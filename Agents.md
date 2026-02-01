@@ -52,12 +52,32 @@
 
 ## MCP Tools
 
-**CRITICAL: NEVER use `grep`, `rg`, or `find` for code exploration.**
+**CRITICAL: NEVER use `grep`, `rg`, or `find` for code exploration.** Use code-search MCP tools instead.
+
+### Code Search (Required)
+
+Use `/code-search` skill for detailed tool selection guidance. Quick reference:
+
+| Task | Tool | NOT |
+|------|------|-----|
+| **Search by meaning** | `mcp__code-search__semantic_search` | `rg "pattern"` |
+| **Find symbol by name** | `mcp__code-search__list_functions` | `rg "function"` |
+| **Before editing files** | `mcp__code-search__get_file_context` (MANDATORY) | Reading file directly |
+| **Who calls this?** | `mcp__code-search__trace_callers` | `rg "Component("` |
+| **Impact analysis** | `mcp__code-search__get_dependents` | `rg "import"` |
+| **Find similar code** | `mcp__code-search__find_similar` | Manual inspection |
+
+**Why code-search?**
+- Semantic: Finds code by meaning, not just literal strings
+- Pre-indexed: Call graph queries <1ms
+- Smart: Auto-boosts source files, deprioritizes tests
+
+**Broadening searches**: Start narrow, widen if no results. Remove `file_pattern`/`chunk_type` filters, rephrase with synonyms, try `list_functions` before `trace_callers`.
+
+### Database
 
 | Task | Tool |
 |------|------|
-| Search code | `mcp__code-search__semantic_search` |
-| Before editing | `mcp__code-search__get_file_context` (MANDATORY) |
 | Database queries | PostgREST with `Accept-Profile: web` (MCP only supports solemd) |
 
 ## Project Structure
