@@ -8,7 +8,7 @@
 > - Workspace: `/workspaces/SoleMD.Web`
 >
 > **TRUSTED RELATIONSHIPS** (Safe to reference read-only):
-> - Infra: Shared services (db, supabase-kong)
+> - Infra: Shared services (db, kong)
 > - App: Data views (solemd schema, read-only)
 >
 > **FORBIDDEN**: Never modify other SoleMD.* project source files.
@@ -78,7 +78,7 @@ Use `/code-search` skill for detailed tool selection guidance. Quick reference:
 
 | Task | Tool |
 |------|------|
-| Database queries | PostgREST with `Accept-Profile: web` (MCP only supports solemd) |
+| Database queries | `mcp__supabase-solemd__sqlToRest` → `mcp__supabase-solemd__postgrestRequest` (schema: `web`) |
 
 ## Project Structure
 
@@ -182,7 +182,7 @@ const supabase = createBrowserClient();
 
 See `/workspaces/CLAUDE.md` for full infrastructure details.
 
-Key services: PostgreSQL (`db:5432`), Supabase API (`supabase-kong:8000`)
+Key services: PostgreSQL (`db:5432`), Supabase API (`kong:8000` aka `supabase-kong`)
 
 ### Agent Helpers
 
