@@ -29,7 +29,12 @@
     "code-search": {
       "type": "http",
       "url": "http://code-search:8100/mcp/solemd.web",
-      "instructions": "CRITICAL: Use this for ALL code exploration. Search for code-search tools FIRST before any code task. Use semantic_search to find code by meaning, list_functions to find symbols, trace_callers/trace_callees for call graphs, get_file_context before editing files, get_dependents for impact analysis. NEVER use grep/rg/find - always use code-search MCP instead."
+      "instructions": "Primary tool for code exploration and navigation. Default chain: semantic_search -> list_functions -> get_file_context -> trace_callers. Use literal_search for exact identifiers/strings; get_dependents only for impact analysis; trace_graph sparingly. Prefer snippet mode with small limits (3-5) and ~30-50 lines; expand when editing. Use rg only as a fallback for exact local text/file search."
+    },
+    "code-search-infra": {
+      "type": "http",
+      "url": "http://code-search:8100/mcp/solemd.infra",
+      "instructions": "Shared SoleMD.Infra code search for cross-project access. Use when you need infrastructure code (Docker, devcontainer, MCP, CI, services)."
     },
     "doc-search": {
       "type": "http",
