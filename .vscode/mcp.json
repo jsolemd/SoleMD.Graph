@@ -45,7 +45,7 @@
       "instructions": "Query external library documentation using hybrid search (BM25 + semantic). 30+ libraries indexed: React, Next.js, Supabase, Langfuse, FastAPI, Pydantic, etc. Use resolve-library-id to find library, then query-docs to search. For exact API names, use exactMatch=true. See /doc-search skill for full guide."
     },
     "obsidian": {
-      "type": "http",
+      "type": "sse",
       "url": "http://obsidian-mcp:8000/sse",
       "instructions": "Obsidian vault access via Local REST API plugin. Read/write notes, search, manage frontmatter/tags. Requires Obsidian running on Windows with Local REST API plugin enabled, and obsidian-mcp container started. See /obsidian skill for usage guide."
     }
