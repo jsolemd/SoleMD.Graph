@@ -28,6 +28,8 @@
 
 **When stuck**: Run `solemd doctor`, check `npm run lint`, restart dev server.
 
+> Infrastructure, MCP tools, agent helpers (`solemd doctor`, `asroot`, `solemd compose`), and code-search rules are in `/workspaces/CLAUDE.md`.
+
 ---
 
 ## Environment
@@ -45,6 +47,9 @@
 |-------|-------------|
 | `/code-search` | **ALWAYS use instead of grep/rg**. Find components, hooks, patterns |
 | `/docker` | Start/stop services |
+| `/schema` | Explore database schemas, tables, relationships |
+| `/database` | SQL queries, DAL patterns |
+| `/chrome-dev` | Browser automation, visual testing, DevTools |
 
 | Command | Action |
 |---------|--------|
@@ -52,36 +57,6 @@
 | `npm run build` | Production build |
 | `npm run lint` | ESLint check |
 | `npx tsc --noEmit` | TypeScript check (manual) |
-
-## MCP Tools
-
-**CRITICAL: NEVER use `grep`, `rg`, or `find` for code exploration.** Use code-search MCP tools instead.
-
-### Code Search (Required)
-
-Use `/code-search` skill for detailed tool selection guidance. Quick reference:
-
-| Task | Tool | NOT |
-|------|------|-----|
-| **Search by meaning** | `mcp__code-search__semantic_search` | `rg "pattern"` |
-| **Find symbol by name** | `mcp__code-search__list_functions` | `rg "function"` |
-| **Before editing files** | `mcp__code-search__get_file_context` (MANDATORY) | Reading file directly |
-| **Who calls this?** | `mcp__code-search__trace_callers` | `rg "Component("` |
-| **Impact analysis** | `mcp__code-search__get_dependents` | `rg "import"` |
-| **Find similar code** | `mcp__code-search__find_similar` | Manual inspection |
-
-**Why code-search?**
-- Semantic: Finds code by meaning, not just literal strings
-- Pre-indexed: Call graph queries <1ms
-- Smart: Auto-boosts source files, deprioritizes tests
-
-**Broadening searches**: Start narrow, widen if no results. Remove `file_pattern`/`chunk_type` filters, rephrase with synonyms, try `list_functions` before `trace_callers`.
-
-### Database
-
-| Task | Tool |
-|------|------|
-| Database queries | `mcp__supabase-solemd__sqlToRest` → `mcp__supabase-solemd__postgrestRequest` (schema: `web`) |
 
 ## Project Structure
 
@@ -180,16 +155,3 @@ const supabase = createBrowserClient();
 | Supabase connection | Verify `NEXT_PUBLIC_SUPABASE_URL` in `.env.local` |
 | Component not rendering | Check 'use client' directive if using hooks |
 | Hydration mismatch | Move dynamic content to client component |
-
-## Shared Infrastructure
-
-See `/workspaces/CLAUDE.md` for full infrastructure details.
-
-Key services: PostgreSQL (`db:5432`), Supabase API (`kong:8000` aka `supabase-kong`)
-
-### Agent Helpers
-
-```bash
-solemd doctor    # Health check
-asroot <cmd>     # Run as root (no sudo)
-```
