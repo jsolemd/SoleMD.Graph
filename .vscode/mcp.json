@@ -32,12 +32,7 @@
     "code-search": {
       "type": "http",
       "url": "http://code-search:8100/mcp/solemd.web",
-      "instructions": "Primary tool for code exploration and navigation. Default chain: semantic_search -> list_functions -> get_file_context -> trace_callers. Use literal_search for exact identifiers/strings; get_dependents only for impact analysis; trace_graph sparingly. Prefer snippet mode with small limits (3-5) and ~30-50 lines; expand when editing. Use rg only as a fallback for exact local text/file search."
-    },
-    "code-search-infra": {
-      "type": "http",
-      "url": "http://code-search:8100/mcp/solemd.infra",
-      "instructions": "Shared SoleMD.Infra code search for cross-project access. Use when you need infrastructure code (Docker, devcontainer, MCP, CI, services)."
+      "instructions": "Primary tool for code exploration and navigation. Use the streamlined surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, index_status. Prefer search_code mode=auto for discovery; use inspect_symbol with file_path to disambiguate overloaded names. Use file_context before edits and dependents/analyze_impact for blast-radius checks. Use rg only as a fallback for exact local text/file search."
     },
     "doc-search": {
       "type": "http",
@@ -48,6 +43,16 @@
       "type": "http",
       "url": "http://obsidian-mcp:8000/mcp",
       "instructions": "Obsidian vault access via Local REST API plugin over streamable HTTP MCP transport. Read/write notes, search, manage frontmatter/tags. Requires Obsidian running on Windows with Local REST API plugin enabled, and obsidian-mcp container started. See /obsidian skill for usage guide."
+    },
+    "neo4j": {
+      "command": "neo4j-mcp",
+      "env": {
+        "NEO4J_URI": "bolt://neo4j:7687",
+        "NEO4J_USERNAME": "neo4j",
+        "NEO4J_PASSWORD": "solemd.infra",
+        "NEO4J_DATABASE": "neo4j"
+      },
+      "instructions": "Neo4j graph database — direct Cypher queries via official Neo4j MCP server. Use for schema inspection (get-schema), read queries (read-cypher), and write operations (write-cypher). Code-search handles LLM-facing structural workflows via inspect_symbol, trace_flow, and analyze_impact. Use this server for direct ad-hoc Cypher."
     }
   }
 }
