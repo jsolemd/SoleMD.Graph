@@ -32,7 +32,7 @@
     "code-search": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.web",
-      "instructions": "Primary tool for code exploration and navigation. Use the streamlined surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, index_status. Prefer search_code mode=auto for discovery; use inspect_symbol with file_path to disambiguate overloaded names. Use file_context before edits and dependents/analyze_impact for blast-radius checks. Use rg only as a fallback for exact local text/file search."
+      "instructions": "Primary tool for code exploration and navigation. Use the streamlined surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, index_status. Prefer search_code mode=auto for discovery; use literal_operator=phrase|all for exact literal intent, and inspect_symbol with file_path to disambiguate overloaded names. Use file_context before edits and dependents/analyze_impact for blast-radius checks. Use index_status reindex_mode=all|content|graph to target rebuild scope."
     },
     "doc-search": {
       "type": "http",
