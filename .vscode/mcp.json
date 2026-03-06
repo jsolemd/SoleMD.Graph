@@ -32,7 +32,7 @@
     "code-search": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.web",
-      "instructions": "Primary tool for code exploration and navigation. Use the streamlined surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, index_status. Prefer search_code mode=auto for discovery; use literal_operator=phrase|all for exact literal intent, and inspect_symbol with file_path to disambiguate overloaded names. Use file_context before edits and dependents/analyze_impact for blast-radius checks. Use index_status reindex_mode=all|content|graph to target rebuild scope."
+      "instructions": "Primary tool for code exploration and navigation. Use the streamlined 11-tool surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, index_status. Default exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) when a path question appears. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Promote good hits into persistent task context with slice_build(task=...) or slice_build(entry_points=[symbol_ref,...]), then use slice_view(slice_id, detail=...) to escalate context. Read matched_on, source_bias_filtered, and unresolved call-site telemetry before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope."
     },
     "doc-search": {
       "type": "http",
