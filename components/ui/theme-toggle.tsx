@@ -1,56 +1,24 @@
-// components/ui/theme-toggle.tsx
 "use client";
 
-import { ActionIcon, Tooltip } from "@mantine/core";
+import { useState, useEffect } from "react";
+import { ActionIcon, Tooltip, useMantineColorScheme, useComputedColorScheme } from "@mantine/core";
 import { Sun, Moon } from "lucide-react";
 import { motion } from "framer-motion";
-import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
 import {
   ANIMATION_VARIANTS,
   HOVER_CSS_TRANSITION,
   STANDARD_EASING,
 } from "@/lib/animation-utils";
 
-/**
- * Optimized theme toggle component with proper next-themes integration
- * Syncs with both next-themes and Mantine theme provider
- */
 export default function ThemeToggle() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { toggleColorScheme } = useMantineColorScheme();
+  const computedColorScheme = useComputedColorScheme("light");
   const [mounted, setMounted] = useState(false);
 
-  // Prevent hydration mismatch
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  useEffect(() => setMounted(true), []);
 
-  const toggleTheme = () => {
-    setTheme(resolvedTheme === "dark" ? "light" : "dark");
-  };
-
-  // Prevent flash during hydration
-  if (!mounted) {
-    return (
-      <ActionIcon
-        variant="subtle"
-        size="lg"
-        radius="md"
-        aria-label="Theme toggle loading"
-        styles={{
-          root: {
-            width: "2.5rem",
-            height: "2.5rem",
-            opacity: 0.5,
-          },
-        }}
-      >
-        <Sun className="h-5 w-5" />
-      </ActionIcon>
-    );
-  }
-
-  const isDark = resolvedTheme === "dark";
+  // Before mount, render a consistent "light" state to avoid hydration mismatch
+  const isDark = mounted ? computedColorScheme === "dark" : false;
 
   return (
     <Tooltip
@@ -67,7 +35,7 @@ export default function ThemeToggle() {
     >
       <motion.div {...ANIMATION_VARIANTS.buttonHover}>
         <ActionIcon
-          onClick={toggleTheme}
+          onClick={toggleColorScheme}
           variant="subtle"
           size="lg"
           radius="md"
@@ -85,7 +53,7 @@ export default function ThemeToggle() {
                 color: isDark
                   ? "var(--color-golden-yellow)"
                   : "var(--color-soft-blue)",
-                transform: "none !important", // Let Framer Motion handle transforms
+                transform: "none !important",
               },
             },
           }}

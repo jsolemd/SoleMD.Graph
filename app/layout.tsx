@@ -1,24 +1,33 @@
-// app/layout.tsx
-
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
-import { ThemeProvider } from "@/components/theme-provider";
+import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core";
 import { MantineThemeProvider } from "@/components/mantine-theme-provider";
-import { cn } from "@/lib/utils";
 
 import "@mantine/core/styles.css";
 import "@/app/globals.css";
 
-// --- IMPORT THE SHARED LAYOUT COMPONENTS ---
-import Header from "@/components/layout/Header";
-import Footer from "@/components/layout/Footer"; // Assuming this is the correct path
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-sans",
+});
 
 export const metadata: Metadata = {
-  title: "SoleMD - Neuroscience Education Reimagined",
-  description:
-    "Where artificial intelligence meets psychiatric care through elegant education and research.",
+  metadataBase: new URL("https://solemd.com"),
+  title: {
+    default: "SoleMD",
+    template: "%s | SoleMD",
+  },
+  description: "Biomedical knowledge, organized.",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f8f9fa" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0f" },
+  ],
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -27,33 +36,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={cn(
-          "min-h-screen bg-background font-sans antialiased",
-          inter.variable
-        )}
-      >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="light"
-          enableSystem
-          disableTransitionOnChange
-        >
-          <MantineThemeProvider>
-            {/* This div creates the stacking context for our z-index layering */}
-            <div className="relative flex flex-col min-h-screen">
-              {/* The Header is now part of the global layout, rendered on every page. */}
-              <Header />
-
-              {/* The <main> tag wraps the page-specific content and allows it to grow */}
-              <main className="flex-1">{children}</main>
-
-              {/* The Footer is also part of the global layout. */}
-              <Footer />
-            </div>
-          </MantineThemeProvider>
-        </ThemeProvider>
+    <html lang="en" {...mantineHtmlProps}>
+      <head>
+        <ColorSchemeScript defaultColorScheme="auto" />
+      </head>
+      <body className={`${inter.variable} font-sans antialiased`}>
+        <MantineThemeProvider>{children}</MantineThemeProvider>
       </body>
     </html>
   );

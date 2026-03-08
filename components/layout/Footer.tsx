@@ -9,7 +9,6 @@ import {
   Container,
   Group,
   Text,
-  Anchor,
   Divider,
   Stack,
   UnstyledButton,

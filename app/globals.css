@@ -1,5 +1,10 @@
-@import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+@layer theme, base, components, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+/* Preflight omitted — Mantine provides base styles via postcss-preset-mantine */
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   /* ===== SOLEMD BRAND COLOR SYSTEM ===== */
@@ -63,6 +68,18 @@
   --color-accent-denim: #5f79a3;
   --color-accent-navy-blue: #6a7a95;
   --color-accent-dusty-blue-gray-alt: #92a8bc;
+
+  /* Graph Canvas */
+  --graph-bg: #f8f9fa;
+  --graph-panel-bg: #ffffff;
+  --graph-panel-border: #e5e5e5;
+  --graph-toolbar-bg: #f5f5f5;
+  --graph-panel-text: #1a1b1e;
+  --graph-panel-text-muted: rgba(0, 0, 0, 0.55);
+  --graph-panel-text-dim: rgba(0, 0, 0, 0.35);
+  --graph-panel-input-bg: #f5f5f5;
+  --graph-panel-hover: rgba(116, 124, 170, 0.08);
+  --graph-panel-active: rgba(116, 124, 170, 0.12);
 
   /* Core System Colors - Light Mode */
   --background: #fafafa; /* Updated background */
@@ -302,6 +319,18 @@
   --color-accent-denim: #4c5e7a;
   --color-accent-navy-blue: #2f3a4a;
   --color-accent-dusty-blue-gray-alt: #6b7f91;
+
+  /* Graph Canvas */
+  --graph-bg: #0a0a0f;
+  --graph-panel-bg: #1a1c23;
+  --graph-panel-border: #2a2d36;
+  --graph-toolbar-bg: #141519;
+  --graph-panel-text: #e0e0e6;
+  --graph-panel-text-muted: rgba(255, 255, 255, 0.6);
+  --graph-panel-text-dim: rgba(255, 255, 255, 0.35);
+  --graph-panel-input-bg: #22252e;
+  --graph-panel-hover: rgba(168, 197, 233, 0.1);
+  --graph-panel-active: rgba(168, 197, 233, 0.15);
 
   /* Core System Colors - Dark Mode */
   --background: #1c1c1f;

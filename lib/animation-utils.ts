@@ -5,8 +5,6 @@
  * following the refined design system standards established in the landing page.
  */
 
-import { Transition } from "framer-motion";
-
 /**
  * Standard easing curve used throughout the application
  * Provides smooth, professional animations

@@ -5,11 +5,34 @@
 
 "use client";
 
-import React, { Component, ErrorInfo, ReactNode } from "react";
+import React, { Component, ErrorInfo, ReactNode, Suspense, lazy } from "react";
 import { Card, Title, Text, Button, Stack, Alert } from "@mantine/core";
-import { AlertTriangle, RefreshCw, Home } from "lucide-react";
+import { RefreshCw, Home } from "lucide-react";
 import { motion } from "framer-motion";
-import { DotLottieReact } from "@lottiefiles/dotlottie-react";
+
+const LottieAnimation = lazy(() =>
+  import("lottie-react").then((mod) => ({
+    default: function LottieError() {
+      const Lottie = mod.default;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const [animationData, setAnimationData] = React.useState<any>(null);
+      React.useEffect(() => {
+        import("@/lib/animations/lottie-404.json").then((m) =>
+          setAnimationData(m.default)
+        );
+      }, []);
+      if (!animationData) return null;
+      return (
+        <Lottie
+          animationData={animationData}
+          loop
+          autoplay
+          style={{ width: "100%", height: "100%" }}
+        />
+      );
+    },
+  }))
+);
 
 interface Props {
   children: ReactNode;
@@ -34,24 +57,16 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
-    // Update state so the next render will show the fallback UI
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    // Log error to console in development
     if (process.env.NODE_ENV === "development") {
       console.error("Error Boundary caught an error:", error, errorInfo);
     }
 
-    // Call custom error handler if provided
     this.props.onError?.(error, errorInfo);
-
-    // Update state with error info
     this.setState({ error, errorInfo });
-
-    // In production, you might want to log to an error reporting service
-    // Example: Sentry.captureException(error, { contexts: { react: errorInfo } });
   }
 
   handleRetry = () => {
@@ -64,12 +79,10 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      // Custom fallback UI
       if (this.props.fallback) {
         return this.props.fallback;
       }
 
-      // Default error UI
       return (
         <div className="min-h-screen flex items-center justify-center p-4">
           <motion.div
@@ -90,22 +103,18 @@ export class ErrorBoundary extends Component<Props, State> {
               }}
             >
               <Stack gap="lg" align="center">
-                {/* Error Animation */}
+                {/* Error Animation — lazy loaded since this path is rare */}
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
                   className="w-32 h-32"
                 >
-                  <DotLottieReact
-                    src="/animations/lottie-404.json"
-                    loop
-                    autoplay
-                    style={{ width: "100%", height: "100%" }}
-                  />
+                  <Suspense fallback={null}>
+                    <LottieAnimation />
+                  </Suspense>
                 </motion.div>
 
-                {/* Error Message */}
                 <div>
                   <Title
                     order={2}
@@ -124,7 +133,6 @@ export class ErrorBoundary extends Component<Props, State> {
                   </Text>
                 </div>
 
-                {/* Error Details (Development Only) */}
                 {process.env.NODE_ENV === "development" && this.state.error && (
                   <Alert
                     color="red"
@@ -147,7 +155,6 @@ export class ErrorBoundary extends Component<Props, State> {
                   </Alert>
                 )}
 
-                {/* Action Buttons */}
                 <div className="flex gap-3 w-full">
                   <motion.div
                     whileHover={{ scale: 1.02 }}
@@ -161,11 +168,7 @@ export class ErrorBoundary extends Component<Props, State> {
                       fullWidth
                       styles={{
                         root: {
-                          backgroundColor: "var(--c-purple-text)",
-                          "&:hover": {
-                            backgroundColor: "var(--c-purple-border)",
-                            transform: "none !important",
-                          },
+                          backgroundColor: "var(--color-muted-indigo)",
                         },
                       }}
                     >
@@ -187,10 +190,6 @@ export class ErrorBoundary extends Component<Props, State> {
                         root: {
                           borderColor: "var(--border)",
                           color: "var(--foreground)",
-                          "&:hover": {
-                            backgroundColor: "var(--c-gray-bg)",
-                            transform: "none !important",
-                          },
                         },
                       }}
                     >
@@ -211,7 +210,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
 /**
  * Hook-based error boundary for functional components
- * Provides error state management without class component
+ * Throws during render (not in useEffect) so React error boundaries catch it
  */
 export function useErrorBoundary() {
   const [error, setError] = React.useState<Error | null>(null);
@@ -224,11 +223,10 @@ export function useErrorBoundary() {
     setError(error);
   }, []);
 
-  React.useEffect(() => {
-    if (error) {
-      throw error;
-    }
-  }, [error]);
+  // Throw during render so React error boundaries can catch it
+  if (error) {
+    throw error;
+  }
 
   return { captureError, resetError };
 }

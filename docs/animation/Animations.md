@@ -258,6 +258,24 @@ useLottieInteractivity({
 - Instrument heavy 3D scenes with Drei’s `<PerformanceMonitor>` and adjust post-processing or instancing counts inside callbacks.
 - Keep asset loading deterministic: use Suspense boundaries, `useGLTF.preload`, and hashed cache keys so the database-first pipeline can index assets predictably.
 
+## Install On Demand
+
+These libraries are documented here but **not installed** in the production bundle.
+Install only what you need for the feature you're building.
+
+```bash
+# 3D (Three.js ecosystem)
+npm install three @react-three/fiber @react-three/drei @types/three --legacy-peer-deps
+
+# GSAP (timeline/scroll choreography)
+npm install gsap @gsap/react --legacy-peer-deps
+
+# visx (data visualization primitives)
+npm install @visx/annotation @visx/axis @visx/brush @visx/chord @visx/clip-path @visx/curve @visx/delaunay @visx/drag @visx/event @visx/geo @visx/glyph @visx/gradient @visx/grid @visx/group @visx/heatmap @visx/hierarchy @visx/legend @visx/marker @visx/mock-data @visx/network @visx/pattern @visx/responsive @visx/sankey @visx/scale @visx/shape @visx/stats @visx/text @visx/threshold @visx/tooltip @visx/voronoi @visx/wordcloud @visx/xychart @visx/zoom --legacy-peer-deps
+```
+
+> Framer Motion and lottie-react are already installed (actively used in production).
+
 ## Reference Index
 
 - three.js manual & examples: https://threejs.org/docs
@@ -266,8 +284,6 @@ useLottieInteractivity({
 - GSAP core & plugins: https://gsap.com/docs
 - Motion (Framer Motion 12) docs: https://motion.dev/docs
 - visx component docs: https://github.com/airbnb/visx
-- Recharts documentation: https://recharts.org/en-US/api
-- Two.js API reference: https://two.js.org/
 - Lottie React docs: https://github.com/gamote/lottie-react
 
 

@@ -1,13 +1,7 @@
-/**
- * Mantine theme provider with next-themes integration
- * Provides seamless dark/light theme switching for SoleMD platform
- */
-
 "use client";
 
-import { MantineProvider } from "@mantine/core";
-import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { MantineProvider, useMantineColorScheme } from "@mantine/core";
 import {
   theme as mantineTheme,
   cssVariablesResolver,
@@ -18,48 +12,32 @@ interface MantineThemeProviderProps {
 }
 
 /**
- * Mantine theme provider that syncs with next-themes
- * Automatically switches Mantine color scheme based on next-themes state
+ * Syncs Mantine's color scheme to the `.dark` class on <html>.
+ * Our globals.css uses `.dark { ... }` for all dark mode tokens.
  */
+function DarkClassSync({ children }: { children: React.ReactNode }) {
+  const { colorScheme } = useMantineColorScheme();
+
+  useEffect(() => {
+    const html = document.documentElement;
+    if (colorScheme === "dark") {
+      html.classList.add("dark");
+    } else {
+      html.classList.remove("dark");
+    }
+  }, [colorScheme]);
+
+  return <>{children}</>;
+}
+
 export function MantineThemeProvider({ children }: MantineThemeProviderProps) {
-  const { theme, systemTheme } = useTheme();
-  const [colorScheme, setColorScheme] = useState<"light" | "dark">("light");
-  const [mounted, setMounted] = useState(false);
-
-  // Handle hydration mismatch
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Sync Mantine color scheme with next-themes
-  useEffect(() => {
-    if (!mounted) return;
-
-    const resolvedTheme = theme === "system" ? systemTheme : theme;
-    setColorScheme(resolvedTheme === "dark" ? "dark" : "light");
-  }, [theme, systemTheme, mounted]);
-
-  // Prevent hydration mismatch by not rendering until mounted
-  if (!mounted) {
-    return (
-      <MantineProvider
-        theme={mantineTheme}
-        defaultColorScheme="light"
-        cssVariablesResolver={cssVariablesResolver}
-      >
-        {children}
-      </MantineProvider>
-    );
-  }
-
   return (
     <MantineProvider
       theme={mantineTheme}
-      defaultColorScheme="light"
-      forceColorScheme={colorScheme}
+      defaultColorScheme="auto"
       cssVariablesResolver={cssVariablesResolver}
     >
-      {children}
+      <DarkClassSync>{children}</DarkClassSync>
     </MantineProvider>
   );
 }
