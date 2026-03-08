@@ -1,85 +1,72 @@
 # SoleMD.Web Roadmap
 
-> Living document. Update as work progresses.
-> Architecture details: [../architecture.md](../architecture.md)
-> Full vision: [../vision.md](../vision.md) (symlink to SoleMD.App)
+> Architecture: [../architecture.md](../architecture.md)
+> Mode registry: `lib/graph/modes.ts`
 
-## Current State (2026-03-07)
+## Current State
 
-- 11 production deps, clean build, zero TS/ESLint errors
-- Supabase connected (51 papers, 2842 chunks, 1986 citations, 550 authors, 2311 vocab terms)
-- Marketing site pages exist (About, Education, Research) — will be absorbed into graph UI
-- No graph rendering yet. No Cosmograph. No API routes for graph data
-
----
-
-## Phase 0: Graph Foundation
-
-Goal: Paper/citation/author graph on screen with a prompt box shell.
-
-### 0.1 — Cosmograph Setup
-- [ ] Install `@cosmograph/react` (check license: CC-BY-NC-4.0, fine for non-commercial)
-- [ ] Create `components/graph/GraphCanvas.tsx` — Cosmograph wrapper
-- [ ] Dark canvas, full viewport, basic node rendering
-- [ ] Node colors mapped to brand palette (papers = brand blue, authors = contact pink, terms = education green)
-- [ ] Verify GPU rendering works, test with 51 papers + citation edges
-
-### 0.2 — Supabase API Routes
-- [ ] `app/api/graph/nodes/route.ts` — fetch papers, authors (later: entities, terms)
-- [ ] `app/api/graph/edges/route.ts` — fetch citations, paper-author links (later: mentions, relations)
-- [ ] Typed responses (`GraphNode`, `GraphEdge` interfaces)
-- [ ] Server-side Supabase client (not browser — these are internal API routes)
-
-### 0.3 — Graph Data Layer
-- [ ] `lib/graph/types.ts` — Node, Edge, GraphMode, GraphState types
-- [ ] `lib/graph/store.ts` — Zustand store (mode, selected node, filters, highlighted nodes)
-- [ ] `lib/graph/data.ts` — fetch + transform Supabase data → Cosmograph format
-- [ ] `lib/graph/colors.ts` — node type → brand color mapping
-
-### 0.4 — Prompt Box Shell
-- [ ] `components/graph/PromptBox.tsx` — dark pill, glass-morphism, bottom-center
-- [ ] Mode toggles: Ask / Explore / Write (UI only — no backend yet)
-- [ ] Framer Motion layout animations for mode transitions
-- [ ] Input field (non-functional for now — placeholder text per mode)
-
-### 0.5 — Landing Page Swap
-- [ ] New root layout/page: Cosmograph full viewport + prompt box
-- [ ] SoleMD wordmark top-left (static for now — About overlay comes in Phase 1)
-- [ ] Stats bar: live counts from DB (papers, citations, terms)
-- [ ] Move current marketing pages to archive or behind a route prefix
-- [ ] Ensure `next build` still passes
+**Phase 0 complete.** Clean foundation:
+- 38 production files, 2,984 lines, 12 deps
+- Cosmograph GPU scatter rendering ~2,184 UMAP chunks from 44 papers
+- 4 modes with data-driven registry (Ask/Explore/Learn/Write)
+- Explore mode fully functional (toolbar, config panels, filters, data table, timeline, legends)
+- Ask/Learn/Write show clean canvas + prompt box (shells ready for expansion)
+- Full light/dark mode, branded Cosmograph CSS theming
+- Zero TS errors, zero ESLint errors, builds clean
 
 ---
 
-## Phase 1: Navigation + Content
+## Phase 1: Mode Expansion
 
-Goal: Click things, see things. Education and About content integrated.
+The graph is always the page. Each mode changes how you interact with it.
 
-### 1.1 — Detail Panels
-- [ ] Click a paper node → slide-in panel with title, authors, journal, year, abstract, chunk count
-- [ ] Click an author node → panel with name, paper count, list of papers
-- [ ] Glass-morphism panels, Framer Motion slide transitions
-- [ ] Escape / click background to dismiss
+### 1.1 — Ask Mode (Grounded RAG)
 
-### 1.2 — Search + Filters
-- [ ] Cosmograph built-in search component wired up
-- [ ] Filter by node type (paper / author / term)
-- [ ] Filter by year range
-- [ ] Filter by journal
+The prompt box becomes a chat interface. The graph becomes visible reasoning.
 
-### 1.3 — About Overlay
-- [ ] SoleMD wordmark click → glass-morphism overlay
-- [ ] Bio, CV/resume, research interests, contact links
-- [ ] Translucent — graph visible underneath
-- [ ] Research interest tags could highlight graph clusters (stretch)
+- [ ] Chat message history in prompt box (conversation thread above input)
+- [ ] `useAskStore` — messages, active query, evidence path, loading state
+- [ ] API route: query → entity extraction → graph traversal → RAG over chunks
+- [ ] Real-time node highlighting as LLM traverses evidence path
+- [ ] Clickable citations in responses → zoom to source node
+- [ ] Grounding indicator (how many nodes support the answer)
+- [ ] Mode layout: `promptVariant: 'chat'` — prompt box expands upward with messages
 
-### 1.4 — Learn Panel
-- [ ] "Learn" accessible from prompt box or wordmark menu
-- [ ] Side panel with education module list
-- [ ] Module = metadata + list of associated paper/entity IDs
-- [ ] Hover module → highlight its graph nodes
-- [ ] Click module → open lesson content in panel, zoom graph to constellation
-- [ ] Module content as MDX or structured markdown
+### 1.2 — Explore Mode (Enhancement)
+
+Already functional. Polish and extend.
+
+- [ ] CosmographPopup on hover/click (node detail card)
+- [ ] Detail panel: click paper node → slide-in with metadata, chunks, authors
+- [ ] Progressive zoom: double-click paper → explode into chunks
+- [ ] Chunk-level cross-paper similarity edges (from MedCPT cosine)
+- [ ] Export: selected subgraph → JSON, BibTeX, or SoleMD.Make
+
+### 1.3 — Learn Mode (Educational Constellations)
+
+Education modules live in the graph. Nodes glow when their module is active.
+
+- [ ] `useLearnStore` — active module, highlighted nodes, progress tracking
+- [ ] Module index panel (slide-in list of available learning modules)
+- [ ] Module activation: click module → highlight its node constellation
+- [ ] Hover module → chunks/papers that inform it light up with connecting lines
+- [ ] Zoom to module subgraph on activation
+- [ ] Module content panel: structured lesson, linked to live graph nodes
+- [ ] Entity highlighting in lesson text (hover entity → graph node glows)
+- [ ] Mode layout: `showModulePanel: true`, `canvasHighlighting: 'by-module'`
+
+### 1.4 — Write Mode (Graph-Assisted Editor)
+
+The prompt box expands into a writing surface. The graph responds to your text.
+
+- [ ] `useWriteStore` — document content, cursor position, NER entities, similarity hits
+- [ ] Expanded editor (prompt box grows upward, full-width, multi-line)
+- [ ] Real-time NER on current paragraph → entity highlights in editor
+- [ ] Paragraph embedding → pgvector similarity → graph nodes glow by relevance
+- [ ] Dual-signal: supporting evidence (warm glow) + contradicting (sharp glow)
+- [ ] Click supporting node → insert citation into editor
+- [ ] Grounding meter (% of claims with supporting evidence)
+- [ ] Mode layout: `promptVariant: 'editor'`, `canvasHighlighting: 'by-relevance'`
 
 ---
 
@@ -87,47 +74,38 @@ Goal: Click things, see things. Education and About content integrated.
 
 Blocked on: entity extraction, relation extraction, embeddings in SoleMD.App.
 
-### 2.1 — Entity + Relation Nodes
+### 2.1 — Entity + Relation Graph
 - [ ] Entity nodes from `solemd.entities` + `solemd.entity_links`
-- [ ] Relation edges from `solemd.paper_relations` with assertion status
-- [ ] Entity-mention edges (entity → paper/chunk)
-- [ ] Visual encoding: edge style for affirmed/negated/speculative
+- [ ] Relation edges with assertion status (affirmed/negated/speculative)
+- [ ] Visual encoding: edge style by relation type and confidence
 
 ### 2.2 — Semantic Positioning
-- [ ] UMAP pre-computed 2D positions (stored in DB or computed at build time)
-- [ ] Replace force-directed layout with UMAP positions
-- [ ] Papers positioned by SPECTER2, entities by SapBERT, chunks by MedCPT
+- [ ] UMAP positions from SPECTER2 (papers), SapBERT (entities), MedCPT (chunks)
+- [ ] Multi-scale: paper-level layout + chunk-level sub-layout
 
 ### 2.3 — Progressive Zoom
-- [ ] Double-click paper → explode into chunks/figures/tables
-- [ ] Chunk-level similarity edges (cross-paper, from MedCPT cosine)
-- [ ] Click chunk → evidence panel (actual text, entities, values, relations)
-
-### 2.4 — Learn Enhancements
-- [ ] Entity highlighting in lesson text (hover underlined entity → graph node glows)
-- [ ] "New since last visit" indicator on modules (new papers touching the module's subgraph)
+- [ ] Paper → chunks → evidence (drill-down)
+- [ ] Chunk-level cross-paper similarity edges
+- [ ] Click chunk → evidence panel (text, entities, values, relations)
 
 ---
 
-## Phase 3: LLM Integration
+## Phase 3: Polish + Integration
 
-### 3.1 — Ask Mode
-- [ ] LLM chat via Claude API (edge function or API route)
-- [ ] Graph traversal: extract entities from query → find paths → RAG over chunks
-- [ ] Traversed nodes highlight in real-time as LLM answers
-- [ ] Clickable citations in responses → zoom to paper/chunk node
+### 3.1 — About Overlay
+- [ ] SoleMD wordmark click → glass-morphism overlay (bio, CV, contact, research)
+- [ ] Graph visible underneath, translucent panel
 
-### 3.2 — Write Mode
-- [ ] Tiptap/ProseMirror editor (prompt box expands upward)
-- [ ] Real-time NER on current paragraph (entity highlighting in editor)
-- [ ] Paragraph embedding → pgvector similarity search
-- [ ] Dual-signal: supporting (warm glow) + contradicting (sharp glow)
-- [ ] Citation insertion (click supporting node → insert citation)
-- [ ] Grounding meter
+### 3.2 — Cross-Mode Transitions
+- [ ] Learn → Ask: "Explain this concept" from within a lesson → Ask with module context
+- [ ] Explore → Write: select nodes in Explore → switch to Write with pre-loaded citations
+- [ ] Ask → Explore: "Show me these papers" → Explore with highlighted subgraph
 
-### 3.3 — Learn + Ask
-- [ ] Ask questions scoped to a module's subgraph
-- [ ] "Explain this concept" from within a lesson → Ask mode with module context
+### 3.3 — Persistence
+- [ ] Save/restore dashboard config per mode
+- [ ] Write mode autosave
+- [ ] Learn mode progress persistence
+- [ ] Ask mode conversation history
 
 ---
 
@@ -140,22 +118,15 @@ Blocked on: entity extraction, relation extraction, embeddings in SoleMD.App.
 
 ---
 
-## Dependencies to Install
-
-| Package | When | Why |
-|---------|------|-----|
-| `@cosmograph/react` | Phase 0.1 | GPU graph rendering |
-| `zustand` | Phase 0.3 | Graph state management |
-| `tiptap` + extensions | Phase 3.2 | Scientific editor |
-
-## Key Decisions Log
+## Key Decisions
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-03-07 | Graph-native rebuild | Vision alignment — graph IS the interface |
-| 2026-03-07 | Cosmograph over alternatives | GPU perf at 100K+ nodes, pre-computed layout, CC-BY-NC-4.0 ok |
-| 2026-03-07 | Dark canvas + brand pastels | Dark makes nodes pop, pastels on overlays bridge existing brand |
+| 2026-03-07 | Graph-native rebuild | The graph IS the interface, not a feature on a page |
+| 2026-03-07 | Mode registry pattern | Data-driven mode config, no hardcoded conditionals |
+| 2026-03-07 | Cosmograph | GPU perf at 100K+ nodes, pre-computed layout support |
+| 2026-03-07 | Dark canvas + brand pastels | Dark makes nodes pop, pastels on overlays bridge brand |
 | 2026-03-07 | Education as graph nodes | Modules are named subgraphs, not separate pages |
-| 2026-03-07 | About as overlay | Wordmark → glass panel, graph visible underneath |
-| 2026-03-07 | Start with real data | 51 papers + citations, let graph grow organically |
-| 2026-03-07 | Zustand for state | Lightweight, simple, good for graph mode/selection/filter state |
+| 2026-03-07 | Two Zustand stores | Interaction state (shared) vs dashboard config (Explore) |
+| 2026-03-07 | Per-mode stores | Each mode gets its own store slice as it expands |
+| 2026-03-07 | No marketing pages | Graph is the only surface. About becomes an overlay |

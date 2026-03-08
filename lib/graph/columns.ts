@@ -15,6 +15,7 @@ export const COLUMNS: ColumnMeta[] = [
   { key: 'citekey', label: 'Citekey', type: 'categorical' },
   { key: 'clusterProbability', label: 'Cluster Probability', type: 'numeric' },
   { key: 'outlierScore', label: 'Outlier Score', type: 'numeric' },
+  { key: 'year', label: 'Publication Year', type: 'numeric' },
   { key: 'x', label: 'X', type: 'numeric' },
   { key: 'y', label: 'Y', type: 'numeric' },
   { key: 'id', label: 'Chunk ID', type: 'text' },
@@ -27,7 +28,7 @@ export const ALL_DATA_COLUMNS = COLUMNS.filter((c) => c.key !== 'index' && c.key
 
 export const TABLE_COLUMNS: (keyof ChunkNode)[] = [
   'id', 'clusterId', 'clusterLabel', 'paperTitle', 'citekey',
-  'clusterProbability', 'outlierScore', 'x', 'y',
+  'year', 'clusterProbability', 'outlierScore', 'x', 'y',
 ]
 
 export function getColumnMeta(key: string): ColumnMeta | undefined {

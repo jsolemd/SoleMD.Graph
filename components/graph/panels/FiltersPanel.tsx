@@ -1,11 +1,11 @@
 "use client";
 
-import { ActionIcon, Button, Select, Stack, Text } from "@mantine/core";
-import { motion } from "framer-motion";
-import { Plus, X } from "lucide-react";
+import { Button, Select, Stack, Text } from "@mantine/core";
+import { Plus } from "lucide-react";
 import { useState } from "react";
 import { useDashboardStore } from "@/lib/graph/dashboard-store";
 import { ALL_DATA_COLUMNS } from "@/lib/graph/columns";
+import { PanelShell, panelSelectStyles } from "./PanelShell";
 import { FilterWidget } from "./filters/FilterWidget";
 
 export function FiltersPanel() {
@@ -22,44 +22,11 @@ export function FiltersPanel() {
     .map((c) => ({ value: c.key, label: c.label }));
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      transition={{ duration: 0.2 }}
-      className="absolute top-0 left-0 z-20 flex h-full w-[300px] flex-col overflow-hidden"
-      style={{
-        backgroundColor: "var(--graph-panel-bg)",
-        borderRight: "1px solid var(--graph-panel-border)",
-      }}
+    <PanelShell
+      title="Filters"
+      side="left"
+      onClose={() => setActivePanel(null)}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3">
-        <Text
-          size="xs"
-          fw={600}
-          style={{
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            color: "var(--graph-panel-text-muted)",
-          }}
-        >
-          Filters
-        </Text>
-        <ActionIcon
-          variant="subtle"
-          size={28}
-          radius="md"
-          onClick={() => setActivePanel(null)}
-          aria-label="Close filters panel"
-          styles={{
-            root: { color: "var(--graph-panel-text-dim)" },
-          }}
-        >
-          <X size={14} />
-        </ActionIcon>
-      </div>
-
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <Stack gap="sm">
           <Text
@@ -96,13 +63,7 @@ export function FiltersPanel() {
               onBlur={() => setShowAddSelect(false)}
               autoFocus
               searchable
-              styles={{
-                input: {
-                  backgroundColor: "var(--graph-panel-input-bg)",
-                  borderColor: "var(--graph-panel-border)",
-                  color: "var(--graph-panel-text)",
-                },
-              }}
+              styles={panelSelectStyles}
             />
           ) : (
             <Button
@@ -131,6 +92,6 @@ export function FiltersPanel() {
           )}
         </Stack>
       </div>
-    </motion.div>
+    </PanelShell>
   );
 }

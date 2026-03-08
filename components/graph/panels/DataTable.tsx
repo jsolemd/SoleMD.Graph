@@ -10,6 +10,7 @@ import {
 } from "@mantine/core";
 import { motion } from "framer-motion";
 import { useDashboardStore } from "@/lib/graph/dashboard-store";
+import { PANEL_SPRING } from "./PanelShell";
 import { useGraphStore } from "@/lib/graph/store";
 import { TABLE_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
 import type { ChunkNode } from "@/lib/graph/types";
@@ -80,21 +81,20 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
-      transition={{ duration: 0.2 }}
+      transition={PANEL_SPRING}
       className="flex flex-col"
       style={{
         height: tableHeight,
-        backgroundColor: "var(--graph-panel-bg)",
-        borderTop: "1px solid var(--graph-panel-border)",
+        backgroundColor: "var(--graph-bg)",
       }}
     >
       {/* Drag handle */}
       <div
-        className="flex h-2 cursor-row-resize items-center justify-center"
+        className="flex h-3 cursor-row-resize items-center justify-center transition-colors hover:bg-[var(--interactive-hover)]"
         onMouseDown={handleDragStart}
       >
         <div
-          className="h-0.5 w-8 rounded-full"
+          className="h-1 w-10 rounded-full"
           style={{ backgroundColor: "var(--graph-panel-text-dim)" }}
         />
       </div>
@@ -120,24 +120,61 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
           total={totalPages}
           value={safePage}
           onChange={setTablePage}
+          className="table-pagination"
+          styles={{
+            control: {
+              border: "none",
+              backgroundColor: "transparent",
+              color: "var(--graph-panel-text-dim)",
+            },
+          }}
         />
       </div>
 
       {/* Table */}
       <div className="flex-1 overflow-auto px-2">
         <Table
-          highlightOnHover
-          striped
           stickyHeader
           style={{ fontSize: "0.75rem" }}
+          styles={{
+            table: { borderColor: "transparent" },
+            thead: { backgroundColor: "var(--graph-bg)" },
+            th: { backgroundColor: "var(--graph-bg)", borderColor: "var(--graph-panel-border)" },
+            td: { borderColor: "var(--graph-panel-border)" },
+            tr: { backgroundColor: "transparent" },
+          }}
         >
           <Table.Thead>
-            <Table.Tr>
-              <Table.Th style={{ width: 40, fontSize: "0.7rem" }}>#</Table.Th>
+            <Table.Tr
+              style={{
+                backgroundColor: "var(--graph-bg)",
+              }}
+            >
+              <Table.Th
+                style={{
+                  width: 40,
+                  fontSize: "0.7rem",
+                  color: "var(--graph-panel-text-muted)",
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                #
+              </Table.Th>
               {TABLE_COLUMNS.map((key) => {
                 const meta = getColumnMeta(key);
                 return (
-                  <Table.Th key={key} style={{ fontSize: "0.7rem" }}>
+                  <Table.Th
+                    key={key}
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "var(--graph-panel-text-muted)",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.03em",
+                    }}
+                  >
                     {meta?.label ?? key}
                   </Table.Th>
                 );
@@ -157,7 +194,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
                       : undefined,
                 }}
               >
-                <Table.Td style={{ fontSize: "0.7rem", color: "var(--graph-panel-text-dim)" }}>
+                <Table.Td style={{ fontSize: "0.7rem", color: "var(--color-golden-yellow)" }}>
                   {startIdx + i + 1}
                 </Table.Td>
                 {TABLE_COLUMNS.map((key) => (

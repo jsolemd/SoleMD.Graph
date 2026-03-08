@@ -1,129 +1,166 @@
 # SoleMD.Web Architecture
 
-> Canonical vision: [vision.md](vision.md) (symlinked from SoleMD.App)
+## Core Concept
 
-## Direction
+The knowledge graph IS the interface. A single full-viewport Cosmograph canvas
+renders at all times. What changes is the mode — how you interact with the graph,
+what chrome surrounds it, and what the graph highlights in response.
 
-SoleMD.Web is being rebuilt as a **graph-native, single-page application**.
-The knowledge graph is the interface. A floating prompt box is the only control.
-Current marketing/portfolio content (About, Education, Research) is woven into
-the graph experience — not removed, but re-imagined.
+There are no pages. There is one canvas and four modes.
 
-## Current Data (live in Supabase)
+## Modes
 
-| Entity | Count | Notes |
-|--------|-------|-------|
-| Papers | 51 | 49 ingested, psychiatry/neurology |
-| RAG chunks | 2,842 | Full text chunked |
-| Citations | 1,986 | Paper-to-paper edges |
-| Authors | 550 | Via paper_authors junction |
-| Vocab terms | 2,311 | Canonical terminology |
-| Zotero backlog | 1,609 | Items not yet ingested |
-| Entities | 0 | NER pipeline not yet run |
-| Relations | 0 | RelEx pipeline not yet run |
-| Embeddings | 0 | Paper/chunk/term — not yet computed |
+Each mode is a lens on the same graph. The canvas never unmounts or reloads.
+Mode configuration lives in `lib/graph/modes.ts` as a data-driven registry.
 
-## Build Phases
+### Ask
+Grounded RAG conversation. The prompt box is a chat interface. As the LLM
+traverses the graph to answer, nodes light up in real-time showing the
+evidence path. Citations in responses are clickable — they zoom to the
+source node. The graph becomes a visible thinking process.
 
-### Phase 0: Foundation (current)
-- Cosmograph canvas rendering paper/citation/author graph from live Supabase
-- Floating prompt box shell with Ask/Explore/Write mode toggles (UI only)
-- Pre-computed force-directed layout (UMAP later when embeddings exist)
-- SoleMD wordmark top-left → opens About overlay
-- Stats bar: paper count, citation count, term count (live from DB)
+### Explore
+Full dashboard. Toolbar, config panels, filters, data table, timeline,
+legends, canvas controls — everything available to inspect the graph
+directly. This is the power-user mode for researchers who want to see
+every cluster, filter by year, color by metric, and browse the raw data.
 
-### Phase 1: Navigation + Content
-- Detail panels (click paper node → paper card with metadata, chunks, authors)
-- Search + filters (by node type, year, journal)
-- Education modules as special node type (click Learn → side panel with modules, graph nodes highlight)
-- About overlay: bio, CV, contact, research links
-- Vocab term explorer (separate cluster or searchable)
+### Learn
+Education modules as graph constellations. Nodes that belong to a learning
+module glow when that module is active. Hover a module and the chunks/papers
+that inform it light up, showing the evidence network behind the lesson.
+Click into a module for structured content with the graph as live context.
 
-### Phase 2: Intelligence (needs backend)
-- Entity nodes + mention edges (after NER pipeline runs)
-- Relation edges with assertion status (after RelEx pipeline)
-- UMAP semantic positioning (after embeddings computed)
-- Progressive zoom: paper → chunks → evidence
-- Chunk-level cross-paper similarity edges
+### Write
+The prompt box expands into an editor surface. As you write, the graph
+responds — real-time NER highlights entities, paragraph embeddings find
+similar chunks, supporting evidence glows warm, contradicting evidence
+glows sharp. Click a supporting node to insert a citation. The graph
+becomes a writing partner.
 
-### Phase 3: LLM Integration
-- Ask mode: LLM + graph traversal + RAG, citations clickable
-- Write mode: Tiptap editor, real-time NER, dual-signal (supporting/contradicting)
-- Document fingerprints
-- Grounding meter
+## Mode Registry Architecture
+
+```
+lib/graph/modes.ts          # ModeConfig + ModeLayout per mode
+lib/graph/types.ts          # GraphMode union type
+lib/graph/store.ts          # Current mode state (Zustand)
+lib/graph/dashboard-store.ts # Panel/config state (Zustand, typed strategies)
+```
+
+To expand a mode:
+1. Add layout flags to `ModeLayout` interface (e.g., `promptVariant: 'editor'`)
+2. Add the flag values to the mode's config in `MODES`
+3. DashboardShell reads the flag — no conditional chains needed
+4. Add mode-specific Zustand store if the mode has unique state
+5. Add mode-specific components that read from both the registry and their store
+
+To add a new mode:
+1. Add key to `GraphMode` union in `types.ts`
+2. Add config entry in `MODES` in `modes.ts`
+3. Add icon in `MODE_ICONS` in `PromptBox.tsx`
+4. Everything else picks it up automatically
+
+## Data Flow
+
+```
+Supabase (solemd schema)
+  → lib/graph/fetch.ts (Server Component, React cache, 4 parallel queries)
+    → app/page.tsx (force-dynamic, passes GraphData to DashboardShell)
+      → CosmographProvider (React context for sub-components)
+        → CosmographRenderer (GPU scatter, reads dashboard store for config)
+        → Panels, Toolbar, Controls (read from provider context)
+```
+
+Points: ~2,184 UMAP-positioned chunks from 44 papers, 58 HDBSCAN clusters.
+Pre-computed positions — no simulation. `enableSimulation={false}`.
+
+## State Architecture
+
+Two Zustand stores, deliberately separated:
+
+**useGraphStore** — interaction state (shared across all modes)
+- `mode`: current GraphMode
+- `selectedNode` / `hoveredNode`: ChunkNode | null
+- Future: conversation history (Ask), active module (Learn), document state (Write)
+
+**useDashboardStore** — dashboard config (primarily Explore mode)
+- Panel visibility, config tab, point color/size/label settings
+- Filters, table state, timeline visibility
+- Typed with `PointColorStrategy`, `PointSizeStrategy`, `ColorSchemeName`
+
+As modes expand, each gets its own store slice:
+- `useAskStore` — conversation messages, RAG context, active evidence path
+- `useLearnStore` — active module, highlighted node sets, progress
+- `useWriteStore` — document content, NER entities, similarity results
+
+## CSS Architecture
+
+Design tokens in `app/globals.css`:
+- **Semantic foundation** (`:root` / `.dark`): background, foreground, surface, text, border, shadow, brand
+- **Graph tokens**: canvas bg, panel chrome, prompt overlay, wordmark, labels
+- **Cosmograph tokens**: 70+ `--cosmograph-*` vars for timeline, search, legends, buttons, histograms
+
+Mantine theme in `lib/mantine-theme.ts` bridges CSS vars to component defaults.
+Tailwind v4 for layout/spacing. Mantine for interactive components.
 
 ## Technology Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Graph rendering | Cosmograph (`@cosmograph/react`) — GPU-accelerated, 100K+ nodes |
-| Graph layout | Force-directed (Phase 0), UMAP pre-computed positions (Phase 2+) |
-| UI framework | Next.js 15 + React 19 + Mantine 8 |
-| Styling | Tailwind CSS 4 + globals.css design tokens |
-| Animation | Framer Motion (layout transitions, mode morphing) |
-| State | Zustand (mode manager, selected node, graph state) |
-| Editor (Phase 3) | Tiptap / ProseMirror |
-| Data | Supabase (PostgreSQL + pgvector) via API routes |
-| LLM (Phase 3) | Claude API via edge functions |
+| Rendering | Cosmograph 2.1 (GPU-accelerated WebGL scatter) |
+| Framework | Next.js 15 + React 19 |
+| Components | Mantine 8 |
+| Styling | Tailwind CSS 4 + CSS custom properties |
+| Animation | Framer Motion |
+| State | Zustand (mode + dashboard stores) |
+| Data | Supabase (PostgreSQL, server-only client) |
+| Icons | Lucide React |
 
-## Design Decisions
-
-### Graph canvas
-- Dark background — makes the brand pastels and node colors pop
-- Full viewport, edge to edge
-- Nodes colored by type using existing brand palette
-- Dense clusters create natural luminosity
-
-### Prompt box
-- Single React component that morphs between three shapes
-- Dark pill, glass-morphism, bottom-center anchored
-- Mode toggles (Ask/Explore/Write) appear on hover/focus
-- Framer Motion layout animations for all transitions
-- The graph component never unmounts — it transforms
-
-### Existing content integration
-- **Education**: Special node type in graph. "Learn" mode or toggle opens side panel
-  with module list; corresponding graph nodes highlight on hover
-- **About/Portfolio**: SoleMD wordmark top-left → glass-morphism overlay with bio,
-  CV, research, contact. Not a page — a floating panel over the graph
-- **Research**: Papers ARE the graph. Research page content becomes the default
-  Explore mode experience
-
-### Branding bridge
-- Current brand palette (5 semantic scales, pastels) applies to node types
-- Dark canvas background, light/pastel overlays with glass-morphism
-- Existing design tokens (shadows, radius, typography) carry forward
-- Light mode: graph on dark canvas, overlays use light brand colors
-- Dark mode: everything dark, nodes glow with brand accent colors
-
-## File Structure (planned)
+## File Structure
 
 ```
 app/
-  (graph)/             # Graph application (main route group)
-    layout.tsx         # Graph layout — Cosmograph provider, prompt box
-    page.tsx           # Landing — full graph + prompt box
-  api/
-    graph/             # API routes for graph data
-      nodes/route.ts   # Fetch nodes (papers, authors, terms, entities)
-      edges/route.ts   # Fetch edges (citations, mentions, relations)
-      detail/route.ts  # Node detail data
-      search/route.ts  # Graph search
+  page.tsx              # Graph page (Server Component, force-dynamic)
+  loading.tsx           # Suspense skeleton
+  layout.tsx            # Root layout (Mantine provider, fonts, metadata)
+  error.tsx             # Error boundary
+  not-found.tsx         # 404
 components/
   graph/
-    GraphCanvas.tsx    # Cosmograph wrapper
-    PromptBox.tsx      # Morphing prompt box (Ask/Explore/Write)
-    DetailPanel.tsx    # Node detail cards (paper/author/entity/term)
-    NodeFilters.tsx    # Type/date/journal filters
-    StatsBar.tsx       # Live counts from DB
-  overlays/
-    AboutOverlay.tsx   # Bio, CV, contact
-    LearnPanel.tsx     # Education modules side panel
+    DashboardShell.tsx  # Mode-aware layout orchestrator (reads mode registry)
+    CosmographRenderer  # GPU scatter (reads dashboard store, brand constants)
+    GraphCanvas.tsx     # Dynamic import bridge (ssr: false)
+    GraphErrorBoundary  # WebGL fallback
+    PromptBox.tsx       # Mode toggles + input (reads mode registry)
+    Wordmark.tsx        # Logo + theme toggle
+    StatsBar.tsx        # Live counts overlay
+    toolbar/
+      LeftToolbar.tsx   # Panel toggle strip
+    controls/
+      CanvasControls    # Fit/select/zoom buttons
+    panels/
+      PanelShell.tsx    # Shared panel chrome
+      ConfigPanel.tsx   # Points/Links/Simulation tabs
+      FiltersPanel.tsx  # Per-column filter widgets
+      InfoPanel.tsx     # Search + stats + color legend
+      DataTable.tsx     # Resizable bottom table
+      config/           # Config sub-panels
+      filters/          # Filter widget components
+  mantine-theme-provider.tsx
+  ui/
+    theme-toggle.tsx
 lib/
   graph/
-    types.ts           # Node, Edge, GraphMode types
-    store.ts           # Zustand store (mode, selection, filters)
-    data.ts            # Supabase queries for graph data
-    layout.ts          # Node positioning (force-directed → UMAP)
-    colors.ts          # Node type → brand color mapping
+    modes.ts            # Mode registry (ModeConfig, ModeLayout, MODES)
+    types.ts            # ChunkNode, GraphMode, strategy types
+    store.ts            # useGraphStore (mode, selection, hover)
+    dashboard-store.ts  # useDashboardStore (panels, config, filters)
+    fetch.ts            # Server-only Supabase queries
+    colors.ts           # 7 color palettes
+    columns.ts          # Column metadata
+  helpers.ts            # formatNumber, clamp
+  utils.ts              # Re-exports helpers
+  mantine-theme.ts      # Mantine/CSS var bridge
+  supabase/server.ts    # Server-only Supabase client
+middleware.ts           # Security headers
 ```

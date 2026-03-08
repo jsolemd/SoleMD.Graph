@@ -17,7 +17,7 @@ export const fetchGraphData = cache(async (): Promise<GraphData> => {
         .limit(5000),
       supabase
         .from('papers')
-        .select('id, title, citekey'),
+        .select('id, title, citekey, year'),
       supabase
         .from('graph_clusters_current')
         .select('cluster_id, label, member_count, centroid_x, centroid_y')
@@ -66,6 +66,7 @@ export const fetchGraphData = cache(async (): Promise<GraphData> => {
       paperId: row.paper_id as string,
       paperTitle: paper.title as string,
       citekey: paper.citekey as string,
+      year: (paper.year as number) ?? null,
     })
   }
 

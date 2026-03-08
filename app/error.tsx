@@ -25,7 +25,7 @@ export default function Error({
           <Text
             size="lg"
             className="mt-2"
-            style={{ color: "var(--foreground)", opacity: 0.7 }}
+            style={{ color: "var(--text-secondary)" }}
           >
             An unexpected error occurred. Please try again or return to the
             homepage.
@@ -37,11 +37,8 @@ export default function Error({
             onClick={reset}
             leftSection={<RefreshCw size={16} />}
             variant="filled"
-            radius="xl"
             styles={{
-              root: {
-                backgroundColor: "var(--color-soft-blue)",
-              },
+              root: { backgroundColor: "var(--brand-accent-alt)" },
             }}
           >
             Try again
@@ -51,10 +48,9 @@ export default function Error({
             href="/"
             leftSection={<Home size={16} />}
             variant="outline"
-            radius="xl"
             styles={{
               root: {
-                borderColor: "var(--border)",
+                borderColor: "var(--border-default)",
                 color: "var(--foreground)",
               },
             }}

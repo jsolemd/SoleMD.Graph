@@ -2,41 +2,26 @@
 
 import { useEffect } from "react";
 import { MantineProvider, useMantineColorScheme } from "@mantine/core";
-import {
-  theme as mantineTheme,
-  cssVariablesResolver,
-} from "@/lib/mantine-theme";
+import { theme as mantineTheme } from "@/lib/mantine-theme";
 
-interface MantineThemeProviderProps {
-  children: React.ReactNode;
-}
-
-/**
- * Syncs Mantine's color scheme to the `.dark` class on <html>.
- * Our globals.css uses `.dark { ... }` for all dark mode tokens.
- */
+/** Syncs Mantine color scheme to `.dark` class on <html> for CSS custom property cascading. */
 function DarkClassSync({ children }: { children: React.ReactNode }) {
   const { colorScheme } = useMantineColorScheme();
 
   useEffect(() => {
-    const html = document.documentElement;
-    if (colorScheme === "dark") {
-      html.classList.add("dark");
-    } else {
-      html.classList.remove("dark");
-    }
+    document.documentElement.classList.toggle("dark", colorScheme === "dark");
   }, [colorScheme]);
 
   return <>{children}</>;
 }
 
-export function MantineThemeProvider({ children }: MantineThemeProviderProps) {
+export function MantineThemeProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <MantineProvider
-      theme={mantineTheme}
-      defaultColorScheme="auto"
-      cssVariablesResolver={cssVariablesResolver}
-    >
+    <MantineProvider theme={mantineTheme} defaultColorScheme="auto">
       <DarkClassSync>{children}</DarkClassSync>
     </MantineProvider>
   );

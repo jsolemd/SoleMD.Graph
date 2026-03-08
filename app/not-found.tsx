@@ -9,7 +9,7 @@ export default function NotFound() {
         <div>
           <Text
             className="text-8xl font-bold"
-            style={{ color: "var(--color-soft-blue)", opacity: 0.3 }}
+            style={{ color: "var(--brand-accent-alt)", opacity: 0.3 }}
           >
             404
           </Text>
@@ -19,7 +19,7 @@ export default function NotFound() {
           <Text
             size="lg"
             className="mt-2"
-            style={{ color: "var(--foreground)", opacity: 0.7 }}
+            style={{ color: "var(--text-secondary)" }}
           >
             The page you are looking for does not exist or has been moved.
           </Text>
@@ -30,11 +30,8 @@ export default function NotFound() {
           href="/"
           leftSection={<Home size={16} />}
           variant="filled"
-          radius="xl"
           styles={{
-            root: {
-              backgroundColor: "var(--color-soft-blue)",
-            },
+            root: { backgroundColor: "var(--brand-accent-alt)" },
           }}
         >
           Go home

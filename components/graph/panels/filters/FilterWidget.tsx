@@ -16,7 +16,7 @@ export function FilterWidget({ column, onRemove }: FilterWidgetProps) {
 
   return (
     <div
-      className="rounded-lg p-3"
+      className="rounded-xl p-3"
       style={{
         backgroundColor: "var(--graph-panel-input-bg)",
         border: "1px solid var(--graph-panel-border)",

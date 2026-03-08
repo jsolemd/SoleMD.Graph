@@ -6,7 +6,7 @@ const createJestConfig = nextJest({ dir: "./" });
 const config: Config = {
   coverageProvider: "v8",
   testEnvironment: "node",
-  testPathIgnorePatterns: ["/node_modules/", "/examples/"],
+  testPathIgnorePatterns: ["/node_modules/", "/examples/", "/archive/"],
 };
 
 export default createJestConfig(config);

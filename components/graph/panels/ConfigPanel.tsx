@@ -1,9 +1,8 @@
 "use client";
 
-import { Tabs, Text, ActionIcon, ScrollArea } from "@mantine/core";
-import { motion } from "framer-motion";
-import { X } from "lucide-react";
+import { Tabs, ScrollArea } from "@mantine/core";
 import { useDashboardStore } from "@/lib/graph/dashboard-store";
+import { PanelShell } from "./PanelShell";
 import { PointsConfig } from "./config/PointsConfig";
 import { LinksConfig } from "./config/LinksConfig";
 import { SimulationConfig } from "./config/SimulationConfig";
@@ -14,44 +13,11 @@ export function ConfigPanel() {
   const setActivePanel = useDashboardStore((s) => s.setActivePanel);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      transition={{ duration: 0.2 }}
-      className="absolute top-0 left-0 z-20 flex h-full w-[300px] flex-col overflow-hidden"
-      style={{
-        backgroundColor: "var(--graph-panel-bg)",
-        borderRight: "1px solid var(--graph-panel-border)",
-      }}
+    <PanelShell
+      title="Configuration"
+      side="left"
+      onClose={() => setActivePanel(null)}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3">
-        <Text
-          size="xs"
-          fw={600}
-          style={{
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-            color: "var(--graph-panel-text-muted)",
-          }}
-        >
-          Configuration
-        </Text>
-        <ActionIcon
-          variant="subtle"
-          size={28}
-          radius="md"
-          onClick={() => setActivePanel(null)}
-          aria-label="Close config panel"
-          styles={{
-            root: { color: "var(--graph-panel-text-dim)" },
-          }}
-        >
-          <X size={14} />
-        </ActionIcon>
-      </div>
-
       <Tabs
         value={configTab}
         onChange={(v) => v && setConfigTab(v as typeof configTab)}
@@ -81,6 +47,6 @@ export function ConfigPanel() {
           </Tabs.Panel>
         </ScrollArea>
       </Tabs>
-    </motion.div>
+    </PanelShell>
   );
 }

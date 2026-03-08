@@ -11,6 +11,7 @@ export interface ChunkNode {
   paperId: string
   paperTitle: string
   citekey: string
+  year: number | null
 }
 
 export interface ClusterInfo {
@@ -48,4 +49,6 @@ export interface GraphStats {
 
 export type GraphMode = 'ask' | 'explore' | 'learn' | 'write'
 
-export type PointColorStrategyType = 'categorical' | 'continuous' | 'direct' | 'single'
+export type PointColorStrategy = 'categorical' | 'continuous' | 'direct' | 'single'
+export type PointSizeStrategy = 'auto' | 'direct' | 'single'
+export type ColorSchemeName = 'default' | 'warm' | 'cool' | 'spectral' | 'viridis' | 'plasma' | 'turbo'

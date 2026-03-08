@@ -1,21 +1,16 @@
-import { getCurrentPageColor } from "@/lib/utils";
+import { formatNumber, clamp } from "@/lib/utils";
 
-describe("getCurrentPageColor", () => {
-  it("returns the correct color for known routes", () => {
-    expect(getCurrentPageColor("/"))
-      .toBe("var(--color-soft-blue)");
-    expect(getCurrentPageColor("/about"))
-      .toBe("var(--color-soft-lavender)");
-    expect(getCurrentPageColor("/research"))
-      .toBe("var(--color-warm-coral)");
-    expect(getCurrentPageColor("/education"))
-      .toBe("var(--color-fresh-green)");
-    expect(getCurrentPageColor("/wiki"))
-      .toBe("var(--color-golden-yellow)");
+describe("formatNumber", () => {
+  it("formats numbers with locale separators", () => {
+    expect(formatNumber(1234)).toBe("1,234");
+    expect(formatNumber(0)).toBe("0");
   });
+});
 
-  it("returns the default color for unknown routes", () => {
-    expect(getCurrentPageColor("/unknown"))
-      .toBe("var(--color-soft-blue)");
+describe("clamp", () => {
+  it("clamps values to range", () => {
+    expect(clamp(5, 0, 10)).toBe(5);
+    expect(clamp(-1, 0, 10)).toBe(0);
+    expect(clamp(15, 0, 10)).toBe(10);
   });
 });
