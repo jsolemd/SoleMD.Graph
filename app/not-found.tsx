@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Button, Title, Text, Stack } from "@mantine/core";
 import { Home } from "lucide-react";
 
@@ -26,7 +25,7 @@ export default function NotFound() {
         </div>
 
         <Button
-          component={Link}
+          component="a"
           href="/"
           leftSection={<Home size={16} />}
           variant="filled"

@@ -7,7 +7,7 @@ import {
   CosmographButtonRectangularSelection,
   CosmographButtonZoomInOut,
 } from "@cosmograph/react";
-import { PANEL_SPRING } from "../panels/PanelShell";
+import { PANEL_SPRING } from "../PanelShell";
 
 /** Borderless style for individual buttons inside the card wrapper. */
 const buttonStyle: React.CSSProperties = {

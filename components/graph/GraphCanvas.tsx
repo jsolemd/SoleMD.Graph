@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import type { GraphData } from "@/lib/graph/types";
+import type { GraphCanvasSource } from "@/lib/graph/duckdb";
 
 const CosmographRenderer = dynamic(
   () => import("./CosmographRenderer"),
@@ -17,6 +18,12 @@ const CosmographRenderer = dynamic(
   }
 );
 
-export function GraphCanvas({ data }: { data: GraphData }) {
-  return <CosmographRenderer data={data} />;
+export function GraphCanvas({
+  data,
+  canvas,
+}: {
+  data: GraphData;
+  canvas: GraphCanvasSource;
+}) {
+  return <CosmographRenderer canvas={canvas} data={data} />;
 }

@@ -1,22 +1,21 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import {
   ActionIcon,
   Tooltip,
   useMantineColorScheme,
   useComputedColorScheme,
 } from "@mantine/core";
+import { useMounted } from "@mantine/hooks";
 import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 
 export default function ThemeToggle() {
   const { toggleColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme("light");
-  const [mounted, setMounted] = useState(false);
-  const spins = useRef(0);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
+  const [spinCount, setSpinCount] = useState(0);
 
   const isDark = mounted ? computedColorScheme === "dark" : false;
   const label = isDark ? "Switch to light mode" : "Switch to dark mode";
@@ -25,7 +24,7 @@ export default function ThemeToggle() {
     <Tooltip label={label} position="bottom" withArrow>
       <ActionIcon
         onClick={() => {
-          spins.current += 1;
+          setSpinCount((current) => current + 1);
           toggleColorScheme();
         }}
         variant="subtle"
@@ -43,7 +42,7 @@ export default function ThemeToggle() {
       >
         <motion.div
           className="flex items-center justify-center"
-          animate={{ rotate: spins.current * 360 }}
+          animate={{ rotate: spinCount * 360 }}
           transition={{ type: "spring", stiffness: 260, damping: 25 }}
         >
           {isDark ? (

@@ -10,8 +10,7 @@ import {
   PenLine,
   ArrowUp,
 } from "lucide-react";
-import { useGraphStore } from "@/lib/graph/store";
-import { useDashboardStore } from "@/lib/graph/dashboard-store";
+import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { MODE_ORDER, getModeConfig } from "@/lib/graph/modes";
 import type { GraphMode } from "@/lib/graph/types";
 

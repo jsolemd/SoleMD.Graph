@@ -1,4 +1,4 @@
-import { formatNumber, clamp } from "@/lib/utils";
+import { formatNumber, clamp } from "@/lib/helpers";
 
 describe("formatNumber", () => {
   it("formats numbers with locale separators", () => {

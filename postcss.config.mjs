@@ -6,7 +6,7 @@
  * - postcss-preset-mantine for Mantine component processing
  * - postcss-simple-vars for Mantine breakpoint variables
  */
-export default {
+const postcssConfig = {
   plugins: {
     // Mantine preset - must come first
     "postcss-preset-mantine": {},
@@ -28,4 +28,6 @@ export default {
     // Note: autoprefixer is automatically included in @tailwindcss/postcss v4
     // No need to include it separately
   },
-};
+}
+
+export default postcssConfig

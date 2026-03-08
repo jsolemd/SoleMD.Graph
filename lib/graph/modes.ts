@@ -1,5 +1,5 @@
 import type { GraphMode } from './types'
-import type { ActivePanel } from './dashboard-store'
+import type { ActivePanel } from './stores'
 
 /** What chrome/controls each mode makes available in the dashboard. */
 export interface ModeLayout {

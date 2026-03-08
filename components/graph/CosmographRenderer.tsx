@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useMemo, useRef } from "react";
-import { Cosmograph } from "@cosmograph/react";
-import type { CosmographRef } from "@cosmograph/react";
+import {
+  Cosmograph,
+  type CosmographData,
+  type CosmographRef,
+} from "@cosmograph/react";
 import { useComputedColorScheme } from "@mantine/core";
-import { useGraphStore } from "@/lib/graph/store";
-import { useDashboardStore } from "@/lib/graph/dashboard-store";
+import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { getPaletteColors } from "@/lib/graph/colors";
 import type { ChunkNode, GraphData, PointColorStrategy } from "@/lib/graph/types";
+import type { GraphCanvasSource } from "@/lib/graph/duckdb";
 
 // Brand color constants for Cosmograph config props (WebGL needs actual values, not CSS vars)
 const BRAND = {
@@ -15,7 +18,13 @@ const BRAND = {
   dark: { bg: "#111113", ring: "#a8c5e9", label: "#e4e4e9", greyout: 0.15 },
 } as const;
 
-export default function CosmographRenderer({ data }: { data: GraphData }) {
+export default function CosmographRenderer({
+  data,
+  canvas,
+}: {
+  data: GraphData;
+  canvas: GraphCanvasSource;
+}) {
   const cosmographRef = useRef<CosmographRef>(undefined);
   const hasFittedView = useRef(false);
   const selectNode = useGraphStore((s) => s.selectNode);
@@ -43,6 +52,15 @@ export default function CosmographRenderer({ data }: { data: GraphData }) {
   );
   const positionXColumn = useDashboardStore((s) => s.positionXColumn);
   const positionYColumn = useDashboardStore((s) => s.positionYColumn);
+  const setFilteredPointIndices = useDashboardStore(
+    (s) => s.setFilteredPointIndices
+  );
+  const setSelectedPointIndices = useDashboardStore(
+    (s) => s.setSelectedPointIndices
+  );
+  const setActiveSelectionSourceId = useDashboardStore(
+    (s) => s.setActiveSelectionSourceId
+  );
 
   // When color strategy is "direct" but a non-default scheme is selected,
   // switch to "categorical" because pointColorPalette is ignored in direct mode
@@ -70,20 +88,40 @@ export default function CosmographRenderer({ data }: { data: GraphData }) {
     return map;
   }, [data.nodes]);
 
+  const idToNode = useMemo(() => {
+    const map = new Map<string, ChunkNode>();
+    for (const node of data.nodes) {
+      map.set(node.id, node);
+    }
+    return map;
+  }, [data.nodes]);
+
+  const allNodeIndices = useMemo(
+    () => data.nodes.map((node) => node.index),
+    [data.nodes]
+  );
+
   const handleLabelClick = useCallback(
     (_index: number, id: string) => {
-      const node = data.nodes.find((n) => n.id === id) ?? null;
-      selectNode(node);
+      selectNode(idToNode.get(id) ?? null);
     },
-    [data.nodes, selectNode]
+    [idToNode, selectNode]
   );
 
   const handleGraphRebuilt = useCallback(() => {
     if (!hasFittedView.current) {
       hasFittedView.current = true;
-      cosmographRef.current?.fitView(0);
+      cosmographRef.current?.fitView(0, 0.1);
+      setFilteredPointIndices(allNodeIndices);
+      setSelectedPointIndices(cosmographRef.current?.getSelectedPointIndices() ?? []);
+      setActiveSelectionSourceId(cosmographRef.current?.getActiveSelectionSourceId() ?? null);
     }
-  }, []);
+  }, [
+    allNodeIndices,
+    setActiveSelectionSourceId,
+    setFilteredPointIndices,
+    setSelectedPointIndices,
+  ]);
 
   const handlePointClick = useCallback(
     (index: number) => {
@@ -103,15 +141,48 @@ export default function CosmographRenderer({ data }: { data: GraphData }) {
     hoverNode(null);
   }, [hoverNode]);
 
-  const points = useMemo(
-    () => data.nodes.map((n) => ({ ...n }) as Record<string, unknown>),
-    [data.nodes]
+  const handlePointsFiltered = useCallback(
+    (
+      filteredPoints: CosmographData,
+      selectedPointIndices: number[] | null | undefined
+    ) => {
+      const filteredRows =
+        cosmographRef.current?.convertCosmographDataToObject(filteredPoints) ?? [];
+      const filteredIndices = filteredRows
+        .map((row) => row.index)
+        .filter((index): index is number => typeof index === "number");
+      const normalizedSelected =
+        selectedPointIndices?.filter(
+          (index): index is number => typeof index === "number"
+        ) ?? [];
+
+      setFilteredPointIndices(filteredIndices);
+      setSelectedPointIndices(normalizedSelected);
+      setActiveSelectionSourceId(cosmographRef.current?.getActiveSelectionSourceId() ?? null);
+
+      if (normalizedSelected.length === 1) {
+        selectNode(indexToNode.get(normalizedSelected[0]) ?? null);
+        return;
+      }
+
+      if (normalizedSelected.length === 0) {
+        selectNode(null);
+      }
+    },
+    [
+      indexToNode,
+      selectNode,
+      setActiveSelectionSourceId,
+      setFilteredPointIndices,
+      setSelectedPointIndices,
+    ]
   );
 
   return (
     <Cosmograph
       ref={cosmographRef}
-      points={points}
+      duckDBConnection={canvas.duckDBConnection}
+      points={canvas.pointsTableName}
       pointIdBy="id"
       pointIndexBy="index"
       pointXBy={positionXColumn}
@@ -131,8 +202,12 @@ export default function CosmographRenderer({ data }: { data: GraphData }) {
       scalePointsOnZoom={scalePointsOnZoom}
       showLabels={showPointLabels}
       showDynamicLabels={showDynamicLabels}
+      showTopLabels={showPointLabels}
       showDynamicLabelsLimit={30}
       showTopLabelsLimit={20}
+      showSelectedLabels
+      showUnselectedPointLabels={false}
+      selectedPointLabelsLimit={60}
       showHoveredPointLabel={showHoveredPointLabel}
       renderHoveredPointRing={renderHoveredPointRing}
       hoveredPointRingColor={colors.ring}
@@ -146,6 +221,7 @@ export default function CosmographRenderer({ data }: { data: GraphData }) {
       disableLogging
       onLabelClick={handleLabelClick}
       onGraphRebuilt={handleGraphRebuilt}
+      onPointsFiltered={handlePointsFiltered}
       onPointClick={handlePointClick}
       onPointMouseOver={handlePointMouseOver}
       onPointMouseOut={handlePointMouseOut}

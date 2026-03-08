@@ -2,9 +2,6 @@ import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  eslint: {
-    ignoreDuringBuilds: false,
-  },
   images: {
     formats: ['image/avif', 'image/webp'],
   },
@@ -12,22 +9,21 @@ const nextConfig: NextConfig = {
     optimizePackageImports: [
       '@mantine/core',
       '@mantine/hooks',
-      '@cosmograph/react',
-      '@cosmograph/cosmograph',
       'lucide-react',
       'framer-motion',
       'zustand',
     ],
   },
+  turbopack: {},
   webpack: (config) => {
-    // DuckDB-WASM ships browser and Node.js entries. Webpack's conditional
-    // exports can resolve to duckdb-node.cjs which uses dynamic require()
-    // for Node-only modules (url, vm, worker_threads). Suppress the
-    // "Critical dependency" warning only for those specific files.
+    // DuckDB-WASM ships browser and Node entries. Webpack can warn when it
+    // inspects the optional Node-side bundle even though the app runs the WASM
+    // path in the browser. Keep the suppression narrow to that file only.
     config.ignoreWarnings = [
       ...(config.ignoreWarnings ?? []),
       { module: /duckdb-node\.cjs$/, message: /Critical dependency/ },
     ]
+
     return config
   },
 }

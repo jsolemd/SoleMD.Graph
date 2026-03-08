@@ -9,9 +9,9 @@ import {
   Table2,
   Clock,
 } from "lucide-react";
-import { useDashboardStore } from "@/lib/graph/dashboard-store";
-import type { ActivePanel } from "@/lib/graph/dashboard-store";
-import { PANEL_SPRING } from "../panels/PanelShell";
+import { useDashboardStore } from "@/lib/graph/stores";
+import type { ActivePanel } from "@/lib/graph/stores";
+import { PANEL_SPRING } from "../PanelShell";
 
 const PANEL_ITEMS: {
   panel: ActivePanel;

@@ -1,7 +1,7 @@
 "use client";
 
 import { Select, Switch, Slider, Stack, Text } from "@mantine/core";
-import { useDashboardStore } from "@/lib/graph/dashboard-store";
+import { useDashboardStore } from "@/lib/graph/stores";
 import { NUMERIC_COLUMNS, ALL_DATA_COLUMNS } from "@/lib/graph/columns";
 import { getPaletteColors } from "@/lib/graph/colors";
 import type {
@@ -80,9 +80,11 @@ export function PointsConfig() {
   const pointLabelColumn = useDashboardStore((s) => s.pointLabelColumn);
   const showPointLabels = useDashboardStore((s) => s.showPointLabels);
   const showDynamicLabels = useDashboardStore((s) => s.showDynamicLabels);
-  const showClusterLabels = useDashboardStore((s) => s.showClusterLabels);
   const showHoveredPointLabel = useDashboardStore(
     (s) => s.showHoveredPointLabel
+  );
+  const renderHoveredPointRing = useDashboardStore(
+    (s) => s.renderHoveredPointRing
   );
   const positionXColumn = useDashboardStore((s) => s.positionXColumn);
   const positionYColumn = useDashboardStore((s) => s.positionYColumn);
@@ -107,11 +109,11 @@ export function PointsConfig() {
   const setShowDynamicLabels = useDashboardStore(
     (s) => s.setShowDynamicLabels
   );
-  const setShowClusterLabels = useDashboardStore(
-    (s) => s.setShowClusterLabels
-  );
   const setShowHoveredPointLabel = useDashboardStore(
     (s) => s.setShowHoveredPointLabel
+  );
+  const setRenderHoveredPointRing = useDashboardStore(
+    (s) => s.setRenderHoveredPointRing
   );
   const setPositionXColumn = useDashboardStore((s) => s.setPositionXColumn);
   const setPositionYColumn = useDashboardStore((s) => s.setPositionYColumn);
@@ -251,16 +253,18 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
-            label="Cluster labels"
-            checked={showClusterLabels}
-            onChange={(e) => setShowClusterLabels(e.currentTarget.checked)}
+            label="Show hovered point label"
+            checked={showHoveredPointLabel}
+            onChange={(e) => setShowHoveredPointLabel(e.currentTarget.checked)}
             styles={switchLabelStyle}
           />
           <Switch
             size="xs"
-            label="Show hovered point label"
-            checked={showHoveredPointLabel}
-            onChange={(e) => setShowHoveredPointLabel(e.currentTarget.checked)}
+            label="Hovered point ring"
+            checked={renderHoveredPointRing}
+            onChange={(e) =>
+              setRenderHoveredPointRing(e.currentTarget.checked)
+            }
             styles={switchLabelStyle}
           />
         </Stack>

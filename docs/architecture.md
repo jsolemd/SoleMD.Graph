@@ -1,166 +1,282 @@
 # SoleMD.Web Architecture
 
-## Core Concept
+This document describes the current runtime, not the historical marketing or education prototypes in `archive/`.
 
-The knowledge graph IS the interface. A single full-viewport Cosmograph canvas
-renders at all times. What changes is the mode — how you interact with the graph,
-what chrome surrounds it, and what the graph highlights in response.
+For query-driven navigation such as "where is Mantine wired?", "which files are `use client`?", or "where is Framer Motion used?", see [code-search-map.md](code-search-map.md).
 
-There are no pages. There is one canvas and four modes.
+## Runtime Summary
 
-## Modes
+The active app is a single-route graph dashboard:
 
-Each mode is a lens on the same graph. The canvas never unmounts or reloads.
-Mode configuration lives in `lib/graph/modes.ts` as a data-driven registry.
+- `app/page.tsx` is the root page.
+- `app/layout.tsx` provides metadata, viewport, fonts, Mantine styles, and the theme provider.
+- `lib/graph/fetch.ts` resolves the active graph bundle from `solemd.graph_runs`.
+- `app/api/graph-bundles/[checksum]/[asset]/route.ts` serves the active or historical bundle assets over same-origin HTTP.
+- `lib/graph/use-graph-bundle.ts` loads the selected bundle in the browser.
+- `lib/graph/duckdb.ts` mounts the bundle into DuckDB-Wasm, exposes query helpers, and hands Cosmograph an external DuckDB connection plus the prepared points table.
+- `components/graph/DashboardShell.tsx` is the client-side orchestration layer.
+- `components/graph/CosmographRenderer.tsx` is the WebGL-heavy renderer loaded through `next/dynamic(..., { ssr: false })`.
 
-### Ask
-Grounded RAG conversation. The prompt box is a chat interface. As the LLM
-traverses the graph to answer, nodes light up in real-time showing the
-evidence path. Citations in responses are clickable — they zoom to the
-source node. The graph becomes a visible thinking process.
+There is one active route today, but the UI is multi-mode. Mode behavior is driven by `lib/graph/modes.ts`.
 
-### Explore
-Full dashboard. Toolbar, config panels, filters, data table, timeline,
-legends, canvas controls — everything available to inspect the graph
-directly. This is the power-user mode for researchers who want to see
-every cluster, filter by year, color by metric, and browse the raw data.
+## Active Vs. Historical
 
-### Learn
-Education modules as graph constellations. Nodes that belong to a learning
-module glow when that module is active. Hover a module and the chunks/papers
-that inform it light up, showing the evidence network behind the lesson.
-Click into a module for structured content with the graph as live context.
+- Active runtime:
+  `app/`, `components/`, `lib/`, `public/`, `proxy.ts`, `next.config.ts`
+- Supporting documentation:
+  `docs/`
+- Historical or exploratory work:
+  `archive/`
 
-### Write
-The prompt box expands into an editor surface. As you write, the graph
-responds — real-time NER highlights entities, paragraph embeddings find
-similar chunks, supporting evidence glows warm, contradicting evidence
-glows sharp. Click a supporting node to insert a citation. The graph
-becomes a writing partner.
+Search and architecture work should prefer the active runtime directories before `archive/`.
 
-## Mode Registry Architecture
+## Next.js Entry Points
 
-```
-lib/graph/modes.ts          # ModeConfig + ModeLayout per mode
-lib/graph/types.ts          # GraphMode union type
-lib/graph/store.ts          # Current mode state (Zustand)
-lib/graph/dashboard-store.ts # Panel/config state (Zustand, typed strategies)
-```
+### `app/layout.tsx`
 
-To expand a mode:
-1. Add layout flags to `ModeLayout` interface (e.g., `promptVariant: 'editor'`)
-2. Add the flag values to the mode's config in `MODES`
-3. DashboardShell reads the flag — no conditional chains needed
-4. Add mode-specific Zustand store if the mode has unique state
-5. Add mode-specific components that read from both the registry and their store
+- Server component
+- Imports `@mantine/core/styles.css`
+- Imports `app/globals.css`
+- Declares `metadata` and `viewport`
+- Wraps the app with `MantineThemeProvider`
+- Adds `ColorSchemeScript`
 
-To add a new mode:
-1. Add key to `GraphMode` union in `types.ts`
-2. Add config entry in `MODES` in `modes.ts`
-3. Add icon in `MODE_ICONS` in `PromptBox.tsx`
-4. Everything else picks it up automatically
+### `app/page.tsx`
+
+- Server component
+- Exports `dynamic = "force-dynamic"`
+- Calls `fetchActiveGraphBundle()`
+- Renders `GraphErrorBoundary` and `DashboardShell`
+
+### `app/loading.tsx`, `app/error.tsx`, `app/not-found.tsx`
+
+- Route-level loading, error, and 404 UI
+- `app/error.tsx` is a client component because it handles reset behavior
+
+## Client / Server Boundary
+
+### Server-oriented files
+
+- `app/layout.tsx`
+- `app/page.tsx`
+- `lib/graph/fetch.ts`
+- `app/api/graph-bundles/[checksum]/[asset]/route.ts`
+- `lib/supabase/server.ts`
+- `proxy.ts`
+
+Notable server markers:
+
+- `lib/graph/fetch.ts` imports `server-only`
+- `lib/graph/fetch.ts` uses `unstable_cache(...)`
+- `app/api/graph-bundles/[checksum]/[asset]/route.ts` resolves checksum-scoped bundle files from disk and serves them with immutable caching headers
+- `lib/supabase/server.ts` creates a privileged Supabase client from env vars
+- `app/page.tsx` exports `dynamic = "force-dynamic"`
+
+### Client-oriented files
+
+Client components are marked with `use client` and are concentrated in:
+
+- `components/mantine-theme-provider.tsx`
+- `components/ui/theme-toggle.tsx`
+- `components/graph/*.tsx`
+- `components/graph/explore/*.tsx`
+- `app/error.tsx`
+
+Notable client boundary:
+
+- `components/graph/GraphCanvas.tsx` uses `next/dynamic(...)` with `ssr: false`
+  to load `CosmographRenderer` only on the client.
 
 ## Data Flow
 
-```
-Supabase (solemd schema)
-  → lib/graph/fetch.ts (Server Component, React cache, 4 parallel queries)
-    → app/page.tsx (force-dynamic, passes GraphData to DashboardShell)
-      → CosmographProvider (React context for sub-components)
-        → CosmographRenderer (GPU scatter, reads dashboard store for config)
-        → Panels, Toolbar, Controls (read from provider context)
+```text
+Supabase graph_runs control plane
+  -> lib/supabase/server.ts
+  -> lib/graph/fetch.ts
+  -> app/page.tsx
+  -> bundle metadata (checksum, manifest, same-origin URLs)
+  -> components/graph/DashboardShell.tsx
+  -> app/api/graph-bundles/[checksum]/[asset]/route.ts
+  -> lib/graph/use-graph-bundle.ts
+  -> lib/graph/duckdb.ts
+  -> DuckDB-Wasm session
+  -> graph_points_web view + local detail queries
+  -> lib/graph/transform.ts
+  -> components/graph/GraphCanvas.tsx
+  -> components/graph/CosmographRenderer.tsx
 ```
 
-Points: ~2,184 UMAP-positioned chunks from 44 papers, 58 HDBSCAN clusters.
-Pre-computed positions — no simulation. `enableSimulation={false}`.
+The server fetch layer currently queries:
+
+- `solemd.graph_runs` for the current completed bundle
+- bundle metadata such as checksum, URI, manifest, QA summary, and bundle version
+
+`bundle_manifest` is an inventory and schema surface, not the heavy graph payload.
+The graph data itself comes from the served `graph.duckdb` file when DuckDB-Wasm
+can attach it directly, with Parquet sidecars used as the fallback table source.
+
+The server does **not** query `graph_points_current`, `graph_clusters_current`, or `graph_cluster_exemplars_current`. Those current-view surfaces are legacy/transitional and are not part of the active Web contract.
+
+The browser bundle layer then loads:
+
+- the DuckDB bundle file over the same-origin `/api/graph-bundles/[checksum]/[asset]` route
+- Parquet assets as fallback inputs if direct DuckDB attach is unavailable
+- local bundle tables such as `graph_points`, `graph_clusters`, `graph_cluster_exemplars`, `graph_papers`, `graph_chunk_details`, and `graph_facets`
+
+`lib/graph/duckdb.ts` prepares a `graph_points_web` view in DuckDB with the field names Cosmograph expects, then:
+
+- `components/graph/CosmographRenderer.tsx` passes that table name plus the external DuckDB connection into Cosmograph
+- `lib/graph/transform.ts` normalizes local query rows into `GraphData` for the table, panels, and stats
+- `components/graph/DetailPanel.tsx` resolves chunk, paper, cluster, and exemplar detail from local DuckDB queries against bundle tables
+- `components/graph/explore/FiltersPanel.tsx` surfaces the precomputed `graph_facets` buckets while Cosmograph applies the live local selections against the loaded bundle tables
 
 ## State Architecture
 
-Two Zustand stores, deliberately separated:
+The app uses two active Zustand stores:
 
-**useGraphStore** — interaction state (shared across all modes)
-- `mode`: current GraphMode
-- `selectedNode` / `hoveredNode`: ChunkNode | null
-- Future: conversation history (Ask), active module (Learn), document state (Write)
+### `lib/graph/stores/graph-store.ts`
 
-**useDashboardStore** — dashboard config (primarily Explore mode)
-- Panel visibility, config tab, point color/size/label settings
-- Filters, table state, timeline visibility
-- Typed with `PointColorStrategy`, `PointSizeStrategy`, `ColorSchemeName`
+Shared interaction state:
 
-As modes expand, each gets its own store slice:
-- `useAskStore` — conversation messages, RAG context, active evidence path
-- `useLearnStore` — active module, highlighted node sets, progress
-- `useWriteStore` — document content, NER entities, similarity results
+- `mode`
+- `selectedNode`
+- `hoveredNode`
 
-## CSS Architecture
+### `lib/graph/stores/dashboard-store.ts`
 
-Design tokens in `app/globals.css`:
-- **Semantic foundation** (`:root` / `.dark`): background, foreground, surface, text, border, shadow, brand
-- **Graph tokens**: canvas bg, panel chrome, prompt overlay, wordmark, labels
-- **Cosmograph tokens**: 70+ `--cosmograph-*` vars for timeline, search, legends, buttons, histograms
+Dashboard state:
 
-Mantine theme in `lib/mantine-theme.ts` bridges CSS vars to component defaults.
-Tailwind v4 for layout/spacing. Mantine for interactive components.
+- active panel
+- table visibility and height
+- point color / size / label configuration
+- filter selection
+- timeline state
+- legend visibility
+- selected and filtered point indices
 
-## Technology Stack
+The barrel file is `lib/graph/stores/index.ts`.
 
-| Layer | Technology |
-|-------|-----------|
-| Rendering | Cosmograph 2.1 (GPU-accelerated WebGL scatter) |
-| Framework | Next.js 15 + React 19 |
-| Components | Mantine 8 |
-| Styling | Tailwind CSS 4 + CSS custom properties |
-| Animation | Framer Motion |
-| State | Zustand (mode + dashboard stores) |
-| Data | Supabase (PostgreSQL, server-only client) |
-| Icons | Lucide React |
+## Styling Architecture
 
-## File Structure
+### `app/globals.css`
 
-```
-app/
-  page.tsx              # Graph page (Server Component, force-dynamic)
-  loading.tsx           # Suspense skeleton
-  layout.tsx            # Root layout (Mantine provider, fonts, metadata)
-  error.tsx             # Error boundary
-  not-found.tsx         # 404
-components/
-  graph/
-    DashboardShell.tsx  # Mode-aware layout orchestrator (reads mode registry)
-    CosmographRenderer  # GPU scatter (reads dashboard store, brand constants)
-    GraphCanvas.tsx     # Dynamic import bridge (ssr: false)
-    GraphErrorBoundary  # WebGL fallback
-    PromptBox.tsx       # Mode toggles + input (reads mode registry)
-    Wordmark.tsx        # Logo + theme toggle
-    StatsBar.tsx        # Live counts overlay
-    toolbar/
-      LeftToolbar.tsx   # Panel toggle strip
-    controls/
-      CanvasControls    # Fit/select/zoom buttons
-    panels/
-      PanelShell.tsx    # Shared panel chrome
-      ConfigPanel.tsx   # Points/Links/Simulation tabs
-      FiltersPanel.tsx  # Per-column filter widgets
-      InfoPanel.tsx     # Search + stats + color legend
-      DataTable.tsx     # Resizable bottom table
-      config/           # Config sub-panels
-      filters/          # Filter widget components
-  mantine-theme-provider.tsx
-  ui/
-    theme-toggle.tsx
-lib/
-  graph/
-    modes.ts            # Mode registry (ModeConfig, ModeLayout, MODES)
-    types.ts            # ChunkNode, GraphMode, strategy types
-    store.ts            # useGraphStore (mode, selection, hover)
-    dashboard-store.ts  # useDashboardStore (panels, config, filters)
-    fetch.ts            # Server-only Supabase queries
-    colors.ts           # 7 color palettes
-    columns.ts          # Column metadata
-  helpers.ts            # formatNumber, clamp
-  utils.ts              # Re-exports helpers
-  mantine-theme.ts      # Mantine/CSS var bridge
-  supabase/server.ts    # Server-only Supabase client
-middleware.ts           # Security headers
-```
+This is the primary styling entry point for the app:
+
+- Tailwind CSS 4 theme and utility imports
+- `@theme` tokens
+- semantic CSS custom properties in `:root`
+- dark-mode overrides in `.dark`
+- graph-specific variables
+- Cosmograph UI variable overrides
+
+### `lib/mantine-theme.ts`
+
+This is the Mantine bridge:
+
+- `createTheme(...)`
+- brand and neutral color tuples
+- shared component defaults
+- radius and shadow defaults that point back to CSS variables
+
+### `components/mantine-theme-provider.tsx`
+
+This is the runtime theme seam:
+
+- wraps the app in `MantineProvider`
+- reads Mantine color scheme
+- syncs `.dark` on `<html>` for CSS-variable cascading
+
+### `postcss.config.mjs`
+
+PostCSS wiring for:
+
+- `postcss-preset-mantine`
+- `postcss-simple-vars`
+- `@tailwindcss/postcss`
+
+## Motion, UI, And Interaction Libraries
+
+### Mantine
+
+Mantine is used for:
+
+- theme provider and color scheme
+- panels and controls
+- error / not-found UI
+- forms and toggles
+
+Primary entry points:
+
+- `components/mantine-theme-provider.tsx`
+- `lib/mantine-theme.ts`
+- `components/ui/theme-toggle.tsx`
+- `components/graph/explore/*.tsx`
+
+### Framer Motion
+
+Framer Motion is used in:
+
+- `components/ui/theme-toggle.tsx`
+- `components/graph/DashboardShell.tsx`
+- `components/graph/PanelShell.tsx`
+- `components/graph/PromptBox.tsx`
+- `components/graph/explore/CanvasControls.tsx`
+- `components/graph/explore/DataTable.tsx`
+- `components/graph/explore/LeftToolbar.tsx`
+
+### Cosmograph
+
+Cosmograph is centered in:
+
+- `components/graph/DashboardShell.tsx`
+- `components/graph/GraphCanvas.tsx`
+- `components/graph/CosmographRenderer.tsx`
+
+The current renderer follows Cosmograph's intended external-DuckDB path:
+
+- `duckDBConnection={{ duckdb, connection }}`
+- `points="graph_points_web"`
+- `pointIdBy="id"`
+- `pointIndexBy="index"`
+- `pointXBy="x"`
+- `pointYBy="y"`
+- `enableSimulation={false}`
+
+This keeps the point cloud inside DuckDB-Wasm rather than duplicating it into another client-side dataset just for the canvas.
+
+## Assets
+
+Static assets live in `public/`.
+
+Current files:
+
+- `public/jon-sole-photo.webp`
+- `public/placeholder-logo.png`
+- `public/placeholder-logo.svg`
+- `public/placeholder-user.jpg`
+- `public/placeholder.jpg`
+
+At the moment, the active runtime in `app/`, `components/`, and `lib/` does not import these assets directly. Search results that surface them should be interpreted as available static files, not current runtime dependencies.
+
+## Config Surface
+
+- `package.json`: dependency and script map
+- `next.config.ts`: `optimizePackageImports` and image formats
+- `proxy.ts`: security headers and CSP report-only policy
+- `lib/graph/fetch.ts`: server-side `graph_runs` lookup and bundle path validation
+- `app/api/graph-bundles/[checksum]/[asset]/route.ts`: immutable checksum-scoped bundle serving with range support
+- `lib/graph/use-graph-bundle.ts`: client-side bundle hydration
+- `lib/graph/duckdb.ts`: DuckDB-Wasm loading, bundle attach/fallback, Cosmograph table prep, and local query execution
+
+## Search-Oriented Summary
+
+If you need a fast answer:
+
+- "Where is Mantine set up?" -> `app/layout.tsx`, `components/mantine-theme-provider.tsx`, `lib/mantine-theme.ts`
+- "Where is Tailwind set up?" -> `app/globals.css`, `postcss.config.mjs`
+- "Which files are client-only?" -> `components/graph/**`, `components/ui/theme-toggle.tsx`, `components/mantine-theme-provider.tsx`, `app/error.tsx`
+- "Which files are server-only?" -> `lib/graph/fetch.ts`, `lib/supabase/server.ts`, `app/page.tsx`, `app/layout.tsx`
+- "Where is Framer Motion?" -> `components/ui/theme-toggle.tsx`, `components/graph/**`
+- "Where is the server bundle fetch?" -> `lib/graph/fetch.ts`
+- "Where is the client bundle load?" -> `lib/graph/use-graph-bundle.ts`, `lib/graph/duckdb.ts`
+- "Where is WebGL dynamically loaded?" -> `components/graph/GraphCanvas.tsx`

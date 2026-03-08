@@ -1,15 +1,15 @@
-import { fetchGraphData } from "@/lib/graph/fetch";
+import { fetchActiveGraphBundle } from "@/lib/graph/fetch";
 import { GraphErrorBoundary } from "@/components/graph/GraphErrorBoundary";
 import { DashboardShell } from "@/components/graph/DashboardShell";
 
 export const dynamic = "force-dynamic";
 
 export default async function GraphPage() {
-  const data = await fetchGraphData();
+  const bundle = await fetchActiveGraphBundle();
 
   return (
     <GraphErrorBoundary>
-      <DashboardShell data={data} />
+      <DashboardShell bundle={bundle} />
     </GraphErrorBoundary>
   );
 }

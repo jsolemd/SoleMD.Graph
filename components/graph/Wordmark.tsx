@@ -2,8 +2,7 @@
 
 import { BrainCircuit } from "lucide-react";
 import ThemeToggle from "@/components/ui/theme-toggle";
-import { useGraphStore } from "@/lib/graph/store";
-import { useDashboardStore } from "@/lib/graph/dashboard-store";
+import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { getModeConfig } from "@/lib/graph/modes";
 
 export function Wordmark() {

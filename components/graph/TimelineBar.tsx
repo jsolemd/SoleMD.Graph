@@ -1,6 +1,7 @@
 "use client";
 
 import { CosmographTimeline } from "@cosmograph/react";
+import { useDashboardStore } from "@/lib/graph/stores";
 
 const yearFormatter = (value: Date | number) =>
   String(Math.round(Number(value)));
@@ -21,6 +22,9 @@ const cosmographOverrides: Record<string, string> = {
 };
 
 export function TimelineBar() {
+  const timelineSelection = useDashboardStore((s) => s.timelineSelection);
+  const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
+
   return (
     <div
       style={{
@@ -30,8 +34,26 @@ export function TimelineBar() {
       } as React.CSSProperties}
     >
       <CosmographTimeline
+        id="timeline:year"
         accessor="year"
+        initialSelection={timelineSelection}
+        preserveSelectionOnUnmount
+        highlightSelectedData
+        useQuantiles
+        useSymlogScale
         formatter={yearFormatter}
+        onSelection={(selection) => {
+          if (
+            selection &&
+            typeof selection[0] === "number" &&
+            typeof selection[1] === "number"
+          ) {
+            setTimelineSelection(selection as [number, number]);
+            return;
+          }
+
+          setTimelineSelection(undefined);
+        }}
         barCount={40}
         barTopMargin={4}
         barRadius={1}

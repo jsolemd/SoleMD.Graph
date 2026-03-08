@@ -1,104 +1,289 @@
 import 'server-only'
-import { cache } from 'react'
+
+import { realpath } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { unstable_cache } from 'next/cache'
 import { createServerClient } from '@/lib/supabase/server'
-import { getClusterColor } from './colors'
-import type { ChunkNode, ClusterExemplar, ClusterInfo, GraphData, GraphStats } from './types'
+import type {
+  GraphBundle,
+  GraphBundleDuckDBFile,
+  GraphBundleManifest,
+  GraphBundleTableManifest,
+} from './types'
 
-export const fetchGraphData = cache(async (): Promise<GraphData> => {
-  const supabase = createServerClient()
+const GRAPH_NAME = 'cosmograph'
+const NODE_KIND = 'rag_chunk'
+const GRAPH_BUNDLE_ROOT =
+  process.env.GRAPH_BUNDLE_ROOT ??
+  '/home/workbench/SoleMD/SoleMD.App/pipeline/app/output/graph/bundles'
 
-  const [pointsResult, papersResult, clustersResult, exemplarsResult] =
-    await Promise.all([
-      supabase
-        .from('graph_points_current')
-        .select('node_id, paper_id, x, y, cluster_id, cluster_label, cluster_probability, outlier_score')
-        .eq('graph_name', 'cosmograph')
-        .eq('node_kind', 'rag_chunk')
-        .limit(5000),
-      supabase
-        .from('papers')
-        .select('id, title, citekey, year'),
-      supabase
-        .from('graph_clusters_current')
-        .select('cluster_id, label, member_count, centroid_x, centroid_y')
-        .eq('graph_name', 'cosmograph')
-        .eq('node_kind', 'rag_chunk'),
-      supabase
-        .from('graph_cluster_exemplars_current')
-        .select('cluster_id, rank, rag_chunk_id, exemplar_score, is_representative, chunk_text, paper_id')
-        .eq('graph_name', 'cosmograph')
-        .eq('node_kind', 'rag_chunk')
-        .lte('rank', 5),
-    ])
+interface GraphRunRow {
+  bundle_bytes: number | string | null
+  bundle_checksum: string
+  bundle_format: string
+  bundle_manifest: Record<string, unknown> | null
+  bundle_uri: string
+  bundle_version: string
+  created_at: string
+  graph_name: string
+  id: string
+  node_kind: string
+  qa_summary: Record<string, unknown> | null
+}
 
-  if (pointsResult.error) throw new Error(`points: ${pointsResult.error.message}`)
-  if (papersResult.error) throw new Error(`papers: ${papersResult.error.message}`)
-  if (clustersResult.error) throw new Error(`clusters: ${clustersResult.error.message}`)
-  if (exemplarsResult.error) throw new Error(`exemplars: ${exemplarsResult.error.message}`)
+function coerceNumber(value: number | string | null | undefined) {
+  if (value == null || value === '') {
+    return 0
+  }
 
-  // Index papers by ID for O(1) lookup
-  const papersById = new Map(
-    papersResult.data.map((p: Record<string, unknown>) => [p.id as string, p])
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function normalizeDuckDBFile(value: unknown): GraphBundleDuckDBFile | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const rawPath = value.path
+  const rawSha = value.sha256
+
+  if (typeof rawPath !== 'string' || typeof rawSha !== 'string') {
+    return null
+  }
+
+  return {
+    path: rawPath,
+    bytes: coerceNumber(value.bytes as number | string | null | undefined),
+    sha256: rawSha,
+  }
+}
+
+function normalizeBundleTableManifest(value: unknown): GraphBundleTableManifest | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const parquetFile = value.parquet_file
+  const sha256 = value.sha256
+
+  if (typeof parquetFile !== 'string' || typeof sha256 !== 'string') {
+    return null
+  }
+
+  const rawColumns = Array.isArray(value.columns) ? value.columns : []
+  const rawSchema = Array.isArray(value.schema) ? value.schema : []
+
+  return {
+    bytes: coerceNumber(value.bytes as number | string | null | undefined),
+    columns: rawColumns.filter((column): column is string => typeof column === 'string'),
+    parquetFile,
+    rowCount: coerceNumber(value.row_count as number | string | null | undefined),
+    schema: rawSchema
+      .filter(isRecord)
+      .map((column) => ({
+        name: typeof column.name === 'string' ? column.name : '',
+        type: typeof column.type === 'string' ? column.type : 'UNKNOWN',
+      }))
+      .filter((column) => column.name.length > 0),
+    sha256,
+  }
+}
+
+function normalizeBundleManifest(row: GraphRunRow): GraphBundleManifest {
+  const manifest = isRecord(row.bundle_manifest) ? row.bundle_manifest : {}
+  const rawTables = isRecord(manifest.tables) ? manifest.tables : {}
+  const tables = Object.fromEntries(
+    Object.entries(rawTables)
+      .map(([tableName, tableValue]) => {
+        const normalized = normalizeBundleTableManifest(tableValue)
+        return normalized ? [tableName, normalized] : null
+      })
+      .filter((entry): entry is [string, GraphBundleTableManifest] => entry !== null)
   )
 
-  const clusterColors: Record<number, string> = {}
-  const nodes: ChunkNode[] = []
-  let nodeIndex = 0
+  return {
+    bundleFormat:
+      typeof manifest.bundle_format === 'string' ? manifest.bundle_format : row.bundle_format,
+    bundleVersion:
+      typeof manifest.bundle_version === 'string' ? manifest.bundle_version : row.bundle_version,
+    createdAt:
+      typeof manifest.created_at === 'string'
+        ? manifest.created_at
+        : row.created_at ?? null,
+    duckdbFile: normalizeDuckDBFile(manifest.duckdb_file) ?? {
+      path: 'graph.duckdb',
+      bytes: 0,
+      sha256: row.bundle_checksum,
+    },
+    graphName:
+      typeof manifest.graph_name === 'string' ? manifest.graph_name : row.graph_name,
+    graphRunId:
+      typeof manifest.graph_run_id === 'string' ? manifest.graph_run_id : row.id,
+    nodeKind:
+      typeof manifest.node_kind === 'string' ? manifest.node_kind : row.node_kind,
+    tables,
+  }
+}
 
-  for (const row of pointsResult.data) {
-    const paper = papersById.get(row.paper_id as string)
-    if (!paper) continue
+function buildBundleAssetUrl(bundleChecksum: string, assetPath: string) {
+  const encodedAssetPath = assetPath
+    .split('/')
+    .filter((segment) => segment.length > 0)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
 
-    const clusterId = (row.cluster_id as number) ?? 0
-    const color = getClusterColor(clusterId)
-    clusterColors[clusterId] = color
+  return `/api/graph-bundles/${bundleChecksum}/${encodedAssetPath}`
+}
 
-    nodes.push({
-      index: nodeIndex++,
-      id: row.node_id as string,
-      x: row.x as number,
-      y: row.y as number,
-      color,
-      clusterId,
-      clusterLabel: row.cluster_label as string | null,
-      clusterProbability: (row.cluster_probability as number) ?? 0,
-      outlierScore: (row.outlier_score as number) ?? 0,
-      paperId: row.paper_id as string,
-      paperTitle: paper.title as string,
-      citekey: paper.citekey as string,
-      year: (paper.year as number) ?? null,
-    })
+function resolveBundleUriPath(bundleUri: string) {
+  if (bundleUri.startsWith('file://')) {
+    return fileURLToPath(bundleUri)
   }
 
-  // Build cluster info
-  const clusters: ClusterInfo[] = clustersResult.data.map((row: Record<string, unknown>) => ({
-    clusterId: row.cluster_id as number,
-    label: row.label as string,
-    memberCount: row.member_count as number,
-    centroidX: row.centroid_x as number,
-    centroidY: row.centroid_y as number,
-  }))
-
-  // Build exemplars
-  const exemplars: ClusterExemplar[] = exemplarsResult.data.map((row: Record<string, unknown>) => ({
-    clusterId: row.cluster_id as number,
-    rank: row.rank as number,
-    ragChunkId: row.rag_chunk_id as string,
-    paperId: row.paper_id as string,
-    chunkText: row.chunk_text as string,
-    exemplarScore: row.exemplar_score as number,
-    isRepresentative: row.is_representative as boolean,
-  }))
-
-  const uniquePapers = new Set(nodes.map((n) => n.paperId))
-  const noiseCount = nodes.filter((n) => n.clusterId === 0).length
-
-  const stats: GraphStats = {
-    chunks: nodes.length,
-    papers: uniquePapers.size,
-    clusters: clusters.filter((c) => c.clusterId !== 0).length,
-    noise: noiseCount,
+  if (path.isAbsolute(bundleUri)) {
+    return bundleUri
   }
 
-  return { nodes, clusters, exemplars, stats, clusterColors }
-})
+  throw new Error(`Unsupported graph bundle URI: ${bundleUri}`)
+}
+
+function buildGraphBundle(row: GraphRunRow): GraphBundle {
+  const manifest = normalizeBundleManifest(row)
+  const assetBaseUrl = `/api/graph-bundles/${row.bundle_checksum}`
+  const duckdbPath = manifest.duckdbFile?.path ?? 'graph.duckdb'
+  const tableUrls = Object.fromEntries(
+    Object.entries(manifest.tables).map(([tableName, tableManifest]) => [
+      tableName,
+      buildBundleAssetUrl(row.bundle_checksum, tableManifest.parquetFile),
+    ])
+  )
+
+  return {
+    assetBaseUrl,
+    bundleBytes: coerceNumber(row.bundle_bytes),
+    bundleChecksum: row.bundle_checksum,
+    bundleFormat: row.bundle_format,
+    bundleManifest: manifest,
+    bundleUri: row.bundle_uri,
+    bundleVersion: row.bundle_version,
+    duckdbUrl: buildBundleAssetUrl(row.bundle_checksum, duckdbPath),
+    graphName: row.graph_name,
+    manifestUrl: buildBundleAssetUrl(row.bundle_checksum, 'manifest.json'),
+    nodeKind: row.node_kind,
+    qaSummary: row.qa_summary,
+    runId: row.id,
+    tableUrls,
+  }
+}
+
+async function queryCurrentGraphRun(): Promise<GraphRunRow> {
+  const supabase = createServerClient()
+  const { data, error } = await supabase
+    .from('graph_runs')
+    .select(
+      'id, graph_name, node_kind, bundle_uri, bundle_format, bundle_version, bundle_checksum, bundle_bytes, bundle_manifest, qa_summary, created_at'
+    )
+    .eq('graph_name', GRAPH_NAME)
+    .eq('node_kind', NODE_KIND)
+    .eq('status', 'completed')
+    .eq('is_current', true)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`graph_runs current: ${error.message}`)
+  }
+
+  if (!data) {
+    throw new Error('No current graph bundle found in solemd.graph_runs')
+  }
+
+  return data as GraphRunRow
+}
+
+async function queryGraphRunByChecksum(bundleChecksum: string): Promise<GraphRunRow> {
+  const supabase = createServerClient()
+  const { data, error } = await supabase
+    .from('graph_runs')
+    .select(
+      'id, graph_name, node_kind, bundle_uri, bundle_format, bundle_version, bundle_checksum, bundle_bytes, bundle_manifest, qa_summary, created_at'
+    )
+    .eq('graph_name', GRAPH_NAME)
+    .eq('node_kind', NODE_KIND)
+    .eq('status', 'completed')
+    .eq('bundle_checksum', bundleChecksum)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    throw new Error(`graph_runs checksum: ${error.message}`)
+  }
+
+  if (!data) {
+    throw new Error(`No completed graph bundle found for checksum ${bundleChecksum}`)
+  }
+
+  return data as GraphRunRow
+}
+
+const getCachedCurrentGraphRun = unstable_cache(
+  async () => queryCurrentGraphRun(),
+  ['graph-runs-current-cosmograph-rag-chunk'],
+  { revalidate: 60 }
+)
+
+const getCachedGraphRunByChecksum = unstable_cache(
+  async (bundleChecksum: string) => queryGraphRunByChecksum(bundleChecksum),
+  ['graph-runs-by-checksum'],
+  { revalidate: 300 }
+)
+
+export async function fetchActiveGraphBundle(): Promise<GraphBundle> {
+  return buildGraphBundle(await getCachedCurrentGraphRun())
+}
+
+export async function fetchGraphBundleByChecksum(
+  bundleChecksum: string
+): Promise<GraphBundle> {
+  return buildGraphBundle(await getCachedGraphRunByChecksum(bundleChecksum))
+}
+
+export async function resolveGraphBundleDirectory(bundle: GraphBundle) {
+  const bundleDirectory = resolveBundleUriPath(bundle.bundleUri)
+  const [resolvedRoot, resolvedDirectory] = await Promise.all([
+    realpath(GRAPH_BUNDLE_ROOT),
+    realpath(bundleDirectory),
+  ])
+
+  if (
+    resolvedDirectory !== resolvedRoot &&
+    !resolvedDirectory.startsWith(`${resolvedRoot}${path.sep}`)
+  ) {
+    throw new Error(`Graph bundle path escapes configured root: ${resolvedDirectory}`)
+  }
+
+  return resolvedDirectory
+}
+
+export function getGraphBundleAssetNames(bundle: GraphBundle) {
+  const assetNames = new Set<string>(['manifest.json'])
+  const duckdbPath = bundle.bundleManifest.duckdbFile?.path
+
+  if (duckdbPath) {
+    assetNames.add(duckdbPath)
+  }
+
+  for (const table of Object.values(bundle.bundleManifest.tables)) {
+    assetNames.add(table.parquetFile)
+  }
+
+  return assetNames
+}

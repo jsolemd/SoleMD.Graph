@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Table,
   Text,
@@ -8,10 +8,10 @@ import {
   SegmentedControl,
   Group,
 } from "@mantine/core";
+import { useCosmograph } from "@cosmograph/react";
 import { motion } from "framer-motion";
-import { useDashboardStore } from "@/lib/graph/dashboard-store";
-import { PANEL_SPRING } from "./PanelShell";
-import { useGraphStore } from "@/lib/graph/store";
+import { useDashboardStore, useGraphStore } from "@/lib/graph/stores";
+import { PANEL_SPRING } from "../PanelShell";
 import { TABLE_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
 import type { ChunkNode } from "@/lib/graph/types";
 import { clamp } from "@/lib/helpers";
@@ -19,20 +19,45 @@ import { clamp } from "@/lib/helpers";
 export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
   const tablePage = useDashboardStore((s) => s.tablePage);
   const tablePageSize = useDashboardStore((s) => s.tablePageSize);
-  const tableShowAllPoints = useDashboardStore((s) => s.tableShowAllPoints);
+  const tableView = useDashboardStore((s) => s.tableView);
   const tableHeight = useDashboardStore((s) => s.tableHeight);
+  const filteredPointIndices = useDashboardStore((s) => s.filteredPointIndices);
+  const selectedPointIndices = useDashboardStore((s) => s.selectedPointIndices);
   const setTablePage = useDashboardStore((s) => s.setTablePage);
-  const setTableShowAllPoints = useDashboardStore((s) => s.setTableShowAllPoints);
+  const setTableView = useDashboardStore((s) => s.setTableView);
   const setTableHeight = useDashboardStore((s) => s.setTableHeight);
 
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const selectNode = useGraphStore((s) => s.selectNode);
+  const { cosmograph } = useCosmograph();
 
-  const displayedNodes = useMemo(() => {
-    if (tableShowAllPoints) return nodes;
-    if (!selectedNode) return [];
-    return nodes.filter((n) => n.id === selectedNode.id);
-  }, [nodes, tableShowAllPoints, selectedNode]);
+  const visibleNodes = useMemo(() => {
+    if (filteredPointIndices === null) {
+      return nodes;
+    }
+
+    const visibleSet = new Set(filteredPointIndices);
+    return nodes.filter((node) => visibleSet.has(node.index));
+  }, [filteredPointIndices, nodes]);
+
+  const selectedNodes = useMemo(() => {
+    if (selectedPointIndices.length > 0) {
+      const selectedSet = new Set(selectedPointIndices);
+      return nodes.filter((node) => selectedSet.has(node.index));
+    }
+
+    if (selectedNode) {
+      return nodes.filter((node) => node.id === selectedNode.id);
+    }
+
+    return [];
+  }, [nodes, selectedNode, selectedPointIndices]);
+
+  const displayedNodes = tableView === "visible" ? visibleNodes : selectedNodes;
+  const selectedIndexSet = useMemo(
+    () => new Set(selectedPointIndices),
+    [selectedPointIndices]
+  );
 
   const totalPages = Math.max(1, Math.ceil(displayedNodes.length / tablePageSize));
   const safePage = clamp(tablePage, 1, totalPages);
@@ -62,6 +87,22 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
       document.addEventListener("mouseup", handleUp);
     },
     [tableHeight, setTableHeight]
+  );
+
+  useEffect(() => {
+    if (tablePage !== safePage) {
+      setTablePage(safePage);
+    }
+  }, [safePage, setTablePage, tablePage]);
+
+  const handleRowClick = useCallback(
+    (node: ChunkNode) => {
+      selectNode(node);
+      cosmograph?.selectPoint(node.index);
+      cosmograph?.setFocusedPoint(node.index);
+      cosmograph?.zoomToPoint(node.index, 250);
+    },
+    [cosmograph, selectNode]
   );
 
   const formatCell = (node: ChunkNode, key: keyof ChunkNode) => {
@@ -105,14 +146,14 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
           <SegmentedControl
             size="xs"
             data={[
-              { label: "All Points", value: "all" },
+              { label: "Visible", value: "visible" },
               { label: "Selected", value: "selected" },
             ]}
-            value={tableShowAllPoints ? "all" : "selected"}
-            onChange={(v) => setTableShowAllPoints(v === "all")}
+            value={tableView}
+            onChange={(value) => setTableView(value as typeof tableView)}
           />
           <Text size="xs" style={{ color: "var(--graph-panel-text-dim)" }}>
-            {displayedNodes.length} rows
+            {displayedNodes.length} of {nodes.length} rows
           </Text>
         </Group>
         <Pagination
@@ -185,11 +226,11 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
             {pageNodes.map((node, i) => (
               <Table.Tr
                 key={node.id}
-                onClick={() => selectNode(node)}
+                onClick={() => handleRowClick(node)}
                 style={{
                   cursor: "pointer",
                   backgroundColor:
-                    selectedNode?.id === node.id
+                    selectedIndexSet.has(node.index) || selectedNode?.id === node.id
                       ? "var(--graph-panel-active)"
                       : undefined,
                 }}
