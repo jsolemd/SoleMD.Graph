@@ -15,11 +15,9 @@
       ]
     },
     "chrome-devtools-visible": {
-      "command": "bash",
-      "args": [
-        "/workspaces/SoleMD.Infra/mcp/chrome-devtools-mcp/scripts/chrome-devtools-mcp-wrapper.sh"
-      ],
-      "instructions": "Visible Chrome on Windows host. Wrapper resolves host.docker.internal to IP (Chrome 66+ rejects non-IP Host headers). Start Chrome: 'solemd chrome start' or Start-ChromeDebug.ps1."
+      "type": "http",
+      "url": "http://localhost:8401/mcp",
+      "instructions": "Visible Chrome on Windows host via HTTP proxy. Chrome must be running with --remote-debugging-port=9222. Start Chrome: 'solemd chrome start' or Start-ChromeDebug.ps1."
     },
     "supabase-solemd": {
       "type": "http",
@@ -40,6 +38,16 @@
       "type": "http",
       "url": "http://localhost:8200/mcp",
       "instructions": "Query external library documentation using hybrid search (BM25 + semantic). 30+ libraries indexed: React, Next.js, Supabase, Langfuse, FastAPI, Pydantic, etc. Use resolve-library-id to find library, then query-docs to search. For exact API names, use exactMatch=true. See /doc-search skill for full guide."
+    },
+    "mantine": {
+      "command": "node",
+      "args": [
+        "/workspaces/SoleMD.Web/node_modules/@mantine/mcp-server/bin/mantine-mcp-server.cjs"
+      ],
+      "env": {
+        "MANTINE_MCP_DATA_URL": "https://alpha.mantine.dev/mcp"
+      },
+      "instructions": "Official Mantine MCP server (first-party, 145 components). Tools: list_items, get_item_doc (full markdown docs), get_item_props (normalized props), search_docs (keyword search). Prefer this for Mantine-specific queries."
     },
     "neo4j": {
       "command": "/workspaces/.devcontainer/solemd-dev/scripts/neo4j-mcp-server.sh",

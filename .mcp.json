@@ -12,11 +12,9 @@
       "instructions": "Headless Chromium browser automation running in Docker."
     },
     "chrome-devtools-visible": {
-      "command": "bash",
-      "args": [
-        "/workspaces/SoleMD.Infra/mcp/chrome-devtools-mcp/scripts/chrome-devtools-mcp-wrapper.sh"
-      ],
-      "instructions": "Visible Chrome on Windows host. Wrapper resolves host.docker.internal to IP (Chrome 66+ rejects non-IP Host headers). Start Chrome: 'solemd chrome start' or Start-ChromeDebug.ps1."
+      "type": "http",
+      "url": "http://localhost:8401/mcp",
+      "instructions": "Visible Chrome on Windows host via HTTP proxy. Chrome must be running with --remote-debugging-port=9222. Start Chrome: 'solemd chrome start' or Start-ChromeDebug.ps1."
     },
     "supabase-solemd": {
       "type": "http",
@@ -40,7 +38,9 @@
     },
     "mantine": {
       "command": "node",
-      "args": ["/workspaces/SoleMD.Web/node_modules/@mantine/mcp-server/bin/mantine-mcp-server.cjs"],
+      "args": [
+        "/workspaces/SoleMD.Web/node_modules/@mantine/mcp-server/bin/mantine-mcp-server.cjs"
+      ],
       "env": {
         "MANTINE_MCP_DATA_URL": "https://alpha.mantine.dev/mcp"
       },
