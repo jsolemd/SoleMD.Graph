@@ -35,7 +35,7 @@ export default function ThemeToggle() {
           root: {
             width: "2.5rem",
             height: "2.5rem",
-            color: "var(--text-tertiary)",
+            color: "var(--graph-panel-text-dim)",
             transition: "color 200ms ease",
           },
         }}

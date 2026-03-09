@@ -41,11 +41,9 @@ export const theme = createTheme({
     gray: neutral,
   },
 
-  fontFamily:
-    "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  fontFamily: "var(--font-sans)",
   headings: {
-    fontFamily:
-      "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+    fontFamily: "var(--font-sans)",
     fontWeight: "500",
   },
 

@@ -20,8 +20,8 @@
   --color-soft-pink: #eda8c4;
   --color-soft-lavender: #d8bee9;
 
-  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono",
     Menlo, Courier, monospace;
 }
@@ -31,6 +31,7 @@
    All downstream tokens reference these via var().
    ═══════════════════════════════════════════════════════════════════ */
 :root {
+  /* WebGL mirror: lib/graph/brand-colors.ts — keep in sync */
   /* ── Foundations ── */
   --background: #fafafa;
   --foreground: #1a1b1e;
@@ -53,7 +54,6 @@
   --graph-bg: #f8f9fa;
   --graph-panel-bg: var(--graph-bg);
   --graph-panel-border: var(--border-subtle);
-  --graph-toolbar-bg: transparent;
   --graph-panel-text: var(--text-primary);
   --graph-panel-text-muted: var(--text-secondary);
   --graph-panel-text-dim: var(--text-secondary);
@@ -76,78 +76,76 @@
   --graph-label-bg: rgba(255, 255, 255, 0.88);
   --graph-label-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   --graph-cluster-label-bg: rgba(255, 255, 255, 0.90);
-  --graph-hovered-ring: var(--brand-accent);
-  --graph-point-label-color: var(--text-primary);
   --graph-greyout-opacity: 0.25;
 
-  /* ── Cosmograph widgets — reference foundations for auto dark-mode ── */
+  /* ── Active mode accent (set by ModeColorSync, default = ask) ── */
+  --mode-accent: var(--color-soft-blue);
+  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 10%, transparent);
+  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 18%, transparent);
+  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 30%, transparent);
+
+  /* ── Error states ── */
+  --error-bg: rgba(255, 107, 107, 0.08);
+  --error-border: rgba(255, 107, 107, 0.24);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COSMOGRAPH THEME — html:root beats Cosmograph's runtime :root
+   injection (specificity 0,1,1 > 0,1,0).
+
+   Cosmograph hardcodes dark defaults in :root for 7 base vars.
+   All widget-specific vars (search, legend, button, etc.) derive
+   from these bases via var(). Override ONLY the 7 bases here —
+   the rest cascade automatically.
+
+   Widget-specific overrides below are ONLY for values that diverge
+   from what the base vars would produce (e.g., custom bar colors,
+   smaller font sizes, different backgrounds for specific widgets).
+   ═══════════════════════════════════════════════════════════════════ */
+html:root {
+  /* ── 7 Cosmograph base vars (everything else derives from these) ── */
   --cosmograph-ui-background: var(--surface);
   --cosmograph-ui-text: var(--text-primary);
   --cosmograph-ui-element-color: var(--border-default);
   --cosmograph-ui-highlighted-element-color: var(--brand-accent);
   --cosmograph-ui-selection-control-color: var(--brand-accent);
-  --cosmograph-ui-font-family: Inter, sans-serif;
+  --cosmograph-ui-font-family: var(--font-sans);
   --cosmograph-ui-font-size: 11px;
   --cosmograph-ui-tick-font-size: 10px;
 
-  --cosmograph-timeline-background: var(--surface);
-  --cosmograph-timeline-text-color: var(--text-secondary);
-  --cosmograph-timeline-axis-color: var(--border-default);
+  /* ── Widget-specific divergences only ── */
+  /* Timeline: custom bar colors from brand palette */
   --cosmograph-timeline-bar-color: var(--brand-accent-alt);
-  --cosmograph-timeline-highlighted-bar-color: var(--brand-accent);
-  --cosmograph-timeline-selection-color: var(--interactive-active);
-  --cosmograph-timeline-selection-opacity: 0.5;
   --cosmograph-timeline-font-size: 10px;
-  --cosmograph-timeline-font-family: Inter, sans-serif;
 
+  /* Search: opaque backgrounds instead of transparent/dark defaults */
   --cosmograph-search-background: var(--surface-alt);
-  --cosmograph-search-text-color: var(--text-primary);
-  --cosmograph-search-font-size: 12px;
-  --cosmograph-search-font-family: Inter, sans-serif;
   --cosmograph-search-list-background: var(--surface);
-  --cosmograph-search-list-font-size: 11px;
-  --cosmograph-search-list-match-color: var(--brand-accent);
   --cosmograph-search-list-match-background: var(--interactive-active);
   --cosmograph-search-accessors-background: var(--surface-alt);
   --cosmograph-search-select-all-background: var(--surface-alt);
-  --cosmograph-search-select-all-color: var(--text-secondary);
   --cosmograph-search-select-all-hover-background: var(--interactive-hover);
+  --cosmograph-search-font-size: 12px;
 
-  --cosmograph-color-legend-type-font-color: var(--text-primary);
+  /* Legend: custom sizes + muted others color */
   --cosmograph-color-legend-type-font-size: 11px;
-  --cosmograph-color-legend-type-font-family: Inter, sans-serif;
-  --cosmograph-color-legend-type-hover-color: var(--interactive-hover);
   --cosmograph-color-legend-type-others-color: var(--text-tertiary);
-  --cosmograph-color-legend-range-font-color: var(--text-primary);
-  --cosmograph-color-legend-range-font-size: 11px;
-  --cosmograph-color-legend-range-font-family: Inter, sans-serif;
 
-  --cosmograph-size-legend-font-color: var(--text-primary);
-  --cosmograph-size-legend-font-size: 11px;
-  --cosmograph-size-legend-font-family: Inter, sans-serif;
-  --cosmograph-size-legend-form-color: rgba(0, 0, 0, 0.25);
-  --cosmograph-size-legend-hover-color: var(--interactive-hover);
-
+  /* Buttons: surface bg instead of element-color default */
   --cosmograph-button-background: var(--surface);
-  --cosmograph-button-color: var(--text-secondary);
   --cosmograph-button-border-radius: 8px;
 
-  --cosmograph-histogram-background: var(--surface-alt);
-  --cosmograph-histogram-text-color: var(--text-secondary);
-  --cosmograph-histogram-axis-color: rgba(0, 0, 0, 0.15);
+  /* Histogram: custom bar color + axis color */
   --cosmograph-histogram-bar-color: var(--color-soft-blue);
-  --cosmograph-histogram-highlighted-bar-color: var(--brand-accent);
-  --cosmograph-histogram-selection-color: var(--interactive-active);
-  --cosmograph-histogram-selection-opacity: 0.5;
-  --cosmograph-histogram-font-size: 10px;
-  --cosmograph-histogram-font-family: Inter, sans-serif;
+  --cosmograph-histogram-axis-color: rgba(0, 0, 0, 0.15);
 
-  --cosmograph-bars-background: var(--surface-alt);
-  --cosmograph-bars-font-color: var(--text-secondary);
-  --cosmograph-bars-font-size: 11px;
-  --cosmograph-bars-font-family: Inter, sans-serif;
-  --cosmograph-bars-highlighted-color: var(--brand-accent);
-  --cosmograph-bars-ui-font-size: 10px;
+  /* Size legend: light form color */
+  --cosmograph-size-legend-form-color: rgba(0, 0, 0, 0.25);
+
+  /* Popup: pre-defined for upcoming CosmographPopup widget */
+  --cosmograph-popup-background: var(--graph-panel-bg);
+  --cosmograph-popup-border-radius: 12px;
+  --cosmograph-popup-shadow: var(--graph-panel-shadow);
 
   --cosmograph-scrollbar-background: rgba(0, 0, 0, 0.08);
 }
@@ -206,11 +204,14 @@
   --graph-cluster-label-bg: rgba(28, 29, 33, 0.80);
   --graph-greyout-opacity: 0.15;
 
-  /* ── Cosmograph (explicit dark overrides) ── */
-  --cosmograph-timeline-background: var(--surface);
-  --cosmograph-timeline-text-color: var(--text-secondary);
+  /* ── Error states ── */
+  --error-bg: rgba(255, 107, 107, 0.10);
+  --error-border: rgba(255, 107, 107, 0.20);
+}
+
+/* Cosmograph dark — only widget-specific divergences from base vars */
+html.dark {
   --cosmograph-timeline-axis-color: rgba(255, 255, 255, 0.12);
-  --cosmograph-timeline-bar-color: var(--brand-accent-alt);
   --cosmograph-histogram-axis-color: rgba(255, 255, 255, 0.12);
   --cosmograph-histogram-bar-color: #527292;
   --cosmograph-size-legend-form-color: rgba(255, 255, 255, 0.25);
@@ -225,7 +226,7 @@
 .table-pagination [data-active] {
   background-color: transparent !important;
   border-color: transparent !important;
-  color: var(--color-golden-yellow) !important;
+  color: var(--mode-accent) !important;
   font-weight: 700;
 }
 
@@ -247,9 +248,6 @@
     line-height: 1.5;
     color: var(--foreground);
     background-color: var(--background);
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -259,22 +257,18 @@
     color: var(--foreground);
   }
 
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: var(--text-tertiary);
-    border-radius: 3px;
-    opacity: 0.5;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--text-secondary);
-  }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   SCROLLBAR UTILITIES
+   ═══════════════════════════════════════════════════════════════════ */
+.scrollbar-hidden { scrollbar-width: none; }
+.scrollbar-hidden::-webkit-scrollbar { display: none; }
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-tertiary) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--text-tertiary); border-radius: 2px; }
