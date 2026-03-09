@@ -217,8 +217,18 @@ export interface GraphSelectionDetail {
   paper: GraphPaperDetail | null
 }
 
+export interface GraphQueryResult {
+  appliedLimit: number | null
+  columns: string[]
+  durationMs: number
+  executedSql: string
+  rowCount: number
+  rows: Array<Record<string, unknown>>
+}
+
 export interface GraphBundleQueries {
   getSelectionDetail: (node: ChunkNode) => Promise<GraphSelectionDetail>
+  runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
 }
 
 export type GraphMode = 'ask' | 'explore' | 'learn' | 'write'
@@ -236,16 +246,16 @@ export type ColorSchemeName =
 
 export type FilterableColumnKey = Exclude<keyof ChunkNode, 'index' | 'color'>
 
-export interface NumericGraphFilter {
-  column: FilterableColumnKey
-  type: 'numeric'
-  selection?: [number, number]
-}
+export type NumericColumnKey =
+  | 'clusterProbability'
+  | 'outlierScore'
+  | 'year'
+  | 'pageNumber'
+  | 'tokenCount'
+  | 'x'
+  | 'y'
 
-export interface CategoricalGraphFilter {
-  column: FilterableColumnKey
-  type: 'categorical'
-  selection?: string
-}
+export type DataColumnKey = FilterableColumnKey
 
-export type GraphFilter = NumericGraphFilter | CategoricalGraphFilter
+export type SizeColumnKey = 'none' | NumericColumnKey
+

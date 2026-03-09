@@ -12,11 +12,7 @@ import { getPaletteColors } from "@/lib/graph/colors";
 import type { ChunkNode, GraphData, PointColorStrategy } from "@/lib/graph/types";
 import type { GraphCanvasSource } from "@/lib/graph/duckdb";
 
-// Brand color constants for Cosmograph config props (WebGL needs actual values, not CSS vars)
-const BRAND = {
-  light: { bg: "#f8f9fa", ring: "#747caa", label: "#1a1b1e", greyout: 0.25 },
-  dark: { bg: "#111113", ring: "#a8c5e9", label: "#e4e4e9", greyout: 0.15 },
-} as const;
+import { BRAND } from "@/lib/graph/brand-colors";
 
 export default function CosmographRenderer({
   data,

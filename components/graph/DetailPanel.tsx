@@ -14,7 +14,18 @@ import {
 import { ExternalLink } from "lucide-react";
 import { useGraphStore } from "@/lib/graph/stores";
 import { formatNumber } from "@/lib/helpers";
-import { PanelShell, sectionLabelStyle } from "./PanelShell";
+import {
+  PanelShell,
+  panelBodyTextClassName,
+  panelCardClassName,
+  panelCardStyle,
+  panelMetaTextClassName,
+  panelStatValueTextClassName,
+  panelTitleTextClassName,
+  panelTextStyle,
+  panelTextDimStyle,
+  sectionLabelStyle,
+} from "./PanelShell";
 import type {
   GraphBundleQueries,
   GraphPaperDetail,
@@ -30,20 +41,17 @@ function Metric({
 }) {
   return (
     <div
-      className="rounded-2xl px-3 py-3"
-      style={{
-        backgroundColor: "var(--graph-panel-input-bg)",
-        border: "1px solid var(--graph-panel-border)",
-      }}
+      className={panelCardClassName}
+      style={panelCardStyle}
     >
       <Text size="xs" fw={600} style={sectionLabelStyle}>
         {label}
       </Text>
       <Text
         mt={4}
-        size="sm"
         fw={600}
-        style={{ color: "var(--graph-panel-text)" }}
+        className={panelStatValueTextClassName}
+        style={panelTextStyle}
       >
         {value == null ? "—" : formatNumber(value)}
       </Text>
@@ -67,8 +75,7 @@ function LinkRow({
       href={href}
       target="_blank"
       rel="noreferrer"
-      size="sm"
-      className="inline-flex items-center gap-1"
+      className={`inline-flex items-center gap-1 ${panelMetaTextClassName}`}
       style={{ color: "var(--brand-accent)" }}
     >
       {label}
@@ -96,6 +103,16 @@ function buildPaperLinks(paper: GraphPaperDetail | null) {
       : null,
   };
 }
+
+const accordionStyles = {
+  item: {
+    backgroundColor: "var(--graph-panel-input-bg)",
+    borderColor: "var(--graph-panel-border)",
+  },
+  control: { color: "var(--graph-panel-text)" },
+  label: { fontSize: "0.75rem", fontWeight: 600 },
+  content: { color: "var(--graph-panel-text-dim)" },
+} as const;
 
 export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
   const selectedNode = useGraphStore((s) => s.selectedNode);
@@ -179,7 +196,7 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
       width={380}
       onClose={() => selectNode(null)}
     >
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="scrollbar-thin flex-1 overflow-y-auto px-4 pb-4">
         <Stack gap="md">
           <Group gap="xs">
             <Badge
@@ -223,17 +240,17 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
 
           <div>
             <Text
-              size="lg"
               fw={600}
-              style={{ color: "var(--graph-panel-text)" }}
+              className={panelTitleTextClassName}
+              style={panelTextStyle}
             >
               {title}
             </Text>
             {subtitle && (
               <Text
                 mt={4}
-                size="sm"
-                style={{ color: "var(--graph-panel-text-dim)" }}
+                className={panelMetaTextClassName}
+                style={panelTextDimStyle}
               >
                 {subtitle}
               </Text>
@@ -250,24 +267,23 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
               <Group gap="xs">
                 <Loader size="xs" color="var(--brand-accent)" />
                 <Text
-                  size="sm"
-                  style={{ color: "var(--graph-panel-text-dim)" }}
+                  className={panelMetaTextClassName}
+                  style={panelTextDimStyle}
                 >
                   Querying local bundle…
                 </Text>
               </Group>
             ) : error ? (
-              <Text size="sm" style={{ color: "var(--graph-panel-text-dim)" }}>
+              <Text
+                className={panelMetaTextClassName}
+                style={panelTextDimStyle}
+              >
                 {error}
               </Text>
             ) : (
               <Text
-                size="sm"
-                style={{
-                  color: "var(--graph-panel-text)",
-                  lineHeight: 1.65,
-                  whiteSpace: "pre-wrap",
-                }}
+                className={panelBodyTextClassName}
+                style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}
               >
                 {chunk?.chunkText ?? selectedNode.chunkPreview ?? "No chunk text available."}
               </Text>
@@ -279,7 +295,10 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
               Paper
             </Text>
             <Stack gap={6}>
-              <Text size="sm" style={{ color: "var(--graph-panel-text)" }}>
+              <Text
+                className={panelBodyTextClassName}
+                style={panelTextStyle}
+              >
                 {paper?.authors.length
                   ? paper.authors.map((author) => author.name).join(", ")
                   : "Authors unavailable"}
@@ -309,22 +328,7 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
 
           <Accordion
             variant="separated"
-            styles={{
-              item: {
-                backgroundColor: "var(--graph-panel-input-bg)",
-                borderColor: "var(--graph-panel-border)",
-              },
-              control: {
-                color: "var(--graph-panel-text)",
-              },
-              label: {
-                fontSize: "0.85rem",
-                fontWeight: 600,
-              },
-              content: {
-                color: "var(--graph-panel-text-dim)",
-              },
-            }}
+            styles={accordionStyles}
           >
             <Accordion.Item value="cluster">
               <Accordion.Control>
@@ -372,8 +376,8 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
                 <Stack gap="sm">
                   {exemplars.length === 0 && (
                     <Text
-                      size="sm"
-                      style={{ color: "var(--graph-panel-text-dim)" }}
+                      className={panelMetaTextClassName}
+                      style={panelTextDimStyle}
                     >
                       No exemplar rows available for this cluster.
                     </Text>
@@ -381,25 +385,25 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
                   {exemplars.map((exemplar) => (
                     <div
                       key={`${exemplar.clusterId}:${exemplar.rank}:${exemplar.ragChunkId}`}
-                      className="rounded-2xl px-3 py-3"
+                      className={panelCardClassName}
                       style={{
+                        ...panelCardStyle,
                         backgroundColor: "var(--surface)",
-                        border: "1px solid var(--graph-panel-border)",
                       }}
                     >
                       <Group justify="space-between" align="flex-start">
                         <div>
                           <Text
-                            size="sm"
                             fw={600}
-                            style={{ color: "var(--graph-panel-text)" }}
+                            className={panelMetaTextClassName}
+                            style={panelTextStyle}
                           >
                             #{exemplar.rank} {exemplar.citekey ?? exemplar.paperTitle ?? "Exemplar"}
                           </Text>
                           <Text
                             mt={2}
                             size="xs"
-                            style={{ color: "var(--graph-panel-text-dim)" }}
+                            style={panelTextDimStyle}
                           >
                             {[exemplar.sectionCanonical, exemplar.pageNumber != null ? `p. ${exemplar.pageNumber}` : null]
                               .filter(Boolean)
@@ -422,10 +426,9 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
                       </Group>
                       <Text
                         mt={8}
-                        size="sm"
+                        className={panelBodyTextClassName}
                         style={{
                           color: "var(--graph-panel-text)",
-                          lineHeight: 1.6,
                         }}
                       >
                         {exemplar.chunkPreview ?? "No preview available."}
@@ -442,10 +445,9 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
               </Accordion.Control>
               <Accordion.Panel>
                 <Text
-                  size="sm"
+                  className={panelBodyTextClassName}
                   style={{
                     color: "var(--graph-panel-text)",
-                    lineHeight: 1.6,
                     whiteSpace: "pre-wrap",
                   }}
                 >
@@ -463,13 +465,13 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <Text size="xs" style={{ color: "var(--graph-panel-text-dim)" }}>
+      <Text className={panelMetaTextClassName} style={panelTextDimStyle}>
         {label}
       </Text>
       <Text
-        size="xs"
         fw={600}
-        style={{ color: "var(--graph-panel-text)" }}
+        className={panelMetaTextClassName}
+        style={panelTextStyle}
       >
         {value}
       </Text>

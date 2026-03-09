@@ -23,7 +23,14 @@ export interface ModeLayout {
 export interface ModeConfig {
   key: GraphMode
   label: string
+  /** Hero color hex — used for PromptBox toggles and Mantine `color` props. */
   color: string
+  /**
+   * CSS variable name (without `var()`) that holds this mode's color.
+   * Must reference a variable defined in globals.css with light/dark variants.
+   * ModeColorSync sets `--mode-accent: var(<colorVar>)` on the root element.
+   */
+  colorVar: string
   placeholder: string
   layout: ModeLayout
 }
@@ -41,6 +48,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
     key: 'ask',
     label: 'Ask',
     color: '#a8c5e9', // soft-blue
+    colorVar: '--color-soft-blue',
     placeholder: 'Ask the knowledge graph...',
     layout: {
       showToolbar: false,
@@ -56,6 +64,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
     key: 'explore',
     label: 'Explore',
     color: '#fbb44e', // golden-yellow
+    colorVar: '--color-golden-yellow',
     placeholder: 'Explore the knowledge graph...',
     layout: {
       showToolbar: true,
@@ -64,13 +73,14 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
-      availablePanels: ['config', 'filters', 'info'],
+      availablePanels: ['config', 'filters', 'info', 'query'],
     },
   },
   learn: {
     key: 'learn',
     label: 'Learn',
     color: '#aedc93', // fresh-green
+    colorVar: '--color-fresh-green',
     placeholder: 'Learn from the knowledge graph...',
     layout: {
       showToolbar: false,
@@ -86,6 +96,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
     key: 'write',
     label: 'Write',
     color: '#ffada4', // warm-coral
+    colorVar: '--color-warm-coral',
     placeholder: 'Write with the knowledge graph...',
     layout: {
       showToolbar: false,

@@ -39,13 +39,15 @@ Premium quality that never shouts. The word "elegant" is intentionally woven thr
 
 | Role | Font | Weight Range |
 |------|------|-------------|
-| All text | Inter | 300–700 |
+| All text | System font stack | 300–700 |
 | Code | JetBrains Mono | 400 |
 
 ```css
---font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
---font-mono: "JetBrains Mono", "Fira Code", Consolas, monospace;
+--font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+--font-mono: "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, Courier, monospace;
 ```
+
+> **Note**: No web fonts are downloaded. The system font stack ensures fastest possible load with native platform typography (SF Pro on macOS/iOS, Segoe UI on Windows, Roboto on Android/ChromeOS).
 
 Headings: `font-weight: 500`, `line-height: 1.25`. Body: `font-weight: 400`, `line-height: 1.5`.
 

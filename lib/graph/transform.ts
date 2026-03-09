@@ -1,3 +1,4 @@
+import { coerceNullableNumber, coerceNullableString } from '../helpers'
 import { getClusterColor } from './colors'
 import type {
   ChunkNode,
@@ -82,23 +83,6 @@ interface BuildGraphDataArgs {
   clusters: GraphClusterRow[]
   facets: GraphFacetRow[]
   points: GraphPointRow[]
-}
-
-function coerceNullableNumber(value: number | string | null | undefined) {
-  if (value == null || value === '') {
-    return null
-  }
-
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function coerceNullableString(value: number | string | null | undefined) {
-  if (value == null || value === '') {
-    return null
-  }
-
-  return String(value)
 }
 
 export function buildGraphData({

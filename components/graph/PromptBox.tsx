@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { MODE_ORDER, getModeConfig } from "@/lib/graph/modes";
+import { DARK_ON_COLOR } from "@/lib/graph/brand-colors";
 import type { GraphMode } from "@/lib/graph/types";
 
 const SPRING = { type: "spring" as const, stiffness: 300, damping: 30 };
@@ -210,7 +211,7 @@ export function PromptBox() {
             className="flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0"
             style={{
               backgroundColor: activeMode.color,
-              color: "#1a1b1e",
+              color: DARK_ON_COLOR,
             }}
             aria-label="Submit prompt"
           >

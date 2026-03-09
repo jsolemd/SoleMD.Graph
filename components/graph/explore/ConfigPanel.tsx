@@ -1,6 +1,6 @@
 "use client";
 
-import { ScrollArea, Stack, Text } from "@mantine/core";
+import { ScrollArea } from "@mantine/core";
 import { useDashboardStore } from "@/lib/graph/stores";
 import { PanelShell } from "../PanelShell";
 import { PointsConfig } from "./PointsConfig";
@@ -15,13 +15,7 @@ export function ConfigPanel() {
       onClose={() => setActivePanel(null)}
     >
       <ScrollArea className="flex-1" px="md" py="sm">
-        <Stack gap="md">
-          <Text size="xs" style={{ color: "var(--graph-panel-text-dim)" }}>
-            These controls are wired directly to the active Cosmograph instance.
-            No placeholder tabs or inactive settings.
-          </Text>
-          <PointsConfig />
-        </Stack>
+        <PointsConfig />
       </ScrollArea>
     </PanelShell>
   );

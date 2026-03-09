@@ -2,6 +2,8 @@ import 'client-only'
 
 import * as duckdb from '@duckdb/duckdb-wasm'
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
+import { coerceNullableNumber, coerceNullableString } from '../helpers'
+import { NOISE_COLOR, DEFAULT_POINT_COLOR } from './brand-colors'
 import { getPaletteColors } from './colors'
 import {
   buildGraphData,
@@ -17,6 +19,7 @@ import type {
   GraphBundle,
   GraphData,
   GraphPaperDetail,
+  GraphQueryResult,
   GraphSelectionDetail,
   PaperAuthor,
 } from './types'
@@ -33,6 +36,7 @@ interface GraphBundleSession {
   canvas: GraphCanvasSource
   data: GraphData
   getSelectionDetail: (node: ChunkNode) => Promise<GraphSelectionDetail>
+  runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
 }
 
 interface BundleRelationResolver {
@@ -129,6 +133,16 @@ interface GraphChunkDetailRow {
 }
 
 const DEFAULT_CLUSTER_COLORS = getPaletteColors('default')
+const READ_ONLY_QUERY_PREFIXES = new Set([
+  'describe',
+  'explain',
+  'pragma',
+  'select',
+  'show',
+  'values',
+  'with',
+])
+const MAX_READ_ONLY_QUERY_ROWS = 200
 
 let selectedBundlePromise: Promise<duckdb.DuckDBBundle> | null = null
 const sessionCache = new Map<string, Promise<GraphBundleSession>>()
@@ -143,23 +157,6 @@ function getAbsoluteUrl(relativeOrAbsoluteUrl: string) {
 
 function escapeSqlString(value: string) {
   return value.replaceAll("'", "''")
-}
-
-function coerceNullableNumber(value: number | string | null | undefined) {
-  if (value == null || value === '') {
-    return null
-  }
-
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-function coerceNullableString(value: number | string | null | undefined) {
-  if (value == null || value === '') {
-    return null
-  }
-
-  return String(value)
 }
 
 function normalizeValue(value: unknown): unknown {
@@ -189,6 +186,74 @@ function mapQueryRows<T>(table: { toArray(): Array<T & { toJSON?: () => unknown 
     .map((row) =>
       normalizeValue(typeof row.toJSON === 'function' ? row.toJSON() : row)
     ) as T[]
+}
+
+function getQueryColumns(table: unknown, rows: Array<Record<string, unknown>>) {
+  const schemaFields = (
+    table as { schema?: { fields?: Array<{ name: string }> } }
+  ).schema?.fields
+
+  if (schemaFields && schemaFields.length > 0) {
+    return schemaFields.map((field) => field.name)
+  }
+
+  return rows[0] ? Object.keys(rows[0]) : []
+}
+
+function normalizeReadOnlySql(sql: string) {
+  return sql.trim().replace(/;+$/g, '').trim()
+}
+
+function buildReadOnlyQuery(sql: string) {
+  const normalized = normalizeReadOnlySql(sql)
+
+  if (!normalized) {
+    throw new Error('Enter a SQL query to run against the local graph bundle.')
+  }
+
+  if (normalized.includes(';')) {
+    throw new Error('Run one statement at a time in the DuckDB query panel.')
+  }
+
+  const firstKeywordMatch = normalized.match(/^[a-z]+/i)
+  const firstKeyword = firstKeywordMatch?.[0]?.toLowerCase()
+
+  if (!firstKeyword || !READ_ONLY_QUERY_PREFIXES.has(firstKeyword)) {
+    throw new Error(
+      'Only read-only SELECT/SHOW/DESCRIBE/PRAGMA/EXPLAIN statements are allowed here.'
+    )
+  }
+
+  if (firstKeyword === 'select' || firstKeyword === 'with' || firstKeyword === 'values') {
+    return {
+      appliedLimit: MAX_READ_ONLY_QUERY_ROWS,
+      sql: `SELECT * FROM (${normalized}) AS dev_query LIMIT ${MAX_READ_ONLY_QUERY_ROWS}`,
+    }
+  }
+
+  return {
+    appliedLimit: null,
+    sql: normalized,
+  }
+}
+
+async function executeReadOnlyQuery(
+  conn: AsyncDuckDBConnection,
+  sql: string
+): Promise<GraphQueryResult> {
+  const query = buildReadOnlyQuery(sql)
+  const startedAt = performance.now()
+  const resultTable = await conn.query(query.sql)
+  const rows = mapQueryRows<Record<string, unknown>>(resultTable)
+
+  return {
+    appliedLimit: query.appliedLimit,
+    columns: getQueryColumns(resultTable, rows),
+    durationMs: Number((performance.now() - startedAt).toFixed(1)),
+    executedSql: query.sql,
+    rowCount: rows.length,
+    rows,
+  }
 }
 
 async function getSelectedDuckDBBundle() {
@@ -253,8 +318,14 @@ async function resolveBundleRelations(
     await conn.query(`ATTACH '${escapeSqlString(absoluteDuckdbUrl)}' AS graph_bundle`)
     await conn.query('SELECT 1 FROM graph_bundle.graph_points LIMIT 1')
 
+    for (const tableName of Object.keys(bundle.bundleManifest.tables)) {
+      await conn.query(
+        `CREATE OR REPLACE VIEW ${tableName} AS SELECT * FROM graph_bundle.${tableName}`
+      )
+    }
+
     return {
-      relation: (tableName) => `graph_bundle.${tableName}`,
+      relation: (tableName) => tableName,
     }
   } catch {
     for (const [tableName, tableUrl] of Object.entries(bundle.tableUrls)) {
@@ -425,10 +496,10 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
         ROW_NUMBER() OVER (ORDER BY cluster_id, paper_id, chunk_index, node_id) - 1 AS index,
         node_id AS id,
         CASE
-          WHEN COALESCE(cluster_id, 0) = 0 THEN '#555555'
+          WHEN COALESCE(cluster_id, 0) = 0 THEN '${NOISE_COLOR}'
           ELSE CASE MOD(COALESCE(cluster_id, 0), ${DEFAULT_CLUSTER_COLORS.length})
         ${colorCase}
-            ELSE '#a8c5e9'
+            ELSE '${DEFAULT_POINT_COLOR}'
           END
         END AS color,
         x,
@@ -573,6 +644,9 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
         pointsTableName: 'graph_points_web',
       },
       data,
+      runReadOnlyQuery(sql: string) {
+        return executeReadOnlyQuery(conn, sql)
+      },
       getSelectionDetail(node: ChunkNode) {
         const cached = selectionCache.get(node.id)
 

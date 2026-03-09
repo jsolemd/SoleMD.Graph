@@ -1,3 +1,4 @@
+import { NOISE_COLOR } from './brand-colors'
 import type { ColorSchemeName } from './types'
 
 const CLUSTER_PALETTE = [
@@ -52,6 +53,6 @@ export function getPaletteColors(schemeName: ColorSchemeName): string[] {
 }
 
 export function getClusterColor(clusterId: number): string {
-  if (clusterId === 0) return '#555555' // noise (HDBSCAN cluster 0)
+  if (clusterId === 0) return NOISE_COLOR // noise (HDBSCAN cluster 0)
   return CLUSTER_PALETTE[clusterId % CLUSTER_PALETTE.length]
 }

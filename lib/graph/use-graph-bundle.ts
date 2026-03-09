@@ -46,6 +46,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           error: null,
           queries: {
             getSelectionDetail: session.getSelectionDetail,
+            runReadOnlyQuery: session.runReadOnlyQuery,
           },
         })
       })

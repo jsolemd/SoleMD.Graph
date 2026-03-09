@@ -2,13 +2,24 @@ import { create } from 'zustand'
 import { getColumnMeta } from '../columns'
 import type {
   ColorSchemeName,
+  DataColumnKey,
   FilterableColumnKey,
-  GraphFilter,
+  NumericColumnKey,
   PointColorStrategy,
   PointSizeStrategy,
+  SizeColumnKey,
 } from '../types'
 
-export type ActivePanel = 'config' | 'filters' | 'info' | null
+/** Curated default filters — one per concept, no redundant pairs. */
+const DEFAULT_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
+  { column: 'clusterLabel', type: 'categorical' },
+  { column: 'journal', type: 'categorical' },
+  { column: 'sectionCanonical', type: 'categorical' },
+  { column: 'chunkKind', type: 'categorical' },
+  { column: 'year', type: 'numeric' },
+]
+
+export type ActivePanel = 'config' | 'filters' | 'info' | 'query' | null
 export type TableView = 'visible' | 'selected'
 
 interface DashboardState {
@@ -16,21 +27,21 @@ interface DashboardState {
   activePanel: ActivePanel
   tableOpen: boolean
   tableHeight: number
+  uiHidden: boolean
 
   // Config: Points
-  pointColorColumn: string
+  pointColorColumn: DataColumnKey | 'color'
   pointColorStrategy: PointColorStrategy
-  pointSizeColumn: string
+  pointSizeColumn: SizeColumnKey
   pointSizeRange: [number, number]
-  pointLabelColumn: string
+  pointLabelColumn: DataColumnKey
   showPointLabels: boolean
   showDynamicLabels: boolean
-  positionXColumn: string
-  positionYColumn: string
+  positionXColumn: NumericColumnKey
+  positionYColumn: NumericColumnKey
 
-  // Filters
-  filters: GraphFilter[]
-  filtersResetVersion: number
+  // Filters — which widgets to show (selection state lives inside Cosmograph crossfilter)
+  filterColumns: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }>
 
   // Table
   tablePage: number
@@ -52,6 +63,7 @@ interface DashboardState {
 
   // Timeline
   showTimeline: boolean
+  timelineColumn: NumericColumnKey
   timelineSelection?: [number, number]
 
   // Write mode
@@ -68,27 +80,19 @@ interface DashboardState {
   setTableOpen: (open: boolean) => void
   toggleTable: () => void
   setTableHeight: (height: number) => void
-  setPointColorColumn: (col: string) => void
+  setUiHidden: (hidden: boolean) => void
+  toggleUiHidden: () => void
+  setPointColorColumn: (col: DataColumnKey | 'color') => void
   setPointColorStrategy: (strategy: PointColorStrategy) => void
-  setPointSizeColumn: (col: string) => void
+  setPointSizeColumn: (col: SizeColumnKey) => void
   setPointSizeRange: (range: [number, number]) => void
-  setPointLabelColumn: (col: string) => void
+  setPointLabelColumn: (col: DataColumnKey) => void
   setShowPointLabels: (show: boolean) => void
   setShowDynamicLabels: (show: boolean) => void
-  setPositionXColumn: (col: string) => void
-  setPositionYColumn: (col: string) => void
+  setPositionXColumn: (col: NumericColumnKey) => void
+  setPositionYColumn: (col: NumericColumnKey) => void
   addFilter: (column: FilterableColumnKey) => void
   removeFilter: (column: FilterableColumnKey) => void
-  clearFilterSelection: (column: FilterableColumnKey) => void
-  clearAllFilterSelections: () => void
-  setCategoricalFilterSelection: (
-    column: FilterableColumnKey,
-    selection?: string
-  ) => void
-  setNumericFilterSelection: (
-    column: FilterableColumnKey,
-    selection?: [number, number]
-  ) => void
   setTablePage: (page: number) => void
   setTablePageSize: (size: number) => void
   setTableView: (view: TableView) => void
@@ -101,6 +105,7 @@ interface DashboardState {
   setRenderHoveredPointRing: (show: boolean) => void
   setShowTimeline: (show: boolean) => void
   toggleTimeline: () => void
+  setTimelineColumn: (col: NumericColumnKey) => void
   setTimelineSelection: (selection?: [number, number]) => void
   setWriteContent: (content: string) => void
   setFilteredPointIndices: (indices: number[] | null) => void
@@ -113,6 +118,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   activePanel: null,
   tableOpen: false,
   tableHeight: 280,
+  uiHidden: false,
 
   // Config defaults
   pointColorColumn: 'clusterLabel',
@@ -120,14 +126,13 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   pointSizeColumn: 'clusterProbability',
   pointSizeRange: [1, 4],
   pointLabelColumn: 'clusterLabel',
-  showPointLabels: true,
-  showDynamicLabels: true,
+  showPointLabels: false,
+  showDynamicLabels: false,
   positionXColumn: 'x',
   positionYColumn: 'y',
 
-  // Filters
-  filters: [],
-  filtersResetVersion: 0,
+  // Filters — curated defaults; users can add/remove via panel
+  filterColumns: DEFAULT_FILTER_COLUMNS,
 
   // Table
   tablePage: 1,
@@ -148,7 +153,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   renderHoveredPointRing: true,
 
   // Timeline
-  showTimeline: true,
+  showTimeline: false,
+  timelineColumn: 'year',
   timelineSelection: undefined,
 
   // Write mode
@@ -166,6 +172,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setTableOpen: (open) => set({ tableOpen: open }),
   toggleTable: () => set((s) => ({ tableOpen: !s.tableOpen })),
   setTableHeight: (height) => set({ tableHeight: height }),
+  setUiHidden: (hidden) => set({ uiHidden: hidden }),
+  toggleUiHidden: () => set((s) => ({ uiHidden: !s.uiHidden })),
   setPointColorColumn: (col) => set({ pointColorColumn: col }),
   setPointColorStrategy: (strategy) => set({ pointColorStrategy: strategy }),
   setPointSizeColumn: (col) => set({ pointSizeColumn: col }),
@@ -177,51 +185,21 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setPositionYColumn: (col) => set({ positionYColumn: col }),
   addFilter: (column) =>
     set((s) => ({
-      filters: s.filters.some((filter) => filter.column === column)
-        ? s.filters
+      filterColumns: s.filterColumns.some((f) => f.column === column)
+        ? s.filterColumns
         : [
-            ...s.filters,
+            ...s.filterColumns,
             {
               column,
               type: getColumnMeta(column)?.type === 'numeric'
-                ? 'numeric'
-                : 'categorical',
+                ? ('numeric' as const)
+                : ('categorical' as const),
             },
           ],
     })),
   removeFilter: (column) =>
     set((s) => ({
-      filters: s.filters.filter((filter) => filter.column !== column),
-    })),
-  clearFilterSelection: (column) =>
-    set((s) => ({
-      filters: s.filters.map((filter) =>
-        filter.column === column ? { ...filter, selection: undefined } : filter
-      ),
-    })),
-  clearAllFilterSelections: () =>
-    set((s) => ({
-      filtersResetVersion: s.filtersResetVersion + 1,
-      filters: s.filters.map((filter) => ({
-        ...filter,
-        selection: undefined,
-      })),
-    })),
-  setCategoricalFilterSelection: (column, selection) =>
-    set((s) => ({
-      filters: s.filters.map((filter) =>
-        filter.column === column && filter.type === 'categorical'
-          ? { ...filter, selection }
-          : filter
-      ),
-    })),
-  setNumericFilterSelection: (column, selection) =>
-    set((s) => ({
-      filters: s.filters.map((filter) =>
-        filter.column === column && filter.type === 'numeric'
-          ? { ...filter, selection }
-          : filter
-      ),
+      filterColumns: s.filterColumns.filter((f) => f.column !== column),
     })),
   setTablePage: (page) => set({ tablePage: page }),
   setTablePageSize: (size) => set({ tablePageSize: size }),
@@ -235,6 +213,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setRenderHoveredPointRing: (show) => set({ renderHoveredPointRing: show }),
   setShowTimeline: (show) => set({ showTimeline: show }),
   toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
+  setTimelineColumn: (col) => set({ timelineColumn: col }),
   setTimelineSelection: (selection) => set({ timelineSelection: selection }),
   setWriteContent: (content) => set({ writeContent: content }),
   setFilteredPointIndices: (indices) => set({ filteredPointIndices: indices }),

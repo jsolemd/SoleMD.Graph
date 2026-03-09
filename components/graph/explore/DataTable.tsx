@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   Table,
   Text,
@@ -11,10 +11,11 @@ import {
 import { useCosmograph } from "@cosmograph/react";
 import { motion } from "framer-motion";
 import { useDashboardStore, useGraphStore } from "@/lib/graph/stores";
-import { PANEL_SPRING } from "../PanelShell";
+import { PANEL_SPRING, panelTableHeaderStyle, panelTextDimStyle } from "../PanelShell";
 import { TABLE_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
+import { useDragResize } from "@/lib/graph/hooks/use-drag-resize";
 import type { ChunkNode } from "@/lib/graph/types";
-import { clamp } from "@/lib/helpers";
+import { clamp, formatCellValue } from "@/lib/helpers";
 
 export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
   const tablePage = useDashboardStore((s) => s.tablePage);
@@ -64,30 +65,12 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
   const startIdx = (safePage - 1) * tablePageSize;
   const pageNodes = displayedNodes.slice(startIdx, startIdx + tablePageSize);
 
-  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
-
-  const handleDragStart = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      dragRef.current = { startY: e.clientY, startHeight: tableHeight };
-
-      const handleMove = (ev: MouseEvent) => {
-        if (!dragRef.current) return;
-        const delta = dragRef.current.startY - ev.clientY;
-        setTableHeight(clamp(dragRef.current.startHeight + delta, 120, 600));
-      };
-
-      const handleUp = () => {
-        dragRef.current = null;
-        document.removeEventListener("mousemove", handleMove);
-        document.removeEventListener("mouseup", handleUp);
-      };
-
-      document.addEventListener("mousemove", handleMove);
-      document.addEventListener("mouseup", handleUp);
-    },
-    [tableHeight, setTableHeight]
-  );
+  const { onMouseDown: handleDragStart } = useDragResize({
+    height: tableHeight,
+    min: 120,
+    max: 600,
+    onResize: setTableHeight,
+  });
 
   useEffect(() => {
     if (tablePage !== safePage) {
@@ -104,18 +87,6 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
     },
     [cosmograph, selectNode]
   );
-
-  const formatCell = (node: ChunkNode, key: keyof ChunkNode) => {
-    const val = node[key];
-    if (val == null) return "—";
-    if (typeof val === "number") {
-      if (key === "clusterProbability" || key === "outlierScore") return val.toFixed(3);
-      if (key === "x" || key === "y") return val.toFixed(2);
-      return String(val);
-    }
-    if (typeof val === "string" && val.length > 40) return val.slice(0, 37) + "...";
-    return String(val);
-  };
 
   return (
     <motion.div
@@ -152,7 +123,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
             value={tableView}
             onChange={(value) => setTableView(value as typeof tableView)}
           />
-          <Text size="xs" style={{ color: "var(--graph-panel-text-dim)" }}>
+          <Text size="xs" style={panelTextDimStyle}>
             {displayedNodes.length} of {nodes.length} rows
           </Text>
         </Group>
@@ -173,7 +144,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto px-2">
+      <div className="scrollbar-thin flex-1 overflow-auto px-2">
         <Table
           stickyHeader
           style={{ fontSize: "0.75rem" }}
@@ -192,14 +163,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
               }}
             >
               <Table.Th
-                style={{
-                  width: 40,
-                  fontSize: "0.7rem",
-                  color: "var(--graph-panel-text-muted)",
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.03em",
-                }}
+                style={{ ...panelTableHeaderStyle, width: 40 }}
               >
                 #
               </Table.Th>
@@ -208,13 +172,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
                 return (
                   <Table.Th
                     key={key}
-                    style={{
-                      fontSize: "0.7rem",
-                      color: "var(--graph-panel-text-muted)",
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.03em",
-                    }}
+                    style={panelTableHeaderStyle}
                   >
                     {meta?.label ?? key}
                   </Table.Th>
@@ -226,16 +184,29 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
             {pageNodes.map((node, i) => (
               <Table.Tr
                 key={node.id}
+                tabIndex={0}
+                aria-selected={selectedIndexSet.has(node.index) || selectedNode?.id === node.id}
                 onClick={() => handleRowClick(node)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleRowClick(node);
+                  }
+                }}
                 style={{
                   cursor: "pointer",
-                  backgroundColor:
+                  borderLeft:
                     selectedIndexSet.has(node.index) || selectedNode?.id === node.id
-                      ? "var(--graph-panel-active)"
+                      ? "3px solid var(--mode-accent)"
+                      : "3px solid transparent",
+                  backgroundColor:
+                    tableView === "visible" &&
+                    (selectedIndexSet.has(node.index) || selectedNode?.id === node.id)
+                      ? "var(--mode-accent-subtle)"
                       : undefined,
                 }}
               >
-                <Table.Td style={{ fontSize: "0.7rem", color: "var(--color-golden-yellow)" }}>
+                <Table.Td style={{ fontSize: "0.7rem", color: "var(--mode-accent)" }}>
                   {startIdx + i + 1}
                 </Table.Td>
                 {TABLE_COLUMNS.map((key) => (
@@ -250,7 +221,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
                       color: "var(--graph-panel-text)",
                     }}
                   >
-                    {formatCell(node, key)}
+                    {formatCellValue(node[key], { columnKey: key, truncate: 40 })}
                   </Table.Td>
                 ))}
               </Table.Tr>

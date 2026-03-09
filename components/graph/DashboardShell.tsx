@@ -15,10 +15,12 @@ import {
   Text,
 } from "@mantine/core";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
+import { panelCardClassName, panelCardStyle, panelTextStyle, panelTextDimStyle } from "./PanelShell";
 import { getModeConfig } from "@/lib/graph/modes";
 import { useGraphBundle } from "@/lib/graph/use-graph-bundle";
 import { formatNumber } from "@/lib/helpers";
 import { GraphCanvas } from "./GraphCanvas";
+import { ModeColorSync } from "./ModeColorSync";
 import { Wordmark } from "./Wordmark";
 import { PromptBox } from "./PromptBox";
 import { TimelineBar } from "./TimelineBar";
@@ -28,8 +30,10 @@ import { CanvasControls } from "./explore/CanvasControls";
 import { ConfigPanel } from "./explore/ConfigPanel";
 import { FiltersPanel } from "./explore/FiltersPanel";
 import { InfoPanel } from "./explore/InfoPanel";
+import { QueryPanel } from "./explore/QueryPanel";
 import { DataTable } from "./explore/DataTable";
 import { DetailPanel } from "./DetailPanel";
+import { HoverPopup } from "./HoverPopup";
 import type { GraphBundle } from "@/lib/graph/types";
 
 const legendStyle: React.CSSProperties = {
@@ -38,19 +42,6 @@ const legendStyle: React.CSSProperties = {
   backgroundColor: "var(--graph-panel-bg)",
   boxShadow: "var(--graph-panel-shadow)",
   padding: 8,
-};
-
-/**
- * Cosmograph injects :root CSS vars with dark defaults AFTER our stylesheet.
- * Inline styles on the shell container override them for all child widgets.
- */
-const cosmographTheme: Record<string, string> = {
-  "--cosmograph-ui-background": "var(--surface)",
-  "--cosmograph-ui-text": "var(--text-primary)",
-  "--cosmograph-ui-element-color": "var(--border-default)",
-  "--cosmograph-ui-highlighted-element-color": "var(--brand-accent)",
-  "--cosmograph-ui-selection-control-color": "var(--brand-accent)",
-  "--cosmograph-ui-font-family": "Inter, sans-serif",
 };
 
 function formatBundleBytes(bytes: number) {
@@ -109,7 +100,7 @@ function GraphBundleLoadingState({ bundle }: { bundle: GraphBundle }) {
                 mt={4}
                 size="lg"
                 fw={600}
-                style={{ color: "var(--graph-panel-text)" }}
+                style={panelTextStyle}
               >
                 Loading {bundle.graphName} / {bundle.nodeKind}
               </Text>
@@ -117,7 +108,7 @@ function GraphBundleLoadingState({ bundle }: { bundle: GraphBundle }) {
             <Loader size="sm" color="var(--brand-accent)" />
           </Group>
 
-          <Text size="sm" style={{ color: "var(--graph-panel-text-dim)" }}>
+          <Text size="sm" style={panelTextDimStyle}>
             PostgreSQL resolved the active run. The browser is now mounting the
             checksum-scoped bundle into DuckDB-Wasm.
           </Text>
@@ -192,13 +183,13 @@ function GraphBundleErrorState({ error }: { error: Error }) {
               mt={4}
               size="lg"
               fw={600}
-              style={{ color: "var(--graph-panel-text)" }}
+              style={panelTextStyle}
             >
               Bundle load failed
             </Text>
           </div>
 
-          <Text size="sm" style={{ color: "var(--graph-panel-text-dim)" }}>
+          <Text size="sm" style={panelTextDimStyle}>
             {error.message}
           </Text>
 
@@ -224,11 +215,8 @@ function GraphBundleErrorState({ error }: { error: Error }) {
 function BundleStat({ label, value }: { label: string; value: string }) {
   return (
     <div
-      className="rounded-2xl px-3 py-3"
-      style={{
-        backgroundColor: "var(--graph-panel-input-bg)",
-        border: "1px solid var(--graph-panel-border)",
-      }}
+      className={panelCardClassName}
+      style={panelCardStyle}
     >
       <Text
         size="xs"
@@ -245,7 +233,7 @@ function BundleStat({ label, value }: { label: string; value: string }) {
         mt={4}
         size="sm"
         fw={600}
-        style={{ color: "var(--graph-panel-text)" }}
+        style={panelTextStyle}
       >
         {value}
       </Text>
@@ -257,6 +245,7 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
   const mode = useGraphStore((s) => s.mode);
   const activePanel = useDashboardStore((s) => s.activePanel);
   const tableOpen = useDashboardStore((s) => s.tableOpen);
+  const uiHidden = useDashboardStore((s) => s.uiHidden);
   const showColorLegend = useDashboardStore((s) => s.showColorLegend);
   const showSizeLegend = useDashboardStore((s) => s.showSizeLegend);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
@@ -276,16 +265,14 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
 
   return (
     <CosmographProvider>
+      <ModeColorSync />
       <div
         className="fixed inset-0 flex flex-col"
-        style={{
-          backgroundColor: "var(--graph-bg)",
-          ...cosmographTheme,
-        } as React.CSSProperties}
+        style={{ backgroundColor: "var(--graph-bg)" }}
       >
         <div className="flex flex-1 overflow-hidden">
           <AnimatePresence>
-            {layout.showToolbar && <LeftToolbar />}
+            {!uiHidden && layout.showToolbar && <LeftToolbar />}
           </AnimatePresence>
 
           <div className="relative flex-1">
@@ -293,23 +280,44 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
             <Wordmark />
 
             <AnimatePresence>
-              {layout.availablePanels.includes("config") &&
+              {!uiHidden &&
+                layout.availablePanels.includes("config") &&
                 activePanel === "config" && <ConfigPanel />}
             </AnimatePresence>
             <AnimatePresence>
-              {layout.availablePanels.includes("filters") &&
-                activePanel === "filters" && <FiltersPanel facets={data.facets} />}
+              {!uiHidden &&
+                layout.availablePanels.includes("filters") &&
+                activePanel === "filters" && <FiltersPanel />}
             </AnimatePresence>
             <AnimatePresence>
-              {layout.availablePanels.includes("info") &&
-                activePanel === "info" && <InfoPanel stats={data.stats} />}
+              {!uiHidden &&
+                layout.availablePanels.includes("info") &&
+                activePanel === "info" && <InfoPanel data={data} />}
             </AnimatePresence>
             <AnimatePresence>
-              <DetailPanel queries={queries} />
+              {!uiHidden && (
+                <>
+                  {layout.availablePanels.includes("query") &&
+                    activePanel === "query" && (
+                      <QueryPanel
+                        bundle={bundle}
+                        runReadOnlyQuery={queries.runReadOnlyQuery}
+                      />
+                    )}
+                  <DetailPanel queries={queries} />
+                </>
+              )}
             </AnimatePresence>
 
-            {layout.showLegends && showColorLegend && (
-              <div className="absolute bottom-4 left-4 z-30">
+            {!uiHidden && layout.showLegends && showColorLegend && (
+              <div
+                className="absolute bottom-4 z-30 transition-[left] duration-200"
+                style={{
+                  left: activePanel
+                    ? (activePanel === "query" ? 420 : activePanel === "info" ? 320 : 300) + 16
+                    : 16,
+                }}
+              >
                 {isContinuousColor ? (
                   <CosmographRangeColorLegend style={legendStyle} />
                 ) : (
@@ -321,26 +329,30 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
               </div>
             )}
 
-            {layout.showLegends && showSizeLegend && (
+            {!uiHidden && layout.showLegends && showSizeLegend && (
               <div className="absolute bottom-20 right-4 z-30">
                 <CosmographSizeLegend selectOnClick style={legendStyle} />
               </div>
             )}
 
             <AnimatePresence>
-              {layout.showCanvasControls && <CanvasControls />}
+              {!uiHidden && layout.showCanvasControls && <CanvasControls />}
             </AnimatePresence>
+
+            <HoverPopup />
           </div>
         </div>
 
-        {layout.showTimeline && showTimeline && <TimelineBar />}
+        {!uiHidden && layout.showTimeline && showTimeline && <TimelineBar />}
 
         <AnimatePresence>
-          {layout.showDataTable && tableOpen && <DataTable nodes={data.nodes} />}
+          {!uiHidden &&
+            layout.showDataTable &&
+            tableOpen && <DataTable nodes={data.nodes} />}
         </AnimatePresence>
 
-        <PromptBox />
-        {layout.showStatsBar && <StatsBar stats={data.stats} />}
+        {!uiHidden && <PromptBox />}
+        {!uiHidden && layout.showStatsBar && <StatsBar stats={data.stats} />}
       </div>
     </CosmographProvider>
   );

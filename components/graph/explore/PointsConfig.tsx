@@ -6,10 +6,13 @@ import { NUMERIC_COLUMNS, ALL_DATA_COLUMNS } from "@/lib/graph/columns";
 import { getPaletteColors } from "@/lib/graph/colors";
 import type {
   ColorSchemeName,
+  DataColumnKey,
+  NumericColumnKey,
   PointColorStrategy,
   PointSizeStrategy,
+  SizeColumnKey,
 } from "@/lib/graph/types";
-import { sectionLabelStyle, panelSelectStyles } from "../PanelShell";
+import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle } from "../PanelShell";
 
 const COLOR_STRATEGY_OPTIONS = [
   { value: "direct", label: "Direct (hex values)" },
@@ -54,7 +57,17 @@ const positionOptions = NUMERIC_COLUMNS.map((c) => ({
   label: c.label,
 }));
 
+/** Active mode accent for interactive Mantine controls. */
+const ACCENT = "var(--mode-accent)";
+
 const switchLabelStyle = { label: { color: "var(--graph-panel-text)" } };
+
+const TIME_COLUMN_OPTIONS = [
+  { value: "year", label: "Publication Year" },
+  ...NUMERIC_COLUMNS.filter((c) => c.key !== "year" && c.key !== "x" && c.key !== "y").map(
+    (c) => ({ value: c.key, label: c.label })
+  ),
+];
 
 function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
   const colors = getPaletteColors(schemeName);
@@ -117,6 +130,10 @@ export function PointsConfig() {
   );
   const setPositionXColumn = useDashboardStore((s) => s.setPositionXColumn);
   const setPositionYColumn = useDashboardStore((s) => s.setPositionYColumn);
+  const timelineColumn = useDashboardStore((s) => s.timelineColumn);
+  const setTimelineColumn = useDashboardStore((s) => s.setTimelineColumn);
+  const showTimeline = useDashboardStore((s) => s.showTimeline);
+  const setShowTimeline = useDashboardStore((s) => s.setShowTimeline);
 
   return (
     <Stack gap="lg">
@@ -131,7 +148,7 @@ export function PointsConfig() {
             label="Column"
             data={colorColumnOptions}
             value={pointColorColumn}
-            onChange={(v) => v && setPointColorColumn(v)}
+            onChange={(v) => v && setPointColorColumn(v as DataColumnKey | 'color')}
             styles={panelSelectStyles}
           />
           <Select
@@ -157,6 +174,7 @@ export function PointsConfig() {
           </div>
           <Switch
             size="xs"
+            color={ACCENT}
             label="Show color legend"
             checked={showColorLegend}
             onChange={(e) => setShowColorLegend(e.currentTarget.checked)}
@@ -176,7 +194,7 @@ export function PointsConfig() {
             label="Column"
             data={sizeColumnOptions}
             value={pointSizeColumn}
-            onChange={(v) => v && setPointSizeColumn(v)}
+            onChange={(v) => v && setPointSizeColumn(v as SizeColumnKey)}
             styles={panelSelectStyles}
           />
           <Select
@@ -193,12 +211,13 @@ export function PointsConfig() {
             <Text
               size="xs"
               mb={4}
-              style={{ color: "var(--graph-panel-text-muted)" }}
+              style={panelTextMutedStyle}
             >
               Size range: {pointSizeRange[0]} &ndash; {pointSizeRange[1]}
             </Text>
             <Slider
               size="xs"
+              color={ACCENT}
               min={1}
               max={30}
               step={1}
@@ -208,6 +227,7 @@ export function PointsConfig() {
           </div>
           <Switch
             size="xs"
+            color={ACCENT}
             label="Scale points on zoom"
             checked={scalePointsOnZoom}
             onChange={(e) => setScalePointsOnZoom(e.currentTarget.checked)}
@@ -215,6 +235,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
+            color={ACCENT}
             label="Show size legend"
             checked={showSizeLegend}
             onChange={(e) => setShowSizeLegend(e.currentTarget.checked)}
@@ -234,11 +255,12 @@ export function PointsConfig() {
             label="Column"
             data={labelColumnOptions}
             value={pointLabelColumn}
-            onChange={(v) => v && setPointLabelColumn(v)}
+            onChange={(v) => v && setPointLabelColumn(v as DataColumnKey)}
             styles={panelSelectStyles}
           />
           <Switch
             size="xs"
+            color={ACCENT}
             label="Show labels"
             checked={showPointLabels}
             onChange={(e) => setShowPointLabels(e.currentTarget.checked)}
@@ -246,6 +268,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
+            color={ACCENT}
             label="Dynamic labels"
             checked={showDynamicLabels}
             onChange={(e) => setShowDynamicLabels(e.currentTarget.checked)}
@@ -253,6 +276,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
+            color={ACCENT}
             label="Show hovered point label"
             checked={showHoveredPointLabel}
             onChange={(e) => setShowHoveredPointLabel(e.currentTarget.checked)}
@@ -260,6 +284,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
+            color={ACCENT}
             label="Hovered point ring"
             checked={renderHoveredPointRing}
             onChange={(e) =>
@@ -281,7 +306,7 @@ export function PointsConfig() {
             label="X column"
             data={positionOptions}
             value={positionXColumn}
-            onChange={(v) => v && setPositionXColumn(v)}
+            onChange={(v) => v && setPositionXColumn(v as NumericColumnKey)}
             styles={panelSelectStyles}
           />
           <Select
@@ -289,8 +314,33 @@ export function PointsConfig() {
             label="Y column"
             data={positionOptions}
             value={positionYColumn}
-            onChange={(v) => v && setPositionYColumn(v)}
+            onChange={(v) => v && setPositionYColumn(v as NumericColumnKey)}
             styles={panelSelectStyles}
+          />
+        </Stack>
+      </div>
+
+      {/* Timeline */}
+      <div>
+        <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+          Timeline
+        </Text>
+        <Stack gap="xs">
+          <Select
+            size="xs"
+            label="Time data column"
+            data={TIME_COLUMN_OPTIONS}
+            value={timelineColumn}
+            onChange={(v) => v && setTimelineColumn(v as NumericColumnKey)}
+            styles={panelSelectStyles}
+          />
+          <Switch
+            size="xs"
+            color={ACCENT}
+            label="Show timeline"
+            checked={showTimeline}
+            onChange={(e) => setShowTimeline(e.currentTarget.checked)}
+            styles={switchLabelStyle}
           />
         </Stack>
       </div>

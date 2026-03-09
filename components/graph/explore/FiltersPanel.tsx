@@ -1,144 +1,40 @@
 "use client";
 
-import { Badge, Button, Group, Select, Stack, Text } from "@mantine/core";
-import { Plus } from "lucide-react";
+import { ActionIcon, Button, Select, Stack, Text } from "@mantine/core";
+import { Plus, X } from "lucide-react";
+import { CosmographBars, CosmographHistogram } from "@cosmograph/react";
 import { useMemo, useState } from "react";
 import { useDashboardStore } from "@/lib/graph/stores";
-import { ALL_DATA_COLUMNS, getColumnMetaByFacetName } from "@/lib/graph/columns";
-import type { FilterableColumnKey, GraphFacet } from "@/lib/graph/types";
-import { PanelShell, panelSelectStyles } from "../PanelShell";
-import { FilterWidget } from "./FilterWidget";
+import { ALL_DATA_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
+import type { FilterableColumnKey } from "@/lib/graph/types";
+import {
+  PanelShell,
+  panelSelectStyles,
+  panelTextStyle,
+} from "../PanelShell";
+import { CosmographWidgetBoundary } from "../CosmographWidgetBoundary";
 
-interface FacetGroup {
-  column: FilterableColumnKey;
-  label: string;
-  valueCount: number;
-  values: GraphFacet[];
-}
+const widgetStyle: React.CSSProperties = {
+  width: "100%",
+};
 
-function FacetPreview({ group }: { group: FacetGroup }) {
-  return (
-    <div
-      className="rounded-xl p-3"
-      style={{
-        backgroundColor: "var(--graph-panel-input-bg)",
-        border: "1px solid var(--graph-panel-border)",
-      }}
-    >
-      <Group justify="space-between" align="flex-start" gap="xs">
-        <div>
-          <Text size="xs" fw={600} style={{ color: "var(--graph-panel-text)" }}>
-            {group.label}
-          </Text>
-          <Text size="xs" style={{ color: "var(--graph-panel-text-dim)" }}>
-            {group.valueCount} precomputed values in `graph_facets`
-          </Text>
-        </div>
-        <Badge
-          variant="light"
-          styles={{
-            root: {
-              backgroundColor: "var(--interactive-active)",
-              color: "var(--graph-panel-text)",
-            },
-          }}
-        >
-          {group.values[0]?.pointCount ?? 0} top points
-        </Badge>
-      </Group>
-
-      <Group mt="sm" gap={6}>
-        {group.values.slice(0, 3).map((facet) => (
-          <Badge
-            key={`${group.column}:${facet.facetValue}`}
-            variant="outline"
-            styles={{
-              root: {
-                borderColor: "var(--graph-panel-border)",
-                color: "var(--graph-panel-text-dim)",
-              },
-            }}
-          >
-            {(facet.facetLabel ?? facet.facetValue).slice(0, 28)}
-            {" · "}
-            {facet.pointCount}
-          </Badge>
-        ))}
-      </Group>
-    </div>
-  );
-}
-
-export function FiltersPanel({ facets }: { facets: GraphFacet[] }) {
-  const filters = useDashboardStore((s) => s.filters);
-  const filtersResetVersion = useDashboardStore((s) => s.filtersResetVersion);
+export function FiltersPanel() {
+  const filterColumns = useDashboardStore((s) => s.filterColumns);
   const addFilter = useDashboardStore((s) => s.addFilter);
   const removeFilter = useDashboardStore((s) => s.removeFilter);
-  const clearAllFilterSelections = useDashboardStore(
-    (s) => s.clearAllFilterSelections
-  );
   const setActivePanel = useDashboardStore((s) => s.setActivePanel);
 
   const [showAddSelect, setShowAddSelect] = useState(false);
 
-  const facetGroups = useMemo<FacetGroup[]>(() => {
-    const grouped = new Map<FilterableColumnKey, FacetGroup>();
-
-    for (const facet of facets) {
-      const meta = getColumnMetaByFacetName(facet.facetName);
-
-      if (!meta) {
-        continue;
-      }
-
-      const existing = grouped.get(meta.key as FilterableColumnKey);
-
-      if (existing) {
-        existing.values.push(facet);
-        continue;
-      }
-
-      grouped.set(meta.key as FilterableColumnKey, {
-        column: meta.key as FilterableColumnKey,
-        label: meta.label,
-        valueCount: 0,
-        values: [facet],
-      });
-    }
-
-    return Array.from(grouped.values())
-      .map((group) => ({
-        ...group,
-        valueCount: group.values.length,
-        values: [...group.values].sort((left, right) => {
-          if (right.pointCount !== left.pointCount) {
-            return right.pointCount - left.pointCount;
-          }
-
-          return (left.sortKey ?? left.facetValue).localeCompare(
-            right.sortKey ?? right.facetValue
-          );
-        }),
-      }))
-      .sort((left, right) => left.label.localeCompare(right.label));
-  }, [facets]);
-
-  const availableColumns = useMemo(() => {
-    const availableFacetColumns = facetGroups
-      .filter((group) => !filters.some((filter) => filter.column === group.column))
-      .map((group) => ({
-        value: group.column,
-        label: `${group.label} (${group.valueCount})`,
-      }));
-
-    if (availableFacetColumns.length > 0) {
-      return availableFacetColumns;
-    }
-
-    return ALL_DATA_COLUMNS
-      .filter((column) => !filters.some((filter) => filter.column === column.key))
-      .map((column) => ({ value: column.key, label: column.label }));
-  }, [facetGroups, filters]);
+  const availableColumns = useMemo(
+    () =>
+      ALL_DATA_COLUMNS.filter(
+        (col) =>
+          col.type !== "text" &&
+          !filterColumns.some((f) => f.column === col.key)
+      ).map((col) => ({ value: col.key, label: col.label })),
+    [filterColumns]
+  );
 
   return (
     <PanelShell
@@ -146,58 +42,57 @@ export function FiltersPanel({ facets }: { facets: GraphFacet[] }) {
       side="left"
       onClose={() => setActivePanel(null)}
     >
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <Stack gap="sm">
-          <Text
-            size="xs"
-            fw={600}
-            style={{
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              color: "var(--graph-panel-text-muted)",
-            }}
-          >
-            Points
-          </Text>
+      <div className="scrollbar-hidden flex-1 overflow-y-auto px-4 pb-4">
+        <Stack gap="lg">
+          {filterColumns.map((filter) => {
+            const meta = getColumnMeta(filter.column);
+            if (!meta) return null;
 
-          <Text size="xs" style={{ color: "var(--graph-panel-text-dim)" }}>
-            Filters stay active when this panel closes. Clear a selection to
-            keep the widget, or remove the widget entirely.
-          </Text>
-
-          {facetGroups.length > 0 && (
-            <>
-              <Text
-                size="xs"
-                fw={600}
-                style={{
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                  color: "var(--graph-panel-text-muted)",
-                }}
-              >
-                Bundle Facets
-              </Text>
-
-              <Text size="xs" style={{ color: "var(--graph-panel-text-dim)" }}>
-                These buckets come from the precomputed `graph_facets` table in
-                the active bundle.
-              </Text>
-
-              {facetGroups.map((group) => (
-                <FacetPreview key={group.column} group={group} />
-              ))}
-            </>
-          )}
-
-          {filters.map((filter) => (
-            <FilterWidget
-              key={filter.column}
-              filter={filter}
-              clearSignal={filtersResetVersion}
-              onRemove={() => removeFilter(filter.column)}
-            />
-          ))}
+            return (
+              <div key={filter.column}>
+                <div className="mb-1 flex items-center justify-between">
+                  <Text size="xs" fw={600} style={panelTextStyle}>
+                    {meta.label}
+                  </Text>
+                  <ActionIcon
+                    variant="subtle"
+                    size={18}
+                    radius="sm"
+                    onClick={() => removeFilter(filter.column)}
+                    aria-label={`Remove ${meta.label} filter`}
+                    styles={{ root: { color: "var(--graph-panel-text-dim)" } }}
+                  >
+                    <X size={10} />
+                  </ActionIcon>
+                </div>
+                <CosmographWidgetBoundary>
+                  {filter.type === "numeric" ? (
+                    <CosmographHistogram
+                      id={`filter:${filter.column}`}
+                      accessor={filter.column}
+                      preserveSelectionOnUnmount
+                      highlightSelectedData
+                      useQuantiles
+                      style={widgetStyle}
+                    />
+                  ) : (
+                    <CosmographBars
+                      id={`filter:${filter.column}`}
+                      accessor={filter.column}
+                      selectOnClick
+                      preserveSelectionOnUnmount
+                      highlightSelectedData
+                      showSearch
+                      showSortingBlock
+                      showTotalWhenFiltered
+                      sort="count"
+                      style={widgetStyle}
+                    />
+                  )}
+                </CosmographWidgetBoundary>
+              </div>
+            );
+          })}
 
           {showAddSelect ? (
             <Select
@@ -227,17 +122,6 @@ export function FiltersPanel({ facets }: { facets: GraphFacet[] }) {
               }}
             >
               Add Filter
-            </Button>
-          )}
-
-          {filters.length > 0 && (
-            <Button
-              size="xs"
-              variant="subtle"
-              color="red"
-              onClick={clearAllFilterSelections}
-            >
-              Clear All Selections
             </Button>
           )}
         </Stack>

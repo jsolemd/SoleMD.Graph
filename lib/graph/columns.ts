@@ -85,7 +85,3 @@ export const TABLE_COLUMNS: (keyof ChunkNode)[] = [
 export function getColumnMeta(key: string): ColumnMeta | undefined {
   return COLUMNS.find((c) => c.key === key)
 }
-
-export function getColumnMetaByFacetName(facetName: string): ColumnMeta | undefined {
-  return COLUMNS.find((c) => c.facetName === facetName)
-}
