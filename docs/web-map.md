@@ -11,7 +11,10 @@ SoleMD.Web
 │
 ├── GRAPH CANVAS (always present, full viewport, never unmounts)
 │   │
-│   ├── Corpus scatter — papers, entities, terms positioned by embedding similarity
+│   ├── Layered maps — three switchable corpus views:
+│   │   ├── Entity map — relations between concepts, color by degree (connection count)
+│   │   ├── Chunk map — semantic similarity across passages, color by parent paper
+│   │   └── Paper map — citation network between studies, color by journal/year
 │   ├── Clusters — natural groupings from embedding proximity (Leiden communities)
 │   ├── Timeline — temporal filter strip (publication years)
 │   └── Filters — node type, category, date range, journal, author, entity class

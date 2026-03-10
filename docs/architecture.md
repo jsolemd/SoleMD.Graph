@@ -67,7 +67,8 @@ Search and architecture work should prefer the active runtime directories before
 Notable server markers:
 
 - `lib/graph/fetch.ts` imports `server-only`
-- `lib/graph/fetch.ts` uses `unstable_cache(...)`
+- `lib/graph/fetch.ts` reads the active `graph_runs.is_current` row uncached so a page refresh can pick up a newly current graph bundle immediately
+- checksum-addressed historical bundle lookups still use `unstable_cache(...)` because those assets are immutable
 - `app/api/graph-bundles/[checksum]/[asset]/route.ts` resolves checksum-scoped bundle files from disk and serves them with immutable caching headers
 - `lib/supabase/server.ts` creates a privileged Supabase client from env vars
 - `app/page.tsx` exports `dynamic = "force-dynamic"`

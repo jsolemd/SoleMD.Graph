@@ -14,7 +14,7 @@
   --color-gray: #777c7e;
   --color-soft-blue: #a8c5e9;
   --color-muted-indigo: #747caa;
-  --color-golden-yellow: #fbb44e;
+  --color-golden-yellow: #e5c799;
   --color-fresh-green: #aedc93;
   --color-warm-coral: #ffada4;
   --color-soft-pink: #eda8c4;
@@ -60,7 +60,7 @@
   --graph-panel-input-bg: var(--surface-alt);
   --graph-panel-hover: var(--interactive-hover);
   --graph-panel-active: var(--interactive-active);
-  --graph-panel-shadow: none;
+  --graph-panel-shadow: 0 2px 12px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
 
   /* ── Graph overlays (PromptBox, Wordmark, StatsBar) ── */
   --graph-prompt-bg: var(--surface);
@@ -78,11 +78,19 @@
   --graph-cluster-label-bg: rgba(255, 255, 255, 0.90);
   --graph-greyout-opacity: 0.25;
 
+  /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
+  --filter-bar-base: color-mix(in srgb, var(--mode-accent) 18%, transparent);
+  --filter-bar-active: var(--mode-accent);
+
   /* ── Active mode accent (set by ModeColorSync, default = ask) ── */
   --mode-accent: var(--color-soft-blue);
   --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 10%, transparent);
-  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 18%, transparent);
+  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 30%, transparent);
   --mode-accent-border: color-mix(in srgb, var(--mode-accent) 30%, transparent);
+
+  /* ── Toolbar icons (single source of truth for lucide + Cosmograph) ── */
+  --icon-size: 16px;
+  --icon-stroke-width: 1.5;
 
   /* ── Error states ── */
   --error-bg: rgba(255, 107, 107, 0.08);
@@ -108,7 +116,7 @@ html:root {
   --cosmograph-ui-text: var(--text-primary);
   --cosmograph-ui-element-color: var(--border-default);
   --cosmograph-ui-highlighted-element-color: var(--brand-accent);
-  --cosmograph-ui-selection-control-color: var(--brand-accent);
+  --cosmograph-ui-selection-control-color: var(--mode-accent);
   --cosmograph-ui-font-family: var(--font-sans);
   --cosmograph-ui-font-size: 11px;
   --cosmograph-ui-tick-font-size: 10px;
@@ -129,18 +137,23 @@ html:root {
 
   /* Legend: custom sizes + muted others color */
   --cosmograph-color-legend-type-font-size: 11px;
+  --cosmograph-color-legend-type-font-color: var(--text-secondary);
+  --cosmograph-color-legend-type-hover-color: var(--mode-accent);
   --cosmograph-color-legend-type-others-color: var(--text-tertiary);
+  --cosmograph-color-legend-range-font-color: var(--text-secondary);
 
   /* Buttons: surface bg instead of element-color default */
   --cosmograph-button-background: var(--surface);
   --cosmograph-button-border-radius: 8px;
 
   /* Histogram: custom bar color + axis color */
-  --cosmograph-histogram-bar-color: var(--color-soft-blue);
+  --cosmograph-histogram-bar-color: var(--mode-accent);
   --cosmograph-histogram-axis-color: rgba(0, 0, 0, 0.15);
 
-  /* Size legend: light form color */
-  --cosmograph-size-legend-form-color: rgba(0, 0, 0, 0.25);
+  /* Size legend: mode-colored circles + semantic text */
+  --cosmograph-size-legend-form-color: var(--mode-accent);
+  --cosmograph-size-legend-font-color: var(--text-secondary);
+  --cosmograph-size-legend-hover-color: var(--mode-accent);
 
   /* Popup: pre-defined for upcoming CosmographPopup widget */
   --cosmograph-popup-background: var(--graph-panel-bg);
@@ -158,11 +171,11 @@ html:root {
   /* ── Brand overrides ── */
   --color-background: #18181b;
   --color-gray: #a1a1aa;
-  --color-soft-blue: #89a3bf;
+  --color-soft-blue: #a8c5e9;
   --color-muted-indigo: #8b8fbf;
-  --color-golden-yellow: #c9a04e;
-  --color-fresh-green: #8aad7a;
-  --color-warm-coral: #c48e88;
+  --color-golden-yellow: #e5c799;
+  --color-fresh-green: #aedc93;
+  --color-warm-coral: #ffada4;
   --color-soft-pink: #b88299;
   --color-soft-lavender: #a899b3;
 
@@ -187,12 +200,12 @@ html:root {
   /* ── Graph canvas (only values that diverge from foundations) ── */
   --graph-bg: #111113;
 
-  --graph-panel-shadow: none;
+  --graph-panel-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.45);
 
   /* ── Graph overlays (matte floating cards) ── */
   --graph-prompt-bg: var(--surface);
-  --graph-prompt-border: #353840;
-  --graph-prompt-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 8px 32px rgba(0, 0, 0, 0.35);
+  --graph-prompt-border: transparent;
+  --graph-prompt-shadow: 0 0 0 1px rgba(255,255,255,0.07), 0 4px 24px rgba(0,0,0,0.5);
   --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
   --graph-prompt-inactive: rgba(255, 255, 255, 0.35);
   --graph-prompt-text: #ffffff;
@@ -204,6 +217,14 @@ html:root {
   --graph-cluster-label-bg: rgba(28, 29, 33, 0.80);
   --graph-greyout-opacity: 0.15;
 
+  /* ── Filter/timeline bars — boost active brightness on dark surfaces ── */
+  --filter-bar-base: color-mix(in srgb, var(--mode-accent) 20%, transparent);
+  --filter-bar-active: color-mix(in oklch, var(--mode-accent) 70%, white);
+
+  /* ── Mode accent — higher opacity needed against dark surfaces ── */
+  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, transparent);
+  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, transparent);
+
   /* ── Error states ── */
   --error-bg: rgba(255, 107, 107, 0.10);
   --error-border: rgba(255, 107, 107, 0.20);
@@ -213,8 +234,7 @@ html:root {
 html.dark {
   --cosmograph-timeline-axis-color: rgba(255, 255, 255, 0.12);
   --cosmograph-histogram-axis-color: rgba(255, 255, 255, 0.12);
-  --cosmograph-histogram-bar-color: #527292;
-  --cosmograph-size-legend-form-color: rgba(255, 255, 255, 0.25);
+  --cosmograph-histogram-bar-color: var(--mode-accent);
   --cosmograph-scrollbar-background: rgba(255, 255, 255, 0.10);
 }
 
@@ -228,6 +248,78 @@ html.dark {
   border-color: transparent !important;
   color: var(--mode-accent) !important;
   font-weight: 700;
+}
+
+/* Graph prompt — typewriter placeholder in mode accent color */
+.graph-prompt-input::placeholder {
+  color: var(--mode-accent, var(--graph-prompt-placeholder));
+  opacity: 0.55;
+  transition: color 0.3s ease;
+}
+
+/* Graph icon buttons — unified mode-aware hover/active.
+   Handles hover and pressed backgrounds for Mantine ActionIcons and
+   Cosmograph selection-tool wrappers.  Icon color for Mantine buttons
+   is set via the `styles` prop (inline style beats Mantine's
+   --ai-color system); the color rule here covers non-Mantine elements
+   like Cosmograph wrappers.  !important on backgrounds ensures our
+   hover/active overrides beat any Mantine variant styling. */
+.graph-icon-btn {
+  color: var(--graph-panel-text-dim);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.graph-icon-btn:hover {
+  background-color: var(--mode-accent-subtle) !important;
+}
+.graph-icon-btn[aria-pressed="true"] {
+  background-color: var(--mode-accent-subtle) !important;
+}
+.graph-icon-btn:active {
+  background-color: var(--mode-accent-hover) !important;
+}
+/* Lucide icons inside graph buttons — centralized size + stroke from vars.
+   Lucide renders <svg class="lucide ..."> with width/height/stroke-width
+   attributes; CSS properties override those at any specificity.
+   Attribute selector survives Tailwind v4 / Lightning CSS tree-shaking. */
+.graph-icon-btn svg[class*="lucide"] {
+  width: var(--icon-size) !important;
+  height: var(--icon-size) !important;
+  stroke-width: var(--icon-stroke-width) !important;
+}
+/* Cosmograph buttons inside wrappers — kill their own hover filter so
+   only the wrapper's background hover takes effect. */
+.graph-icon-btn [class*="style_module_button"] {
+  filter: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+/* Rect selection — scale stroke to match lucide (96×96 viewBox = 4× lucide's 24×24) */
+.graph-icon-btn [class*="style_module_button"] svg .st0 {
+  stroke-width: calc(var(--icon-stroke-width) * 4px) !important;
+}
+/* Polygon selection — remove built-in scale(1.15) that makes it oversized */
+.graph-icon-btn [class*="style_module_button"] svg[viewBox="0 0 24 24"] {
+  transform: none !important;
+}
+
+/* CosmographSearch accessor — fade instead of lateral slide on focus */
+[class*="style_module_accessorButton"] {
+  transition: opacity 0.15s ease-out !important;
+}
+
+
+/* Detail panel accordion — mode-accent on hover for label + chevron */
+.detail-accordion .mantine-Accordion-control:hover .mantine-Accordion-label,
+.detail-accordion .mantine-Accordion-control:hover .mantine-Accordion-chevron {
+  color: var(--mode-accent) !important;
+}
+.detail-accordion .mantine-Accordion-control {
+  background: transparent !important;
+}
+.detail-accordion .mantine-Accordion-item {
+  border: none !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -260,15 +352,13 @@ html.dark {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
-   SCROLLBAR UTILITIES
+   GLOBAL SCROLLBAR — invisible by default, still scrollable.
+   Cosmograph widgets override with their own class-scoped rules
+   (.style_module_scrollbar__*) at higher specificity, so expanded
+   legends / "show more" lists get a visible thin bar automatically.
+   NOTE: Do NOT add scrollbar-width: none — it would override
+   Cosmograph's widget scrollbars in Chrome 121+.
    ═══════════════════════════════════════════════════════════════════ */
-.scrollbar-hidden { scrollbar-width: none; }
-.scrollbar-hidden::-webkit-scrollbar { display: none; }
-
-.scrollbar-thin {
-  scrollbar-width: thin;
-  scrollbar-color: var(--text-tertiary) transparent;
-}
-.scrollbar-thin::-webkit-scrollbar { width: 4px; height: 4px; }
-.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
-.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--text-tertiary); border-radius: 2px; }
+*::-webkit-scrollbar { width: 0; height: 0; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: transparent; }

@@ -19,12 +19,14 @@ const DEFAULT_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeri
   { column: 'year', type: 'numeric' },
 ]
 
-export type ActivePanel = 'config' | 'filters' | 'info' | 'query' | null
+export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | null
 export type TableView = 'visible' | 'selected'
 
 interface DashboardState {
   // Panel visibility
   activePanel: ActivePanel
+  panelsVisible: boolean
+  panelBottomY: { left: number; right: number }
   tableOpen: boolean
   tableHeight: number
   uiHidden: boolean
@@ -66,6 +68,10 @@ interface DashboardState {
   timelineColumn: NumericColumnKey
   timelineSelection?: [number, number]
 
+  // Prompt size: minimized (pill) / normal / maximized (full-height)
+  promptMinimized: boolean
+  promptMaximized: boolean
+
   // Write mode
   writeContent: string
 
@@ -77,6 +83,9 @@ interface DashboardState {
   // Actions
   setActivePanel: (panel: ActivePanel) => void
   togglePanel: (panel: ActivePanel) => void
+  setPanelsVisible: (visible: boolean) => void
+  setPanelBottomY: (side: 'left' | 'right', y: number) => void
+  togglePanelsVisible: () => void
   setTableOpen: (open: boolean) => void
   toggleTable: () => void
   setTableHeight: (height: number) => void
@@ -107,15 +116,85 @@ interface DashboardState {
   toggleTimeline: () => void
   setTimelineColumn: (col: NumericColumnKey) => void
   setTimelineSelection: (selection?: [number, number]) => void
+  setPromptMinimized: (minimized: boolean) => void
+  setPromptMaximized: (maximized: boolean) => void
+  togglePromptMinimized: () => void
+  togglePromptMaximized: () => void
   setWriteContent: (content: string) => void
   setFilteredPointIndices: (indices: number[] | null) => void
   setSelectedPointIndices: (indices: number[]) => void
   setActiveSelectionSourceId: (sourceId: string | null) => void
 }
 
+/* ───── Clearance selectors ─────
+ * Single source of truth for bottom/left space occupied by docked elements.
+ * Any positioned element that sits above/beside the dock reads these.
+ */
+
+/** Height constants for bottom-docked elements. */
+const BOTTOM_DOCK = {
+  timeline: 44,
+  toolbarIcon: 34,
+  toolbarBase: 12,
+  gap: 8,
+} as const;
+
+/**
+ * Canvas-level bottom obstacles (timeline + data table).
+ * Elements that sit AT the bottom dock level (collapsed pill, toolbar) use this.
+ */
+export function selectBottomObstacles(s: DashboardState): number {
+  let total = 0;
+  if (s.showTimeline) total += BOTTOM_DOCK.timeline;
+  if (s.tableOpen) total += s.tableHeight;
+  return total;
+}
+
+/**
+ * Full bottom clearance including toolbar icons.
+ * Elements that float ABOVE the bottom dock (PromptBox normal/write, legends) use this.
+ */
+export function selectBottomClearance(s: DashboardState): number {
+  let total = selectBottomObstacles(s);
+  if (s.panelsVisible) total += BOTTOM_DOCK.toolbarBase + BOTTOM_DOCK.toolbarIcon + BOTTOM_DOCK.gap;
+  return total;
+}
+
+/** Width of each left-side panel — must match PanelShell `width` props. */
+const PANEL_WIDTHS: Record<NonNullable<ActivePanel>, number> = {
+  about: 320,
+  config: 300,
+  filters: 300,
+  info: 320,
+  query: 420,
+};
+const PANEL_MARGIN = 24; // panel left (12) + gap (12)
+
+/** Total px of left-edge space occupied by an open panel. */
+export function selectLeftClearance(s: DashboardState): number {
+  if (!s.activePanel) return 0;
+  // About panel renders regardless of panelsVisible
+  if (s.activePanel === 'about') return PANEL_WIDTHS.about + PANEL_MARGIN;
+  if (!s.panelsVisible) return 0;
+  return (PANEL_WIDTHS[s.activePanel] ?? 300) + PANEL_MARGIN;
+}
+
+/** Right-side detail panel: width (380) + margin (12 + 12). */
+const DETAIL_PANEL_CLEARANCE = 380 + PANEL_MARGIN;
+
+/** Total px of right-edge space occupied by the detail panel. */
+export function selectRightClearance(s: DashboardState): number {
+  // DetailPanel renders when a node is selected — it's outside the panel toggle system,
+  // so we check panelBottomY.right which PanelShell reports for side="right".
+  if (s.panelBottomY.right === 0) return 0;
+  return DETAIL_PANEL_CLEARANCE;
+}
+
 export const useDashboardStore = create<DashboardState>((set) => ({
   // Panel visibility
   activePanel: null,
+  panelsVisible: false,
+  panelBottomY: { left: 0, right: 0 },
   tableOpen: false,
   tableHeight: 280,
   uiHidden: false,
@@ -124,7 +203,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   pointColorColumn: 'clusterLabel',
   pointColorStrategy: 'categorical',
   pointSizeColumn: 'clusterProbability',
-  pointSizeRange: [1, 4],
+  pointSizeRange: [1, 6],
   pointLabelColumn: 'clusterLabel',
   showPointLabels: false,
   showDynamicLabels: false,
@@ -157,6 +236,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   timelineColumn: 'year',
   timelineSelection: undefined,
 
+  // Prompt size: minimized (pill) / normal / maximized (full-height)
+  promptMinimized: false,
+  promptMaximized: false,
+
   // Write mode
   writeContent: '',
 
@@ -169,6 +252,14 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setActivePanel: (panel) => set({ activePanel: panel }),
   togglePanel: (panel) =>
     set((s) => ({ activePanel: s.activePanel === panel ? null : panel })),
+  setPanelsVisible: (visible) => set({ panelsVisible: visible }),
+  setPanelBottomY: (side, y) =>
+    set((s) => s.panelBottomY[side] === y ? s : { panelBottomY: { ...s.panelBottomY, [side]: y } }),
+  togglePanelsVisible: () =>
+    set((s) => {
+      const next = !s.panelsVisible
+      return { panelsVisible: next, ...(next ? {} : { activePanel: null }) }
+    }),
   setTableOpen: (open) => set({ tableOpen: open }),
   toggleTable: () => set((s) => ({ tableOpen: !s.tableOpen })),
   setTableHeight: (height) => set({ tableHeight: height }),
@@ -215,6 +306,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
   setTimelineColumn: (col) => set({ timelineColumn: col }),
   setTimelineSelection: (selection) => set({ timelineSelection: selection }),
+  setPromptMinimized: (minimized) => set({ promptMinimized: minimized, promptMaximized: false }),
+  setPromptMaximized: (maximized) => set({ promptMaximized: maximized, promptMinimized: false }),
+  togglePromptMinimized: () => set((s) => ({ promptMinimized: !s.promptMinimized, promptMaximized: false })),
+  togglePromptMaximized: () => set((s) => ({ promptMaximized: !s.promptMaximized, promptMinimized: false })),
   setWriteContent: (content) => set({ writeContent: content }),
   setFilteredPointIndices: (indices) => set({ filteredPointIndices: indices }),
   setSelectedPointIndices: (indices) => set({ selectedPointIndices: indices }),

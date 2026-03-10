@@ -11,7 +11,8 @@ import {
 import { useCosmograph } from "@cosmograph/react";
 import { motion } from "framer-motion";
 import { useDashboardStore, useGraphStore } from "@/lib/graph/stores";
-import { PANEL_SPRING, panelTableHeaderStyle, panelTextDimStyle } from "../PanelShell";
+import { panelTableHeaderStyle, panelTextDimStyle } from "../PanelShell";
+import { smooth } from "@/lib/motion";
 import { TABLE_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
 import { useDragResize } from "@/lib/graph/hooks/use-drag-resize";
 import type { ChunkNode } from "@/lib/graph/types";
@@ -22,6 +23,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
   const tablePageSize = useDashboardStore((s) => s.tablePageSize);
   const tableView = useDashboardStore((s) => s.tableView);
   const tableHeight = useDashboardStore((s) => s.tableHeight);
+  const showTimeline = useDashboardStore((s) => s.showTimeline);
   const filteredPointIndices = useDashboardStore((s) => s.filteredPointIndices);
   const selectedPointIndices = useDashboardStore((s) => s.selectedPointIndices);
   const setTablePage = useDashboardStore((s) => s.setTablePage);
@@ -90,12 +92,13 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 20 }}
-      transition={PANEL_SPRING}
-      className="flex flex-col"
+      exit={{ opacity: 0, y: 40 }}
+      transition={smooth}
+      className="absolute left-0 right-0 z-20 flex flex-col"
       style={{
+        bottom: showTimeline ? 44 : 0,
         height: tableHeight,
         backgroundColor: "var(--graph-bg)",
       }}
@@ -144,7 +147,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
       </div>
 
       {/* Table */}
-      <div className="scrollbar-thin flex-1 overflow-auto px-2">
+      <div className="flex-1 overflow-auto px-2">
         <Table
           stickyHeader
           style={{ fontSize: "0.75rem" }}

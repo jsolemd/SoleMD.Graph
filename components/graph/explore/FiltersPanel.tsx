@@ -8,6 +8,8 @@ import { useDashboardStore } from "@/lib/graph/stores";
 import { ALL_DATA_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
 import type { FilterableColumnKey } from "@/lib/graph/types";
 import {
+  ICON_BTN_STYLES,
+  PANEL_ACCENT,
   PanelShell,
   panelSelectStyles,
   panelTextStyle,
@@ -17,6 +19,13 @@ import { CosmographWidgetBoundary } from "../CosmographWidgetBoundary";
 const widgetStyle: React.CSSProperties = {
   width: "100%",
 };
+
+const cosmographFilterOverrides: React.CSSProperties = {
+  "--cosmograph-histogram-bar-color": "var(--filter-bar-base)",
+  "--cosmograph-histogram-highlighted-bar-color": "var(--filter-bar-active)",
+  "--cosmograph-bars-background": "var(--filter-bar-base)",
+  "--cosmograph-bars-highlighted-color": "var(--filter-bar-active)",
+} as React.CSSProperties;
 
 export function FiltersPanel() {
   const filterColumns = useDashboardStore((s) => s.filterColumns);
@@ -42,14 +51,14 @@ export function FiltersPanel() {
       side="left"
       onClose={() => setActivePanel(null)}
     >
-      <div className="scrollbar-hidden flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
         <Stack gap="lg">
           {filterColumns.map((filter) => {
             const meta = getColumnMeta(filter.column);
             if (!meta) return null;
 
             return (
-              <div key={filter.column}>
+              <div key={filter.column} style={cosmographFilterOverrides}>
                 <div className="mb-1 flex items-center justify-between">
                   <Text size="xs" fw={600} style={panelTextStyle}>
                     {meta.label}
@@ -60,7 +69,7 @@ export function FiltersPanel() {
                     radius="sm"
                     onClick={() => removeFilter(filter.column)}
                     aria-label={`Remove ${meta.label} filter`}
-                    styles={{ root: { color: "var(--graph-panel-text-dim)" } }}
+                    styles={ICON_BTN_STYLES}
                   >
                     <X size={10} />
                   </ActionIcon>
@@ -114,14 +123,12 @@ export function FiltersPanel() {
             <Button
               size="xs"
               variant="subtle"
+              color={PANEL_ACCENT}
               leftSection={<Plus size={14} />}
               onClick={() => setShowAddSelect(true)}
               disabled={availableColumns.length === 0}
-              styles={{
-                root: { color: "var(--graph-panel-text-muted)" },
-              }}
             >
-              Add Filter
+              Add Filter{availableColumns.length > 0 && ` · ${availableColumns.length}`}
             </Button>
           )}
         </Stack>

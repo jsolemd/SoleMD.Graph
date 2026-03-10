@@ -22,10 +22,9 @@ import type {
   GraphQueryResult,
 } from "@/lib/graph/types";
 import {
+  PANEL_ACCENT,
   PanelShell,
-  panelBodyTextClassName,
   panelErrorStyle,
-  panelMetaTextClassName,
   panelTableHeaderStyle,
   panelTextStyle,
   panelTextMutedStyle,
@@ -78,7 +77,6 @@ function QueryResultTable({ result }: { result: GraphQueryResult }) {
   return (
     <Table.ScrollContainer
       minWidth={200}
-      className="scrollbar-thin"
       style={{
         border: "1px solid var(--graph-panel-border)",
         borderRadius: 12,
@@ -149,7 +147,8 @@ function QueryResult({ result }: { result: GraphQueryResult }) {
           size="sm"
           styles={{
             root: {
-              backgroundColor: "var(--interactive-active)",
+              backgroundColor: "var(--mode-accent-subtle)",
+              border: "1px solid var(--mode-accent-border)",
               color: "var(--graph-panel-text)",
             },
           }}
@@ -159,7 +158,7 @@ function QueryResult({ result }: { result: GraphQueryResult }) {
       </Group>
 
       {result.appliedLimit != null && (
-        <Text className={panelMetaTextClassName} style={panelTextDimStyle}>
+        <Text style={panelTextDimStyle}>
           SELECT/WITH queries are wrapped with LIMIT {result.appliedLimit} to
           keep the browser responsive.
         </Text>
@@ -168,7 +167,7 @@ function QueryResult({ result }: { result: GraphQueryResult }) {
       <Text
         size="xs"
         className="cursor-pointer"
-        style={{ color: "var(--brand-accent)" }}
+        style={{ color: "var(--mode-accent)" }}
         onClick={() => setShowSql((v) => !v)}
       >
         {showSql ? "Hide executed SQL" : "Show executed SQL"}
@@ -235,16 +234,15 @@ export function QueryPanel({
       width={420}
       onClose={() => setActivePanel(null)}
     >
-      <div className="scrollbar-thin flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4">
         <Stack gap="sm">
-          <Text className={panelBodyTextClassName} style={panelTextDimStyle}>
+          <Text style={panelTextDimStyle}>
             Run SQL queries against the graph data loaded in your browser.
             Results stay local and never leave this device.
           </Text>
 
           <Text
             fw={600}
-            className={panelMetaTextClassName}
             style={panelTextMutedStyle}
           >
             Available Relations
@@ -256,8 +254,10 @@ export function QueryPanel({
                 variant="outline"
                 styles={{
                   root: {
+                    backgroundColor: "var(--mode-accent-subtle)",
                     borderColor: "var(--graph-panel-border)",
                     color: "var(--graph-panel-text-dim)",
+                    fontWeight: 500,
                   },
                 }}
               >
@@ -268,7 +268,6 @@ export function QueryPanel({
 
           <Text
             fw={600}
-            className={panelMetaTextClassName}
             style={panelTextMutedStyle}
           >
             Quick Queries
@@ -279,6 +278,8 @@ export function QueryPanel({
                 key={sample.label}
                 size="compact-xs"
                 variant="light"
+                color={PANEL_ACCENT}
+                styles={{ label: { color: "var(--graph-panel-text)" } }}
                 onClick={() => setSql(sample.sql)}
               >
                 {sample.label}
@@ -312,6 +313,7 @@ export function QueryPanel({
             <Group gap="xs">
               <Button
                 size="xs"
+                color={PANEL_ACCENT}
                 leftSection={running ? <Loader size={12} /> : <Play size={14} />}
                 onClick={handleRun}
                 loading={running}
@@ -321,6 +323,7 @@ export function QueryPanel({
               <Button
                 size="xs"
                 variant="subtle"
+                color={PANEL_ACCENT}
                 leftSection={<RotateCcw size={14} />}
                 onClick={() => {
                   setSql(DEFAULT_QUERY);
@@ -332,7 +335,7 @@ export function QueryPanel({
               </Button>
             </Group>
 
-            <Text className={panelMetaTextClassName} style={panelTextDimStyle}>
+            <Text style={panelTextDimStyle}>
               `graph_points_web` exposes the Cosmograph-ready camelCase view.
             </Text>
           </Group>

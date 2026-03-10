@@ -12,7 +12,7 @@ import type {
   PointSizeStrategy,
   SizeColumnKey,
 } from "@/lib/graph/types";
-import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle } from "../PanelShell";
+import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle, PANEL_ACCENT } from "../PanelShell";
 
 const COLOR_STRATEGY_OPTIONS = [
   { value: "direct", label: "Direct (hex values)" },
@@ -57,8 +57,6 @@ const positionOptions = NUMERIC_COLUMNS.map((c) => ({
   label: c.label,
 }));
 
-/** Active mode accent for interactive Mantine controls. */
-const ACCENT = "var(--mode-accent)";
 
 const switchLabelStyle = { label: { color: "var(--graph-panel-text)" } };
 
@@ -174,7 +172,7 @@ export function PointsConfig() {
           </div>
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Show color legend"
             checked={showColorLegend}
             onChange={(e) => setShowColorLegend(e.currentTarget.checked)}
@@ -217,7 +215,7 @@ export function PointsConfig() {
             </Text>
             <Slider
               size="xs"
-              color={ACCENT}
+              color={PANEL_ACCENT}
               min={1}
               max={30}
               step={1}
@@ -227,7 +225,7 @@ export function PointsConfig() {
           </div>
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Scale points on zoom"
             checked={scalePointsOnZoom}
             onChange={(e) => setScalePointsOnZoom(e.currentTarget.checked)}
@@ -235,7 +233,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Show size legend"
             checked={showSizeLegend}
             onChange={(e) => setShowSizeLegend(e.currentTarget.checked)}
@@ -260,7 +258,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Show labels"
             checked={showPointLabels}
             onChange={(e) => setShowPointLabels(e.currentTarget.checked)}
@@ -268,7 +266,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Dynamic labels"
             checked={showDynamicLabels}
             onChange={(e) => setShowDynamicLabels(e.currentTarget.checked)}
@@ -276,7 +274,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Show hovered point label"
             checked={showHoveredPointLabel}
             onChange={(e) => setShowHoveredPointLabel(e.currentTarget.checked)}
@@ -284,7 +282,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Hovered point ring"
             checked={renderHoveredPointRing}
             onChange={(e) =>
@@ -336,7 +334,7 @@ export function PointsConfig() {
           />
           <Switch
             size="xs"
-            color={ACCENT}
+            color={PANEL_ACCENT}
             label="Show timeline"
             checked={showTimeline}
             onChange={(e) => setShowTimeline(e.currentTarget.checked)}

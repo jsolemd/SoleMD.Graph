@@ -27,7 +27,7 @@ Premium quality that never shouts. The word "elegant" is intentionally woven thr
 - **Matte floating cards** — solid opaque surfaces, NOT glass/frosted/backdrop-blur
 - **Deep multi-layer shadows** create the "hovering" depth feel
 - **Generous rounding** — `rounded-3xl` on prompt box, `rounded-2xl` on controls, `rounded-xl` on widgets
-- **Spring physics everywhere** — shared `PANEL_SPRING` config (`stiffness: 300, damping: 30`)
+- **Spring physics everywhere** — shared presets in `lib/motion.ts` (`snappy`, `smooth`, `responsive`, `bouncy`, `settle`)
 - **Mode-colored submit** — pastel bg + dark `#1a1b1e` icon
 - **Gradient dividers** — brand-accent gradient separators between grouped actions
 - **Muted icons at rest** — `--graph-prompt-inactive`, colored accent when active at 15% bg tint
@@ -61,11 +61,17 @@ Headings: `font-weight: 500`, `line-height: 1.25`. Body: `font-weight: 400`, `li
 |-------|-------|------|---------------|
 | `--color-soft-blue` | `#a8c5e9` | `#89a3bf` | Brand primary |
 | `--color-muted-indigo` | `#747caa` | `#8b8fbf` | Brand accent |
-| `--color-golden-yellow` | `#fbb44e` | `#c9a04e` | Innovation / explore |
+| `--color-golden-yellow` | `#e5c799` | `#b69d77` | Innovation / explore |
 | `--color-fresh-green` | `#aedc93` | `#8aad7a` | Education / learn |
 | `--color-warm-coral` | `#ffada4` | `#c48e88` | Action / write |
 | `--color-soft-pink` | `#eda8c4` | `#b88299` | Contact |
 | `--color-soft-lavender` | `#d8bee9` | `#a899b3` | Extended accent |
+
+### Extended Accent Colors
+
+| Hex | Name | Notes |
+|-----|------|-------|
+| `#fbb44e` | Vivid Gold | Original golden-yellow at full saturation. Reserved for high-emphasis accents, data-viz highlights, or promotional contexts where a louder pop is intentional. |
 
 ### Brand Accent
 
@@ -113,7 +119,7 @@ Light mode uses subtle rgba shadows. Dark mode uses deep black shadows.
 ## Motion
 
 - **Framework**: Framer Motion for layout animations, spring physics for panels
-- **Spring config**: `PANEL_SPRING = { stiffness: 300, damping: 30 }`
+- **Spring presets**: `lib/motion.ts` — `snappy` (panels), `smooth` (mode shifts), `settle` (icons), `bouncy` (micro-interactions), `responsive` (drag)
 - **Mode transitions**: `layout` animations via framer-motion. Nothing snaps or jumps.
 - **Graph transitions**: The canvas component never unmounts — it transforms fluidly
 - **Scroll triggers**: Soft reveal on scroll, not auto-playing
@@ -173,5 +179,6 @@ SPECTER2 positions papers. SapBERT positions entities. MedCPT positions chunks. 
 | `app/globals.css` | All design tokens (semantic + graph + Cosmograph, ~280 lines) |
 | `lib/mantine-theme.ts` | Mantine ↔ CSS variable bridge |
 | `components/mantine-theme-provider.tsx` | `defaultColorScheme="auto"`, DarkClassSync |
-| `components/graph/panels/PanelShell.tsx` | Shared panel chrome, `PANEL_SPRING` constant |
+| `components/graph/PanelShell.tsx` | Shared panel chrome, style exports, `ICON_BTN_STYLES` |
+| `lib/motion.ts` | Spring presets (`snappy`, `smooth`, `settle`, `bouncy`, `responsive`) |
 | `components/graph/CosmographRenderer.tsx` | `BRAND.light` / `BRAND.dark` WebGL constants |

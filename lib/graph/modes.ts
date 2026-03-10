@@ -3,18 +3,24 @@ import type { ActivePanel } from './stores'
 
 /** What chrome/controls each mode makes available in the dashboard. */
 export interface ModeLayout {
-  /** Show the left toolbar (panel toggles, timeline, data table) */
-  showToolbar: boolean
+  /** Auto-show the panel bar when entering this mode */
+  autoShowPanels: boolean
+  /** Auto-show the timeline when entering this mode */
+  autoShowTimeline: boolean
+  /** Auto-show the data table when entering this mode */
+  autoShowTable: boolean
   /** Show the bottom timeline strip */
   showTimeline: boolean
   /** Show the bottom-right stats overlay */
   showStatsBar: boolean
-  /** Show canvas controls (fit, select, zoom) */
+  /** Show canvas controls (selection tools) */
   showCanvasControls: boolean
   /** Show color/size legends on canvas */
   showLegends: boolean
   /** Show the data table */
   showDataTable: boolean
+  /** Collapse the prompt box to a compact pill (icons only) */
+  promptCollapsed: boolean
   /** Which side panels are available to open */
   availablePanels: ActivePanel[]
 }
@@ -35,6 +41,9 @@ export interface ModeConfig {
   layout: ModeLayout
 }
 
+/** All modes share the same panel set — colors adapt via --mode-accent. */
+const SHARED_PANELS: ActivePanel[] = ['config', 'filters', 'info', 'query']
+
 /**
  * Mode registry — single source of truth for all mode behavior.
  *
@@ -51,29 +60,35 @@ export const MODES: Record<GraphMode, ModeConfig> = {
     colorVar: '--color-soft-blue',
     placeholder: 'Ask the knowledge graph...',
     layout: {
-      showToolbar: false,
-      showTimeline: false,
+      autoShowPanels: false,
+      autoShowTimeline: false,
+      autoShowTable: false,
+      showTimeline: true,
       showStatsBar: true,
-      showCanvasControls: false,
-      showLegends: false,
-      showDataTable: false,
-      availablePanels: [],
+      showCanvasControls: true,
+      showLegends: true,
+      showDataTable: true,
+      promptCollapsed: false,
+      availablePanels: SHARED_PANELS,
     },
   },
   explore: {
     key: 'explore',
     label: 'Explore',
-    color: '#fbb44e', // golden-yellow
+    color: '#e5c799', // golden-yellow
     colorVar: '--color-golden-yellow',
     placeholder: 'Explore the knowledge graph...',
     layout: {
-      showToolbar: true,
+      autoShowPanels: true,
+      autoShowTimeline: false,
+      autoShowTable: false,
       showTimeline: true,
       showStatsBar: false,
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
-      availablePanels: ['config', 'filters', 'info', 'query'],
+      promptCollapsed: true,
+      availablePanels: SHARED_PANELS,
     },
   },
   learn: {
@@ -83,13 +98,16 @@ export const MODES: Record<GraphMode, ModeConfig> = {
     colorVar: '--color-fresh-green',
     placeholder: 'Learn from the knowledge graph...',
     layout: {
-      showToolbar: false,
-      showTimeline: false,
+      autoShowPanels: false,
+      autoShowTimeline: false,
+      autoShowTable: false,
+      showTimeline: true,
       showStatsBar: true,
-      showCanvasControls: false,
-      showLegends: false,
-      showDataTable: false,
-      availablePanels: [],
+      showCanvasControls: true,
+      showLegends: true,
+      showDataTable: true,
+      promptCollapsed: false,
+      availablePanels: SHARED_PANELS,
     },
   },
   write: {
@@ -99,13 +117,16 @@ export const MODES: Record<GraphMode, ModeConfig> = {
     colorVar: '--color-warm-coral',
     placeholder: 'Write with the knowledge graph...',
     layout: {
-      showToolbar: false,
-      showTimeline: false,
+      autoShowPanels: false,
+      autoShowTimeline: false,
+      autoShowTable: false,
+      showTimeline: true,
       showStatsBar: true,
-      showCanvasControls: false,
-      showLegends: false,
-      showDataTable: false,
-      availablePanels: [],
+      showCanvasControls: true,
+      showLegends: true,
+      showDataTable: true,
+      promptCollapsed: false,
+      availablePanels: SHARED_PANELS,
     },
   },
 }

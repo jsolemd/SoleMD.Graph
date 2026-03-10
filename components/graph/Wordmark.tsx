@@ -3,36 +3,51 @@
 import { useCallback, useState } from "react";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { useCosmograph } from "@cosmograph/react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   BrainCircuit,
   Camera,
+  Database,
   Download,
   Eye,
   EyeOff,
+  Filter,
+  Info,
+  LayoutPanelLeft,
   Maximize,
   Minus,
   Plus,
+  SlidersHorizontal,
 } from "lucide-react";
 import ThemeToggle from "@/components/ui/theme-toggle";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { getModeConfig } from "@/lib/graph/modes";
-
-const ICON_STYLE = {
-  root: {
-    color: "var(--graph-panel-text-dim)",
-    transition: "color 200ms ease",
-  },
-} as const;
+import { ICON_BTN_STYLES } from "./PanelShell";
+import { settle } from "@/lib/motion";
+import type { ActivePanel } from "@/lib/graph/stores";
 
 const ZOOM_FACTOR = 1.4;
+
+const PANEL_ITEMS: Array<{
+  panel: Exclude<ActivePanel, null>;
+  icon: typeof SlidersHorizontal;
+  label: string;
+}> = [
+  { panel: "config", icon: SlidersHorizontal, label: "Configuration" },
+  { panel: "filters", icon: Filter, label: "Filters" },
+  { panel: "info", icon: Info, label: "Info" },
+  { panel: "query", icon: Database, label: "SQL Explorer" },
+];
 
 export function Wordmark() {
   const mode = useGraphStore((s) => s.mode);
   const activePanel = useDashboardStore((s) => s.activePanel);
+  const panelsVisible = useDashboardStore((s) => s.panelsVisible);
   const uiHidden = useDashboardStore((s) => s.uiHidden);
   const toggleUiHidden = useDashboardStore((s) => s.toggleUiHidden);
-  const { layout, color: modeColor } = getModeConfig(mode);
+  const togglePanel = useDashboardStore((s) => s.togglePanel);
+  const togglePanelsVisible = useDashboardStore((s) => s.togglePanelsVisible);
+  const { color: modeColor } = getModeConfig(mode);
   const [spinCount, setSpinCount] = useState(0);
   const { cosmograph } = useCosmograph();
 
@@ -75,106 +90,166 @@ export function Wordmark() {
     URL.revokeObjectURL(url);
   }, [cosmograph]);
 
-  // Shift right when a left-side panel is open
-  const hasLeftPanel =
-    !uiHidden && layout.showToolbar && activePanel !== null;
-
   return (
     <>
-      <div
-        className="absolute top-3 z-40 flex items-center gap-3 transition-all duration-200"
-        style={{ left: hasLeftPanel ? 332 : 12 }}
-      >
-        {!uiHidden && (
-          <div className="flex items-center gap-2">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full transition-colors duration-300"
-              style={{ backgroundColor: modeColor }}
-            >
-              <BrainCircuit size={16} color="white" />
-            </div>
-            <span
-              className="text-lg font-semibold select-none"
-              style={{ color: "var(--graph-wordmark-text)" }}
-            >
-              Sole
-              <span
-                className="transition-colors duration-300"
-                style={{ color: modeColor }}
+      {/* Left: logo + panel icon row */}
+      <div className="absolute top-3 left-3 z-40 flex flex-col gap-2">
+        <div className="flex items-center gap-3">
+          {!uiHidden && (
+            <Tooltip label="About SoleMD" position="right" withArrow>
+              <button
+                type="button"
+                className="flex cursor-pointer items-center gap-2 rounded-full border-0 bg-transparent p-0 transition-opacity hover:opacity-80"
+                onClick={() => togglePanel("about")}
+                aria-label="About SoleMD"
               >
-                MD
-              </span>
-            </span>
-          </div>
-        )}
-        <ThemeToggle />
+                <div
+                  className="flex h-8 w-8 items-center justify-center rounded-full transition-colors duration-300"
+                  style={{ backgroundColor: modeColor }}
+                >
+                  <BrainCircuit size={16} color="white" />
+                </div>
+                <span
+                  className="text-lg font-semibold select-none"
+                  style={{ color: "var(--graph-wordmark-text)" }}
+                >
+                  Sole
+                  <span
+                    className="transition-colors duration-300"
+                    style={{ color: modeColor }}
+                  >
+                    MD
+                  </span>
+                </span>
+              </button>
+            </Tooltip>
+          )}
+        </div>
+
+        <AnimatePresence>
+          {panelsVisible && !uiHidden && (
+            <motion.div
+              className="flex items-center gap-0.5"
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.15 }}
+            >
+              {PANEL_ITEMS.map(({ panel, icon: Icon, label }) => {
+                const isActive = activePanel === panel;
+                return (
+                  <Tooltip key={panel} label={label} position="bottom" withArrow>
+                    <ActionIcon
+                      variant="transparent"
+                      size="lg"
+                      radius="xl"
+                      className="graph-icon-btn"
+                      styles={ICON_BTN_STYLES}
+                      onClick={() => togglePanel(panel)}
+                      aria-pressed={isActive}
+                      aria-label={label}
+                    >
+                      <Icon />
+                    </ActionIcon>
+                  </Tooltip>
+                );
+              })}
+
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
+      {/* Right: toolbar buttons */}
       <div data-wordmark-toolbar className="absolute right-3 top-3 z-40 flex items-center gap-0.5">
         {!uiHidden && (
           <>
             <Tooltip label="Fit view" position="bottom" withArrow>
               <ActionIcon
-                onClick={handleFitView}
-                variant="subtle"
+                variant="transparent"
                 size="lg"
                 radius="xl"
+                className="graph-icon-btn"
+                styles={ICON_BTN_STYLES}
+                onClick={handleFitView}
                 aria-label="Fit view"
-                styles={ICON_STYLE}
               >
-                <Maximize size={16} strokeWidth={1.5} />
+                <Maximize />
               </ActionIcon>
             </Tooltip>
             <Tooltip label="Zoom in" position="bottom" withArrow>
               <ActionIcon
-                onClick={handleZoomIn}
-                variant="subtle"
+                variant="transparent"
                 size="lg"
                 radius="xl"
+                className="graph-icon-btn"
+                styles={ICON_BTN_STYLES}
+                onClick={handleZoomIn}
                 aria-label="Zoom in"
-                styles={ICON_STYLE}
               >
-                <Plus size={16} strokeWidth={1.5} />
+                <Plus />
               </ActionIcon>
             </Tooltip>
             <Tooltip label="Zoom out" position="bottom" withArrow>
               <ActionIcon
-                onClick={handleZoomOut}
-                variant="subtle"
+                variant="transparent"
                 size="lg"
                 radius="xl"
+                className="graph-icon-btn"
+                styles={ICON_BTN_STYLES}
+                onClick={handleZoomOut}
                 aria-label="Zoom out"
-                styles={ICON_STYLE}
               >
-                <Minus size={16} strokeWidth={1.5} />
+                <Minus />
               </ActionIcon>
             </Tooltip>
             <Tooltip label="Save screenshot" position="bottom" withArrow>
               <ActionIcon
-                onClick={handleScreenshot}
-                variant="subtle"
+                variant="transparent"
                 size="lg"
                 radius="xl"
+                className="graph-icon-btn"
+                styles={ICON_BTN_STYLES}
+                onClick={handleScreenshot}
                 aria-label="Save screenshot"
-                styles={ICON_STYLE}
               >
-                <Camera size={16} strokeWidth={1.5} />
+                <Camera />
               </ActionIcon>
             </Tooltip>
             <Tooltip label="Export data" position="bottom" withArrow>
               <ActionIcon
-                onClick={handleExport}
-                variant="subtle"
+                variant="transparent"
                 size="lg"
                 radius="xl"
+                className="graph-icon-btn"
+                styles={ICON_BTN_STYLES}
+                onClick={handleExport}
                 aria-label="Export data"
-                styles={ICON_STYLE}
               >
-                <Download size={16} strokeWidth={1.5} />
+                <Download />
               </ActionIcon>
             </Tooltip>
 
             <div className="mx-1 h-5 w-px" style={{ backgroundColor: "var(--graph-panel-border)" }} />
+
+            <Tooltip
+              label={panelsVisible ? "Hide panels" : "Show panels"}
+              position="bottom"
+              withArrow
+            >
+              <ActionIcon
+                variant="transparent"
+                size="lg"
+                radius="xl"
+                className="graph-icon-btn"
+                styles={ICON_BTN_STYLES}
+                onClick={togglePanelsVisible}
+                aria-pressed={panelsVisible}
+                aria-label={panelsVisible ? "Hide panels" : "Show panels"}
+              >
+                <LayoutPanelLeft />
+              </ActionIcon>
+            </Tooltip>
           </>
         )}
 
@@ -184,25 +259,30 @@ export function Wordmark() {
           withArrow
         >
           <ActionIcon
+            variant="transparent"
+            size="lg"
+            radius="xl"
+            className="graph-icon-btn"
+            styles={ICON_BTN_STYLES}
             onClick={() => {
               setSpinCount((current) => current + 1);
               toggleUiHidden();
             }}
-            variant="subtle"
-            size="lg"
-            radius="xl"
             aria-label={uiHidden ? "Show graph UI" : "Hide graph UI"}
-            styles={ICON_STYLE}
           >
             <motion.div
               className="flex items-center justify-center"
               animate={{ rotate: spinCount * 360 }}
-              transition={{ type: "spring", stiffness: 260, damping: 25 }}
+              transition={settle}
             >
-              {uiHidden ? <Eye size={18} /> : <EyeOff size={18} />}
+              {uiHidden ? <Eye /> : <EyeOff />}
             </motion.div>
           </ActionIcon>
         </Tooltip>
+
+        <div className="mx-1 h-5 w-px" style={{ backgroundColor: "var(--graph-panel-border)" }} />
+
+        <ThemeToggle />
       </div>
     </>
   );

@@ -8,9 +8,9 @@ import { useDashboardStore } from "@/lib/graph/stores";
 import { formatNumber } from "@/lib/helpers";
 import type { ChunkNode, GraphData } from "@/lib/graph/types";
 import {
+  PANEL_ACCENT,
   PanelShell,
-  panelBodyTextClassName,
-  panelMetaTextClassName,
+  badgeOutlineStyles,
   panelTableHeaderStyle,
   panelTextStyle,
   panelTextDimStyle,
@@ -109,11 +109,11 @@ export function InfoPanel({ data }: { data: GraphData }) {
       width={320}
       onClose={() => setActivePanel(null)}
     >
-      <div className="scrollbar-hidden flex-1 overflow-y-auto px-4 pb-4">
-        <Stack gap="lg">
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
+        <Stack gap="md">
           {/* Dataset Overview */}
           <div>
-            <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+            <Text fw={600} mb={4} style={sectionLabelStyle}>
               Dataset
             </Text>
             <div className="grid grid-cols-2 gap-2">
@@ -130,18 +130,18 @@ export function InfoPanel({ data }: { data: GraphData }) {
           {/* Top Clusters */}
           {topClusters.length > 0 && (
             <div>
-              <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+              <Text fw={600} mb={4} style={sectionLabelStyle}>
                 Top Clusters
               </Text>
               <div
-                className="scrollbar-hidden overflow-auto rounded-xl"
+                className="overflow-auto rounded-xl"
                 style={{
                   border: "1px solid var(--graph-panel-border)",
                   maxHeight: 200,
                 }}
               >
                 <Table
-                  style={{ fontSize: "0.7rem" }}
+                  style={{ fontSize: "0.65rem" }}
                   styles={{
                     table: { borderColor: "transparent" },
                     th: {
@@ -208,23 +208,17 @@ export function InfoPanel({ data }: { data: GraphData }) {
           {/* Sections Composition */}
           {sectionFacets.length > 0 && (
             <div>
-              <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+              <Text fw={600} mb={4} style={sectionLabelStyle}>
                 Sections
               </Text>
               <Stack gap={6}>
                 {sectionFacets.map((f) => (
                   <div key={f.facetValue}>
                     <Group justify="space-between" mb={2}>
-                      <Text
-                        className={panelMetaTextClassName}
-                        style={panelTextStyle}
-                      >
+                      <Text style={panelTextStyle}>
                         {f.facetLabel ?? f.facetValue}
                       </Text>
-                      <Text
-                        className={panelMetaTextClassName}
-                        style={panelTextDimStyle}
-                      >
+                      <Text style={panelTextDimStyle}>
                         {formatNumber(f.pointCount)}
                       </Text>
                     </Group>
@@ -245,9 +239,10 @@ export function InfoPanel({ data }: { data: GraphData }) {
             </div>
           )}
 
-          {/* Search */}
-          <div>
-            <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+          {/* Search — overflow:clip prevents the absolutely-positioned
+               accessor dropdown (1100px+) from inflating scroll height. */}
+          <div style={{ overflow: "clip" }}>
+            <Text fw={600} mb={4} style={sectionLabelStyle}>
               Search
             </Text>
             <CosmographWidgetBoundary>
@@ -272,7 +267,7 @@ export function InfoPanel({ data }: { data: GraphData }) {
 
           {/* Selection */}
           <div>
-            <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+            <Text fw={600} mb={4} style={sectionLabelStyle}>
               Selection
             </Text>
             <Stack gap={4}>
@@ -290,11 +285,11 @@ export function InfoPanel({ data }: { data: GraphData }) {
                 clusterColors={clusterColors}
               />
             )}
-            <Group mt="sm" grow>
-              <Button size="xs" variant="light" onClick={handleOpenTable}>
+            <Group mt={8} grow>
+              <Button size="compact-xs" variant="light" color={PANEL_ACCENT} onClick={handleOpenTable}>
                 Open in table
               </Button>
-              <Button size="xs" variant="subtle" onClick={handleFitSelection}>
+              <Button size="compact-xs" variant="subtle" color={PANEL_ACCENT} onClick={handleFitSelection}>
                 Fit selection
               </Button>
             </Group>
@@ -310,25 +305,25 @@ export function InfoPanel({ data }: { data: GraphData }) {
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div
-      className="rounded-xl px-3 py-2.5"
+      className="rounded-lg px-2.5 py-1.5"
       style={{
         backgroundColor: "var(--graph-panel-input-bg)",
         border: "1px solid var(--graph-panel-border)",
       }}
     >
       <Text
-        size="xs"
         fw={600}
         style={{
           ...panelTextMutedStyle,
           letterSpacing: "0.05em",
           textTransform: "uppercase",
-          fontSize: "0.6rem",
+          fontSize: "0.55rem",
+          lineHeight: 1,
         }}
       >
         {label}
       </Text>
-      <Text mt={2} size="sm" fw={600} style={panelTextStyle}>
+      <Text mt={1} size="xs" fw={600} style={panelTextStyle}>
         {value}
       </Text>
     </div>
@@ -403,18 +398,10 @@ function SelectionSummary({
     };
   }, [nodes, selectedPointIndices]);
 
-  const badgeStyles = {
-    root: {
-      borderColor: "var(--graph-panel-border)",
-      color: "var(--graph-panel-text-dim)",
-    },
-  } as const;
-
   return (
     <Stack gap={4} mt={6}>
       <Text
         fw={500}
-        className={panelMetaTextClassName}
         style={panelTextMutedStyle}
       >
         Breakdown
@@ -431,7 +418,7 @@ function SelectionSummary({
               key={c.id}
               variant="outline"
               size="xs"
-              styles={badgeStyles}
+              styles={badgeOutlineStyles}
               leftSection={
                 <span
                   className="inline-block h-1.5 w-1.5 rounded-full"
@@ -450,7 +437,7 @@ function SelectionSummary({
       {summary.topSections.length > 0 && (
         <Group gap={4} mt={2}>
           {summary.topSections.map((label) => (
-            <Badge key={label} variant="outline" size="xs" styles={badgeStyles}>
+            <Badge key={label} variant="outline" size="xs" styles={badgeOutlineStyles}>
               {label}
             </Badge>
           ))}
@@ -463,10 +450,10 @@ function SelectionSummary({
 function StatRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between">
-      <Text className={panelMetaTextClassName} style={panelTextDimStyle}>
+      <Text style={panelTextDimStyle}>
         {label}
       </Text>
-      <Text className={panelBodyTextClassName} fw={600} style={panelTextStyle}>
+      <Text fw={600} style={panelTextStyle}>
         {value}
       </Text>
     </div>

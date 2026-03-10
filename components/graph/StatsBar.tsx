@@ -13,7 +13,7 @@ export function StatsBar({ stats }: { stats: GraphStats }) {
 
   return (
     <div
-      className="absolute bottom-6 right-6 flex gap-4 text-xs select-none"
+      className="absolute right-3 top-[52px] z-40 flex gap-4 text-xs select-none"
       style={{ color: "var(--graph-stats-text)" }}
     >
       {items.map((item) => (

@@ -234,12 +234,6 @@ async function queryGraphRunByChecksum(bundleChecksum: string): Promise<GraphRun
   return data as GraphRunRow
 }
 
-const getCachedCurrentGraphRun = unstable_cache(
-  async () => queryCurrentGraphRun(),
-  ['graph-runs-current-cosmograph-rag-chunk'],
-  { revalidate: 60 }
-)
-
 const getCachedGraphRunByChecksum = unstable_cache(
   async (bundleChecksum: string) => queryGraphRunByChecksum(bundleChecksum),
   ['graph-runs-by-checksum'],
@@ -247,7 +241,7 @@ const getCachedGraphRunByChecksum = unstable_cache(
 )
 
 export async function fetchActiveGraphBundle(): Promise<GraphBundle> {
-  return buildGraphBundle(await getCachedCurrentGraphRun())
+  return buildGraphBundle(await queryCurrentGraphRun())
 }
 
 export async function fetchGraphBundleByChecksum(

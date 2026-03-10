@@ -2,7 +2,7 @@ import { NOISE_COLOR } from './brand-colors'
 import type { ColorSchemeName } from './types'
 
 const CLUSTER_PALETTE = [
-  '#a8c5e9', '#aedc93', '#fbb44e', '#ffada4', '#eda8c4',
+  '#a8c5e9', '#aedc93', '#e5c799', '#ffada4', '#eda8c4',
   '#8dd3c7', '#b8a9c9', '#fdb462', '#80b1d3', '#d9d9d9',
   '#bc80bd', '#ccebc5', '#ffed6f', '#fb8072', '#bebada',
   '#e5c494', '#b3de69', '#fccde5', '#d9ef8b', '#a6cee3',

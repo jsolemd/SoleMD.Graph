@@ -32,6 +32,12 @@ export default function RootLayout({
     <html lang="en" {...mantineHtmlProps}>
       <head>
         <ColorSchemeScript defaultColorScheme="auto" />
+        {/* Set .dark class before paint to prevent FOUC — mirrors ColorSchemeScript logic */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var s=localStorage.getItem("mantine-color-scheme-value");var d=s==="dark"||(s!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches);document.documentElement.classList.toggle("dark",d)}catch(e){}`,
+          }}
+        />
       </head>
       <body className="font-sans">
         <MantineThemeProvider>{children}</MantineThemeProvider>

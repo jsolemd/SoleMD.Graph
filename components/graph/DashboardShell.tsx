@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { AnimatePresence } from "framer-motion";
 import {
   CosmographProvider,
@@ -8,24 +9,26 @@ import {
   CosmographTypeColorLegend,
 } from "@cosmograph/react";
 import {
+  ActionIcon,
   Button,
   Group,
   Loader,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core";
+import { GanttChart, Table2 } from "lucide-react";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
-import { panelCardClassName, panelCardStyle, panelTextStyle, panelTextDimStyle } from "./PanelShell";
+import { panelCardClassName, panelCardStyle, panelTextStyle, panelTextDimStyle, ICON_BTN_STYLES } from "./PanelShell";
 import { getModeConfig } from "@/lib/graph/modes";
 import { useGraphBundle } from "@/lib/graph/use-graph-bundle";
-import { formatNumber } from "@/lib/helpers";
+import { formatBytes, formatNumber } from "@/lib/helpers";
 import { GraphCanvas } from "./GraphCanvas";
 import { ModeColorSync } from "./ModeColorSync";
 import { Wordmark } from "./Wordmark";
 import { PromptBox } from "./PromptBox";
 import { TimelineBar } from "./TimelineBar";
 import { StatsBar } from "./StatsBar";
-import { LeftToolbar } from "./explore/LeftToolbar";
 import { CanvasControls } from "./explore/CanvasControls";
 import { ConfigPanel } from "./explore/ConfigPanel";
 import { FiltersPanel } from "./explore/FiltersPanel";
@@ -33,7 +36,7 @@ import { InfoPanel } from "./explore/InfoPanel";
 import { QueryPanel } from "./explore/QueryPanel";
 import { DataTable } from "./explore/DataTable";
 import { DetailPanel } from "./DetailPanel";
-import { HoverPopup } from "./HoverPopup";
+import { AboutPanel } from "./AboutPanel";
 import type { GraphBundle } from "@/lib/graph/types";
 
 const legendStyle: React.CSSProperties = {
@@ -44,20 +47,6 @@ const legendStyle: React.CSSProperties = {
   padding: 8,
 };
 
-function formatBundleBytes(bytes: number) {
-  if (bytes <= 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB"];
-  const exponent = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1
-  );
-  const value = bytes / 1024 ** exponent;
-
-  return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
-}
 
 function GraphBundleLoadingState({ bundle }: { bundle: GraphBundle }) {
   const qaPointCount =
@@ -121,7 +110,7 @@ function GraphBundleLoadingState({ bundle }: { bundle: GraphBundle }) {
             />
             <BundleStat
               label="Bundle Size"
-              value={formatBundleBytes(bundle.bundleBytes)}
+              value={formatBytes(bundle.bundleBytes)}
             />
             <BundleStat
               label="Tables"
@@ -241,10 +230,66 @@ function BundleStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Height of the timeline bar in px. */
+const TIMELINE_HEIGHT = 44;
+
+/** Bottom-left toggle bar for timeline and data table. */
+function BottomToolbar() {
+  const showTimeline = useDashboardStore((s) => s.showTimeline);
+  const tableOpen = useDashboardStore((s) => s.tableOpen);
+  const tableHeight = useDashboardStore((s) => s.tableHeight);
+  const toggleTimeline = useDashboardStore((s) => s.toggleTimeline);
+  const toggleTable = useDashboardStore((s) => s.toggleTable);
+
+  // Float above whichever bottom widgets are visible
+  let bottomOffset = 12;
+  if (showTimeline) bottomOffset += TIMELINE_HEIGHT;
+  if (tableOpen) bottomOffset += tableHeight;
+
+  return (
+    <div
+      className="absolute left-3 z-20 flex items-center gap-0.5 transition-[bottom] duration-200"
+      style={{ bottom: bottomOffset }}
+    >
+      <Tooltip label={showTimeline ? "Hide timeline" : "Show timeline"} position="top" withArrow>
+        <ActionIcon
+          variant="transparent"
+          size="lg"
+          radius="xl"
+          className="graph-icon-btn"
+          styles={ICON_BTN_STYLES}
+          onClick={toggleTimeline}
+          aria-pressed={showTimeline}
+          aria-label={showTimeline ? "Hide timeline" : "Show timeline"}
+        >
+          <GanttChart size={16} strokeWidth={1.5} />
+        </ActionIcon>
+      </Tooltip>
+      <Tooltip label={tableOpen ? "Hide table" : "Show table"} position="top" withArrow>
+        <ActionIcon
+          variant="transparent"
+          size="lg"
+          radius="xl"
+          className="graph-icon-btn"
+          styles={ICON_BTN_STYLES}
+          onClick={toggleTable}
+          aria-pressed={tableOpen}
+          aria-label={tableOpen ? "Hide table" : "Show table"}
+        >
+          <Table2 size={16} strokeWidth={1.5} />
+        </ActionIcon>
+      </Tooltip>
+    </div>
+  );
+}
+
 export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
   const mode = useGraphStore((s) => s.mode);
   const activePanel = useDashboardStore((s) => s.activePanel);
+  const panelsVisible = useDashboardStore((s) => s.panelsVisible);
+  const setPanelsVisible = useDashboardStore((s) => s.setPanelsVisible);
   const tableOpen = useDashboardStore((s) => s.tableOpen);
+  const tableHeight = useDashboardStore((s) => s.tableHeight);
   const uiHidden = useDashboardStore((s) => s.uiHidden);
   const showColorLegend = useDashboardStore((s) => s.showColorLegend);
   const showSizeLegend = useDashboardStore((s) => s.showSizeLegend);
@@ -252,8 +297,22 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
   const pointColorStrategy = useDashboardStore((s) => s.pointColorStrategy);
   const { canvas, data, error, loading, queries } = useGraphBundle(bundle);
 
+  const promptMinimized = useDashboardStore((s) => s.promptMinimized);
   const { layout } = getModeConfig(mode);
+  const isWrite = mode === "write";
+  /** Canvas shifts right only when write editor is actually visible (not minimized to pill). */
+  const canvasShifted = isWrite && !promptMinimized;
   const isContinuousColor = pointColorStrategy === "continuous";
+
+  const setShowTimeline = useDashboardStore((s) => s.setShowTimeline);
+  const setTableOpen = useDashboardStore((s) => s.setTableOpen);
+
+  // Auto-show widgets when entering a mode that requests them (e.g. explore)
+  useEffect(() => {
+    if (layout.autoShowPanels) setPanelsVisible(true);
+    if (layout.autoShowTimeline) setShowTimeline(true);
+    if (layout.autoShowTable) setTableOpen(true);
+  }, [layout.autoShowPanels, layout.autoShowTimeline, layout.autoShowTable, setPanelsVisible, setShowTimeline, setTableOpen]);
 
   if (error) {
     return <GraphBundleErrorState error={error} />;
@@ -267,89 +326,100 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
     <CosmographProvider>
       <ModeColorSync />
       <div
-        className="fixed inset-0 flex flex-col"
+        className="fixed inset-0"
         style={{ backgroundColor: "var(--graph-bg)" }}
       >
-        <div className="flex flex-1 overflow-hidden">
-          <AnimatePresence>
-            {!uiHidden && layout.showToolbar && <LeftToolbar />}
-          </AnimatePresence>
-
-          <div className="relative flex-1">
-            <GraphCanvas canvas={canvas} data={data} />
-            <Wordmark />
-
-            <AnimatePresence>
-              {!uiHidden &&
-                layout.availablePanels.includes("config") &&
-                activePanel === "config" && <ConfigPanel />}
-            </AnimatePresence>
-            <AnimatePresence>
-              {!uiHidden &&
-                layout.availablePanels.includes("filters") &&
-                activePanel === "filters" && <FiltersPanel />}
-            </AnimatePresence>
-            <AnimatePresence>
-              {!uiHidden &&
-                layout.availablePanels.includes("info") &&
-                activePanel === "info" && <InfoPanel data={data} />}
-            </AnimatePresence>
-            <AnimatePresence>
-              {!uiHidden && (
-                <>
-                  {layout.availablePanels.includes("query") &&
-                    activePanel === "query" && (
-                      <QueryPanel
-                        bundle={bundle}
-                        runReadOnlyQuery={queries.runReadOnlyQuery}
-                      />
-                    )}
-                  <DetailPanel queries={queries} />
-                </>
-              )}
-            </AnimatePresence>
-
-            {!uiHidden && layout.showLegends && showColorLegend && (
-              <div
-                className="absolute bottom-4 z-30 transition-[left] duration-200"
-                style={{
-                  left: activePanel
-                    ? (activePanel === "query" ? 420 : activePanel === "info" ? 320 : 300) + 16
-                    : 16,
-                }}
-              >
-                {isContinuousColor ? (
-                  <CosmographRangeColorLegend style={legendStyle} />
-                ) : (
-                  <CosmographTypeColorLegend
-                    selectOnClick
-                    style={legendStyle}
-                  />
-                )}
-              </div>
-            )}
-
-            {!uiHidden && layout.showLegends && showSizeLegend && (
-              <div className="absolute bottom-20 right-4 z-30">
-                <CosmographSizeLegend selectOnClick style={legendStyle} />
-              </div>
-            )}
-
-            <AnimatePresence>
-              {!uiHidden && layout.showCanvasControls && <CanvasControls />}
-            </AnimatePresence>
-
-            <HoverPopup />
-          </div>
+        {/* Graph canvas — always full viewport; in write mode shift right
+            so the graph centers in the visible area beside the editor. */}
+        <div
+          className="absolute inset-0 overflow-hidden"
+          style={{
+            transform: canvasShifted ? "translateX(min(280px, 22.5vw))" : undefined,
+            transition: "transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+          }}
+        >
+          <GraphCanvas canvas={canvas} data={data} />
         </div>
 
-        {!uiHidden && layout.showTimeline && showTimeline && <TimelineBar />}
+        {/* UI overlays — Wordmark always renders; it gates its own children via uiHidden */}
+        <Wordmark />
 
+        {/* About panel — always available via wordmark click */}
         <AnimatePresence>
-          {!uiHidden &&
-            layout.showDataTable &&
-            tableOpen && <DataTable nodes={data.nodes} />}
+          {!uiHidden && activePanel === "about" && <AboutPanel />}
         </AnimatePresence>
+
+        {/* Left-side panels — available in all modes when panel bar is visible */}
+        <AnimatePresence>
+          {!uiHidden && panelsVisible && activePanel === "config" && (
+            <ConfigPanel />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {!uiHidden && panelsVisible && activePanel === "filters" && (
+            <FiltersPanel />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {!uiHidden && panelsVisible && activePanel === "info" && (
+            <InfoPanel data={data} />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {!uiHidden && panelsVisible && activePanel === "query" && (
+            <QueryPanel
+              bundle={bundle}
+              runReadOnlyQuery={queries.runReadOnlyQuery}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Right-side detail panel — always available on point click */}
+        <AnimatePresence>
+          {!uiHidden && <DetailPanel queries={queries} />}
+        </AnimatePresence>
+
+        {/* Legends — right side, stacked, shift above bottom widgets */}
+        {!uiHidden && (showColorLegend || showSizeLegend) && (
+          <div
+            className="absolute right-4 z-30 flex flex-col gap-2 transition-[bottom] duration-200"
+            style={{
+              bottom: 16
+                + (showTimeline ? TIMELINE_HEIGHT : 0)
+                + (tableOpen ? tableHeight : 0),
+            }}
+          >
+            {showSizeLegend && (
+              <CosmographSizeLegend selectOnClick style={legendStyle} />
+            )}
+            {showColorLegend && (
+              isContinuousColor ? (
+                <CosmographRangeColorLegend style={legendStyle} />
+              ) : (
+                <CosmographTypeColorLegend
+                  selectOnClick
+                  style={legendStyle}
+                />
+              )
+            )}
+          </div>
+        )}
+
+        {/* Canvas controls (selection tools) */}
+        <AnimatePresence>
+          {!uiHidden && panelsVisible && <CanvasControls />}
+        </AnimatePresence>
+
+        {/* Bottom widgets — overlay on top of graph, pinned to bottom edge */}
+        <AnimatePresence>
+          {!uiHidden && showTimeline && <TimelineBar />}
+        </AnimatePresence>
+        <AnimatePresence>
+          {!uiHidden && tableOpen && <DataTable nodes={data.nodes} />}
+        </AnimatePresence>
+
+        {/* Bottom-left toggle bar for timeline & table */}
+        {!uiHidden && panelsVisible && <BottomToolbar />}
 
         {!uiHidden && <PromptBox />}
         {!uiHidden && layout.showStatsBar && <StatsBar stats={data.stats} />}

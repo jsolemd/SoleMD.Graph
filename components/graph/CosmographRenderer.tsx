@@ -24,7 +24,6 @@ export default function CosmographRenderer({
   const cosmographRef = useRef<CosmographRef>(undefined);
   const hasFittedView = useRef(false);
   const selectNode = useGraphStore((s) => s.selectNode);
-  const hoverNode = useGraphStore((s) => s.hoverNode);
   const scheme = useComputedColorScheme("light");
   const isDark = scheme === "dark";
   const colors = isDark ? BRAND.dark : BRAND.light;
@@ -126,17 +125,6 @@ export default function CosmographRenderer({
     [indexToNode, selectNode]
   );
 
-  const handlePointMouseOver = useCallback(
-    (index: number) => {
-      hoverNode(indexToNode.get(index) ?? null);
-    },
-    [indexToNode, hoverNode]
-  );
-
-  const handlePointMouseOut = useCallback(() => {
-    hoverNode(null);
-  }, [hoverNode]);
-
   const handlePointsFiltered = useCallback(
     (
       filteredPoints: CosmographData,
@@ -194,6 +182,7 @@ export default function CosmographRenderer({
       enableSimulation={false}
       backgroundColor={colors.bg}
       pointSizeRange={pointSizeRange}
+      pointOpacity={colors.pointOpacity}
       pointGreyoutOpacity={colors.greyout}
       scalePointsOnZoom={scalePointsOnZoom}
       showLabels={showPointLabels}
@@ -219,8 +208,6 @@ export default function CosmographRenderer({
       onGraphRebuilt={handleGraphRebuilt}
       onPointsFiltered={handlePointsFiltered}
       onPointClick={handlePointClick}
-      onPointMouseOver={handlePointMouseOver}
-      onPointMouseOut={handlePointMouseOut}
       style={{ width: "100%", height: "100%" }}
     />
   );

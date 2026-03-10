@@ -2,7 +2,7 @@
 
 import { Component, type ReactNode } from "react";
 import { Text } from "@mantine/core";
-import { panelMetaTextClassName, panelTextDimStyle } from "./PanelShell";
+import { panelTextDimStyle } from "./PanelShell";
 
 /** Catches DuckDB-WASM race conditions without crashing the page. */
 export class CosmographWidgetBoundary extends Component<
@@ -20,7 +20,7 @@ export class CosmographWidgetBoundary extends Component<
     if (this.state.hasError) {
       return this.props.fallback ?? (
         <div className="flex items-center gap-2">
-          <Text className={panelMetaTextClassName} style={panelTextDimStyle}>
+          <Text style={panelTextDimStyle}>
             Widget failed to load.
           </Text>
           <button

@@ -18,7 +18,7 @@ SoleMD.Web is currently a single-route Next.js 16 application centered on a full
 - `components/mantine-theme-provider.tsx`: Mantine provider plus dark-mode `.dark` sync
 - `lib/mantine-theme.ts`: Mantine `createTheme(...)` bridge
 - `app/globals.css`: Tailwind v4 theme tokens plus semantic CSS variables
-- `lib/graph/fetch.ts`: `server-only` fetch for the active graph bundle in `solemd.graph_runs`
+- `lib/graph/fetch.ts`: `server-only` fetch for the active graph bundle in `solemd.graph_runs`; active-run resolution is intentionally uncached so refresh picks up a newly current graph immediately
 - `lib/graph/use-graph-bundle.ts`: client hook that hydrates the bundle into `GraphData`
 - `lib/graph/duckdb.ts`: DuckDB-Wasm bundle loading and query helpers
 - `components/graph/GraphCanvas.tsx`: `next/dynamic(..., { ssr: false })` bridge for WebGL

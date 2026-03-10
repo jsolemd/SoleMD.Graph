@@ -1,29 +1,29 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { Text, ActionIcon, Tooltip } from "@mantine/core";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
+import { smooth } from "@/lib/motion";
+import { useDashboardStore } from "@/lib/graph/stores";
 
-/** Shared spring config for consistent panel animations. */
-export const PANEL_SPRING = {
-  type: "spring" as const,
-  stiffness: 300,
-  damping: 30,
-};
+const panelChromeTextClassName = "uppercase tracking-[0.08em]";
 
-export const panelChromeTextClassName = "text-[11px] uppercase tracking-[0.08em]";
-export const panelMetaTextClassName = "text-xs leading-4";
-export const panelBodyTextClassName = "text-xs leading-5";
-export const panelTitleTextClassName = "text-base leading-6";
-export const panelStatValueTextClassName = "text-sm leading-5";
+/**
+ * Panel text style objects — inline styles beat Mantine's class-based font-size.
+ * Each combines color + sizing so every `<Text style={…}>` is self-contained.
+ */
+export const panelTextStyle = { color: "var(--graph-panel-text)", fontSize: 11, lineHeight: "16px" } as const;
+export const panelTextMutedStyle = { color: "var(--graph-panel-text-muted)", fontSize: 11, lineHeight: "16px" } as const;
+export const panelTextDimStyle = { color: "var(--graph-panel-text-dim)", fontSize: 11, lineHeight: "16px" } as const;
 
-/** Reusable style objects for panel text colors — eliminates inline object allocation. */
-export const panelTextStyle = { color: "var(--graph-panel-text)" } as const;
-export const panelTextMutedStyle = { color: "var(--graph-panel-text-muted)" } as const;
-export const panelTextDimStyle = { color: "var(--graph-panel-text-dim)" } as const;
+/** Chrome label (panel title, section headings) — smallest tier. */
+export const panelChromeStyle: React.CSSProperties = { fontSize: 10, lineHeight: "14px" };
 
-export const panelCardClassName = "rounded-2xl px-3 py-3";
+/** Stat value text — slightly bolder than body. */
+export const panelStatValueStyle: React.CSSProperties = { fontSize: 12, lineHeight: "16px" };
+
+export const panelCardClassName = "rounded-xl px-2.5 py-2";
 export const panelCardStyle: React.CSSProperties = {
   backgroundColor: "var(--graph-panel-input-bg)",
   border: "1px solid var(--graph-panel-border)",
@@ -34,6 +34,33 @@ export const panelErrorStyle: React.CSSProperties = {
   border: "1px solid var(--error-border)",
 };
 
+/**
+ * Shared Mantine `styles` for all graph icon buttons.
+ * Sets `color` as an inline style so it beats Mantine's internal
+ * `color: var(--ai-color)` from the variant system.
+ * Hover/active backgrounds are handled by the `.graph-icon-btn` CSS class.
+ */
+export const ICON_BTN_STYLES = {
+  root: { color: "var(--graph-panel-text-dim)" },
+} as const;
+
+/** Badge with mode-accent background — for cluster labels, "Primary" tags. */
+export const badgeAccentStyles = {
+  root: {
+    backgroundColor: "var(--mode-accent-subtle)",
+    color: "var(--graph-panel-text)",
+    border: "1px solid var(--mode-accent-border)",
+  },
+} as const;
+
+/** Badge with outline — for section, page number, neutral metadata. */
+export const badgeOutlineStyles = {
+  root: {
+    borderColor: "var(--graph-panel-border)",
+    color: "var(--graph-panel-text-dim)",
+  },
+} as const;
+
 interface PanelShellProps {
   children: ReactNode;
   title: string;
@@ -42,9 +69,15 @@ interface PanelShellProps {
   onClose: () => void;
 }
 
+/** Top offset so panels float below the Wordmark + panel icon row. */
+export const PANEL_TOP = 104;
+
+/** Mode-aware accent for Mantine `color` props inside panels. */
+export const PANEL_ACCENT = "var(--mode-accent)";
+
 const ANIMATION = {
-  left: { initial: { opacity: 0, x: -20 }, exit: { opacity: 0, x: -20 } },
-  right: { initial: { opacity: 0, x: 20 }, exit: { opacity: 0, x: 20 } },
+  left: { initial: { opacity: 0, y: -16 }, exit: { opacity: 0, y: -16 } },
+  right: { initial: { opacity: 0, y: -16 }, exit: { opacity: 0, y: -16 } },
 };
 
 export function PanelShell({
@@ -55,6 +88,8 @@ export function PanelShell({
   onClose,
 }: PanelShellProps) {
   const anim = ANIMATION[side];
+  const panelRef = useRef<HTMLDivElement>(null);
+  const setPanelBottomY = useDashboardStore((s) => s.setPanelBottomY);
 
   // Dismiss on Escape — ref avoids re-registering on every onClose identity change
   const onCloseRef = useRef(onClose);
@@ -72,34 +107,50 @@ export function PanelShell({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Right-side panels need z-50 to sit above native Cosmograph controls (z-40)
-  const zClass = side === "right" ? "z-50" : "z-20";
+  // Report panel bottom position so PromptBox can check for overlap
+  // Use layout position (PANEL_TOP + height) instead of getBoundingClientRect,
+  // which reflects the current framer-motion animated transform (y: -16 on enter).
+  const reportBottom = useCallback(() => {
+    if (panelRef.current) {
+      setPanelBottomY(side, PANEL_TOP + panelRef.current.offsetHeight);
+    }
+  }, [side, setPanelBottomY]);
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    reportBottom();
+    const ro = new ResizeObserver(reportBottom);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      setPanelBottomY(side, 0);
+    };
+  }, [reportBottom, setPanelBottomY, side]);
 
   return (
     <motion.div
+      ref={panelRef}
       initial={anim.initial}
-      animate={{ opacity: 1, x: 0 }}
+      animate={{ opacity: 1, y: 0 }}
       exit={anim.exit}
-      transition={PANEL_SPRING}
-      className={`absolute top-0 ${side}-0 ${zClass} flex h-full flex-col overflow-hidden`}
+      transition={smooth}
+      className="absolute z-30 flex flex-col overflow-hidden rounded-2xl"
       style={{
+        top: PANEL_TOP,
+        ...(side === "left" ? { left: 12 } : { right: 12 }),
         width,
+        maxHeight: `calc(100vh - ${PANEL_TOP + 100}px)`,
         backgroundColor: "var(--graph-panel-bg)",
-        borderRight:
-          side === "left"
-            ? "1px solid var(--graph-panel-border)"
-            : undefined,
-        borderLeft:
-          side === "right"
-            ? "1px solid var(--graph-panel-border)"
-            : undefined,
+        border: "1px solid var(--graph-panel-border)",
+        boxShadow: "var(--graph-panel-shadow)",
       }}
     >
-      <div className="flex items-center justify-between px-4 py-3">
+      <div className="flex items-center justify-between px-3 py-2">
         <Text
           fw={600}
           className={panelChromeTextClassName}
-          style={panelTextMutedStyle}
+          style={{ ...panelTextMutedStyle, ...panelChromeStyle }}
         >
           {title}
         </Text>
@@ -109,12 +160,13 @@ export function PanelShell({
           withArrow
         >
           <ActionIcon
-            variant="subtle"
+            variant="transparent"
             size={28}
             radius="xl"
+            className="graph-icon-btn"
+            styles={ICON_BTN_STYLES}
             onClick={onClose}
             aria-label={`Close ${title.toLowerCase()} panel`}
-            styles={{ root: { color: "var(--graph-panel-text-dim)" } }}
           >
             <X size={14} />
           </ActionIcon>
@@ -127,6 +179,8 @@ export function PanelShell({
 
 /** Shared label style for section headings inside panels. */
 export const sectionLabelStyle: React.CSSProperties = {
+  fontSize: 10,
+  lineHeight: "14px",
   color: "var(--graph-panel-text-muted)",
   textTransform: "uppercase",
   letterSpacing: "0.05em",
@@ -134,7 +188,7 @@ export const sectionLabelStyle: React.CSSProperties = {
 
 /** Shared style for table column headers inside panels. */
 export const panelTableHeaderStyle: React.CSSProperties = {
-  fontSize: "0.7rem",
+  fontSize: "0.6rem",
   fontWeight: 600,
   textTransform: "uppercase",
   letterSpacing: "0.03em",
