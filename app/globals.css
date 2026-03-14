@@ -242,6 +242,11 @@ html.dark {
    COMPONENT OVERRIDES
    ═══════════════════════════════════════════════════════════════════ */
 
+/* Config panel — thin visible scrollbar (global rules hide scrollbars) */
+.config-scroll::-webkit-scrollbar { width: 4px; }
+.config-scroll::-webkit-scrollbar-track { background: transparent; }
+.config-scroll::-webkit-scrollbar-thumb { background: var(--graph-panel-border); border-radius: 2px; }
+
 /* DataTable pagination — minimal, mode-colored active page */
 .table-pagination [data-active] {
   background-color: transparent !important;

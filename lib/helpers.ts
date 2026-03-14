@@ -9,11 +9,14 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
 }
 
+const defaultNumberFormat = new Intl.NumberFormat("en-US")
+
 export function formatNumber(
   value: number,
   options?: Intl.NumberFormatOptions
 ): string {
-  return new Intl.NumberFormat("en-US", options).format(value);
+  if (!options) return defaultNumberFormat.format(value)
+  return new Intl.NumberFormat("en-US", options).format(value)
 }
 
 export function clamp(value: number, min: number, max: number): number {

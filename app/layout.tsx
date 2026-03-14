@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core";
-import { MantineThemeProvider } from "@/components/mantine-theme-provider";
+import { MantineThemeProvider } from "@/components/MantineThemeProvider";
 
 import "@mantine/core/styles.css";
 import "@/app/globals.css";
