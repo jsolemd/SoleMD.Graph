@@ -1,30 +1,27 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Textarea, Tooltip } from "@mantine/core";
 import { useViewportSize } from "@mantine/hooks";
 import {
   motion,
   animate,
-  AnimatePresence,
   useDragControls,
   useMotionValue,
 } from "framer-motion";
 import {
-  MessageCircle,
-  Compass,
-  BookOpen,
-  PenLine,
   ArrowUp,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { selectBottomClearance, selectLeftClearance, selectRightClearance } from "@/lib/graph/stores/dashboard-store";
-import { MODE_ORDER, getModeConfig } from "@/lib/graph/modes";
+import { getModeConfig } from "@/lib/graph/modes";
 import { MODE_EXAMPLES, pickRandom } from "@/lib/graph/mode-examples";
-import { responsive, smooth, bouncy, settle, dblHoverHint } from "@/lib/motion";
+import { responsive, smooth, bouncy } from "@/lib/motion";
 import type { GraphMode } from "@/lib/graph/types";
+import { useTypewriter } from "@/lib/graph/hooks/use-typewriter";
+import { ModeToggleBar } from "./ModeToggleBar";
 
 // Prompt positioning constants
 const BOTTOM_BASE = 32;
@@ -32,201 +29,6 @@ const BOTTOM_BASE = 32;
 const WRITE_TOP_CLEARANCE = 96;
 /** Top clearance for write panel — no panel icons. */
 const WRITE_TOP_BASE = 56;
-
-/** Cycles through texts once with a typewriter type/delete effect, then stops. */
-function useTypewriter(
-  texts: string[],
-  { speed = 45, deleteSpeed = 25, waitTime = 2000, initialDelay = 600 } = {},
-) {
-  const [display, setDisplay] = useState("");
-  const [textIdx, setTextIdx] = useState(0);
-  const [charIdx, setCharIdx] = useState(0);
-  const [done, setDone] = useState(false);
-  const [phase, setPhase] = useState<"delay" | "typing" | "deleting" | "done">("delay");
-  const textsRef = useRef(texts);
-
-  // Reset when texts array identity changes (mode switch)
-  useEffect(() => {
-    textsRef.current = texts;
-    setDisplay("");
-    setTextIdx(0);
-    setCharIdx(0);
-    setDone(false);
-    setPhase("delay");
-  }, [texts]);
-
-  useEffect(() => {
-    if (phase === "done") return;
-    const current = textsRef.current[textIdx];
-    if (!current) return;
-
-    let timeout: ReturnType<typeof setTimeout>;
-
-    switch (phase) {
-      case "delay":
-        timeout = setTimeout(() => setPhase("typing"), initialDelay);
-        break;
-      case "typing":
-        if (charIdx < current.length) {
-          timeout = setTimeout(() => {
-            setDisplay(current.slice(0, charIdx + 1));
-            setCharIdx((c) => c + 1);
-          }, speed);
-        } else if (textIdx >= textsRef.current.length - 1) {
-          // Last text fully typed — hold it
-          setDone(true);
-          setPhase("done");
-        } else {
-          timeout = setTimeout(() => setPhase("deleting"), waitTime);
-        }
-        break;
-      case "deleting":
-        if (display.length > 0) {
-          timeout = setTimeout(() => {
-            setDisplay((d) => d.slice(0, -1));
-          }, deleteSpeed);
-        } else {
-          const nextIdx = textIdx + 1;
-          if (nextIdx >= textsRef.current.length) {
-            // One full cycle complete
-            setDone(true);
-            setPhase("done");
-          } else {
-            setTextIdx(nextIdx);
-            setCharIdx(0);
-            setPhase("typing");
-          }
-        }
-        break;
-    }
-    return () => clearTimeout(timeout);
-  }, [phase, charIdx, display, textIdx, speed, deleteSpeed, waitTime, initialDelay]);
-
-  const isLast = textIdx >= textsRef.current.length - 1;
-  return { text: display, done, isLast };
-}
-
-/** Inactive mode icon hover — wiggle to hint "click me". */
-const INACTIVE_ICON_HOVER = {
-  rotate: [0, -12, 12, -8, 8, 0],
-  scale: 1.1,
-  transition: { rotate: { duration: 0.5, ease: "easeInOut" as const }, scale: bouncy },
-};
-
-/** Icon mapping — keeps presentation separate from mode data. */
-const MODE_ICONS: Record<GraphMode, typeof MessageCircle> = {
-  ask: MessageCircle,
-  explore: Compass,
-  learn: BookOpen,
-  write: PenLine,
-};
-
-/** Gradient divider between mode toggles. */
-function ModeDivider() {
-  return (
-    <div
-      className="h-5 w-px mx-1 flex-shrink-0 rounded-full"
-      style={{
-        background:
-          "linear-gradient(to bottom, transparent, var(--graph-prompt-divider), transparent)",
-      }}
-    />
-  );
-}
-
-/** Shared mode toggle bar. */
-export function ModeToggleBar({
-  compact = false,
-  onModeChange,
-}: {
-  compact?: boolean;
-  onModeChange?: (mode: GraphMode) => void;
-}) {
-  const mode = useGraphStore((s) => s.mode);
-  const setMode = useGraphStore((s) => s.setMode);
-  const togglePromptMinimized = useDashboardStore((s) => s.togglePromptMinimized);
-  const lastActiveClickRef = useRef<number>(0);
-
-  const handleClick = useCallback(
-    (key: GraphMode) => {
-      if (key === mode) {
-        const now = Date.now();
-        if (now - lastActiveClickRef.current < 400) {
-          togglePromptMinimized();
-          lastActiveClickRef.current = 0;
-          return;
-        }
-        lastActiveClickRef.current = now;
-        return;
-      }
-      lastActiveClickRef.current = 0;
-      setMode(key);
-      onModeChange?.(key);
-    },
-    [mode, setMode, onModeChange, togglePromptMinimized],
-  );
-
-  return (
-    <div className="flex items-center">
-      {MODE_ORDER.map((key, i) => {
-        const config = getModeConfig(key);
-        const isActive = key === mode;
-        const Icon = MODE_ICONS[key];
-        return (
-          <Fragment key={key}>
-            {i > 0 && <ModeDivider />}
-            <Tooltip label={config.label} position="top" withArrow>
-              <motion.button
-                onClick={() => handleClick(key)}
-                className="relative flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium transition-colors duration-200 border h-7"
-                style={{
-                  backgroundColor: isActive
-                    ? "var(--mode-accent-subtle)"
-                    : "transparent",
-                  borderColor: "transparent",
-                  color: isActive
-                    ? "var(--mode-accent)"
-                    : "var(--graph-prompt-inactive)",
-                }}
-                whileHover={isActive ? dblHoverHint : undefined}
-                aria-pressed={isActive}
-                aria-label={`${config.label} mode`}
-              >
-                <motion.div
-                  className="flex items-center justify-center w-4 h-4 flex-shrink-0"
-                  animate={{
-                    rotate: isActive ? 360 : 0,
-                    scale: isActive ? 1.1 : 1,
-                  }}
-                  whileHover={isActive ? undefined : INACTIVE_ICON_HOVER}
-                  transition={settle}
-                >
-                  <Icon size={14} />
-                </motion.div>
-                {!compact && (
-                  <AnimatePresence mode="wait">
-                    {isActive && (
-                      <motion.span
-                        key={key}
-                        initial={{ width: 0, opacity: 0 }}
-                        animate={{ width: "auto", opacity: 1 }}
-                        exit={{ width: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden whitespace-nowrap"
-                      >
-                        {config.label}
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                )}
-              </motion.button>
-            </Tooltip>
-          </Fragment>
-        );
-      })}
-    </div>
-  );
-}
 
 export function PromptBox() {
   const mode = useGraphStore((s) => s.mode);
@@ -240,8 +42,6 @@ export function PromptBox() {
   const bottomClearance = useDashboardStore(selectBottomClearance);
   const leftClearance = useDashboardStore(selectLeftClearance);
   const rightClearance = useDashboardStore(selectRightClearance);
-  const panelBottomYLeft = useDashboardStore((s) => s.panelBottomY.left);
-  const panelBottomYRight = useDashboardStore((s) => s.panelBottomY.right);
   const activeMode = getModeConfig(mode);
   const { layout } = activeMode;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-pick on mode change
@@ -253,7 +53,10 @@ export function PromptBox() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
+  const userDragX = useRef(0);
   const userDragY = useRef(0);
+  const prevEffLeft = useRef(0);
+  const prevEffRight = useRef(0);
   const dragControls = useDragControls();
   const dragX = useMotionValue(0);
   const dragY = useMotionValue(0);
@@ -268,11 +71,10 @@ export function PromptBox() {
   // preventing content from reflowing before the card finishes resizing.
   const isFullHeight = isWrite || promptMaximized || heightOverride;
 
-  // Overlap-aware clearance — single source of truth for both the effect and JSX width.
-  // Only applies clearance when a panel physically extends into the prompt zone.
-  const promptZoneTop = vh - BOTTOM_BASE - 80; // ~prompt height + margin
-  const effLeft = (isWrite || panelBottomYLeft > promptZoneTop) ? leftClearance : 0;
-  const effRight = panelBottomYRight > promptZoneTop ? rightClearance : 0;
+  // Left/right panels are user-initiated — always respect their clearance.
+  // Store selectors already return 0 when no panel is open.
+  const effLeft = leftClearance;
+  const effRight = rightClearance;
   const targetY = Math.min(0, BOTTOM_BASE - bottomClearance);
 
   // Unified positioning — clear precedence: write > collapsed > obstacle avoidance.
@@ -325,15 +127,22 @@ export function PromptBox() {
         // Collapsed pill: left edge at 12px.
         // Card uses translateX(0) in this mode, so dragX directly places the left edge.
         const targetX = 12 - vw / 2;
-        posAnim.current.x = animate(dragX, targetX, smooth);
-        posAnim.current.y = animate(dragY, targetY, smooth);
-        userDragY.current = targetY;
+        if (modeChanged) { userDragX.current = targetX; userDragY.current = targetY; }
+        posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
+        posAnim.current.y = animate(dragY, Math.min(userDragY.current, targetY), smooth);
       } else {
         // Normal: center in available space between left and right panels.
         const targetX = (effLeft - effRight) / 2;
-        posAnim.current.x = animate(dragX, targetX, smooth);
-        if (modeChanged) userDragY.current = 0;
-        // Obstacle avoidance (Y only)
+        if (modeChanged) { userDragX.current = 0; userDragY.current = 0; }
+        // Reset drag offset when panels change so prompt re-centers in available space
+        if (prevEffLeft.current !== effLeft || prevEffRight.current !== effRight) {
+          userDragX.current = 0;
+          prevEffLeft.current = effLeft;
+          prevEffRight.current = effRight;
+          setIsOffset(userDragY.current !== 0);
+        }
+        // Respect user drag offset; obstacle avoidance clamps Y upward only
+        posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
         const target = Math.min(userDragY.current, targetY);
         posAnim.current.y = animate(dragY, target, smooth);
       }
@@ -399,6 +208,7 @@ export function PromptBox() {
         dragElastic={0}
         style={{ x: dragX, y: dragY }}
         onDragStart={() => {
+          posAnim.current.x?.stop();
           posAnim.current.y?.stop();
           isDragging.current = true;
           document.body.style.cursor = "grabbing";
@@ -430,6 +240,7 @@ export function PromptBox() {
           const safeY = Math.max(maxUp, Math.min(0, curY));
           if (curX !== safeX) animate(dragX, safeX, responsive);
           if (curY !== safeY) animate(dragY, safeY, responsive);
+          userDragX.current = safeX;
           userDragY.current = safeY;
           setIsOffset(safeX !== 0 || safeY !== 0);
           setTimeout(() => {
@@ -638,6 +449,7 @@ export function PromptBox() {
                 if (!isOffset) return;
                 animate(dragX, (effLeft - effRight) / 2, responsive);
                 animate(dragY, targetY, responsive);
+                userDragX.current = 0;
                 userDragY.current = 0;
                 setIsOffset(false);
               }}

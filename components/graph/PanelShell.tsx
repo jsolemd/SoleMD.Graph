@@ -40,7 +40,7 @@ export const panelErrorStyle: React.CSSProperties = {
  * `color: var(--ai-color)` from the variant system.
  * Hover/active backgrounds are handled by the `.graph-icon-btn` CSS class.
  */
-export const ICON_BTN_STYLES = {
+export const iconBtnStyles = {
   root: { color: "var(--graph-panel-text-dim)" },
 } as const;
 
@@ -69,11 +69,14 @@ interface PanelShellProps {
   onClose: () => void;
 }
 
-/** Top offset so panels float below the Wordmark + panel icon row. */
-export const PANEL_TOP = 104;
+/** Top offset so panels float below the Wordmark + panel icon row + stats/layer bar. */
+export const PANEL_TOP = 116;
 
 /** Mode-aware accent for Mantine `color` props inside panels. */
 export const PANEL_ACCENT = "var(--mode-accent)";
+
+/** Shared label color for Mantine Switch components inside panels. */
+export const switchLabelStyle = { label: { color: "var(--graph-panel-text)" } };
 
 const ANIMATION = {
   left: { initial: { opacity: 0, y: -16 }, exit: { opacity: 0, y: -16 } },
@@ -164,7 +167,7 @@ export function PanelShell({
             size={28}
             radius="xl"
             className="graph-icon-btn"
-            styles={ICON_BTN_STYLES}
+            styles={iconBtnStyles}
             onClick={onClose}
             aria-label={`Close ${title.toLowerCase()} panel`}
           >

@@ -19,10 +19,10 @@ import {
   Plus,
   SlidersHorizontal,
 } from "lucide-react";
-import ThemeToggle from "@/components/ui/theme-toggle";
+import ThemeToggle from "@/components/ui/ThemeToggle";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { getModeConfig } from "@/lib/graph/modes";
-import { ICON_BTN_STYLES } from "./PanelShell";
+import { iconBtnStyles } from "./PanelShell";
 import { settle } from "@/lib/motion";
 import type { ActivePanel } from "@/lib/graph/stores";
 
@@ -70,24 +70,28 @@ export function Wordmark() {
   }, [cosmograph]);
 
   const handleExport = useCallback(async () => {
-    const pointsData = await cosmograph?.getPointsData();
-    if (!pointsData) return;
-    const rows = cosmograph?.convertCosmographDataToObject(pointsData) ?? [];
-    if (rows.length === 0) return;
-    const keys = Object.keys(rows[0]);
-    const csv = [
-      keys.join(","),
-      ...rows.map((row) =>
-        keys.map((k) => JSON.stringify((row as Record<string, unknown>)[k] ?? "")).join(",")
-      ),
-    ].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "solemd-graph-data.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const pointsData = await cosmograph?.getPointsData();
+      if (!pointsData) return;
+      const rows = cosmograph?.convertCosmographDataToObject(pointsData) ?? [];
+      if (rows.length === 0) return;
+      const keys = Object.keys(rows[0]);
+      const csv = [
+        keys.join(","),
+        ...rows.map((row) =>
+          keys.map((k) => JSON.stringify((row as Record<string, unknown>)[k] ?? "")).join(",")
+        ),
+      ].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "solemd-graph-data.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("CSV export failed:", error);
+    }
   }, [cosmograph]);
 
   return (
@@ -144,7 +148,7 @@ export function Wordmark() {
                       size="lg"
                       radius="xl"
                       className="graph-icon-btn"
-                      styles={ICON_BTN_STYLES}
+                      styles={iconBtnStyles}
                       onClick={() => togglePanel(panel)}
                       aria-pressed={isActive}
                       aria-label={label}
@@ -170,7 +174,7 @@ export function Wordmark() {
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={ICON_BTN_STYLES}
+                styles={iconBtnStyles}
                 onClick={handleFitView}
                 aria-label="Fit view"
               >
@@ -183,7 +187,7 @@ export function Wordmark() {
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={ICON_BTN_STYLES}
+                styles={iconBtnStyles}
                 onClick={handleZoomIn}
                 aria-label="Zoom in"
               >
@@ -196,7 +200,7 @@ export function Wordmark() {
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={ICON_BTN_STYLES}
+                styles={iconBtnStyles}
                 onClick={handleZoomOut}
                 aria-label="Zoom out"
               >
@@ -209,7 +213,7 @@ export function Wordmark() {
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={ICON_BTN_STYLES}
+                styles={iconBtnStyles}
                 onClick={handleScreenshot}
                 aria-label="Save screenshot"
               >
@@ -222,7 +226,7 @@ export function Wordmark() {
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={ICON_BTN_STYLES}
+                styles={iconBtnStyles}
                 onClick={handleExport}
                 aria-label="Export data"
               >
@@ -242,7 +246,7 @@ export function Wordmark() {
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={ICON_BTN_STYLES}
+                styles={iconBtnStyles}
                 onClick={togglePanelsVisible}
                 aria-pressed={panelsVisible}
                 aria-label={panelsVisible ? "Hide panels" : "Show panels"}
@@ -263,7 +267,7 @@ export function Wordmark() {
             size="lg"
             radius="xl"
             className="graph-icon-btn"
-            styles={ICON_BTN_STYLES}
+            styles={iconBtnStyles}
             onClick={() => {
               setSpinCount((current) => current + 1);
               toggleUiHidden();

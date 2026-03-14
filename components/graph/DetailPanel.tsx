@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Accordion,
   Anchor,
@@ -10,8 +10,10 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
+import { useCosmograph } from "@cosmograph/react";
 import { ExternalLink } from "lucide-react";
-import { useGraphStore } from "@/lib/graph/stores";
+import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
+import { useGraphColorTheme } from "@/lib/graph/hooks/use-graph-color-theme";
 import { formatNumber } from "@/lib/helpers";
 import {
   PanelShell,
@@ -27,8 +29,10 @@ import type {
   ClusterExemplar,
   ClusterInfo,
   GraphBundleQueries,
+  GraphNode,
   GraphPaperDetail,
   GraphSelectionDetail,
+  PaperDocument,
 } from "@/lib/graph/types";
 
 /* ─── Shared primitives ───────────────────────────────────────── */
@@ -43,6 +47,74 @@ function InlineStats({ items }: { items: Array<{ label: string; value: number | 
       {parts.join(" \u00b7 ")}
     </Text>
   );
+}
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function getParagraphCandidates(value: string | null | undefined): string[] {
+  if (!value) return [];
+
+  return value
+    .replace(/\r\n/g, "\n")
+    .split(/\n\s*\n/)
+    .flatMap((block) => {
+      const trimmed = block.trim();
+      if (!trimmed) return [];
+
+      // Metadata-heavy previews are often short multi-line blocks. Splitting those
+      // lines lets us skip title/author metadata and surface the first prose block.
+      if (trimmed.includes("\n") && trimmed.length < 240) {
+        return trimmed
+          .split(/\n+/)
+          .map(collapseWhitespace)
+          .filter(Boolean);
+      }
+
+      return [collapseWhitespace(trimmed)];
+    });
+}
+
+function looksLikeSectionHeading(value: string): boolean {
+  const normalized = collapseWhitespace(value);
+  const wordCount = normalized.split(" ").length;
+  return wordCount <= 6 && !/[.!?]/.test(normalized);
+}
+
+function looksLikeNarrativeParagraph(value: string): boolean {
+  const normalized = collapseWhitespace(value);
+  const wordCount = normalized.split(" ").length;
+  return wordCount >= 16 && /[.!?]/.test(normalized) && !looksLikeSectionHeading(normalized);
+}
+
+function getPreferredPaperPreview({
+  abstract,
+  displayPreview,
+  nodeDisplayPreview,
+}: {
+  abstract: string | null;
+  displayPreview: string | null;
+  nodeDisplayPreview: string | null;
+}): { source: "abstract" | "display" | null; text: string | null } {
+  const displayCandidates = getParagraphCandidates(displayPreview ?? nodeDisplayPreview);
+  const displayParagraph = displayCandidates.find(looksLikeNarrativeParagraph);
+
+  if (displayParagraph) {
+    return { source: "display", text: displayParagraph };
+  }
+
+  const abstractCandidates = getParagraphCandidates(abstract);
+  const abstractParagraph = abstractCandidates.find(looksLikeNarrativeParagraph) ?? abstractCandidates[0];
+
+  if (abstractParagraph) {
+    return { source: "abstract", text: abstractParagraph };
+  }
+
+  return {
+    source: displayCandidates[0] ? "display" : null,
+    text: displayCandidates[0] ?? null,
+  };
 }
 
 function KV({ label, value }: { label: string; value: string }) {
@@ -76,7 +148,9 @@ function ExtLink({ href, label }: { href: string | null; label: string }) {
 
 /* ─── Header ──────────────────────────────────────────────────── */
 
-function DetailHeader({ node, paper }: { node: ChunkNode; paper: GraphPaperDetail | null }) {
+function DetailHeader({ node, paper }: { node: GraphNode; paper: GraphPaperDetail | null }) {
+  const colorTheme = useGraphColorTheme();
+  const nodeColor = colorTheme === "light" ? node.colorLight : node.color;
   const title = paper?.title ?? node.paperTitle;
   const subtitle = [
     paper?.journal ?? node.journal,
@@ -104,19 +178,19 @@ function DetailHeader({ node, paper }: { node: ChunkNode; paper: GraphPaperDetai
               width: 6,
               height: 6,
               borderRadius: "50%",
-              backgroundColor: node.color,
+              backgroundColor: nodeColor,
               marginRight: 5,
               verticalAlign: "middle",
             }}
           />
           {node.clusterLabel ?? `Cluster ${node.clusterId}`}
         </Badge>
-        {node.sectionCanonical && (
+        {node.nodeKind === 'chunk' && node.sectionCanonical && (
           <Badge size="xs" variant="outline" styles={badgeOutlineStyles}>
             {node.sectionCanonical}
           </Badge>
         )}
-        {node.pageNumber != null && (
+        {node.nodeKind === 'chunk' && node.pageNumber != null && (
           <Badge size="xs" variant="outline" styles={badgeOutlineStyles}>
             p. {node.pageNumber}
           </Badge>
@@ -181,6 +255,77 @@ function ChunkSection({
             />
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/* ─── Paper Document (paper layer detail) ────────────────────── */
+
+function PaperDocumentSection({
+  nodeDisplayPreview,
+  paper,
+  paperDocument,
+  loading,
+  error,
+}: {
+  nodeDisplayPreview: string | null;
+  paper: GraphPaperDetail | null;
+  paperDocument: PaperDocument | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const preview = getPreferredPaperPreview({
+    abstract: paper?.abstract ?? null,
+    displayPreview: paperDocument?.displayPreview ?? null,
+    nodeDisplayPreview,
+  });
+
+  return (
+    <div>
+      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+        Preview
+      </Text>
+      {loading ? (
+        <Group gap="xs">
+          <Loader size="xs" color="var(--mode-accent)" />
+          <Text style={panelTextDimStyle}>
+            Loading paper document…
+          </Text>
+        </Group>
+      ) : error ? (
+        <Text style={panelTextDimStyle}>
+          {error}
+        </Text>
+      ) : preview.text ? (
+        <>
+          <div
+            className="rounded-xl px-3 py-3 mb-2"
+            style={{
+              backgroundColor: "var(--mode-accent-subtle)",
+              border: "1px solid var(--mode-accent-border)",
+            }}
+          >
+            <Text
+              style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}
+            >
+              {preview.text}
+            </Text>
+          </div>
+          {preview.source === "display" && paperDocument?.wasTruncated && (
+            <Text mt={6} style={panelTextDimStyle}>
+              Preview text is truncated for the graph bundle.
+            </Text>
+          )}
+        </>
+      ) : paperDocument || paper ? (
+        <Text style={panelTextDimStyle}>
+          No preview text available in the bundle.
+        </Text>
+      ) : (
+        <Text style={panelTextDimStyle}>
+          No document content available in the bundle.
+        </Text>
       )}
     </div>
   );
@@ -323,6 +468,18 @@ function ExemplarsContent({ exemplars }: { exemplars: ClusterExemplar[] }) {
 export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const selectNode = useGraphStore((s) => s.selectNode);
+  const setSelectedPointIndices = useDashboardStore((s) => s.setSelectedPointIndices);
+  const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
+  const { cosmograph } = useCosmograph();
+
+  /** Clear selection across all three layers: graph store, dashboard store, Cosmograph visual. */
+  const clearSelection = useCallback(() => {
+    selectNode(null);
+    setSelectedPointIndices([]);
+    setActiveSelectionSourceId(null);
+    cosmograph?.unselectAllPoints();
+  }, [selectNode, setSelectedPointIndices, setActiveSelectionSourceId, cosmograph]);
+
   const [resolved, setResolved] = useState<{
     detail: GraphSelectionDetail | null;
     error: string | null;
@@ -355,20 +512,32 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
   const error = isResolved ? resolved.error : null;
   const loading = !isResolved;
 
+  const isPaper = selectedNode.nodeKind === 'paper';
+
   return (
-    <PanelShell title="Selection" side="right" width={380} onClose={() => selectNode(null)}>
+    <PanelShell title="Selection" side="right" width={380} onClose={clearSelection}>
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <Stack gap="lg">
           <DetailHeader node={selectedNode} paper={detail?.paper ?? null} />
 
           <div style={{ height: 1, backgroundColor: "var(--graph-panel-border)" }} />
 
-          <ChunkSection
-            node={selectedNode}
-            chunk={detail?.chunk ?? null}
-            loading={loading}
-            error={error}
-          />
+          {isPaper ? (
+            <PaperDocumentSection
+              nodeDisplayPreview={selectedNode.nodeKind === "paper" ? selectedNode.displayPreview : null}
+              paper={detail?.paper ?? null}
+              paperDocument={detail?.paperDocument ?? null}
+              loading={loading}
+              error={error}
+            />
+          ) : (
+            <ChunkSection
+              node={selectedNode}
+              chunk={detail?.chunk ?? null}
+              loading={loading}
+              error={error}
+            />
+          )}
 
           <PaperSection paper={detail?.paper ?? null} />
 
@@ -381,7 +550,7 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
             </Accordion.Item>
 
             <Accordion.Item value="exemplars">
-              <Accordion.Control>Related chunks</Accordion.Control>
+              <Accordion.Control>{isPaper ? "Cluster exemplars" : "Related chunks"}</Accordion.Control>
               <Accordion.Panel>
                 <ExemplarsContent exemplars={detail?.exemplars ?? []} />
               </Accordion.Panel>

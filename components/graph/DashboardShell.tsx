@@ -19,7 +19,7 @@ import {
 } from "@mantine/core";
 import { GanttChart, Table2 } from "lucide-react";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
-import { panelCardClassName, panelCardStyle, panelTextStyle, panelTextDimStyle, ICON_BTN_STYLES } from "./PanelShell";
+import { panelCardClassName, panelCardStyle, panelTextStyle, panelTextDimStyle, iconBtnStyles } from "./PanelShell";
 import { getModeConfig } from "@/lib/graph/modes";
 import { useGraphBundle } from "@/lib/graph/use-graph-bundle";
 import { formatBytes, formatNumber } from "@/lib/helpers";
@@ -29,6 +29,7 @@ import { Wordmark } from "./Wordmark";
 import { PromptBox } from "./PromptBox";
 import { TimelineBar } from "./TimelineBar";
 import { StatsBar } from "./StatsBar";
+import { LayerSwitcher } from "./LayerSwitcher";
 import { CanvasControls } from "./explore/CanvasControls";
 import { ConfigPanel } from "./explore/ConfigPanel";
 import { FiltersPanel } from "./explore/FiltersPanel";
@@ -257,7 +258,7 @@ function BottomToolbar() {
           size="lg"
           radius="xl"
           className="graph-icon-btn"
-          styles={ICON_BTN_STYLES}
+          styles={iconBtnStyles}
           onClick={toggleTimeline}
           aria-pressed={showTimeline}
           aria-label={showTimeline ? "Hide timeline" : "Show timeline"}
@@ -271,7 +272,7 @@ function BottomToolbar() {
           size="lg"
           radius="xl"
           className="graph-icon-btn"
-          styles={ICON_BTN_STYLES}
+          styles={iconBtnStyles}
           onClick={toggleTable}
           aria-pressed={tableOpen}
           aria-label={tableOpen ? "Hide table" : "Show table"}
@@ -294,6 +295,8 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
   const showColorLegend = useDashboardStore((s) => s.showColorLegend);
   const showSizeLegend = useDashboardStore((s) => s.showSizeLegend);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
+  const activeLayer = useDashboardStore((s) => s.activeLayer);
+  const availableLayers = useDashboardStore((s) => s.availableLayers);
   const pointColorStrategy = useDashboardStore((s) => s.pointColorStrategy);
   const { canvas, data, error, loading, queries } = useGraphBundle(bundle);
 
@@ -415,14 +418,23 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
           {!uiHidden && showTimeline && <TimelineBar />}
         </AnimatePresence>
         <AnimatePresence>
-          {!uiHidden && tableOpen && <DataTable nodes={data.nodes} />}
+          {!uiHidden && tableOpen && (
+            <DataTable nodes={activeLayer === 'paper' ? data.paperNodes : data.nodes} />
+          )}
         </AnimatePresence>
 
         {/* Bottom-left toggle bar for timeline & table */}
         {!uiHidden && panelsVisible && <BottomToolbar />}
 
         {!uiHidden && <PromptBox />}
-        {!uiHidden && layout.showStatsBar && <StatsBar stats={data.stats} />}
+        {!uiHidden && (layout.showStatsBar || availableLayers.length > 1) && (
+          <div className="absolute right-3 top-[52px] z-40 flex flex-col items-end gap-1.5">
+            {layout.showStatsBar && (
+              <StatsBar stats={activeLayer === 'paper' && data.paperStats ? data.paperStats : data.stats} />
+            )}
+            {availableLayers.length > 1 && <LayerSwitcher layers={availableLayers} />}
+          </div>
+        )}
       </div>
     </CosmographProvider>
   );
