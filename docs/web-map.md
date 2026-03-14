@@ -76,9 +76,10 @@ Click [Explore]                   → Compact search, graph goes 100%, discovery
 Click [Learn]                     → Learn panel slides in, graph scopes to module
 Click [Write]                     → Prompt expands into editor, graph shrinks to mini
 
-Type in Ask mode                  → LLM answers, graph highlights traversed nodes
-Type in Explore search            → Nodes filter/highlight in real-time
-Type in Write editor              → Graph shows ● supporting + ◆ contradicting nodes
+Type in Ask mode                  → Graph lights up related nodes as you type (keyword → semantic)
+                                    On submit: LLM answers, evidence nodes persist with stance colors
+Type in Explore search            → Nodes filter/highlight in real-time (CosmographSearch)
+Type in Write editor              → Current paragraph highlights evidence (● support / ◆ contradict)
 
 Click a graph node                → Detail panel slides in from left
 Hover a graph node                → Neighborhood expands, tooltip preview

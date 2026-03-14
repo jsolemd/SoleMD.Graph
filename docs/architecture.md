@@ -245,6 +245,100 @@ The current renderer follows Cosmograph's intended external-DuckDB path:
 
 This keeps the point cloud inside DuckDB-Wasm rather than duplicating it into another client-side dataset just for the canvas.
 
+### Layer Switching — Multiple Maps in One Connection
+
+Cosmograph's `points` prop accepts a **string table name** when using an external DuckDB connection. Switching layers is a prop change, not a remount — Cosmograph rebuilds the graph automatically and fires `onGraphRebuilt`.
+
+**Bundle structure** (pipeline generates all tables into one DuckDB file):
+
+```
+Same DuckDB connection (one AsyncDuckDB instance):
+  ├── chunk_points       ← current "graph_points_web" (chunks with UMAP x/y)
+  ├── entity_points      ← entities with UMAP from RotatE+SapBERT hybrid
+  ├── entity_links       ← relation edges (source/target index, type, assertion)
+  ├── paper_points       ← papers with UMAP from Qwen3+GGVec hybrid
+  ├── paper_links        ← citation/reference edges (source/target index, direction)
+  (authors are rows in paper_points with nodeType="author", positioned at paper centroid)
+  ├── synthesis_points   ← canonical terms + learning modules (future)
+  ├── graph_clusters     ← cluster metadata (shared or per-layer)
+  └── graph_facets       ← facet summaries (shared or per-layer)
+```
+
+**Web-side data flow for layer switch:**
+
+```
+User clicks "Entities" in layer selector
+  → dashboard store: setActiveLayer("entity")
+  → LAYER_CONFIGS["entity"] resolves:
+      { pointsTable: "entity_points",
+        linksTable: "entity_links",
+        colorStrategy: "degree",
+        sizeStrategy: "degree",
+        pointSizeRange: [2, 8],
+        pointOpacity: { light: 0.5, dark: 0.7 },
+        renderLinks: true,
+        curvedLinks: true }
+  → CosmographRenderer reads from store, passes new props:
+      <Cosmograph
+        points="entity_points"
+        links="entity_links"
+        pointColorStrategy="degree"
+        ...
+      />
+  → Cosmograph rebuilds graph (onGraphRebuilt fires)
+  → fitView(0) centers the new layout
+
+Overlay toggles (Paper Map only):
+  showReferences toggle
+    → links={showReferences ? "paper_links" : undefined}
+    → Cosmograph adds/removes edges without rebuilding points
+  showAuthors toggle
+    → filters author rows (nodeType="author") in/out of paper_points view
+    → Cosmograph rebuilds with updated point set
+```
+
+**Implementation pattern** (mirrors the existing mode registry in `lib/graph/modes.ts`):
+
+```typescript
+// lib/graph/layers.ts — data-driven layer config registry
+type MapLayer = "entity" | "chunk" | "paper" | "synthesis";
+
+interface LayerConfig {
+  label: string;
+  pointsTable: string;
+  linksTable?: string;
+  linkSourceBy?: string;
+  linkTargetBy?: string;
+  linkSourceIndexBy?: string;
+  linkTargetIndexBy?: string;
+  defaultColorStrategy: PointColorStrategy;
+  defaultColorColumn: string;
+  defaultSizeStrategy: PointSizeStrategy;
+  defaultSizeColumn?: string;
+  pointSizeRange: [number, number];
+  pointOpacity: { light: number; dark: number };
+  renderLinks: boolean;
+  curvedLinks: boolean;
+  linkOpacity?: number;
+}
+
+const LAYERS: Record<MapLayer, LayerConfig> = { ... };
+```
+
+**Key constraints:**
+- All tables share the same DuckDB connection (no reconnection)
+- Each table must have `id`, `index`, `x`, `y` columns minimum
+- Link tables need `sourceId`, `targetId`, `sourceIndex`, `targetIndex`
+- `onGraphRebuilt` must re-fit view on layer change (not just first load)
+- Dashboard store resets filters/selection on layer switch (different data schema)
+- Session cache already keyed by bundle checksum — no changes needed
+
+**What does NOT change:**
+- Server fetch (`fetchActiveGraphBundle`) — same bundle, more tables
+- DuckDB session creation — tables are already loaded from the bundle file
+- GraphCanvas SSR boundary — same dynamic import
+- Mode registry — modes and layers are orthogonal (you can be in Ask mode on the Entity layer)
+
 ## Assets
 
 Static assets live in `public/`.

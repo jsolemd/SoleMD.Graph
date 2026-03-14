@@ -71,30 +71,26 @@ Explore gives the graph **full viewport**. The prompt box shrinks to a compact s
 - Timeline filter — scroll through publication years, nodes fade in/out temporally
 - Search input filters and highlights matching nodes in real-time
 
-## Layered Maps — Three Levels of the Corpus
+## Layered Maps — The Abstraction Ladder
 
-The graph isn't one map — it's three. Each layer shows the corpus at a different granularity, with its own layout, edges, visual encoding, and analytical functions. This is the full expression of the SoleMD pipeline: papers are split into chunks, chunks yield entities, and each layer is a first-class map you can explore independently.
+The graph is four maps ascending an abstraction ladder — from atomic concepts to synthesized understanding. Each layer is the visual output of a pipeline stage.
 
 ```
-╔═══════════════════════════════════════════════════════════════════════╗
-║  ENTITY MAP              CHUNK MAP              PAPER MAP            ║
-║  ──────────              ─────────              ─────────            ║
-║                                                                      ║
-║  ○──○    ○              ● ● ●    ●             ◉    ◉               ║
-║  │╲ │   ╱│              │ ╲     ╱              │ ╲  │               ║
-║  ○──○──○ ○              ●──●──●                ◉──◉──◉             ║
-║     │  ╲                   │                      │                  ║
-║     ○    ○              ●  ●  ●                ◉  ◉                 ║
-║                                                                      ║
-║  Relations between       Semantic similarity     Citation network    ║
-║  biomedical concepts     across passages         between studies     ║
-║                                                                      ║
-║  Color = connection      Color = parent paper    Color = journal     ║
-║  count (degree)          or cluster              or year             ║
-║                                                                      ║
-║  "How do these           "Where do papers        "What's the         ║
-║   concepts connect?"      talk to each other?"    citation flow?"    ║
-╚═══════════════════════════════════════════════════════════════════════╝
+ABSTRACTION LADDER
+
+  Synthesis    ★  LLM-generated understanding of canonical terms
+                  "What does the corpus know about this concept?"
+       ↑
+  Papers       ◉  Citation/reference network + author overlay
+                  "What's the citation flow? Who wrote what?"
+       ↑
+  Chunks       ●  Semantic similarity across passages
+                  "Where do papers talk to each other?"
+       ↑
+  Entities     ○  Relations between biomedical concepts
+                  "How do these concepts connect?"
+
+  Pipeline:    NER → Chunking → GROBID/Marker → Entity Linking → LLM Synthesis
 ```
 
 ### Layer 1: Entity Map
@@ -117,54 +113,150 @@ The passage layer. Nodes are text chunks (RAG segments from papers). Edges are *
 - **Clusters** form around topical convergences: all the passages about "BDNF and synaptic plasticity" cluster regardless of which paper they came from
 - **Functions**: Find semantically similar passages across the corpus. Discover unexpected connections between papers. Identify the most information-dense regions. Power the RAG retrieval visualization ("here's what the LLM pulled from").
 
-### Layer 3: Paper Map
+### Layer 3: Paper Map (+ Overlays)
 
-The publication layer. Nodes are papers. Edges are **citations** — who cites whom. This is the classical bibliometric view, but positioned by embedding similarity rather than force-directed layout.
+The publication layer. Nodes are papers, positioned by embedding similarity (Qwen3 on Marker markdown). Two toggleable overlays add authors and citation edges on top.
+
+**Base map (always on):**
 
 - **Color by journal or publication year** — temporal and source patterns
 - **Size by citation count** — heavily cited papers are larger
-- **Edges encode citation direction** — arrows from citing to cited
 - **Clusters** form around research communities, methodological schools, or thematic areas
-- **Functions**: Find seminal papers. Trace citation chains. Detect citation gaps (papers that should cite each other but don't). Map the evolution of a research area over time.
+- **Functions**: Find seminal papers. Identify topic clusters. See which papers are bridges between communities.
+
+**Overlay toggles:**
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Paper Map                  [◉ References] [◉ Authors]│  ← Toolbar toggles
+└──────────────────────────────────────────────────────┘
+```
+
+**References overlay** (`paper_links` table):
+- Toggling on passes `links="paper_links"` to Cosmograph; toggling off passes `links={undefined}`
+- **Arrows** from citing paper → cited paper, showing the flow of ideas through the literature
+- **Link opacity** kept low (~0.25) to avoid edge spaghetti at scale
+- **Curved links** for readability when many edges overlap
+- **Functions with edges visible**: Trace citation chains. Detect citation gaps (papers that should cite each other but don't). Map the evolution of a research area over time. See which papers are bridges between communities.
+
+**Author overlay** (additional rows in `paper_points` with `nodeType="author"`):
+- Toggling on includes author rows in the view; toggling off filters them out via the dashboard store
+- **Positioned at centroid** of their papers (no separate embedding — position derived from the papers they wrote)
+- **Authorship edges** connect authors to their papers
+- **Co-authorship** emerges naturally — authors who share papers are close because their papers are close
+- **Author size** by paper count or citation sum
+- **Author color** by primary topic cluster (derived from dominant cluster of their papers)
+- Clicking an author highlights all their papers (and citation edges if references overlay is also on)
+- Styled differently from paper nodes via `pointSizeByFn` / `pointColorByFn` accessor functions keyed on `nodeType`
+
+Both overlays can be on simultaneously — you see papers, the citation network between them, and the authors who wrote them, all in one view.
+
+### Layer 4: Synthesis Map (Learn Mode)
+
+The understanding layer. Nodes are **canonical terms** (UMLS concepts) with **LLM-generated synthesis** — auto-generated living summaries of everything the corpus knows about each concept. Each synthesis node aggregates all entities, chunks, and papers that resolve to that canonical term, then an LLM produces a structured synthesis: definition, key findings, open questions, conflicts in the evidence.
+
+- **Positioned by term embedding** — SapBERT embeddings of canonical terms, so related concepts cluster naturally (all dopamine receptors near each other, all SSRIs near each other)
+- **Size by evidence mass** — how many entities, chunks, and papers feed into this term's synthesis
+- **Color by UMLS semantic group** — disorders, chemicals, genes, procedures, etc.
+- **Edges** — UMLS hierarchical relations (is-a, part-of) plus corpus-derived co-occurrence
+- **Functions**: See what the corpus knows about any concept. Find where evidence is rich vs thin. Discover conflicts (different papers contradict on the same term). Browse the vocabulary landscape of the entire corpus at a glance.
+
+**What a synthesis node contains:**
+
+Clicking a synthesis node opens a side panel with:
+
+```
+╭─────────────────────────────────────────────────╮
+│  Brain-Derived Neurotrophic Factor (BDNF)       │
+│  UMLS: C0107103 · Semantic: Amino Acid/Peptide  │
+│  ────────────────────────────────────────────── │
+│                                                  │
+│  SYNTHESIS (LLM-generated)                       │
+│  BDNF is a neurotrophin critical for synaptic   │
+│  plasticity and neuronal survival. The corpus    │
+│  contains 42 mentions across 12 papers...        │
+│                                                  │
+│  KEY FINDINGS                                    │
+│  • Reduced BDNF in MDD (Smith 2024, Jones 2023) │
+│  • TrkB signaling mediates antidepressant...     │
+│                                                  │
+│  CONFLICTS                                       │
+│  • Serum vs brain BDNF correlation disputed...   │
+│                                                  │
+│  CONNECTED ENTITIES (14)                         │
+│  TrkB · p75NTR · MDD · synaptic plasticity ·... │
+│                                                  │
+│  SOURCE PAPERS (12)                              │
+│  Smith 2024 · Jones 2023 · ...                   │
+╰─────────────────────────────────────────────────╯
+```
+
+The synthesis is regenerated when new papers are ingested. Each term's synthesis is grounded — every claim traces back to specific chunks and papers. The graph illuminates sourced nodes when browsing a synthesis (same pattern as Learn mode step-through).
+
+**Learning modules** (lectures, walkthroughs, case studies) also live on this layer as a distinct node type. They are authored content positioned by embedding near the terms they teach about. Clicking a module opens a step-through slide deck in the side panel, with graph illumination per slide (sourced nodes glow bright, related nodes dim-glow). See [Learn Mode](learn.md) for full details.
+
+**Why this is the capstone layer:**
+
+```
+Entities  →  Chunks  →  Papers (+Authors)  →  Synthesis
+(concepts)   (passages)  (studies + people)    (understanding)
+
+Pipeline extracts structure.
+LLM synthesizes understanding.
+Synthesis layer makes both visible.
+```
 
 ### Layer Switching
 
 The layer selector is a first-class control in Explore mode. Switching layers is not zooming — it's changing the entire map. The viewport position and any active filters carry over where meaningful (e.g., filtering by date range applies to all layers).
 
 ```
-┌───────────────────────────────────┐
-│  ○ Entities   ● Chunks   ○ Papers │  ← Layer selector (explore toolbar)
-└───────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  ○ Entities   ● Chunks   ○ Papers   ○ Synthesis     │  ← Layer selector
+└──────────────────────────────────────────────────────┘
 ```
 
-Each layer is a separate DuckDB bundle (points table + optional edges table) with its own UMAP layout. The Cosmograph canvas swaps bundles on layer change — same renderer, different data.
+Each layer is a separate table in the **same DuckDB connection** (one `AsyncDuckDB` instance). Switching layers is a React prop change — Cosmograph rebuilds automatically. No remounting, no reconnection. See [architecture.md: Layer Switching](architecture.md#layer-switching--multiple-maps-in-one-connection) for implementation details.
+
+**How it works technically:**
+1. Pipeline generates all layer tables into one DuckDB bundle file
+2. `duckdb.ts` loads the bundle once — all tables available immediately
+3. Dashboard store tracks `activeLayer: MapLayer`
+4. `LAYER_CONFIGS` registry maps each layer to its table name + visual defaults
+5. `CosmographRenderer` reads active layer config, passes `points={config.pointsTable}` + `links={config.linksTable}`
+6. Cosmograph fires `onGraphRebuilt` → `fitView(0)` centers the new layout
+7. Store resets filters/selection on layer change (different data schema)
 
 ### Cross-Layer Navigation
 
-Layers aren't silos. Clicking an entity in the Entity Map can highlight all chunks that mention it. Clicking a chunk can highlight its parent paper. Clicking a paper can show all entities it contributed:
+Layers aren't silos. Clicking a node in any layer can highlight related nodes in any other layer:
 
 ```
-ENTITY MAP                  CHUNK MAP                   PAPER MAP
-───────────                 ─────────                   ─────────
-Click "BDNF"          →    Highlight chunks             →   Highlight papers
-                            mentioning BDNF                 containing BDNF
+ENTITIES          CHUNKS            PAPERS (+AUTHORS)     SYNTHESIS
+────────          ──────            ─────────────────     ─────────
+Click "BDNF"  →   Highlight     →   Highlight papers  →   Show BDNF
+                   chunks with       containing BDNF       synthesis
+                   BDNF              (+ their authors)     node
 
-                      ←    Click a chunk                ←   Click "Smith 2024"
-Show entities               to see its parent                Show all chunks
-in this chunk               paper                           from this paper
+              ←   Click chunk   ←   Click paper        ←  Click term
+Show entities     Show parent       Show all chunks        Show all
+in this chunk     paper             from this paper        connected
+                                                           evidence
 ```
 
 ### Pipeline Full Circle
 
-This layered architecture is the **visual expression of the SoleMD pipeline**:
+This layered architecture is the **visual expression of the SoleMD pipeline**, with the synthesis layer closing the loop from raw data to understanding:
 
 ```
-Pipeline:    PDF  →  GROBID/Marker  →  RAG Chunking  →  NER  →  Relation Extraction
-                         ↓                  ↓              ↓            ↓
-Map Layer:          Paper Map          Chunk Map      Entity Map   Entity Map (edges)
+Pipeline:       PDF → GROBID/Marker → RAG Chunking → NER → RelEx → Entity Linking → LLM Synthesis
+                          ↓                ↓           ↓      ↓          ↓                ↓
+Map Layer:           Paper Map        Chunk Map    Entity Map  (edges)  Synthesis Map  Synthesis (content)
+                     + Authors
+                     (overlay)
 ```
 
-Every stage of the extraction pipeline produces a map layer. The graph interface is not a separate product — it IS the pipeline's output, made explorable.
+Every stage of the extraction pipeline produces a map layer. The synthesis layer adds LLM-generated understanding on top — canonical terms with auto-generated summaries of everything the corpus knows about them, plus authored teaching modules. The graph interface is not a separate product — it IS the pipeline's output, made explorable and teachable.
 
 ### Embedding Strategy — Making the Maps Speak
 
@@ -177,6 +269,9 @@ Each layer needs a different embedding strategy because each layer has different
 | **Entity** | SapBERT (entity names → UMLS-aligned vectors) | **RotatE** on extracted relation edges | Graph-heavy (70/30) | Concatenated |
 | **Chunk** | **Qwen3-Embedding-0.6B** (passage text, instruction-aware) | GGVec on similarity edges | Text-heavy (70/30) | Concatenated |
 | **Paper** | **Qwen3-Embedding-0.6B** (Marker markdown, 32K context) | GGVec on citation graph | Roughly equal (50/50) | Concatenated |
+| **Synthesis** | SapBERT (canonical term names → UMLS-aligned) | GGVec on UMLS hierarchy + co-occurrence | Graph-heavy (60/40) | Concatenated |
+
+Authors have no separate embedding — they are positioned at the centroid of their papers' coordinates on the Paper Map.
 
 **Why these specific models:**
 
@@ -227,12 +322,14 @@ Research shows hybrid text+graph embeddings achieve ~0.93 silhouette scores — 
 **Full pipeline → embedding → map flow:**
 
 ```
-Pipeline Stage          Text Source              Text Model              Graph Model         Map
-──────────────          ───────────              ──────────              ───────────         ───
-PDF → Marker            Marker markdown (full)   Qwen3-Emb-0.6B (32K)   GGVec (citations)   Paper Map
-Marker → RAG Chunking   Chunk text               Qwen3-Emb-0.6B         GGVec (sim edges)   Chunk Map
-Chunks → NER            Entity names/desc        SapBERT (UMLS-aligned)  —                   Entity Map
-NER → RelEx             —                        —                       RotatE (relations)  Entity Map (edges)
+Pipeline Stage            Text Source                Text Model              Graph Model            Map
+──────────────            ───────────                ──────────              ───────────            ───
+PDF → Marker              Marker markdown (full)     Qwen3-Emb-0.6B (32K)   GGVec (citations)      Paper Map
+  (+ metadata)            (authors → centroid)       (no separate emb)       (authorship edges)     (+ Author overlay)
+Marker → RAG Chunking     Chunk text                 Qwen3-Emb-0.6B         GGVec (sim edges)      Chunk Map
+Chunks → NER              Entity names/desc          SapBERT (UMLS-aligned)  —                      Entity Map
+NER → RelEx               —                          —                       RotatE (relations)     Entity Map (edges)
+Entity Linking → LLM      Canonical term names       SapBERT                 GGVec (UMLS + co-occ)  Synthesis Map
 ```
 
 ### Pre-UMAP Processing (Pipeline Side)

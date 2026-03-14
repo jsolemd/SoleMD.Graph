@@ -23,12 +23,15 @@ The graph is always the page. Each mode changes how you interact with it.
 ### 1.1 — Ask Mode (Grounded RAG)
 
 The prompt box becomes a chat interface. The graph becomes visible reasoning.
+See **[Graph Reactivity Plan](graph-reactivity.md)** for the full as-you-type → on-submit → stance-coloring pipeline.
 
+- [ ] **Graph reactivity Phase A**: keyword match on full chunk content, as-you-type highlighting
+- [ ] **Graph reactivity Phase B**: embedding similarity for semantic matching (debounced)
 - [ ] Chat message history in prompt box (conversation thread above input)
 - [ ] `useAskStore` — messages, active query, evidence path, loading state
 - [ ] API route: query → entity extraction → graph traversal → RAG over chunks
-- [ ] Real-time node highlighting as LLM traverses evidence path
-- [ ] Clickable citations in responses → zoom to source node
+- [ ] **Graph reactivity Phase C**: retrieved evidence nodes as cited sources, clickable → zoom
+- [ ] **Graph reactivity Phase D**: epistemic stance coloring (supports / refutes / related)
 - [ ] Grounding indicator (how many nodes support the answer)
 - [ ] Mode layout: `promptVariant: 'chat'` — prompt box expands upward with messages
 
@@ -130,3 +133,4 @@ Blocked on: entity extraction, relation extraction, embeddings in SoleMD.App.
 | 2026-03-07 | Two Zustand stores | Interaction state (shared) vs dashboard config (Explore) |
 | 2026-03-07 | Per-mode stores | Each mode gets its own store slice as it expands |
 | 2026-03-07 | No marketing pages | Graph is the only surface. About becomes an overlay |
+| 2026-03-10 | Graph reactivity plan | As-you-type highlighting → embedding search → cited sources → stance coloring. See [graph-reactivity.md](graph-reactivity.md) |
