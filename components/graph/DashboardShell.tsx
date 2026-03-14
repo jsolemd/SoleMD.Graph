@@ -298,13 +298,14 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const availableLayers = useDashboardStore((s) => s.availableLayers);
   const pointColorStrategy = useDashboardStore((s) => s.pointColorStrategy);
+  const isSelectionLocked = useDashboardStore((s) => s.lockedSelection !== null);
   const { canvas, data, error, loading, queries } = useGraphBundle(bundle);
 
   const promptMinimized = useDashboardStore((s) => s.promptMinimized);
   const { layout } = getModeConfig(mode);
-  const isWrite = mode === "write";
-  /** Canvas shifts right only when write editor is actually visible (not minimized to pill). */
-  const canvasShifted = isWrite && !promptMinimized;
+  const isCreate = mode === "create";
+  /** Canvas shifts right only when create editor is actually visible (not minimized to pill). */
+  const canvasShifted = isCreate && !promptMinimized;
   const isContinuousColor = pointColorStrategy === "continuous";
 
   const setShowTimeline = useDashboardStore((s) => s.setShowTimeline);
@@ -332,7 +333,7 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
         className="fixed inset-0"
         style={{ backgroundColor: "var(--graph-bg)" }}
       >
-        {/* Graph canvas — always full viewport; in write mode shift right
+        {/* Graph canvas — always full viewport; in create mode shift right
             so the graph centers in the visible area beside the editor. */}
         <div
           className="absolute inset-0 overflow-hidden"
@@ -379,7 +380,7 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
 
         {/* Right-side detail panel — always available on point click */}
         <AnimatePresence>
-          {!uiHidden && <DetailPanel queries={queries} />}
+          {!uiHidden && <DetailPanel bundle={bundle} queries={queries} data={data} />}
         </AnimatePresence>
 
         {/* Legends — right side, stacked, shift above bottom widgets */}
@@ -393,14 +394,17 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
             }}
           >
             {showSizeLegend && (
-              <CosmographSizeLegend selectOnClick style={legendStyle} />
+              <CosmographSizeLegend
+                selectOnClick={!isSelectionLocked}
+                style={legendStyle}
+              />
             )}
             {showColorLegend && (
               isContinuousColor ? (
                 <CosmographRangeColorLegend style={legendStyle} />
               ) : (
                 <CosmographTypeColorLegend
-                  selectOnClick
+                  selectOnClick={!isSelectionLocked}
                   style={legendStyle}
                 />
               )
@@ -419,18 +423,18 @@ export function DashboardShell({ bundle }: { bundle: GraphBundle }) {
         </AnimatePresence>
         <AnimatePresence>
           {!uiHidden && tableOpen && (
-            <DataTable nodes={activeLayer === 'paper' ? data.paperNodes : data.nodes} />
+            <DataTable nodes={activeLayer === 'paper' ? data.paperNodes : activeLayer === 'geo' ? data.geoNodes : data.nodes} />
           )}
         </AnimatePresence>
 
         {/* Bottom-left toggle bar for timeline & table */}
         {!uiHidden && panelsVisible && <BottomToolbar />}
 
-        {!uiHidden && <PromptBox />}
+        {!uiHidden && <PromptBox bundle={bundle} />}
         {!uiHidden && (layout.showStatsBar || availableLayers.length > 1) && (
           <div className="absolute right-3 top-[52px] z-40 flex flex-col items-end gap-1.5">
             {layout.showStatsBar && (
-              <StatsBar stats={activeLayer === 'paper' && data.paperStats ? data.paperStats : data.stats} />
+              <StatsBar stats={activeLayer === 'paper' && data.paperStats ? data.paperStats : activeLayer === 'geo' && data.geoStats ? data.geoStats : data.stats} />
             )}
             {availableLayers.length > 1 && <LayerSwitcher layers={availableLayers} />}
           </div>

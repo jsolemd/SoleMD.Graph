@@ -1,10 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
-import { Stack } from "@mantine/core";
+import { useEffect, useMemo } from "react";
+import { SegmentedControl, Stack } from "@mantine/core";
 import { useDashboardStore } from "@/lib/graph/stores";
 import { getActiveLayerData } from "@/lib/graph/info-widgets";
-import { useInfoStats } from "@/lib/graph/hooks/use-info-stats";
+import {
+  type InfoScope,
+  useInfoStats,
+} from "@/lib/graph/hooks/use-info-stats";
 import { buildClusterColors } from "@/lib/graph/colors";
 import { useGraphColorTheme } from "@/lib/graph/hooks/use-graph-color-theme";
 import type { GraphData } from "@/lib/graph/types";
@@ -22,31 +25,48 @@ import {
 export function InfoPanel({ data }: { data: GraphData }) {
   const setActivePanel = useDashboardStore((s) => s.setActivePanel);
   const activeLayer = useDashboardStore((s) => s.activeLayer);
+  const currentPointIndices = useDashboardStore((s) => s.currentPointIndices);
   const selectedPointIndices = useDashboardStore((s) => s.selectedPointIndices);
   const activeSelectionSourceId = useDashboardStore(
     (s) => s.activeSelectionSourceId,
   );
+  const infoScopeMode = useDashboardStore((s) => s.infoScopeMode);
+  const setInfoScopeMode = useDashboardStore((s) => s.setInfoScopeMode);
   const infoWidgets = useDashboardStore((s) => s.infoWidgets);
 
-  // Resolve layer-appropriate nodes + stats
-  const { nodes: allNodes, stats } = useMemo(
+  // Resolve layer-appropriate nodes for the active layer
+  const { nodes: allNodes } = useMemo(
     () => getActiveLayerData(data, activeLayer),
     [data, activeLayer],
   );
 
-  // Single source of truth: selection is active when selectedPointIndices is non-empty.
-  // This boolean is threaded to every sub-component — no component should infer
-  // selection state from reference identity or array length comparisons.
   const hasSelection = selectedPointIndices.length > 0;
+  const scope: InfoScope =
+    infoScopeMode === "selected" && !hasSelection
+      ? "current"
+      : infoScopeMode;
 
-  // Scope: selection or full dataset
+  useEffect(() => {
+    if (infoScopeMode === "selected" && !hasSelection) {
+      setInfoScopeMode("current");
+    }
+  }, [hasSelection, infoScopeMode, setInfoScopeMode]);
+
   const scopedNodes = useMemo(() => {
-    if (!hasSelection) return allNodes;
-    const selectedSet = new Set(selectedPointIndices);
-    return allNodes.filter((n) => selectedSet.has(n.index));
-  }, [allNodes, selectedPointIndices, hasSelection]);
+    if (scope === "selected") {
+      const selectedSet = new Set(selectedPointIndices);
+      return allNodes.filter((n) => selectedSet.has(n.index));
+    }
 
-  const info = useInfoStats(allNodes, scopedNodes, activeLayer, stats, hasSelection);
+    if (scope === "current" && currentPointIndices !== null) {
+      const currentSet = new Set(currentPointIndices);
+      return allNodes.filter((n) => currentSet.has(n.index));
+    }
+
+    return allNodes;
+  }, [allNodes, currentPointIndices, scope, selectedPointIndices]);
+
+  const info = useInfoStats(allNodes, scopedNodes, scope);
 
   // Cluster colors for the table
   const colorTheme = useGraphColorTheme();
@@ -64,12 +84,31 @@ export function InfoPanel({ data }: { data: GraphData }) {
     >
       <div className="flex-1 overflow-y-auto px-3 pb-3">
         <Stack gap="md">
+          <SegmentedControl
+            size="xs"
+            fullWidth
+            data={[
+              { label: "Current", value: "current" },
+              {
+                label: "Selected",
+                value: "selected",
+                disabled: !hasSelection,
+              },
+              { label: "Dataset", value: "dataset" },
+            ]}
+            value={scope}
+            onChange={(value) => setInfoScopeMode(value as typeof infoScopeMode)}
+          />
+
           {/* Scope badge */}
           <ScopeIndicator
             scopedCount={info.scopedCount}
             totalCount={info.totalCount}
-            hasSelection={info.hasSelection}
-            selectionSource={activeSelectionSourceId}
+            scope={info.scope}
+            isSubset={info.isSubset}
+            selectionSource={
+              info.scope === "selected" ? activeSelectionSourceId : null
+            }
           />
 
           {/* Dataset overview cards */}
@@ -79,7 +118,7 @@ export function InfoPanel({ data }: { data: GraphData }) {
           <ClusterTable
             topClusters={info.topClusters}
             clusterColors={clusterColors}
-            hasSelection={info.hasSelection}
+            scope={info.scope}
           />
 
           {/* Pluggable widget slots */}
@@ -89,7 +128,7 @@ export function InfoPanel({ data }: { data: GraphData }) {
               slot={slot}
               scopedNodes={scopedNodes}
               allNodes={allNodes}
-              hasSelection={hasSelection}
+              scope={info.scope}
             />
           ))}
 
@@ -100,7 +139,7 @@ export function InfoPanel({ data }: { data: GraphData }) {
           <SearchSection />
 
           {/* Selection actions */}
-          <SelectionActions selectedCount={selectedPointIndices.length} />
+          <SelectionActions scope={info.scope} />
         </Stack>
       </div>
     </PanelShell>

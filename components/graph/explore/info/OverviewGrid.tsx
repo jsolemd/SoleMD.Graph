@@ -66,7 +66,7 @@ function StatCard({
 }
 
 export function OverviewGrid({ info, layer }: OverviewGridProps) {
-  const { scopedCount, totalCount, hasSelection, papers, clusters, noise, yearRange } =
+  const { scopedCount, totalCount, isSubset, papers, clusters, noise, yearRange } =
     info;
 
   const isPaper = layer === "paper";
@@ -76,11 +76,13 @@ export function OverviewGrid({ info, layer }: OverviewGridProps) {
       <StatCard
         label={isPaper ? "Papers" : "Points"}
         value={
-          hasSelection
+          isSubset
             ? `${formatNumber(scopedCount)} / ${formatNumber(totalCount)}`
             : formatNumber(totalCount)
         }
-        proportion={hasSelection ? scopedCount / totalCount : undefined}
+        proportion={
+          isSubset && totalCount > 0 ? scopedCount / totalCount : undefined
+        }
       />
       {isPaper ? (
         <StatCard label="Noise" value={formatNumber(noise)} />

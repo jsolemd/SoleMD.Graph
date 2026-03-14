@@ -1,6 +1,7 @@
 "use client";
 
 import { Table, Text } from "@mantine/core";
+import type { InfoScope } from "@/lib/graph/hooks/use-info-stats";
 import { formatNumber } from "@/lib/helpers";
 import type { ClusterStat } from "@/lib/graph/hooks/use-info-stats";
 import {
@@ -12,20 +13,23 @@ import {
 interface ClusterTableProps {
   topClusters: ClusterStat[];
   clusterColors: Record<number, string>;
-  hasSelection: boolean;
+  scope: InfoScope;
 }
 
 export function ClusterTable({
   topClusters,
   clusterColors,
-  hasSelection,
+  scope,
 }: ClusterTableProps) {
   if (topClusters.length === 0) return null;
+
+  const scopeLabel =
+    scope === "selected" ? " (selected)" : scope === "current" ? " (current)" : "";
 
   return (
     <div>
       <Text fw={600} mb={4} style={sectionLabelStyle}>
-        Top Clusters{hasSelection ? " (selection)" : ""}
+        Top Clusters{scopeLabel}
       </Text>
       <div
         className="overflow-auto rounded-xl"

@@ -121,21 +121,57 @@ export const PAPER_TABLE_COLUMNS: string[] = [
   'outlierScore',
 ]
 
+/* ─── Geo columns ──────────────────────────────────────────────── */
+
+export const GEO_COLUMNS: ColumnMeta[] = [
+  { key: 'institution', label: 'Institution', type: 'text' },
+  { key: 'country', facetName: 'country', label: 'Country', type: 'categorical' },
+  { key: 'countryCode', label: 'Country Code', type: 'categorical' },
+  { key: 'city', label: 'City', type: 'categorical' },
+  { key: 'region', label: 'Region', type: 'categorical' },
+  { key: 'paperCount', label: 'Papers', type: 'numeric' },
+  { key: 'authorCount', label: 'Authors', type: 'numeric' },
+  { key: 'year', facetName: 'year', label: 'Publication Year', type: 'numeric' },
+  { key: 'clusterId', facetName: 'cluster_id', label: 'Cluster ID', type: 'categorical' },
+  { key: 'clusterLabel', facetName: 'cluster_label', label: 'Country Group', type: 'categorical' },
+  { key: 'x', label: 'Longitude', type: 'numeric' },
+  { key: 'y', label: 'Latitude', type: 'numeric' },
+  { key: 'id', label: 'Institution Key', type: 'text' },
+  { key: 'rorId', label: 'ROR ID', type: 'text' },
+]
+
+export const ALL_GEO_DATA_COLUMNS = GEO_COLUMNS.filter((c) => c.key !== 'index' && c.key !== 'color' && c.key !== 'colorLight')
+
+export const GEO_TABLE_COLUMNS: string[] = [
+  'institution',
+  'city',
+  'country',
+  'countryCode',
+  'paperCount',
+  'authorCount',
+  'clusterLabel',
+  'rorId',
+]
+
 /* ─── Layer helpers ─────────────────────────────────────────────── */
 
 export function getColumnsForLayer(layer: MapLayer): ColumnMeta[] {
-  return layer === 'paper' ? ALL_PAPER_DATA_COLUMNS : ALL_DATA_COLUMNS
+  if (layer === 'paper') return ALL_PAPER_DATA_COLUMNS
+  if (layer === 'geo') return ALL_GEO_DATA_COLUMNS
+  return ALL_DATA_COLUMNS
 }
 
 export function getTableColumnsForLayer(layer: MapLayer): string[] {
-  return layer === 'paper' ? PAPER_TABLE_COLUMNS : TABLE_COLUMNS
+  if (layer === 'paper') return PAPER_TABLE_COLUMNS
+  if (layer === 'geo') return GEO_TABLE_COLUMNS
+  return TABLE_COLUMNS
 }
 
 export function getColumnMetaForLayer(key: string, layer: MapLayer): ColumnMeta | undefined {
-  const columns = layer === 'paper' ? PAPER_COLUMNS : COLUMNS
+  const columns = layer === 'paper' ? PAPER_COLUMNS : layer === 'geo' ? GEO_COLUMNS : COLUMNS
   return columns.find((c) => c.key === key)
 }
 
 export function getColumnMeta(key: string): ColumnMeta | undefined {
-  return COLUMNS.find((c) => c.key === key) ?? PAPER_COLUMNS.find((c) => c.key === key)
+  return COLUMNS.find((c) => c.key === key) ?? PAPER_COLUMNS.find((c) => c.key === key) ?? GEO_COLUMNS.find((c) => c.key === key)
 }

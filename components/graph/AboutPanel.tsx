@@ -114,17 +114,18 @@ export function AboutPanel() {
             </div>
           </div>
 
-          {/* Bio */}
+          {/* About */}
           <div>
             <Text fw={600} mb={4} style={sectionLabelStyle}>
               About
             </Text>
             <Text style={{ ...panelTextStyle, lineHeight: "18px" }}>
-              Bridging neuroscience, clinical care, and technology to transform
-              mental health education. Trained in molecular neuroscience at Johns
-              Hopkins and psychiatry at Stanford. Chief of CL Psychiatry at
-              SCVMC, coordinating multidisciplinary care for medically complex
-              patients.
+              Psychiatry carries real morbidity and mortality, and its empirical
+              foundation is still evolving. On the path toward evidence-based
+              care, SoleMD maps the connections between what evidence we do
+              have - so clinicians, researchers, and learners can navigate the
+              complexity with evidence-informed pathways. Ask questions, explore
+              the map, and see what connections emerge.
             </Text>
           </div>
 
@@ -192,19 +193,6 @@ export function AboutPanel() {
             </Stack>
           </div>
 
-          {/* SoleMD */}
-          <div>
-            <Text fw={600} mb={4} style={sectionLabelStyle}>
-              SoleMD
-            </Text>
-            <Text style={{ ...panelTextStyle, lineHeight: "18px" }}>
-              A biomedical knowledge graph connecting psychiatric research,
-              clinical evidence, and educational resources. Built to help
-              clinicians, researchers, and learners navigate the complexity of
-              modern neuroscience and psychiatry.
-            </Text>
-          </div>
-
           {/* Contact */}
           <div>
             <Text fw={600} mb={4} style={sectionLabelStyle}>
@@ -212,7 +200,7 @@ export function AboutPanel() {
             </Text>
             <div className="flex items-center gap-2">
               <Mail size={12} style={{ color: "var(--mode-accent)" }} />
-              <Text style={panelTextDimStyle}>jon@solemd.com</Text>
+              <Text style={panelTextDimStyle}>jon@solemd.org</Text>
             </div>
           </div>
         </Stack>

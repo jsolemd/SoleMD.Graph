@@ -3,16 +3,21 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 import { NOISE_COLOR, NOISE_COLOR_LIGHT, DEFAULT_POINT_COLOR } from '../brand-colors'
 import { getPaletteColors } from '../colors'
 import {
+  buildGeoNodes,
+  buildGeoStats,
   buildGraphData,
   buildPaperNodes,
   buildPaperStats,
+  type GeoPointRow,
   type GraphClusterRow,
   type GraphFacetRow,
   type GraphPointRow,
   type PaperPointRow,
 } from '../transform'
+import { EMPTY_LINKS_TABLE, LINK_COLUMNS } from '../layers'
 import type {
   GraphBundle,
+  GraphClusterDetail,
   GraphData,
   GraphNode,
   GraphQueryResult,
@@ -48,6 +53,7 @@ interface GraphBundleSession {
   availableLayers: MapLayer[]
   canvas: GraphCanvasSource
   data: GraphData
+  getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
   getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
@@ -211,6 +217,17 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
           display_preview AS chunkPreview,
           display_preview AS displayPreview,
           COALESCE(payload_was_truncated, false) AS payloadWasTruncated,
+          -- Chunk-only columns as NULL placeholders so crossfilter queries
+          -- registered on the chunk layer don't break during layer transitions.
+          NULL::VARCHAR AS stableChunkId,
+          NULL::INTEGER AS chunkIndex,
+          NULL::VARCHAR AS sectionCanonical,
+          NULL::INTEGER AS pageNumber,
+          NULL::INTEGER AS tokenCount,
+          NULL::INTEGER AS charCount,
+          NULL::VARCHAR AS chunkKind,
+          false AS hasTableContext,
+          false AS hasFigureContext,
           paper_author_count AS paperAuthorCount,
           paper_reference_count AS paperReferenceCount,
           paper_asset_count AS paperAssetCount,
@@ -225,6 +242,80 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
       )
       availableLayers.push('paper')
     }
+
+    // Geo layer — real-world lat/lng, no UMAP/HDBSCAN
+    if (bundle.bundleManifest.tables.geo_points) {
+      await conn.query(
+        `CREATE OR REPLACE VIEW geo_points_web AS
+        SELECT
+          point_index AS index,
+          node_id AS id,
+          COALESCE(color_hex, '${DEFAULT_POINT_COLOR}') AS hexColor,
+          COALESCE(color_hex, '${DEFAULT_POINT_COLOR}') AS hexColorLight,
+          x,
+          y,
+          COALESCE(cluster_id, 0) AS clusterId,
+          cluster_label AS clusterLabel,
+          1.0 AS clusterProbability,
+          0.0 AS outlierScore,
+          '' AS paperId,
+          institution AS paperTitle,
+          '' AS citekey,
+          NULL::VARCHAR AS journal,
+          first_year AS year,
+          NULL::VARCHAR AS doi,
+          NULL::VARCHAR AS pmid,
+          NULL::VARCHAR AS pmcid,
+          institution AS chunkPreview,
+          -- Geo-specific columns
+          institution,
+          ror_id AS rorId,
+          city,
+          region,
+          country,
+          country_code AS countryCode,
+          COALESCE(paper_count, 0) AS paperCount,
+          COALESCE(author_count, 0) AS authorCount,
+          first_year AS firstYear,
+          last_year AS lastYear,
+          COALESCE(size_value, paper_count, 1) AS sizeValue,
+          -- Placeholder columns for crossfilter compatibility
+          NULL::VARCHAR AS stableChunkId,
+          NULL::INTEGER AS chunkIndex,
+          NULL::VARCHAR AS sectionCanonical,
+          NULL::INTEGER AS pageNumber,
+          NULL::INTEGER AS tokenCount,
+          NULL::INTEGER AS charCount,
+          NULL::VARCHAR AS chunkKind,
+          false AS hasTableContext,
+          false AS hasFigureContext,
+          NULL::INTEGER AS paperAuthorCount,
+          NULL::INTEGER AS paperReferenceCount,
+          NULL::INTEGER AS paperAssetCount,
+          NULL::INTEGER AS paperChunkCount,
+          NULL::DOUBLE AS paperEntityCount,
+          NULL::DOUBLE AS paperRelationCount,
+          NULL::INTEGER AS paperSentenceCount,
+          NULL::INTEGER AS paperPageCount,
+          NULL::INTEGER AS paperTableCount,
+          NULL::INTEGER AS paperFigureCount
+        FROM ${relations.relation('geo_points')}`
+      )
+      availableLayers.push('geo')
+    }
+
+    // Empty links view — Cosmograph crashes (pragma_table_info on internal
+    // cosmograph_links) when the `links` prop transitions from a table name
+    // to undefined. This zero-row view lets us always pass a valid table.
+    await conn.query(
+      `CREATE OR REPLACE VIEW ${EMPTY_LINKS_TABLE} AS
+      SELECT
+        NULL::VARCHAR AS ${LINK_COLUMNS.sourceBy},
+        NULL::INTEGER AS ${LINK_COLUMNS.sourceIndexBy},
+        NULL::VARCHAR AS ${LINK_COLUMNS.targetBy},
+        NULL::INTEGER AS ${LINK_COLUMNS.targetIndexBy}
+      WHERE false`
+    )
 
     // Create paper_documents view if available in bundle
     if (hasPaperDocuments) {
@@ -365,7 +456,40 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
       data.paperStats = buildPaperStats(data.paperNodes, data.clusters)
     }
 
+    // Load geo nodes if geo layer is available
+    if (availableLayers.includes('geo')) {
+      const geoPointRows = await queryRows<GeoPointRow>(
+        conn,
+        `SELECT
+          index AS point_index,
+          id,
+          id AS node_id,
+          x,
+          y,
+          clusterId AS cluster_id,
+          clusterLabel AS cluster_label,
+          hexColor AS color_hex,
+          sizeValue AS size_value,
+          institution,
+          rorId AS ror_id,
+          city,
+          region,
+          country,
+          countryCode AS country_code,
+          paperCount AS paper_count,
+          authorCount AS author_count,
+          firstYear AS first_year,
+          lastYear AS last_year
+        FROM geo_points_web
+        ORDER BY index`
+      )
+
+      data.geoNodes = buildGeoNodes(geoPointRows)
+      data.geoStats = buildGeoStats(data.geoNodes)
+    }
+
     const selectionCache = new Map<string, Promise<GraphSelectionDetail>>()
+    const clusterCache = new Map<number, Promise<GraphClusterDetail>>()
     const paperDocumentCache = new Map<string, Promise<PaperDocument | null>>()
 
     return {
@@ -415,6 +539,66 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
         })()
 
         paperDocumentCache.set(paperId, next)
+        return next
+      },
+      getClusterDetail(clusterId: number) {
+        const cached = clusterCache.get(clusterId)
+        if (cached) return cached
+
+        const next = (async (): Promise<GraphClusterDetail> => {
+          const clusterRows = await queryRows<GraphClusterDetailRow>(
+            conn,
+            `SELECT
+              cluster_id,
+              label,
+              label_mode,
+              member_count,
+              centroid_x,
+              centroid_y,
+              representative_rag_chunk_id,
+              label_source,
+              candidate_count,
+              entity_candidate_count,
+              lexical_candidate_count,
+              mean_cluster_probability,
+              mean_outlier_score,
+              paper_count,
+              is_noise
+            FROM ${relations.relation('graph_clusters')}
+            WHERE cluster_id = ?
+            LIMIT 1`,
+            [clusterId]
+          )
+
+          const exemplarRows = await queryRows<GraphClusterExemplarRow>(
+            conn,
+            `SELECT
+              cluster_id,
+              rank,
+              rag_chunk_id,
+              paper_id,
+              citekey,
+              title,
+              section_type,
+              section_canonical,
+              page_number,
+              exemplar_score,
+              is_representative,
+              chunk_preview
+            FROM ${relations.relation('graph_cluster_exemplars')}
+            WHERE cluster_id = ?
+            ORDER BY rank
+            LIMIT 5`,
+            [clusterId]
+          )
+
+          return {
+            cluster: clusterRows[0] ? mapCluster(clusterRows[0]) : null,
+            exemplars: exemplarRows.map(mapExemplar),
+          }
+        })()
+
+        clusterCache.set(clusterId, next)
         return next
       },
       getSelectionDetail(node: GraphNode) {

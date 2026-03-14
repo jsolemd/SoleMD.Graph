@@ -1,12 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   CosmographButtonPolygonalSelection,
   CosmographButtonRectangularSelection,
+  useCosmograph,
 } from "@cosmograph/react";
-import { useDashboardStore } from "@/lib/graph/stores";
+import { AnimatePresence, motion } from "framer-motion";
+import { ActionIcon, Tooltip } from "@mantine/core";
+import { Lock, Unlock, X } from "lucide-react";
+import { useDashboardStore, useGraphStore } from "@/lib/graph/stores";
+import { iconBtnStyles } from "../PanelShell";
+import { snappy } from "@/lib/motion";
 
 /**
  * Selection tools portaled into the Wordmark toolbar.
@@ -121,22 +127,36 @@ function useCosmographButtonId() {
 export function CanvasControls() {
   const portalTarget = usePortalTarget("[data-wordmark-toolbar]");
   const hasSelection = useDashboardStore((s) => s.selectedPointIndices.length > 0);
+  const hasCurrentScope = useDashboardStore((s) => s.currentPointIndices !== null);
   const activeSourceId = useDashboardStore((s) => s.activeSelectionSourceId);
+  const lockedSelection = useDashboardStore((s) => s.lockedSelection);
+  const timelineSelection = useDashboardStore((s) => s.timelineSelection);
+  const lockSelection = useDashboardStore((s) => s.lockSelection);
+  const unlockSelection = useDashboardStore((s) => s.unlockSelection);
+  const isLocked = lockedSelection !== null;
+  const hasResettableScope =
+    hasSelection || hasCurrentScope || timelineSelection !== undefined;
 
-  const rect = useCosmographButtonId();
-  const poly = useCosmographButtonId();
+  const { ref: rectButtonRef, id: rectButtonId } = useCosmographButtonId();
+  const { ref: polyButtonRef, id: polyButtonId } = useCosmographButtonId();
 
   // Which tool the user last clicked (tool "activated", awaiting draw)
   const [activatedToolId, setActivatedToolId] = useState<string | null>(null);
 
-  // Clear tool activation when selection is cleared (click empty canvas)
-  const prevHasSelection = useRef(hasSelection);
   useEffect(() => {
-    if (prevHasSelection.current && !hasSelection) {
-      setActivatedToolId(null);
-    }
-    prevHasSelection.current = hasSelection;
-  }, [hasSelection]);
+    const unsubscribe = useDashboardStore.subscribe((state, prevState) => {
+      const hasSelectionNow = state.selectedPointIndices.length > 0;
+      const hadSelection = prevState.selectedPointIndices.length > 0;
+      const isLockedNow = state.lockedSelection !== null;
+      const wasLocked = prevState.lockedSelection !== null;
+
+      if ((hadSelection && !hasSelectionNow) || (!wasLocked && isLockedNow)) {
+        setActivatedToolId(null);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Clear tool activation on Escape (cancels tool without selecting)
   useEffect(() => {
@@ -147,34 +167,124 @@ export function CanvasControls() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const selectNode = useGraphStore((s) => s.selectNode);
+  const setCurrentPointIndices = useDashboardStore(
+    (s) => s.setCurrentPointIndices
+  );
+  const setHighlightedPointIndices = useDashboardStore(
+    (s) => s.setHighlightedPointIndices
+  );
+  const setSelectedPointIndices = useDashboardStore((s) => s.setSelectedPointIndices);
+  const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
+  const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
+  const setTableView = useDashboardStore((s) => s.setTableView);
+  const setInfoScopeMode = useDashboardStore((s) => s.setInfoScopeMode);
+  const { cosmograph } = useCosmograph();
+
+  const clearSelection = useCallback(() => {
+    selectNode(null);
+    setCurrentPointIndices(null);
+    setHighlightedPointIndices([]);
+    setSelectedPointIndices([]);
+    setActiveSelectionSourceId(null);
+    setTimelineSelection(undefined);
+    setTableView("current");
+    setInfoScopeMode("current");
+    unlockSelection();
+    cosmograph?.pointsSelection?.reset();
+    cosmograph?.linksSelection?.reset();
+    setActivatedToolId(null);
+  }, [
+    cosmograph,
+    selectNode,
+    setActiveSelectionSourceId,
+    setCurrentPointIndices,
+    setHighlightedPointIndices,
+    setInfoScopeMode,
+    setSelectedPointIndices,
+    setTableView,
+    setTimelineSelection,
+    unlockSelection,
+  ]);
+
   if (!portalTarget) return null;
 
   // Button is "on" if: user just activated this tool, OR a selection from this tool exists
-  const rectOn = activatedToolId === rect.id
-    || (hasSelection && activeSourceId === rect.id);
-  const polyOn = activatedToolId === poly.id
-    || (hasSelection && activeSourceId === poly.id);
+  const rectOn = !isLocked && (
+    activatedToolId === rectButtonId
+    || (hasSelection && activeSourceId === rectButtonId)
+  );
+  const polyOn = !isLocked && (
+    activatedToolId === polyButtonId
+    || (hasSelection && activeSourceId === polyButtonId)
+  );
 
   return createPortal(
     <>
+      <AnimatePresence>
+        {hasResettableScope && (
+          <motion.div
+            key="clear-selection"
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={snappy}
+          >
+            <Tooltip label="Clear selection and filters" position="bottom" withArrow>
+              <ActionIcon
+                variant="transparent"
+                size="lg"
+                radius="xl"
+                className="graph-icon-btn"
+                styles={iconBtnStyles}
+                onClick={clearSelection}
+                aria-label="Clear selection and filters"
+              >
+                <X size={14} />
+              </ActionIcon>
+            </Tooltip>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div
-        ref={rect.ref}
+        ref={rectButtonRef}
         className="graph-icon-btn"
-        style={wrapperStyle}
+        style={isLocked ? { ...wrapperStyle, opacity: 0.35, pointerEvents: "none" } : wrapperStyle}
         aria-pressed={rectOn}
-        onClick={() => setActivatedToolId(rect.id)}
+        aria-disabled={isLocked}
+        onClick={() => {
+          if (!isLocked) setActivatedToolId(rectButtonId);
+        }}
       >
         <CosmographButtonRectangularSelection style={innerStyle} />
       </div>
       <div
-        ref={poly.ref}
+        ref={polyButtonRef}
         className="graph-icon-btn"
-        style={wrapperStyle}
+        style={isLocked ? { ...wrapperStyle, opacity: 0.35, pointerEvents: "none" } : wrapperStyle}
         aria-pressed={polyOn}
-        onClick={() => setActivatedToolId(poly.id)}
+        aria-disabled={isLocked}
+        onClick={() => {
+          if (!isLocked) setActivatedToolId(polyButtonId);
+        }}
       >
         <CosmographButtonPolygonalSelection style={innerStyle} />
       </div>
+      <Tooltip label={isLocked ? "Unlock selection" : "Lock selection"} position="bottom" withArrow>
+        <ActionIcon
+          variant="transparent"
+          size="lg"
+          radius="xl"
+          className="graph-icon-btn"
+          styles={iconBtnStyles}
+          onClick={() => isLocked ? unlockSelection() : lockSelection()}
+          style={!hasSelection && !isLocked ? { opacity: 0.35, pointerEvents: "none" } : undefined}
+          aria-label={isLocked ? "Unlock selection" : "Lock selection"}
+          aria-pressed={isLocked}
+        >
+          {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+        </ActionIcon>
+      </Tooltip>
       <div
         className="mx-1 h-5 w-px"
         style={{ backgroundColor: "var(--border-subtle)" }}

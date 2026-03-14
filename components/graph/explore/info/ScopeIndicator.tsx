@@ -2,6 +2,7 @@
 
 import { Badge } from "@mantine/core";
 import { motion, AnimatePresence } from "framer-motion";
+import type { InfoScope } from "@/lib/graph/hooks/use-info-stats";
 import { snappy } from "@/lib/motion";
 import { formatNumber } from "@/lib/helpers";
 import { badgeOutlineStyles } from "../../PanelShell";
@@ -9,7 +10,8 @@ import { badgeOutlineStyles } from "../../PanelShell";
 interface ScopeIndicatorProps {
   scopedCount: number;
   totalCount: number;
-  hasSelection: boolean;
+  scope: InfoScope;
+  isSubset: boolean;
   selectionSource: string | null;
 }
 
@@ -31,13 +33,23 @@ function formatSelectionSource(sourceId: string | null) {
 export function ScopeIndicator({
   scopedCount,
   totalCount,
-  hasSelection,
+  scope,
+  isSubset,
   selectionSource,
 }: ScopeIndicatorProps) {
+  const label =
+    scope === "selected"
+      ? `${formatNumber(scopedCount)} of ${formatNumber(totalCount)} selected · ${formatSelectionSource(selectionSource)}`
+      : scope === "current"
+        ? isSubset
+          ? `${formatNumber(scopedCount)} of ${formatNumber(totalCount)} current`
+          : `Current · all ${formatNumber(totalCount)}`
+        : "Dataset";
+
   return (
     <AnimatePresence mode="wait">
       <motion.div
-        key={hasSelection ? "selection" : "dataset"}
+        key={scope}
         initial={{ opacity: 0, y: -4 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 4 }}
@@ -48,9 +60,7 @@ export function ScopeIndicator({
           size="sm"
           styles={badgeOutlineStyles}
         >
-          {hasSelection
-            ? `${formatNumber(scopedCount)} of ${formatNumber(totalCount)} selected · ${formatSelectionSource(selectionSource)}`
-            : "Dataset"}
+          {label}
         </Badge>
       </motion.div>
     </AnimatePresence>

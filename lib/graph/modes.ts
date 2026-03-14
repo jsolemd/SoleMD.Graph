@@ -110,12 +110,12 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       availablePanels: SHARED_PANELS,
     },
   },
-  write: {
-    key: 'write',
-    label: 'Write',
+  create: {
+    key: 'create',
+    label: 'Create',
     color: '#ffada4', // warm-coral
     colorVar: '--color-warm-coral',
-    placeholder: 'Write with the knowledge graph...',
+    placeholder: 'Create with the knowledge graph...',
     layout: {
       autoShowPanels: false,
       autoShowTimeline: false,
@@ -137,4 +137,4 @@ export function getModeConfig(mode: GraphMode): ModeConfig {
 }
 
 /** Ordered list of modes for rendering in PromptBox. */
-export const MODE_ORDER: GraphMode[] = ['ask', 'explore', 'learn', 'write']
+export const MODE_ORDER: GraphMode[] = ['ask', 'explore', 'learn', 'create']

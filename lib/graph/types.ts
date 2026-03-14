@@ -96,7 +96,22 @@ export interface PaperNode extends GraphNodeBase {
   payloadWasTruncated: boolean
 }
 
-export type GraphNode = ChunkNode | PaperNode
+/** Geographic institution node for the map layer. */
+export interface GeoNode extends GraphNodeBase {
+  nodeKind: 'institution'
+  institution: string | null
+  rorId: string | null
+  city: string | null
+  region: string | null
+  country: string | null
+  countryCode: string | null
+  paperCount: number
+  authorCount: number
+  firstYear: number | null
+  lastYear: number | null
+}
+
+export type GraphNode = ChunkNode | PaperNode | GeoNode
 
 export interface ClusterInfo {
   clusterId: number
@@ -154,7 +169,9 @@ export interface GraphData {
   facets: GraphFacet[]
   nodes: ChunkNode[]
   paperNodes: PaperNode[]
+  geoNodes: GeoNode[]
   paperStats: GraphStats | null
+  geoStats: GraphStats | null
   stats: GraphStats
 }
 
@@ -247,6 +264,11 @@ export interface GraphSelectionDetail {
   paperDocument: PaperDocument | null
 }
 
+export interface GraphClusterDetail {
+  cluster: ClusterInfo | null
+  exemplars: ClusterExemplar[]
+}
+
 export interface GraphQueryResult {
   appliedLimit: number | null
   columns: string[]
@@ -257,14 +279,15 @@ export interface GraphQueryResult {
 }
 
 export interface GraphBundleQueries {
+  getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
 }
 
-export type GraphMode = 'ask' | 'explore' | 'learn' | 'write'
+export type GraphMode = 'ask' | 'explore' | 'learn' | 'create'
 
-export type MapLayer = 'chunk' | 'paper'
+export type MapLayer = 'chunk' | 'paper' | 'geo'
 
 export type ColorTheme = 'light' | 'dark'
 export type PointColorStrategy = 'categorical' | 'continuous' | 'direct' | 'single'

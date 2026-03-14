@@ -2,42 +2,41 @@
 
 import { Button, Group } from "@mantine/core";
 import { useCosmograph } from "@cosmograph/react";
+import type { InfoScope } from "@/lib/graph/hooks/use-info-stats";
 import { useDashboardStore } from "@/lib/graph/stores";
 import { PANEL_ACCENT } from "../../PanelShell";
 
 interface SelectionActionsProps {
-  selectedCount: number;
+  scope: InfoScope;
 }
 
-export function SelectionActions({ selectedCount }: SelectionActionsProps) {
+export function SelectionActions({ scope }: SelectionActionsProps) {
   const setTableOpen = useDashboardStore((s) => s.setTableOpen);
   const setTableView = useDashboardStore((s) => s.setTableView);
   const selectedPointIndices = useDashboardStore(
     (s) => s.selectedPointIndices,
   );
-  const filteredPointIndices = useDashboardStore(
-    (s) => s.filteredPointIndices,
+  const currentPointIndices = useDashboardStore(
+    (s) => s.currentPointIndices,
   );
-  const stats = useDashboardStore((s) => s.selectedPointIndices); // read for fitView
   const { cosmograph } = useCosmograph();
 
   const handleOpenTable = () => {
     setTableOpen(true);
-    setTableView(selectedCount > 0 ? "selected" : "visible");
+    setTableView(scope === "selected" ? "selected" : "current");
   };
 
   const handleFitSelection = () => {
-    if (selectedCount > 0) {
+    if (scope === "selected" && selectedPointIndices.length > 0) {
       cosmograph?.fitViewByIndices(selectedPointIndices, 0, 0.15);
       return;
     }
-    if (
-      filteredPointIndices &&
-      filteredPointIndices.length > 0
-    ) {
-      cosmograph?.fitViewByIndices(filteredPointIndices, 0, 0.15);
+
+    if (scope === "current" && currentPointIndices && currentPointIndices.length > 0) {
+      cosmograph?.fitViewByIndices(currentPointIndices, 0, 0.15);
       return;
     }
+
     cosmograph?.fitView(0, 0.1);
   };
 
@@ -57,7 +56,7 @@ export function SelectionActions({ selectedCount }: SelectionActionsProps) {
         color={PANEL_ACCENT}
         onClick={handleFitSelection}
       >
-        Fit selection
+        Fit scope
       </Button>
     </Group>
   );

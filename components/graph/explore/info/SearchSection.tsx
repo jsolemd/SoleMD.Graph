@@ -15,6 +15,7 @@ export function SearchSection() {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const setTableOpen = useDashboardStore((s) => s.setTableOpen);
   const setTableView = useDashboardStore((s) => s.setTableView);
+  const isSelectionLocked = useDashboardStore((s) => s.lockedSelection !== null);
 
   const searchFields = useMemo(
     () => getLayerConfig(activeLayer).searchableFields,
@@ -30,10 +31,15 @@ export function SearchSection() {
         <CosmographSearch
           style={{ width: "100%" }}
           accessor="clusterLabel"
+          disabled={isSelectionLocked}
           showAccessorsMenu
           showFooter
           preserveSelectionOnUnmount
-          placeholderText="Search points, papers, or clusters..."
+          placeholderText={
+            isSelectionLocked
+              ? "Unlock selection to search-select..."
+              : "Search points, papers, or clusters..."
+          }
           suggestionFields={searchFields}
           suggestionTruncationLength={72}
           onSelectAll={() => {

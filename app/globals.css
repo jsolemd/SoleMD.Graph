@@ -242,7 +242,10 @@ html.dark {
    COMPONENT OVERRIDES
    ═══════════════════════════════════════════════════════════════════ */
 
-/* Config panel — thin visible scrollbar (global rules hide scrollbars) */
+/* Config panel — thin visible scrollbar (global rules hide scrollbars).
+   scrollbar-gutter: stable reserves space so appearing/disappearing scrollbar
+   doesn't cause reflow oscillation (which triggers ResizeObserver loops). */
+.config-scroll { scrollbar-gutter: stable; }
 .config-scroll::-webkit-scrollbar { width: 4px; }
 .config-scroll::-webkit-scrollbar-track { background: transparent; }
 .config-scroll::-webkit-scrollbar-thumb { background: var(--graph-panel-border); border-radius: 2px; }

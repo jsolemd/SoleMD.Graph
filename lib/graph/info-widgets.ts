@@ -25,6 +25,9 @@ export function getActiveLayerData(
   if (layer === 'paper') {
     return { nodes: data.paperNodes, stats: data.paperStats ?? data.stats }
   }
+  if (layer === 'geo') {
+    return { nodes: data.geoNodes, stats: data.geoStats ?? data.stats }
+  }
   return { nodes: data.nodes as GraphNode[], stats: data.stats }
 }
 

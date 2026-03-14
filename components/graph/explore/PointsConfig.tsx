@@ -92,7 +92,7 @@ function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
 export function PointsConfig() {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const layerConfig = getLayerConfig(activeLayer);
-  const hasLinks = Boolean(layerConfig.linksTable);
+  const hasLinks = layerConfig.hasLinks;
   const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
   const numericCols = useMemo(() => layerColumns.filter((c) => c.type === 'numeric'), [layerColumns]);
 

@@ -4,6 +4,7 @@ import { NOISE_COLOR, NOISE_COLOR_LIGHT } from './brand-colors'
 import type {
   ChunkNode,
   ClusterInfo,
+  GeoNode,
   GraphData,
   GraphFacet,
   GraphStats,
@@ -189,7 +190,9 @@ export function buildGraphData({
     clusters: clusterInfo,
     facets: graphFacets,
     paperNodes: [],
+    geoNodes: [],
     paperStats: null,
+    geoStats: null,
     stats,
   }
 }
@@ -293,5 +296,100 @@ export function buildPaperStats(
     papers: paperNodes.length,
     clusters: clusters.filter((c) => !c.isNoise).length,
     noise: noiseCount,
+  }
+}
+
+/* ─── Geo node builder ──────────────────────────────────────── */
+
+export interface GeoPointRow {
+  point_index: number | null
+  id: string
+  node_id: string
+  x: number
+  y: number
+  cluster_id: number | null
+  cluster_label: string | null
+  color_hex: string | null
+  size_value: number | null
+  institution: string | null
+  ror_id: string | null
+  city: string | null
+  region: string | null
+  country: string | null
+  country_code: string | null
+  paper_count: number | null
+  author_count: number | null
+  first_year: number | null
+  last_year: number | null
+}
+
+export function buildGeoNodes(rows: GeoPointRow[]): GeoNode[] {
+  const darkPalette = getPaletteColors('default', 'dark')
+  const lightPalette = getPaletteColors('default', 'light')
+  const nodes: GeoNode[] = []
+
+  for (const [index, row] of rows.entries()) {
+    const clusterId = row.cluster_id ?? 0
+    const color = row.color_hex
+      ?? (clusterId <= 0 ? NOISE_COLOR : darkPalette[clusterId % darkPalette.length])
+    const colorLight = clusterId <= 0
+      ? NOISE_COLOR_LIGHT
+      : lightPalette[clusterId % lightPalette.length]
+
+    nodes.push({
+      nodeKind: 'institution',
+      index: row.point_index ?? index,
+      id: row.node_id ?? row.id,
+      x: row.x,
+      y: row.y,
+      color,
+      colorLight,
+      clusterId,
+      clusterLabel: row.cluster_label,
+      clusterProbability: 1,
+      outlierScore: 0,
+      paperId: '',
+      paperTitle: '',
+      citekey: '',
+      year: row.first_year ?? null,
+      journal: null,
+      doi: null,
+      pmid: null,
+      pmcid: null,
+      chunkPreview: row.institution ?? null,
+      paperAuthorCount: row.author_count ?? null,
+      paperReferenceCount: null,
+      paperAssetCount: null,
+      paperChunkCount: null,
+      paperEntityCount: null,
+      paperRelationCount: null,
+      paperSentenceCount: null,
+      paperPageCount: null,
+      paperTableCount: null,
+      paperFigureCount: null,
+      institution: row.institution ?? null,
+      rorId: row.ror_id ?? null,
+      city: row.city ?? null,
+      region: row.region ?? null,
+      country: row.country ?? null,
+      countryCode: row.country_code ?? null,
+      paperCount: row.paper_count ?? 0,
+      authorCount: row.author_count ?? 0,
+      firstYear: row.first_year ?? null,
+      lastYear: row.last_year ?? null,
+    })
+  }
+
+  return nodes
+}
+
+export function buildGeoStats(geoNodes: GeoNode[]): GraphStats {
+  const countries = new Set(geoNodes.map((n) => n.countryCode).filter(Boolean))
+  return {
+    points: geoNodes.length,
+    pointLabel: 'institutions',
+    papers: geoNodes.reduce((sum, n) => sum + n.paperCount, 0),
+    clusters: countries.size,
+    noise: 0,
   }
 }

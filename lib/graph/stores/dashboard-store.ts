@@ -28,12 +28,20 @@ const PAPER_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric'
   { column: 'year' as FilterableColumnKey, type: 'numeric' },
 ]
 
+const GEO_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
+  { column: 'clusterLabel' as FilterableColumnKey, type: 'categorical' },
+  { column: 'year' as FilterableColumnKey, type: 'numeric' },
+]
+
 function getDefaultFiltersForLayer(layer: MapLayer) {
-  return layer === 'paper' ? PAPER_FILTER_COLUMNS : CHUNK_FILTER_COLUMNS
+  if (layer === 'paper') return PAPER_FILTER_COLUMNS
+  if (layer === 'geo') return GEO_FILTER_COLUMNS
+  return CHUNK_FILTER_COLUMNS
 }
 
 export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | null
-export type TableView = 'visible' | 'selected'
+export type TableView = 'current' | 'selected'
+export type InfoScopeMode = 'current' | 'selected' | 'dataset'
 
 interface DashboardState {
   // Layer
@@ -69,6 +77,7 @@ interface DashboardState {
   tablePage: number
   tablePageSize: number
   tableView: TableView
+  infoScopeMode: InfoScopeMode
 
   // Color scheme
   colorScheme: ColorSchemeName
@@ -82,6 +91,10 @@ interface DashboardState {
   // Hover & interaction
   showHoveredPointLabel: boolean
   renderHoveredPointRing: boolean
+
+  // Selection behavior
+  /** When true, clicking a point selects it AND all connected points (via links). */
+  connectedSelect: boolean
 
   // Links
   renderLinks: boolean
@@ -106,10 +119,13 @@ interface DashboardState {
   // Write mode
   writeContent: string
 
-  // Crossfilter state mirrored from Cosmograph callbacks
-  filteredPointIndices: number[] | null
+  // Crossfilter state mirrored from Cosmograph callbacks:
+  // current working set, persistent selection intent, and current canvas highlight.
+  currentPointIndices: number[] | null
   selectedPointIndices: number[]
+  highlightedPointIndices: number[]
   activeSelectionSourceId: string | null
+  lockedSelection: Set<number> | null
 
   // Actions
   setActivePanel: (panel: ActivePanel) => void
@@ -138,6 +154,7 @@ interface DashboardState {
   setTablePage: (page: number) => void
   setTablePageSize: (size: number) => void
   setTableView: (view: TableView) => void
+  setInfoScopeMode: (mode: InfoScopeMode) => void
   setColorScheme: (scheme: ColorSchemeName) => void
   setShowColorLegend: (show: boolean) => void
   setPointSizeStrategy: (strategy: PointSizeStrategy) => void
@@ -145,6 +162,8 @@ interface DashboardState {
   setShowSizeLegend: (show: boolean) => void
   setShowHoveredPointLabel: (show: boolean) => void
   setRenderHoveredPointRing: (show: boolean) => void
+  setConnectedSelect: (on: boolean) => void
+  toggleConnectedSelect: () => void
   setRenderLinks: (show: boolean) => void
   setLinkOpacity: (opacity: number) => void
   setLinkGreyoutOpacity: (opacity: number) => void
@@ -163,9 +182,12 @@ interface DashboardState {
   togglePromptMinimized: () => void
   togglePromptMaximized: () => void
   setWriteContent: (content: string) => void
-  setFilteredPointIndices: (indices: number[] | null) => void
+  setCurrentPointIndices: (indices: number[] | null) => void
   setSelectedPointIndices: (indices: number[]) => void
+  setHighlightedPointIndices: (indices: number[]) => void
   setActiveSelectionSourceId: (sourceId: string | null) => void
+  lockSelection: () => void
+  unlockSelection: () => void
   setActiveLayer: (layer: MapLayer) => void
   setAvailableLayers: (layers: MapLayer[]) => void
 }
@@ -267,7 +289,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   // Table
   tablePage: 1,
   tablePageSize: 100,
-  tableView: 'visible',
+  tableView: 'current',
+  infoScopeMode: 'current',
 
   // Color scheme
   colorScheme: 'default',
@@ -281,6 +304,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   // Hover & interaction
   showHoveredPointLabel: true,
   renderHoveredPointRing: true,
+
+  // Selection behavior
+  connectedSelect: false,
 
   // Links
   renderLinks: true,
@@ -306,9 +332,11 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   writeContent: '',
 
   // Crossfilter state mirrored from Cosmograph callbacks
-  filteredPointIndices: null,
+  currentPointIndices: null,
   selectedPointIndices: [],
+  highlightedPointIndices: [],
   activeSelectionSourceId: null,
+  lockedSelection: null,
 
   // Actions
   setActivePanel: (panel) => set({ activePanel: panel }),
@@ -367,6 +395,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setTablePage: (page) => set({ tablePage: page }),
   setTablePageSize: (size) => set({ tablePageSize: size }),
   setTableView: (view) => set({ tableView: view }),
+  setInfoScopeMode: (mode) => set({ infoScopeMode: mode }),
   setColorScheme: (scheme) => set({ colorScheme: scheme }),
   setShowColorLegend: (show) => set({ showColorLegend: show }),
   setPointSizeStrategy: (strategy) => set({ pointSizeStrategy: strategy }),
@@ -374,6 +403,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setShowSizeLegend: (show) => set({ showSizeLegend: show }),
   setShowHoveredPointLabel: (show) => set({ showHoveredPointLabel: show }),
   setRenderHoveredPointRing: (show) => set({ renderHoveredPointRing: show }),
+  setConnectedSelect: (on) => set({ connectedSelect: on }),
+  toggleConnectedSelect: () => set((s) => ({ connectedSelect: !s.connectedSelect })),
   setRenderLinks: (show) => set({ renderLinks: show }),
   setLinkOpacity: (opacity) => set({ linkOpacity: opacity }),
   setLinkGreyoutOpacity: (opacity) => set({ linkGreyoutOpacity: opacity }),
@@ -392,10 +423,16 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   togglePromptMinimized: () => set((s) => ({ promptMinimized: !s.promptMinimized, promptMaximized: false })),
   togglePromptMaximized: () => set((s) => ({ promptMaximized: !s.promptMaximized, promptMinimized: false })),
   setWriteContent: (content) => set({ writeContent: content }),
-  setFilteredPointIndices: (indices) => set({ filteredPointIndices: indices }),
+  setCurrentPointIndices: (indices) => set({ currentPointIndices: indices }),
   setSelectedPointIndices: (indices) => set({ selectedPointIndices: indices }),
+  setHighlightedPointIndices: (indices) => set({ highlightedPointIndices: indices }),
   setActiveSelectionSourceId: (sourceId) =>
     set({ activeSelectionSourceId: sourceId }),
+  lockSelection: () => set((s) =>
+    s.selectedPointIndices.length === 0 ? s
+      : { lockedSelection: new Set(s.selectedPointIndices) }
+  ),
+  unlockSelection: () => set({ lockedSelection: null }),
   setActiveLayer: (layer) =>
     set(() => {
       const config = getLayerConfig(layer)
@@ -407,10 +444,16 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         pointSizeColumn: (config.defaultSizeColumn ?? 'none') as SizeColumnKey,
         pointSizeStrategy: config.defaultSizeStrategy,
         pointSizeRange: config.pointSizeRange,
-        // Reset selection/filter state
-        filteredPointIndices: null,
+        // Reset selection/interaction state
+        connectedSelect: false,
+        currentPointIndices: null,
         selectedPointIndices: [],
+        highlightedPointIndices: [],
         activeSelectionSourceId: null,
+        lockedSelection: null,
+        tablePage: 1,
+        tableView: 'current',
+        infoScopeMode: 'current',
         // Reset filters and info widgets to layer-appropriate defaults
         filterColumns: getDefaultFiltersForLayer(layer),
         infoWidgets: config.defaultInfoWidgets,

@@ -1,7 +1,7 @@
 "use client";
 
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { FileText, Grid2x2 } from "lucide-react";
+import { FileText, Globe2, Grid2x2 } from "lucide-react";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { getModeConfig } from "@/lib/graph/modes";
 import { LAYERS, LAYER_ORDER } from "@/lib/graph/layers";
@@ -11,6 +11,7 @@ import type { MapLayer } from "@/lib/graph/types";
 const LAYER_ICONS: Record<MapLayer, typeof Grid2x2> = {
   chunk: Grid2x2,
   paper: FileText,
+  geo: Globe2,
 };
 
 export function LayerSwitcher({ layers }: { layers: MapLayer[] }) {

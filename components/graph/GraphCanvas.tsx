@@ -1,6 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useDashboardStore } from "@/lib/graph/stores";
+import { getLayerConfig } from "@/lib/graph/layers";
 import type { GraphData } from "@/lib/graph/types";
 import type { GraphCanvasSource } from "@/lib/graph/duckdb";
 
@@ -18,6 +20,20 @@ const CosmographRenderer = dynamic(
   }
 );
 
+const MapCanvas = dynamic(
+  () => import("./MapCanvas"),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="fixed inset-0 bg-[var(--graph-bg)]"
+        role="img"
+        aria-label="Loading geographic map..."
+      />
+    ),
+  }
+);
+
 export function GraphCanvas({
   data,
   canvas,
@@ -25,5 +41,12 @@ export function GraphCanvas({
   data: GraphData;
   canvas: GraphCanvasSource;
 }) {
+  const activeLayer = useDashboardStore((s) => s.activeLayer);
+  const layerConfig = getLayerConfig(activeLayer);
+
+  if (layerConfig.rendererType === "maplibre") {
+    return <MapCanvas data={data} />;
+  }
+
   return <CosmographRenderer canvas={canvas} data={data} />;
 }

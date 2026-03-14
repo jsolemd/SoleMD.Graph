@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Group, Progress, Stack, Text } from "@mantine/core";
 import type { GraphNode } from "@/lib/graph/types";
+import type { InfoScope } from "@/lib/graph/hooks/use-info-stats";
 import { readNodeColumnValue } from "@/lib/graph/info-widgets";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextStyle, panelTextDimStyle } from "../../PanelShell";
@@ -11,8 +12,8 @@ interface FacetSummaryProps {
   column: string;
   scopedNodes: GraphNode[];
   allNodes: GraphNode[];
-  /** Explicit selection flag — single source of truth from orchestrator. */
-  hasSelection: boolean;
+  /** Current info-panel scope — dataset baseline, current working set, or explicit selection. */
+  scope: InfoScope;
   maxItems?: number;
 }
 
@@ -26,9 +27,11 @@ export function FacetSummary({
   column,
   scopedNodes,
   allNodes,
-  hasSelection,
+  scope,
   maxItems = 6,
 }: FacetSummaryProps) {
+  const isSubset = scope !== "dataset";
+
   const rows = useMemo(() => {
     // Count values across all nodes (for ghost track denominator)
     const allCounts = new Map<string, number>();
@@ -39,9 +42,9 @@ export function FacetSummary({
       allCounts.set(key, (allCounts.get(key) ?? 0) + 1);
     }
 
-    // Count values in scoped nodes when selection is active
+    // Count values in the current subset scope
     const scopedCounts = new Map<string, number>();
-    if (hasSelection) {
+    if (isSubset) {
       for (const n of scopedNodes) {
         const v = readNodeColumnValue(n, column);
         if (v == null) continue;
@@ -50,9 +53,10 @@ export function FacetSummary({
       }
     }
 
-    if (hasSelection) {
-      // Selection-first: rank by scoped counts so rare-but-selected values surface.
-      // Start with values present in the selection, then fill remaining slots
+    if (isSubset) {
+      // Subset-first: rank by scoped counts so the current/selected
+      // cohort surfaces before broader dataset context.
+      // Start with values present in the subset, then fill remaining slots
       // from the full dataset to provide context.
       const selectedRows: FacetRow[] = [...scopedCounts.entries()]
         .sort((a, b) => b[1] - a[1])
@@ -63,7 +67,7 @@ export function FacetSummary({
           allCount: allCounts.get(value) ?? 0,
         }));
 
-      // If selection has fewer values than maxItems, fill with top dataset values
+      // If the subset has fewer values than maxItems, fill with top dataset values
       if (selectedRows.length < maxItems) {
         const selectedValues = new Set(selectedRows.map((r) => r.value));
         const remaining = [...allCounts.entries()]
@@ -81,7 +85,7 @@ export function FacetSummary({
       return selectedRows;
     }
 
-    // No selection: rank by full-dataset frequency
+    // Full-dataset scope: rank by overall frequency
     return [...allCounts.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, maxItems)
@@ -90,7 +94,7 @@ export function FacetSummary({
         scopedCount: allCount,
         allCount,
       }));
-  }, [column, scopedNodes, allNodes, hasSelection, maxItems]);
+  }, [allNodes, column, isSubset, maxItems, scopedNodes]);
 
   if (rows.length === 0) return null;
 
@@ -100,7 +104,7 @@ export function FacetSummary({
     <Stack gap={6}>
       {rows.map((row) => {
         const allPct = maxCount > 0 ? (row.allCount / maxCount) * 100 : 0;
-        const scopedPct = hasSelection
+        const scopedPct = isSubset
           ? maxCount > 0
             ? (row.scopedCount / maxCount) * 100
             : 0
@@ -111,14 +115,14 @@ export function FacetSummary({
             <Group justify="space-between" mb={2}>
               <Text style={panelTextStyle}>{row.value}</Text>
               <Text style={panelTextDimStyle}>
-                {hasSelection
+                {isSubset
                   ? `${formatNumber(row.scopedCount)} / ${formatNumber(row.allCount)}`
                   : formatNumber(row.allCount)}
               </Text>
             </Group>
             <div className="relative" style={{ height: 4 }}>
               {/* Ghost track — full dataset proportion */}
-              {hasSelection && (
+              {isSubset && (
                 <Progress
                   size={4}
                   radius="xl"
@@ -141,11 +145,11 @@ export function FacetSummary({
                 color="var(--mode-accent)"
                 styles={{
                   root: {
-                    backgroundColor: hasSelection
+                    backgroundColor: isSubset
                       ? "transparent"
                       : "var(--graph-panel-input-bg)",
-                    position: hasSelection ? "absolute" : "relative",
-                    inset: hasSelection ? 0 : undefined,
+                    position: isSubset ? "absolute" : "relative",
+                    inset: isSubset ? 0 : undefined,
                   },
                 }}
               />

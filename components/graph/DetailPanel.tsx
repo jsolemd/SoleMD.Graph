@@ -1,389 +1,40 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  Accordion,
-  Anchor,
-  Badge,
-  Group,
-  Loader,
-  Stack,
-  Text,
-} from "@mantine/core";
-import { useCosmograph } from "@cosmograph/react";
-import { ExternalLink } from "lucide-react";
-import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
-import { useGraphColorTheme } from "@/lib/graph/hooks/use-graph-color-theme";
-import { formatNumber } from "@/lib/helpers";
-import {
-  PanelShell,
-  panelTextStyle,
-  panelTextDimStyle,
-  sectionLabelStyle,
-  badgeAccentStyles,
-  badgeOutlineStyles,
-} from "./PanelShell";
+import { Accordion, Stack, Text } from "@mantine/core";
+import { useDashboardStore, useGraphStore } from "@/lib/graph/stores";
+import { fetchGraphNodeDetail, type GraphNodeDetailResponsePayload } from "@/lib/graph/detail-service";
 import type {
-  ChunkDetail,
-  ChunkNode,
-  ClusterExemplar,
-  ClusterInfo,
+  GraphBundle,
   GraphBundleQueries,
-  GraphNode,
-  GraphPaperDetail,
+  GraphData,
   GraphSelectionDetail,
-  PaperDocument,
 } from "@/lib/graph/types";
-
-/* ─── Shared primitives ───────────────────────────────────────── */
-
-function InlineStats({ items }: { items: Array<{ label: string; value: number | null | undefined }> }) {
-  const parts = items
-    .filter((m) => m.value != null)
-    .map((m) => `${formatNumber(m.value!)} ${m.label}`);
-  if (parts.length === 0) return null;
-  return (
-    <Text style={panelTextDimStyle}>
-      {parts.join(" \u00b7 ")}
-    </Text>
-  );
-}
-
-function collapseWhitespace(value: string): string {
-  return value.replace(/\s+/g, " ").trim();
-}
-
-function getParagraphCandidates(value: string | null | undefined): string[] {
-  if (!value) return [];
-
-  return value
-    .replace(/\r\n/g, "\n")
-    .split(/\n\s*\n/)
-    .flatMap((block) => {
-      const trimmed = block.trim();
-      if (!trimmed) return [];
-
-      // Metadata-heavy previews are often short multi-line blocks. Splitting those
-      // lines lets us skip title/author metadata and surface the first prose block.
-      if (trimmed.includes("\n") && trimmed.length < 240) {
-        return trimmed
-          .split(/\n+/)
-          .map(collapseWhitespace)
-          .filter(Boolean);
-      }
-
-      return [collapseWhitespace(trimmed)];
-    });
-}
-
-function looksLikeSectionHeading(value: string): boolean {
-  const normalized = collapseWhitespace(value);
-  const wordCount = normalized.split(" ").length;
-  return wordCount <= 6 && !/[.!?]/.test(normalized);
-}
-
-function looksLikeNarrativeParagraph(value: string): boolean {
-  const normalized = collapseWhitespace(value);
-  const wordCount = normalized.split(" ").length;
-  return wordCount >= 16 && /[.!?]/.test(normalized) && !looksLikeSectionHeading(normalized);
-}
-
-function getPreferredPaperPreview({
-  abstract,
-  displayPreview,
-  nodeDisplayPreview,
-}: {
-  abstract: string | null;
-  displayPreview: string | null;
-  nodeDisplayPreview: string | null;
-}): { source: "abstract" | "display" | null; text: string | null } {
-  const displayCandidates = getParagraphCandidates(displayPreview ?? nodeDisplayPreview);
-  const displayParagraph = displayCandidates.find(looksLikeNarrativeParagraph);
-
-  if (displayParagraph) {
-    return { source: "display", text: displayParagraph };
-  }
-
-  const abstractCandidates = getParagraphCandidates(abstract);
-  const abstractParagraph = abstractCandidates.find(looksLikeNarrativeParagraph) ?? abstractCandidates[0];
-
-  if (abstractParagraph) {
-    return { source: "abstract", text: abstractParagraph };
-  }
-
-  return {
-    source: displayCandidates[0] ? "display" : null,
-    text: displayCandidates[0] ?? null,
-  };
-}
-
-function KV({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <Text style={panelTextDimStyle}>
-        {label}
-      </Text>
-      <Text fw={600} style={panelTextStyle}>
-        {value}
-      </Text>
-    </div>
-  );
-}
-
-function ExtLink({ href, label }: { href: string | null; label: string }) {
-  if (!href) return null;
-  return (
-    <Anchor
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1"
-      style={{ color: "var(--mode-accent)", fontSize: 11 }}
-    >
-      {label}
-      <ExternalLink size={11} />
-    </Anchor>
-  );
-}
-
-/* ─── Header ──────────────────────────────────────────────────── */
-
-function DetailHeader({ node, paper }: { node: GraphNode; paper: GraphPaperDetail | null }) {
-  const colorTheme = useGraphColorTheme();
-  const nodeColor = colorTheme === "light" ? node.colorLight : node.color;
-  const title = paper?.title ?? node.paperTitle;
-  const subtitle = [
-    paper?.journal ?? node.journal,
-    paper?.year ?? node.year,
-    paper?.citekey ?? node.citekey,
-  ]
-    .filter(Boolean)
-    .join(" \u00b7 ");
-
-  return (
-    <div>
-      <Text fw={600} lh={1.35} style={panelTextStyle}>
-        {title}
-      </Text>
-      {subtitle && (
-        <Text mt={4} style={panelTextDimStyle}>
-          {subtitle}
-        </Text>
-      )}
-      <Group gap={6} mt={10}>
-        <Badge size="xs" styles={badgeAccentStyles}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              backgroundColor: nodeColor,
-              marginRight: 5,
-              verticalAlign: "middle",
-            }}
-          />
-          {node.clusterLabel ?? `Cluster ${node.clusterId}`}
-        </Badge>
-        {node.nodeKind === 'chunk' && node.sectionCanonical && (
-          <Badge size="xs" variant="outline" styles={badgeOutlineStyles}>
-            {node.sectionCanonical}
-          </Badge>
-        )}
-        {node.nodeKind === 'chunk' && node.pageNumber != null && (
-          <Badge size="xs" variant="outline" styles={badgeOutlineStyles}>
-            p. {node.pageNumber}
-          </Badge>
-        )}
-      </Group>
-    </div>
-  );
-}
-
-/* ─── Chunk ───────────────────────────────────────────────────── */
-
-function ChunkSection({
-  node,
-  chunk,
-  loading,
-  error,
-}: {
-  node: ChunkNode;
-  chunk: ChunkDetail | null;
-  loading: boolean;
-  error: string | null;
-}) {
-  const text = chunk?.chunkText ?? node.chunkPreview;
-
-  return (
-    <div>
-      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
-        Chunk
-      </Text>
-      {loading ? (
-        <Group gap="xs">
-          <Loader size="xs" color="var(--mode-accent)" />
-          <Text style={panelTextDimStyle}>
-            Querying local bundle…
-          </Text>
-        </Group>
-      ) : error ? (
-        <Text style={panelTextDimStyle}>
-          {error}
-        </Text>
-      ) : (
-        <>
-          <div
-            className="rounded-xl px-3 py-3"
-            style={{
-              backgroundColor: "var(--mode-accent-subtle)",
-              border: "1px solid var(--mode-accent-border)",
-            }}
-          >
-            <Text
-              style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}
-            >
-              {text ?? "No chunk text available."}
-            </Text>
-          </div>
-          <div className="mt-2">
-            <InlineStats
-              items={[
-                { label: "tokens", value: chunk?.tokenCount ?? node.tokenCount },
-                { label: "chars", value: chunk?.charCount ?? node.charCount },
-              ]}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ─── Paper Document (paper layer detail) ────────────────────── */
-
-function PaperDocumentSection({
-  nodeDisplayPreview,
-  paper,
-  paperDocument,
-  loading,
-  error,
-}: {
-  nodeDisplayPreview: string | null;
-  paper: GraphPaperDetail | null;
-  paperDocument: PaperDocument | null;
-  loading: boolean;
-  error: string | null;
-}) {
-  const preview = getPreferredPaperPreview({
-    abstract: paper?.abstract ?? null,
-    displayPreview: paperDocument?.displayPreview ?? null,
-    nodeDisplayPreview,
-  });
-
-  return (
-    <div>
-      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
-        Preview
-      </Text>
-      {loading ? (
-        <Group gap="xs">
-          <Loader size="xs" color="var(--mode-accent)" />
-          <Text style={panelTextDimStyle}>
-            Loading paper document…
-          </Text>
-        </Group>
-      ) : error ? (
-        <Text style={panelTextDimStyle}>
-          {error}
-        </Text>
-      ) : preview.text ? (
-        <>
-          <div
-            className="rounded-xl px-3 py-3 mb-2"
-            style={{
-              backgroundColor: "var(--mode-accent-subtle)",
-              border: "1px solid var(--mode-accent-border)",
-            }}
-          >
-            <Text
-              style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}
-            >
-              {preview.text}
-            </Text>
-          </div>
-          {preview.source === "display" && paperDocument?.wasTruncated && (
-            <Text mt={6} style={panelTextDimStyle}>
-              Preview text is truncated for the graph bundle.
-            </Text>
-          )}
-        </>
-      ) : paperDocument || paper ? (
-        <Text style={panelTextDimStyle}>
-          No preview text available in the bundle.
-        </Text>
-      ) : (
-        <Text style={panelTextDimStyle}>
-          No document content available in the bundle.
-        </Text>
-      )}
-    </div>
-  );
-}
-
-/* ─── Paper ───────────────────────────────────────────────────── */
-
-function buildPaperLinks(paper: GraphPaperDetail | null) {
-  if (!paper) return { doi: null, pmc: null, pubmed: null };
-  return {
-    doi: paper.doi ? `https://doi.org/${paper.doi}` : null,
-    pmc: paper.pmcid
-      ? `https://pmc.ncbi.nlm.nih.gov/articles/${paper.pmcid}/`
-      : null,
-    pubmed: paper.pmid
-      ? `https://pubmed.ncbi.nlm.nih.gov/${paper.pmid}/`
-      : null,
-  };
-}
-
-function PaperSection({ paper }: { paper: GraphPaperDetail | null }) {
-  if (!paper) return null;
-  const links = buildPaperLinks(paper);
-  const hasLinks = links.doi || links.pubmed || links.pmc;
-
-  return (
-    <div>
-      <Text size="xs" fw={600} mb={6} style={sectionLabelStyle}>
-        Authors
-      </Text>
-      <Text style={panelTextStyle}>
-        {paper.authors.length
-          ? paper.authors.map((a) => a.name).join(", ")
-          : "Unavailable"}
-      </Text>
-      {hasLinks && (
-        <Group gap="sm" mt={6}>
-          <ExtLink href={links.doi} label="DOI" />
-          <ExtLink href={links.pubmed} label="PubMed" />
-          <ExtLink href={links.pmc} label="PMC" />
-        </Group>
-      )}
-      <div className="mt-2">
-        <InlineStats
-          items={[
-            { label: "chunks", value: paper.chunkCount },
-            { label: "refs", value: paper.referenceCount },
-            { label: "pages", value: paper.pageCount },
-            { label: "figs", value: paper.figureCount },
-            { label: "tables", value: paper.tableCount },
-          ]}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ─── Collapsible sections ────────────────────────────────────── */
+import { PanelShell } from "./PanelShell";
+import {
+  buildChunkNoteMarkdown,
+  buildPaperNoteMarkdown,
+  findPaperNodeByPaperId,
+} from "./detail-panel/helpers";
+import {
+  ChunkSection,
+  DetailHeader,
+  InstitutionSection,
+  PaperDocumentSection,
+  PaperSection,
+  SelectionActionBar,
+} from "./detail-panel/primary";
+import {
+  AssetGalleryContent,
+  ChunkSummariesContent,
+  ClusterContent,
+  ConnectionsContent,
+  EntitiesContent,
+  ExemplarsContent,
+  PdfContent,
+  ReferencesContent,
+} from "./detail-panel/remote";
+import { panelTextStyle } from "./detail-panel/ui";
 
 const accordionStyles = {
   item: { borderBottom: "none" },
@@ -394,94 +45,66 @@ const accordionStyles = {
     paddingBottom: 6,
     backgroundColor: "transparent",
   },
-  label: { fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase" as const, letterSpacing: "0.04em", color: "var(--graph-panel-text-muted)", transition: "color 150ms ease" },
-  chevron: { color: "var(--graph-panel-text-muted)", width: 14, height: 14, transition: "color 150ms ease" },
+  label: {
+    fontSize: "0.7rem",
+    fontWeight: 600,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.04em",
+    color: "var(--graph-panel-text-muted)",
+    transition: "color 150ms ease",
+  },
+  chevron: {
+    color: "var(--graph-panel-text-muted)",
+    width: 14,
+    height: 14,
+    transition: "color 150ms ease",
+  },
   content: { paddingLeft: 0, paddingRight: 0, paddingBottom: 12 },
 } as const;
 
-function ClusterContent({ cluster }: { cluster: ClusterInfo | null }) {
-  if (!cluster) {
-    return (
-      <Text style={panelTextDimStyle}>
-        No cluster data available.
-      </Text>
-    );
-  }
-  return (
-    <Stack gap="xs">
-      <KV label="Members" value={cluster.memberCount != null ? formatNumber(cluster.memberCount) : "—"} />
-      <KV label="Papers" value={cluster.paperCount != null ? formatNumber(cluster.paperCount) : "—"} />
-      <KV label="Mean probability" value={cluster.meanClusterProbability != null ? cluster.meanClusterProbability.toFixed(3) : "—"} />
-      <KV label="Label source" value={cluster.labelSource ?? "—"} />
-    </Stack>
-  );
+function useCopyFeedback(selectedNodeId: string | null) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    setCopyState("idle");
+  }, [selectedNodeId]);
+
+  const setCopied = useCallback((state: "copied" | "failed") => {
+    setCopyState(state);
+    window.setTimeout(() => setCopyState("idle"), 1800);
+  }, []);
+
+  const copyLabel =
+    copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy failed" : "Copy note";
+
+  return { copyLabel, setCopied };
 }
 
-function ExemplarsContent({ exemplars }: { exemplars: ClusterExemplar[] }) {
-  if (exemplars.length === 0) {
-    return (
-      <Text style={panelTextDimStyle}>
-        No related chunks available for this cluster.
-      </Text>
-    );
-  }
-  return (
-    <Stack gap={0}>
-      {exemplars.map((ex, i) => (
-        <div
-          key={`${ex.clusterId}:${ex.rank}:${ex.ragChunkId}`}
-          style={{
-            paddingTop: i === 0 ? 0 : 10,
-            paddingBottom: 10,
-            borderBottom: i < exemplars.length - 1 ? "1px solid var(--graph-panel-border)" : undefined,
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <Text fw={600} style={panelTextDimStyle}>
-              {ex.citekey ?? ex.paperTitle ?? "—"}
-            </Text>
-            {ex.isRepresentative && (
-              <Badge size="xs" styles={badgeAccentStyles}>
-                Primary
-              </Badge>
-            )}
-          </div>
-          <Text
-            mt={4}
-            style={panelTextStyle}
-          >
-            {ex.chunkPreview ?? "No preview available."}
-          </Text>
-          <Text mt={2} size="xs" style={panelTextDimStyle}>
-            {[ex.sectionCanonical, ex.pageNumber != null ? `p. ${ex.pageNumber}` : null]
-              .filter(Boolean)
-              .join(" \u00b7 ")}
-          </Text>
-        </div>
-      ))}
-    </Stack>
-  );
-}
+export function DetailPanel({
+  bundle,
+  queries,
+  data,
+}: {
+  bundle: GraphBundle;
+  queries: GraphBundleQueries;
+  data: GraphData;
+}) {
+  const selectedNode = useGraphStore((state) => state.selectedNode);
+  const selectNode = useGraphStore((state) => state.selectNode);
+  const setMode = useGraphStore((state) => state.setMode);
+  const setActiveLayer = useDashboardStore((state) => state.setActiveLayer);
 
-/* ─── Orchestrator ────────────────────────────────────────────── */
-
-export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
-  const selectedNode = useGraphStore((s) => s.selectedNode);
-  const selectNode = useGraphStore((s) => s.selectNode);
-  const setSelectedPointIndices = useDashboardStore((s) => s.setSelectedPointIndices);
-  const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
-  const { cosmograph } = useCosmograph();
-
-  /** Clear selection across all three layers: graph store, dashboard store, Cosmograph visual. */
-  const clearSelection = useCallback(() => {
+  const closePanel = useCallback(() => {
     selectNode(null);
-    setSelectedPointIndices([]);
-    setActiveSelectionSourceId(null);
-    cosmograph?.unselectAllPoints();
-  }, [selectNode, setSelectedPointIndices, setActiveSelectionSourceId, cosmograph]);
+  }, [selectNode]);
 
   const [resolved, setResolved] = useState<{
     detail: GraphSelectionDetail | null;
+    error: string | null;
+    id: string | null;
+  }>({ detail: null, error: null, id: null });
+  const [hydrated, setHydrated] = useState<{
+    detail: GraphNodeDetailResponsePayload | null;
     error: string | null;
     id: string | null;
   }>({ detail: null, error: null, id: null });
@@ -492,18 +115,99 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
 
     queries
       .getSelectionDetail(selectedNode)
-      .then((d) => !cancelled && setResolved({ detail: d, error: null, id: selectedNode.id }))
-      .catch((e: unknown) =>
-        !cancelled &&
-        setResolved({
-          detail: null,
-          error: e instanceof Error ? e.message : "Failed to load detail",
-          id: selectedNode.id,
-        })
-      );
+      .then((detail) => {
+        if (!cancelled) {
+          setResolved({ detail, error: null, id: selectedNode.id });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setResolved({
+            detail: null,
+            error: error instanceof Error ? error.message : "Failed to load detail",
+            id: selectedNode.id,
+          });
+        }
+      });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [queries, selectedNode]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    let cancelled = false;
+
+    fetchGraphNodeDetail({ bundle, node: selectedNode })
+      .then((detail) => {
+        if (!cancelled) {
+          setHydrated({ detail, error: null, id: selectedNode.id });
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setHydrated({
+            detail: null,
+            error: error instanceof Error ? error.message : "Failed to hydrate graph detail",
+            id: selectedNode.id,
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bundle, selectedNode]);
+
+  const { copyLabel, setCopied } = useCopyFeedback(selectedNode?.id ?? null);
+
+  const navigateToPaperNode = useCallback(
+    (paperNode: (typeof data.paperNodes)[number]) => {
+      setActiveLayer("paper");
+      window.requestAnimationFrame(() => selectNode(paperNode));
+    },
+    [selectNode, setActiveLayer, data.paperNodes]
+  );
+
+  const navigateToChunkNode = useCallback(
+    (chunkNode: (typeof data.nodes)[number]) => {
+      setActiveLayer("chunk");
+      window.requestAnimationFrame(() => selectNode(chunkNode));
+    },
+    [selectNode, setActiveLayer, data.nodes]
+  );
+
+  const handleAsk = useCallback(() => {
+    setMode("ask");
+  }, [setMode]);
+
+  const handleCopyNote = useCallback(async () => {
+    if (!selectedNode) return;
+
+    const markdown =
+      selectedNode.nodeKind === "paper"
+        ? buildPaperNoteMarkdown({
+            nodeDisplayPreview: selectedNode.displayPreview,
+            paper: resolved.detail?.paper ?? null,
+            paperDocument: resolved.detail?.paperDocument ?? null,
+            servicePaper: hydrated.detail?.paper ?? null,
+          })
+        : selectedNode.nodeKind === "institution"
+          ? `# ${(selectedNode as import("@/lib/graph/types").GeoNode).institution ?? "Institution"}\n\n${(selectedNode as import("@/lib/graph/types").GeoNode).city ?? ""}, ${(selectedNode as import("@/lib/graph/types").GeoNode).country ?? ""}`
+          : buildChunkNoteMarkdown({
+              node: selectedNode as import("@/lib/graph/types").ChunkNode,
+              chunk: resolved.detail?.chunk ?? null,
+              serviceChunk: hydrated.detail?.chunk ?? null,
+            });
+
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied("copied");
+    } catch {
+      setCopied("failed");
+    }
+  }, [hydrated.detail, resolved.detail, selectedNode, setCopied]);
 
   if (!selectedNode) return null;
 
@@ -511,21 +215,42 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
   const detail = isResolved ? resolved.detail : null;
   const error = isResolved ? resolved.error : null;
   const loading = !isResolved;
+  const isHydrated = hydrated.id === selectedNode.id;
+  const serviceDetail = isHydrated ? hydrated.detail : null;
+  const serviceError = isHydrated ? hydrated.error : null;
+  const serviceLoading = !isHydrated;
+  const isPaper = selectedNode.nodeKind === "paper";
+  const isGeo = selectedNode.nodeKind === "institution";
 
-  const isPaper = selectedNode.nodeKind === 'paper';
+  const sourcePaperNode = findPaperNodeByPaperId(data.paperNodes, selectedNode.paperId);
+
+  const actionPdfUrl = isPaper
+    ? serviceDetail?.paper?.pdf_asset?.access?.url ?? null
+    : serviceDetail?.chunk?.paper_pdf_asset?.access?.url ?? null;
 
   return (
-    <PanelShell title="Selection" side="right" width={380} onClose={clearSelection}>
+    <PanelShell title="Selection" side="right" width={380} onClose={closePanel}>
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <Stack gap="lg">
           <DetailHeader node={selectedNode} paper={detail?.paper ?? null} />
 
+          <SelectionActionBar
+            onCopyNote={handleCopyNote}
+            onAsk={handleAsk}
+            pdfUrl={actionPdfUrl}
+            copyLabel={copyLabel}
+            onOpenGraphPaper={!isPaper && sourcePaperNode ? () => navigateToPaperNode(sourcePaperNode) : null}
+            openGraphPaperLabel="Open paper"
+          />
+
           <div style={{ height: 1, backgroundColor: "var(--graph-panel-border)" }} />
 
-          {isPaper ? (
+          {isGeo ? (
+            <InstitutionSection node={selectedNode} />
+          ) : isPaper ? (
             <PaperDocumentSection
-              nodeDisplayPreview={selectedNode.nodeKind === "paper" ? selectedNode.displayPreview : null}
-              paper={detail?.paper ?? null}
+              nodeDisplayPreview={selectedNode.displayPreview}
+              paper={serviceDetail?.paper ?? detail?.paper ?? null}
               paperDocument={detail?.paperDocument ?? null}
               loading={loading}
               error={error}
@@ -539,9 +264,147 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
             />
           )}
 
-          <PaperSection paper={detail?.paper ?? null} />
+          {!isGeo && <PaperSection paper={detail?.paper ?? null} servicePaper={serviceDetail?.paper ?? null} />}
 
           <Accordion variant="default" className="detail-accordion" styles={accordionStyles}>
+            {isPaper && (
+              <Accordion.Item value="visuals">
+                <Accordion.Control>Visuals</Accordion.Control>
+                <Accordion.Panel>
+                  <AssetGalleryContent
+                    bundle={bundle}
+                    node={selectedNode}
+                    assets={serviceDetail?.paper?.assets}
+                    loading={serviceLoading}
+                    error={serviceError}
+                    emptyLabel="No figure or table assets available."
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {isPaper && (
+              <Accordion.Item value="pdf">
+                <Accordion.Control>PDF</Accordion.Control>
+                <Accordion.Panel>
+                  <PdfContent
+                    bundle={bundle}
+                    node={selectedNode}
+                    asset={serviceDetail?.paper?.pdf_asset}
+                    loading={serviceLoading}
+                    error={serviceError}
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {isPaper && (
+              <Accordion.Item value="key-passages">
+                <Accordion.Control>Key passages</Accordion.Control>
+                <Accordion.Panel>
+                  <ChunkSummariesContent
+                    chunks={serviceDetail?.paper?.narrative_chunks}
+                    chunkNodes={data.nodes}
+                    onNavigateToChunk={navigateToChunkNode}
+                    loading={serviceLoading}
+                    error={serviceError}
+                    emptyLabel="No key passages available."
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {isPaper && (
+              <Accordion.Item value="connections">
+                <Accordion.Control>Connections</Accordion.Control>
+                <Accordion.Panel>
+                  <ConnectionsContent
+                    incoming={serviceDetail?.paper?.incoming_citations}
+                    outgoing={serviceDetail?.paper?.outgoing_citations}
+                    paperNodes={data.paperNodes}
+                    onNavigateToPaper={navigateToPaperNode}
+                    loading={serviceLoading}
+                    error={serviceError}
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {isPaper && (
+              <Accordion.Item value="bibliography">
+                <Accordion.Control>Bibliography</Accordion.Control>
+                <Accordion.Panel>
+                  <ReferencesContent
+                    references={serviceDetail?.paper?.references}
+                    paperNodes={data.paperNodes}
+                    onNavigateToPaper={navigateToPaperNode}
+                    loading={serviceLoading}
+                    error={serviceError}
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {!isPaper && (
+              <Accordion.Item value="page-assets">
+                <Accordion.Control>Visuals</Accordion.Control>
+                <Accordion.Panel>
+                  <AssetGalleryContent
+                    bundle={bundle}
+                    node={selectedNode}
+                    assets={serviceDetail?.chunk?.page_assets}
+                    loading={serviceLoading}
+                    error={serviceError}
+                    emptyLabel="No page assets available."
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {!isPaper && (
+              <Accordion.Item value="source-pdf">
+                <Accordion.Control>Source PDF</Accordion.Control>
+                <Accordion.Panel>
+                  <PdfContent
+                    bundle={bundle}
+                    node={selectedNode}
+                    asset={serviceDetail?.chunk?.paper_pdf_asset}
+                    loading={serviceLoading}
+                    error={serviceError}
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {!isPaper && (
+              <Accordion.Item value="entities">
+                <Accordion.Control>Entities</Accordion.Control>
+                <Accordion.Panel>
+                  <EntitiesContent
+                    entities={serviceDetail?.chunk?.entities}
+                    loading={serviceLoading}
+                    error={serviceError}
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
+            {!isPaper && (
+              <Accordion.Item value="neighboring-chunks">
+                <Accordion.Control>Neighboring chunks</Accordion.Control>
+                <Accordion.Panel>
+                  <ChunkSummariesContent
+                    chunks={serviceDetail?.chunk?.neighboring_chunks}
+                    chunkNodes={data.nodes}
+                    onNavigateToChunk={navigateToChunkNode}
+                    loading={serviceLoading}
+                    error={serviceError}
+                    emptyLabel="No neighboring chunks available."
+                  />
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
+
             <Accordion.Item value="cluster">
               <Accordion.Control>Cluster context</Accordion.Control>
               <Accordion.Panel>
@@ -552,20 +415,24 @@ export function DetailPanel({ queries }: { queries: GraphBundleQueries }) {
             <Accordion.Item value="exemplars">
               <Accordion.Control>{isPaper ? "Cluster exemplars" : "Related chunks"}</Accordion.Control>
               <Accordion.Panel>
-                <ExemplarsContent exemplars={detail?.exemplars ?? []} />
+                <ExemplarsContent
+                  exemplars={detail?.exemplars ?? []}
+                  chunkNodes={data.nodes}
+                  onNavigateToChunk={navigateToChunkNode}
+                />
               </Accordion.Panel>
             </Accordion.Item>
 
-            <Accordion.Item value="abstract">
-              <Accordion.Control>Abstract</Accordion.Control>
-              <Accordion.Panel>
-                <Text
-                  style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}
-                >
-                  {detail?.paper?.abstract ?? "No abstract available in the bundle."}
-                </Text>
-              </Accordion.Panel>
-            </Accordion.Item>
+            {isPaper && (
+              <Accordion.Item value="abstract">
+                <Accordion.Control>Abstract</Accordion.Control>
+                <Accordion.Panel>
+                  <Text style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}>
+                    {serviceDetail?.paper?.abstract ?? detail?.paper?.abstract ?? "No abstract available."}
+                  </Text>
+                </Accordion.Panel>
+              </Accordion.Item>
+            )}
           </Accordion>
         </Stack>
       </div>

@@ -17,11 +17,13 @@ import {
   Maximize,
   Minus,
   Plus,
+  Share2,
   SlidersHorizontal,
 } from "lucide-react";
 import ThemeToggle from "@/components/ui/ThemeToggle";
 import { useGraphStore, useDashboardStore } from "@/lib/graph/stores";
 import { getModeConfig } from "@/lib/graph/modes";
+import { getLayerConfig } from "@/lib/graph/layers";
 import { iconBtnStyles } from "./PanelShell";
 import { settle } from "@/lib/motion";
 import type { ActivePanel } from "@/lib/graph/stores";
@@ -47,12 +49,48 @@ export function Wordmark() {
   const toggleUiHidden = useDashboardStore((s) => s.toggleUiHidden);
   const togglePanel = useDashboardStore((s) => s.togglePanel);
   const togglePanelsVisible = useDashboardStore((s) => s.togglePanelsVisible);
+  const activeLayer = useDashboardStore((s) => s.activeLayer);
+  const connectedSelect = useDashboardStore((s) => s.connectedSelect);
+  const toggleConnectedSelect = useDashboardStore((s) => s.toggleConnectedSelect);
+  const renderLinks = useDashboardStore((s) => s.renderLinks);
+  const setRenderLinks = useDashboardStore((s) => s.setRenderLinks);
+  const selectedNode = useGraphStore((s) => s.selectedNode);
+  const layerHasLinks = getLayerConfig(activeLayer).hasLinks;
   const { color: modeColor } = getModeConfig(mode);
   const [spinCount, setSpinCount] = useState(0);
   const { cosmograph } = useCosmograph();
 
+  // Context-aware links button:
+  // - No selection: toggle link visibility (show/hide citation lines)
+  // - Node selected: toggle connected select (expand/collapse neighbors)
+  const handleLinksToggle = useCallback(() => {
+    if (selectedNode) {
+      const turningOn = !connectedSelect;
+      toggleConnectedSelect();
+      if (turningOn) {
+        cosmograph?.selectPoint(selectedNode.index, false, true);
+      } else {
+        cosmograph?.selectPoint(selectedNode.index, false, false);
+      }
+    } else {
+      setRenderLinks(!renderLinks);
+    }
+  }, [connectedSelect, cosmograph, renderLinks, selectedNode, setRenderLinks, toggleConnectedSelect]);
+
+  const linksButtonActive = selectedNode ? connectedSelect : renderLinks;
+  const linksButtonLabel = selectedNode
+    ? (connectedSelect ? "Hide connected nodes" : "Show connected nodes")
+    : (renderLinks ? "Hide links" : "Show links");
+
   const handleFitView = useCallback(() => {
-    cosmograph?.fitView(250, 0.1);
+    const selected = useDashboardStore.getState().selectedPointIndices;
+    if (selected.length === 1) {
+      cosmograph?.zoomToPoint(selected[0], 250);
+    } else if (selected.length > 1) {
+      cosmograph?.fitViewByIndices(selected, 250, 0.1);
+    } else {
+      cosmograph?.fitView(250, 0.1);
+    }
   }, [cosmograph]);
 
   const handleZoomIn = useCallback(() => {
@@ -168,6 +206,25 @@ export function Wordmark() {
       <div data-wordmark-toolbar className="absolute right-3 top-3 z-40 flex items-center gap-0.5">
         {!uiHidden && (
           <>
+            {layerHasLinks && (
+              <>
+                <Tooltip label={linksButtonLabel} position="bottom" withArrow>
+                  <ActionIcon
+                    variant="transparent"
+                    size="lg"
+                    radius="xl"
+                    className="graph-icon-btn"
+                    styles={iconBtnStyles}
+                    onClick={handleLinksToggle}
+                    aria-pressed={linksButtonActive}
+                    aria-label={linksButtonLabel}
+                  >
+                    <Share2 />
+                  </ActionIcon>
+                </Tooltip>
+                <div className="mx-1 h-5 w-px" style={{ backgroundColor: "var(--graph-panel-border)" }} />
+              </>
+            )}
             <Tooltip label="Fit view" position="bottom" withArrow>
               <ActionIcon
                 variant="transparent"

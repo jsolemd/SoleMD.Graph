@@ -26,7 +26,7 @@ const MODE_ICONS: Record<GraphMode, typeof MessageCircle> = {
   ask: MessageCircle,
   explore: Compass,
   learn: BookOpen,
-  write: PenLine,
+  create: PenLine,
 };
 
 /** Gradient divider between mode toggles. */

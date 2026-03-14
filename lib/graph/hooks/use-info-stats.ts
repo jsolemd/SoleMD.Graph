@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import type { GraphNode, GraphStats, MapLayer } from '../types'
+import type { GraphNode } from '../types'
 import { readNodeColumnValue } from '../info-widgets'
 
 /* ─── Types ──────────────────────────────────────────────────── */
@@ -10,12 +10,18 @@ export interface ClusterStat {
   count: number
 }
 
+export type InfoScope = 'dataset' | 'current' | 'selected'
+
 export interface InfoStats {
   /** Total active-layer node count (denominator for proportions). */
   totalCount: number
   /** Scoped count — selection or full dataset. */
   scopedCount: number
-  /** Whether we're showing a subset (selection active). */
+  /** Current info-panel scope. */
+  scope: InfoScope
+  /** Whether we're showing a subset rather than the full dataset. */
+  isSubset: boolean
+  /** Whether the scope is driven by explicit selection intent. */
   hasSelection: boolean
 
   papers: number
@@ -31,17 +37,17 @@ export interface InfoStats {
  * Compute info-panel stats from scoped + all nodes.
  * Pure function — no hooks, testable in isolation.
  *
- * `hasSelection` is the single source of truth for selection state,
- * derived from `selectedPointIndices.length > 0` in the orchestrator.
- * This avoids each consumer inferring selection differently.
+ * `scope` is the single source of truth for info-panel scoping:
+ * dataset baseline, current working set, or explicit selection intent.
  */
 export function computeInfoStats(
   allNodes: GraphNode[],
   scopedNodes: GraphNode[],
-  _layer: MapLayer,
-  stats: GraphStats,
-  hasSelection: boolean,
+  scope: InfoScope,
 ): InfoStats {
+  const hasSelection = scope === 'selected'
+  const totalCount = allNodes.length
+  const isSubset = scopedNodes.length < totalCount
   const paperIds = new Set<string>()
   const clusterCounts = new Map<number, { label: string; count: number }>()
   let noiseNodes = 0
@@ -85,8 +91,10 @@ export function computeInfoStats(
     .map(([clusterId, info]) => ({ clusterId, ...info }))
 
   return {
-    totalCount: hasSelection ? allNodes.length : stats.points,
+    totalCount,
     scopedCount: scopedNodes.length,
+    scope,
+    isSubset,
     hasSelection,
     papers: paperIds.size,
     clusters: clusterCounts.size - noiseBuckets,
@@ -101,12 +109,10 @@ export function computeInfoStats(
 export function useInfoStats(
   allNodes: GraphNode[],
   scopedNodes: GraphNode[],
-  layer: MapLayer,
-  stats: GraphStats,
-  hasSelection: boolean,
+  scope: InfoScope,
 ): InfoStats {
   return useMemo(
-    () => computeInfoStats(allNodes, scopedNodes, layer, stats, hasSelection),
-    [allNodes, scopedNodes, layer, stats, hasSelection],
+    () => computeInfoStats(allNodes, scopedNodes, scope),
+    [allNodes, scopedNodes, scope],
   )
 }

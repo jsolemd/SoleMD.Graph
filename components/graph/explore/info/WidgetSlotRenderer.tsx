@@ -4,6 +4,7 @@ import { ActionIcon, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
 import type { GraphNode } from "@/lib/graph/types";
 import type { InfoWidgetSlot } from "@/lib/graph/info-widgets";
+import type { InfoScope } from "@/lib/graph/hooks/use-info-stats";
 import { useDashboardStore } from "@/lib/graph/stores";
 import { iconBtnStyles, panelTextStyle } from "../../PanelShell";
 import { FacetSummary } from "./FacetSummary";
@@ -14,14 +15,14 @@ interface WidgetSlotRendererProps {
   slot: InfoWidgetSlot;
   scopedNodes: GraphNode[];
   allNodes: GraphNode[];
-  hasSelection: boolean;
+  scope: InfoScope;
 }
 
 export function WidgetSlotRenderer({
   slot,
   scopedNodes,
   allNodes,
-  hasSelection,
+  scope,
 }: WidgetSlotRendererProps) {
   const removeInfoWidget = useDashboardStore((s) => s.removeInfoWidget);
 
@@ -49,7 +50,7 @@ export function WidgetSlotRenderer({
           column={slot.column}
           scopedNodes={scopedNodes}
           allNodes={allNodes}
-          hasSelection={hasSelection}
+          scope={scope}
         />
       )}
       {slot.kind === "histogram" && (

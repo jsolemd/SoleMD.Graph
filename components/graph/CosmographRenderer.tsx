@@ -25,7 +25,6 @@ export default function CosmographRenderer({
 }) {
   const cosmographRef = useRef<CosmographRef>(undefined);
   const hasFittedView = useRef(false);
-  const bridgedSelectionRef = useRef(false);
   const selectNode = useGraphStore((s) => s.selectNode);
   const scheme = useComputedColorScheme("light");
   const isDark = scheme === "dark";
@@ -55,8 +54,8 @@ export default function CosmographRenderer({
   const positionXColumn = useDashboardStore((s) => s.positionXColumn);
   const positionYColumn = useDashboardStore((s) => s.positionYColumn);
 
-  // Link visibility — only relevant for layers with a links table
-  const hasLinks = Boolean(layerConfig.linksTable);
+  // Link visibility — only relevant for layers with meaningful link data
+  const hasLinks = layerConfig.hasLinks;
   const renderLinks = useDashboardStore((s) => s.renderLinks);
   const linkOpacity = useDashboardStore((s) => s.linkOpacity);
   const linkGreyoutOpacity = useDashboardStore((s) => s.linkGreyoutOpacity);
@@ -66,15 +65,24 @@ export default function CosmographRenderer({
   const curvedLinks = useDashboardStore((s) => s.curvedLinks);
   const linkDefaultArrows = useDashboardStore((s) => s.linkDefaultArrows);
   const scaleLinksOnZoom = useDashboardStore((s) => s.scaleLinksOnZoom);
-  const setFilteredPointIndices = useDashboardStore(
-    (s) => s.setFilteredPointIndices
+  const setCurrentPointIndices = useDashboardStore(
+    (s) => s.setCurrentPointIndices
+  );
+  const selectionIntentPointIndices = useDashboardStore(
+    (s) => s.selectedPointIndices
   );
   const setSelectedPointIndices = useDashboardStore(
     (s) => s.setSelectedPointIndices
   );
+  const setHighlightedPointIndices = useDashboardStore(
+    (s) => s.setHighlightedPointIndices
+  );
   const setActiveSelectionSourceId = useDashboardStore(
     (s) => s.setActiveSelectionSourceId
   );
+  const connectedSelect = useDashboardStore((s) => s.connectedSelect);
+  const lockedSelection = useDashboardStore((s) => s.lockedSelection);
+  const isLocked = lockedSelection !== null;
 
   const colorTheme = useGraphColorTheme();
 
@@ -166,19 +174,20 @@ export default function CosmographRenderer({
       hasFittedView.current = true;
       lastFittedLayer.current = layerConfig.pointsTable;
       cosmographRef.current?.fitView(0, 0.1);
-      setFilteredPointIndices(allNodeIndices);
-      setSelectedPointIndices(cosmographRef.current?.getSelectedPointIndices() ?? []);
-      setActiveSelectionSourceId(cosmographRef.current?.getActiveSelectionSourceId() ?? null);
+      setCurrentPointIndices(null);
+      setSelectedPointIndices([]);
+      setHighlightedPointIndices([]);
+      setActiveSelectionSourceId(null);
     }
 
     if (lastFittedLayer.current === null) {
       lastFittedLayer.current = layerConfig.pointsTable;
     }
   }, [
-    allNodeIndices,
     layerConfig.pointsTable,
     setActiveSelectionSourceId,
-    setFilteredPointIndices,
+    setCurrentPointIndices,
+    setHighlightedPointIndices,
     setSelectedPointIndices,
   ]);
 
@@ -189,10 +198,49 @@ export default function CosmographRenderer({
     [indexToNode, selectNode]
   );
 
+  const handleBackgroundClick = useCallback(() => {
+    selectNode(null);
+    // Explicitly clear programmatic selections (selectPoint calls)
+    // that resetSelectionOnEmptyCanvasClick may not reach
+    cosmographRef.current?.unselectAllPoints();
+  }, [selectNode]);
+
+  const getIntentClauseIds = useCallback(() => {
+    const clauses = cosmographRef.current?.pointsSelection?.clauses ?? [];
+    return clauses
+      .map((clause) => {
+        if (
+          typeof clause !== "object" ||
+          clause === null ||
+          !("source" in clause)
+        ) {
+          return null;
+        }
+
+        const source = clause.source;
+        if (
+          typeof source !== "object" ||
+          source === null ||
+          !("id" in source) ||
+          typeof source.id !== "string"
+        ) {
+          return null;
+        }
+
+        return source.id;
+      })
+      .filter(
+        (sourceId): sourceId is string =>
+          sourceId !== null &&
+          !sourceId.startsWith("filter:") &&
+          !sourceId.startsWith("timeline:")
+      );
+  }, []);
+
   const handlePointsFiltered = useCallback(
     (
       filteredPoints: CosmographData,
-      selectedPointIndices: number[] | null | undefined
+      callbackSelectedPointIndices: number[] | null | undefined
     ) => {
       const filteredRows =
         cosmographRef.current?.convertCosmographDataToObject(filteredPoints) ?? [];
@@ -200,46 +248,71 @@ export default function CosmographRenderer({
         .map((row) => row.index)
         .filter((index): index is number => typeof index === "number");
       const normalizedSelected =
-        selectedPointIndices?.filter(
+        callbackSelectedPointIndices?.filter(
           (index): index is number => typeof index === "number"
         ) ?? [];
-
-      setFilteredPointIndices(filteredIndices);
-      setSelectedPointIndices(normalizedSelected);
-      setActiveSelectionSourceId(cosmographRef.current?.getActiveSelectionSourceId() ?? null);
-
-      // Bridge: crossfilter widget → canvas greyout
       const sourceId = cosmographRef.current?.getActiveSelectionSourceId() ?? null;
-      const isFromWidget = sourceId?.startsWith('filter:') || sourceId?.startsWith('timeline:');
+      const isFilterSource =
+        sourceId?.startsWith("filter:") || sourceId?.startsWith("timeline:");
+      const hasPartialCurrent =
+        filteredIndices.length > 0 && filteredIndices.length < allNodeIndices.length;
+      const nextHighlight =
+        normalizedSelected.length > 0
+          ? normalizedSelected
+          : hasPartialCurrent
+            ? filteredIndices
+            : [];
+      const hasIntentClauses = getIntentClauseIds().length > 0;
+      const pointClauseCount =
+        cosmographRef.current?.pointsSelection?.clauses?.length ?? 0;
+      const linkClauseCount =
+        cosmographRef.current?.linksSelection?.clauses?.length ?? 0;
+      const hasCurrentScope = pointClauseCount > 0 || linkClauseCount > 0;
 
-      // When a widget re-fires, clear stale bridge first so crossfilter recalculates cleanly
-      if (isFromWidget && bridgedSelectionRef.current) {
-        bridgedSelectionRef.current = false;
-        cosmographRef.current?.unselectAllPoints();
-        return; // next callback will re-bridge if filter is still active
-      }
+      setCurrentPointIndices(hasCurrentScope ? filteredIndices : null);
 
-      // No canvas selection + partial filter → select filtered points for greyout
-      if (normalizedSelected.length === 0 && filteredIndices.length > 0 && filteredIndices.length < allNodeIndices.length) {
-        bridgedSelectionRef.current = true;
-        cosmographRef.current?.selectPoints(filteredIndices);
-      }
+      // Locked mode freezes persistent intent and lets filters only alter the
+      // currently visible/highlighted subset. Intent-changing widgets should
+      // be disabled natively while locked, but this keeps the store resilient.
+      if (lockedSelection && lockedSelection.size > 0) {
+        if (isFilterSource) {
+          setHighlightedPointIndices(nextHighlight);
+          return;
+        }
 
-      if (normalizedSelected.length === 1) {
-        selectNode(indexToNode.get(normalizedSelected[0]) ?? null);
+        setHighlightedPointIndices(selectionIntentPointIndices);
         return;
       }
 
-      if (normalizedSelected.length === 0) {
-        selectNode(null);
+      // Filters and timeline always define visibility/highlight only. They never
+      // overwrite the user's persistent selection intent.
+      if (isFilterSource) {
+        setHighlightedPointIndices(nextHighlight);
+        return;
       }
+
+      // Non-filter sources update persistent intent only while they still own
+      // a live selection clause. This is what prevents "clear selection under
+      // active filters" from rehydrating intent from the current intersection.
+      if (!hasIntentClauses) {
+        setSelectedPointIndices([]);
+        setHighlightedPointIndices(nextHighlight);
+        setActiveSelectionSourceId(null);
+        return;
+      }
+
+      setSelectedPointIndices(normalizedSelected);
+      setHighlightedPointIndices(normalizedSelected);
+      setActiveSelectionSourceId(sourceId);
     },
     [
       allNodeIndices,
-      indexToNode,
-      selectNode,
+      getIntentClauseIds,
+      lockedSelection,
+      selectionIntentPointIndices,
       setActiveSelectionSourceId,
-      setFilteredPointIndices,
+      setCurrentPointIndices,
+      setHighlightedPointIndices,
       setSelectedPointIndices,
     ]
   );
@@ -297,14 +370,15 @@ export default function CosmographRenderer({
       pointLabelColor={colors.label}
       pointLabelClassName={pointLabelStyle}
       clusterLabelClassName={clusterLabelStyle}
-      selectPointOnClick="single"
-      focusPointOnClick
-      resetSelectionOnEmptyCanvasClick
+      selectPointOnClick={isLocked ? false : (hasLinks && connectedSelect) ? true : "single"}
+      focusPointOnClick={!isLocked}
+      resetSelectionOnEmptyCanvasClick={!isLocked}
       disableLogging
       onLabelClick={handleLabelClick}
       onGraphRebuilt={handleGraphRebuilt}
       onPointsFiltered={handlePointsFiltered}
       onPointClick={handlePointClick}
+      onBackgroundClick={handleBackgroundClick}
       style={{ width: "100%", height: "100%" }}
     />
   );

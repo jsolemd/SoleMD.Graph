@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { Text, ActionIcon, Tooltip } from "@mantine/core";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
@@ -110,26 +110,25 @@ export function PanelShell({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // Report panel bottom position so PromptBox can check for overlap
+  // Report panel bottom position so PromptBox can check for overlap.
   // Use layout position (PANEL_TOP + height) instead of getBoundingClientRect,
   // which reflects the current framer-motion animated transform (y: -16 on enter).
-  const reportBottom = useCallback(() => {
-    if (panelRef.current) {
-      setPanelBottomY(side, PANEL_TOP + panelRef.current.offsetHeight);
-    }
-  }, [side, setPanelBottomY]);
-
   useEffect(() => {
     const el = panelRef.current;
     if (!el) return;
-    reportBottom();
-    const ro = new ResizeObserver(reportBottom);
+
+    const report = () => {
+      setPanelBottomY(side, PANEL_TOP + el.offsetHeight);
+    };
+
+    report();
+    const ro = new ResizeObserver(report);
     ro.observe(el);
     return () => {
       ro.disconnect();
       setPanelBottomY(side, 0);
     };
-  }, [reportBottom, setPanelBottomY, side]);
+  }, [side, setPanelBottomY]);
 
   return (
     <motion.div

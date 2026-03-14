@@ -26,7 +26,10 @@ export function DataTable({ nodes }: { nodes: GraphNode[] }) {
   const tableColumns = useMemo(() => getTableColumnsForLayer(activeLayer), [activeLayer]);
   const tableHeight = useDashboardStore((s) => s.tableHeight);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
-  const filteredPointIndices = useDashboardStore((s) => s.filteredPointIndices);
+  const currentPointIndices = useDashboardStore((s) => s.currentPointIndices);
+  const highlightedPointIndices = useDashboardStore(
+    (s) => s.highlightedPointIndices
+  );
   const selectedPointIndices = useDashboardStore((s) => s.selectedPointIndices);
   const setTablePage = useDashboardStore((s) => s.setTablePage);
   const setTableView = useDashboardStore((s) => s.setTableView);
@@ -36,32 +39,36 @@ export function DataTable({ nodes }: { nodes: GraphNode[] }) {
   const selectNode = useGraphStore((s) => s.selectNode);
   const { cosmograph } = useCosmograph();
 
-  const visibleNodes = useMemo(() => {
-    if (filteredPointIndices === null) {
+  const currentNodes = useMemo(() => {
+    if (currentPointIndices === null) {
       return nodes;
     }
 
-    const visibleSet = new Set(filteredPointIndices);
-    return nodes.filter((node) => visibleSet.has(node.index));
-  }, [filteredPointIndices, nodes]);
+    const currentSet = new Set(currentPointIndices);
+    return nodes.filter((node) => currentSet.has(node.index));
+  }, [currentPointIndices, nodes]);
 
   const selectedNodes = useMemo(() => {
     if (selectedPointIndices.length > 0) {
       const selectedSet = new Set(selectedPointIndices);
       return nodes.filter((node) => selectedSet.has(node.index));
     }
-
-    if (selectedNode) {
-      return nodes.filter((node) => node.id === selectedNode.id);
-    }
-
     return [];
-  }, [nodes, selectedNode, selectedPointIndices]);
+  }, [nodes, selectedPointIndices]);
 
-  const displayedNodes = tableView === "visible" ? visibleNodes : selectedNodes;
+  const resolvedTableView =
+    tableView === "selected" && selectedPointIndices.length === 0
+      ? "current"
+      : tableView;
+  const displayedNodes =
+    resolvedTableView === "current" ? currentNodes : selectedNodes;
   const selectedIndexSet = useMemo(
     () => new Set(selectedPointIndices),
     [selectedPointIndices]
+  );
+  const highlightedIndexSet = useMemo(
+    () => new Set(highlightedPointIndices),
+    [highlightedPointIndices]
   );
 
   const totalPages = Math.max(1, Math.ceil(displayedNodes.length / tablePageSize));
@@ -82,10 +89,15 @@ export function DataTable({ nodes }: { nodes: GraphNode[] }) {
     }
   }, [safePage, setTablePage, tablePage]);
 
+  useEffect(() => {
+    if (tableView === "selected" && selectedPointIndices.length === 0) {
+      setTableView("current");
+    }
+  }, [selectedPointIndices.length, setTableView, tableView]);
+
   const handleRowClick = useCallback(
     (node: GraphNode) => {
       selectNode(node);
-      cosmograph?.selectPoint(node.index);
       cosmograph?.setFocusedPoint(node.index);
       cosmograph?.zoomToPoint(node.index, 250);
     },
@@ -122,10 +134,14 @@ export function DataTable({ nodes }: { nodes: GraphNode[] }) {
           <SegmentedControl
             size="xs"
             data={[
-              { label: "Visible", value: "visible" },
-              { label: "Selected", value: "selected" },
+              { label: "Current", value: "current" },
+              {
+                label: "Selected",
+                value: "selected",
+                disabled: selectedPointIndices.length === 0,
+              },
             ]}
-            value={tableView}
+            value={resolvedTableView}
             onChange={(value) => setTableView(value as typeof tableView)}
           />
           <Text size="xs" style={panelTextDimStyle}>
@@ -186,51 +202,64 @@ export function DataTable({ nodes }: { nodes: GraphNode[] }) {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {pageNodes.map((node, i) => (
-              <Table.Tr
-                key={node.id}
-                tabIndex={0}
-                aria-selected={selectedIndexSet.has(node.index) || selectedNode?.id === node.id}
-                onClick={() => handleRowClick(node)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleRowClick(node);
-                  }
-                }}
-                style={{
-                  cursor: "pointer",
-                  borderLeft:
-                    selectedIndexSet.has(node.index) || selectedNode?.id === node.id
+            {pageNodes.map((node, i) => {
+              const isIntentSelected = selectedIndexSet.has(node.index);
+              const isHighlighted = highlightedIndexSet.has(node.index);
+              const isFocused = selectedNode?.id === node.id;
+              const showSelectedState =
+                resolvedTableView === "selected"
+                  ? isIntentSelected || isFocused
+                  : isHighlighted || isFocused;
+
+              return (
+                <Table.Tr
+                  key={node.id}
+                  tabIndex={0}
+                  aria-selected={showSelectedState}
+                  onClick={() => handleRowClick(node)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleRowClick(node);
+                    }
+                  }}
+                  style={{
+                    cursor: "pointer",
+                    borderLeft: showSelectedState
                       ? "3px solid var(--mode-accent)"
                       : "3px solid transparent",
-                  backgroundColor:
-                    tableView === "visible" &&
-                    (selectedIndexSet.has(node.index) || selectedNode?.id === node.id)
-                      ? "var(--mode-accent-subtle)"
-                      : undefined,
-                }}
-              >
-                <Table.Td style={{ fontSize: "0.7rem", color: "var(--mode-accent)" }}>
-                  {startIdx + i + 1}
-                </Table.Td>
-                {tableColumns.map((key) => (
+                    backgroundColor:
+                      isHighlighted || isFocused
+                        ? "var(--mode-accent-subtle)"
+                        : undefined,
+                  }}
+                >
                   <Table.Td
-                    key={key}
-                    style={{
-                      fontSize: "0.7rem",
-                      maxWidth: key === "paperTitle" ? 200 : 120,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      color: "var(--graph-panel-text)",
-                    }}
+                    style={{ fontSize: "0.7rem", color: "var(--mode-accent)" }}
                   >
-                    {formatCellValue((node as unknown as Record<string, unknown>)[key], { columnKey: key, truncate: 40 })}
+                    {startIdx + i + 1}
                   </Table.Td>
-                ))}
-              </Table.Tr>
-            ))}
+                  {tableColumns.map((key) => (
+                    <Table.Td
+                      key={key}
+                      style={{
+                        fontSize: "0.7rem",
+                        maxWidth: key === "paperTitle" ? 200 : 120,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        color: "var(--graph-panel-text)",
+                      }}
+                    >
+                      {formatCellValue(
+                        (node as unknown as Record<string, unknown>)[key],
+                        { columnKey: key, truncate: 40 }
+                      )}
+                    </Table.Td>
+                  ))}
+                </Table.Tr>
+              );
+            })}
           </Table.Tbody>
         </Table>
       </div>
