@@ -9,6 +9,7 @@ export const DARK_ON_COLOR = "#1a1b1e";
 
 /** Noise cluster color (HDBSCAN cluster 0). */
 export const NOISE_COLOR = "#555555";
+export const NOISE_COLOR_LIGHT = "#999999";
 
 /** Fallback when cluster-mod lookup has no match. */
 export const DEFAULT_POINT_COLOR = "#a8c5e9";

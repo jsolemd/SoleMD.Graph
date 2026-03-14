@@ -44,12 +44,14 @@ export interface GraphBundle {
   tableUrls: Record<string, string>
 }
 
-export interface ChunkNode {
+/** Fields shared by all node types (chunk and paper). */
+export interface GraphNodeBase {
   index: number
   id: string
   x: number
   y: number
   color: string
+  colorLight: string
   clusterId: number
   clusterLabel: string | null
   clusterProbability: number
@@ -62,17 +64,6 @@ export interface ChunkNode {
   doi: string | null
   pmid: string | null
   pmcid: string | null
-  stableChunkId: string | null
-  chunkIndex: number | null
-  sectionType: string | null
-  sectionCanonical: string | null
-  sectionPath: string | null
-  pageNumber: number | null
-  tokenCount: number | null
-  charCount: number | null
-  chunkKind: string | null
-  blockType: string | null
-  blockId: string | null
   chunkPreview: string | null
   paperAuthorCount: number | null
   paperReferenceCount: number | null
@@ -84,9 +75,28 @@ export interface ChunkNode {
   paperPageCount: number | null
   paperTableCount: number | null
   paperFigureCount: number | null
+}
+
+export interface ChunkNode extends GraphNodeBase {
+  nodeKind: 'chunk'
+  stableChunkId: string | null
+  chunkIndex: number | null
+  sectionCanonical: string | null
+  pageNumber: number | null
+  tokenCount: number | null
+  charCount: number | null
+  chunkKind: string | null
   hasTableContext: boolean
   hasFigureContext: boolean
 }
+
+export interface PaperNode extends GraphNodeBase {
+  nodeKind: 'paper'
+  displayPreview: string | null
+  payloadWasTruncated: boolean
+}
+
+export type GraphNode = ChunkNode | PaperNode
 
 export interface ClusterInfo {
   clusterId: number
@@ -132,7 +142,8 @@ export interface GraphFacet {
 }
 
 export interface GraphStats {
-  chunks: number
+  points: number
+  pointLabel: string
   papers: number
   clusters: number
   noise: number
@@ -140,10 +151,28 @@ export interface GraphStats {
 
 export interface GraphData {
   clusters: ClusterInfo[]
-  clusterColors: Record<number, string>
   facets: GraphFacet[]
   nodes: ChunkNode[]
+  paperNodes: PaperNode[]
+  paperStats: GraphStats | null
   stats: GraphStats
+}
+
+export interface PaperDocument {
+  paperId: string
+  sourceEmbeddingId: string | null
+  citekey: string | null
+  title: string | null
+  sourcePayloadPolicy: string | null
+  sourceTextHash: string | null
+  contextLabel: string | null
+  displayPreview: string | null
+  wasTruncated: boolean
+  contextCharCount: number | null
+  bodyCharCount: number | null
+  textCharCount: number | null
+  contextTokenCount: number | null
+  bodyTokenCount: number | null
 }
 
 export interface PaperAuthor {
@@ -215,6 +244,7 @@ export interface GraphSelectionDetail {
   cluster: ClusterInfo | null
   exemplars: ClusterExemplar[]
   paper: GraphPaperDetail | null
+  paperDocument: PaperDocument | null
 }
 
 export interface GraphQueryResult {
@@ -227,12 +257,16 @@ export interface GraphQueryResult {
 }
 
 export interface GraphBundleQueries {
-  getSelectionDetail: (node: ChunkNode) => Promise<GraphSelectionDetail>
+  getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
+  getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
 }
 
 export type GraphMode = 'ask' | 'explore' | 'learn' | 'write'
 
+export type MapLayer = 'chunk' | 'paper'
+
+export type ColorTheme = 'light' | 'dark'
 export type PointColorStrategy = 'categorical' | 'continuous' | 'direct' | 'single'
 export type PointSizeStrategy = 'auto' | 'direct' | 'single'
 export type ColorSchemeName =
@@ -244,7 +278,7 @@ export type ColorSchemeName =
   | 'plasma'
   | 'turbo'
 
-export type FilterableColumnKey = Exclude<keyof ChunkNode, 'index' | 'color'>
+export type FilterableColumnKey = Exclude<keyof ChunkNode, 'index' | 'color' | 'colorLight' | 'nodeKind'>
 
 export type NumericColumnKey =
   | 'clusterProbability'
@@ -258,4 +292,3 @@ export type NumericColumnKey =
 export type DataColumnKey = FilterableColumnKey
 
 export type SizeColumnKey = 'none' | NumericColumnKey
-

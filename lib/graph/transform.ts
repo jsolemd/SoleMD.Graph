@@ -1,16 +1,16 @@
 import { coerceNullableNumber, coerceNullableString } from '../helpers'
-import { getClusterColor } from './colors'
+import { getPaletteColors } from './colors'
+import { NOISE_COLOR, NOISE_COLOR_LIGHT } from './brand-colors'
 import type {
   ChunkNode,
   ClusterInfo,
   GraphData,
   GraphFacet,
   GraphStats,
+  PaperNode,
 } from './types'
 
 export interface GraphPointRow {
-  block_id: string | null
-  block_type: string | null
   char_count: number | null
   chunk_index: number | null
   chunk_kind: string | null
@@ -38,11 +38,10 @@ export interface GraphPointRow {
   paper_sentence_count: number | null
   paper_table_count: number | null
   page_number: number | null
+  point_index: number | null
   pmcid: string | null
   pmid: number | string | null
   section_canonical: string | null
-  section_path: string | null
-  section_type: string | null
   stable_chunk_id: string | null
   title: string | null
   token_count: number | null
@@ -90,20 +89,27 @@ export function buildGraphData({
   clusters,
   facets,
 }: BuildGraphDataArgs): GraphData {
-  const clusterColors: Record<number, string> = {}
+  const darkPalette = getPaletteColors('default', 'dark')
+  const lightPalette = getPaletteColors('default', 'light')
   const nodes: ChunkNode[] = []
 
   for (const [index, row] of points.entries()) {
     const clusterId = row.cluster_id ?? 0
-    const color = getClusterColor(clusterId)
-    clusterColors[clusterId] = color
+    const color = clusterId <= 0
+      ? NOISE_COLOR
+      : darkPalette[clusterId % darkPalette.length]
+    const colorLight = clusterId <= 0
+      ? NOISE_COLOR_LIGHT
+      : lightPalette[clusterId % lightPalette.length]
 
     nodes.push({
-      index,
+      nodeKind: 'chunk',
+      index: row.point_index ?? index,
       id: row.node_id,
       x: row.x,
       y: row.y,
       color,
+      colorLight,
       clusterId,
       clusterLabel: row.cluster_label,
       clusterProbability: row.cluster_probability ?? 0,
@@ -118,15 +124,11 @@ export function buildGraphData({
       pmcid: row.pmcid,
       stableChunkId: row.stable_chunk_id,
       chunkIndex: row.chunk_index ?? null,
-      sectionType: row.section_type,
       sectionCanonical: row.section_canonical,
-      sectionPath: row.section_path,
       pageNumber: row.page_number ?? null,
       tokenCount: row.token_count ?? null,
       charCount: row.char_count ?? null,
       chunkKind: row.chunk_kind,
-      blockType: row.block_type,
-      blockId: row.block_id,
       chunkPreview: row.chunk_preview,
       paperAuthorCount: row.paper_author_count ?? null,
       paperReferenceCount: row.paper_reference_count ?? null,
@@ -175,7 +177,8 @@ export function buildGraphData({
   const noiseCount = nodes.filter((node) => node.clusterId === 0).length
 
   const stats: GraphStats = {
-    chunks: nodes.length,
+    points: nodes.length,
+    pointLabel: 'chunks',
     papers: uniquePapers.size,
     clusters: clusterInfo.filter((cluster) => !cluster.isNoise).length,
     noise: noiseCount,
@@ -185,7 +188,110 @@ export function buildGraphData({
     nodes,
     clusters: clusterInfo,
     facets: graphFacets,
+    paperNodes: [],
+    paperStats: null,
     stats,
-    clusterColors,
+  }
+}
+
+/* ─── Paper node builder ─────────────────────────────────────── */
+
+export interface PaperPointRow {
+  id: string
+  node_id: string
+  paper_id: string
+  x: number
+  y: number
+  point_index: number | null
+  cluster_id: number | null
+  cluster_label: string | null
+  cluster_probability: number | null
+  outlier_score: number | null
+  citekey: string | null
+  title: string | null
+  journal: string | null
+  year: number | null
+  doi: string | null
+  pmid: number | string | null
+  pmcid: string | null
+  chunk_preview: string | null
+  display_preview: string | null
+  payload_was_truncated: boolean | null
+  paper_author_count: number | null
+  paper_reference_count: number | null
+  paper_asset_count: number | null
+  paper_chunk_count: number | null
+  paper_entity_count: number | string | null
+  paper_relation_count: number | string | null
+  paper_sentence_count: number | null
+  paper_page_count: number | null
+  paper_table_count: number | null
+  paper_figure_count: number | null
+}
+
+export function buildPaperNodes(rows: PaperPointRow[]): PaperNode[] {
+  const darkPalette = getPaletteColors('default', 'dark')
+  const lightPalette = getPaletteColors('default', 'light')
+  const nodes: PaperNode[] = []
+
+  for (const [index, row] of rows.entries()) {
+    const clusterId = row.cluster_id ?? 0
+    const color = clusterId <= 0
+      ? NOISE_COLOR
+      : darkPalette[clusterId % darkPalette.length]
+    const colorLight = clusterId <= 0
+      ? NOISE_COLOR_LIGHT
+      : lightPalette[clusterId % lightPalette.length]
+
+    nodes.push({
+      nodeKind: 'paper',
+      index: row.point_index ?? index,
+      id: row.node_id,
+      x: row.x,
+      y: row.y,
+      color,
+      colorLight,
+      clusterId,
+      clusterLabel: row.cluster_label,
+      clusterProbability: row.cluster_probability ?? 0,
+      outlierScore: row.outlier_score ?? 0,
+      paperId: row.paper_id,
+      paperTitle: row.title ?? 'Untitled paper',
+      citekey: row.citekey ?? 'Uncited',
+      year: row.year ?? null,
+      journal: row.journal,
+      doi: row.doi,
+      pmid: coerceNullableString(row.pmid),
+      pmcid: row.pmcid,
+      chunkPreview: row.chunk_preview ?? row.display_preview,
+      paperAuthorCount: row.paper_author_count ?? null,
+      paperReferenceCount: row.paper_reference_count ?? null,
+      paperAssetCount: row.paper_asset_count ?? null,
+      paperChunkCount: row.paper_chunk_count ?? null,
+      paperEntityCount: coerceNullableNumber(row.paper_entity_count),
+      paperRelationCount: coerceNullableNumber(row.paper_relation_count),
+      paperSentenceCount: row.paper_sentence_count ?? null,
+      paperPageCount: row.paper_page_count ?? null,
+      paperTableCount: row.paper_table_count ?? null,
+      paperFigureCount: row.paper_figure_count ?? null,
+      displayPreview: row.display_preview ?? null,
+      payloadWasTruncated: Boolean(row.payload_was_truncated),
+    })
+  }
+
+  return nodes
+}
+
+export function buildPaperStats(
+  paperNodes: PaperNode[],
+  clusters: ClusterInfo[]
+): GraphStats {
+  const noiseCount = paperNodes.filter((node) => node.clusterId === 0).length
+  return {
+    points: paperNodes.length,
+    pointLabel: 'papers',
+    papers: paperNodes.length,
+    clusters: clusters.filter((c) => !c.isNoise).length,
+    noise: noiseCount,
   }
 }

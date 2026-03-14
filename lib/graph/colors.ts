@@ -1,5 +1,7 @@
-import { NOISE_COLOR } from './brand-colors'
-import type { ColorSchemeName } from './types'
+import { NOISE_COLOR, NOISE_COLOR_LIGHT } from './brand-colors'
+import type { ColorSchemeName, ColorTheme } from './types'
+
+export type { ColorTheme } from './types'
 
 const CLUSTER_PALETTE = [
   '#a8c5e9', '#aedc93', '#e5c799', '#ffada4', '#eda8c4',
@@ -48,11 +50,93 @@ const COLOR_PALETTES: Record<ColorSchemeName, readonly string[]> = {
   ],
 }
 
-export function getPaletteColors(schemeName: ColorSchemeName): string[] {
-  return [...COLOR_PALETTES[schemeName]]
+/** Palettes that are perceptually uniform — never adjust for theme. */
+const SCIENTIFIC_PALETTES: ReadonlySet<ColorSchemeName> = new Set([
+  'spectral', 'viridis', 'plasma', 'turbo',
+])
+
+/* ---------- HSL helpers ---------- */
+
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = (max + min) / 2
+
+  if (max === min) return { h: 0, s: 0, l: l * 100 }
+
+  const d = max - min
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+
+  let h = 0
+  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+  else if (max === g) h = ((b - r) / d + 2) / 6
+  else h = ((r - g) / d + 4) / 6
+
+  return { h: h * 360, s: s * 100, l: l * 100 }
 }
 
-export function getClusterColor(clusterId: number): string {
-  if (clusterId === 0) return NOISE_COLOR // noise (HDBSCAN cluster 0)
-  return CLUSTER_PALETTE[clusterId % CLUSTER_PALETTE.length]
+function hslToHex(h: number, s: number, l: number): string {
+  const sn = s / 100
+  const ln = l / 100
+  const a = sn * Math.min(ln, 1 - ln)
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    const color = ln - a * Math.max(Math.min(k - 3, 9 - k, 1), -1)
+    return Math.round(255 * Math.max(0, Math.min(1, color)))
+      .toString(16)
+      .padStart(2, '0')
+  }
+  return `#${f(0)}${f(8)}${f(4)}`
+}
+
+/**
+ * Boost saturation and reduce lightness so pastel colors pop on light
+ * backgrounds. Clamps prevent over-saturation or overly dark results.
+ */
+function adjustForLightTheme(hex: string): string {
+  const { h, s, l } = hexToHsl(hex)
+  return hslToHex(h, Math.min(s + 25, 92), Math.max(l - 16, 32))
+}
+
+/* ---------- Public API ---------- */
+
+export function getPaletteColors(
+  schemeName: ColorSchemeName,
+  theme: ColorTheme = 'dark',
+): string[] {
+  const source = COLOR_PALETTES[schemeName]
+  if (theme === 'light' && !SCIENTIFIC_PALETTES.has(schemeName)) {
+    return source.map(adjustForLightTheme)
+  }
+  return [...source]
+}
+
+export function getClusterColor(
+  clusterId: number,
+  theme: ColorTheme = 'dark',
+): string {
+  if (clusterId <= 0) return theme === 'light' ? NOISE_COLOR_LIGHT : NOISE_COLOR
+  const palette = getPaletteColors('default', theme)
+  return palette[clusterId % palette.length]
+}
+
+export function buildClusterColors(
+  nodes: ReadonlyArray<{ clusterId: number }>,
+  theme: ColorTheme = 'dark',
+): Record<number, string> {
+  const palette = getPaletteColors('default', theme)
+  const noiseColor = theme === 'light' ? NOISE_COLOR_LIGHT : NOISE_COLOR
+  const colors: Record<number, string> = {}
+  for (const node of nodes) {
+    if (!(node.clusterId in colors)) {
+      colors[node.clusterId] = node.clusterId <= 0
+        ? noiseColor
+        : palette[node.clusterId % palette.length]
+    }
+  }
+  return colors
 }

@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import { getColumnMeta } from '../columns'
+import type { InfoWidgetSlot } from '../info-widgets'
+import { getLayerConfig } from '../layers'
 import type {
   ColorSchemeName,
   DataColumnKey,
   FilterableColumnKey,
+  MapLayer,
   NumericColumnKey,
   PointColorStrategy,
   PointSizeStrategy,
@@ -11,7 +14,7 @@ import type {
 } from '../types'
 
 /** Curated default filters — one per concept, no redundant pairs. */
-const DEFAULT_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
+const CHUNK_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
   { column: 'clusterLabel', type: 'categorical' },
   { column: 'journal', type: 'categorical' },
   { column: 'sectionCanonical', type: 'categorical' },
@@ -19,10 +22,24 @@ const DEFAULT_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeri
   { column: 'year', type: 'numeric' },
 ]
 
+const PAPER_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
+  { column: 'clusterLabel' as FilterableColumnKey, type: 'categorical' },
+  { column: 'journal' as FilterableColumnKey, type: 'categorical' },
+  { column: 'year' as FilterableColumnKey, type: 'numeric' },
+]
+
+function getDefaultFiltersForLayer(layer: MapLayer) {
+  return layer === 'paper' ? PAPER_FILTER_COLUMNS : CHUNK_FILTER_COLUMNS
+}
+
 export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | null
 export type TableView = 'visible' | 'selected'
 
 interface DashboardState {
+  // Layer
+  activeLayer: MapLayer
+  availableLayers: MapLayer[]
+
   // Panel visibility
   activePanel: ActivePanel
   panelsVisible: boolean
@@ -32,7 +49,7 @@ interface DashboardState {
   uiHidden: boolean
 
   // Config: Points
-  pointColorColumn: DataColumnKey | 'color'
+  pointColorColumn: DataColumnKey | 'hexColor'
   pointColorStrategy: PointColorStrategy
   pointSizeColumn: SizeColumnKey
   pointSizeRange: [number, number]
@@ -41,6 +58,9 @@ interface DashboardState {
   showDynamicLabels: boolean
   positionXColumn: NumericColumnKey
   positionYColumn: NumericColumnKey
+
+  // Info widgets — user-configurable insight slots in the info panel
+  infoWidgets: InfoWidgetSlot[]
 
   // Filters — which widgets to show (selection state lives inside Cosmograph crossfilter)
   filterColumns: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }>
@@ -62,6 +82,17 @@ interface DashboardState {
   // Hover & interaction
   showHoveredPointLabel: boolean
   renderHoveredPointRing: boolean
+
+  // Links
+  renderLinks: boolean
+  linkOpacity: number
+  linkGreyoutOpacity: number
+  linkVisibilityDistanceRange: [number, number]
+  linkVisibilityMinTransparency: number
+  linkDefaultWidth: number
+  curvedLinks: boolean
+  linkDefaultArrows: boolean
+  scaleLinksOnZoom: boolean
 
   // Timeline
   showTimeline: boolean
@@ -91,7 +122,7 @@ interface DashboardState {
   setTableHeight: (height: number) => void
   setUiHidden: (hidden: boolean) => void
   toggleUiHidden: () => void
-  setPointColorColumn: (col: DataColumnKey | 'color') => void
+  setPointColorColumn: (col: DataColumnKey | 'hexColor') => void
   setPointColorStrategy: (strategy: PointColorStrategy) => void
   setPointSizeColumn: (col: SizeColumnKey) => void
   setPointSizeRange: (range: [number, number]) => void
@@ -100,6 +131,8 @@ interface DashboardState {
   setShowDynamicLabels: (show: boolean) => void
   setPositionXColumn: (col: NumericColumnKey) => void
   setPositionYColumn: (col: NumericColumnKey) => void
+  addInfoWidget: (slot: InfoWidgetSlot) => void
+  removeInfoWidget: (column: string) => void
   addFilter: (column: FilterableColumnKey) => void
   removeFilter: (column: FilterableColumnKey) => void
   setTablePage: (page: number) => void
@@ -112,6 +145,15 @@ interface DashboardState {
   setShowSizeLegend: (show: boolean) => void
   setShowHoveredPointLabel: (show: boolean) => void
   setRenderHoveredPointRing: (show: boolean) => void
+  setRenderLinks: (show: boolean) => void
+  setLinkOpacity: (opacity: number) => void
+  setLinkGreyoutOpacity: (opacity: number) => void
+  setLinkVisibilityDistanceRange: (range: [number, number]) => void
+  setLinkVisibilityMinTransparency: (transparency: number) => void
+  setLinkDefaultWidth: (width: number) => void
+  setCurvedLinks: (curved: boolean) => void
+  setLinkDefaultArrows: (arrows: boolean) => void
+  setScaleLinksOnZoom: (scale: boolean) => void
   setShowTimeline: (show: boolean) => void
   toggleTimeline: () => void
   setTimelineColumn: (col: NumericColumnKey) => void
@@ -124,6 +166,8 @@ interface DashboardState {
   setFilteredPointIndices: (indices: number[] | null) => void
   setSelectedPointIndices: (indices: number[]) => void
   setActiveSelectionSourceId: (sourceId: string | null) => void
+  setActiveLayer: (layer: MapLayer) => void
+  setAvailableLayers: (layers: MapLayer[]) => void
 }
 
 /* ───── Clearance selectors ─────
@@ -191,6 +235,10 @@ export function selectRightClearance(s: DashboardState): number {
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
+  // Layer
+  activeLayer: 'chunk',
+  availableLayers: ['chunk'],
+
   // Panel visibility
   activePanel: null,
   panelsVisible: false,
@@ -210,8 +258,11 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   positionXColumn: 'x',
   positionYColumn: 'y',
 
+  // Info widgets — curated defaults per layer; users can add/remove via panel
+  infoWidgets: getLayerConfig('chunk').defaultInfoWidgets,
+
   // Filters — curated defaults; users can add/remove via panel
-  filterColumns: DEFAULT_FILTER_COLUMNS,
+  filterColumns: CHUNK_FILTER_COLUMNS,
 
   // Table
   tablePage: 1,
@@ -230,6 +281,17 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   // Hover & interaction
   showHoveredPointLabel: true,
   renderHoveredPointRing: true,
+
+  // Links
+  renderLinks: true,
+  linkOpacity: 1.0,
+  linkGreyoutOpacity: 0.1,
+  linkVisibilityDistanceRange: [50, 150] as [number, number],
+  linkVisibilityMinTransparency: 0.25,
+  linkDefaultWidth: 1,
+  curvedLinks: false,
+  linkDefaultArrows: false,
+  scaleLinksOnZoom: false,
 
   // Timeline
   showTimeline: false,
@@ -274,6 +336,16 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setShowDynamicLabels: (show) => set({ showDynamicLabels: show }),
   setPositionXColumn: (col) => set({ positionXColumn: col }),
   setPositionYColumn: (col) => set({ positionYColumn: col }),
+  addInfoWidget: (slot) =>
+    set((s) => ({
+      infoWidgets: s.infoWidgets.some((w) => w.column === slot.column)
+        ? s.infoWidgets
+        : [...s.infoWidgets, slot],
+    })),
+  removeInfoWidget: (column) =>
+    set((s) => ({
+      infoWidgets: s.infoWidgets.filter((w) => w.column !== column),
+    })),
   addFilter: (column) =>
     set((s) => ({
       filterColumns: s.filterColumns.some((f) => f.column === column)
@@ -302,6 +374,15 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setShowSizeLegend: (show) => set({ showSizeLegend: show }),
   setShowHoveredPointLabel: (show) => set({ showHoveredPointLabel: show }),
   setRenderHoveredPointRing: (show) => set({ renderHoveredPointRing: show }),
+  setRenderLinks: (show) => set({ renderLinks: show }),
+  setLinkOpacity: (opacity) => set({ linkOpacity: opacity }),
+  setLinkGreyoutOpacity: (opacity) => set({ linkGreyoutOpacity: opacity }),
+  setLinkVisibilityDistanceRange: (range) => set({ linkVisibilityDistanceRange: range }),
+  setLinkVisibilityMinTransparency: (transparency) => set({ linkVisibilityMinTransparency: transparency }),
+  setLinkDefaultWidth: (width) => set({ linkDefaultWidth: width }),
+  setCurvedLinks: (curved) => set({ curvedLinks: curved }),
+  setLinkDefaultArrows: (arrows) => set({ linkDefaultArrows: arrows }),
+  setScaleLinksOnZoom: (scale) => set({ scaleLinksOnZoom: scale }),
   setShowTimeline: (show) => set({ showTimeline: show }),
   toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
   setTimelineColumn: (col) => set({ timelineColumn: col }),
@@ -315,4 +396,25 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setSelectedPointIndices: (indices) => set({ selectedPointIndices: indices }),
   setActiveSelectionSourceId: (sourceId) =>
     set({ activeSelectionSourceId: sourceId }),
+  setActiveLayer: (layer) =>
+    set(() => {
+      const config = getLayerConfig(layer)
+      return {
+        activeLayer: layer,
+        // Reset config to layer defaults
+        pointColorColumn: config.defaultColorColumn as DataColumnKey | 'hexColor',
+        pointColorStrategy: config.defaultColorStrategy,
+        pointSizeColumn: (config.defaultSizeColumn ?? 'none') as SizeColumnKey,
+        pointSizeStrategy: config.defaultSizeStrategy,
+        pointSizeRange: config.pointSizeRange,
+        // Reset selection/filter state
+        filteredPointIndices: null,
+        selectedPointIndices: [],
+        activeSelectionSourceId: null,
+        // Reset filters and info widgets to layer-appropriate defaults
+        filterColumns: getDefaultFiltersForLayer(layer),
+        infoWidgets: config.defaultInfoWidgets,
+      }
+    }),
+  setAvailableLayers: (layers) => set({ availableLayers: layers }),
 }))

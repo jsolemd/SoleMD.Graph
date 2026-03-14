@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import type { ChunkNode, GraphMode } from '../types'
+import type { GraphMode, GraphNode } from '../types'
 
 interface GraphUIStore {
-  selectedNode: ChunkNode | null
+  selectedNode: GraphNode | null
   mode: GraphMode
-  selectNode: (node: ChunkNode | null) => void
+  selectNode: (node: GraphNode | null) => void
   setMode: (mode: GraphMode) => void
 }
 
