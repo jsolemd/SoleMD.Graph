@@ -58,6 +58,11 @@
         "NEO4J_DATABASE": "neo4j"
       },
       "instructions": "Neo4j graph database — direct Cypher queries via official Neo4j MCP server. Use for schema inspection (get-schema), read queries (read-cypher), and write operations (write-cypher). Code-search handles LLM-facing structural workflows via inspect_symbol, trace_flow, and analyze_impact. Use this server for direct ad-hoc Cypher."
+    },
+    "code-search-app": {
+      "type": "http",
+      "url": "http://localhost:8100/mcp/solemd.app",
+      "instructions": "Cross-project code search for SoleMD.App. Use when you need to understand App pipeline code, data models, or API contracts while working in SoleMD.Web."
     }
   }
 }
