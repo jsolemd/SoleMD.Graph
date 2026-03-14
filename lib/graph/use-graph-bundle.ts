@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { loadGraphBundle } from './duckdb'
 import type { GraphCanvasSource } from './duckdb'
+import { useDashboardStore } from './stores'
 import type { GraphBundle, GraphBundleQueries, GraphData } from './types'
 
 interface ResolvedGraphBundleState {
@@ -39,6 +40,8 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           return
         }
 
+        useDashboardStore.getState().setAvailableLayers(session.availableLayers)
+
         setState({
           bundleChecksum: bundle.bundleChecksum,
           canvas: session.canvas,
@@ -46,6 +49,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           error: null,
           queries: {
             getSelectionDetail: session.getSelectionDetail,
+            getPaperDocument: session.getPaperDocument,
             runReadOnlyQuery: session.runReadOnlyQuery,
           },
         })
