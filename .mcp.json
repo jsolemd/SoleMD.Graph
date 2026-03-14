@@ -59,7 +59,7 @@
     "code-search-app": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.app",
-      "instructions": "Cross-project code search for SoleMD.App. Use when you need to understand App pipeline code, data models, or API contracts while working in SoleMD.Web."
+      "instructions": "Code search for SoleMD.App (Python biomedical NLP pipeline). Use when you need to find or understand App pipeline code, data models, DAL patterns, or API contracts. Same tools as code-search: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, etc."
     }
   }
 }
