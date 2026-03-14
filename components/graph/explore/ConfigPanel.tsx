@@ -1,6 +1,5 @@
 "use client";
 
-import { ScrollArea } from "@mantine/core";
 import { useDashboardStore } from "@/lib/graph/stores";
 import { PanelShell } from "../PanelShell";
 import { PointsConfig } from "./PointsConfig";
@@ -14,9 +13,9 @@ export function ConfigPanel() {
       side="left"
       onClose={() => setActivePanel(null)}
     >
-      <ScrollArea className="flex-1" px="md" py="sm">
+      <div className="config-scroll flex-1 min-h-0 overflow-y-auto px-4 py-2">
         <PointsConfig />
-      </ScrollArea>
+      </div>
     </PanelShell>
   );
 }

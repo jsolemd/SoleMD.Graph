@@ -1,9 +1,13 @@
 "use client";
 
+import { useMemo } from "react";
 import { Select, Switch, Slider, Stack, Text } from "@mantine/core";
+import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/lib/graph/stores";
-import { NUMERIC_COLUMNS, ALL_DATA_COLUMNS } from "@/lib/graph/columns";
+import { getColumnsForLayer } from "@/lib/graph/columns";
+import { getLayerConfig } from "@/lib/graph/layers";
 import { getPaletteColors } from "@/lib/graph/colors";
+import { useGraphColorTheme } from "@/lib/graph/hooks/use-graph-color-theme";
 import type {
   ColorSchemeName,
   DataColumnKey,
@@ -12,7 +16,7 @@ import type {
   PointSizeStrategy,
   SizeColumnKey,
 } from "@/lib/graph/types";
-import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle, PANEL_ACCENT } from "../PanelShell";
+import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle, switchLabelStyle, PANEL_ACCENT } from "../PanelShell";
 
 const COLOR_STRATEGY_OPTIONS = [
   { value: "direct", label: "Direct (hex values)" },
@@ -37,38 +41,45 @@ const SIZE_STRATEGY_OPTIONS = [
   { value: "single", label: "Single (uniform)" },
 ];
 
-const colorColumnOptions = [
-  { value: "color", label: "color (pre-computed)" },
-  ...ALL_DATA_COLUMNS.map((c) => ({ value: c.key, label: c.label })),
-];
-
-const sizeColumnOptions = [
-  { value: "none", label: "None (uniform)" },
-  ...NUMERIC_COLUMNS.map((c) => ({ value: c.key, label: c.label })),
-];
-
-const labelColumnOptions = ALL_DATA_COLUMNS.map((c) => ({
-  value: c.key,
-  label: c.label,
-}));
-
-const positionOptions = NUMERIC_COLUMNS.map((c) => ({
-  value: c.key,
-  label: c.label,
-}));
-
-
-const switchLabelStyle = { label: { color: "var(--graph-panel-text)" } };
-
-const TIME_COLUMN_OPTIONS = [
-  { value: "year", label: "Publication Year" },
-  ...NUMERIC_COLUMNS.filter((c) => c.key !== "year" && c.key !== "x" && c.key !== "y").map(
-    (c) => ({ value: c.key, label: c.label })
-  ),
-];
+function LabeledSlider({
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  step,
+  disabled,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step: number;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <Text size="xs" mb={4} style={panelTextMutedStyle}>
+        {label}
+      </Text>
+      <Slider
+        size="xs"
+        color={PANEL_ACCENT}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+      />
+    </div>
+  );
+}
 
 function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
-  const colors = getPaletteColors(schemeName);
+  const theme = useGraphColorTheme();
+  const colors = getPaletteColors(schemeName, theme);
   return (
     <div className="mt-1 flex h-2 overflow-hidden rounded">
       {colors.slice(0, 10).map((color, i) => (
@@ -79,59 +90,130 @@ function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
 }
 
 export function PointsConfig() {
-  const pointColorColumn = useDashboardStore((s) => s.pointColorColumn);
-  const pointColorStrategy = useDashboardStore((s) => s.pointColorStrategy);
-  const colorScheme = useDashboardStore((s) => s.colorScheme);
-  const showColorLegend = useDashboardStore((s) => s.showColorLegend);
-  const pointSizeColumn = useDashboardStore((s) => s.pointSizeColumn);
-  const pointSizeRange = useDashboardStore((s) => s.pointSizeRange);
-  const pointSizeStrategy = useDashboardStore((s) => s.pointSizeStrategy);
-  const scalePointsOnZoom = useDashboardStore((s) => s.scalePointsOnZoom);
-  const showSizeLegend = useDashboardStore((s) => s.showSizeLegend);
-  const pointLabelColumn = useDashboardStore((s) => s.pointLabelColumn);
-  const showPointLabels = useDashboardStore((s) => s.showPointLabels);
-  const showDynamicLabels = useDashboardStore((s) => s.showDynamicLabels);
-  const showHoveredPointLabel = useDashboardStore(
-    (s) => s.showHoveredPointLabel
-  );
-  const renderHoveredPointRing = useDashboardStore(
-    (s) => s.renderHoveredPointRing
-  );
-  const positionXColumn = useDashboardStore((s) => s.positionXColumn);
-  const positionYColumn = useDashboardStore((s) => s.positionYColumn);
+  const activeLayer = useDashboardStore((s) => s.activeLayer);
+  const layerConfig = getLayerConfig(activeLayer);
+  const hasLinks = Boolean(layerConfig.linksTable);
+  const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
+  const numericCols = useMemo(() => layerColumns.filter((c) => c.type === 'numeric'), [layerColumns]);
 
-  const setPointColorColumn = useDashboardStore((s) => s.setPointColorColumn);
-  const setPointColorStrategy = useDashboardStore(
-    (s) => s.setPointColorStrategy
+  const colorColumnOptions = useMemo(() => [
+    { value: "hexColor", label: "Hex color (pre-computed)" },
+    ...layerColumns.map((c) => ({ value: c.key, label: c.label })),
+  ], [layerColumns]);
+
+  const sizeColumnOptions = useMemo(() => [
+    { value: "none", label: "None (uniform)" },
+    ...numericCols.map((c) => ({ value: c.key, label: c.label })),
+  ], [numericCols]);
+
+  const labelColumnOptions = useMemo(
+    () => layerColumns.map((c) => ({ value: c.key, label: c.label })),
+    [layerColumns]
   );
-  const setColorScheme = useDashboardStore((s) => s.setColorScheme);
-  const setShowColorLegend = useDashboardStore((s) => s.setShowColorLegend);
-  const setPointSizeColumn = useDashboardStore((s) => s.setPointSizeColumn);
-  const setPointSizeRange = useDashboardStore((s) => s.setPointSizeRange);
-  const setPointSizeStrategy = useDashboardStore(
-    (s) => s.setPointSizeStrategy
+
+  const positionOptions = useMemo(
+    () => numericCols.map((c) => ({ value: c.key, label: c.label })),
+    [numericCols]
   );
-  const setScalePointsOnZoom = useDashboardStore(
-    (s) => s.setScalePointsOnZoom
-  );
-  const setShowSizeLegend = useDashboardStore((s) => s.setShowSizeLegend);
-  const setPointLabelColumn = useDashboardStore((s) => s.setPointLabelColumn);
-  const setShowPointLabels = useDashboardStore((s) => s.setShowPointLabels);
-  const setShowDynamicLabels = useDashboardStore(
-    (s) => s.setShowDynamicLabels
-  );
-  const setShowHoveredPointLabel = useDashboardStore(
-    (s) => s.setShowHoveredPointLabel
-  );
-  const setRenderHoveredPointRing = useDashboardStore(
-    (s) => s.setRenderHoveredPointRing
-  );
-  const setPositionXColumn = useDashboardStore((s) => s.setPositionXColumn);
-  const setPositionYColumn = useDashboardStore((s) => s.setPositionYColumn);
-  const timelineColumn = useDashboardStore((s) => s.timelineColumn);
-  const setTimelineColumn = useDashboardStore((s) => s.setTimelineColumn);
-  const showTimeline = useDashboardStore((s) => s.showTimeline);
-  const setShowTimeline = useDashboardStore((s) => s.setShowTimeline);
+
+  const timeColumnOptions = useMemo(() => [
+    { value: "year", label: "Publication Year" },
+    ...numericCols
+      .filter((c) => c.key !== "year" && c.key !== "x" && c.key !== "y")
+      .map((c) => ({ value: c.key, label: c.label })),
+  ], [numericCols]);
+
+  const {
+    pointColorColumn, pointColorStrategy, colorScheme, showColorLegend,
+    setPointColorColumn, setPointColorStrategy, setColorScheme, setShowColorLegend,
+  } = useDashboardStore(useShallow((s) => ({
+    pointColorColumn: s.pointColorColumn,
+    pointColorStrategy: s.pointColorStrategy,
+    colorScheme: s.colorScheme,
+    showColorLegend: s.showColorLegend,
+    setPointColorColumn: s.setPointColorColumn,
+    setPointColorStrategy: s.setPointColorStrategy,
+    setColorScheme: s.setColorScheme,
+    setShowColorLegend: s.setShowColorLegend,
+  })));
+
+  const {
+    pointSizeColumn, pointSizeRange, pointSizeStrategy, scalePointsOnZoom, showSizeLegend,
+    setPointSizeColumn, setPointSizeRange, setPointSizeStrategy, setScalePointsOnZoom, setShowSizeLegend,
+  } = useDashboardStore(useShallow((s) => ({
+    pointSizeColumn: s.pointSizeColumn,
+    pointSizeRange: s.pointSizeRange,
+    pointSizeStrategy: s.pointSizeStrategy,
+    scalePointsOnZoom: s.scalePointsOnZoom,
+    showSizeLegend: s.showSizeLegend,
+    setPointSizeColumn: s.setPointSizeColumn,
+    setPointSizeRange: s.setPointSizeRange,
+    setPointSizeStrategy: s.setPointSizeStrategy,
+    setScalePointsOnZoom: s.setScalePointsOnZoom,
+    setShowSizeLegend: s.setShowSizeLegend,
+  })));
+
+  const {
+    pointLabelColumn, showPointLabels, showDynamicLabels,
+    showHoveredPointLabel, renderHoveredPointRing,
+    setPointLabelColumn, setShowPointLabels, setShowDynamicLabels,
+    setShowHoveredPointLabel, setRenderHoveredPointRing,
+  } = useDashboardStore(useShallow((s) => ({
+    pointLabelColumn: s.pointLabelColumn,
+    showPointLabels: s.showPointLabels,
+    showDynamicLabels: s.showDynamicLabels,
+    showHoveredPointLabel: s.showHoveredPointLabel,
+    renderHoveredPointRing: s.renderHoveredPointRing,
+    setPointLabelColumn: s.setPointLabelColumn,
+    setShowPointLabels: s.setShowPointLabels,
+    setShowDynamicLabels: s.setShowDynamicLabels,
+    setShowHoveredPointLabel: s.setShowHoveredPointLabel,
+    setRenderHoveredPointRing: s.setRenderHoveredPointRing,
+  })));
+
+  const {
+    positionXColumn, positionYColumn, timelineColumn, showTimeline,
+    setPositionXColumn, setPositionYColumn, setTimelineColumn, setShowTimeline,
+  } = useDashboardStore(useShallow((s) => ({
+    positionXColumn: s.positionXColumn,
+    positionYColumn: s.positionYColumn,
+    timelineColumn: s.timelineColumn,
+    showTimeline: s.showTimeline,
+    setPositionXColumn: s.setPositionXColumn,
+    setPositionYColumn: s.setPositionYColumn,
+    setTimelineColumn: s.setTimelineColumn,
+    setShowTimeline: s.setShowTimeline,
+  })));
+
+  const {
+    renderLinks, linkOpacity, linkGreyoutOpacity,
+    linkVisibilityDistanceRange, linkVisibilityMinTransparency,
+    linkDefaultWidth, curvedLinks, linkDefaultArrows, scaleLinksOnZoom,
+    setRenderLinks, setLinkOpacity, setLinkGreyoutOpacity,
+    setLinkVisibilityDistanceRange, setLinkVisibilityMinTransparency,
+    setLinkDefaultWidth, setCurvedLinks, setLinkDefaultArrows, setScaleLinksOnZoom,
+  } = useDashboardStore(useShallow((s) => ({
+    renderLinks: s.renderLinks,
+    linkOpacity: s.linkOpacity,
+    linkGreyoutOpacity: s.linkGreyoutOpacity,
+    linkVisibilityDistanceRange: s.linkVisibilityDistanceRange,
+    linkVisibilityMinTransparency: s.linkVisibilityMinTransparency,
+    linkDefaultWidth: s.linkDefaultWidth,
+    curvedLinks: s.curvedLinks,
+    linkDefaultArrows: s.linkDefaultArrows,
+    scaleLinksOnZoom: s.scaleLinksOnZoom,
+    setRenderLinks: s.setRenderLinks,
+    setLinkOpacity: s.setLinkOpacity,
+    setLinkGreyoutOpacity: s.setLinkGreyoutOpacity,
+    setLinkVisibilityDistanceRange: s.setLinkVisibilityDistanceRange,
+    setLinkVisibilityMinTransparency: s.setLinkVisibilityMinTransparency,
+    setLinkDefaultWidth: s.setLinkDefaultWidth,
+    setCurvedLinks: s.setCurvedLinks,
+    setLinkDefaultArrows: s.setLinkDefaultArrows,
+    setScaleLinksOnZoom: s.setScaleLinksOnZoom,
+  })));
+
+  const linkControlsDisabled = !renderLinks;
 
   return (
     <Stack gap="lg">
@@ -146,7 +228,7 @@ export function PointsConfig() {
             label="Column"
             data={colorColumnOptions}
             value={pointColorColumn}
-            onChange={(v) => v && setPointColorColumn(v as DataColumnKey | 'color')}
+            onChange={(v) => v && setPointColorColumn(v as DataColumnKey | 'hexColor')}
             styles={panelSelectStyles}
           />
           <Select
@@ -205,24 +287,14 @@ export function PointsConfig() {
             }
             styles={panelSelectStyles}
           />
-          <div>
-            <Text
-              size="xs"
-              mb={4}
-              style={panelTextMutedStyle}
-            >
-              Size range: {pointSizeRange[0]} &ndash; {pointSizeRange[1]}
-            </Text>
-            <Slider
-              size="xs"
-              color={PANEL_ACCENT}
-              min={1}
-              max={30}
-              step={1}
-              value={pointSizeRange[1]}
-              onChange={(v) => setPointSizeRange([pointSizeRange[0], v])}
-            />
-          </div>
+          <LabeledSlider
+            label={`Size range: ${pointSizeRange[0]} \u2013 ${pointSizeRange[1]}`}
+            value={pointSizeRange[1]}
+            onChange={(v) => setPointSizeRange([pointSizeRange[0], v])}
+            min={1}
+            max={30}
+            step={1}
+          />
           <Switch
             size="xs"
             color={PANEL_ACCENT}
@@ -327,7 +399,7 @@ export function PointsConfig() {
           <Select
             size="xs"
             label="Time data column"
-            data={TIME_COLUMN_OPTIONS}
+            data={timeColumnOptions}
             value={timelineColumn}
             onChange={(v) => v && setTimelineColumn(v as NumericColumnKey)}
             styles={panelSelectStyles}
@@ -342,6 +414,87 @@ export function PointsConfig() {
           />
         </Stack>
       </div>
+
+      {/* Links — only for layers with citation links */}
+      {hasLinks && (
+        <>
+          <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+            Links
+          </Text>
+          <Stack gap="xs">
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Show links"
+              checked={renderLinks}
+              onChange={(e) => setRenderLinks(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+            />
+            <LabeledSlider
+              label={`Opacity: ${linkOpacity.toFixed(2)}`}
+              value={linkOpacity}
+              onChange={setLinkOpacity}
+              min={0} max={1} step={0.05}
+              disabled={linkControlsDisabled}
+            />
+            <LabeledSlider
+              label={`Greyout opacity: ${linkGreyoutOpacity.toFixed(2)}`}
+              value={linkGreyoutOpacity}
+              onChange={setLinkGreyoutOpacity}
+              min={0} max={1} step={0.05}
+              disabled={linkControlsDisabled}
+            />
+            <LabeledSlider
+              label={`Fade range: ${linkVisibilityDistanceRange[0]} \u2013 ${linkVisibilityDistanceRange[1]}px`}
+              value={linkVisibilityDistanceRange[1]}
+              onChange={(v) => setLinkVisibilityDistanceRange([linkVisibilityDistanceRange[0], v])}
+              min={0} max={500} step={10}
+              disabled={linkControlsDisabled}
+            />
+            <LabeledSlider
+              label={`Min transparency: ${linkVisibilityMinTransparency.toFixed(2)}`}
+              value={linkVisibilityMinTransparency}
+              onChange={setLinkVisibilityMinTransparency}
+              min={0} max={1} step={0.05}
+              disabled={linkControlsDisabled}
+            />
+            <LabeledSlider
+              label={`Width: ${linkDefaultWidth}`}
+              value={linkDefaultWidth}
+              onChange={setLinkDefaultWidth}
+              min={0.5} max={10} step={0.5}
+              disabled={linkControlsDisabled}
+            />
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Curved links"
+              checked={curvedLinks}
+              onChange={(e) => setCurvedLinks(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+              disabled={linkControlsDisabled}
+            />
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Show arrows"
+              checked={linkDefaultArrows}
+              onChange={(e) => setLinkDefaultArrows(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+              disabled={linkControlsDisabled}
+            />
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Scale on zoom"
+              checked={scaleLinksOnZoom}
+              onChange={(e) => setScaleLinksOnZoom(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+              disabled={linkControlsDisabled}
+            />
+          </Stack>
+        </>
+      )}
     </Stack>
   );
 }

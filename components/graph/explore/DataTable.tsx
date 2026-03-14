@@ -13,15 +13,17 @@ import { motion } from "framer-motion";
 import { useDashboardStore, useGraphStore } from "@/lib/graph/stores";
 import { panelTableHeaderStyle, panelTextDimStyle } from "../PanelShell";
 import { smooth } from "@/lib/motion";
-import { TABLE_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
+import { getTableColumnsForLayer, getColumnMetaForLayer } from "@/lib/graph/columns";
 import { useDragResize } from "@/lib/graph/hooks/use-drag-resize";
-import type { ChunkNode } from "@/lib/graph/types";
+import type { GraphNode } from "@/lib/graph/types";
 import { clamp, formatCellValue } from "@/lib/helpers";
 
-export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
+export function DataTable({ nodes }: { nodes: GraphNode[] }) {
+  const activeLayer = useDashboardStore((s) => s.activeLayer);
   const tablePage = useDashboardStore((s) => s.tablePage);
   const tablePageSize = useDashboardStore((s) => s.tablePageSize);
   const tableView = useDashboardStore((s) => s.tableView);
+  const tableColumns = useMemo(() => getTableColumnsForLayer(activeLayer), [activeLayer]);
   const tableHeight = useDashboardStore((s) => s.tableHeight);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
   const filteredPointIndices = useDashboardStore((s) => s.filteredPointIndices);
@@ -81,7 +83,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
   }, [safePage, setTablePage, tablePage]);
 
   const handleRowClick = useCallback(
-    (node: ChunkNode) => {
+    (node: GraphNode) => {
       selectNode(node);
       cosmograph?.selectPoint(node.index);
       cosmograph?.setFocusedPoint(node.index);
@@ -170,8 +172,8 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
               >
                 #
               </Table.Th>
-              {TABLE_COLUMNS.map((key) => {
-                const meta = getColumnMeta(key);
+              {tableColumns.map((key) => {
+                const meta = getColumnMetaForLayer(key, activeLayer);
                 return (
                   <Table.Th
                     key={key}
@@ -212,7 +214,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
                 <Table.Td style={{ fontSize: "0.7rem", color: "var(--mode-accent)" }}>
                   {startIdx + i + 1}
                 </Table.Td>
-                {TABLE_COLUMNS.map((key) => (
+                {tableColumns.map((key) => (
                   <Table.Td
                     key={key}
                     style={{
@@ -224,7 +226,7 @@ export function DataTable({ nodes }: { nodes: ChunkNode[] }) {
                       color: "var(--graph-panel-text)",
                     }}
                   >
-                    {formatCellValue(node[key], { columnKey: key, truncate: 40 })}
+                    {formatCellValue((node as unknown as Record<string, unknown>)[key], { columnKey: key, truncate: 40 })}
                   </Table.Td>
                 ))}
               </Table.Tr>

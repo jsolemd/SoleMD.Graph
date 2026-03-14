@@ -5,10 +5,10 @@ import { Plus, X } from "lucide-react";
 import { CosmographBars, CosmographHistogram } from "@cosmograph/react";
 import { useMemo, useState } from "react";
 import { useDashboardStore } from "@/lib/graph/stores";
-import { ALL_DATA_COLUMNS, getColumnMeta } from "@/lib/graph/columns";
+import { getColumnsForLayer, getColumnMeta } from "@/lib/graph/columns";
 import type { FilterableColumnKey } from "@/lib/graph/types";
 import {
-  ICON_BTN_STYLES,
+  iconBtnStyles,
   PANEL_ACCENT,
   PanelShell,
   panelSelectStyles,
@@ -33,16 +33,19 @@ export function FiltersPanel() {
   const removeFilter = useDashboardStore((s) => s.removeFilter);
   const setActivePanel = useDashboardStore((s) => s.setActivePanel);
 
+  const activeLayer = useDashboardStore((s) => s.activeLayer);
   const [showAddSelect, setShowAddSelect] = useState(false);
+
+  const layerDataColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
 
   const availableColumns = useMemo(
     () =>
-      ALL_DATA_COLUMNS.filter(
+      layerDataColumns.filter(
         (col) =>
           col.type !== "text" &&
           !filterColumns.some((f) => f.column === col.key)
       ).map((col) => ({ value: col.key, label: col.label })),
-    [filterColumns]
+    [filterColumns, layerDataColumns]
   );
 
   return (
@@ -69,7 +72,7 @@ export function FiltersPanel() {
                     radius="sm"
                     onClick={() => removeFilter(filter.column)}
                     aria-label={`Remove ${meta.label} filter`}
-                    styles={ICON_BTN_STYLES}
+                    styles={iconBtnStyles}
                   >
                     <X size={10} />
                   </ActionIcon>
