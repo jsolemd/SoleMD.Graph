@@ -113,6 +113,34 @@ export interface GeoNode extends GraphNodeBase {
 
 export type GraphNode = ChunkNode | PaperNode | GeoNode
 
+/** Collaboration edge between two institutions for the geo layer. */
+export interface GeoLink {
+  sourceId: string
+  targetId: string
+  sourceIndex: number
+  targetIndex: number
+  paperCount: number
+  sourceLng: number
+  sourceLat: number
+  targetLng: number
+  targetLat: number
+}
+
+/** Author row from the graph_author_geo table for institution drill-down. */
+export interface AuthorGeoRow {
+  authorId: string
+  name: string | null
+  surname: string | null
+  givenName: string | null
+  orcid: string | null
+  citekey: string | null
+  paperTitle: string | null
+  year: number | null
+  institution: string | null
+  department: string | null
+  institutionKey: string | null
+}
+
 export interface ClusterInfo {
   clusterId: number
   label: string
@@ -170,6 +198,7 @@ export interface GraphData {
   nodes: ChunkNode[]
   paperNodes: PaperNode[]
   geoNodes: GeoNode[]
+  geoLinks: GeoLink[]
   paperStats: GraphStats | null
   geoStats: GraphStats | null
   stats: GraphStats
@@ -280,6 +309,7 @@ export interface GraphQueryResult {
 
 export interface GraphBundleQueries {
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
+  getInstitutionAuthors: (institutionKey: string) => Promise<AuthorGeoRow[]>
   getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>

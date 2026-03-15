@@ -55,7 +55,10 @@ export function Wordmark() {
   const renderLinks = useDashboardStore((s) => s.renderLinks);
   const setRenderLinks = useDashboardStore((s) => s.setRenderLinks);
   const selectedNode = useGraphStore((s) => s.selectedNode);
-  const layerHasLinks = getLayerConfig(activeLayer).hasLinks;
+  const mapControls = useDashboardStore((s) => s.mapControls);
+  const layerConfig = getLayerConfig(activeLayer);
+  const layerHasLinks = layerConfig.hasLinks;
+  const isMapLayer = layerConfig.rendererType === "maplibre";
   const { color: modeColor } = getModeConfig(mode);
   const [spinCount, setSpinCount] = useState(0);
   const { cosmograph } = useCosmograph();
@@ -64,7 +67,7 @@ export function Wordmark() {
   // - No selection: toggle link visibility (show/hide citation lines)
   // - Node selected: toggle connected select (expand/collapse neighbors)
   const handleLinksToggle = useCallback(() => {
-    if (selectedNode) {
+    if (selectedNode && !isMapLayer) {
       const turningOn = !connectedSelect;
       toggleConnectedSelect();
       if (turningOn) {
@@ -75,14 +78,18 @@ export function Wordmark() {
     } else {
       setRenderLinks(!renderLinks);
     }
-  }, [connectedSelect, cosmograph, renderLinks, selectedNode, setRenderLinks, toggleConnectedSelect]);
+  }, [connectedSelect, cosmograph, isMapLayer, renderLinks, selectedNode, setRenderLinks, toggleConnectedSelect]);
 
-  const linksButtonActive = selectedNode ? connectedSelect : renderLinks;
-  const linksButtonLabel = selectedNode
+  const linksButtonActive = selectedNode && !isMapLayer ? connectedSelect : renderLinks;
+  const linksButtonLabel = selectedNode && !isMapLayer
     ? (connectedSelect ? "Hide connected nodes" : "Show connected nodes")
     : (renderLinks ? "Hide links" : "Show links");
 
   const handleFitView = useCallback(() => {
+    if (isMapLayer) {
+      mapControls?.fitView();
+      return;
+    }
     const selected = useDashboardStore.getState().selectedPointIndices;
     if (selected.length === 1) {
       cosmograph?.zoomToPoint(selected[0], 250);
@@ -91,17 +98,25 @@ export function Wordmark() {
     } else {
       cosmograph?.fitView(250, 0.1);
     }
-  }, [cosmograph]);
+  }, [cosmograph, isMapLayer, mapControls]);
 
   const handleZoomIn = useCallback(() => {
+    if (isMapLayer) {
+      mapControls?.zoomIn();
+      return;
+    }
     const current = cosmograph?.getZoomLevel() ?? 1;
     cosmograph?.setZoomLevel(current * ZOOM_FACTOR, 200);
-  }, [cosmograph]);
+  }, [cosmograph, isMapLayer, mapControls]);
 
   const handleZoomOut = useCallback(() => {
+    if (isMapLayer) {
+      mapControls?.zoomOut();
+      return;
+    }
     const current = cosmograph?.getZoomLevel() ?? 1;
     cosmograph?.setZoomLevel(current / ZOOM_FACTOR, 200);
-  }, [cosmograph]);
+  }, [cosmograph, isMapLayer, mapControls]);
 
   const handleScreenshot = useCallback(() => {
     cosmograph?.captureScreenshot("solemd-graph.png");
@@ -264,32 +279,36 @@ export function Wordmark() {
                 <Minus />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label="Save screenshot" position="bottom" withArrow>
-              <ActionIcon
-                variant="transparent"
-                size="lg"
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={handleScreenshot}
-                aria-label="Save screenshot"
-              >
-                <Camera />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Export data" position="bottom" withArrow>
-              <ActionIcon
-                variant="transparent"
-                size="lg"
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={handleExport}
-                aria-label="Export data"
-              >
-                <Download />
-              </ActionIcon>
-            </Tooltip>
+            {!isMapLayer && (
+              <>
+                <Tooltip label="Save screenshot" position="bottom" withArrow>
+                  <ActionIcon
+                    variant="transparent"
+                    size="lg"
+                    radius="xl"
+                    className="graph-icon-btn"
+                    styles={iconBtnStyles}
+                    onClick={handleScreenshot}
+                    aria-label="Save screenshot"
+                  >
+                    <Camera />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Export data" position="bottom" withArrow>
+                  <ActionIcon
+                    variant="transparent"
+                    size="lg"
+                    radius="xl"
+                    className="graph-icon-btn"
+                    styles={iconBtnStyles}
+                    onClick={handleExport}
+                    aria-label="Export data"
+                  >
+                    <Download />
+                  </ActionIcon>
+                </Tooltip>
+              </>
+            )}
 
             <div className="mx-1 h-5 w-px" style={{ backgroundColor: "var(--graph-panel-border)" }} />
 

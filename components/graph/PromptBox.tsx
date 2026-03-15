@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ScrollArea, Text, Textarea, Tooltip } from "@mantine/core";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ScrollArea, Text, Tooltip } from "@mantine/core";
 import { useViewportSize } from "@mantine/hooks";
 import {
   motion,
@@ -9,8 +9,10 @@ import {
   useDragControls,
   useMotionValue,
 } from "framer-motion";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowUp,
+  Type,
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
@@ -23,14 +25,82 @@ import type { GraphBundle, GraphMode } from "@/lib/graph/types";
 import { useTypewriter } from "@/lib/graph/hooks/use-typewriter";
 import { fetchGraphRagQuery, type GraphRagQueryResponsePayload } from "@/lib/graph/detail-service";
 import { ModeToggleBar } from "./ModeToggleBar";
+import { CreateEditor, type CreateEditorHandle } from "./CreateEditor";
 
-// Prompt positioning constants
+// ── Prompt layout constants ──────────────────────────────────────────
 const BOTTOM_BASE = 32;
 const VIEWPORT_MARGIN = 8;
 /** Top clearance for write panel — below Wordmark icon row when panels visible. */
 const WRITE_TOP_CLEARANCE = 96;
 /** Top clearance for write panel — no panel icons. */
 const WRITE_TOP_BASE = 56;
+/** Maximum card width in any mode. */
+const MAX_CARD_W = 560;
+/** Minimum card width in create mode (CSS clamp lower bound). */
+const MIN_CARD_W_CREATE = 530;
+/** Viewport ratio for normal-mode width (90vw cap). */
+const VW_RATIO = 0.9;
+/** Floor width when side panels squeeze available space. */
+const MIN_AVAILABLE_W = 300;
+/** Horizontal gap between card edges and panel edges. */
+const PANEL_GAP = 48;
+/** Collapsed pill height target. */
+const PILL_H = 48;
+/** Collapsed pill left-edge offset from viewport left. */
+const PILL_LEFT = 12;
+
+/** Compute card width for normal mode, respecting panel clearance. */
+function cardWidth(vw: number, leftCl: number, rightCl: number): number {
+  if (leftCl > 0 || rightCl > 0) {
+    const avail = Math.max(MIN_AVAILABLE_W, vw - leftCl - rightCl - PANEL_GAP);
+    return Math.round(Math.min(MAX_CARD_W, vw * VW_RATIO, avail));
+  }
+  return Math.round(Math.min(MAX_CARD_W, vw * VW_RATIO));
+}
+
+// ── Shared icon button ───────────────────────────────────────────────
+interface PromptIconBtnProps {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+  size?: "sm" | "md";
+  active?: boolean;
+  disabled?: boolean;
+  "aria-pressed"?: boolean;
+}
+
+function PromptIconBtn({
+  icon: Icon,
+  label,
+  onClick,
+  size = "sm",
+  active,
+  disabled,
+  "aria-pressed": ariaPressed,
+}: PromptIconBtnProps) {
+  const md = size === "md";
+  return (
+    <Tooltip label={label} position="top" withArrow>
+      <motion.button
+        whileHover={{ scale: md ? 1.08 : 1.12 }}
+        whileTap={{ scale: md ? 0.92 : 0.9 }}
+        transition={bouncy}
+        onClick={onClick}
+        disabled={disabled}
+        className={`flex items-center justify-center rounded-full flex-shrink-0 ${md ? "h-9 w-9" : "h-7 w-7"}`}
+        style={{
+          backgroundColor: active ? "var(--mode-accent-subtle)" : "transparent",
+          color: active ? "var(--mode-accent)" : "var(--graph-prompt-inactive)",
+          border: "none",
+        }}
+        aria-label={label}
+        aria-pressed={ariaPressed}
+      >
+        <Icon size={md ? 18 : 15} />
+      </motion.button>
+    </Tooltip>
+  );
+}
 
 export function PromptBox({ bundle }: { bundle: GraphBundle }) {
   const mode = useGraphStore((s) => s.mode);
@@ -55,8 +125,9 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
   const [ragError, setRagError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffset, setIsOffset] = useState(false);
+  const [showFormattingTools, setShowFormattingTools] = useState(false);
   const { width: vw, height: vh } = useViewportSize();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<CreateEditorHandle>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
   const userDragX = useRef(0);
@@ -74,9 +145,10 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
   const cardHeight = useMotionValue(0);
   const [heightOverride, setHeightOverride] = useState(false);
 
-  // heightOverride keeps full-height layout active during the shrink animation,
-  // preventing content from reflowing before the card finishes resizing.
-  const isFullHeight = isCreate || promptMaximized || heightOverride;
+  // isFullHeightMode = logical mode (stable during FLIP animations).
+  // isFullHeight    = mode + animation override (toggles with heightOverride).
+  const isFullHeightMode = isCreate || promptMaximized;
+  const isFullHeight = isFullHeightMode || heightOverride;
 
   // Panel bottom edges (from viewport top) — reported by PanelShell's ResizeObserver.
   // Normal-mode avoidance also checks actual horizontal overlap and only moves
@@ -90,7 +162,27 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
   // One effect eliminates competing animations on dragX/dragY.
   const posAnim = useRef<{ x?: ReturnType<typeof animate>; y?: ReturnType<typeof animate>; h?: ReturnType<typeof animate> }>({});
   const fullHeightEnteredRef = useRef(false);
+  /** Prevents effect re-runs from calling h?.stop() during active height animations. */
+  const heightAnimatingRef = useRef(false);
+  /** Generation counter — invalidates stale .then() callbacks when a new height animation starts. */
+  const heightGenRef = useRef(0);
+  /** Non-null = a FLIP measurement is pending; value is the "from" height. */
+  const pendingFlipRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const prevPosMode = useRef<"create" | "maximized" | "collapsed" | "normal">("normal");
+
+  /** Start a guarded height animation. Prevents effect re-runs from stopping it. */
+  const startHeightAnim = useCallback((target: number, onDone?: () => void) => {
+    const gen = ++heightGenRef.current;
+    heightAnimatingRef.current = true;
+    posAnim.current.h = animate(cardHeight, target, smooth);
+    posAnim.current.h.then(() => {
+      if (gen !== heightGenRef.current) return; // stale — newer animation took over
+      heightAnimatingRef.current = false;
+      onDone?.();
+    });
+  }, [cardHeight]);
 
   useEffect(() => {
     // Skip until first paint (viewport not yet measured)
@@ -98,19 +190,23 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
 
     posAnim.current.x?.stop();
     posAnim.current.y?.stop();
-    posAnim.current.h?.stop();
+    // Don't stop h animation if one is actively running (guarded by startHeightAnim)
+    if (!heightAnimatingRef.current) posAnim.current.h?.stop();
 
     const posMode = isCollapsed ? "collapsed" : isCreate ? "create" : promptMaximized ? "maximized" : "normal";
     const modeChanged = prevPosMode.current !== posMode;
     prevPosMode.current = posMode;
-
     if (posMode === "create" || posMode === "maximized") {
       // Full-height modes — always respect panel clearance (they span the viewport).
       const targetX = posMode === "create"
-        ? 24 + leftClearance + Math.min(560, vw * 0.45) / 2 - vw / 2
+        ? 24 + leftClearance + Math.min(MAX_CARD_W, Math.max(MIN_CARD_W_CREATE, vw * 0.5)) / 2 - vw / 2
         : (leftClearance - rightClearance) / 2;
       const topClearance = panelsVisible ? WRITE_TOP_CLEARANCE : WRITE_TOP_BASE;
       const targetH = vh - topClearance - Math.max(bottomClearance, 24);
+
+      // Bump generation to invalidate any stale .then() callbacks
+      heightGenRef.current++;
+      heightAnimatingRef.current = false;
 
       if (!fullHeightEnteredRef.current) {
         cardHeight.set(cardRef.current?.offsetHeight ?? 60);
@@ -123,20 +219,30 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
       posAnim.current.h = animate(cardHeight, targetH, smooth);
       userDragY.current = targetY;
     } else {
-      // Exit full-height — animate height down before releasing override
+      // Always clear pending FLIP when leaving full-height mode — prevents stale refs
+      pendingFlipRef.current = null;
+
+      // Exit full-height — release height override
       if (fullHeightEnteredRef.current) {
-        const shrinkTarget = posMode === "collapsed" ? 48 : 80;
-        posAnim.current.h = animate(cardHeight, shrinkTarget, smooth);
-        posAnim.current.h.then(() => {
+        if (posMode === "collapsed") {
+          // Collapsed pill: animate height to small target.
+          startHeightAnim(PILL_H, () => {
+            if (!mountedRef.current) return;
+            setHeightOverride(false);
+            fullHeightEnteredRef.current = false;
+          });
+        } else {
+          // Normal mode: FLIP trigger — snapshot current height, release override.
+          // useLayoutEffect will measure auto height and start the animation.
+          pendingFlipRef.current = cardHeight.get();
           setHeightOverride(false);
-          fullHeightEnteredRef.current = false;
-        });
+        }
       }
 
       if (posMode === "collapsed") {
-        // Collapsed pill: left edge at 12px.
+        // Collapsed pill: left edge at PILL_LEFT.
         // Card uses translateX(0) in this mode, so dragX directly places the left edge.
-        const targetX = 12 - vw / 2;
+        const targetX = PILL_LEFT - vw / 2;
         autoTargetXRef.current = targetX;
         if (modeChanged) { userDragX.current = targetX; userDragY.current = targetY; }
         posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
@@ -145,9 +251,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
         // Normal: treat side panels as obstacle rectangles and move only the
         // minimum distance needed to keep the prompt clear while staying as
         // close to center as possible.
-        const cardW = leftClearance > 0 || rightClearance > 0
-          ? Math.min(640, vw * 0.9, Math.max(300, vw - leftClearance - rightClearance - 48))
-          : Math.min(640, vw * 0.9);
+        const cardW = cardWidth(vw, leftClearance, rightClearance);
         const cardH = cardRef.current?.offsetHeight ?? 100;
         const promptTop = vh - BOTTOM_BASE - cardH + targetY;
         const centeredLeft = vw / 2 - cardW / 2;
@@ -169,11 +273,9 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
         if (modeChanged) { userDragX.current = 0; userDragY.current = 0; }
         if (autoTargetXRef.current !== targetX) {
           userDragX.current = 0;
-          autoTargetXRef.current = targetX;
           setIsOffset(userDragY.current !== 0);
-        } else {
-          autoTargetXRef.current = targetX;
         }
+        autoTargetXRef.current = targetX;
         // Respect user drag offset; obstacle avoidance clamps Y upward only
         posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
         const target = Math.min(userDragY.current, targetY);
@@ -185,22 +287,54 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
       posAnim.current.x?.stop();
       posAnim.current.y?.stop();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      posAnim.current.h?.stop();
+      if (!heightAnimatingRef.current) posAnim.current.h?.stop();
     };
-  }, [isCreate, isCollapsed, promptMaximized, panelsVisible, bottomClearance, leftClearance, rightClearance, leftPanelBottom, rightPanelBottom, targetY, vw, vh, dragX, dragY, cardHeight]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- showFormattingTools intentionally excluded (doesn't affect positioning)
+  }, [isCreate, isCollapsed, promptMaximized, panelsVisible, bottomClearance, leftClearance, rightClearance, leftPanelBottom, rightPanelBottom, targetY, vw, vh, dragX, dragY, cardHeight, startHeightAnim]);
+
+  // FLIP measurement — fires after DOM mutation but before paint.
+  // When pendingFlipRef is set, the card just re-rendered with height: auto.
+  // We measure offsetHeight, restore the override, and animate to the measured height.
+  useLayoutEffect(() => {
+    const fromH = pendingFlipRef.current;
+    if (fromH === null) return;
+    pendingFlipRef.current = null;
+
+    const toH = cardRef.current?.offsetHeight ?? fromH;
+    cardHeight.set(fromH);
+    setHeightOverride(true);
+
+    startHeightAnim(toH, () => {
+      if (!mountedRef.current) return;
+      setHeightOverride(false);
+      fullHeightEnteredRef.current = false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs and motion values are stable
+  }, [heightOverride]);
 
   const handleModeChange = useCallback((newMode: GraphMode) => {
+    editorRef.current?.flush();
+    // Clear stale animation state from previous transitions
+    pendingFlipRef.current = null;
+    fullHeightEnteredRef.current = false;
+    heightAnimatingRef.current = false;
     setPromptMaximized(false);
     setPromptMinimized(getModeConfig(newMode).layout.promptCollapsed);
     setRagError(null);
     if (newMode !== "ask") {
       setRagResponse(null);
     }
-    setTimeout(() => textareaRef.current?.focus(), 100);
-  }, [setPromptMinimized, setPromptMaximized]);
+    // Sync hasInput to the destination mode's content
+    if (newMode === "create") {
+      setHasInput(writeContent.length > 0);
+    } else {
+      setHasInput(promptValue.length > 0);
+    }
+    setTimeout(() => editorRef.current?.focus(), 100);
+  }, [writeContent, promptValue, setPromptMinimized, setPromptMaximized]);
 
   const handleSubmit = useCallback(() => {
-    const query = activePromptValue.trim();
+    const query = (editorRef.current?.getText() ?? activePromptValue).trim();
     if (!query || !isAsk) {
       return;
     }
@@ -230,8 +364,13 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
 
   const handlePillClick = useCallback(() => {
     if (isDragging.current) return;
+    // Clear any stale animation state from previous transitions
+    pendingFlipRef.current = null;
+    fullHeightEnteredRef.current = false;
+    heightAnimatingRef.current = false;
+    setHeightOverride(false);
     setPromptMinimized(false);
-    setTimeout(() => textareaRef.current?.focus(), 100);
+    setTimeout(() => editorRef.current?.focus(), 100);
   }, [setPromptMinimized]);
 
   const handlePillKeyDown = useCallback(
@@ -251,13 +390,9 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
     [dragControls],
   );
 
-  // Normal-mode width — always constrain when panels are present (keeps card compact).
-  // Position shifting is handled separately in the effect via overlap gating.
-  const availableWidth = Math.max(300, vw - leftClearance - rightClearance - 48);
-  const normalCardWidth = leftClearance > 0 || rightClearance > 0
-    ? Math.min(640, vw * 0.9, availableWidth)
-    : Math.min(640, vw * 0.9);
-  const normalWidth = vw === 0 ? "min(640px, 90vw)" : `${normalCardWidth}px`;
+  // Normal-mode width — constrain when panels are present (keeps card compact).
+  const normalCardWidth = cardWidth(vw, leftClearance, rightClearance);
+  const normalWidth = vw === 0 ? `min(${MAX_CARD_W}px, ${VW_RATIO * 100}vw)` : `${normalCardWidth}px`;
 
   return (
     /* Positioning anchor — fixed at bottom-center; write-mode repositions via dragX/dragY.
@@ -288,22 +423,21 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
           const vh = window.innerHeight;
           const boxW = cardRef.current
             ? cardRef.current.offsetWidth
-            : Math.min(640, vw * 0.9);
+            : cardWidth(vw, 0, 0);
           const boxH = cardRef.current
             ? cardRef.current.offsetHeight
             : 120;
-          const margin = 8;
           const curX = dragX.get();
           const curY = dragY.get();
           // Pill uses transform:none (left-aligned), others use translateX(-50%) (centered)
           const minX = isCollapsed
-            ? margin - vw / 2
-            : -(vw / 2 - boxW / 2 - margin);
+            ? VIEWPORT_MARGIN - vw / 2
+            : -(vw / 2 - boxW / 2 - VIEWPORT_MARGIN);
           const maxX = isCollapsed
-            ? vw / 2 - boxW - margin
-            : vw / 2 - boxW / 2 - margin;
+            ? vw / 2 - boxW - VIEWPORT_MARGIN
+            : vw / 2 - boxW / 2 - VIEWPORT_MARGIN;
           // Box bottom is at BOTTOM_BASE - dragY (dragY negative = up)
-          const maxUp = -(vh - BOTTOM_BASE - boxH - margin);
+          const maxUp = -(vh - BOTTOM_BASE - boxH - VIEWPORT_MARGIN);
           const safeX = Math.max(minX, Math.min(maxX, curX));
           const safeY = Math.max(maxUp, Math.min(0, curY));
           if (curX !== safeX) animate(dragX, safeX, responsive);
@@ -324,7 +458,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
             width: isCollapsed
               ? undefined
               : isCreate
-                ? "min(560px, 45vw)"
+                ? `clamp(${MIN_CARD_W_CREATE}px, 50vw, ${MAX_CARD_W}px)`
                 : normalWidth,
             transform: isCollapsed ? "none" : "translateX(-50%)",
             position: "relative",
@@ -353,80 +487,62 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
           {/* Textarea — CSS grid row transition for smooth height animation */}
           <div
             onPointerDown={(e) => e.stopPropagation()}
+            aria-hidden={isCollapsed}
             style={{
               display: "grid",
               gridTemplateRows: isCollapsed ? "0fr" : "1fr",
               opacity: isCollapsed ? 0 : 1,
               flex: isFullHeight ? 1 : undefined,
               minHeight: isFullHeight ? 0 : undefined,
+              cursor: "default",
               transition:
                 "grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
             }}
           >
-            <div style={{ overflow: "hidden", minHeight: 0, position: "relative", height: isFullHeight ? "100%" : undefined }}>
-              {/* Placeholder overlay — supports colored mode word */}
-              {!hasInput && (
-                <div
-                  aria-hidden
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    pointerEvents: "none",
-                    padding: "0.25rem 0.5rem",
-                    fontSize: "0.9375rem",
-                    lineHeight: 1.5,
-                    overflow: "hidden",
-                    color: "var(--graph-prompt-placeholder)",
-                  }}
-                >
-                  {typewriterIsLast ? (
-                    <span>
-                      <span style={{ color: "var(--mode-accent)", opacity: 0.7 }}>
-                        {typewriterText.slice(0, activeMode.label.length)}
-                      </span>
-                      {typewriterText.slice(activeMode.label.length)}
-                    </span>
-                  ) : (
-                    typewriterText
-                  )}
-                </div>
-              )}
-              <Textarea
-                ref={textareaRef}
-                value={activePromptValue}
-                onChange={(e) => {
-                  const val = e.currentTarget.value;
-                  setHasInput(val.length > 0);
+            <div style={{ overflow: "hidden", minHeight: 0, height: isFullHeight ? "100%" : undefined }}>
+              <CreateEditor
+                ref={editorRef}
+                content={activePromptValue}
+                onContentChange={(markdown) => {
                   if (isCreate) {
-                    setWriteContent(val);
-                  } else {
-                    setPromptValue(val);
+                    setWriteContent(markdown);
+                    return;
                   }
+                  setPromptValue(markdown);
                 }}
-                autosize={!isFullHeight}
-                minRows={isFullHeight ? undefined : 1}
-                maxRows={isFullHeight ? undefined : 4}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                    event.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-                styles={{
-                  root: { width: "100%", flex: isFullHeight ? 1 : undefined },
-                  wrapper: { height: isFullHeight ? "100%" : undefined },
-                  input: {
-                    backgroundColor: "transparent",
-                    border: "none",
-                    color: "var(--graph-prompt-text)",
-                    fontSize: "0.9375rem",
-                    padding: "0.25rem 0.5rem",
-                    lineHeight: 1.5,
-                    height: isFullHeight ? "100%" : undefined,
-                    resize: "none",
-                  },
-                }}
-                aria-label={`${activeMode.label} prompt`}
+                onEmptyChange={(empty) => setHasInput(!empty)}
+                onSubmit={isAsk ? handleSubmit : undefined}
+                ariaLabel={`${activeMode.label} prompt`}
+                debounceMs={isCreate ? 300 : 0}
+                compact={!isFullHeightMode}
+                showToolbar={showFormattingTools}
+                placeholder={!hasInput ? (
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      pointerEvents: "none",
+                      padding: "0.25rem 0.5rem",
+                      fontSize: "10pt",
+                      lineHeight: 1.5,
+                      overflow: "hidden",
+                      color: "var(--graph-prompt-placeholder)",
+                      zIndex: 1,
+                    }}
+                  >
+                    {typewriterIsLast ? (
+                      <span>
+                        <span style={{ color: "var(--mode-accent)", opacity: 0.7 }}>
+                          {typewriterText.slice(0, activeMode.label.length)}
+                        </span>
+                        {typewriterText.slice(activeMode.label.length)}
+                      </span>
+                    ) : (
+                      typewriterText
+                    )}
+                  </div>
+                ) : undefined}
               />
             </div>
           </div>
@@ -436,6 +552,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
             className="flex items-center"
             style={{
               userSelect: "none",
+              cursor: "default",
               justifyContent: isCollapsed ? "center" : "space-between",
               paddingTop: isCollapsed ? 0 : 6,
             }}
@@ -460,61 +577,34 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
                 >
                   {/* Size chevrons — grouped tightly */}
                   <div className="flex items-center -space-x-1">
-                    {!isFullHeight && (
-                      <Tooltip label="Expand" position="top" withArrow>
-                        <motion.button
-                          whileHover={{ scale: 1.12 }}
-                          whileTap={{ scale: 0.9 }}
-                          transition={bouncy}
-                          onClick={() => setPromptMaximized(true)}
-                          className="flex h-6 w-6 items-center justify-center rounded-full flex-shrink-0"
-                          style={{
-                            backgroundColor: "transparent",
-                            color: "var(--graph-prompt-inactive)",
-                            border: "none",
-                          }}
-                          aria-label="Expand prompt"
-                        >
-                          <ChevronUp size={14} />
-                        </motion.button>
-                      </Tooltip>
+                    {!isFullHeightMode && (
+                      <PromptIconBtn icon={ChevronUp} label="Expand" onClick={() => setPromptMaximized(true)} />
                     )}
-                    <Tooltip label={promptMaximized ? "Shrink" : "Collapse"} position="top" withArrow>
-                      <motion.button
-                        whileHover={{ scale: 1.12 }}
-                        whileTap={{ scale: 0.9 }}
-                        transition={bouncy}
-                        onClick={() => promptMaximized ? setPromptMaximized(false) : setPromptMinimized(true)}
-                        className="flex h-6 w-6 items-center justify-center rounded-full flex-shrink-0"
-                        style={{
-                          backgroundColor: "transparent",
-                          color: "var(--graph-prompt-inactive)",
-                          border: "none",
-                        }}
-                        aria-label={promptMaximized ? "Shrink prompt" : "Collapse prompt"}
-                      >
-                        <ChevronDown size={14} />
-                      </motion.button>
-                    </Tooltip>
+                    <PromptIconBtn
+                      icon={ChevronDown}
+                      label={promptMaximized ? "Shrink" : "Collapse"}
+                      onClick={() => promptMaximized ? setPromptMaximized(false) : setPromptMinimized(true)}
+                    />
                   </div>
 
-                  {/* Submit */}
-                  <motion.button
-                    whileHover={{ scale: 1.08 }}
-                    whileTap={{ scale: 0.92 }}
-                    transition={bouncy}
+                  {/* Formatting toggle — outside chevron group so it doesn't shift */}
+                  <PromptIconBtn
+                    icon={Type}
+                    label={showFormattingTools ? "Hide formatting tools" : "Show formatting tools"}
+                    onClick={() => setShowFormattingTools((c) => !c)}
+                    active={showFormattingTools}
+                    aria-pressed={showFormattingTools}
+                  />
+
+                  {/* Submit — handleSubmit guards against non-ask modes internally */}
+                  <PromptIconBtn
+                    icon={ArrowUp}
+                    label="Submit prompt"
                     onClick={handleSubmit}
-                    className="flex h-8 w-8 items-center justify-center rounded-full flex-shrink-0"
-                    style={{
-                      backgroundColor: "var(--mode-accent-subtle)",
-                      color: "var(--mode-accent)",
-                      border: "none",
-                    }}
-                    aria-label="Submit prompt"
+                    size="md"
+                    active
                     disabled={!activePromptValue.trim() || isSubmitting}
-                  >
-                    <ArrowUp size={16} />
-                  </motion.button>
+                  />
                 </div>
               )}
           </div>
@@ -543,7 +633,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
                 </Text>
               )}
               {ragResponse && (
-                <ScrollArea.Autosize mah={isFullHeight ? 320 : 220} mt={6} type="auto">
+                <ScrollArea.Autosize mah={isFullHeightMode ? 320 : 220} mt={6} type="auto">
                   {ragResponse.answer && (
                     <Text size="sm" style={{ color: "var(--graph-prompt-text)", whiteSpace: "pre-wrap" }}>
                       {ragResponse.answer}
@@ -598,7 +688,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
                 bottom: isCollapsed ? -6 : 0,
                 left: "50%",
                 transform: "translateX(-50%)",
-                padding: "4px 8px",
+                padding: "12px 8px",
                 cursor: isOffset ? "pointer" : "default",
               }}
             >

@@ -43,10 +43,20 @@ export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | nu
 export type TableView = 'current' | 'selected'
 export type InfoScopeMode = 'current' | 'selected' | 'dataset'
 
+/** Callbacks registered by MapCanvas so the Wordmark toolbar can control the map. */
+export interface MapControls {
+  zoomIn: () => void
+  zoomOut: () => void
+  fitView: () => void
+}
+
 interface DashboardState {
   // Layer
   activeLayer: MapLayer
   availableLayers: MapLayer[]
+
+  // Map controls — registered by MapCanvas, consumed by Wordmark
+  mapControls: MapControls | null
 
   // Panel visibility
   activePanel: ActivePanel
@@ -119,6 +129,11 @@ interface DashboardState {
   // Write mode
   writeContent: string
 
+  // Geo filter state — parallel to Cosmograph's crossfilter but driven manually
+  geoFilters: Record<string, string[] | [number, number]>
+  setGeoFilter: (column: string, value: string[] | [number, number] | null) => void
+  clearGeoFilters: () => void
+
   // Crossfilter state mirrored from Cosmograph callbacks:
   // current working set, persistent selection intent, and current canvas highlight.
   currentPointIndices: number[] | null
@@ -190,6 +205,7 @@ interface DashboardState {
   unlockSelection: () => void
   setActiveLayer: (layer: MapLayer) => void
   setAvailableLayers: (layers: MapLayer[]) => void
+  setMapControls: (controls: MapControls | null) => void
 }
 
 /* ───── Clearance selectors ─────
@@ -260,6 +276,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   // Layer
   activeLayer: 'chunk',
   availableLayers: ['chunk'],
+  mapControls: null,
 
   // Panel visibility
   activePanel: null,
@@ -309,7 +326,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   connectedSelect: false,
 
   // Links
-  renderLinks: true,
+  renderLinks: false,
   linkOpacity: 1.0,
   linkGreyoutOpacity: 0.1,
   linkVisibilityDistanceRange: [50, 150] as [number, number],
@@ -330,6 +347,19 @@ export const useDashboardStore = create<DashboardState>((set) => ({
 
   // Write mode
   writeContent: '',
+
+  // Geo filters
+  geoFilters: {},
+  setGeoFilter: (column, value) =>
+    set((s) => {
+      if (value === null) {
+        const next = { ...s.geoFilters }
+        delete next[column]
+        return { geoFilters: next }
+      }
+      return { geoFilters: { ...s.geoFilters, [column]: value } }
+    }),
+  clearGeoFilters: () => set({ geoFilters: {} }),
 
   // Crossfilter state mirrored from Cosmograph callbacks
   currentPointIndices: null,
@@ -457,7 +487,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         // Reset filters and info widgets to layer-appropriate defaults
         filterColumns: getDefaultFiltersForLayer(layer),
         infoWidgets: config.defaultInfoWidgets,
+        geoFilters: {},
       }
     }),
   setAvailableLayers: (layers) => set({ availableLayers: layers }),
+  setMapControls: (controls) => set({ mapControls: controls }),
 }))

@@ -102,6 +102,19 @@ function adjustForLightTheme(hex: string): string {
   return hslToHex(h, Math.min(s + 25, 92), Math.max(l - 16, 32))
 }
 
+/* ---------- RGBA helper ---------- */
+
+/** Convert a hex color string to an RGBA tuple for deck.gl accessors. */
+export function hexToRgba(
+  hex: string,
+  alpha = 160,
+): [number, number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return [r, g, b, alpha]
+}
+
 /* ---------- Public API ---------- */
 
 export function getPaletteColors(

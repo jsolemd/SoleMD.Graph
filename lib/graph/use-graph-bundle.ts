@@ -49,6 +49,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           error: null,
           queries: {
             getClusterDetail: session.getClusterDetail,
+            getInstitutionAuthors: session.getInstitutionAuthors,
             getSelectionDetail: session.getSelectionDetail,
             getPaperDocument: session.getPaperDocument,
             runReadOnlyQuery: session.runReadOnlyQuery,

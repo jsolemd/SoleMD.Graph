@@ -32,7 +32,7 @@
     "code-search": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.web",
-      "instructions": "Primary tool for code exploration and navigation. Use the streamlined 11-tool surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, index_status. Default exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Promote good hits into persistent task context with slice_build(task=...) or slice_build(promote_refs=[symbol_ref, symbol_uid, ...]), then use slice_view(slice_id, detail=...) to escalate context. Read matched_on, rank_explain, source_bias_filtered, neighborhood, and unresolved call-site telemetry before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope."
+      "instructions": "Primary tool for code exploration and navigation in the active project context. Use the streamlined 13-tool surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, find_clones, find_patterns, index_status. Default exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Promote good hits into persistent task context with slice_build(task=...) or slice_build(promote_refs=[symbol_ref, symbol_uid, ...]), then use slice_view(slice_id, detail=...) to escalate context. Read matched_on, rank_explain, source_bias_filtered, neighborhood, and unresolved call-site telemetry before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via explicit aliases: code-search-app, code-search-web, code-search-make, code-search-wiki, and code-search-infra."
     },
     "doc-search": {
       "type": "http",
@@ -62,7 +62,27 @@
     "code-search-app": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.app",
-      "instructions": "Code search for SoleMD.App (Python biomedical NLP pipeline). Use when you need to find or understand App pipeline code, data models, DAL patterns, or API contracts. Same tools as code-search: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, etc."
+      "instructions": "Code search for SoleMD.App (Python biomedical NLP pipeline). Use when you need to find or understand App pipeline code, data models, DAL patterns, orchestration, or API contracts. Same 13-tool surface as code-search."
+    },
+    "code-search-web": {
+      "type": "http",
+      "url": "http://localhost:8100/mcp/solemd.web",
+      "instructions": "Code search for SoleMD.Web (Next.js frontend). Use when you need to find or understand Web components, pages, API routes, hooks, motion/UI patterns, or data fetch flows. Same 13-tool surface as code-search."
+    },
+    "code-search-make": {
+      "type": "http",
+      "url": "http://localhost:8100/mcp/solemd.make",
+      "instructions": "Code search for SoleMD.Make (markdown-first document generation). Use when you need to find or understand Pandoc, Typst, Carbone, slides, citation/Zotero workflows, filters, templates, or document source conventions. Same 13-tool surface as code-search."
+    },
+    "code-search-wiki": {
+      "type": "http",
+      "url": "http://localhost:8100/mcp/solemd.wiki",
+      "instructions": "Code search for SoleMD.Wiki (Quartz knowledge wiki). Use when you need to find or understand wiki content structure, Quartz configuration, plugins, or publishing/build behavior. Same 13-tool surface as code-search."
+    },
+    "code-search-infra": {
+      "type": "http",
+      "url": "http://localhost:8100/mcp/solemd.infra",
+      "instructions": "Code search for SoleMD.Infra (shared infrastructure). Use when you need to find or understand Docker Compose, MCP servers, devcontainer generation, monitoring, or shared operational scripts. Same 13-tool surface as code-search."
     }
   }
 }

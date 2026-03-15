@@ -224,6 +224,7 @@ html:root {
   /* ── Mode accent — higher opacity needed against dark surfaces ── */
   --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, transparent);
   --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, transparent);
+  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 45%, transparent);
 
   /* ── Error states ── */
   --error-bg: rgba(255, 107, 107, 0.10);
@@ -249,6 +250,197 @@ html.dark {
 .config-scroll::-webkit-scrollbar { width: 4px; }
 .config-scroll::-webkit-scrollbar-track { background: transparent; }
 .config-scroll::-webkit-scrollbar-thumb { background: var(--graph-panel-border); border-radius: 2px; }
+
+/* ── Tiptap Create Mode Editor ── */
+.tiptap-create {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.tiptap-create--compact {
+  height: auto;
+}
+
+.tiptap-create__content,
+.tiptap-create__content > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Toolbar — seamless row within the matte card, no gradient/border chrome.
+   Visual grouping via spacing alone, matching graph-icon-btn hover pattern. */
+.tiptap-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.25rem 0.3rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.tiptap-toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+.tiptap-toolbar-group {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 1px;
+}
+
+/* Faint separator between groups (not around them) */
+.tiptap-toolbar-group + .tiptap-toolbar-group::before {
+  content: "";
+  display: block;
+  width: 1px;
+  height: 14px;
+  margin-right: 0.3rem;
+  background: var(--graph-prompt-divider);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.tiptap-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--graph-prompt-inactive);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.tiptap-tool:hover {
+  background: var(--mode-accent-subtle);
+  color: var(--graph-prompt-text);
+}
+
+.tiptap-tool.is-active {
+  background: var(--mode-accent-subtle);
+  color: var(--mode-accent);
+}
+
+.tiptap-tool.is-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.tiptap-create .tiptap {
+  flex: 1;
+  overflow-y: auto;
+  outline: none;
+  padding: 0.25rem 0.5rem;
+  font-size: 10pt;
+  line-height: 1.5;
+  color: var(--graph-prompt-text);
+  caret-color: var(--mode-accent);
+}
+.tiptap-create--compact .tiptap {
+  max-height: calc(4 * 1.5em + 0.5rem);
+}
+
+.tiptap-create .tiptap { scrollbar-gutter: stable; }
+.tiptap-create .tiptap::-webkit-scrollbar { width: 4px; }
+.tiptap-create .tiptap::-webkit-scrollbar-track { background: transparent; }
+.tiptap-create .tiptap::-webkit-scrollbar-thumb {
+  background: var(--graph-prompt-divider);
+  border-radius: 2px;
+}
+
+/* ── Prose formatting — minimal, inherits PromptBox text tokens ── */
+.tiptap-create .tiptap h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.25rem;
+}
+.tiptap-create .tiptap h2 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0.6rem 0 0.2rem;
+}
+.tiptap-create .tiptap h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.15rem;
+}
+.tiptap-create .tiptap p { margin: 0.25rem 0; }
+.tiptap-create .tiptap > *:first-child { margin-top: 0; }
+.tiptap-create .tiptap blockquote {
+  border-left: 3px solid var(--mode-accent);
+  padding-left: 0.75rem;
+  margin: 0.5rem 0;
+  color: var(--graph-prompt-inactive);
+}
+.tiptap-create .tiptap code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--mode-accent-subtle);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+}
+.tiptap-create .tiptap pre {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--mode-accent-subtle);
+  padding: 0.75rem;
+  border-radius: 8px;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+}
+.tiptap-create .tiptap ul,
+.tiptap-create .tiptap ol {
+  padding-left: 1.25rem;
+  margin: 0.25rem 0;
+}
+.tiptap-create .tiptap hr {
+  border: none;
+  border-top: 1px solid var(--graph-prompt-divider);
+  margin: 0.75rem 0;
+}
+.tiptap-create .tiptap ::selection {
+  background: var(--mode-accent-subtle);
+}
+
+/* ── Source mode textarea — monospace raw markdown view ── */
+.tiptap-source {
+  flex: 1;
+  width: 100%;
+  resize: none;
+  outline: none;
+  border: none;
+  background: transparent;
+  padding: 0.25rem 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--graph-prompt-text);
+  caret-color: var(--mode-accent);
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.tiptap-source::-webkit-scrollbar { width: 4px; }
+.tiptap-source::-webkit-scrollbar-track { background: transparent; }
+.tiptap-source::-webkit-scrollbar-thumb {
+  background: var(--graph-prompt-divider);
+  border-radius: 2px;
+}
+.tiptap-source::selection {
+  background: var(--mode-accent-subtle);
+}
 
 /* DataTable pagination — minimal, mode-colored active page */
 .table-pagination [data-active] {

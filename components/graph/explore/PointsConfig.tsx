@@ -93,6 +93,7 @@ export function PointsConfig() {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const layerConfig = getLayerConfig(activeLayer);
   const hasLinks = layerConfig.hasLinks;
+  const isMapLayer = layerConfig.rendererType === "maplibre";
   const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
   const numericCols = useMemo(() => layerColumns.filter((c) => c.type === 'numeric'), [layerColumns]);
 
@@ -295,100 +296,108 @@ export function PointsConfig() {
             max={30}
             step={1}
           />
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Scale points on zoom"
-            checked={scalePointsOnZoom}
-            onChange={(e) => setScalePointsOnZoom(e.currentTarget.checked)}
-            styles={switchLabelStyle}
-          />
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Show size legend"
-            checked={showSizeLegend}
-            onChange={(e) => setShowSizeLegend(e.currentTarget.checked)}
-            styles={switchLabelStyle}
-          />
+          {!isMapLayer && (
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Scale points on zoom"
+              checked={scalePointsOnZoom}
+              onChange={(e) => setScalePointsOnZoom(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+            />
+          )}
+          {!isMapLayer && (
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Show size legend"
+              checked={showSizeLegend}
+              onChange={(e) => setShowSizeLegend(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+            />
+          )}
         </Stack>
       </div>
 
-      {/* Labels */}
-      <div>
-        <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
-          Labels
-        </Text>
-        <Stack gap="xs">
-          <Select
-            size="xs"
-            label="Column"
-            data={labelColumnOptions}
-            value={pointLabelColumn}
-            onChange={(v) => v && setPointLabelColumn(v as DataColumnKey)}
-            styles={panelSelectStyles}
-          />
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Show labels"
-            checked={showPointLabels}
-            onChange={(e) => setShowPointLabels(e.currentTarget.checked)}
-            styles={switchLabelStyle}
-          />
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Dynamic labels"
-            checked={showDynamicLabels}
-            onChange={(e) => setShowDynamicLabels(e.currentTarget.checked)}
-            styles={switchLabelStyle}
-          />
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Show hovered point label"
-            checked={showHoveredPointLabel}
-            onChange={(e) => setShowHoveredPointLabel(e.currentTarget.checked)}
-            styles={switchLabelStyle}
-          />
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Hovered point ring"
-            checked={renderHoveredPointRing}
-            onChange={(e) =>
-              setRenderHoveredPointRing(e.currentTarget.checked)
-            }
-            styles={switchLabelStyle}
-          />
-        </Stack>
-      </div>
+      {/* Labels — MapLibre handles its own label rendering via symbol layers */}
+      {!isMapLayer && (
+        <div>
+          <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+            Labels
+          </Text>
+          <Stack gap="xs">
+            <Select
+              size="xs"
+              label="Column"
+              data={labelColumnOptions}
+              value={pointLabelColumn}
+              onChange={(v) => v && setPointLabelColumn(v as DataColumnKey)}
+              styles={panelSelectStyles}
+            />
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Show labels"
+              checked={showPointLabels}
+              onChange={(e) => setShowPointLabels(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+            />
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Dynamic labels"
+              checked={showDynamicLabels}
+              onChange={(e) => setShowDynamicLabels(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+            />
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Show hovered point label"
+              checked={showHoveredPointLabel}
+              onChange={(e) => setShowHoveredPointLabel(e.currentTarget.checked)}
+              styles={switchLabelStyle}
+            />
+            <Switch
+              size="xs"
+              color={PANEL_ACCENT}
+              label="Hovered point ring"
+              checked={renderHoveredPointRing}
+              onChange={(e) =>
+                setRenderHoveredPointRing(e.currentTarget.checked)
+              }
+              styles={switchLabelStyle}
+            />
+          </Stack>
+        </div>
+      )}
 
-      {/* Positions */}
-      <div>
-        <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
-          Positions
-        </Text>
-        <Stack gap="xs">
-          <Select
-            size="xs"
-            label="X column"
-            data={positionOptions}
-            value={positionXColumn}
-            onChange={(v) => v && setPositionXColumn(v as NumericColumnKey)}
-            styles={panelSelectStyles}
-          />
-          <Select
-            size="xs"
-            label="Y column"
-            data={positionOptions}
-            value={positionYColumn}
-            onChange={(v) => v && setPositionYColumn(v as NumericColumnKey)}
-            styles={panelSelectStyles}
-          />
-        </Stack>
-      </div>
+      {/* Positions — geo layer uses real-world lat/lng, not configurable axes */}
+      {!isMapLayer && (
+        <div>
+          <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+            Positions
+          </Text>
+          <Stack gap="xs">
+            <Select
+              size="xs"
+              label="X column"
+              data={positionOptions}
+              value={positionXColumn}
+              onChange={(v) => v && setPositionXColumn(v as NumericColumnKey)}
+              styles={panelSelectStyles}
+            />
+            <Select
+              size="xs"
+              label="Y column"
+              data={positionOptions}
+              value={positionYColumn}
+              onChange={(v) => v && setPositionYColumn(v as NumericColumnKey)}
+              styles={panelSelectStyles}
+            />
+          </Stack>
+        </div>
+      )}
 
       {/* Timeline */}
       <div>
@@ -415,7 +424,7 @@ export function PointsConfig() {
         </Stack>
       </div>
 
-      {/* Links — only for layers with citation links */}
+      {/* Links */}
       {hasLinks && (
         <>
           <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
@@ -425,73 +434,78 @@ export function PointsConfig() {
             <Switch
               size="xs"
               color={PANEL_ACCENT}
-              label="Show links"
+              label={isMapLayer ? "Show collaboration arcs" : "Show links"}
               checked={renderLinks}
               onChange={(e) => setRenderLinks(e.currentTarget.checked)}
               styles={switchLabelStyle}
             />
-            <LabeledSlider
-              label={`Opacity: ${linkOpacity.toFixed(2)}`}
-              value={linkOpacity}
-              onChange={setLinkOpacity}
-              min={0} max={1} step={0.05}
-              disabled={linkControlsDisabled}
-            />
-            <LabeledSlider
-              label={`Greyout opacity: ${linkGreyoutOpacity.toFixed(2)}`}
-              value={linkGreyoutOpacity}
-              onChange={setLinkGreyoutOpacity}
-              min={0} max={1} step={0.05}
-              disabled={linkControlsDisabled}
-            />
-            <LabeledSlider
-              label={`Fade range: ${linkVisibilityDistanceRange[0]} \u2013 ${linkVisibilityDistanceRange[1]}px`}
-              value={linkVisibilityDistanceRange[1]}
-              onChange={(v) => setLinkVisibilityDistanceRange([linkVisibilityDistanceRange[0], v])}
-              min={0} max={500} step={10}
-              disabled={linkControlsDisabled}
-            />
-            <LabeledSlider
-              label={`Min transparency: ${linkVisibilityMinTransparency.toFixed(2)}`}
-              value={linkVisibilityMinTransparency}
-              onChange={setLinkVisibilityMinTransparency}
-              min={0} max={1} step={0.05}
-              disabled={linkControlsDisabled}
-            />
-            <LabeledSlider
-              label={`Width: ${linkDefaultWidth}`}
-              value={linkDefaultWidth}
-              onChange={setLinkDefaultWidth}
-              min={0.5} max={10} step={0.5}
-              disabled={linkControlsDisabled}
-            />
-            <Switch
-              size="xs"
-              color={PANEL_ACCENT}
-              label="Curved links"
-              checked={curvedLinks}
-              onChange={(e) => setCurvedLinks(e.currentTarget.checked)}
-              styles={switchLabelStyle}
-              disabled={linkControlsDisabled}
-            />
-            <Switch
-              size="xs"
-              color={PANEL_ACCENT}
-              label="Show arrows"
-              checked={linkDefaultArrows}
-              onChange={(e) => setLinkDefaultArrows(e.currentTarget.checked)}
-              styles={switchLabelStyle}
-              disabled={linkControlsDisabled}
-            />
-            <Switch
-              size="xs"
-              color={PANEL_ACCENT}
-              label="Scale on zoom"
-              checked={scaleLinksOnZoom}
-              onChange={(e) => setScaleLinksOnZoom(e.currentTarget.checked)}
-              styles={switchLabelStyle}
-              disabled={linkControlsDisabled}
-            />
+            {/* Full Cosmograph link controls — only for non-map layers */}
+            {!isMapLayer && (
+              <>
+                <LabeledSlider
+                  label={`Opacity: ${linkOpacity.toFixed(2)}`}
+                  value={linkOpacity}
+                  onChange={setLinkOpacity}
+                  min={0} max={1} step={0.05}
+                  disabled={linkControlsDisabled}
+                />
+                <LabeledSlider
+                  label={`Greyout opacity: ${linkGreyoutOpacity.toFixed(2)}`}
+                  value={linkGreyoutOpacity}
+                  onChange={setLinkGreyoutOpacity}
+                  min={0} max={1} step={0.05}
+                  disabled={linkControlsDisabled}
+                />
+                <LabeledSlider
+                  label={`Fade range: ${linkVisibilityDistanceRange[0]} \u2013 ${linkVisibilityDistanceRange[1]}px`}
+                  value={linkVisibilityDistanceRange[1]}
+                  onChange={(v) => setLinkVisibilityDistanceRange([linkVisibilityDistanceRange[0], v])}
+                  min={0} max={500} step={10}
+                  disabled={linkControlsDisabled}
+                />
+                <LabeledSlider
+                  label={`Min transparency: ${linkVisibilityMinTransparency.toFixed(2)}`}
+                  value={linkVisibilityMinTransparency}
+                  onChange={setLinkVisibilityMinTransparency}
+                  min={0} max={1} step={0.05}
+                  disabled={linkControlsDisabled}
+                />
+                <LabeledSlider
+                  label={`Width: ${linkDefaultWidth}`}
+                  value={linkDefaultWidth}
+                  onChange={setLinkDefaultWidth}
+                  min={0.5} max={10} step={0.5}
+                  disabled={linkControlsDisabled}
+                />
+                <Switch
+                  size="xs"
+                  color={PANEL_ACCENT}
+                  label="Curved links"
+                  checked={curvedLinks}
+                  onChange={(e) => setCurvedLinks(e.currentTarget.checked)}
+                  styles={switchLabelStyle}
+                  disabled={linkControlsDisabled}
+                />
+                <Switch
+                  size="xs"
+                  color={PANEL_ACCENT}
+                  label="Show arrows"
+                  checked={linkDefaultArrows}
+                  onChange={(e) => setLinkDefaultArrows(e.currentTarget.checked)}
+                  styles={switchLabelStyle}
+                  disabled={linkControlsDisabled}
+                />
+                <Switch
+                  size="xs"
+                  color={PANEL_ACCENT}
+                  label="Scale on zoom"
+                  checked={scaleLinksOnZoom}
+                  onChange={(e) => setScaleLinksOnZoom(e.currentTarget.checked)}
+                  styles={switchLabelStyle}
+                  disabled={linkControlsDisabled}
+                />
+              </>
+            )}
           </Stack>
         </>
       )}

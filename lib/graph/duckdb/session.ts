@@ -16,6 +16,8 @@ import {
 } from '../transform'
 import { EMPTY_LINKS_TABLE, LINK_COLUMNS } from '../layers'
 import type {
+  AuthorGeoRow,
+  GeoLink,
   GraphBundle,
   GraphClusterDetail,
   GraphData,
@@ -54,6 +56,7 @@ interface GraphBundleSession {
   canvas: GraphCanvasSource
   data: GraphData
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
+  getInstitutionAuthors: (institutionKey: string) => Promise<AuthorGeoRow[]>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
   getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
@@ -302,6 +305,40 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
         FROM ${relations.relation('geo_points')}`
       )
       availableLayers.push('geo')
+
+      // Geo links — collaboration edges between institutions
+      if (bundle.bundleManifest.tables.geo_links) {
+        await conn.query(
+          `CREATE OR REPLACE VIEW geo_links_web AS
+          SELECT
+            source_node_id AS sourceId,
+            source_point_index AS sourceIndex,
+            target_node_id AS targetId,
+            target_point_index AS targetIndex,
+            paper_count AS paperCount
+          FROM ${relations.relation('geo_links')}`
+        )
+      }
+
+      // Author-institution mapping for drill-down
+      if (bundle.bundleManifest.tables.graph_author_geo) {
+        await conn.query(
+          `CREATE OR REPLACE VIEW author_geo_web AS
+          SELECT
+            paper_author_id AS authorId,
+            name,
+            surname,
+            given_name AS givenName,
+            orcid,
+            citekey,
+            paper_title AS paperTitle,
+            year,
+            institution,
+            department,
+            institution_key AS institutionKey
+          FROM ${relations.relation('graph_author_geo')}`
+        )
+      }
     }
 
     // Empty links view — Cosmograph crashes (pragma_table_info on internal
@@ -486,11 +523,47 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
 
       data.geoNodes = buildGeoNodes(geoPointRows)
       data.geoStats = buildGeoStats(data.geoNodes)
+
+      // Load geo links (collaboration edges)
+      if (bundle.bundleManifest.tables.geo_links) {
+        const geoNodeLookup = new Map(data.geoNodes.map((n) => [n.id, n]))
+        const linkRows = await queryRows<{
+          sourceId: string
+          sourceIndex: number
+          targetId: string
+          targetIndex: number
+          paperCount: number
+        }>(
+          conn,
+          `SELECT sourceId, sourceIndex, targetId, targetIndex, paperCount
+          FROM geo_links_web`
+        )
+        data.geoLinks = linkRows
+          .map((row) => {
+            const src = geoNodeLookup.get(row.sourceId)
+            const tgt = geoNodeLookup.get(row.targetId)
+            if (!src || !tgt) return null
+            return {
+              sourceId: row.sourceId,
+              targetId: row.targetId,
+              sourceIndex: row.sourceIndex,
+              targetIndex: row.targetIndex,
+              paperCount: row.paperCount ?? 1,
+              sourceLng: src.x,
+              sourceLat: src.y,
+              targetLng: tgt.x,
+              targetLat: tgt.y,
+            } satisfies GeoLink
+          })
+          .filter((l): l is GeoLink => l !== null)
+      }
     }
 
+    const hasAuthorGeo = Boolean(bundle.bundleManifest.tables.graph_author_geo)
     const selectionCache = new Map<string, Promise<GraphSelectionDetail>>()
     const clusterCache = new Map<number, Promise<GraphClusterDetail>>()
     const paperDocumentCache = new Map<string, Promise<PaperDocument | null>>()
+    const authorCache = new Map<string, Promise<AuthorGeoRow[]>>()
 
     return {
       availableLayers,
@@ -504,6 +577,36 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
       data,
       runReadOnlyQuery(sql: string) {
         return executeReadOnlyQuery(conn, sql)
+      },
+      getInstitutionAuthors(institutionKey: string) {
+        const cached = authorCache.get(institutionKey)
+        if (cached) return cached
+
+        const next = (async (): Promise<AuthorGeoRow[]> => {
+          if (!hasAuthorGeo) return []
+
+          const rows = await queryRows<{
+            authorId: string
+            name: string | null
+            surname: string | null
+            givenName: string | null
+            orcid: string | null
+            citekey: string | null
+            paperTitle: string | null
+            year: number | null
+            institution: string | null
+            department: string | null
+            institutionKey: string | null
+          }>(
+            conn,
+            `SELECT * FROM author_geo_web WHERE institutionKey = ? ORDER BY year DESC, surname`,
+            [institutionKey]
+          )
+          return rows.map((r) => ({ ...r }))
+        })()
+
+        authorCache.set(institutionKey, next)
+        return next
       },
       getPaperDocument(paperId: string) {
         const cached = paperDocumentCache.get(paperId)

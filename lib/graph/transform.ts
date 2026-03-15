@@ -191,6 +191,7 @@ export function buildGraphData({
     facets: graphFacets,
     paperNodes: [],
     geoNodes: [],
+    geoLinks: [],
     paperStats: null,
     geoStats: null,
     stats,

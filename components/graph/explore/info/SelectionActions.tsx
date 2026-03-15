@@ -4,6 +4,7 @@ import { Button, Group } from "@mantine/core";
 import { useCosmograph } from "@cosmograph/react";
 import type { InfoScope } from "@/lib/graph/hooks/use-info-stats";
 import { useDashboardStore } from "@/lib/graph/stores";
+import { getLayerConfig } from "@/lib/graph/layers";
 import { PANEL_ACCENT } from "../../PanelShell";
 
 interface SelectionActionsProps {
@@ -19,6 +20,9 @@ export function SelectionActions({ scope }: SelectionActionsProps) {
   const currentPointIndices = useDashboardStore(
     (s) => s.currentPointIndices,
   );
+  const activeLayer = useDashboardStore((s) => s.activeLayer);
+  const mapControls = useDashboardStore((s) => s.mapControls);
+  const isMapLayer = getLayerConfig(activeLayer).rendererType === "maplibre";
   const { cosmograph } = useCosmograph();
 
   const handleOpenTable = () => {
@@ -27,6 +31,11 @@ export function SelectionActions({ scope }: SelectionActionsProps) {
   };
 
   const handleFitSelection = () => {
+    if (isMapLayer) {
+      mapControls?.fitView();
+      return;
+    }
+
     if (scope === "selected" && selectedPointIndices.length > 0) {
       cosmograph?.fitViewByIndices(selectedPointIndices, 0, 0.15);
       return;

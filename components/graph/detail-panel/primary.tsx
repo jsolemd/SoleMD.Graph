@@ -1,10 +1,13 @@
 "use client";
 
-import { Badge, Button, Group, Text } from "@mantine/core";
+import { useEffect, useState } from "react";
+import { Accordion, Badge, Button, Group, Text } from "@mantine/core";
 import { Copy, FileText, MessageSquareText, Orbit } from "lucide-react";
 import type {
+  AuthorGeoRow,
   ChunkNode,
   GeoNode,
+  GraphBundleQueries,
   GraphNode,
   GraphPaperDetail,
   PaperDocument,
@@ -28,10 +31,18 @@ export function DetailHeader({
   paper: GraphPaperDetail | null;
 }) {
   const nodeColor = node.color;
-  const title = paper?.title ?? node.paperTitle;
-  const subtitle = [paper?.journal ?? node.journal, paper?.year ?? node.year, paper?.citekey ?? node.citekey]
-    .filter(Boolean)
-    .join(" · ");
+  const isGeo = node.nodeKind === "institution";
+  const geo = isGeo ? (node as GeoNode) : null;
+
+  const title = isGeo
+    ? (geo!.institution ?? "Unknown institution")
+    : (paper?.title ?? node.paperTitle);
+
+  const subtitle = isGeo
+    ? [geo!.city, geo!.region, geo!.country].filter(Boolean).join(", ")
+    : [paper?.journal ?? node.journal, paper?.year ?? node.year, paper?.citekey ?? node.citekey]
+        .filter(Boolean)
+        .join(" · ");
 
   return (
     <div>
@@ -249,10 +260,70 @@ function buildPaperLinks(paper: GraphPaperDetail | GraphNodeDetailResponsePayloa
   };
 }
 
-export function InstitutionSection({ node }: { node: GraphNode }) {
-  if (node.nodeKind !== "institution") return null;
-  const geo = node as GeoNode;
+export function InstitutionSection({
+  node,
+  queries,
+}: {
+  node: GraphNode;
+  queries?: GraphBundleQueries | null;
+}) {
+  const [authors, setAuthors] = useState<AuthorGeoRow[]>([]);
+  const [loadingAuthors, setLoadingAuthors] = useState(false);
+
+  const geo = node.nodeKind === "institution" ? (node as GeoNode) : null;
+  const geoId = geo?.id ?? null;
+
+  useEffect(() => {
+    if (!geoId || !queries) return;
+    let cancelled = false;
+    setLoadingAuthors(true);
+    queries.getInstitutionAuthors(geoId).then((rows) => {
+      if (!cancelled) {
+        setAuthors(rows);
+        setLoadingAuthors(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setLoadingAuthors(false);
+    });
+    return () => { cancelled = true; };
+  }, [geoId, queries]);
+
+  if (!geo) return null;
   const rorUrl = geo.rorId ? `https://ror.org/${geo.rorId.replace("https://ror.org/", "")}` : null;
+
+  // Group authors by unique name for summary
+  const uniqueAuthors = (() => {
+    const seen = new Map<string, { name: string; papers: number; orcid: string | null }>();
+    for (const a of authors) {
+      const key = a.surname ? `${a.surname}|${a.givenName ?? ""}` : a.name ?? "";
+      const existing = seen.get(key);
+      if (existing) {
+        existing.papers++;
+      } else {
+        seen.set(key, {
+          name: a.name ?? `${a.givenName ?? ""} ${a.surname ?? ""}`.trim(),
+          papers: 1,
+          orcid: a.orcid,
+        });
+      }
+    }
+    return [...seen.values()].sort((a, b) => b.papers - a.papers);
+  })();
+
+  const uniquePapers = (() => {
+    const seen = new Map<string, { citekey: string; title: string; year: number | null }>();
+    for (const a of authors) {
+      if (!a.citekey) continue;
+      if (!seen.has(a.citekey)) {
+        seen.set(a.citekey, {
+          citekey: a.citekey,
+          title: a.paperTitle ?? "Untitled",
+          year: a.year,
+        });
+      }
+    }
+    return [...seen.values()].sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+  })();
 
   return (
     <div>
@@ -282,6 +353,63 @@ export function InstitutionSection({ node }: { node: GraphNode }) {
           ]}
         />
       </div>
+
+      {/* Author drill-down */}
+      {(uniqueAuthors.length > 0 || uniquePapers.length > 0 || loadingAuthors) && (
+        <Accordion variant="default" mt={12} styles={{
+          item: { borderBottom: "none" },
+          control: { paddingLeft: 0, paddingRight: 0, paddingTop: 4, paddingBottom: 4, backgroundColor: "transparent" },
+          label: { fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--graph-panel-text-muted)" },
+          chevron: { color: "var(--graph-panel-text-muted)", width: 14, height: 14 },
+          content: { paddingLeft: 0, paddingRight: 0, paddingBottom: 8 },
+        }}>
+          {uniquePapers.length > 0 && (
+            <Accordion.Item value="papers">
+              <Accordion.Control>
+                Papers ({uniquePapers.length})
+              </Accordion.Control>
+              <Accordion.Panel>
+                <div className="flex flex-col gap-1.5">
+                  {uniquePapers.map((p) => (
+                    <div key={p.citekey}>
+                      <Text style={panelTextStyle}>{p.title}</Text>
+                      <Text style={panelTextDimStyle}>
+                        {p.citekey}{p.year ? ` · ${p.year}` : ""}
+                      </Text>
+                    </div>
+                  ))}
+                </div>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )}
+          <Accordion.Item value="authors">
+            <Accordion.Control>
+              Authors{uniqueAuthors.length > 0 ? ` (${uniqueAuthors.length})` : ""}
+            </Accordion.Control>
+            <Accordion.Panel>
+              {loadingAuthors ? (
+                <Text style={panelTextDimStyle}>Loading authors...</Text>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {uniqueAuthors.slice(0, 30).map((a, i) => (
+                    <div key={i} className="flex items-baseline justify-between gap-2">
+                      <Text style={panelTextStyle}>{a.name}</Text>
+                      <Text style={panelTextDimStyle}>
+                        {a.papers} paper{a.papers !== 1 ? "s" : ""}
+                      </Text>
+                    </div>
+                  ))}
+                  {uniqueAuthors.length > 30 && (
+                    <Text style={panelTextDimStyle}>
+                      + {uniqueAuthors.length - 30} more
+                    </Text>
+                  )}
+                </div>
+              )}
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      )}
     </div>
   );
 }

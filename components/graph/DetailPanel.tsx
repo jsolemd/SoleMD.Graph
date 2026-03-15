@@ -137,6 +137,12 @@ export function DetailPanel({
 
   useEffect(() => {
     if (!selectedNode) return;
+    // Geo/institution nodes don't need edge function hydration —
+    // all their data comes from the DuckDB bundle columns.
+    if (selectedNode.nodeKind === "institution") {
+      setHydrated({ detail: null, error: null, id: selectedNode.id });
+      return;
+    }
     let cancelled = false;
 
     fetchGraphNodeDetail({ bundle, node: selectedNode })
@@ -246,7 +252,7 @@ export function DetailPanel({
           <div style={{ height: 1, backgroundColor: "var(--graph-panel-border)" }} />
 
           {isGeo ? (
-            <InstitutionSection node={selectedNode} />
+            <InstitutionSection node={selectedNode} queries={queries} />
           ) : isPaper ? (
             <PaperDocumentSection
               nodeDisplayPreview={selectedNode.displayPreview}
@@ -345,7 +351,7 @@ export function DetailPanel({
               </Accordion.Item>
             )}
 
-            {!isPaper && (
+            {!isPaper && !isGeo && (
               <Accordion.Item value="page-assets">
                 <Accordion.Control>Visuals</Accordion.Control>
                 <Accordion.Panel>
@@ -361,7 +367,7 @@ export function DetailPanel({
               </Accordion.Item>
             )}
 
-            {!isPaper && (
+            {!isPaper && !isGeo && (
               <Accordion.Item value="source-pdf">
                 <Accordion.Control>Source PDF</Accordion.Control>
                 <Accordion.Panel>
@@ -376,7 +382,7 @@ export function DetailPanel({
               </Accordion.Item>
             )}
 
-            {!isPaper && (
+            {!isPaper && !isGeo && (
               <Accordion.Item value="entities">
                 <Accordion.Control>Entities</Accordion.Control>
                 <Accordion.Panel>
@@ -389,7 +395,7 @@ export function DetailPanel({
               </Accordion.Item>
             )}
 
-            {!isPaper && (
+            {!isPaper && !isGeo && (
               <Accordion.Item value="neighboring-chunks">
                 <Accordion.Control>Neighboring chunks</Accordion.Control>
                 <Accordion.Panel>
@@ -405,23 +411,27 @@ export function DetailPanel({
               </Accordion.Item>
             )}
 
-            <Accordion.Item value="cluster">
-              <Accordion.Control>Cluster context</Accordion.Control>
-              <Accordion.Panel>
-                <ClusterContent cluster={detail?.cluster ?? null} />
-              </Accordion.Panel>
-            </Accordion.Item>
+            {!isGeo && (
+              <>
+                <Accordion.Item value="cluster">
+                  <Accordion.Control>Cluster context</Accordion.Control>
+                  <Accordion.Panel>
+                    <ClusterContent cluster={detail?.cluster ?? null} />
+                  </Accordion.Panel>
+                </Accordion.Item>
 
-            <Accordion.Item value="exemplars">
-              <Accordion.Control>{isPaper ? "Cluster exemplars" : "Related chunks"}</Accordion.Control>
-              <Accordion.Panel>
-                <ExemplarsContent
-                  exemplars={detail?.exemplars ?? []}
-                  chunkNodes={data.nodes}
-                  onNavigateToChunk={navigateToChunkNode}
-                />
-              </Accordion.Panel>
-            </Accordion.Item>
+                <Accordion.Item value="exemplars">
+                  <Accordion.Control>{isPaper ? "Cluster exemplars" : "Related chunks"}</Accordion.Control>
+                  <Accordion.Panel>
+                    <ExemplarsContent
+                      exemplars={detail?.exemplars ?? []}
+                      chunkNodes={data.nodes}
+                      onNavigateToChunk={navigateToChunkNode}
+                    />
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </>
+            )}
 
             {isPaper && (
               <Accordion.Item value="abstract">

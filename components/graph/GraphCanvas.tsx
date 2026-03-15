@@ -12,7 +12,7 @@ const CosmographRenderer = dynamic(
     ssr: false,
     loading: () => (
       <div
-        className="fixed inset-0 bg-[var(--graph-bg)]"
+        className="absolute inset-0 bg-[var(--graph-bg)]"
         role="img"
         aria-label="Loading knowledge graph..."
       />
@@ -26,7 +26,7 @@ const MapCanvas = dynamic(
     ssr: false,
     loading: () => (
       <div
-        className="fixed inset-0 bg-[var(--graph-bg)]"
+        className="absolute inset-0 bg-[var(--graph-bg)]"
         role="img"
         aria-label="Loading geographic map..."
       />
