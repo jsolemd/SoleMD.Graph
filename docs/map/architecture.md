@@ -88,7 +88,7 @@ need to compute ourselves.
 - **Format**: Gzipped JSONL, monthly releases with incremental diffs
 - **API key**: Required for dataset downloads (free)
 - **Domain filtering**: "Neuroscience" is not a separate field — falls under Medicine/Biology/Psychology. Use PMID cross-reference with PubMed MeSH for fine-grained filtering
-- **Total download**: ~1TB compressed for full initial sync
+- **Total download**: ~45 GB for papers dataset (only full bulk download); abstracts, citations, embeddings, and TLDRs fetched via S2 Batch API for domain paper IDs only
 
 ### PubTator3 (NCBI Biomedical Annotations)
 
@@ -164,19 +164,19 @@ HOT (Self-Hosted PostgreSQL, ~50-150 GB)
 ├── Domain SPECTER2 embeddings: 5-10M vectors halfvec (~12-24 GB)
 └── TLDRs for domain papers (~1-2 GB)
 
-COLD (Parquet on Cloudflare R2 or local NVMe, ~600 GB-1 TB)
-├── Full PubTator3 entity annotations: 1.6B rows (~30 GB Parquet)
-├── Full PubTator3 relations: 33M rows (~2 GB Parquet)
-├── Full S2 citations: 2.8B edges (~60 GB Parquet)
-├── Full S2 SPECTER2 embeddings: 200M+ vectors (~400 GB Parquet)
-├── Full S2 paper metadata: 225M rows (~20 GB Parquet)
-└── Full S2 abstracts: 100M rows (~40 GB Parquet)
+COLD (local NVMe only, ~60 GB — just raw source files)
+├── S2 papers dataset: 225M rows (~45 GB JSONL.gz) — only full bulk download
+├── PubTator3 tab files: entities + relations (~11 GB compressed)
+└── That's it. Everything else comes via S2 Batch API.
 ```
 
-The key insight: **domain-filtering to neuroscience/psychiatry reduces data
-20-50x**. We don't need 1.6B rows hot — only the ~25-80M rows for our 500K-2M
-domain papers. Full bulk data lives as sorted, Hive-partitioned Parquet files
-queried by DuckDB (embedded in Python) during monthly batch processing.
+The key insight: **we don't download everything in bulk.** Only the S2 papers
+dataset (~45 GB) is a full download — DuckDB filters it to identify domain
+corpus IDs (500K-2M papers). Then the S2 Batch API fetches abstracts, citations,
+embeddings, and TLDRs for those IDs only, loading results directly into
+PostgreSQL. PubTator3 tab files (~11 GB) are downloaded in full and streamed
+through a domain filter into PostgreSQL. DuckDB is a one-time filter tool,
+not a data store.
 
 | Component | Eliminated alternative | Why eliminated |
 |-----------|----------------------|----------------|
@@ -184,7 +184,7 @@ queried by DuckDB (embedded in Python) during monthly batch processing.
 | Self-hosted PG | Neon ($0.35/GB/month) | $53/month for 150 GB storage alone, plus compute |
 | Parquet on R2 | ClickHouse | Overkill — adds another service for batch queries DuckDB handles fine |
 | DuckDB embedded | MotherDuck | Cloud dependency, $82/TB/month vs free self-hosted |
-| Hot/Cold split | Everything in one PG | 1-2 TB doesn't fit cost-effectively in a single PG with HNSW indexes |
+| Hot/Cold split | Everything in one PG | Raw source files (~60 GB) kept on disk for re-filtering; domain data lives in PG |
 
 ### Vector Search
 
@@ -343,8 +343,8 @@ intellectual lineage.
                     │   MedCPT reranking (inline)    │
                     │                               │
                     │  Dramatiq Workers:             │
-                    │   PubTator3 bulk load          │
-                    │   S2 dataset download          │
+                    │   PubTator3 stream + filter    │
+                    │   S2 Batch API fetches         │
                     │   Embedding generation         │
                     │   UMAP + Leiden (GPU rental)   │
                     │   Graph bundle build           │
@@ -352,21 +352,21 @@ intellectual lineage.
 
                                │
                     ┌──────────▼───────────────────┐
-                    │   COLD DATA (Parquet)         │
+                    │   COLD DATA (raw source files) │
                     │                               │
-                    │  Local NVMe + Cloudflare R2:  │
-                    │   Full PubTator3 (1.6B rows)  │
-                    │   Full S2 citations (2.8B)    │
-                    │   Full S2 embeddings (200M+)  │
-                    │   Full S2 abstracts (100M)    │
+                    │  Local NVMe (~60 GB):         │
+                    │   S2 papers dump (~45 GB)     │
+                    │   PubTator3 tab files (~11 GB)│
                     │                               │
-                    │  Queried by DuckDB embedded   │
-                    │  in Python (batch ETL only)   │
+                    │  DuckDB filters S2 papers to  │
+                    │  get domain IDs. S2 Batch API │
+                    │  fetches the rest. One-time.  │
                     └──────────────────────────────┘
 
 External Data Sources (batch, not real-time):
-  ├── PubTator3 FTP (monthly, ~11 GB tab + 190 GB BioCXML)
-  ├── Semantic Scholar Datasets API (monthly, incremental diffs)
+  ├── PubTator3 FTP (monthly, ~11 GB tab files)
+  ├── S2 papers dataset (one-time ~45 GB; monthly diffs via S2 Diffs API)
+  ├── S2 Batch API (abstracts, citations, embeddings, TLDRs for domain IDs)
   └── GPU rental for UMAP/Leiden (H100, ~$1-3/hr, minutes per run)
 
 File Delivery:
@@ -381,17 +381,19 @@ File Delivery:
 
 ```
 1. ACQUIRE
-   PubTator3 FTP ──→ Download tab + BioCXML ──→ Stage in PostgreSQL
-   S2 Datasets API ──→ Download papers/abstracts/citations/embeddings ──→ Stage
+   PubTator3 FTP ──→ Download tab files (~11 GB) ──→ Stream + filter into PostgreSQL
+   S2 Datasets API ──→ Download papers dataset only (~45 GB) ──→ Local disk
 
 2. FILTER
-   S2 papers ──→ Filter by Medicine + Biology + Psychology fields
+   DuckDB reads S2 papers dump ──→ Filter by Medicine + Biology + Psychology
               ──→ Cross-ref PMIDs with PubMed MeSH for neuro/psych/neuro
-              ──→ 500K-2M domain-focused papers
+              ──→ 500K-2M domain paper IDs
 
-3. LOAD
+3. FETCH + LOAD
+   S2 Batch API ──→ Abstracts, citations, embeddings, TLDRs for domain IDs
+                ──→ Results go directly into PostgreSQL
    PubTator entities/relations ──→ COPY into pubtator schema ──→ Atomic swap
-   S2 paper metadata + abstracts ──→ Upsert into solemd.papers
+   S2 paper metadata ──→ Upsert into solemd.papers
    S2 SPECTER2 embeddings ──→ Load into graph_corpus_embeddings
    S2 TLDRs ──→ Store for detail panel display
 
@@ -521,17 +523,18 @@ LOCAL (your machine)                    PRODUCTION (dedicated server (ReliableSi
 ├── FastAPI (uvicorn)                   ├── FastAPI (Docker)
 ├── Dramatiq workers                    ├── Dramatiq workers (Docker)
 ├── Redis (Docker)                      ├── Redis (Docker)
-├── Cold data (Parquet on local NVMe)   ├── Cold data (Parquet on NVMe)
+├── Cold data (~60 GB on local NVMe)    ├── Cold data (~60 GB on NVMe)
 └── Graph Parquet (local /public)       └── Graph Parquet (R2 or Caddy)
                                         ├── Cloudflare CDN (free)
                                         ├── Coolify (git-push deploys)
                                         └── Caddy (reverse proxy + SSL)
 ```
 
-The cold data (full PubTator3 + S2 datasets, ~1 TB) **stays on your local
-machine**. It's only read by the Python batch pipeline to filter and load
-domain data into PostgreSQL. It never needs to be hosted unless you want
-the monthly refresh to run unattended on the server.
+The cold data (S2 papers dump + PubTator3 tab files, ~60 GB) **stays on your
+local machine**. DuckDB reads the S2 papers dump once to identify domain IDs,
+then the Batch API fetches everything else. PubTator3 tab files are streamed
+through a filter into PostgreSQL. Cold data never needs to be hosted unless
+you want the monthly refresh to run unattended on the server.
 
 ### Production Deployment: All-in-One Hetzner
 
@@ -561,8 +564,8 @@ or a second VPS, keep the database on dedicated hardware.
 
 | Item | Cost |
 |------|------|
-| PubTator3 download (11 GB tab + 190 GB BioCXML) | $0 (bandwidth only) |
-| Semantic Scholar datasets (~1 TB compressed) | $0 (bandwidth only) |
+| PubTator3 download (~11 GB tab files) | $0 (bandwidth only) |
+| S2 papers dataset (~45 GB) + Batch API calls for domain data | $0 (free API) |
 | MedCPT embedding of 2M abstracts (self-hosted GPU) | ~$2-5 |
 | GPU UMAP + Leiden on 2M points (H100 rental) | ~$1-3 |
 | LLM cluster labels (500 clusters via GPT-4o-mini) | ~$0.30-5 |
@@ -577,8 +580,8 @@ on your local NVMe. No hosted services required except LLM APIs.
 |------|------|
 | Local PostgreSQL (Docker on your machine) | $0 |
 | Local Next.js dev server | $0 |
-| Local Parquet files (PubTator3, S2 datasets, ~1 TB on NVMe) | $0 |
-| Local DuckDB (embedded in Python, reads local Parquet) | $0 |
+| Local source files (S2 papers dump + PubTator3, ~60 GB on NVMe) | $0 |
+| Local DuckDB (filters S2 papers dump, one-time use) | $0 |
 | LLM queries (10K/month, Gemini Flash primary) | $30-50 |
 | GPU rental for UMAP (one-time, H100 ~$1-3/hr) | $1-3 |
 | Sentry (free tier) | $0 |
@@ -757,10 +760,9 @@ SoleMD.Graph/                         # Renamed from SoleMD.Web
 ├── docker/
 │   └── compose.yaml                  # PostgreSQL, Redis, engine
 │
-├── data/                             # .gitignored — local bulk data
-│   ├── pubtator/                     # Downloaded PubTator3 files
-│   ├── semantic-scholar/             # Downloaded S2 datasets
-│   └── parquet/                      # Processed Parquet files
+├── data/                             # .gitignored — local source files (~60 GB)
+│   ├── pubtator/                     # Downloaded PubTator3 tab files (~11 GB)
+│   └── semantic-scholar/             # S2 papers dataset only (~45 GB)
 │
 ├── CLAUDE.md
 └── README.md
@@ -806,7 +808,7 @@ These happen in parallel — set up the repo while data downloads.
 | 0b | Create `engine/` Python project (pyproject.toml, FastAPI skeleton) | — |
 | 0c | Create `docker/compose.yaml` (PostgreSQL + Redis) | `postgresql.md` |
 | 0d | **Download PubTator3** tab-delimited files (~11 GB) to `data/pubtator/` | `pubtator3.md` |
-| 0e | **Download Semantic Scholar** datasets (papers, abstracts, citations, embeddings) to `data/semantic-scholar/` | `semantic-scholar.md` |
+| 0e | **Download S2 papers** dataset (~45 GB) to `data/semantic-scholar/`; remaining data via Batch API after filtering | `semantic-scholar.md` |
 | 0f | Design PostgreSQL schema (solemd + pubtator schemas) | `postgresql.md` |
 
 ### Phase 1: Data Processing + First Graph
@@ -815,8 +817,8 @@ Once data is downloaded, process it into the database and build the first graph.
 
 | Step | Action | Deep-Dive Doc |
 |------|--------|---------------|
-| 1a | Parse PubTator3 tab files → domain-filtered Parquet | `pubtator3.md` |
-| 1b | Parse S2 datasets → domain-filtered papers, citations, SPECTER2 | `semantic-scholar.md` |
+| 1a | Stream PubTator3 tab files → domain-filter → load into PostgreSQL | `pubtator3.md` |
+| 1b | DuckDB filter S2 papers → domain IDs → S2 Batch API → PostgreSQL | `semantic-scholar.md` |
 | 1c | Load domain subset into PostgreSQL | `postgresql.md` |
 | 1d | GPU UMAP + Leiden on SPECTER2 embeddings → 2D layout + clusters | `cuml-umap.md` |
 | 1e | Build graph Parquet bundle → load in Cosmograph | `cosmograph.md` |

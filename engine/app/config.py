@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     openai_api_key: str = ""
 
-    model_config = {"env_prefix": "SOLEMD_GRAPH_", "env_file": ".env.local"}
+    model_config = {"env_file": "../.env.local", "extra": "ignore"}
 
 
 settings = Settings()

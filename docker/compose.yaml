@@ -1,6 +1,8 @@
 # SoleMD.Graph — Local Development Services
 # Usage: docker compose -f docker/compose.yaml up -d
 
+name: solemd-graph
+
 services:
   db:
     image: pgvector/pgvector:pg16

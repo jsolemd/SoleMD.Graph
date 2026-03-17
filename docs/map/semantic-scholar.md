@@ -3,8 +3,8 @@
 > **Service #13** in the [architecture](architecture.md) service inventory
 > **Date**: 2026-03-16
 > **Status**: Implementation guide -- verified against Datasets API documentation
-> **Scope**: Bulk dataset acquisition, domain filtering, PostgreSQL loading,
-> monthly refresh, and integration with the SoleMD.Graph pipeline
+> **Scope**: API-first data acquisition (bulk papers + batch API), domain
+> filtering, PostgreSQL loading, monthly refresh, and SoleMD.Graph integration
 
 ---
 
@@ -73,8 +73,9 @@ JSON (`.jsonl.gz`). Each release contains multiple shards per dataset.
 | `authors` | ~105M | ~10 | ~10 GB | Author metadata + affiliations |
 | `publication-venues` | ~195K | 1 | ~10 MB | Venue/journal metadata |
 
-**Total initial download**: ~1 TB compressed. Domain-filtered output is 20-50x
-smaller.
+**Full catalog size**: ~1 TB compressed if all datasets were downloaded. With the
+API-first strategy (Section 4), we download only `papers` + `paper-ids` (~55 GB)
+and pull the rest via the batch API for domain papers only.
 
 ### Sample Records
 
@@ -224,40 +225,50 @@ by or citing a domain paper. These neighbors provide citation context even if
 they are outside the strict domain (e.g., a methods paper from computer science
 cited by a neuroscience paper).
 
-### What to Download vs What to Filter Locally
+### Data Acquisition Strategy: API-First
 
-| Dataset | Strategy | Rationale |
-|---------|----------|-----------|
-| `paper-ids` | Download full, filter locally | Small (8 GB), need complete PMID mapping |
-| `papers` | Download full, filter locally | Need metadata for domain + neighbors |
-| `abstracts` | Download full, filter locally | Need abstracts for domain papers |
-| `citations` | Download full, filter locally | Must find edges touching domain papers |
-| `embeddings` | Download full, filter locally | Must extract domain paper vectors |
-| `tldrs` | Download full, filter locally | Small, need domain paper TLDRs |
-| `s2orc` | Defer to Phase 2 | Large (200 GB), only needed for deep RAG |
-| `authors` | Defer | Not needed for MVP graph |
-| `publication-venues` | Download (tiny) | Useful for venue metadata |
+Instead of downloading every S2 bulk dataset (~1.2 TB), we download only the
+`papers` dataset for local filtering and pull everything else through the S2
+**batch API**. This reduces total download from ~1.2 TB to ~60 GB.
+
+| Dataset | Strategy | Download Size | Rationale |
+|---------|----------|---------------|-----------|
+| `papers` | **Bulk download**, filter locally with DuckDB | ~45 GB | Has `s2fieldsofstudy` inline -- needed for domain filtering |
+| `paper-ids` | **Bulk download**, filter locally with DuckDB | ~8 GB | Complete PMID cross-reference mapping |
+| `abstracts` | **Batch API** (`fields=abstract`) | ~0 (API) | Pull only for domain corpus IDs -- no need for 54 GB bulk |
+| `citations` | **Batch API** (`fields=citations`) | ~0 (API) | Pull per citing paper -- no need for 255 GB bulk |
+| `embeddings` | **Batch API** (`fields=embedding.specter_v2`) | ~0 (API) | Pull only domain vectors -- no need for 840 GB bulk |
+| `tldrs` | **Batch API** (`fields=tldr`) | ~0 (API) | Pull only domain TLDRs -- no need for 3 GB bulk |
+| `s2orc` | Defer to Phase 2 | - | Only needed for deep RAG |
+| `authors` | Defer | - | Not needed for MVP graph |
+| `publication-venues` | Download (tiny) | ~10 MB | Useful for venue metadata |
+
+**Total download: ~55 GB** (papers + paper-ids + venues) plus API traffic for
+domain papers. Start small with ~200K psychiatry-core papers, expand to full
+2M domain set incrementally.
 
 ### Hot/Cold Split
 
 | Layer | Contents | Storage |
 |-------|----------|---------|
 | **Hot** (PostgreSQL) | 500K-2M domain papers + metadata, 5-10M SPECTER2 vectors (halfvec), 50-100M citation edges (domain-expanded), TLDRs | ~50-70 GB |
-| **Cold** (Parquet on NVMe) | Full S2 papers, citations, embeddings, abstracts | ~600 GB Parquet |
+| **Cold** (Parquet on NVMe) | Full S2 papers + paper-ids (DuckDB-queryable) | ~60 GB Parquet |
 
 ---
 
-## 4. Download Procedure
+## 4. Download & Acquisition Procedure
 
 ### Prerequisites
 
 - **API key**: Free, obtain from https://www.semanticscholar.org/product/api
-- **Disk space**: ~1.5 TB for raw downloads + processed Parquet
-- **Bandwidth**: Expect 12-48 hours for the full initial download depending on
-  connection speed
-- **Tools**: Python 3.11+, `requests`, `tqdm`
+- **Disk space**: ~80 GB for bulk downloads + filtered Parquet
+- **Bandwidth**: Expect 2-6 hours for bulk download depending on connection
+- **Tools**: Python 3.11+, `requests`, `tqdm`, `duckdb`
 
-### API Workflow
+### Phase 1: Bulk Download (Papers + Paper-IDs Only)
+
+Only two datasets are downloaded in full. Everything else comes from the batch
+API after domain filtering.
 
 **Step 1: List available releases**
 
@@ -293,10 +304,10 @@ Returns:
 
 The `files` array contains pre-signed S3 URLs for each shard.
 
-**Step 3: Download shards**
+**Step 3: Download shards (papers + paper-ids only)**
 
 ```python
-"""Download all shards for a Semantic Scholar dataset."""
+"""Download bulk shards for Semantic Scholar papers and paper-ids."""
 import os
 import requests
 from pathlib import Path
@@ -362,12 +373,10 @@ def download_dataset(dataset_name: str, output_dir: Path) -> None:
     meta_path.write_text(json.dumps(meta, indent=2))
     print(f"Downloaded {len(urls)} shards for {dataset_name} (release {release_id})")
 
-# Usage
+# Usage -- only papers and paper-ids are downloaded in bulk
 if __name__ == "__main__":
     base = Path("data/semantic-scholar/raw")
-    # Download in priority order
-    for ds in ["paper-ids", "papers", "abstracts", "citations",
-               "tldrs", "embeddings"]:
+    for ds in ["paper-ids", "papers"]:
         download_dataset(ds, base / ds)
 ```
 
@@ -382,51 +391,168 @@ for f in data/semantic-scholar/raw/papers/*.jsonl.gz; do
 done
 ```
 
+### Phase 2: Batch API for Domain Data
+
+After DuckDB filtering produces the domain corpus ID list (see Section 5), pull
+embeddings, abstracts, citations, and TLDRs via the S2 batch API. This avoids
+downloading ~1.1 TB of data we do not need.
+
+**Batch API endpoint**: `POST https://api.semanticscholar.org/graph/v1/paper/batch`
+
+- **Limit**: 500 paper IDs per request
+- **Rate limit**: 1 request/second (authenticated)
+- **Auth**: `x-api-key` header (required)
+
+**Request format**:
+
+```json
+POST /graph/v1/paper/batch?fields=embedding.specter_v2,abstract,tldr,citations.citedPaper.paperId,citations.isInfluential,citations.intents,citations.contexts
+{
+  "ids": ["CorpusId:203012345", "CorpusId:198765432", "CorpusId:212345678", "...up to 500"]
+}
+```
+
+**Response format** (abbreviated):
+
+```json
+[
+  {
+    "paperId": "abc123def456",
+    "embedding": {
+      "model": "specter2",
+      "vector": [0.0234, -0.1567, 0.0891, ...]
+    },
+    "abstract": "The prefrontal cortex plays a critical role...",
+    "tldr": {
+      "model": "tldr@v2.0.0",
+      "text": "D2 receptors on PFC interneurons modulate gamma..."
+    },
+    "citations": [
+      {
+        "citedPaper": {"paperId": "xyz789"},
+        "isInfluential": true,
+        "intents": ["Background"],
+        "contexts": ["Building on the seminal observation..."]
+      }
+    ]
+  },
+  null
+]
+```
+
+Papers not found return `null` in the response array. Always handle nulls.
+
+**Batch API client with rate limiting**:
+
+```python
+"""Pull domain paper data via S2 batch API with rate limiting."""
+import os
+import time
+import requests
+from typing import Iterator
+
+S2_API_KEY = os.environ["S2_API_KEY"]
+BATCH_URL = "https://api.semanticscholar.org/graph/v1/paper/batch"
+BATCH_SIZE = 500    # Max per request
+RATE_LIMIT = 1.0    # Seconds between requests
+MAX_RETRIES = 5
+
+def chunked(ids: list[str], size: int) -> Iterator[list[str]]:
+    """Yield successive chunks of the given size."""
+    for i in range(0, len(ids), size):
+        yield ids[i : i + size]
+
+def fetch_batch(
+    corpus_ids: list[int],
+    fields: str,
+) -> list[dict | None]:
+    """Fetch a batch of papers with exponential backoff."""
+    ids = [f"CorpusId:{cid}" for cid in corpus_ids]
+    params = {"fields": fields}
+    headers = {"x-api-key": S2_API_KEY, "Content-Type": "application/json"}
+
+    for attempt in range(MAX_RETRIES):
+        resp = requests.post(
+            BATCH_URL,
+            params=params,
+            headers=headers,
+            json={"ids": ids},
+        )
+        if resp.status_code == 200:
+            return resp.json()
+        if resp.status_code == 429:
+            wait = 2 ** attempt
+            print(f"Rate limited, waiting {wait}s (attempt {attempt + 1})")
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+
+    raise RuntimeError(f"Failed after {MAX_RETRIES} retries")
+
+def fetch_all_papers(
+    corpus_ids: list[int],
+    fields: str,
+) -> Iterator[dict]:
+    """Fetch all papers in batches, respecting rate limits."""
+    for batch in chunked(corpus_ids, BATCH_SIZE):
+        results = fetch_batch(batch, fields)
+        for result in results:
+            if result is not None:
+                yield result
+        time.sleep(RATE_LIMIT)  # Honor 1 req/sec limit
+```
+
+**Time estimates for batch API** (at 1 req/sec, 500 IDs/request):
+
+| Corpus Size | Requests | Wall Time |
+|-------------|----------|-----------|
+| 200K papers (psychiatry core) | 400 | ~7 min |
+| 500K papers (neuro core) | 1,000 | ~17 min |
+| 2M papers (full domain) | 4,000 | ~67 min |
+| 5M papers (+ citation neighbors) | 10,000 | ~2.8 hr |
+
+### Rate Limiting & Backoff (Required)
+
+The S2 API enforces strict rate limits. Keys that do not respect them get
+temporarily blocked.
+
+- **Authenticated rate**: 1 request/second (hard limit)
+- **429 response**: Must use exponential backoff: wait `2^n` seconds where
+  `n` is the retry count (1s, 2s, 4s, 8s, 16s...)
+- **Max retries**: 5 attempts before failing the batch
+- **Header**: `x-api-key` (case-sensitive) -- include on every request
+- **Tip**: Sleep 1.0s between batches preemptively; do not fire-and-throttle
+
 ### Local Directory Structure
 
 ```
 data/semantic-scholar/
-├── raw/                       # Downloaded .jsonl.gz shards
+├── raw/                       # Downloaded .jsonl.gz shards (bulk only)
 │   ├── paper-ids/             # ~10 shards, ~8 GB total
-│   ├── papers/                # ~30 shards, ~20 GB total
-│   ├── abstracts/             # ~30 shards, ~54 GB total
-│   ├── citations/             # ~30 shards, ~80 GB total
-│   ├── embeddings/            # ~30 shards, ~600 GB total
-│   ├── tldrs/                 # ~10 shards, ~3 GB total
-│   ├── publication-venues/    # 1 shard, ~10 MB
-│   └── s2orc/                 # Phase 2 (~200 GB total)
-├── parquet/                   # Processed domain-filtered output
-│   ├── papers.parquet
-│   ├── abstracts.parquet
-│   ├── tldrs.parquet
-│   ├── paper_ids.parquet
-│   ├── citations/             # Hive-partitioned
-│   └── embeddings/            # Hive-partitioned
+│   ├── papers/                # ~30 shards, ~45 GB total
+│   └── publication-venues/    # 1 shard, ~10 MB
+├── filtered/                  # DuckDB-filtered domain corpus IDs
+│   ├── domain_corpus_ids.parquet
+│   └── expanded_corpus_ids.parquet
 └── release_metadata.json      # Tracks current release IDs
 ```
 
-### Download Priority Order
+Note: abstracts, embeddings, citations, and TLDRs are NOT stored locally as
+intermediate files. They flow directly from the batch API into PostgreSQL.
 
-| Priority | Dataset | Why First |
-|----------|---------|-----------|
-| 1 | `paper-ids` | Needed for PMID cross-referencing; everything else depends on it |
-| 2 | `papers` | Core metadata for domain filtering |
-| 3 | `abstracts` | Needed for RAG embedding (MedCPT) |
-| 4 | `citations` | Citation graph structure |
-| 5 | `tldrs` | Paper detail panel display |
-| 6 | `embeddings` | SPECTER2 for UMAP layout (largest download, start early) |
-| 7 | `s2orc` | Phase 2 -- deep RAG from full-text |
+### Incremental Start: Begin Small
 
-### Expected Download Times
+Start with a narrow domain and expand:
 
-| Connection | paper-ids (8 GB) | papers (20 GB) | abstracts (54 GB) | citations (80 GB) | embeddings (600 GB) |
-|------------|------------------|----------------|--------------------|--------------------|---------------------|
-| 100 Mbps | ~11 min | ~27 min | ~72 min | ~107 min | ~13 hr |
-| 500 Mbps | ~2 min | ~5 min | ~14 min | ~21 min | ~2.7 hr |
-| 1 Gbps | ~1 min | ~3 min | ~7 min | ~11 min | ~1.3 hr |
+```
+Phase A:  200K psychiatry-core papers         →  ~7 min API time
+Phase B:  500K neuro/psych papers             →  ~17 min API time
+Phase C:  2M full domain (Medicine+Biology+Psychology, MeSH-filtered)
+Phase D:  5-10M expanded (+ 1st-order citation neighbors)
+```
 
-Start the embeddings download first (in the background) since it dominates
-total time.
+Each phase reuses the same pipeline -- just expand the corpus ID list and re-run
+the batch API fetch. PostgreSQL loading uses UPSERT so new data merges cleanly.
 
 ---
 
@@ -434,26 +560,27 @@ total time.
 
 ### Overview
 
-Raw JSONL shards are too large to work with directly. The processing pipeline
-filters them to the domain of interest and writes optimized Parquet files for
-fast querying by DuckDB.
+The processing pipeline has two phases: (1) DuckDB filters the bulk-downloaded
+`papers` and `paper-ids` datasets to produce domain corpus IDs, then (2) the
+batch API pulls detailed data for those IDs directly into PostgreSQL.
 
 ### Domain Filtering Workflow
 
 ```
-1. Build PMID -> Corpus ID mapping      (paper-ids dataset)
+1. Build PMID -> Corpus ID mapping      (paper-ids bulk dataset, DuckDB)
 2. Get domain PMIDs                     (PubMed MeSH query, external step)
-3. Map domain PMIDs -> corpus IDs       (join #1 and #2)
-4. Get domain papers                    (filter papers to domain corpus IDs)
-5. Expand domain set                    (add first-order citation neighbors)
-6. Filter citations                     (both endpoints in expanded set)
-7. Filter embeddings                    (expanded set)
-8. Filter abstracts                     (expanded set)
-9. Filter TLDRs                         (expanded set)
-10. Write Parquet                       (sorted, partitioned, ZSTD compressed)
+3. Map domain PMIDs -> corpus IDs       (DuckDB join)
+4. Cross-ref with fields of study       (papers bulk dataset, DuckDB filter)
+5. Export domain corpus ID list         (DuckDB -> Parquet)
+6. Batch API: pull embeddings           (POST /paper/batch, 500/req -> PostgreSQL)
+7. Batch API: pull abstracts + TLDRs    (POST /paper/batch, 500/req -> PostgreSQL)
+8. Batch API: pull citations            (POST /paper/batch, 500/req -> PostgreSQL)
 ```
 
-### Step-by-Step with DuckDB
+DuckDB is used ONLY for steps 1-5 (filtering the two bulk datasets). Steps 6-8
+go directly from the S2 API into PostgreSQL via psycopg COPY or INSERT.
+
+### Step-by-Step: DuckDB Domain Filtering
 
 DuckDB reads gzipped JSONL natively and handles the filtering without loading
 everything into memory. All queries below assume DuckDB is started with
@@ -509,9 +636,14 @@ JOIN domain_pmids d ON p.pmid = d.pmid;
 -- Result: 500K-2M rows (some PMIDs may not have S2 entries)
 ```
 
-**Step 4: Filter papers to domain**
+**Step 4: Cross-reference with fields of study from the papers dataset**
+
+The `papers` bulk dataset includes inline `s2fieldsofstudy`. Use this to
+validate domain membership and add papers that lack PMIDs but match our
+field-of-study criteria:
 
 ```sql
+-- Papers in our field-of-study filter that also have PMIDs
 CREATE TABLE domain_papers AS
 SELECT p.*
 FROM read_json(
@@ -524,136 +656,151 @@ FROM read_json(
         citationcount: 'INTEGER', influentialcitationcount: 'INTEGER',
         isopenaccess: 'BOOLEAN', publicationdate: 'VARCHAR',
         journal: 'JSON', publicationtypes: 'VARCHAR[]',
+        s2fieldsofstudy: 'JSON[]',
         url: 'VARCHAR'
     }
 ) p
 JOIN domain_corpus_ids d ON p.corpusid = d.corpusid;
 ```
 
-**Step 5: Expand to first-order citation neighbors**
+**Step 5: Export domain corpus ID list**
 
 ```sql
--- Find all corpus IDs that cite or are cited by domain papers
-CREATE TABLE expanded_corpus_ids AS
-SELECT corpusid FROM domain_corpus_ids
-UNION
-SELECT c.citedcorpusid AS corpusid
-FROM read_json(
-    'data/semantic-scholar/raw/citations/*.jsonl.gz',
-    format = 'newline_delimited',
-    compression = 'gzip',
-    columns = {citingcorpusid: 'BIGINT', citedcorpusid: 'BIGINT'}
-) c
-JOIN domain_corpus_ids d ON c.citingcorpusid = d.corpusid
-UNION
-SELECT c.citingcorpusid AS corpusid
-FROM read_json(
-    'data/semantic-scholar/raw/citations/*.jsonl.gz',
-    format = 'newline_delimited',
-    compression = 'gzip',
-    columns = {citingcorpusid: 'BIGINT', citedcorpusid: 'BIGINT'}
-) c
-JOIN domain_corpus_ids d ON c.citedcorpusid = d.corpusid;
+-- Export the filtered corpus IDs for batch API consumption
+COPY (SELECT corpusid FROM domain_corpus_ids ORDER BY corpusid)
+TO 'data/semantic-scholar/filtered/domain_corpus_ids.parquet'
+(FORMAT PARQUET, COMPRESSION 'ZSTD');
 
--- Result: 5-10M rows (domain papers + their citation neighborhood)
-```
-
-**Step 6: Filter citations**
-
-```sql
--- Keep only edges where BOTH endpoints are in the expanded set
-COPY (
-    SELECT c.citingcorpusid, c.citedcorpusid,
-           c.isinfluential, c.intents, c.contexts
-    FROM read_json(
-        'data/semantic-scholar/raw/citations/*.jsonl.gz',
-        format = 'newline_delimited',
-        compression = 'gzip',
-        columns = {
-            citingcorpusid: 'BIGINT', citedcorpusid: 'BIGINT',
-            isinfluential: 'BOOLEAN', intents: 'VARCHAR[]',
-            contexts: 'VARCHAR[]'
-        }
-    ) c
-    JOIN expanded_corpus_ids e1 ON c.citingcorpusid = e1.corpusid
-    JOIN expanded_corpus_ids e2 ON c.citedcorpusid = e2.corpusid
-    ORDER BY c.citingcorpusid
-)
-TO 'data/semantic-scholar/parquet/citations'
-(FORMAT PARQUET, COMPRESSION 'ZSTD', ROW_GROUP_SIZE 100000,
- PARTITION_BY (citingcorpusid // 1000000));
-```
-
-**Step 7: Filter embeddings**
-
-```sql
-COPY (
-    SELECT e.corpusid, e.vector
-    FROM read_json(
-        'data/semantic-scholar/raw/embeddings/*.jsonl.gz',
-        format = 'newline_delimited',
-        compression = 'gzip',
-        columns = {corpusid: 'BIGINT', vector: 'FLOAT[768]'}
-    ) e
-    JOIN expanded_corpus_ids d ON e.corpusid = d.corpusid
-    ORDER BY e.corpusid
-)
-TO 'data/semantic-scholar/parquet/embeddings'
-(FORMAT PARQUET, COMPRESSION 'ZSTD', ROW_GROUP_SIZE 50000,
- PARTITION_BY (corpusid // 1000000));
-```
-
-**Step 8: Filter abstracts**
-
-```sql
-COPY (
-    SELECT a.corpusid, a.abstract
-    FROM read_json(
-        'data/semantic-scholar/raw/abstracts/*.jsonl.gz',
-        format = 'newline_delimited',
-        compression = 'gzip',
-        columns = {corpusid: 'BIGINT', abstract: 'VARCHAR'}
-    ) a
-    JOIN expanded_corpus_ids d ON a.corpusid = d.corpusid
-    ORDER BY a.corpusid
-)
-TO 'data/semantic-scholar/parquet/abstracts.parquet'
+-- Also export basic paper metadata for PostgreSQL loading
+COPY (SELECT * FROM domain_papers ORDER BY corpusid)
+TO 'data/semantic-scholar/filtered/domain_papers.parquet'
 (FORMAT PARQUET, COMPRESSION 'ZSTD');
 ```
 
-**Step 9: Filter TLDRs**
+### Step-by-Step: Batch API to PostgreSQL
 
-```sql
-COPY (
-    SELECT t.corpusid, t.text AS tldr
-    FROM read_json(
-        'data/semantic-scholar/raw/tldrs/*.jsonl.gz',
-        format = 'newline_delimited',
-        compression = 'gzip',
-        columns = {corpusid: 'BIGINT', model: 'VARCHAR', text: 'VARCHAR'}
-    ) t
-    JOIN expanded_corpus_ids d ON t.corpusid = d.corpusid
-    ORDER BY t.corpusid
-)
-TO 'data/semantic-scholar/parquet/tldrs.parquet'
-(FORMAT PARQUET, COMPRESSION 'ZSTD');
+After DuckDB produces the domain corpus ID list, the batch API pulls remaining
+data and loads it directly into PostgreSQL -- no intermediate Parquet files.
+
+**Step 6: Pull embeddings via batch API**
+
+```python
+"""Pull SPECTER2 embeddings for domain papers and load into PostgreSQL."""
+import duckdb
+import psycopg
+
+def load_embeddings_from_api(corpus_ids: list[int], db_url: str) -> int:
+    """Fetch embeddings via batch API, INSERT directly into PostgreSQL."""
+    conn = psycopg.connect(db_url)
+    total = 0
+
+    with conn.cursor() as cur:
+        for paper in fetch_all_papers(corpus_ids, "embedding.specter_v2"):
+            emb = paper.get("embedding")
+            if not emb or not emb.get("vector"):
+                continue
+            vec_str = "[" + ",".join(str(v) for v in emb["vector"]) + "]"
+            cur.execute(
+                """INSERT INTO solemd.s2_embeddings (corpus_id, embedding)
+                   VALUES (%s, %s::halfvec(768))
+                   ON CONFLICT (corpus_id) DO UPDATE SET embedding = EXCLUDED.embedding""",
+                (paper["corpusId"], vec_str),
+            )
+            total += 1
+            if total % 10_000 == 0:
+                conn.commit()
+
+    conn.commit()
+    conn.close()
+    return total
+
+# Load corpus IDs from DuckDB-filtered Parquet
+db = duckdb.connect()
+ids = db.execute(
+    "SELECT corpusid FROM read_parquet('data/semantic-scholar/filtered/domain_corpus_ids.parquet')"
+).fetchall()
+corpus_ids = [row[0] for row in ids]
+load_embeddings_from_api(corpus_ids, DB_URL)
+```
+
+**Step 7: Pull abstracts + TLDRs via batch API**
+
+```python
+def load_abstracts_tldrs_from_api(corpus_ids: list[int], db_url: str) -> int:
+    """Fetch abstracts and TLDRs, UPDATE existing paper rows."""
+    conn = psycopg.connect(db_url)
+    total = 0
+
+    with conn.cursor() as cur:
+        for paper in fetch_all_papers(corpus_ids, "abstract,tldr"):
+            abstract = paper.get("abstract")
+            tldr_obj = paper.get("tldr")
+            tldr = tldr_obj["text"] if tldr_obj else None
+            cur.execute(
+                """UPDATE solemd.s2_papers
+                   SET abstract = %s, tldr = %s
+                   WHERE corpus_id = %s""",
+                (abstract, tldr, paper["corpusId"]),
+            )
+            total += 1
+            if total % 10_000 == 0:
+                conn.commit()
+
+    conn.commit()
+    conn.close()
+    return total
+```
+
+**Step 8: Pull citations via batch API**
+
+```python
+def load_citations_from_api(corpus_ids: list[int], db_url: str) -> int:
+    """Fetch citations per paper, INSERT into PostgreSQL."""
+    conn = psycopg.connect(db_url)
+    total = 0
+    fields = "citations.citedPaper.paperId,citations.citedPaper.corpusId,citations.isInfluential,citations.intents,citations.contexts"
+
+    with conn.cursor() as cur:
+        for paper in fetch_all_papers(corpus_ids, fields):
+            citing_id = paper.get("corpusId")
+            for cite in (paper.get("citations") or []):
+                cited = cite.get("citedPaper", {})
+                cited_id = cited.get("corpusId")
+                if not cited_id:
+                    continue
+                context = (cite.get("contexts") or [None])[0]
+                cur.execute(
+                    """INSERT INTO solemd.s2_citations
+                       (citing_corpus_id, cited_corpus_id, is_influential, intents, context_text)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON CONFLICT DO NOTHING""",
+                    (citing_id, cited_id, cite.get("isInfluential", False),
+                     cite.get("intents"), context),
+                )
+                total += 1
+            if total % 50_000 == 0:
+                conn.commit()
+
+    conn.commit()
+    conn.close()
+    return total
 ```
 
 ### Processing Time Estimates
 
-| Step | Data Scanned | Expected Time |
-|------|-------------|---------------|
-| Paper-IDs parse + filter | 8 GB gz | ~5-10 min |
-| Papers filter | 20 GB gz | ~10-20 min |
-| Citation expansion + filter | 80 GB gz (2 passes) | ~60-90 min |
-| Embeddings filter | 600 GB gz | ~3-6 hr |
-| Abstracts filter | 54 GB gz | ~20-40 min |
-| TLDRs filter | 3 GB gz | ~2-5 min |
-| **Total** | | **~5-8 hr** |
+| Step | What | Expected Time |
+|------|------|---------------|
+| DuckDB: Paper-IDs parse + filter | 8 GB gz | ~5-10 min |
+| DuckDB: Papers filter | 45 GB gz | ~15-30 min |
+| DuckDB: Export corpus ID list | in-memory | ~1 min |
+| Batch API: Embeddings (2M papers) | 4,000 requests | ~67 min |
+| Batch API: Abstracts + TLDRs (2M) | 4,000 requests | ~67 min |
+| Batch API: Citations (2M papers) | 4,000 requests | ~67 min |
+| PostgreSQL: HNSW index build | 2M halfvec(768) | ~15-30 min |
+| **Total** | | **~4-5 hr** |
 
-The embeddings dataset dominates processing time. DuckDB will stream through
-600 GB of gzipped JSON, extracting only the 5-10M matching vectors. This can
-run unattended.
+Start with 200K psychiatry-core papers (~7 min per API phase) to validate the
+pipeline end-to-end before scaling to the full 2M domain set.
 
 ---
 
@@ -763,26 +910,21 @@ for cosine similarity at half precision.
 
 ## 7. Loading into PostgreSQL
 
-### Loading Papers
+With the API-first strategy, data flows into PostgreSQL from two sources:
 
-```sql
--- Use COPY with a staging table for atomic load
-CREATE UNLOGGED TABLE solemd._s2_papers_staging (LIKE solemd.s2_papers INCLUDING ALL);
+1. **Papers metadata**: DuckDB-filtered Parquet (Section 5, Step 5) -> psycopg COPY
+2. **Embeddings, abstracts, TLDRs, citations**: Batch API -> direct INSERT/UPDATE
+   (Section 5, Steps 6-8)
 
--- From Python/psycopg:
--- 1. Read domain-filtered Parquet with DuckDB
--- 2. Write to CSV pipe
--- 3. COPY into staging table
--- 4. Atomic swap
-```
+### Loading Papers (from DuckDB-filtered Parquet)
 
-Python loading script:
+Papers are the only table loaded from local Parquet. Use COPY with a staging
+table for atomic load:
 
 ```python
-"""Load domain-filtered S2 data from Parquet into PostgreSQL."""
+"""Load domain-filtered S2 papers from Parquet into PostgreSQL."""
 import duckdb
 import psycopg
-from psycopg import sql
 
 DB_URL = "postgresql://user:pass@localhost:5432/solemd"
 
@@ -802,7 +944,7 @@ def load_papers(parquet_path: str) -> int:
         # Read Parquet and stream into staging via COPY
         db = duckdb.connect()
         reader = db.execute(f"""
-            SELECT corpusid, pmid, doi, pmc, title, abstract, tldr,
+            SELECT corpusid, pmid, doi, pmc, title,
                    year, venue, journal_name, journal_volume, journal_pages,
                    publication_date, reference_count, citation_count,
                    influential_citation_count, is_open_access,
@@ -812,7 +954,7 @@ def load_papers(parquet_path: str) -> int:
 
         with cur.copy("""
             COPY solemd._s2_papers_staging (
-                corpus_id, pmid, doi, pmc, title, abstract, tldr,
+                corpus_id, pmid, doi, pmc, title,
                 year, venue, journal_name, journal_volume, journal_pages,
                 publication_date, reference_count, citation_count,
                 influential_citation_count, is_open_access,
@@ -837,149 +979,42 @@ def load_papers(parquet_path: str) -> int:
     return row_count
 ```
 
-### Loading Citations
+Note: `abstract` and `tldr` columns are NULL after this step. They are populated
+by the batch API in Step 7 of Section 5 via UPDATE.
 
-Citations are the largest table. Use `COPY` in binary format for maximum speed:
+### Citations and Embeddings (from Batch API)
 
-```python
-def load_citations(parquet_dir: str) -> int:
-    """Load citations from partitioned Parquet."""
-    conn = psycopg.connect(DB_URL)
-    conn.autocommit = False
+Citations and embeddings are loaded directly from the S2 batch API into
+PostgreSQL -- see Section 5, Steps 6 and 8. There are no intermediate Parquet
+files for these datasets.
 
-    with conn.cursor() as cur:
-        cur.execute("""
-            CREATE UNLOGGED TABLE IF NOT EXISTS solemd._s2_citations_staging
-            (LIKE solemd.s2_citations INCLUDING DEFAULTS)
-        """)
-        cur.execute("TRUNCATE solemd._s2_citations_staging")
+### Post-Load: HNSW Index Build
 
-        db = duckdb.connect()
-        # Stream partitioned Parquet
-        result = db.execute(f"""
-            SELECT citingcorpusid, citedcorpusid, isinfluential,
-                   intents, contexts[1] AS context_text
-            FROM read_parquet('{parquet_dir}/**/*.parquet')
-        """)
+After batch API loading completes, build the HNSW index on embeddings:
 
-        batch_size = 100_000
-        total = 0
-        while True:
-            batch = result.fetchmany(batch_size)
-            if not batch:
-                break
-            with cur.copy("""
-                COPY solemd._s2_citations_staging (
-                    citing_corpus_id, cited_corpus_id, is_influential,
-                    intents, context_text
-                ) FROM STDIN
-            """) as copy:
-                for row in batch:
-                    copy.write_row(row)
-            total += len(batch)
+```sql
+SET maintenance_work_mem = '4GB';
 
-        # Build indexes on staging table before swap
-        cur.execute("""
-            CREATE INDEX ON solemd._s2_citations_staging (cited_corpus_id)
-        """)
-
-        # Atomic swap
-        cur.execute("DROP TABLE IF EXISTS solemd.s2_citations_old CASCADE")
-        cur.execute("ALTER TABLE solemd.s2_citations RENAME TO s2_citations_old")
-        cur.execute(
-            "ALTER TABLE solemd._s2_citations_staging RENAME TO s2_citations"
-        )
-        cur.execute("DROP TABLE solemd.s2_citations_old")
-
-    conn.commit()
-    conn.close()
-    return total
-```
-
-### Loading SPECTER2 Embeddings
-
-Embeddings require special handling -- 768 floats per row must be formatted as
-pgvector's text representation:
-
-```python
-def load_embeddings(parquet_dir: str) -> int:
-    """Load SPECTER2 embeddings into pgvector halfvec."""
-    conn = psycopg.connect(DB_URL)
-    conn.autocommit = False
-
-    with conn.cursor() as cur:
-        cur.execute("""
-            CREATE UNLOGGED TABLE IF NOT EXISTS solemd._s2_embeddings_staging (
-                corpus_id BIGINT PRIMARY KEY,
-                embedding halfvec(768) NOT NULL
-            )
-        """)
-        cur.execute("TRUNCATE solemd._s2_embeddings_staging")
-
-        db = duckdb.connect()
-        result = db.execute(f"""
-            SELECT corpusid, vector
-            FROM read_parquet('{parquet_dir}/**/*.parquet')
-        """)
-
-        batch_size = 10_000
-        total = 0
-        while True:
-            batch = result.fetchmany(batch_size)
-            if not batch:
-                break
-            # Format vectors as pgvector text: '[0.1,0.2,...,0.3]'
-            rows = []
-            for corpus_id, vector in batch:
-                vec_str = "[" + ",".join(str(v) for v in vector) + "]"
-                rows.append((corpus_id, vec_str))
-
-            with cur.copy("""
-                COPY solemd._s2_embeddings_staging (corpus_id, embedding)
-                FROM STDIN
-            """) as copy:
-                for row in rows:
-                    copy.write_row(row)
-            total += len(batch)
-
-        # Build HNSW index (takes 30-60 min for 5-10M vectors)
-        cur.execute("""
-            CREATE INDEX ON solemd._s2_embeddings_staging
-            USING hnsw (embedding halfvec_cosine_ops)
-            WITH (m = 16, ef_construction = 64)
-        """)
-
-        # Atomic swap
-        cur.execute("DROP TABLE IF EXISTS solemd.s2_embeddings_old CASCADE")
-        cur.execute("ALTER TABLE solemd.s2_embeddings RENAME TO s2_embeddings_old")
-        cur.execute(
-            "ALTER TABLE solemd._s2_embeddings_staging RENAME TO s2_embeddings"
-        )
-        cur.execute("DROP TABLE solemd.s2_embeddings_old")
-
-    conn.commit()
-    conn.close()
-    return total
+-- Build HNSW index (~15-30 min for 2M vectors, longer for 5-10M)
+CREATE INDEX CONCURRENTLY idx_s2_embeddings_hnsw
+    ON solemd.s2_embeddings
+    USING hnsw (embedding halfvec_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 ```
 
 ### Loading Time Estimates
 
-| Table | Rows | COPY Time | Index Time | Total |
-|-------|------|-----------|------------|-------|
-| `s2_papers` | 5-10M | ~5-10 min | ~2-5 min | ~10-15 min |
-| `s2_citations` | 50-100M | ~30-60 min | ~15-30 min | ~45-90 min |
-| `s2_embeddings` | 5-10M | ~20-40 min | ~30-60 min (HNSW) | ~50-100 min |
-| `s2_graph_layout` | 5-10M | ~3-5 min | ~1-2 min | ~5-7 min |
-| **Total** | | | | **~2-3.5 hr** |
+| Step | Rows | Time |
+|------|------|------|
+| Papers COPY (from Parquet) | 2M | ~5-10 min |
+| Batch API: embeddings -> INSERT | 2M | ~67 min (API-bound) |
+| Batch API: abstracts + TLDRs -> UPDATE | 2M | ~67 min (API-bound) |
+| Batch API: citations -> INSERT | 2M papers | ~67 min (API-bound) |
+| HNSW index build | 2M vectors | ~15-30 min |
+| **Total** | | **~3.5-4 hr** |
 
-The HNSW index build on 5-10M halfvec(768) vectors is the bottleneck. It runs
-single-threaded in PostgreSQL and requires holding the full index in memory
-(~8-16 GB for halfvec at this scale). Ensure `maintenance_work_mem` is set to
-at least 4 GB:
-
-```sql
-SET maintenance_work_mem = '4GB';
-```
+The batch API at 1 req/sec is the bottleneck, not PostgreSQL I/O. For 200K
+papers (Phase A), total load time drops to ~30 min.
 
 ---
 
@@ -1025,7 +1060,7 @@ def apply_monthly_refresh() -> None:
         print("Already up to date")
         return
 
-    for dataset in ["paper-ids", "papers", "abstracts", "tldrs"]:
+    for dataset in ["paper-ids", "papers"]:
         diff = get_diffs(current, latest, dataset)
         # Download update files (upserts)
         for url in diff.get("update_files", []):
@@ -1035,6 +1070,7 @@ def apply_monthly_refresh() -> None:
             download_shard(url, Path(f"data/semantic-scholar/diffs/{dataset}/"))
 
     # Re-run domain filtering pipeline on updated data
+    # Then re-fetch via batch API for new/changed domain papers
     # Then reload PostgreSQL tables
     meta["papers"]["release_id"] = latest
     meta_path.write_text(json.dumps(meta, indent=2))
@@ -1044,22 +1080,22 @@ def apply_monthly_refresh() -> None:
 
 | Dataset | Strategy | Rationale |
 |---------|----------|-----------|
-| `paper-ids` | Incremental diff | Small diffs, need current PMID mapping |
-| `papers` | Incremental diff | Apply upserts + deletes to existing Parquet |
-| `abstracts` | Incremental diff | Same as papers |
-| `tldrs` | Incremental diff | Small dataset, fast to update |
-| `citations` | Full re-download + re-filter | Citation graph changes are complex; re-filtering from scratch is simpler and safer than patching 2.8B edges |
-| `embeddings` | Full re-download + re-filter | New papers get new embeddings; diffing 200M vectors is impractical |
+| `paper-ids` | Incremental diff (bulk) | Small diffs, need current PMID mapping |
+| `papers` | Incremental diff (bulk) | Apply upserts + deletes to filtered Parquet |
+| `abstracts` | Batch API re-fetch for new papers | Only new domain papers need abstracts |
+| `tldrs` | Batch API re-fetch for new papers | Only new domain papers need TLDRs |
+| `citations` | Batch API re-fetch for new papers | Pull citations only for newly added corpus IDs |
+| `embeddings` | Batch API re-fetch for new papers | Pull SPECTER2 only for newly added corpus IDs |
 
 ### Monthly Refresh Workflow
 
 ```
 1. Check current release vs latest release
-2. Download diffs for paper-ids, papers, abstracts, tldrs
-3. Apply diffs to local Parquet files
-4. Re-download citations and embeddings (if full refresh month)
-5. Re-run domain filtering pipeline
-6. Reload PostgreSQL tables via atomic swap
+2. Download diffs for paper-ids and papers (bulk)
+3. Apply diffs to local filtered Parquet
+4. Re-run DuckDB domain filtering to identify new corpus IDs
+5. Batch API: fetch embeddings, abstracts, TLDRs, citations for new IDs only
+6. UPSERT new data into PostgreSQL
 7. Re-run UMAP .transform() for new papers (incremental layout)
 8. Rebuild graph Parquet bundles
 9. Upload to R2
@@ -1238,10 +1274,10 @@ purposes and should not be confused.
 The data flow from S2 embeddings to the rendered graph:
 
 ```
-S2 Datasets API
+S2 Batch API (POST /paper/batch, fields=embedding.specter_v2)
   |
   v
-SPECTER2 768d vectors (per paper)
+SPECTER2 768d vectors (per domain paper)
   |
   v
 GPU cuML UMAP (768d --> 2D)           # ~60 sec for 2M points on H100
@@ -1281,11 +1317,11 @@ the 128 GB RAM budget of the target server.
 
 ### Comparison to Alternative Embedding Approaches
 
-**Option A: Download SPECTER2 from S2 (chosen)**
-- Cost: $0 (pre-computed)
+**Option A: Pull SPECTER2 via S2 batch API (chosen)**
+- Cost: $0 (pre-computed by S2)
 - Quality: Citation-aware, trained on academic papers
-- Coverage: 200M+ papers
-- Effort: Download + filter (~3-6 hr processing)
+- Coverage: 200M+ papers available
+- Effort: Batch API fetch for domain papers (~67 min for 2M papers)
 
 **Option B: Self-embed with SPECTER2 from HuggingFace**
 - Model: `allenai/specter2` (Apache 2.0 license)
@@ -1358,35 +1394,36 @@ This runs entirely in the browser at <10ms latency.
 ### Data Flow Summary
 
 ```
-Semantic Scholar Datasets API
+Semantic Scholar
     |
-    +-- paper-ids -----> PMID bridge -----> PubTator3 annotations
+    +-- [Datasets API: bulk download]
+    |   +-- paper-ids -----> DuckDB filter -> PMID bridge -> PubTator3
+    |   +-- papers --------> DuckDB filter -> domain corpus IDs
+    |                      -> psycopg COPY -> solemd.s2_papers
     |
-    +-- papers --------> solemd.s2_papers -> metadata display
-    |                                     -> DuckDB-WASM search
+    +-- [Graph API: batch endpoint, domain IDs only]
+    |   +-- abstracts -----> INSERT/UPDATE -> solemd.s2_papers.abstract
+    |   |                 -> MedCPT embed -> pgvector HNSW -> RAG
+    |   +-- citations -----> INSERT -> solemd.s2_citations
+    |   |                 -> corpus_links.parquet -> Cosmograph edges
+    |   +-- embeddings ----> INSERT -> solemd.s2_embeddings
+    |   |                 -> UMAP 2D -> corpus_points.parquet -> Cosmograph
+    |   +-- tldrs ---------> UPDATE -> solemd.s2_papers.tldr
     |
-    +-- abstracts -----> MedCPT embed ----> pgvector HNSW -> RAG
-    |
-    +-- citations -----> solemd.s2_citations -> citation graph queries
-    |                 -> corpus_links.parquet -> Cosmograph edges
-    |
-    +-- embeddings ----> UMAP 2D ---------> corpus_points.parquet -> Cosmograph
-    |                 -> solemd.s2_embeddings -> nearest-neighbor queries
-    |
-    +-- tldrs ---------> solemd.s2_papers.tldr -> detail panel preview
-    |
-    +-- s2orc ---------> (Phase 2) chunk + MedCPT -> deep RAG
+    +-- s2orc ------------> (Phase 2) chunk + MedCPT -> deep RAG
 ```
 
 ### API Rate Limits (Reference)
 
-All bulk data comes from the Datasets API (pre-signed S3 URLs, no rate limit on
-downloads). The live API is used only for spot lookups and has these limits:
+The Datasets API provides pre-signed S3 URLs (no rate limit on downloads) for
+bulk datasets (papers, paper-ids). The Graph API batch endpoint is used
+extensively to pull embeddings, abstracts, citations, and TLDRs for domain
+papers.
 
 | Tier | Rate | Notes |
 |------|------|-------|
 | Unauthenticated | ~5,000 req / 5 min (shared pool) | Do not rely on this |
-| Authenticated (new key) | 1 req/sec | Sufficient for spot lookups |
+| Authenticated (new key) | 1 req/sec | **Core rate for batch API workflow** |
 | Higher rates | Available on request | Contact S2 team |
 | Batch endpoint | 500 paper IDs per request | `POST /graph/v1/paper/batch` |
 | Author batch | 1,000 author IDs per request | `POST /graph/v1/author/batch` |
@@ -1395,12 +1432,12 @@ downloads). The live API is used only for spot lookups and has these limits:
 
 **Exponential backoff** is required. On 429 responses, wait 2^n seconds before
 retrying (n = retry count). The S2 API will temporarily block keys that do not
-respect rate limits.
+respect rate limits. Sleep 1.0s between batch requests preemptively.
 
-For SoleMD.Graph, the live API is rarely needed -- all bulk data flows through
-the Datasets API, and the PostgreSQL hot store handles all application queries.
-The live API is useful for:
+For SoleMD.Graph, the batch API is the primary data acquisition channel for
+everything except the `papers` and `paper-ids` bulk datasets. The live
+single-paper API is useful for:
 
 - Verifying a single paper's current data during debugging
 - Looking up a paper not yet in the local dataset
-- Testing API connectivity before starting a bulk download
+- Testing API connectivity before starting a batch run
