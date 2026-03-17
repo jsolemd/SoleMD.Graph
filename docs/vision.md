@@ -1,1 +1,0 @@
-/workspaces/SoleMD.App/pipeline/docs/system-map/vision.md

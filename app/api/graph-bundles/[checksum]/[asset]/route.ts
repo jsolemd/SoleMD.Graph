@@ -7,7 +7,7 @@ import {
   fetchGraphBundleByChecksum,
   getGraphBundleAssetNames,
   resolveGraphBundleDirectory,
-} from '@/lib/graph/fetch'
+} from '@/features/graph/lib/fetch'
 
 export const runtime = 'nodejs'
 

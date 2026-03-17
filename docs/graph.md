@@ -1,1 +1,0 @@
-/home/workbench/SoleMD/SoleMD.App/pipeline/docs/system-map/graph.md

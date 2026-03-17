@@ -1,6 +1,5 @@
-import { fetchActiveGraphBundle } from "@/lib/graph/fetch";
-import { GraphErrorBoundary } from "@/components/graph/GraphErrorBoundary";
-import { DashboardShell } from "@/components/graph/DashboardShell";
+import { fetchActiveGraphBundle } from "@/features/graph/lib/fetch";
+import { DashboardShell, GraphErrorBoundary } from "@/features/graph";
 
 export const dynamic = "force-dynamic";
 

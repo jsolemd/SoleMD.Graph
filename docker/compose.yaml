@@ -1,0 +1,34 @@
+# SoleMD.Graph — Local Development Services
+# Usage: docker compose -f docker/compose.yaml up -d
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: solemd-graph-db
+    restart: unless-stopped
+    ports:
+      - "5433:5432"  # 5433 to avoid conflict with existing SoleMD.App postgres on 5432
+    environment:
+      POSTGRES_DB: solemd_graph
+      POSTGRES_USER: solemd
+      POSTGRES_PASSWORD: solemd_local
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solemd -d solemd_graph"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: solemd-graph-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"  # 6380 to avoid conflict with existing Redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
