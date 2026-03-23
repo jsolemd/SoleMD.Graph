@@ -42,7 +42,7 @@
     "mantine": {
       "command": "node",
       "args": [
-        "/workspaces/SoleMD.Web/node_modules/@mantine/mcp-server/bin/mantine-mcp-server.cjs"
+        "/workspaces/SoleMD.Graph/node_modules/@mantine/mcp-server/bin/mantine-mcp-server.cjs"
       ],
       "env": {
         "MANTINE_MCP_DATA_URL": "https://alpha.mantine.dev/mcp"
@@ -50,7 +50,7 @@
       "instructions": "Official Mantine MCP server (first-party, 145 components). Tools: list_items, get_item_doc (full markdown docs), get_item_props (normalized props), search_docs (keyword search). Prefer this for Mantine-specific queries."
     },
     "neo4j": {
-      "command": "/workspaces/.devcontainer/solemd-dev/scripts/neo4j-mcp-server.sh",
+      "command": "/workspaces/SoleMD.Infra/scripts/neo4j-mcp-server.sh",
       "env": {
         "NEO4J_URI": "bolt://localhost:7687",
         "NEO4J_USERNAME": "neo4j",

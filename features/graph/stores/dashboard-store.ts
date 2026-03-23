@@ -1,231 +1,34 @@
 import { create } from 'zustand'
-import { getColumnMeta, getColumnsForLayer } from '@/features/graph/lib/columns'
-import type { InfoWidgetSlot } from '@/features/graph/lib/info-widgets'
-import { getLayerConfig } from '@/features/graph/lib/layers'
-import { useGraphStore } from './graph-store'
-import type {
-  ColorSchemeName,
-  DataColumnKey,
-  FilterableColumnKey,
-  MapLayer,
-  NumericColumnKey,
-  PointColorStrategy,
-  PointSizeStrategy,
-  SizeColumnKey,
-} from '@/features/graph/types'
 
-/** Curated default filters — one per concept, no redundant pairs. */
-const CHUNK_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
-  { column: 'nodeKind', type: 'categorical' },
-  { column: 'clusterLabel', type: 'categorical' },
-  { column: 'category', type: 'categorical' },
-  { column: 'relationCertainty', type: 'categorical' },
-  { column: 'journal', type: 'categorical' },
-  { column: 'sectionCanonical', type: 'categorical' },
-  { column: 'chunkKind', type: 'categorical' },
-  { column: 'year', type: 'numeric' },
-]
+import { createPanelSlice } from './slices/panel-slice'
+import { createConfigSlice } from './slices/config-slice'
+import { createSelectionSlice } from './slices/selection-slice'
+import { createGeoSlice } from './slices/geo-slice'
+import { createTimelineSlice } from './slices/timeline-slice'
+import { createLinksSlice } from './slices/links-slice'
 
-const PAPER_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
-  { column: 'clusterLabel', type: 'categorical' },
-  { column: 'journal', type: 'categorical' },
-  { column: 'year', type: 'numeric' },
-]
+import type { PanelSlice } from './slices/panel-slice'
+import type { ConfigSlice } from './slices/config-slice'
+import type { SelectionSlice } from './slices/selection-slice'
+import type { GeoSlice } from './slices/geo-slice'
+import type { TimelineSlice } from './slices/timeline-slice'
+import type { LinksSlice } from './slices/links-slice'
 
-const GEO_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
-  { column: 'clusterLabel', type: 'categorical' },
-  { column: 'year', type: 'numeric' },
-]
+/* ───── Re-exports for backwards compatibility ───── */
 
-function getDefaultFiltersForLayer(layer: MapLayer) {
-  if (layer === 'paper') return PAPER_FILTER_COLUMNS
-  if (layer === 'geo') return GEO_FILTER_COLUMNS
-  return CHUNK_FILTER_COLUMNS
-}
+export type { ActivePanel, MapControls } from './slices/panel-slice'
+export type { TableView, InfoScopeMode } from './slices/config-slice'
+export type { GeoSelection } from './slices/geo-slice'
 
-export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | null
-export type TableView = 'current' | 'selected'
-export type InfoScopeMode = 'current' | 'selected' | 'dataset'
+/* ───── Composite state type ───── */
 
-/** Geographic selection at country or region level from choropleth click. */
-export interface GeoSelection {
-  level: 'country' | 'region'
-  countryCode: string       // iso_a2
-  countryName: string       // Natural Earth "admin"
-  regionName?: string       // geoNode.region value (for filters + display)
-  polygonName?: string      // Natural Earth polygon "name" (for outline highlight)
-}
-
-/** Callbacks registered by MapCanvas so the Wordmark toolbar can control the map. */
-export interface MapControls {
-  zoomIn: () => void
-  zoomOut: () => void
-  fitView: () => void
-}
-
-interface DashboardState {
-  // Layer
-  activeLayer: MapLayer
-  availableLayers: MapLayer[]
-
-  // Map controls — registered by MapCanvas, consumed by Wordmark
-  mapControls: MapControls | null
-
-  // Panel visibility
-  activePanel: ActivePanel
-  panelsVisible: boolean
-  panelBottomY: { left: number; right: number }
-  tableOpen: boolean
-  tableHeight: number
-  uiHidden: boolean
-
-  // Config: Points
-  pointColorColumn: DataColumnKey | 'hexColor'
-  pointColorStrategy: PointColorStrategy
-  pointSizeColumn: SizeColumnKey
-  pointSizeRange: [number, number]
-  pointLabelColumn: DataColumnKey
-  showPointLabels: boolean
-  showDynamicLabels: boolean
-  positionXColumn: NumericColumnKey
-  positionYColumn: NumericColumnKey
-
-  // Info widgets — user-configurable insight slots in the info panel
-  infoWidgets: InfoWidgetSlot[]
-
-  // Filters — which widgets to show (selection state lives inside Cosmograph crossfilter)
-  filterColumns: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }>
-
-  // Table
-  tablePage: number
-  tablePageSize: number
-  tableView: TableView
-  infoScopeMode: InfoScopeMode
-
-  // Color scheme
-  colorScheme: ColorSchemeName
-  showColorLegend: boolean
-
-  // Sizing
-  pointSizeStrategy: PointSizeStrategy
-  scalePointsOnZoom: boolean
-  showSizeLegend: boolean
-
-  // Hover & interaction
-  showHoveredPointLabel: boolean
-  renderHoveredPointRing: boolean
-
-  // Selection behavior
-  /** When true, clicking a point selects it AND all connected points (via links). */
-  connectedSelect: boolean
-
-  // Links
-  renderLinks: boolean
-  renderCitationLinks: boolean
-  linkOpacity: number
-  linkGreyoutOpacity: number
-  linkVisibilityDistanceRange: [number, number]
-  linkVisibilityMinTransparency: number
-  linkDefaultWidth: number
-  curvedLinks: boolean
-  linkDefaultArrows: boolean
-  scaleLinksOnZoom: boolean
-
-  // Timeline
-  showTimeline: boolean
-  timelineColumn: NumericColumnKey
-  timelineSelection?: [number, number]
-
-  // Prompt size: minimized (pill) / normal / maximized (full-height)
-  promptMinimized: boolean
-  promptMaximized: boolean
-
-  // Write mode
-  writeContent: string
-
-  // Geo filter state — parallel to Cosmograph's crossfilter but driven manually
-  geoFilters: Record<string, string[] | [number, number]>
-  setGeoFilter: (column: string, value: string[] | [number, number] | null) => void
-  clearGeoFilters: () => void
-
-  // Geo selection — country/region level from choropleth click
-  geoSelection: GeoSelection | null
-  setGeoSelection: (sel: GeoSelection | null) => void
-
-  // Crossfilter state mirrored from Cosmograph callbacks:
-  // current working set, persistent selection intent, and current canvas highlight.
-  currentPointIndices: number[] | null
-  selectedPointIndices: number[]
-  highlightedPointIndices: number[]
-  activeSelectionSourceId: string | null
-  lockedSelection: Set<number> | null
-
-  // Actions
-  setActivePanel: (panel: ActivePanel) => void
-  togglePanel: (panel: ActivePanel) => void
-  setPanelsVisible: (visible: boolean) => void
-  setPanelBottomY: (side: 'left' | 'right', y: number) => void
-  togglePanelsVisible: () => void
-  setTableOpen: (open: boolean) => void
-  toggleTable: () => void
-  setTableHeight: (height: number) => void
-  setUiHidden: (hidden: boolean) => void
-  toggleUiHidden: () => void
-  setPointColorColumn: (col: DataColumnKey | 'hexColor') => void
-  setPointColorStrategy: (strategy: PointColorStrategy) => void
-  setPointSizeColumn: (col: SizeColumnKey) => void
-  setPointSizeRange: (range: [number, number]) => void
-  setPointLabelColumn: (col: DataColumnKey) => void
-  setShowPointLabels: (show: boolean) => void
-  setShowDynamicLabels: (show: boolean) => void
-  setPositionXColumn: (col: NumericColumnKey) => void
-  setPositionYColumn: (col: NumericColumnKey) => void
-  addInfoWidget: (slot: InfoWidgetSlot) => void
-  removeInfoWidget: (column: string) => void
-  addFilter: (column: FilterableColumnKey) => void
-  removeFilter: (column: FilterableColumnKey) => void
-  setTablePage: (page: number) => void
-  setTablePageSize: (size: number) => void
-  setTableView: (view: TableView) => void
-  setInfoScopeMode: (mode: InfoScopeMode) => void
-  setColorScheme: (scheme: ColorSchemeName) => void
-  setShowColorLegend: (show: boolean) => void
-  setPointSizeStrategy: (strategy: PointSizeStrategy) => void
-  setScalePointsOnZoom: (scale: boolean) => void
-  setShowSizeLegend: (show: boolean) => void
-  setShowHoveredPointLabel: (show: boolean) => void
-  setRenderHoveredPointRing: (show: boolean) => void
-  setConnectedSelect: (on: boolean) => void
-  toggleConnectedSelect: () => void
-  setRenderLinks: (show: boolean) => void
-  setRenderCitationLinks: (show: boolean) => void
-  setLinkOpacity: (opacity: number) => void
-  setLinkGreyoutOpacity: (opacity: number) => void
-  setLinkVisibilityDistanceRange: (range: [number, number]) => void
-  setLinkVisibilityMinTransparency: (transparency: number) => void
-  setLinkDefaultWidth: (width: number) => void
-  setCurvedLinks: (curved: boolean) => void
-  setLinkDefaultArrows: (arrows: boolean) => void
-  setScaleLinksOnZoom: (scale: boolean) => void
-  setShowTimeline: (show: boolean) => void
-  toggleTimeline: () => void
-  setTimelineColumn: (col: NumericColumnKey) => void
-  setTimelineSelection: (selection?: [number, number]) => void
-  setPromptMinimized: (minimized: boolean) => void
-  setPromptMaximized: (maximized: boolean) => void
-  togglePromptMinimized: () => void
-  togglePromptMaximized: () => void
-  setWriteContent: (content: string) => void
-  setCurrentPointIndices: (indices: number[] | null) => void
-  setSelectedPointIndices: (indices: number[]) => void
-  setHighlightedPointIndices: (indices: number[]) => void
-  setActiveSelectionSourceId: (sourceId: string | null) => void
-  lockSelection: () => void
-  unlockSelection: () => void
-  setActiveLayer: (layer: MapLayer) => void
-  setAvailableLayers: (layers: MapLayer[]) => void
-  setMapControls: (controls: MapControls | null) => void
-}
+export type DashboardState =
+  PanelSlice &
+  ConfigSlice &
+  SelectionSlice &
+  GeoSlice &
+  TimelineSlice &
+  LinksSlice
 
 /* ───── Clearance selectors ─────
  * Single source of truth for bottom/left space occupied by docked elements.
@@ -262,7 +65,7 @@ export function selectBottomClearance(s: DashboardState): number {
 }
 
 /** Width of each left-side panel — must match PanelShell `width` props. */
-const PANEL_WIDTHS: Record<NonNullable<ActivePanel>, number> = {
+const PANEL_WIDTHS: Record<string, number> = {
   about: 320,
   config: 300,
   filters: 300,
@@ -291,252 +94,13 @@ export function selectRightClearance(s: DashboardState): number {
   return DETAIL_PANEL_CLEARANCE;
 }
 
-export const useDashboardStore = create<DashboardState>((set) => ({
-  // Layer
-  activeLayer: 'chunk',
-  availableLayers: ['chunk'],
-  mapControls: null,
+/* ───── Store ───── */
 
-  // Panel visibility
-  activePanel: null,
-  panelsVisible: false,
-  panelBottomY: { left: 0, right: 0 },
-  tableOpen: false,
-  tableHeight: 280,
-  uiHidden: false,
-
-  // Config defaults
-  pointColorColumn: 'hexColor',
-  pointColorStrategy: 'direct',
-  pointSizeColumn: 'clusterProbability',
-  pointSizeRange: [2, 8],
-  pointLabelColumn: 'clusterLabel',
-  showPointLabels: false,
-  showDynamicLabels: false,
-  positionXColumn: 'x',
-  positionYColumn: 'y',
-
-  // Info widgets — curated defaults per layer; users can add/remove via panel
-  infoWidgets: getLayerConfig('chunk').defaultInfoWidgets,
-
-  // Filters — curated defaults; users can add/remove via panel
-  filterColumns: CHUNK_FILTER_COLUMNS,
-
-  // Table
-  tablePage: 1,
-  tablePageSize: 100,
-  tableView: 'current',
-  infoScopeMode: 'current',
-
-  // Color scheme
-  colorScheme: 'default',
-  showColorLegend: false,
-
-  // Sizing
-  pointSizeStrategy: 'auto',
-  scalePointsOnZoom: false,
-  showSizeLegend: false,
-
-  // Hover & interaction
-  showHoveredPointLabel: true,
-  renderHoveredPointRing: true,
-
-  // Selection behavior
-  connectedSelect: false,
-
-  // Links
-  renderLinks: false,
-  renderCitationLinks: false,
-  linkOpacity: 1.0,
-  linkGreyoutOpacity: 0.1,
-  linkVisibilityDistanceRange: [50, 150] as [number, number],
-  linkVisibilityMinTransparency: 0.25,
-  linkDefaultWidth: 1,
-  curvedLinks: false,
-  linkDefaultArrows: false,
-  scaleLinksOnZoom: false,
-
-  // Timeline
-  showTimeline: false,
-  timelineColumn: 'year',
-  timelineSelection: undefined,
-
-  // Prompt size: minimized (pill) / normal / maximized (full-height)
-  promptMinimized: false,
-  promptMaximized: false,
-
-  // Write mode
-  writeContent: '',
-
-  // Geo filters
-  geoFilters: {},
-  setGeoFilter: (column, value) =>
-    set((s) => {
-      if (value === null) {
-        const next = { ...s.geoFilters }
-        delete next[column]
-        return { geoFilters: next }
-      }
-      return { geoFilters: { ...s.geoFilters, [column]: value } }
-    }),
-  clearGeoFilters: () => set({ geoFilters: {} }),
-
-  // Geo selection — atomically sets selection AND applies geoFilters
-  geoSelection: null,
-  setGeoSelection: (sel) =>
-    set(() => {
-      if (!sel) return { geoSelection: null, geoFilters: {} }
-      const filters: Record<string, string[]> = { countryCode: [sel.countryCode] }
-      if (sel.level === 'region' && sel.regionName) {
-        filters.region = [sel.regionName]
-      }
-      return { geoSelection: sel, geoFilters: filters }
-    }),
-
-  // Crossfilter state mirrored from Cosmograph callbacks
-  currentPointIndices: null,
-  selectedPointIndices: [],
-  highlightedPointIndices: [],
-  activeSelectionSourceId: null,
-  lockedSelection: null,
-
-  // Actions
-  setActivePanel: (panel) => set({ activePanel: panel }),
-  togglePanel: (panel) =>
-    set((s) => ({ activePanel: s.activePanel === panel ? null : panel })),
-  setPanelsVisible: (visible) => set({ panelsVisible: visible }),
-  setPanelBottomY: (side, y) =>
-    set((s) => s.panelBottomY[side] === y ? s : { panelBottomY: { ...s.panelBottomY, [side]: y } }),
-  togglePanelsVisible: () =>
-    set((s) => {
-      const next = !s.panelsVisible
-      return { panelsVisible: next, ...(next ? {} : { activePanel: null }) }
-    }),
-  setTableOpen: (open) => set({ tableOpen: open }),
-  toggleTable: () => set((s) => ({ tableOpen: !s.tableOpen })),
-  setTableHeight: (height) => set({ tableHeight: height }),
-  setUiHidden: (hidden) => set({ uiHidden: hidden }),
-  toggleUiHidden: () => set((s) => ({ uiHidden: !s.uiHidden })),
-  setPointColorColumn: (col) => set({ pointColorColumn: col }),
-  setPointColorStrategy: (strategy) => set({ pointColorStrategy: strategy }),
-  setPointSizeColumn: (col) => set({ pointSizeColumn: col }),
-  setPointSizeRange: (range) => set({ pointSizeRange: range }),
-  setPointLabelColumn: (col) => set({ pointLabelColumn: col }),
-  setShowPointLabels: (show) => set({ showPointLabels: show }),
-  setShowDynamicLabels: (show) => set({ showDynamicLabels: show }),
-  setPositionXColumn: (col) => set({ positionXColumn: col }),
-  setPositionYColumn: (col) => set({ positionYColumn: col }),
-  addInfoWidget: (slot) =>
-    set((s) => ({
-      infoWidgets: s.infoWidgets.some((w) => w.column === slot.column)
-        ? s.infoWidgets
-        : [...s.infoWidgets, slot],
-    })),
-  removeInfoWidget: (column) =>
-    set((s) => ({
-      infoWidgets: s.infoWidgets.filter((w) => w.column !== column),
-    })),
-  addFilter: (column) =>
-    set((s) => ({
-      filterColumns: s.filterColumns.some((f) => f.column === column)
-        ? s.filterColumns
-        : [
-            ...s.filterColumns,
-            {
-              column,
-              type: getColumnMeta(column)?.type === 'numeric'
-                ? ('numeric' as const)
-                : ('categorical' as const),
-            },
-          ],
-    })),
-  removeFilter: (column) =>
-    set((s) => ({
-      filterColumns: s.filterColumns.filter((f) => f.column !== column),
-    })),
-  setTablePage: (page) => set({ tablePage: page }),
-  setTablePageSize: (size) => set({ tablePageSize: size }),
-  setTableView: (view) => set({ tableView: view }),
-  setInfoScopeMode: (mode) => set({ infoScopeMode: mode }),
-  setColorScheme: (scheme) => set({ colorScheme: scheme }),
-  setShowColorLegend: (show) => set({ showColorLegend: show }),
-  setPointSizeStrategy: (strategy) => set({ pointSizeStrategy: strategy }),
-  setScalePointsOnZoom: (scale) => set({ scalePointsOnZoom: scale }),
-  setShowSizeLegend: (show) => set({ showSizeLegend: show }),
-  setShowHoveredPointLabel: (show) => set({ showHoveredPointLabel: show }),
-  setRenderHoveredPointRing: (show) => set({ renderHoveredPointRing: show }),
-  setConnectedSelect: (on) => set({ connectedSelect: on }),
-  toggleConnectedSelect: () => set((s) => ({ connectedSelect: !s.connectedSelect })),
-  setRenderLinks: (show) => set({ renderLinks: show }),
-  setRenderCitationLinks: (show) => set({ renderCitationLinks: show }),
-  setLinkOpacity: (opacity) => set({ linkOpacity: opacity }),
-  setLinkGreyoutOpacity: (opacity) => set({ linkGreyoutOpacity: opacity }),
-  setLinkVisibilityDistanceRange: (range) => set({ linkVisibilityDistanceRange: range }),
-  setLinkVisibilityMinTransparency: (transparency) => set({ linkVisibilityMinTransparency: transparency }),
-  setLinkDefaultWidth: (width) => set({ linkDefaultWidth: width }),
-  setCurvedLinks: (curved) => set({ curvedLinks: curved }),
-  setLinkDefaultArrows: (arrows) => set({ linkDefaultArrows: arrows }),
-  setScaleLinksOnZoom: (scale) => set({ scaleLinksOnZoom: scale }),
-  setShowTimeline: (show) => set({ showTimeline: show }),
-  toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
-  setTimelineColumn: (col) => set({ timelineColumn: col }),
-  setTimelineSelection: (selection) => set({ timelineSelection: selection }),
-  setPromptMinimized: (minimized) => set({ promptMinimized: minimized, promptMaximized: false }),
-  setPromptMaximized: (maximized) => set({ promptMaximized: maximized, promptMinimized: false }),
-  togglePromptMinimized: () => set((s) => ({ promptMinimized: !s.promptMinimized, promptMaximized: false })),
-  togglePromptMaximized: () => set((s) => ({ promptMaximized: !s.promptMaximized, promptMinimized: false })),
-  setWriteContent: (content) => set({ writeContent: content }),
-  setCurrentPointIndices: (indices) => set({ currentPointIndices: indices }),
-  setSelectedPointIndices: (indices) => set({ selectedPointIndices: indices }),
-  setHighlightedPointIndices: (indices) => set({ highlightedPointIndices: indices }),
-  setActiveSelectionSourceId: (sourceId) =>
-    set({ activeSelectionSourceId: sourceId }),
-  lockSelection: () => set((s) =>
-    s.selectedPointIndices.length === 0 ? s
-      : { lockedSelection: new Set(s.selectedPointIndices) }
-  ),
-  unlockSelection: () => set({ lockedSelection: null }),
-  setActiveLayer: (layer) => {
-    set(() => {
-      const config = getLayerConfig(layer)
-      return {
-        activeLayer: layer,
-        pointColorColumn: config.defaultColorColumn as DataColumnKey | 'hexColor',
-        pointColorStrategy: config.defaultColorStrategy,
-        pointSizeColumn: (config.defaultSizeColumn ?? 'none') as SizeColumnKey,
-        pointSizeStrategy: config.defaultSizeStrategy,
-        pointSizeRange: config.pointSizeRange,
-        renderLinks: false,
-        linkVisibilityDistanceRange: layer === 'paper'
-          ? [0, 10000] as [number, number]
-          : [50, 150] as [number, number],
-        linkVisibilityMinTransparency: layer === 'paper' ? 0.8 : 0.25,
-        linkDefaultWidth: layer === 'paper' ? 2 : 1,
-        linkGreyoutOpacity: layer === 'paper' ? 0.1 : 0,
-        connectedSelect: false,
-        currentPointIndices: null,
-        selectedPointIndices: [],
-        highlightedPointIndices: [],
-        activeSelectionSourceId: null,
-        lockedSelection: null,
-        tablePage: 1,
-        tableView: 'current',
-        infoScopeMode: 'current',
-        pointLabelColumn: (() => {
-          const layerColumns = getColumnsForLayer(layer)
-          return layerColumns.some(c => c.key === 'clusterLabel')
-            ? 'clusterLabel' as DataColumnKey
-            : (layerColumns[0]?.key ?? 'clusterLabel') as DataColumnKey
-        })(),
-        filterColumns: getDefaultFiltersForLayer(layer),
-        infoWidgets: config.defaultInfoWidgets,
-        geoFilters: {},
-        geoSelection: null,
-      }
-    })
-    // Clear graph-store selection so DetailPanel closes on layer switch
-    useGraphStore.getState().selectNode(null)
-  },
-  setAvailableLayers: (layers) => set({ availableLayers: layers }),
-  setMapControls: (controls) => set({ mapControls: controls }),
+export const useDashboardStore = create<DashboardState>((...a) => ({
+  ...createPanelSlice(...a),
+  ...createConfigSlice(...a),
+  ...createSelectionSlice(...a),
+  ...createGeoSlice(...a),
+  ...createTimelineSlice(...a),
+  ...createLinksSlice(...a),
 }))

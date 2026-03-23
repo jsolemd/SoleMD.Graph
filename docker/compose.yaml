@@ -8,14 +8,31 @@ services:
     image: pgvector/pgvector:pg16
     container_name: solemd-graph-db
     restart: unless-stopped
+    shm_size: 8g
     ports:
-      - "5433:5432"  # 5433 to avoid conflict with existing SoleMD.App postgres on 5432
+      - "127.0.0.1:5433:5432"  # localhost-only; 5433 to avoid conflict with SoleMD.App
     environment:
       POSTGRES_DB: solemd_graph
       POSTGRES_USER: solemd
       POSTGRES_PASSWORD: solemd_local
+    command: >
+      postgres
+      -c shared_buffers=4GB
+      -c effective_cache_size=20GB
+      -c maintenance_work_mem=2GB
+      -c work_mem=64MB
+      -c max_wal_size=8GB
+      -c min_wal_size=1GB
+      -c wal_compression=zstd
+      -c wal_buffers=64MB
+      -c checkpoint_timeout=30min
+      -c checkpoint_completion_target=0.9
+      -c wal_level=minimal
+      -c max_wal_senders=0
+      -c track_io_timing=on
+      -c log_min_duration_statement=1000
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U solemd -d solemd_graph"]
@@ -27,10 +44,54 @@ services:
     image: redis:7-alpine
     container_name: solemd-graph-redis
     restart: unless-stopped
+    mem_limit: 512m
     ports:
       - "6380:6379"  # 6380 to avoid conflict with existing Redis
+    command: ["redis-server", "--requirepass", "local_dev"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "local_dev", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+
+  graph:
+    build:
+      context: ..
+      dockerfile: docker/graph/Dockerfile
+    container_name: solemd-graph-graph
+    profiles: ["gpu"]
+    shm_size: 1g
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - ..:/workspaces/SoleMD.Graph
+      - graph-venv:/workspaces/SoleMD.Graph/engine/.venv
+      - /mnt/e/SoleMD.Graph/data:/mnt/e/SoleMD.Graph/data:ro
+      - /mnt/e/SoleMD.Graph/graph:/mnt/e/SoleMD.Graph/graph
+    environment:
+      DATABASE_URL: postgresql://solemd:solemd_local@db:5432/solemd_graph
+      REDIS_URL: redis://:local_dev@redis:6379/0
+      GRAPH_LAYOUT_BACKEND: gpu
+      GRAPH_CLUSTER_BACKEND: gpu
+      CUDA_PATH: /opt/conda/targets/x86_64-linux
+      CUDA_HOME: /opt/conda/targets/x86_64-linux
+      GRAPH_DIR: /mnt/e/SoleMD.Graph/graph
+      SEMANTIC_SCHOLAR_DIR: /mnt/e/SoleMD.Graph/data/semantic-scholar
+      PUBTATOR_DIR: /mnt/e/SoleMD.Graph/data/pubtator
+      S2_RELEASE_ID: "2026-03-10"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sleep infinity
+
+volumes:
+  pgdata:
+  graph-venv:

@@ -155,7 +155,7 @@ describe('buildGraphData', () => {
     })
     expect(data.stats).toEqual({
       points: 2,
-      pointLabel: 'chunks',
+      pointLabel: 'nodes',
       papers: 2,
       clusters: 1,
       noise: 1,
@@ -163,7 +163,13 @@ describe('buildGraphData', () => {
     expect(data.facets).toHaveLength(1)
     expect(data.nodes[0].color).toMatch(/^#[0-9a-f]{6}$/i)
     expect(data.paperNodes).toEqual([])
-    expect(data.paperStats).toBeNull()
+    expect(data.paperStats).toEqual({
+      points: 0,
+      pointLabel: 'papers',
+      papers: 0,
+      clusters: 0,
+      noise: 0,
+    })
   })
 })
 

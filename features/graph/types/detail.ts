@@ -38,6 +38,10 @@ export interface GraphPaperDetail {
   graphClusterCount: number | null
   graphPointCount: number | null
   journal: string | null
+  isOpenAccess: boolean | null
+  openAccessPdfLicense: string | null
+  openAccessPdfStatus: string | null
+  openAccessPdfUrl: string | null
   paperId: string
   pageCount: number | null
   pmcid: string | null
@@ -46,6 +50,7 @@ export interface GraphPaperDetail {
   relationCount: number | null
   sentenceCount: number | null
   tableCount: number | null
+  textAvailability: string | null
   title: string | null
   year: number | null
 }

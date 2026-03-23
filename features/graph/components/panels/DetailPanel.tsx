@@ -48,33 +48,7 @@ import {
   PdfContent,
   ReferencesContent,
 } from "./detail/remote";
-import { panelTextStyle } from "./detail/ui";
-
-const accordionStyles = {
-  item: { borderBottom: "none" },
-  control: {
-    paddingLeft: 0,
-    paddingRight: 0,
-    paddingTop: 6,
-    paddingBottom: 6,
-    backgroundColor: "transparent",
-  },
-  label: {
-    fontSize: "0.7rem",
-    fontWeight: 600,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.04em",
-    color: "var(--graph-panel-text-muted)",
-    transition: "color 150ms ease",
-  },
-  chevron: {
-    color: "var(--graph-panel-text-muted)",
-    width: 14,
-    height: 14,
-    transition: "color 150ms ease",
-  },
-  content: { paddingLeft: 0, paddingRight: 0, paddingBottom: 12 },
-} as const;
+import { accordionStyles, panelTextStyle } from "./detail/ui";
 
 function useCopyFeedback(selectedNodeId: string | null) {
   const [copyState, setCopyState] = useState<{

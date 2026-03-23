@@ -15,8 +15,16 @@ async function getSelectedDuckDBBundle() {
 
 export async function createConnection() {
   const bundle = await getSelectedDuckDBBundle()
+
+  if (!bundle.mainWorker) {
+    throw new Error(
+      'DuckDB bundle selection did not resolve a mainWorker URL. ' +
+        'This usually means no compatible WASM bundle was found for the current browser.'
+    )
+  }
+
   const workerUrl = URL.createObjectURL(
-    new Blob([`importScripts("${bundle.mainWorker!}");`], {
+    new Blob([`importScripts("${bundle.mainWorker}");`], {
       type: 'text/javascript',
     })
   )

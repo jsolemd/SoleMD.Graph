@@ -27,6 +27,19 @@ function shadeByPaper(hex: string, paperIndex: number): string {
   return hslToHex(h, s, Math.max(30, Math.min(80, l + offset)))
 }
 
+/* ─── Cluster color resolution ────────────────────────────── */
+
+function resolveClusterColors(
+  clusterId: number,
+  palette: string[],
+  paletteLight: string[],
+): { color: string; colorLight: string } {
+  return {
+    color: clusterId <= 0 ? NOISE_COLOR : palette[clusterId % palette.length],
+    colorLight: clusterId <= 0 ? NOISE_COLOR_LIGHT : paletteLight[clusterId % paletteLight.length],
+  }
+}
+
 /* ─── Base node factory ───────────────────────────────────── */
 
 function buildBaseNode(
@@ -222,18 +235,13 @@ export function buildGraphData({
   for (const [index, row] of points.entries()) {
     const clusterId = row.cluster_id ?? 0
     const paperIdx = row.paper_cluster_index ?? 0
-    const baseColor = clusterId <= 0
-      ? NOISE_COLOR
-      : darkPalette[clusterId % darkPalette.length]
-    const baseColorLight = clusterId <= 0
-      ? NOISE_COLOR_LIGHT
-      : lightPalette[clusterId % lightPalette.length]
+    const clusterColors = resolveClusterColors(clusterId, darkPalette, lightPalette)
     const color = clusterId <= 0 || paperIdx === 0
-      ? baseColor
-      : shadeByPaper(baseColor, paperIdx)
+      ? clusterColors.color
+      : shadeByPaper(clusterColors.color, paperIdx)
     const colorLight = clusterId <= 0 || paperIdx === 0
-      ? baseColorLight
-      : shadeByPaper(baseColorLight, paperIdx)
+      ? clusterColors.colorLight
+      : shadeByPaper(clusterColors.colorLight, paperIdx)
 
     const base = buildBaseNode({
       index: row.point_index ?? index,
@@ -432,12 +440,7 @@ export function buildPaperNodes(rows: PaperPointRow[]): PaperNode[] {
 
   for (const [index, row] of rows.entries()) {
     const clusterId = row.cluster_id ?? 0
-    const color = clusterId <= 0
-      ? NOISE_COLOR
-      : darkPalette[clusterId % darkPalette.length]
-    const colorLight = clusterId <= 0
-      ? NOISE_COLOR_LIGHT
-      : lightPalette[clusterId % lightPalette.length]
+    const { color, colorLight } = resolveClusterColors(clusterId, darkPalette, lightPalette)
 
     nodes.push({
       ...buildBaseNode({
@@ -529,11 +532,9 @@ export function buildGeoNodes(rows: GeoPointRow[]): GeoNode[] {
 
   for (const [index, row] of rows.entries()) {
     const clusterId = row.cluster_id ?? 0
-    const color = row.color_hex
-      ?? (clusterId <= 0 ? NOISE_COLOR : darkPalette[clusterId % darkPalette.length])
-    const colorLight = clusterId <= 0
-      ? NOISE_COLOR_LIGHT
-      : lightPalette[clusterId % lightPalette.length]
+    const base = resolveClusterColors(clusterId, darkPalette, lightPalette)
+    const color = row.color_hex ?? base.color
+    const colorLight = base.colorLight
 
     nodes.push({
       ...buildBaseNode({

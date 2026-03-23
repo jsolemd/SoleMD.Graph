@@ -88,7 +88,7 @@ need to compute ourselves.
 - **Format**: Gzipped JSONL, monthly releases with incremental diffs
 - **API key**: Required for dataset downloads (free)
 - **Domain filtering**: "Neuroscience" is not a separate field — falls under Medicine/Biology/Psychology. Use PMID cross-reference with PubMed MeSH for fine-grained filtering
-- **Total download**: ~45 GB for papers dataset (only full bulk download); abstracts, citations, embeddings, and TLDRs fetched via S2 Batch API for domain paper IDs only
+- **Total download**: ~45 GB for papers dataset (only full bulk download); stable paper metadata, authors, OA PDF metadata, references, abstracts, TLDRs, and embeddings fetched via S2 Batch API for domain paper IDs only
 
 ### PubTator3 (NCBI Biomedical Annotations)
 
@@ -172,11 +172,36 @@ COLD (local NVMe only, ~60 GB — just raw source files)
 
 The key insight: **we don't download everything in bulk.** Only the S2 papers
 dataset (~45 GB) is a full download — DuckDB filters it to identify domain
-corpus IDs (500K-2M papers). Then the S2 Batch API fetches abstracts, citations,
-embeddings, and TLDRs for those IDs only, loading results directly into
-PostgreSQL. PubTator3 tab files (~11 GB) are downloaded in full and streamed
-through a domain filter into PostgreSQL. DuckDB is a one-time filter tool,
-not a data store.
+corpus IDs (500K-2M papers). Then the S2 Graph Batch API fetches the stable
+paper metadata we actually need for those IDs: abstracts, TLDRs, SPECTER2
+embeddings, text availability, venue/journal metadata, OA PDF metadata,
+authors, and later outgoing references. PubTator3 tab files (~11 GB) are
+downloaded in full and streamed through a domain filter into PostgreSQL.
+DuckDB is a one-time filter tool, not a data store.
+
+### Canonical PostgreSQL Backbone
+
+The durable backbone is relational:
+
+- `solemd.corpus`: domain membership and pipeline state (`candidate`, `graph`, mapped, default-visible)
+- `solemd.papers`: one canonical row per paper with bulk metadata plus release-aware S2 enrichment
+- `solemd.publication_venues`: normalized `publicationVenue` registry
+- `solemd.authors`: canonical S2 author snapshots
+- `solemd.paper_authors`: ordered author list per paper
+- `solemd.author_affiliations`: raw affiliation rows plus later normalized institution / ROR / geo fields
+- `solemd.paper_assets`: OA PDF metadata now, mirrored/local assets later
+- `solemd.paper_references`: outgoing bibliographic references per paper
+- `solemd.citations`: normalized domain-domain citation edges derived from references or a richer citation source
+- `pubtator.entity_annotations` / `pubtator.relations`: domain-filtered biomedical entity substrate
+
+Design rule:
+- scalar paper metadata stays on `solemd.papers`
+- repeating relations get child tables
+- graph / geo bundles are exported read models, not source-of-truth tables
+
+Geo note:
+- the planned geo layer already assumes `paper_authors` + `author_affiliations` as its primary input
+- Semantic Scholar author affiliations are often sparse, so future geo normalization should enrich `author_affiliations` from OpenAlex / ROR and may port prior SoleMD.App affiliation/backfill logic into `SoleMD.Graph` as first-class engine code during the transition
 
 | Component | Eliminated alternative | Why eliminated |
 |-----------|----------------------|----------------|
@@ -366,7 +391,11 @@ intellectual lineage.
 External Data Sources (batch, not real-time):
   ├── PubTator3 FTP (monthly, ~11 GB tab files)
   ├── S2 papers dataset (one-time ~45 GB; monthly diffs via S2 Diffs API)
-  ├── S2 Batch API (abstracts, citations, embeddings, TLDRs for domain IDs)
+  ├── S2 Graph Batch API
+  │    ├── full paper metadata pass (abstract, TLDR, embedding, text availability,
+  │    │    venue, journal, OA PDF, authors)
+  │    └── reference pass (outgoing references for domain papers)
+  ├── S2 citations dataset (only if intent / influence / context become hard requirements)
   └── GPU rental for UMAP/Leiden (H100, ~$1-3/hr, minutes per run)
 
 File Delivery:
@@ -388,14 +417,21 @@ File Delivery:
    DuckDB reads S2 papers dump ──→ Filter by Medicine + Biology + Psychology
               ──→ Cross-ref PMIDs with PubMed MeSH for neuro/psych/neuro
               ──→ 500K-2M domain paper IDs
+              ──→ Load `solemd.corpus` + base `solemd.papers`
 
 3. FETCH + LOAD
-   S2 Batch API ──→ Abstracts, citations, embeddings, TLDRs for domain IDs
-                ──→ Results go directly into PostgreSQL
+   S2 Batch API (full metadata pass)
+                ──→ `solemd.papers` (abstract, TLDR, embedding, text availability,
+                     paper ids, external ids, journal snapshot, release stamps)
+                ──→ `solemd.publication_venues`
+                ──→ `solemd.authors`
+                ──→ `solemd.paper_authors`
+                ──→ `solemd.author_affiliations` (raw strings first)
+                ──→ `solemd.paper_assets` (`open_access_pdf`)
+   S2 Batch API (reference pass)
+                ──→ `solemd.paper_references`
+                ──→ derive `solemd.citations` for domain-domain graph edges
    PubTator entities/relations ──→ COPY into pubtator schema ──→ Atomic swap
-   S2 paper metadata ──→ Upsert into solemd.papers
-   S2 SPECTER2 embeddings ──→ Load into graph_corpus_embeddings
-   S2 TLDRs ──→ Store for detail panel display
 
 4. EMBED (RAG)
    Paper abstracts ──→ MedCPT Article Encoder ──→ pgvector HNSW index
@@ -415,6 +451,19 @@ File Delivery:
      ──→ DuckDB ──→ corpus_clusters.parquet
    Upload to Cloudflare R2
 ```
+
+Release-aware rule:
+- `solemd.papers.s2_full_release_id` tracks the last full metadata pass
+- `solemd.papers.s2_embedding_release_id` tracks the last embedding pass
+- `solemd.papers.s2_references_release_id` tracks the last outgoing-reference pass
+- child tables carry `source_release_id`
+- `solemd.papers.s2_references_checked_at` is the paper-level sentinel for the dedicated `paper_references` load
+
+Current API constraint:
+- the live S2 batch API supports nested citation/reference paper metadata (`paperId`, `corpusId`, `title`, `year`, `externalIds`)
+- it does **not** currently support nested `intents` or `isInfluential` on `citations` / `references`
+- nested `references` are not emitted consistently for every paper even when bulk `reference_count > 0`, so the reference pass must trust the live payload rather than the bulk count
+- if influence / intent metadata becomes mandatory, use the dedicated S2 citations dataset rather than the paper batch response
 
 ### Real-Time (Per User Request)
 
@@ -850,10 +899,11 @@ Prepare for real users.
 
 ### SoleMD.App Status
 
-SoleMD.App stays as-is. No changes. It will be deprecated or deleted depending
-on the success of SoleMD.Graph. Code can be referenced or copied as needed
-(chunker, graph builder, service client patterns) but there is no obligation
-to maintain compatibility.
+SoleMD.App is being deprecated. If Graph needs any of its useful logic
+(affiliation parsing, backfill routines, chunking patterns, graph builder
+ideas, service client patterns), that logic should be ported into
+`SoleMD.Graph/engine` in an organized way rather than treated as a runtime
+dependency. There is no obligation to maintain cross-project compatibility.
 
 ---
 

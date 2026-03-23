@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   CosmographButtonPolygonalSelection,
@@ -72,28 +72,33 @@ function usePortalTarget(selector: string) {
   const [target, setTarget] = useState<HTMLElement | null>(null);
 
   useEffect(() => {
+    let wrapper: HTMLDivElement | null = null;
+
     const native = document.querySelector<HTMLElement>(selector);
     if (native) {
-      const wrapper = document.createElement("div");
+      wrapper = document.createElement("div");
       wrapper.style.display = "contents";
       native.insertBefore(wrapper, native.firstChild);
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Portal target must trigger re-render after DOM insertion
       setTarget(wrapper);
-      return () => { wrapper.remove(); };
+      return () => { wrapper?.remove(); };
     }
 
     const observer = new MutationObserver(() => {
       const found = document.querySelector<HTMLElement>(selector);
       if (found) {
         observer.disconnect();
-        const wrapper = document.createElement("div");
+        wrapper = document.createElement("div");
         wrapper.style.display = "contents";
         found.insertBefore(wrapper, found.firstChild);
         setTarget(wrapper);
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => { observer.disconnect(); };
+    return () => {
+      observer.disconnect();
+      wrapper?.remove();
+    };
   }, [selector]);
 
   return target;
@@ -106,16 +111,21 @@ function usePortalTarget(selector: string) {
  */
 function useCosmographButtonId() {
   const [id, setId] = useState<string | null>(null);
+  const observerRef = useRef<MutationObserver | null>(null);
 
   const ref = useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
+
     if (el) {
       const inner = el.querySelector<HTMLElement>("[id]");
       if (inner?.id) { setId(inner.id); return; }
       const obs = new MutationObserver(() => {
         const found = el.querySelector<HTMLElement>("[id]");
-        if (found?.id) { setId(found.id); obs.disconnect(); }
+        if (found?.id) { setId(found.id); obs.disconnect(); observerRef.current = null; }
       });
       obs.observe(el, { childList: true, subtree: true });
+      observerRef.current = obs;
     }
   }, []);
 

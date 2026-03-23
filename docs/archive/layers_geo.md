@@ -112,6 +112,8 @@ OpenAlex API ────► batch enrichment by DOI ─────────
                                                         │
 ROR API ─────────► affiliation matching fallback ───────┘
                                                         │
+Legacy SoleMD.App affiliation/backfill logic ───────────┘
+                                                        │
                                                         ▼
                                               author_affiliations
                                               (institution, city, country,
@@ -222,3 +224,6 @@ for the full technical plan including:
 - Layer config and web component architecture
 - Build flow and CLI flags
 - Phased implementation roadmap
+
+Transition note:
+- if existing affiliation parsing or backfill logic from SoleMD.App is worth keeping, port it into `SoleMD.Graph/engine` as first-class code rather than depending on SoleMD.App at runtime

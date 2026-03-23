@@ -43,6 +43,31 @@ import {
 } from './mappers'
 import { escapeSqlString, getAbsoluteUrl, executeReadOnlyQuery, queryRows } from './queries'
 
+const CACHE_MAX_ENTRIES = 200
+
+/** Simple bounded Map that evicts the oldest entry when full. */
+function createBoundedCache<K, V>(max = CACHE_MAX_ENTRIES): Map<K, V> {
+  const map = new Map<K, V>()
+  const originalSet = map.set.bind(map)
+  map.set = (key: K, value: V) => {
+    if (map.size >= max && !map.has(key)) {
+      const oldest = map.keys().next().value
+      if (oldest !== undefined) map.delete(oldest)
+    }
+    return originalSet(key, value)
+  }
+  return map
+}
+
+const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/i
+
+function validateTableName(name: string): string {
+  if (!TABLE_NAME_RE.test(name)) {
+    throw new Error(`Invalid table name: ${name}`)
+  }
+  return name
+}
+
 export interface GraphCanvasSource {
   duckDBConnection: {
     connection: AsyncDuckDBConnection
@@ -80,18 +105,20 @@ async function resolveBundleRelations(
 
   try {
     await conn.query(`ATTACH '${escapeSqlString(absoluteDuckdbUrl)}' AS graph_bundle`)
-    await conn.query(`SELECT 1 FROM graph_bundle.${probeTable} LIMIT 1`)
+    await conn.query(`SELECT 1 FROM graph_bundle.${validateTableName(probeTable)} LIMIT 1`)
 
     for (const tableName of Object.keys(bundle.bundleManifest.tables)) {
+      const safe = validateTableName(tableName)
       await conn.query(
-        `CREATE OR REPLACE VIEW ${tableName} AS SELECT * FROM graph_bundle.${tableName}`
+        `CREATE OR REPLACE VIEW ${safe} AS SELECT * FROM graph_bundle.${safe}`
       )
     }
   } catch {
     for (const [tableName, tableUrl] of Object.entries(bundle.tableUrls)) {
+      const safe = validateTableName(tableName)
       const absoluteTableUrl = getAbsoluteUrl(tableUrl)
       await conn.query(
-        `CREATE OR REPLACE VIEW ${tableName} AS SELECT * FROM read_parquet('${escapeSqlString(
+        `CREATE OR REPLACE VIEW ${safe} AS SELECT * FROM read_parquet('${escapeSqlString(
           absoluteTableUrl
         )}')`
       )
@@ -186,35 +213,71 @@ async function queryPaperDocument(
   return rows[0] ? mapPaperDocument(rows[0]) : null
 }
 
+async function queryPaperDetail(
+  conn: AsyncDuckDBConnection,
+  paperId: string
+): Promise<GraphPaperDetailRow[]> {
+  return queryRows<GraphPaperDetailRow>(
+    conn,
+    `SELECT
+      paper_id,
+      citekey,
+      title,
+      journal,
+      year,
+      doi,
+      pmid,
+      pmcid,
+      abstract,
+      authors_json,
+      author_count,
+      reference_count,
+      asset_count,
+      chunk_count,
+      entity_count,
+      relation_count,
+      sentence_count,
+      page_count,
+      table_count,
+      figure_count,
+      graph_point_count,
+      graph_cluster_count
+    FROM graph_papers
+    WHERE paper_id = ?
+    LIMIT 1`,
+    [paperId]
+  )
+}
+
 async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundleSession> {
   const { conn, db, worker } = await createConnection()
 
   try {
     await resolveBundleRelations(conn, bundle)
     const hasCorpusGraph = Boolean(bundle.bundleManifest.tables.corpus_points)
-    const pointTable = hasCorpusGraph ? 'corpus_points' : 'graph_points'
-    const clusterTable = hasCorpusGraph ? 'corpus_clusters' : 'graph_clusters'
+    const pointTable = validateTableName(hasCorpusGraph ? 'corpus_points' : 'graph_points')
+    const clusterTable = validateTableName(hasCorpusGraph ? 'corpus_clusters' : 'graph_clusters')
     const facetTable =
       hasCorpusGraph && bundle.bundleManifest.tables.corpus_facets
-        ? 'corpus_facets'
+        ? validateTableName('corpus_facets')
         : bundle.bundleManifest.tables.graph_facets
-          ? 'graph_facets'
+          ? validateTableName('graph_facets')
           : null
     const exemplarTable =
       hasCorpusGraph && bundle.bundleManifest.tables.corpus_cluster_exemplars
-        ? 'corpus_cluster_exemplars'
+        ? validateTableName('corpus_cluster_exemplars')
         : bundle.bundleManifest.tables.graph_cluster_exemplars
-          ? 'graph_cluster_exemplars'
+          ? validateTableName('graph_cluster_exemplars')
           : null
     const documentTable =
       hasCorpusGraph && bundle.bundleManifest.tables.corpus_documents
-        ? 'corpus_documents'
+        ? validateTableName('corpus_documents')
         : bundle.bundleManifest.tables.paper_documents
-          ? 'paper_documents'
+          ? validateTableName('paper_documents')
           : null
     const corpusLinksTable =
       hasCorpusGraph && bundle.bundleManifest.tables.corpus_links
-        ? 'corpus_links'
+        ? validateTableName('corpus_links')
         : null
     const colorCase = DEFAULT_CLUSTER_COLORS.map(
       (color, index) => `WHEN ${index} THEN '${color}'`
@@ -583,7 +646,13 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
            relation_count,
            page_count,
            table_count,
-           figure_count
+           figure_count,
+           text_availability,
+           is_open_access,
+           open_access_pdf_url,
+           open_access_pdf_status,
+           open_access_pdf_license,
+           authors_json
          FROM ${documentTable}`
       )
 
@@ -599,7 +668,7 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
            COALESCE(MAX(p.pmid), MAX(d.pmid)) AS pmid,
            COALESCE(MAX(p.pmcid), MAX(d.pmcid)) AS pmcid,
            MAX(d.abstract) AS abstract,
-           '[]' AS authors_json,
+           COALESCE(MAX(d.authors_json), '[]') AS authors_json,
            COALESCE(MAX(p.paperAuthorCount), MAX(d.author_count)) AS author_count,
            COALESCE(MAX(p.paperReferenceCount), MAX(d.reference_count)) AS reference_count,
            COALESCE(MAX(p.paperAssetCount), MAX(d.asset_count)) AS asset_count,
@@ -610,6 +679,11 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
            COALESCE(MAX(p.paperPageCount), MAX(d.page_count)) AS page_count,
            COALESCE(MAX(p.paperTableCount), MAX(d.table_count)) AS table_count,
            COALESCE(MAX(p.paperFigureCount), MAX(d.figure_count)) AS figure_count,
+           MAX(d.text_availability) AS text_availability,
+           MAX(d.is_open_access) AS is_open_access,
+           MAX(d.open_access_pdf_url) AS open_access_pdf_url,
+           MAX(d.open_access_pdf_status) AS open_access_pdf_status,
+           MAX(d.open_access_pdf_license) AS open_access_pdf_license,
            COUNT(*) FILTER (WHERE p.id IS NOT NULL) AS graph_point_count,
            COUNT(DISTINCT CASE WHEN p.clusterId > 0 THEN p.clusterId END) AS graph_cluster_count
          FROM paper_points_web p
@@ -650,7 +724,13 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
            NULL::INTEGER AS relation_count,
            NULL::INTEGER AS page_count,
            NULL::INTEGER AS table_count,
-           NULL::INTEGER AS figure_count
+           NULL::INTEGER AS figure_count,
+           NULL::VARCHAR AS text_availability,
+           NULL::BOOLEAN AS is_open_access,
+           NULL::VARCHAR AS open_access_pdf_url,
+           NULL::VARCHAR AS open_access_pdf_status,
+           NULL::VARCHAR AS open_access_pdf_license,
+           '[]' AS authors_json
          FROM paper_documents`
       )
     } else {
@@ -685,7 +765,51 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
            NULL::INTEGER AS relation_count,
            NULL::INTEGER AS page_count,
            NULL::INTEGER AS table_count,
-           NULL::INTEGER AS figure_count
+           NULL::INTEGER AS figure_count,
+           NULL::VARCHAR AS text_availability,
+           NULL::BOOLEAN AS is_open_access,
+           NULL::VARCHAR AS open_access_pdf_url,
+           NULL::VARCHAR AS open_access_pdf_status,
+           NULL::VARCHAR AS open_access_pdf_license,
+           '[]' AS authors_json
+         WHERE false`
+      )
+    }
+
+    // Fallback: graph_papers is only created above when hasCorpusGraph && documentTable.
+    // For non-corpus bundles (or corpus bundles without a document table), create an
+    // empty fallback so that paper detail queries don't error on a missing view.
+    if (!(hasCorpusGraph && documentTable)) {
+      await conn.query(
+        `CREATE OR REPLACE VIEW graph_papers AS
+         SELECT
+           NULL::VARCHAR AS paper_id,
+           NULL::VARCHAR AS citekey,
+           NULL::VARCHAR AS title,
+           NULL::VARCHAR AS journal,
+           NULL::INTEGER AS year,
+           NULL::VARCHAR AS doi,
+           NULL::VARCHAR AS pmid,
+           NULL::VARCHAR AS pmcid,
+           NULL::VARCHAR AS abstract,
+           '[]' AS authors_json,
+           NULL::INTEGER AS author_count,
+           NULL::INTEGER AS reference_count,
+           NULL::INTEGER AS asset_count,
+           NULL::INTEGER AS chunk_count,
+           NULL::INTEGER AS entity_count,
+           NULL::INTEGER AS relation_count,
+           NULL::INTEGER AS sentence_count,
+           NULL::INTEGER AS page_count,
+           NULL::INTEGER AS table_count,
+           NULL::INTEGER AS figure_count,
+           NULL::VARCHAR AS text_availability,
+           NULL::BOOLEAN AS is_open_access,
+           NULL::VARCHAR AS open_access_pdf_url,
+           NULL::VARCHAR AS open_access_pdf_status,
+           NULL::VARCHAR AS open_access_pdf_license,
+           NULL::BIGINT AS graph_point_count,
+           NULL::BIGINT AS graph_cluster_count
          WHERE false`
       )
     }
@@ -1175,10 +1299,10 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
     }
 
     const hasAuthorGeo = Boolean(bundle.bundleManifest.tables.graph_author_geo)
-    const selectionCache = new Map<string, Promise<GraphSelectionDetail>>()
-    const clusterCache = new Map<number, Promise<GraphClusterDetail>>()
-    const paperDocumentCache = new Map<string, Promise<PaperDocument | null>>()
-    const authorCache = new Map<string, Promise<AuthorGeoRow[]>>()
+    const selectionCache = createBoundedCache<string, Promise<GraphSelectionDetail>>()
+    const clusterCache = createBoundedCache<number, Promise<GraphClusterDetail>>()
+    const paperDocumentCache = createBoundedCache<string, Promise<PaperDocument | null>>()
+    const authorCache = createBoundedCache<string, Promise<AuthorGeoRow[]>>()
 
     return {
       availableLayers,
@@ -1299,36 +1423,7 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
 
           if (node.nodeKind === 'paper') {
             // Paper node: query paper details + cluster + exemplars (no chunk_details)
-            const paperRows = await queryRows<GraphPaperDetailRow>(
-              conn,
-              `SELECT
-                paper_id,
-                citekey,
-                title,
-                journal,
-                year,
-                doi,
-                pmid,
-                pmcid,
-                abstract,
-                authors_json,
-                author_count,
-                reference_count,
-                asset_count,
-                chunk_count,
-                entity_count,
-                relation_count,
-                sentence_count,
-                page_count,
-                table_count,
-                figure_count,
-                graph_point_count,
-                graph_cluster_count
-              FROM graph_papers
-              WHERE paper_id = ?
-              LIMIT 1`,
-              [node.paperId ?? node.id]
-            )
+            const paperRows = await queryPaperDetail(conn, node.paperId ?? node.id)
 
             // Load paper document on demand
             const paperDocument = await queryPaperDocument(conn, node.paperId ?? node.id)
@@ -1343,36 +1438,7 @@ async function createGraphBundleSession(bundle: GraphBundle): Promise<GraphBundl
           }
 
           const paperRows = node.paperId
-            ? await queryRows<GraphPaperDetailRow>(
-                conn,
-                `SELECT
-                  paper_id,
-                  citekey,
-                  title,
-                  journal,
-                  year,
-                  doi,
-                  pmid,
-                  pmcid,
-                  abstract,
-                  authors_json,
-                  author_count,
-                  reference_count,
-                  asset_count,
-                  chunk_count,
-                  entity_count,
-                  relation_count,
-                  sentence_count,
-                  page_count,
-                  table_count,
-                  figure_count,
-                  graph_point_count,
-                  graph_cluster_count
-                FROM graph_papers
-                WHERE paper_id = ?
-                LIMIT 1`,
-                [node.paperId]
-              )
+            ? await queryPaperDetail(conn, node.paperId)
             : []
 
           if (node.nodeKind !== 'chunk') {

@@ -1,6 +1,11 @@
 'use client'
 
-import { createBrowserClient } from '@/lib/supabase/client'
+import {
+  getGraphNodeDetail,
+  getGraphAssetUrl,
+  getGraphNeighborhood,
+  getGraphRagQuery,
+} from '@/app/actions/graph'
 
 import type { GraphBundle, GraphNode } from '@/features/graph/types'
 
@@ -295,17 +300,37 @@ interface FetchGraphRagQueryArgs {
   generateAnswer?: boolean
 }
 
-const detailCache = new Map<string, Promise<GraphNodeDetailResponsePayload>>()
-const CACHE_MAX = 100
+interface CacheEntry {
+  promise: Promise<GraphNodeDetailResponsePayload>
+  timestamp: number
+}
 
-function cacheSet(key: string, value: Promise<GraphNodeDetailResponsePayload>): Promise<GraphNodeDetailResponsePayload> {
+const detailCache = new Map<string, CacheEntry>()
+const CACHE_MAX = 100
+const CACHE_TTL_MS = 5 * 60 * 1000
+
+function cacheSet(key: string, promise: Promise<GraphNodeDetailResponsePayload>): Promise<GraphNodeDetailResponsePayload> {
   if (detailCache.size >= CACHE_MAX) {
     // Delete oldest entry (first key in insertion order)
     const firstKey = detailCache.keys().next().value
     if (firstKey !== undefined) detailCache.delete(firstKey)
   }
-  detailCache.set(key, value)
-  return value
+  detailCache.set(key, { promise, timestamp: Date.now() })
+  return promise
+}
+
+function cacheGet(key: string): Promise<GraphNodeDetailResponsePayload> | undefined {
+  const entry = detailCache.get(key)
+  if (!entry) return undefined
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    detailCache.delete(key)
+    return undefined
+  }
+  return entry.promise
+}
+
+export function clearDetailCache(): void {
+  detailCache.clear()
 }
 
 function getGraphReleaseId(bundle: GraphBundle) {
@@ -324,28 +349,17 @@ export async function fetchGraphNodeDetail({
     throw new Error(`Remote graph detail is not supported for node kind "${node.nodeKind}"`)
   }
   const cacheKey = `${getGraphReleaseId(bundle)}:${node.nodeKind}:${node.id}`
-  const cached = detailCache.get(cacheKey)
+  const cached = cacheGet(cacheKey)
 
   if (cached) {
     return cached
   }
 
-  const next = (async () => {
-    const supabase = createBrowserClient()
-    const { data, error } = await supabase.functions.invoke('graph-node-detail', {
-      body: {
-        graph_release_id: getGraphReleaseId(bundle),
-        layer_key: node.nodeKind,
-        node_id: node.id,
-      },
-    })
-
-    if (error) {
-      throw error
-    }
-
-    return data as GraphNodeDetailResponsePayload
-  })().catch((error) => {
+  const next = getGraphNodeDetail({
+    graph_release_id: getGraphReleaseId(bundle),
+    layer_key: node.nodeKind,
+    node_id: node.id,
+  }).catch((error) => {
     detailCache.delete(cacheKey)
     throw error
   })
@@ -363,24 +377,16 @@ export async function refreshGraphAssetUrl({
   if (!supportsRemoteGraphNodeDetail(node)) {
     throw new Error(`Remote graph asset URLs are not supported for node kind "${node.nodeKind}"`)
   }
-  const supabase = createBrowserClient()
-  const { data, error } = await supabase.functions.invoke('graph-asset-url', {
-    body: {
-      graph_release_id: getGraphReleaseId(bundle),
-      layer_key: node.nodeKind,
-      node_id: node.id,
-      asset_id: asset.asset_id,
-      asset_type: asset.asset_type,
-      storage_path: asset.storage_path,
-      expires_in_seconds: expiresInSeconds,
-    },
+
+  return getGraphAssetUrl({
+    graph_release_id: getGraphReleaseId(bundle),
+    layer_key: node.nodeKind,
+    node_id: node.id,
+    asset_id: asset.asset_id,
+    asset_type: asset.asset_type,
+    storage_path: asset.storage_path,
+    expires_in_seconds: expiresInSeconds,
   })
-
-  if (error) {
-    throw error
-  }
-
-  return data as GraphAssetUrlResponsePayload
 }
 
 export async function fetchGraphNeighborhood({
@@ -393,23 +399,15 @@ export async function fetchGraphNeighborhood({
   if (!supportsRemoteGraphNodeDetail(node)) {
     throw new Error(`Remote graph neighborhoods are not supported for node kind "${node.nodeKind}"`)
   }
-  const supabase = createBrowserClient()
-  const { data, error } = await supabase.functions.invoke('graph-neighborhood', {
-    body: {
-      graph_release_id: getGraphReleaseId(bundle),
-      layer_key: node.nodeKind,
-      node_id: node.id,
-      limit,
-      include_incoming: includeIncoming,
-      include_outgoing: includeOutgoing,
-    },
+
+  return getGraphNeighborhood({
+    graph_release_id: getGraphReleaseId(bundle),
+    layer_key: node.nodeKind,
+    node_id: node.id,
+    limit,
+    include_incoming: includeIncoming,
+    include_outgoing: includeOutgoing,
   })
-
-  if (error) {
-    throw error
-  }
-
-  return data as GraphNeighborhoodResponsePayload
 }
 
 export async function fetchGraphRagQuery({
@@ -422,29 +420,20 @@ export async function fetchGraphRagQuery({
   useLexical,
   generateAnswer,
 }: FetchGraphRagQueryArgs): Promise<GraphRagQueryResponsePayload> {
-  const supabase = createBrowserClient()
-  const { data, error } = await supabase.functions.invoke('graph-rag-query', {
-    body: {
-      graph_release_id: getGraphReleaseId(bundle),
-      query,
-      selected_layer_key:
-        selectedNode?.nodeKind === 'paper'
-          ? 'paper'
-          : selectedNode?.nodeKind === 'chunk'
-            ? 'chunk'
-            : null,
-      selected_node_id: selectedNode?.id ?? null,
-      selected_cluster_id: selectedClusterId ?? null,
-      k,
-      rerank_topn: rerankTopn,
-      use_lexical: useLexical,
-      generate_answer: generateAnswer,
-    },
+  return getGraphRagQuery({
+    graph_release_id: getGraphReleaseId(bundle),
+    query,
+    selected_layer_key:
+      selectedNode?.nodeKind === 'paper'
+        ? 'paper'
+        : selectedNode?.nodeKind === 'chunk'
+          ? 'chunk'
+          : null,
+    selected_node_id: selectedNode?.id ?? null,
+    selected_cluster_id: selectedClusterId ?? null,
+    k,
+    rerank_topn: rerankTopn,
+    use_lexical: useLexical,
+    generate_answer: generateAnswer,
   })
-
-  if (error) {
-    throw error
-  }
-
-  return data as GraphRagQueryResponsePayload
 }

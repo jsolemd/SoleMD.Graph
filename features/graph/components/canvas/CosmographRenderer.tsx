@@ -79,12 +79,12 @@ export default function CosmographRenderer({
 
   // Selection & interaction state
   const {
-    setCurrentPointIndices, selectionIntentPointIndices,
+    setCurrentPointIndices, selectedPointIndices,
     setSelectedPointIndices, setHighlightedPointIndices,
     setActiveSelectionSourceId, connectedSelect, lockedSelection,
   } = useDashboardStore(useShallow((s) => ({
     setCurrentPointIndices: s.setCurrentPointIndices,
-    selectionIntentPointIndices: s.selectedPointIndices,
+    selectedPointIndices: s.selectedPointIndices,
     setSelectedPointIndices: s.setSelectedPointIndices,
     setHighlightedPointIndices: s.setHighlightedPointIndices,
     setActiveSelectionSourceId: s.setActiveSelectionSourceId,
@@ -152,14 +152,6 @@ export default function CosmographRenderer({
     return map;
   }, [activeNodes]);
 
-  const idToNode = useMemo(() => {
-    const map = new Map<string, GraphNode>();
-    for (const node of activeNodes) {
-      map.set(node.id, node);
-    }
-    return map;
-  }, [activeNodes]);
-
   const allNodeIndices = useMemo(
     () => activeNodes.map((node) => node.index),
     [activeNodes]
@@ -167,9 +159,9 @@ export default function CosmographRenderer({
 
   const handleLabelClick = useCallback(
     (_index: number, id: string) => {
-      selectNode(idToNode.get(id) ?? null);
+      selectNode(activeNodes.find((n) => n.id === id) ?? null);
     },
-    [idToNode, selectNode]
+    [activeNodes, selectNode]
   );
 
   // Track the layer so we can re-fit view on layer changes
@@ -289,7 +281,7 @@ export default function CosmographRenderer({
           return;
         }
 
-        setHighlightedPointIndices(selectionIntentPointIndices);
+        setHighlightedPointIndices(selectedPointIndices);
         return;
       }
 
@@ -320,7 +312,7 @@ export default function CosmographRenderer({
       getIntentClauseIds,
       lockedSelection,
       selectNode,
-      selectionIntentPointIndices,
+      selectedPointIndices,
       setActiveSelectionSourceId,
       setCurrentPointIndices,
       setHighlightedPointIndices,
@@ -351,7 +343,7 @@ export default function CosmographRenderer({
       linkTargetBy={layerConfig.linkTargetBy}
       linkTargetIndexBy={layerConfig.linkTargetIndexBy}
       linkIncludeColumns={hasLinks ? ["*"] : undefined}
-      renderLinks={hasLinks && (renderLinks || selectionIntentPointIndices.length > 0)}
+      renderLinks={hasLinks && (renderLinks || selectedPointIndices.length > 0)}
       linkOpacity={hasLinks ? linkOpacity : undefined}
       linkGreyoutOpacity={hasLinks ? (renderLinks ? linkGreyoutOpacity : 0) : undefined}
       linkVisibilityDistanceRange={hasLinks ? linkVisibilityDistanceRange : undefined}

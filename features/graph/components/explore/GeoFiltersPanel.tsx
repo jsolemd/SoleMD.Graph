@@ -2,26 +2,15 @@
 
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActionIcon,
-  Button,
   RangeSlider,
-  Select,
-  Stack,
   Text,
   TextInput,
 } from "@mantine/core";
-import { Plus, Search, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getColumnsForLayer, getColumnMeta } from "@/features/graph/lib/columns";
 import { getNodeProp, safeMin, safeMax } from "@/features/graph/lib/helpers";
-import type { FilterableColumnKey, GeoNode } from "@/features/graph/types";
-import {
-  iconBtnStyles,
-  PANEL_ACCENT,
-  PanelShell,
-  panelSelectStyles,
-  panelTextStyle,
-} from "../panels/PanelShell";
+import type { GeoNode } from "@/features/graph/types";
+import { FilterPanelShell } from "./FilterPanelShell";
 
 /**
  * Geo-specific filters panel — replaces FiltersPanel for the geo layer.
@@ -56,16 +45,15 @@ function useCategoricalDistribution(
 function useNumericRange(
   geoNodes: GeoNode[],
   column: string,
-): { min: number; max: number; values: number[] } {
+): { min: number; max: number } {
   return useMemo(() => {
     const values = geoNodes
       .map((n) => getNodeProp(n, column))
       .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-    if (values.length === 0) return { min: 0, max: 0, values: [] };
+    if (values.length === 0) return { min: 0, max: 0 };
     return {
       min: safeMin(values),
       max: safeMax(values),
-      values,
     };
   }, [geoNodes, column]);
 }
@@ -95,7 +83,7 @@ function CategoricalFilterWidget({
 
   const handleClick = useCallback(
     (value: string) => {
-      const current = (selectedValues ?? []) as string[];
+      const current = selectedValues ?? [];
       const next = current.includes(value)
         ? current.filter((v) => v !== value)
         : [...current, value];
@@ -236,105 +224,15 @@ function NumericFilterWidget({
 }
 
 export function GeoFiltersPanel({ geoNodes }: GeoFiltersPanelProps) {
-  const filterColumns = useDashboardStore((s) => s.filterColumns);
-  const addFilter = useDashboardStore((s) => s.addFilter);
-  const removeFilter = useDashboardStore((s) => s.removeFilter);
-  const setActivePanel = useDashboardStore((s) => s.setActivePanel);
-  const activeLayer = useDashboardStore((s) => s.activeLayer);
-  const [showAddSelect, setShowAddSelect] = useState(false);
-
-  const layerDataColumns = useMemo(
-    () => getColumnsForLayer(activeLayer),
-    [activeLayer],
-  );
-
-  const availableColumns = useMemo(
-    () =>
-      layerDataColumns
-        .filter(
-          (col) =>
-            col.type !== "text" &&
-            !filterColumns.some((f) => f.column === col.key),
-        )
-        .map((col) => ({ value: col.key, label: col.label })),
-    [filterColumns, layerDataColumns],
-  );
-
   return (
-    <PanelShell
-      title="Filters"
-      side="left"
-      onClose={() => setActivePanel(null)}
-    >
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <Stack gap="lg">
-          {filterColumns.map((filter) => {
-            const meta = getColumnMeta(filter.column);
-            if (!meta) return null;
-
-            return (
-              <div key={filter.column}>
-                <div className="mb-1 flex items-center justify-between">
-                  <Text size="xs" fw={600} style={panelTextStyle}>
-                    {meta.label}
-                  </Text>
-                  <ActionIcon
-                    variant="subtle"
-                    size={18}
-                    radius="sm"
-                    onClick={() => removeFilter(filter.column)}
-                    aria-label={`Remove ${meta.label} filter`}
-                    styles={iconBtnStyles}
-                  >
-                    <X size={10} />
-                  </ActionIcon>
-                </div>
-                {filter.type === "numeric" ? (
-                  <NumericFilterWidget
-                    column={filter.column}
-                    geoNodes={geoNodes}
-                  />
-                ) : (
-                  <CategoricalFilterWidget
-                    column={filter.column}
-                    geoNodes={geoNodes}
-                  />
-                )}
-              </div>
-            );
-          })}
-
-          {showAddSelect ? (
-            <Select
-              size="xs"
-              placeholder="Select column..."
-              data={availableColumns}
-              onChange={(v) => {
-                if (v) {
-                  addFilter(v as FilterableColumnKey);
-                  setShowAddSelect(false);
-                }
-              }}
-              onBlur={() => setShowAddSelect(false)}
-              autoFocus
-              searchable
-              styles={panelSelectStyles}
-            />
-          ) : (
-            <Button
-              size="xs"
-              variant="subtle"
-              color={PANEL_ACCENT}
-              leftSection={<Plus size={14} />}
-              onClick={() => setShowAddSelect(true)}
-              disabled={availableColumns.length === 0}
-            >
-              Add Filter
-              {availableColumns.length > 0 && ` · ${availableColumns.length}`}
-            </Button>
-          )}
-        </Stack>
-      </div>
-    </PanelShell>
+    <FilterPanelShell
+      renderWidget={(filter) =>
+        filter.type === "numeric" ? (
+          <NumericFilterWidget column={filter.column} geoNodes={geoNodes} />
+        ) : (
+          <CategoricalFilterWidget column={filter.column} geoNodes={geoNodes} />
+        )
+      }
+    />
   );
 }

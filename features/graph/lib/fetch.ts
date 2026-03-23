@@ -3,9 +3,10 @@ import 'server-only'
 import { realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { unstable_cache } from 'next/cache'
+import { and, desc, eq } from 'drizzle-orm'
 import { coerceNullableNumber } from '@/lib/helpers'
-import { createServerClient } from '@/lib/supabase/server'
+import { db } from '@/lib/db'
+import { graphRuns } from '@/lib/db/schema'
 import type {
   GraphBundle,
   GraphBundleDuckDBFile,
@@ -17,7 +18,7 @@ const GRAPH_NAME = 'cosmograph'
 const NODE_KIND = 'corpus'
 const GRAPH_BUNDLE_ROOT =
   process.env.GRAPH_BUNDLE_ROOT ??
-  '/home/workbench/SoleMD/SoleMD.App/pipeline/app/output/graph/bundles'
+  '/mnt/e/SoleMD.Graph/graph/bundles'
 
 interface GraphRunRow {
   bundle_bytes: number | string | null
@@ -179,62 +180,79 @@ function buildGraphBundle(row: GraphRunRow): GraphBundle {
 }
 
 async function queryCurrentGraphRun(): Promise<GraphRunRow> {
-  const supabase = createServerClient()
-  const { data, error } = await supabase
-    .from('graph_runs')
-    .select(
-      'id, graph_name, node_kind, bundle_uri, bundle_format, bundle_version, bundle_checksum, bundle_bytes, bundle_manifest, qa_summary, created_at'
+  const rows = await db
+    .select()
+    .from(graphRuns)
+    .where(
+      and(
+        eq(graphRuns.graphName, GRAPH_NAME),
+        eq(graphRuns.nodeKind, NODE_KIND),
+        eq(graphRuns.status, 'completed'),
+        eq(graphRuns.isCurrent, true),
+      )
     )
-    .eq('graph_name', GRAPH_NAME)
-    .eq('node_kind', NODE_KIND)
-    .eq('status', 'completed')
-    .eq('is_current', true)
-    .order('created_at', { ascending: false })
+    .orderBy(desc(graphRuns.createdAt))
     .limit(1)
-    .maybeSingle()
 
-  if (error) {
-    throw new Error(`graph_runs current: ${error.message}`)
-  }
-
-  if (!data) {
+  const row = rows[0]
+  if (!row) {
     throw new Error('No current graph bundle found in solemd.graph_runs')
   }
 
-  return data as GraphRunRow
+  return {
+    id: row.id,
+    graph_name: row.graphName,
+    node_kind: row.nodeKind,
+    bundle_uri: row.bundleUri,
+    bundle_format: row.bundleFormat,
+    bundle_version: row.bundleVersion,
+    bundle_checksum: row.bundleChecksum,
+    bundle_bytes: row.bundleBytes,
+    bundle_manifest: row.bundleManifest as Record<string, unknown> | null,
+    qa_summary: row.qaSummary as Record<string, unknown> | null,
+    created_at: row.createdAt.toISOString(),
+  }
 }
 
 async function queryGraphRunByChecksum(bundleChecksum: string): Promise<GraphRunRow> {
-  const supabase = createServerClient()
-  const { data, error } = await supabase
-    .from('graph_runs')
-    .select(
-      'id, graph_name, node_kind, bundle_uri, bundle_format, bundle_version, bundle_checksum, bundle_bytes, bundle_manifest, qa_summary, created_at'
+  const rows = await db
+    .select()
+    .from(graphRuns)
+    .where(
+      and(
+        eq(graphRuns.graphName, GRAPH_NAME),
+        eq(graphRuns.nodeKind, NODE_KIND),
+        eq(graphRuns.status, 'completed'),
+        eq(graphRuns.bundleChecksum, bundleChecksum),
+      )
     )
-    .eq('graph_name', GRAPH_NAME)
-    .eq('node_kind', NODE_KIND)
-    .eq('status', 'completed')
-    .eq('bundle_checksum', bundleChecksum)
-    .order('created_at', { ascending: false })
+    .orderBy(desc(graphRuns.createdAt))
     .limit(1)
-    .maybeSingle()
 
-  if (error) {
-    throw new Error(`graph_runs checksum: ${error.message}`)
-  }
-
-  if (!data) {
+  const row = rows[0]
+  if (!row) {
     throw new Error(`No completed graph bundle found for checksum ${bundleChecksum}`)
   }
 
-  return data as GraphRunRow
+  return {
+    id: row.id,
+    graph_name: row.graphName,
+    node_kind: row.nodeKind,
+    bundle_uri: row.bundleUri,
+    bundle_format: row.bundleFormat,
+    bundle_version: row.bundleVersion,
+    bundle_checksum: row.bundleChecksum,
+    bundle_bytes: row.bundleBytes,
+    bundle_manifest: row.bundleManifest as Record<string, unknown> | null,
+    qa_summary: row.qaSummary as Record<string, unknown> | null,
+    created_at: row.createdAt.toISOString(),
+  }
 }
 
-const getCachedGraphRunByChecksum = unstable_cache(
-  async (bundleChecksum: string) => queryGraphRunByChecksum(bundleChecksum),
-  ['graph-runs-by-checksum'],
-  { revalidate: 300 }
-)
+// TODO: Replace with `"use cache"` + `cacheLife('minutes')` when real queries are in place
+async function getCachedGraphRunByChecksum(bundleChecksum: string): Promise<GraphRunRow> {
+  return queryGraphRunByChecksum(bundleChecksum)
+}
 
 export async function fetchActiveGraphBundle(): Promise<GraphBundle> {
   return buildGraphBundle(await queryCurrentGraphRun())

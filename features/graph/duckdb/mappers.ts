@@ -53,7 +53,11 @@ export interface GraphPaperDetailRow {
   figure_count: number | string | null
   graph_cluster_count: number | string | null
   graph_point_count: number | string | null
+  is_open_access: boolean | null
   journal: string | null
+  open_access_pdf_license: string | null
+  open_access_pdf_status: string | null
+  open_access_pdf_url: string | null
   page_count: number | string | null
   paper_id: string
   pmcid: string | null
@@ -62,6 +66,7 @@ export interface GraphPaperDetailRow {
   relation_count: number | string | null
   sentence_count: number | string | null
   table_count: number | string | null
+  text_availability: string | null
   title: string | null
   year: number | null
 }
@@ -189,7 +194,11 @@ export function mapPaper(row: GraphPaperDetailRow): GraphPaperDetail {
     figureCount: coerceNullableNumber(row.figure_count),
     graphClusterCount: coerceNullableNumber(row.graph_cluster_count),
     graphPointCount: coerceNullableNumber(row.graph_point_count),
+    isOpenAccess: row.is_open_access ?? null,
     journal: row.journal,
+    openAccessPdfLicense: row.open_access_pdf_license,
+    openAccessPdfStatus: row.open_access_pdf_status,
+    openAccessPdfUrl: row.open_access_pdf_url,
     paperId: row.paper_id,
     pageCount: coerceNullableNumber(row.page_count),
     pmcid: row.pmcid,
@@ -198,6 +207,7 @@ export function mapPaper(row: GraphPaperDetailRow): GraphPaperDetail {
     relationCount: coerceNullableNumber(row.relation_count),
     sentenceCount: coerceNullableNumber(row.sentence_count),
     tableCount: coerceNullableNumber(row.table_count),
+    textAvailability: row.text_availability,
     title: row.title,
     year: row.year ?? null,
   }

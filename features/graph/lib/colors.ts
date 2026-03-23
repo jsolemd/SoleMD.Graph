@@ -58,6 +58,7 @@ const SCIENTIFIC_PALETTES: ReadonlySet<ColorSchemeName> = new Set([
 /* ---------- HSL helpers ---------- */
 
 export function hexToHsl(hex: string): { h: number; s: number; l: number } {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return { h: 0, s: 0, l: 50 }
   const r = parseInt(hex.slice(1, 3), 16) / 255
   const g = parseInt(hex.slice(3, 5), 16) / 255
   const b = parseInt(hex.slice(5, 7), 16) / 255
@@ -109,6 +110,7 @@ export function hexToRgba(
   hex: string,
   alpha = 160,
 ): [number, number, number, number] {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return [128, 128, 128, alpha]
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
   const b = parseInt(hex.slice(5, 7), 16)

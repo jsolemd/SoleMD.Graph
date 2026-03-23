@@ -3,11 +3,35 @@ import type { NextConfig } from 'next'
 const DUCKDB_BROWSER_ENTRY = '@duckdb/duckdb-wasm/dist/duckdb-browser.mjs'
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   reactStrictMode: true,
+  reactCompiler: true,
+  cacheComponents: true,
   images: {
     formats: ['image/avif', 'image/webp'],
   },
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          { key: 'X-DNS-Prefetch-Control', value: 'on' },
+        ],
+      },
+    ]
+  },
   experimental: {
+    viewTransition: true,
     optimizePackageImports: [
       '@mantine/core',
       '@mantine/hooks',

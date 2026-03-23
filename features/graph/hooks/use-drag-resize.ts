@@ -9,15 +9,16 @@ export function useDragResize(opts: {
 }): { onMouseDown: (e: React.MouseEvent) => void } {
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null);
 
+  const { height, min, max, onResize } = opts;
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault();
-      dragRef.current = { startY: e.clientY, startHeight: opts.height };
+      dragRef.current = { startY: e.clientY, startHeight: height };
 
       const handleMove = (ev: MouseEvent) => {
         if (!dragRef.current) return;
         const delta = dragRef.current.startY - ev.clientY;
-        opts.onResize(clamp(dragRef.current.startHeight + delta, opts.min, opts.max));
+        onResize(clamp(dragRef.current.startHeight + delta, min, max));
       };
 
       const handleUp = () => {
@@ -29,7 +30,7 @@ export function useDragResize(opts: {
       document.addEventListener("mousemove", handleMove);
       document.addEventListener("mouseup", handleUp);
     },
-    [opts]
+    [height, min, max, onResize]
   );
 
   return { onMouseDown };

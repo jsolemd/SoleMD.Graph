@@ -9,8 +9,6 @@ import {
   resolveGraphBundleDirectory,
 } from '@/features/graph/lib/fetch'
 
-export const runtime = 'nodejs'
-
 type RouteContext = {
   params: Promise<{
     asset: string
@@ -108,8 +106,19 @@ async function serveAsset(
   }
 
   const bundleDirectory = await resolveGraphBundleDirectory(bundle)
-  const assetPath = path.join(bundleDirectory, asset)
-  const assetStats = await stat(assetPath)
+  const assetPath = path.resolve(bundleDirectory, asset)
+
+  if (!assetPath.startsWith(bundleDirectory)) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  let assetStats: Awaited<ReturnType<typeof stat>>
+  try {
+    assetStats = await stat(assetPath)
+  } catch {
+    return NextResponse.json({ error: 'Asset not found on disk' }, { status: 404 })
+  }
+
   const etag = `"${bundle.bundleChecksum}:${asset}:${assetStats.size}"`
 
   if (request.headers.get('if-none-match') === etag) {

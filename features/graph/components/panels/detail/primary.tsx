@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Accordion, Badge, Button, Group, Text } from "@mantine/core";
 import { Copy, FileText, MessageSquareText, Orbit } from "lucide-react";
 import type {
@@ -20,6 +20,7 @@ import { badgeAccentStyles, badgeOutlineStyles } from "@/features/graph/componen
 import {
   InlineStats,
   ExtLink,
+  accordionStyles,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
@@ -450,7 +451,7 @@ export function InstitutionSection({
   const rorUrl = geo.rorId ? `https://ror.org/${geo.rorId.replace("https://ror.org/", "")}` : null;
 
   // Group authors by unique name for summary
-  const uniqueAuthors = (() => {
+  const uniqueAuthors = useMemo(() => {
     const seen = new Map<string, { name: string; papers: number; orcid: string | null }>();
     for (const a of authors) {
       const key = a.surname ? `${a.surname}|${a.givenName ?? ""}` : a.name ?? "";
@@ -466,9 +467,9 @@ export function InstitutionSection({
       }
     }
     return [...seen.values()].sort((a, b) => b.papers - a.papers);
-  })();
+  }, [authors]);
 
-  const uniquePapers = (() => {
+  const uniquePapers = useMemo(() => {
     const seen = new Map<string, { citekey: string; title: string; year: number | null }>();
     for (const a of authors) {
       if (!a.citekey) continue;
@@ -481,7 +482,7 @@ export function InstitutionSection({
       }
     }
     return [...seen.values()].sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
-  })();
+  }, [authors]);
 
   return (
     <div>
@@ -514,13 +515,7 @@ export function InstitutionSection({
 
       {/* Author drill-down */}
       {(uniqueAuthors.length > 0 || uniquePapers.length > 0 || loadingAuthors) && (
-        <Accordion variant="default" mt={12} styles={{
-          item: { borderBottom: "none" },
-          control: { paddingLeft: 0, paddingRight: 0, paddingTop: 4, paddingBottom: 4, backgroundColor: "transparent" },
-          label: { fontSize: "0.7rem", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--graph-panel-text-muted)" },
-          chevron: { color: "var(--graph-panel-text-muted)", width: 14, height: 14 },
-          content: { paddingLeft: 0, paddingRight: 0, paddingBottom: 8 },
-        }}>
+        <Accordion variant="default" mt={12} styles={accordionStyles}>
           {uniquePapers.length > 0 && (
             <Accordion.Item value="papers">
               <Accordion.Control>
@@ -549,9 +544,9 @@ export function InstitutionSection({
                 <Text style={panelTextDimStyle}>Loading authors...</Text>
               ) : (
                 <div className="flex flex-col gap-1.5">
-                  {uniqueAuthors.slice(0, 30).map((a, i) => (
+                  {uniqueAuthors.slice(0, 30).map((a) => (
                     <div
-                      key={i}
+                      key={a.name}
                       role={onSelectAuthor ? "button" : undefined}
                       tabIndex={onSelectAuthor ? 0 : undefined}
                       className={`flex items-baseline justify-between gap-2 rounded-lg px-2 py-1 -mx-2 transition-colors ${onSelectAuthor ? "cursor-pointer hover:bg-[var(--mode-accent-subtle)] focus-visible:bg-[var(--mode-accent-subtle)] focus-visible:outline-none" : ""}`}

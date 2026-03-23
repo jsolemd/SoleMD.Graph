@@ -36,7 +36,7 @@ Papers with PMIDs appear in both Semantic Scholar and PubTator3. The S2
 `paper-ids` dataset provides the cross-reference mapping between S2 corpus IDs
 and PMIDs. This bridge is the foundation of domain filtering -- PubMed MeSH
 queries yield PMID sets, which map to S2 corpus IDs via `paper-ids`, which
-unlock citations, embeddings, and TLDRs for those same papers.
+unlock stable paper metadata, references, embeddings, and TLDRs for those same papers.
 
 ### Complement, Not Replacement
 
@@ -58,24 +58,47 @@ semantics (PubTator3 entities and relations).
 All datasets are available through the Datasets API as gzipped newline-delimited
 JSON (`.jsonl.gz`). Each release contains multiple shards per dataset.
 
-### Dataset Summary
+### Dataset Summary (2026-03-10 release)
 
-| Dataset | Records | Shards | Compressed Size | Description |
-|---------|---------|--------|-----------------|-------------|
-| `papers` | ~225M | ~30 | ~20 GB | Title, authors, year, venue, fields of study, external IDs |
-| `abstracts` | ~100M | ~30 | ~54 GB | Full abstract text |
-| `citations` | ~2.8B | ~30 | ~80 GB | Directed edges with context, intent, influential flag |
-| `s2fieldsofstudy` | ~225M | ~10 | ~5 GB | Field-of-study labels per paper |
-| `embeddings` | ~200M+ | ~30 | ~600 GB | SPECTER2 768d float vectors |
-| `tldrs` | ~60M | ~10 | ~3 GB | Machine-generated single-sentence summaries |
-| `s2orc` | ~12M | ~30 | ~200 GB | Full-text structured papers |
-| `paper-ids` | ~225M | ~10 | ~8 GB | Cross-reference mapping (PMID, DOI, arXiv, etc.) |
-| `authors` | ~105M | ~10 | ~10 GB | Author metadata + affiliations |
-| `publication-venues` | ~195K | 1 | ~10 MB | Venue/journal metadata |
+Source: `GET https://api.semanticscholar.org/datasets/v1/release/latest`
 
-**Full catalog size**: ~1 TB compressed if all datasets were downloaded. With the
-API-first strategy (Section 4), we download only `papers` + `paper-ids` (~55 GB)
-and pull the rest via the batch API for domain papers only.
+| Dataset | Records | Size | Description | We use it? |
+|---------|---------|------|-------------|-----------|
+| `papers` | 200M | 45 GB | Title, authors, year, venue, fields of study, external IDs | **Yes** — already downloaded (60 shards) |
+| `abstracts` | 100M | 54 GB | Full abstract text | **Phase 1.5** — bulk download replaces Batch API for abstracts |
+| `tldrs` | 58M | 6 GB | Machine-generated single-sentence summaries | **Phase 1.5** — bulk download, DuckDB filter by corpus_id |
+| `citations` | 2.4B | 255 GB | Directed edges with context, intent, influential flag | **Phase 2** — bulk download for graph edges |
+| `embeddings-specter_v2` | 120M | 840 GB | SPECTER2 768d float vectors | **Batch API only** — 840 GB too large for 2.5M papers |
+| `embeddings-specter_v1` | 120M | 840 GB | Original SPECTER vectors | No — v2 preferred |
+| `paper-ids` | 450M | 15 GB | Cross-reference mapping (PMID, DOI, arXiv, etc.) | Maybe later |
+| `authors` | 75M | 3 GB | Author metadata + affiliations | Maybe later |
+| `publication-venues` | — | — | Venue/journal metadata | Maybe later |
+| `s2orc` | 10M | 120 GB | Full-text parsed from open-access PDFs (v1) | No — v2 preferred |
+| `s2orc_v2` | 16M | 180 GB | Full-text with improved structural annotation | **Phase 3** — RAG over full paper text |
+
+### Enrichment Strategy: Bulk vs Batch API
+
+For enriching our ~14M candidate / ~1.98M graph-tier corpus, two paths:
+
+| Data | Bulk download | Batch API | Our choice |
+|------|--------------|-----------|-----------|
+| Abstracts | 54 GB, DuckDB filter | 1 req/500 papers, ~1.1h for 1.98M | **Phase 1: Batch API** (graph-tier only). **Phase 1.5: Bulk** (all candidate). |
+| TLDRs | 6 GB, DuckDB filter | Same calls as abstracts | **Phase 1: Batch API**. **Phase 1.5: Bulk** (cheap, covers everything). |
+| SPECTER2 | 840 GB download | Same calls as abstracts | **Batch API always** — 840 GB for 1.98M papers is absurd. |
+| Citations | 255 GB, DuckDB filter | Separate batch calls | **Phase 2: Bulk** — gets ALL edges, no API budget. |
+| Full text | 180 GB (s2orc_v2, 16M papers) | Not available via batch | **Phase 3: Bulk** — only source for full text. |
+
+**Why hybrid**: Batch API is ideal when you need a small subset fast (1.98M of 200M).
+Bulk is ideal when you want everything or most of a dataset (abstracts for all 14M,
+all citation edges). The 840 GB SPECTER2 bulk is never worth it — we only need
+embeddings for graph-tier papers.
+
+**Monthly refresh**: Bulk datasets support incremental diffs via
+`GET /diffs/{start_release}/to/{end_release}/{dataset_name}`.
+This avoids re-downloading full datasets on each monthly refresh.
+
+**Full "explore everything" download** (excluding embeddings):
+papers (45 GB) + abstracts (54 GB) + tldrs (6 GB) + citations (255 GB) + s2orc_v2 (180 GB) + authors (3 GB) = **~543 GB**.
 
 ### Sample Records
 
@@ -236,16 +259,17 @@ Instead of downloading every S2 bulk dataset (~1.2 TB), we download only the
 | `papers` | **Bulk download**, filter locally with DuckDB | ~45 GB | Has `s2fieldsofstudy` inline -- needed for domain filtering |
 | `paper-ids` | **Bulk download**, filter locally with DuckDB | ~8 GB | Complete PMID cross-reference mapping |
 | `abstracts` | **Batch API** (`fields=abstract`) | ~0 (API) | Pull only for domain corpus IDs -- no need for 54 GB bulk |
-| `citations` | **Batch API** (`fields=citations`) | ~0 (API) | Pull per citing paper -- no need for 255 GB bulk |
+| `references` | **Batch API** (`fields=references.*`) | ~0 (API) | Pull outgoing bibliographic lists only for domain corpus IDs |
+| `citations` | **Derived from references** initially; dedicated citations dataset if richer metadata is required | ~0 (API) or 255 GB bulk later | Build domain-domain edges without overfetching, upgrade only if intent/influence/context is needed |
 | `embeddings` | **Batch API** (`fields=embedding.specter_v2`) | ~0 (API) | Pull only domain vectors -- no need for 840 GB bulk |
 | `tldrs` | **Batch API** (`fields=tldr`) | ~0 (API) | Pull only domain TLDRs -- no need for 3 GB bulk |
 | `s2orc` | Defer to Phase 2 | - | Only needed for deep RAG |
-| `authors` | Defer | - | Not needed for MVP graph |
-| `publication-venues` | Download (tiny) | ~10 MB | Useful for venue metadata |
+| `authors` | **Batch API** (`fields=authors.*`) | ~0 (API) | Needed for paper detail and future geo layer |
+| `publication-venues` | **Batch API** (`fields=publicationVenue`) | ~0 (API) | Needed for normalized venue metadata |
 
-**Total download: ~55 GB** (papers + paper-ids + venues) plus API traffic for
-domain papers. Start small with ~200K psychiatry-core papers, expand to full
-2M domain set incrementally.
+**Total download: ~53 GB** (papers + paper-ids) plus API traffic for domain
+papers. Stable per-paper metadata, authors, venues, OA PDF metadata, embeddings,
+and references come through the S2 Graph Batch API after filtering.
 
 ### Hot/Cold Split
 
@@ -394,7 +418,7 @@ done
 ### Phase 2: Batch API for Domain Data
 
 After DuckDB filtering produces the domain corpus ID list (see Section 5), pull
-embeddings, abstracts, citations, and TLDRs via the S2 batch API. This avoids
+embeddings, abstracts, stable paper metadata, and references via the S2 batch API. This avoids
 downloading ~1.1 TB of data we do not need.
 
 **Batch API endpoint**: `POST https://api.semanticscholar.org/graph/v1/paper/batch`
@@ -406,7 +430,7 @@ downloading ~1.1 TB of data we do not need.
 **Request format**:
 
 ```json
-POST /graph/v1/paper/batch?fields=embedding.specter_v2,abstract,tldr,citations.citedPaper.paperId,citations.isInfluential,citations.intents,citations.contexts
+POST /graph/v1/paper/batch?fields=paperId,externalIds,publicationVenue,journal,openAccessPdf,authors.authorId,authors.name,authors.affiliations,authors.externalIds,abstract,tldr,embedding.specter_v2,textAvailability,references.paperId,references.corpusId,references.title,references.year,references.externalIds
 {
   "ids": ["CorpusId:203012345", "CorpusId:198765432", "CorpusId:212345678", "...up to 500"]
 }
@@ -418,6 +442,13 @@ POST /graph/v1/paper/batch?fields=embedding.specter_v2,abstract,tldr,citations.c
 [
   {
     "paperId": "abc123def456",
+    "externalIds": {"DOI": "10.1038/s41586-023-06789-1", "CorpusId": 203012345},
+    "publicationVenue": {"id": "venue-123", "name": "Nature", "type": "journal"},
+    "journal": {"name": "Nature", "volume": "618", "pages": "345-352"},
+    "openAccessPdf": {"url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10234567", "status": "GREEN", "license": null},
+    "authors": [
+      {"authorId": "12345678", "name": "J. Smith", "affiliations": [], "externalIds": {}}
+    ],
     "embedding": {
       "model": "specter2",
       "vector": [0.0234, -0.1567, 0.0891, ...]
@@ -427,12 +458,14 @@ POST /graph/v1/paper/batch?fields=embedding.specter_v2,abstract,tldr,citations.c
       "model": "tldr@v2.0.0",
       "text": "D2 receptors on PFC interneurons modulate gamma..."
     },
-    "citations": [
+    "textAvailability": "abstract",
+    "references": [
       {
-        "citedPaper": {"paperId": "xyz789"},
-        "isInfluential": true,
-        "intents": ["Background"],
-        "contexts": ["Building on the seminal observation..."]
+        "paperId": "xyz789",
+        "corpusId": 198765432,
+        "title": "Foundational reference title",
+        "year": 2019,
+        "externalIds": {"DOI": "10.1038/example"}
       }
     ]
   },
@@ -441,6 +474,11 @@ POST /graph/v1/paper/batch?fields=embedding.specter_v2,abstract,tldr,citations.c
 ```
 
 Papers not found return `null` in the response array. Always handle nulls.
+
+**Important current API constraint**:
+- the live paper batch response supports nested citation/reference paper metadata (`paperId`, `corpusId`, `title`, `year`, `externalIds`)
+- it does **not** currently support nested `citations.intents`, `citations.isInfluential`, `references.intents`, or `references.isInfluential`
+- if those fields become a hard requirement, use the dedicated S2 citations dataset rather than the paper batch response
 
 **Batch API client with rate limiting**:
 
@@ -572,13 +610,13 @@ batch API pulls detailed data for those IDs directly into PostgreSQL.
 3. Map domain PMIDs -> corpus IDs       (DuckDB join)
 4. Cross-ref with fields of study       (papers bulk dataset, DuckDB filter)
 5. Export domain corpus ID list         (DuckDB -> Parquet)
-6. Batch API: pull embeddings           (POST /paper/batch, 500/req -> PostgreSQL)
-7. Batch API: pull abstracts + TLDRs    (POST /paper/batch, 500/req -> PostgreSQL)
-8. Batch API: pull citations            (POST /paper/batch, 500/req -> PostgreSQL)
+6. Batch API: full metadata pass        (POST /paper/batch, 500/req -> PostgreSQL)
+7. Batch API: reference pass            (POST /paper/batch, 500/req -> PostgreSQL)
+8. Derive domain citation edges         (paper_references -> citations)
 ```
 
 DuckDB is used ONLY for steps 1-5 (filtering the two bulk datasets). Steps 6-8
-go directly from the S2 API into PostgreSQL via psycopg COPY or INSERT.
+go directly into PostgreSQL via psycopg UPSERT/INSERT.
 
 ### Step-by-Step: DuckDB Domain Filtering
 
@@ -690,7 +728,7 @@ import duckdb
 import psycopg
 
 def load_embeddings_from_api(corpus_ids: list[int], db_url: str) -> int:
-    """Fetch embeddings via batch API, INSERT directly into PostgreSQL."""
+    """Fetch embeddings via batch API, UPDATE canonical paper rows."""
     conn = psycopg.connect(db_url)
     total = 0
 
@@ -701,10 +739,12 @@ def load_embeddings_from_api(corpus_ids: list[int], db_url: str) -> int:
                 continue
             vec_str = "[" + ",".join(str(v) for v in emb["vector"]) + "]"
             cur.execute(
-                """INSERT INTO solemd.s2_embeddings (corpus_id, embedding)
-                   VALUES (%s, %s::halfvec(768))
-                   ON CONFLICT (corpus_id) DO UPDATE SET embedding = EXCLUDED.embedding""",
-                (paper["corpusId"], vec_str),
+                """UPDATE solemd.papers
+                   SET embedding = %s::vector(768),
+                       s2_embedding_checked_at = now(),
+                       updated_at = now()
+                   WHERE corpus_id = %s""",
+                (vec_str, paper["externalIds"]["CorpusId"]),
             )
             total += 1
             if total % 10_000 == 0:
@@ -737,10 +777,10 @@ def load_abstracts_tldrs_from_api(corpus_ids: list[int], db_url: str) -> int:
             tldr_obj = paper.get("tldr")
             tldr = tldr_obj["text"] if tldr_obj else None
             cur.execute(
-                """UPDATE solemd.s2_papers
-                   SET abstract = %s, tldr = %s
+                """UPDATE solemd.papers
+                   SET abstract = %s, tldr = %s, updated_at = now()
                    WHERE corpus_id = %s""",
-                (abstract, tldr, paper["corpusId"]),
+                (abstract, tldr, paper["externalIds"]["CorpusId"]),
             )
             total += 1
             if total % 10_000 == 0:
@@ -751,31 +791,38 @@ def load_abstracts_tldrs_from_api(corpus_ids: list[int], db_url: str) -> int:
     return total
 ```
 
-**Step 8: Pull citations via batch API**
+**Step 8: Pull references via batch API, then derive citations**
 
 ```python
-def load_citations_from_api(corpus_ids: list[int], db_url: str) -> int:
-    """Fetch citations per paper, INSERT into PostgreSQL."""
+def load_references_from_api(corpus_ids: list[int], db_url: str) -> int:
+    """Fetch outgoing references per paper, INSERT into PostgreSQL."""
     conn = psycopg.connect(db_url)
     total = 0
-    fields = "citations.citedPaper.paperId,citations.citedPaper.corpusId,citations.isInfluential,citations.intents,citations.contexts"
+    fields = "references.paperId,references.corpusId,references.title,references.year,references.externalIds"
 
     with conn.cursor() as cur:
         for paper in fetch_all_papers(corpus_ids, fields):
-            citing_id = paper.get("corpusId")
-            for cite in (paper.get("citations") or []):
-                cited = cite.get("citedPaper", {})
-                cited_id = cited.get("corpusId")
-                if not cited_id:
-                    continue
-                context = (cite.get("contexts") or [None])[0]
+            citing_id = paper.get("externalIds", {}).get("CorpusId")
+            for idx, ref in enumerate(paper.get("references") or [], start=1):
+                external_ids = ref.get("externalIds", {})
                 cur.execute(
-                    """INSERT INTO solemd.s2_citations
-                       (citing_corpus_id, cited_corpus_id, is_influential, intents, context_text)
-                       VALUES (%s, %s, %s, %s, %s)
-                       ON CONFLICT DO NOTHING""",
-                    (citing_id, cited_id, cite.get("isInfluential", False),
-                     cite.get("intents"), context),
+                    """INSERT INTO solemd.paper_references
+                       (corpus_id, reference_index, referenced_paper_id, referenced_corpus_id,
+                        title, year, external_ids, doi, pmid, pmcid)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (corpus_id, reference_index) DO NOTHING""",
+                    (
+                        citing_id,
+                        idx,
+                        ref.get("paperId"),
+                        ref.get("corpusId"),
+                        ref.get("title"),
+                        ref.get("year"),
+                        Json(external_ids),
+                        external_ids.get("DOI"),
+                        external_ids.get("PubMed"),
+                        external_ids.get("PubMedCentral"),
+                    ),
                 )
                 total += 1
             if total % 50_000 == 0:
@@ -786,6 +833,21 @@ def load_citations_from_api(corpus_ids: list[int], db_url: str) -> int:
     return total
 ```
 
+Then resolve domain-domain graph edges:
+
+```sql
+INSERT INTO solemd.citations (citing_corpus_id, cited_corpus_id, cited_paper_id, source, source_release_id)
+SELECT
+  pr.corpus_id,
+  pr.referenced_corpus_id,
+  pr.referenced_paper_id,
+  'semantic_scholar_graph_api',
+  pr.source_release_id
+FROM solemd.paper_references pr
+WHERE pr.referenced_corpus_id IS NOT NULL
+ON CONFLICT (citing_corpus_id, cited_corpus_id) DO NOTHING;
+```
+
 ### Processing Time Estimates
 
 | Step | What | Expected Time |
@@ -793,8 +855,8 @@ def load_citations_from_api(corpus_ids: list[int], db_url: str) -> int:
 | DuckDB: Paper-IDs parse + filter | 8 GB gz | ~5-10 min |
 | DuckDB: Papers filter | 45 GB gz | ~15-30 min |
 | DuckDB: Export corpus ID list | in-memory | ~1 min |
-| Batch API: Embeddings (2M papers) | 4,000 requests | ~67 min |
-| Batch API: Abstracts + TLDRs (2M) | 4,000 requests | ~67 min |
+| Batch API: Full metadata (2M papers) | 4,000 requests | ~67-90 min |
+| Batch API: References (2M papers) | 4,000 requests | ~67-90 min |
 | Batch API: Citations (2M papers) | 4,000 requests | ~67 min |
 | PostgreSQL: HNSW index build | 2M halfvec(768) | ~15-30 min |
 | **Total** | | **~4-5 hr** |
@@ -807,104 +869,66 @@ pipeline end-to-end before scaling to the full 2M domain set.
 ## 6. PostgreSQL Schema
 
 Domain-filtered S2 data is loaded into PostgreSQL as the "hot" data layer.
-These tables extend the existing `solemd` schema.
+Current live schema uses `solemd.corpus` + `solemd.papers` as the canonical paper store, with normalized child tables for related metadata. The sketch below reflects the organized target shape rather than the older one-table-per-concern draft.
 
 ```sql
--- ============================================================
--- solemd.s2_papers: Semantic Scholar paper metadata
--- ============================================================
-CREATE TABLE solemd.s2_papers (
-    corpus_id       BIGINT PRIMARY KEY,
-    pmid            INTEGER,
-    doi             TEXT,
-    pmc             TEXT,
-    title           TEXT NOT NULL,
-    abstract        TEXT,
-    tldr            TEXT,
-    year            SMALLINT,
-    venue           TEXT,
-    journal_name    TEXT,
-    journal_volume  TEXT,
-    journal_pages   TEXT,
-    publication_date DATE,
-    reference_count     INTEGER NOT NULL DEFAULT 0,
-    citation_count      INTEGER NOT NULL DEFAULT 0,
-    influential_citation_count INTEGER NOT NULL DEFAULT 0,
-    is_open_access  BOOLEAN NOT NULL DEFAULT FALSE,
-    fields_of_study TEXT[],           -- e.g., {'Medicine','Biology'}
-    publication_types TEXT[],         -- e.g., {'JournalArticle'}
-    s2_url          TEXT,
-    is_domain_core  BOOLEAN NOT NULL DEFAULT FALSE,  -- true = matched MeSH filter; false = citation neighbor
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+CREATE TABLE solemd.papers (
+    corpus_id               BIGINT PRIMARY KEY REFERENCES solemd.corpus(corpus_id),
+    title                   TEXT NOT NULL,
+    year                    INTEGER,
+    venue                   TEXT,
+    journal_name            TEXT,
+    journal_volume          TEXT,
+    journal_issue           TEXT,
+    journal_pages           TEXT,
+    publication_date        DATE,
+    publication_types       TEXT[],
+    fields_of_study         TEXT[],
+    reference_count         INTEGER,
+    citation_count          INTEGER,
+    influential_citation_count INTEGER,
+    is_open_access          BOOLEAN,
+    s2_url                  TEXT,
+    paper_id                TEXT,
+    paper_external_ids      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    publication_venue_id    TEXT REFERENCES solemd.publication_venues(publication_venue_id),
+    abstract                TEXT,
+    tldr                    TEXT,
+    embedding               vector(768),
+    text_availability       TEXT,
+    s2_full_checked_at      TIMESTAMPTZ,
+    s2_embedding_checked_at TIMESTAMPTZ,
+    s2_references_checked_at TIMESTAMPTZ,
+    s2_found                BOOLEAN,
+    s2_full_release_id      TEXT,
+    s2_embedding_release_id TEXT,
+    s2_references_release_id TEXT
 );
 
-CREATE INDEX idx_s2_papers_pmid ON solemd.s2_papers (pmid) WHERE pmid IS NOT NULL;
-CREATE INDEX idx_s2_papers_doi ON solemd.s2_papers (doi) WHERE doi IS NOT NULL;
-CREATE INDEX idx_s2_papers_year ON solemd.s2_papers (year);
-CREATE INDEX idx_s2_papers_domain ON solemd.s2_papers (is_domain_core) WHERE is_domain_core;
-CREATE INDEX idx_s2_papers_citation_count ON solemd.s2_papers (citation_count DESC);
-
--- ============================================================
--- solemd.s2_citations: Citation edges between papers
--- ============================================================
-CREATE TABLE solemd.s2_citations (
-    citing_corpus_id BIGINT NOT NULL REFERENCES solemd.s2_papers(corpus_id),
-    cited_corpus_id  BIGINT NOT NULL REFERENCES solemd.s2_papers(corpus_id),
-    is_influential   BOOLEAN NOT NULL DEFAULT FALSE,
-    intents          TEXT[],           -- {'Background','Methodology','ResultComparison'}
-    context_text     TEXT,             -- Citation context sentence (first context only)
-    PRIMARY KEY (citing_corpus_id, cited_corpus_id)
-);
-
-CREATE INDEX idx_s2_citations_cited ON solemd.s2_citations (cited_corpus_id);
-CREATE INDEX idx_s2_citations_influential
-    ON solemd.s2_citations (citing_corpus_id, cited_corpus_id)
-    WHERE is_influential;
-
--- ============================================================
--- solemd.s2_embeddings: SPECTER2 768d vectors for graph layout
--- ============================================================
-CREATE TABLE solemd.s2_embeddings (
-    corpus_id  BIGINT PRIMARY KEY REFERENCES solemd.s2_papers(corpus_id),
-    embedding  halfvec(768) NOT NULL   -- pgvector halfvec for 50% storage savings
-);
-
--- HNSW index for nearest-neighbor queries (e.g., "related papers")
--- Use cosine distance -- SPECTER2 embeddings are L2-normalized
-CREATE INDEX idx_s2_embeddings_hnsw
-    ON solemd.s2_embeddings
-    USING hnsw (embedding halfvec_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
-
--- ============================================================
--- solemd.s2_graph_layout: Pre-computed 2D coordinates from UMAP
--- ============================================================
-CREATE TABLE solemd.s2_graph_layout (
-    corpus_id   BIGINT PRIMARY KEY REFERENCES solemd.s2_papers(corpus_id),
-    x           REAL NOT NULL,
-    y           REAL NOT NULL,
-    cluster_id  INTEGER,
-    cluster_label TEXT
-);
-
-CREATE INDEX idx_s2_graph_layout_cluster ON solemd.s2_graph_layout (cluster_id);
+CREATE TABLE solemd.publication_venues (...);
+CREATE TABLE solemd.authors (...);
+CREATE TABLE solemd.paper_authors (...);
+CREATE TABLE solemd.author_affiliations (...);
+CREATE TABLE solemd.paper_assets (...);      -- open_access_pdf now, mirrors later
+CREATE TABLE solemd.paper_references (...);  -- outgoing bibliography
+CREATE TABLE solemd.citations (...);         -- domain-domain edges derived from references
+CREATE TABLE solemd.graph (...);             -- UMAP x/y + cluster data
 ```
 
 ### Storage Estimates
 
 | Table | Rows | Row Size | Total |
 |-------|------|----------|-------|
-| `s2_papers` | 5-10M | ~500 bytes avg | ~3-5 GB |
-| `s2_citations` | 50-100M | ~80 bytes avg | ~4-8 GB |
-| `s2_embeddings` | 5-10M | ~1.6 KB (halfvec 768) | ~8-16 GB |
-| `s2_graph_layout` | 5-10M | ~28 bytes | ~140-280 MB |
+| `papers` | 5-10M | ~600-900 bytes avg | ~4-8 GB |
+| `paper_references` | 50-100M | ~100-160 bytes avg | ~5-12 GB |
+| `citations` | 50-100M | ~40-80 bytes avg | ~3-8 GB |
+| `paper_authors` + `authors` | 10-40M rows | variable | ~2-6 GB |
+| `author_affiliations` | highly variable | variable | geo-dependent |
+| `graph` / layout tables | 5-10M | ~28 bytes | ~140-280 MB |
 | **Indexes** | | | ~5-10 GB |
 | **Total** | | | **~20-40 GB** |
 
-Using `halfvec(768)` instead of `vector(768)` cuts embedding storage by 50%
-(2 bytes per float instead of 4). SPECTER2 vectors have sufficient precision
-for cosine similarity at half precision.
+Embedding storage can stay inline on `solemd.papers` for the first build, or move to a dedicated half-precision table later if storage pressure justifies it.
 
 ---
 
@@ -929,50 +953,62 @@ import psycopg
 DB_URL = "postgresql://user:pass@localhost:5432/solemd"
 
 def load_papers(parquet_path: str) -> int:
-    """Load papers from Parquet into PostgreSQL via COPY."""
+    """Load filtered paper metadata into solemd.corpus + solemd.papers."""
     conn = psycopg.connect(DB_URL)
     conn.autocommit = False
 
     with conn.cursor() as cur:
-        # Create staging table
-        cur.execute("""
-            CREATE UNLOGGED TABLE IF NOT EXISTS solemd._s2_papers_staging
-            (LIKE solemd.s2_papers INCLUDING DEFAULTS)
-        """)
-        cur.execute("TRUNCATE solemd._s2_papers_staging")
-
-        # Read Parquet and stream into staging via COPY
         db = duckdb.connect()
         reader = db.execute(f"""
-            SELECT corpusid, pmid, doi, pmc, title,
-                   year, venue, journal_name, journal_volume, journal_pages,
+            SELECT corpusid, pmid, doi, pmc, filter_reason,
+                   title, year, venue, journal_name,
                    publication_date, reference_count, citation_count,
                    influential_citation_count, is_open_access,
-                   fields_of_study, publication_types, s2_url, is_domain_core
+                   fields_of_study, publication_types, s2_url
             FROM read_parquet('{parquet_path}')
         """).fetchall()
 
-        with cur.copy("""
-            COPY solemd._s2_papers_staging (
-                corpus_id, pmid, doi, pmc, title,
-                year, venue, journal_name, journal_volume, journal_pages,
-                publication_date, reference_count, citation_count,
-                influential_citation_count, is_open_access,
-                fields_of_study, publication_types, s2_url, is_domain_core
-            ) FROM STDIN
-        """) as copy:
-            for row in reader:
-                copy.write_row(row)
+        for row in reader:
+            corpus_id, pmid, doi, pmc, filter_reason, *paper_values = row
+            cur.execute(
+                """
+                INSERT INTO solemd.corpus (corpus_id, pmid, doi, pmc_id, filter_reason)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (corpus_id) DO UPDATE SET
+                    pmid = EXCLUDED.pmid,
+                    doi = EXCLUDED.doi,
+                    pmc_id = EXCLUDED.pmc_id,
+                    filter_reason = EXCLUDED.filter_reason
+                """,
+                (corpus_id, pmid, doi, pmc, filter_reason),
+            )
+            cur.execute(
+                """
+                INSERT INTO solemd.papers (
+                    corpus_id, title, year, venue, journal_name, publication_date,
+                    reference_count, citation_count, influential_citation_count,
+                    is_open_access, fields_of_study, publication_types, s2_url
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (corpus_id) DO UPDATE SET
+                    title = EXCLUDED.title,
+                    year = EXCLUDED.year,
+                    venue = EXCLUDED.venue,
+                    journal_name = EXCLUDED.journal_name,
+                    publication_date = EXCLUDED.publication_date,
+                    reference_count = EXCLUDED.reference_count,
+                    citation_count = EXCLUDED.citation_count,
+                    influential_citation_count = EXCLUDED.influential_citation_count,
+                    is_open_access = EXCLUDED.is_open_access,
+                    fields_of_study = EXCLUDED.fields_of_study,
+                    publication_types = EXCLUDED.publication_types,
+                    s2_url = EXCLUDED.s2_url,
+                    updated_at = now()
+                """,
+                (corpus_id, *paper_values),
+            )
 
-        row_count = cur.execute(
-            "SELECT count(*) FROM solemd._s2_papers_staging"
-        ).fetchone()[0]
-
-        # Atomic swap
-        cur.execute("DROP TABLE IF EXISTS solemd.s2_papers_old")
-        cur.execute("ALTER TABLE solemd.s2_papers RENAME TO s2_papers_old")
-        cur.execute("ALTER TABLE solemd._s2_papers_staging RENAME TO s2_papers")
-        cur.execute("DROP TABLE solemd.s2_papers_old")
+        row_count = len(reader)
 
     conn.commit()
     conn.close()
@@ -982,11 +1018,14 @@ def load_papers(parquet_path: str) -> int:
 Note: `abstract` and `tldr` columns are NULL after this step. They are populated
 by the batch API in Step 7 of Section 5 via UPDATE.
 
-### Citations and Embeddings (from Batch API)
+### References, Citations, and Embeddings
 
-Citations and embeddings are loaded directly from the S2 batch API into
-PostgreSQL -- see Section 5, Steps 6 and 8. There are no intermediate Parquet
-files for these datasets.
+Embeddings are written directly during the full metadata pass.
+
+Outgoing references should be loaded into `solemd.paper_references` from a
+dedicated reference pass. Domain-domain edges in `solemd.citations` are then
+derived from `paper_references`. There are no intermediate Parquet files for
+these canonical PostgreSQL tables.
 
 ### Post-Load: HNSW Index Build
 
@@ -996,9 +1035,9 @@ After batch API loading completes, build the HNSW index on embeddings:
 SET maintenance_work_mem = '4GB';
 
 -- Build HNSW index (~15-30 min for 2M vectors, longer for 5-10M)
-CREATE INDEX CONCURRENTLY idx_s2_embeddings_hnsw
-    ON solemd.s2_embeddings
-    USING hnsw (embedding halfvec_cosine_ops)
+CREATE INDEX CONCURRENTLY idx_papers_embedding_hnsw
+    ON solemd.papers
+    USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 ```
 
@@ -1007,11 +1046,11 @@ CREATE INDEX CONCURRENTLY idx_s2_embeddings_hnsw
 | Step | Rows | Time |
 |------|------|------|
 | Papers COPY (from Parquet) | 2M | ~5-10 min |
-| Batch API: embeddings -> INSERT | 2M | ~67 min (API-bound) |
-| Batch API: abstracts + TLDRs -> UPDATE | 2M | ~67 min (API-bound) |
-| Batch API: citations -> INSERT | 2M papers | ~67 min (API-bound) |
+| Batch API: full metadata -> UPSERT | 2M | ~67-90 min (API-bound) |
+| Batch API: references -> INSERT | 2M papers | ~67-90 min (API-bound) |
+| Derive domain citations | 50-100M refs | PG-bound, minutes to tens of minutes |
 | HNSW index build | 2M vectors | ~15-30 min |
-| **Total** | | **~3.5-4 hr** |
+| **Total** | | **~3-4 hr** |
 
 The batch API at 1 req/sec is the bottleneck, not PostgreSQL I/O. For 200K
 papers (Phase A), total load time drops to ~30 min.
@@ -1082,10 +1121,9 @@ def apply_monthly_refresh() -> None:
 |---------|----------|-----------|
 | `paper-ids` | Incremental diff (bulk) | Small diffs, need current PMID mapping |
 | `papers` | Incremental diff (bulk) | Apply upserts + deletes to filtered Parquet |
-| `abstracts` | Batch API re-fetch for new papers | Only new domain papers need abstracts |
-| `tldrs` | Batch API re-fetch for new papers | Only new domain papers need TLDRs |
-| `citations` | Batch API re-fetch for new papers | Pull citations only for newly added corpus IDs |
-| `embeddings` | Batch API re-fetch for new papers | Pull SPECTER2 only for newly added corpus IDs |
+| full metadata | Release-aware batch re-fetch | Use `s2_full_release_id` on `solemd.papers` |
+| references | Release-aware batch re-fetch | Use `s2_references_release_id` on `solemd.papers`; derive `solemd.citations` after each pass |
+| embeddings | Release-aware batch re-fetch | Use `s2_embedding_release_id` on `solemd.papers` |
 
 ### Monthly Refresh Workflow
 
@@ -1094,12 +1132,14 @@ def apply_monthly_refresh() -> None:
 2. Download diffs for paper-ids and papers (bulk)
 3. Apply diffs to local filtered Parquet
 4. Re-run DuckDB domain filtering to identify new corpus IDs
-5. Batch API: fetch embeddings, abstracts, TLDRs, citations for new IDs only
-6. UPSERT new data into PostgreSQL
-7. Re-run UMAP .transform() for new papers (incremental layout)
-8. Rebuild graph Parquet bundles
-9. Upload to R2
-10. Update release_metadata.json
+5. Batch API: run full metadata pass for the new release id
+6. Batch API: run reference pass for the new release id
+7. Derive or refresh domain citation edges
+8. UPSERT new data into PostgreSQL
+9. Re-run UMAP .transform() for new papers (incremental layout)
+10. Rebuild graph Parquet bundles
+11. Upload to R2
+12. Update release_metadata.json
 ```
 
 **Incremental UMAP**: Between full recomputes, new papers can be projected
@@ -1116,98 +1156,89 @@ scratch) should happen quarterly or when >20% of the corpus is new.
 ```sql
 -- By PMID
 SELECT corpus_id, title, year, venue, citation_count, tldr,
-       fields_of_study, is_domain_core
-FROM solemd.s2_papers
+       fields_of_study, c.corpus_tier
+FROM solemd.papers p
+JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
 WHERE pmid = 37654321;
 
 -- By S2 corpus ID
-SELECT * FROM solemd.s2_papers WHERE corpus_id = 203012345;
+SELECT * FROM solemd.papers WHERE corpus_id = 203012345;
 
 -- By DOI
-SELECT * FROM solemd.s2_papers WHERE doi = '10.1038/s41586-023-06789-1';
+SELECT * FROM solemd.papers WHERE doi = '10.1038/s41586-023-06789-1';
 ```
 
 ### Citation Graph Traversal
 
 ```sql
 -- Papers cited by a given paper (outgoing references)
-SELECT p.corpus_id, p.title, p.year, c.intents, c.is_influential
-FROM solemd.s2_citations c
-JOIN solemd.s2_papers p ON c.cited_corpus_id = p.corpus_id
+SELECT p.corpus_id, p.title, p.year
+FROM solemd.citations c
+JOIN solemd.papers p ON c.cited_corpus_id = p.corpus_id
 WHERE c.citing_corpus_id = 203012345
 ORDER BY p.citation_count DESC;
 
 -- Papers citing a given paper (incoming citations)
-SELECT p.corpus_id, p.title, p.year, c.intents, c.is_influential
-FROM solemd.s2_citations c
-JOIN solemd.s2_papers p ON c.citing_corpus_id = p.corpus_id
+SELECT p.corpus_id, p.title, p.year
+FROM solemd.citations c
+JOIN solemd.papers p ON c.citing_corpus_id = p.corpus_id
 WHERE c.cited_corpus_id = 203012345
 ORDER BY p.year DESC;
 
 -- Mutual citations (co-citation): papers cited together with a given paper
 SELECT p.corpus_id, p.title, count(*) AS co_citation_count
-FROM solemd.s2_citations c1
-JOIN solemd.s2_citations c2
+FROM solemd.citations c1
+JOIN solemd.citations c2
     ON c1.citing_corpus_id = c2.citing_corpus_id
     AND c1.cited_corpus_id != c2.cited_corpus_id
-JOIN solemd.s2_papers p ON c2.cited_corpus_id = p.corpus_id
+JOIN solemd.papers p ON c2.cited_corpus_id = p.corpus_id
 WHERE c1.cited_corpus_id = 203012345
 GROUP BY p.corpus_id, p.title
 ORDER BY co_citation_count DESC
 LIMIT 20;
-
--- Citation context: see the sentence where a paper was cited
-SELECT c.context_text, c.intents, c.is_influential,
-       p.title AS citing_paper
-FROM solemd.s2_citations c
-JOIN solemd.s2_papers p ON c.citing_corpus_id = p.corpus_id
-WHERE c.cited_corpus_id = 203012345
-  AND c.context_text IS NOT NULL
-ORDER BY c.is_influential DESC
-LIMIT 10;
 ```
 
-### Citation Intent Filtering
+### Reference Drill-Down
 
 ```sql
--- Show only methodology citations (how was this paper's method used?)
-SELECT p.title, p.year, c.context_text
-FROM solemd.s2_citations c
-JOIN solemd.s2_papers p ON c.citing_corpus_id = p.corpus_id
-WHERE c.cited_corpus_id = 203012345
-  AND 'Methodology' = ANY(c.intents);
-
--- Influential citations only (high-signal references)
-SELECT p.title, p.year, c.intents
-FROM solemd.s2_citations c
-JOIN solemd.s2_papers p ON c.citing_corpus_id = p.corpus_id
-WHERE c.cited_corpus_id = 203012345
-  AND c.is_influential = true
-ORDER BY p.year DESC;
+-- Outgoing references captured from the S2 paper batch response
+SELECT
+  pr.reference_index,
+  pr.title,
+  pr.year,
+  pr.doi,
+  pr.pmid,
+  pr.referenced_corpus_id
+FROM solemd.paper_references pr
+WHERE pr.corpus_id = 203012345
+ORDER BY pr.reference_index
+LIMIT 20;
 ```
+
+If citation intent / influence / context becomes mandatory, add a second citation source from the dedicated S2 citations dataset instead of expecting those fields from the paper batch response.
 
 ### SPECTER2 Nearest Neighbors
 
 ```sql
 -- Find papers most similar to a given paper (cosine similarity)
 SELECT p.corpus_id, p.title, p.year, p.citation_count,
-       1 - (e.embedding <=> target.embedding) AS similarity
-FROM solemd.s2_embeddings e
-JOIN solemd.s2_papers p ON e.corpus_id = p.corpus_id
+       1 - (p.embedding <=> target.embedding) AS similarity
+FROM solemd.papers p
 CROSS JOIN (
-    SELECT embedding FROM solemd.s2_embeddings WHERE corpus_id = 203012345
+    SELECT embedding FROM solemd.papers WHERE corpus_id = 203012345
 ) target
-WHERE e.corpus_id != 203012345
-ORDER BY e.embedding <=> target.embedding
+WHERE p.corpus_id != 203012345
+  AND p.embedding IS NOT NULL
+ORDER BY p.embedding <=> target.embedding
 LIMIT 20;
 
 -- Find papers similar to a query embedding (from MedCPT or SPECTER2)
--- $1 = '[0.023, -0.156, ...]'::halfvec(768)
+-- $1 = '[0.023, -0.156, ...]'::vector(768)
 SELECT p.corpus_id, p.title, p.year,
-       1 - (e.embedding <=> $1::halfvec(768)) AS similarity
-FROM solemd.s2_embeddings e
-JOIN solemd.s2_papers p ON e.corpus_id = p.corpus_id
-ORDER BY e.embedding <=> $1::halfvec(768)
+       1 - (p.embedding <=> $1::vector(768)) AS similarity
+FROM solemd.papers p
+WHERE p.embedding IS NOT NULL
+ORDER BY p.embedding <=> $1::vector(768)
 LIMIT 20;
 ```
 
@@ -1216,7 +1247,7 @@ LIMIT 20;
 ```sql
 -- Papers in Medicine AND Biology
 SELECT corpus_id, title, year, citation_count
-FROM solemd.s2_papers
+FROM solemd.papers
 WHERE fields_of_study @> ARRAY['Medicine', 'Biology']
 ORDER BY citation_count DESC
 LIMIT 50;
@@ -1228,7 +1259,7 @@ LIMIT 50;
 -- Fast paper preview without LLM calls
 SELECT corpus_id, title, year, venue, tldr, citation_count,
        influential_citation_count
-FROM solemd.s2_papers
+FROM solemd.papers
 WHERE corpus_id = 203012345;
 ```
 
@@ -1399,16 +1430,15 @@ Semantic Scholar
     +-- [Datasets API: bulk download]
     |   +-- paper-ids -----> DuckDB filter -> PMID bridge -> PubTator3
     |   +-- papers --------> DuckDB filter -> domain corpus IDs
-    |                      -> psycopg COPY -> solemd.s2_papers
+    |                      -> psycopg COPY -> solemd.corpus + solemd.papers
     |
     +-- [Graph API: batch endpoint, domain IDs only]
-    |   +-- abstracts -----> INSERT/UPDATE -> solemd.s2_papers.abstract
+    |   +-- full metadata --> UPSERT -> solemd.papers
+    |   |                 -> upsert venues/authors/assets child tables
     |   |                 -> MedCPT embed -> pgvector HNSW -> RAG
-    |   +-- citations -----> INSERT -> solemd.s2_citations
+    |   +-- references ----> INSERT -> solemd.paper_references
+    |   |                 -> derive -> solemd.citations
     |   |                 -> corpus_links.parquet -> Cosmograph edges
-    |   +-- embeddings ----> INSERT -> solemd.s2_embeddings
-    |   |                 -> UMAP 2D -> corpus_points.parquet -> Cosmograph
-    |   +-- tldrs ---------> UPDATE -> solemd.s2_papers.tldr
     |
     +-- s2orc ------------> (Phase 2) chunk + MedCPT -> deep RAG
 ```
@@ -1417,8 +1447,8 @@ Semantic Scholar
 
 The Datasets API provides pre-signed S3 URLs (no rate limit on downloads) for
 bulk datasets (papers, paper-ids). The Graph API batch endpoint is used
-extensively to pull embeddings, abstracts, citations, and TLDRs for domain
-papers.
+extensively to pull stable paper metadata, authors, OA PDF metadata,
+references, embeddings, and TLDRs for domain papers.
 
 | Tier | Rate | Notes |
 |------|------|-------|

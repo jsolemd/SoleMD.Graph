@@ -1,8 +1,6 @@
 import { fetchActiveGraphBundle } from "@/features/graph/lib/fetch";
 import { DashboardShell, GraphErrorBoundary } from "@/features/graph";
 
-export const dynamic = "force-dynamic";
-
 export default async function GraphPage() {
   const bundle = await fetchActiveGraphBundle();
 

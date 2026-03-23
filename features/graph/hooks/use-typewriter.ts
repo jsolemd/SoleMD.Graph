@@ -1,30 +1,65 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef } from "react";
+
+type Phase = "delay" | "typing" | "deleting" | "done";
+
+interface TypewriterState {
+  display: string;
+  textIdx: number;
+  charIdx: number;
+  phase: Phase;
+}
+
+type TypewriterAction =
+  | { type: "RESET" }
+  | { type: "SET_PHASE"; phase: Phase }
+  | { type: "TYPE_CHAR"; text: string }
+  | { type: "DELETE_CHAR" }
+  | { type: "NEXT_TEXT" };
+
+const initialState: TypewriterState = {
+  display: "",
+  textIdx: 0,
+  charIdx: 0,
+  phase: "delay",
+};
+
+function reducer(state: TypewriterState, action: TypewriterAction): TypewriterState {
+  switch (action.type) {
+    case "RESET":
+      return initialState;
+    case "SET_PHASE":
+      return { ...state, phase: action.phase };
+    case "TYPE_CHAR":
+      return {
+        ...state,
+        charIdx: state.charIdx + 1,
+        display: action.text.slice(0, state.charIdx + 1),
+      };
+    case "DELETE_CHAR":
+      return { ...state, display: state.display.slice(0, -1) };
+    case "NEXT_TEXT":
+      return { ...state, textIdx: state.textIdx + 1, charIdx: 0, phase: "typing" };
+  }
+}
 
 /** Cycles through texts once with a typewriter type/delete effect, then stops. */
 export function useTypewriter(
   texts: string[],
   { speed = 45, deleteSpeed = 25, waitTime = 2000, initialDelay = 600 } = {},
 ) {
-  const [display, setDisplay] = useState("");
-  const [textIdx, setTextIdx] = useState(0);
-  const [charIdx, setCharIdx] = useState(0);
-  const [done, setDone] = useState(false);
-  const [phase, setPhase] = useState<"delay" | "typing" | "deleting" | "done">("delay");
+  const [state, dispatch] = useReducer(reducer, initialState);
   const textsRef = useRef(texts);
 
   // Reset when texts array identity changes (mode switch)
   useEffect(() => {
     textsRef.current = texts;
-    setDisplay("");
-    setTextIdx(0);
-    setCharIdx(0);
-    setDone(false);
-    setPhase("delay");
+    dispatch({ type: "RESET" });
   }, [texts]);
 
   useEffect(() => {
+    const { phase, textIdx, charIdx, display } = state;
     if (phase === "done") return;
     const current = textsRef.current[textIdx];
     if (!current) return;
@@ -33,44 +68,36 @@ export function useTypewriter(
 
     switch (phase) {
       case "delay":
-        timeout = setTimeout(() => setPhase("typing"), initialDelay);
+        timeout = setTimeout(() => dispatch({ type: "SET_PHASE", phase: "typing" }), initialDelay);
         break;
       case "typing":
         if (charIdx < current.length) {
-          timeout = setTimeout(() => {
-            setDisplay(current.slice(0, charIdx + 1));
-            setCharIdx((c) => c + 1);
-          }, speed);
+          timeout = setTimeout(() => dispatch({ type: "TYPE_CHAR", text: current }), speed);
         } else if (textIdx >= textsRef.current.length - 1) {
           // Last text fully typed — hold it
-          setDone(true);
-          setPhase("done");
+          dispatch({ type: "SET_PHASE", phase: "done" });
         } else {
-          timeout = setTimeout(() => setPhase("deleting"), waitTime);
+          timeout = setTimeout(() => dispatch({ type: "SET_PHASE", phase: "deleting" }), waitTime);
         }
         break;
       case "deleting":
         if (display.length > 0) {
-          timeout = setTimeout(() => {
-            setDisplay((d) => d.slice(0, -1));
-          }, deleteSpeed);
+          timeout = setTimeout(() => dispatch({ type: "DELETE_CHAR" }), deleteSpeed);
         } else {
           const nextIdx = textIdx + 1;
           if (nextIdx >= textsRef.current.length) {
             // One full cycle complete
-            setDone(true);
-            setPhase("done");
+            dispatch({ type: "SET_PHASE", phase: "done" });
           } else {
-            setTextIdx(nextIdx);
-            setCharIdx(0);
-            setPhase("typing");
+            dispatch({ type: "NEXT_TEXT" });
           }
         }
         break;
     }
     return () => clearTimeout(timeout);
-  }, [phase, charIdx, display, textIdx, speed, deleteSpeed, waitTime, initialDelay]);
+  }, [state, speed, deleteSpeed, waitTime, initialDelay]);
 
-  const isLast = textIdx >= textsRef.current.length - 1;
-  return { text: display, done, isLast };
+  const done = state.phase === "done";
+  const isLast = state.textIdx >= textsRef.current.length - 1;
+  return { text: state.display, done, isLast };
 }

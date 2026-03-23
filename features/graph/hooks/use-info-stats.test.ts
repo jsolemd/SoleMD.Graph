@@ -1,5 +1,5 @@
 import { computeInfoStats } from './use-info-stats'
-import type { ChunkNode, GraphNode, GraphStats } from '@/features/graph/types'
+import type { ChunkNode, GraphNode } from '@/features/graph/types'
 
 function makeChunkNode(overrides: Partial<ChunkNode> = {}): ChunkNode {
   return {
@@ -45,14 +45,6 @@ function makeChunkNode(overrides: Partial<ChunkNode> = {}): ChunkNode {
   }
 }
 
-const defaultStats: GraphStats = {
-  points: 100,
-  pointLabel: 'chunks',
-  papers: 10,
-  clusters: 5,
-  noise: 2,
-}
-
 describe('computeInfoStats', () => {
   it('returns full dataset stats when no selection', () => {
     const nodes: GraphNode[] = [
@@ -60,17 +52,17 @@ describe('computeInfoStats', () => {
       makeChunkNode({ index: 1, clusterId: 2, paperId: 'p2', year: 2024 }),
     ]
 
-    const result = computeInfoStats(nodes, nodes, 'chunk', defaultStats, false)
+    const result = computeInfoStats(nodes, nodes, 'dataset')
 
     expect(result.hasSelection).toBe(false)
-    expect(result.totalCount).toBe(defaultStats.points)
+    expect(result.totalCount).toBe(2)
     expect(result.scopedCount).toBe(2)
     expect(result.papers).toBe(2)
     expect(result.clusters).toBe(2)
     expect(result.yearRange).toEqual({ min: 2020, max: 2024 })
   })
 
-  it('detects selection when hasSelection is true', () => {
+  it('detects selection when scope is selected', () => {
     const allNodes: GraphNode[] = [
       makeChunkNode({ index: 0, clusterId: 1, paperId: 'p1', year: 2020 }),
       makeChunkNode({ index: 1, clusterId: 2, paperId: 'p2', year: 2024 }),
@@ -78,7 +70,7 @@ describe('computeInfoStats', () => {
     ]
     const scopedNodes = [allNodes[0]]
 
-    const result = computeInfoStats(allNodes, scopedNodes, 'chunk', defaultStats, true)
+    const result = computeInfoStats(allNodes, scopedNodes, 'selected')
 
     expect(result.hasSelection).toBe(true)
     expect(result.totalCount).toBe(3)
@@ -94,11 +86,11 @@ describe('computeInfoStats', () => {
     ]
 
     // Select all points — hasSelection is still true because
-    // selectedPointIndices.length > 0 in the orchestrator
-    const result = computeInfoStats(nodes, nodes, 'chunk', defaultStats, true)
+    // scope is 'selected' from the orchestrator
+    const result = computeInfoStats(nodes, nodes, 'selected')
 
     expect(result.hasSelection).toBe(true)
-    expect(result.totalCount).toBe(2) // allNodes.length, not stats.points
+    expect(result.totalCount).toBe(2)
     expect(result.scopedCount).toBe(2)
   })
 
@@ -109,7 +101,7 @@ describe('computeInfoStats', () => {
       makeChunkNode({ index: 2, clusterId: 0, clusterLabel: 'Noise' }),
     ]
 
-    const result = computeInfoStats(nodes, nodes, 'chunk', defaultStats, false)
+    const result = computeInfoStats(nodes, nodes, 'dataset')
 
     expect(result.noise).toBe(2)
     // 3 unique clusterIds (1, -1, 0) minus 2 noise buckets (-1, 0) = 1 real cluster
@@ -120,7 +112,7 @@ describe('computeInfoStats', () => {
   })
 
   it('handles empty node array', () => {
-    const result = computeInfoStats([], [], 'chunk', defaultStats, false)
+    const result = computeInfoStats([], [], 'dataset')
 
     expect(result.scopedCount).toBe(0)
     expect(result.papers).toBe(0)
@@ -135,7 +127,7 @@ describe('computeInfoStats', () => {
       makeChunkNode({ index: 0, clusterId: 5, paperId: 'p1', year: 2023 }),
     ]
 
-    const result = computeInfoStats(nodes, nodes, 'chunk', defaultStats, false)
+    const result = computeInfoStats(nodes, nodes, 'dataset')
 
     expect(result.scopedCount).toBe(1)
     expect(result.papers).toBe(1)
@@ -149,7 +141,7 @@ describe('computeInfoStats', () => {
       makeChunkNode({ index: i, clusterId: i + 1, clusterLabel: `C${i + 1}` }),
     )
 
-    const result = computeInfoStats(nodes, nodes, 'chunk', defaultStats, false)
+    const result = computeInfoStats(nodes, nodes, 'dataset')
 
     expect(result.topClusters.length).toBeLessThanOrEqual(8)
   })
@@ -160,7 +152,7 @@ describe('computeInfoStats', () => {
       makeChunkNode({ index: 1, year: null }),
     ]
 
-    const result = computeInfoStats(nodes, nodes, 'chunk', defaultStats, false)
+    const result = computeInfoStats(nodes, nodes, 'dataset')
 
     expect(result.yearRange).toBeNull()
   })

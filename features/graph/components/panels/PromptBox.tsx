@@ -49,6 +49,14 @@ const PILL_H = 48;
 /** Collapsed pill left-edge offset from viewport left. */
 const PILL_LEFT = 12;
 
+const SCOPE_LABELS: Record<string, string> = {
+  paper: "paper",
+  chunk: "chunk",
+  term: "term",
+  alias: "alias",
+  relation_assertion: "relation",
+};
+
 /** Compute card width for normal mode, respecting panel clearance. */
 function cardWidth(vw: number, leftCl: number, rightCl: number): number {
   if (leftCl > 0 || rightCl > 0) {
@@ -151,17 +159,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
   const isFullHeight = isFullHeightMode || heightOverride;
 
   const selectedScopeLabel = selectedNode
-    ? selectedNode.nodeKind === "paper"
-      ? "paper"
-      : selectedNode.nodeKind === "chunk"
-        ? "chunk"
-        : selectedNode.nodeKind === "term"
-          ? "term"
-          : selectedNode.nodeKind === "alias"
-            ? "alias"
-            : selectedNode.nodeKind === "relation_assertion"
-              ? "relation"
-              : "node"
+    ? (SCOPE_LABELS[selectedNode.nodeKind] ?? "node")
     : null;
 
   // Panel bottom edges (from viewport top) — reported by PanelShell's ResizeObserver.
@@ -432,11 +430,11 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
         onDragEnd={() => {
           document.body.style.cursor = "";
           // Clamp so the full prompt box stays within the viewport
-          const vw = window.innerWidth;
+          const viewportW = window.innerWidth;
           const vh = window.innerHeight;
           const boxW = cardRef.current
             ? cardRef.current.offsetWidth
-            : cardWidth(vw, 0, 0);
+            : cardWidth(viewportW, 0, 0);
           const boxH = cardRef.current
             ? cardRef.current.offsetHeight
             : 120;
@@ -444,11 +442,11 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
           const curY = dragY.get();
           // Pill uses transform:none (left-aligned), others use translateX(-50%) (centered)
           const minX = isCollapsed
-            ? VIEWPORT_MARGIN - vw / 2
-            : -(vw / 2 - boxW / 2 - VIEWPORT_MARGIN);
+            ? VIEWPORT_MARGIN - viewportW / 2
+            : -(viewportW / 2 - boxW / 2 - VIEWPORT_MARGIN);
           const maxX = isCollapsed
-            ? vw / 2 - boxW - VIEWPORT_MARGIN
-            : vw / 2 - boxW / 2 - VIEWPORT_MARGIN;
+            ? viewportW / 2 - boxW - VIEWPORT_MARGIN
+            : viewportW / 2 - boxW / 2 - VIEWPORT_MARGIN;
           // Box bottom is at BOTTOM_BASE - dragY (dragY negative = up)
           const maxUp = -(vh - BOTTOM_BASE - boxH - VIEWPORT_MARGIN);
           const safeX = Math.max(minX, Math.min(maxX, curX));
@@ -616,7 +614,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
                     onClick={handleSubmit}
                     size="md"
                     active
-                    disabled={!activePromptValue.trim() || isSubmitting}
+                    disabled={!isAsk || !activePromptValue.trim() || isSubmitting}
                   />
                 </div>
               )}

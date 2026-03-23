@@ -78,10 +78,7 @@ export const PANEL_ACCENT = "var(--mode-accent)";
 /** Shared label color for Mantine Switch components inside panels. */
 export const switchLabelStyle = { label: { color: "var(--graph-panel-text)" } };
 
-const ANIMATION = {
-  left: { initial: { opacity: 0, y: -16 }, exit: { opacity: 0, y: -16 } },
-  right: { initial: { opacity: 0, y: -16 }, exit: { opacity: 0, y: -16 } },
-};
+const PANEL_ANIMATION = { initial: { opacity: 0, y: -16 }, exit: { opacity: 0, y: -16 } };
 
 export function PanelShell({
   children,
@@ -90,15 +87,12 @@ export function PanelShell({
   width = 300,
   onClose,
 }: PanelShellProps) {
-  const anim = ANIMATION[side];
   const panelRef = useRef<HTMLDivElement>(null);
   const setPanelBottomY = useDashboardStore((s) => s.setPanelBottomY);
 
   // Dismiss on Escape — ref avoids re-registering on every onClose identity change
   const onCloseRef = useRef(onClose);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  });
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -133,9 +127,9 @@ export function PanelShell({
   return (
     <motion.div
       ref={panelRef}
-      initial={anim.initial}
+      initial={PANEL_ANIMATION.initial}
       animate={{ opacity: 1, y: 0 }}
-      exit={anim.exit}
+      exit={PANEL_ANIMATION.exit}
       transition={smooth}
       className="absolute z-30 flex flex-col overflow-hidden rounded-2xl"
       style={{

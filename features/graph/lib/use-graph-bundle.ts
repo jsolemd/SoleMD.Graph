@@ -74,7 +74,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
     return () => {
       cancelled = true
     }
-  }, [bundle])
+  }, [bundle.bundleChecksum])
 
   const isResolvedBundle = state.bundleChecksum === bundle.bundleChecksum
 

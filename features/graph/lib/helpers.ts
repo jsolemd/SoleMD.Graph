@@ -8,6 +8,7 @@ export function getNodeProp(node: GraphNode, key: string): any {
 
 /** Loop-safe min that avoids stack overflow from spread on large arrays. */
 export function safeMin(values: number[]): number {
+  if (values.length === 0) return 0;
   let min = Infinity;
   for (const v of values) if (v < min) min = v;
   return min;
@@ -15,6 +16,7 @@ export function safeMin(values: number[]): number {
 
 /** Loop-safe max that avoids stack overflow from spread on large arrays. */
 export function safeMax(values: number[]): number {
+  if (values.length === 0) return 0;
   let max = -Infinity;
   for (const v of values) if (v > max) max = v;
   return max;
