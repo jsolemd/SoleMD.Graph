@@ -12,7 +12,6 @@ function makeChunkNode(overrides: Partial<ChunkNode> = {}): ChunkNode {
     clusterId: 1,
     clusterLabel: 'Cluster 1',
     clusterProbability: 0.9,
-    outlierScore: 0.1,
     paperId: 'paper-1',
     paperTitle: 'Test Paper',
     citekey: 'test2024',

@@ -59,14 +59,14 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     linkTargetIndexBy: LINK_COLUMNS.targetIndexBy,
     defaultColorColumn: 'hexColor',
     defaultColorStrategy: 'direct',
-    defaultSizeColumn: 'clusterProbability',
+    defaultSizeColumn: 'paperReferenceCount',
     defaultSizeStrategy: 'auto',
-    pointSizeRange: [1, 5],
+    pointSizeRange: [1.5, 5],
     requiredTable: 'corpus_points',
     defaultInfoWidgets: [
-      { column: 'nodeKind', kind: 'facet-summary', label: 'Node kinds' },
-      { column: 'category', kind: 'facet-summary', label: 'Categories' },
-      { column: 'sectionCanonical', kind: 'facet-summary', label: 'Sections' },
+      { column: 'journal', kind: 'facet-summary', label: 'Journals' },
+      { column: 'semanticGroups', kind: 'facet-summary', label: 'Entity groups' },
+      { column: 'relationCategories', kind: 'facet-summary', label: 'Relation categories' },
     ],
     searchableFields: {
       nodeKind: 'Node Kind',
@@ -97,9 +97,9 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     linkTargetIndexBy: LINK_COLUMNS.targetIndexBy,
     defaultColorColumn: 'journal',
     defaultColorStrategy: 'categorical',
-    defaultSizeColumn: 'paperChunkCount',
+    defaultSizeColumn: 'paperReferenceCount',
     defaultSizeStrategy: 'auto',
-    pointSizeRange: [5, 20],
+    pointSizeRange: [2, 8],
     // Paper nodes are derived from corpus data — the paper layer is available
     // whenever the corpus bundle includes paper-kind nodes.
     requiredTable: 'corpus_points',

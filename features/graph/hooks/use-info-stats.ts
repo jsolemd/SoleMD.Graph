@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { GraphNode } from '@/features/graph/types'
 import { readNodeColumnValue } from '@/features/graph/lib/info-widgets'
+import type { GraphInfoScope } from '@/features/graph/types'
 
 /* ─── Types ──────────────────────────────────────────────────── */
 
@@ -10,7 +11,7 @@ export interface ClusterStat {
   count: number
 }
 
-export type InfoScope = 'dataset' | 'current' | 'selected'
+export type InfoScope = GraphInfoScope
 
 export interface InfoStats {
   /** Total active-layer node count (denominator for proportions). */

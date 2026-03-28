@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { getPaletteColors } from "@/features/graph/lib/colors"
+import { getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors"
 import { getNodeProp, safeMin, safeMax } from "@/features/graph/lib/helpers"
 import type { ColorSchemeName, ColorTheme, GeoNode, PointColorStrategy, PointSizeStrategy, SizeColumnKey } from "@/features/graph/types"
 import type { ExpressionSpecification } from "maplibre-gl"
@@ -20,23 +20,24 @@ export function useMapColorExpression(
   colorTheme: ColorTheme,
 ): ExpressionSpecification | string {
   return useMemo(() => {
+    const resolved = resolvePaletteSelection(colorColumn, colorStrategy, colorScheme, colorTheme)
     const palette = getPaletteColors(colorScheme, colorTheme)
 
-    if (colorStrategy === "direct" || colorColumn === "hexColor") {
+    if (resolved.colorStrategy === "direct") {
       return ["get", colorTheme === "light" ? "colorLight" : "color"] as ExpressionSpecification
     }
 
-    if (colorStrategy === "single") {
+    if (resolved.colorStrategy === "single") {
       return palette[0]
     }
 
-    if (colorStrategy === "categorical") {
+    if (resolved.colorStrategy === "categorical") {
       const uniqueValues = [...new Set(
-        geoNodes.map((n) => getNodeProp(n, colorColumn)).filter(Boolean)
+        geoNodes.map((n) => getNodeProp(n, resolved.colorColumn)).filter(Boolean)
       )]
       if (uniqueValues.length === 0) return palette[0]
 
-      const matchExpr: unknown[] = ["match", ["get", colorColumn]]
+      const matchExpr: unknown[] = ["match", ["get", resolved.colorColumn]]
       for (let i = 0; i < uniqueValues.length; i++) {
         matchExpr.push(String(uniqueValues[i]), palette[i % palette.length])
       }
@@ -44,9 +45,9 @@ export function useMapColorExpression(
       return matchExpr as ExpressionSpecification
     }
 
-    if (colorStrategy === "continuous") {
+    if (resolved.colorStrategy === "continuous") {
       const values = geoNodes
-        .map((n) => getNodeProp(n, colorColumn))
+        .map((n) => getNodeProp(n, resolved.colorColumn))
         .filter((v): v is number => typeof v === "number" && Number.isFinite(v))
       if (values.length === 0) return palette[0]
 
@@ -55,7 +56,7 @@ export function useMapColorExpression(
       if (min === max) return palette[0]
 
       const stops = palette.slice(0, 5)
-      const interpExpr: unknown[] = ["interpolate", ["linear"], ["get", colorColumn]]
+      const interpExpr: unknown[] = ["interpolate", ["linear"], ["get", resolved.colorColumn]]
       for (let i = 0; i < stops.length; i++) {
         interpExpr.push(min + (max - min) * (i / (stops.length - 1)), stops[i])
       }

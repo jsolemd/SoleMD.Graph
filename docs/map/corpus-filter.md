@@ -176,15 +176,27 @@
 
 ## Tiered Corpus: Candidate vs Graph
 
-The completed filter run produced **14.06M candidate papers** and **1,980,474 graph-tier papers**. Three nested data layers manage what gets embedded, mapped, and rendered.
+The corpus filter decides who enters the durable biomedical corpus and who is
+eligible for later graph work. Rendering is a separate downstream decision made
+by the graph build and export pipeline.
 
 ### Three Data Layers
 
 | Layer | Size | What | Storage |
 |-------|------|------|---------|
-| **Database universe** | ~14.06M | All papers matching journal or vocab signal | Metadata + MedCPT index. Full PubTator3 entities (318M annotations, 24.7M relations). |
-| **Mapped universe** | 3-5M | Papers with SPECTER2 embeddings + UMAP x/y coordinates | `is_mapped = true`. Pre-computed positions for instant overlay. |
-| **Active canvas** | ~2M | Currently rendered in Cosmograph | Baseline (~1.85M, `is_default_visible = true`) + dynamic overlay from mapped universe. |
+| **Database universe** | ~14.06M | All papers admitted to the corpus by journal / venue / entity / relation rules | `solemd.corpus` + `solemd.papers` + PubTator substrate |
+| **Mapped run cohort** | run-specific | Papers from a completed graph run that received coordinates | `solemd.graph`, later synced to `solemd.corpus.is_mapped` for the current run |
+| **Published renderable cohort** | export-specific | Engine-filtered mapped points published to the browser with dense indices | `render_points` in export, then `corpus_points.parquet` |
+
+Current implementation note:
+
+- `is_mapped` is current-run readiness metadata, synced after publish
+- `is_default_visible` is also generated upstream from the same canonical
+  render-policy helper
+- today, `is_default_visible` intentionally matches the published renderable
+  cohort
+- a narrower first-paint baseline versus a broader mapped reservoir is a later
+  product/data-policy step, not current browser behavior
 
 ### Promotion Rules
 
@@ -240,7 +252,7 @@ Papers track their progress through the mapping pipeline:
 ```
 corpus_tier = 'candidate'  →  corpus_tier = 'graph'     (promoted by journal/venue_rule)
 is_mapped = false          →  is_mapped = true           (SPECTER2 + UMAP computed)
-is_default_visible = false →  is_default_visible = true  (in baseline canvas load)
+is_default_visible = false →  is_default_visible = true  (current publish policy for renderable points)
 ```
 
 ### Quality Filter
@@ -253,13 +265,28 @@ The `graph_papers` VIEW applies quality filters for Phase 2 export and map visib
 - Keeps `Editorial` only if citation_count >= 20
 - Result: ~2.74M graph → ~2.60M after quality filters
 
-### Phase 1.5 — Overlay Promotion
+### Phase 1.5 — Future Mapped Reservoir Expansion
 
-Promotes high-signal C-L bridge papers from candidate to the mapped universe using a **reservoir/overlay** strategy:
+This section is still a forward-looking data-policy idea, not the current
+browser implementation.
 
-- **PMI-based scoring**: Compute pointwise mutual information between vocab entities and non-specialty venues. Papers where neuro/psych terms appear unexpectedly in general medical contexts score highest.
-- **Reservoir**: Pre-embed and pre-map top candidate papers with SPECTER2 + UMAP coordinates, stored as dormant (is_mapped = true, is_default_visible = false).
-- **Overlay**: When the user explores a specialty topic, relevant mapped papers flow onto the active canvas from the reservoir. The graph feels alive — always ~2M papers, but which 2M changes based on what you're exploring.
+Potential next step:
+
+- score high-signal C-L bridge papers for admission into a broader mapped
+  reservoir
+- pre-compute coordinates for those papers in future graph runs
+- then separate:
+  - renderable cohort
+  - default-visible cohort
+  - current visible / emphasized set
+
+What is true today:
+
+- the browser does not stream overlay subsets from a dormant mapped reservoir
+- the browser operates over the published local hot point table for the current
+  run
+- dynamic reveal / emphasis happens through native Cosmograph filters, timeline
+  state, and a DuckDB-local visibility-budget query over already-mapped points
 
 The candidate pool is cheap (metadata only). Nothing is lost — bridge papers wait for empirical promotion rules, not guesswork.
 

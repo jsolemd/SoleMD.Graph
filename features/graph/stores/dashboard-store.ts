@@ -6,6 +6,7 @@ import { createSelectionSlice } from './slices/selection-slice'
 import { createGeoSlice } from './slices/geo-slice'
 import { createTimelineSlice } from './slices/timeline-slice'
 import { createLinksSlice } from './slices/links-slice'
+import { createVisibilitySlice } from './slices/visibility-slice'
 
 import type { PanelSlice } from './slices/panel-slice'
 import type { ConfigSlice } from './slices/config-slice'
@@ -13,6 +14,7 @@ import type { SelectionSlice } from './slices/selection-slice'
 import type { GeoSlice } from './slices/geo-slice'
 import type { TimelineSlice } from './slices/timeline-slice'
 import type { LinksSlice } from './slices/links-slice'
+import type { VisibilitySlice } from './slices/visibility-slice'
 
 /* ───── Re-exports for backwards compatibility ───── */
 
@@ -28,7 +30,8 @@ export type DashboardState =
   SelectionSlice &
   GeoSlice &
   TimelineSlice &
-  LinksSlice
+  LinksSlice &
+  VisibilitySlice
 
 /* ───── Clearance selectors ─────
  * Single source of truth for bottom/left space occupied by docked elements.
@@ -103,4 +106,5 @@ export const useDashboardStore = create<DashboardState>((...a) => ({
   ...createGeoSlice(...a),
   ...createTimelineSlice(...a),
   ...createLinksSlice(...a),
+  ...createVisibilitySlice(...a),
 }))

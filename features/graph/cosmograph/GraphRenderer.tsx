@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   Cosmograph,
   type CosmographData,
@@ -9,23 +9,54 @@ import {
 import { useComputedColorScheme } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
-import { getPaletteColors } from "@/features/graph/lib/colors";
+import { getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors";
+import { getPointIncludeColumns } from "@/features/graph/lib/cosmograph-columns";
+import {
+  BUDGET_FOCUS_SOURCE_ID,
+  buildBudgetScopeSql,
+  buildVisibilityScopeSql,
+  buildVisibilityFocusClause,
+  clearSelectionClause,
+  createSelectionSource,
+  getSelectionSourceId,
+  isBudgetScopeSelectionSourceId,
+  isVisibilitySelectionSourceId,
+} from "@/features/graph/lib/cosmograph-selection";
 import { getLayerConfig } from "@/features/graph/lib/layers";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
-import type { GraphData, GraphNode, PointColorStrategy } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphData, GraphNode } from "@/features/graph/types";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
 
 import { BRAND } from "@/features/graph/lib/brand-colors";
 
+function getFilteredPointIndices(filteredPoints: CosmographData): number[] {
+  const indexColumn = filteredPoints.getChild("index");
+  if (!indexColumn) {
+    return [];
+  }
+
+  return Array.from(indexColumn.toArray()).filter(
+    (index): index is number => typeof index === "number" && Number.isFinite(index),
+  );
+}
+
 export default function CosmographRenderer({
   data,
   canvas,
+  queries,
 }: {
-  data: GraphData;
+  data: GraphData | null;
   canvas: GraphCanvasSource;
+  queries: GraphBundleQueries;
 }) {
   const cosmographRef = useRef<CosmographRef>(undefined);
   const hasFittedView = useRef(false);
+  const selectionRequestId = useRef(0);
+  const visibilityBudgetRequestId = useRef(0);
+  const budgetFocusSource = useMemo(
+    () => createSelectionSource(BUDGET_FOCUS_SOURCE_ID),
+    [],
+  );
   const selectNode = useGraphStore((s) => s.selectNode);
   const scheme = useComputedColorScheme("light");
   const isDark = scheme === "dark";
@@ -34,6 +65,11 @@ export default function CosmographRenderer({
   // Active layer — determines which DuckDB table Cosmograph reads from
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const layerConfig = getLayerConfig(activeLayer);
+  const activePanel = useDashboardStore((s) => s.activePanel);
+  const filterColumns = useDashboardStore((s) => s.filterColumns);
+  const showTimeline = useDashboardStore((s) => s.showTimeline);
+  const timelineColumn = useDashboardStore((s) => s.timelineColumn);
+  const tableOpen = useDashboardStore((s) => s.tableOpen);
 
   // Point config — grouped with useShallow to avoid unnecessary re-renders
   const {
@@ -79,38 +115,39 @@ export default function CosmographRenderer({
 
   // Selection & interaction state
   const {
-    setCurrentPointIndices, selectedPointIndices,
+    setCurrentPointIndices, setCurrentPointScopeSql, selectedPointIndices,
     setSelectedPointIndices, setHighlightedPointIndices,
-    setActiveSelectionSourceId, connectedSelect, lockedSelection,
+    setActiveSelectionSourceId, lockedSelection,
+    visibilityFocus, clearVisibilityFocus, applyVisibilityBudget,
   } = useDashboardStore(useShallow((s) => ({
     setCurrentPointIndices: s.setCurrentPointIndices,
+    setCurrentPointScopeSql: s.setCurrentPointScopeSql,
     selectedPointIndices: s.selectedPointIndices,
     setSelectedPointIndices: s.setSelectedPointIndices,
     setHighlightedPointIndices: s.setHighlightedPointIndices,
     setActiveSelectionSourceId: s.setActiveSelectionSourceId,
-    connectedSelect: s.connectedSelect,
     lockedSelection: s.lockedSelection,
+    visibilityFocus: s.visibilityFocus,
+    clearVisibilityFocus: s.clearVisibilityFocus,
+    applyVisibilityBudget: s.applyVisibilityBudget,
   })));
   const isLocked = lockedSelection !== null;
 
   const colorTheme = useGraphColorTheme();
 
-  // When color strategy is "direct" but a non-default scheme is selected,
-  // switch to "categorical" because pointColorPalette is ignored in direct mode
-  const effectiveColorStrategy: PointColorStrategy = useMemo(() => {
-    if (pointColorStrategy === "direct" && colorSchemeName !== "default") {
-      return "categorical";
-    }
-    return pointColorStrategy;
-  }, [pointColorStrategy, colorSchemeName]);
-
-  // Use light-mode color column when theme is light and user selected the pre-computed hex color
-  const effectiveColorColumn = useMemo(() => {
-    if (pointColorColumn === "hexColor" && colorTheme === "light") {
-      return "hexColorLight";
-    }
-    return pointColorColumn;
-  }, [pointColorColumn, colorTheme]);
+  const {
+    colorColumn: effectiveColorColumn,
+    colorStrategy: effectiveColorStrategy,
+  } = useMemo(
+    () =>
+      resolvePaletteSelection(
+        pointColorColumn,
+        pointColorStrategy,
+        colorSchemeName,
+        colorTheme,
+      ),
+    [pointColorColumn, pointColorStrategy, colorSchemeName, colorTheme],
+  );
 
   // Include activeLayer + pointColorColumn so Cosmograph receives a fresh array
   // reference on layer/column switches — without this, Cosmograph skips re-coloring
@@ -126,22 +163,52 @@ export default function CosmographRenderer({
     "background: var(--graph-label-bg); border-radius: 4px; box-shadow: var(--graph-label-shadow);";
   const clusterLabelStyle =
     "background: var(--graph-cluster-label-bg); font-weight: 500; border-radius: 4px;";
-
-  // Derive active node array based on layer
-  const activeNodes: GraphNode[] = useMemo(
-    () => activeLayer === 'paper' ? data.paperNodes : data.nodes,
-    [activeLayer, data.nodes, data.paperNodes]
+  const pointIncludeColumns = useMemo(
+    () =>
+      getPointIncludeColumns({
+        layer: activeLayer,
+        activePanel,
+        showTimeline,
+        filterColumns,
+        timelineColumn,
+      }),
+    [activeLayer, activePanel, filterColumns, showTimeline, timelineColumn],
   );
+
+  const activeNodes: GraphNode[] = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+    return activeLayer === "paper" ? data.paperNodes : data.nodes;
+  }, [activeLayer, data]);
+
+  const totalPointCount = useMemo(() => {
+    if (activeLayer === "geo") {
+      return data?.geoNodes.length ?? canvas.pointCounts.geo ?? 0;
+    }
+    return canvas.pointCounts[activeLayer] ?? activeNodes.length;
+  }, [activeLayer, activeNodes.length, canvas.pointCounts, data?.geoNodes.length]);
 
   // Auto-scale opacity: sparse graphs stay a touch more opaque so individual
   // points are visible; dense graphs soften further to avoid glare.
   const effectiveOpacity = useMemo(() => {
-    const pointCount = activeNodes.length;
-    const density = Math.min(Math.log10(Math.max(pointCount, 1)) / Math.log10(50000), 1);
-    const baseOpacity = isDark ? 0.7 : 0.5;
-    const maxOpacity = isDark ? 0.82 : 0.7;
-    return maxOpacity - density * (maxOpacity - baseOpacity);
-  }, [activeNodes.length, isDark]);
+    const pointCount = totalPointCount;
+    const density = Math.min(
+      Math.log10(Math.max(pointCount, 1)) / Math.log10(2_500_000),
+      1,
+    );
+    const minOpacity = isDark ? 0.42 : 0.28;
+    const maxOpacity = isDark ? 0.72 : 0.56;
+    return maxOpacity - density * (maxOpacity - minOpacity);
+  }, [isDark, totalPointCount]);
+
+  const fitViewPadding = useMemo(() => {
+    const pointCount = totalPointCount;
+    if (pointCount >= 2_000_000) return 0.18;
+    if (pointCount >= 1_000_000) return 0.15;
+    if (pointCount >= 250_000) return 0.12;
+    return 0.1;
+  }, [totalPointCount]);
 
   // Build index->node map for O(1) lookup in callbacks
   const indexToNode = useMemo(() => {
@@ -152,16 +219,30 @@ export default function CosmographRenderer({
     return map;
   }, [activeNodes]);
 
-  const allNodeIndices = useMemo(
-    () => activeNodes.map((node) => node.index),
-    [activeNodes]
+  const resolveAndSelectNode = useCallback(
+    async (selector: { id?: string; index?: number }) => {
+      const requestId = ++selectionRequestId.current;
+      const node =
+        (selector.index != null ? indexToNode.get(selector.index) : null) ??
+        (selector.id != null
+          ? activeNodes.find((candidate) => candidate.id === selector.id) ?? null
+          : null) ??
+        (await queries.resolvePointSelection(activeLayer, selector));
+
+      if (requestId !== selectionRequestId.current) {
+        return;
+      }
+
+      selectNode(node);
+    },
+    [activeLayer, activeNodes, indexToNode, queries, selectNode]
   );
 
   const handleLabelClick = useCallback(
     (_index: number, id: string) => {
-      selectNode(activeNodes.find((n) => n.id === id) ?? null);
+      void resolveAndSelectNode({ id });
     },
-    [activeNodes, selectNode]
+    [resolveAndSelectNode]
   );
 
   // Track the layer so we can re-fit view on layer changes
@@ -174,8 +255,10 @@ export default function CosmographRenderer({
     if (isFirstFit || isLayerChange) {
       hasFittedView.current = true;
       lastFittedLayer.current = layerConfig.pointsTable;
-      cosmographRef.current?.fitView(0, 0.1);
+      cosmographRef.current?.fitView(0, fitViewPadding);
+      clearVisibilityFocus();
       setCurrentPointIndices(null);
+      setCurrentPointScopeSql(null);
       setSelectedPointIndices([]);
       setHighlightedPointIndices([]);
       setActiveSelectionSourceId(null);
@@ -185,110 +268,176 @@ export default function CosmographRenderer({
       lastFittedLayer.current = layerConfig.pointsTable;
     }
   }, [
+    fitViewPadding,
+    clearVisibilityFocus,
     layerConfig.pointsTable,
-    setActiveSelectionSourceId,
     setCurrentPointIndices,
+    setActiveSelectionSourceId,
+    setCurrentPointScopeSql,
     setHighlightedPointIndices,
     setSelectedPointIndices,
   ]);
 
   const handlePointClick = useCallback(
     (index: number) => {
-      selectNode(indexToNode.get(index) ?? null);
+      void resolveAndSelectNode({ index });
     },
-    [indexToNode, selectNode]
+    [resolveAndSelectNode]
   );
 
   const handleBackgroundClick = useCallback(() => {
+    selectionRequestId.current += 1;
+    clearVisibilityFocus();
     selectNode(null);
     // Explicitly clear programmatic selections (selectPoint calls)
     // that resetSelectionOnEmptyCanvasClick may not reach
     cosmographRef.current?.unselectAllPoints();
-  }, [selectNode]);
+  }, [clearVisibilityFocus, selectNode]);
 
   const getIntentClauseIds = useCallback(() => {
     const clauses = cosmographRef.current?.pointsSelection?.clauses ?? [];
     return clauses
-      .map((clause) => {
-        if (
-          typeof clause !== "object" ||
-          clause === null ||
-          !("source" in clause)
-        ) {
-          return null;
-        }
-
-        const source = clause.source;
-        if (
-          typeof source !== "object" ||
-          source === null ||
-          !("id" in source) ||
-          typeof source.id !== "string"
-        ) {
-          return null;
-        }
-
-        return source.id;
-      })
+      .map((clause) =>
+        typeof clause === "object" && clause !== null && "source" in clause
+          ? getSelectionSourceId(clause.source)
+          : null,
+      )
       .filter(
         (sourceId): sourceId is string =>
           sourceId !== null &&
-          !sourceId.startsWith("filter:") &&
-          !sourceId.startsWith("timeline:")
+          !isVisibilitySelectionSourceId(sourceId)
       );
   }, []);
+
+  useEffect(() => {
+    const pointsSelection = cosmographRef.current?.pointsSelection;
+    if (!pointsSelection) {
+      return;
+    }
+
+    if (!visibilityFocus || visibilityFocus.layer !== activeLayer) {
+      clearSelectionClause(pointsSelection, budgetFocusSource);
+      return;
+    }
+
+    pointsSelection.update(
+      buildVisibilityFocusClause(budgetFocusSource, visibilityFocus),
+    );
+  }, [activeLayer, budgetFocusSource, visibilityFocus]);
+
+  const refreshVisibilityBudget = useCallback(async () => {
+    if (activeLayer === "geo" || !visibilityFocus || visibilityFocus.layer !== activeLayer) {
+      return;
+    }
+
+    const requestId = ++visibilityBudgetRequestId.current;
+    const scopeSql = buildBudgetScopeSql(cosmographRef.current?.pointsSelection);
+    const budget = await queries.getVisibilityBudget({
+      layer: activeLayer,
+      selector: { index: visibilityFocus.seedIndex },
+      scopeSql,
+    });
+
+    if (requestId !== visibilityBudgetRequestId.current) {
+      return;
+    }
+
+    if (!budget) {
+      clearVisibilityFocus();
+      return;
+    }
+
+    applyVisibilityBudget(activeLayer, budget);
+  }, [
+    activeLayer,
+    applyVisibilityBudget,
+    clearVisibilityFocus,
+    queries,
+    visibilityFocus,
+  ]);
 
   const handlePointsFiltered = useCallback(
     (
       filteredPoints: CosmographData,
       callbackSelectedPointIndices: number[] | null | undefined
     ) => {
-      const filteredRows =
-        cosmographRef.current?.convertCosmographDataToObject(filteredPoints) ?? [];
-      const filteredIndices = filteredRows
-        .map((row) => row.index)
-        .filter((index): index is number => typeof index === "number");
+      let filteredIndicesCache: number[] | null = null;
+      const getFilteredIndices = () => {
+        if (filteredIndicesCache === null) {
+          filteredIndicesCache = getFilteredPointIndices(filteredPoints);
+        }
+        return filteredIndicesCache;
+      };
       const normalizedSelected =
         callbackSelectedPointIndices?.filter(
           (index): index is number => typeof index === "number"
         ) ?? [];
       const sourceId = cosmographRef.current?.getActiveSelectionSourceId() ?? null;
-      const isFilterSource =
-        sourceId?.startsWith("filter:") || sourceId?.startsWith("timeline:");
+      const isVisibilitySource = isVisibilitySelectionSourceId(sourceId);
+      const hasIntentClauses = getIntentClauseIds().length > 0;
+      const pointClauseCount =
+        cosmographRef.current?.pointsSelection?.clauses?.length ?? 0;
+      const linkClauseCount =
+        cosmographRef.current?.linksSelection?.clauses?.length ?? 0;
+      const currentPointScopeSql =
+        pointClauseCount > 0
+          ? buildVisibilityScopeSql(cosmographRef.current?.pointsSelection)
+          : null;
+      const hasCurrentScope =
+        (currentPointScopeSql != null &&
+          currentPointScopeSql.trim().length > 0) ||
+        linkClauseCount > 0;
+      const shouldRefreshVisibilityBudget =
+        isBudgetScopeSelectionSourceId(sourceId) &&
+        visibilityFocus != null &&
+        visibilityFocus.layer === activeLayer;
+      const shouldKeepCurrentIndices =
+        hasCurrentScope &&
+        (activeLayer === "geo" || currentPointScopeSql == null);
+      const shouldTrackHighlights =
+        activeLayer === "geo" || tableOpen;
+
+      const filteredIndices =
+        shouldKeepCurrentIndices || shouldTrackHighlights
+          ? getFilteredIndices()
+          : [];
       const hasPartialCurrent =
-        filteredIndices.length > 0 && filteredIndices.length < allNodeIndices.length;
+        filteredIndices.length > 0 && filteredIndices.length < totalPointCount;
       const nextHighlight =
         normalizedSelected.length > 0
           ? normalizedSelected
           : hasPartialCurrent
             ? filteredIndices
             : [];
-      const hasIntentClauses = getIntentClauseIds().length > 0;
-      const pointClauseCount =
-        cosmographRef.current?.pointsSelection?.clauses?.length ?? 0;
-      const linkClauseCount =
-        cosmographRef.current?.linksSelection?.clauses?.length ?? 0;
-      const hasCurrentScope = pointClauseCount > 0 || linkClauseCount > 0;
 
-      setCurrentPointIndices(hasCurrentScope ? filteredIndices : null);
+      setCurrentPointScopeSql(currentPointScopeSql);
+      setCurrentPointIndices(shouldKeepCurrentIndices ? filteredIndices : null);
 
       // Locked mode freezes persistent intent and lets filters only alter the
       // currently visible/highlighted subset. Intent-changing widgets should
       // be disabled natively while locked, but this keeps the store resilient.
       if (lockedSelection && lockedSelection.size > 0) {
-        if (isFilterSource) {
-          setHighlightedPointIndices(nextHighlight);
+        if (isVisibilitySource) {
+          if (shouldRefreshVisibilityBudget) {
+            void refreshVisibilityBudget();
+          }
+          setHighlightedPointIndices(shouldTrackHighlights ? nextHighlight : []);
           return;
         }
 
-        setHighlightedPointIndices(selectedPointIndices);
+        setHighlightedPointIndices(
+          shouldTrackHighlights ? selectedPointIndices : [],
+        );
         return;
       }
 
       // Filters and timeline always define visibility/highlight only. They never
       // overwrite the user's persistent selection intent.
-      if (isFilterSource) {
-        setHighlightedPointIndices(nextHighlight);
+      if (isVisibilitySource) {
+        if (shouldRefreshVisibilityBudget) {
+          void refreshVisibilityBudget();
+        }
+        setHighlightedPointIndices(shouldTrackHighlights ? nextHighlight : []);
         return;
       }
 
@@ -297,7 +446,7 @@ export default function CosmographRenderer({
       // active filters" from rehydrating intent from the current intersection.
       if (!hasIntentClauses) {
         setSelectedPointIndices([]);
-        setHighlightedPointIndices(nextHighlight);
+        setHighlightedPointIndices(shouldTrackHighlights ? nextHighlight : []);
         setActiveSelectionSourceId(null);
         selectNode(null);
         return;
@@ -308,15 +457,20 @@ export default function CosmographRenderer({
       setActiveSelectionSourceId(sourceId);
     },
     [
-      allNodeIndices,
+      activeLayer,
       getIntentClauseIds,
       lockedSelection,
+      refreshVisibilityBudget,
       selectNode,
       selectedPointIndices,
       setActiveSelectionSourceId,
       setCurrentPointIndices,
+      setCurrentPointScopeSql,
       setHighlightedPointIndices,
       setSelectedPointIndices,
+      totalPointCount,
+      tableOpen,
+      visibilityFocus,
     ]
   );
 
@@ -336,13 +490,14 @@ export default function CosmographRenderer({
       pointSizeBy={pointSizeColumn === "none" ? undefined : pointSizeColumn}
       pointSizeStrategy={pointSizeStrategy}
       pointLabelBy={pointLabelColumn}
-      pointLabelWeightBy="clusterProbability"
-      pointIncludeColumns={["*"]}
+      pointLabelWeightBy="paperReferenceCount"
+      pointIncludeColumns={
+        pointIncludeColumns.length > 0 ? pointIncludeColumns : undefined
+      }
       linkSourceBy={layerConfig.linkSourceBy}
       linkSourceIndexBy={layerConfig.linkSourceIndexBy}
       linkTargetBy={layerConfig.linkTargetBy}
       linkTargetIndexBy={layerConfig.linkTargetIndexBy}
-      linkIncludeColumns={hasLinks ? ["*"] : undefined}
       renderLinks={hasLinks && (renderLinks || selectedPointIndices.length > 0)}
       linkOpacity={hasLinks ? linkOpacity : undefined}
       linkGreyoutOpacity={hasLinks ? (renderLinks ? linkGreyoutOpacity : 0) : undefined}
@@ -358,14 +513,16 @@ export default function CosmographRenderer({
       pointOpacity={effectiveOpacity}
       pointGreyoutOpacity={colors.greyout}
       scalePointsOnZoom={scalePointsOnZoom}
+      pointClusterBy="clusterLabel"
+      showClusterLabels
       showLabels={showPointLabels}
       showDynamicLabels={showDynamicLabels}
       showTopLabels={showPointLabels}
-      showDynamicLabelsLimit={30}
-      showTopLabelsLimit={20}
+      showDynamicLabelsLimit={60}
+      showTopLabelsLimit={40}
       showSelectedLabels
       showUnselectedPointLabels={false}
-      selectedPointLabelsLimit={60}
+      selectedPointLabelsLimit={100}
       showHoveredPointLabel={showHoveredPointLabel}
       renderHoveredPointRing={renderHoveredPointRing}
       hoveredPointRingColor={colors.ring}

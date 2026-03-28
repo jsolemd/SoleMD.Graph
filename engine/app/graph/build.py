@@ -17,10 +17,16 @@ from app.config import settings
 from app.graph._util import require_numpy
 from app.graph.clusters import ClusterConfig
 from app.graph.clusters import run_leiden
+from app.graph.export_bundle import BUNDLE_VERSION
 from app.graph.export_bundle import export_graph_bundle
 from app.graph.labels import build_cluster_labels
+from app.graph.labels import load_vocabulary_terms
 from app.graph.layout import LayoutConfig
+from app.graph.layout import apply_cluster_repulsion
+from app.graph.layout import compute_spatial_outlier_scores
 from app.graph.layout import preprocess_embeddings
+from app.graph.render_policy import DEFAULT_VISIBLE_POLICY
+from app.graph.render_policy import default_visible_point_predicate_sql
 from app.graph.layout import run_layout
 
 
@@ -245,6 +251,7 @@ def _write_graph_points(
     coordinates: "numpy.ndarray",
     cluster_ids: "numpy.ndarray",
     is_noise: "numpy.ndarray",
+    outlier_scores: "numpy.ndarray | None" = None,
 ) -> None:
     with db.pooled() as conn, conn.cursor() as cur:
         with cur.copy(
@@ -267,6 +274,11 @@ def _write_graph_points(
             for point_index, (corpus_id, xy, cluster_id, noise_flag) in enumerate(
                 zip(corpus_ids.tolist(), coordinates, cluster_ids, is_noise, strict=False)
             ):
+                score = (
+                    float(outlier_scores[point_index])
+                    if outlier_scores is not None
+                    else None
+                )
                 copy.write_row(
                     (
                         graph_run_id,
@@ -277,7 +289,7 @@ def _write_graph_points(
                         int(cluster_id),
                         None,
                         None,
-                        None,
+                        score,
                         bool(noise_flag),
                     )
                 )
@@ -414,6 +426,7 @@ def _finalize_graph_run(
                 SET is_current = false
                 WHERE graph_name = 'cosmograph'
                   AND node_kind = 'corpus'
+                  AND is_current = true
                 """
             )
         cur.execute(
@@ -436,7 +449,7 @@ def _finalize_graph_run(
                 publish_current,
                 bundle_dir,
                 "parquet-manifest" if bundle_dir else None,
-                "1" if bundle_dir else None,
+                BUNDLE_VERSION if bundle_dir else None,
                 bundle_checksum,
                 bundle_bytes,
                 Jsonb(bundle_manifest) if bundle_manifest else None,
@@ -445,20 +458,7 @@ def _finalize_graph_run(
             ),
         )
         if publish_current:
-            cur.execute("UPDATE solemd.corpus SET is_mapped = false")
-            cur.execute(
-                """
-                UPDATE solemd.corpus c
-                SET is_mapped = true
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM solemd.graph g
-                    WHERE g.graph_run_id = %s
-                      AND g.corpus_id = c.corpus_id
-                )
-                """,
-                (graph_run_id,),
-            )
+            _sync_current_corpus_visibility(cur, graph_run_id)
         conn.commit()
 
 
@@ -475,6 +475,82 @@ def _mark_graph_run_failed(graph_run_id: str, error: Exception) -> None:
             (str(error), graph_run_id),
         )
         conn.commit()
+
+
+def _sync_current_corpus_visibility(cur, graph_run_id: str) -> None:
+    default_visible_predicate = default_visible_point_predicate_sql("g")
+    cur.execute(
+        """
+        UPDATE solemd.corpus
+        SET is_mapped = false,
+            is_default_visible = false
+        WHERE is_mapped = true
+           OR is_default_visible = true
+        """
+    )
+    cur.execute(
+        """
+        UPDATE solemd.corpus c
+        SET is_mapped = true
+        FROM solemd.graph g
+        WHERE g.graph_run_id = %s
+          AND g.corpus_id = c.corpus_id
+          AND c.is_mapped IS DISTINCT FROM true
+        """,
+        (graph_run_id,),
+    )
+    cur.execute(
+        f"""
+        UPDATE solemd.corpus c
+        SET is_default_visible = true
+        FROM solemd.graph g
+        WHERE g.graph_run_id = %s
+          AND g.corpus_id = c.corpus_id
+          AND {default_visible_predicate}
+          AND c.is_default_visible IS DISTINCT FROM true
+        """,
+        (graph_run_id,),
+    )
+
+
+def sync_current_graph_flags() -> dict[str, str | int]:
+    with db.pooled() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM solemd.graph_runs
+            WHERE graph_name = 'cosmograph'
+              AND node_kind = 'corpus'
+              AND status = 'completed'
+              AND is_current = true
+            ORDER BY completed_at DESC NULLS LAST, updated_at DESC
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+        if not row:
+            raise RuntimeError("no current cosmograph corpus graph run found")
+
+        graph_run_id = row["id"]
+        _sync_current_corpus_visibility(cur, graph_run_id)
+
+        cur.execute(
+            """
+            SELECT
+                count(*) FILTER (WHERE is_mapped = true)::INTEGER AS mapped_now,
+                count(*) FILTER (WHERE is_default_visible = true)::INTEGER AS default_visible_now
+            FROM solemd.corpus
+            """
+        )
+        counts = cur.fetchone()
+        conn.commit()
+
+    return {
+        "graph_run_id": graph_run_id,
+        "mapped_now": counts["mapped_now"],
+        "default_visible_now": counts["default_visible_now"],
+        "default_visible_policy": DEFAULT_VISIBLE_POLICY,
+    }
 
 
 def run_graph_build(
@@ -495,6 +571,7 @@ def run_graph_build(
         node_kind="corpus",
         parameters={
             "limit": limit or None,
+            "default_visible_policy": DEFAULT_VISIBLE_POLICY,
             "layout": asdict(layout_config),
             "clusters": asdict(cluster_config),
         },
@@ -510,19 +587,34 @@ def run_graph_build(
         layout_result = run_layout(embeddings, config=layout_config)
         cluster_result = run_leiden(embeddings, config=cluster_config)
 
+        coordinates = apply_cluster_repulsion(
+            layout_result.coordinates,
+            cluster_result.cluster_ids,
+            repulsion_factor=layout_config.cluster_repulsion_factor,
+        )
+
+        outlier_result = compute_spatial_outlier_scores(
+            coordinates,
+            n_neighbors=layout_config.outlier_lof_neighbors,
+            contamination=layout_config.outlier_contamination,
+        )
+        merged_noise = cluster_result.is_noise | outlier_result.is_spatial_outlier
+
         _write_graph_points(
             graph_run_id=graph_run_id,
             corpus_ids=input_data.corpus_ids,
-            coordinates=layout_result.coordinates,
+            coordinates=coordinates,
             cluster_ids=cluster_result.cluster_ids,
-            is_noise=cluster_result.is_noise,
+            is_noise=merged_noise,
+            outlier_scores=outlier_result.outlier_scores,
         )
 
         cluster_texts = _load_cluster_texts(
             graph_run_id=graph_run_id,
             sample_per_cluster=settings.graph_label_sample_per_cluster,
         )
-        cluster_labels = build_cluster_labels(cluster_texts)
+        vocab_terms = load_vocabulary_terms()
+        cluster_labels = build_cluster_labels(cluster_texts, vocab_terms=vocab_terms)
         label_map = {item.cluster_id: item.label for item in cluster_labels}
         label_mode_map = {item.cluster_id: item.label_mode for item in cluster_labels}
         label_source_map = {item.cluster_id: item.label_source for item in cluster_labels}
@@ -531,7 +623,7 @@ def run_graph_build(
             graph_run_id=graph_run_id,
             corpus_ids=input_data.corpus_ids,
             citation_counts=input_data.citation_counts,
-            coordinates=layout_result.coordinates,
+            coordinates=coordinates,
             cluster_ids=cluster_result.cluster_ids,
             labels=label_map,
             label_modes=label_mode_map,
@@ -544,7 +636,10 @@ def run_graph_build(
         bundle_bytes = None
         bundle_manifest = None
         if not skip_export:
-            bundle = export_graph_bundle(graph_run_id=graph_run_id)
+            bundle = export_graph_bundle(
+                graph_run_id=graph_run_id,
+                bundle_profile="hot",
+            )
             bundle_dir = bundle.bundle_dir
             bundle_checksum = bundle.bundle_checksum
             bundle_bytes = bundle.bundle_bytes
@@ -559,7 +654,11 @@ def run_graph_build(
             publish_current=publish_current,
             qa_summary={
                 "point_count": int(input_data.corpus_ids.shape[0]),
+                "renderable_point_count": int(input_data.corpus_ids.shape[0] - outlier_result.outlier_count),
                 "cluster_count": len(cluster_rows),
+                "spatial_outlier_count": outlier_result.outlier_count,
+                "spatial_outlier_method": outlier_result.method,
+                "default_visible_policy": DEFAULT_VISIBLE_POLICY,
                 "limit": limit or None,
                 "layout_backend": layout_result.backend,
                 "cluster_backend": cluster_result.backend,
@@ -587,6 +686,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize or run graph builds")
     parser.add_argument("--json", action="store_true", help="Emit JSON only")
     parser.add_argument("--run", action="store_true", help="Run a graph build instead of summary only")
+    parser.add_argument(
+        "--sync-current-flags",
+        action="store_true",
+        help="Backfill corpus.is_mapped and corpus.is_default_visible from the current published graph run",
+    )
     parser.add_argument("--limit", type=int, default=0, help="Limit papers for a canary graph build")
     parser.add_argument(
         "--publish-current",
@@ -600,6 +704,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.run and args.sync_current_flags:
+        raise ValueError("choose either --run or --sync-current-flags")
+
     if args.run:
         payload = asdict(
             run_graph_build(
@@ -608,6 +715,8 @@ def main() -> None:
                 skip_export=args.skip_export,
             )
         )
+    elif args.sync_current_flags:
+        payload = sync_current_graph_flags()
     else:
         payload = asdict(load_graph_build_summary())
 

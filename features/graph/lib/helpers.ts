@@ -24,7 +24,6 @@ export function safeMax(values: number[]): number {
 
 const COLUMN_PRECISION: Record<string, number> = {
   clusterProbability: 3,
-  outlierScore: 3,
   x: 2,
   y: 2,
 };

@@ -23,7 +23,7 @@ Cosmograph v2 natively supports this via **programmatic selection**:
 // Select matching nodes — everything else greys out automatically
 cosmographRef.current.selectPointsByIndices(matchingIndices);
 
-// Already wired in CosmographRenderer.tsx:
+// Already wired in cosmograph/GraphRenderer.tsx:
 //   pointGreyoutOpacity={colors.greyout}   ← controls fade level
 //   pointOpacity={colors.pointOpacity}      ← controls highlighted level
 ```

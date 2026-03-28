@@ -48,7 +48,6 @@ function buildBaseNode(
   return {
     clusterLabel: null,
     clusterProbability: 0,
-    outlierScore: 0,
     paperId: null,
     paperTitle: null,
     citekey: null,
@@ -60,10 +59,12 @@ function buildBaseNode(
     displayLabel: null,
     searchText: null,
     chunkPreview: null,
+    topEntities: null,
     canonicalName: null,
     category: null,
     semanticGroups: null,
     organSystems: null,
+    relationCategories: null,
     mentionCount: null,
     paperCount: null,
     chunkCount: null,
@@ -82,6 +83,9 @@ function buildBaseNode(
     nodeRole: 'primary',
     isDefaultVisible: true,
     payloadJson: null,
+    textAvailability: null,
+    isOpenAccess: null,
+    hasOpenAccessPdf: null,
     paperAuthorCount: null,
     paperReferenceCount: null,
     paperAssetCount: null,
@@ -123,17 +127,18 @@ export interface GraphPointRow {
   cluster_probability: number | null
   doi: string | null
   evidence_status: string | null
+  has_open_access_pdf: boolean | null
   has_figure_context: boolean | null
   has_table_context: boolean | null
   id: string
   is_default_visible: boolean | null
+  is_open_access: boolean | null
   journal: string | null
   mention_count: number | null
   node_kind: string | null
   node_role: string | null
   node_id: string
   organ_systems_csv: string | null
-  outlier_score: number | null
   paper_asset_count: number | null
   paper_author_count: number | null
   paper_chunk_count: number | null
@@ -156,12 +161,15 @@ export interface GraphPointRow {
   relation_certainty: string | null
   relation_count: number | string | null
   relation_direction: string | null
+  relation_categories_csv: string | null
   relation_type: string | null
   search_text: string | null
   semantic_groups_csv: string | null
   section_canonical: string | null
   stable_chunk_id: string | null
+  text_availability: string | null
   title: string | null
+  top_entities_csv: string | null
   token_count: number | null
   x: number
   y: number
@@ -202,6 +210,140 @@ interface BuildGraphDataArgs {
   points: GraphPointRow[]
 }
 
+export function buildGraphNode(
+  row: GraphPointRow,
+  fallbackIndex = 0,
+): GraphNode {
+  const darkPalette = getPaletteColors('default', 'dark')
+  const lightPalette = getPaletteColors('default', 'light')
+  const clusterId = row.cluster_id ?? 0
+  const paperIdx = row.paper_cluster_index ?? 0
+  const clusterColors = resolveClusterColors(clusterId, darkPalette, lightPalette)
+  const color =
+    clusterId <= 0 || paperIdx === 0
+      ? clusterColors.color
+      : shadeByPaper(clusterColors.color, paperIdx)
+  const colorLight =
+    clusterId <= 0 || paperIdx === 0
+      ? clusterColors.colorLight
+      : shadeByPaper(clusterColors.colorLight, paperIdx)
+
+  const base = buildBaseNode({
+    index: row.point_index ?? fallbackIndex,
+    id: row.node_id,
+    x: row.x,
+    y: row.y,
+    color,
+    colorLight,
+    clusterId,
+    clusterLabel: row.cluster_label,
+    clusterProbability: row.cluster_probability ?? 0,
+    paperId: row.paper_id ?? null,
+    paperTitle: row.title ?? null,
+    citekey: row.citekey ?? null,
+    year: row.year ?? null,
+    journal: row.journal,
+    doi: row.doi,
+    pmid: coerceNullableString(row.pmid),
+    pmcid: row.pmcid,
+    displayLabel:
+      row.display_label ??
+      row.title ??
+      row.canonical_name ??
+      row.alias_text ??
+      row.relation_type ??
+      row.chunk_preview ??
+      row.node_id,
+    searchText: row.search_text ?? null,
+    chunkPreview: row.chunk_preview ?? row.display_preview ?? null,
+    topEntities: row.top_entities_csv ?? null,
+    canonicalName: row.canonical_name ?? null,
+    category: row.category ?? null,
+    semanticGroups: row.semantic_groups_csv ?? null,
+    organSystems: row.organ_systems_csv ?? null,
+    relationCategories: row.relation_categories_csv ?? null,
+    mentionCount: coerceNullableNumber(row.mention_count),
+    paperCount: coerceNullableNumber(row.paper_count),
+    chunkCount: coerceNullableNumber(row.chunk_count ?? row.paper_chunk_count),
+    relationCount: coerceNullableNumber(
+      row.relation_count ?? row.paper_relation_count,
+    ),
+    aliasCount: coerceNullableNumber(row.alias_count),
+    relationType: row.relation_type ?? null,
+    relationCategory: row.relation_category ?? null,
+    relationDirection: row.relation_direction ?? null,
+    relationCertainty: row.relation_certainty ?? null,
+    assertionStatus: row.assertion_status ?? null,
+    evidenceStatus: row.evidence_status ?? null,
+    aliasText: row.alias_text ?? null,
+    aliasType: row.alias_type ?? null,
+    aliasQualityScore: coerceNullableNumber(row.alias_quality_score),
+    aliasSource: row.alias_source ?? null,
+    nodeRole: (row.node_role === 'overlay' ? 'overlay' : 'primary') as
+      | 'overlay'
+      | 'primary',
+    isDefaultVisible: row.is_default_visible === true,
+    payloadJson: row.payload_json ?? null,
+    textAvailability: row.text_availability ?? null,
+    isOpenAccess: row.is_open_access ?? null,
+    hasOpenAccessPdf: row.has_open_access_pdf ?? null,
+    paperAuthorCount: row.paper_author_count ?? null,
+    paperReferenceCount: row.paper_reference_count ?? null,
+    paperAssetCount: row.paper_asset_count ?? null,
+    paperChunkCount: row.paper_chunk_count ?? null,
+    paperEntityCount: coerceNullableNumber(row.paper_entity_count),
+    paperRelationCount: coerceNullableNumber(row.paper_relation_count),
+    paperSentenceCount: row.paper_sentence_count ?? null,
+    paperPageCount: row.paper_page_count ?? null,
+    paperTableCount: row.paper_table_count ?? null,
+    paperFigureCount: row.paper_figure_count ?? null,
+  })
+
+  const nodeKind = (row.node_kind ?? 'chunk') as GraphNode['nodeKind']
+  if (nodeKind === 'paper') {
+    return {
+      ...base,
+      nodeKind: 'paper',
+      displayPreview: row.display_preview ?? row.chunk_preview ?? null,
+      payloadWasTruncated: false,
+    } satisfies PaperNode
+  }
+  if (nodeKind === 'term') {
+    return {
+      ...base,
+      nodeKind: 'term',
+      definition: row.definition ?? null,
+      semanticTypes: row.semantic_types_csv ?? null,
+      aliasesCsv: row.aliases_csv ?? null,
+    } satisfies TermNode
+  }
+  if (nodeKind === 'relation_assertion') {
+    return {
+      ...base,
+      nodeKind: 'relation_assertion',
+    } satisfies RelationAssertionNode
+  }
+  if (nodeKind === 'alias') {
+    return {
+      ...base,
+      nodeKind: 'alias',
+    } satisfies AliasNode
+  }
+  return {
+    ...base,
+    nodeKind: 'chunk',
+    stableChunkId: row.stable_chunk_id,
+    chunkIndex: row.chunk_index ?? null,
+    sectionCanonical: row.section_canonical,
+    pageNumber: row.page_number ?? null,
+    tokenCount: row.token_count ?? null,
+    charCount: row.char_count ?? null,
+    chunkKind: row.chunk_kind,
+    hasTableContext: Boolean(row.has_table_context),
+    hasFigureContext: Boolean(row.has_figure_context),
+  } satisfies ChunkNode
+}
+
 export function buildStatsForNodes(
   nodes: GraphNode[],
   { pointLabel }: { pointLabel: string },
@@ -228,125 +370,7 @@ export function buildGraphData({
   clusters,
   facets,
 }: BuildGraphDataArgs): GraphData {
-  const darkPalette = getPaletteColors('default', 'dark')
-  const lightPalette = getPaletteColors('default', 'light')
-  const nodes: GraphNode[] = []
-
-  for (const [index, row] of points.entries()) {
-    const clusterId = row.cluster_id ?? 0
-    const paperIdx = row.paper_cluster_index ?? 0
-    const clusterColors = resolveClusterColors(clusterId, darkPalette, lightPalette)
-    const color = clusterId <= 0 || paperIdx === 0
-      ? clusterColors.color
-      : shadeByPaper(clusterColors.color, paperIdx)
-    const colorLight = clusterId <= 0 || paperIdx === 0
-      ? clusterColors.colorLight
-      : shadeByPaper(clusterColors.colorLight, paperIdx)
-
-    const base = buildBaseNode({
-      index: row.point_index ?? index,
-      id: row.node_id,
-      x: row.x,
-      y: row.y,
-      color,
-      colorLight,
-      clusterId,
-      clusterLabel: row.cluster_label,
-      clusterProbability: row.cluster_probability ?? 0,
-      outlierScore: row.outlier_score ?? 0,
-      paperId: row.paper_id ?? null,
-      paperTitle: row.title ?? null,
-      citekey: row.citekey ?? null,
-      year: row.year ?? null,
-      journal: row.journal,
-      doi: row.doi,
-      pmid: coerceNullableString(row.pmid),
-      pmcid: row.pmcid,
-      displayLabel: row.display_label ?? row.title ?? row.canonical_name ?? row.alias_text ?? row.relation_type ?? row.chunk_preview ?? row.node_id,
-      searchText: row.search_text ?? null,
-      chunkPreview: row.chunk_preview ?? row.display_preview ?? null,
-      canonicalName: row.canonical_name ?? null,
-      category: row.category ?? null,
-      semanticGroups: row.semantic_groups_csv ?? null,
-      organSystems: row.organ_systems_csv ?? null,
-      mentionCount: coerceNullableNumber(row.mention_count),
-      paperCount: coerceNullableNumber(row.paper_count),
-      chunkCount: coerceNullableNumber(row.chunk_count ?? row.paper_chunk_count),
-      relationCount: coerceNullableNumber(row.relation_count ?? row.paper_relation_count),
-      aliasCount: coerceNullableNumber(row.alias_count),
-      relationType: row.relation_type ?? null,
-      relationCategory: row.relation_category ?? null,
-      relationDirection: row.relation_direction ?? null,
-      relationCertainty: row.relation_certainty ?? null,
-      assertionStatus: row.assertion_status ?? null,
-      evidenceStatus: row.evidence_status ?? null,
-      aliasText: row.alias_text ?? null,
-      aliasType: row.alias_type ?? null,
-      aliasQualityScore: coerceNullableNumber(row.alias_quality_score),
-      aliasSource: row.alias_source ?? null,
-      nodeRole: (row.node_role === 'overlay' ? 'overlay' : 'primary') as 'overlay' | 'primary',
-      isDefaultVisible: Boolean(row.is_default_visible ?? true),
-      payloadJson: row.payload_json ?? null,
-      paperAuthorCount: row.paper_author_count ?? null,
-      paperReferenceCount: row.paper_reference_count ?? null,
-      paperAssetCount: row.paper_asset_count ?? null,
-      paperChunkCount: row.paper_chunk_count ?? null,
-      paperEntityCount: coerceNullableNumber(row.paper_entity_count),
-      paperRelationCount: coerceNullableNumber(row.paper_relation_count),
-      paperSentenceCount: row.paper_sentence_count ?? null,
-      paperPageCount: row.paper_page_count ?? null,
-      paperTableCount: row.paper_table_count ?? null,
-      paperFigureCount: row.paper_figure_count ?? null,
-    })
-
-    const nodeKind = (row.node_kind ?? 'chunk') as GraphNode['nodeKind']
-    if (nodeKind === 'paper') {
-      nodes.push({
-        ...base,
-        nodeKind: 'paper',
-        displayPreview: row.display_preview ?? row.chunk_preview ?? null,
-        payloadWasTruncated: false,
-      } satisfies PaperNode)
-      continue
-    }
-    if (nodeKind === 'term') {
-      nodes.push({
-        ...base,
-        nodeKind: 'term',
-        definition: row.definition ?? null,
-        semanticTypes: row.semantic_types_csv ?? null,
-        aliasesCsv: row.aliases_csv ?? null,
-      } satisfies TermNode)
-      continue
-    }
-    if (nodeKind === 'relation_assertion') {
-      nodes.push({
-        ...base,
-        nodeKind: 'relation_assertion',
-      } satisfies RelationAssertionNode)
-      continue
-    }
-    if (nodeKind === 'alias') {
-      nodes.push({
-        ...base,
-        nodeKind: 'alias',
-      } satisfies AliasNode)
-      continue
-    }
-    nodes.push({
-      ...base,
-      nodeKind: 'chunk',
-      stableChunkId: row.stable_chunk_id,
-      chunkIndex: row.chunk_index ?? null,
-      sectionCanonical: row.section_canonical,
-      pageNumber: row.page_number ?? null,
-      tokenCount: row.token_count ?? null,
-      charCount: row.char_count ?? null,
-      chunkKind: row.chunk_kind,
-      hasTableContext: Boolean(row.has_table_context),
-      hasFigureContext: Boolean(row.has_figure_context),
-    } satisfies ChunkNode)
-  }
+  const nodes = points.map((row, index) => buildGraphNode(row, index))
 
   const clusterInfo: ClusterInfo[] = clusters.map((cluster) => ({
     clusterId: cluster.cluster_id,
@@ -409,7 +433,6 @@ export interface PaperPointRow {
   cluster_id: number | null
   cluster_label: string | null
   cluster_probability: number | null
-  outlier_score: number | null
   citekey: string | null
   title: string | null
   journal: string | null
@@ -453,7 +476,6 @@ export function buildPaperNodes(rows: PaperPointRow[]): PaperNode[] {
         clusterId,
         clusterLabel: row.cluster_label,
         clusterProbability: row.cluster_probability ?? 0,
-        outlierScore: row.outlier_score ?? 0,
         paperId: row.paper_id,
         paperTitle: row.title ?? 'Untitled paper',
         citekey: row.citekey ?? 'Uncited',
@@ -547,7 +569,6 @@ export function buildGeoNodes(rows: GeoPointRow[]): GeoNode[] {
         clusterId,
         clusterLabel: row.cluster_label,
         clusterProbability: 1,
-        outlierScore: 0,
         year: row.first_year ?? null,
         displayLabel: row.institution ?? row.node_id,
         chunkPreview: row.institution ?? null,

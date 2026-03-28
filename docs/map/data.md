@@ -2,6 +2,20 @@
 
 How data flows from external sources to the user's browser.
 
+The delivery contract for what stays `hot`, `warm`, and `cold` in the graph
+bundle lives in [bundle-contract.md](bundle-contract.md).
+
+Current browser-delivery note:
+
+- the default published graph bundle is now `hot` only
+- mandatory first-load artifacts are currently:
+  - `corpus_points.parquet`
+  - `corpus_clusters.parquet`
+- future `warm` artifacts are expected to be separate optional local Parquet
+  files attached after interaction, not part of the mandatory first download
+- `cold` remains the backend/API path for raw citation neighborhoods, full
+  PubTator payloads, assets, and later full text
+
 ---
 
 ## The Big Picture
@@ -55,7 +69,7 @@ How data flows from external sources to the user's browser.
 ║                                                                         ║
 ║   solemd schema                        pubtator schema                  ║
 ║   ┌──────────────────────────┐         ┌──────────────────────────┐    ║
-║   │ papers (500K-2M rows)    │         │ entity_annotations       │    ║
+║   │ papers (~14M corpus rows)│         │ entity_annotations       │    ║
 ║   │   title, abstract, year, │         │   (25-80M rows)          │    ║
 ║   │   journal, PMID, S2 ID  │         │   pmid, type, concept_id │    ║
 ║   │                          │         │   mentions, resource     │    ║
@@ -63,7 +77,7 @@ How data flows from external sources to the user's browser.
 ║   │   MedCPT 768d vectors    │         │ relations (500K-1M rows) │    ║
 ║   │   for RAG search         │         │   pmid, type, subject,   │    ║
 ║   │                          │         │   object                 │    ║
-║   │ citations (50-100M edges)│         └──────────────────────────┘    ║
+║   │ citations (domain edges) │         └──────────────────────────┘    ║
 ║   │   citing_id, cited_id,   │                                         ║
 ║   │   intent, influential    │         Only the domain-filtered         ║
 ║   │                          │         subset lives here, not the       ║
@@ -110,24 +124,24 @@ How data flows from external sources to the user's browser.
 ║   ┌─────────────────────────────────────────────────────────────────┐   ║
 ║   │                    COSMOGRAPH (graph canvas)                     │   ║
 ║   │                                                                  │   ║
-║   │   500K-2M paper nodes rendered by GPU (WebGL)                   │   ║
+║   │   Published renderable mapped cohort rendered by GPU (WebGL)    │   ║
 ║   │   Clustered by research community (UMAP layout)                 │   ║
-║   │   Colored by entity type, year, journal, cluster                │   ║
-║   │   Citation edges between papers                                 │   ║
+║   │   Colored and scoped locally by cluster / year / journal /      │   ║
+║   │   search budget over DuckDB-WASM tables                         │   ║
 ║   │                                                                  │   ║
-║   │   Data source: corpus_points.parquet loaded via DuckDB-WASM     │   ║
-║   │   (the graph data is a FILE loaded into the browser,            │   ║
-║   │    not a live database query — like opening a spreadsheet)      │   ║
+║   │   Default first-load data source:                               │   ║
+║   │     corpus_points.parquet + corpus_clusters.parquet             │   ║
+║   │   Optional links remain outside the default hot publish path    │   ║
 ║   └─────────────────────────────────────────────────────────────────┘   ║
 ║                                                                         ║
 ║   ┌─────────────────────────────────────────────────────────────────┐   ║
 ║   │                    ENTITY HIGHLIGHTING                           │   ║
 ║   │                                                                  │   ║
 ║   │   User types "dopamine receptor"                                │   ║
-║   │     → DuckDB-WASM queries the Parquet file IN THE BROWSER       │   ║
-║   │     → Finds papers mentioning "dopamine" or "receptor"          │   ║
-║   │     → Cosmograph highlights those nodes                         │   ║
-║   │     → All client-side, no server call, instant (<10ms)          │   ║
+║   │     → DuckDB-WASM searches the hot point table in browser       │   ║
+║   │     → Resolves a seed point and scoped visibility budget        │   ║
+║   │     → Cosmograph applies native filter/timeline/budget clauses  │   ║
+║   │     → Panels query the same scoped DuckDB state locally         │   ║
 ║   └─────────────────────────────────────────────────────────────────┘   ║
 ║                                                                         ║
 ║   ┌─────────────────────────────────────────────────────────────────┐   ║
@@ -229,8 +243,11 @@ How data flows from external sources to the user's browser.
   │  REBUILD GRAPH                                           │
   │  SPECTER2 embeddings → GPU UMAP → 2D layout             │
   │  Leiden clustering → cluster labels (LLM, ~$0.30)       │
-  │  Write corpus_points.parquet + corpus_links.parquet      │
-  │  Upload to R2 (production) or serve locally (dev)        │
+  │  Export hot bundle:                                     │
+  │    - corpus_points.parquet                              │
+  │    - corpus_clusters.parquet                            │
+  │  Optional warm/cold artifacts follow the bundle         │
+  │  contract; links are not part of the default publish    │
   └─────────────────────────────────────────────────────────┘
 ```
 

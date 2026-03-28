@@ -24,39 +24,44 @@ External data sources (PubTator3, Semantic Scholar) feed into a graph engine tha
 computes layout, clusters, and embeddings. The engine exports Parquet bundles served
 to the browser, where Cosmograph renders the unified experience. Full data-flow
 details live in [data.md](data.md). Deferred ideas and post-freeze roadmap items live
-in [future.md](../design/future.md).
+in [future.md](../design/future.md). The graph delivery contract for `hot`, `warm`,
+and `cold` bundle data lives in [bundle-contract.md](bundle-contract.md).
 
 ---
 
-## The Living Graph — Dynamic Data Layers
+## The Living Graph — Current Runtime Structure
 
-The graph always shows ~2M papers. But WHICH 2M changes based on what you're
-exploring. Papers flow in and out of the visible canvas, drawn from a larger
-pre-mapped universe. The graph feels alive.
+The browser now loads the published renderable mapped cohort for the current
+graph run into local DuckDB-WASM and lets Cosmograph operate over that local
+substrate directly.
+
+What changes during interaction is not which Parquet rows exist in the browser,
+but which subset is emphasized, greyed, filtered, or queried through the native
+Cosmograph + Mosaic selection model.
 
 ### Three Nested Data Layers
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  DATABASE UNIVERSE (14M papers)                             │
-│  All papers with metadata. MedCPT retrieval index.         │
+│  DATABASE UNIVERSE (~14M papers)                            │
+│  Full corpus membership + metadata + retrieval substrate.   │
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  MAPPED UNIVERSE (3-5M papers)                        │  │
-│  │  SPECTER2 embedding + UMAP x/y coordinates            │  │
+│  │  PUBLISHED RENDERABLE COHORT                          │  │
+│  │  Engine/export-defined mapped points for one run      │  │
+│  │  Dense browser-facing point_index, hot Parquet bundle │  │
 │  │                                                       │  │
 │  │  ┌─────────────────────────────────────────────────┐  │  │
-│  │  │  ACTIVE CANVAS (~2M papers at any time)         │  │  │
-│  │  │  Currently rendered in Cosmograph               │  │  │
+│  │  │  CURRENT VISIBLE / EMPHASIZED SET               │  │  │
+│  │  │  Native filter + timeline + budget state        │  │  │
+│  │  │  over the local hot point table                 │  │  │
 │  │  │                                                 │  │  │
-│  │  │  ┌───────────────────────────────────────────┐  │  │  │
-│  │  │  │  BASELINE (~1.85M core neuro/psych)      │  │  │  │
-│  │  │  │  Always visible. Stable scaffold.         │  │  │  │
-│  │  │  └───────────────────────────────────────────┘  │  │  │
-│  │  │  + Dynamic overlay from mapped universe         │  │  │
+│  │  │  First-paint policy (`is_default_visible`)      │  │  │
+│  │  │  is upstream-generated, but currently equals    │  │  │
+│  │  │  the published renderable cohort.               │  │  │
 │  │  └─────────────────────────────────────────────────┘  │  │
 │  └───────────────────────────────────────────────────────┘  │
-│  + Detail panel for any paper (side panel, no coordinates)  │
+│  + Warm/cold detail paths for richer paper evidence         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -64,10 +69,10 @@ pre-mapped universe. The graph feels alive.
 
 | User Action | Graph Response |
 |-------------|---------------|
-| Filter by "delirium + critical care" | Mapped critical care papers flow onto the canvas from reservoir |
-| Write about "lithium nephrotoxicity" | MedCPT retrieves nephrology papers; mapped ones light up on canvas, unmapped show in side panel |
-| Explore a psycho-oncology cluster | Overlay pulls in pre-mapped oncology bridge papers near that cluster |
-| Ask "what treats ICU delirium?" | RAG retrieves from full 14M; cited papers with coordinates illuminate on canvas |
+| Filter by year / journal / cluster | Cosmograph updates native visibility clauses; panels and summaries query the same scoped DuckDB state |
+| Search for a paper or concept | DuckDB resolves a seed point, then a local visibility-budget query emphasizes a seed-centered neighborhood |
+| Click a point | Persistent selection stays separate from the current visibility scope |
+| Ask / fetch evidence | Cold or server-side retrieval can illuminate mapped papers, but does not redefine the browser render cohort |
 
 ### Two Embedding Spaces
 
@@ -80,16 +85,32 @@ pre-mapped universe. The graph feels alive.
 
 1. Every visible paper needs pre-computed UMAP x/y from a single run
 2. All coordinates from same UMAP run (can't merge separate runs)
-3. Don't replace all 2M on every interaction — use persistent scaffold + dynamic overlay
-4. Don't load all mapped papers into browser — stream overlay subsets
+3. Browser-side DuckDB should query and scope the exported run, not rebuild
+   renderability, indices, or links
+4. Dynamic visibility must use native Cosmograph filtering / greyout / selection
+   over local hot points, not a second JS visibility engine
+
+### Current implementation note
+
+- The current bundle is canonical `v2`
+- Default first-load artifacts are:
+  - `corpus_points.parquet`
+  - `corpus_clusters.parquet`
+- `corpus_links.parquet` is not part of the default publish path
+- `renderable cohort` is defined engine-side during export
+- `default-visible cohort` is also defined engine-side and currently matches the
+  published renderable cohort
+- `current visible / emphasized set` is a local DuckDB + Cosmograph runtime
+  state, not a separate streamed overlay system
 
 ---
 
 ## Layered Maps — The Abstraction Ladder
 
-Four layers of the same corpus, always switchable. Each layer shows different
-relationships between the same underlying data. Cross-layer navigation is instant
-(same DuckDB-WASM connection, React prop change).
+This remains the product abstraction ladder, not the fully shipped runtime.
+Today’s implementation is the paper graph with DuckDB-local querying and
+Cosmograph rendering. Additional layers below are the intended model for future
+expansion.
 
 ```
   ★ Synthesis   LLM-generated understanding + learning content
@@ -108,9 +129,15 @@ relationships between the same underlying data. Cross-layer navigation is instan
 | **Papers** | Full publications | Citation links (S2, with intent + influence) | Trace evidence chains |
 | **Synthesis** | LLM-generated articles + curated lectures | Topic → source links | Learn and teach through the graph |
 
-**Cross-layer navigation:** click an entity → highlight its chunks → highlight its
-papers → show its synthesis. Each layer draws from the same PostgreSQL + Parquet
-data, projected through different embeddings and layouts.
+**Cross-layer navigation target:** click an entity → highlight its chunks →
+highlight its papers → show its synthesis. Each layer draws from the same
+PostgreSQL + Parquet data, projected through different embeddings and layouts.
+
+Current note:
+
+- the shipped runtime today is the paper point cloud
+- queryable citation neighborhoods remain a later warm/cold path, not default
+  always-on edge rendering
 
 Extended thinking: `archive/modes_explore.md`
 
@@ -118,8 +145,10 @@ Extended thinking: `archive/modes_explore.md`
 
 ## Capabilities — One Fluid Experience
 
-There is no mode toggle. All four capabilities coexist on the same canvas.
-The UI adapts to what you're doing — not the other way around.
+This section is the product direction. The current implementation has the graph
+canvas, local search/filter/detail workflows, and the bundle/runtime structure
+described above. Ask / Write / Learn remain architectural targets that should be
+built on top of the same graph substrate.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -133,28 +162,31 @@ The UI adapts to what you're doing — not the other way around.
 │  │ Discover │   │ answer  │   │ evidence│   │ → Graph context  │ │
 │  └─────────┘   └─────────┘   └─────────┘   └──────────────────┘ │
 │                                                                    │
-│  All capabilities available simultaneously. The UI adapts to       │
-│  what you're doing — not the other way around.                     │
+│  Target: all capabilities available through one graph substrate.   │
+│  Current runtime: Explore is implemented first.                    │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-| Capability | What You Do | Graph Response | Data Path |
-|-----------|-------------|---------------|-----------|
-| **Explore** | Navigate, filter, zoom, click nodes | Full viewport, highlights, detail panels | DuckDB-WASM → Cosmograph |
-| **Ask** | Type a question | Cited papers light up as answer streams | MedCPT → pgvector → Gemini → Cosmograph |
-| **Write** | Draft text in editor | Supporting + contradicting evidence surfaces | NER + MedCPT → pgvector → dual-signal |
-| **Learn** | Click knowledge article or lecture | Content panel opens, sourced nodes illuminate | Synthesis layer + authored content |
+| Capability | Status | What You Do | Graph Response | Data Path |
+|-----------|--------|-------------|---------------|-----------|
+| **Explore** | Current | Navigate, filter, zoom, click nodes | Full viewport, highlights, detail panels | DuckDB-WASM → Cosmograph |
+| **Ask** | Planned | Type a question | Cited papers light up as answer streams | MedCPT → pgvector → Gemini → graph highlight |
+| **Write** | Planned | Draft text in editor | Supporting + contradicting evidence surfaces | NER + MedCPT → pgvector → dual-signal |
+| **Learn** | Planned | Click knowledge article or lecture | Content panel opens, sourced nodes illuminate | Synthesis layer + authored content |
 
 ### Explore
 
 Navigate the graph directly. Filter by entity type, year, journal, cluster. Zoom
-into research communities. Click nodes for detail panels. Switch layers to see the
-same corpus through different lenses — entities, chunks, papers, or synthesis. This
-is the default state: the graph at full viewport, waiting for you to dig in.
+into research communities. Click nodes for detail panels. The current runtime is
+the paper graph and its local DuckDB query surface; additional layers remain a
+planned expansion on top of that substrate. This is the default state: the graph
+at full viewport, waiting for you to dig in.
 
 Extended thinking: `archive/modes_explore.md`
 
 ### Ask
+
+Target workflow:
 
 Type a question in natural language. The question is embedded with MedCPT, matched
 against paper embeddings via pgvector HNSW search, and the top-K results feed into
@@ -166,6 +198,8 @@ Extended thinking: `archive/modes_ask.md`
 
 ### Write
 
+Target workflow:
+
 Open the editor panel alongside the graph. As you draft, NER extracts entities from
 your text and MedCPT embeds your sentences. The graph responds in two channels:
 supporting evidence (high similarity, same direction) glows bright; contradicting
@@ -176,6 +210,8 @@ top-10 semantically similar papers in ~100ms.
 Extended thinking: `archive/modes_write.md`
 
 ### Learn
+
+Target workflow:
 
 Open a knowledge article or lecture. The content panel appears alongside the graph,
 and sourced nodes illuminate as you read. By the end, the trail of illumination

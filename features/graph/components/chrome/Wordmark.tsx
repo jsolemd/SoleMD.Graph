@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { useCosmograph } from "@cosmograph/react";
+import { useGraphCamera, useGraphSelection, useGraphExport } from "@/features/graph/cosmograph";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BrainCircuit,
@@ -27,8 +27,6 @@ import { getLayerConfig } from "@/features/graph/lib/layers";
 import { iconBtnStyles } from "../panels/PanelShell";
 import { settle } from "@/lib/motion";
 import type { ActivePanel } from "@/features/graph/stores";
-
-const ZOOM_FACTOR = 1.4;
 
 const PANEL_ITEMS: Array<{
   panel: Exclude<ActivePanel, null>;
@@ -61,7 +59,9 @@ export function Wordmark() {
   const isMapLayer = layerConfig.rendererType === "maplibre";
   const { color: modeColor } = getModeConfig(mode);
   const [spinCount, setSpinCount] = useState(0);
-  const { cosmograph } = useCosmograph();
+  const { fitView, fitViewByIndices, zoomToPoint, zoomIn, zoomOut } = useGraphCamera();
+  const { selectPoint } = useGraphSelection();
+  const { captureScreenshot, exportDataAsCsv } = useGraphExport();
 
   // Context-aware links button:
   // - No selection: toggle link visibility (show/hide citation lines)
@@ -71,14 +71,14 @@ export function Wordmark() {
       const turningOn = !connectedSelect;
       toggleConnectedSelect();
       if (turningOn) {
-        cosmograph?.selectPoint(selectedNode.index, false, true);
+        selectPoint(selectedNode.index, false, true);
       } else {
-        cosmograph?.selectPoint(selectedNode.index, false, false);
+        selectPoint(selectedNode.index, false, false);
       }
     } else {
       setRenderLinks(!renderLinks);
     }
-  }, [connectedSelect, cosmograph, isMapLayer, renderLinks, selectedNode, setRenderLinks, toggleConnectedSelect]);
+  }, [connectedSelect, isMapLayer, renderLinks, selectPoint, selectedNode, setRenderLinks, toggleConnectedSelect]);
 
   const linksButtonActive = selectedNode && !isMapLayer ? connectedSelect : renderLinks;
   const linksButtonLabel = selectedNode && !isMapLayer
@@ -92,60 +92,37 @@ export function Wordmark() {
     }
     const selected = useDashboardStore.getState().selectedPointIndices;
     if (selected.length === 1) {
-      cosmograph?.zoomToPoint(selected[0], 250);
+      zoomToPoint(selected[0], 250);
     } else if (selected.length > 1) {
-      cosmograph?.fitViewByIndices(selected, 250, 0.1);
+      fitViewByIndices(selected, 250, 0.1);
     } else {
-      cosmograph?.fitView(250, 0.1);
+      fitView(250, 0.1);
     }
-  }, [cosmograph, isMapLayer, mapControls]);
+  }, [fitView, fitViewByIndices, isMapLayer, mapControls, zoomToPoint]);
 
   const handleZoomIn = useCallback(() => {
     if (isMapLayer) {
       mapControls?.zoomIn();
       return;
     }
-    const current = cosmograph?.getZoomLevel() ?? 1;
-    cosmograph?.setZoomLevel(current * ZOOM_FACTOR, 200);
-  }, [cosmograph, isMapLayer, mapControls]);
+    zoomIn();
+  }, [isMapLayer, mapControls, zoomIn]);
 
   const handleZoomOut = useCallback(() => {
     if (isMapLayer) {
       mapControls?.zoomOut();
       return;
     }
-    const current = cosmograph?.getZoomLevel() ?? 1;
-    cosmograph?.setZoomLevel(current / ZOOM_FACTOR, 200);
-  }, [cosmograph, isMapLayer, mapControls]);
+    zoomOut();
+  }, [isMapLayer, mapControls, zoomOut]);
 
   const handleScreenshot = useCallback(() => {
-    cosmograph?.captureScreenshot("solemd-graph.png");
-  }, [cosmograph]);
+    captureScreenshot();
+  }, [captureScreenshot]);
 
   const handleExport = useCallback(async () => {
-    try {
-      const pointsData = await cosmograph?.getPointsData();
-      if (!pointsData) return;
-      const rows = cosmograph?.convertCosmographDataToObject(pointsData) ?? [];
-      if (rows.length === 0) return;
-      const keys = Object.keys(rows[0]);
-      const csv = [
-        keys.join(","),
-        ...rows.map((row) =>
-          keys.map((k) => JSON.stringify((row as Record<string, unknown>)[k] ?? "")).join(",")
-        ),
-      ].join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "solemd-graph-data.csv";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("CSV export failed:", error);
-    }
-  }, [cosmograph]);
+    await exportDataAsCsv();
+  }, [exportDataAsCsv]);
 
   return (
     <>

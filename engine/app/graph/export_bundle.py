@@ -14,6 +14,11 @@ import pyarrow.parquet as pq
 
 from app import db
 from app.config import settings
+from app.graph.export import bundle_contract
+from app.graph.render_policy import default_visible_point_predicate_sql
+from app.graph.render_policy import renderable_point_predicate_sql
+
+BUNDLE_VERSION = "2"
 
 
 POINTS_SCHEMA = pa.schema(
@@ -30,7 +35,6 @@ POINTS_SCHEMA = pa.schema(
         ("cluster_id", pa.int32()),
         ("cluster_label", pa.string()),
         ("cluster_probability", pa.float32()),
-        ("outlier_score", pa.float32()),
         ("title", pa.string()),
         ("citekey", pa.string()),
         ("journal", pa.string()),
@@ -38,53 +42,22 @@ POINTS_SCHEMA = pa.schema(
         ("doi", pa.string()),
         ("pmid", pa.string()),
         ("pmcid", pa.string()),
-        ("stable_chunk_id", pa.string()),
-        ("chunk_index", pa.int32()),
-        ("section_canonical", pa.string()),
-        ("page_number", pa.int32()),
-        ("token_count", pa.int32()),
-        ("char_count", pa.int32()),
-        ("chunk_kind", pa.string()),
-        ("chunk_preview", pa.string()),
         ("display_label", pa.string()),
         ("search_text", pa.string()),
-        ("canonical_name", pa.string()),
-        ("category", pa.string()),
-        ("definition", pa.string()),
-        ("semantic_types_csv", pa.string()),
         ("semantic_groups_csv", pa.string()),
         ("organ_systems_csv", pa.string()),
-        ("aliases_csv", pa.string()),
-        ("mention_count", pa.float32()),
-        ("paper_count", pa.float32()),
-        ("chunk_count", pa.float32()),
-        ("relation_count", pa.float32()),
-        ("alias_count", pa.float32()),
-        ("relation_type", pa.string()),
-        ("relation_category", pa.string()),
-        ("relation_direction", pa.string()),
-        ("relation_certainty", pa.string()),
-        ("assertion_status", pa.string()),
-        ("evidence_status", pa.string()),
-        ("alias_text", pa.string()),
-        ("alias_type", pa.string()),
-        ("alias_quality_score", pa.float32()),
-        ("alias_source", pa.string()),
+        ("top_entities_csv", pa.string()),
+        ("relation_categories_csv", pa.string()),
         ("is_default_visible", pa.bool_()),
-        ("payload_json", pa.string()),
+        ("text_availability", pa.string()),
+        ("is_open_access", pa.bool_()),
+        ("has_open_access_pdf", pa.bool_()),
         ("paper_author_count", pa.int32()),
         ("paper_reference_count", pa.int32()),
         ("paper_asset_count", pa.int32()),
-        ("paper_chunk_count", pa.int32()),
         ("paper_entity_count", pa.int32()),
         ("paper_relation_count", pa.int32()),
-        ("paper_sentence_count", pa.int32()),
-        ("paper_page_count", pa.int32()),
-        ("paper_table_count", pa.int32()),
-        ("paper_figure_count", pa.int32()),
         ("paper_cluster_index", pa.int32()),
-        ("has_table_context", pa.bool_()),
-        ("has_figure_context", pa.bool_()),
     ]
 )
 
@@ -220,19 +193,22 @@ def _hash_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _point_documents_cte() -> str:
-    return """
+def _render_points_cte() -> str:
+    renderable_predicate = renderable_point_predicate_sql("rp")
+    default_visible_predicate = default_visible_point_predicate_sql("g")
+    return f"""
     WITH run_points AS (
         SELECT
             g.graph_run_id,
             g.corpus_id,
-            g.point_index,
+            g.point_index AS source_point_index,
             g.x,
             g.y,
             g.cluster_id,
             g.cluster_probability,
             g.outlier_score,
             g.is_noise,
+            ({default_visible_predicate}) AS is_default_visible,
             gc.label AS cluster_label,
             gc.centroid_x,
             gc.centroid_y
@@ -242,6 +218,71 @@ def _point_documents_cte() -> str:
            AND gc.cluster_id = g.cluster_id
         WHERE g.graph_run_id = %(graph_run_id)s
     ),
+    render_points AS (
+        SELECT
+            rp.graph_run_id,
+            rp.corpus_id,
+            ROW_NUMBER() OVER (
+                ORDER BY rp.source_point_index
+            )::INTEGER - 1 AS point_index,
+            rp.source_point_index,
+            rp.x,
+            rp.y,
+            rp.cluster_id,
+            rp.cluster_probability,
+            rp.outlier_score,
+            rp.is_noise,
+            rp.is_default_visible,
+            rp.cluster_label,
+            rp.centroid_x,
+            rp.centroid_y
+        FROM run_points rp
+        WHERE {renderable_predicate}
+    ),
+    render_cluster_rollup AS (
+        SELECT
+            COALESCE(cluster_id, 0) AS cluster_id,
+            count(*)::INTEGER AS member_count,
+            count(*)::INTEGER AS paper_count,
+            avg(x)::REAL AS centroid_x,
+            avg(y)::REAL AS centroid_y,
+            avg(cluster_probability)::REAL AS mean_cluster_probability,
+            avg(outlier_score)::REAL AS mean_outlier_score
+        FROM render_points
+        GROUP BY COALESCE(cluster_id, 0)
+    ),
+    render_cluster_representatives AS (
+        SELECT
+            ranked.cluster_id,
+            ranked.representative_node_id,
+            ranked.representative_node_kind
+        FROM (
+            SELECT
+                COALESCE(rp.cluster_id, 0) AS cluster_id,
+                'paper:' || rp.corpus_id::TEXT AS representative_node_id,
+                'paper'::TEXT AS representative_node_kind,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(rp.cluster_id, 0)
+                    ORDER BY
+                        ((rp.x - rc.centroid_x) * (rp.x - rc.centroid_x))
+                        + ((rp.y - rc.centroid_y) * (rp.y - rc.centroid_y)),
+                        rp.cluster_probability DESC NULLS LAST,
+                        rp.source_point_index
+                )::INTEGER AS rank
+            FROM render_points rp
+            JOIN render_cluster_rollup rc
+              ON rc.cluster_id = COALESCE(rp.cluster_id, 0)
+        ) AS ranked
+        WHERE ranked.rank = 1
+    )
+    """
+
+
+def _point_documents_cte() -> str:
+    return (
+        _render_points_cte()
+        + """
+    ,
     author_rollup AS (
         SELECT
             pa.corpus_id,
@@ -258,7 +299,7 @@ def _point_documents_cte() -> str:
                 '[]'
             ) AS authors_json
         FROM solemd.paper_authors pa
-        JOIN run_points rp ON rp.corpus_id = pa.corpus_id
+        JOIN render_points rp ON rp.corpus_id = pa.corpus_id
         GROUP BY pa.corpus_id
     ),
     asset_rollup AS (
@@ -269,26 +310,54 @@ def _point_documents_cte() -> str:
             max(a.access_status) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_status,
             max(a.license) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_license
         FROM solemd.paper_assets a
-        JOIN run_points rp ON rp.corpus_id = a.corpus_id
+        JOIN render_points rp ON rp.corpus_id = a.corpus_id
         GROUP BY a.corpus_id
     ),
     entity_rollup AS (
         SELECT
-            c.corpus_id,
-            count(*)::INTEGER AS entity_count
-        FROM solemd.corpus c
-        JOIN run_points rp ON rp.corpus_id = c.corpus_id
-        JOIN pubtator.entity_annotations ea ON ea.pmid = c.pmid
-        GROUP BY c.corpus_id
+            ranked.corpus_id,
+            sum(ranked.hit_count)::INTEGER AS entity_count,
+            string_agg(DISTINCT ranked.entity_type, ', ' ORDER BY ranked.entity_type) AS semantic_groups_csv,
+            string_agg(ranked.entity_label, ' | ' ORDER BY ranked.hit_count DESC, ranked.entity_label)
+                FILTER (WHERE ranked.rank <= 5) AS top_entities_csv
+        FROM (
+            SELECT
+                c.corpus_id,
+                ea.entity_type,
+                COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id) AS entity_label,
+                count(*)::INTEGER AS hit_count,
+                row_number() OVER (
+                    PARTITION BY c.corpus_id
+                    ORDER BY count(*) DESC, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
+                ) AS rank
+            FROM solemd.corpus c
+            JOIN render_points rp ON rp.corpus_id = c.corpus_id
+            JOIN pubtator.entity_annotations ea ON ea.pmid = c.pmid
+            GROUP BY c.corpus_id, ea.entity_type, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
+        ) AS ranked
+        GROUP BY ranked.corpus_id
     ),
     relation_rollup AS (
         SELECT
-            c.corpus_id,
-            count(*)::INTEGER AS relation_count
-        FROM solemd.corpus c
-        JOIN run_points rp ON rp.corpus_id = c.corpus_id
-        JOIN pubtator.relations r ON r.pmid = c.pmid
-        GROUP BY c.corpus_id
+            ranked.corpus_id,
+            sum(ranked.hit_count)::INTEGER AS relation_count,
+            string_agg(ranked.relation_type, ', ' ORDER BY ranked.hit_count DESC, ranked.relation_type)
+                FILTER (WHERE ranked.rank <= 5) AS relation_categories_csv
+        FROM (
+            SELECT
+                c.corpus_id,
+                r.relation_type,
+                count(*)::INTEGER AS hit_count,
+                row_number() OVER (
+                    PARTITION BY c.corpus_id
+                    ORDER BY count(*) DESC, r.relation_type
+                ) AS rank
+            FROM solemd.corpus c
+            JOIN render_points rp ON rp.corpus_id = c.corpus_id
+            JOIN pubtator.relations r ON r.pmid = c.pmid
+            GROUP BY c.corpus_id, r.relation_type
+        ) AS ranked
+        GROUP BY ranked.corpus_id
     ),
     paper_base AS (
         SELECT
@@ -300,8 +369,8 @@ def _point_documents_cte() -> str:
             rp.cluster_id,
             rp.cluster_label,
             rp.cluster_probability,
-            rp.outlier_score,
             rp.is_noise,
+            rp.is_default_visible,
             rp.centroid_x,
             rp.centroid_y,
             p.paper_id,
@@ -326,8 +395,12 @@ def _point_documents_cte() -> str:
             asset_rollup.open_access_pdf_status,
             asset_rollup.open_access_pdf_license,
             COALESCE(entity_rollup.entity_count, 0) AS entity_count,
-            COALESCE(relation_rollup.relation_count, 0) AS relation_count
-        FROM run_points rp
+            entity_rollup.semantic_groups_csv,
+            NULL::TEXT AS organ_systems_csv,
+            entity_rollup.top_entities_csv,
+            COALESCE(relation_rollup.relation_count, 0) AS relation_count,
+            relation_rollup.relation_categories_csv
+        FROM render_points rp
         JOIN solemd.papers p ON p.corpus_id = rp.corpus_id
         JOIN solemd.corpus c ON c.corpus_id = rp.corpus_id
         LEFT JOIN author_rollup ON author_rollup.corpus_id = rp.corpus_id
@@ -336,9 +409,11 @@ def _point_documents_cte() -> str:
         LEFT JOIN relation_rollup ON relation_rollup.corpus_id = rp.corpus_id
     )
     """
+    )
 
 
 def _table_specs() -> list[BundleTableSpec]:
+    render_cte = _render_points_cte()
     shared_cte = _point_documents_cte()
     return [
         BundleTableSpec(
@@ -354,14 +429,31 @@ def _table_specs() -> list[BundleTableSpec]:
                 COALESCE(paper_id, 'corpus:' || corpus_id::TEXT) AS paper_id,
                 'paper' AS node_kind,
                 'primary' AS node_role,
-                NULL::TEXT AS hex_color,
-                NULL::TEXT AS hex_color_light,
+                CASE
+                    WHEN COALESCE(cluster_id, 0) = 0 THEN '#555555'
+                    ELSE (ARRAY[
+                        'rgba(43, 85, 168, 0.85)',
+                        'rgba(153, 82, 213, 0.85)',
+                        'rgba(240, 105, 180, 0.85)',
+                        'rgba(255, 149, 131, 0.85)',
+                        'rgba(254, 224, 139, 0.85)'
+                    ])[1 + MOD(COALESCE(cluster_id, 0), 5)]
+                END AS hex_color,
+                CASE
+                    WHEN COALESCE(cluster_id, 0) = 0 THEN '#999999'
+                    ELSE (ARRAY[
+                        'rgba(43, 85, 168, 0.85)',
+                        'rgba(153, 82, 213, 0.85)',
+                        'rgba(240, 105, 180, 0.85)',
+                        'rgba(255, 149, 131, 0.85)',
+                        'rgba(254, 224, 139, 0.85)'
+                    ])[1 + MOD(COALESCE(cluster_id, 0), 5)]
+                END AS hex_color_light,
                 x,
                 y,
                 cluster_id,
                 cluster_label,
                 cluster_probability,
-                outlier_score,
                 title,
                 NULL::TEXT AS citekey,
                 journal_name AS journal,
@@ -369,67 +461,25 @@ def _table_specs() -> list[BundleTableSpec]:
                 doi,
                 pmid,
                 pmcid,
-                NULL::TEXT AS stable_chunk_id,
-                NULL::INTEGER AS chunk_index,
-                NULL::TEXT AS section_canonical,
-                NULL::INTEGER AS page_number,
-                NULL::INTEGER AS token_count,
-                NULL::INTEGER AS char_count,
-                NULL::TEXT AS chunk_kind,
-                COALESCE(tldr, LEFT(abstract, 500), title) AS chunk_preview,
-                COALESCE(tldr, title) AS display_label,
-                CONCAT_WS(' ', title, tldr, abstract) AS search_text,
-                NULL::TEXT AS canonical_name,
-                NULL::TEXT AS category,
-                NULL::TEXT AS definition,
-                NULL::TEXT AS semantic_types_csv,
-                NULL::TEXT AS semantic_groups_csv,
-                NULL::TEXT AS organ_systems_csv,
-                NULL::TEXT AS aliases_csv,
-                NULL::REAL AS mention_count,
-                1.0::REAL AS paper_count,
-                NULL::REAL AS chunk_count,
-                relation_count::REAL AS relation_count,
-                NULL::REAL AS alias_count,
-                NULL::TEXT AS relation_type,
-                NULL::TEXT AS relation_category,
-                NULL::TEXT AS relation_direction,
-                NULL::TEXT AS relation_certainty,
-                NULL::TEXT AS assertion_status,
-                NULL::TEXT AS evidence_status,
-                NULL::TEXT AS alias_text,
-                NULL::TEXT AS alias_type,
-                NULL::REAL AS alias_quality_score,
-                NULL::TEXT AS alias_source,
-                true AS is_default_visible,
-                jsonb_build_object(
-                    'display_preview', COALESCE(tldr, LEFT(abstract, 500), title),
-                    'was_truncated', false,
-                    'text_availability', text_availability,
-                    'is_open_access', is_open_access,
-                    'publication_venue_id', publication_venue_id,
-                    's2_url', s2_url,
-                    'open_access_pdf_url', open_access_pdf_url,
-                    'open_access_pdf_status', open_access_pdf_status,
-                    'open_access_pdf_license', open_access_pdf_license,
-                    'authors_json', authors_json
-                )::TEXT AS payload_json,
+                title AS display_label,
+                CONCAT_WS(' ', title, journal_name, semantic_groups_csv, top_entities_csv, relation_categories_csv) AS search_text,
+                semantic_groups_csv,
+                organ_systems_csv,
+                top_entities_csv,
+                relation_categories_csv,
+                is_default_visible,
+                text_availability,
+                is_open_access,
+                (open_access_pdf_url IS NOT NULL AND open_access_pdf_url <> '') AS has_open_access_pdf,
                 author_count AS paper_author_count,
                 COALESCE(reference_count, 0) AS paper_reference_count,
                 asset_count AS paper_asset_count,
-                0::INTEGER AS paper_chunk_count,
                 entity_count AS paper_entity_count,
                 relation_count AS paper_relation_count,
-                NULL::INTEGER AS paper_sentence_count,
-                NULL::INTEGER AS paper_page_count,
-                NULL::INTEGER AS paper_table_count,
-                NULL::INTEGER AS paper_figure_count,
                 ROW_NUMBER() OVER (
                     PARTITION BY COALESCE(cluster_id, 0)
                     ORDER BY COALESCE(citation_count, 0) DESC, corpus_id
-                )::INTEGER - 1 AS paper_cluster_index,
-                false AS has_table_context,
-                false AS has_figure_context
+                )::INTEGER - 1 AS paper_cluster_index
             FROM paper_base
             ORDER BY point_index
             """,
@@ -438,66 +488,31 @@ def _table_specs() -> list[BundleTableSpec]:
             name="corpus_clusters",
             parquet_file="corpus_clusters.parquet",
             schema=CLUSTERS_SCHEMA,
-            sql="""
+            sql=
+            render_cte
+            + """
             SELECT
-                cluster_id,
-                label,
-                label_mode,
-                label_source,
-                member_count,
-                paper_count,
-                centroid_x,
-                centroid_y,
-                representative_node_id,
-                representative_node_kind,
-                candidate_count,
-                mean_cluster_probability,
-                mean_outlier_score,
-                is_noise
-            FROM solemd.graph_clusters
-            WHERE graph_run_id = %(graph_run_id)s
-            ORDER BY cluster_id
-            """,
-        ),
-        BundleTableSpec(
-            name="corpus_links",
-            parquet_file="corpus_links.parquet",
-            schema=LINKS_SCHEMA,
-            sql="""
-            SELECT
-                'paper:' || src.corpus_id::TEXT AS source_node_id,
-                src.point_index AS source_point_index,
-                'paper:' || dst.corpus_id::TEXT AS target_node_id,
-                dst.point_index AS target_point_index,
-                'citation' AS link_kind,
-                CASE
-                    WHEN c.is_influential IS TRUE THEN 2.0
-                    WHEN c.context_count > 0 THEN 1.5
-                    ELSE 1.0
-                END::REAL AS weight,
-                true AS is_directed,
-                true AS is_default_visible,
-                CASE
-                    WHEN c.is_influential IS TRUE THEN 'high'
-                    WHEN c.context_count > 0 THEN 'contextual'
-                    ELSE 'standard'
-                END AS certainty,
-                c.citation_id::TEXT AS relation_id,
-                NULL::TEXT AS paper_id,
-                c.citation_id,
-                c.context_count,
-                c.is_influential,
-                c.intents::TEXT AS intents_json,
-                c.contexts::TEXT AS contexts_json
-            FROM solemd.citations c
-            JOIN solemd.graph src
-              ON src.graph_run_id = %(graph_run_id)s
-             AND src.corpus_id = c.citing_corpus_id
-            JOIN solemd.graph dst
-              ON dst.graph_run_id = %(graph_run_id)s
-             AND dst.corpus_id = c.cited_corpus_id
-            WHERE c.source = 'semantic_scholar_citations_bulk'
-            ORDER BY src.point_index, dst.point_index
+                gc.cluster_id,
+                gc.label,
+                gc.label_mode,
+                gc.label_source,
+                r.member_count,
+                r.paper_count,
+                r.centroid_x,
+                r.centroid_y,
+                rep.representative_node_id,
+                rep.representative_node_kind,
+                gc.candidate_count,
+                COALESCE(r.mean_cluster_probability, gc.mean_cluster_probability) AS mean_cluster_probability,
+                COALESCE(r.mean_outlier_score, gc.mean_outlier_score) AS mean_outlier_score,
+                (gc.cluster_id = 0) AS is_noise
+            FROM solemd.graph_clusters gc
+            JOIN render_cluster_rollup r
+              ON r.cluster_id = gc.cluster_id
+            LEFT JOIN render_cluster_representatives rep
+              ON rep.cluster_id = gc.cluster_id
+            WHERE gc.graph_run_id = %(graph_run_id)s
+            ORDER BY gc.cluster_id
             """,
         ),
         BundleTableSpec(
@@ -591,7 +606,57 @@ def _table_specs() -> list[BundleTableSpec]:
             ORDER BY cluster_id, rank
             """,
         ),
+        BundleTableSpec(
+            name="corpus_links",
+            parquet_file="corpus_links.parquet",
+            schema=LINKS_SCHEMA,
+            sql=
+            render_cte
+            + """
+            SELECT
+                'paper:' || src.corpus_id::TEXT AS source_node_id,
+                src.point_index AS source_point_index,
+                'paper:' || dst.corpus_id::TEXT AS target_node_id,
+                dst.point_index AS target_point_index,
+                'citation' AS link_kind,
+                CASE
+                    WHEN c.is_influential IS TRUE THEN 2.0
+                    WHEN c.context_count > 0 THEN 1.5
+                    ELSE 1.0
+                END::REAL AS weight,
+                true AS is_directed,
+                true AS is_default_visible,
+                CASE
+                    WHEN c.is_influential IS TRUE THEN 'high'
+                    WHEN c.context_count > 0 THEN 'contextual'
+                    ELSE 'standard'
+                END AS certainty,
+                c.citation_id::TEXT AS relation_id,
+                NULL::TEXT AS paper_id,
+                c.citation_id,
+                c.context_count,
+                c.is_influential,
+                c.intents::TEXT AS intents_json,
+                c.contexts::TEXT AS contexts_json
+            FROM solemd.citations c
+            JOIN render_points src
+              ON src.corpus_id = c.citing_corpus_id
+            JOIN render_points dst
+              ON dst.corpus_id = c.cited_corpus_id
+            WHERE c.source = 'semantic_scholar_citations_bulk'
+            """,
+        ),
     ]
+
+
+def _bundle_table_specs(bundle_profile: str) -> list[BundleTableSpec]:
+    all_specs = _table_specs()
+    if bundle_profile == "hot":
+        allowed = {"corpus_points", "corpus_clusters"}
+        return [spec for spec in all_specs if spec.name in allowed]
+    if bundle_profile == "full":
+        return all_specs
+    raise ValueError(f"Unsupported bundle profile: {bundle_profile}")
 
 
 def _write_query_to_parquet(
@@ -639,14 +704,17 @@ def export_graph_bundle(
     graph_run_id: str,
     graph_name: str = "cosmograph",
     node_kind: str = "corpus",
+    output_dir: Path | None = None,
+    bundle_profile: str = "hot",
 ) -> BundleSummary:
-    bundle_dir = settings.graph_bundles_root_path / graph_run_id
+    graph_run_id_text = str(graph_run_id)
+    bundle_dir = output_dir or (settings.graph_bundles_root_path / graph_run_id)
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
     table_summaries: dict[str, dict] = {}
     total_bytes = 0
     with db.connect() as conn:
-        for spec in _table_specs():
+        for spec in _bundle_table_specs(bundle_profile):
             summary = _write_query_to_parquet(
                 conn,
                 sql=spec.sql,
@@ -659,11 +727,13 @@ def export_graph_bundle(
 
     manifest_payload = {
         "bundle_format": "parquet-manifest",
-        "bundle_version": "1",
+        "bundle_version": BUNDLE_VERSION,
         "created_at": None,
         "graph_name": graph_name,
-        "graph_run_id": graph_run_id,
+        "graph_run_id": graph_run_id_text,
         "node_kind": node_kind,
+        "bundle_profile": bundle_profile,
+        "contract": bundle_contract(),
         "duckdb_file": None,
         "tables": table_summaries,
     }
@@ -673,7 +743,7 @@ def export_graph_bundle(
     total_bytes += manifest_path.stat().st_size
 
     return BundleSummary(
-        graph_run_id=graph_run_id,
+        graph_run_id=graph_run_id_text,
         bundle_dir=str(bundle_dir),
         bundle_checksum=bundle_checksum,
         bundle_bytes=total_bytes,

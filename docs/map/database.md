@@ -1,6 +1,6 @@
 # Database Schema
 
-> **Status**: Phase 1 tables implemented (`001_core_schema.sql` + `002_add_is_retracted.sql` + `003_add_corpus_tier.sql` + `004_candidate_tier_and_mapping.sql` + `004b_entity_rule.sql` + `004c_baseline_expansion_and_relation_rules.sql` + `004d_final_baseline_expansion.sql` + `004e_endocrine_metabolic_baseline.sql` + `005_add_s2_enrichment_tracking.sql` + `006_add_s2_embedding_tracking.sql` + `007_add_s2_metadata_and_related_tables.sql` + `008_add_s2_reference_tracking.sql`)
+> **Status**: Phase 1 tables implemented (`001_core_schema.sql` + `002_add_is_retracted.sql` + `003_add_corpus_tier.sql` + `004_candidate_tier_and_mapping.sql` + `004b_entity_rule.sql` + `004c_baseline_expansion_and_relation_rules.sql` + `004d_final_baseline_expansion.sql` + `004e_endocrine_metabolic_baseline.sql` + `005_add_s2_enrichment_tracking.sql` + `006_add_s2_embedding_tracking.sql` + `007_add_s2_metadata_and_related_tables.sql` + `008_add_s2_reference_tracking.sql` + `012_create_entities_table.sql`)
 > **Port**: 5433 (Docker, `pgvector/pgvector:pg16`)
 > **Extensions**: `vector` (pgvector), `pg_trgm` (trigram FTS)
 > **Schemas**: `solemd` (application), `pubtator` (reference data)
@@ -22,19 +22,19 @@ Authoritative membership: which papers are in our domain. Papers enter as `candi
 | filter_reason | TEXT NOT NULL | 'journal_match', 'pattern_match', 'journal_and_vocab', 'vocab_entity_match' |
 | corpus_tier | TEXT NOT NULL DEFAULT 'candidate' | 'candidate' (metadata only) or 'graph' (SPECTER2 + Cosmograph). CHECK constraint. Partial index on graph tier. |
 | is_mapped | BOOLEAN NOT NULL DEFAULT false | Has SPECTER2 + UMAP coords |
-| is_default_visible | BOOLEAN NOT NULL DEFAULT false | In baseline canvas load |
+| is_default_visible | BOOLEAN NOT NULL DEFAULT false | First-paint graph policy for the current published run. Synced upstream after publish, but derived canonically from graph-run render policy. |
 | created_at | TIMESTAMPTZ | |
 
 **Tiered corpus**:
 - **Candidate** (~11.32M live): remaining broad candidate pool after promotions. Metadata only. Cheap to store.
 - **Graph** (~2.74M live): promoted papers for SPECTER2 embeddings and Cosmograph rendering. Includes core journals, venue rules, second-wave entity rules, respiratory bridge entities, clean endocrine/metabolic additions, and relation-gated toxicity families. Quality-filtered to ~2.60M via `graph_papers` view.
 
-**State transitions** (columns track mapping pipeline progress):
+**State transitions** (columns track mapping and publish readiness):
 ```
 candidate (default)
   → corpus_tier = 'graph'       promoted by journal match or venue_rule
   → is_mapped = true            SPECTER2 embedded + UMAP x/y computed
-  → is_default_visible = true   in the baseline canvas load (Phase 2 subset of mapped graph)
+  → is_default_visible = true   current publish policy for browser-renderable points
 ```
 
 ### solemd.venue_rule
@@ -330,7 +330,7 @@ PubTator3 entity-entity relations filtered to domain PMIDs.
 
 ---
 
-## Phase 2 — Graph + Bundles (next)
+## Phase 2 — Graph + Bundles (current)
 
 ### solemd.graph_runs
 
@@ -366,14 +366,14 @@ Mapped-paper coordinates and cluster assignments for a specific graph run.
 |--------|------|-------|
 | graph_run_id | UUID FK→graph_runs | |
 | corpus_id | BIGINT FK→corpus | |
-| point_index | INTEGER | Stable export order within the run |
+| point_index | INTEGER | Stable source order within the run. Export regenerates dense browser-facing indices from this order. |
 | x | REAL NOT NULL | UMAP dimension 1 |
 | y | REAL NOT NULL | UMAP dimension 2 |
 | cluster_id | INTEGER | Macro Leiden community ID |
 | micro_cluster_id | INTEGER | Optional later finer-grained cluster ID |
 | cluster_probability | REAL | Optional confidence score |
-| outlier_score | REAL | Optional outlier score |
-| is_noise | BOOLEAN | Reserved for future noise labeling / pruning |
+| outlier_score | REAL | Continuous spatial outlier score. Current canonical render policy excludes non-zero outliers from the published browser cohort. |
+| is_noise | BOOLEAN | Combined cluster/spatial noise flag retained for analysis and QA, not the canonical browser render switch. |
 
 ### solemd.graph_clusters
 
@@ -391,7 +391,7 @@ Cluster-level summaries and labels for a graph run.
 | centroid_x | REAL | |
 | centroid_y | REAL | |
 | representative_node_id | TEXT | Current representative point/node id |
-| representative_node_kind | TEXT | `paper` for the current baseline |
+| representative_node_kind | TEXT | `paper` for the current exported paper graph |
 | candidate_count | INTEGER | Placeholder for later label candidate tracking |
 | mean_cluster_probability | REAL | Optional |
 | mean_outlier_score | REAL | Optional |
@@ -403,10 +403,13 @@ Cluster-level summaries and labels for a graph run.
 citations dataset and should be treated as the canonical graph-edge source.
 `solemd.paper_references` remains the richer bibliography path for now.
 
-Current plan:
+Current delivery rule:
 - ingest bulk `citations` into `solemd.citations`
 - retain API-side `paper_references` for richer per-paper bibliography snapshots
-- export those edges into `corpus_links.parquet` and `geo_citation_links`
+- treat `corpus_links.parquet` as a canonical link artifact name, but not part of
+  the default browser publish path
+- keep raw citation neighborhoods behind warm/cold delivery until the graph API
+  boundary is designed cleanly
 
 Current bulk-backed citation columns:
 
@@ -445,16 +448,17 @@ Full-text chunks for RAG search. Source: S2ORC structured text.
 
 ### solemd.entities
 
-Canonical entity records aggregated from PubTator mentions.
+Canonical entity records aggregated from PubTator mentions. Populated by `uv run python -m app.corpus.entities`. The `canonical_name` is the most-frequent mention form from `pubtator.entity_annotations`, overridden by hand-curated `entity_rule.canonical_name` where available. Used by the cluster labeling pass to prefer canonical biomedical terms.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| concept_id | TEXT PK | MESH:D009461, Gene:1234 |
+| concept_id | TEXT NOT NULL | MESH:D009461, Gene:1234 |
 | entity_type | TEXT NOT NULL | gene, disease, chemical, etc. |
-| canonical_name | TEXT NOT NULL | Preferred name |
-| synonyms | TEXT[] | Alternative mention forms |
-| embedding | vector(768) | SapBERT for entity-level search |
-| paper_count | INTEGER | Number of domain papers mentioning this entity |
+| canonical_name | TEXT NOT NULL | Preferred name (mode of PubTator mentions, overridden by entity_rule) |
+| synonyms | TEXT[] | All unique mention forms |
+| embedding | vector(768) | SapBERT for entity-level search (NULL until enrichment) |
+| paper_count | INTEGER NOT NULL | Number of domain papers mentioning this entity |
+| | **PK** | (concept_id, entity_type) — composite, because gene IDs overlap across types |
 
 ---
 
@@ -471,14 +475,14 @@ Canonical entity records aggregated from PubTator mentions.
 ```
 Three nested data layers:
 
-  DATABASE UNIVERSE (14M papers)
-    All papers with metadata. MedCPT retrieval index.
-    └── MAPPED UNIVERSE (3-5M papers)
-          SPECTER2 embedding + UMAP x/y (is_mapped = true)
-          └── ACTIVE CANVAS (~2M papers at any time)
-                Currently rendered in Cosmograph
-                ├── BASELINE (Phase 2 subset, is_default_visible = true)
-                └── Dynamic overlay from mapped universe
+  DATABASE UNIVERSE (~14M papers)
+    All admitted corpus papers with metadata and retrieval substrate.
+    └── MAPPED RUN COHORT
+          Papers in a completed graph run with UMAP x/y (`solemd.graph`)
+          └── PUBLISHED RENDERABLE COHORT
+                Export-defined browser cohort with dense `point_index`
+                └── CURRENT VISIBLE / EMPHASIZED SET
+                      Native filter/timeline/budget state over hot local points
 
 Pipeline:
 
@@ -506,13 +510,16 @@ GPU UMAP + Leiden on papers.embedding (graph-tier only)
   → solemd.graph_runs
   → solemd.graph (x, y, cluster_id, optional micro-cluster / score fields)
   → solemd.graph_clusters
-  → is_mapped = true, is_default_visible = true for baseline
+  → publish sync marks current-run `is_mapped`
+  → canonical render/default-visible policy also syncs `is_default_visible`
 
 Export:
   papers + graph + entity/relation counts + OA/text metadata → corpus_points.parquet
   graph cluster summaries → corpus_clusters.parquet
-  graph cluster exemplars → corpus_cluster_exemplars.parquet
-  paper detail rows → corpus_documents.parquet
-  bulk citations → corpus_links.parquet
-  → DuckDB-WASM in browser → Cosmograph renders
+  optional warm artifacts later:
+    - corpus_cluster_exemplars.parquet
+    - corpus_documents.parquet
+  optional/cold link artifacts later:
+    - corpus_links.parquet
+  → DuckDB-WASM in browser → Cosmograph renders from hot tables
 ```

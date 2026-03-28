@@ -16,7 +16,6 @@ export interface GraphNodeBase {
   clusterId: number
   clusterLabel: string | null
   clusterProbability: number
-  outlierScore: number
   paperId: string | null
   paperTitle: string | null
   citekey: string | null
@@ -28,10 +27,12 @@ export interface GraphNodeBase {
   displayLabel: string | null
   searchText: string | null
   chunkPreview: string | null
+  topEntities: string | null
   canonicalName: string | null
   category: string | null
   semanticGroups: string | null
   organSystems: string | null
+  relationCategories: string | null
   mentionCount: number | null
   paperCount: number | null
   chunkCount: number | null
@@ -50,6 +51,9 @@ export interface GraphNodeBase {
   nodeRole: 'primary' | 'overlay'
   isDefaultVisible: boolean
   payloadJson: string | null
+  textAvailability: string | null
+  isOpenAccess: boolean | null
+  hasOpenAccessPdf: boolean | null
   paperAuthorCount: number | null
   paperReferenceCount: number | null
   paperAssetCount: number | null

@@ -2,10 +2,11 @@
 
 import { useMemo } from "react";
 import { Select, Switch, Stack, Text } from "@mantine/core";
+import type { ComboboxItem } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
 import { getColumnsForLayer } from "@/features/graph/lib/columns";
-import { getPaletteColors } from "@/features/graph/lib/colors";
+import { COLOR_SCHEME_OPTIONS, getPaletteColors } from "@/features/graph/lib/colors";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
 import type { ColorSchemeName, DataColumnKey, MapLayer, PointColorStrategy } from "@/features/graph/types";
 import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
@@ -15,16 +16,6 @@ const COLOR_STRATEGY_OPTIONS = [
   { value: "categorical", label: "Categorical" },
   { value: "continuous", label: "Continuous" },
   { value: "single", label: "Single color" },
-];
-
-const COLOR_SCHEME_OPTIONS = [
-  { value: "default", label: "Default" },
-  { value: "warm", label: "Warm" },
-  { value: "cool", label: "Cool" },
-  { value: "spectral", label: "Spectral" },
-  { value: "viridis", label: "Viridis" },
-  { value: "plasma", label: "Plasma" },
-  { value: "turbo", label: "Turbo" },
 ];
 
 function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
@@ -37,6 +28,31 @@ function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
       ))}
     </div>
   );
+}
+
+function ColorSwatchBar({ colors }: { colors: readonly string[] }) {
+  return (
+    <div className="flex h-1.5 w-full overflow-hidden rounded-sm">
+      {colors.slice(0, 10).map((color) => (
+        <div key={color} className="flex-1" style={{ backgroundColor: color }} />
+      ))}
+    </div>
+  );
+}
+
+function SchemeOptionContent({ option }: { option: ComboboxItem }) {
+  const theme = useGraphColorTheme();
+  const colors = getPaletteColors(option.value as ColorSchemeName, theme);
+  return (
+    <div className="flex w-full flex-col gap-0.5 py-0.5">
+      <span className="text-xs">{option.label}</span>
+      <ColorSwatchBar colors={colors} />
+    </div>
+  );
+}
+
+function renderSchemeOption({ option }: { option: ComboboxItem; checked?: boolean }) {
+  return <SchemeOptionContent option={option} />;
 }
 
 export function ColorConfig({ activeLayer }: { activeLayer: MapLayer }) {
@@ -90,6 +106,7 @@ export function ColorConfig({ activeLayer }: { activeLayer: MapLayer }) {
             data={COLOR_SCHEME_OPTIONS}
             value={colorScheme}
             onChange={(v) => v && setColorScheme(v as ColorSchemeName)}
+            renderOption={renderSchemeOption}
             styles={panelSelectStyles}
           />
           <PalettePreview schemeName={colorScheme} />

@@ -199,6 +199,10 @@ Design rule:
 - repeating relations get child tables
 - graph / geo bundles are exported read models, not source-of-truth tables
 
+Bundle note:
+- the browser-facing graph delivery contract is explicitly tiered into `hot`,
+  `warm`, and `cold` bundle/service paths; see [bundle-contract.md](bundle-contract.md)
+
 Geo note:
 - the planned geo layer already assumes `paper_authors` + `author_affiliations` as its primary input
 - Semantic Scholar author affiliations are often sparse, so future geo normalization should enrich `author_affiliations` from OpenAlex / ROR and may port prior SoleMD.App affiliation/backfill logic into `SoleMD.Graph` as first-class engine code during the transition
@@ -443,12 +447,23 @@ File Delivery:
    Cluster exemplars ──→ GPT-4o-mini ──→ Natural language labels
 
 6. BUNDLE
-   2D coords + clusters + entity mentions + metadata
+   Mandatory first-load bundle (`Hot`)
+     2D coords + cluster fields + compact filter/search metadata
      ──→ DuckDB ──→ corpus_points.parquet
-   Citation edges + PubTator relations
-     ──→ DuckDB ──→ corpus_links.parquet
-   Cluster labels + stats
+     Cluster labels + stats
      ──→ DuckDB ──→ corpus_clusters.parquet
+   Optional browser-local artifacts (`Warm`, attached lazily later)
+     richer paper detail rows
+     ──→ DuckDB ──→ corpus_documents.parquet
+     cluster exemplar previews
+     ──→ DuckDB ──→ corpus_cluster_exemplars.parquet
+     compact aggregated link summaries if they prove useful
+     ──→ DuckDB ──→ optional future aggregated link artifact
+   On-demand backend fetch (`Cold`)
+     raw paper-paper citation neighborhoods
+     full PubTator annotation / relation payloads
+     PDF assets
+     later S2ORC full-text / chunk evidence
    Upload to Cloudflare R2
 ```
 

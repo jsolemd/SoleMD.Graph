@@ -1380,9 +1380,9 @@ SoleMD.Graph architecture.
 | S2 Data | Integration | Consumer |
 |---------|-------------|----------|
 | SPECTER2 embeddings | UMAP 768d to 2D coordinates | `corpus_points.parquet` -> Cosmograph scatter plot |
-| Citations | Directed edges between papers | `corpus_links.parquet` -> Cosmograph edge rendering |
-| Citation intent | Edge color/thickness encoding | Background=gray, Methodology=blue, Result=orange |
-| Influential flag | Edge weight / visual emphasis | Influential edges rendered thicker or brighter |
+| Citations | Directed edges between papers | Canonical source stays in PostgreSQL; optional `corpus_links.parquet` is not part of the default hot publish path |
+| Citation intent | Edge metadata | Preserved for later warm/cold edge neighborhoods rather than default canvas rendering |
+| Influential flag | Edge metadata | Preserved for later neighborhood ranking / emphasis |
 | Fields of study | Node color facets | Filter/color papers by field |
 
 ### Paper Detail Panel
@@ -1438,7 +1438,7 @@ Semantic Scholar
     |   |                 -> MedCPT embed -> pgvector HNSW -> RAG
     |   +-- references ----> INSERT -> solemd.paper_references
     |   |                 -> derive -> solemd.citations
-    |   |                 -> corpus_links.parquet -> Cosmograph edges
+    |   |                 -> optional/cold citation neighborhoods later
     |
     +-- s2orc ------------> (Phase 2) chunk + MedCPT -> deep RAG
 ```

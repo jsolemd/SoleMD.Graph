@@ -1,17 +1,21 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { SegmentedControl, Stack } from "@mantine/core";
-import { useDashboardStore } from "@/features/graph/stores";
+import { useEffect, useMemo, useState } from "react";
+import { SegmentedControl, Stack, Text } from "@mantine/core";
+import { getClusterColor } from "@/features/graph/lib/colors";
 import { getActiveLayerData } from "@/features/graph/lib/info-widgets";
-import {
-  type InfoScope,
-  useInfoStats,
-} from "@/features/graph/hooks/use-info-stats";
-import { buildClusterColors } from "@/features/graph/lib/colors";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
-import type { GraphData } from "@/features/graph/types";
-import { PanelShell } from "../panels/PanelShell";
+import {
+  useInfoStats,
+  type InfoScope,
+} from "@/features/graph/hooks/use-info-stats";
+import { useDashboardStore } from "@/features/graph/stores";
+import type {
+  GraphBundleQueries,
+  GraphData,
+  GraphInfoSummary,
+} from "@/features/graph/types";
+import { PanelShell, panelTextDimStyle } from "../panels/PanelShell";
 import {
   ScopeIndicator,
   OverviewGrid,
@@ -21,20 +25,26 @@ import {
   SearchSection,
   SelectionActions,
 } from "./info";
+import { QueryWidgetSlotRenderer } from "./info/QueryWidgetSlotRenderer";
 
-export function InfoPanel({ data }: { data: GraphData }) {
-  const setActivePanel = useDashboardStore((s) => s.setActivePanel);
-  const activeLayer = useDashboardStore((s) => s.activeLayer);
-  const currentPointIndices = useDashboardStore((s) => s.currentPointIndices);
-  const selectedPointIndices = useDashboardStore((s) => s.selectedPointIndices);
+function GeoInfoPanel({
+  data,
+  queries,
+}: {
+  data: GraphData
+  queries: GraphBundleQueries
+}) {
+  const setActivePanel = useDashboardStore((state) => state.setActivePanel);
+  const activeLayer = useDashboardStore((state) => state.activeLayer);
+  const currentPointIndices = useDashboardStore((state) => state.currentPointIndices);
+  const selectedPointIndices = useDashboardStore((state) => state.selectedPointIndices);
   const activeSelectionSourceId = useDashboardStore(
-    (s) => s.activeSelectionSourceId,
+    (state) => state.activeSelectionSourceId,
   );
-  const infoScopeMode = useDashboardStore((s) => s.infoScopeMode);
-  const setInfoScopeMode = useDashboardStore((s) => s.setInfoScopeMode);
-  const infoWidgets = useDashboardStore((s) => s.infoWidgets);
+  const infoScopeMode = useDashboardStore((state) => state.infoScopeMode);
+  const setInfoScopeMode = useDashboardStore((state) => state.setInfoScopeMode);
+  const infoWidgets = useDashboardStore((state) => state.infoWidgets);
 
-  // Resolve layer-appropriate nodes for the active layer
   const { nodes: allNodes } = useMemo(
     () => getActiveLayerData(data, activeLayer),
     [data, activeLayer],
@@ -42,9 +52,7 @@ export function InfoPanel({ data }: { data: GraphData }) {
 
   const hasSelection = selectedPointIndices.length > 0;
   const scope: InfoScope =
-    infoScopeMode === "selected" && !hasSelection
-      ? "current"
-      : infoScopeMode;
+    infoScopeMode === "selected" && !hasSelection ? "current" : infoScopeMode;
 
   useEffect(() => {
     if (infoScopeMode === "selected" && !hasSelection) {
@@ -55,24 +63,28 @@ export function InfoPanel({ data }: { data: GraphData }) {
   const scopedNodes = useMemo(() => {
     if (scope === "selected") {
       const selectedSet = new Set(selectedPointIndices);
-      return allNodes.filter((n) => selectedSet.has(n.index));
+      return allNodes.filter((node) => selectedSet.has(node.index));
     }
 
     if (scope === "current" && currentPointIndices !== null) {
       const currentSet = new Set(currentPointIndices);
-      return allNodes.filter((n) => currentSet.has(n.index));
+      return allNodes.filter((node) => currentSet.has(node.index));
     }
 
     return allNodes;
   }, [allNodes, currentPointIndices, scope, selectedPointIndices]);
 
   const info = useInfoStats(allNodes, scopedNodes, scope);
-
-  // Cluster colors for the table
   const colorTheme = useGraphColorTheme();
   const clusterColors = useMemo(
-    () => buildClusterColors(allNodes, colorTheme),
-    [allNodes, colorTheme],
+    () =>
+      Object.fromEntries(
+        info.topClusters.map((cluster) => [
+          cluster.clusterId,
+          getClusterColor(cluster.clusterId, colorTheme),
+        ]),
+      ),
+    [colorTheme, info.topClusters],
   );
 
   return (
@@ -100,7 +112,6 @@ export function InfoPanel({ data }: { data: GraphData }) {
             onChange={(value) => setInfoScopeMode(value as typeof infoScopeMode)}
           />
 
-          {/* Scope badge */}
           <ScopeIndicator
             scopedCount={info.scopedCount}
             totalCount={info.totalCount}
@@ -111,17 +122,14 @@ export function InfoPanel({ data }: { data: GraphData }) {
             }
           />
 
-          {/* Dataset overview cards */}
           <OverviewGrid info={info} layer={activeLayer} />
 
-          {/* Top clusters */}
           <ClusterTable
             topClusters={info.topClusters}
             clusterColors={clusterColors}
             scope={info.scope}
           />
 
-          {/* Pluggable widget slots */}
           {infoWidgets.map((slot) => (
             <WidgetSlotRenderer
               key={slot.column}
@@ -132,16 +140,211 @@ export function InfoPanel({ data }: { data: GraphData }) {
             />
           ))}
 
-          {/* Add insight button */}
           <AddInsightButton />
-
-          {/* Search */}
-          <SearchSection />
-
-          {/* Selection actions */}
-          <SelectionActions scope={info.scope} />
+          <SearchSection key={activeLayer} queries={queries} />
+          <SelectionActions scope={info.scope} queries={queries} />
         </Stack>
       </div>
     </PanelShell>
   );
+}
+
+function QueryDrivenInfoPanel({
+  queries,
+}: {
+  queries: GraphBundleQueries;
+}) {
+  const setActivePanel = useDashboardStore((state) => state.setActivePanel);
+  const activeLayer = useDashboardStore((state) => state.activeLayer);
+  const currentPointIndices = useDashboardStore((state) => state.currentPointIndices);
+  const currentPointScopeSql = useDashboardStore((state) => state.currentPointScopeSql);
+  const selectedPointIndices = useDashboardStore((state) => state.selectedPointIndices);
+  const activeSelectionSourceId = useDashboardStore(
+    (state) => state.activeSelectionSourceId,
+  );
+  const infoScopeMode = useDashboardStore((state) => state.infoScopeMode);
+  const setInfoScopeMode = useDashboardStore((state) => state.setInfoScopeMode);
+  const infoWidgets = useDashboardStore((state) => state.infoWidgets);
+  const colorTheme = useGraphColorTheme();
+
+  const hasSelection = selectedPointIndices.length > 0;
+  const scope: InfoScope =
+    infoScopeMode === "selected" && !hasSelection ? "current" : infoScopeMode;
+
+  const [info, setInfo] = useState<GraphInfoSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [lastResolvedKey, setLastResolvedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (infoScopeMode === "selected" && !hasSelection) {
+      setInfoScopeMode("current");
+    }
+  }, [hasSelection, infoScopeMode, setInfoScopeMode]);
+
+  const requestKey = useMemo(
+    () =>
+      JSON.stringify({
+        activeLayer,
+        scope,
+        currentScopeSql: currentPointScopeSql,
+        selectedCount: selectedPointIndices.length,
+        selectedFirst: selectedPointIndices[0] ?? null,
+        selectedLast:
+          selectedPointIndices.length > 0
+            ? selectedPointIndices[selectedPointIndices.length - 1]
+            : null,
+      }),
+    [activeLayer, currentPointScopeSql, scope, selectedPointIndices],
+  );
+  const loading = lastResolvedKey !== requestKey;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    queries
+      .getInfoSummary({
+        layer: activeLayer,
+        scope,
+        currentPointIndices,
+        currentPointScopeSql,
+        selectedPointIndices,
+      })
+      .then((summary) => {
+        if (cancelled) {
+          return;
+        }
+        setInfo(summary);
+        setError(null);
+        setLastResolvedKey(requestKey);
+      })
+      .catch((queryError: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setError(
+          queryError instanceof Error
+            ? queryError.message
+            : "Failed to load info summary",
+        );
+        setLastResolvedKey(requestKey);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeLayer,
+    currentPointIndices,
+    currentPointScopeSql,
+    queries,
+    requestKey,
+    scope,
+    selectedPointIndices,
+  ]);
+
+  const clusterColors = useMemo(
+    () =>
+      Object.fromEntries(
+        (info?.topClusters ?? []).map((cluster) => [
+          cluster.clusterId,
+          getClusterColor(cluster.clusterId, colorTheme),
+        ]),
+      ),
+    [colorTheme, info?.topClusters],
+  );
+
+  return (
+    <PanelShell
+      title="Info"
+      side="left"
+      width={320}
+      onClose={() => setActivePanel(null)}
+    >
+      <div className="flex-1 overflow-y-auto px-3 pb-3">
+        <Stack gap="md">
+          <SegmentedControl
+            size="xs"
+            fullWidth
+            data={[
+              { label: "Current", value: "current" },
+              {
+                label: "Selected",
+                value: "selected",
+                disabled: !hasSelection,
+              },
+              { label: "Dataset", value: "dataset" },
+            ]}
+            value={scope}
+            onChange={(value) => setInfoScopeMode(value as typeof infoScopeMode)}
+          />
+
+          {loading ? (
+            <Text size="sm" style={panelTextDimStyle}>
+              Querying DuckDB summaries…
+            </Text>
+          ) : error ? (
+            <Text size="sm" style={panelTextDimStyle}>
+              {error}
+            </Text>
+          ) : info ? (
+            <>
+              <ScopeIndicator
+                scopedCount={info.scopedCount}
+                totalCount={info.totalCount}
+                scope={info.scope}
+                isSubset={info.isSubset}
+                selectionSource={
+                  info.scope === "selected" ? activeSelectionSourceId : null
+                }
+              />
+
+              <OverviewGrid info={info} layer={activeLayer} />
+
+              <ClusterTable
+                topClusters={info.topClusters}
+                clusterColors={clusterColors}
+                scope={info.scope}
+              />
+
+              {infoWidgets.map((slot) => (
+                <QueryWidgetSlotRenderer
+                  key={slot.column}
+                  slot={slot}
+                  layer={activeLayer}
+                  scope={info.scope}
+                  currentPointIndices={currentPointIndices}
+                  currentPointScopeSql={currentPointScopeSql}
+                  selectedPointIndices={selectedPointIndices}
+                  queries={queries}
+                />
+              ))}
+
+              <AddInsightButton />
+              <SearchSection key={activeLayer} queries={queries} />
+              <SelectionActions scope={info.scope} queries={queries} />
+            </>
+          ) : null}
+        </Stack>
+      </div>
+    </PanelShell>
+  );
+}
+
+export function InfoPanel({
+  data,
+  queries,
+}: {
+  data: GraphData | null;
+  queries: GraphBundleQueries;
+}) {
+  const activeLayer = useDashboardStore((state) => state.activeLayer);
+
+  if (activeLayer === "geo") {
+    if (!data) {
+      return null;
+    }
+    return <GeoInfoPanel data={data} queries={queries} />;
+  }
+
+  return <QueryDrivenInfoPanel queries={queries} />;
 }

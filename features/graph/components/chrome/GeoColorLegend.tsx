@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Text } from "@mantine/core";
 import { useDashboardStore } from "@/features/graph/stores";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
-import { getPaletteColors } from "@/features/graph/lib/colors";
+import { getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors";
 import { getNodeProp, safeMin, safeMax } from "@/features/graph/lib/helpers";
 import type { GeoNode } from "@/features/graph/types";
 
@@ -17,16 +17,17 @@ export function GeoColorLegend({ geoNodes }: { geoNodes: GeoNode[] }) {
   const colorTheme = useGraphColorTheme();
 
   const legend = useMemo(() => {
+    const resolved = resolvePaletteSelection(pointColorColumn, pointColorStrategy, colorScheme, colorTheme);
     const palette = getPaletteColors(colorScheme, colorTheme);
 
-    if (pointColorStrategy === "single" || pointColorStrategy === "direct") {
+    if (resolved.colorStrategy === "single" || resolved.colorStrategy === "direct") {
       return null; // No legend needed
     }
 
-    if (pointColorStrategy === "categorical") {
+    if (resolved.colorStrategy === "categorical") {
       const counts = new Map<string, number>();
       for (const n of geoNodes) {
-        const val = String(getNodeProp(n, pointColorColumn) ?? "");
+        const val = String(getNodeProp(n, resolved.colorColumn) ?? "");
         if (!val) continue;
         counts.set(val, (counts.get(val) ?? 0) + 1);
       }
@@ -47,9 +48,9 @@ export function GeoColorLegend({ geoNodes }: { geoNodes: GeoNode[] }) {
       };
     }
 
-    if (pointColorStrategy === "continuous") {
+    if (resolved.colorStrategy === "continuous") {
       const values = geoNodes
-        .map((n) => getNodeProp(n, pointColorColumn))
+        .map((n) => getNodeProp(n, resolved.colorColumn))
         .filter((v): v is number => typeof v === "number" && Number.isFinite(v));
       if (values.length === 0) return null;
 
@@ -63,7 +64,7 @@ export function GeoColorLegend({ geoNodes }: { geoNodes: GeoNode[] }) {
         min,
         max,
         stops,
-        column: pointColorColumn,
+        column: resolved.colorColumn,
       };
     }
 

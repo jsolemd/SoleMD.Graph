@@ -9,8 +9,11 @@ import { db } from '@/lib/db'
 import { graphRuns } from '@/lib/db/schema'
 import type {
   GraphBundle,
+  GraphBundleArtifactSet,
+  GraphBundleContract,
   GraphBundleDuckDBFile,
   GraphBundleManifest,
+  GraphBundleContractFileSet,
   GraphBundleTableManifest,
 } from '@/features/graph/types'
 
@@ -19,6 +22,52 @@ const NODE_KIND = 'corpus'
 const GRAPH_BUNDLE_ROOT =
   process.env.GRAPH_BUNDLE_ROOT ??
   '/mnt/e/SoleMD.Graph/graph/bundles'
+
+const DEFAULT_BUNDLE_CONTRACT: GraphBundleContract = {
+  artifactSets: {
+    hot: ['corpus_points', 'corpus_clusters'],
+    warm: ['corpus_documents', 'corpus_cluster_exemplars'],
+    cold: [
+      'corpus_links',
+      'citation_neighborhood',
+      'pubtator_annotations',
+      'pubtator_relations',
+      'paper_assets',
+      'full_text',
+      'rag_chunks',
+    ],
+  },
+  files: {
+    corpus_points: 'corpus_points.parquet',
+    corpus_clusters: 'corpus_clusters.parquet',
+    corpus_documents: 'corpus_documents.parquet',
+    corpus_cluster_exemplars: 'corpus_cluster_exemplars.parquet',
+    corpus_links: 'corpus_links.parquet',
+    manifest: 'manifest.json',
+  },
+}
+
+const CANONICAL_BUNDLE_VERSION = '2'
+const REQUIRED_BUNDLE_TABLES = ['corpus_points', 'corpus_clusters'] as const
+const DEPRECATED_BUNDLE_TABLES = [
+  'graph_points',
+  'graph_clusters',
+  'graph_facets',
+  'graph_cluster_exemplars',
+  'graph_chunk_details',
+  'paper_documents',
+  'paper_points',
+] as const
+
+function assertSupportedBundleVersion(bundleVersion: string) {
+  if (bundleVersion === CANONICAL_BUNDLE_VERSION) {
+    return
+  }
+
+  throw new Error(
+    `Unsupported graph bundle version "${bundleVersion}". Frontend requires ${CANONICAL_BUNDLE_VERSION}.`
+  )
+}
 
 interface GraphRunRow {
   bundle_bytes: number | string | null
@@ -92,6 +141,81 @@ function normalizeBundleTableManifest(value: unknown): GraphBundleTableManifest 
   }
 }
 
+function normalizeArtifactSet(value: unknown): GraphBundleArtifactSet | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const normalizeList = (entry: unknown) =>
+    Array.isArray(entry)
+      ? [...new Set(
+          entry
+            .filter((item): item is string => typeof item === 'string')
+        )]
+      : []
+
+  return {
+    hot: normalizeList(value.hot),
+    warm: normalizeList(value.warm),
+    cold: normalizeList(value.cold),
+  }
+}
+
+function normalizeContractFileSet(value: unknown): GraphBundleContractFileSet | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const fileSet: GraphBundleContractFileSet = {}
+  for (const key of [
+    'corpus_points',
+    'corpus_clusters',
+    'corpus_documents',
+    'corpus_cluster_exemplars',
+    'corpus_links',
+    'manifest',
+  ] as const) {
+    const rawValue = value[key]
+    if (typeof rawValue === 'string') {
+      fileSet[key] = rawValue
+    }
+  }
+  return fileSet
+}
+
+function assertCanonicalBundleManifest(manifest: GraphBundleManifest) {
+  assertSupportedBundleVersion(manifest.bundleVersion)
+
+  const missingTables = REQUIRED_BUNDLE_TABLES.filter((tableName) => !manifest.tables[tableName])
+  if (missingTables.length > 0) {
+    throw new Error(
+      `Canonical graph bundle is missing required tables: ${missingTables.join(', ')}.`
+    )
+  }
+
+  const deprecatedTables = DEPRECATED_BUNDLE_TABLES.filter((tableName) => manifest.tables[tableName])
+  if (deprecatedTables.length > 0) {
+    throw new Error(
+      `Canonical graph bundle includes deprecated tables: ${deprecatedTables.join(', ')}.`
+    )
+  }
+}
+
+function normalizeBundleContract(value: unknown): GraphBundleContract | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  return {
+    artifactSets: normalizeArtifactSet(value.artifact_sets) ?? {
+      hot: [],
+      warm: [],
+      cold: [],
+    },
+    files: normalizeContractFileSet(value.files) ?? {},
+  }
+}
+
 function normalizeBundleManifest(row: GraphRunRow): GraphBundleManifest {
   const manifest = isRecord(row.bundle_manifest) ? row.bundle_manifest : {}
   const rawTables = isRecord(manifest.tables) ? manifest.tables : {}
@@ -107,17 +231,16 @@ function normalizeBundleManifest(row: GraphRunRow): GraphBundleManifest {
   return {
     bundleFormat:
       typeof manifest.bundle_format === 'string' ? manifest.bundle_format : row.bundle_format,
+    bundleProfile:
+      typeof manifest.bundle_profile === 'string' ? manifest.bundle_profile : 'hot',
     bundleVersion:
       typeof manifest.bundle_version === 'string' ? manifest.bundle_version : row.bundle_version,
+    contract: normalizeBundleContract(manifest.contract) ?? DEFAULT_BUNDLE_CONTRACT,
     createdAt:
       typeof manifest.created_at === 'string'
         ? manifest.created_at
         : row.created_at ?? null,
-    duckdbFile: normalizeDuckDBFile(manifest.duckdb_file) ?? {
-      path: 'graph.duckdb',
-      bytes: 0,
-      sha256: row.bundle_checksum,
-    },
+    duckdbFile: normalizeDuckDBFile(manifest.duckdb_file),
     graphName:
       typeof manifest.graph_name === 'string' ? manifest.graph_name : row.graph_name,
     graphRunId:
@@ -152,8 +275,8 @@ function resolveBundleUriPath(bundleUri: string) {
 
 function buildGraphBundle(row: GraphRunRow): GraphBundle {
   const manifest = normalizeBundleManifest(row)
+  assertCanonicalBundleManifest(manifest)
   const assetBaseUrl = `/api/graph-bundles/${row.bundle_checksum}`
-  const duckdbPath = manifest.duckdbFile?.path ?? 'graph.duckdb'
   const tableUrls = Object.fromEntries(
     Object.entries(manifest.tables).map(([tableName, tableManifest]) => [
       tableName,
@@ -168,8 +291,10 @@ function buildGraphBundle(row: GraphRunRow): GraphBundle {
     bundleFormat: row.bundle_format,
     bundleManifest: manifest,
     bundleUri: row.bundle_uri,
-    bundleVersion: row.bundle_version,
-    duckdbUrl: buildBundleAssetUrl(row.bundle_checksum, duckdbPath),
+    bundleVersion: manifest.bundleVersion,
+    duckdbUrl: manifest.duckdbFile
+      ? buildBundleAssetUrl(row.bundle_checksum, manifest.duckdbFile.path)
+      : null,
     graphName: row.graph_name,
     manifestUrl: buildBundleAssetUrl(row.bundle_checksum, 'manifest.json'),
     nodeKind: row.node_kind,

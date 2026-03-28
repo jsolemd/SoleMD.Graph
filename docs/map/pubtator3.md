@@ -1068,21 +1068,24 @@ User asks "What is the role of BDNF in depression treatment?"
 This is a JOIN between the vector search candidate set and PubTator3
 annotations, applied as a post-retrieval re-ranking signal.
 
-### PubTator3 Relations as Graph Edges
+### PubTator3 Relations and Graph Delivery
 
-PubTator3 relations become edges in the Cosmograph visualization alongside
-Semantic Scholar citation edges:
+PubTator3 relations are part of the durable biomedical substrate, but they are
+not part of the default browser graph payload today.
 
-```
-corpus_links.parquet contains:
-  - S2 citation edges (directed: paper A cites paper B)
-  - PubTator3 relation edges (undirected: concept X relates to concept Y in paper Z)
-```
+Current implementation:
 
-Relation edges connect papers that share a specific biological relationship
-between entities (e.g., "lithium treats bipolar disorder" creates an edge
-between all papers asserting that Chemical-Disease relation). These are
-computed during graph bundle building and stored as edge rows in Parquet.
+- compact PubTator-derived summaries are exported onto hot points
+  - semantic groups
+  - top entities
+  - relation-category summaries
+- full relation rows remain database-side / future cold-path data
+- `corpus_links.parquet` remains the canonical link artifact name if paper or
+  relation edges are published later, but it is not part of the default hot
+  browser bundle
+
+That means PubTator currently informs graph search, filtering, summaries, and
+future evidence/link artifacts more than direct always-on edge rendering.
 
 ### PMID as Bridge Key
 

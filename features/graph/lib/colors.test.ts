@@ -5,13 +5,13 @@ import {
   type ColorTheme,
 } from './colors'
 
-const HEX_RE = /^#[0-9a-f]{6}$/i
+const CSS_COLOR_RE = /^(#[0-9a-f]{6}|rgb\(|rgba\()/i
 
 describe('getPaletteColors', () => {
-  it('returns different colors for light vs dark theme on default palette', () => {
+  it('returns stable native colors for light and dark themes', () => {
     const dark = getPaletteColors('default', 'dark')
     const light = getPaletteColors('default', 'light')
-    expect(dark).not.toEqual(light)
+    expect(dark).toEqual(light)
     expect(dark).toHaveLength(light.length)
   })
 
@@ -21,27 +21,22 @@ describe('getPaletteColors', () => {
     expect(implicit).toEqual(explicit)
   })
 
-  it('does NOT adjust scientific palettes', () => {
-    for (const name of ['spectral', 'viridis', 'plasma', 'turbo'] as const) {
+  it('returns stable native palettes for showcase schemes', () => {
+    for (const name of ['spectral', 'warm', 'royal', 'turbo'] as const) {
       const dark = getPaletteColors(name, 'dark')
       const light = getPaletteColors(name, 'light')
       expect(dark).toEqual(light)
     }
   })
 
-  it('adjusts warm and cool palettes for light theme', () => {
-    expect(getPaletteColors('warm', 'dark')).not.toEqual(getPaletteColors('warm', 'light'))
-    expect(getPaletteColors('cool', 'dark')).not.toEqual(getPaletteColors('cool', 'light'))
-  })
-
-  it('returns valid hex values for all palettes and themes', () => {
-    const palettes = ['default', 'warm', 'cool', 'spectral', 'viridis', 'plasma', 'turbo'] as const
+  it('returns valid CSS colors for representative palettes and themes', () => {
+    const palettes = ['default', 'warm', 'royal', 'spectral', 'tableau10', 'turbo'] as const
     const themes: ColorTheme[] = ['light', 'dark']
     for (const palette of palettes) {
       for (const theme of themes) {
         const colors = getPaletteColors(palette, theme)
         for (const color of colors) {
-          expect(color).toMatch(HEX_RE)
+          expect(color).toMatch(CSS_COLOR_RE)
         }
       }
     }
@@ -72,9 +67,9 @@ describe('getClusterColor', () => {
   it('returns theme-appropriate cluster colors', () => {
     const dark = getClusterColor(1, 'dark')
     const light = getClusterColor(1, 'light')
-    expect(dark).toMatch(HEX_RE)
-    expect(light).toMatch(HEX_RE)
-    expect(dark).not.toEqual(light)
+    expect(dark).toMatch(CSS_COLOR_RE)
+    expect(light).toMatch(CSS_COLOR_RE)
+    expect(dark).toEqual(light)
   })
 
   it('wraps around at palette boundary', () => {
@@ -85,7 +80,7 @@ describe('getClusterColor', () => {
 
   it('handles very large clusterId', () => {
     const color = getClusterColor(1000, 'dark')
-    expect(color).toMatch(HEX_RE)
+    expect(color).toMatch(CSS_COLOR_RE)
   })
 
   it('returns noise color for negative clusterId', () => {
@@ -110,8 +105,8 @@ describe('buildClusterColors', () => {
     const colors = buildClusterColors(nodes, 'dark')
     expect(Object.keys(colors).map(Number).sort()).toEqual([0, 1, 3])
     expect(colors[0]).toBe('#555555')
-    for (const hex of Object.values(colors)) {
-      expect(hex).toMatch(HEX_RE)
+    for (const color of Object.values(colors)) {
+      expect(color).toMatch(CSS_COLOR_RE)
     }
   })
 
@@ -119,16 +114,16 @@ describe('buildClusterColors', () => {
     const colors = buildClusterColors(nodes, 'light')
     expect(Object.keys(colors).map(Number).sort()).toEqual([0, 1, 3])
     expect(colors[0]).toBe('#999999')
-    for (const hex of Object.values(colors)) {
-      expect(hex).toMatch(HEX_RE)
+    for (const color of Object.values(colors)) {
+      expect(color).toMatch(CSS_COLOR_RE)
     }
   })
 
-  it('light and dark mappings differ for non-noise clusters', () => {
+  it('light and dark mappings stay stable for native palettes', () => {
     const dark = buildClusterColors(nodes, 'dark')
     const light = buildClusterColors(nodes, 'light')
-    expect(dark[1]).not.toEqual(light[1])
-    expect(dark[3]).not.toEqual(light[3])
+    expect(dark[1]).toEqual(light[1])
+    expect(dark[3]).toEqual(light[3])
   })
 
   it('returns empty record for empty nodes array', () => {

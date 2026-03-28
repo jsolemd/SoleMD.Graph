@@ -181,4 +181,4 @@ SPECTER2 positions papers. SapBERT positions entities. MedCPT positions chunks. 
 | `components/mantine-theme-provider.tsx` | `defaultColorScheme="auto"`, DarkClassSync |
 | `components/graph/PanelShell.tsx` | Shared panel chrome, style exports, `ICON_BTN_STYLES` |
 | `lib/motion.ts` | Spring presets (`snappy`, `smooth`, `settle`, `bouncy`, `responsive`) |
-| `components/graph/CosmographRenderer.tsx` | `BRAND.light` / `BRAND.dark` WebGL constants |
+| `cosmograph/GraphRenderer.tsx` | `BRAND.light` / `BRAND.dark` WebGL constants |

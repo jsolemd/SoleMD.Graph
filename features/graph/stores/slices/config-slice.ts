@@ -123,11 +123,11 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
 
   pointColorColumn: 'hexColor',
   pointColorStrategy: 'direct',
-  pointSizeColumn: 'clusterProbability',
-  pointSizeRange: [2, 8],
+  pointSizeColumn: 'paperReferenceCount',
+  pointSizeRange: [1.5, 5],
   pointLabelColumn: 'clusterLabel',
-  showPointLabels: false,
-  showDynamicLabels: false,
+  showPointLabels: true,
+  showDynamicLabels: true,
   positionXColumn: 'x',
   positionYColumn: 'y',
 
@@ -139,11 +139,11 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   tableView: 'current',
   infoScopeMode: 'current',
 
-  colorScheme: 'default',
+  colorScheme: 'vibrant',
   showColorLegend: false,
 
   pointSizeStrategy: 'auto',
-  scalePointsOnZoom: false,
+  scalePointsOnZoom: true,
   showSizeLegend: false,
 
   showHoveredPointLabel: true,
@@ -216,6 +216,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         linkGreyoutOpacity: layer === 'paper' ? 0.1 : 0,
         connectedSelect: false,
         currentPointIndices: null,
+        currentPointScopeSql: null,
         selectedPointIndices: [],
         highlightedPointIndices: [],
         activeSelectionSourceId: null,

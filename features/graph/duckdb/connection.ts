@@ -33,6 +33,9 @@ export async function createConnection() {
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker)
   URL.revokeObjectURL(workerUrl)
   const conn = await db.connect()
+  await conn.query("SET preserve_insertion_order = false")
+  await conn.query("SET memory_limit = '2GB'")
+  await conn.query("SET threads = 1")
 
   return { conn, db, worker }
 }
