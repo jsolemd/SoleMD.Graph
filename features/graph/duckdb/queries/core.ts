@@ -46,7 +46,7 @@ function normalizeValue(value: unknown): unknown {
   return value
 }
 
-export function mapQueryRows<T>(table: { toArray(): Array<T & { toJSON?: () => unknown }> }) {
+function mapQueryRows<T>(table: { toArray(): Array<T & { toJSON?: () => unknown }> }) {
   return table
     .toArray()
     .map((row) =>

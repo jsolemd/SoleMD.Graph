@@ -1,8 +1,8 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import {
-  type GraphClusterDetailRow,
-  type GraphClusterExemplarRow,
+import type {
+  GraphClusterDetailRow,
+  GraphClusterExemplarRow,
 } from '../mappers'
 
 import { queryRows } from './core'

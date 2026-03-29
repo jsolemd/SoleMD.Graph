@@ -6,7 +6,7 @@ import { GraphShell, ColorLegends, SizeLegend } from "@/features/graph/cosmograp
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { getLayerConfig } from "@/features/graph/lib/layers";
-import { useGraphBundle } from "@/features/graph/lib/use-graph-bundle";
+import { useGraphBundle } from "@/features/graph/hooks/use-graph-bundle";
 import { GraphCanvas } from "../canvas/GraphCanvas";
 import { ModeColorSync } from "./ModeColorSync";
 import { Wordmark } from "../chrome/Wordmark";
@@ -19,17 +19,14 @@ import { CanvasControls } from "../explore/CanvasControls";
 import { ConfigPanel } from "../explore/ConfigPanel";
 import { FiltersPanel } from "../explore/FiltersPanel";
 import { GeoFiltersPanel } from "../explore/GeoFiltersPanel";
-import { InfoPanel } from "../explore/info-panel/InfoPanel";
+import { InfoPanel } from "../explore/info-panel";
 import { QueryPanel } from "../explore/query-panel";
 import { DataTable } from "../explore/data-table";
 import { GeoColorLegend } from "../chrome/GeoColorLegend";
 import { DetailPanel } from "../panels/DetailPanel";
 import { AboutPanel } from "../panels/AboutPanel";
-import { GraphBundleLoadingOverlay } from "./loading/GraphBundleLoadingOverlay";
-import { GraphBundleErrorState } from "./loading/GraphBundleErrorState";
-import { GraphMetadataHydrationState } from "./loading/GraphMetadataHydrationState";
-import { GraphAttribution, TIMELINE_HEIGHT } from "./chrome/GraphAttribution";
-import { BottomToolbar } from "./chrome/BottomToolbar";
+import { GraphBundleLoadingOverlay, GraphBundleErrorState, GraphMetadataHydrationState } from "./loading";
+import { GraphAttribution, TIMELINE_HEIGHT, BottomToolbar } from "./chrome";
 import type {
   GraphBundle,
   GraphData,

@@ -3,7 +3,6 @@ export {
   escapeSqlString,
   executeReadOnlyQuery,
   getAbsoluteUrl,
-  mapQueryRows,
   queryRows,
 } from './core'
 

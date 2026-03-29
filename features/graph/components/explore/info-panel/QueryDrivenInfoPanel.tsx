@@ -17,7 +17,7 @@ import {
   SearchSection,
   SelectionActions,
 } from "../info";
-import { QueryWidgetSlotRenderer } from "../info/QueryWidgetSlotRenderer";
+import { QueryWidgetSlotRenderer } from "../info";
 
 interface QueryDrivenInfoPanelProps {
   queries: GraphBundleQueries;
