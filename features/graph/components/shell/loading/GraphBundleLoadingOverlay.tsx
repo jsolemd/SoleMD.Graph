@@ -6,7 +6,7 @@ import { formatBytes, formatNumber } from "@/lib/helpers";
 import { panelCardClassName, panelCardStyle, panelTextStyle, panelTextDimStyle } from "../../panels/PanelShell";
 import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
 
-export function getUserFriendlyMessage(
+function getUserFriendlyMessage(
   stage: GraphBundleLoadProgress["stage"] | undefined,
   canvasReady: boolean,
   loadedRows?: number,
@@ -36,7 +36,7 @@ export function getUserFriendlyMessage(
   }
 }
 
-export function BundleStat({ label, value }: { label: string; value: string }) {
+function BundleStat({ label, value }: { label: string; value: string }) {
   return (
     <div
       className={panelCardClassName}

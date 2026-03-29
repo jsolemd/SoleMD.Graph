@@ -20,11 +20,11 @@ export function coerceNumber(value: number | string | null | undefined): number 
   return coerceNullableNumber(value) ?? 0
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function normalizeDuckDBFile(value: unknown): GraphBundleDuckDBFile | null {
+function normalizeDuckDBFile(value: unknown): GraphBundleDuckDBFile | null {
   if (!isRecord(value)) {
     return null
   }
@@ -43,7 +43,7 @@ export function normalizeDuckDBFile(value: unknown): GraphBundleDuckDBFile | nul
   }
 }
 
-export function normalizeBundleTableManifest(value: unknown): GraphBundleTableManifest | null {
+function normalizeBundleTableManifest(value: unknown): GraphBundleTableManifest | null {
   if (!isRecord(value)) {
     return null
   }
@@ -74,7 +74,7 @@ export function normalizeBundleTableManifest(value: unknown): GraphBundleTableMa
   }
 }
 
-export function normalizeArtifactSet(value: unknown): GraphBundleArtifactSet | null {
+function normalizeArtifactSet(value: unknown): GraphBundleArtifactSet | null {
   if (!isRecord(value)) {
     return null
   }
@@ -91,11 +91,11 @@ export function normalizeArtifactSet(value: unknown): GraphBundleArtifactSet | n
   }
 }
 
-export function normalizeBundleProfile(value: unknown): GraphBundleProfile {
+function normalizeBundleProfile(value: unknown): GraphBundleProfile {
   return value === 'full' ? 'full' : 'base'
 }
 
-export function normalizeContractFileSet(value: unknown): GraphBundleContractFileSet | null {
+function normalizeContractFileSet(value: unknown): GraphBundleContractFileSet | null {
   if (!isRecord(value)) {
     return null
   }
@@ -136,7 +136,7 @@ export function assertCanonicalBundleManifest(manifest: GraphBundleManifest) {
   }
 }
 
-export function normalizeBundleContract(value: unknown): GraphBundleContract | null {
+function normalizeBundleContract(value: unknown): GraphBundleContract | null {
   if (!isRecord(value)) {
     return null
   }

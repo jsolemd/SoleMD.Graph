@@ -17,7 +17,7 @@ export function getPaperRefMeta(paper: GraphDetailCitation["related_paper"] | nu
   return [paper.citekey, paper.journal, paper.year].filter(Boolean).join(" · ");
 }
 
-function ItemActions({
+export function ItemActions({
   graphNode,
   onNavigateToPaper,
   doi,

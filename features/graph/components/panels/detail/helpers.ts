@@ -18,11 +18,11 @@ function joinNonEmpty(values: Array<string | null | undefined>) {
     .join(" · ");
 }
 
-export function collapseWhitespace(value: string): string {
+function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-export function getParagraphCandidates(value: string | null | undefined): string[] {
+function getParagraphCandidates(value: string | null | undefined): string[] {
   if (!value) return [];
 
   return value
@@ -43,13 +43,13 @@ export function getParagraphCandidates(value: string | null | undefined): string
     });
 }
 
-export function looksLikeSectionHeading(value: string): boolean {
+function looksLikeSectionHeading(value: string): boolean {
   const normalized = collapseWhitespace(value);
   const wordCount = normalized.split(" ").length;
   return wordCount <= 6 && !/[.!?]/.test(normalized);
 }
 
-export function looksLikeNarrativeParagraph(value: string): boolean {
+function looksLikeNarrativeParagraph(value: string): boolean {
   const normalized = collapseWhitespace(value);
   const wordCount = normalized.split(" ").length;
   return wordCount >= 16 && /[.!?]/.test(normalized) && !looksLikeSectionHeading(normalized);

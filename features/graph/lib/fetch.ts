@@ -20,9 +20,6 @@ import {
   normalizeBundleManifest,
 } from './fetch/normalize'
 
-export * from './fetch/constants'
-export * from './fetch/normalize'
-
 function buildBundleAssetUrl(bundleChecksum: string, assetPath: string) {
   const encodedAssetPath = assetPath
     .split('/')

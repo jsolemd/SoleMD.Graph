@@ -3,47 +3,13 @@
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import type { GraphDetailCitation, PaperNode } from "@/features/graph/types";
 import { findPaperNodeByPaperId } from "../helpers";
-import { getPaperRefMeta } from "./ReferencesContent";
+import { getPaperRefMeta, ItemActions } from "./ReferencesContent";
 import {
   RemoteStatus,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
 } from "../ui";
-
-// ItemActions is private in ReferencesContent, so we inline the same pattern here
-import { Button } from "@mantine/core";
-import { ArrowRight } from "lucide-react";
-import { ExtLink } from "../ui";
-
-function ItemActions({
-  graphNode,
-  onNavigateToPaper,
-  doi,
-  pmid,
-}: {
-  graphNode: PaperNode | null;
-  onNavigateToPaper: (node: PaperNode) => void;
-  doi: string | null;
-  pmid: string | null;
-}) {
-  return (
-    <Group gap="xs" mt={6}>
-      {graphNode && (
-        <Button
-          size="compact-xs"
-          variant="light"
-          leftSection={<ArrowRight size={12} />}
-          onClick={() => onNavigateToPaper(graphNode)}
-        >
-          Go to node
-        </Button>
-      )}
-      <ExtLink href={doi ? `https://doi.org/${doi}` : null} label="DOI" />
-      <ExtLink href={pmid ? `https://pubmed.ncbi.nlm.nih.gov/${pmid}/` : null} label="PubMed" />
-    </Group>
-  );
-}
 
 export function ConnectionsContent({
   incoming,
