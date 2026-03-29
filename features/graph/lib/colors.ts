@@ -5,8 +5,6 @@ import type {
   PointColorStrategy,
 } from '@/features/graph/types'
 
-export type { ColorTheme } from '@/features/graph/types'
-
 /**
  * Native Cosmograph palette catalog.
  *

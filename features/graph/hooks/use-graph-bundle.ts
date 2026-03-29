@@ -52,6 +52,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
 
   useEffect(() => {
     let cancelled = false
+    let unsubscribeCanvas = () => {}
     const unsubscribeProgress = subscribeToGraphBundleProgress(
       bundle.bundleChecksum,
       (progress) => {
@@ -73,9 +74,24 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           return
         }
 
+        unsubscribeCanvas = session.subscribeCanvas((nextCanvas) => {
+          if (cancelled) {
+            return
+          }
+
+          setState((current) => ({
+            ...current,
+            bundleChecksum: bundle.bundleChecksum,
+            canvas: nextCanvas,
+          }))
+        })
+
         useDashboardStore.getState().setAvailableLayers(session.availableLayers)
 
         const queries: GraphBundleQueries = {
+          setOverlayPointIds: session.setOverlayPointIds,
+          clearOverlay: session.clearOverlay,
+          activateOverlay: session.activateOverlay,
           getClusterDetail: session.getClusterDetail,
           getInstitutionAuthors: session.getInstitutionAuthors,
           getAuthorInstitutions: session.getAuthorInstitutions,
@@ -88,6 +104,9 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           getPointIndicesForScope: session.getPointIndicesForScope,
           getSelectionDetail: session.getSelectionDetail,
           getPaperDocument: session.getPaperDocument,
+          getPaperNodesByPaperIds: session.getPaperNodesByPaperIds,
+          getUniversePointIdsByPaperIds: session.getUniversePointIdsByPaperIds,
+          getChunkNodesByChunkIds: session.getChunkNodesByChunkIds,
           resolvePointSelection: session.resolvePointSelection,
           getTablePage: session.getTablePage,
           runReadOnlyQuery: session.runReadOnlyQuery,
@@ -120,6 +139,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
 
     return () => {
       cancelled = true
+      unsubscribeCanvas()
       unsubscribeProgress()
     }
   }, [bundle])
@@ -164,7 +184,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           metadataError:
             error instanceof Error
               ? error
-              : new Error('Failed to hydrate graph metadata'),
+              : new Error('Failed to hydrate geographic metadata'),
         }))
       })
 

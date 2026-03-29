@@ -16,7 +16,7 @@ import type { TimelineSlice } from './slices/timeline-slice'
 import type { LinksSlice } from './slices/links-slice'
 import type { VisibilitySlice } from './slices/visibility-slice'
 
-/* ───── Re-exports for backwards compatibility ───── */
+/* ───── Convenience re-exports ───── */
 
 export type { ActivePanel, MapControls } from './slices/panel-slice'
 export type { TableView, InfoScopeMode } from './slices/config-slice'
