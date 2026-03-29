@@ -119,6 +119,9 @@ export interface GraphDetailChunkEntity {
   semantic_types: string[]
 }
 
+// Remote detail/evidence payloads may remain paper/chunk-capable over time, but
+// they are not the graph hot path. Cosmograph and DuckDB-native corpus widgets
+// should depend on the paper-point runtime types in `points.ts` / `nodes.ts`.
 export interface GraphNodeDetailResponsePayload {
   meta: {
     request_id: string

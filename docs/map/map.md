@@ -167,9 +167,9 @@ expansion.
 | **Papers** | Full publications | Citation links (S2, with intent + influence) | Trace evidence chains |
 | **Synthesis** | LLM-generated articles + curated lectures | Topic → source links | Learn and teach through the graph |
 
-**Cross-layer navigation target:** click an entity → highlight its chunks →
-highlight its papers → show its synthesis. Each layer draws from the same
-PostgreSQL + Parquet data, projected through different embeddings and layouts.
+**Future modular navigation target:** if entity, chunk, or synthesis layers are
+added later, they should remain separate add-ons that can reference the paper
+runtime without changing the base corpus-only graph path.
 
 Current note:
 

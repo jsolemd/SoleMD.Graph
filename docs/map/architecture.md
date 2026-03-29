@@ -263,7 +263,7 @@ Design rule:
 - base admission stays in graph-db, not in the browser runtime
 - expensive PubTator aggregation is staged into `paper_evidence_summary` before publish
 - large evidence scans should join against permanent mapped-paper tables so PostgreSQL can plan parallel workers
-- graph / geo bundles are exported read models, not source-of-truth tables
+- graph bundles, plus any future geo add-on bundles, are exported read models and not source-of-truth tables
 
 Bundle note:
 - the browser-facing graph delivery contract is explicitly tiered into `base`,
@@ -865,8 +865,9 @@ deep-dive documents, not in this overview.
    SoleMD.App's vocab schema) fit into this system? Filter facets? Type-ahead
    entity recognition? Or defer entirely?
 
-7. **Geolocation layer**: The existing web app has a geographic view based on
-   author affiliations. Does this carry forward into the new build?
+7. **Geolocation layer**: If affiliation-based geography returns later, it
+   should be a modular add-on with isolated bundle/query/UI paths rather than a
+   branch inside the corpus runtime.
 
 8. **Citation graph edges in Cosmograph**: S2 citation edges (2.8B total) are
    too many for Cosmograph. Need a strategy for filtering to domain-relevant
