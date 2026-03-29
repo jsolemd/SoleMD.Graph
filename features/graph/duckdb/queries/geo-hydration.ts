@@ -11,140 +11,12 @@ import type {
   GraphBundle,
   GraphData,
   MapLayer,
-  PaperDocument,
 } from '@/features/graph/types'
 
-import {
-  mapPaperDocument,
-  type GraphClusterDetailRow,
-  type GraphClusterExemplarRow,
-  type GraphPaperDetailRow,
-  type PaperDocumentRow,
-} from './mappers'
-import { queryRows } from './queries'
-import type { ProgressCallback } from './types'
-import { createEmptyGraphData } from './utils'
+import type { ProgressCallback } from '../types'
+import { createEmptyGraphData } from '../utils'
 
-export async function queryClusterRows(
-  conn: AsyncDuckDBConnection,
-  clusterId: number
-): Promise<GraphClusterDetailRow[]> {
-  return queryRows<GraphClusterDetailRow>(
-    conn,
-    `SELECT
-      cluster_id,
-      label,
-      label_mode,
-      member_count,
-      centroid_x,
-      centroid_y,
-      representative_rag_chunk_id,
-      label_source,
-      candidate_count,
-      entity_candidate_count,
-      lexical_candidate_count,
-      mean_cluster_probability,
-      mean_outlier_score,
-      paper_count,
-      is_noise
-    FROM graph_clusters
-    WHERE cluster_id = ?
-    LIMIT 1`,
-    [clusterId]
-  )
-}
-
-export async function queryExemplarRows(
-  conn: AsyncDuckDBConnection,
-  clusterId: number
-): Promise<GraphClusterExemplarRow[]> {
-  return queryRows<GraphClusterExemplarRow>(
-    conn,
-    `SELECT
-      cluster_id,
-      rank,
-      rag_chunk_id,
-      paper_id,
-      citekey,
-      title,
-      section_type,
-      section_canonical,
-      page_number,
-      exemplar_score,
-      is_representative,
-      chunk_preview
-    FROM graph_cluster_exemplars
-    WHERE cluster_id = ?
-    ORDER BY rank
-    LIMIT 5`,
-    [clusterId]
-  )
-}
-
-export async function queryPaperDocument(
-  conn: AsyncDuckDBConnection,
-  paperId: string
-): Promise<PaperDocument | null> {
-  const rows = await queryRows<PaperDocumentRow>(
-    conn,
-    `SELECT
-      paper_id,
-      source_embedding_id,
-      citekey,
-      title,
-      source_payload_policy,
-      source_text_hash,
-      context_label,
-      display_preview,
-      was_truncated,
-      context_char_count,
-      body_char_count,
-      text_char_count,
-      context_token_count,
-      body_token_count
-    FROM paper_documents_web
-    WHERE paper_id = ?
-    LIMIT 1`,
-    [paperId]
-  )
-  return rows[0] ? mapPaperDocument(rows[0]) : null
-}
-
-export async function queryPaperDetail(
-  conn: AsyncDuckDBConnection,
-  paperId: string
-): Promise<GraphPaperDetailRow[]> {
-  return queryRows<GraphPaperDetailRow>(
-    conn,
-    `SELECT
-      paper_id,
-      citekey,
-      title,
-      journal,
-      year,
-      doi,
-      pmid,
-      pmcid,
-      abstract,
-      authors_json,
-      author_count,
-      reference_count,
-      asset_count,
-      chunk_count,
-      entity_count,
-      relation_count,
-      sentence_count,
-      page_count,
-      table_count,
-      figure_count,
-      graph_point_count,
-      graph_cluster_count
-    FROM paper_catalog_web
-    WHERE paper_id = ?
-    LIMIT 1`,
-    [paperId]
-  )
-}
+import { queryRows } from './core'
 
 export async function hydrateGeoData(
   conn: AsyncDuckDBConnection,
@@ -275,6 +147,3 @@ export async function hydrateGeoData(
   })
   return data
 }
-
-export { mapCluster, mapExemplar, mapPaper, mapChunkDetail } from './mappers'
-export type { GraphClusterDetailRow, GraphClusterExemplarRow, GraphPaperDetailRow, GraphChunkDetailRow } from './mappers'
