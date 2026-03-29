@@ -114,7 +114,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         </AnimatePresence>
         <AnimatePresence>
           {!uiHidden && panelsVisible && activePanel === "filters" && (
-            <FiltersPanel />
+            <FiltersPanel queries={queries} />
           )}
         </AnimatePresence>
         <AnimatePresence>
@@ -167,7 +167,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         </AnimatePresence>
 
         <AnimatePresence>
-          {!uiHidden && showTimeline && <TimelineBar />}
+          {!uiHidden && showTimeline && <TimelineBar queries={queries} />}
         </AnimatePresence>
         <AnimatePresence>
           {!uiHidden && tableOpen && (

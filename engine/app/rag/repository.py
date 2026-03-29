@@ -12,6 +12,7 @@ from app.rag import queries
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
+    GraphRelease,
     GraphSignal,
     PaperAssetRecord,
     PaperEvidenceHit,
@@ -24,7 +25,23 @@ from app.rag.types import CitationDirection, GraphSignalKind, RetrievalChannel
 class RagRepository(Protocol):
     """Read-only repository contract used by the service."""
 
-    def search_papers(self, query: str, *, limit: int) -> list[PaperEvidenceHit]: ...
+    def resolve_graph_release(self, graph_release_id: str) -> GraphRelease: ...
+
+    def resolve_selected_corpus_id(
+        self,
+        *,
+        graph_run_id: str,
+        selected_paper_id: str | None,
+        selected_node_id: str | None,
+    ) -> int | None: ...
+
+    def search_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        limit: int,
+    ) -> list[PaperEvidenceHit]: ...
 
     def fetch_citation_contexts(
         self,
@@ -67,7 +84,8 @@ class RagRepository(Protocol):
     def fetch_semantic_neighbors(
         self,
         *,
-        selected_paper_id: str,
+        graph_run_id: str,
+        selected_corpus_id: int,
         limit: int = 6,
     ) -> list[GraphSignal]: ...
 
@@ -130,8 +148,77 @@ class PostgresRagRepository:
     def __init__(self, connect: Callable[..., object] | None = None):
         self._connect = connect or db.pooled
 
-    def search_papers(self, query: str, *, limit: int) -> list[PaperEvidenceHit]:
-        params = (query, query, query, query, query, 0.1, limit)
+    def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+        release_key = graph_release_id.strip()
+        params = (release_key, release_key, release_key)
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(queries.GRAPH_RELEASE_LOOKUP_SQL, params)
+                row = cur.fetchone()
+
+        if not row:
+            raise LookupError(f"Unknown graph release: {graph_release_id}")
+
+        return GraphRelease(
+            graph_release_id=row.get("bundle_checksum") or row["graph_run_id"],
+            graph_run_id=row["graph_run_id"],
+            bundle_checksum=row.get("bundle_checksum"),
+            graph_name=row["graph_name"],
+            is_current=bool(row.get("is_current")),
+        )
+
+    def resolve_selected_corpus_id(
+        self,
+        *,
+        graph_run_id: str,
+        selected_paper_id: str | None,
+        selected_node_id: str | None,
+    ) -> int | None:
+        if selected_paper_id:
+            for prefix in ("paper:", "corpus:"):
+                if selected_paper_id.startswith(prefix):
+                    suffix = selected_paper_id.split(":", 1)[1]
+                    if suffix.isdigit():
+                        return int(suffix)
+
+        if selected_node_id:
+            for prefix in ("paper:", "corpus:"):
+                if selected_node_id.startswith(prefix):
+                    suffix = selected_node_id.split(":", 1)[1]
+                    if suffix.isdigit():
+                        return int(suffix)
+
+            if selected_node_id.isdigit():
+                return int(selected_node_id)
+
+        if not selected_paper_id:
+            return None
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.SELECTED_CORPUS_LOOKUP_SQL,
+                    (
+                        graph_run_id,
+                        selected_paper_id,
+                        selected_paper_id,
+                        selected_paper_id,
+                        selected_paper_id,
+                    ),
+                )
+                row = cur.fetchone()
+
+        return int(row["corpus_id"]) if row else None
+
+    def search_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        limit: int,
+    ) -> list[PaperEvidenceHit]:
+        params = (graph_run_id, query, query, query, query, query, 0.1, limit)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(queries.PAPER_SEARCH_SQL, params)
@@ -385,15 +472,19 @@ class PostgresRagRepository:
     def fetch_semantic_neighbors(
         self,
         *,
-        selected_paper_id: str,
+        graph_run_id: str,
+        selected_corpus_id: int,
         limit: int = 6,
     ) -> list[GraphSignal]:
-        if not selected_paper_id:
+        if selected_corpus_id <= 0:
             return []
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.SEMANTIC_NEIGHBOR_SQL, (selected_paper_id, limit))
+                cur.execute(
+                    queries.SEMANTIC_NEIGHBOR_SQL,
+                    (graph_run_id, selected_corpus_id, limit),
+                )
                 rows = cur.fetchall()
 
         signals: list[GraphSignal] = []

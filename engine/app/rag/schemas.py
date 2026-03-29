@@ -35,7 +35,10 @@ class ResponseMeta(RagSchema):
 
 class GraphContext(RagSchema):
     graph_release_id: str
+    graph_run_id: str
+    bundle_checksum: str | None = None
     graph_name: str = DEFAULT_GRAPH_NAME
+    is_current: bool = False
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
     selected_paper_id: str | None = None

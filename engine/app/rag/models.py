@@ -34,6 +34,17 @@ class PaperRetrievalQuery:
     generate_answer: bool = True
 
 
+@dataclass(frozen=True, slots=True)
+class GraphRelease:
+    """Resolved graph release metadata for evidence requests."""
+
+    graph_release_id: str
+    graph_run_id: str
+    bundle_checksum: str | None
+    graph_name: str
+    is_current: bool
+
+
 @dataclass(slots=True)
 class PaperEvidenceHit:
     """Paper-level retrieval hit used as the bundle spine."""
@@ -192,6 +203,7 @@ class RagSearchResult:
     duration_ms: float
     retrieval_version: str
     query: PaperRetrievalQuery
+    graph_release: GraphRelease
     bundles: list[EvidenceBundle]
     graph_signals: list[GraphSignal]
     channels: list[RetrievalChannelResult]

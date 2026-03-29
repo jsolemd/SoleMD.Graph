@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useDashboardStore } from "@/features/graph/stores";
 import { TimelineWidget } from "@/features/graph/cosmograph/widgets/TimelineWidget";
+import type { GraphBundleQueries } from "@/features/graph/types";
 import { smooth } from "@/lib/motion";
 
 const timelineStyle: React.CSSProperties = {
@@ -11,9 +12,8 @@ const timelineStyle: React.CSSProperties = {
   backgroundColor: "var(--graph-bg)",
 };
 
-export function TimelineBar() {
+export function TimelineBar({ queries }: { queries: GraphBundleQueries }) {
   const timelineColumn = useDashboardStore((s) => s.timelineColumn);
-  const timelineSelection = useDashboardStore((s) => s.timelineSelection);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
 
   return (
@@ -27,7 +27,7 @@ export function TimelineBar() {
     >
       <TimelineWidget
         column={timelineColumn}
-        initialSelection={timelineSelection}
+        queries={queries}
         onSelection={setTimelineSelection}
       />
     </motion.div>

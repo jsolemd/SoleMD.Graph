@@ -119,6 +119,20 @@ export function buildVisibilityScopeSql(
   )
 }
 
+export function buildVisibilityScopeSqlExcludingSource(
+  selection: Selection | null | undefined,
+  excludedSourceId: string,
+): string | null {
+  return buildSelectionScopeSql(selection, (clause) => {
+    const sourceId = getSelectionSourceId(clause.source)
+    return (
+      sourceId !== null &&
+      sourceId !== excludedSourceId &&
+      isVisibilitySelectionSourceId(sourceId)
+    )
+  })
+}
+
 export function buildIntentSelectionScopeSql(
   selection: Selection | null | undefined,
 ): string | null {
@@ -159,4 +173,45 @@ export function hasBudgetScopeClauses(
   return selection.clauses.some((clause) =>
     isBudgetScopeSelectionSourceId(getSelectionSourceId(clause.source)),
   )
+}
+
+export function getSelectionValueForSource<T>(
+  selection: Selection | null | undefined,
+  sourceId: string,
+): T | null {
+  if (!selection) {
+    return null
+  }
+
+  const clause = selection.clauses.find(
+    (candidate) => getSelectionSourceId(candidate.source) === sourceId,
+  )
+
+  return (clause?.value as T | undefined) ?? null
+}
+
+export function buildCategoricalFilterClause(
+  source: ClauseSource,
+  column: string,
+  value: string,
+): SelectionClause {
+  return {
+    source,
+    value,
+    predicate: eq(column, value),
+    meta: { type: 'point' },
+  }
+}
+
+export function buildNumericRangeFilterClause(
+  source: ClauseSource,
+  column: string,
+  range: [number, number],
+): SelectionClause {
+  return {
+    source,
+    value: range,
+    predicate: isBetween(column, range),
+    meta: { type: 'point' },
+  }
 }

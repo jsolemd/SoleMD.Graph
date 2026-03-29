@@ -12,7 +12,10 @@ export interface EngineResponseMeta {
 
 export interface EngineGraphContext {
   graph_release_id: string
+  graph_run_id: string
+  bundle_checksum: string | null
   graph_name: string
+  is_current: boolean
   selected_layer_key: 'paper' | 'chunk' | null
   selected_node_id: string | null
   selected_paper_id: string | null

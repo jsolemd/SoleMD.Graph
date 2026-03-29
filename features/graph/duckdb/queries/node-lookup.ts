@@ -52,7 +52,7 @@ export async function queryPaperNodesByPaperIds(
         WHEN COALESCE(nodeRole, 'primary') = 'overlay' THEN true
         ELSE false
       END AS isOverlayActive
-    FROM active_paper_points_web
+    FROM current_paper_points_web
     WHERE paperId IN (${buildPlaceholderList(uniqueIds.length)})`,
     uniqueIds
   )

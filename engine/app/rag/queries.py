@@ -1,7 +1,33 @@
 """SQL query text for the current-table evidence baseline."""
 
+GRAPH_RELEASE_LOOKUP_SQL = """
+SELECT
+    id::TEXT AS graph_run_id,
+    graph_name,
+    is_current,
+    NULLIF(bundle_checksum, '') AS bundle_checksum
+FROM solemd.graph_runs
+WHERE
+    status = 'completed'
+    AND node_kind = 'paper'
+    AND (
+        %s = 'current'
+        AND is_current = true
+        OR id::TEXT = %s
+        OR bundle_checksum = %s
+    )
+ORDER BY is_current DESC, created_at DESC
+LIMIT 1
+"""
+
+
 PAPER_SEARCH_SQL = """
-WITH ranked_papers AS (
+WITH scoped_corpus AS (
+    SELECT DISTINCT corpus_id
+    FROM solemd.graph_points
+    WHERE graph_run_id = %s
+),
+ranked_papers AS (
     SELECT
         p.corpus_id,
         p.paper_id,
@@ -28,6 +54,8 @@ WITH ranked_papers AS (
         ) AS lexical_score,
         COALESCE(similarity(lower(COALESCE(p.title, '')), lower(%s)), 0) AS title_similarity
     FROM solemd.papers p
+    JOIN scoped_corpus scoped
+      ON scoped.corpus_id = p.corpus_id
     JOIN solemd.corpus c
       ON c.corpus_id = p.corpus_id
     WHERE
@@ -62,6 +90,23 @@ ORDER BY
     citation_count DESC,
     corpus_id DESC
 LIMIT %s
+"""
+
+
+SELECTED_CORPUS_LOOKUP_SQL = """
+SELECT gp.corpus_id
+FROM solemd.graph_points gp
+LEFT JOIN solemd.papers p
+  ON p.corpus_id = gp.corpus_id
+WHERE
+    gp.graph_run_id = %s
+    AND (
+        p.paper_id = %s
+        OR ('paper:' || gp.corpus_id::TEXT) = %s
+        OR ('corpus:' || gp.corpus_id::TEXT) = %s
+        OR gp.corpus_id::TEXT = %s
+    )
+LIMIT 1
 """
 
 
@@ -153,16 +198,30 @@ ORDER BY corpus_id, asset_id
 
 
 SEMANTIC_NEIGHBOR_SQL = """
+WITH scoped_corpus AS (
+    SELECT DISTINCT corpus_id
+    FROM solemd.graph_points
+    WHERE graph_run_id = %s
+),
+seed AS (
+    SELECT p.corpus_id, p.embedding
+    FROM solemd.papers p
+    JOIN scoped_corpus scoped
+      ON scoped.corpus_id = p.corpus_id
+    WHERE p.corpus_id = %s
+    LIMIT 1
+)
 SELECT
     p.corpus_id,
     p.paper_id,
     (seed.embedding <=> p.embedding) AS distance
-FROM solemd.papers seed
+FROM seed
+JOIN scoped_corpus scoped
+  ON scoped.corpus_id <> seed.corpus_id
 JOIN solemd.papers p
-  ON p.corpus_id <> seed.corpus_id
+  ON p.corpus_id = scoped.corpus_id
 WHERE
-    seed.paper_id = %s
-    AND seed.embedding IS NOT NULL
+    seed.embedding IS NOT NULL
     AND p.embedding IS NOT NULL
 ORDER BY seed.embedding <=> p.embedding ASC
 LIMIT %s

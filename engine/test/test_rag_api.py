@@ -19,7 +19,11 @@ class FakeService:
                 retrieval_version="baseline-postgres-v1",
             ),
             graph_context=GraphContext(
-                graph_release_id=request.graph_release_id,
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
                 selected_layer_key=request.selected_layer_key,
                 selected_node_id=request.selected_node_id,
                 selected_paper_id=request.selected_paper_id,
@@ -55,4 +59,28 @@ def test_search_evidence_endpoint_returns_typed_response():
     payload = response.json()
     assert payload["meta"]["request_id"] == "req-test"
     assert payload["query"] == "melatonin delirium"
+    assert payload["graph_context"]["graph_run_id"] == "run-1"
+    assert payload["graph_context"]["bundle_checksum"] == "bundle-1"
     assert payload["graph_context"]["selected_layer_key"] == "paper"
+
+
+def test_search_evidence_endpoint_maps_unknown_release_to_404():
+    class MissingReleaseService:
+        def search(self, request):
+            raise LookupError(f"Unknown graph release: {request.graph_release_id}")
+
+    app.dependency_overrides[get_rag_service] = lambda: MissingReleaseService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/evidence/search",
+        json={
+            "graph_release_id": "missing-release",
+            "query": "melatonin delirium",
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Unknown graph release: missing-release"

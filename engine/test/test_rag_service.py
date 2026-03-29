@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
+    GraphRelease,
     GraphSignal,
     PaperAssetRecord,
     PaperEvidenceHit,
@@ -21,7 +22,36 @@ from app.rag.types import (
 
 
 class FakeRepository:
-    def search_papers(self, query: str, *, limit: int) -> list[PaperEvidenceHit]:
+    def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+        assert graph_release_id == "release-1"
+        return GraphRelease(
+            graph_release_id="bundle-1",
+            graph_run_id="run-1",
+            bundle_checksum="bundle-1",
+            graph_name="living_graph",
+            is_current=True,
+        )
+
+    def resolve_selected_corpus_id(
+        self,
+        *,
+        graph_run_id: str,
+        selected_paper_id: str | None,
+        selected_node_id: str | None,
+    ) -> int | None:
+        assert graph_run_id == "run-1"
+        assert selected_paper_id == "seed-paper"
+        assert selected_node_id == "seed-paper"
+        return 11
+
+    def search_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        limit: int,
+    ) -> list[PaperEvidenceHit]:
+        assert graph_run_id == "run-1"
         assert query == "melatonin delirium"
         assert limit == 6
         return [
@@ -147,8 +177,15 @@ class FakeRepository:
             ]
         }
 
-    def fetch_semantic_neighbors(self, *, selected_paper_id: str, limit: int = 6):
-        assert selected_paper_id == "seed-paper"
+    def fetch_semantic_neighbors(
+        self,
+        *,
+        graph_run_id: str,
+        selected_corpus_id: int,
+        limit: int = 6,
+    ):
+        assert graph_run_id == "run-1"
+        assert selected_corpus_id == 11
         return [
             GraphSignal(
                 corpus_id=33,
@@ -180,7 +217,9 @@ def test_rag_service_returns_bundles_graph_signals_and_answer():
     response = service.search(request)
 
     assert response.query == "melatonin delirium"
-    assert response.graph_context.graph_release_id == "release-1"
+    assert response.graph_context.graph_release_id == "bundle-1"
+    assert response.graph_context.graph_run_id == "run-1"
+    assert response.graph_context.bundle_checksum == "bundle-1"
     assert response.graph_context.selected_paper_id == "seed-paper"
     assert response.answer_model == "baseline-extractive-v1"
     assert len(response.evidence_bundles) == 2

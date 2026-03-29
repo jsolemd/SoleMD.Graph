@@ -14,6 +14,7 @@ from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
     EvidenceBundle,
+    GraphRelease,
     GraphSignal,
     PaperEvidenceHit,
     PaperReferenceRecord,
@@ -89,10 +90,15 @@ class RagService:
 
     def search(self, request: RagSearchRequest) -> RagSearchResponse:
         started = perf_counter()
+        release = self._repository.resolve_graph_release(request.graph_release_id)
         query = _build_query(request)
 
         paper_hits = (
-            self._repository.search_papers(query.normalized_query, limit=query.rerank_topn)
+            self._repository.search_papers(
+                release.graph_run_id,
+                query.normalized_query,
+                limit=query.rerank_topn,
+            )
             if query.use_lexical
             else []
         )
@@ -122,12 +128,18 @@ class RagService:
 
         references = self._repository.fetch_references(top_corpus_ids)
         assets = self._repository.fetch_assets(top_corpus_ids)
+        selected_corpus_id = self._repository.resolve_selected_corpus_id(
+            graph_run_id=release.graph_run_id,
+            selected_paper_id=query.selected_paper_id,
+            selected_node_id=query.selected_node_id,
+        )
         semantic_neighbors = (
             self._repository.fetch_semantic_neighbors(
-                selected_paper_id=query.selected_paper_id,
+                graph_run_id=release.graph_run_id,
+                selected_corpus_id=selected_corpus_id,
                 limit=query.k,
             )
-            if query.selected_paper_id
+            if selected_corpus_id is not None
             else []
         )
 
@@ -233,6 +245,7 @@ class RagService:
             duration_ms=(perf_counter() - started) * 1000,
             retrieval_version=DEFAULT_RETRIEVAL_VERSION,
             query=query,
+            graph_release=release,
             bundles=bundles,
             graph_signals=graph_signals,
             channels=channels,
@@ -254,7 +267,11 @@ def serialize_search_result(result: RagSearchResult) -> RagSearchResponse:
                 retrieval_version=result.retrieval_version,
             ).model_dump(),
             "graph_context": GraphContext(
-                graph_release_id=result.query.graph_release_id,
+                graph_release_id=result.graph_release.graph_release_id,
+                graph_run_id=result.graph_release.graph_run_id,
+                bundle_checksum=result.graph_release.bundle_checksum,
+                graph_name=result.graph_release.graph_name,
+                is_current=result.graph_release.is_current,
                 selected_layer_key=result.query.selected_layer_key,
                 selected_node_id=result.query.selected_node_id,
                 selected_paper_id=result.query.selected_paper_id,
