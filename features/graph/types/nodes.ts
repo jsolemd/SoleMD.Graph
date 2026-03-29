@@ -49,7 +49,8 @@ export interface GraphNodeBase {
   aliasQualityScore: number | null
   aliasSource: string | null
   nodeRole: 'primary' | 'overlay'
-  isDefaultVisible: boolean
+  isInBase: boolean
+  baseRank: number | null
   payloadJson: string | null
   textAvailability: string | null
   isOpenAccess: boolean | null

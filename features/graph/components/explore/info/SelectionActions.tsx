@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Group } from "@mantine/core";
+import { Button, Group, Stack } from "@mantine/core";
 import { useGraphCamera } from "@/features/graph/cosmograph";
 import type { InfoScope } from "@/features/graph/hooks/use-info-stats";
 import { useDashboardStore } from "@/features/graph/stores";
@@ -12,9 +12,14 @@ import { PANEL_ACCENT } from "../../panels/PanelShell";
 interface SelectionActionsProps {
   scope: InfoScope;
   queries?: GraphBundleQueries;
+  overlayCount?: number;
 }
 
-export function SelectionActions({ scope, queries }: SelectionActionsProps) {
+export function SelectionActions({
+  scope,
+  queries,
+  overlayCount = 0,
+}: SelectionActionsProps) {
   const setTableOpen = useDashboardStore((s) => s.setTableOpen);
   const setTableView = useDashboardStore((s) => s.setTableView);
   const selectedPointIndices = useDashboardStore(
@@ -31,6 +36,18 @@ export function SelectionActions({ scope, queries }: SelectionActionsProps) {
   const isMapLayer = getLayerConfig(activeLayer).rendererType === "maplibre";
   const { fitView, fitViewByIndices } = useGraphCamera();
   const [isResolvingCurrentScope, setIsResolvingCurrentScope] = useState(false);
+  const [isActivatingOverlay, setIsActivatingOverlay] = useState(false);
+  const [isClearingOverlay, setIsClearingOverlay] = useState(false);
+
+  const hasCurrentSubset =
+    Boolean(currentPointScopeSql && currentPointScopeSql.trim().length > 0) ||
+    Boolean(currentPointIndices && currentPointIndices.length > 0);
+  const canActivateOverlay =
+    !isMapLayer &&
+    activeLayer !== "geo" &&
+    Boolean(queries) &&
+    ((scope === "selected" && selectedPointIndices.length > 0) ||
+      (scope === "current" && hasCurrentSubset));
 
   const handleOpenTable = () => {
     setTableOpen(true);
@@ -76,25 +93,84 @@ export function SelectionActions({ scope, queries }: SelectionActionsProps) {
     fitView(0, 0.1);
   };
 
+  const handleActivateOverlay = async () => {
+    if (!queries || activeLayer === "geo" || !canActivateOverlay) {
+      return;
+    }
+
+    setIsActivatingOverlay(true);
+    try {
+      await queries.activateOverlay({
+        kind: "cluster-neighborhood",
+        layer: activeLayer,
+        scope: scope === "selected" ? "selected" : "current",
+        currentPointIndices,
+        currentPointScopeSql,
+        selectedPointIndices,
+      });
+    } finally {
+      setIsActivatingOverlay(false);
+    }
+  };
+
+  const handleClearOverlay = async () => {
+    if (!queries || overlayCount === 0) {
+      return;
+    }
+
+    setIsClearingOverlay(true);
+    try {
+      await queries.clearOverlay();
+    } finally {
+      setIsClearingOverlay(false);
+    }
+  };
+
   return (
-    <Group grow>
-      <Button
-        size="compact-xs"
-        variant="light"
-        color={PANEL_ACCENT}
-        onClick={handleOpenTable}
-      >
-        Open in table
-      </Button>
-      <Button
-        size="compact-xs"
-        variant="subtle"
-        color={PANEL_ACCENT}
-        loading={isResolvingCurrentScope}
-        onClick={handleFitSelection}
-      >
-        Fit scope
-      </Button>
-    </Group>
+    <Stack gap="xs">
+      <Group grow>
+        <Button
+          size="compact-xs"
+          variant="light"
+          color={PANEL_ACCENT}
+          onClick={handleOpenTable}
+        >
+          Open in table
+        </Button>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color={PANEL_ACCENT}
+          loading={isResolvingCurrentScope}
+          onClick={handleFitSelection}
+        >
+          Fit scope
+        </Button>
+      </Group>
+      {!isMapLayer && (
+        <Group grow>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color={PANEL_ACCENT}
+            loading={isActivatingOverlay}
+            disabled={!canActivateOverlay}
+            onClick={handleActivateOverlay}
+          >
+            Expand overlay
+          </Button>
+          <Button
+            size="compact-xs"
+            variant="subtle"
+            color={PANEL_ACCENT}
+            loading={isClearingOverlay}
+            disabled={overlayCount === 0}
+            onClick={handleClearOverlay}
+          >
+            {overlayCount > 0 ? `Clear overlay (${overlayCount.toLocaleString()})` : "Clear overlay"}
+          </Button>
+        </Group>
+      )}
+    </Stack>
   );
 }

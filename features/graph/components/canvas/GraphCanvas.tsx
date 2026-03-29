@@ -60,5 +60,5 @@ export function GraphCanvas({
     return <MapCanvas data={data} />;
   }
 
-  return <CosmographRenderer canvas={canvas} data={data} queries={queries} />;
+  return <CosmographRenderer canvas={canvas} queries={queries} />;
 }

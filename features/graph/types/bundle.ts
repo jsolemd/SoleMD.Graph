@@ -17,19 +17,22 @@ export interface GraphBundleTableManifest {
 }
 
 export interface GraphBundleContractFileSet {
-  corpus_points?: string
-  corpus_clusters?: string
-  corpus_documents?: string
-  corpus_cluster_exemplars?: string
-  corpus_links?: string
+  base_points?: string
+  base_clusters?: string
+  universe_points?: string
+  paper_documents?: string
+  cluster_exemplars?: string
+  universe_links?: string
   manifest?: string
 }
 
 export interface GraphBundleArtifactSet {
-  hot: string[]
-  warm: string[]
-  cold: string[]
+  base: string[]
+  universe: string[]
+  evidence: string[]
 }
+
+export type GraphBundleProfile = 'base' | 'full'
 
 export interface GraphBundleContract {
   artifactSets: GraphBundleArtifactSet
@@ -38,7 +41,7 @@ export interface GraphBundleContract {
 
 export interface GraphBundleManifest {
   bundleFormat: string
-  bundleProfile: string
+  bundleProfile: GraphBundleProfile
   bundleVersion: string
   contract: GraphBundleContract
   createdAt: string | null

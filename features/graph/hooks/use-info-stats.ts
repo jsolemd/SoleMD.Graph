@@ -18,6 +18,10 @@ export interface InfoStats {
   totalCount: number
   /** Scoped count — selection or full dataset. */
   scopedCount: number
+  /** Count of scoped nodes that belong to the stable base scaffold. */
+  baseCount: number
+  /** Count of scoped nodes currently promoted as overlay. */
+  overlayCount: number
   /** Current info-panel scope. */
   scope: InfoScope
   /** Whether we're showing a subset rather than the full dataset. */
@@ -51,6 +55,8 @@ export function computeInfoStats(
   const isSubset = scopedNodes.length < totalCount
   const paperIds = new Set<string>()
   const clusterCounts = new Map<number, { label: string; count: number }>()
+  let baseCount = 0
+  let overlayCount = 0
   let noiseNodes = 0
   let yearMin = Infinity
   let yearMax = -Infinity
@@ -59,6 +65,12 @@ export function computeInfoStats(
   for (const n of scopedNodes) {
     if (n.paperId) {
       paperIds.add(n.paperId)
+    }
+
+    if (n.nodeRole === 'overlay') {
+      overlayCount++
+    } else {
+      baseCount++
     }
 
     const existing = clusterCounts.get(n.clusterId)
@@ -96,6 +108,8 @@ export function computeInfoStats(
   return {
     totalCount,
     scopedCount: scopedNodes.length,
+    baseCount,
+    overlayCount,
     scope,
     isSubset,
     hasSelection,

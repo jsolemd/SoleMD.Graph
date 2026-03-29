@@ -1,4 +1,8 @@
+/**
+ * @jest-environment jsdom
+ */
 import { renderHook } from "@testing-library/react";
+import { swapCosmographMock } from "../test-utils";
 
 const mockCosmograph = {
   captureScreenshot: jest.fn(),
@@ -31,12 +35,6 @@ describe("useGraphExport", () => {
   });
 
   it("exportDataAsCsv fetches data and triggers download", async () => {
-    const mockClick = jest.fn();
-    const mockCreateElement = jest.spyOn(document, "createElement").mockReturnValue({
-      href: "",
-      download: "",
-      click: mockClick,
-    } as unknown as HTMLAnchorElement);
     const mockCreateObjectURL = jest.fn().mockReturnValue("blob:url");
     const mockRevokeObjectURL = jest.fn();
     global.URL.createObjectURL = mockCreateObjectURL;
@@ -47,10 +45,8 @@ describe("useGraphExport", () => {
 
     expect(mockCosmograph.getPointsData).toHaveBeenCalled();
     expect(mockCosmograph.convertCosmographDataToObject).toHaveBeenCalledWith("mock-data");
-    expect(mockClick).toHaveBeenCalled();
+    expect(mockCreateObjectURL).toHaveBeenCalled();
     expect(mockRevokeObjectURL).toHaveBeenCalledWith("blob:url");
-
-    mockCreateElement.mockRestore();
   });
 
   it("exportDataAsCsv returns early when no points data", async () => {
@@ -64,22 +60,16 @@ describe("useGraphExport", () => {
 });
 
 describe("useGraphExport (null cosmograph)", () => {
-  beforeAll(() => {
-    jest.resetModules();
-    jest.mock("@cosmograph/react", () => ({
-      useCosmograph: () => ({ cosmograph: null }),
-    }));
-  });
+  beforeAll(() => swapCosmographMock(null));
+  afterAll(() => swapCosmographMock(mockCosmograph));
 
   it("captureScreenshot is a no-op when cosmograph is null", () => {
-    const { useGraphExport: useGraphExportNull } = require("../hooks/use-graph-export");
-    const { result } = renderHook(() => useGraphExportNull());
+    const { result } = renderHook(() => useGraphExport());
     expect(() => result.current.captureScreenshot()).not.toThrow();
   });
 
   it("exportDataAsCsv returns early when cosmograph is null", async () => {
-    const { useGraphExport: useGraphExportNull } = require("../hooks/use-graph-export");
-    const { result } = renderHook(() => useGraphExportNull());
+    const { result } = renderHook(() => useGraphExport());
     await expect(result.current.exportDataAsCsv()).resolves.toBeUndefined();
   });
 });

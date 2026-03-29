@@ -66,8 +66,17 @@ function StatCard({
 }
 
 export function OverviewGrid({ info, layer }: OverviewGridProps) {
-  const { scopedCount, totalCount, isSubset, papers, clusters, noise, yearRange } =
-    info;
+  const {
+    scopedCount,
+    totalCount,
+    baseCount,
+    overlayCount,
+    isSubset,
+    papers,
+    clusters,
+    noise,
+    yearRange,
+  } = info;
 
   const isPaper = layer === "paper";
 
@@ -83,6 +92,11 @@ export function OverviewGrid({ info, layer }: OverviewGridProps) {
         proportion={
           isSubset && totalCount > 0 ? scopedCount / totalCount : undefined
         }
+      />
+      <StatCard
+        label="Base"
+        value={formatNumber(baseCount)}
+        proportion={totalCount > 0 ? baseCount / totalCount : undefined}
       />
       {isPaper ? (
         <StatCard label="Noise" value={formatNumber(noise)} />
@@ -100,6 +114,29 @@ export function OverviewGrid({ info, layer }: OverviewGridProps) {
             : "—"
         }
       />
+      <div
+        className="col-span-2 rounded-lg px-2.5 py-1.5"
+        style={{
+          backgroundColor: "var(--graph-panel-input-bg)",
+          border: "1px solid var(--graph-panel-border)",
+        }}
+      >
+        <Text
+          fw={600}
+          style={{
+            ...panelTextMutedStyle,
+            letterSpacing: "0.05em",
+            textTransform: "uppercase",
+            fontSize: "0.55rem",
+            lineHeight: 1,
+          }}
+        >
+          Overlay
+        </Text>
+        <Text mt={1} size="xs" fw={600} style={panelTextStyle}>
+          {formatNumber(overlayCount)}
+        </Text>
+      </div>
     </div>
   );
 }

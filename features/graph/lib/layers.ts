@@ -50,8 +50,8 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     key: 'chunk',
     label: 'Corpus',
     rendererType: 'cosmograph',
-    pointsTable: 'graph_points_web',
-    linksTable: 'corpus_links_web',
+    pointsTable: 'active_points_web',
+    linksTable: 'active_links_web',
     hasLinks: true,
     linkSourceBy: LINK_COLUMNS.sourceBy,
     linkSourceIndexBy: LINK_COLUMNS.sourceIndexBy,
@@ -62,7 +62,7 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     defaultSizeColumn: 'paperReferenceCount',
     defaultSizeStrategy: 'auto',
     pointSizeRange: [1.5, 5],
-    requiredTable: 'corpus_points',
+    requiredTable: 'base_points',
     defaultInfoWidgets: [
       { column: 'journal', kind: 'facet-summary', label: 'Journals' },
       { column: 'semanticGroups', kind: 'facet-summary', label: 'Entity groups' },
@@ -88,8 +88,8 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     key: 'paper',
     label: 'Papers',
     rendererType: 'cosmograph',
-    pointsTable: 'paper_points_web',
-    linksTable: 'paper_links',
+    pointsTable: 'active_paper_points_web',
+    linksTable: 'active_paper_links_web',
     hasLinks: true,
     linkSourceBy: LINK_COLUMNS.sourceBy,
     linkSourceIndexBy: LINK_COLUMNS.sourceIndexBy,
@@ -102,7 +102,7 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     pointSizeRange: [2, 8],
     // Paper nodes are derived from corpus data — the paper layer is available
     // whenever the corpus bundle includes paper-kind nodes.
-    requiredTable: 'corpus_points',
+    requiredTable: 'base_points',
     defaultInfoWidgets: [
       { column: 'journal', kind: 'facet-summary', label: 'Journals' },
     ],

@@ -20,7 +20,7 @@ describe('getColumnsForLayer', () => {
     const cols = getColumnsForLayer('paper')
     expect(cols).toBe(ALL_PAPER_DATA_COLUMNS)
     expect(cols.some((c) => c.key === 'paperReferenceCount')).toBe(true)
-    expect(cols.some((c) => c.key === 'paperFigureCount')).toBe(true)
+    expect(cols.some((c) => c.key === 'paperRelationCount')).toBe(true)
     // Paper layer should not have chunk-specific columns
     expect(cols.some((c) => c.key === 'sectionCanonical')).toBe(false)
     expect(cols.some((c) => c.key === 'tokenCount')).toBe(false)

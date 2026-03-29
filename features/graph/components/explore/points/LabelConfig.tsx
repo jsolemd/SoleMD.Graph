@@ -11,8 +11,19 @@ import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } 
 export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
   const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
 
+  // Only show columns that make sense as point labels — short text or
+  // categorical identifiers, not numeric measures or long-form content.
+  const LABEL_COLUMN_KEYS = new Set([
+    'displayLabel', 'clusterLabel', 'paperTitle', 'citekey', 'journal',
+    'category', 'canonicalName', 'topEntities', 'id',
+    // Geo layer
+    'institution', 'country', 'city',
+  ]);
   const labelColumnOptions = useMemo(
-    () => layerColumns.map((c) => ({ value: c.key, label: c.label })),
+    () => layerColumns
+      .filter((c) => LABEL_COLUMN_KEYS.has(c.key))
+      .map((c) => ({ value: c.key, label: c.label })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [layerColumns]
   );
 

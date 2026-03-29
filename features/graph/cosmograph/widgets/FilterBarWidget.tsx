@@ -9,8 +9,8 @@ export function FilterBarWidget({ column }: { column: string }) {
       id={`filter:${column}`}
       accessor={column}
       selectOnClick
-      preserveSelectionOnUnmount
       highlightSelectedData
+      preserveSelectionOnUnmount
       showSearch
       showSortingBlock
       showTotalWhenFiltered

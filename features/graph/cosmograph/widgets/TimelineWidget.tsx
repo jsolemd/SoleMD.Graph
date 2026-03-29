@@ -47,9 +47,9 @@ export function TimelineWidget({ column, initialSelection, onSelection }: Timeli
       <CosmographTimeline
         id={`timeline:${column}`}
         accessor={column}
+        highlightSelectedData
         initialSelection={initialSelection}
         preserveSelectionOnUnmount
-        highlightSelectedData
         useQuantiles
         useSymlogScale
         formatter={yearFormatter}

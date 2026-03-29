@@ -1,4 +1,8 @@
+/**
+ * @jest-environment jsdom
+ */
 import { renderHook } from "@testing-library/react";
+import { swapCosmographMock } from "../test-utils";
 
 const mockPointsSelection = { reset: jest.fn() };
 const mockLinksSelection = { reset: jest.fn() };
@@ -63,22 +67,16 @@ describe("useGraphSelection", () => {
 });
 
 describe("useGraphSelection (null cosmograph)", () => {
-  beforeAll(() => {
-    jest.resetModules();
-    jest.mock("@cosmograph/react", () => ({
-      useCosmograph: () => ({ cosmograph: null }),
-    }));
-  });
+  beforeAll(() => swapCosmographMock(null));
+  afterAll(() => swapCosmographMock(mockCosmograph));
 
   it("selectPoint is a no-op when cosmograph is null", () => {
-    const { useGraphSelection: useGraphSelectionNull } = require("../hooks/use-graph-selection");
-    const { result } = renderHook(() => useGraphSelectionNull());
+    const { result } = renderHook(() => useGraphSelection());
     expect(() => result.current.selectPoint(0)).not.toThrow();
   });
 
   it("getActiveSelectionSourceId returns null when cosmograph is null", () => {
-    const { useGraphSelection: useGraphSelectionNull } = require("../hooks/use-graph-selection");
-    const { result } = renderHook(() => useGraphSelectionNull());
+    const { result } = renderHook(() => useGraphSelection());
     expect(result.current.getActiveSelectionSourceId()).toBeNull();
   });
 });

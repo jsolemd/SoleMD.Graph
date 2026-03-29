@@ -125,7 +125,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   pointColorStrategy: 'direct',
   pointSizeColumn: 'paperReferenceCount',
   pointSizeRange: [1.5, 5],
-  pointLabelColumn: 'clusterLabel',
+  pointLabelColumn: 'displayLabel',
   showPointLabels: true,
   showDynamicLabels: true,
   positionXColumn: 'x',
@@ -226,9 +226,9 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         infoScopeMode: 'current',
         pointLabelColumn: (() => {
           const layerColumns = getColumnsForLayer(layer)
-          return layerColumns.some(c => c.key === 'clusterLabel')
-            ? 'clusterLabel' as DataColumnKey
-            : (layerColumns[0]?.key ?? 'clusterLabel') as DataColumnKey
+          return layerColumns.some(c => c.key === 'displayLabel')
+            ? 'displayLabel' as DataColumnKey
+            : (layerColumns[0]?.key ?? 'displayLabel') as DataColumnKey
         })(),
         filterColumns: getDefaultFiltersForLayer(layer),
         infoWidgets: config.defaultInfoWidgets,

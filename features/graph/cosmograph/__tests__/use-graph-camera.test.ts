@@ -1,4 +1,8 @@
+/**
+ * @jest-environment jsdom
+ */
 import { renderHook } from "@testing-library/react";
+import { swapCosmographMock } from "../test-utils";
 
 const mockCosmograph = {
   fitView: jest.fn(),
@@ -62,23 +66,16 @@ describe("useGraphCamera", () => {
 });
 
 describe("useGraphCamera (null cosmograph)", () => {
-  beforeAll(() => {
-    jest.resetModules();
-    jest.mock("@cosmograph/react", () => ({
-      useCosmograph: () => ({ cosmograph: null }),
-    }));
-  });
+  beforeAll(() => swapCosmographMock(null));
+  afterAll(() => swapCosmographMock(mockCosmograph));
 
   it("fitView is a no-op when cosmograph is null", () => {
-    // Re-import after mock reset
-    const { useGraphCamera: useGraphCameraNull } = require("../hooks/use-graph-camera");
-    const { result } = renderHook(() => useGraphCameraNull());
+    const { result } = renderHook(() => useGraphCamera());
     expect(() => result.current.fitView(300)).not.toThrow();
   });
 
   it("getZoomLevel returns 1 when cosmograph is null", () => {
-    const { useGraphCamera: useGraphCameraNull } = require("../hooks/use-graph-camera");
-    const { result } = renderHook(() => useGraphCameraNull());
+    const { result } = renderHook(() => useGraphCamera());
     expect(result.current.getZoomLevel()).toBe(1);
   });
 });

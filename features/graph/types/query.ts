@@ -1,4 +1,4 @@
-import type { GraphNode, AuthorGeoRow } from './nodes'
+import type { ChunkNode, GraphNode, AuthorGeoRow, PaperNode } from './nodes'
 import type { GraphClusterDetail } from './detail'
 import type { PaperDocument } from './detail'
 import type { GraphSelectionDetail } from './detail'
@@ -31,6 +31,8 @@ export interface GraphInfoClusterStat {
 export interface GraphInfoSummary {
   totalCount: number
   scopedCount: number
+  baseCount: number
+  overlayCount: number
   scope: GraphInfoScope
   isSubset: boolean
   hasSelection: boolean
@@ -61,6 +63,31 @@ export interface GraphSearchResult {
   subtitle: string | null
 }
 
+export type OverlayActivationScope = 'current' | 'selected'
+export type OverlayActivationKind = 'cluster-neighborhood'
+
+export interface OverlayActivationRequest {
+  kind: OverlayActivationKind
+  layer: Exclude<MapLayer, 'geo'>
+  scope: OverlayActivationScope
+  currentPointIndices?: number[] | null
+  currentPointScopeSql?: string | null
+  selectedPointIndices?: number[]
+  maxPoints?: number
+  maxClusters?: number
+  perClusterLimit?: number
+}
+
+export interface OverlayActivationResult {
+  kind: OverlayActivationKind
+  layer: Exclude<MapLayer, 'geo'>
+  scope: OverlayActivationScope
+  overlayCount: number
+  addedCount: number
+  seedCount: number
+  clusterCount: number
+}
+
 export interface GraphVisibilityBudget {
   seedIndex: number
   clusterId: number | null
@@ -80,12 +107,18 @@ export interface GraphScopeQueryArgs {
 }
 
 export interface GraphBundleQueries {
+  setOverlayPointIds: (pointIds: string[]) => Promise<{ overlayCount: number }>
+  clearOverlay: () => Promise<{ overlayCount: number }>
+  activateOverlay: (args: OverlayActivationRequest) => Promise<OverlayActivationResult>
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getInstitutionAuthors: (institutionKey: string) => Promise<AuthorGeoRow[]>
   /** Query all institutions an author has been affiliated with. Uses ORCID when available, falls back to name. */
   getAuthorInstitutions: (name: string, orcid: string | null) => Promise<AuthorGeoRow[]>
   getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
+  getPaperNodesByPaperIds: (paperIds: string[]) => Promise<Record<string, PaperNode>>
+  getUniversePointIdsByPaperIds: (paperIds: string[]) => Promise<Record<string, string>>
+  getChunkNodesByChunkIds: (chunkIds: string[]) => Promise<Record<string, ChunkNode>>
   resolvePointSelection: (
     layer: MapLayer,
     selector: { id?: string; index?: number }

@@ -8,8 +8,8 @@ export function FilterHistogramWidget({ column }: { column: string }) {
     <CosmographHistogram
       id={`filter:${column}`}
       accessor={column}
-      preserveSelectionOnUnmount
       highlightSelectedData
+      preserveSelectionOnUnmount
       useQuantiles
       style={widgetStyle}
     />
