@@ -115,10 +115,10 @@ function mapEngineRagResponse(
 }
 
 function mapEvidenceBundleToResult(bundle: EngineEvidenceBundle): GraphRagResult {
-  const paperId = bundle.paper.paper_id ?? String(bundle.paper.corpus_id)
+  const paperId = bundle.paper.paper_id ?? `corpus:${bundle.paper.corpus_id}`
 
   return {
-    chunk_id: `paper:${bundle.paper.corpus_id}`,
+    chunk_id: paperId,
     paper_id: paperId,
     citekey: null,
     doi: bundle.paper.doi,
@@ -145,7 +145,7 @@ function mapEvidenceBundleToResult(bundle: EngineEvidenceBundle): GraphRagResult
 }
 
 function mapEvidenceBundle(bundle: EngineEvidenceBundle): GraphEvidenceBundle {
-  const paperId = bundle.paper.paper_id ?? String(bundle.paper.corpus_id)
+  const paperId = bundle.paper.paper_id ?? `corpus:${bundle.paper.corpus_id}`
 
   return {
     paper_id: paperId,

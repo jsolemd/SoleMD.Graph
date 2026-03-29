@@ -270,7 +270,6 @@ Relevant live code surfaces:
 - `features/graph/lib/detail-service.ts` already defines the frontend contracts that a real evidence API must satisfy
 - `features/graph/components/panels/PromptBox.tsx` already asks for generated answers
 - `features/graph/duckdb/session.ts` already provides `getPaperNodesByPaperIds(...)` for paper-id to point-index resolution
-- `features/graph/stores/slices/selection-slice.ts` already carries `highlightedPointIndices`
 - `lib/db/index.ts` and `lib/db/schema.ts` show the current frontend use of Drizzle for graph metadata reads, but that is current scaffolding rather than a target architectural dependency
 
 The architecture work therefore needs to close a real gap between the docs and
@@ -731,13 +730,13 @@ The frontend graph path should be:
    active/query aliases, not through JS-hydrated point payloads
 3. active hits provide point indices for immediate graph-lighting
 4. non-active hits must flow through the overlay activation seam so they become active canvas points instead of remaining passive evidence rows
-5. the UI can still write `highlightedPointIndices` for secondary emphasis, but overlay promotion is the native path for bringing new evidence into view
+5. the UI should not reintroduce a client-side highlighted-index mirror; overlay promotion and DuckDB-native scope resolution are the native path for bringing new evidence into view
 
 This preserves separation of concerns:
 
 - engine owns evidence semantics
 - DuckDB session owns bundle-local id resolution and overlay promotion
-- Zustand and Cosmograph own highlight state and rendering once the relevant points are active
+- Zustand and Cosmograph own selection intent and rendering once the relevant points are active
 
 The engine response should therefore include typed graph signals, not just a
 flat list of highlighted ids.
@@ -1204,7 +1203,7 @@ Deliverables:
 - add graph highlight hints to evidence responses
 - resolve returned paper ids through DuckDB against the active canvas first
 - add the universe-resolution path needed to promote non-active evidence papers into overlay/active canvas state
-- write `highlightedPointIndices` only after active resolution or overlay promotion has established concrete point indices
+- keep evidence-driven graph sync on DuckDB alias resolution and overlay producer state, not a JS highlighted-index mirror
 - preserve or replace the current detail-service cache intentionally
 - wire completed answers first, then streaming answers
 
