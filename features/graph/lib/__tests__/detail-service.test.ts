@@ -3,15 +3,15 @@ import {
   fetchGraphNodeDetail,
   fetchGraphRagQuery,
   refreshGraphAssetUrl,
-} from './detail-service'
+} from '../detail-service'
 import {
   getGraphNodeDetail,
   getGraphAssetUrl,
   getGraphRagQuery,
-} from '../../../app/actions/graph'
-import type { GraphBundle, GraphNode } from '../types'
+} from '../../../../app/actions/graph'
+import type { GraphBundle, GraphNode } from '../../types'
 
-jest.mock('../../../app/actions/graph', () => ({
+jest.mock('../../../../app/actions/graph', () => ({
   getGraphNodeDetail: jest.fn(),
   getGraphAssetUrl: jest.fn(),
   getGraphNeighborhood: jest.fn(),

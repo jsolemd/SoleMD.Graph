@@ -4,7 +4,7 @@ import {
   findChunkNodeByChunkId,
   findPaperNodeByPaperId,
   getPreferredPaperPreview,
-} from './helpers'
+} from '../helpers'
 
 describe('detail panel helpers', () => {
   it('prefers a narrative display preview for paper preview text', () => {

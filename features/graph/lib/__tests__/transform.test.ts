@@ -1,5 +1,5 @@
-import { buildGraphData, buildPaperNodes, buildPaperStats } from './transform'
-import type { GraphPointRow } from './transform'
+import { buildGraphData, buildPaperNodes, buildPaperStats } from '../transform'
+import type { GraphPointRow } from '../transform'
 import type { ClusterInfo } from '@/features/graph/types'
 
 /** Build a minimal GraphPointRow with sensible defaults. */

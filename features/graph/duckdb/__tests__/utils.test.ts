@@ -1,4 +1,4 @@
-import { validateTableName, buildPlaceholderList, createBoundedCache } from './utils'
+import { validateTableName, buildPlaceholderList, createBoundedCache } from '../utils'
 
 describe('validateTableName', () => {
   it('accepts lowercase identifiers', () => {

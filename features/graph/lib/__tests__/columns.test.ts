@@ -6,7 +6,7 @@ import {
   PAPER_TABLE_COLUMNS,
   ALL_DATA_COLUMNS,
   ALL_PAPER_DATA_COLUMNS,
-} from './columns'
+} from '../columns'
 
 describe('getColumnsForLayer', () => {
   it('returns chunk data columns for chunk layer', () => {

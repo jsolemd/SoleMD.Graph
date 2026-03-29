@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import { renderHook } from "@testing-library/react";
-import { swapCosmographMock } from "../test-utils";
+import { swapCosmographMock } from "./test-utils";
 
 const mockPointsSelection = { reset: jest.fn() };
 const mockLinksSelection = { reset: jest.fn() };

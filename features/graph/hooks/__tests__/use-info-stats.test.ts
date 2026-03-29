@@ -1,4 +1,4 @@
-import { computeInfoStats } from './use-info-stats'
+import { computeInfoStats } from '../use-info-stats'
 import type { ChunkNode, GraphNode } from '@/features/graph/types'
 
 function makeChunkNode(overrides: Partial<ChunkNode> = {}): ChunkNode {

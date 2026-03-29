@@ -14,7 +14,7 @@ import {
   buildVisibilityScopeSql,
   createSelectionSource,
   isVisibilitySelectionSourceId,
-} from './cosmograph-selection'
+} from '../cosmograph-selection'
 
 describe('visibility scope helpers', () => {
   it('treats filter clauses as visibility sources and emits scope SQL', () => {

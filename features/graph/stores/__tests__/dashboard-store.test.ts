@@ -4,7 +4,7 @@ import {
   selectLeftClearance,
   selectRightClearance,
   useDashboardStore,
-} from './dashboard-store'
+} from '../dashboard-store'
 
 type DashboardState = ReturnType<typeof useDashboardStore.getState>
 

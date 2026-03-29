@@ -1,4 +1,4 @@
-import { buildIndexWhereClause, buildCurrentViewPredicate, sliceScopeIndices, buildScopedLayerPredicate } from './sql-helpers'
+import { buildIndexWhereClause, buildCurrentViewPredicate, sliceScopeIndices, buildScopedLayerPredicate } from '../sql-helpers'
 
 describe('buildIndexWhereClause', () => {
   it('returns false predicate for empty array', () => {

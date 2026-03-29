@@ -1,4 +1,4 @@
-import { buildReadOnlyQuery } from './queries'
+import { buildReadOnlyQuery } from '../queries'
 
 describe('buildReadOnlyQuery', () => {
   describe('accepts read-only statements', () => {
