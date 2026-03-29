@@ -1,163 +1,41 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { SegmentedControl, Stack, Text } from "@mantine/core";
+import { useDebouncedValue } from "@mantine/hooks";
 import { getClusterColor } from "@/features/graph/lib/colors";
-import { getActiveLayerData } from "@/features/graph/lib/info-widgets";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
-import {
-  useInfoStats,
-  type InfoScope,
-} from "@/features/graph/hooks/use-info-stats";
+import type { InfoScope } from "@/features/graph/hooks/use-info-stats";
 import { useDashboardStore } from "@/features/graph/stores";
-import type {
-  GraphBundleQueries,
-  GraphData,
-  GraphInfoSummary,
-} from "@/features/graph/types";
-import { PanelShell, panelTextDimStyle } from "../panels/PanelShell";
+import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
+import { PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
 import {
   ScopeIndicator,
   OverviewGrid,
   ClusterTable,
-  WidgetSlotRenderer,
   AddInsightButton,
   SearchSection,
   SelectionActions,
-} from "./info";
-import { QueryWidgetSlotRenderer } from "./info/QueryWidgetSlotRenderer";
+} from "../info";
+import { QueryWidgetSlotRenderer } from "../info/QueryWidgetSlotRenderer";
 
-function GeoInfoPanel({
-  data,
-  queries,
-}: {
-  data: GraphData
-  queries: GraphBundleQueries
-}) {
-  const setActivePanel = useDashboardStore((state) => state.setActivePanel);
-  const activeLayer = useDashboardStore((state) => state.activeLayer);
-  const currentPointIndices = useDashboardStore((state) => state.currentPointIndices);
-  const selectedPointIndices = useDashboardStore((state) => state.selectedPointIndices);
-  const activeSelectionSourceId = useDashboardStore(
-    (state) => state.activeSelectionSourceId,
-  );
-  const infoScopeMode = useDashboardStore((state) => state.infoScopeMode);
-  const setInfoScopeMode = useDashboardStore((state) => state.setInfoScopeMode);
-  const infoWidgets = useDashboardStore((state) => state.infoWidgets);
-
-  const { nodes: allNodes } = useMemo(
-    () => getActiveLayerData(data, activeLayer),
-    [data, activeLayer],
-  );
-
-  const hasSelection = selectedPointIndices.length > 0;
-  const scope: InfoScope =
-    infoScopeMode === "selected" && !hasSelection ? "current" : infoScopeMode;
-
-  useEffect(() => {
-    if (infoScopeMode === "selected" && !hasSelection) {
-      setInfoScopeMode("current");
-    }
-  }, [hasSelection, infoScopeMode, setInfoScopeMode]);
-
-  const scopedNodes = useMemo(() => {
-    if (scope === "selected") {
-      const selectedSet = new Set(selectedPointIndices);
-      return allNodes.filter((node) => selectedSet.has(node.index));
-    }
-
-    if (scope === "current" && currentPointIndices !== null) {
-      const currentSet = new Set(currentPointIndices);
-      return allNodes.filter((node) => currentSet.has(node.index));
-    }
-
-    return allNodes;
-  }, [allNodes, currentPointIndices, scope, selectedPointIndices]);
-
-  const info = useInfoStats(allNodes, scopedNodes, scope);
-  const colorTheme = useGraphColorTheme();
-  const clusterColors = useMemo(
-    () =>
-      Object.fromEntries(
-        info.topClusters.map((cluster) => [
-          cluster.clusterId,
-          getClusterColor(cluster.clusterId, colorTheme),
-        ]),
-      ),
-    [colorTheme, info.topClusters],
-  );
-
-  return (
-    <PanelShell
-      title="Info"
-      side="left"
-      width={320}
-      onClose={() => setActivePanel(null)}
-    >
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
-        <Stack gap="md">
-          <SegmentedControl
-            size="xs"
-            fullWidth
-            data={[
-              { label: "Current", value: "current" },
-              {
-                label: "Selected",
-                value: "selected",
-                disabled: !hasSelection,
-              },
-              { label: "Dataset", value: "dataset" },
-            ]}
-            value={scope}
-            onChange={(value) => setInfoScopeMode(value as typeof infoScopeMode)}
-          />
-
-          <ScopeIndicator
-            scopedCount={info.scopedCount}
-            totalCount={info.totalCount}
-            scope={info.scope}
-            isSubset={info.isSubset}
-            selectionSource={
-              info.scope === "selected" ? activeSelectionSourceId : null
-            }
-          />
-
-          <OverviewGrid info={info} layer={activeLayer} />
-
-          <ClusterTable
-            topClusters={info.topClusters}
-            clusterColors={clusterColors}
-            scope={info.scope}
-          />
-
-          {infoWidgets.map((slot) => (
-            <WidgetSlotRenderer
-              key={slot.column}
-              slot={slot}
-              scopedNodes={scopedNodes}
-              allNodes={allNodes}
-              scope={info.scope}
-            />
-          ))}
-
-          <AddInsightButton />
-          <SearchSection key={activeLayer} queries={queries} />
-          <SelectionActions scope={info.scope} queries={queries} />
-        </Stack>
-      </div>
-    </PanelShell>
-  );
+interface QueryDrivenInfoPanelProps {
+  queries: GraphBundleQueries;
+  overlayRevision: number;
+  overlayCount: number;
 }
 
-function QueryDrivenInfoPanel({
+export function QueryDrivenInfoPanel({
   queries,
-}: {
-  queries: GraphBundleQueries;
-}) {
+  overlayRevision,
+  overlayCount,
+}: QueryDrivenInfoPanelProps) {
   const setActivePanel = useDashboardStore((state) => state.setActivePanel);
   const activeLayer = useDashboardStore((state) => state.activeLayer);
   const currentPointIndices = useDashboardStore((state) => state.currentPointIndices);
   const currentPointScopeSql = useDashboardStore((state) => state.currentPointScopeSql);
+  const [debouncedCurrentPointScopeSql] = useDebouncedValue(currentPointScopeSql, 120);
+  const deferredCurrentPointScopeSql = useDeferredValue(debouncedCurrentPointScopeSql);
   const selectedPointIndices = useDashboardStore((state) => state.selectedPointIndices);
   const activeSelectionSourceId = useDashboardStore(
     (state) => state.activeSelectionSourceId,
@@ -186,17 +64,19 @@ function QueryDrivenInfoPanel({
       JSON.stringify({
         activeLayer,
         scope,
-        currentScopeSql: currentPointScopeSql,
+        currentScopeSql: deferredCurrentPointScopeSql,
         selectedCount: selectedPointIndices.length,
         selectedFirst: selectedPointIndices[0] ?? null,
         selectedLast:
           selectedPointIndices.length > 0
             ? selectedPointIndices[selectedPointIndices.length - 1]
             : null,
+        overlayRevision,
       }),
-    [activeLayer, currentPointScopeSql, scope, selectedPointIndices],
+    [activeLayer, deferredCurrentPointScopeSql, overlayRevision, scope, selectedPointIndices],
   );
-  const loading = lastResolvedKey !== requestKey;
+  const loading = info == null && lastResolvedKey !== requestKey;
+  const refreshing = info != null && lastResolvedKey !== requestKey;
 
   useEffect(() => {
     let cancelled = false;
@@ -206,7 +86,7 @@ function QueryDrivenInfoPanel({
         layer: activeLayer,
         scope,
         currentPointIndices,
-        currentPointScopeSql,
+        currentPointScopeSql: deferredCurrentPointScopeSql,
         selectedPointIndices,
       })
       .then((summary) => {
@@ -235,7 +115,7 @@ function QueryDrivenInfoPanel({
   }, [
     activeLayer,
     currentPointIndices,
-    currentPointScopeSql,
+    deferredCurrentPointScopeSql,
     queries,
     requestKey,
     scope,
@@ -288,6 +168,11 @@ function QueryDrivenInfoPanel({
             </Text>
           ) : info ? (
             <>
+              {refreshing && (
+                <Text size="xs" style={panelTextDimStyle}>
+                  Updating summaries…
+                </Text>
+              )}
               <ScopeIndicator
                 scopedCount={info.scopedCount}
                 totalCount={info.totalCount}
@@ -313,7 +198,7 @@ function QueryDrivenInfoPanel({
                   layer={activeLayer}
                   scope={info.scope}
                   currentPointIndices={currentPointIndices}
-                  currentPointScopeSql={currentPointScopeSql}
+                  currentPointScopeSql={deferredCurrentPointScopeSql}
                   selectedPointIndices={selectedPointIndices}
                   queries={queries}
                 />
@@ -321,30 +206,15 @@ function QueryDrivenInfoPanel({
 
               <AddInsightButton />
               <SearchSection key={activeLayer} queries={queries} />
-              <SelectionActions scope={info.scope} queries={queries} />
+              <SelectionActions
+                scope={info.scope}
+                queries={queries}
+                overlayCount={overlayCount}
+              />
             </>
           ) : null}
         </Stack>
       </div>
     </PanelShell>
   );
-}
-
-export function InfoPanel({
-  data,
-  queries,
-}: {
-  data: GraphData | null;
-  queries: GraphBundleQueries;
-}) {
-  const activeLayer = useDashboardStore((state) => state.activeLayer);
-
-  if (activeLayer === "geo") {
-    if (!data) {
-      return null;
-    }
-    return <GeoInfoPanel data={data} queries={queries} />;
-  }
-
-  return <QueryDrivenInfoPanel queries={queries} />;
 }

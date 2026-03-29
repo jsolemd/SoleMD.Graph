@@ -4,18 +4,14 @@ import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
-  Code,
-  Collapse,
   Group,
   Loader,
   Stack,
-  Table,
   Text,
   Textarea,
 } from "@mantine/core";
 import { Play, RotateCcw } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
-import { formatCellValue } from "@/features/graph/lib/helpers";
 import type {
   GraphBundle,
   GraphBundleQueries,
@@ -25,11 +21,11 @@ import {
   PANEL_ACCENT,
   PanelShell,
   panelErrorStyle,
-  panelTableHeaderStyle,
   panelTextStyle,
   panelTextMutedStyle,
   panelTextDimStyle,
-} from "../panels/PanelShell";
+} from "../../panels/PanelShell";
+import { QueryResult } from "./QueryResult";
 
 const DEFAULT_QUERY = `SELECT
   cluster_id,
@@ -47,7 +43,7 @@ const SAMPLE_QUERIES = [
   },
   {
     label: "Count Points",
-    sql: "SELECT count(*) AS point_count FROM graph_points",
+    sql: "SELECT count(*) AS point_count FROM active_points_web",
   },
   {
     label: "Top Clusters",
@@ -60,137 +56,10 @@ const SAMPLE_QUERIES = [
   paperTitle,
   clusterLabel,
   year
-FROM graph_points_web
+FROM active_points_web
 LIMIT 10`,
   },
 ] as const;
-
-function QueryResultTable({ result }: { result: GraphQueryResult }) {
-  if (result.columns.length === 0) {
-    return (
-      <Text size="xs" style={panelTextDimStyle}>
-        Query completed with no tabular output.
-      </Text>
-    );
-  }
-
-  return (
-    <Table.ScrollContainer
-      minWidth={200}
-      style={{
-        border: "1px solid var(--graph-panel-border)",
-        borderRadius: 12,
-        maxHeight: 320,
-        overflow: "auto",
-      }}
-    >
-      <Table
-        stickyHeader
-        style={{ fontSize: "0.75rem" }}
-        styles={{
-          table: { borderColor: "transparent" },
-          thead: { backgroundColor: "var(--graph-panel-bg)" },
-          th: {
-            backgroundColor: "var(--graph-panel-bg)",
-            borderColor: "var(--graph-panel-border)",
-          },
-          td: { borderColor: "var(--graph-panel-border)" },
-          tr: { backgroundColor: "transparent" },
-        }}
-      >
-        <Table.Thead>
-          <Table.Tr>
-            {result.columns.map((column) => (
-              <Table.Th
-                key={column}
-                style={panelTableHeaderStyle}
-              >
-                {column}
-              </Table.Th>
-            ))}
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {result.rows.map((row, index) => (
-            <Table.Tr key={index}>
-              {result.columns.map((column) => (
-                <Table.Td
-                  key={`${index}:${column}`}
-                  style={{
-                    ...panelTextDimStyle,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {formatCellValue(row[column], { nullLabel: "NULL" })}
-                </Table.Td>
-              ))}
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
-  );
-}
-
-function QueryResult({ result }: { result: GraphQueryResult }) {
-  const [showSql, setShowSql] = useState(false);
-
-  return (
-    <>
-      <Group justify="space-between" align="center">
-        <Text size="xs" fw={600} style={panelTextMutedStyle}>
-          Result
-        </Text>
-        <Badge
-          variant="light"
-          size="sm"
-          styles={{
-            root: {
-              backgroundColor: "var(--mode-accent-subtle)",
-              border: "1px solid var(--mode-accent-border)",
-              color: "var(--graph-panel-text)",
-            },
-          }}
-        >
-          {result.rowCount} rows in {result.durationMs.toFixed(1)} ms
-        </Badge>
-      </Group>
-
-      {result.appliedLimit != null && (
-        <Text style={panelTextDimStyle}>
-          SELECT/WITH queries are wrapped with LIMIT {result.appliedLimit} to
-          keep the browser responsive.
-        </Text>
-      )}
-
-      <Text
-        size="xs"
-        className="cursor-pointer"
-        style={{ color: "var(--mode-accent)" }}
-        onClick={() => setShowSql((v) => !v)}
-      >
-        {showSql ? "Hide executed SQL" : "Show executed SQL"}
-      </Text>
-      <Collapse in={showSql}>
-        <Code
-          block
-          style={{
-            backgroundColor: "var(--graph-panel-input-bg)",
-            border: "1px solid var(--graph-panel-border)",
-            color: "var(--graph-panel-text-dim)",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
-          {result.executedSql}
-        </Code>
-      </Collapse>
-
-      <QueryResultTable result={result} />
-    </>
-  );
-}
 
 export function QueryPanel({
   bundle,
@@ -206,7 +75,7 @@ export function QueryPanel({
   const [running, setRunning] = useState(false);
 
   const availableTables = useMemo(
-    () => ["graph_points_web", ...Object.keys(bundle.bundleManifest.tables).sort()],
+    () => ["active_points_web", "active_paper_points_web", ...Object.keys(bundle.bundleManifest.tables).sort()],
     [bundle.bundleManifest.tables]
   );
 
@@ -241,10 +110,7 @@ export function QueryPanel({
             Results stay local and never leave this device.
           </Text>
 
-          <Text
-            fw={600}
-            style={panelTextMutedStyle}
-          >
+          <Text fw={600} style={panelTextMutedStyle}>
             Available Relations
           </Text>
           <Group gap={6}>
@@ -266,10 +132,7 @@ export function QueryPanel({
             ))}
           </Group>
 
-          <Text
-            fw={600}
-            style={panelTextMutedStyle}
-          >
+          <Text fw={600} style={panelTextMutedStyle}>
             Quick Queries
           </Text>
           <Group gap={6}>
@@ -336,24 +199,20 @@ export function QueryPanel({
             </Group>
 
             <Text style={panelTextDimStyle}>
-              `graph_points_web` exposes the Cosmograph-ready camelCase view.
+              `active_points_web` is the live canvas view. `active_paper_points_web`
+              is the paper-layer projection of that same active set.
             </Text>
           </Group>
 
           {error && (
-            <div
-              className="rounded-xl p-3"
-              style={panelErrorStyle}
-            >
+            <div className="rounded-xl p-3" style={panelErrorStyle}>
               <Text size="xs" style={panelTextStyle}>
                 {error}
               </Text>
             </div>
           )}
 
-          {result && (
-            <QueryResult result={result} />
-          )}
+          {result && <QueryResult result={result} />}
         </Stack>
       </div>
     </PanelShell>

@@ -1,0 +1,168 @@
+"use client";
+
+import { useCallback, useMemo } from "react";
+import { Loader, Stack, Table, Text } from "@mantine/core";
+import { useGraphCamera, useGraphSelection } from "@/features/graph/cosmograph";
+import { useGraphStore } from "@/features/graph/stores";
+import { getTableColumnsForLayer, getColumnMetaForLayer } from "@/features/graph/lib/columns";
+import { formatCellValue } from "@/features/graph/lib/helpers";
+import { panelTableHeaderStyle, panelTextDimStyle } from "../../panels/PanelShell";
+import type { GraphNode, MapLayer } from "@/features/graph/types";
+
+interface DataTableBodyProps {
+  activeLayer: MapLayer;
+  pageRows: GraphNode[];
+  startIdx: number;
+  pageLoading: boolean;
+  pageRefreshing: boolean;
+  pageError: string | null;
+  selectedIndexSet: Set<number>;
+  highlightedIndexSet: Set<number>;
+  resolvedTableView: string;
+}
+
+export function DataTableBody({
+  activeLayer,
+  pageRows,
+  startIdx,
+  pageLoading,
+  pageRefreshing,
+  pageError,
+  selectedIndexSet,
+  highlightedIndexSet,
+  resolvedTableView,
+}: DataTableBodyProps) {
+  const selectedNode = useGraphStore((s) => s.selectedNode);
+  const selectNode = useGraphStore((s) => s.selectNode);
+  const { zoomToPoint } = useGraphCamera();
+  const { setFocusedPoint } = useGraphSelection();
+
+  const tableColumns = useMemo(() => getTableColumnsForLayer(activeLayer), [activeLayer]);
+
+  const handleRowClick = useCallback(
+    (node: GraphNode) => {
+      selectNode(node);
+      if (activeLayer !== "geo") {
+        setFocusedPoint(node.index);
+        zoomToPoint(node.index, 250);
+      }
+    },
+    [activeLayer, selectNode, setFocusedPoint, zoomToPoint]
+  );
+
+  if (pageLoading) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 py-6">
+        <Stack gap="xs" align="center">
+          <Loader size="sm" color="var(--brand-accent)" />
+          <Text size="sm" style={panelTextDimStyle}>
+            Querying DuckDB for table rows…
+          </Text>
+        </Stack>
+      </div>
+    );
+  }
+
+  if (pageError) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 py-6">
+        <Text size="sm" style={panelTextDimStyle}>
+          {pageError}
+        </Text>
+      </div>
+    );
+  }
+
+  return (
+    <Stack gap="xs" h="100%">
+      {pageRefreshing && (
+        <Text size="xs" style={panelTextDimStyle}>
+          Updating rows…
+        </Text>
+      )}
+      <Table
+        stickyHeader
+        style={{ fontSize: "0.75rem" }}
+        styles={{
+          table: { borderColor: "transparent" },
+          thead: { backgroundColor: "var(--graph-bg)" },
+          th: { backgroundColor: "var(--graph-bg)", borderColor: "var(--graph-panel-border)" },
+          td: { borderColor: "var(--graph-panel-border)" },
+          tr: { backgroundColor: "transparent" },
+        }}
+      >
+        <Table.Thead>
+          <Table.Tr style={{ backgroundColor: "var(--graph-bg)" }}>
+            <Table.Th style={{ ...panelTableHeaderStyle, width: 40 }}>#</Table.Th>
+            {tableColumns.map((key) => {
+              const meta = getColumnMetaForLayer(key, activeLayer);
+              return (
+                <Table.Th key={key} style={panelTableHeaderStyle}>
+                  {meta?.label ?? key}
+                </Table.Th>
+              );
+            })}
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {pageRows.map((node, i) => {
+            const isIntentSelected = selectedIndexSet.has(node.index);
+            const isHighlighted = highlightedIndexSet.has(node.index);
+            const isFocused = selectedNode?.id === node.id;
+            const showSelectedState =
+              resolvedTableView === "selected"
+                ? isIntentSelected || isFocused
+                : isHighlighted || isFocused;
+
+            return (
+              <Table.Tr
+                key={node.id}
+                tabIndex={0}
+                aria-selected={showSelectedState}
+                onClick={() => handleRowClick(node)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleRowClick(node);
+                  }
+                }}
+                style={{
+                  cursor: "pointer",
+                  borderLeft: showSelectedState
+                    ? "3px solid var(--mode-accent)"
+                    : "3px solid transparent",
+                  backgroundColor:
+                    isHighlighted || isFocused
+                      ? "var(--mode-accent-subtle)"
+                      : undefined,
+                }}
+              >
+                <Table.Td style={{ fontSize: "0.7rem", color: "var(--mode-accent)" }}>
+                  {startIdx + i + 1}
+                </Table.Td>
+                {tableColumns.map((key) => (
+                  <Table.Td
+                    key={key}
+                    style={{
+                      fontSize: "0.7rem",
+                      maxWidth: key === "paperTitle" ? 200 : 120,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: "var(--graph-panel-text)",
+                    }}
+                  >
+                    {formatCellValue(
+                      (node as unknown as Record<string, unknown>)[key],
+                      { columnKey: key, truncate: 40 }
+                    )}
+                  </Table.Td>
+                ))}
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+    </Stack>
+  );
+}
