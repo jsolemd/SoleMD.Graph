@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
 import {
-  Map, Source, Layer, useControl,
+  Map, Source, Layer,
   type MapRef, type MapLayerMouseEvent,
 } from "react-map-gl/maplibre";
 import { useComputedColorScheme } from "@mantine/core";
-import { MapboxOverlay } from "@deck.gl/mapbox";
-import { ArcLayer } from "@deck.gl/layers";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { selectLeftClearance } from "@/features/graph/stores/dashboard-store";
 import {
@@ -22,33 +20,10 @@ import { getPaletteColors } from "@/features/graph/lib/colors";
 import { NOISE_COLOR, NOISE_COLOR_LIGHT } from "@/features/graph/lib/brand-colors";
 import type { GeoJSONSource } from "maplibre-gl";
 import type { GraphData, GeoNode } from "@/features/graph/types";
+import { DeckGLOverlay } from "./map/DeckGLOverlay";
+import { ArcTooltip } from "./map/ArcTooltip";
+import { LIGHT_STYLE, DARK_STYLE, INITIAL_VIEW, CLUSTER_MAX_ZOOM, selectionOpacity } from "./map/map-utils";
 import "maplibre-gl/dist/maplibre-gl.css";
-
-const LIGHT_STYLE = "https://tiles.stadiamaps.com/styles/alidade_smooth.json";
-const DARK_STYLE = "https://tiles.stadiamaps.com/styles/alidade_smooth_dark.json";
-const INITIAL_VIEW = { longitude: 0, latitude: 30, zoom: 1.8 } as const;
-
-/** Must match the Source's clusterMaxZoom prop — used in canExpand check */
-const CLUSTER_MAX_ZOOM = 17;
-
-/** deck.gl overlay bridge */
-function DeckGLOverlay({ layers }: { layers: ArcLayer[] }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const overlay = useControl(() => new MapboxOverlay({ layers: layers as any }));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  overlay.setProps({ layers: layers as any });
-  return null;
-}
-
-/** MapLibre opacity expression — dims features not in the active selection set. */
-function selectionOpacity(
-  hl: Set<number> | null, sel: Set<number> | null,
-  active: number, dim: number, base: number,
-): unknown[] | number {
-  const set = hl ?? sel;
-  if (!set) return base;
-  return ["match", ["get", "index"], [...set], active, dim];
-}
 
 export default function MapCanvas({ data }: { data: GraphData }) {
   const mapRef = useRef<MapRef>(null);
@@ -435,24 +410,7 @@ export default function MapCanvas({ data }: { data: GraphData }) {
         )}
       </Map>
 
-      {hoveredArc && (
-        <div
-          role="tooltip" aria-live="polite"
-          className="pointer-events-none fixed z-50 rounded-lg px-3 py-2 text-xs shadow-lg"
-          style={{
-            left: Math.min(hoveredArc.x + 12, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200),
-            top: Math.max(hoveredArc.y - 12, 40),
-            background: isDark ? "rgba(30,30,35,0.92)" : "rgba(255,255,255,0.95)",
-            color: isDark ? "#e4e4e9" : "#1a1b1e",
-            border: `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)"}`,
-          }}
-        >
-          <div className="font-medium">{hoveredArc.source}</div>
-          <div className="text-[10px] opacity-60">↔</div>
-          <div className="font-medium">{hoveredArc.target}</div>
-          <div className="mt-1 opacity-70">{hoveredArc.paperCount} paper{hoveredArc.paperCount !== 1 ? "s" : ""}</div>
-        </div>
-      )}
+      {hoveredArc && <ArcTooltip arc={hoveredArc} isDark={isDark} />}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
 import {
   motion,
@@ -17,9 +17,8 @@ import { selectBottomClearance, selectLeftClearance, selectRightClearance } from
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { MODE_EXAMPLES, pickRandom } from "@/features/graph/lib/mode-examples";
 import { responsive } from "@/lib/motion";
-import type { GraphBundle, GraphBundleQueries, GraphMode, GraphRagQueryResponsePayload } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleQueries, GraphMode } from "@/features/graph/types";
 import { useTypewriter } from "@/features/graph/hooks/use-typewriter";
-import { fetchGraphRagQuery } from "@/features/graph/lib/detail-service";
 import { ModeToggleBar } from "../chrome/ModeToggleBar";
 import { CreateEditor, type CreateEditorHandle } from "./CreateEditor";
 import {
@@ -34,6 +33,7 @@ import {
 import { PromptIconBtn } from "./prompt/PromptIconBtn";
 import { usePromptPosition } from "./prompt/use-prompt-position";
 import { RagResponsePanel } from "./prompt/RagResponsePanel";
+import { useRagQuery } from "./prompt/use-rag-query";
 
 export function PromptBox({
   bundle,
@@ -61,9 +61,6 @@ export function PromptBox({
   const { text: typewriterText, isLast: typewriterIsLast } = useTypewriter(examples);
   const [hasInput, setHasInput] = useState(false);
   const [promptValue, setPromptValue] = useState("");
-  const [ragResponse, setRagResponse] = useState<GraphRagQueryResponsePayload | null>(null);
-  const [ragError, setRagError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFormattingTools, setShowFormattingTools] = useState(false);
   const { width: vw } = useViewportSize();
   const editorRef = useRef<CreateEditorHandle>(null);
@@ -72,6 +69,15 @@ export function PromptBox({
   const isAsk = mode === "ask";
   const isCollapsed = promptMinimized;
   const activePromptValue = isCreate ? writeContent : promptValue;
+
+  const { ragResponse, ragError, isSubmitting, handleSubmit, clearRag } = useRagQuery({
+    bundle,
+    queries,
+    isAsk,
+    selectedNode,
+    getPromptText: useCallback(() => editorRef.current?.getText() ?? activePromptValue, [activePromptValue]),
+    setHighlightedPointIndices,
+  });
 
   const leftPanelBottom = useDashboardStore((s) => s.panelBottomY.left);
   const rightPanelBottom = useDashboardStore((s) => s.panelBottomY.right);
@@ -114,51 +120,6 @@ export function PromptBox({
     ? (SCOPE_LABELS[selectedNode.nodeKind] ?? "node")
     : null;
 
-  useEffect(() => {
-    if (!ragResponse || !queries) {
-      return;
-    }
-
-    const paperIds = Array.from(
-      new Set(
-        ragResponse.graph_signals
-          .map((signal) => signal.paper_id)
-          .filter((paperId): paperId is string => Boolean(paperId)),
-      ),
-    );
-    if (paperIds.length === 0) {
-      setHighlightedPointIndices([]);
-      return;
-    }
-
-    let cancelled = false;
-    queries
-      .getPaperNodesByPaperIds(paperIds)
-      .then((paperNodes) => {
-        if (cancelled) {
-          return;
-        }
-
-        const indices = Array.from(
-          new Set(
-            Object.values(paperNodes)
-              .map((node) => node.index)
-              .filter((index) => Number.isFinite(index)),
-          ),
-        );
-        setHighlightedPointIndices(indices);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHighlightedPointIndices([]);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [queries, ragResponse, setHighlightedPointIndices]);
-
   const handleModeChange = useCallback((newMode: GraphMode) => {
     editorRef.current?.flush();
     // Clear stale animation state from previous transitions
@@ -167,11 +128,7 @@ export function PromptBox({
     heightAnimatingRef.current = false;
     setPromptMaximized(false);
     setPromptMinimized(getModeConfig(newMode).layout.promptCollapsed);
-    setRagError(null);
-    if (newMode !== "ask") {
-      setRagResponse(null);
-      setHighlightedPointIndices([]);
-    }
+    clearRag(newMode === "ask");
     // Sync hasInput to the destination mode's content
     if (newMode === "create") {
       setHasInput(writeContent.length > 0);
@@ -179,38 +136,7 @@ export function PromptBox({
       setHasInput(promptValue.length > 0);
     }
     setTimeout(() => editorRef.current?.focus(), 100);
-  }, [writeContent, promptValue, setHighlightedPointIndices, setPromptMinimized, setPromptMaximized, pendingFlipRef, fullHeightEnteredRef, heightAnimatingRef]);
-
-  const handleSubmit = useCallback(() => {
-    const query = (editorRef.current?.getText() ?? activePromptValue).trim();
-    if (!query || !isAsk) {
-      return;
-    }
-
-    setIsSubmitting(true);
-    setHighlightedPointIndices([]);
-    fetchGraphRagQuery({
-      bundle,
-      query,
-      selectedNode,
-      k: 6,
-      rerankTopn: 18,
-      useLexical: true,
-      generateAnswer: true,
-    })
-      .then((response) => {
-        setRagResponse(response);
-        setRagError(null);
-      })
-      .catch((error) => {
-        setRagResponse(null);
-        setRagError(error instanceof Error ? error.message : "Failed to query the graph");
-        setHighlightedPointIndices([]);
-      })
-      .finally(() => {
-        setIsSubmitting(false);
-      });
-  }, [activePromptValue, bundle, isAsk, selectedNode, setHighlightedPointIndices]);
+  }, [writeContent, promptValue, clearRag, setPromptMinimized, setPromptMaximized, pendingFlipRef, fullHeightEnteredRef, heightAnimatingRef]);
 
   const handlePillClick = useCallback(() => {
     if (isDragging.current) return;
