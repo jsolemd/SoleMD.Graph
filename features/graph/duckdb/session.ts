@@ -7,7 +7,6 @@ import type {
   GraphSearchResult,
   GraphSelectionDetail,
   GraphVisibilityBudget,
-  MapLayer,
   PaperDocument,
 } from '@/features/graph/types'
 
@@ -45,27 +44,12 @@ import {
   queryVisibilityBudget,
 } from './queries'
 import type { GraphBundleSession, GraphCanvasListener, ProgressCallback } from './types'
+import { createBoundedCache, getAutoloadBundleTables } from './utils'
 import {
-  createBoundedCache,
-  validateTableName,
-  requireBundleTable,
-  getAutoloadBundleTables,
-} from './utils'
-import {
-  resolveBundleRelations,
-  createPointViewSelectBuilder,
-  registerBasePointsView,
-  registerUniverseLinksViews,
-  registerUniversePointView,
-  initializeOverlayMembershipTable,
-  registerActivePointViews,
-  registerClusterViews,
-  registerGeoViews,
+  registerInitialSessionViews,
+  createEnsureOptionalBundleTables,
   replaceOverlayPointIds,
   clearOverlayPointIds,
-  registerPaperDocumentViews,
-  registerGraphChunkDetailsView,
-  registerClusterExemplarView,
 } from './views'
 
 export async function createGraphBundleSession(
@@ -81,56 +65,16 @@ export async function createGraphBundleSession(
       message: 'Opening DuckDB-Wasm and resolving the active graph bundle.',
       percent: 2,
     })
-    let bundleAttached = await resolveBundleRelations(conn, bundle, autoloadTables)
+
     onProgress(bundle.bundleChecksum, {
       stage: 'views',
       message: 'Registering canonical bundle tables and active views.',
       percent: 10,
     })
-    const attachedTableSet = new Set(autoloadTables)
-    requireBundleTable(bundle, 'base_points')
-    requireBundleTable(bundle, 'base_clusters')
 
-    const buildPointViewSelect = createPointViewSelectBuilder(bundle)
-    await registerBasePointsView(conn, buildPointViewSelect)
-
-    await registerUniversePointView(conn, {
-      sourceTable: attachedTableSet.has('universe_points')
-        ? validateTableName('universe_points')
-        : null,
-      selectSql: buildPointViewSelect,
-    })
-
-    await initializeOverlayMembershipTable(conn)
-    await registerActivePointViews(conn)
-
-    await registerUniverseLinksViews(conn, {
-      universeLinksTable: attachedTableSet.has('universe_links')
-        ? validateTableName('universe_links')
-        : null,
-    })
-
-    await registerClusterViews(conn)
-
-    const availableLayers: MapLayer[] = ['chunk']
-
-    await registerPaperDocumentViews(
-      conn,
-      attachedTableSet.has('paper_documents')
-        ? validateTableName('paper_documents')
-        : null
-    )
-    await registerGraphChunkDetailsView(conn)
-    await registerClusterExemplarView(
-      conn,
-      attachedTableSet.has('cluster_exemplars')
-        ? validateTableName('cluster_exemplars')
-        : null
-    )
-
-    availableLayers.push('paper')
-
-    await registerGeoViews(conn, bundle, availableLayers)
+    const viewState = await registerInitialSessionViews(conn, bundle, autoloadTables)
+    const { availableLayers } = viewState
+    const ensureOptionalBundleTables = createEnsureOptionalBundleTables(conn, bundle, viewState)
 
     let overlayRevision = 0
     await registerActiveCanvasAliasViews(conn, overlayRevision)
@@ -147,7 +91,6 @@ export async function createGraphBundleSession(
     })
 
     let dataPromise: Promise<GraphData> | null = null
-
     const hasAuthorGeo = Boolean(bundle.bundleManifest.tables.graph_author_geo)
     const selectionCache = createBoundedCache<string, Promise<GraphSelectionDetail>>()
     const clusterCache = createBoundedCache<number, Promise<GraphClusterDetail>>()
@@ -156,28 +99,20 @@ export async function createGraphBundleSession(
     const searchCache = createBoundedCache<string, Promise<GraphSearchResult[]>>()
     const visibilityBudgetCache = createBoundedCache<string, Promise<GraphVisibilityBudget | null>>()
     const scopeIndicesCache = createBoundedCache<string, Promise<number[]>>()
-    let ensureOptionalTablesPromise: Promise<void> | null = null
+
     let canvas = buildCanvasSource({
-      conn,
-      db,
-      pointCounts: initialPointCounts,
-      overlayCount: 0,
-      overlayRevision,
+      conn, db, pointCounts: initialPointCounts, overlayCount: 0, overlayRevision,
     })
     const canvasListeners = new Set<GraphCanvasListener>()
 
     const emitCanvas = () => {
-      for (const listener of canvasListeners) {
-        listener(canvas)
-      }
+      for (const listener of canvasListeners) listener(canvas)
     }
 
     const subscribeCanvas = (listener: GraphCanvasListener) => {
       canvasListeners.add(listener)
       listener(canvas)
-      return () => {
-        canvasListeners.delete(listener)
-      }
+      return () => { canvasListeners.delete(listener) }
     }
 
     const resetOverlayDependentCaches = () => {
@@ -189,83 +124,16 @@ export async function createGraphBundleSession(
     const refreshCanvas = async (incrementRevision = true) => {
       const pointCounts = await queryCanvasPointCounts(conn, geoPointCount)
       const overlayRows = await queryRows<{ count: number }>(
-        conn,
-        `SELECT count(*)::INTEGER AS count FROM overlay_points_web`
+        conn, `SELECT count(*)::INTEGER AS count FROM overlay_points_web`
       )
-      if (incrementRevision) {
-        overlayRevision += 1
-      }
+      if (incrementRevision) overlayRevision += 1
       await registerActiveCanvasAliasViews(conn, overlayRevision)
       canvas = buildCanvasSource({
-        conn,
-        db,
-        pointCounts,
-        overlayCount: overlayRows[0]?.count ?? 0,
-        overlayRevision,
+        conn, db, pointCounts,
+        overlayCount: overlayRows[0]?.count ?? 0, overlayRevision,
       })
       emitCanvas()
       return { overlayCount: canvas.overlayCount }
-    }
-
-    const ensureOptionalBundleTables = async (tableNames: string[]) => {
-      while (true) {
-        const requested = [...new Set(tableNames)].filter(
-          (tableName) =>
-            Boolean(bundle.bundleManifest.tables[tableName]) &&
-            !attachedTableSet.has(tableName)
-        )
-        if (requested.length === 0) {
-          return
-        }
-
-        if (ensureOptionalTablesPromise) {
-          await ensureOptionalTablesPromise
-          continue
-        }
-
-        ensureOptionalTablesPromise = (async () => {
-          bundleAttached = await resolveBundleRelations(
-            conn,
-            bundle,
-            requested,
-            bundleAttached
-          )
-
-          for (const tableName of requested) {
-            attachedTableSet.add(tableName)
-          }
-
-          if (requested.includes('universe_points')) {
-            await registerUniversePointView(conn, {
-              sourceTable: validateTableName('universe_points'),
-              selectSql: buildPointViewSelect,
-            })
-          }
-
-          if (requested.includes('universe_links')) {
-            await registerUniverseLinksViews(conn, {
-              universeLinksTable: validateTableName('universe_links'),
-            })
-          }
-
-          if (requested.includes('paper_documents')) {
-            await registerPaperDocumentViews(conn, validateTableName('paper_documents'))
-            await registerGraphChunkDetailsView(conn)
-          }
-
-          if (requested.includes('cluster_exemplars')) {
-            await registerClusterExemplarView(
-              conn,
-              validateTableName('cluster_exemplars')
-            )
-          }
-        })().finally(() => {
-          ensureOptionalTablesPromise = null
-        })
-
-        await ensureOptionalTablesPromise
-        return
-      }
     }
 
     return {
@@ -311,19 +179,11 @@ export async function createGraphBundleSession(
 
         const next = (async (): Promise<AuthorGeoRow[]> => {
           if (!hasAuthorGeo) return []
-
           const rows = await queryRows<{
-            authorId: string
-            name: string | null
-            surname: string | null
-            givenName: string | null
-            orcid: string | null
-            citekey: string | null
-            paperTitle: string | null
-            year: number | null
-            institution: string | null
-            department: string | null
-            institutionKey: string | null
+            authorId: string; name: string | null; surname: string | null
+            givenName: string | null; orcid: string | null; citekey: string | null
+            paperTitle: string | null; year: number | null; institution: string | null
+            department: string | null; institutionKey: string | null
           }>(
             conn,
             `SELECT * FROM author_geo_web WHERE institutionKey = ? ORDER BY year DESC, surname`,
@@ -342,19 +202,11 @@ export async function createGraphBundleSession(
 
         const next = (async (): Promise<AuthorGeoRow[]> => {
           if (!hasAuthorGeo) return []
-
           const rows = await queryRows<{
-            authorId: string
-            name: string | null
-            surname: string | null
-            givenName: string | null
-            orcid: string | null
-            citekey: string | null
-            paperTitle: string | null
-            year: number | null
-            institution: string | null
-            department: string | null
-            institutionKey: string | null
+            authorId: string; name: string | null; surname: string | null
+            givenName: string | null; orcid: string | null; citekey: string | null
+            paperTitle: string | null; year: number | null; institution: string | null
+            department: string | null; institutionKey: string | null
           }>(
             conn,
             orcid
@@ -371,12 +223,10 @@ export async function createGraphBundleSession(
       getPaperDocument(paperId: string) {
         const cached = paperDocumentCache.get(paperId)
         if (cached) return cached
-
         const next = (async () => {
           await ensureOptionalBundleTables(['paper_documents'])
           return queryPaperDocument(conn, paperId)
         })()
-
         paperDocumentCache.set(paperId, next)
         return next
       },
@@ -391,83 +241,54 @@ export async function createGraphBundleSession(
         return queryChunkNodesByChunkIds(conn, chunkIds)
       },
       resolvePointSelection(layer, selector) {
-        if (layer === 'paper') {
-          return queryPaperPointSelection(conn, selector)
-        }
-        if (layer === 'chunk') {
-          return queryGraphPointSelection(conn, selector)
-        }
-        if (layer === 'geo') {
-          return queryGeoPointSelection(conn, selector)
-        }
+        if (layer === 'paper') return queryPaperPointSelection(conn, selector)
+        if (layer === 'chunk') return queryGraphPointSelection(conn, selector)
+        if (layer === 'geo') return queryGeoPointSelection(conn, selector)
         return Promise.resolve(null)
       },
       getTablePage(args) {
-        if (args.layer === 'paper') {
-          return queryPaperTablePage(conn, args)
-        }
-        if (args.layer === 'geo') {
-          return queryGeoTablePage(conn, args)
-        }
+        if (args.layer === 'paper') return queryPaperTablePage(conn, args)
+        if (args.layer === 'geo') return queryGeoTablePage(conn, args)
         return queryChunkTablePage(conn, args)
       },
       getInfoSummary(args) {
         return queryInfoSummary(conn, args)
       },
       getInfoBars(args) {
-        return queryInfoBars(conn, {
-          ...args,
-          maxItems: args.maxItems ?? 8,
-        })
+        return queryInfoBars(conn, { ...args, maxItems: args.maxItems ?? 8 })
       },
       getInfoHistogram(args) {
-        return queryInfoHistogram(conn, {
-          ...args,
-          bins: args.bins ?? 16,
-        })
+        return queryInfoHistogram(conn, { ...args, bins: args.bins ?? 16 })
       },
       getFacetSummary(args) {
-        return queryFacetSummary(conn, {
-          ...args,
-          maxItems: args.maxItems ?? 6,
-        })
+        return queryFacetSummary(conn, { ...args, maxItems: args.maxItems ?? 6 })
       },
       searchPoints(args) {
         const cacheKey = JSON.stringify({
-          layer: args.layer,
-          column: args.column,
-          query: args.query.trim().toLowerCase(),
-          limit: args.limit ?? 12,
+          layer: args.layer, column: args.column,
+          query: args.query.trim().toLowerCase(), limit: args.limit ?? 12,
         })
         const cached = searchCache.get(cacheKey)
         if (cached) return cached
-
         const next = queryPointSearch(conn, args)
         searchCache.set(cacheKey, next)
         return next
       },
       getVisibilityBudget(args) {
         const cacheKey = JSON.stringify({
-          layer: args.layer,
-          id: args.selector.id ?? null,
-          index: args.selector.index ?? null,
-          scopeSql: args.scopeSql?.trim() || null,
+          layer: args.layer, id: args.selector.id ?? null,
+          index: args.selector.index ?? null, scopeSql: args.scopeSql?.trim() || null,
         })
         const cached = visibilityBudgetCache.get(cacheKey)
         if (cached) return cached
-
         const next = queryVisibilityBudget(conn, args)
         visibilityBudgetCache.set(cacheKey, next)
         return next
       },
       getPointIndicesForScope(args) {
-        const cacheKey = JSON.stringify({
-          layer: args.layer,
-          scopeSql: args.scopeSql.trim(),
-        })
+        const cacheKey = JSON.stringify({ layer: args.layer, scopeSql: args.scopeSql.trim() })
         const cached = scopeIndicesCache.get(cacheKey)
         if (cached) return cached
-
         const next = queryPointIndicesForScope(conn, args)
         scopeIndicesCache.set(cacheKey, next)
         return next
@@ -475,29 +296,23 @@ export async function createGraphBundleSession(
       getClusterDetail(clusterId: number) {
         const cached = clusterCache.get(clusterId)
         if (cached) return cached
-
         const next = (async (): Promise<GraphClusterDetail> => {
           await ensureOptionalBundleTables(['cluster_exemplars'])
           const [clusterRows_, exemplarRows] = await Promise.all([
             queryClusterRows(conn, clusterId),
             queryExemplarRows(conn, clusterId),
           ])
-
           return {
             cluster: clusterRows_[0] ? mapCluster(clusterRows_[0]) : null,
             exemplars: exemplarRows.map(mapExemplar),
           }
         })()
-
         clusterCache.set(clusterId, next)
         return next
       },
       getSelectionDetail(node: GraphNode) {
         const cached = selectionCache.get(node.id)
-
-        if (cached) {
-          return cached
-        }
+        if (cached) return cached
 
         const next = (async (): Promise<GraphSelectionDetail> => {
           await ensureOptionalBundleTables(['cluster_exemplars', 'paper_documents'])
@@ -507,12 +322,8 @@ export async function createGraphBundleSession(
           ])
 
           if (node.nodeKind === 'paper') {
-            // Paper node: query paper details + cluster + exemplars (no chunk_details)
             const paperRows = await queryPaperDetail(conn, node.paperId ?? node.id)
-
-            // Load paper document on demand
             const paperDocument = await queryPaperDocument(conn, node.paperId ?? node.id)
-
             return {
               chunk: null,
               cluster: clusterRows_[0] ? mapCluster(clusterRows_[0]) : null,
@@ -522,15 +333,11 @@ export async function createGraphBundleSession(
             }
           }
 
-          const paperRows = node.paperId
-            ? await queryPaperDetail(conn, node.paperId)
-            : []
+          const paperRows = node.paperId ? await queryPaperDetail(conn, node.paperId) : []
 
           if (node.nodeKind !== 'chunk') {
             const paperDocument = node.paperId
-              ? await queryPaperDocument(conn, node.paperId)
-              : null
-
+              ? await queryPaperDocument(conn, node.paperId) : null
             return {
               chunk: null,
               cluster: clusterRows_[0] ? mapCluster(clusterRows_[0]) : null,
@@ -543,34 +350,12 @@ export async function createGraphBundleSession(
           const chunkRows = await queryRows<GraphChunkDetailRow>(
             conn,
             `SELECT
-              rag_chunk_id,
-              paper_id,
-              citekey,
-              title,
-              journal,
-              year,
-              doi,
-              pmid,
-              pmcid,
-              stable_chunk_id,
-              chunk_index,
-              section_type,
-              section_canonical,
-              section_path,
-              page_number,
-              token_count,
-              char_count,
-              chunk_kind,
-              block_type,
-              block_id,
-              chunk_text,
-              chunk_preview,
-              abstract,
-              cluster_id,
-              cluster_label,
-              cluster_probability,
-              outlier_score,
-              source_embedding_id
+              rag_chunk_id, paper_id, citekey, title, journal, year, doi,
+              pmid, pmcid, stable_chunk_id, chunk_index, section_type,
+              section_canonical, section_path, page_number, token_count,
+              char_count, chunk_kind, block_type, block_id, chunk_text,
+              chunk_preview, abstract, cluster_id, cluster_label,
+              cluster_probability, outlier_score, source_embedding_id
             FROM graph_chunk_details
             WHERE rag_chunk_id = ?
             LIMIT 1`,
