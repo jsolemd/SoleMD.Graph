@@ -8,8 +8,8 @@ import type {
   PaperNode,
   RelationAssertionNode,
   TermNode,
+  GraphNodeDetailResponsePayload,
 } from "@/features/graph/types";
-import type { GraphNodeDetailResponsePayload } from "@/features/graph/lib/detail-service";
 
 function joinNonEmpty(values: Array<string | null | undefined>) {
   return values

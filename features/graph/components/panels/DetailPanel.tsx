@@ -6,8 +6,8 @@ import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import {
   fetchGraphNodeDetail,
   supportsRemoteGraphNodeDetail,
-  type GraphNodeDetailResponsePayload,
 } from "@/features/graph/lib/detail-service";
+import type { GraphNodeDetailResponsePayload } from "@/features/graph/types";
 import type {
   AuthorGeoRow,
   ChunkNode,
@@ -23,7 +23,6 @@ import {
   buildCorpusNodeNoteMarkdown,
   buildChunkNoteMarkdown,
   buildPaperNoteMarkdown,
-  findPaperNodeByPaperId,
 } from "./detail/helpers";
 import {
   AliasSection,
@@ -113,6 +112,8 @@ export function DetailPanel({
     error: string | null;
     id: string | null;
   }>({ detail: null, error: null, id: null });
+  const [relatedPaperNodeMap, setRelatedPaperNodeMap] = useState<Record<string, PaperNode>>({});
+  const [relatedChunkNodeMap, setRelatedChunkNodeMap] = useState<Record<string, ChunkNode>>({});
   const supportsRemoteDetail = selectedNode ? supportsRemoteGraphNodeDetail(selectedNode) : false;
 
   useEffect(() => {
@@ -230,9 +231,117 @@ export function DetailPanel({
     setMode("ask");
   }, [setMode]);
 
-  const chunkNodes = useMemo(
-    () => data.nodes.filter((node): node is ChunkNode => node.nodeKind === "chunk"),
+  const localPaperNodeMap = useMemo(
+    () =>
+      Object.fromEntries(
+        data.paperNodes
+          .filter((node): node is PaperNode & { paperId: string } => Boolean(node.paperId))
+          .map((node) => [node.paperId, node])
+      ),
+    [data.paperNodes]
+  );
+
+  const localChunkNodeMap = useMemo(
+    () =>
+      Object.fromEntries(
+        data.nodes
+          .filter((node): node is ChunkNode => node.nodeKind === "chunk")
+          .flatMap((node) =>
+            node.stableChunkId ? [[node.id, node], [node.stableChunkId, node]] : [[node.id, node]]
+          )
+      ),
     [data.nodes]
+  );
+
+  useEffect(() => {
+    const paperIds = new Set<string>();
+    const chunkIds = new Set<string>();
+
+    if (selectedNode?.paperId) {
+      paperIds.add(selectedNode.paperId);
+    }
+
+    for (const citation of hydrated.detail?.paper?.incoming_citations ?? []) {
+      if (citation.related_paper_id) {
+        paperIds.add(citation.related_paper_id);
+      }
+    }
+
+    for (const citation of hydrated.detail?.paper?.outgoing_citations ?? []) {
+      if (citation.related_paper_id) {
+        paperIds.add(citation.related_paper_id);
+      }
+    }
+
+    for (const reference of hydrated.detail?.paper?.references ?? []) {
+      const paperId = reference.resolved_paper_id ?? reference.resolved_paper?.paper_id ?? null;
+      if (paperId) {
+        paperIds.add(paperId);
+      }
+    }
+
+    for (const chunk of hydrated.detail?.paper?.narrative_chunks ?? []) {
+      if (chunk.chunk_id) {
+        chunkIds.add(chunk.chunk_id);
+      }
+    }
+
+    for (const chunk of hydrated.detail?.chunk?.neighboring_chunks ?? []) {
+      if (chunk.chunk_id) {
+        chunkIds.add(chunk.chunk_id);
+      }
+    }
+
+    for (const exemplar of resolved.detail?.exemplars ?? []) {
+      if (exemplar.ragChunkId) {
+        chunkIds.add(exemplar.ragChunkId);
+      }
+    }
+
+    const missingPaperIds = [...paperIds].filter((paperId) => !(paperId in localPaperNodeMap));
+    const missingChunkIds = [...chunkIds].filter((chunkId) => !(chunkId in localChunkNodeMap));
+
+    if (missingPaperIds.length === 0 && missingChunkIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    Promise.all([
+      missingPaperIds.length > 0 ? queries.getPaperNodesByPaperIds(missingPaperIds) : Promise.resolve({}),
+      missingChunkIds.length > 0 ? queries.getChunkNodesByChunkIds(missingChunkIds) : Promise.resolve({}),
+    ])
+      .then(([paperNodes, chunkNodes]) => {
+        if (cancelled) {
+          return;
+        }
+        setRelatedPaperNodeMap(paperNodes);
+        setRelatedChunkNodeMap(chunkNodes);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setRelatedPaperNodeMap({});
+        setRelatedChunkNodeMap({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrated.detail, localChunkNodeMap, localPaperNodeMap, queries, resolved.detail?.exemplars, selectedNode?.paperId]);
+
+  const paperNodes = useMemo(
+    () => Object.values({ ...localPaperNodeMap, ...relatedPaperNodeMap }),
+    [localPaperNodeMap, relatedPaperNodeMap]
+  );
+
+  const chunkNodes = useMemo(
+    () =>
+      Object.values({ ...localChunkNodeMap, ...relatedChunkNodeMap }).filter(
+        (node, index, allNodes) => allNodes.findIndex((candidate) => candidate.id === node.id) === index
+      ),
+    [localChunkNodeMap, relatedChunkNodeMap]
   );
 
   const handleCopyNote = useCallback(async () => {
@@ -299,7 +408,11 @@ export function DetailPanel({
   const isAlias = selectedNode.nodeKind === "alias";
   const isRelationAssertion = selectedNode.nodeKind === "relation_assertion";
 
-  const sourcePaperNode = findPaperNodeByPaperId(data.paperNodes, selectedNode.paperId);
+  const sourcePaperNode = selectedNode.paperId
+    ? paperNodes.find(
+        (node) => node.paperId === selectedNode.paperId || node.id === selectedNode.paperId
+      ) ?? null
+    : null;
 
   const actionPdfUrl = isPaper
     ? serviceDetail?.paper?.pdf_asset?.access?.url ?? null
@@ -414,7 +527,7 @@ export function DetailPanel({
                   <ConnectionsContent
                     incoming={serviceDetail?.paper?.incoming_citations}
                     outgoing={serviceDetail?.paper?.outgoing_citations}
-                    paperNodes={data.paperNodes}
+                    paperNodes={paperNodes}
                     onNavigateToPaper={navigateToPaperNode}
                     loading={serviceLoading}
                     error={serviceError}
@@ -429,7 +542,7 @@ export function DetailPanel({
                 <Accordion.Panel>
                   <ReferencesContent
                     references={serviceDetail?.paper?.references}
-                    paperNodes={data.paperNodes}
+                    paperNodes={paperNodes}
                     onNavigateToPaper={navigateToPaperNode}
                     loading={serviceLoading}
                     error={serviceError}

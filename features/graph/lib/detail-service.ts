@@ -16,8 +16,6 @@ import type {
   GraphRagQueryResponsePayload,
 } from '@/features/graph/types/detail-service'
 
-export type * from '@/features/graph/types/detail-service'
-
 interface FetchGraphNodeDetailArgs {
   bundle: GraphBundle
   node: GraphNode

@@ -1,15 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ScrollArea, Text, Tooltip } from "@mantine/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
 import {
   motion,
   animate,
-  useDragControls,
-  useMotionValue,
 } from "framer-motion";
-import type { LucideIcon } from "lucide-react";
 import {
   ArrowUp,
   Type,
@@ -20,97 +16,32 @@ import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { selectBottomClearance, selectLeftClearance, selectRightClearance } from "@/features/graph/stores/dashboard-store";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { MODE_EXAMPLES, pickRandom } from "@/features/graph/lib/mode-examples";
-import { responsive, smooth, bouncy } from "@/lib/motion";
-import type { GraphBundle, GraphMode } from "@/features/graph/types";
+import { responsive } from "@/lib/motion";
+import type { GraphBundle, GraphBundleQueries, GraphMode, GraphRagQueryResponsePayload } from "@/features/graph/types";
 import { useTypewriter } from "@/features/graph/hooks/use-typewriter";
-import { fetchGraphRagQuery, type GraphRagQueryResponsePayload } from "@/features/graph/lib/detail-service";
+import { fetchGraphRagQuery } from "@/features/graph/lib/detail-service";
 import { ModeToggleBar } from "../chrome/ModeToggleBar";
 import { CreateEditor, type CreateEditorHandle } from "./CreateEditor";
+import {
+  BOTTOM_BASE,
+  VIEWPORT_MARGIN,
+  MAX_CARD_W,
+  MIN_CARD_W_CREATE,
+  VW_RATIO,
+  SCOPE_LABELS,
+  cardWidth,
+} from "./prompt/constants";
+import { PromptIconBtn } from "./prompt/PromptIconBtn";
+import { usePromptPosition } from "./prompt/use-prompt-position";
+import { RagResponsePanel } from "./prompt/RagResponsePanel";
 
-// ── Prompt layout constants ──────────────────────────────────────────
-const BOTTOM_BASE = 32;
-const VIEWPORT_MARGIN = 8;
-/** Top clearance for write panel — below Wordmark icon row when panels visible. */
-const WRITE_TOP_CLEARANCE = 96;
-/** Top clearance for write panel — no panel icons. */
-const WRITE_TOP_BASE = 56;
-/** Maximum card width in any mode. */
-const MAX_CARD_W = 560;
-/** Minimum card width in create mode (CSS clamp lower bound). */
-const MIN_CARD_W_CREATE = 530;
-/** Viewport ratio for normal-mode width (90vw cap). */
-const VW_RATIO = 0.9;
-/** Floor width when side panels squeeze available space. */
-const MIN_AVAILABLE_W = 300;
-/** Horizontal gap between card edges and panel edges. */
-const PANEL_GAP = 48;
-/** Collapsed pill height target. */
-const PILL_H = 48;
-/** Collapsed pill left-edge offset from viewport left. */
-const PILL_LEFT = 12;
-
-const SCOPE_LABELS: Record<string, string> = {
-  paper: "paper",
-  chunk: "chunk",
-  term: "term",
-  alias: "alias",
-  relation_assertion: "relation",
-};
-
-/** Compute card width for normal mode, respecting panel clearance. */
-function cardWidth(vw: number, leftCl: number, rightCl: number): number {
-  if (leftCl > 0 || rightCl > 0) {
-    const avail = Math.max(MIN_AVAILABLE_W, vw - leftCl - rightCl - PANEL_GAP);
-    return Math.round(Math.min(MAX_CARD_W, vw * VW_RATIO, avail));
-  }
-  return Math.round(Math.min(MAX_CARD_W, vw * VW_RATIO));
-}
-
-// ── Shared icon button ───────────────────────────────────────────────
-interface PromptIconBtnProps {
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  size?: "sm" | "md";
-  active?: boolean;
-  disabled?: boolean;
-  "aria-pressed"?: boolean;
-}
-
-function PromptIconBtn({
-  icon: Icon,
-  label,
-  onClick,
-  size = "sm",
-  active,
-  disabled,
-  "aria-pressed": ariaPressed,
-}: PromptIconBtnProps) {
-  const md = size === "md";
-  return (
-    <Tooltip label={label} position="top" withArrow>
-      <motion.button
-        whileHover={{ scale: md ? 1.08 : 1.12 }}
-        whileTap={{ scale: md ? 0.92 : 0.9 }}
-        transition={bouncy}
-        onClick={onClick}
-        disabled={disabled}
-        className={`flex items-center justify-center rounded-full flex-shrink-0 ${md ? "h-9 w-9" : "h-7 w-7"}`}
-        style={{
-          backgroundColor: active ? "var(--mode-accent-subtle)" : "transparent",
-          color: active ? "var(--mode-accent)" : "var(--graph-prompt-inactive)",
-          border: "none",
-        }}
-        aria-label={label}
-        aria-pressed={ariaPressed}
-      >
-        <Icon size={md ? 18 : 15} />
-      </motion.button>
-    </Tooltip>
-  );
-}
-
-export function PromptBox({ bundle }: { bundle: GraphBundle }) {
+export function PromptBox({
+  bundle,
+  queries,
+}: {
+  bundle: GraphBundle
+  queries: GraphBundleQueries | null
+}) {
   const mode = useGraphStore((s) => s.mode);
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const writeContent = useDashboardStore((s) => s.writeContent);
@@ -120,6 +51,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
   const promptMaximized = useDashboardStore((s) => s.promptMaximized);
   const setPromptMinimized = useDashboardStore((s) => s.setPromptMinimized);
   const setPromptMaximized = useDashboardStore((s) => s.setPromptMaximized);
+  const setHighlightedPointIndices = useDashboardStore((s) => s.setHighlightedPointIndices);
   const bottomClearance = useDashboardStore(selectBottomClearance);
   const leftClearance = useDashboardStore(selectLeftClearance);
   const rightClearance = useDashboardStore(selectRightClearance);
@@ -132,196 +64,100 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
   const [ragResponse, setRagResponse] = useState<GraphRagQueryResponsePayload | null>(null);
   const [ragError, setRagError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isOffset, setIsOffset] = useState(false);
   const [showFormattingTools, setShowFormattingTools] = useState(false);
-  const { width: vw, height: vh } = useViewportSize();
+  const { width: vw } = useViewportSize();
   const editorRef = useRef<CreateEditorHandle>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const isDragging = useRef(false);
-  const userDragX = useRef(0);
-  const userDragY = useRef(0);
-  const autoTargetXRef = useRef(0);
-  const dragControls = useDragControls();
-  const dragX = useMotionValue(0);
-  const dragY = useMotionValue(0);
   const isCreate = mode === "create";
   const isAsk = mode === "ask";
   const isCollapsed = promptMinimized;
   const activePromptValue = isCreate ? writeContent : promptValue;
 
-  // Animated card height for full-height modes.
-  const cardHeight = useMotionValue(0);
-  const [heightOverride, setHeightOverride] = useState(false);
+  const leftPanelBottom = useDashboardStore((s) => s.panelBottomY.left);
+  const rightPanelBottom = useDashboardStore((s) => s.panelBottomY.right);
 
-  // isFullHeightMode = logical mode (stable during FLIP animations).
-  // isFullHeight    = mode + animation override (toggles with heightOverride).
-  const isFullHeightMode = isCreate || promptMaximized;
-  const isFullHeight = isFullHeightMode || heightOverride;
+  const {
+    isDragging,
+    userDragX,
+    userDragY,
+    autoTargetXRef,
+    dragControls,
+    dragX,
+    dragY,
+    cardHeight,
+    heightOverride,
+    setHeightOverride,
+    isFullHeightMode,
+    isFullHeight,
+    isOffset,
+    setIsOffset,
+    targetY,
+    pendingFlipRef,
+    fullHeightEnteredRef,
+    heightAnimatingRef,
+  } = usePromptPosition({
+    isCreate,
+    isCollapsed,
+    promptMaximized,
+    panelsVisible,
+    bottomClearance,
+    leftClearance,
+    rightClearance,
+    leftPanelBottom,
+    rightPanelBottom,
+    vw,
+    vh: useViewportSize().height,
+    cardRef,
+  });
 
   const selectedScopeLabel = selectedNode
     ? (SCOPE_LABELS[selectedNode.nodeKind] ?? "node")
     : null;
 
-  // Panel bottom edges (from viewport top) — reported by PanelShell's ResizeObserver.
-  // Normal-mode avoidance also checks actual horizontal overlap and only moves
-  // the minimum distance needed.
-  const leftPanelBottom = useDashboardStore((s) => s.panelBottomY.left);
-  const rightPanelBottom = useDashboardStore((s) => s.panelBottomY.right);
-
-  const targetY = Math.min(0, BOTTOM_BASE - bottomClearance);
-
-  // Unified positioning — clear precedence: write > collapsed > obstacle avoidance.
-  // One effect eliminates competing animations on dragX/dragY.
-  const posAnim = useRef<{ x?: ReturnType<typeof animate>; y?: ReturnType<typeof animate>; h?: ReturnType<typeof animate> }>({});
-  const fullHeightEnteredRef = useRef(false);
-  /** Prevents effect re-runs from calling h?.stop() during active height animations. */
-  const heightAnimatingRef = useRef(false);
-  /** Generation counter — invalidates stale .then() callbacks when a new height animation starts. */
-  const heightGenRef = useRef(0);
-  /** Non-null = a FLIP measurement is pending; value is the "from" height. */
-  const pendingFlipRef = useRef<number | null>(null);
-  const mountedRef = useRef(true);
-  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
-  const prevPosMode = useRef<"create" | "maximized" | "collapsed" | "normal">("normal");
-
-  /** Start a guarded height animation. Prevents effect re-runs from stopping it. */
-  const startHeightAnim = useCallback((target: number, onDone?: () => void) => {
-    const gen = ++heightGenRef.current;
-    heightAnimatingRef.current = true;
-    posAnim.current.h = animate(cardHeight, target, smooth);
-    posAnim.current.h.then(() => {
-      if (gen !== heightGenRef.current) return; // stale — newer animation took over
-      heightAnimatingRef.current = false;
-      onDone?.();
-    });
-  }, [cardHeight]);
-
   useEffect(() => {
-    // Skip until first paint (viewport not yet measured)
-    if (vw === 0) return;
-
-    posAnim.current.x?.stop();
-    posAnim.current.y?.stop();
-    // Don't stop h animation if one is actively running (guarded by startHeightAnim)
-    if (!heightAnimatingRef.current) posAnim.current.h?.stop();
-
-    const posMode = isCollapsed ? "collapsed" : isCreate ? "create" : promptMaximized ? "maximized" : "normal";
-    const modeChanged = prevPosMode.current !== posMode;
-    prevPosMode.current = posMode;
-    if (posMode === "create" || posMode === "maximized") {
-      // Full-height modes — always respect panel clearance (they span the viewport).
-      const targetX = posMode === "create"
-        ? 24 + leftClearance + Math.min(MAX_CARD_W, Math.max(MIN_CARD_W_CREATE, vw * 0.5)) / 2 - vw / 2
-        : (leftClearance - rightClearance) / 2;
-      const topClearance = panelsVisible ? WRITE_TOP_CLEARANCE : WRITE_TOP_BASE;
-      const targetH = vh - topClearance - Math.max(bottomClearance, 24);
-
-      // Bump generation to invalidate any stale .then() callbacks
-      heightGenRef.current++;
-      heightAnimatingRef.current = false;
-
-      if (!fullHeightEnteredRef.current) {
-        cardHeight.set(cardRef.current?.offsetHeight ?? 60);
-        setHeightOverride(true);
-        fullHeightEnteredRef.current = true;
-      }
-      autoTargetXRef.current = targetX;
-      posAnim.current.x = animate(dragX, targetX, smooth);
-      posAnim.current.y = animate(dragY, targetY, smooth);
-      posAnim.current.h = animate(cardHeight, targetH, smooth);
-      userDragY.current = targetY;
-    } else {
-      // Always clear pending FLIP when leaving full-height mode — prevents stale refs
-      pendingFlipRef.current = null;
-
-      // Exit full-height — release height override
-      if (fullHeightEnteredRef.current) {
-        if (posMode === "collapsed") {
-          // Collapsed pill: animate height to small target.
-          startHeightAnim(PILL_H, () => {
-            if (!mountedRef.current) return;
-            setHeightOverride(false);
-            fullHeightEnteredRef.current = false;
-          });
-        } else {
-          // Normal mode: FLIP trigger — snapshot current height, release override.
-          // useLayoutEffect will measure auto height and start the animation.
-          pendingFlipRef.current = cardHeight.get();
-          setHeightOverride(false);
-        }
-      }
-
-      if (posMode === "collapsed") {
-        // Collapsed pill: left edge at PILL_LEFT.
-        // Card uses translateX(0) in this mode, so dragX directly places the left edge.
-        const targetX = PILL_LEFT - vw / 2;
-        autoTargetXRef.current = targetX;
-        if (modeChanged) { userDragX.current = targetX; userDragY.current = targetY; }
-        posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
-        posAnim.current.y = animate(dragY, Math.min(userDragY.current, targetY), smooth);
-      } else {
-        // Normal: treat side panels as obstacle rectangles and move only the
-        // minimum distance needed to keep the prompt clear while staying as
-        // close to center as possible.
-        const cardW = cardWidth(vw, leftClearance, rightClearance);
-        const cardH = cardRef.current?.offsetHeight ?? 100;
-        const promptTop = vh - BOTTOM_BASE - cardH + targetY;
-        const centeredLeft = vw / 2 - cardW / 2;
-        const centeredRight = centeredLeft + cardW;
-        let minX = VIEWPORT_MARGIN - centeredLeft;
-        let maxX = (vw - VIEWPORT_MARGIN) - centeredRight;
-
-        if (leftClearance > 0 && leftPanelBottom > promptTop && centeredLeft < leftClearance) {
-          minX = leftClearance - centeredLeft;
-        }
-        if (rightClearance > 0 && rightPanelBottom > promptTop && centeredRight > vw - rightClearance) {
-          maxX = (vw - rightClearance) - centeredRight;
-        }
-
-        const targetX = minX <= maxX
-          ? Math.max(minX, Math.min(0, maxX))
-          : Math.max(Math.min(0, minX), maxX);
-
-        if (modeChanged) { userDragX.current = 0; userDragY.current = 0; }
-        if (autoTargetXRef.current !== targetX) {
-          userDragX.current = 0;
-          setIsOffset(userDragY.current !== 0);
-        }
-        autoTargetXRef.current = targetX;
-        // Respect user drag offset; obstacle avoidance clamps Y upward only
-        posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
-        const target = Math.min(userDragY.current, targetY);
-        posAnim.current.y = animate(dragY, target, smooth);
-      }
+    if (!ragResponse || !queries) {
+      return;
     }
 
+    const paperIds = Array.from(
+      new Set(
+        ragResponse.graph_signals
+          .map((signal) => signal.paper_id)
+          .filter((paperId): paperId is string => Boolean(paperId)),
+      ),
+    );
+    if (paperIds.length === 0) {
+      setHighlightedPointIndices([]);
+      return;
+    }
+
+    let cancelled = false;
+    queries
+      .getPaperNodesByPaperIds(paperIds)
+      .then((paperNodes) => {
+        if (cancelled) {
+          return;
+        }
+
+        const indices = Array.from(
+          new Set(
+            Object.values(paperNodes)
+              .map((node) => node.index)
+              .filter((index) => Number.isFinite(index)),
+          ),
+        );
+        setHighlightedPointIndices(indices);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHighlightedPointIndices([]);
+        }
+      });
+
     return () => {
-      posAnim.current.x?.stop();
-      posAnim.current.y?.stop();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      if (!heightAnimatingRef.current) posAnim.current.h?.stop();
+      cancelled = true;
     };
-  }, [isCreate, isCollapsed, promptMaximized, panelsVisible, bottomClearance, leftClearance, rightClearance, leftPanelBottom, rightPanelBottom, targetY, vw, vh, dragX, dragY, cardHeight, startHeightAnim]);
-
-  // FLIP measurement — fires after DOM mutation but before paint.
-  // When pendingFlipRef is set, the card just re-rendered with height: auto.
-  // We measure offsetHeight, restore the override, and animate to the measured height.
-  useLayoutEffect(() => {
-    const fromH = pendingFlipRef.current;
-    if (fromH === null) return;
-    pendingFlipRef.current = null;
-
-    const toH = cardRef.current?.offsetHeight ?? fromH;
-    cardHeight.set(fromH);
-    setHeightOverride(true);
-
-    startHeightAnim(toH, () => {
-      if (!mountedRef.current) return;
-      setHeightOverride(false);
-      fullHeightEnteredRef.current = false;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refs and motion values are stable
-  }, [heightOverride]);
+  }, [queries, ragResponse, setHighlightedPointIndices]);
 
   const handleModeChange = useCallback((newMode: GraphMode) => {
     editorRef.current?.flush();
@@ -334,6 +170,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
     setRagError(null);
     if (newMode !== "ask") {
       setRagResponse(null);
+      setHighlightedPointIndices([]);
     }
     // Sync hasInput to the destination mode's content
     if (newMode === "create") {
@@ -342,7 +179,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
       setHasInput(promptValue.length > 0);
     }
     setTimeout(() => editorRef.current?.focus(), 100);
-  }, [writeContent, promptValue, setPromptMinimized, setPromptMaximized]);
+  }, [writeContent, promptValue, setHighlightedPointIndices, setPromptMinimized, setPromptMaximized, pendingFlipRef, fullHeightEnteredRef, heightAnimatingRef]);
 
   const handleSubmit = useCallback(() => {
     const query = (editorRef.current?.getText() ?? activePromptValue).trim();
@@ -351,6 +188,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
     }
 
     setIsSubmitting(true);
+    setHighlightedPointIndices([]);
     fetchGraphRagQuery({
       bundle,
       query,
@@ -367,11 +205,12 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
       .catch((error) => {
         setRagResponse(null);
         setRagError(error instanceof Error ? error.message : "Failed to query the graph");
+        setHighlightedPointIndices([]);
       })
       .finally(() => {
         setIsSubmitting(false);
       });
-  }, [activePromptValue, bundle, isAsk, selectedNode]);
+  }, [activePromptValue, bundle, isAsk, selectedNode, setHighlightedPointIndices]);
 
   const handlePillClick = useCallback(() => {
     if (isDragging.current) return;
@@ -382,7 +221,7 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
     setHeightOverride(false);
     setPromptMinimized(false);
     setTimeout(() => editorRef.current?.focus(), 100);
-  }, [setPromptMinimized]);
+  }, [setPromptMinimized, isDragging, pendingFlipRef, fullHeightEnteredRef, heightAnimatingRef, setHeightOverride]);
 
   const handlePillKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -422,8 +261,6 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
         dragElastic={0}
         style={{ x: dragX, y: dragY }}
         onDragStart={() => {
-          posAnim.current.x?.stop();
-          posAnim.current.y?.stop();
           isDragging.current = true;
           document.body.style.cursor = "grabbing";
         }}
@@ -621,66 +458,14 @@ export function PromptBox({ bundle }: { bundle: GraphBundle }) {
           </div>
 
           {!isCollapsed && isAsk && (ragResponse || ragError || isSubmitting) && (
-            <div
-              style={{
-                marginTop: 8,
-                borderTop: "1px solid var(--graph-panel-border)",
-                paddingTop: 10,
-              }}
-            >
-              {selectedNode && (
-                <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
-                  Scoped to {selectedScopeLabel}: {selectedNode.displayLabel || selectedNode.citekey || selectedNode.paperTitle || selectedNode.id}
-                </Text>
-              )}
-              {isSubmitting && (
-                <Text mt={6} size="sm" style={{ color: "var(--graph-prompt-placeholder)" }}>
-                  Querying graph evidence…
-                </Text>
-              )}
-              {ragError && (
-                <Text mt={6} size="sm" style={{ color: "var(--graph-prompt-placeholder)" }}>
-                  {ragError}
-                </Text>
-              )}
-              {ragResponse && (
-                <ScrollArea.Autosize mah={isFullHeightMode ? 320 : 220} mt={6} type="auto">
-                  {ragResponse.answer && (
-                    <Text size="sm" style={{ color: "var(--graph-prompt-text)", whiteSpace: "pre-wrap" }}>
-                      {ragResponse.answer}
-                    </Text>
-                  )}
-                  {!ragResponse.answer && ragResponse.results.length === 0 && (
-                    <Text size="sm" style={{ color: "var(--graph-prompt-placeholder)" }}>
-                      No matching evidence was found for this query.
-                    </Text>
-                  )}
-                  {ragResponse.results.length > 0 && (
-                    <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                      {ragResponse.results.slice(0, 3).map((result) => (
-                        <div
-                          key={result.chunk_id}
-                          className="rounded-xl px-3 py-2"
-                          style={{
-                            backgroundColor: "var(--mode-accent-subtle)",
-                            border: "1px solid var(--mode-accent-border)",
-                          }}
-                        >
-                          <Text size="xs" fw={600} style={{ color: "var(--graph-prompt-text)" }}>
-                            {[result.citekey || result.paper_title || result.paper_id, result.section, result.page != null ? `p. ${result.page}` : null]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </Text>
-                          <Text mt={4} size="sm" style={{ color: "var(--graph-prompt-text)" }}>
-                            {result.text}
-                          </Text>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </ScrollArea.Autosize>
-              )}
-            </div>
+            <RagResponsePanel
+              ragResponse={ragResponse}
+              ragError={ragError}
+              isSubmitting={isSubmitting}
+              isFullHeightMode={isFullHeightMode}
+              selectedNode={selectedNode}
+              selectedScopeLabel={selectedScopeLabel}
+            />
           )}
 
           {/* Drag grip / recenter — always visible, widens when offset */}
