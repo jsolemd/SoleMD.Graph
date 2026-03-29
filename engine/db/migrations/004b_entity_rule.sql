@@ -1,5 +1,5 @@
 -- Migration 004b: Entity-based promotion rules
--- Creates solemd.entity_rule for promoting candidate papers to graph tier
+-- Creates solemd.entity_rule for promoting candidate papers to mapped layout
 -- based on PubTator3 entity annotations.
 --
 -- Entity rules complement venue rules: venue rules promote by journal identity,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS solemd.entity_rule (
     entity_type         TEXT NOT NULL,
     concept_id          TEXT NOT NULL,
     canonical_name      TEXT NOT NULL,
-    rule_category       TEXT NOT NULL,
+    family_key          TEXT NOT NULL,
     confidence          TEXT NOT NULL DEFAULT 'high',
     min_citation_count  INTEGER NOT NULL DEFAULT 0,
     added_at            TIMESTAMPTZ DEFAULT now(),
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS solemd.entity_rule (
 );
 
 COMMENT ON TABLE solemd.entity_rule IS
-    'Entity-based promotion rules: promote candidate papers to graph tier '
+    'Entity-based promotion rules: promote candidate papers to mapped layout '
     'when they have PubTator3 annotations matching these concept IDs.';
 
 COMMENT ON COLUMN solemd.entity_rule.confidence IS
@@ -41,7 +41,7 @@ COMMENT ON COLUMN solemd.entity_rule.confidence IS
 
 -- ── SEED: HIGH confidence — behavior (8 rules) ─────────────
 
-INSERT INTO solemd.entity_rule (entity_type, concept_id, canonical_name, rule_category, confidence, min_citation_count)
+INSERT INTO solemd.entity_rule (entity_type, concept_id, canonical_name, family_key, confidence, min_citation_count)
 VALUES
     ('disease', 'MESH:D010554', 'Aggression', 'behavior', 'high', 10),
     ('disease', 'MESH:D007174', 'Impulsivity', 'behavior', 'high', 10),
@@ -55,7 +55,7 @@ ON CONFLICT DO NOTHING;
 
 -- ── SEED: HIGH confidence — neuropsych disease (5 rules) ────
 
-INSERT INTO solemd.entity_rule (entity_type, concept_id, canonical_name, rule_category, confidence, min_citation_count)
+INSERT INTO solemd.entity_rule (entity_type, concept_id, canonical_name, family_key, confidence, min_citation_count)
 VALUES
     ('disease', 'MESH:D004833', 'Epilepsy', 'neuropsych_disease', 'high', 10),
     ('disease', 'MESH:D000341', 'Affective psychosis', 'neuropsych_disease', 'high', 5),
@@ -68,7 +68,7 @@ ON CONFLICT DO NOTHING;
 -- These promote ONLY if the paper also has a high-confidence entity match
 -- or a treat/cause relation, preventing noise from gene-only papers.
 
-INSERT INTO solemd.entity_rule (entity_type, concept_id, canonical_name, rule_category, confidence, min_citation_count)
+INSERT INTO solemd.entity_rule (entity_type, concept_id, canonical_name, family_key, confidence, min_citation_count)
 VALUES
     ('gene', '627',  'BDNF',  'neurotransmitter_gene', 'requires_second_gate', 10),
     ('gene', '6531', 'DAT',   'neurotransmitter_gene', 'requires_second_gate', 10),

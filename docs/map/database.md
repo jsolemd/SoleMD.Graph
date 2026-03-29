@@ -1,381 +1,263 @@
 # Database Schema
 
-> **Status**: Phase 1 tables implemented (`001_core_schema.sql` + `002_add_is_retracted.sql` + `003_add_corpus_tier.sql` + `004_candidate_tier_and_mapping.sql` + `004b_entity_rule.sql` + `004c_baseline_expansion_and_relation_rules.sql` + `004d_final_baseline_expansion.sql` + `004e_endocrine_metabolic_baseline.sql` + `005_add_s2_enrichment_tracking.sql` + `006_add_s2_embedding_tracking.sql` + `007_add_s2_metadata_and_related_tables.sql` + `008_add_s2_reference_tracking.sql` + `012_create_entities_table.sql`)
+> **Status**: canonical graph-db schema for base admission, mapped canvas state, and evidence substrate
 > **Port**: 5433 (Docker, `pgvector/pgvector:pg16`)
 > **Extensions**: `vector` (pgvector), `pg_trgm` (trigram FTS)
 > **Schemas**: `solemd` (application), `pubtator` (reference data)
 
+This document describes the target graph-db model used to build and publish the
+living graph. The runtime contract is:
+
+- `base_points` is the always-loaded scaffold
+- `universe_points` is the mapped remainder available for later promotion
+- `overlay_points` is the promoted subset currently active in the canvas
+- `active_points` is the dense browser-facing union of base plus overlay
+- `evidence_api` serves heavy retrieval and rich payloads
+
+There is no compatibility layer here. Old visibility-era names are intentionally
+absent.
+
 ---
 
-## Phase 1 — Corpus + Loading (current)
+## Canonical Table Set
 
-### solemd.corpus
+### `solemd.corpus`
 
-Authoritative membership: which papers are in our domain. Papers enter as `candidate` (broad candidate pool) and are promoted to `graph` for SPECTER2 embedding + Cosmograph visualization.
+Authoritative domain membership. A paper enters the corpus if it meets the
+domain filter, then remains eligible for mapping, base admission, or later
+overlay promotion.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| corpus_id | BIGINT PK | S2 corpus ID |
-| pmid | INTEGER UNIQUE | Bridge to PubTator3 |
+| corpus_id | BIGINT PK | Stable internal paper id |
+| pmid | INTEGER UNIQUE | PubMed id, link to PubTator3 |
 | doi | TEXT | External linking |
-| pmc_id | TEXT | PubMed Central cross-ref |
-| filter_reason | TEXT NOT NULL | 'journal_match', 'pattern_match', 'journal_and_vocab', 'vocab_entity_match' |
-| corpus_tier | TEXT NOT NULL DEFAULT 'candidate' | 'candidate' (metadata only) or 'graph' (SPECTER2 + Cosmograph). CHECK constraint. Partial index on graph tier. |
-| is_mapped | BOOLEAN NOT NULL DEFAULT false | Has SPECTER2 + UMAP coords |
-| is_default_visible | BOOLEAN NOT NULL DEFAULT false | First-paint graph policy for the current published run. Synced upstream after publish, but derived canonically from graph-run render policy. |
+| pmc_id | TEXT | PubMed Central cross-reference |
+| admission_reason | TEXT NOT NULL | Why the paper entered the corpus; e.g. direct evidence or curated base family |
+| is_in_current_map | BOOLEAN NOT NULL DEFAULT false | True once the paper is present in the current published graph run |
+| is_in_current_base | BOOLEAN NOT NULL DEFAULT false | True once the paper is admitted into the current published `base_points` scaffold |
+| mapped_at | TIMESTAMPTZ | When the current run first mapped the paper |
 | created_at | TIMESTAMPTZ | |
 
-**Tiered corpus**:
-- **Candidate** (~11.32M live): remaining broad candidate pool after promotions. Metadata only. Cheap to store.
-- **Graph** (~2.74M live): promoted papers for SPECTER2 embeddings and Cosmograph rendering. Includes core journals, venue rules, second-wave entity rules, respiratory bridge entities, clean endocrine/metabolic additions, and relation-gated toxicity families. Quality-filtered to ~2.60M via `graph_papers` view.
+### `solemd.papers`
 
-**State transitions** (columns track mapping and publish readiness):
-```
-candidate (default)
-  → corpus_tier = 'graph'       promoted by journal match or venue_rule
-  → is_mapped = true            SPECTER2 embedded + UMAP x/y computed
-  → is_default_visible = true   current publish policy for browser-renderable points
-```
+Canonical paper metadata. This table stores the stable bibliographic and
+retrieval fields used across the graph, bundle, and evidence layers.
 
-### solemd.venue_rule
+Typical columns:
 
-Venue-level promotion rules for adding specialty papers to graph tier. Papers in these venues get promoted to `graph` even if they only matched via vocab signal.
+- `corpus_id`
+- `title`
+- `year`
+- `venue`
+- `journal_name`
+- `publication_date`
+- `publication_types`
+- `fields_of_study`
+- `reference_count`
+- `citation_count`
+- `influential_citation_count`
+- `is_open_access`
+- `s2_url`
+- `abstract`
+- `tldr`
+- `embedding`
+- `text_availability`
+- `paper_id`
+- `paper_external_ids`
+- `publication_venue_id`
+- `journal_volume`
+- `journal_issue`
+- `journal_pages`
+- `is_retracted`
+- `created_at`
+- `updated_at`
+
+### `solemd.base_policy`
+
+Single active policy record for base admission. This is the source of truth for
+which rule sets are active when a new graph run is built.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| venue_normalized | TEXT PK | Exact normalized venue string |
-| rule_source | TEXT NOT NULL | 'nlm', 'pattern', 'manual_cl' |
-| specialty | TEXT | 'critical_care', 'psycho_oncology', etc. |
+| policy_version | TEXT PK | Human-readable version string |
+| description | TEXT | Summary of the active base admission policy |
+| target_base_count | INTEGER NOT NULL DEFAULT `1160000` | Desired first-paint size |
+| is_active | BOOLEAN NOT NULL DEFAULT false | At most one active row |
+| created_at | TIMESTAMPTZ | |
+| updated_at | TIMESTAMPTZ | |
+
+### `solemd.base_journal_family`
+
+Curated family definitions for journals that belong in the base scaffold by
+default.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| family_key | TEXT PK | Stable family identifier |
+| family_label | TEXT NOT NULL | Human-readable family name |
+| family_type | TEXT NOT NULL | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, or `specialty` |
+| include_in_base | BOOLEAN NOT NULL DEFAULT true | Whether the family admits papers into `base_points` |
+| description | TEXT | Human-readable rationale |
 | added_at | TIMESTAMPTZ | |
 
-### solemd.entity_rule
+### `solemd.journal_rule`
 
-Entity-based promotion rules for adding papers to graph tier based on PubTator3 annotations. Papers with matching entity annotations get promoted to `graph` if they pass the confidence + citation gate.
+Venue-to-family mapping table. A normalized venue can participate in one or
+more base journal families.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| entity_type | TEXT NOT NULL | Must match pubtator.entity_annotations.entity_type |
-| concept_id | TEXT NOT NULL | Must match pubtator.entity_annotations.concept_id |
-| canonical_name | TEXT NOT NULL | Human-readable name |
-| rule_category | TEXT NOT NULL | 'behavior', 'neuropsych_disease', 'neurotransmitter_gene' |
-| confidence | TEXT NOT NULL DEFAULT 'high' | 'high', 'moderate', 'requires_second_gate' |
-| min_citation_count | INTEGER NOT NULL DEFAULT 0 | Citation floor for promotion |
+| venue_normalized | TEXT PK | Canonical normalized journal string |
+| family_key | TEXT NOT NULL | References `solemd.base_journal_family.family_key` |
+| include_in_corpus | BOOLEAN NOT NULL DEFAULT true | Whether this venue remains part of the domain corpus |
+| rule_source | TEXT NOT NULL | `nlm`, `pattern`, `manual_cl`, or `curated` |
 | added_at | TIMESTAMPTZ | |
-| | **PK** | (entity_type, concept_id) — composite, because gene IDs overlap with species |
 
-**Confidence tiers**:
-- **high/moderate**: promote if paper has entity annotation + passes citation gate
-- **requires_second_gate**: promote only if paper ALSO has a high-confidence entity_rule match OR a treat/cause relation on the same PMID. Used for gene entities (BDNF, DAT, SERT, COMT, MAOA) to prevent noise from pure genetics papers.
+### `solemd.entity_rule`
 
-**Seeds**: 39 live rules across 6 categories:
-- behavior (14)
-- neuropsych_disease (5)
-- neurotransmitter_gene (5, second-gated)
-- systemic_bridge (7)
-- iatrogenic_syndrome (6)
-- endocrine_metabolic (2)
-
-The second-wave baseline expansion added delirium, agitation, catatonia, hallucinations, delusions, paranoia, encephalopathy, hepatic encephalopathy, uremia, hyponatremia, serotonin syndrome, neuroleptic malignant syndrome, extrapyramidal symptoms, drug-induced parkinsonism, QT prolongation, and torsades de pointes. The final pre-freeze expansions added hypoxia, respiratory insufficiency, acute lung injury, diabetic ketoacidosis, and myxedema. Narrow withdrawal and several broader endocrine concepts were audited but deferred because the current PubTator concept mappings are too noisy for concept_id-only promotion.
-
-### solemd.relation_rule
-
-Relation-gated promotion families for high-precision bridge papers. Current live use is baseline chemical-toxicity promotion; overlay-targeted families can be staged here later without immediate graph promotion.
+Entity-driven base admission rules. These are direct evidence rules, not
+visibility lanes.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| subject_type | TEXT NOT NULL | Currently `chemical` |
-| relation_type | TEXT NOT NULL | Currently `cause` |
-| object_type | TEXT NOT NULL | Currently `disease` |
-| object_id | TEXT NOT NULL | PubTator disease concept id |
-| canonical_name | TEXT NOT NULL | Human-readable syndrome/toxicity name |
-| rule_category | TEXT NOT NULL | `metabolic_toxicity`, `hematologic_toxicity`, etc. |
-| target_layer | TEXT NOT NULL DEFAULT 'baseline' | `baseline` promotes now; `overlay` is staged only |
+| entity_type | TEXT NOT NULL | PubTator3 entity type |
+| concept_id | TEXT NOT NULL | PubTator3 concept id |
+| canonical_name | TEXT NOT NULL | Human-readable concept name |
+| family_key | TEXT | Optional family key for audit grouping |
+| confidence | TEXT NOT NULL | `high`, `moderate`, or `requires_second_gate` |
 | min_citation_count | INTEGER NOT NULL DEFAULT 0 | Citation floor |
 | added_at | TIMESTAMPTZ | |
+| **PK** | (`entity_type`, `concept_id`) | |
 
-**Live seeds**: 16 baseline relation rules covering:
-- metabolic toxicity: weight gain, metabolic syndrome, hyperglycemia
-- cardiac toxicity: myocarditis
-- hematologic toxicity: agranulocytosis, neutropenia
-- GI toxicity: ileus
-- neurologic toxicity: seizures
-- renal toxicity: kidney injury, nephritis, acute kidney failure
-- dermatologic toxicity: toxic epidermal necrolysis, Stevens-Johnson syndrome
-- hepatic/pancreatic toxicity: pancreatitis, hepatitis, drug-induced liver injury
+### `solemd.relation_rule`
 
-### solemd.graph_papers (VIEW)
-
-Quality-filtered view of graph-tier papers for Phase 2 export (Parquet bundles, UMAP input, cluster labeling). NOT used by enrichment — enrichment targets all graph-tier papers to get SPECTER2 embeddings for everything. The quality filter gates what appears on the map.
-
-Null-safe logic: `ANY(NULL)` returns NULL, so each filter clause guards with `IS NOT NULL`.
-
-```sql
-CREATE VIEW solemd.graph_papers AS
-SELECT p.*, c.corpus_tier, c.filter_reason, c.is_mapped, c.is_default_visible
-FROM solemd.papers p
-JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-WHERE c.corpus_tier = 'graph'
-  AND (p.year >= 1945 OR p.year IS NULL)
-  AND NOT (
-    (p.publication_types IS NULL OR CARDINALITY(p.publication_types) = 0)
-    AND COALESCE(p.citation_count, 0) < 50
-  )
-  AND NOT (
-    p.publication_types IS NOT NULL
-    AND 'News' = ANY(p.publication_types)
-    AND COALESCE(p.citation_count, 0) < 50
-  )
-  AND NOT (
-    p.publication_types IS NOT NULL
-    AND 'LettersAndComments' = ANY(p.publication_types)
-    AND COALESCE(p.citation_count, 0) < 50
-  )
-  AND NOT (
-    p.publication_types IS NOT NULL
-    AND 'Editorial' = ANY(p.publication_types)
-    AND COALESCE(p.citation_count, 0) < 20
-  );
-```
-
-### solemd.papers
-
-Rich metadata. Loaded from S2 bulk during filtering, enriched via batch API.
-
-| Column | Type | Source | Notes |
-|--------|------|--------|-------|
-| corpus_id | BIGINT PK FK→corpus | S2 bulk | |
-| title | TEXT NOT NULL | S2 bulk | |
-| year | INTEGER | S2 bulk | Timeline, decade grouping |
-| venue | TEXT | S2 bulk | Venue filter |
-| journal_name | TEXT | S2 bulk | |
-| publication_date | DATE | S2 bulk | Exact date for timeline |
-| publication_types | TEXT[] | S2 bulk | Review, ClinicalTrial, etc. |
-| fields_of_study | TEXT[] | S2 bulk | Medicine, Biology, Psychology |
-| reference_count | INTEGER | S2 bulk | |
-| citation_count | INTEGER | S2 bulk | Node size in Cosmograph |
-| influential_citation_count | INTEGER | S2 bulk | Quality signal |
-| is_open_access | BOOLEAN | S2 bulk | |
-| s2_url | TEXT | S2 bulk | Link to S2 page |
-| abstract | TEXT | Batch API | RAG, display, search |
-| tldr | TEXT | Batch API | Quick preview on hover |
-| embedding | vector(768) | Batch API | SPECTER2, for UMAP layout |
-| text_availability | TEXT | Batch API | 'fulltext', 'abstract', 'none' |
-| paper_id | TEXT | Batch API | S2 `paperId` hash |
-| paper_external_ids | JSONB | Batch API | Canonical S2 external ID snapshot |
-| publication_venue_id | TEXT FK→publication_venues | Batch API | Stable venue identity |
-| journal_volume | TEXT | Batch API | |
-| journal_issue | TEXT | Batch API | |
-| journal_pages | TEXT | Batch API | |
-| s2_full_checked_at | TIMESTAMPTZ | Migration 005 | Resume sentinel for full metadata enrichment |
-| s2_embedding_checked_at | TIMESTAMPTZ | Migration 006 | Resume sentinel for embedding-only enrichment |
-| s2_found | BOOLEAN | Migration 005 | Whether S2 returned a paper for this corpus_id |
-| s2_full_release_id | TEXT | Migration 007 | Release-aware full metadata stamp |
-| s2_embedding_release_id | TEXT | Migration 007 | Release-aware embedding stamp |
-| s2_references_checked_at | TIMESTAMPTZ | Migration 008 | Resume sentinel for outgoing reference sync |
-| s2_references_release_id | TEXT | Migration 008 | Release-aware outgoing reference stamp |
-| is_retracted | BOOLEAN DEFAULT false | Migration 002 | Retraction flag (populated post-build via PubMed E-utilities) |
-| created_at | TIMESTAMPTZ | | |
-| updated_at | TIMESTAMPTZ | | |
-
-Partial index: `idx_papers_retracted` on `(is_retracted) WHERE is_retracted = true` — sparse index, near-zero overhead until populated.
-
-### solemd.publication_venues
-
-Normalized S2 publication venue metadata. One row per `publicationVenue.id`.
+Relation-driven base admission rules for high-precision cross-domain overlap.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| publication_venue_id | TEXT PK | Stable S2 venue id |
-| name | TEXT NOT NULL | |
-| venue_type | TEXT | journal, conference, etc. |
-| issn | TEXT | |
-| url | TEXT | |
-| alternate_names | TEXT[] | |
-| alternate_urls | TEXT[] | |
-| source | TEXT | `semantic_scholar_graph_api` |
-| last_seen_release_id | TEXT | |
+| subject_type | TEXT NOT NULL | Usually `chemical` |
+| relation_type | TEXT NOT NULL | Usually `cause`, `associate`, `treat`, etc. |
+| object_type | TEXT NOT NULL | Usually `disease` |
+| object_id | TEXT NOT NULL | PubTator3 concept id |
+| canonical_name | TEXT NOT NULL | Human-readable overlap name |
+| family_key | TEXT | Optional family key for audit grouping |
+| target_scope | TEXT NOT NULL DEFAULT 'base' | Base admission target |
+| min_citation_count | INTEGER NOT NULL DEFAULT 0 | Citation floor |
+| added_at | TIMESTAMPTZ | |
+| **PK** | (`subject_type`, `relation_type`, `object_type`, `object_id`) | |
 
-### solemd.authors
+### `solemd.paper_evidence_summary`
 
-Canonical S2 author snapshot keyed by `authorId`.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| author_id | TEXT PK | Stable S2 author id |
-| name | TEXT NOT NULL | |
-| external_ids | JSONB | ORCID / DBLP / other ids when provided |
-| source | TEXT | `semantic_scholar_graph_api` |
-| last_seen_release_id | TEXT | |
-
-### solemd.paper_authors
-
-Paper-specific author ordering and raw affiliation strings. This is the primary bridge into the future geo layer.
+Durable per-paper evidence summary used by base admission. This is a persisted
+derived stage keyed by `corpus_id`, not a new source of truth and not a
+materialized-view compatibility layer.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| corpus_id | BIGINT FK→papers | |
-| author_position | INTEGER | 1-based paper order |
-| author_id | TEXT FK→authors | Nullable if S2 omits authorId |
-| name | TEXT NOT NULL | Snapshot name as seen on this paper |
-| affiliations | TEXT[] | Raw S2 affiliation strings |
-| external_ids | JSONB | Snapshot of author external IDs |
-| source_release_id | TEXT | |
-| | **PK** | (`corpus_id`, `author_position`) |
+| corpus_id | BIGINT PK FK→corpus | Stable paper key |
+| admission_reason | TEXT NOT NULL | Current corpus admission reason |
+| pmid | INTEGER | Nullable because some papers do not have PubMed ids |
+| citation_count | INTEGER NOT NULL DEFAULT 0 | Citation count used for evidence thresholds |
+| venue_normalized | TEXT NOT NULL DEFAULT `''` | Stored normalized venue string from `solemd.clean_venue()` |
+| has_vocab_match | BOOLEAN NOT NULL DEFAULT false | Whether corpus admission came through vocab-bearing gates |
+| paper_entity_count | INTEGER NOT NULL DEFAULT 0 | Total PubTator entity rows matched to the paper |
+| has_entity_rule_hit | BOOLEAN NOT NULL DEFAULT false | Whether any entity_rule hit survived citation gating |
+| paper_relation_count | INTEGER NOT NULL DEFAULT 0 | Total PubTator relation rows matched to the paper |
+| has_relation_rule_hit | BOOLEAN NOT NULL DEFAULT false | Whether any relation_rule hit survived citation gating |
+| is_direct_evidence | BOOLEAN NOT NULL DEFAULT false | Direct evidence surface used by base admission |
+| is_journal_base | BOOLEAN NOT NULL DEFAULT false | Whether the paper also matches a curated base journal family |
+| journal_family_key | TEXT | Matched base journal family, if any |
+| journal_family_label | TEXT | Human-readable base journal family label |
+| journal_family_type | TEXT | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, or `specialty` |
+| created_at | TIMESTAMPTZ | |
+| updated_at | TIMESTAMPTZ | |
 
-### solemd.author_affiliations
+This table exists so base admission can reuse paper-level evidence facts across
+rebuilds. Raw source truth still lives in `solemd.corpus`, `solemd.papers`, and
+`pubtator.*`. The summary stores the expensive join results once, then later
+base refreshes and publishes consume that table directly.
 
-One row per raw affiliation string per paper author. Later geo enrichment normalizes these into institution / ROR / lat-lng.
+### `solemd.graph_runs`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| corpus_id | BIGINT | |
-| author_position | INTEGER | |
-| affiliation_index | INTEGER | 1-based within author |
-| raw_affiliation | TEXT NOT NULL | |
-| institution / department / city / region / country | TEXT | Filled by later geo enrichment |
-| country_code | TEXT | |
-| latitude / longitude | DOUBLE PRECISION | |
-| ror_id | TEXT | |
-| source_release_id | TEXT | |
-| | **PK** | (`corpus_id`, `author_position`, `affiliation_index`) |
-
-### solemd.paper_assets
-
-External or mirrored paper assets. Currently used for `open_access_pdf` metadata from S2.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| asset_id | BIGSERIAL PK | |
-| corpus_id | BIGINT FK→papers | |
-| asset_kind | TEXT | `open_access_pdf`, later figures/tables/local mirrors |
-| source | TEXT | |
-| source_release_id | TEXT | |
-| remote_url | TEXT | Publisher / PMC URL |
-| storage_path | TEXT | Local or bucket mirror path when present |
-| access_status | TEXT | S2 OA status, e.g. `GREEN` |
-| license | TEXT | |
-| disclaimer | TEXT | |
-| metadata | JSONB | Full asset payload |
-
-### solemd.paper_references
-
-Outgoing S2 reference snapshot per paper. Richer bibliographic drill-down lives here; domain-domain graph links can be derived from it.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| reference_id | BIGSERIAL PK | |
-| corpus_id | BIGINT FK→papers | Citing paper |
-| reference_index | INTEGER | 1-based order within S2 reference list |
-| referenced_paper_id | TEXT | S2 paper id when resolved |
-| referenced_corpus_id | BIGINT FK→corpus | Domain join target when present |
-| title | TEXT | |
-| year | INTEGER | |
-| external_ids | JSONB | Raw S2 external id payload |
-| doi / pmid / pmcid / arxiv_id / acl_id / dblp_id / mag_id | TEXT | Extracted convenience columns |
-| source_release_id | TEXT | |
-
-### solemd.citations
-
-Normalized domain-domain citation edges. Intended source for graph links and geo citation links. Usually built from `paper_references`.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| citing_corpus_id | BIGINT FK→corpus | Paper that cites |
-| cited_corpus_id | BIGINT FK→corpus | Paper being cited |
-| cited_paper_id | TEXT | Stable S2 paper id |
-| source_release_id | TEXT | |
-| | **PK** | (`citing_corpus_id`, `cited_corpus_id`) |
-
-### solemd.load_history
-
-ETL tracking for debugging and resume support.
-
-| Column | Type |
-|--------|------|
-| id | SERIAL PK |
-| operation | TEXT NOT NULL |
-| source | TEXT |
-| rows_processed | INTEGER |
-| rows_loaded | INTEGER |
-| status | TEXT |
-| started_at | TIMESTAMPTZ |
-| completed_at | TIMESTAMPTZ |
-| error_message | TEXT |
-| metadata | JSONB |
-
-### pubtator.entity_annotations (UNLOGGED)
-
-PubTator3 entities filtered to domain PMIDs. UNLOGGED — if lost, re-run filter.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| pmid | INTEGER NOT NULL | |
-| entity_type | TEXT NOT NULL | gene, disease, chemical, species, mutation, cellline |
-| concept_id | TEXT NOT NULL | MESH:D009461, Gene:1234, etc. |
-| mentions | TEXT NOT NULL | Pipe-delimited mention strings |
-| resource | TEXT NOT NULL | Default 'PubTator3' |
-
-### pubtator.relations (UNLOGGED)
-
-PubTator3 entity-entity relations filtered to domain PMIDs.
-
-| Column | Type | Notes |
-|--------|------|-------|
-| pmid | INTEGER NOT NULL | |
-| relation_type | TEXT NOT NULL | treat, associate, stimulate, inhibit, etc. |
-| subject_type | TEXT NOT NULL | |
-| subject_id | TEXT NOT NULL | |
-| object_type | TEXT NOT NULL | |
-| object_id | TEXT NOT NULL | |
-
----
-
-## Phase 2 — Graph + Bundles (current)
-
-### solemd.graph_runs
-
-Published graph-build runs and bundle metadata consumed by the frontend.
+Published graph runs and bundle metadata.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | id | UUID PK | Graph run identifier |
-| graph_name | VARCHAR(128) | `cosmograph` for the baseline paper graph |
-| node_kind | VARCHAR(64) | `corpus` for the current mapped-paper bundle |
+| graph_name | VARCHAR(128) | Current paper graph name |
+| node_kind | VARCHAR(64) | `corpus` |
 | status | VARCHAR(32) | running, completed, failed |
-| is_current | BOOLEAN | Which run the frontend should serve by default |
+| is_current | BOOLEAN | Which run is published by default |
 | bundle_uri | TEXT | Filesystem path to bundle directory |
 | bundle_format | VARCHAR(32) | `parquet-manifest` |
 | bundle_version | VARCHAR(32) | Bundle schema version |
-| bundle_checksum | VARCHAR(128) | Manifest checksum used by the frontend asset routes |
-| bundle_bytes | BIGINT | Total bundle size in bytes |
+| bundle_checksum | VARCHAR(128) | Manifest checksum |
 | bundle_manifest | JSONB | Table/file manifest |
-| qa_summary | JSONB | Build QA counts and sanity checks |
-| source_release_id | TEXT | Semantic Scholar bulk release used for metadata |
-| embedding_release_id | TEXT | Release stamp for embeddings used in the map |
-| citations_release_id | TEXT | Release stamp for citation-edge ingest |
-| parameters | JSONB | Layout / clustering / export parameters |
+| qa_summary | JSONB | Build QA counts |
+| parameters | JSONB | Layout, clustering, and export parameters |
+| source_release_id | TEXT | Semantic Scholar release |
+| embedding_release_id | TEXT | Embedding release stamp |
+| citations_release_id | TEXT | Citation ingest stamp |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
 | completed_at | TIMESTAMPTZ | |
 
-### solemd.graph
+`graph_runs.qa_summary` is also used during active builds to expose the current
+build stage and checkpoint directory before the final publish summary replaces
+that interim payload.
 
-Mapped-paper coordinates and cluster assignments for a specific graph run.
+### Graph Build Checkpoints (filesystem)
+
+Layout checkpoints are intentionally **not** stored in PostgreSQL. They are
+run-scoped filesystem artifacts written under:
+
+- `graph/tmp/graph_build/<graph_run_id>/`
+
+Why they are not tables:
+
+1. PCA matrices, kNN arrays, and coordinate checkpoints are large binary blobs,
+   not relational facts.
+2. Resume logic needs fast append/restart behavior without bloating graph-db.
+3. PostgreSQL stays focused on durable corpus/evidence/run metadata, while the
+   layout engine owns its numeric work files.
+
+Canonical checkpoint artifacts:
+
+- `corpus_ids.npy`
+- `citation_counts.npy`
+- `layout_matrix.npy`
+- `knn_indices.npy`
+- `knn_distances.npy`
+- `coordinates.npy`
+- `cluster_ids.npy`
+- `outlier_scores.npy`
+- `is_noise.npy`
+- `checkpoint.json`
+
+### `solemd.graph_points`
+
+Run-scoped mapped points for the live canvas. This table is the canonical source
+for `base_points` and `universe_points` exports.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | graph_run_id | UUID FK→graph_runs | |
 | corpus_id | BIGINT FK→corpus | |
-| point_index | INTEGER | Stable source order within the run. Export regenerates dense browser-facing indices from this order. |
+| point_index | INTEGER | Dense browser-facing index derived from run order |
 | x | REAL NOT NULL | UMAP dimension 1 |
 | y | REAL NOT NULL | UMAP dimension 2 |
-| cluster_id | INTEGER | Macro Leiden community ID |
-| micro_cluster_id | INTEGER | Optional later finer-grained cluster ID |
+| cluster_id | INTEGER | Leiden community id |
+| micro_cluster_id | INTEGER | Optional finer-grained local cluster id |
 | cluster_probability | REAL | Optional confidence score |
-| outlier_score | REAL | Continuous spatial outlier score. Current canonical render policy excludes non-zero outliers from the published browser cohort. |
-| is_noise | BOOLEAN | Combined cluster/spatial noise flag retained for analysis and QA, not the canonical browser render switch. |
+| outlier_score | REAL | Spatial outlier score |
+| is_noise | BOOLEAN NOT NULL DEFAULT false | Noise flag retained for QA |
+| created_at | TIMESTAMPTZ | |
+| updated_at | TIMESTAMPTZ | |
+| is_in_base | BOOLEAN NOT NULL DEFAULT false | Whether the point belongs in the first-paint scaffold |
+| base_rank | REAL NOT NULL DEFAULT 0 | Ordering signal within the base scaffold |
 
-### solemd.graph_clusters
+### `solemd.graph_clusters`
 
 Cluster-level summaries and labels for a graph run.
 
@@ -383,143 +265,265 @@ Cluster-level summaries and labels for a graph run.
 |--------|------|-------|
 | graph_run_id | UUID FK→graph_runs | |
 | cluster_id | INTEGER | |
-| label | TEXT | Lexical or later LLM label |
+| label | TEXT | Lexical or LLM label |
 | label_mode | TEXT | lexical, llm, fixed, etc. |
-| label_source | TEXT | provenance for the label |
-| member_count | INTEGER | |
-| paper_count | INTEGER | |
+| label_source | TEXT | Provenance for the label |
+| member_count | INTEGER | Total mapped members |
+| paper_count | INTEGER | Paper count |
 | centroid_x | REAL | |
 | centroid_y | REAL | |
-| representative_node_id | TEXT | Current representative point/node id |
-| representative_node_kind | TEXT | `paper` for the current exported paper graph |
-| candidate_count | INTEGER | Placeholder for later label candidate tracking |
-| mean_cluster_probability | REAL | Optional |
-| mean_outlier_score | REAL | Optional |
+| representative_node_id | TEXT | Representative point id |
+| representative_node_kind | TEXT | `paper` |
+| mean_cluster_probability | REAL | |
+| mean_outlier_score | REAL | |
 | is_noise | BOOLEAN | |
+| base_count | INTEGER | Papers in base for this cluster |
+| base_fraction | REAL | `base_count / paper_count` |
 
-### Citation Edge Population
+### `solemd.graph_base_features`
 
-`solemd.citations` now has the extra fields needed for the Semantic Scholar bulk
-citations dataset and should be treated as the canonical graph-edge source.
-`solemd.paper_references` remains the richer bibliography path for now.
-
-Current delivery rule:
-- ingest bulk `citations` into `solemd.citations`
-- retain API-side `paper_references` for richer per-paper bibliography snapshots
-- treat `corpus_links.parquet` as a canonical link artifact name, but not part of
-  the default browser publish path
-- keep raw citation neighborhoods behind warm/cold delivery until the graph API
-  boundary is designed cleanly
-
-Current bulk-backed citation columns:
+Run-scoped base-admission audit features. This table exists to explain why a
+paper did or did not enter the base scaffold.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| citing_corpus_id | BIGINT FK→corpus | |
-| cited_corpus_id | BIGINT FK→corpus | |
-| cited_paper_id | TEXT | Retained for API-derived paths when present |
-| citation_id | BIGINT | Bulk Semantic Scholar citation identifier |
-| contexts | JSONB | Citation-context text snippets |
-| intents | JSONB | Nested intent labels aligned to contexts |
-| is_influential | BOOLEAN | Bulk influence flag |
-| context_count | INTEGER | Convenience count of context snippets |
-| source | TEXT | `semantic_scholar_citations_bulk` or API-derived source |
-| source_release_id | TEXT | Bulk release / API release stamp |
-| updated_at | TIMESTAMPTZ | |
+| graph_run_id | UUID FK→graph_runs | |
+| corpus_id | BIGINT FK→corpus | |
+| admission_reason | TEXT | Direct evidence or curated family reason |
+| has_vocab_match | BOOLEAN | Whether corpus admission came through vocab-bearing gates |
+| citation_count | INTEGER | |
+| paper_entity_count | INTEGER | |
+| paper_relation_count | INTEGER | |
+| has_entity_rule_hit | BOOLEAN | |
+| has_relation_rule_hit | BOOLEAN | |
+| is_direct_evidence | BOOLEAN | Direct evidence admission surface after rule and vocab evaluation |
+| is_journal_base | BOOLEAN | Whether the paper also matches a curated base journal family |
+| journal_family_key | TEXT | Family key that triggered journal-side base admission, if any |
+| journal_family_label | TEXT | Human-readable journal family label |
+| journal_family_type | TEXT | Journal family type used for ranking/audit |
+| base_source | TEXT | `hidden`, `direct`, `journal`, or `direct+journal` |
+| created_at | TIMESTAMPTZ | |
+
+### `solemd.mapped_papers` view
+
+Export-ready view joining corpus membership, paper metadata, and mapped
+coordinates. This is the canonical read model for graph export and analysis.
+
+Typical shape:
+
+```sql
+SELECT
+  c.corpus_id,
+  c.pmid,
+  c.admission_reason,
+  c.is_in_current_map,
+  c.is_in_current_base,
+  p.title,
+  p.year,
+  p.venue,
+  p.citation_count,
+  gp.graph_run_id,
+  gp.point_index,
+  gp.x,
+  gp.y,
+  gp.cluster_id,
+  gp.is_in_base,
+  gp.base_rank
+FROM solemd.corpus c
+JOIN solemd.papers p ON p.corpus_id = c.corpus_id
+JOIN solemd.graph_points gp ON gp.corpus_id = c.corpus_id;
+```
 
 ---
 
-## Phase 3 — RAG + Entity Layer (later)
+## Rebuild Strategy At Scale
 
-### solemd.paper_chunks
+The canonical schema is designed so `base_points` rebuilds do not have to
+recompute the entire graph stack forever. For the current mapped corpus, a full
+graph rebuild is acceptable. For larger releases such as `14M+` mapped papers,
+the graph should be rebuilt as an overnight pipeline with four separate stages.
 
-Full-text chunks for RAG search. Source: S2ORC structured text.
+### 1. `paper_evidence_summary`
 
-| Column | Type | Notes |
-|--------|------|-------|
-| id | SERIAL PK | |
-| corpus_id | BIGINT FK→papers | Parent paper |
-| chunk_index | INTEGER | Order within paper |
-| section_name | TEXT | intro, methods, results, discussion |
-| chunk_text | TEXT NOT NULL | The actual text |
-| embedding | vector(768) | MedCPT for semantic search |
-| sentence_offsets | INTEGER[] | Byte offsets for sentence boundaries |
-| token_count | INTEGER | |
+Materialize per-paper evidence features once per ingest or rule release, not
+once per graph publish.
 
-### solemd.entities
+This summary should hold the expensive admission inputs:
 
-Canonical entity records aggregated from PubTator mentions. Populated by `uv run python -m app.corpus.entities`. The `canonical_name` is the most-frequent mention form from `pubtator.entity_annotations`, overridden by hand-curated `entity_rule.canonical_name` where available. Used by the cluster labeling pass to prefer canonical biomedical terms.
+- direct entity-rule hits
+- direct relation-rule hits
+- family keys matched by journal curation
+- citation and metadata thresholds
+- per-paper evidence counts used by base admission
 
-| Column | Type | Notes |
-|--------|------|-------|
-| concept_id | TEXT NOT NULL | MESH:D009461, Gene:1234 |
-| entity_type | TEXT NOT NULL | gene, disease, chemical, etc. |
-| canonical_name | TEXT NOT NULL | Preferred name (mode of PubTator mentions, overridden by entity_rule) |
-| synonyms | TEXT[] | All unique mention forms |
-| embedding | vector(768) | SapBERT for entity-level search (NULL until enrichment) |
-| paper_count | INTEGER NOT NULL | Number of domain papers mentioning this entity |
-| | **PK** | (concept_id, entity_type) — composite, because gene IDs overlap across types |
+`graph_base_features` is run-scoped audit output. `paper_evidence_summary` is
+the reusable upstream substrate that keeps later base rebuilds cheap.
+
+Operationally, the summary refresh is committed in five stages:
+
+1. `source`
+2. `entity`
+3. `relation`
+4. `journal`
+5. `finalize`
+
+That gives the build a real resume boundary. If a refresh fails on `relation`,
+the next run can start from `relation` instead of throwing away the completed
+`source` and `entity` work.
+
+### 2. `universe_layout`
+
+Recompute mapped coordinates only when the embedding release or layout recipe
+changes.
+
+This stage owns:
+
+- PCA-space layout matrix checkpoint
+- shared kNN graph checkpoint
+- UMAP coordinates
+- cluster assignment
+- outlier scores
+- run-independent mapped paper membership for the release
+
+The expensive layout job should not rerun just because the base policy or
+journal families changed.
+
+Operationally, the canonical layout build now uses:
+
+1. one shared PCA-space kNN graph
+2. UMAP `precomputed_knn` to reuse that graph for layout
+3. Leiden clustering from the same kNN graph
+4. durable filesystem checkpoints so failed runs can resume
+
+### 3. `base_admission`
+
+Apply the active `base_policy` against the evidence summary and the mapped
+universe to decide `is_in_base` and `base_rank`.
+
+This stage should be the normal policy-refresh path. It is much cheaper than a
+full graph rebuild because it operates on precomputed features instead of
+rescanning PubTator evidence tables and redoing layout.
+
+### 4. `publish`
+
+Export and publish the canonical bundle:
+
+- `base_points`
+- `base_clusters`
+- `universe_points`
+- evidence-side artifacts
+
+This final stage should be the only step that mutates the current published run.
+If a run already has persisted `graph_points` and `graph_clusters`, it should
+also be publishable later without rerunning layout.
+
+## Why This Split Matters
+
+The current full rebuild is slow because it combines all of the following into a
+single publish path:
+
+- evidence joins across the mapped corpus
+- base-admission feature materialization
+- layout-owned run state
+- export and manifest generation
+
+That is acceptable for a clean canonical reset. It is not the intended steady
+state for universe-scale publishing.
+
+The long-term optimization target is:
+
+1. ingest new papers into `corpus` and `papers`
+2. refresh `paper_evidence_summary` incrementally
+3. append or rebuild `universe_layout` on a release cadence
+4. recompute `base_admission` whenever policy changes
+5. publish a new canonical bundle
+
+With that separation, new papers can flow into the baseline corpus continuously,
+while `base_points` can be refreshed as a cheap policy job and the full
+universe layout can run as an overnight release build.
+
+### Implementation Notes For Release-Scale Builds
+
+When the mapped universe grows materially beyond the current corpus, the highest
+leverage optimizations are:
+
+1. keep entity, relation, and journal-family evidence in a persistent
+   `paper_evidence_summary` keyed by `corpus_id`
+2. add composite PubTator indexes that match the admission joins, especially
+   `(pmid, entity_type, concept_id)` for entities and
+   `(pmid, subject_type, relation_type, object_type, object_id)` for relations
+3. if a run-scoped staging pass is still needed, materialize `run_points` once
+   with an index on `pmid` instead of reusing the same CTE across multiple heavy
+   joins
+4. write `graph_points.is_in_base` and `graph_points.base_rank` once, rather
+   than resetting the full run and then updating it again
+5. persist normalized venue or paper-to-family mapping so journal top-ups do not
+   rerun millions of `clean_venue()` evaluations during every publish
+6. checkpoint layout artifacts (`layout_matrix`, shared `knn`, coordinates,
+   clusters) so GPU builds restart from the last durable stage instead of from
+   raw embeddings
+
+### Why `paper_evidence_summary` Is A Table
+
+Keep `paper_evidence_summary` as a normal persisted table refreshed by explicit
+SQL stages. Do not replace it with a materialized view.
+
+Reasons:
+
+1. The graph build needs controlled `INSERT ... ON CONFLICT` updates and stale-row cleanup.
+2. The summary is reused by multiple later stages, so it should survive publish failures.
+3. A normal table leaves room for incremental or batched refresh later without changing the contract.
+
+### Why Heavy Evidence Scans Avoid Temp-Source Tables
+
+The expensive entity and relation aggregates should join raw PubTator evidence
+directly against permanent mapped-paper tables (`solemd.corpus` and
+`solemd.papers`) and only use temporary tables for the smaller downstream
+stages.
+
+That query shape matters because PostgreSQL parallel query is much more willing
+to plan `Gather` / `Gather Merge` workers over large scans of regular tables
+than over scans driven by temporary-table sources. In practice, that means the
+summary refresh can actually use multiple workers on the PubTator-side scans
+instead of falling back to a serial temp-table probe pattern.
 
 ---
 
-### Two Embedding Spaces, Two Purposes
+## Evidence Substrate
 
-| Embedding | Model | Dimension | Purpose |
-|-----------|-------|-----------|---------|
-| papers.embedding | SPECTER2 | 768 | Graph UMAP layout + @ autocomplete. Citation-aware — papers that cite each other cluster together. |
-| paper_chunks.embedding | MedCPT | 768 | RAG search. Query-document architecture — question goes through query encoder, chunks through document encoder. |
-| entities.embedding | SapBERT | 768 | Entity layer UMAP + entity similarity. Biomedical concept-aware — "dopamine" near "serotonin" near "norepinephrine". |
+### `pubtator.entity_annotations`
 
-### Data Flow Summary
+PubTator3 entities filtered to corpus PMIDs.
 
-```
-Three nested data layers:
+| Column | Type | Notes |
+|--------|------|-------|
+| pmid | INTEGER NOT NULL | |
+| entity_type | TEXT NOT NULL | gene, disease, chemical, species, mutation, cellline |
+| concept_id | TEXT NOT NULL | |
+| mentions | TEXT NOT NULL | Pipe-delimited mention strings |
+| resource | TEXT NOT NULL | Default `PubTator3` |
 
-  DATABASE UNIVERSE (~14M papers)
-    All admitted corpus papers with metadata and retrieval substrate.
-    └── MAPPED RUN COHORT
-          Papers in a completed graph run with UMAP x/y (`solemd.graph`)
-          └── PUBLISHED RENDERABLE COHORT
-                Export-defined browser cohort with dense `point_index`
-                └── CURRENT VISIBLE / EMPHASIZED SET
-                      Native filter/timeline/budget state over hot local points
+### `pubtator.relations`
 
-Pipeline:
+PubTator3 relations filtered to corpus PMIDs.
 
-S2 bulk download (51 GB)
-  → DuckDB filters by venue + vocab → solemd.corpus + solemd.papers (~14M candidate)
-  → SQL UPDATE promotes core journals → corpus_tier = 'graph'
-  → venue_rule promotion → additional specialty papers to graph tier
-  → entity_rule promotion → +634,793 live papers (2026-03-20)
-  → relation_rule promotion → +87,108 live papers (2026-03-20)
-  → graph_papers VIEW applies quality filters → ~2.60M live
-  → S2 Batch API enriches graph-tier only → abstract, tldr, embedding, text_availability,
-      publication venue metadata, author snapshots, OA PDF metadata
+| Column | Type | Notes |
+|--------|------|-------|
+| pmid | INTEGER NOT NULL | |
+| relation_type | TEXT NOT NULL | |
+| subject_type | TEXT NOT NULL | |
+| subject_id | TEXT NOT NULL | |
+| object_type | TEXT NOT NULL | |
+| object_id | TEXT NOT NULL | |
 
-PubTator3 FTP (6 GB)
-  → Stream-filter by ALL candidate PMIDs → pubtator.entity_annotations + pubtator.relations
-  → (Full candidate pool loaded — preserves entity data for Phase 1.5 bridge analysis)
+---
 
-S2 bulk `citations`
-  → solemd.citations (contexts, intents, influence, canonical domain edges)
+## Design Rules
 
-S2 Batch API (references)
-  → solemd.paper_references (richer bibliography snapshot, secondary path)
-
-GPU UMAP + Leiden on papers.embedding (graph-tier only)
-  → solemd.graph_runs
-  → solemd.graph (x, y, cluster_id, optional micro-cluster / score fields)
-  → solemd.graph_clusters
-  → publish sync marks current-run `is_mapped`
-  → canonical render/default-visible policy also syncs `is_default_visible`
-
-Export:
-  papers + graph + entity/relation counts + OA/text metadata → corpus_points.parquet
-  graph cluster summaries → corpus_clusters.parquet
-  optional warm artifacts later:
-    - corpus_cluster_exemplars.parquet
-    - corpus_documents.parquet
-  optional/cold link artifacts later:
-    - corpus_links.parquet
-  → DuckDB-WASM in browser → Cosmograph renders from hot tables
-```
+1. `graph_points` carries the render decision through `is_in_base` and `base_rank`.
+2. `graph_clusters` stays geometric and descriptive; it does not decide first paint.
+3. `base_journal_family` and `journal_rule` define curated journal admission.
+4. `entity_rule` and `relation_rule` define direct evidence admission.
+5. `mapped_papers` is a read model, not the source of truth.
+6. `pubtator.*` is the evidence substrate, not the graph-admission policy.
+7. There is no legacy lane policy in this schema.

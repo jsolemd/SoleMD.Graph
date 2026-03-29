@@ -15,10 +15,11 @@ import pyarrow.parquet as pq
 from app import db
 from app.config import settings
 from app.graph.export import bundle_contract
-from app.graph.render_policy import default_visible_point_predicate_sql
+from app.graph.render_policy import base_point_predicate_sql
 from app.graph.render_policy import renderable_point_predicate_sql
 
-BUNDLE_VERSION = "2"
+BUNDLE_VERSION = "4"
+PARQUET_ROW_GROUP_SIZE = 122_880
 
 
 POINTS_SCHEMA = pa.schema(
@@ -48,7 +49,8 @@ POINTS_SCHEMA = pa.schema(
         ("organ_systems_csv", pa.string()),
         ("top_entities_csv", pa.string()),
         ("relation_categories_csv", pa.string()),
-        ("is_default_visible", pa.bool_()),
+        ("is_in_base", pa.bool_()),
+        ("base_rank", pa.float32()),
         ("text_availability", pa.string()),
         ("is_open_access", pa.bool_()),
         ("has_open_access_pdf", pa.bool_()),
@@ -89,7 +91,7 @@ LINKS_SCHEMA = pa.schema(
         ("link_kind", pa.string()),
         ("weight", pa.float32()),
         ("is_directed", pa.bool_()),
-        ("is_default_visible", pa.bool_()),
+        ("is_in_base", pa.bool_()),
         ("certainty", pa.string()),
         ("relation_id", pa.string()),
         ("paper_id", pa.string()),
@@ -195,7 +197,7 @@ def _hash_file(path: Path) -> str:
 
 def _render_points_cte() -> str:
     renderable_predicate = renderable_point_predicate_sql("rp")
-    default_visible_predicate = default_visible_point_predicate_sql("g")
+    base_predicate = base_point_predicate_sql("g")
     return f"""
     WITH run_points AS (
         SELECT
@@ -208,17 +210,37 @@ def _render_points_cte() -> str:
             g.cluster_probability,
             g.outlier_score,
             g.is_noise,
-            ({default_visible_predicate}) AS is_default_visible,
+            ({base_predicate}) AS is_in_base,
+            COALESCE(g.base_rank, 0)::REAL AS base_rank,
             gc.label AS cluster_label,
             gc.centroid_x,
             gc.centroid_y
-        FROM solemd.graph g
+        FROM solemd.graph_points g
         LEFT JOIN solemd.graph_clusters gc
             ON gc.graph_run_id = g.graph_run_id
            AND gc.cluster_id = g.cluster_id
         WHERE g.graph_run_id = %(graph_run_id)s
     ),
     render_points AS (
+        SELECT
+            rp.graph_run_id,
+            rp.corpus_id,
+            rp.source_point_index,
+            rp.x,
+            rp.y,
+            rp.cluster_id,
+            rp.cluster_probability,
+            rp.outlier_score,
+            rp.is_noise,
+            rp.is_in_base,
+            rp.base_rank,
+            rp.cluster_label,
+            rp.centroid_x,
+            rp.centroid_y
+        FROM run_points rp
+        WHERE {renderable_predicate}
+    ),
+    base_points AS (
         SELECT
             rp.graph_run_id,
             rp.corpus_id,
@@ -232,12 +254,45 @@ def _render_points_cte() -> str:
             rp.cluster_probability,
             rp.outlier_score,
             rp.is_noise,
-            rp.is_default_visible,
+            rp.is_in_base,
+            rp.base_rank,
             rp.cluster_label,
             rp.centroid_x,
             rp.centroid_y
-        FROM run_points rp
-        WHERE {renderable_predicate}
+        FROM render_points rp
+        WHERE rp.is_in_base
+    ),
+    base_point_count AS (
+        SELECT count(*)::INTEGER AS total FROM base_points
+    ),
+    universe_points AS (
+        SELECT
+            rp.graph_run_id,
+            rp.corpus_id,
+            (
+                (SELECT total FROM base_point_count)
+                + ROW_NUMBER() OVER (ORDER BY rp.source_point_index)
+                - 1
+            )::INTEGER AS point_index,
+            rp.source_point_index,
+            rp.x,
+            rp.y,
+            rp.cluster_id,
+            rp.cluster_probability,
+            rp.outlier_score,
+            rp.is_noise,
+            rp.is_in_base,
+            rp.base_rank,
+            rp.cluster_label,
+            rp.centroid_x,
+            rp.centroid_y
+        FROM render_points rp
+        WHERE NOT rp.is_in_base
+    ),
+    export_points AS (
+        SELECT * FROM base_points
+        UNION ALL
+        SELECT * FROM universe_points
     ),
     render_cluster_rollup AS (
         SELECT
@@ -248,7 +303,7 @@ def _render_points_cte() -> str:
             avg(y)::REAL AS centroid_y,
             avg(cluster_probability)::REAL AS mean_cluster_probability,
             avg(outlier_score)::REAL AS mean_outlier_score
-        FROM render_points
+        FROM export_points
         GROUP BY COALESCE(cluster_id, 0)
     ),
     render_cluster_representatives AS (
@@ -269,7 +324,7 @@ def _render_points_cte() -> str:
                         rp.cluster_probability DESC NULLS LAST,
                         rp.source_point_index
                 )::INTEGER AS rank
-            FROM render_points rp
+            FROM export_points rp
             JOIN render_cluster_rollup rc
               ON rc.cluster_id = COALESCE(rp.cluster_id, 0)
         ) AS ranked
@@ -299,7 +354,7 @@ def _point_documents_cte() -> str:
                 '[]'
             ) AS authors_json
         FROM solemd.paper_authors pa
-        JOIN render_points rp ON rp.corpus_id = pa.corpus_id
+        JOIN export_points rp ON rp.corpus_id = pa.corpus_id
         GROUP BY pa.corpus_id
     ),
     asset_rollup AS (
@@ -310,7 +365,7 @@ def _point_documents_cte() -> str:
             max(a.access_status) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_status,
             max(a.license) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_license
         FROM solemd.paper_assets a
-        JOIN render_points rp ON rp.corpus_id = a.corpus_id
+        JOIN export_points rp ON rp.corpus_id = a.corpus_id
         GROUP BY a.corpus_id
     ),
     entity_rollup AS (
@@ -331,7 +386,7 @@ def _point_documents_cte() -> str:
                     ORDER BY count(*) DESC, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
                 ) AS rank
             FROM solemd.corpus c
-            JOIN render_points rp ON rp.corpus_id = c.corpus_id
+            JOIN export_points rp ON rp.corpus_id = c.corpus_id
             JOIN pubtator.entity_annotations ea ON ea.pmid = c.pmid
             GROUP BY c.corpus_id, ea.entity_type, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
         ) AS ranked
@@ -353,7 +408,7 @@ def _point_documents_cte() -> str:
                     ORDER BY count(*) DESC, r.relation_type
                 ) AS rank
             FROM solemd.corpus c
-            JOIN render_points rp ON rp.corpus_id = c.corpus_id
+            JOIN export_points rp ON rp.corpus_id = c.corpus_id
             JOIN pubtator.relations r ON r.pmid = c.pmid
             GROUP BY c.corpus_id, r.relation_type
         ) AS ranked
@@ -370,7 +425,8 @@ def _point_documents_cte() -> str:
             rp.cluster_label,
             rp.cluster_probability,
             rp.is_noise,
-            rp.is_default_visible,
+            rp.is_in_base,
+            rp.base_rank,
             rp.centroid_x,
             rp.centroid_y,
             p.paper_id,
@@ -400,7 +456,7 @@ def _point_documents_cte() -> str:
             entity_rollup.top_entities_csv,
             COALESCE(relation_rollup.relation_count, 0) AS relation_count,
             relation_rollup.relation_categories_csv
-        FROM render_points rp
+        FROM export_points rp
         JOIN solemd.papers p ON p.corpus_id = rp.corpus_id
         JOIN solemd.corpus c ON c.corpus_id = rp.corpus_id
         LEFT JOIN author_rollup ON author_rollup.corpus_id = rp.corpus_id
@@ -417,8 +473,8 @@ def _table_specs() -> list[BundleTableSpec]:
     shared_cte = _point_documents_cte()
     return [
         BundleTableSpec(
-            name="corpus_points",
-            parquet_file="corpus_points.parquet",
+            name="base_points",
+            parquet_file="base_points.parquet",
             schema=POINTS_SCHEMA,
             sql=
             shared_cte
@@ -467,7 +523,8 @@ def _table_specs() -> list[BundleTableSpec]:
                 organ_systems_csv,
                 top_entities_csv,
                 relation_categories_csv,
-                is_default_visible,
+                is_in_base,
+                base_rank,
                 text_availability,
                 is_open_access,
                 (open_access_pdf_url IS NOT NULL AND open_access_pdf_url <> '') AS has_open_access_pdf,
@@ -481,12 +538,87 @@ def _table_specs() -> list[BundleTableSpec]:
                     ORDER BY COALESCE(citation_count, 0) DESC, corpus_id
                 )::INTEGER - 1 AS paper_cluster_index
             FROM paper_base
+            WHERE is_in_base
             ORDER BY point_index
             """,
         ),
         BundleTableSpec(
-            name="corpus_clusters",
-            parquet_file="corpus_clusters.parquet",
+            name="universe_points",
+            parquet_file="universe_points.parquet",
+            schema=POINTS_SCHEMA,
+            sql=
+            shared_cte
+            + """
+            SELECT
+                point_index,
+                'paper:' || corpus_id::TEXT AS id,
+                COALESCE(paper_id, 'corpus:' || corpus_id::TEXT) AS paper_id,
+                'paper' AS node_kind,
+                'primary' AS node_role,
+                CASE
+                    WHEN COALESCE(cluster_id, 0) = 0 THEN '#555555'
+                    ELSE (ARRAY[
+                        'rgba(43, 85, 168, 0.85)',
+                        'rgba(153, 82, 213, 0.85)',
+                        'rgba(240, 105, 180, 0.85)',
+                        'rgba(255, 149, 131, 0.85)',
+                        'rgba(254, 224, 139, 0.85)'
+                    ])[1 + MOD(COALESCE(cluster_id, 0), 5)]
+                END AS hex_color,
+                CASE
+                    WHEN COALESCE(cluster_id, 0) = 0 THEN '#999999'
+                    ELSE (ARRAY[
+                        'rgba(43, 85, 168, 0.85)',
+                        'rgba(153, 82, 213, 0.85)',
+                        'rgba(240, 105, 180, 0.85)',
+                        'rgba(255, 149, 131, 0.85)',
+                        'rgba(254, 224, 139, 0.85)'
+                    ])[1 + MOD(COALESCE(cluster_id, 0), 5)]
+                END AS hex_color_light,
+                x,
+                y,
+                cluster_id,
+                cluster_label,
+                cluster_probability,
+                title,
+                NULL::TEXT AS citekey,
+                journal_name AS journal,
+                year,
+                doi,
+                pmid,
+                pmcid,
+                title AS display_label,
+                CONCAT_WS(' ', title, journal_name, semantic_groups_csv, top_entities_csv, relation_categories_csv) AS search_text,
+                semantic_groups_csv,
+                organ_systems_csv,
+                top_entities_csv,
+                relation_categories_csv,
+                is_in_base,
+                base_rank,
+                text_availability,
+                is_open_access,
+                (open_access_pdf_url IS NOT NULL AND open_access_pdf_url <> '') AS has_open_access_pdf,
+                author_count AS paper_author_count,
+                COALESCE(reference_count, 0) AS paper_reference_count,
+                asset_count AS paper_asset_count,
+                entity_count AS paper_entity_count,
+                relation_count AS paper_relation_count,
+                ROW_NUMBER() OVER (
+                    PARTITION BY COALESCE(cluster_id, 0)
+                    ORDER BY COALESCE(citation_count, 0) DESC, corpus_id
+                )::INTEGER - 1 AS paper_cluster_index
+            FROM paper_base
+            WHERE NOT is_in_base
+            ORDER BY
+                COALESCE(cluster_id, 0),
+                COALESCE(year, 0),
+                COALESCE(reference_count, 0) DESC,
+                point_index
+            """,
+        ),
+        BundleTableSpec(
+            name="base_clusters",
+            parquet_file="base_clusters.parquet",
             schema=CLUSTERS_SCHEMA,
             sql=
             render_cte
@@ -516,8 +648,8 @@ def _table_specs() -> list[BundleTableSpec]:
             """,
         ),
         BundleTableSpec(
-            name="corpus_documents",
-            parquet_file="corpus_documents.parquet",
+            name="paper_documents",
+            parquet_file="paper_documents.parquet",
             schema=DOCUMENTS_SCHEMA,
             sql=
             shared_cte
@@ -563,8 +695,8 @@ def _table_specs() -> list[BundleTableSpec]:
             """,
         ),
         BundleTableSpec(
-            name="corpus_cluster_exemplars",
-            parquet_file="corpus_cluster_exemplars.parquet",
+            name="cluster_exemplars",
+            parquet_file="cluster_exemplars.parquet",
             schema=EXEMPLARS_SCHEMA,
             sql=
             shared_cte
@@ -607,8 +739,8 @@ def _table_specs() -> list[BundleTableSpec]:
             """,
         ),
         BundleTableSpec(
-            name="corpus_links",
-            parquet_file="corpus_links.parquet",
+            name="universe_links",
+            parquet_file="universe_links.parquet",
             schema=LINKS_SCHEMA,
             sql=
             render_cte
@@ -625,7 +757,7 @@ def _table_specs() -> list[BundleTableSpec]:
                     ELSE 1.0
                 END::REAL AS weight,
                 true AS is_directed,
-                true AS is_default_visible,
+                (src.is_in_base AND dst.is_in_base) AS is_in_base,
                 CASE
                     WHEN c.is_influential IS TRUE THEN 'high'
                     WHEN c.context_count > 0 THEN 'contextual'
@@ -651,8 +783,8 @@ def _table_specs() -> list[BundleTableSpec]:
 
 def _bundle_table_specs(bundle_profile: str) -> list[BundleTableSpec]:
     all_specs = _table_specs()
-    if bundle_profile == "hot":
-        allowed = {"corpus_points", "corpus_clusters"}
+    if bundle_profile == "base":
+        allowed = {"base_points", "base_clusters", "universe_points"}
         return [spec for spec in all_specs if spec.name in allowed]
     if bundle_profile == "full":
         return all_specs
@@ -666,7 +798,7 @@ def _write_query_to_parquet(
     params: dict,
     schema: pa.Schema,
     output_path: Path,
-    batch_size: int = 50_000,
+    batch_size: int = PARQUET_ROW_GROUP_SIZE,
 ) -> BundleFileSummary:
     writer: pq.ParquetWriter | None = None
     row_count = 0
@@ -681,7 +813,7 @@ def _write_query_to_parquet(
             table = pa.Table.from_pylist(rows, schema=schema)
             if writer is None:
                 writer = pq.ParquetWriter(output_path, table.schema, compression="zstd")
-            writer.write_table(table)
+            writer.write_table(table, row_group_size=PARQUET_ROW_GROUP_SIZE)
             row_count += table.num_rows
 
     if writer is None:
@@ -705,7 +837,7 @@ def export_graph_bundle(
     graph_name: str = "cosmograph",
     node_kind: str = "corpus",
     output_dir: Path | None = None,
-    bundle_profile: str = "hot",
+    bundle_profile: str = "base",
 ) -> BundleSummary:
     graph_run_id_text = str(graph_run_id)
     bundle_dir = output_dir or (settings.graph_bundles_root_path / graph_run_id)

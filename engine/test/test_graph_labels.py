@@ -2,131 +2,135 @@
 
 from __future__ import annotations
 
-from app.graph.labels import _match_vocab_term
+from app.graph.labels import _deduplicate_labels
 from app.graph.labels import build_cluster_labels
 
 
 _SAMPLE_CLUSTER_TEXTS = {
     0: ["noise"],
     1: [
-        "Delirium in intensive care patients",
-        "ICU delirium and encephalopathy",
-        "Delirium assessment tools for critical care",
+        "Delirium prevalence among hospitalized elderly",
+        "Delirium screening with confusion assessment method",
+        "Delirium prevention strategies in postoperative settings",
+        "Hypoactive delirium underdiagnosis and management",
+        "Delirium duration and long-term cognitive decline",
     ],
     2: [
         "Stroke thrombolysis with tissue plasminogen activator",
-        "Acute ischemic stroke mechanical thrombectomy",
-        "Stroke rehabilitation and motor recovery prediction",
+        "Acute ischemic stroke mechanical thrombectomy outcomes",
+        "Stroke rehabilitation motor recovery prediction models",
+        "Hemorrhagic stroke surgical intervention timing",
+        "Stroke recurrence prevention anticoagulation therapy",
     ],
 }
 
 
-def test_build_cluster_labels_generates_ctfidf_labels():
+def test_build_cluster_labels_single_term_per_cluster():
+    """Each unique cluster gets a single title-cased term."""
     labels = build_cluster_labels(_SAMPLE_CLUSTER_TEXTS)
-
     by_cluster = {label.cluster_id: label for label in labels}
+
     assert by_cluster[0].label == "Noise"
+    assert by_cluster[0].label_mode == "fixed"
+    assert by_cluster[0].label_source == "system"
+
+    # Non-noise clusters — no " / " separator
+    assert " / " not in by_cluster[1].label
+    assert " / " not in by_cluster[2].label
+
+    # All non-noise labels use ctfidf mode and source
     assert by_cluster[1].label_mode == "ctfidf"
+    assert by_cluster[1].label_source == "ctfidf"
+
+
+def test_labels_contain_expected_terms():
+    """The top c-TF-IDF term should reflect the dominant topic."""
+    labels = build_cluster_labels(_SAMPLE_CLUSTER_TEXTS)
+    by_cluster = {label.cluster_id: label for label in labels}
+
     assert "Delirium" in by_cluster[1].label
     assert "Stroke" in by_cluster[2].label
 
 
-def test_build_cluster_labels_without_vocab_unchanged():
-    """Without vocab_terms, labels and label_source are unchanged."""
-    labels = build_cluster_labels(_SAMPLE_CLUSTER_TEXTS, vocab_terms=None)
-    by_cluster = {label.cluster_id: label for label in labels}
-    assert by_cluster[1].label_source == "title_terms"
-    assert by_cluster[2].label_source == "title_terms"
+def test_noise_cluster_always_labeled():
+    """Cluster 0 is always 'Noise' regardless of content."""
+    texts = {0: ["some actual content here about delirium"]}
+    labels = build_cluster_labels(texts)
+    assert len(labels) == 1
+    assert labels[0].label == "Noise"
 
 
-def test_build_cluster_labels_with_vocab_boosts_entity_terms():
-    """Vocab-matched terms are boosted in ranking and use canonical form."""
-    vocab = {
-        "delirium": "Delirium",
-        "stroke": "Stroke",
-        "encephalopathy": "Encephalopathy",
-    }
-    labels = build_cluster_labels(_SAMPLE_CLUSTER_TEXTS, vocab_terms=vocab)
-    by_cluster = {label.cluster_id: label for label in labels}
-
-    # Cluster 1: "delirium" and "encephalopathy" are entities — should be boosted
-    assert "Delirium" in by_cluster[1].label
-    assert by_cluster[1].label_source == "ctfidf+vocab"
-
-    # Cluster 2: "stroke" is an entity — should be boosted
-    assert "Stroke" in by_cluster[2].label
-    assert by_cluster[2].label_source == "ctfidf+vocab"
-
-
-def test_build_cluster_labels_with_empty_vocab_no_change():
-    """Empty vocab dict has no effect on labels."""
-    labels = build_cluster_labels(_SAMPLE_CLUSTER_TEXTS, vocab_terms={})
-    by_cluster = {label.cluster_id: label for label in labels}
-    assert by_cluster[1].label_source == "title_terms"
-
-
-def test_build_cluster_labels_with_nonmatching_vocab():
-    """Vocab with no matching terms leaves label_source as title_terms."""
-    vocab = {"lithium": "Lithium", "clozapine": "Clozapine"}
-    labels = build_cluster_labels(_SAMPLE_CLUSTER_TEXTS, vocab_terms=vocab)
-    by_cluster = {label.cluster_id: label for label in labels}
-    assert by_cluster[1].label_source == "title_terms"
-    assert by_cluster[2].label_source == "title_terms"
-
-
-def test_vocab_boost_promotes_entity_over_generic_term():
-    """An entity term gets boosted so it ranks higher than generic words."""
-    # Two clusters so c-TF-IDF can contrast them.
-    # Cluster 1 mentions "delirium" (an entity) alongside generic words.
-    # Cluster 2 is unrelated so "delirium" is distinctive to cluster 1.
+def test_single_cluster_gets_label():
+    """A single non-noise cluster still gets a label."""
     texts = {
         0: ["noise"],
         1: [
-            "advanced neuroimaging techniques for delirium detection",
-            "novel neuroimaging approaches in delirium assessment",
-            "neuroimaging protocols delirium evaluation critical care",
-        ],
-        2: [
-            "cardiac arrhythmia management pharmacotherapy",
-            "antiarrhythmic drug selection cardiac electrophysiology",
-            "cardiac rhythm monitoring implantable devices",
+            "Epilepsy seizure management anticonvulsant therapy",
+            "Epilepsy surgery temporal lobe resection outcomes",
+            "Epileptic seizures electroencephalography monitoring",
         ],
     }
-
-    # With vocab: "delirium" gets boosted and should appear in cluster 1's label
-    vocab = {"delirium": "Delirium"}
-    labels_vocab = build_cluster_labels(texts, vocab_terms=vocab)
-    by_cluster = {l.cluster_id: l for l in labels_vocab}
-    assert "Delirium" in by_cluster[1].label
-    assert by_cluster[1].label_source == "ctfidf+vocab"
+    labels = build_cluster_labels(texts)
+    by_cluster = {label.cluster_id: label for label in labels}
+    assert by_cluster[1].label_mode == "ctfidf"
+    assert " / " not in by_cluster[1].label
 
 
-# ─── _match_vocab_term unit tests ───────────────────────────
-
-def test_match_vocab_term_exact():
-    vocab = {"delirium": "Delirium", "serotonin syndrome": "Serotonin Syndrome"}
-    assert _match_vocab_term("delirium", vocab) == "Delirium"
-    assert _match_vocab_term("serotonin syndrome", vocab) == "Serotonin Syndrome"
+# ─── _deduplicate_labels unit tests ─────────────────────────
 
 
-def test_match_vocab_term_case_insensitive():
-    vocab = {"delirium": "Delirium"}
-    assert _match_vocab_term("Delirium", vocab) == "Delirium"
-    assert _match_vocab_term("DELIRIUM", vocab) == "Delirium"
+def test_dedup_unique_labels_unchanged():
+    """Unique labels stay as single terms."""
+    terms = {1: ["pain", "chronic"], 2: ["stroke", "ischemic"]}
+    labels = _deduplicate_labels(terms, set())
+    assert labels[1] == "Pain"
+    assert labels[2] == "Stroke"
 
 
-def test_match_vocab_term_no_match():
-    vocab = {"delirium": "Delirium"}
-    assert _match_vocab_term("stroke", vocab) is None
+def test_dedup_uses_natural_bigram_compound():
+    """When 'term2 term1' is a known bigram, use the natural compound."""
+    terms = {
+        1: ["pain", "neuropathic", "chronic"],
+        2: ["pain", "delirium", "scale"],
+    }
+    bigrams = {"neuropathic pain", "chronic pain"}
+    labels = _deduplicate_labels(terms, bigrams)
+
+    assert labels[1] == "Neuropathic Pain"
+    assert labels[2] == "Pain & Delirium"
 
 
-def test_match_vocab_term_partial_match():
-    """A unigram term should match if it's a component of a canonical name."""
-    vocab = {"serotonin syndrome": "Serotonin Syndrome"}
-    assert _match_vocab_term("serotonin", vocab) == "Serotonin Syndrome"
+def test_dedup_ampersand_when_no_bigram():
+    """When no natural bigram exists, use 'Term1 & Term2'."""
+    terms = {
+        1: ["learning", "dopamine", "fear"],
+        2: ["learning", "deep", "network"],
+    }
+    bigrams = {"deep learning"}
+    labels = _deduplicate_labels(terms, bigrams)
+
+    assert labels[2] == "Deep Learning"
+    assert labels[1] == "Learning & Dopamine"
 
 
-def test_match_vocab_term_short_term_no_partial():
-    """Short terms (< 5 chars) should not partial-match to avoid noise."""
-    vocab = {"qt prolongation": "QT Prolongation"}
-    assert _match_vocab_term("qt", vocab) is None
+def test_dedup_fallback_with_cluster_id():
+    """When only one term is available, append cluster ID."""
+    terms = {1: ["pain"], 2: ["pain"]}
+    labels = _deduplicate_labels(terms, set())
+    assert labels[1] == "Pain (1)"
+    assert labels[2] == "Pain (2)"
+
+
+def test_dedup_three_way_collision():
+    """Three clusters sharing the same top term all get qualified."""
+    terms = {
+        1: ["cancer", "breast", "tumor"],
+        2: ["cancer", "lung", "smoking"],
+        3: ["cancer", "prostate", "psa"],
+    }
+    bigrams = {"breast cancer", "lung cancer", "prostate cancer"}
+    labels = _deduplicate_labels(terms, bigrams)
+
+    assert labels[1] == "Breast Cancer"
+    assert labels[2] == "Lung Cancer"
+    assert labels[3] == "Prostate Cancer"

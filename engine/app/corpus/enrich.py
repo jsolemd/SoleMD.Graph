@@ -1,15 +1,15 @@
-"""Enrich graph-tier papers via S2 batch API.
+"""Enrich mapped-universe papers via S2 batch API.
 
 Pulls stable S2 paper metadata, author snapshots, OA PDF metadata,
-abstracts, TLDRs, SPECTER2 embeddings, and text availability for graph-tier
+abstracts, TLDRs, SPECTER2 embeddings, and text availability for mapped-universe
 papers in solemd.corpus that don't yet have them. Updates solemd.papers and
 related normalized tables in place. Supports resume (skips already-enriched rows).
 
-Only papers with corpus_tier = 'graph' are enriched. Candidate papers
-are metadata-only and deferred to Phase 1.5 promotion.
+Only papers with layout_status = 'mapped' are enriched. Candidate papers
+are metadata-only and deferred until they are promoted into the mapped universe.
 
 Time estimate:
-    ~2.5M graph-tier papers / 500 per batch = ~5K requests
+    ~2.5M mapped-universe papers / 500 per batch = ~5K requests
     At 1 req/sec with overhead ≈ 1.4 hours
     Resumable: can stop (Ctrl+C) and restart at any time
 
@@ -72,10 +72,10 @@ def _get_unenriched_ids(
     *,
     release_id: str = "",
 ) -> list[int]:
-    """Get corpus_ids that need enrichment (graph-tier only).
+    """Get corpus_ids that need enrichment (mapped-universe only).
 
-    Only papers with corpus_tier = 'graph' are enriched. Candidate papers
-    are metadata-only; they get enriched after Phase 1.5 promotion.
+    Only papers with layout_status = 'mapped' are enriched. Candidate papers
+    are metadata-only until promoted into the mapped universe.
 
     Args:
         embedding_only: Only fetch papers missing embeddings.
@@ -89,7 +89,7 @@ def _get_unenriched_ids(
             query = """
                 SELECT p.corpus_id FROM solemd.papers p
                 JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-                WHERE c.corpus_tier = 'graph'
+                WHERE c.layout_status = 'mapped'
                   AND p.s2_embedding_release_id IS DISTINCT FROM %s
                   AND p.s2_found IS DISTINCT FROM false
                 ORDER BY p.corpus_id
@@ -99,7 +99,7 @@ def _get_unenriched_ids(
             query = """
                 SELECT p.corpus_id FROM solemd.papers p
                 JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-                WHERE c.corpus_tier = 'graph'
+                WHERE c.layout_status = 'mapped'
                   AND p.embedding IS NULL
                   AND p.s2_embedding_checked_at IS NULL
                   AND p.s2_found IS DISTINCT FROM false
@@ -110,7 +110,7 @@ def _get_unenriched_ids(
             query = """
                 SELECT p.corpus_id FROM solemd.papers p
                 JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-                WHERE c.corpus_tier = 'graph'
+                WHERE c.layout_status = 'mapped'
                   AND p.s2_full_release_id IS DISTINCT FROM %s
                 ORDER BY p.corpus_id
             """
@@ -119,7 +119,7 @@ def _get_unenriched_ids(
             query = """
                 SELECT p.corpus_id FROM solemd.papers p
                 JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-                WHERE c.corpus_tier = 'graph'
+                WHERE c.layout_status = 'mapped'
                   AND p.s2_full_checked_at IS NULL
                 ORDER BY p.corpus_id
             """

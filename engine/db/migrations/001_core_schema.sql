@@ -18,16 +18,16 @@ BEGIN;
 -- PubTator filtering and batch API both read from this table.
 
 CREATE TABLE solemd.corpus (
-    corpus_id   BIGINT      PRIMARY KEY,
-    pmid        INTEGER     UNIQUE,
-    doi         TEXT,
-    pmc_id      TEXT,
-    filter_reason TEXT      NOT NULL,   -- 'venue_match', 'mesh_query', 'citation_neighbor'
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+    corpus_id         BIGINT      PRIMARY KEY,
+    pmid              INTEGER     UNIQUE,
+    doi               TEXT,
+    pmc_id            TEXT,
+    admission_reason  TEXT        NOT NULL,   -- 'journal_match', 'pattern_match', 'vocab_entity_match'
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_corpus_pmid ON solemd.corpus (pmid) WHERE pmid IS NOT NULL;
-CREATE INDEX idx_corpus_filter ON solemd.corpus (filter_reason);
+CREATE INDEX idx_corpus_admission_reason ON solemd.corpus (admission_reason);
 
 -- ─── solemd.papers ──────────────────────────────────────────
 -- Rich paper metadata. Populated from S2 bulk data during filtering,

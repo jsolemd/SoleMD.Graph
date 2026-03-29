@@ -2,18 +2,24 @@
 
 How data flows from external sources to the user's browser.
 
-The delivery contract for what stays `hot`, `warm`, and `cold` in the graph
+The delivery contract for what stays `base`, `universe`, and `evidence` in the graph
 bundle lives in [bundle-contract.md](bundle-contract.md).
 
 Current browser-delivery note:
 
-- the default published graph bundle is now `hot` only
+- the default published graph bundle now autoloads only the `base` scaffold
 - mandatory first-load artifacts are currently:
-  - `corpus_points.parquet`
-  - `corpus_clusters.parquet`
-- future `warm` artifacts are expected to be separate optional local Parquet
-  files attached after interaction, not part of the mandatory first download
-- `cold` remains the backend/API path for raw citation neighborhoods, full
+  - `base_points.parquet`
+  - `base_clusters.parquet`
+- current premapped universe artifact:
+  - `universe_points.parquet`
+- universe artifacts are present in the bundle manifest but are not attached
+  on startup
+- local overlay activation is expressed through DuckDB membership/views:
+  `overlay_point_ids`, `overlay_points_web`, and `active_points_web`
+- `paper_documents.parquet` and `cluster_exemplars.parquet` now attach
+  only when detail queries ask for them
+- `evidence` remains the backend/API path for raw citation neighborhoods, full
   PubTator payloads, assets, and later full text
 
 ---
@@ -73,17 +79,25 @@ Current browser-delivery note:
 ║   │   title, abstract, year, │         │   (25-80M rows)          │    ║
 ║   │   journal, PMID, S2 ID  │         │   pmid, type, concept_id │    ║
 ║   │                          │         │   mentions, resource     │    ║
-║   │ embeddings (pgvector)    │         │                          │    ║
-║   │   MedCPT 768d vectors    │         │ relations (500K-1M rows) │    ║
-║   │   for RAG search         │         │   pmid, type, subject,   │    ║
-║   │                          │         │   object                 │    ║
-║   │ citations (domain edges) │         └──────────────────────────┘    ║
+║   │ paper_evidence_summary   │         │                          │    ║
+║   │   durable per-paper      │         │ relations (500K-1M rows) │    ║
+║   │   entity / relation /    │         │   pmid, type, subject,   │    ║
+║   │   journal admission facts│         │   object                 │    ║
+║   │                          │         └──────────────────────────┘    ║
+║   │ graph_points / clusters  │                                         ║
+║   │   mapped coordinates     │         Only the domain-filtered         ║
+║   │   + base admission       │         subset lives here, not the       ║
+║   │                          │         full 1.6B rows.                  ║
+║   │ graph/tmp/graph_build/*  │                                         ║
+║   │   run-scoped PCA / kNN / │         Durable layout checkpoints live  ║
+║   │   coordinate checkpoints │         on disk, not in graph-db.        ║
+║   │ embeddings (pgvector)    │                                         ║
+║   │   MedCPT 768d vectors    │                                         ║
+║   │   for RAG search         │                                         ║
+║   │                          │                                         ║
+║   │ citations (domain edges) │                                         ║
 ║   │   citing_id, cited_id,   │                                         ║
-║   │   intent, influential    │         Only the domain-filtered         ║
-║   │                          │         subset lives here, not the       ║
-║   │ graph_layout             │         full 1.6B rows.                  ║
-║   │   UMAP 2D coordinates    │                                         ║
-║   │   cluster assignments    │                                         ║
+║   │   intent, influential    │                                         ║
 ║   └──────────────────────────┘                                         ║
 ╚═════════════════╤══════════════════════════════════╤════════════════════╝
                   │                                  │
@@ -96,18 +110,18 @@ Current browser-delivery note:
 ║  port 3000              ║                    ║  port 8300               ║
 ║                         ║                    ║                          ║
 ║  Drizzle ORM            ║                    ║  psycopg (PG driver)     ║
-║  (replaces Supabase     ║                    ║                          ║
-║   JS client — same      ║                    ║  READS: paper data,      ║
-║   idea, talks SQL       ║                    ║    search results,       ║
-║   directly to PG)       ║                    ║    entity lookups        ║
+║  (TypeScript SQL        ║                    ║                          ║
+║   client, talks         ║                    ║  READS: paper data,      ║
+║   directly to PG)       ║                    ║    search results,       ║
+║                         ║                    ║    entity lookups        ║
 ║                         ║                    ║                          ║
 ║  Server Components      ║                    ║  WRITES: loads new data  ║
 ║  fetch data, pass       ║                    ║    from S2 Batch API +   ║
 ║  to React components    ║                    ║    PubTator3 into PG     ║
 ║                         ║                    ║                          ║
-║  Server Actions         ║                    ║  BUILDS: graph Parquet   ║
-║  handle search,         ║                    ║    bundles (UMAP +       ║
-║  LLM streaming          ║                    ║    Leiden + DuckDB)      ║
+║  Server Actions         ║                    ║  BUILDS: evidence        ║
+║  handle search,         ║                    ║    summary -> base       ║
+║  LLM streaming          ║                    ║    admission -> bundle   ║
 ║                         ║                    ║                          ║
 ║  Vercel AI SDK          ║                    ║  Dramatiq workers run    ║
 ║  streams Gemini         ║                    ║  long batch jobs         ║
@@ -124,21 +138,22 @@ Current browser-delivery note:
 ║   ┌─────────────────────────────────────────────────────────────────┐   ║
 ║   │                    COSMOGRAPH (graph canvas)                     │   ║
 ║   │                                                                  │   ║
-║   │   Published renderable mapped cohort rendered by GPU (WebGL)    │   ║
+║   │   Base scaffold rendered by GPU (WebGL)                        │   ║
 ║   │   Clustered by research community (UMAP layout)                 │   ║
 ║   │   Colored and scoped locally by cluster / year / journal /      │   ║
 ║   │   search budget over DuckDB-WASM tables                         │   ║
 ║   │                                                                  │   ║
 ║   │   Default first-load data source:                               │   ║
-║   │     corpus_points.parquet + corpus_clusters.parquet             │   ║
-║   │   Optional links remain outside the default hot publish path    │   ║
+║   │     base_points.parquet + base_clusters.parquet                 │   ║
+║   │   Universe premapped artifact: universe_points.parquet          │   ║
+║   │   Optional links remain outside the default base publish path   │   ║
 ║   └─────────────────────────────────────────────────────────────────┘   ║
 ║                                                                         ║
 ║   ┌─────────────────────────────────────────────────────────────────┐   ║
 ║   │                    ENTITY HIGHLIGHTING                           │   ║
 ║   │                                                                  │   ║
 ║   │   User types "dopamine receptor"                                │   ║
-║   │     → DuckDB-WASM searches the hot point table in browser       │   ║
+║   │     → DuckDB-WASM searches the base point table in browser      │   ║
 ║   │     → Resolves a seed point and scoped visibility budget        │   ║
 ║   │     → Cosmograph applies native filter/timeline/budget clauses  │   ║
 ║   │     → Panels query the same scoped DuckDB state locally         │   ║
@@ -240,13 +255,17 @@ Current browser-delivery note:
                            │
                            ▼
   ┌─────────────────────────────────────────────────────────┐
-  │  REBUILD GRAPH                                           │
-  │  SPECTER2 embeddings → GPU UMAP → 2D layout             │
-  │  Leiden clustering → cluster labels (LLM, ~$0.30)       │
-  │  Export hot bundle:                                     │
-  │    - corpus_points.parquet                              │
-  │    - corpus_clusters.parquet                            │
-  │  Optional warm/cold artifacts follow the bundle         │
+  │  REFRESH EVIDENCE + REBUILD GRAPH                        │
+  │  pubtator + papers -> paper_evidence_summary            │
+  │  embeddings -> PCA layout matrix -> shared kNN          │
+  │  shared kNN -> GPU UMAP + GPU Leiden                    │
+  │  run checkpoints -> coordinates / clusters / outliers   │
+  │  base admission reads evidence summary, then exports:   │
+  │    - base_points.parquet                                │
+  │    - base_clusters.parquet                              │
+  │  Export premapped universe artifact:                    │
+  │    - universe_points.parquet                            │
+  │  Optional universe/evidence artifacts follow the bundle │
   │  contract; links are not part of the default publish    │
   └─────────────────────────────────────────────────────────┘
 ```

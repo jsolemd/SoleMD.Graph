@@ -234,9 +234,9 @@ The union of these two PMID sets forms the domain filter applied to PubTator3.
 | Relations | 33M rows | 500K-1M rows |
 | Papers covered | 36M | 500K-2M |
 
-### Hot vs Cold Split
+### Graph Database vs Release Mirror Split
 
-**HOT data** (PostgreSQL, ~10-20 GB): Domain-filtered entity annotations and
+**Graph database data** (PostgreSQL, ~10-20 GB): Domain-filtered entity annotations and
 relations. Queried interactively by the web app for paper detail panels, entity
 lookups, and RAG boosting.
 
@@ -1039,14 +1039,16 @@ bulk tab data.
 
 ### Entity Mentions in Graph Parquet Bundle
 
-PubTator3 entity annotations are baked into `corpus_points.parquet` during
-graph bundle building. Each paper row includes a serialized list of entity
+PubTator3 entity annotations are baked into the graph bundle during
+graph bundle building. Today that means `base_points.parquet` for the opening
+scaffold and, when needed, `universe_points.parquet` for the broader premapped
+coordinate universe. Each paper row includes a serialized list of entity
 mentions and their concept IDs, enabling client-side entity highlighting
 without any server round-trip:
 
 ```
 User types "dopamine" in the search box
---> DuckDB-WASM: SELECT pmid FROM corpus_points WHERE mentions LIKE '%dopamine%'
+--> DuckDB-WASM: SELECT pmid FROM active_points_web WHERE mentions LIKE '%dopamine%'
 --> Cosmograph highlights matching nodes (<10ms)
 ```
 
@@ -1075,14 +1077,14 @@ not part of the default browser graph payload today.
 
 Current implementation:
 
-- compact PubTator-derived summaries are exported onto hot points
+- compact PubTator-derived summaries are exported onto base points
   - semantic groups
   - top entities
   - relation-category summaries
-- full relation rows remain database-side / future cold-path data
-- `corpus_links.parquet` remains the canonical link artifact name if paper or
-  relation edges are published later, but it is not part of the default hot
-  browser bundle
+- full relation rows remain database-side / future evidence-path data
+- `universe_links.parquet` is the canonical browser-side link artifact name if
+  paper or relation edges are published later, but it is not part of the
+  default base browser bundle
 
 That means PubTator currently informs graph search, filtering, summaries, and
 future evidence/link artifacts more than direct always-on edge rendering.

@@ -1,10 +1,10 @@
--- Migration 004c: Baseline entity expansion + relation-gated toxicity families
+-- Migration 004c: Base entity expansion + relation-gated toxicity families
 --
 -- Purpose:
---   1. Add a second wave of high-yield baseline entity_rule seeds for
+--   1. Add a second wave of high-yield base entity_rule seeds for
 --      bedside neurobehavior, systemic encephalopathy, and iatrogenic syndromes
 --   2. Create solemd.relation_rule for high-precision chemical->cause promotion
---      families (baseline now, overlay-ready later)
+--      families (base now, overlay-ready later)
 --
 -- Notes:
 --   - Apathy and anhedonia remain important, but are not seeded as entity_rule
@@ -13,13 +13,13 @@
 
 BEGIN;
 
--- ── 1. Expand entity_rule with high-yield baseline concepts ──────────────
+-- ── 1. Expand entity_rule with high-yield base concepts ──────────────────
 
 INSERT INTO solemd.entity_rule (
     entity_type,
     concept_id,
     canonical_name,
-    rule_category,
+    family_key,
     confidence,
     min_citation_count
 )
@@ -50,22 +50,22 @@ CREATE TABLE IF NOT EXISTS solemd.relation_rule (
     object_type          TEXT NOT NULL,
     object_id            TEXT NOT NULL,
     canonical_name       TEXT NOT NULL,
-    rule_category        TEXT NOT NULL,
-    target_layer         TEXT NOT NULL DEFAULT 'baseline',
+    family_key           TEXT NOT NULL,
+    target_scope         TEXT NOT NULL DEFAULT 'base',
     min_citation_count   INTEGER NOT NULL DEFAULT 0,
     added_at             TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (subject_type, relation_type, object_type, object_id),
-    CONSTRAINT relation_rule_target_layer_check
-        CHECK (target_layer IN ('baseline', 'overlay'))
+    CONSTRAINT relation_rule_target_scope_check
+        CHECK (target_scope IN ('base', 'overlay'))
 );
 
 COMMENT ON TABLE solemd.relation_rule IS
-    'Relation-gated promotion rules. Baseline rules promote now; overlay rules are staged for future mapped-reservoir work.';
+    'Relation-gated promotion rules. Base rules promote now; overlay rules are staged for future overlay activation.';
 
-COMMENT ON COLUMN solemd.relation_rule.target_layer IS
-    'baseline = promote to graph tier now, overlay = count/stage for future overlay reservoir work.';
+COMMENT ON COLUMN solemd.relation_rule.target_scope IS
+    'base = promote to mapped layout now, overlay = count/stage for later overlay activation.';
 
--- ── 3. Seed baseline toxicity families (chemical -> cause -> syndrome) ───
+-- ── 3. Seed base toxicity families (chemical -> cause -> syndrome) ───────
 -- These are intentionally relation-gated rather than direct entity promotion
 -- because they are most valuable as medication/adverse-effect bridges.
 
@@ -75,18 +75,18 @@ INSERT INTO solemd.relation_rule (
     object_type,
     object_id,
     canonical_name,
-    rule_category,
-    target_layer,
+    family_key,
+    target_scope,
     min_citation_count
 )
 VALUES
-    ('chemical', 'cause', 'disease', 'MESH:D015430', 'Weight gain', 'metabolic_toxicity', 'baseline', 5),
-    ('chemical', 'cause', 'disease', 'MESH:D024821', 'Metabolic syndrome', 'metabolic_toxicity', 'baseline', 5),
-    ('chemical', 'cause', 'disease', 'MESH:D006943', 'Hyperglycemia', 'metabolic_toxicity', 'baseline', 5),
-    ('chemical', 'cause', 'disease', 'MESH:D009205', 'Myocarditis', 'cardiac_toxicity', 'baseline', 5),
-    ('chemical', 'cause', 'disease', 'MESH:D000380', 'Agranulocytosis', 'hematologic_toxicity', 'baseline', 5),
-    ('chemical', 'cause', 'disease', 'MESH:D009503', 'Neutropenia', 'hematologic_toxicity', 'baseline', 5),
-    ('chemical', 'cause', 'disease', 'MESH:D045823', 'Ileus', 'gi_toxicity', 'baseline', 5)
+    ('chemical', 'cause', 'disease', 'MESH:D015430', 'Weight gain', 'metabolic_toxicity', 'base', 5),
+    ('chemical', 'cause', 'disease', 'MESH:D024821', 'Metabolic syndrome', 'metabolic_toxicity', 'base', 5),
+    ('chemical', 'cause', 'disease', 'MESH:D006943', 'Hyperglycemia', 'metabolic_toxicity', 'base', 5),
+    ('chemical', 'cause', 'disease', 'MESH:D009205', 'Myocarditis', 'cardiac_toxicity', 'base', 5),
+    ('chemical', 'cause', 'disease', 'MESH:D000380', 'Agranulocytosis', 'hematologic_toxicity', 'base', 5),
+    ('chemical', 'cause', 'disease', 'MESH:D009503', 'Neutropenia', 'hematologic_toxicity', 'base', 5),
+    ('chemical', 'cause', 'disease', 'MESH:D045823', 'Ileus', 'gi_toxicity', 'base', 5)
 ON CONFLICT DO NOTHING;
 
 COMMIT;

@@ -163,6 +163,11 @@ html:root {
   --cosmograph-scrollbar-background: rgba(0, 0, 0, 0.08);
 }
 
+/* Replace Cosmograph's built-in SVG mark with a repo-owned attribution line. */
+[class*="style_module_attribution__"] {
+  display: none !important;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    DARK MODE — Only override foundations + tokens that diverge.
    Downstream tokens using var() update automatically.

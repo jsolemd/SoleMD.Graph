@@ -1,190 +1,220 @@
-# The Living Graph — Dynamic Data Architecture
+# The Living Graph - Base, Universe, Active Canvas
 
-> The graph always shows ~2M papers. But WHICH 2M changes based on what you're
-> exploring. Papers flow in and out of the visible canvas, drawn from a larger
-> pre-mapped universe. The graph feels alive.
+> The graph is not trying to show everything at first paint. It is trying to
+> open with a domain-rich base scaffold, then let the rest of the mapped
+> universe flow in on demand.
+
+The intended operating model is simple:
+
+- `base_points` is the curated opening canvas
+- `universe_points` is the mapped remainder
+- `overlay_points` is the currently promoted subset from the universe
+- `active_points` is the live canvas table
+- `evidence_api` serves the heavy retrieval path
+
+The target base size is intentionally large enough to preserve organ-system
+overlap, but small enough to remain stable and fast. A domain-rich base around
+`1.16M` points is the current design target.
 
 ---
 
-## Three Nested Data Layers
+## Three Nested Layers
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│  DATABASE UNIVERSE  (~14M papers)                                     │
-│                                                                       │
-│  Every paper matching our two-signal domain filter.                   │
-│  Full metadata from S2 bulk. MedCPT embeddings for semantic search.  │
-│  PubTator3 entity annotations (318M) + relations (24.7M).           │
-│  Storage: solemd.corpus + solemd.papers + pubtator.*                 │
+│  DOMAIN CORPUS                                                        │
+│  Full mapped paper universe: paper metadata, PubTator evidence,       │
+│  and retrieval substrate.                                             │
 │                                                                       │
 │  ┌───────────────────────────────────────────────────────────────┐   │
-│  │  MAPPED UNIVERSE  (3-5M papers, is_mapped = true)             │   │
-│  │                                                               │   │
-│  │  SPECTER2 embedding + UMAP 2D coordinates pre-computed.      │   │
-│  │  These papers HAVE positions on the map — they can appear     │   │
-│  │  on the canvas instantly when relevant.                       │   │
-│  │  Storage: solemd.graph (x, y, cluster_id)                    │   │
+│  │  BASE POINTS                                                 │   │
+│  │  Curated first-paint scaffold.                               │   │
+│  │  High-quality papers with direct evidence or curated base    │   │
+│  │  journal-family membership.                                  │   │
 │  │                                                               │   │
 │  │  ┌───────────────────────────────────────────────────────┐   │   │
-│  │  │  ACTIVE CANVAS  (~2M papers at any time)              │   │   │
-│  │  │                                                       │   │   │
-│  │  │  Currently loaded in browser + rendered by Cosmograph │   │   │
-│  │  │  via DuckDB-WASM Parquet bundle.                      │   │   │
-│  │  │                                                       │   │   │
-│  │  │  ┌───────────────────────────────────────────────┐   │   │   │
-│  │  │  │  BASELINE  (~1.85M, is_default_visible=true) │   │   │   │
-│  │  │  │                                               │   │   │   │
-│  │  │  │  Core neuro/psych papers. Always visible.     │   │   │   │
-│  │  │  │  Stable scaffold that doesn't change between  │   │   │   │
-│  │  │  │  interactions. Quality-filtered via            │   │   │   │
-│  │  │  │  graph_papers VIEW.                           │   │   │   │
-│  │  │  └───────────────────────────────────────────────┘   │   │   │
-│  │  │                                                       │   │   │
-│  │  │  + DYNAMIC OVERLAY (0-200K papers from reservoir)     │   │   │
-│  │  │    Streamed in based on user actions.                  │   │   │
-│  │  │    Pre-mapped, so they have coordinates.               │   │   │
+│  │  │  ACTIVE CANVAS                                        │   │   │
+│  │  │  Base + promoted overlay in one dense table.         │   │   │
+│  │  │  DuckDB-local views keep ids stable and links dense.  │   │   │
 │  │  └───────────────────────────────────────────────────────┘   │   │
+│  │                                                               │   │
+│  │  + OVERLAY POINTS                                             │   │
+│  │    Mapped papers promoted from the universe for the current   │   │
+│  │    user focus.                                                │   │
 │  └───────────────────────────────────────────────────────────────┘   │
 │                                                                       │
-│  + DETAIL PANEL (any of 14M papers)                                  │
-│    Side panel for papers without coordinates.                        │
-│    MedCPT retrieval reaches the full database.                       │
+│  + EVIDENCE API                                                       │
+│    Backend retrieval for raw citation neighborhoods and verbose payloads │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## User Interaction Examples
+## What Base Is For
 
-### 1. Filter by "delirium + critical care"
+Base points are the papers that should be available immediately when the graph
+opens. They are not a synonym for "everything we know".
 
-```
-User clicks filter → "delirium" entity + "critical care" venue
-  → DuckDB query against mapped universe: is_mapped=true AND venue LIKE '%crit%'
-  → ~5K critical care papers with pre-computed UMAP coordinates
-  → Stream into active canvas as overlay points
-  → Appear near existing delirium cluster (SPECTER2 placed them there)
-  → Baseline unchanged — overlay adds to it
-```
+Base admission should favor:
 
-### 2. Write about "lithium nephrotoxicity"
+- direct evidence papers
+- high-quality journal families that are explicitly curated for the domain
+- organ-system overlap that preserves breadth across medicine
+- prestige journals and related sub-journals that reliably carry relevant work
 
-```
-User types in editor → NER extracts "lithium", "nephrotoxicity"
-  → MedCPT embeds query → pgvector HNSW search across full 14M
-  → Top-K results split:
-    - Papers with is_mapped=true → light up on canvas (they have coordinates)
-    - Papers without coordinates → show in detail side panel
-  → Supporting evidence glows bright, contradicting evidence pulses differently
-```
+That means the opening scaffold should cover:
 
-### 3. Explore a psycho-oncology cluster
+- neurology
+- psychiatry
+- neuropsychiatry
+- neuroscience
+- psychology
+- neuropsychology
+- high-quality overlap across the rest of medicine
 
-```
-User zooms into a Leiden cluster labeled "psycho-oncology"
-  → System detects focus area → queries mapped reservoir for related papers
-  → Pre-mapped oncology bridge papers (is_mapped=true, is_default_visible=false)
-  → Flow onto canvas near the cluster — they were UMAP-placed in context
-  → User sees the cluster grow richer as they explore
-```
+The point is not to maximize recall inside base. The point is to make sure the
+base is representative, high-quality, and broad enough that a user can start
+working without immediately promoting half the universe.
 
-### 4. Ask "what treats ICU delirium?"
+---
 
-```
-User types question → MedCPT encodes → pgvector retrieves from ALL 14M
-  → Top-K feed into Gemini Flash for synthesis
-  → As answer streams, cited papers with coordinates illuminate on canvas
-  → Papers without coordinates listed with links in answer panel
-```
+## How the Graph Responds
+
+| User action | Graph response |
+|-------------|----------------|
+| Filter by year / journal / cluster | Cosmograph updates against local DuckDB views |
+| Search for a paper or concept | DuckDB resolves the seed and promotes a local neighborhood when appropriate |
+| Click a point | Persistent selection stays separate from active visibility |
+| Open a detail panel | Universe-local document/exemplar tables attach if needed |
+| Ask for evidence | `evidence_api` handles heavy retrieval and full citation context |
+
+The browser should keep the camera fixed while the active set changes. Users
+should feel like they are expanding a stable map, not jumping between maps.
 
 ---
 
 ## Two Embedding Spaces
 
-| Embedding | Model | Dimension | Purpose | Scope |
-|-----------|-------|-----------|---------|-------|
-| **SPECTER2** | Pre-computed by S2 | 768 | Map geometry — UMAP layout, cluster structure. Citation-aware: papers that cite each other cluster together. | Mapped universe (3-5M) |
-| **MedCPT** | Self-embedded | 768 | Semantic retrieval — search, RAG, @ autocomplete. Query-document architecture — question through query encoder, chunks through document encoder. | Full database (14M) |
+| Embedding | Model | Purpose | Scope |
+|-----------|-------|---------|-------|
+| SPECTER2 | Pre-computed by Semantic Scholar | Layout, cluster structure, paper-paper proximity | Mapped universe and base |
+| MedCPT | Self-embedded | Search, RAG, autocomplete, retrieval | Full corpus and evidence |
 
-**Why two?** SPECTER2 is optimized for paper-paper similarity (good for layout). MedCPT is optimized for query-document matching (good for search). Using one for both would compromise either layout quality or retrieval accuracy.
+Why two?
 
----
-
-## Architectural Constraints
-
-1. **Single UMAP run**: Every visible paper needs pre-computed x/y from the same UMAP run. Can't merge coordinates from separate runs — the manifold would be inconsistent.
-
-2. **Coordinate stability**: The baseline scaffold (~1.85M papers) must be stable across sessions. Users develop spatial memory ("delirium is in the upper right"). Overlay papers are placed within the same coordinate space during the initial UMAP run.
-
-3. **Browser memory budget**: Cosmograph handles ~2M points well on modern GPUs. Loading all 5M mapped papers would exceed WebGL buffer limits. The overlay pattern keeps the active set manageable.
-
-4. **Streaming, not bulk**: Overlay papers stream in as small DuckDB query results, not as a full Parquet reload. The existing DuckDB-WASM connection handles this — same architecture as current crossfilter queries.
+- SPECTER2 is good for map geometry and citation-aware clustering
+- MedCPT is good for query-document retrieval
+- mixing those responsibilities would weaken both
 
 ---
 
-## Implementation Pattern: DuckDB Bundle Architecture
+## Canonical Runtime Pattern
 
-The living graph builds on the existing Parquet bundle pipeline:
+The browser runtime now follows this sequence:
 
-```
-Phase 2 (baseline):
-  GPU UMAP on ~1.85M quality-filtered papers → x, y coordinates
-  Leiden clustering → cluster_id, cluster_label
-  Export: corpus_points.parquet (baseline bundle)
-  DuckDB-WASM loads bundle → Cosmograph renders
+1. Boot `base_points` locally.
+2. Attach `universe_points` only when the bundle needs richer local detail.
+3. Promote a subset into `overlay_points`.
+4. Rebuild `active_points` as a dense union of base plus overlay.
+5. Remap links through `active_links_web` and `active_paper_links_web`.
+6. Keep the camera fixed while the canvas changes.
+7. Use `evidence_api` for payloads that are too heavy for the bundle.
 
-Phase 2+ (mapped reservoir):
-  GPU UMAP on full mapped universe (3-5M) in SAME run as baseline
-  Additional papers stored with is_mapped=true, is_default_visible=false
-  Export: reservoir_points.parquet (overlay bundle, served separately)
-  DuckDB-WASM loads on demand → Cosmograph adds overlay points
-```
+Implementation detail:
 
-Key: the baseline and reservoir are from the **same UMAP run**. Reservoir papers have coordinates that are consistent with the baseline manifold.
+- `overlay_point_ids -> overlay_points_web -> active_points_web`
+- `active_points_web` is the browser-facing dense canvas table
+- `active_links_web` and `active_paper_links_web` follow active ids, not a static export cohort
 
----
-
-## Mapped Universe Sizing
-
-| Category | Papers | Source |
-|----------|--------|--------|
-| Graph tier (core journals) | ~1.98M | journal_match + pattern_match + journal_and_vocab |
-| Venue-rule additions | ~38K | solemd.venue_rule (specialty venues) |
-| Quality-filtered baseline | ~1.85M | graph_papers VIEW |
-| Phase 1.5 overlay reservoir | ~1-3M | Top candidate papers by PMI score |
-| **Total mapped universe** | **~3-5M** | All embedded in same UMAP run |
+This is the clean boundary: base and universe are data, active is runtime state,
+evidence is a service.
 
 ---
 
-## Phase 2 Implementation Path
+## Base Admission Policy
 
-1. **SPECTER2 embedding retrieval** — S2 Batch API for ~1.98M graph-tier papers
-2. **GPU UMAP** — cuML UMAP on SPECTER2 vectors → 2D coordinates
-3. **Leiden clustering** — community detection → cluster labels via LLM
-4. **Baseline Parquet bundle** — export quality-filtered papers with coordinates
-5. **DuckDB-WASM + Cosmograph** — render baseline (~1.85M points)
-6. **Reservoir embedding** — extend UMAP to include top candidate papers (Phase 1.5)
-7. **Overlay streaming** — DuckDB queries against reservoir bundle on user actions
-8. **State management** — track is_mapped / is_default_visible per paper
+The simplified admission model is:
+
+`base = direct evidence OR curated base journal family`
+
+That is the whole policy shape. Everything else is secondary to the goal of
+producing a strong opening scaffold.
+
+Practical implications:
+
+- `journal_rule` and `base_journal_family` define curated journal coverage
+- `entity_rule` and `relation_rule` define direct evidence coverage
+- `paper_evidence_summary` is the durable per-paper stage that base admission reuses
+- `graph_points.is_in_base` records the final admission decision
+- `graph_points.base_rank` orders base points for export and QA
+- graph-build layout state is checkpointed per run on disk so failed runs resume
+  from PCA / kNN / coordinates artifacts instead of restarting the whole build
+
+This is deliberately simpler than the old visibility-lane approach because the
+runtime no longer needs the base to double as the entire expansion policy.
 
 ---
 
-## Phase 2 Consideration: Concept Node Pinning
+## Target Composition
 
-Promoting papers via entity rules (Step 3d) ensures papers about aggression, anhedonia, frontostriatal circuits, etc. are in the graph tier and will eventually get UMAP coordinates. But for the **concepts themselves** to be visually prominent on the canvas, we need concept-level visual anchors.
+A good base is not just neurology and psychiatry. It should also carry the
+right amount of overlap from the rest of medicine.
 
-**Problem**: A user filtering aggressively (by year, publication type, venue) might temporarily hide all papers in the "aggression" cluster. The concept becomes invisible even though it's central to the domain.
+The current target composition is:
 
-**Solution: Exemplar pinning in the Parquet bundle**
+- strong direct-evidence backbone across neuro/psych
+- flagship and prestige journals that regularly publish relevant overlap
+- explicit organ-system coverage where neuro/psych concepts show up in clinical
+  medicine
+- enough breadth that new papers can continue to fall into the base as they are
+  downloaded, if they meet quality and domain requirements
 
-Pin term-layer exemplar nodes for key behavioral and circuit concepts:
+The useful mental model is:
 
-1. **Exemplar selection**: For each entity_rule concept, find the highest-citation-count representative paper in the graph tier that has that entity annotation. This paper becomes the "exemplar" for that concept.
+- `base_points` is curated, not exhaustive
+- `universe_points` is comprehensive for the mapped corpus
+- `overlay_points` is the user-driven expansion surface
 
-2. **Pin flag**: Add `is_pinned BOOLEAN` to the Parquet bundle schema. Pinned nodes are always rendered by Cosmograph regardless of active filters.
+---
 
-3. **Visual treatment**: Pinned exemplars get a distinct visual treatment (different shape, persistent label, slightly larger size) so they serve as landmarks. "Aggression is near the upper-left, next to the impulsivity cluster."
+## Implementation Pattern: DuckDB Bundle
 
-4. **Synthetic nodes (alternative)**: Instead of pinning real papers, create lightweight synthetic nodes at cluster centroids. These carry no paper metadata — just a concept label and UMAP coordinates. Simpler but less informative on click.
+The canonical bundle is:
 
-**Scope**: This is a Cosmograph/bundle concern, not a corpus concern. The entity promotion (Phase 1) gets the papers into the graph tier. Concept pinning (Phase 2) makes them visually discoverable.
+- `base_points.parquet`
+- `base_clusters.parquet`
+- `universe_points.parquet`
+- `paper_documents.parquet`
+- `cluster_exemplars.parquet`
+
+DuckDB keeps those artifacts local and queryable without hydrating a giant JS
+array. Cosmograph reads the dense active canvas views, not raw application
+objects.
+
+The important property is that base and universe are produced from the same
+mapped coordinate system. Overlay promotion should not change the manifold or
+reset spatial memory.
+
+The same principle now applies to the offline build:
+
+- one shared PCA-space kNN graph feeds both UMAP and Leiden
+- `paper_evidence_summary` is the database-side reusable evidence stage
+- `graph/tmp/graph_build/<graph_run_id>/` is the filesystem-side layout stage
+- publish/export is a later step, not the place where raw evidence or neighbor
+  graphs are recomputed
+
+---
+
+## What This Replaces
+
+The new model replaces the older lane-based first-paint policy.
+
+Those terms belonged to a system where the opening canvas had to carry too much
+policy logic. In the new architecture:
+
+- base admission is explicit
+- universe is preserved
+- overlay promotion is runtime state
+- evidence stays backend-driven until needed
+
+That is the clean separation the graph needs.

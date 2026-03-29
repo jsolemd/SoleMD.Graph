@@ -1,8 +1,8 @@
--- Migration 004e: Final endocrine/metabolic baseline additions
+-- Migration 004e: Final endocrine/metabolic base additions
 --
 -- Purpose:
 --   Add the last clean, bedside-reversible endocrine/metabolic syndromes
---   before freezing Phase 1 baseline coverage.
+--   before freezing Phase 1 base coverage.
 --
 -- Notes:
 --   - Hypoglycemia was audited and is currently mapped under a dirty PubTator
@@ -13,7 +13,7 @@
 --     They remain deferred pending mention-gated rules or better concept IDs.
 --   - Thyrotoxicosis, adrenal insufficiency, and hypercalcemia were also
 --     withheld because the current concept mappings are broader/noisier than
---     desired for baseline freeze.
+--     desired for base admission.
 
 BEGIN;
 
@@ -21,7 +21,7 @@ INSERT INTO solemd.entity_rule (
     entity_type,
     concept_id,
     canonical_name,
-    rule_category,
+    family_key,
     confidence,
     min_citation_count
 )

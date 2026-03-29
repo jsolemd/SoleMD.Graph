@@ -1,8 +1,8 @@
 """Graph bundle delivery contract.
 
 This module is intentionally small and declarative. It defines which artifacts
-belong to the mandatory hot bundle, which are optional browser-local warm
-artifacts, and which must remain cold behind fetch paths / APIs.
+belong to the mandatory base bundle, which remain browser-local universe
+artifacts, and which stay behind evidence fetch paths / APIs.
 """
 
 from __future__ import annotations
@@ -14,16 +14,17 @@ from dataclasses import field
 
 @dataclass(frozen=True, slots=True)
 class GraphBundleArtifactSet:
-    hot: tuple[str, ...] = (
-        "corpus_points",
-        "corpus_clusters",
+    base: tuple[str, ...] = (
+        "base_points",
+        "base_clusters",
     )
-    warm: tuple[str, ...] = (
-        "corpus_documents",
-        "corpus_cluster_exemplars",
+    universe: tuple[str, ...] = (
+        "universe_points",
+        "paper_documents",
+        "cluster_exemplars",
     )
-    cold: tuple[str, ...] = (
-        "corpus_links",
+    evidence: tuple[str, ...] = (
+        "universe_links",
         "citation_neighborhood",
         "pubtator_annotations",
         "pubtator_relations",
@@ -35,11 +36,12 @@ class GraphBundleArtifactSet:
 
 @dataclass(frozen=True, slots=True)
 class GraphBundleFileSet:
-    corpus_points: str = "corpus_points.parquet"
-    corpus_clusters: str = "corpus_clusters.parquet"
-    corpus_documents: str = "corpus_documents.parquet"
-    corpus_cluster_exemplars: str = "corpus_cluster_exemplars.parquet"
-    corpus_links: str = "corpus_links.parquet"
+    base_points: str = "base_points.parquet"
+    base_clusters: str = "base_clusters.parquet"
+    universe_points: str = "universe_points.parquet"
+    paper_documents: str = "paper_documents.parquet"
+    cluster_exemplars: str = "cluster_exemplars.parquet"
+    universe_links: str = "universe_links.parquet"
     manifest: str = "manifest.json"
 
 

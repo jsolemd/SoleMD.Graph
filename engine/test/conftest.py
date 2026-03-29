@@ -20,6 +20,8 @@ def mock_conn():
         conn = MagicMock()
         cur = MagicMock()
         cur.fetchall.return_value = rows or []
+        conn.__enter__.return_value = conn
+        conn.__exit__.return_value = False
         conn.cursor.return_value.__enter__.return_value = cur
         conn.cursor.return_value.__exit__.return_value = False
         return conn

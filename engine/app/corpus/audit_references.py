@@ -35,7 +35,7 @@ def _sample_papers(sample_size: int, min_reference_count: int) -> list[dict]:
             SELECT p.corpus_id, p.year, p.reference_count
             FROM solemd.papers p
             JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-            WHERE c.corpus_tier = 'graph'
+            WHERE c.layout_status = 'mapped'
               AND COALESCE(p.reference_count, 0) >= %s
             ORDER BY random()
             LIMIT %s

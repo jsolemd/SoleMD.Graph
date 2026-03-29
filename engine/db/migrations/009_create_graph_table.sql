@@ -36,7 +36,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_runs_current
     ON solemd.graph_runs (graph_name, node_kind)
     WHERE is_current = true;
 
-CREATE TABLE IF NOT EXISTS solemd.graph (
+CREATE TABLE IF NOT EXISTS solemd.graph_points (
     graph_run_id         UUID NOT NULL REFERENCES solemd.graph_runs (id) ON DELETE CASCADE,
     corpus_id            BIGINT NOT NULL REFERENCES solemd.corpus (corpus_id) ON DELETE CASCADE,
     point_index          INTEGER,
@@ -52,16 +52,16 @@ CREATE TABLE IF NOT EXISTS solemd.graph (
     PRIMARY KEY (graph_run_id, corpus_id)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_point_index
-    ON solemd.graph (graph_run_id, point_index)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_points_point_index
+    ON solemd.graph_points (graph_run_id, point_index)
     WHERE point_index IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_graph_run_cluster_id
-    ON solemd.graph (graph_run_id, cluster_id)
+CREATE INDEX IF NOT EXISTS idx_graph_points_run_cluster_id
+    ON solemd.graph_points (graph_run_id, cluster_id)
     WHERE cluster_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_graph_run_micro_cluster_id
-    ON solemd.graph (graph_run_id, micro_cluster_id)
+CREATE INDEX IF NOT EXISTS idx_graph_points_run_micro_cluster_id
+    ON solemd.graph_points (graph_run_id, micro_cluster_id)
     WHERE micro_cluster_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS solemd.graph_clusters (
@@ -91,7 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_graph_clusters_label
 COMMENT ON TABLE solemd.graph_runs IS
     'Published graph build runs and bundle metadata consumed by the frontend.';
 
-COMMENT ON TABLE solemd.graph IS
+COMMENT ON TABLE solemd.graph_points IS
     'Mapped-paper coordinates and cluster assignments for a specific graph build run.';
 
 COMMENT ON TABLE solemd.graph_clusters IS

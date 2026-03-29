@@ -114,7 +114,7 @@ class TestBuildFilterQuery:
         assert "LEFT JOIN nlm_venues" in query
         assert "LEFT JOIN vocab_pmids" in query
 
-    def test_includes_filter_reason_case(self):
+    def test_includes_admission_reason_case(self):
         query = _build_filter_query("data/test.jsonl.gz")
         assert "journal_and_vocab" in query
         assert "journal_match" in query

@@ -1,5 +1,8 @@
 # Render Cohort Stabilization
 
+> This is an upstream export/renderability stabilization document.
+> Forward-looking runtime work is now tracked in [../design/future.md](../design/future.md).
+
 ## Purpose
 
 Keep the graph pipeline aligned with native Cosmograph + DuckDB patterns:
@@ -28,46 +31,52 @@ This document is the working tracker for the current graph stabilization pass.
 - [x] Move render-cohort ownership into engine export.
 - [x] Build a single `render_points` cohort in `engine/app/graph/export_bundle.py`.
 - [x] Regenerate dense browser-facing `point_index` in export.
-- [x] Rebuild `corpus_links` from the exported render cohort.
-- [x] Remove deprecated artifact-name aliases and require canonical `corpus_links`.
+- [x] Rebuild `universe_links` from the exported render cohort.
+- [x] Remove deprecated artifact-name aliases and require canonical `universe_links`.
 - [x] Keep the staged frontend load path:
   - canvas/queries first
   - metadata later
-- [x] Require the canonical `v2` bundle contract at the frontend boundary.
+- [x] Require the canonical `v4` bundle contract at the frontend boundary.
 
 ## Accepted Findings To Carry Forward
 
-### 1. Default-visible policy is now canonical, but not yet narrower
+### 1. Default-visible policy is now canonical and narrower than renderability
 
 `is_default_visible` is now derived from the exported run itself and also synced onto
 `solemd.corpus` by the graph publish path.
 Current canonical policy:
 
 - when a graph run is published as current, `is_mapped = true` for that run's points
-- `is_default_visible = true` for that same published run's renderable cohort
+- `is_default_visible = true` only for renderable points admitted by the
+  centralized default-visibility policy
 - renderability remains engine-owned via the outlier-filtered export cohort
-- the renderable/default-visible predicate now lives in one canonical engine helper,
+- renderability and default visibility now have separate canonical helpers,
   shared by export and publish/backfill paths
 - the exported bundle no longer depends on mutable global `solemd.corpus` visibility flags
 - the same policy can be backfilled onto the current published run via
   `uv run python -m app.graph.build --sync-current-flags`
+- graph-db now materializes:
+  - `default_visibility_lane`
+  - `default_visibility_rank`
+  - `graph_visibility_features`
+  - cluster rescue/domain metrics
 
-This means the default-visible subset is no longer inert, but it is not yet a narrower
-baseline than the published renderable graph. A distinct baseline-versus-reservoir split
-still depends on broader mapped-universe work.
+This means the default-visible subset is no longer inert and no longer collapses
+to the full published renderable graph. The browser still keeps the broader
+renderable cohort local, but first paint begins from the narrower policy-defined
+baseline.
 
 Tracking implication:
 
 - the default-visible column is now generated upstream instead of left dead
-- today, `renderable cohort` and `default-visible cohort` intentionally collapse to the
-  current published render cohort
+- `renderable cohort` and `default-visible cohort` are now distinct
 - bundle artifacts are canonical per-run outputs, not reflections of whichever run is
   currently marked in `solemd.corpus`
-- a narrower baseline remains a future data/product step once the mapped reservoir exists
+- the remaining product step is policy tuning, not architecture separation
 
 ### 2. Cluster export is partially coherent, but label metadata is still raw-backed
 
-`corpus_clusters` now recomputes centroids, representatives, and `is_noise` against the filtered render cohort.
+`base_clusters` now recomputes centroids, representatives, and `is_noise` against the filtered render cohort.
 
 Still raw-backed today:
 
@@ -84,7 +93,7 @@ Tracking implication:
 
 ### 3. `bundleVersion` is now a strict migration gate
 
-The frontend now fails fast unless the bundle is the canonical `v2` shape.
+The frontend now fails fast unless the bundle is the canonical `v4` shape.
 
 Tracking implication:
 
@@ -100,14 +109,14 @@ Tracking implication:
 - the interaction path is materially lighter than before
 - the real next step is still a dedicated DuckDB-local visibility-budget query
 
-### 5. `outlier_score` has been removed from the hot point artifact
+### 5. `outlier_score` has been removed from the base-point artifact
 
 Once export filters to the render cohort, `outlier_score` does not belong in the browser’s primary point substrate.
 
 Tracking implication:
 
 - cluster/detail paths can still surface outlier metrics where they are semantically meaningful
-- the hot point table is now closer to the intended render/filter contract
+- the base point table is now closer to the intended render/filter contract
 
 ### 6. Cosmograph selection is not a free second visibility lane
 
@@ -126,10 +135,10 @@ Additional implementation finding:
 - the public Cosmograph API exposes only the built-in `pointsSelectionClient` through `selectPoints()`
 - if we add a programmatic visibility-budget source, it should be a distinct crossfilter source id
   (for example `budget:*`) rather than reusing persistent point selection
-- that budget source should be predicate-driven over hot fields/ranking columns when possible,
+- that budget source should be predicate-driven over base fields/ranking columns when possible,
   not a giant client-side `IN (...)` list of point indices
 - the first-pass emphasis lane now uses a dedicated `budget:focus-cluster` source with a
-  Mosaic predicate over hot `clusterId` / `index`, so search-driven focus does not hijack
+  Mosaic predicate over base `clusterId` / `index`, so search-driven focus does not hijack
   persistent user selection
 
 ## Next Stage Order
@@ -138,8 +147,10 @@ Additional implementation finding:
 
 - [x] define the current default-visible policy upstream
 - [x] populate `is_default_visible` in the publish path
-- [ ] keep `is_default_visible` as first-paint policy only, not render eligibility
-- [ ] narrow the default-visible baseline once mapped reservoir semantics exist
+- [x] keep `is_default_visible` as first-paint policy only, not render eligibility
+- [x] narrow the default-visible baseline upstream via the centralized
+  `core_rescue_bridge_v1` policy
+  - successor handoff: `docs/plans/entity-aware-default-visibility.md`
 
 ### Stage 2B: Finish render/export coherence
 
@@ -153,8 +164,8 @@ Additional implementation finding:
 - [ ] decide whether representative nodes should be:
   - recomputed against filtered render points
   - or exported separately as raw-run representatives
-- [x] replace the compatibility gate with a strict `v2` canonical-bundle gate
-- [x] remove `outlier_score` from hot `corpus_points`
+- [x] replace the compatibility gate with a strict `v4` canonical-bundle gate
+- [x] remove `outlier_score` from `base_points`
 
 ### Stage 2C: Build the visibility/emphasis layer
 
@@ -163,16 +174,16 @@ Additional implementation finding:
 - [x] avoid rebuilding points arrays or DuckDB views per interaction
 - [x] move query-driven `current` scope off giant `IN (...)` lists where a native point-scope SQL
   predicate is available
-  - `currentPointScopeSql` now mirrors native visibility clauses only (`filter:*`, `timeline:*`,
-    `budget:*`) for DuckDB queries
+  - `currentPointScopeSql` now mirrors native visibility clauses only (`filter:*`,
+    `timeline:*`, `budget:*`) for DuckDB queries
   - point index arrays are no longer maintained eagerly for SQL-backed non-geo current scope
   - array-backed current scope remains only where the layer or feature still needs indices
     directly (for example geo or non-SQL-scoped cases)
   - fit-scope now resolves indices on demand from DuckDB when the current scope is SQL-backed
 - [x] split visibility/emphasis semantics from persistent selection semantics
 - [x] add a native `budget:*` emphasis lane instead of overloading `selectPoints()`
-- [x] drive first-pass search focus with a predicate over hot `clusterId` / `index`
-- [x] define one DuckDB-local visibility-budget query over hot points
+- [x] drive first-pass search focus with a predicate over base `clusterId` / `index`
+- [x] define one DuckDB-local visibility-budget query over base points
 - [x] keep the first budget payload minimal:
   - seed index
   - optional cluster inclusion
@@ -184,11 +195,11 @@ Additional implementation finding:
   - native filter/timeline updates now recompute the active search-derived budget focus using
     the current focus seed index as the anchor
 - [x] shift budget emphasis from "cluster only" to "local neighborhood"
-  - the budget query now derives a local spatial window from hot `x` / `y` coordinates
+  - the budget query now derives a local spatial window from base `x` / `y` coordinates
   - cluster-wide emphasis is included only when the scoped cluster remains small enough to be
     meaningful
-- [x] keep warm/cold out of the immediate visibility loop
-- [x] reserve `budget:*` as a visibility-source prefix alongside `filter:*` and `timeline:*`
+- [x] keep universe/evidence out of the immediate visibility loop
+- [x] reserve `budget:*` as a visibility-source prefix alongside `baseline:*`, `filter:*`, and `timeline:*`
 
 ## Current Architecture Position
 
@@ -211,9 +222,11 @@ This is the key boundary to preserve.
 - architecturally sound
 - code-level stabilization mostly successful
 - current upstream policy is explicit and generated in the publish path
-- next unresolved step is making default-visible narrower than the full published
-  render cohort once reservoir semantics exist
-- canonical bundle boundary is now strict `v2` with no deprecated artifact aliasing
+- next unresolved step is tuning `core` / `rescue` / `bridge` thresholds and
+  families as the mapped corpus evolves
+- that policy-design follow-up now lives in:
+  - `docs/plans/entity-aware-default-visibility.md`
+- canonical bundle boundary is now strict `v4` with no deprecated artifact aliasing
 - `current` is now intentionally visibility-scoped; persistent point selection remains a separate
   intent lane
 - next implementation layer should be a richer DuckDB-local visibility-budget query on top of
@@ -222,7 +235,7 @@ This is the key boundary to preserve.
 ## Do Not Jump To Yet
 
 - 14M-point browser map delivery
-- hot `corpus_neighbors` baseline artifact
+- pre-canonical `corpus_neighbors` baseline artifact
 - browser-side graph expansion logic
 - reintroducing `SELECT *` / wide point materialization
 

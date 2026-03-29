@@ -1,8 +1,6 @@
-"""Canonical render/default-visible policy helpers for graph export and publish."""
+"""Canonical render/base admission helpers for graph export and publish."""
 
 from __future__ import annotations
-
-DEFAULT_VISIBLE_POLICY = "renderable_current_run"
 
 
 def renderable_point_predicate_sql(alias: str) -> str:
@@ -10,6 +8,9 @@ def renderable_point_predicate_sql(alias: str) -> str:
     return f"COALESCE({alias}.outlier_score, 0) = 0"
 
 
-def default_visible_point_predicate_sql(alias: str) -> str:
-    """Return the canonical SQL predicate for default-visible graph points."""
-    return renderable_point_predicate_sql(alias)
+def base_point_predicate_sql(alias: str) -> str:
+    """Return the canonical SQL predicate for base_points admission."""
+    return (
+        f"({renderable_point_predicate_sql(alias)})"
+        f" AND (COALESCE({alias}.is_in_base, false))"
+    )

@@ -24,20 +24,32 @@ External data sources (PubTator3, Semantic Scholar) feed into a graph engine tha
 computes layout, clusters, and embeddings. The engine exports Parquet bundles served
 to the browser, where Cosmograph renders the unified experience. Full data-flow
 details live in [data.md](data.md). Deferred ideas and post-freeze roadmap items live
-in [future.md](../design/future.md). The graph delivery contract for `hot`, `warm`,
-and `cold` bundle data lives in [bundle-contract.md](bundle-contract.md).
+in [future.md](../design/future.md). The graph delivery contract for `base`,
+`universe`, and `evidence` bundle data lives in [bundle-contract.md](bundle-contract.md).
 
 ---
 
 ## The Living Graph — Current Runtime Structure
 
-The browser now loads the published renderable mapped cohort for the current
-graph run into local DuckDB-WASM and lets Cosmograph operate over that local
-substrate directly.
+The browser now boots from a true base scaffold, not the broader premapped
+universe.
 
-What changes during interaction is not which Parquet rows exist in the browser,
-but which subset is emphasized, greyed, filtered, or queried through the native
-Cosmograph + Mosaic selection model.
+`base_points.parquet` contains the current run's opening scaffold, while the
+broader premapped tail is exported separately as `universe_points.parquet`.
+Cosmograph still renders directly from DuckDB table names, but the mandatory
+first-load cost is now tied to the base scaffold rather than the entire mapped
+universe.
+
+What changes during interaction is still native DuckDB/Cosmograph visibility
+state, but the current runtime boundary is now:
+
+- base scaffold autoloaded on first paint
+- universe premapped artifact present in the bundle manifest but not autoloaded
+- overlay activation now has a native DuckDB surface:
+  `overlay_point_ids` -> `overlay_points_web` -> `active_points_web`
+- universe document and exemplar artifacts attached only when detail queries ask
+  for them
+- evidence/server retrieval for anything unmapped or too heavy for browser-local delivery
 
 ### Three Nested Data Layers
 
@@ -47,21 +59,27 @@ Cosmograph + Mosaic selection model.
 │  Full corpus membership + metadata + retrieval substrate.   │
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  PUBLISHED RENDERABLE COHORT                          │  │
+│  │  PREMAPPED UNIVERSE                                   │  │
 │  │  Engine/export-defined mapped points for one run      │  │
-│  │  Dense browser-facing point_index, hot Parquet bundle │  │
+│  │  Split into base scaffold + universe tail             │  │
 │  │                                                       │  │
 │  │  ┌─────────────────────────────────────────────────┐  │  │
-│  │  │  CURRENT VISIBLE / EMPHASIZED SET               │  │  │
-│  │  │  Native filter + timeline + budget state        │  │  │
-│  │  │  over the local hot point table                 │  │  │
-│  │  │                                                 │  │  │
-│  │  │  First-paint policy (`is_default_visible`)      │  │  │
-│  │  │  is upstream-generated, but currently equals    │  │  │
-│  │  │  the published renderable cohort.               │  │  │
+│  │  │  BASE SCAFFOLD                                 │  │  │
+│  │  │  `base_points.parquet`                          │  │  │
+│  │  │  Stable opening scaffold                         │  │  │
+│  │  └─────────────────────────────────────────────────┘  │  │
+│  │                                                       │  │
+│  │  ┌─────────────────────────────────────────────────┐  │  │
+│  │  │  ACTIVE CANVAS                                   │  │  │
+│  │  │  Base + any promoted overlay                     │  │  │
+│  │  │  Native filter + timeline + budget state         │  │  │
+│  │  │  over the local active point table               │  │  │
+│  │  │                                                  │  │  │
+│  │  │  Universe activation enlarges this set          │  │  │
+│  │  │  without changing the shared UMAP manifold       │  │  │
 │  │  └─────────────────────────────────────────────────┘  │  │
 │  └───────────────────────────────────────────────────────┘  │
-│  + Warm/cold detail paths for richer paper evidence         │
+│  + Universe/evidence detail paths for richer paper evidence │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -72,7 +90,7 @@ Cosmograph + Mosaic selection model.
 | Filter by year / journal / cluster | Cosmograph updates native visibility clauses; panels and summaries query the same scoped DuckDB state |
 | Search for a paper or concept | DuckDB resolves a seed point, then a local visibility-budget query emphasizes a seed-centered neighborhood |
 | Click a point | Persistent selection stays separate from the current visibility scope |
-| Ask / fetch evidence | Cold or server-side retrieval can illuminate mapped papers, but does not redefine the browser render cohort |
+| Ask / fetch evidence | Evidence or server-side retrieval can illuminate mapped papers, but does not redefine the browser's base/universe contract |
 
 ### Two Embedding Spaces
 
@@ -88,20 +106,34 @@ Cosmograph + Mosaic selection model.
 3. Browser-side DuckDB should query and scope the exported run, not rebuild
    renderability, indices, or links
 4. Dynamic visibility must use native Cosmograph filtering / greyout / selection
-   over local hot points, not a second JS visibility engine
+   over local base points, not a second JS visibility engine
+5. First paint should avoid full-point JS hydration; targeted universe detail
+   loads are acceptable, full point-array hydration is not
 
 ### Current implementation note
 
-- The current bundle is canonical `v2`
+- The current bundle is canonical `v4`
 - Default first-load artifacts are:
-  - `corpus_points.parquet`
-  - `corpus_clusters.parquet`
-- `corpus_links.parquet` is not part of the default publish path
-- `renderable cohort` is defined engine-side during export
-- `default-visible cohort` is also defined engine-side and currently matches the
-  published renderable cohort
-- `current visible / emphasized set` is a local DuckDB + Cosmograph runtime
-  state, not a separate streamed overlay system
+  - `base_points.parquet`
+  - `base_clusters.parquet`
+- Universe premapped artifact:
+  - `universe_points.parquet`
+- `universe_links.parquet` is not part of the default publish path
+- base admission is decided upstream and exported as `is_in_base` / `base_rank`
+- upstream base admission is now staged as:
+  raw evidence -> `paper_evidence_summary` -> `graph_base_features` -> export
+- the graph build itself now stages:
+  embeddings -> PCA layout matrix -> shared kNN -> coordinates / clusters -> export
+- the browser only consumes the canonical `base`, `universe`, `active`, and
+  `evidence` contract
+- first paint now comes from `base_points`, not from a client-side
+  visibility clause
+- the base point table is the base scaffold itself
+- the broader premapped universe is preserved as a separate universe artifact, not
+  autoloaded on startup
+- the active canvas is a local DuckDB + Cosmograph runtime state
+- chunk/paper first paint stays DuckDB-native and no longer relies on a full
+  point-array metadata hydration step
 
 ---
 
@@ -136,7 +168,7 @@ PostgreSQL + Parquet data, projected through different embeddings and layouts.
 Current note:
 
 - the shipped runtime today is the paper point cloud
-- queryable citation neighborhoods remain a later warm/cold path, not default
+- queryable citation neighborhoods remain a later universe/evidence path, not default
   always-on edge rendering
 
 Extended thinking: `archive/modes_explore.md`
@@ -291,6 +323,7 @@ you look at — it's the space you learn in.
 | **Semantic Scholar** | `docs/map/semantic-scholar.md` | Papers, citations, embeddings from S2 |
 | **Database schema** | `docs/map/database.md` | PostgreSQL tables and indexes |
 | **Corpus filter** | `docs/map/corpus-filter.md` | Domain corpus identification via DuckDB |
+| **Base admission** | `docs/map/database.md` | Direct evidence + curated base journal families |
 | **Living graph** | `docs/design/living-graph.md` | Three-layer dynamic data architecture |
 | **Architecture** | `docs/map/architecture.md` | Detailed technical architecture |
 | **Brand** | `docs/design/brand.md` | Visual identity and design tokens |

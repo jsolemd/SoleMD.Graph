@@ -1,4 +1,4 @@
-"""Filter S2 papers to domain corpus and load into PostgreSQL.
+"""Filter S2 papers to the domain corpus and load into PostgreSQL.
 
 Reads the downloaded S2 papers JSONL shards with DuckDB, applies
 two-signal domain filtering (venue identity + PubTator3 vocab matching),
@@ -192,7 +192,7 @@ def _build_filter_query(source: str) -> str:
                 WHEN nlm.name IS NOT NULL THEN 'journal_match'
                 WHEN {patterns} THEN 'pattern_match'
                 ELSE 'vocab_entity_match'
-            END AS filter_reason,
+            END AS admission_reason,
             b.title,
             b.year,
             b.venue,
@@ -222,7 +222,7 @@ _STAGING_DDL = """
         pmid INTEGER,
         doi TEXT,
         pmc_id TEXT,
-        filter_reason TEXT,
+        admission_reason TEXT,
         title TEXT,
         year INTEGER,
         venue TEXT,
@@ -240,7 +240,7 @@ _STAGING_DDL = """
 
 _STAGING_COPY = """
     COPY _stg (
-        corpus_id, pmid, doi, pmc_id, filter_reason,
+        corpus_id, pmid, doi, pmc_id, admission_reason,
         title, year, venue, journal_name, publication_date,
         citation_count, reference_count, influential_citation_count,
         is_open_access, publication_types, fields_of_study, s2_url
@@ -260,13 +260,13 @@ _DEDUP_STAGING_INTERNAL = """
 """
 
 _UPSERT_CORPUS = """
-    INSERT INTO solemd.corpus (corpus_id, pmid, doi, pmc_id, filter_reason)
-    SELECT corpus_id, pmid, doi, pmc_id, filter_reason FROM _stg
+    INSERT INTO solemd.corpus (corpus_id, pmid, doi, pmc_id, admission_reason)
+    SELECT corpus_id, pmid, doi, pmc_id, admission_reason FROM _stg
     ON CONFLICT (corpus_id) DO UPDATE SET
         pmid = EXCLUDED.pmid,
         doi = EXCLUDED.doi,
         pmc_id = EXCLUDED.pmc_id,
-        filter_reason = EXCLUDED.filter_reason
+        admission_reason = EXCLUDED.admission_reason
 """
 
 _UPSERT_PAPERS = """
@@ -416,7 +416,7 @@ def run_filter(
 
             # Count filter reasons
             for row in rows:
-                reason = row[4]  # filter_reason is 5th column
+                reason = row[4]  # admission_reason is 5th column
                 reason_counts[reason] = reason_counts.get(reason, 0) + 1
 
             if dry_run:
@@ -474,14 +474,14 @@ def run_filter(
                 logger.warning("    %s", name)
         logger.info("=" * 60)
 
-        # ── Step 6: Promote venue_rule matches ─────────────────
+        # ── Step 6: Promote journal_rule matches into the mapped universe ──
         if not dry_run:
             try:
-                venue_stats = promote_venue_rules(dry_run=False)
-                stats["venue_promotion"] = venue_stats
+                journal_stats = promote_journal_rules(dry_run=False)
+                stats["journal_promotion"] = journal_stats
             except Exception as e:
-                logger.warning("venue_rule promotion failed (non-fatal): %s", e)
-                stats["venue_promotion_error"] = str(e)
+                logger.warning("journal_rule promotion failed (non-fatal): %s", e)
+                stats["journal_promotion_error"] = str(e)
 
         # ── Step 7: Promote entity_rule matches ───────────────
         if not dry_run:
@@ -527,12 +527,12 @@ def _run_promotion(
     Flow: connect → setup_fn (optional) → count/preview → dry_run check →
     update → log_etl_run → close.
 
-    For simple promotions (venue_rules), provide count_sql + update_sql.
+    For simple promotions (journal rules), provide count_sql + update_sql.
     For complex promotions (entity/relation), provide setup_fn + update_fn
     which handle temp tables and multi-step updates internally.
 
     Args:
-        label: Human-readable label for logging (e.g. "venue_rule").
+        label: Human-readable label for logging (e.g. "journal_rule").
         count_sql: SQL that returns rows with a 'cnt' column for preview.
         count_params: Parameters for count_sql.
         update_sql: SQL UPDATE ... RETURNING for simple promotions.
@@ -585,48 +585,50 @@ def _run_promotion(
             metadata=stats,
         )
 
-        logger.info("Promoted %d papers to graph tier via %s", promoted, label)
+        logger.info("Promoted %d papers to mapped layout via %s", promoted, label)
         return stats
     finally:
         conn.close()
 
 
-def promote_venue_rules(*, dry_run: bool = False) -> dict:
-    """Promote candidate papers whose venue matches a venue_rule entry to graph tier.
+def promote_journal_rules(*, dry_run: bool = False) -> dict:
+    """Promote candidate papers whose venue matches a journal_rule entry to mapped layout.
 
     Uses solemd.clean_venue() for normalization consistent with the filter pipeline.
-    Called automatically at the end of run_filter(), or standalone via --promote-venues.
+    Called automatically at the end of run_filter(), or standalone via --promote-journals.
     """
     count_sql = """
-        SELECT vr.specialty, COUNT(*) AS cnt
+        SELECT jr.family_key, COUNT(*) AS cnt
         FROM solemd.corpus c
         JOIN solemd.papers p ON p.corpus_id = c.corpus_id
-        JOIN solemd.venue_rule vr ON solemd.clean_venue(p.venue) = vr.venue_normalized
-        WHERE c.corpus_tier = 'candidate'
-        GROUP BY vr.specialty
+        JOIN solemd.journal_rule jr ON solemd.clean_venue(p.venue) = jr.venue_normalized
+        WHERE c.layout_status = 'candidate'
+          AND jr.include_in_corpus = true
+        GROUP BY jr.family_key
         ORDER BY cnt DESC
     """
     update_sql = """
         UPDATE solemd.corpus c
-        SET corpus_tier = 'graph'
+        SET layout_status = 'mapped'
         FROM solemd.papers p
-        JOIN solemd.venue_rule vr ON solemd.clean_venue(p.venue) = vr.venue_normalized
+        JOIN solemd.journal_rule jr ON solemd.clean_venue(p.venue) = jr.venue_normalized
         WHERE c.corpus_id = p.corpus_id
-          AND c.corpus_tier = 'candidate'
+          AND c.layout_status = 'candidate'
+          AND jr.include_in_corpus = true
         RETURNING c.corpus_id
     """
     return _run_promotion(
-        "venue_rule",
+        "journal_rule",
         count_sql=count_sql,
         update_sql=update_sql,
         dry_run=dry_run,
-        etl_operation="promote_venue_rules",
-        etl_source="solemd.venue_rule",
+        etl_operation="promote_journal_rules",
+        etl_source="solemd.journal_rule",
     )
 
 
 def promote_entity_rules(*, dry_run: bool = False) -> dict:
-    """Promote candidate papers matching entity_rule to graph tier.
+    """Promote candidate papers matching entity_rule to mapped layout.
 
     Three confidence tiers:
     - high/moderate: promote if paper has entity annotation + passes citation gate
@@ -635,14 +637,14 @@ def promote_entity_rules(*, dry_run: bool = False) -> dict:
     """
     high_mod_match_query = """
         CREATE TEMP TABLE tmp_entity_high_mod_matches AS
-        SELECT DISTINCT c.corpus_id, c.pmid, er.rule_category, er.confidence
+        SELECT DISTINCT c.corpus_id, c.pmid, er.family_key, er.confidence
         FROM solemd.entity_rule er
         JOIN pubtator.entity_annotations ea
             ON ea.entity_type = er.entity_type
             AND ea.concept_id = er.concept_id
         JOIN solemd.corpus c
             ON c.pmid = ea.pmid
-            AND c.corpus_tier = 'candidate'
+            AND c.layout_status = 'candidate'
         JOIN solemd.papers p
             ON p.corpus_id = c.corpus_id
         WHERE er.confidence IN ('high', 'moderate')
@@ -651,14 +653,14 @@ def promote_entity_rules(*, dry_run: bool = False) -> dict:
 
     gene_match_query = """
         CREATE TEMP TABLE tmp_entity_gene_matches AS
-        SELECT DISTINCT c.corpus_id, c.pmid, er_gene.rule_category, er_gene.confidence
+        SELECT DISTINCT c.corpus_id, c.pmid, er_gene.family_key, er_gene.confidence
         FROM solemd.entity_rule er_gene
         JOIN pubtator.entity_annotations ea_gene
             ON ea_gene.entity_type = er_gene.entity_type
             AND ea_gene.concept_id = er_gene.concept_id
         JOIN solemd.corpus c
             ON c.pmid = ea_gene.pmid
-            AND c.corpus_tier = 'candidate'
+            AND c.layout_status = 'candidate'
         JOIN solemd.papers p
             ON p.corpus_id = c.corpus_id
         WHERE er_gene.confidence = 'requires_second_gate'
@@ -705,27 +707,27 @@ def promote_entity_rules(*, dry_run: bool = False) -> dict:
 
             cur.execute(
                 """
-                SELECT rule_category, confidence, COUNT(DISTINCT corpus_id) AS cnt
+                SELECT family_key, confidence, COUNT(DISTINCT corpus_id) AS cnt
                 FROM tmp_entity_high_mod_matches
-                GROUP BY rule_category, confidence
+                GROUP BY family_key, confidence
                 ORDER BY cnt DESC
                 """
             )
             high_mod_counts = {
-                f"{row['rule_category']}({row['confidence']})": row["cnt"]
+                f"{row['family_key']}({row['confidence']})": row["cnt"]
                 for row in cur.fetchall()
             }
 
             cur.execute(
                 """
-                SELECT rule_category, confidence, COUNT(DISTINCT corpus_id) AS cnt
+                SELECT family_key, confidence, COUNT(DISTINCT corpus_id) AS cnt
                 FROM tmp_entity_gene_matches
-                GROUP BY rule_category, confidence
+                GROUP BY family_key, confidence
                 ORDER BY cnt DESC
                 """
             )
             gene_counts = {
-                f"{row['rule_category']}({row['confidence']})": row["cnt"]
+                f"{row['family_key']}({row['confidence']})": row["cnt"]
                 for row in cur.fetchall()
             }
 
@@ -743,7 +745,7 @@ def promote_entity_rules(*, dry_run: bool = False) -> dict:
             cur.execute(
                 """
                 UPDATE solemd.corpus c
-                SET corpus_tier = 'graph'
+                SET layout_status = 'mapped'
                 FROM (
                     SELECT DISTINCT corpus_id
                     FROM tmp_entity_high_mod_matches
@@ -758,7 +760,7 @@ def promote_entity_rules(*, dry_run: bool = False) -> dict:
             cur.execute(
                 """
                 UPDATE solemd.corpus c
-                SET corpus_tier = 'graph'
+                SET layout_status = 'mapped'
                 FROM (
                     SELECT DISTINCT corpus_id
                     FROM tmp_entity_gene_matches
@@ -791,11 +793,11 @@ def promote_entity_rules(*, dry_run: bool = False) -> dict:
 
 
 def promote_relation_rules(*, dry_run: bool = False) -> dict:
-    """Promote candidate papers matching relation_rule baseline families.
+    """Promote candidate papers matching relation_rule base families into mapped layout.
 
-    relation_rule can also store overlay-targeted families for Phase 1.5.
+    relation_rule can also store overlay-targeted families.
     Those are counted in dry-runs but are not yet promoted because overlay is not
-    materialized in corpus_tier.
+    materialized in layout_status.
     """
     relation_match_query = """
         CREATE TEMP TABLE tmp_relation_matches AS
@@ -803,8 +805,8 @@ def promote_relation_rules(*, dry_run: bool = False) -> dict:
             c.corpus_id,
             c.pmid,
             rr.canonical_name,
-            rr.rule_category,
-            rr.target_layer
+            rr.family_key,
+            rr.target_scope
         FROM solemd.relation_rule rr
         JOIN pubtator.relations r
             ON r.subject_type = rr.subject_type
@@ -813,7 +815,7 @@ def promote_relation_rules(*, dry_run: bool = False) -> dict:
             AND r.object_id = rr.object_id
         JOIN solemd.corpus c
             ON c.pmid = r.pmid
-            AND c.corpus_tier = 'candidate'
+            AND c.layout_status = 'candidate'
         JOIN solemd.papers p
             ON p.corpus_id = c.corpus_id
         WHERE COALESCE(p.citation_count, 0) >= rr.min_citation_count
@@ -829,19 +831,19 @@ def promote_relation_rules(*, dry_run: bool = False) -> dict:
             )
             cur.execute(
                 "CREATE INDEX tmp_relation_matches_target_idx "
-                "ON tmp_relation_matches (target_layer)"
+                "ON tmp_relation_matches (target_scope)"
             )
 
             cur.execute(
                 """
-                SELECT canonical_name, rule_category, target_layer, COUNT(DISTINCT corpus_id) AS cnt
+                SELECT canonical_name, family_key, target_scope, COUNT(DISTINCT corpus_id) AS cnt
                 FROM tmp_relation_matches
-                GROUP BY canonical_name, rule_category, target_layer
+                GROUP BY canonical_name, family_key, target_scope
                 ORDER BY cnt DESC
                 """
             )
             by_rule = {
-                f"{row['canonical_name']} [{row['rule_category']}/{row['target_layer']}]": row["cnt"]
+                f"{row['canonical_name']} [{row['family_key']}/{row['target_scope']}]": row["cnt"]
                 for row in cur.fetchall()
             }
 
@@ -849,16 +851,16 @@ def promote_relation_rules(*, dry_run: bool = False) -> dict:
                 """
                 SELECT COUNT(DISTINCT corpus_id) AS cnt
                 FROM tmp_relation_matches
-                WHERE target_layer = 'baseline'
+                WHERE target_scope = 'base'
                 """
             )
-            baseline_total = cur.fetchone()["cnt"]
+            base_total = cur.fetchone()["cnt"]
 
             cur.execute(
                 """
                 SELECT COUNT(DISTINCT corpus_id) AS cnt
                 FROM tmp_relation_matches
-                WHERE target_layer = 'overlay'
+                WHERE target_scope = 'overlay'
                 """
             )
             overlay_total = cur.fetchone()["cnt"]
@@ -866,18 +868,18 @@ def promote_relation_rules(*, dry_run: bool = False) -> dict:
         logger.info(
             "  (includes %d overlay-only matches, not yet promoted)", overlay_total,
         )
-        return baseline_total, by_rule
+        return base_total, by_rule
 
     def _update(conn: psycopg.Connection) -> tuple[int, dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 UPDATE solemd.corpus c
-                SET corpus_tier = 'graph'
+                SET layout_status = 'mapped'
                 FROM (
                     SELECT DISTINCT corpus_id
                     FROM tmp_relation_matches
-                    WHERE target_layer = 'baseline'
+                    WHERE target_scope = 'base'
                 ) rm
                 WHERE c.corpus_id = rm.corpus_id
                 RETURNING c.corpus_id
@@ -910,7 +912,7 @@ Examples:
     uv run python -m app.corpus.filter                     # Full run (all 60 shards)
     uv run python -m app.corpus.filter --skip-vocab        # Journal-only filter
     uv run python -m app.corpus.filter --shard 5           # Specific shard
-    uv run python -m app.corpus.filter --promote-venues     # Promote venue_rule matches
+    uv run python -m app.corpus.filter --promote-journals   # Promote journal_rule matches
     uv run python -m app.corpus.filter --promote-entities   # Promote entity_rule matches
     uv run python -m app.corpus.filter --promote-relations  # Promote relation_rule matches
     uv run python -m app.corpus.filter --promote-entities --dry-run  # Preview entity promotion
@@ -923,16 +925,16 @@ Examples:
     )
     parser.add_argument("--skip-vocab", action="store_true", help="Skip PubTator3 vocab signal")
     parser.add_argument(
-        "--promote-venues", action="store_true",
-        help="Promote venue_rule matches from candidate to graph tier",
+        "--promote-journals", action="store_true",
+        help="Promote journal_rule matches from candidate to mapped layout",
     )
     parser.add_argument(
         "--promote-entities", action="store_true",
-        help="Promote entity_rule matches from candidate to graph tier",
+        help="Promote entity_rule matches from candidate to mapped layout",
     )
     parser.add_argument(
         "--promote-relations", action="store_true",
-        help="Promote relation_rule baseline matches from candidate to graph tier",
+        help="Promote relation_rule base matches from candidate to mapped layout",
     )
     args = parser.parse_args()
 
@@ -941,8 +943,8 @@ Examples:
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     )
 
-    if args.promote_venues:
-        promote_venue_rules(dry_run=args.dry_run)
+    if args.promote_journals:
+        promote_journal_rules(dry_run=args.dry_run)
     elif args.promote_entities:
         promote_entity_rules(dry_run=args.dry_run)
     elif args.promote_relations:

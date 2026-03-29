@@ -1,1891 +1,1267 @@
-# SoleMD.Graph Full Evidence System Plan
+# SoleMD.Graph Evidence and RAG Plan
 
-Status: Proposed target architecture  
+Status: Canonical plan  
+Updated: 2026-03-28  
 Project: `SoleMD.Graph`  
-Scope: full-fidelity evidence warehouse, retrieval plane, graph engagement model, and RAG integration built on local Semantic Scholar and PubTator assets  
-Target product posture: public nonprofit educational platform  
-Audience: engine, schema, retrieval, graph, and frontend workstreams
+Scope: canonical evidence substrate, engine API, frontend integration, retrieval baseline, future evidence warehouse, and future Qdrant retrieval plane  
+Supersedes: duplicate implementation-spec draft now archived at `docs/archive/plans/full-evidence-system-schema-and-api-spec.md`
 
-## Why This Exists
+## Why This Rewrite Exists
 
-SoleMD.Graph should not stop at paper-level visualization or preview-level RAG.
-The project already has unusually rich local assets:
+The prior evidence documents were directionally strong but too split, too
+spec-heavy relative to the live code, and too willing to let preview-era
+`paper_chunks` thinking leak into the canonical design.
 
-- Semantic Scholar bulk metadata
-- Semantic Scholar bulk citations with contexts and intents
-- `s2orc_v2` full text with structural and citation-span annotation
-- PubTator tabular entity/relation annotations
-- PubTator BioCXML with passage structure and exact mention offsets
-- SPECTER2 paper embeddings for map geometry
+The repo truth on 2026-03-28 is:
 
-Those assets justify a stronger target than "paper search plus chunk retrieval."
-The correct target is a **full evidence system**:
+- the graph runtime is now explicitly `base -> universe -> overlay -> active -> evidence`
+- PostgreSQL is the canonical live substrate for the graph and evidence spine
+- `engine/app/rag` is effectively empty
+- `engine/app/main.py` is still only a health endpoint
+- `app/actions/graph.ts` is still returning typed stubs for graph detail and RAG
+- `features/graph/lib/detail-service.ts` already defines the frontend-facing typed
+  shapes the future engine will need to satisfy
 
-- exact prose retrieval
-- source-aware grounding
-- entity-aware filtering and reranking
-- citation-aware evidence chains
-- table and figure evidence
-- graph interactions that respond to retrieval state in real time
+This plan is therefore not just an aspirational architecture note. It is the
+program plan that should drive the next implementation passes.
 
-The graph should not be a static backdrop. It should become the spatial memory
-of the literature, continuously animated by retrieval and evidence.
+The immediate implementation posture also matters:
 
-## Executive Summary
+- the live graph rebuild against `solemd_graph` is still running
+- no heavy database work should start right now
+- no RAG migrations should be applied yet
+- no backfills, chunk builds, embedding jobs, or large scans should start yet
 
-SoleMD.Graph should be rebuilt around a **structured evidence warehouse** rather
-than a thin `paper_chunks` table. The canonical system should model:
+The right move now is to lock the contracts, own the backend boundary, and build
+the cheap engine-side retrieval baseline on the current tables.
 
-- document
-- section
-- block
-- sentence
-- bibliography entry
-- in-text citation mention
-- entity mention
-- relation mention
-- asset
-- table and figure payload
-- versioned derived chunks
+## Implementation Tracker
 
-Retrieval should operate across multiple evidence granularities:
+Current implementation tracker for the first evidence vertical slice:
 
-- sentence
-- block / paragraph
-- derived retrieval chunk
-- caption
-- table summary
-- abstract
+- [x] canonical evidence plan consolidated into one active document
+- [x] scale target and hierarchical retrieval posture documented
+- [x] FastAPI versus Supabase posture documented
+- [x] graph-signal contract direction documented
+- [x] `engine/app/rag/` package scaffold landed
+- [x] canonical FastAPI evidence search endpoint landed
+- [x] baseline retrieval over current tables landed
+- [x] graph-signal projection landed
+- [x] Next.js engine adapter landed
+- [x] Ask -> evidence -> graph-lighting baseline landed for already-active papers
+- [x] DuckDB universe point-id resolution helper landed for overlay promotion
+- [ ] Ask -> evidence -> overlay activation loop landed for non-active universe papers
+- [ ] answer surface finalized without obscuring the graph
+- [ ] `@`-triggered support/refute interaction finalized for composition mode
 
-The graph should support multiple interacting layers:
+Implementation rule:
 
-- paper layer
-- evidence overlay
-- entity overlay
-- citation overlay
-- relation overlay
+- update this checklist and the milestone notes as scope is uncovered during implementation
 
-The RAG system should return **evidence bundles**, not bare text. An evidence
-bundle includes:
+Current milestone note:
 
-- exact supporting sentence
-- parent block
-- neighboring context
-- section path
-- matched entities
-- citation mentions
-- bibliography entry
-- linked papers
-- related assets
+- the backend baseline now lands a canonical `POST /api/v1/evidence/search`
+  path, typed evidence bundles, typed graph signals, unit tests, and a thin
+  Next.js server adapter
+- the graph integration path is now explicitly two-stage:
+  resolve returned `paper_id` values against the active canvas first for
+  immediate highlighting, then promote non-active evidence papers into the
+  overlay/active canvas path through DuckDB instead of treating them as
+  highlight-only misses
+- the DuckDB side now carries the universe point-id resolver needed for
+  evidence-driven overlay promotion; the remaining work is wiring that helper
+  into the Ask panel flow and active-canvas update path
+- the next milestone is not more retrieval depth first; it is standing up the
+  `Vercel AI SDK` response surface and the `@` support/refute interaction on
+  top of the same engine contract
 
-This plan intentionally treats current bundle/detail contracts as disposable
-scaffolding. Compatibility with preview-era shapes is not a design goal.
+## Locked Decisions
 
-## Platform Target, Rights Posture, and Deployment Principles
+1. PostgreSQL remains the canonical source of truth for paper, evidence, and warehouse state.
+2. The graph bundle remains lean. Rich evidence is served by the engine, not embedded into the default browser bundle.
+3. `pubtator.*` remains an upstream source substrate. It is not replaced by the future evidence warehouse.
+4. `solemd.paper_references` and `solemd.paper_assets` are evolved, not casually replaced.
+5. The canonical evidence model is a span spine:
+   - document
+   - section
+   - block
+   - sentence
+   - citation mention
+   - bibliography entry
+   - entity mention
+   - relation mention
+   - asset
+6. `paper_chunks` are derived retrieval products, not the evidence spine.
+7. The engine API is the canonical evidence contract. The frontend should not assemble evidence semantics from raw tables.
+8. Drizzle is not required for the target architecture. The canonical plan should not depend on it.
+9. FastAPI is the backend evidence boundary. Pydantic request and response models are the canonical typed contract.
+10. Route Handlers and Server Actions are not interchangeable:
+    - Server Actions are for UI-driven mutations or controlled server-side actions
+    - Route Handlers are for HTTP endpoints
+    - neither should become the canonical evidence business-logic layer
+11. Next.js Server Components should call the engine server-to-server for evidence reads when possible. Do not insert an extra same-app HTTP hop unless the browser truly needs one.
+12. Future sentence and block serving should target Qdrant once the warehouse exists and retrieval volume justifies it.
+13. Bounded paper-level and warehouse-local validation can continue to use PostgreSQL and pgvector.
+14. There is no backwards-compatibility requirement for preview-era `chunk_text` contracts.
+15. Full-text parsing must use structural signals from `s2orc_v2` and BioCXML. Do not use regex as the parser.
+16. The stack must support:
+    - a paper catalog that can grow past `200M+` articles
+    - a full-text evidence warehouse that can support at least `14M+` chunked articles
+17. Launch-scale retrieval must be hierarchical. Do not assume one global sentence ANN index over the entire corpus is the default serving path.
+18. Supabase is not the canonical evidence backend. If it is used later, it should complement the stack with managed infrastructure capabilities, not replace PostgreSQL plus FastAPI evidence orchestration.
+19. Supabase Edge Functions are not the primary runtime for evidence retrieval, parsing, or warehouse orchestration.
 
-This system is being designed for a **public nonprofit educational platform**,
-not just a private personal tool.
+## Scale Target
 
-Implications:
+The scale target is now explicit:
 
-- public attribution requirements should be assumed from the beginning, including clear Semantic Scholar attribution in the UI
-- the architecture must remain rights-aware even where policy details are still evolving
-- retrieval/storage and UI display must be decoupled so display policy can tighten later without re-parsing or re-indexing the corpus
+- `200M+` article-level records at full launch
+- `14M+` full-text articles chunked and citable in the evidence system
 
-Current posture:
+This changes several earlier assumptions.
 
-- the formal rights/compliance model is intentionally deferred as a dedicated later workstream
-- `display_policy` functionality should ship from day one as a placeholder operational contract, not as a finalized legal regime
-- when license/access metadata is present, it should be surfaced in the UI so users can understand what is being shown and why
-- if content is partially displayed or withheld later, the response should include an explicit reason rather than silently omitting text
+The graph runtime can still begin from a curated mapped subset, but the evidence
+stack must be designed for a much larger retrieval surface than the current
+graph build.
 
-Deployment principles:
+### What this means operationally
 
-- provider-agnostic in documentation
-- US-based hosting only
-- single-node first, with scale-out left possible but not assumed
-- capability requirements should be specified in terms of RAM, storage, GPU/CPU needs, and latency budgets rather than naming a vendor
+1. The paper catalog and the evidence warehouse are different scale domains.
+2. The system must support exact citation and evidence inspection without assuming
+   every sentence is a first-pass global ANN object.
+3. Canonical truth and serving indexes must stay decoupled.
+4. The launch target is beyond "single-node first" retrieval thinking, even if
+   current development still runs locally.
 
-## Non-Negotiable Product Outcomes
+### Required serving posture
 
-1. A user can retrieve the **best supporting sentence** for a claim, not just a vaguely related chunk.
-2. A user can expand from that sentence to surrounding paragraph context, section context, and cited references.
-3. A user can filter or boost retrieval by **entity presence** at evidence level.
-4. A user can retrieve methods/results/tables/figure captions as distinct evidence types.
-5. The graph can light up semantically related papers and evidence nodes in response to live retrieval.
-6. The system can support both discovery and writing:
-   - Ask
-   - Explore
-   - Learn
-   - Cite / write
-7. Every answer is inspectable down to:
-   - source release
-   - exact span
-   - section path
-   - citation linkage
-   - associated metadata
-8. Chunking and retrieval policies are versioned and comparable.
+Use a hierarchical retrieval funnel:
 
-## Current State and Design Drivers
+1. paper-level recall across the global paper catalog
+2. evidence-level recall within a bounded candidate set
+3. sentence resolution and exact citation grounding inside the bounded set
+4. reranking and bundle assembly after grounding
 
-### What is already true in this repo
+That implies the default retrieval unit at launch scale should be:
 
-- Local bulk storage is release-aware for Semantic Scholar and PubTator.
-- The normalized PostgreSQL backbone already exists for:
-  - `solemd.corpus`
-  - `solemd.papers`
-  - `solemd.citations`
-  - related paper metadata tables
-  - `pubtator.entity_annotations`
-  - `pubtator.relations`
-- Existing enrichment tables already in live use include:
-  - `solemd.paper_assets`
-  - `solemd.paper_references`
-- The graph build pipeline exists and is already benchmarked at large mapped-paper scales.
-- The current Phase 3 RAG schema is only a thin placeholder in [database.md](/home/workbench/SoleMD/SoleMD.Graph/docs/map/database.md#L431).
-- The current bundle exporter emits placeholder chunk fields in [export_bundle.py](/home/workbench/SoleMD/SoleMD.Graph/engine/app/graph/export_bundle.py#L360).
-- The current frontend "chunk detail" view is preview-based and currently maps preview text into `chunk_text` in [session.ts](/home/workbench/SoleMD/SoleMD.Graph/features/graph/duckdb/session.ts#L819).
-- The current graph detail and RAG actions are still stubs in [graph.ts](/home/workbench/SoleMD/SoleMD.Graph/app/actions/graph.ts#L47).
+- paper for global recall
+- block or chunk for first-pass evidence recall
+- sentence for grounding, citation, and display
 
-### Existing table reconciliation
+Sentence remains canonical for exact evidence, but it does not need to be the
+default first-pass ANN unit across the entire launch-scale corpus.
 
-Two existing live tables must be evolved, not recreated:
+## Current Repo Truth
 
-- `solemd.paper_assets` already stores open-access PDF asset rows written by the S2 enrichment path
-- `solemd.paper_references` already stores per-paper bibliography rows from S2 API enrichment
+### Canonical graph/runtime posture
+
+The live graph design is already clear in `docs/design/living-graph.md`:
+
+- `base_points` is the opening scaffold
+- `universe_points` is the mapped remainder
+- `overlay_points` is the promoted subset
+- `active_points` is the live browser-facing dense union
+- `evidence_api` is the heavy retrieval path
+
+That split is correct and should remain.
+
+### Current canonical PostgreSQL substrate
+
+These current tables already exist and are the baseline evidence substrate:
+
+- `solemd.corpus`
+- `solemd.papers`
+- `solemd.citations`
+- `solemd.paper_references`
+- `solemd.paper_assets`
+- `pubtator.entity_annotations`
+- `pubtator.relations`
+
+These graph-facing tables are useful for grounding but are not the warehouse:
+
+- `solemd.graph_runs`
+- `solemd.graph_points`
+- `solemd.graph_clusters`
+- `solemd.graph_base_features`
+
+### Current code reality
+
+Relevant live code surfaces:
+
+- `engine/app/main.py` has only the health endpoint
+- `engine/app/graph/export.py` still declares bundle evidence artifacts that exceed what the current bundle actually exports
+- `engine/app/db.py` already provides the shared PostgreSQL connection boundary
+- `engine/app/graph/export_bundle.py` still exports placeholder document and chunk-adjacent fields for the graph bundle
+- `app/actions/graph.ts` is still stubbed for graph detail, neighborhoods, and RAG
+- `features/graph/lib/detail-service.ts` already defines the frontend contracts that a real evidence API must satisfy
+- `features/graph/components/panels/PromptBox.tsx` already asks for generated answers
+- `features/graph/duckdb/session.ts` already provides `getPaperNodesByPaperIds(...)` for paper-id to point-index resolution
+- `features/graph/stores/slices/selection-slice.ts` already carries `highlightedPointIndices`
+- `lib/db/index.ts` and `lib/db/schema.ts` show the current frontend use of Drizzle for graph metadata reads, but that is current scaffolding rather than a target architectural dependency
+
+The architecture work therefore needs to close a real gap between the docs and
+the implementation surface, not just refine an already-existing API.
+
+### Observed raw-file findings
+
+Small direct probes of the local bulk assets confirm several design-critical facts.
+
+From sampled `s2orc_v2` rows:
+
+- `body.text` and `bibliography.text` are present
+- `body.annotations` includes `section_header`, `paragraph`, `bib_ref`, and sometimes `sentence`
+- each annotation kind is itself a JSON-encoded string and requires a second decode step
+- `sentence` is absent in some rows, so deterministic sentence fallback remains necessary
+
+From sampled BioCXML members:
+
+- passages have explicit `offset`
+- passages carry `section_type` and `type`
+- front matter contains identifiers and license metadata in `<infon>` tags
+- inline `<annotation>` tags carry exact mention offsets
 
 Implication:
 
-- evidence warehouse migrations should start with `ALTER TABLE` on existing structures where possible
-- the evidence model may use richer logical names such as `paper_reference_entries`, but the migration plan must explicitly reconcile those logical contracts with the existing physical tables
-
-### PubTator coexistence rule
-
-The existing `pubtator` schema remains a live upstream dependency for corpus promotion and policy logic.
-
-Roles:
-
-- `pubtator.entity_annotations` and `pubtator.relations` remain source reference tables
-- `solemd.paper_entity_mentions` and `solemd.paper_relation_mentions` become evidence warehouse tables
-
-These coexist.
-The evidence warehouse does not replace the promotion-oriented `pubtator` tables.
-
-### Observed local `s2orc_v2` findings
-
-From direct local sampling of shard `s2orc_v2-0000.jsonl.gz`:
-
-- total local shards: `214`
-- annotation payloads are JSON-encoded strings nested inside the JSON record
-- `body.annotations` currently exposes:
-  - `paragraph`
-  - `section_header`
-  - `sentence`
-  - `bib_ref`
-- `bibliography.annotations` currently exposes:
-  - `bib_entry`
-  - `bib_id`
-  - `bib_title`
-  - `bib_venue`
-  - `bib_author_first_name`
-  - `bib_author_last_name`
-- mean body length in a 200-record sample: about `31,974` characters / `5,030` words
-- sentence annotations were absent in about `18%` of a 500-record sample
-- section headers were present in nearly all sampled papers
-- matched bibliography links were common:
-  - papers with matched inline body `bib_ref`: about `90%`
-  - papers with matched bibliography entries: about `93%`
-- section header attributes may carry numbering, for example:
-  - `1.`
-  - `2.1.`
-  - `4.1.`
+- `s2orc_v2` remains the likely primary text spine
+- BioCXML is strong enough to justify a parallel annotation and caption enrichment track
 
-Implications:
+## Evidence Artifact Reconciliation
 
-- the parser must decode annotation JSON strings as a second step
-- sentence annotations are strong but not universal
-- citation-aware retrieval is a major strength of `s2orc_v2`
-- section trees can preserve numbering / hierarchy
+The current bundle contract in `engine/app/graph/export.py` and
+`features/graph/types/bundle.ts` still declares evidence artifacts that are not
+implemented as durable canonical bundle exports.
 
-### Observed local BioCXML findings
+Treat that artifact list as transitional.
 
-From direct local sampling of `BioCXML.0.tar.gz`:
+Recommended disposition:
 
-- BioCXML archives are present locally
-- archive members are XML documents containing one or more articles
-- passages can expose:
-  - title/front matter
-  - abstract
-  - intro/body paragraphs
-  - figure captions
-  - table captions
-  - table payloads
-- front matter may include:
-  - author fragments
-  - DOI / PMCID / publisher ids
-  - license text
-  - keywords
-- inline `<annotation>` tags provide exact mention offsets and entity types
+- `universe_links`
+  - stays browser-local / bundle-facing
+- `citation_neighborhood`
+  - moves to engine API
+- `pubtator_annotations`
+  - moves to engine API
+- `pubtator_relations`
+  - moves to engine API
+- `paper_assets`
+  - moves to engine API
+- `full_text`
+  - moves to engine API
+- `rag_chunks`
+  - moves to engine API and later gives way to warehouse-backed evidence endpoints
 
-Implications:
+Rules:
 
-- BioCXML is not just an abstract fallback
-- it is the richest exact-offset entity annotation source
-- it is currently the clearest route to table / figure caption evidence
+- remove phantom evidence artifacts from the canonical bundle contract once engine endpoints replace them
+- do not let the bundle contract imply that rich evidence lives in Parquet by default
 
-### Observed live DB coverage
+## Architecture Boundary
 
-From the current graph-tier database state:
+### One canonical evidence boundary
 
-- `2,743,699` graph-tier papers
-- `639,416` currently marked `text_availability = 'fulltext'`
-- `657,727` with PMCID
-- `955,164` marked open access
+The evidence system should have one clear boundary:
 
-Current candidate-tier `text_availability` remains null, so graph-tier overlap
-is measurable today, while candidate-tier full-text overlap should not be
-estimated from current database values alone.
+- Next.js owns UI composition, auth/session integration, and graph/app delivery
+- FastAPI owns evidence retrieval, evidence assembly, and retrieval orchestration
+- PostgreSQL owns canonical truth
+- Qdrant later owns high-scale sentence and block retrieval serving
 
-## Phase 0 Preview Bridge
+That means the evidence contract is owned by the engine, not by Drizzle models,
+not by ad hoc frontend joins, and not by bundle placeholder fields.
 
-Before the full evidence warehouse lands, the repo already has enough data to
-ship a preview evidence path and validate the end-to-end loop:
+### What stays in Next.js
 
-- paper semantic retrieval from existing paper embeddings
-- citation-context evidence from `solemd.citations.contexts`
-- citation-intent metadata from `solemd.citations.intents`
-- entity-based paper filtering from `pubtator.entity_annotations`
-- graph highlighting through the existing Ask UI path and graph selection model
+Next.js 16 should own:
 
-Preview scope:
+- Server Component page composition
+- graph bundle discovery and metadata reads
+- app shell, panel, and streaming UI
+- auth/session handling once auth is enabled
+- server-to-server calls to the engine
+- optional same-origin BFF endpoints only when the browser needs an HTTP surface
 
-- `POST /evidence/preview/query`
-- `GET /evidence/preview/paper/{corpus_id}`
-- PromptBox wired to preview evidence
-- graph highlight payloads at paper level
+Preferred posture:
 
-Purpose:
+- keep database access in Next.js as thin as possible
+- prefer engine-backed reads for evidence and retrieval semantics
+- use direct SQL only for small app-local metadata reads if they still need to stay in the web app
 
-- validate query -> retrieve -> display -> highlight quickly
-- establish the evaluation harness before full-text ingest
-- create a baseline that later block/sentence retrieval must beat
+The current repo uses Drizzle today, but the target architecture does not need it.
 
-## Target Product Vision
+If local web-app SQL remains necessary for a small metadata surface such as:
 
-### Ask
+- `solemd.graph_runs`
+- bundle metadata
+- minimal administrative reads
 
-The user asks a question. The system retrieves the strongest evidence and shows:
+then the web app can use either:
 
-- best sentence-level support
-- surrounding paragraph / block context
-- section path
-- linked references
-- supporting tables / captions if relevant
-- papers that light up on the graph
-- adjacent evidence neighborhoods
+- the existing Drizzle layer temporarily
+- or a thinner direct `postgres` client layer later
 
-As the answer streams, cited papers and evidence clusters illuminate.
+Drizzle is not the right long-term layer for:
 
-### Explore
+- evidence retrieval orchestration
+- query parsing
+- citation-context ranking
+- multi-channel fusion
+- PostgreSQL plus Qdrant coordination
+- warehouse-aware span assembly
+- evidence-native response contracts
 
-The user moves through the paper map, but can also pivot into evidence:
+### Supabase posture
 
-- highlight papers mentioning a concept
-- highlight papers containing a specific relation
-- highlight chunks/sentences semantically aligned to a free-text query
-- switch between paper-level, evidence-level, and entity-level overlays
+Supabase is not the target replacement for the evidence backend.
 
-### Cite / Write
+For this project, Supabase Data API and PostgREST are schema-facing API layers.
+The SoleMD evidence backend still needs custom retrieval semantics, citation
+grounding, typed bundle assembly, answer synthesis, and later PostgreSQL plus
+Qdrant orchestration.
 
-The user is drafting a claim. The system can:
+Use this posture:
 
-- retrieve exact supporting prose
-- rank papers by support strength
-- expose methods and sample-size context
-- show whether evidence is repeated, contradictory, or citation-central
-- return exact sentence and block text suitable for note capture and citation support
+- keep canonical evidence reads and writes in FastAPI over direct PostgreSQL connections
+- treat Supabase as optional managed infrastructure only if the project later wants:
+  - managed Auth
+  - managed Storage
+  - managed Realtime
+  - hosted PostgreSQL operations
+- do not make Supabase REST or GraphQL the primary evidence contract
+- do not make Supabase Edge Functions the core retrieval, parsing, or warehouse runtime
 
-### Learn
+If Supabase is adopted later, it should be in a complementary role, not as a
+substitute for the engine API.
 
-The system can walk a user through a topic using evidence chains:
+### What stays in FastAPI
 
-- cluster exemplars
-- key supporting sentences
-- methods/results distinctions
-- graph neighborhoods of supporting and contrasting papers
+FastAPI should own:
 
-## Design Principles
+- `/api/v1/evidence/...` endpoints
+- request validation
+- response validation and serialization
+- retrieval orchestration across current PostgreSQL tables
+- later orchestration across PostgreSQL plus Qdrant
+- signed asset URL logic if asset delivery becomes engine-mediated
+- retrieval diagnostics, version stamps, and tracing
+- worker-triggering or parse/index orchestration endpoints when those land
 
-1. **Structured truth first**
-   Retrieval units are derived artifacts. The source of truth is structured evidence.
+FastAPI should be structured as a real application, not a single-file app:
 
-2. **Span fidelity**
-   Exact offsets matter. Every evidence object should be anchorable to source text.
+- `engine/app/main.py` becomes app assembly
+- `engine/app/api/` owns routers
+- `engine/app/rag/` owns evidence retrieval logic
 
-3. **Multiple evidence granularities**
-   Sentences, blocks, chunks, captions, tables, and abstracts all have distinct retrieval value.
+### Server Actions versus Route Handlers
 
-4. **Versioned derivation**
-   Chunking, indexing, and reranking policies should be versioned so the system can improve without losing provenance.
+The current frontend already uses Server Actions in `app/actions/graph.ts`.
+That remains reasonable, but only as a thin UI adapter.
 
-5. **Source layering**
-   `s2orc_v2`, BioCXML, PubTator tabular, and abstract-only fallback each contribute different strengths.
+Use Server Actions for:
 
-6. **Graph as runtime evidence state**
-   The graph should react to retrieval, not merely coexist beside it.
+- controlled UI-originated operations
+- user-initiated search submissions
+- graph panel requests that are naturally initiated from the UI
+- future write and cite actions
 
-7. **Lean hot bundle, rich cold evidence**
-   Keep the graph render path fast. Rich evidence loads through dedicated APIs.
+Use Route Handlers for:
 
-## System Overview
+- browser-facing HTTP endpoints
+- streaming responses that need an HTTP boundary
+- public or external clients
+- same-origin access from client components when a browser fetch is required
 
-```text
-Local Bulk Assets
-  ├── Semantic Scholar papers / abstracts / tldrs / citations / paper-ids / authors
-  ├── Semantic Scholar s2orc_v2
-  └── PubTator tabular + BioCXML
+Do not use either of them as the place where retrieval logic lives.
+They should delegate to a typed engine client or to the FastAPI API directly.
 
-        ↓ normalize / parse / align / checkpoint
+### Typed contract strategy
 
-Canonical Evidence Warehouse (PostgreSQL)
-  ├── papers / documents / sections / blocks / sentences
-  ├── bibliography entries / citation mentions
-  ├── entity mentions / relation mentions
-  ├── assets / tables / figures
-  └── chunk versions / derived chunks
+The contract should be owned once and generated outward:
 
-        ↓ derived indexing pipelines
+1. Pydantic models define the canonical request and response schemas.
+2. FastAPI exposes OpenAPI for the versioned evidence endpoints.
+3. TypeScript types are generated from OpenAPI for the Next.js app.
+4. The frontend uses a thin typed engine client, not hand-maintained duplicate DTOs.
 
-Retrieval Plane
-  ├── dense sentence index
-  ├── dense block/chunk index
-  ├── sparse lexical index
-  ├── entity-aware filters
-  └── cross-encoder reranker
+Rules:
 
-        ↓ evidence APIs
+- no dual hand-written Python and TypeScript evidence schemas
+- no frontend-only reinterpretation of response meaning
+- every evidence response carries retrieval version metadata and timing
+- every paper or evidence item can carry display-policy metadata
 
-Graph + UI
-  ├── paper graph layer
-  ├── evidence overlays
-  ├── entity overlays
-  ├── citation / relation overlays
-  └── writing / asking / exploration workflows
-```
+### Type migration strategy
 
-## Canonical Evidence Warehouse
+`features/graph/lib/detail-service.ts` is the current de facto frontend payload
+surface and should be treated as a migration constraint.
 
-### 1. `solemd.paper_documents`
+Recommended sequence:
 
-One canonical document row per paper.
+1. define Pydantic models that initially match the current TypeScript payload
+   shapes closely enough to avoid gratuitous frontend churn
+2. generate TypeScript client and types from FastAPI OpenAPI
+3. add a build-time structural equivalence check between generated engine types
+   and the current frontend expectations
+4. migrate consumers from hand-written engine-facing interfaces to generated types
+5. delete superseded hand-written engine-facing interfaces later
 
-Purpose:
+Important distinction:
 
-- document-level identity
-- source precedence
-- coverage
-- text length / completeness
-- provenance
+- engine-facing payload interfaces in `detail-service.ts` are part of the migration surface
+- DuckDB-local browser-runtime types remain a separate concern
 
-Recommended columns:
+## API Contract
 
-| Column | Type | Notes |
-|---|---|---|
-| `corpus_id` | `BIGINT PK FK -> papers` | one canonical document per paper |
-| `preferred_text_source` | `TEXT` | `s2orc_v2`, `biocxml`, `abstract_only` |
-| `preferred_annotation_source` | `TEXT` | `biocxml`, `pubtator_tabular`, `none` |
-| `source_release_id` | `TEXT` | primary preferred source release |
-| `canonical_text_hash` | `TEXT` | hash of canonical document text |
-| `document_text` | `TEXT` | canonical full text or abstract-only text |
-| `text_length_chars` | `INTEGER` | |
-| `text_length_words` | `INTEGER` | |
-| `section_count` | `INTEGER` | |
-| `block_count` | `INTEGER` | |
-| `sentence_count` | `INTEGER` | |
-| `reference_entry_count` | `INTEGER` | |
-| `citation_mention_count` | `INTEGER` | |
-| `entity_mention_count` | `INTEGER` | |
-| `relation_mention_count` | `INTEGER` | |
-| `page_count` | `INTEGER` | if recoverable |
-| `table_count` | `INTEGER` | |
-| `figure_count` | `INTEGER` | |
-| `has_fulltext` | `BOOLEAN` | |
-| `has_biocxml` | `BOOLEAN` | |
-| `has_sentence_offsets` | `BOOLEAN` | |
-| `has_citation_mentions` | `BOOLEAN` | |
-| `has_entity_offsets` | `BOOLEAN` | |
-| `display_policy` | `TEXT` | placeholder render policy: `full`, `partial`, `metadata_only`, `undecided` |
-| `display_policy_reason` | `TEXT` | explain why text is fully shown, partially shown, or withheld |
-| `rights_metadata` | `JSONB` | surfaced license/access/disclaimer metadata when present |
-| `created_at` | `TIMESTAMPTZ` | |
-| `updated_at` | `TIMESTAMPTZ` | |
-
-Notes:
-
-- `display_policy` is an operational rendering field, not the final legal/compliance model
-- retrieval should continue to use canonical text even if display policy later becomes more restrictive
-- when available, `rights_metadata` should carry user-explainable fields such as license text, access status, disclaimer, and source of the rights signal
-
-### 2. `solemd.paper_document_sources`
-
-One row per source contribution to a paper document.
-
-Purpose:
-
-- preserve source layering
-- support source precedence
-- retain auditability across releases
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `document_source_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `source_kind` | `TEXT` | `s2orc_v2`, `biocxml`, `abstract_only`, later others |
-| `source_release_id` | `TEXT` | |
-| `external_document_id` | `TEXT` | PMID / PMCID / corpusid / archive member id |
-| `is_text_source` | `BOOLEAN` | |
-| `is_annotation_source` | `BOOLEAN` | |
-| `priority_rank` | `INTEGER` | lower is preferred |
-| `raw_metadata` | `JSONB` | source-specific metadata |
-| `created_at` | `TIMESTAMPTZ` | |
-
-### 3. `solemd.paper_sections`
-
-Hierarchical section tree.
-
-Purpose:
-
-- preserve section numbering and path
-- enable section-aware retrieval and filtering
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `section_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `parent_section_id` | `BIGINT FK -> paper_sections` | nullable |
-| `section_index` | `INTEGER` | stable order within document |
-| `section_depth` | `INTEGER` | root = 0 |
-| `section_number` | `TEXT` | from `attributes.n` when present |
-| `section_name_raw` | `TEXT` | raw header |
-| `section_name_normalized` | `TEXT` | normalized text |
-| `section_canonical` | `TEXT` | `introduction`, `methods`, etc. |
-| `section_path` | `TEXT[]` | hierarchical label path |
-| `start_char` | `INTEGER` | |
-| `end_char` | `INTEGER` | |
-| `source_document_source_id` | `BIGINT FK -> paper_document_sources` | |
-
-### 4. `solemd.paper_blocks`
-
-Canonical content spans.
-
-Block types:
-
-- `title`
-- `abstract`
-- `paragraph`
-- `figure_caption`
-- `table_caption`
-- `table_text`
-- `front_matter`
-- `footnote`
-- `other`
-
-Purpose:
-
-- preserve structure and evidence modality
-- provide the main context-level retrieval substrate
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `block_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `section_id` | `BIGINT FK -> paper_sections` | nullable |
-| `block_index` | `INTEGER` | stable order |
-| `block_kind` | `TEXT` | see above |
-| `block_label` | `TEXT` | e.g. `Figure 2`, `Table 1` |
-| `source_block_id` | `TEXT` | source-local identifier if present |
-| `start_char` | `INTEGER` | |
-| `end_char` | `INTEGER` | |
-| `block_text` | `TEXT` | materialized text for retrieval and API reads |
-| `char_count` | `INTEGER` | |
-| `word_count` | `INTEGER` | |
-| `page_number` | `INTEGER` | nullable |
-| `section_path` | `TEXT[]` | denormalized for convenience |
-| `metadata` | `JSONB` | source-specific payload |
-| `source_document_source_id` | `BIGINT FK -> paper_document_sources` | |
-
-### 5. `solemd.paper_sentences`
-
-Sentence-level evidence units.
-
-Purpose:
-
-- exact claim grounding
-- best-sentence retrieval
-- sentence-specific graph engagement
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `sentence_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `block_id` | `BIGINT FK -> paper_blocks` | |
-| `section_id` | `BIGINT FK -> paper_sections` | nullable |
-| `sentence_index` | `INTEGER` | order within document |
-| `block_sentence_index` | `INTEGER` | order within block |
-| `start_char` | `INTEGER` | |
-| `end_char` | `INTEGER` | |
-| `sentence_text` | `TEXT` | |
-| `char_count` | `INTEGER` | |
-| `word_count` | `INTEGER` | |
-| `has_citation_mention` | `BOOLEAN` | |
-| `has_entity_mention` | `BOOLEAN` | |
-| `has_relation_mention` | `BOOLEAN` | |
-| `source_document_source_id` | `BIGINT FK -> paper_document_sources` | |
-
-### 6. `solemd.paper_reference_entries`
-
-Bibliography entries.
-
-Purpose:
-
-- resolve reference metadata
-- connect in-text citations to papers
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `reference_entry_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `reference_index` | `INTEGER` | stable order |
-| `ref_id` | `TEXT` | source-local bibliography id, e.g. `b7` |
-| `start_char` | `INTEGER` | optional if bibliography text materialized |
-| `end_char` | `INTEGER` | optional |
-| `raw_citation_text` | `TEXT` | |
-| `title` | `TEXT` | |
-| `authors_json` | `JSONB` | |
-| `venue` | `TEXT` | |
-| `year` | `INTEGER` | |
-| `doi` | `TEXT` | |
-| `pmid` | `TEXT` | |
-| `pmcid` | `TEXT` | |
-| `arxiv_id` | `TEXT` | |
-| `mag_id` | `TEXT` | |
-| `matched_paper_id` | `TEXT` | Semantic Scholar paper id |
-| `matched_corpus_id` | `BIGINT` | local corpus join target |
-| `match_confidence` | `REAL` | |
-| `metadata` | `JSONB` | |
-| `source_document_source_id` | `BIGINT FK -> paper_document_sources` | |
-
-### 7. `solemd.paper_reference_mentions`
-
-In-text citation mentions.
-
-Purpose:
-
-- exact citation span grounding
-- citation-aware retrieval
-- graph evidence chains
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `reference_mention_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `block_id` | `BIGINT FK -> paper_blocks` | |
-| `sentence_id` | `BIGINT FK -> paper_sentences` | nullable |
-| `ref_id` | `TEXT` | bibliography entry join key |
-| `reference_entry_id` | `BIGINT FK -> paper_reference_entries` | nullable until resolved |
-| `start_char` | `INTEGER` | |
-| `end_char` | `INTEGER` | |
-| `surface_text` | `TEXT` | e.g. `[7]` |
-| `matched_paper_id` | `TEXT` | denormalized convenience |
-| `matched_corpus_id` | `BIGINT` | denormalized convenience |
-| `source_document_source_id` | `BIGINT FK -> paper_document_sources` | |
-
-### 8. `solemd.paper_assets`
-
-General document assets.
-
-Asset kinds:
-
-- `open_access_pdf`
-- `figure_image`
-- `table_xml`
-- `supplement`
-- `page_image`
-- `other`
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `asset_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `asset_kind` | `TEXT` | |
-| `source` | `TEXT` | preserve current live asset source contract |
-| `source_release_id` | `TEXT` | |
-| `asset_label` | `TEXT` | `Figure 2`, `Table 1` |
-| `page_number` | `INTEGER` | nullable |
-| `storage_path` | `TEXT` | local or remote |
-| `remote_url` | `TEXT` | |
-| `content_type` | `TEXT` | |
-| `byte_size` | `BIGINT` | |
-| `access_status` | `TEXT` | |
-| `license` | `TEXT` | |
-| `disclaimer` | `TEXT` | carry forward existing live column |
-| `caption_text` | `TEXT` | |
-| `section_path` | `TEXT[]` | |
-| `metadata` | `JSONB` | |
-| `created_at` | `TIMESTAMPTZ` | |
-
-### 9. `solemd.paper_tables`
-
-Structured table payloads.
-
-Purpose:
-
-- table-aware retrieval
-- later normalized table analytics
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `table_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `asset_id` | `BIGINT FK -> paper_assets` | nullable |
-| `caption_block_id` | `BIGINT FK -> paper_blocks` | nullable |
-| `table_block_id` | `BIGINT FK -> paper_blocks` | nullable |
-| `table_label` | `TEXT` | |
-| `caption_text` | `TEXT` | |
-| `table_xml` | `TEXT` | raw XML when available |
-| `table_json` | `JSONB` | normalized rows / cells |
-| `table_text` | `TEXT` | flattened searchable text |
-| `row_count` | `INTEGER` | |
-| `column_count` | `INTEGER` | |
-| `metadata` | `JSONB` | |
-
-### 10. `solemd.paper_figures`
-
-Figure metadata and caption linkage.
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `figure_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `asset_id` | `BIGINT FK -> paper_assets` | nullable |
-| `caption_block_id` | `BIGINT FK -> paper_blocks` | nullable |
-| `figure_label` | `TEXT` | |
-| `caption_text` | `TEXT` | |
-| `metadata` | `JSONB` | |
-
-### 11. `solemd.paper_entity_mentions`
-
-Exact concept mentions.
-
-Purpose:
-
-- entity-aware filtering
-- entity-aware reranking
-- UI highlighting
-- graph overlays
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `entity_mention_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `block_id` | `BIGINT FK -> paper_blocks` | |
-| `sentence_id` | `BIGINT FK -> paper_sentences` | nullable |
-| `section_id` | `BIGINT FK -> paper_sections` | nullable |
-| `entity_type` | `TEXT` | gene, disease, chemical, etc. |
-| `concept_id` | `TEXT` | normalized concept id |
-| `canonical_name` | `TEXT` | preferred concept label |
-| `mention_text` | `TEXT` | exact surface form |
-| `start_char` | `INTEGER` | |
-| `end_char` | `INTEGER` | |
-| `source_resource` | `TEXT` | PubTator/GNorm2/etc. |
-| `is_negated` | `BOOLEAN` | nullable |
-| `assertion_status` | `TEXT` | nullable |
-| `temporal_status` | `TEXT` | nullable |
-| `confidence` | `REAL` | nullable |
-| `source_document_source_id` | `BIGINT FK -> paper_document_sources` | |
-
-### 12. `solemd.paper_relation_mentions`
-
-Grounded relation mentions.
-
-Purpose:
-
-- relation-aware search
-- relation overlays
-- graph-based evidence expansion
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `relation_mention_id` | `BIGSERIAL PK` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `block_id` | `BIGINT FK -> paper_blocks` | |
-| `sentence_id` | `BIGINT FK -> paper_sentences` | nullable |
-| `subject_entity_mention_id` | `BIGINT FK -> paper_entity_mentions` | nullable |
-| `object_entity_mention_id` | `BIGINT FK -> paper_entity_mentions` | nullable |
-| `relation_type` | `TEXT` | |
-| `relation_subtype` | `TEXT` | nullable |
-| `confidence` | `REAL` | nullable |
-| `metadata` | `JSONB` | |
-| `source_document_source_id` | `BIGINT FK -> paper_document_sources` | |
-
-### 13. Versioned chunking: `paper_chunk_versions`
-
-Purpose:
-
-- decouple chunk policy from canonical text
-- support controlled retrieval experiments
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `chunk_version_id` | `BIGSERIAL PK` | |
-| `name` | `TEXT` | e.g. `narrative_v1` |
-| `description` | `TEXT` | |
-| `tokenizer_name` | `TEXT` | model tokenizer used for limits |
-| `target_token_min` | `INTEGER` | |
-| `target_token_max` | `INTEGER` | |
-| `chunk_policy` | `JSONB` | full chunking parameters |
-| `is_active` | `BOOLEAN` | |
-| `created_at` | `TIMESTAMPTZ` | |
-
-### 14. Derived retrieval chunks: `paper_chunks`
-
-Purpose:
-
-- derived retrieval objects across policies
-- support passage-level retrieval and graph evidence overlays
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `chunk_id` | `BIGSERIAL PK` | |
-| `chunk_version_id` | `BIGINT FK -> paper_chunk_versions` | |
-| `corpus_id` | `BIGINT FK -> paper_documents` | |
-| `section_id` | `BIGINT FK -> paper_sections` | nullable |
-| `chunk_index` | `INTEGER` | order within document for this version |
-| `stable_chunk_id` | `TEXT` | content/span-addressed id |
-| `chunk_kind` | `TEXT` | `narrative`, `caption`, `table_summary`, `abstract`, etc. |
-| `chunk_header` | `TEXT` | micro-header |
-| `section_canonical` | `TEXT` | |
-| `section_path` | `TEXT[]` | |
-| `start_char` | `INTEGER` | |
-| `end_char` | `INTEGER` | |
-| `chunk_text` | `TEXT` | |
-| `char_count` | `INTEGER` | |
-| `word_count` | `INTEGER` | |
-| `token_count` | `INTEGER` | tokenizer-aware |
-| `citation_count` | `INTEGER` | convenience |
-| `entity_count` | `INTEGER` | convenience |
-| `metadata` | `JSONB` | |
-
-### 15. Chunk membership: `paper_chunk_members`
-
-Purpose:
-
-- preserve provenance from chunk back to canonical units
-
-Recommended columns:
-
-| Column | Type | Notes |
-|---|---|---|
-| `chunk_id` | `BIGINT FK -> paper_chunks` | |
-| `member_kind` | `TEXT` | `block` or `sentence` |
-| `member_id` | `BIGINT` | referenced id |
-| `member_order` | `INTEGER` | |
-| `PRIMARY KEY` | composite | `(chunk_id, member_kind, member_id)` |
-
-## Source Precedence Rules
-
-### Preferred text source
-
-1. `s2orc_v2` full text when present and structurally parseable
-2. BioCXML full text / rich passage text when present and `s2orc_v2` is absent or materially weaker
-3. abstract-only fallback
-
-### Preferred annotation source
-
-1. BioCXML exact-offset annotations
-2. PubTator tabular concept/relation enrichment projected onto abstract-only fallback
-3. none
-
-### Preferred citation source
-
-1. `s2orc_v2` in-text `bib_ref` + bibliography matching
-2. API / local bibliography enrichment as secondary reconciliation
-
-Design rule:
-
-- text and annotation source should be modeled separately
-- a paper may have `s2orc_v2` as preferred text source and BioCXML as preferred annotation source
-
-### Abstract-only fallback structure
-
-Abstract-only papers remain first-class evidence objects.
-
-Recommended structure:
-
-- `paper_documents.document_text` = abstract
-- `paper_documents.preferred_text_source` = `abstract_only`
-- `paper_sections` contains one section with `section_canonical = 'abstract'`
-- `paper_blocks` contains one block with `block_kind = 'abstract'`
-- `paper_sentences` are generated with deterministic fallback sentence splitting
-- `paper_entity_mentions` are projected from PubTator tabular mention strings where exact string matching is possible
-
-For projected abstract-only mentions:
-
-- `span_origin = 'derived'`
-- `source_resource = 'pubtator_tabular_projected'`
-- ambiguous string projections should remain inspectable in metadata rather than silently collapsed
-
-## Parsing and Ingest Design
-
-### A. `s2orc_v2` parser
-
-Responsibilities:
-
-- stream JSONL
-- decode nested annotation JSON strings
-- build canonical text and spans
-- preserve section numbers
-- build bibliography entry rows
-- build in-text citation mention rows
-
-Required resilience:
-
-- tolerate missing sentence annotations
-- generate deterministic fallback sentence boundaries when annotations are absent
-- preserve whether sentence boundaries are source-native or fallback-generated
-- use biomedical-aware sentence splitting so abbreviations, units, citations, and enumerations do not fragment evidence badly
-- use `pySBD` as the default rule-based fallback sentence splitter
-- compare `scispaCy` as an evaluation baseline rather than treating it as the default
-- tolerate missing `matched_paper_id`
-- tolerate noisy headers and multilingual metadata
-
-### B. BioCXML parser
-
-Responsibilities:
-
-- stream tar members without unpacking whole archives
-- parse passage types
-- parse entity annotations and relations
-- capture front matter and caption/table text
-- align text spans to canonical document where possible
-
-### C. Alignment layer
-
-The alignment layer should connect:
-
-- PMID / PMCID / DOI / corpusid
-- BioC passage offsets to canonical text spans
-- entity mentions to blocks/sentences/chunks
-- reference mentions to bibliography entries and linked papers
-
-Where exact alignment is not possible:
-
-- keep source-local offsets
-- retain provenance and expose that uncertainty in metadata
-
-## Chunking Strategy
-
-### Core rule
-
-Chunks are derived retrieval products, not the source of truth.
-
-### Narrative chunk policy
-
-Use structure-aware adaptive chunking:
-
-- respect section boundaries
-- respect sentence boundaries
-- preserve subsection cohesion
-- create shorter chunks for high-information local evidence
-- attach micro-headers
-
-### Token budget
-
-Dense retrieval chunks should be tokenizer-aware. The MedCPT article encoder
-examples use `max_length = 512`, so dense chunk budgets should stay below that
-window rather than using raw word-count heuristics alone.
-
-Recommended starting policy:
-
-- target range: roughly `220-350` words or equivalent tokenizer budget
-- hard cap: stay within `~384-448` model tokens for dense retrieval payloads
-- use neighboring chunk expansion during answer synthesis to recover larger context
-
-### Chunk types
-
-Chunk types should include:
-
-- `narrative`
-- `abstract`
-- `figure_caption`
-- `table_caption`
-- `table_summary`
-- `methods_focus`
-- `results_focus`
-
-### Micro-headers
-
-Each chunk should store:
-
-- a concise micro-header
-- section canonical label
-- full section path
-
-These should be usable for:
-
-- reranking
-- display
-- graph badges
-- note export
-
-## Retrieval Plane
-
-### Retrieval units
+### Versioning
 
-The retrieval system should search across multiple evidence units:
+Use a versioned engine API from day one:
 
-- sentences
-- blocks
-- chunks
-- captions
-- table summaries
-- abstracts
+- `/api/v1/evidence/search`
+- `/api/v1/evidence/papers/{corpus_id}`
+- `/api/v1/evidence/papers/{corpus_id}/references`
+- `/api/v1/evidence/papers/{corpus_id}/assets`
+- `/api/v1/evidence/blocks/{block_id}`
+- `/api/v1/evidence/sentences/{sentence_id}`
+- `/api/v1/evidence/cite`
 
-### Candidate generation
+Do not publish unversioned evidence endpoints.
 
-At query time, generate candidates in parallel from:
+### Canonical request and response models
 
-- dense sentence retrieval
-- dense block / chunk retrieval
-- sparse lexical retrieval
-- entity-constrained retrieval
-- citation-neighborhood expansion
-- table / figure / caption retrieval
+The engine should define these first-class models immediately:
 
-### Fusion
+- `PaperRetrievalQuery`
+- `RagSearchRequest`
+- `RagSearchResponse`
+- `PaperEvidenceHit`
+- `CitationContextHit`
+- `EntityMatchedPaperHit`
+- `RetrievalChannelResult`
+- `EvidenceBundle`
 
-Combine candidate lists with:
+Recommended response rules:
 
-- Reciprocal Rank Fusion as the default baseline
-- learned fusion later if evaluations justify it
+- `RagSearchResponse` returns bundles, not raw rows
+- `RetrievalChannelResult` exposes channel diagnostics for debug and testing
+- `EvidenceBundle` always includes paper grounding, not detached text
+- future sentence and block results fit under the same bundle contract
+- graph overlay hints are a response add-on, not a separate opaque side channel
 
-### Reranking
+### Error contract
 
-Use MedCPT Cross Encoder over top candidates.
+The current stub pattern in `app/actions/graph.ts` is temporary and not
+type-safe enough for the real system.
 
-Recommended model checkpoints:
+Define a canonical engine error envelope:
 
-- query encoder: `ncbi/MedCPT-Query-Encoder`
-- article encoder: `ncbi/MedCPT-Article-Encoder`
-- cross-encoder reranker: `ncbi/MedCPT-Cross-Encoder`
+- `EngineErrorResponse`
+  - `request_id`
+  - `error_code`
+  - `error_message`
+  - `retry_after_seconds`
+  - `details`
 
-Version governance:
+Recommended status conventions:
 
-- pin exact model identifiers and major library versions in implementation configs
-- treat throughput numbers as benchmark outputs, not fixed spec truth
-- when upstream model or library releases change, require an explicit review prompt before upgrading
-- upgrade only after benchmark comparison, relevance comparison, and rollback notes are recorded
+- `400` invalid request
+- `401` unauthenticated
+- `403` unauthorized
+- `404` entity not found
+- `409` incompatible graph release or stale request context
+- `429` rate limited
+- `500` internal engine failure
+- `503` dependency unavailable
 
-Structured rerank features should include:
+Frontend rule:
 
-- dense score
-- lexical score
-- entity overlap
-- relation match
-- section prior
-- evidence type prior
-- citation connectedness
-- citation intent priors when citation-context metadata is available
-- cluster / graph relevance
-- recency / year if required by query mode
+- Server Actions and engine clients should return a typed success-or-error result
+- do not cast error payloads into success shapes
+- the error path must remain testable without a live engine
 
-### Evidence assembly
+### Display-policy contract
 
-For each selected evidence item, assemble:
+Every paper or evidence response should allow a normalized `display` object:
 
-- best supporting sentence
-- parent block
-- neighboring blocks
-- section path
-- matched entities
-- citation mentions
-- bibliography entry
-- linked paper metadata
-- asset context
+- `display_policy`
+- `display_policy_reason`
+- `access_status`
+- `license`
+- `disclaimer`
 
-## Physical Storage and Indexing
+This is required even before the formal rights/compliance workstream lands.
 
-### Canonical truth
+### Graph integration contract
 
-Canonical truth remains in PostgreSQL.
+The evidence API should be able to return lightweight graph hints:
 
-Reasons:
+- highlighted `corpus_id`s
+- optional evidence ids once evidence nodes exist
+- optional citation edges
+- optional cluster ids
 
-- relational joins
-- auditability
-- release provenance
-- easy API reads
-- easy bulk ingest and checkpoints
+The graph runtime still owns spatial state.
+The engine returns evidence semantics, not canvas instructions.
 
-### Retrieval plane
+### Synthesis and streaming
 
-The retrieval plane should be treated as separate from canonical truth.
+Retrieval and synthesis are distinct stages, but the Ask workflow needs both.
 
-Target capabilities:
+The current frontend already expects a completed answer shape:
 
-- dense vector search
-- sparse lexical search
-- payload filtering
-- low-latency rerank candidate handoff
+- `generateAnswer?: boolean` exists in `detail-service.ts`
+- `answer` and `answer_model` already exist in the RAG response payload
 
-### Recommended backend decision
+Recommended posture:
 
-Use a split architecture:
+- keep retrieval in `engine/app/rag/`
+- add `engine/app/rag/answer.py` for answer synthesis orchestration
+- include answer fields in `RagSearchResponse`
+- support both:
+  - non-streaming responses for the baseline
+  - streaming responses for the interactive Ask path
 
-1. PostgreSQL as canonical evidence warehouse
-2. Qdrant as the production retrieval plane for sentence/block/chunk search
-3. pgvector as a bounded baseline and validation path, not the primary sentence-scale serving layer
+Preferred UI layer:
 
-This is the recommended target state for the full evidence system.
+- use `Vercel AI SDK` in Next.js if the app keeps an AI-native streaming UX
+- keep evidence retrieval and grounding in FastAPI
 
-### Retrieval plane bring-up sequence
+Transport rule:
 
-The production target is Qdrant, but bring-up should be staged:
+- browser streaming may use a same-origin Next.js Route Handler proxy when needed
+- server-to-server retrieval remains direct to the engine
 
-1. pgvector paper-level baseline on existing SPECTER2 graph papers
-2. pgvector block-level MedCPT canary for recall and latency benchmarking
-3. Qdrant `evidence_blocks` collection at block scale
-4. Qdrant `evidence_sentences` collection at sentence scale
+### Auth and service identity
 
-Interpretation:
+The evidence API should not remain implicitly trusted.
 
-- pgvector is the right early validation and benchmarking tool
-- Qdrant is the intended production retrieval plane once evidence-serving scale moves beyond comfortable pgvector bounds
+Recommended posture:
 
-### Why Qdrant is the recommended retrieval plane
+- local development:
+  - simple shared engine token is sufficient
+- production:
+  - Next.js-authenticated requests should present explicit service or user identity to the engine
+- server-to-server:
+  - use a dedicated service credential between Next.js and FastAPI
 
-Qdrant is a better fit for sentence-scale biomedical evidence retrieval because it natively supports:
+Contract rule:
 
-- dense vector retrieval
-- sparse vector retrieval
-- dense+sparse fusion via hybrid queries and `RRF`
-- payload indexes for exact filters
-- nested payload filters
-- tenant/principal indexing optimizations
-- quantization for large-scale memory reduction
+- every engine request carries a stable request id
+- authenticated identity and authorization context are enforced in middleware, not improvised in handlers
 
-Those capabilities align directly with the evidence system query shapes:
+## Frontend Integration Plan
 
-- semantic similarity + entity filters
-- semantic similarity + section/modality filters
-- lexical precision + semantic recall fusion
-- sentence retrieval with citation/entity payload constraints
+### Current frontend posture
 
-### Why pgvector partitioning is not the primary answer
+The frontend already assumes typed detail and RAG payloads in
+`features/graph/lib/detail-service.ts`, and it currently reaches them through
+stubbed Server Actions in `app/actions/graph.ts`.
 
-pgvector remains valuable, but it should not be the main production answer for
-hundreds of millions of sentence vectors.
+That is the seam to use.
 
-Key reasons:
+### Integration target
 
-- approximate vector filtering in pgvector is still applied after index scanning, which can require larger `ef_search` or iterative scans to recover recall under selective filters
-- PostgreSQL partitioning only helps when the query planner can prune to a small number of partitions
-- entity-centric and evidence-centric queries often require many overlapping filters rather than one clean partition key
-- partitioning helps operations and some coarse routing, but it does not solve sentence-scale vector footprint
+The integration path should be:
 
-At expected sentence scale, raw vector storage is already large before ANN overhead:
+1. add a typed engine client in Next.js server code
+2. have `app/actions/graph.ts` call that client
+3. keep `features/graph/lib/detail-service.ts` as the client-facing interface
+4. replace preview placeholder assumptions with evidence-native payloads
 
-- `120M` sentence vectors at `768d`: about `343 GiB` in `float32`
-- `156M` sentence vectors at `768d`: about `446 GiB` in `float32`
-- `200M` sentence vectors at `768d`: about `572 GiB` in `float32`
+This preserves the current UI composition while moving the evidence semantics to
+the correct backend boundary.
 
-Even if compressed to `halfvec`, the footprint is still large enough that the
-retrieval engine choice materially affects feasibility.
+### Next implementation slice
 
-### Postgres indexing requirements
+The next implementation slice should be one boundary-respecting vertical path:
 
-For canonical evidence warehouse:
+`query -> retrieval channels -> fused evidence bundles -> graph signals -> UI`
 
-- B-tree on `corpus_id`, stable indices, and section ordering
-- GIN / trigram / FTS where appropriate
-- careful partitioning by source / release / target kind for very large tables
+This is the right next step because it proves:
 
-### When pgvector is still the right tool
+- the engine can own evidence semantics
+- the graph can react to retrieval without learning retrieval internals
+- the frontend can stay thin while still feeling deeply integrated
+- later warehouse and Qdrant changes can land behind the same response contract
 
-Keep pgvector for:
+Do not treat graph-lighting as a separate bolt-on after retrieval.
+It is part of the same evidence interaction contract, but it must remain
+logically distinct from rendering state.
 
-- paper-level graph/search embeddings already living naturally in PostgreSQL
-- early warehouse-local retrieval canaries
-- block/chunk-scale experiments before sentence-scale serving is turned on
-- exact evaluation baselines and warehouse-side debugging
+### Response surface requirement
 
-### What partitioning means if pgvector is used
+The answer surface cannot be designed as if the graph disappears during retrieval.
 
-If a pgvector baseline is used for canaries or bounded serving, partitioning
-should be understood narrowly:
+Requirements:
 
-- use `LIST`, `RANGE`, or `HASH` partitions on coarse operational dimensions
-- expect each partition to carry its own ANN indexes
-- rely on partition pruning only for filters that consistently narrow queries to a small subset
-- avoid overpartitioning, because planning overhead rises when many partitions remain eligible
+- the graph remains visible while the user reads the answer and evidence
+- the answer surface is anchored to the prompt or a nearby docked panel, not a
+  full-screen modal takeover
+- evidence cards and graph-lighting should be inspectable together
+- answer streaming should not break graph interaction or hide the active canvas
+- the interactive response surface should be owned by `Vercel AI SDK` in Next.js,
+  not improvised directly inside the database or retrieval layer
 
-Useful partition keys if needed:
+The initial implementation may keep the current prompt-attached result tray, but
+the contract should leave room for a richer docked evidence rail later.
 
-- retrieval granularity
-- source kind
-- publication year or year bands
-- corpus tier
+### Composition support and refute requirement
 
-Poor primary partition keys:
+The prompt/editor should gain a deliberate `@`-triggered evidence-assist path.
 
-- concept ids
-- section labels with many combinations
-- ad hoc runtime query facets
+Target behavior:
 
-For pgvector baseline if used:
+- when the user types `@`, the client inspects the current drafting context
+- the engine receives the last few sentences or current paragraph, not just the
+  raw token after `@`
+- the engine can return supporting studies, refuting studies, or both
+- the graph can light up the resulting evidence set while the user keeps writing
 
-- use approximate indexing with partition-aware filtering and iterative scans where necessary
-- use `halfvec` where recall tests permit
-- create exact or partial indexes on high-value filter columns
-- reserve dense sentence indexing as a distinct operational concern rather than assuming it belongs in one monolithic table/index
+Design rules:
 
-### Recommended Qdrant collection layout
+- this is not generic mention autocomplete
+- support and refute are evidence intents, not renderer behaviors
+- the retrieval path should be reusable by Ask and Create/Write modes
+- the intent contract should be explicit in the API, not inferred from ad hoc UI strings
+- `Vercel AI SDK` should own the streamed interaction and composition UX
+- the engine should expose typed evidence retrieval tools/endpoints that the AI
+  layer calls
 
-Recommended starting collections:
+### Graph highlight integration
 
-- `evidence_sentences`
-- `evidence_blocks`
-- `evidence_captions` later if captions need independent serving characteristics
+The engine should return graph grounding in terms of stable paper identifiers,
+not browser-specific point indices.
 
-Preferred rule:
+The frontend graph path should be:
 
-- one collection per retrieval granularity
-- payload-driven filtering within a collection
-- avoid one collection per entity, section, or source
+1. engine response returns `corpus_id` or stable paper ids
+2. the browser runtime resolves those ids through DuckDB against the active canvas
+3. active hits provide point indices for immediate graph-lighting
+4. non-active hits must flow through the overlay activation seam so they become active canvas points instead of remaining passive evidence rows
+5. the UI can still write `highlightedPointIndices` for secondary emphasis, but overlay promotion is the native path for bringing new evidence into view
 
-Recommended Qdrant payload fields:
+This preserves separation of concerns:
 
-- `corpus_id`
-- `paper_id` or local paper key
-- `sentence_id` or `block_id`
-- `section_canonical`
-- `block_kind`
-- `chunk_kind` if applicable
-- `source_kind`
-- `publication_year`
-- `corpus_tier`
-- `has_entity`
-- `has_citation`
-- `concept_ids`
-- `matched_corpus_ids`
-- `cluster_id` if graph-aware boosts are added
+- engine owns evidence semantics
+- DuckDB session owns bundle-local id resolution and overlay promotion
+- Zustand and Cosmograph own highlight state and rendering once the relevant points are active
 
-Notes:
+The engine response should therefore include typed graph signals, not just a
+flat list of highlighted ids.
 
-- display policy remains canonical PostgreSQL/API logic rather than primary retrieval logic
-- a coarse `display_policy` payload field may be added later if it materially improves serving efficiency, but rights/render policy should not be owned by the vector index
+Important current constraint:
 
-Recommended Qdrant search strategy:
+- `getPaperNodesByPaperIds(...)` resolves against `active_paper_points_web`, not the full universe
+- evidence-driven overlay activation therefore also needs a universe-resolution helper that can map returned `paper_id` values to universe point ids before calling `setOverlayPointIds(...)`
+- this is a frontend graph-integration task, not a reason to distort the engine response contract
 
-- dense MedCPT retrieval
-- sparse lexical retrieval
-- `RRF` fusion
-- cross-encoder reranking
-- payload filters applied early
-- quantization enabled after initial relevance baselines are stable
+Recommended near-term signal families:
 
-### Sparse retrieval strategy
+- `entity_match`
+- `semantic_neighbor`
+- `citation_neighbor`
+- `answer_support`
 
-Use a staged lexical path:
+Each signal should carry:
 
-1. initial sparse retrieval from PostgreSQL FTS on evidence text
-2. application-level fusion with dense Qdrant results via `RRF`
-3. later migration to unified Qdrant dense+sparse serving if evaluation justifies the extra complexity
+- stable `corpus_id`
+- channel or reason
+- score
+- rank
+- optional explanation metadata
 
-## Entity-Aware Evidence
+Rules:
 
-### Why entity offsets matter
+- the engine does not emit canvas-specific indices
+- the graph client does not reconstruct retrieval meaning from raw tables
+- graph highlighting remains derivable from the evidence response, but not
+  entangled with renderer-specific state
+- new retrieval channels can be added without changing the graph state model
 
-Entity presence is high-yield evidence in biomedical retrieval.
+### Role of local SQL after evidence APIs land
 
-The system should support:
+Do not grow a second evidence access layer in Next.js.
+Once evidence APIs exist, evidence flows through the engine.
 
-- hard filters:
-  - "only evidence mentioning lithium"
-  - "only blocks mentioning both BDNF and depression"
-- soft boosts:
-  - prefer evidence with matching concepts
-- exact highlighting:
-  - show mention spans inside returned prose
-- graph overlays:
-  - light up papers and evidence nodes by concept
-- evidence faceting:
-  - methods-only, results-only, disease-specific, chemical-specific
+If the web app still needs a tiny metadata-only SQL surface, that can remain as:
 
-### Required representation
+- temporary Drizzle usage
+- or a thinner direct SQL client
 
-Do not rely on paper-level counts or chunk arrays alone.
-Use exact mention-level rows in `paper_entity_mentions` and optional denormalized
-chunk caches for convenience.
+But the target plan should not require Drizzle.
 
-## Citation-Aware Evidence
+## Immediate Retrieval Baseline
 
-### Citation mentions as first-class objects
+### Goal
 
-In-text citation mentions should support:
+Ship a real engine-side evidence baseline now, using current tables only and no
+heavy live-data work.
 
-- exact span highlighting
-- sentence-level evidence grounding
+This baseline should support:
+
+- query to candidate papers
+- optional entity filter
+- optional relation filter
+- optional citation-context boost
+- response as evidence bundles
+
+### Indexing strategy for the baseline
+
+This is design work now, not a live migration order.
+
+The baseline path must assume indexed lookup strategies for:
+
+- title and abstract full-text search
+- fuzzy or prefix title lookup
+- entity filtering on `pubtator.entity_annotations`
+- relation filtering on `pubtator.relations`
+- citation expansion on `solemd.citations`
+
+Operational note:
+
+- any live index creation should wait until the graph rebuild finishes
+- when index work begins, use non-blocking operational patterns where appropriate
+
+### Current-table retrieval channels
+
+The baseline should use only existing tables:
+
+1. paper retrieval from `solemd.papers`
+2. citation-context retrieval and boost from `solemd.citations`
+3. entity-aware paper filtering from `pubtator.entity_annotations`
+4. relation-aware paper filtering or boost from `pubtator.relations`
+5. bibliography expansion from `solemd.paper_references`
+6. asset lookup from `solemd.paper_assets`
+
+### Baseline ranking flow
+
+Recommended first-pass flow:
+
+1. normalize the free-text query
+2. derive optional entity and relation filters
+3. retrieve candidate papers from `solemd.papers`
+4. apply entity and relation filters if present
+5. score citation-context matches from `solemd.citations.contexts`
+6. optionally use citation intents as a boost feature
+7. assemble final evidence bundles with references and assets
+8. return graph highlight ids from the top paper bundles
+
+### Baseline graph interaction contract
+
+The baseline should already support graph-aware interaction, even before the
+warehouse exists.
+
+That means the first real response should return:
+
+- evidence bundles for display and inspection
+- graph-signal candidates for canvas highlighting
+- per-paper reasons explaining why each paper should light up
+
+The first graph-signal sources should be:
+
+- direct entity overlap with the query
+- semantic paper similarity
+- citation-context support
+- final supporting-paper rank
+
+This gives the graph a principled semantic role without forcing the frontend to
+reverse-engineer retrieval logic.
+
+### Why this baseline matters
+
+This gives a real evidence loop before the warehouse exists:
+
+- the Ask path can return explainable paper bundles
+- the graph can highlight grounded papers
+- retrieval and response contracts can be tested
+- the future warehouse can replace the retrieval channels without changing the
+  public bundle shape
+
+### Baseline response shape
+
+The baseline `EvidenceBundle` should include:
+
+- paper identity and bibliographic metadata
+- why the paper matched
+- paper-level retrieval score and rank features
+- top citation-context hits
+- matching entities and relations
 - bibliography expansion
-- cited-paper navigation
-- graph citation chain visualization
+- asset references
+- display metadata
 
-### Why this matters
+Do not return bundle-export preview text as if it were evidence.
 
-This is what turns the system from "retrieved text" into "inspectable evidence."
-The user should be able to click from:
+The top-level response should also include a graph-facing signal collection that
+can evolve independently of the evidence bundle internals.
 
-- answer claim
-- supporting sentence
-- in-text citation span
-- bibliography entry
-- cited paper
-- graph neighborhood
+## Engine Package Shape
 
-## Tables and Figures
+Build the initial engine surface around a real `engine/app/rag/` package:
 
-Tables and figures should not be treated as secondary leftovers.
+- `engine/app/rag/__init__.py`
+- `engine/app/rag/types.py`
+- `engine/app/rag/models.py`
+- `engine/app/rag/schemas.py`
+- `engine/app/rag/queries.py`
+- `engine/app/rag/repository.py`
+- `engine/app/rag/ranking.py`
+- `engine/app/rag/bundle.py`
+- `engine/app/rag/service.py`
+- `engine/app/rag/answer.py`
+- `engine/app/rag/tests/`
 
-### First-class evidence types
+Add the API layer explicitly:
 
-- `table_text`
-- `table_caption`
-- `figure_caption`
-- later: normalized table row retrieval
+- `engine/app/api/__init__.py`
+- `engine/app/api/rag.py`
 
-### Retrieval behavior
+Suggested module roles:
 
-Queries that imply:
+- `types.py`: enums, literals, shared aliases
+- `models.py`: internal domain models used by the service layer
+- `schemas.py`: Pydantic API request and response models
+- `queries.py`: SQL text and row-shape comments
+- `repository.py`: database read methods only
+- `ranking.py`: pure ranking and fusion functions
+- `bundle.py`: evidence assembly from row groups to response bundles
+- `service.py`: orchestration entrypoint for search and detail reads
+- `answer.py`: answer synthesis and streaming orchestration over retrieved evidence
+- `api/rag.py`: FastAPI router and endpoint wiring
 
-- sample size
-- hazard ratio
-- confidence interval
-- measurement panel
-- adverse event frequency
-- protocol / assay details
+Rules:
 
-should explicitly search table and caption indexes.
+- repository code does not know about HTTP
+- API code does not know SQL
+- ranking logic is pure and unit-testable
+- bundle assembly is deterministic and testable from fixtures
 
-## Cosmograph Engagement Model
+## Evidence Warehouse Target
 
-### The graph is not just paper coordinates
+### Canonical rule
 
-It becomes a live evidence state machine.
+The future warehouse is a span spine first and a retrieval index second.
 
-### Core graph layers
-
-1. **Paper layer**
-   - current mapped literature graph
-   - SPECTER2 / citation-informed layout
-
-2. **Evidence overlay**
-   - retrieved chunks / blocks / sentence anchors
-   - dynamic, query-scoped, not necessarily permanently bundled
-
-3. **Entity overlay**
-   - concept-aware highlighting and filtering
-
-4. **Citation overlay**
-   - directed citation paths between papers
-   - answer-specific citation illumination
-
-5. **Relation overlay**
-   - PubTator relation-driven connective tissue
-
-### Query-time interactions
-
-#### As-you-type semantic highlighting
-
-- encode the query
-- retrieve candidate papers/evidence
-- glow nearby relevant papers
-- pulse matching evidence overlays
-
-#### Entity highlighting
-
-- detect recognizable biomedical entities in the query
-- highlight papers and evidence nodes containing those entities
-- allow AND/OR concept filters
-
-#### Answer streaming
-
-As evidence is selected or the answer streams:
-
-- cited papers light up
-- supporting sentence/chunk nodes appear
-- neighboring graph clusters can soften into view
-- contradictory or adjacent evidence can be surfaced with alternate styles
-
-### Evidence node design
-
-Evidence nodes should be attachable to parent papers and display:
-
-- evidence type
-- section type
-- support / contrast / related stance
-- entity badges
-- citation count / linkage
-
-These can be:
-
-- ephemeral runtime overlays
-- or persisted evidence graph points for exemplar and hot-path usage
-
-## Bundle and Read Model Strategy
-
-### Hot bundle
-
-Keep hot bundle contents minimal and filter-oriented:
-
-- paper points
-- clusters
-- exemplars
-- compact paper metadata
-- compact entity summaries
-- compact evidence summaries for faceting
-
-### Warm bundle / read models
-
-Potential warm tables:
-
-- compact chunk previews
-- representative evidence per cluster
-- paper-level entity / relation summaries
-- per-paper evidence counts by type and section
-
-### Cold evidence
-
-Fetch on demand:
-
-- full block text
-- full sentence text
-- exact mention spans
-- citation mention chains
-- bibliography payloads
-- table XML / JSON
-- full annotation payloads
-
-Design rule:
-
-- do not push full text or large annotation payloads into the always-hot graph bundle
-
-## API Surface
-
-### Core evidence APIs
-
-- `POST /evidence/query`
-- `GET /evidence/paper/{paper_id}`
-- `GET /evidence/block/{block_id}`
-- `GET /evidence/sentence/{sentence_id}`
-- `GET /evidence/chunk/{chunk_id}`
-- `GET /evidence/neighborhood`
-- `GET /evidence/assets/{asset_id}`
-
-### Entity and relation APIs
-
-- `GET /evidence/entities/search`
-- `GET /evidence/entity/{concept_id}`
-- `GET /evidence/relations/search`
-
-### Writing / cite APIs
-
-- `POST /evidence/cite`
-- `POST /evidence/highlight`
-- `POST /evidence/support-check`
-
-### Response contract principle
-
-APIs should return **structured evidence objects**, not flat text blobs.
-
-Every evidence payload should be able to include:
-
-- ids
-- corpus / paper metadata
-- exact text span
-- section path
-- entities
-- citations
-- linked references
-- assets
-- graph identifiers / cluster ids if relevant
-
-## Query Workflows
-
-### Ask workflow
-
-1. User enters free-text question.
-2. Query parser extracts:
-   - semantic intent
-   - entities
-   - possible relation signals
-   - likely section priors
-   - evidence modality priors
-3. Candidate retrieval runs across dense, sparse, entity, and graph channels.
-4. Candidates are fused and reranked.
-5. Evidence bundles are assembled.
-6. Graph receives highlighted paper ids, evidence ids, and overlay metadata.
-7. LLM synthesizes answer using selected evidence.
-8. Answer citations remain clickable all the way down to sentence spans and bibliography.
-
-### Cite / write workflow
-
-1. User writes a sentence or paragraph in the editor.
-2. The current draft span becomes the retrieval query.
-3. The system returns:
-   - supporting sentences
-   - parent papers
-   - methods/results context
-   - confidence and support metadata
-4. The user selects a citation.
-5. The graph lights up the supporting papers and related evidence nodes.
-6. Exact prose can be copied into notes or supporting evidence panels with provenance.
-
-### Explore workflow
-
-1. User types a term or entity.
-2. Matching papers and evidence nodes light up immediately.
-3. Filters can pivot to:
-   - entity type
-   - section type
-   - evidence type
-   - year
-   - venue
-4. The user can open exact evidence from graph interactions.
-
-## Evaluation Plan
-
-The evaluation harness should begin in Phase 0, before full-text evidence is live.
-
-Recommended initial benchmark set:
-
-- `50-100` gold questions
-- paper-level preview retrieval baseline
-- later block-level and sentence-level comparisons against the preview baseline
-
-### Retrieval metrics
-
-- sentence-level recall@k
-- block-level recall@k
-- evidence bundle precision@k
-- citation-resolution rate
-- entity-filter precision
-- table/caption retrieval recall
-
-### RAG metrics
-
-- grounded answer precision
-- unsupported statement rate
-- citation faithfulness
-- answer completeness
-- evidence diversity
-
-### Graph interaction metrics
-
-- highlight latency
-- evidence overlay latency
-- answer-to-graph synchronization latency
-- time-to-open supporting sentence
-
-### Quality checks
-
-- percentage of evidence items with exact offsets
-- percentage of citation mentions resolved to bibliography entries
-- percentage of bibliography entries matched to local papers
-- section canonicalization accuracy
-- entity mention alignment accuracy
-
-## Implementation Workstreams
-
-### Workstream A: Canonical evidence schema
-
-Deliverables:
-
-- migration set for canonical evidence warehouse tables
-- updated schema docs
-- storage strategy notes
-- retrieval-plane contract notes for PostgreSQL canonical + Qdrant serving
-- explicit reconciliation notes for evolving existing `paper_assets` and `paper_references`
-
-### Workstream B: `s2orc_v2` parser and ingest
-
-Deliverables:
-
-- streaming parser
-- release-aware checkpoints
-- document / section / block / sentence / citation rows
-- biomedical-aware sentence fallback when source sentence offsets are missing
-
-### Workstream C: BioCXML parser and overlay alignment
-
-Deliverables:
-
-- passage / entity / relation / caption / table extraction
-- alignment layer
-- exact mention rows
-- entity-aware retrieval payload derivation for downstream indexes
-
-### Workstream D: Derived chunking and retrieval products
-
-Deliverables:
-
-- chunk versioning
-- initial chunk policies
-- sentence/block/chunk read models
-
-### Workstream E: Retrieval plane
-
-Deliverables:
-
-- Qdrant collection definitions and ingest
-- dense retrieval
-- sparse retrieval
-- entity-constrained retrieval
-- reranker
-- retrieval evaluation harness
-- preview-evidence bridge retirement plan once evidence APIs supersede it
-
-### Workstream F: Evidence APIs
-
-Deliverables:
-
-- evidence query endpoints
-- paper / block / sentence / chunk detail endpoints
-- cite workflow endpoints
-
-### Workstream G: Graph integration
-
-Deliverables:
-
-- dynamic evidence overlay design
-- graph highlight protocol
-- answer-to-graph sync
-- evidence-node interaction model
-
-### Workstream H: Writing workflows
-
-Deliverables:
-
-- support retrieval from draft prose
-- citation selection UI contract
-- exact-prose export path
-
-## Suggested Build Order
-
-0. ship Phase 0 preview evidence using existing paper embeddings, citation contexts, and entity filters
-1. finalize evidence schema
-2. stand up the evaluation harness and gold-question baseline against Phase 0
-3. finalize retrieval contracts for PostgreSQL canonical storage plus Qdrant serving
-4. implement Phase 1a core text spine
-5. ingest `s2orc_v2` into canonical document/section/block/sentence tables
-6. ship deterministic biomedical-aware sentence fallback and sentence-quality checks
-7. implement abstract-only fallback ingest for the dominant abstract-only population
-8. run pgvector block-level MedCPT canary
-9. implement Phase 1b citation and entity enrichment
-10. overlay BioCXML entity/relation/caption/table information
-11. project PubTator tabular entity mentions onto abstract-only texts where possible
-12. stand up Qdrant block retrieval first, then sentence retrieval
-13. build versioned chunks
-14. stand up evidence APIs
-15. build dense+sparse retrieval and reranking
-16. integrate graph highlighting / evidence overlays
-17. implement writing/cite workflows
-18. evaluate and iterate on chunking/index policies
-
-## Delivery Phasing Recommendation
-
-The full target remains the 15-table evidence warehouse, but delivery should be
-phased so the system becomes useful early without backing away from the final
-architecture.
-
-### Phase 0: Preview evidence
-
-Ship first with existing data:
-
-- paper-level retrieval from current embeddings
-- citation-context preview evidence from `solemd.citations.contexts`
-- citation-intent metadata from `solemd.citations.intents`
-- entity-aware paper filters from `pubtator.entity_annotations`
-- Ask UI and graph highlight wiring
-
-Rationale:
-
-- this gives a shippable preview path in days
-- it validates the product loop before full-text ingest
-- it becomes the baseline that block and sentence retrieval must beat
-
-### Phase 1a: Core text spine
-
-Ship first:
+That means the canonical tables are:
 
 - `paper_documents`
 - `paper_document_sources`
 - `paper_sections`
 - `paper_blocks`
 - `paper_sentences`
-
-Rationale:
-
-- these tables validate text parsing, hierarchy, and sentence handling in isolation
-- this keeps the first parsing deliverable focused and testable
-
-### Phase 1b: Citation and entity enrichment
-
-Add next:
-
 - `paper_reference_entries`
-- `paper_reference_mentions`
+- `paper_citation_mentions`
 - `paper_entity_mentions`
-
-Rationale:
-
-- this adds citation grounding and entity-aware evidence without coupling it to first-pass text parsing
-- entity mentions still land early enough to support real retrieval and highlighting
-
-### Phase 2: Relation and asset enrichment
-
-Add next:
-
 - `paper_relation_mentions`
 - `paper_assets`
-- `paper_tables`
-- `paper_figures`
-
-Rationale:
-
-- these enrich the evidence object and graph overlays
-- table/figure retrieval is important, but it does not have to block the core prose-and-citation system
-
-### Phase 3: Derived retrieval products
-
-Add next:
-
 - `paper_chunk_versions`
 - `paper_chunks`
 - `paper_chunk_members`
 
-Rationale:
+### Reconciliation with current physical tables
 
-- chunks are important retrieval products, but they are derived from the canonical spine
-- keeping them in Phase 3 reduces the risk of confusing derived artifacts with source-of-truth evidence
+The logical model must reconcile with current live tables:
 
-### Deferred rights/compliance workstream
+- `solemd.paper_references` remains the physical bibliography-entry substrate and
+  evolves toward the logical `paper_reference_entries` contract
+- `solemd.paper_assets` remains the physical asset substrate and evolves toward
+  the richer asset contract
+- `pubtator.entity_annotations` and `pubtator.relations` remain upstream source
+  tables, not warehouse replacements
 
-This remains intentionally deferred, but the architectural hooks are part of v1:
+### Non-negotiable modeling rules
 
-- `display_policy` and `display_policy_reason` exist from day one
-- license/access/disclaimer metadata is preserved and surfaced when present
-- retrieval and storage do not assume that current UI display policy is permanent
-- a later rights/compliance workstream can tighten rendering or export rules without forcing a schema rewrite or retrieval redesign
+1. `paper_document_sources` is mandatory. Source provenance is not optional.
+2. Citation edge metadata, bibliography entries, and in-text citation mentions are distinct objects.
+3. Exact mention-grounded relations and paper-level PubTator relations are distinct objects.
+4. Every span-bearing object carries provenance and alignment status.
+5. Chunks are derived products that can always be traced back to canonical spans.
 
-## Open Decisions
+## Structural Parsing Plan
 
-### Retrieval engine
+### Source precedence
 
-The major architectural decision is now recommended:
+Preferred canonical text source:
 
-- PostgreSQL is the canonical evidence warehouse
-- Qdrant is the recommended production retrieval plane
-- pgvector remains the bounded baseline and validation path
+1. `s2orc_v2`
+2. BioCXML when `s2orc_v2` is missing or materially weaker
+3. abstract-only fallback
 
-Open implementation details still remain:
+Preferred annotation source:
 
-- exact collection count and whether captions deserve their own collection
-- when to enable quantization in production
-- whether sentence retrieval is turned on only after block retrieval clears evaluation gates
+1. BioCXML exact-offset annotations
+2. aligned source-native annotations from `s2orc_v2` where applicable
+3. projected PubTator abstract-only matches when exact alignment is possible
 
-### Evidence overlay persistence
+### `s2orc_v2` parse rules
 
-Need to choose whether evidence nodes are:
+The parser must use the source structure directly:
 
-- ephemeral at runtime only
-- partially materialized for exemplars / hot evidence
-- or fully persisted as graph points
+- decode nested annotation JSON first
+- walk body annotations in source order
+- treat `section_header`, `paragraph`, `sentence`, and `bib_ref` as structural signals
+- build section hierarchy from section-header metadata and numbering
+- build blocks from paragraph annotations
+- accept source-native sentence spans when present
+- only fall back to deterministic sentence segmentation inside known block boundaries
 
-### Table normalization depth
+Observed nuance from sampled local rows:
 
-Need to choose whether v1 stores:
+- annotation groups such as `section_header`, `paragraph`, and `bib_ref` arrive as JSON-encoded strings
+- the parser must therefore decode the row, then decode each annotation group
 
-- raw XML + flattened text only
-- or a normalized table cell model as well
+Do not:
 
-## Incremental Refresh and Monthly Update Strategy
+- regex section detection
+- regex citation extraction
+- split the whole document into sentences without block boundaries
+- parse chunks first and backfill structure later
 
-The evidence warehouse must support release-aware refreshes, not only first-pass ingest.
+### BioCXML parse rules
 
-Recommended rules:
+The BioCXML path must preserve structural semantics:
 
-1. detect document changes via `canonical_text_hash`
-2. reparse only changed `s2orc_v2` shards or records
-3. re-run BioCXML overlays for changed source releases
-4. project refreshed PubTator tabular mentions back onto abstract-only documents
-5. use retrieval payload hashes to re-embed and re-upsert only changed rows
-6. keep deletion tracking so retrieval-plane points can be removed when canonical rows disappear
+- parse passages as structured units
+- preserve passage type and infons
+- preserve figure captions and table captions as first-class blocks
+- preserve table payloads as structured assets
+- treat inline annotations as the strongest entity-span source
 
-## Risks
+Do not assume relation tags are uniformly present or equally dense across all
+BioCXML documents.
 
-### 1. Overbuilding the hot path
+### Parallel S2 and BioCXML enrichment posture
 
-Risk:
+BioCXML should not be treated as a strictly serial post-processing stage that
+waits for every S2 text decision to be complete.
 
-- trying to ship full evidence through Parquet bundles would bloat the graph path
+Preferred posture:
 
-Mitigation:
+- `s2orc_v2` drives canonical text parsing
+- BioCXML runs as a parallel annotation and asset enrichment track
+- reconciliation happens in the alignment layer through provenance and confidence
 
-- keep hot bundle lean
-- move rich evidence to APIs
+This matches the observed source strengths:
 
-### 2. Alignment ambiguity
+- `s2orc_v2` is strong on structural full text and bibliography linkage
+- BioCXML is strong on exact entity offsets, passage metadata, and caption/table surface
 
-Risk:
+### Alignment rules
 
-- BioCXML and `s2orc_v2` will not always align perfectly
+Canonical text choice and canonical annotation choice are separate decisions.
 
-Mitigation:
+Every imported span-bearing object should carry:
 
-- retain source-local spans
-- store confidence / provenance
-- do not force false exactness
+- `span_origin`
+- `alignment_status`
+- `alignment_confidence`
+- source-local offsets when exact canonical alignment fails
 
-### 3. Retrieval sprawl
+Allowed outcomes:
 
-Risk:
+- aligned exactly
+- aligned with bounded confidence
+- source-local only
 
-- too many retrieval channels without evaluation discipline
+Never fabricate false exact spans to satisfy schema cleanliness.
 
-Mitigation:
+## Retrieval Plane Strategy
 
-- establish a versioned evaluation harness
-- ship with clear sentence/block/chunk baselines before adding more learned fusion
+### Near term
 
-### 4. Citation chain complexity
+The current-table baseline stays entirely in PostgreSQL.
 
-Risk:
+That is enough for:
 
-- bibliography entry resolution and in-text citation linkage may become messy across sources
+- paper-level retrieval
+- citation-context enrichment
+- entity and relation filtering
+- bibliography and asset bundle assembly
 
-Mitigation:
+### Future
 
-- keep bibliography entries and citation mentions as separate first-class tables
-- preserve raw ids and matched ids side by side
+Once the warehouse exists, sentence and block serving should move toward Qdrant.
 
-## Explicit Non-Goals
+Planned Qdrant collections:
 
-This plan does not assume:
+- `evidence_blocks`
+- `evidence_sentences`
+- later `evidence_captions`
 
-- bundle backward compatibility with the current preview-era `graph_chunk_details`
-- keeping current detail panel contracts unchanged
-- forcing all evidence serving through DuckDB bundle reads
-- a one-table RAG design
+Qdrant payloads should stay lightweight and denormalized enough for filtering:
 
-## Immediate Deliverables From This Plan
+- `corpus_id`
+- `paper_id`
+- `section_canonical`
+- `block_kind`
+- `year`
+- `has_citation`
+- `entity_concept_ids`
+- `relation_keys`
+- `display_policy`
 
-1. treat the current `paper_chunks` placeholder as superseded by a structured evidence warehouse
-2. create detailed migrations for:
-   - `paper_documents`
-   - `paper_document_sources`
-   - `paper_sections`
-   - `paper_blocks`
-   - `paper_sentences`
-   - `paper_reference_entries`
-   - `paper_reference_mentions`
-   - `paper_entity_mentions`
-   - `paper_relation_mentions`
-   - `paper_assets`
-   - `paper_tables`
-   - `paper_figures`
-   - `paper_chunk_versions`
-   - `paper_chunks`
-   - `paper_chunk_members`
-3. write ALTER-based reconciliation plans for existing `paper_assets` and `paper_references`
-4. replace current placeholder graph/evidence APIs with evidence-native endpoints
-5. define a graph highlight protocol for evidence-driven interaction
-6. stand up retrieval evaluation before finalizing serving backend choices
-7. define Qdrant collection schemas, payload fields, and ingest contracts alongside PostgreSQL DDL
+PostgreSQL remains canonical for:
 
-## Detailed Spec
+- text truth
+- provenance
+- asset metadata
+- display policy
+- retrieval version state
+- backfills and audit
 
-The detailed implementation spec now lives at:
+### Launch-scale indexing strategy
 
-- [full-evidence-system-schema-and-api-spec.md](/home/workbench/SoleMD/SoleMD.Graph/docs/plans/full-evidence-system-schema-and-api-spec.md)
+To support `14M+` full-text articles and a `200M+` paper catalog, the retrieval
+plane should be staged as follows:
 
-That document pins down:
+1. global paper recall index across the full paper catalog
+2. global block or chunk recall index across the full-text subset
+3. sentence lookup and grounding in canonical PostgreSQL after the first-pass
+   recall step
 
-- exact DDL
-- indexes
-- partitioning strategy
-- API payloads
-- graph highlight payloads
-- retrieval index contracts
-- chunk version naming conventions
+This avoids the worst scaling trap:
+
+- indexing every sentence as a first-pass ANN object before the system needs it
+
+### Canonical storage implications
+
+The warehouse design should assume partitioned high-volume tables from the
+beginning for:
+
+- `paper_blocks`
+- `paper_sentences`
+- `paper_citation_mentions`
+- `paper_entity_mentions`
+- `paper_relation_mentions`
+- `paper_chunks`
+- `paper_chunk_members`
+
+Partitioning details can be finalized later, but the schema should not assume a
+single small-table posture.
+
+## Workstream Dependencies
+
+Use this dependency graph explicitly:
+
+- Workstream A -> Workstream B
+- Workstream A -> Workstream C
+- Workstream A -> type generation and client migration
+- Workstream D -> Workstream E
+- Workstream D -> Workstream F
+- Workstream E -> Workstream F
+- Workstream B -> Workstream C
+
+Interpretation:
+
+- engine contracts come first
+- baseline retrieval can ship before the warehouse
+- frontend integration depends on engine contracts and the baseline
+- parsing and Qdrant work depend on warehouse structure being real
+- chunk and sentence serving work cannot float free of the warehouse spine
+
+## Workstreams
+
+### Workstream A: Engine baseline and contracts
+
+Deliverables:
+
+- `engine/app/rag/` package scaffold
+- canonical Pydantic request and response models
+- versioned FastAPI evidence router
+- typed Next.js engine client plan
+- type migration plan from current hand-written frontend payload interfaces to generated types
+- canonical error envelope
+- unit tests for ranking and bundle assembly
+- development environment contract for engine URL, credentials, and local startup
+
+### Workstream B: Current-table retrieval baseline
+
+Deliverables:
+
+- paper retrieval repository methods
+- citation-context repository methods
+- entity and relation filter methods
+- bibliography and asset expansion methods
+- `rag.service.search(...)` baseline
+- indexing design for title, abstract, entity, relation, and citation lookup
+- non-streaming answer synthesis baseline when `generate_answer = true`
+
+### Workstream C: Frontend and graph integration
+
+Deliverables:
+
+- replace stubbed `app/actions/graph.ts` with engine-backed calls
+- align `detail-service.ts` payloads to the engine contract
+- add graph highlight hints to evidence responses
+- resolve returned paper ids through DuckDB against the active canvas first
+- add the universe-resolution path needed to promote non-active evidence papers into overlay/active canvas state
+- write `highlightedPointIndices` only after active resolution or overlay promotion has established concrete point indices
+- preserve or replace the current detail-service cache intentionally
+- wire completed answers first, then streaming answers
+
+### Workstream D: Evidence warehouse migrations
+
+Deliverables:
+
+- migration plan for the span spine
+- reconciliation plan for `paper_references` and `paper_assets`
+- source provenance tables
+
+### Workstream E: Structural parsing and ingest
+
+Deliverables:
+
+- `s2orc_v2` structural parser
+- BioCXML overlay parser
+- alignment layer
+- abstract-only fallback path
+
+Prerequisite:
+
+- warehouse spine tables from Workstream D must exist before this becomes more than parser prototyping
+
+### Workstream F: Derived retrieval products and Qdrant
+
+Deliverables:
+
+- chunk versioning
+- chunk derivation
+- sentence and block retrieval read models
+- Qdrant sync contracts
+- retrieval evaluation harness
+
+Prerequisites:
+
+- Workstream D warehouse tables
+- Workstream E parsed and aligned canonical spans
+
+## Observability
+
+The evidence stack needs observability from the first real API pass.
+
+Minimum contract:
+
+- structured logs with request ids
+- latency metrics for retrieval and answer synthesis
+- retrieval version stamping in responses
+- engine-side tracing hooks for search, bundle assembly, and answer generation
+
+The initial pass does not need a large observability rollout, but it does need
+stable identifiers and structured instrumentation.
+
+## Development Environment
+
+The plan should assume a documented local engine environment.
+
+Minimum expected configuration:
+
+- `ENGINE_URL`
+- `ENGINE_API_KEY` or equivalent dev credential
+- local FastAPI run command
+- local PostgreSQL connection contract
+- later Qdrant connection contract
+
+This should remain lightweight, but the engine cannot stay implicit.
+
+## Immediate Deliverables While The Graph Rebuild Runs
+
+Do now:
+
+1. finalize this plan and retire the duplicate spec doc
+2. create the `engine/app/rag/` scaffold
+3. define the canonical evidence request and response schemas
+4. define the graph-signal response contract alongside the evidence bundle contract
+5. define the answer-surface contract that preserves graph visibility
+6. define the `@`-triggered support/refute interaction contract in docs before UI implementation
+7. implement light repository helpers over current tables only
+8. implement the baseline ranking and bundle assembly logic
+9. wire graph-signal projection from the baseline retrieval outputs
+10. add pure unit tests with fixtures and mocked rows
+11. define the Next.js to engine client boundary
+12. define the warehouse tables and parse stages in docs only
+
+Do not do yet:
+
+- live warehouse migrations
+- full-text backfills
+- chunk generation jobs
+- embedding jobs
+- large index builds
+- large joins and scans on the live database
+
+Allowed now:
+
+- targeted `LIMIT` reads
+- schema inspection
+- doc and contract work
+- unit tests with fixtures
+
+## Build Order
+
+### Phase 0: Contract-first baseline
+
+1. ship the engine package scaffold
+2. ship `rag.service.search(...)` over current tables
+3. ship typed evidence bundles and typed graph signals
+4. wire Next.js server-side adapters to the engine
+5. resolve returned paper ids through DuckDB against the active canvas
+6. promote non-active evidence papers through the overlay path so they can become active canvas points
+7. prove the end-to-end Ask -> evidence -> graph-lighting and overlay-activation loop
+8. define the stable answer surface for Ask mode
+9. define the reusable support/refute interaction path for `@` in composition mode
+
+### Phase 1: Warehouse spine
+
+1. add warehouse migrations after the graph rebuild is done
+2. build `paper_documents` through `paper_sentences`
+3. add citation, bibliography, entity, relation, and asset enrichment
+
+### Phase 2: Derived retrieval products
+
+1. add `paper_chunk_versions`
+2. add `paper_chunks`
+3. add `paper_chunk_members`
+4. build retrieval evaluation on sentence, block, and chunk outputs
+
+### Phase 3: Production retrieval plane
+
+1. add Qdrant sync state
+2. stand up `evidence_blocks`
+3. stand up `evidence_sentences`
+4. compare against PostgreSQL baseline
+5. switch serving only after evaluation justifies it
+
+## Definition Of Done For The Current Pass
+
+This pass is done when:
+
+- the evidence plan is canonical and no longer split across duplicate active docs
+- the engine-side package shape is locked
+- the API boundary is explicit
+- Drizzle versus FastAPI responsibilities are explicit
+- the current-table retrieval baseline is fully specified
+- the future warehouse is defined as a span spine with derived chunks
+- the parsing plan is explicitly structural and non-regex
+- the work can proceed without starting heavy live database work
 
 ## Sources
 
 ### Local repo references
 
-- [docs/map/database.md](/home/workbench/SoleMD/SoleMD.Graph/docs/map/database.md#L431)
-- [engine/app/graph/export_bundle.py](/home/workbench/SoleMD/SoleMD.Graph/engine/app/graph/export_bundle.py#L360)
-- [features/graph/duckdb/session.ts](/home/workbench/SoleMD/SoleMD.Graph/features/graph/duckdb/session.ts#L819)
-- [app/actions/graph.ts](/home/workbench/SoleMD/SoleMD.Graph/app/actions/graph.ts#L47)
-- [engine/db/migrations/001_core_schema.sql](/home/workbench/SoleMD/SoleMD.Graph/engine/db/migrations/001_core_schema.sql#L93)
-- [engine/db/migrations/007_add_s2_metadata_and_related_tables.sql](/home/workbench/SoleMD/SoleMD.Graph/engine/db/migrations/007_add_s2_metadata_and_related_tables.sql#L101)
-- [engine/db/migrations/010_extend_citations_for_bulk_dataset.sql](/home/workbench/SoleMD/SoleMD.Graph/engine/db/migrations/010_extend_citations_for_bulk_dataset.sql#L8)
-- [engine/app/corpus/filter.py](/home/workbench/SoleMD/SoleMD.Graph/engine/app/corpus/filter.py#L628)
-- [engine/app/corpus/enrich.py](/home/workbench/SoleMD/SoleMD.Graph/engine/app/corpus/enrich.py#L357)
-- [docs/plans/release-aware-bulk-ingest-and-graph-roadmap.md](/home/workbench/SoleMD/SoleMD.Graph/docs/plans/release-aware-bulk-ingest-and-graph-roadmap.md)
-- [docs/plans/pubtator-bulk-dataset-audit.md](/home/workbench/SoleMD/SoleMD.Graph/docs/plans/pubtator-bulk-dataset-audit.md)
-- [docs/map/architecture.md](/home/workbench/SoleMD/SoleMD.Graph/docs/map/architecture.md#L214)
+- `docs/design/living-graph.md`
+- `docs/map/database.md`
+- `docs/map/data.md`
+- `docs/map/architecture.md`
+- `engine/app/db.py`
+- `engine/app/main.py`
+- `engine/app/graph/export_bundle.py`
+- `app/actions/graph.ts`
+- `features/graph/lib/detail-service.ts`
+- `lib/db/index.ts`
+- `lib/db/schema.ts`
 
-### External primary sources
+### External guidance consulted
 
-- MedCPT paper: https://academic.oup.com/bioinformatics/article/39/11/btad651/7335842
-- MedCPT repository: https://github.com/ncbi/MedCPT
-- pySBD repository: https://github.com/nipunsadvilkar/pySBD
-- scispaCy repository: https://github.com/allenai/scispacy
-- LitSense 2.0: https://academic.oup.com/nar/article/53/W1/W361/8133630
-- GUIDE-RAG review: https://academic.oup.com/jamia/article/32/4/605/7954485
-- Comparative evaluation of adaptive chunking in clinical RAG: https://pmc.ncbi.nlm.nih.gov/articles/PMC12649634/
-- PubTator 3.0 paper: https://pubmed.ncbi.nlm.nih.gov/38572754/
-- S2ORC paper: https://aclanthology.org/2020.acl-main.447.pdf
-- Semantic Scholar open data overview: https://www.semanticscholar.org/faq/open-data
-- pgvector documentation: https://github.com/pgvector/pgvector
-- PostgreSQL declarative partitioning: https://www.postgresql.org/docs/current/ddl-partitioning.html
-- Qdrant indexing and payload indexes: https://qdrant.tech/documentation/concepts/indexing/
-- Qdrant filtering: https://qdrant.tech/documentation/concepts/filtering/
-- Qdrant hybrid queries: https://qdrant.tech/documentation/concepts/hybrid-queries/
-- Qdrant quantization: https://qdrant.tech/documentation/guides/quantization/
+- Next.js guidance on Server Actions, Route Handlers, and backend-for-frontend patterns
+- FastAPI guidance on APIRouter structure and response-model validation
+- Pydantic guidance on schema generation and typed validation
+- Supabase guidance on Data APIs, direct Postgres connections, and platform architecture
+- Qdrant guidance on hybrid search and reranking for future sentence and block serving

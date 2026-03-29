@@ -1,10 +1,8 @@
 # SoleMD.Graph: Clean-Sheet Architecture
 
-> **Date**: 2026-03-16
-> **Status**: Foundation document — starting point for per-service deep dives
-> **Scope**: New repository for a biomedical knowledge graph web app powered by
-> PubTator3 + Semantic Scholar, visualized through Cosmograph, with RAG-powered
-> evidence retrieval. This is NOT an evolution of SoleMD.App — it is a fresh build.
+> **Status**: Active architecture — updated as the project evolves
+> **Scope**: Biomedical knowledge graph web app powered by PubTator3 + Semantic
+> Scholar, visualized through Cosmograph, with RAG-powered evidence retrieval.
 
 ---
 
@@ -70,6 +68,44 @@ why it scales where others cannot.
 - **Key constraint**: WebGL texture size limits node storage to `MAX_TEXTURE_SIZE^2` (~67M theoretical)
 - **Embedding mode**: Requires pre-computed 2D coordinates — Cosmograph cannot do dimensionality reduction
 
+#### Adapter Boundary (`features/graph/cosmograph/`)
+
+All `@cosmograph/react` and `@cosmograph/cosmograph` imports are contained
+behind a single adapter layer at `features/graph/cosmograph/`. No component
+outside this directory may import from `@cosmograph/*` directly.
+
+This decouples the application from Cosmograph's API surface. When Cosmograph
+ships a breaking version bump, changes are limited to the adapter directory —
+consumer components, hooks, and panels remain untouched.
+
+```
+features/graph/cosmograph/
+├── index.ts                      # Barrel — the only import consumers use
+├── GraphRenderer.tsx             # <Cosmograph> component with ~60 props
+├── GraphShell.tsx                # CosmographProvider boundary
+├── hooks/
+│   ├── use-graph-camera.ts       # fitView, zoom, pan
+│   ├── use-graph-selection.ts    # select, focus, clear, selection objects
+│   └── use-graph-export.ts       # screenshot, CSV export
+└── widgets/
+    ├── TimelineWidget.tsx         # CosmographTimeline + PlayPause
+    ├── FilterBarWidget.tsx        # CosmographBars (categorical)
+    ├── FilterHistogramWidget.tsx  # CosmographHistogram (numeric)
+    ├── SelectionToolbar.tsx       # Rect/poly selection buttons + state machine
+    ├── ColorLegends.tsx           # Type or range color legend
+    └── SizeLegend.tsx             # Size legend
+```
+
+**Rules**:
+- Consumers import from `@/features/graph/cosmograph` (the barrel), never
+  from `@cosmograph/react` or `@cosmograph/cosmograph`
+- Hooks expose app-shaped APIs (e.g. `fitView(duration, padding)`) — not
+  raw Cosmograph ref methods
+- Widgets accept app-level props (e.g. `{ column, onSelection }`) and
+  translate to Cosmograph-specific props internally
+- `cosmograph-selection.ts` and `cosmograph-columns.ts` stay in `lib/`
+  because they import `@uwdata/mosaic-core`, not Cosmograph
+
 ### Semantic Scholar (Academic Graph)
 
 The world's largest open academic graph. Provides everything we would otherwise
@@ -133,17 +169,16 @@ The "Why not" column captures the key reason alternatives were rejected.
 
 ### Backend Platform + Data Storage
 
-| Decision | **Self-hosted PostgreSQL on Hetzner** + **Auth.js or Supabase Auth** + **Drizzle ORM** |
-|----------|------------------------------------------------------------------------------------------|
-| Why | Domain-filtered data is 50-150 GB — too large for Supabase Cloud ($1,870+/month for required compute) but trivial for self-hosted ($120/month for 128 GB RAM, 3.84 TB NVMe). |
+| Decision | **Self-hosted PostgreSQL (US)** + **Auth.js or Supabase Auth** + **Drizzle ORM** |
+|----------|----------------------------------------------------------------------------------------|
+| Why | Domain-filtered data is 50-150 GB — too large for Supabase Cloud ($1,870+/month for required compute) but trivial for a US dedicated server (~$189/month for 128 GB RAM, 3.84 TB NVMe). |
 
 **Why NOT Supabase Cloud for the database**: Supabase Cloud Pro includes 8 GB.
 Our domain-filtered dataset is 50-150 GB with pgvector HNSW indexes that need
 to fit in RAM. Supabase's 8XL compute ($1,870/month) or higher would be needed.
 Self-hosted PostgreSQL on a US dedicated server provides 128 GB RAM for
 ~$189/month (ReliableSite EPYC 4545P, NJ/Miami/LA data centers) — 10x cheaper.
-Hetzner AX102 ($120/month) is even cheaper but has dedicated servers in
-Europe only (US cloud VMs are $460+/month for 128 GB).
+US hosting is required for this project.
 
 **Auth options** (still being evaluated):
 - **Auth.js (NextAuth v5)**: Free, framework-native, no extra service. Handles OAuth, credentials, sessions.
@@ -151,7 +186,7 @@ Europe only (US cloud VMs are $460+/month for 128 GB).
 - **Supabase Cloud Free tier**: Use Supabase Cloud solely for Auth (50K MAU free), keep data on self-hosted PG.
 - **Clerk**: Managed auth ($25+/month), excellent DX, but adds vendor dependency.
 
-**Data storage architecture — Hot/Cold split**:
+**Data storage architecture — Base/Evidence split**:
 
 ```
 HOT (Self-Hosted PostgreSQL, ~50-150 GB)
@@ -181,27 +216,41 @@ DuckDB is a one-time filter tool, not a data store.
 
 ### Canonical PostgreSQL Backbone
 
-The durable backbone is relational:
+The durable backbone is relational and now centered on base admission rather
+than visibility lanes.
 
-- `solemd.corpus`: domain membership and pipeline state (`candidate`, `graph`, mapped, default-visible)
-- `solemd.papers`: one canonical row per paper with bulk metadata plus release-aware S2 enrichment
-- `solemd.publication_venues`: normalized `publicationVenue` registry
+- `solemd.corpus`: domain membership, admission reason, and mapping readiness
+- `solemd.papers`: canonical paper metadata plus release-aware S2 enrichment
+- `solemd.publication_venues`: normalized publication venue registry
 - `solemd.authors`: canonical S2 author snapshots
 - `solemd.paper_authors`: ordered author list per paper
 - `solemd.author_affiliations`: raw affiliation rows plus later normalized institution / ROR / geo fields
 - `solemd.paper_assets`: OA PDF metadata now, mirrored/local assets later
 - `solemd.paper_references`: outgoing bibliographic references per paper
 - `solemd.citations`: normalized domain-domain citation edges derived from references or a richer citation source
-- `pubtator.entity_annotations` / `pubtator.relations`: domain-filtered biomedical entity substrate
+- `solemd.base_policy`: active base-admission policy record
+- `solemd.base_journal_family`: curated base journal families
+- `solemd.journal_rule`: normalized venue-to-family mapping
+- `solemd.entity_rule`: direct evidence base-admission rules
+- `solemd.relation_rule`: relation-driven overlap rules
+- `solemd.paper_evidence_summary`: durable per-paper evidence summary for restartable base admission
+- `solemd.graph_runs`: published run metadata and bundle manifest
+- `solemd.graph_points`: run-scoped coordinates with `is_in_base` and `base_rank`
+- `solemd.graph_clusters`: run-scoped cluster summaries
+- `solemd.graph_base_features`: audit features used to explain base admission
+- `pubtator.entity_annotations` / `pubtator.relations`: domain-filtered biomedical evidence substrate
 
 Design rule:
 - scalar paper metadata stays on `solemd.papers`
 - repeating relations get child tables
+- base admission stays in graph-db, not in the browser runtime
+- expensive PubTator aggregation is staged into `paper_evidence_summary` before publish
+- large evidence scans should join against permanent mapped-paper tables so PostgreSQL can plan parallel workers
 - graph / geo bundles are exported read models, not source-of-truth tables
 
 Bundle note:
-- the browser-facing graph delivery contract is explicitly tiered into `hot`,
-  `warm`, and `cold` bundle/service paths; see [bundle-contract.md](bundle-contract.md)
+- the browser-facing graph delivery contract is explicitly tiered into `base`,
+  `universe`, `active`, and `evidence`; see [bundle-contract.md](bundle-contract.md)
 
 Geo note:
 - the planned geo layer already assumes `paper_authors` + `author_affiliations` as its primary input
@@ -213,7 +262,7 @@ Geo note:
 | Self-hosted PG | Neon ($0.35/GB/month) | $53/month for 150 GB storage alone, plus compute |
 | Parquet on R2 | ClickHouse | Overkill — adds another service for batch queries DuckDB handles fine |
 | DuckDB embedded | MotherDuck | Cloud dependency, $82/TB/month vs free self-hosted |
-| Hot/Cold split | Everything in one PG | Raw source files (~60 GB) kept on disk for re-filtering; domain data lives in PG |
+| Base/Evidence split | Everything in one PG | Raw source files (~60 GB) kept on disk for re-filtering; domain data lives in PG |
 
 ### Vector Search
 
@@ -269,14 +318,23 @@ intellectual lineage.
 
 ### Graph Layout
 
-| Decision | **GPU cuML UMAP + Leiden clustering** |
-|----------|---------------------------------------|
-| Why | GPU UMAP processes 2M x 768d in ~60 seconds (300x over CPU). Leiden on kNN graph is faster than HDBSCAN and avoids curse-of-dimensionality at 768d. |
+| Decision | **GPU PCA-space kNN → cuML UMAP + cuGraph Leiden** |
+|----------|-----------------------------------------------------|
+| Why | One shared PCA-space kNN graph now feeds both layout and clustering. That removes duplicated neighbor search, keeps the two stages aligned, and gives the build a durable checkpoint boundary. |
 | Cost per rebuild | ~$1-3 GPU rental (one H100 hour) + ~$0.30-5 LLM cluster labels = under $10 total |
 | CPU fallback | PaCMAP (60-90 min, best global structure of CPU methods) |
 | Why not Cosmograph force layout | Cosmograph embedding mode requires pre-computed 2D coordinates. It cannot do dimensionality reduction from 768d. Force layout is for graph topology, not manifold learning. |
 | Cluster labeling | c-TF-IDF for keywords → GPT-4o-mini for natural language labels (~$0.30 for 500 clusters) |
 | Incremental updates | UMAP `.transform()` projects new papers onto existing 2D space. Full recompute monthly. |
+
+Implementation notes:
+
+- preprocess SPECTER2 embeddings once
+- reduce to a shared PCA-space layout matrix
+- build one self-inclusive kNN graph
+- reuse that graph through UMAP `precomputed_knn`
+- run Leiden from the same kNN graph
+- persist run-scoped checkpoints on disk so failed runs resume from the last durable artifact
 
 ### Caching
 
@@ -321,10 +379,10 @@ intellectual lineage.
 │  │   Cosmograph     │  │  DuckDB-WASM    │  │   Vercel AI SDK     │  │
 │  │   (WebGL graph)  │  │  (client SQL)   │  │   (streaming chat)  │  │
 │  │                  │  │                 │  │                     │  │
-│  │  SPECTER2 UMAP   │  │  Parquet from   │  │  Gemini Flash       │  │
-│  │  layout, Leiden   │  │  R2 via HTTP    │  │  streaming synth    │  │
-│  │  clusters,        │  │  range reqs     │  │  with citations     │  │
-│  │  entity facets   │  │                 │  │                     │  │
+│  │  Behind adapter  │  │  Parquet from   │  │  Gemini Flash       │  │
+│  │  boundary:       │  │  R2 via HTTP    │  │  streaming synth    │  │
+│  │  cosmograph/     │  │  range reqs     │  │  with citations     │  │
+│  │  (hooks+widgets) │  │                 │  │                     │  │
 │  └────────┬─────────┘  └────────┬────────┘  └──────────┬──────────┘  │
 │           │                     │                       │             │
 │           └─────────────────────┼───────────────────────┘             │
@@ -442,24 +500,31 @@ File Delivery:
    S2ORC full-text (12M papers) ──→ Chunk ──→ MedCPT ──→ pgvector
 
 5. LAYOUT
-   SPECTER2 768d ──→ GPU cuML UMAP (768d → 2D) ──→ 2D coordinates
-   SPECTER2 768d ──→ GPU cuML UMAP (768d → 10d) ──→ Leiden kNN clustering
+   SPECTER2 768d ──→ preprocess ──→ PCA layout matrix
+   PCA layout matrix ──→ shared kNN checkpoint
+   shared kNN ──→ GPU UMAP `precomputed_knn` ──→ 2D coordinates
+   shared kNN ──→ GPU Leiden ──→ cluster ids
+   coordinates + cluster ids ──→ durable run checkpoints
    Cluster exemplars ──→ GPT-4o-mini ──→ Natural language labels
 
 6. BUNDLE
-   Mandatory first-load bundle (`Hot`)
-     2D coords + cluster fields + compact filter/search metadata
-     ──→ DuckDB ──→ corpus_points.parquet
+   Mandatory first-load bundle (`Base`)
+     base scaffold coords + cluster fields + compact filter/search metadata
+     ──→ DuckDB ──→ base_points.parquet
      Cluster labels + stats
-     ──→ DuckDB ──→ corpus_clusters.parquet
-   Optional browser-local artifacts (`Warm`, attached lazily later)
+     ──→ DuckDB ──→ base_clusters.parquet
+  Optional browser-local artifacts (`Universe`, attached lazily later)
+     premapped universe tail with stable appended point indices
+     ──→ DuckDB ──→ universe_points.parquet
+     local activation surface
+     ──→ DuckDB temp membership + views (`overlay_point_ids` → `overlay_points_web` → `active_points_web`)
      richer paper detail rows
-     ──→ DuckDB ──→ corpus_documents.parquet
+     ──→ DuckDB ──→ paper_documents.parquet
      cluster exemplar previews
-     ──→ DuckDB ──→ corpus_cluster_exemplars.parquet
+     ──→ DuckDB ──→ cluster_exemplars.parquet
      compact aggregated link summaries if they prove useful
      ──→ DuckDB ──→ optional future aggregated link artifact
-   On-demand backend fetch (`Cold`)
+   On-demand backend fetch (`Evidence`)
      raw paper-paper citation neighborhoods
      full PubTator annotation / relation payloads
      PDF assets
@@ -485,7 +550,7 @@ Current API constraint:
 ```
 TYPING → entities light up:
   User types "dopamine receptor"
-  → DuckDB-WASM: SQL over corpus_points.parquet (client-side, <10ms)
+  → DuckDB-WASM: SQL over the base scaffold table (client-side, <10ms)
   → Cosmograph highlights matching nodes
 
 @ CITATION insertion:
@@ -521,7 +586,7 @@ what each service does and why it was chosen.
 | 3 | **Cosmograph** | Graph visualization — WebGL rendering, DuckDB integration, crossfilters | `cosmograph.md` |
 | 4 | **DuckDB-WASM** | Client-side analytics — SQL over Parquet in the browser | `duckdb-wasm.md` |
 | 5 | **Vercel AI SDK 6** | LLM streaming — Server Actions, `useChat`, structured output, multi-provider | `vercel-ai-sdk.md` |
-| 6 | **PostgreSQL** (self-hosted) | Database — domain-filtered hot data, pgvector, full-text search | `postgresql.md` |
+| 6 | **PostgreSQL** (self-hosted) | Database — domain-filtered graph data, pgvector, full-text search | `postgresql.md` |
 | 7 | **Drizzle ORM** | Type-safe SQL from Next.js Server Components | `drizzle.md` |
 | 8 | **pgvector** | Vector search — HNSW indexes on MedCPT embeddings | `pgvector.md` |
 | 8b | **Auth.js or Supabase GoTrue** | Authentication — OAuth, anonymous sign-ins, JWT sessions | `auth.md` |
@@ -587,17 +652,17 @@ LOCAL (your machine)                    PRODUCTION (dedicated server (ReliableSi
 ├── FastAPI (uvicorn)                   ├── FastAPI (Docker)
 ├── Dramatiq workers                    ├── Dramatiq workers (Docker)
 ├── Redis (Docker)                      ├── Redis (Docker)
-├── Cold data (~60 GB on local NVMe)    ├── Cold data (~60 GB on NVMe)
+├── Release mirror data (~60 GB on local NVMe)    ├── Release mirror data (~60 GB on NVMe)
 └── Graph Parquet (local /public)       └── Graph Parquet (R2 or Caddy)
                                         ├── Cloudflare CDN (free)
                                         ├── Coolify (git-push deploys)
                                         └── Caddy (reverse proxy + SSL)
 ```
 
-The cold data (S2 papers dump + PubTator3 tab files, ~60 GB) **stays on your
+The release mirror data (S2 papers dump + PubTator3 tab files, ~60 GB) **stays on your
 local machine**. DuckDB reads the S2 papers dump once to identify domain IDs,
 then the Batch API fetches everything else. PubTator3 tab files are streamed
-through a filter into PostgreSQL. Cold data never needs to be hosted unless
+through a filter into PostgreSQL. Release mirror data never needs to be hosted unless
 you want the monthly refresh to run unattended on the server.
 
 ### Production Deployment: All-in-One Hetzner
@@ -637,7 +702,7 @@ or a second VPS, keep the database on dedicated hardware.
 
 ### Monthly Operating (Local Development Phase)
 
-Everything runs on your machine. Cold data (PubTator3, S2 datasets) lives
+Everything runs on your machine. Release mirror data (PubTator3, S2 datasets) lives
 on your local NVMe. No hosted services required except LLM APIs.
 
 | Item | Cost |
@@ -690,7 +755,8 @@ SoleMD.Graph/
 │   │   │   └── paper/[id]/           # Paper detail view
 │   │   └── api/                      # Route handlers (if needed)
 │   ├── components/                   # React components
-│   │   ├── graph/                    # Cosmograph wrapper, filters, panels
+│   │   ├── graph/                    # Graph canvas, filters, panels
+│   │   │   └── cosmograph/           # Adapter boundary — all @cosmograph imports here
 │   │   ├── search/                   # Search input, results, chat
 │   │   └── ui/                       # Shared Mantine components
 │   ├── lib/

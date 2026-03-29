@@ -78,11 +78,11 @@ Source: `GET https://api.semanticscholar.org/datasets/v1/release/latest`
 
 ### Enrichment Strategy: Bulk vs Batch API
 
-For enriching our ~14M candidate / ~1.98M graph-tier corpus, two paths:
+For enriching our ~14M candidate / ~1.98M mapped-universe corpus, two paths:
 
 | Data | Bulk download | Batch API | Our choice |
 |------|--------------|-----------|-----------|
-| Abstracts | 54 GB, DuckDB filter | 1 req/500 papers, ~1.1h for 1.98M | **Phase 1: Batch API** (graph-tier only). **Phase 1.5: Bulk** (all candidate). |
+| Abstracts | 54 GB, DuckDB filter | 1 req/500 papers, ~1.1h for 1.98M | **Phase 1: Batch API** (mapped-universe only). **Phase 1.5: Bulk** (all candidate). |
 | TLDRs | 6 GB, DuckDB filter | Same calls as abstracts | **Phase 1: Batch API**. **Phase 1.5: Bulk** (cheap, covers everything). |
 | SPECTER2 | 840 GB download | Same calls as abstracts | **Batch API always** — 840 GB for 1.98M papers is absurd. |
 | Citations | 255 GB, DuckDB filter | Separate batch calls | **Phase 2: Bulk** — gets ALL edges, no API budget. |
@@ -91,7 +91,7 @@ For enriching our ~14M candidate / ~1.98M graph-tier corpus, two paths:
 **Why hybrid**: Batch API is ideal when you need a small subset fast (1.98M of 200M).
 Bulk is ideal when you want everything or most of a dataset (abstracts for all 14M,
 all citation edges). The 840 GB SPECTER2 bulk is never worth it — we only need
-embeddings for graph-tier papers.
+embeddings for mapped-universe papers.
 
 **Monthly refresh**: Bulk datasets support incremental diffs via
 `GET /diffs/{start_release}/to/{end_release}/{dataset_name}`.
@@ -271,12 +271,12 @@ Instead of downloading every S2 bulk dataset (~1.2 TB), we download only the
 papers. Stable per-paper metadata, authors, venues, OA PDF metadata, embeddings,
 and references come through the S2 Graph Batch API after filtering.
 
-### Hot/Cold Split
+### Graph Database vs Release Mirror Split
 
 | Layer | Contents | Storage |
 |-------|----------|---------|
-| **Hot** (PostgreSQL) | 500K-2M domain papers + metadata, 5-10M SPECTER2 vectors (halfvec), 50-100M citation edges (domain-expanded), TLDRs | ~50-70 GB |
-| **Cold** (Parquet on NVMe) | Full S2 papers + paper-ids (DuckDB-queryable) | ~60 GB Parquet |
+| **Graph database** (PostgreSQL) | 500K-2M domain papers + metadata, 5-10M SPECTER2 vectors (halfvec), 50-100M citation edges (domain-expanded), TLDRs | ~50-70 GB |
+| **Release mirror** (Parquet on NVMe) | Full S2 papers + paper-ids (DuckDB-queryable) | ~60 GB Parquet |
 
 ---
 
@@ -868,7 +868,7 @@ pipeline end-to-end before scaling to the full 2M domain set.
 
 ## 6. PostgreSQL Schema
 
-Domain-filtered S2 data is loaded into PostgreSQL as the "hot" data layer.
+Domain-filtered S2 data is loaded into PostgreSQL as the graph database layer.
 Current live schema uses `solemd.corpus` + `solemd.papers` as the canonical paper store, with normalized child tables for related metadata. The sketch below reflects the organized target shape rather than the older one-table-per-concern draft.
 
 ```sql
@@ -912,7 +912,7 @@ CREATE TABLE solemd.author_affiliations (...);
 CREATE TABLE solemd.paper_assets (...);      -- open_access_pdf now, mirrors later
 CREATE TABLE solemd.paper_references (...);  -- outgoing bibliography
 CREATE TABLE solemd.citations (...);         -- domain-domain edges derived from references
-CREATE TABLE solemd.graph (...);             -- UMAP x/y + cluster data
+CREATE TABLE solemd.graph_points (...);      -- UMAP x/y + cluster data
 ```
 
 ### Storage Estimates
@@ -924,7 +924,7 @@ CREATE TABLE solemd.graph (...);             -- UMAP x/y + cluster data
 | `citations` | 50-100M | ~40-80 bytes avg | ~3-8 GB |
 | `paper_authors` + `authors` | 10-40M rows | variable | ~2-6 GB |
 | `author_affiliations` | highly variable | variable | geo-dependent |
-| `graph` / layout tables | 5-10M | ~28 bytes | ~140-280 MB |
+| `graph_points` / layout tables | 5-10M | ~28 bytes | ~140-280 MB |
 | **Indexes** | | | ~5-10 GB |
 | **Total** | | | **~20-40 GB** |
 
@@ -960,7 +960,7 @@ def load_papers(parquet_path: str) -> int:
     with conn.cursor() as cur:
         db = duckdb.connect()
         reader = db.execute(f"""
-            SELECT corpusid, pmid, doi, pmc, filter_reason,
+            SELECT corpusid, pmid, doi, pmc, admission_reason,
                    title, year, venue, journal_name,
                    publication_date, reference_count, citation_count,
                    influential_citation_count, is_open_access,
@@ -969,18 +969,18 @@ def load_papers(parquet_path: str) -> int:
         """).fetchall()
 
         for row in reader:
-            corpus_id, pmid, doi, pmc, filter_reason, *paper_values = row
+            corpus_id, pmid, doi, pmc, admission_reason, *paper_values = row
             cur.execute(
                 """
-                INSERT INTO solemd.corpus (corpus_id, pmid, doi, pmc_id, filter_reason)
+                INSERT INTO solemd.corpus (corpus_id, pmid, doi, pmc_id, admission_reason)
                 VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (corpus_id) DO UPDATE SET
                     pmid = EXCLUDED.pmid,
                     doi = EXCLUDED.doi,
                     pmc_id = EXCLUDED.pmc_id,
-                    filter_reason = EXCLUDED.filter_reason
+                    admission_reason = EXCLUDED.admission_reason
                 """,
-                (corpus_id, pmid, doi, pmc, filter_reason),
+                (corpus_id, pmid, doi, pmc, admission_reason),
             )
             cur.execute(
                 """
@@ -1156,7 +1156,7 @@ scratch) should happen quarterly or when >20% of the corpus is new.
 ```sql
 -- By PMID
 SELECT corpus_id, title, year, venue, citation_count, tldr,
-       fields_of_study, c.corpus_tier
+       fields_of_study, c.layout_status
 FROM solemd.papers p
 JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
 WHERE pmid = 37654321;
@@ -1320,7 +1320,7 @@ GPU cuML UMAP (768d --> 2D)           # ~60 sec for 2M points on H100
 Leiden clustering (on kNN graph from UMAP intermediate 10d)
   |
   v
-corpus_points.parquet                  # corpus_id, x, y, cluster_id, metadata
+base_points.parquet                    # opening scaffold for the active canvas
   |
   v
 Cloudflare R2 / local /public
@@ -1379,9 +1379,9 @@ SoleMD.Graph architecture.
 
 | S2 Data | Integration | Consumer |
 |---------|-------------|----------|
-| SPECTER2 embeddings | UMAP 768d to 2D coordinates | `corpus_points.parquet` -> Cosmograph scatter plot |
-| Citations | Directed edges between papers | Canonical source stays in PostgreSQL; optional `corpus_links.parquet` is not part of the default hot publish path |
-| Citation intent | Edge metadata | Preserved for later warm/cold edge neighborhoods rather than default canvas rendering |
+| SPECTER2 embeddings | UMAP 768d to 2D coordinates | `base_points.parquet` + `universe_points.parquet` -> active canvas / premapped universe |
+| Citations | Directed edges between papers | Canonical source stays in PostgreSQL; optional `universe_links.parquet` is not part of the default base publish path |
+| Citation intent | Edge metadata | Preserved for later universe/evidence edge neighborhoods rather than default canvas rendering |
 | Influential flag | Edge metadata | Preserved for later neighborhood ranking / emphasis |
 | Fields of study | Node color facets | Filter/color papers by field |
 
@@ -1414,7 +1414,7 @@ SoleMD.Graph architecture.
 ### Entity Highlighting (Client-Side)
 
 When a user types a term in the graph interface, DuckDB-WASM queries
-`corpus_points.parquet` to find matching papers. The matching logic combines:
+the active DuckDB point views (`active_points_web`) to find matching papers. The matching logic combines:
 
 - PubTator entity annotations (loaded into the Parquet bundle during graph build)
 - S2 paper titles and TLDRs (full-text search within DuckDB-WASM)
@@ -1438,7 +1438,7 @@ Semantic Scholar
     |   |                 -> MedCPT embed -> pgvector HNSW -> RAG
     |   +-- references ----> INSERT -> solemd.paper_references
     |   |                 -> derive -> solemd.citations
-    |   |                 -> optional/cold citation neighborhoods later
+    |   |                 -> optional universe/evidence citation neighborhoods later
     |
     +-- s2orc ------------> (Phase 2) chunk + MedCPT -> deep RAG
 ```

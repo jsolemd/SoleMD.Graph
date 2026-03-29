@@ -62,7 +62,7 @@ Brain regions/circuits have NO dedicated entity type in PubTator3. However, dysf
 
 ## High-Graph-Ratio Neuropsych Diseases
 
-Diseases with high graph ratios (fraction of papers already in graph tier) indicate strong domain relevance. Those NOT yet in graph tier are promotion candidates.
+Diseases with high graph ratios (fraction of papers already in the mapped universe) indicate strong domain relevance. Those NOT yet in the mapped universe are promotion candidates.
 
 | concept_id | Name | Top mention | Papers | Graph ratio |
 |-----------|------|------------|--------|-------------|
@@ -174,15 +174,15 @@ PubTator3 does NOT have a brain region or circuit entity type. Brain structures 
 
 ---
 
-## C-L Bridge Entities
+## C-L Overlap Entities
 
-Entities that score highest on the bridge formula — appearing frequently as candidates but with low graph ratios, indicating they live in non-specialty journals.
+Entities that score highest on the overlap formula — appearing frequently as candidates but with low graph ratios, indicating they live in non-specialty journals.
 
-**Bridge scoring formula**: `bridge_score = candidate_papers * graph_ratio * (1 - graph_ratio)`
+**Overlap scoring formula**: `overlap_score = candidate_papers * graph_ratio * (1 - graph_ratio)`
 
-Maximum bridge score occurs at graph_ratio = 0.5 (equally split between graph and candidate tiers).
+Maximum overlap score occurs at graph_ratio = 0.5 (equally split between the mapped universe and candidate corpus).
 
-| Entity | Papers | Graph ratio | Bridge score | Specialty crossings |
+| Entity | Papers | Graph ratio | Overlap score | Specialty crossings |
 |--------|--------|-------------|-------------|---------------------|
 | Pain | 890K | 0.091 | 73.6K | Rheumatology, orthopedics, anesthesia |
 | Stroke | 520K | 0.148 | 65.5K | Cardiology, vascular surgery, rehab |

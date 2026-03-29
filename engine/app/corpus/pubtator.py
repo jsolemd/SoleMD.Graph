@@ -136,6 +136,12 @@ from collections.abc import Callable
 from typing import Any
 
 
+_ALLOWED_TABLES = frozenset({
+    "pubtator.entity_annotations",
+    "pubtator.relations",
+})
+
+
 def _stream_load(
     conn: psycopg.Connection,
     corpus_pmids: set[int],
@@ -151,6 +157,8 @@ def _stream_load(
     Parses and filters rows BEFORE entering the COPY context so that
     a single bad row cannot abort the entire COPY operation.
     """
+    if table not in _ALLOWED_TABLES:
+        raise ValueError(f"table {table!r} not in allowed set — prevents SQL injection")
     if not file_path.exists():
         raise FileNotFoundError(f"{label} file not found: {file_path}")
 
@@ -211,6 +219,8 @@ def _stream_load(
             with conn.cursor() as cur2:
                 cur2.execute(f"TRUNCATE {table}")
             conn.commit()
+            # Reset loaded — rollback discarded all written rows
+            loaded = 0
             errors += 1
         else:
             conn.commit()

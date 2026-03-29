@@ -34,10 +34,10 @@ class GraphEnvironmentSummary:
 
 @dataclass(frozen=True, slots=True)
 class GraphVerificationSummary:
-    total_graph: int
-    total_graph_papers: int
-    mapped_now: int
-    default_visible_now: int
+    total_mapped: int
+    total_mapped_papers: int
+    current_mapped: int
+    current_base: int
     ready_for_layout: int
     missing_embeddings: int
     missing_text_availability: int
@@ -151,10 +151,10 @@ def load_graph_verification_summary() -> GraphVerificationSummary:
     build = load_graph_build_summary()
     environment = load_graph_environment_summary()
     return GraphVerificationSummary(
-        total_graph=build.total_graph,
-        total_graph_papers=build.total_graph_papers,
-        mapped_now=build.mapped_now,
-        default_visible_now=build.default_visible_now,
+        total_mapped=build.total_mapped,
+        total_mapped_papers=build.total_mapped_papers,
+        current_mapped=build.current_mapped,
+        current_base=build.current_base,
         ready_for_layout=build.ready_for_layout,
         missing_embeddings=build.missing_embeddings,
         missing_text_availability=build.missing_text_availability,

@@ -1,4 +1,4 @@
-"""Sync outgoing references for graph-tier papers via the S2 batch API.
+"""Sync outgoing references for mapped-universe papers via the S2 batch API.
 
 Populates `solemd.paper_references` from Semantic Scholar Graph API `references.*`
 fields and derives domain-domain citation edges into `solemd.citations`.
@@ -52,7 +52,7 @@ def _get_unchecked_reference_ids(
             SELECT p.corpus_id
             FROM solemd.papers p
             JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-            WHERE c.corpus_tier = 'graph'
+            WHERE c.layout_status = 'mapped'
               AND p.s2_references_release_id IS DISTINCT FROM %s
               AND p.s2_found IS DISTINCT FROM false
             ORDER BY p.corpus_id
@@ -63,7 +63,7 @@ def _get_unchecked_reference_ids(
             SELECT p.corpus_id
             FROM solemd.papers p
             JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
-            WHERE c.corpus_tier = 'graph'
+            WHERE c.layout_status = 'mapped'
               AND p.s2_references_checked_at IS NULL
               AND p.s2_found IS DISTINCT FROM false
             ORDER BY p.corpus_id

@@ -5,15 +5,15 @@ used by BERTopic and widely adopted.  It weights terms by how distinctive
 they are to each cluster versus the entire corpus, producing meaningful
 labels instead of surfacing common words like "the / and / for".
 
-When a vocabulary is provided (from solemd.entities), entity terms get a
-score boost during c-TF-IDF ranking so they are preferentially selected
-as cluster labels over generic words.  The canonical form from the
-vocabulary replaces the raw extracted term in the final label.
+Each cluster gets a single top term, title-cased.  When two clusters
+share the same top term, the second-ranked term is used as a qualifier
+to produce a unique label (e.g. "Neuropathic Pain" or "Pain & Delirium").
 """
 
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from dataclasses import dataclass
 
 import numpy as np
@@ -22,11 +22,6 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.preprocessing import normalize
 
 logger = logging.getLogger(__name__)
-
-# Boost factor applied to c-TF-IDF scores for terms matching the vocabulary.
-# 3x means an entity term needs only ~1/3 the raw statistical distinctiveness
-# of a non-entity term to win a top-N slot.
-VOCAB_BOOST = 3.0
 
 
 # Biomedical boilerplate that sklearn's english list doesn't cover.
@@ -62,51 +57,11 @@ class ClusterLabel:
     label_source: str
 
 
-def _build_vocab_index(
-    feature_names: np.ndarray,
-    vocab: dict[str, str],
-) -> tuple[np.ndarray, dict[int, str]]:
-    """Build a boolean mask and canonical-name map for features matching vocab.
-
-    Returns:
-        mask: boolean array, True for features that match a vocab entry.
-        canonical_map: {feature_index: canonical_name} for matched features.
-    """
-    mask = np.zeros(len(feature_names), dtype=bool)
-    canonical_map: dict[int, str] = {}
-
-    # Build reverse index: for each vocab entry, store all its word tokens
-    # so we can match both unigrams and bigrams efficiently.
-    vocab_lower = set(vocab.keys())
-
-    for i, name in enumerate(feature_names):
-        key = name.lower()
-
-        # Exact match: "delirium" or "serotonin syndrome"
-        if key in vocab_lower:
-            mask[i] = True
-            canonical_map[i] = vocab[key]
-            continue
-
-        # Partial match: unigram/bigram is a component of a canonical name.
-        # Only for terms >= 5 chars to avoid noise.
-        if len(key) >= 5:
-            for vocab_key, canonical in vocab.items():
-                if vocab_key.startswith(key + " ") or vocab_key.endswith(" " + key):
-                    mask[i] = True
-                    canonical_map[i] = canonical
-                    break
-
-    return mask, canonical_map
-
-
 def _ctfidf_top_terms(
     cluster_texts: dict[int, list[str]],
     *,
     top_n: int = 3,
-    vocab: dict[str, str] | None = None,
-    vocab_boost: float = VOCAB_BOOST,
-) -> tuple[dict[int, list[str]], dict[int, bool]]:
+) -> tuple[dict[int, list[str]], set[str]]:
     """Extract the most distinctive terms per cluster using c-TF-IDF.
 
     1. Merge all documents per cluster into one mega-document.
@@ -114,16 +69,15 @@ def _ctfidf_top_terms(
        extensions + max_df/min_df frequency filtering.
     3. Apply class-based IDF: log(total_original_docs / term_freq_across_clusters).
     4. L1-normalize per cluster.
-    5. If vocab provided, boost scores for entity terms by ``vocab_boost``.
-    6. Pick top terms, using canonical forms for vocab-matched terms.
+    5. Pick top terms per cluster.
 
     Returns:
         terms_by_cluster: {cluster_id: [term_strings]}
-        vocab_matched: {cluster_id: True if any term was vocab-boosted}
+        bigram_features: set of bigram features present in the vocabulary
     """
     cluster_ids = sorted(cid for cid in cluster_texts if cid != 0)
     if not cluster_ids:
-        return {}, {}
+        return {}, set()
 
     # Merge documents per cluster into mega-documents
     merged_docs: list[str] = []
@@ -145,7 +99,7 @@ def _ctfidf_top_terms(
     try:
         tf_matrix = vectorizer.fit_transform(merged_docs)
     except ValueError:
-        return {cid: [] for cid in cluster_ids}, {cid: False for cid in cluster_ids}
+        return {cid: [] for cid in cluster_ids}, set()
 
     feature_names = vectorizer.get_feature_names_out()
 
@@ -158,7 +112,10 @@ def _ctfidf_top_terms(
     feature_names = feature_names[bio_mask]
 
     if tf_matrix.shape[1] == 0:
-        return {cid: [] for cid in cluster_ids}, {cid: False for cid in cluster_ids}
+        return {cid: [] for cid in cluster_ids}, set()
+
+    # Collect bigram features for natural compound detection
+    bigram_features = {str(f) for f in feature_names if " " in str(f)}
 
     # c-TF-IDF: class-based IDF using total original document count
     df = np.squeeze(np.asarray(tf_matrix.sum(axis=0)))
@@ -169,71 +126,97 @@ def _ctfidf_top_terms(
     ctfidf = tf_matrix * idf_diag
     ctfidf = normalize(ctfidf, axis=1, norm="l1")
 
-    # Build vocab boost mask if vocabulary is available
-    vocab_mask: np.ndarray | None = None
-    canonical_map: dict[int, str] = {}
-    if vocab:
-        vocab_mask, canonical_map = _build_vocab_index(feature_names, vocab)
-        if canonical_map:
-            logger.info(
-                "Vocab boost: %d of %d features matched canonical entities",
-                len(canonical_map), len(feature_names),
-            )
-
-    # Extract top terms per cluster with vocab boosting
+    # Extract top terms per cluster
     terms_result: dict[int, list[str]] = {}
-    matched_result: dict[int, bool] = {}
 
     for idx, cid in enumerate(cluster_ids):
         row = np.squeeze(np.asarray(ctfidf[idx].todense()))
-
-        # Apply vocab boost: multiply entity term scores so they rank higher
-        if vocab_mask is not None and vocab_mask.any():
-            boosted = row.copy()
-            boosted[vocab_mask] *= vocab_boost
-        else:
-            boosted = row
-
-        top_indices = boosted.argsort()[::-1][:top_n]
+        top_indices = row.argsort()[::-1][:top_n]
 
         terms: list[str] = []
-        has_match = False
         for i in top_indices:
             if row[i] <= 0:
                 break
-            if i in canonical_map:
-                terms.append(canonical_map[i])
-                has_match = True
-            else:
-                terms.append(feature_names[i])
+            terms.append(str(feature_names[i]))
 
         terms_result[cid] = terms
-        matched_result[cid] = has_match
 
-    return terms_result, matched_result
+    return terms_result, bigram_features
 
 
-def load_vocabulary_terms(*, min_paper_count: int = 10) -> dict[str, str]:
+def _deduplicate_labels(
+    terms_by_cluster: dict[int, list[str]],
+    bigram_features: set[str],
+) -> dict[int, str]:
+    """Produce unique labels from c-TF-IDF top terms.
+
+    1. Assign top-1 term (title-cased) as each cluster's label.
+    2. Detect exact duplicates across clusters.
+    3. For each duplicate group, qualify with the second term:
+       - If "{term2} {term1}" is a known bigram, use natural compound
+         (e.g. "Neuropathic Pain").
+       - Otherwise use "{term1} & {term2}" (e.g. "Pain & Delirium").
+    4. Fallback: append cluster ID if no second term is available.
+    """
+    # First pass: assign top-1 term
+    labels: dict[int, str] = {}
+    for cid, terms in terms_by_cluster.items():
+        labels[cid] = terms[0].title() if terms else f"Cluster {cid}"
+
+    # Find duplicates
+    label_counts = Counter(labels.values())
+    duplicates = {label for label, count in label_counts.items() if count > 1}
+
+    if not duplicates:
+        return labels
+
+    # Second pass: disambiguate duplicates using second term
+    for cid, terms in terms_by_cluster.items():
+        if labels[cid] not in duplicates:
+            continue
+
+        if len(terms) >= 2:
+            t1, t2 = terms[0], terms[1]
+            # Check if "term2 term1" forms a natural bigram
+            compound = f"{t2} {t1}"
+            if compound in bigram_features:
+                labels[cid] = compound.title()
+            else:
+                labels[cid] = f"{t1.title()} & {t2.title()}"
+        else:
+            labels[cid] = f"{labels[cid]} ({cid})"
+
+    return labels
+
+
+def load_vocabulary_terms(
+    *,
+    min_paper_count: int = 100,
+    entity_types: tuple[str, ...] = ("disease", "chemical"),
+) -> dict[str, str]:
     """Load canonical entity names from solemd.entities.
 
     Returns a {lowercase_name: canonical_name} lookup dict, filtered to
-    entities with at least ``min_paper_count`` papers to avoid noise.
+    entities with at least ``min_paper_count`` papers and matching
+    ``entity_types`` to avoid noise from gene aliases and cell lines.
 
     Falls back to an empty dict if the table doesn't exist yet.
     """
     from app import db
 
-    query = """
+    placeholders = ", ".join(["%s"] * len(entity_types))
+    query = f"""
         SELECT canonical_name
         FROM solemd.entities
         WHERE paper_count >= %s
           AND canonical_name IS NOT NULL
           AND canonical_name != ''
+          AND entity_type IN ({placeholders})
     """
     vocab: dict[str, str] = {}
     try:
         with db.connect() as conn, conn.cursor() as cur:
-            cur.execute(query, (min_paper_count,))
+            cur.execute(query, (min_paper_count, *entity_types))
             for row in cur.fetchall():
                 name = row["canonical_name"]
                 vocab[name.lower()] = name
@@ -242,42 +225,17 @@ def load_vocabulary_terms(*, min_paper_count: int = 10) -> dict[str, str]:
     return vocab
 
 
-def _match_vocab_term(term: str, vocab: dict[str, str]) -> str | None:
-    """Match a single term against the vocabulary.
-
-    Tries exact match first, then checks if any canonical name
-    contains the term as a word boundary component.
-
-    Returns the canonical form if matched, None otherwise.
-    """
-    key = term.lower()
-
-    if key in vocab:
-        return vocab[key]
-
-    if len(key) >= 5:
-        for vocab_key, canonical in vocab.items():
-            if vocab_key.startswith(key + " ") or vocab_key.endswith(" " + key):
-                return canonical
-
-    return None
-
-
 def build_cluster_labels(
     cluster_texts: dict[int, list[str]],
-    *,
-    vocab_terms: dict[str, str] | None = None,
 ) -> list[ClusterLabel]:
     """Build labels for all clusters. Cluster 0 is always labeled 'Noise'.
 
-    When ``vocab_terms`` is provided, entity terms receive a score boost
-    during c-TF-IDF ranking so they are preferentially selected over
-    generic words.  Matched terms use the canonical form from the vocabulary.
+    Each cluster gets the single most distinctive c-TF-IDF term,
+    title-cased for display. Duplicate labels are disambiguated using
+    the second-ranked term as a qualifier.
     """
-    top_terms, vocab_matched = _ctfidf_top_terms(
-        cluster_texts,
-        vocab=vocab_terms,
-    )
+    top_terms, bigram_features = _ctfidf_top_terms(cluster_texts)
+    unique_labels = _deduplicate_labels(top_terms, bigram_features)
 
     labels: list[ClusterLabel] = []
     for cluster_id in sorted(cluster_texts):
@@ -292,29 +250,14 @@ def build_cluster_labels(
             )
             continue
 
-        terms = top_terms.get(cluster_id, [])
-        has_match = vocab_matched.get(cluster_id, False)
-
-        if terms:
-            # Canonical terms from vocab are already in proper case;
-            # non-vocab terms get .title() casing.
-            display_terms = []
-            for term in terms:
-                if vocab_terms and _match_vocab_term(term, vocab_terms):
-                    # Already canonical form from _ctfidf_top_terms
-                    display_terms.append(term)
-                else:
-                    display_terms.append(term.title())
-            label = " / ".join(display_terms)
-        else:
-            label = f"Cluster {cluster_id}"
+        label = unique_labels.get(cluster_id, f"Cluster {cluster_id}")
 
         labels.append(
             ClusterLabel(
                 cluster_id=cluster_id,
                 label=label,
                 label_mode="ctfidf",
-                label_source="ctfidf+vocab" if has_match else "title_terms",
+                label_source="ctfidf",
             )
         )
     return labels

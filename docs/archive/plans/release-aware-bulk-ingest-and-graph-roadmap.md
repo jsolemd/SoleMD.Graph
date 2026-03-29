@@ -1,5 +1,10 @@
 # Release-Aware Bulk Ingest and Graph Roadmap
 
+> Historical implementation plan. Some sections preserve pre-canonical browser
+> wording for historical context. The current canonical browser architecture is documented in
+> [../design/future.md](../design/future.md) and the canonical bundle contract is in
+> [../map/bundle-contract.md](../map/bundle-contract.md).
+
 Status: Active working plan  
 Project: `SoleMD.Graph`  
 Scope: local bulk data mirror, release-aware ingest, graph build, monthly refresh
@@ -62,11 +67,11 @@ This document is the implementation checklist for that shift.
   - graph run writes
   - bundle export
   - manifest-backed widened bundle tables:
-    - `corpus_points`
-    - `corpus_links`
-    - `corpus_clusters`
-    - `corpus_documents`
-    - `corpus_cluster_exemplars`
+    - `base_points`
+    - `universe_links`
+    - `base_clusters`
+    - `paper_documents`
+    - `cluster_exemplars`
 - The remaining graph work is productionization for the full mapped corpus, not first-pass feasibility.
 - The graph build baseline is now GPU-native inside the dedicated graph container:
   - local engine env still retains CPU fallback for development safety
@@ -315,26 +320,26 @@ Bundle contract decisions:
 - keep Apache Parquet as the on-disk bundle format and keep the `.parquet`
   naming; it is the standard columnar file format we want here
 - use a tiered export contract instead of pushing every heavy payload into the
-  always-hot point table:
-  - hot:
-    - `corpus_points.parquet`
+  always-loaded base point table:
+  - base:
+    - `base_points.parquet`
     - immediate render/filter metadata only
     - include compact PubTator-derived summaries that support search/faceting
-      without bloating the hot payload:
+      without bloating the base payload:
       - `semantic_groups_csv`
       - `top_entities_csv`
       - `relation_categories_csv`
-  - warm:
-    - `corpus_documents.parquet`
-    - `corpus_clusters.parquet`
-    - `corpus_cluster_exemplars.parquet`
+  - universe:
+    - `paper_documents.parquet`
+    - `base_clusters.parquet`
+    - `cluster_exemplars.parquet`
     - small aggregated link artifacts only, if they materially help local drilldown
       without bloating the browser payload:
       - e.g. a future aggregated cluster-link artifact
     - these should be optional local artifacts with their own manifest entries
       and URLs, attached lazily after first interaction rather than shipped in
       the mandatory first-load payload
-  - cold:
+  - evidence:
     - fetched on demand via detail/data services
     - raw paper-paper citation neighborhoods
     - large citation-context payloads
@@ -365,7 +370,7 @@ PubTator export policy:
   - organ-system summary
   - major relation-category summary
 - keep the full annotation and relation payloads behind fetch paths for detail
-  drilldown instead of inflating the hot point layer
+  drilldown instead of inflating the base point layer
 
 Current implementation status:
 
@@ -381,24 +386,24 @@ Current implementation status:
   - UMAP is now treated only as the 2D layout layer
   - cluster label sampling now happens from PostgreSQL after graph points are
     written, rather than carrying all titles/TLDRs in memory
-  - the first full linked graph build completed:
+    - the first full linked graph build completed:
     - run id: `fd2ee233-3bca-4d71-82c7-e9596011282f`
     - points: `2,452,643`
     - clusters: `48`
     - bundle size: `5.5 GB`
     - tables:
-      - `corpus_points.parquet`
-      - `corpus_links.parquet`
-      - `corpus_clusters.parquet`
-      - `corpus_documents.parquet`
-      - `corpus_cluster_exemplars.parquet`
+      - `base_points.parquet`
+      - `universe_links.parquet`
+      - `base_clusters.parquet`
+      - `paper_documents.parquet`
+      - `cluster_exemplars.parquet`
   - the first full build is now published as the active graph run
 - still to do:
   - make the UMAP/clustering path efficient enough for the full mapped corpus
   - add macro/micro clustering if needed
-  - slim the hot points table so first paint is practical
+  - slim the base points table so first paint is practical
   - add staged loading progress with a real percentage
-  - stop materializing the full hot table into JS memory before the canvas resolves
+  - stop materializing the full base table into JS memory before the canvas resolves
 
 Current benchmark policy:
 
@@ -437,13 +442,15 @@ Interpretation:
   once the system is not competing with the overnight bulk citations ingest
 - the remaining risk is operational contention on PostgreSQL / disk / temp space,
   not algorithmic feasibility
-  - the first full linked bundle confirmed that the hot path is now the main
+  - the first full linked bundle confirmed that the base path is now the main
     frontend bottleneck:
-  - `corpus_points.parquet` is too large and too wide to remain the always-hot payload
-  - `corpus_links.parquet` is large and should move to cold fetch paths rather
+  - `base_points.parquet` is too large and too wide to remain the always-loaded payload
+  - `universe_links.parquet` is large and should move to evidence fetch paths rather
     than remaining in the default browser-local bundle
-  - only compact aggregated link artifacts should remain warm in the default bundle
-  - the browser currently materializes all rows from `graph_points_web` into JS memory
+  - only compact aggregated link artifacts should remain in the universe layer of the default bundle
+  - the browser previously materialized all active point rows into JS memory;
+    the current remediation path is to keep the canvas DuckDB-native and only
+    hydrate targeted universe detail on demand
   - rich filtering still belongs in the bundle, but it needs compact typed summaries
     rather than raw/full-detail payloads on every point
   - chunked point hydration and `%` loading progress are now part of the active
@@ -453,32 +460,32 @@ Interpretation:
     - the graph can mount as soon as bundle tables/views are ready
     - point clicks and label clicks can resolve nodes on demand from DuckDB
       before the full in-memory node arrays finish hydrating
-    - warm metadata hydration is now lazy rather than automatic
+    - universe detail hydration is now lazy rather than automatic
     - the data table now pages directly from DuckDB instead of waiting for the
       full in-memory node arrays
     - the info panel is now query-driven for corpus/paper layers:
       - summary stats come directly from DuckDB
       - widget bars / histograms / facet summaries query DuckDB on demand
-      - the info panel no longer triggers full warm hydration for non-geo layers
+      - the info panel no longer triggers full universe-detail hydration for non-geo layers
     - heavy UI consumers are now staged behind explicit metadata demand instead
       of blocking first paint
   - the next frontend optimization step is now:
     - move any remaining heavy panel logic toward query-driven / staged reads
-    - define the cold API layer for:
+    - define the evidence API layer for:
       - citation neighborhoods
       - full PubTator payloads
       - PDF / asset access
       - later full text and chunk evidence
-    - define the warm attachment contract explicitly:
+    - define the universe attachment contract explicitly:
       - which files are optional local artifacts
       - what interaction triggers them
       - how they are attached into DuckDB after first paint
-    - decide which warm artifacts remain in the default published bundle versus
-      becoming cold API/detail fetches
+    - decide which universe artifacts remain in the default published bundle
+      versus becoming evidence API/detail fetches
     - remove any remaining hard dependency on full `GraphData.nodes` for panels
       that can be driven from DuckDB relations instead
   - reload/build distinction is now explicit:
-    - fast browser reloads reopen an already-built hot bundle
+    - fast browser reloads reopen an already-built base bundle
     - slow runs are the offline graph-build path:
       - embedding load
       - GPU UMAP
@@ -494,29 +501,29 @@ Interpretation:
       - widen UMAP spacing baseline so the macro-shape breathes more
       - current default `min_dist` target moved upward for future builds
   - a compact re-export of the active run is underway so the frontend can switch
-    to the slimmer hot table without rebuilding UMAP/Leiden
+    to the slimmer base table without rebuilding UMAP/Leiden
   - the default published bundle posture is now stricter:
-    - new graph builds export `bundle_profile = "hot"` by default
+    - new graph builds export `bundle_profile = "base"` by default
     - default published bundles should contain:
-      - `corpus_points.parquet`
-      - `corpus_clusters.parquet`
+      - `base_points.parquet`
+      - `base_clusters.parquet`
     - the generated bundle manifest now encodes the delivery contract directly:
       - `bundle_profile`
-      - `contract.artifact_sets.hot`
-      - `contract.artifact_sets.warm`
-      - `contract.artifact_sets.cold`
+      - `contract.artifact_sets.base`
+      - `contract.artifact_sets.universe`
+      - `contract.artifact_sets.evidence`
     - raw paper-paper citation edges are no longer part of the default publish path
-    - rich local documents / exemplars / aggregated links remain future warm artifacts
-      once the warm/cold API boundary is fully designed
-  - dynamic "alive graph" behavior should be treated as a hot-layer concern:
+    - rich local documents / exemplars / aggregated links remain future universe artifacts
+      once the universe/evidence API boundary is fully designed
+  - dynamic "alive graph" behavior should be treated as a base-layer concern:
     - use native Cosmograph filters / timeline / crossfilter plus DuckDB-backed
       point metadata instead of inventing a second JS-side visibility engine
     - capture filtered/selected state through `onPointsFiltered`
     - the product model should separate:
-      - renderable cohort
-      - default-visible cohort
-      - current visible set
-    - keep the controlling visibility fields hot:
+      - base scaffold
+      - activated overlay
+      - current active canvas
+    - keep the controlling visibility fields base:
       - `is_default_visible`
       - `year`
       - cluster fields
@@ -525,15 +532,17 @@ Interpretation:
     - export/build discipline for that model:
       - define render eligibility in the engine/export layer
       - treat default visibility as policy, not render eligibility
-      - if any mapped rows are excluded from the exported renderable cohort,
+      - if any mapped rows are excluded from the exported active canvas,
         regenerate browser-facing `point_index` densely
       - rebuild any exported link or neighbor artifact against that final
-        renderable cohort instead of assuming raw `solemd.graph` indices remain
+        active canvas instead of assuming raw `solemd.graph` indices remain
         valid
       - keep spatial outliers and cluster-noise distinguishable in the engine
         even if the browser later uses a simpler combined rule
-    - later add ranking/visibility fields if needed:
-      - `visibility_tier`
+    - current compact policy/ranking fields:
+      - `default_visibility_lane`
+      - `default_visibility_rank`
+    - later add additional ranking fields if needed:
       - `importance_score`
       - recency buckets
       - bridge / novelty metrics
@@ -590,9 +599,9 @@ Tasks:
 
 - design a first-class graph detail API contract before ad hoc endpoints appear
 - keep the delivery boundary explicit:
-  - `Hot` = mandatory first-load bundle
-  - `Warm` = optional browser-local artifacts attached lazily
-  - `Cold` = backend/API fetch
+  - `Base` = mandatory first-load bundle
+  - `Universe` = optional browser-local artifacts attached lazily
+  - `Evidence` = backend/API fetch
 - support citation-neighborhood fetches for a selected paper:
   - outgoing
   - incoming
@@ -635,11 +644,11 @@ Expected output layout:
 ```text
 /mnt/e/SoleMD.Graph/graph/bundles/<graph_run_id>/
   manifest.json
-  corpus_points.parquet
-  corpus_links.parquet
-  corpus_clusters.parquet
-  corpus_documents.parquet
-  corpus_cluster_exemplars.parquet
+  base_points.parquet
+  universe_links.parquet
+  base_clusters.parquet
+  paper_documents.parquet
+  cluster_exemplars.parquet
   geo_points.parquet
   geo_links.parquet
   geo_citation_links.parquet
