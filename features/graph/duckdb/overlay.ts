@@ -1,0 +1,172 @@
+import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
+
+import type { MapLayer, OverlayActivationRequest, OverlayActivationResult } from '@/features/graph/types'
+
+import { queryRows } from './queries'
+import { buildIndexWhereClause, getLayerTableName } from './sql-helpers'
+
+export function getOverlayUniversePredicate(layer: Exclude<MapLayer, 'geo'>, alias = 'u'): string {
+  if (layer === 'paper') {
+    return `${alias}.nodeKind = 'paper'`
+  }
+
+  return `COALESCE(${alias}.nodeKind, 'chunk') <> 'paper'`
+}
+
+export function buildOverlayActivationFocusPredicate(args: OverlayActivationRequest): string | null {
+  if (args.scope === 'selected') {
+    const selected = args.selectedPointIndices ?? []
+    return selected.length > 0 ? buildIndexWhereClause(selected) : null
+  }
+
+  if (args.currentPointScopeSql && args.currentPointScopeSql.trim().length > 0) {
+    return args.currentPointScopeSql
+  }
+
+  if (args.currentPointIndices && args.currentPointIndices.length > 0) {
+    return buildIndexWhereClause(args.currentPointIndices)
+  }
+
+  return null
+}
+
+export async function activateOverlayByClusterNeighborhood(
+  conn: AsyncDuckDBConnection,
+  args: OverlayActivationRequest
+): Promise<OverlayActivationResult> {
+  const focusPredicate = buildOverlayActivationFocusPredicate(args)
+  if (!focusPredicate) {
+    const rows = await queryRows<{ count: number }>(
+      conn,
+      `SELECT count(*)::INTEGER AS count FROM overlay_points_web`
+    )
+    return {
+      kind: args.kind,
+      layer: args.layer,
+      scope: args.scope,
+      overlayCount: rows[0]?.count ?? 0,
+      addedCount: 0,
+      seedCount: 0,
+      clusterCount: 0,
+    }
+  }
+
+  const focusTable = getLayerTableName(args.layer)
+  const maxPoints = Math.max(1, Math.floor(args.maxPoints ?? 5000))
+  const maxClusters = Math.max(1, Math.floor(args.maxClusters ?? 16))
+  const perClusterLimit = Math.max(1, Math.floor(args.perClusterLimit ?? 250))
+  const universePredicate = getOverlayUniversePredicate(args.layer)
+
+  const candidateCteSql = `
+    WITH focus AS (
+      SELECT
+        id,
+        clusterId,
+        COALESCE(clusterProbability, 0) AS clusterProbability,
+        COALESCE(paperReferenceCount, 0) AS paperReferenceCount
+      FROM ${focusTable}
+      WHERE (${focusPredicate})
+        AND COALESCE(clusterId, 0) > 0
+    ),
+    focus_clusters AS (
+      SELECT
+        clusterId,
+        count(*)::INTEGER AS seedCount,
+        AVG(clusterProbability) AS avgSeedProbability,
+        MAX(paperReferenceCount) AS maxSeedReferences
+      FROM focus
+      GROUP BY clusterId
+    ),
+    limited_clusters AS (
+      SELECT
+        clusterId,
+        seedCount,
+        ROW_NUMBER() OVER (
+          ORDER BY
+            seedCount DESC,
+            maxSeedReferences DESC,
+            avgSeedProbability DESC,
+            clusterId
+        )::INTEGER AS clusterRank
+      FROM focus_clusters
+    ),
+    ranked_candidates AS (
+      SELECT
+        u.id,
+        u.clusterId,
+        lc.seedCount,
+        ROW_NUMBER() OVER (
+          PARTITION BY u.clusterId
+          ORDER BY
+            COALESCE(u.paperReferenceCount, 0) DESC,
+            COALESCE(u.clusterProbability, 0) DESC,
+            COALESCE(u.year, 0) DESC,
+            COALESCE(u.sourcePointIndex, 0),
+            u.id
+        )::INTEGER AS clusterCandidateRank
+      FROM universe_points_web u
+      JOIN limited_clusters lc
+        ON lc.clusterId = u.clusterId
+      LEFT JOIN active_points_web active
+        ON active.id = u.id
+      WHERE lc.clusterRank <= ${maxClusters}
+        AND active.id IS NULL
+        AND ${universePredicate}
+    ),
+    limited_candidates AS (
+      SELECT
+        id,
+        clusterId,
+        seedCount,
+        ROW_NUMBER() OVER (
+          ORDER BY
+            seedCount DESC,
+            clusterId,
+            clusterCandidateRank,
+            id
+        )::INTEGER AS globalRank
+      FROM ranked_candidates
+      WHERE clusterCandidateRank <= ${perClusterLimit}
+    )`
+
+  const summaryRows = await queryRows<{
+    seedCount: number
+    clusterCount: number
+    candidateCount: number
+  }>(
+    conn,
+    `${candidateCteSql}
+     SELECT
+       (SELECT count(*)::INTEGER FROM focus) AS seedCount,
+       (SELECT count(*)::INTEGER FROM limited_clusters WHERE clusterRank <= ${maxClusters}) AS clusterCount,
+       (SELECT count(*)::INTEGER FROM limited_candidates WHERE globalRank <= ${maxPoints}) AS candidateCount`
+  )
+
+  const summary = summaryRows[0] ?? { seedCount: 0, clusterCount: 0, candidateCount: 0 }
+
+  await conn.query(`DELETE FROM overlay_point_ids`)
+  if (summary.candidateCount > 0) {
+    await conn.query(
+      `${candidateCteSql}
+       INSERT INTO overlay_point_ids
+       SELECT id
+       FROM limited_candidates
+       WHERE globalRank <= ${maxPoints}`
+    )
+  }
+
+  const overlayRows = await queryRows<{ count: number }>(
+    conn,
+    `SELECT count(*)::INTEGER AS count FROM overlay_points_web`
+  )
+
+  return {
+    kind: args.kind,
+    layer: args.layer,
+    scope: args.scope,
+    overlayCount: overlayRows[0]?.count ?? 0,
+    addedCount: summary.candidateCount,
+    seedCount: summary.seedCount,
+    clusterCount: summary.clusterCount,
+  }
+}

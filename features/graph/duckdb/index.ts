@@ -1,2 +1,2 @@
-export { loadGraphBundle, subscribeToGraphBundleProgress } from './session'
-export type { GraphCanvasSource } from './session'
+export { loadGraphBundle, subscribeToGraphBundleProgress } from './progress'
+export type { GraphCanvasSource } from './types'
