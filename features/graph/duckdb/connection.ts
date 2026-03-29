@@ -32,9 +32,13 @@ export async function createConnection() {
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker)
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker)
   URL.revokeObjectURL(workerUrl)
+  await db.open({
+    maximumThreads: 1,
+  })
+
   const conn = await db.connect()
   await conn.query("SET preserve_insertion_order = false")
-  await conn.query("SET memory_limit = '2GB'")
+  await conn.query("SET memory_limit = '1500MB'")
   await conn.query("SET threads = 1")
 
   return { conn, db, worker }

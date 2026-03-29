@@ -60,7 +60,6 @@ export interface GraphBundle {
   bundleManifest: GraphBundleManifest
   bundleUri: string
   bundleVersion: string
-  duckdbUrl: string | null
   graphName: string
   manifestUrl: string
   nodeKind: string

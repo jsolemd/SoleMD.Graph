@@ -21,8 +21,9 @@ mapped corpus and rich evidence.
 The bundle contract therefore follows three rules:
 
 1. Keep the always-loaded base point layer compact enough for large-map rendering.
-2. Keep rich paper, cluster, and universe detail locally queryable in DuckDB.
-3. Keep heavy citation, full-text, and annotation payloads behind evidence fetch paths.
+2. Keep only canvas/search/filter/table-critical metadata in the point parquet.
+3. Keep rich paper, cluster, and universe detail behind lazy DuckDB views or API fetches.
+4. Keep heavy citation, full-text, and annotation payloads behind evidence fetch paths.
 
 Loading should be DuckDB-first, not JS-array-first.
 
@@ -32,14 +33,16 @@ Loading should be DuckDB-first, not JS-array-first.
 
 | Layer | Where it lives | When it loads | Purpose |
 |------|----------------|---------------|---------|
-| `Base` | Mandatory Parquet bundle | First paint | Render, color, size, fast faceting, local search |
-| `Universe` | Optional local Parquet artifacts | Attached after interaction | Overlay activation, detail panels, cluster drilldown |
-| `Active` | DuckDB-local views | Immediately after base load | Base + promoted overlay in one dense canvas table |
-| `Evidence` | Fetch path / detail service | On demand | Raw citation neighborhoods, full text, mirrored assets, full annotation payloads |
+| `Base` | Mandatory Parquet bundle | First paint | Render, color, size, fast faceting, local search, paged table rows |
+| `Universe` | Optional local Parquet artifacts | Attached after interaction | Overlay activation and local promotion from the mapped remainder |
+| `Active` | DuckDB-local views + overlay membership table | Immediately after base load | Base + promoted overlay in one dense canvas table |
+| `Evidence` | Fetch path / detail service | On demand | Paper detail, raw citation neighborhoods, full text, mirrored assets, full annotation payloads |
 
 ### Design rule
 
 - `Base` must stay typed and compact.
+- `Base` and `Universe` should stay Parquet-backed in the browser; do not eagerly copy the
+  full base scaffold into DuckDB temp point tables.
 - `Universe` can be richer, but it must remain queryable locally.
 - `Active` is a local runtime state, not a shipped artifact.
 - `Evidence` is for large or verbose payloads that do not belong in first load.
@@ -68,28 +71,31 @@ The base point schema should include the smallest useful set of typed columns:
 
 | Category | Fields |
 |----------|--------|
-| identity | `point_index`, `id`, `paper_id`, `corpus_id` |
+| identity | `point_index`, `id`, `paper_id` |
 | layout | `x`, `y` |
-| cluster | `cluster_id`, `cluster_label`, `cluster_probability`, `paper_cluster_index` |
-| bibliographic | `title`, `journal`, `year`, `doi`, `pmid`, `pmcid` |
-| quality | `citation_count`, `paper_entity_count`, `paper_relation_count`, `influential_citation_count` |
-| base admission | `is_in_base`, `base_rank`, `admission_reason` |
-| compact rendering | `text_availability`, `is_open_access`, `has_open_access_pdf`, `display_label`, `search_text` |
-| compact evidence summaries | `semantic_groups_csv`, `top_entities_csv`, `relation_categories_csv` |
+| cluster | `cluster_id`, `cluster_label`, `cluster_probability` |
+| bibliographic | `title`, `citekey`, `journal`, `year`, `display_label` |
+| quality | `paper_author_count`, `paper_reference_count`, `paper_entity_count`, `paper_relation_count` |
+| base admission | `is_in_base`, `base_rank` |
+| compact rendering | `hex_color`, `hex_color_light`, `text_availability` |
+| compact evidence summaries | `semantic_groups_csv`, `organ_systems_csv`, `relation_categories_csv` |
 
 ### What belongs in base
 
 Base should contain high-quality papers that satisfy one of these conditions:
 
-- direct evidence papers
-- curated base journal family papers
-- explicit organ-overlap representation that is needed for domain breadth
+- rule-backed papers with curated entity or relation support
+- flagship journals that reliably preserve foundational neuro / psych / neuroscience coverage
+- narrow vocab-anchored overlap that is needed for domain breadth
 
 The intent is a domain-rich opening scaffold around the target first-paint size,
-not a recall-maximizing visibility bucket.
+not a recall-maximizing first-paint bucket.
 
 ### What does not belong in base
 
+- DOI / PMID / PMCID identifiers
+- open-access booleans and asset counters
+- `search_text`, `top_entities_csv`, or other stitched convenience text
 - full abstract-sized text blobs
 - full author JSON
 - full PubTator annotations
@@ -114,7 +120,13 @@ Universe points are:
 
 - mapped to the same UMAP manifold as the base scaffold
 - excluded from first paint until promoted
-- available for later local queries, panel detail, and overlay activation
+- available for later overlay activation
+
+`paper_documents.parquet` and `cluster_exemplars.parquet` carry the richer
+paper/cluster detail that does not belong in the point parquet.
+`cluster_exemplars.parquet` is a paper-level preview table for cluster context,
+not a chunk graph layer. If a future detail surface grows beyond those local
+tables, it belongs in `evidence`, not back in `base_points`.
 
 The universe point schema should stay aligned with the base point schema so the
 runtime can combine them without remapping coordinates or rebuilding ids.
@@ -127,18 +139,37 @@ Active canvas state is DuckDB-local and derived from the loaded bundle.
 
 The canonical runtime views are:
 
+- `selected_point_indices`
+- `overlay_point_ids_by_producer`
 - `overlay_point_ids`
 - `overlay_points_web`
+- `active_point_index_lookup_web`
+- `current_points_canvas_web`
+- `current_points_web`
+- `current_paper_points_web`
+- `current_links_web`
 - `active_points_web`
+- `base_links_web`
 - `active_links_web`
 - `active_paper_links_web`
 
 Rules:
 
-- `overlay_point_ids` is the membership surface for promoted points
-- `overlay_points_web` resolves those ids to rows in the universe
+- `selected_point_indices` is materialized from live Cosmograph selection clauses inside DuckDB
+- `overlay_point_ids_by_producer` and `overlay_point_ids` are the mutable local membership surfaces
+- `overlay_points_canvas_web` / `current_points_canvas_web` are the narrow render-facing point views used by Cosmograph
+- `overlay_points_web` / `current_points_web` are the richer query-facing point views used for search, table, and widget aggregation
+- `overlay_points_web` resolves promoted universe rows for query usage without copying them into a second local point table
+- `active_point_index_lookup_web` remaps ids to dense active indices
+- `current_points_canvas_web` / `current_points_web` / `current_paper_points_web`
+  are the canonical browser-facing active aliases
 - `active_points_web` is the dense browser-facing union of base + overlay
 - `active_links_web` and `active_paper_links_web` remap to active ids so links follow the canvas
+- when overlay is empty, the active canvas should alias base directly rather than materializing a synthetic active copy
+- `pointIncludeColumns` should include only the accessors required by mounted
+  native Cosmograph widgets; richer detail stays on DuckDB query paths or the
+  backend evidence API rather than mirrored JS point objects
+- info-panel widget queries should batch by scope change, not fan out one DuckDB roundtrip per widget
 
 This keeps the active canvas stable while still allowing the user to promote
 relevant papers in place.

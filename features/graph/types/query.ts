@@ -1,4 +1,4 @@
-import type { ChunkNode, GraphNode, AuthorGeoRow, PaperNode } from './nodes'
+import type { GraphPointRecord } from './points'
 import type { GraphClusterDetail } from './detail'
 import type { PaperDocument } from './detail'
 import type { GraphSelectionDetail } from './detail'
@@ -17,7 +17,7 @@ export interface GraphTablePageResult {
   totalRows: number
   page: number
   pageSize: number
-  rows: GraphNode[]
+  rows: GraphPointRecord[]
 }
 
 export type GraphInfoScope = 'dataset' | 'current' | 'selected'
@@ -55,12 +55,18 @@ export interface GraphInfoHistogramBin {
   count: number
 }
 
+export interface GraphInfoHistogramResult {
+  bins: GraphInfoHistogramBin[]
+  totalCount: number
+}
+
 export interface GraphSearchResult {
   id: string
   index: number
   label: string
   matchedValue: string | null
   subtitle: string | null
+  point: GraphPointRecord
 }
 
 export type OverlayActivationScope = 'current' | 'selected'
@@ -68,11 +74,9 @@ export type OverlayActivationKind = 'cluster-neighborhood'
 
 export interface OverlayActivationRequest {
   kind: OverlayActivationKind
-  layer: Exclude<MapLayer, 'geo'>
+  layer: MapLayer
   scope: OverlayActivationScope
-  currentPointIndices?: number[] | null
   currentPointScopeSql?: string | null
-  selectedPointIndices?: number[]
   maxPoints?: number
   maxClusters?: number
   perClusterLimit?: number
@@ -80,13 +84,15 @@ export interface OverlayActivationRequest {
 
 export interface OverlayActivationResult {
   kind: OverlayActivationKind
-  layer: Exclude<MapLayer, 'geo'>
+  layer: MapLayer
   scope: OverlayActivationScope
   overlayCount: number
   addedCount: number
   seedCount: number
   clusterCount: number
 }
+
+export type OverlayProducerId = string
 
 export interface GraphVisibilityBudget {
   seedIndex: number
@@ -101,36 +107,36 @@ export interface GraphVisibilityBudget {
 export interface GraphScopeQueryArgs {
   layer: MapLayer
   scope: GraphInfoScope
-  currentPointIndices: number[] | null
   currentPointScopeSql: string | null
-  selectedPointIndices: number[]
 }
 
 export interface GraphBundleQueries {
+  setSelectedPointIndices: (pointIndices: number[]) => Promise<void>
+  setSelectedPointScopeSql: (scopeSql: string | null) => Promise<void>
+  getOverlayPointIds: () => Promise<string[]>
+  setOverlayProducerPointIds: (args: {
+    producerId: OverlayProducerId
+    pointIds: string[]
+  }) => Promise<{ overlayCount: number }>
+  clearOverlayProducer: (producerId: OverlayProducerId) => Promise<{ overlayCount: number }>
   setOverlayPointIds: (pointIds: string[]) => Promise<{ overlayCount: number }>
   clearOverlay: () => Promise<{ overlayCount: number }>
   activateOverlay: (args: OverlayActivationRequest) => Promise<OverlayActivationResult>
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
-  getInstitutionAuthors: (institutionKey: string) => Promise<AuthorGeoRow[]>
-  /** Query all institutions an author has been affiliated with. Uses ORCID when available, falls back to name. */
-  getAuthorInstitutions: (name: string, orcid: string | null) => Promise<AuthorGeoRow[]>
-  getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
+  getSelectionDetail: (point: GraphPointRecord) => Promise<GraphSelectionDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
-  getPaperNodesByPaperIds: (paperIds: string[]) => Promise<Record<string, PaperNode>>
+  getPaperNodesByPaperIds: (paperIds: string[]) => Promise<Record<string, GraphPointRecord>>
   getUniversePointIdsByPaperIds: (paperIds: string[]) => Promise<Record<string, string>>
-  getChunkNodesByChunkIds: (chunkIds: string[]) => Promise<Record<string, ChunkNode>>
   resolvePointSelection: (
     layer: MapLayer,
     selector: { id?: string; index?: number }
-  ) => Promise<GraphNode | null>
+  ) => Promise<GraphPointRecord | null>
   getTablePage: (args: {
     layer: MapLayer
     view: 'current' | 'selected'
     page: number
     pageSize: number
-    currentPointIndices: number[] | null
     currentPointScopeSql: string | null
-    selectedPointIndices: number[]
   }) => Promise<GraphTablePageResult>
   getInfoSummary: (args: GraphScopeQueryArgs) => Promise<GraphInfoSummary>
   getInfoBars: (
@@ -138,10 +144,19 @@ export interface GraphBundleQueries {
   ) => Promise<Array<{ value: string; count: number }>>
   getInfoHistogram: (
     args: GraphScopeQueryArgs & { column: string; bins?: number }
-  ) => Promise<{ bins: GraphInfoHistogramBin[]; totalCount: number }>
+  ) => Promise<GraphInfoHistogramResult>
   getFacetSummary: (
     args: GraphScopeQueryArgs & { column: string; maxItems?: number }
   ) => Promise<GraphInfoFacetRow[]>
+  getFacetSummaries: (
+    args: GraphScopeQueryArgs & { columns: string[]; maxItems?: number }
+  ) => Promise<Record<string, GraphInfoFacetRow[]>>
+  getInfoBarsBatch: (
+    args: GraphScopeQueryArgs & { columns: string[]; maxItems?: number }
+  ) => Promise<Record<string, Array<{ value: string; count: number }>>>
+  getInfoHistogramsBatch: (
+    args: GraphScopeQueryArgs & { columns: string[]; bins?: number }
+  ) => Promise<Record<string, GraphInfoHistogramResult>>
   searchPoints: (args: {
     layer: MapLayer
     column: string
@@ -153,9 +168,15 @@ export interface GraphBundleQueries {
     selector: { id?: string; index?: number }
     scopeSql?: string | null
   }) => Promise<GraphVisibilityBudget | null>
-  getPointIndicesForScope: (args: {
+  getScopeCoordinates: (args: {
     layer: MapLayer
-    scopeSql: string
-  }) => Promise<number[]>
+    scope: 'current' | 'selected'
+    currentPointScopeSql: string | null
+  }) => Promise<number[] | null>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
+  exportTableCsv: (args: {
+    layer: MapLayer
+    view: 'current' | 'selected'
+    currentPointScopeSql: string | null
+  }) => Promise<string>
 }

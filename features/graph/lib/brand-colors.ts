@@ -13,12 +13,3 @@ export const NOISE_COLOR_LIGHT = "#999999";
 
 /** Fallback when cluster-mod lookup has no match. */
 export const DEFAULT_POINT_COLOR = "#a8c5e9";
-
-/** Hardcoded map colors used by MapCanvas.tsx — extracted here for single-source maintenance. */
-export const MAP_COLORS = {
-  water: { light: '#eef0f2', dark: '#1a1c20' },
-  choropleth: {
-    light: ['#d0dcea', '#b8cede', '#8eacc8', '#6e94b8', '#5080a8'],
-    dark: ['#1a2332', '#223040', '#2e4a68', '#3a6088', '#4878a8'],
-  },
-} as const;

@@ -45,28 +45,27 @@ export default function CosmographRenderer({
   const config = useCosmographConfig(canvas);
   // Destructure values referenced in useCallback deps so the linter can track them
   const {
-    activeLayer, fitViewPadding, setRenderedPointCount, tableOpen, totalPointCount,
+    activeLayer, fitViewPadding,
   } = config;
 
   // Selection & interaction state
   const {
-    setCurrentPointIndices, setCurrentPointScopeSql, selectedPointIndices,
-    setSelectedPointIndices, setHighlightedPointIndices,
-    setActiveSelectionSourceId, lockedSelection,
+    setCurrentPointScopeSql, selectedPointCount,
+    setSelectedPointCount, setHighlightedPointIndices,
+    setActiveSelectionSourceId, selectionLocked,
     visibilityFocus, clearVisibilityFocus, applyVisibilityBudget,
   } = useDashboardStore(useShallow((s) => ({
-    setCurrentPointIndices: s.setCurrentPointIndices,
     setCurrentPointScopeSql: s.setCurrentPointScopeSql,
-    selectedPointIndices: s.selectedPointIndices,
-    setSelectedPointIndices: s.setSelectedPointIndices,
+    selectedPointCount: s.selectedPointCount,
+    setSelectedPointCount: s.setSelectedPointCount,
     setHighlightedPointIndices: s.setHighlightedPointIndices,
     setActiveSelectionSourceId: s.setActiveSelectionSourceId,
-    lockedSelection: s.lockedSelection,
+    selectionLocked: s.selectionLocked,
     visibilityFocus: s.visibilityFocus,
     clearVisibilityFocus: s.clearVisibilityFocus,
     applyVisibilityBudget: s.applyVisibilityBudget,
   })));
-  const isLocked = lockedSelection !== null;
+  const isLocked = selectionLocked;
 
   const { zoomedIn, isActivelyZooming, handleZoomStart, handleZoomEnd } =
     useZoomLabels(cosmographRef);
@@ -96,11 +95,7 @@ export default function CosmographRenderer({
   // activation does not accidentally trigger a camera reset.
   const lastFittedLayer = useRef<typeof activeLayer | null>(null);
 
-  const handleGraphRebuilt = useCallback((stats?: { pointsCount: number }) => {
-    if (stats?.pointsCount != null) {
-      setRenderedPointCount(stats.pointsCount);
-    }
-
+  const handleGraphRebuilt = useCallback(() => {
     const isFirstFit = !hasFittedView.current;
     const isLayerChange = lastFittedLayer.current !== null && lastFittedLayer.current !== activeLayer;
 
@@ -109,9 +104,8 @@ export default function CosmographRenderer({
       lastFittedLayer.current = activeLayer;
       cosmographRef.current?.fitView(0, fitViewPadding);
       clearVisibilityFocus();
-      setCurrentPointIndices(null);
       setCurrentPointScopeSql(null);
-      setSelectedPointIndices([]);
+      setSelectedPointCount(0);
       setHighlightedPointIndices([]);
       setActiveSelectionSourceId(null);
     }
@@ -122,13 +116,11 @@ export default function CosmographRenderer({
   }, [
     activeLayer,
     fitViewPadding,
-    setRenderedPointCount,
     clearVisibilityFocus,
-    setCurrentPointIndices,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
     setHighlightedPointIndices,
-    setSelectedPointIndices,
+    setSelectedPointCount,
   ]);
 
   const handlePointClick = useCallback(
@@ -166,15 +158,11 @@ export default function CosmographRenderer({
   const handlePointsFiltered = usePointsFiltered({
     cosmographRef,
     activeLayer,
-    totalPointCount,
-    tableOpen,
-    selectedPointIndices,
-    lockedSelection,
+    selectionLocked,
     visibilityFocus,
     selectNode,
-    setCurrentPointIndices,
     setCurrentPointScopeSql,
-    setSelectedPointIndices,
+    setSelectedPointCount,
     setHighlightedPointIndices,
     setActiveSelectionSourceId,
     clearVisibilityFocus,
@@ -205,7 +193,7 @@ export default function CosmographRenderer({
       linkSourceIndexBy={config.layerConfig.linkSourceIndexBy}
       linkTargetBy={config.layerConfig.linkTargetBy}
       linkTargetIndexBy={config.layerConfig.linkTargetIndexBy}
-      renderLinks={config.hasLinks && (config.renderLinks || selectedPointIndices.length > 0)}
+      renderLinks={config.hasLinks && (config.renderLinks || selectedPointCount > 0)}
       linkOpacity={config.hasLinks ? config.linkOpacity : undefined}
       linkGreyoutOpacity={config.hasLinks ? (config.renderLinks ? config.linkGreyoutOpacity : 0) : undefined}
       linkVisibilityDistanceRange={config.hasLinks ? config.linkVisibilityDistanceRange : undefined}
@@ -220,7 +208,6 @@ export default function CosmographRenderer({
       pointOpacity={config.effectiveOpacity}
       pointGreyoutOpacity={config.colors.greyout}
       scalePointsOnZoom={config.scalePointsOnZoom}
-      pointClusterBy="clusterLabel"
       showClusterLabels={config.showPointLabels && !zoomedIn}
       showLabels={config.showPointLabels}
       showDynamicLabels={config.showPointLabels && config.showDynamicLabels && zoomedIn && !isActivelyZooming}
@@ -245,10 +232,6 @@ export default function CosmographRenderer({
       onZoomStart={handleZoomStart}
       onZoomEnd={handleZoomEnd}
       onLabelClick={handleLabelClick}
-      onGraphDataUpdated={() => {
-        const positions = cosmographRef.current?.getPointPositions();
-        setRenderedPointCount(positions ? Math.floor(positions.length / 2) : null);
-      }}
       onGraphRebuilt={handleGraphRebuilt}
       onPointsFiltered={handlePointsFiltered}
       onPointClick={handlePointClick}

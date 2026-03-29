@@ -1,10 +1,24 @@
 export { registerActivePointViews } from './active-points'
-export { createPointViewSelectBuilder, registerBasePointsView } from './base-points'
+export {
+  createPointCanvasProjectionSql,
+  createPointQueryProjectionSql,
+  registerBasePointsView,
+} from './base-points'
 export { registerClusterViews } from './clusters'
-export { registerGraphChunkDetailsView, registerClusterExemplarView } from './details'
-export { registerGeoViews } from './geo'
-export { initializeOverlayMembershipTable, replaceOverlayPointIds, clearOverlayPointIds } from './overlay'
+export { registerClusterExemplarView } from './details'
+export {
+  clearAllOverlayPointIds,
+  clearOverlayProducerPointIds,
+  initializeOverlayMembershipTable,
+  materializeOverlayPointIds,
+  replaceOverlayProducerPointIds,
+} from './overlay'
 export { registerPaperDocumentViews } from './paper-documents'
+export {
+  initializeSelectedPointTable,
+  replaceSelectedPointIndices,
+  replaceSelectedPointIndicesFromScopeSql,
+} from './selection'
 export {
   registerInitialSessionViews,
   createEnsureOptionalBundleTables,

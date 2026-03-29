@@ -1,4 +1,4 @@
-import type { ClusterInfo, ClusterExemplar } from './clusters'
+import type { ClusterExemplar, ClusterInfo } from './clusters'
 
 export interface PaperDocument {
   paperId: string
@@ -55,39 +55,7 @@ export interface GraphPaperDetail {
   year: number | null
 }
 
-export interface ChunkDetail {
-  abstract: string | null
-  blockId: string | null
-  blockType: string | null
-  charCount: number | null
-  chunkIndex: number | null
-  chunkKind: string | null
-  chunkPreview: string | null
-  chunkText: string | null
-  citekey: string | null
-  clusterId: number | null
-  clusterLabel: string | null
-  clusterProbability: number | null
-  doi: string | null
-  journal: string | null
-  outlierScore: number | null
-  pageNumber: number | null
-  paperId: string
-  pmcid: string | null
-  pmid: string | null
-  ragChunkId: string
-  sectionCanonical: string | null
-  sectionPath: string | null
-  sectionType: string | null
-  sourceEmbeddingId: string | null
-  stableChunkId: string | null
-  title: string | null
-  tokenCount: number | null
-  year: number | null
-}
-
 export interface GraphSelectionDetail {
-  chunk: ChunkDetail | null
   cluster: ClusterInfo | null
   exemplars: ClusterExemplar[]
   paper: GraphPaperDetail | null

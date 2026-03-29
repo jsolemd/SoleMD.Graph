@@ -9,6 +9,7 @@ import {
 } from '../sql-helpers'
 
 import { queryRows } from './core'
+import { mapGraphPointRow, type GraphPointSelectionRow } from './node-selection'
 
 export async function queryPointSearch(
   conn: AsyncDuckDBConnection,
@@ -31,6 +32,31 @@ export async function queryPointSearch(
   const labelExpr = getSearchLabelExpression(args.layer)
 
   const rows = await queryRows<{
+    paperId: string | null
+    nodeRole: 'primary' | 'overlay' | null
+    color: string
+    colorLight: string
+    x: number
+    y: number
+    clusterId: number | null
+    clusterLabel: string | null
+    clusterProbability: number | null
+    displayLabel: string | null
+    paperTitle: string | null
+    citekey: string | null
+    journal: string | null
+    year: number | null
+    semanticGroups: string | null
+    organSystems: string | null
+    relationCategories: string | null
+    textAvailability: string | null
+    paperAuthorCount: number | null
+    paperReferenceCount: number | null
+    paperEntityCount: number | null
+    paperRelationCount: number | null
+    isInBase: boolean | null
+    baseRank: number | null
+    isOverlayActive: boolean | null
     id: string
     index: number
     label: string | null
@@ -41,6 +67,34 @@ export async function queryPointSearch(
     `SELECT
        id,
        index,
+       paperId,
+       nodeRole,
+       hexColor AS color,
+       hexColorLight AS colorLight,
+       x,
+       y,
+       clusterId,
+       clusterLabel,
+       clusterProbability,
+       displayLabel,
+       paperTitle,
+       citekey,
+       journal,
+       year,
+       semanticGroups,
+       organSystems,
+       relationCategories,
+       textAvailability,
+       paperAuthorCount,
+       paperReferenceCount,
+       paperEntityCount,
+       paperRelationCount,
+       isInBase,
+       baseRank,
+       CASE
+         WHEN COALESCE(nodeRole, 'primary') = 'overlay' THEN true
+         ELSE false
+       END AS isOverlayActive,
        ${labelExpr} AS label,
        CAST(${column} AS VARCHAR) AS matched_value,
        concat_ws(
@@ -75,5 +129,6 @@ export async function queryPointSearch(
     label: row.label ?? row.matched_value ?? row.id,
     matchedValue: row.matched_value,
     subtitle: row.subtitle,
+    point: mapGraphPointRow(row as GraphPointSelectionRow),
   }))
 }

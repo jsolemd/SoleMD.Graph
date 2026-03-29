@@ -1,234 +1,120 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import {
-  buildGeoNodes,
-  buildGraphNode,
-  buildPaperNodes,
-  type GeoPointRow,
-  type GraphPointRow,
-} from '@/features/graph/lib/transform'
-import type { GraphNode } from '@/features/graph/types'
+import type { GraphPointRecord } from '@/features/graph/types'
 
 import { queryRows } from './core'
 
-export async function queryGraphPointSelection(
-  conn: AsyncDuckDBConnection,
-  selector: { id?: string; index?: number }
-): Promise<GraphNode | null> {
-  const { id, index } = selector
-  if (id == null && index == null) {
-    return null
-  }
-
-  const rows = await queryRows<GraphPointRow>(
-    conn,
-    `SELECT
-      index AS point_index,
-      id,
-      id AS node_id,
-      nodeKind AS node_kind,
-      nodeRole AS node_role,
-      paperId AS paper_id,
-      x,
-      y,
-      clusterId AS cluster_id,
-      clusterLabel AS cluster_label,
-      clusterProbability AS cluster_probability,
-      citekey,
-      paperTitle AS title,
-      journal,
-      year,
-      doi,
-      pmid,
-      pmcid,
-      NULL::VARCHAR AS stable_chunk_id,
-      NULL::INTEGER AS chunk_index,
-      NULL::VARCHAR AS section_canonical,
-      NULL::INTEGER AS page_number,
-      NULL::INTEGER AS token_count,
-      NULL::INTEGER AS char_count,
-      NULL::VARCHAR AS chunk_kind,
-      NULL::VARCHAR AS chunk_preview,
-      displayLabel AS display_label,
-      searchText AS search_text,
-      NULL::VARCHAR AS canonical_name,
-      NULL::VARCHAR AS category,
-      NULL::VARCHAR AS definition,
-      NULL::VARCHAR AS semantic_types_csv,
-      semanticGroups AS semantic_groups_csv,
-      organSystems AS organ_systems_csv,
-      topEntities AS top_entities_csv,
-      relationCategories AS relation_categories_csv,
-      NULL::REAL AS mention_count,
-      NULL::REAL AS paper_count,
-      NULL::REAL AS chunk_count,
-      paperRelationCount AS relation_count,
-      NULL::REAL AS alias_count,
-      NULL::VARCHAR AS relation_type,
-      NULL::VARCHAR AS relation_category,
-      NULL::VARCHAR AS relation_direction,
-      NULL::VARCHAR AS relation_certainty,
-      NULL::VARCHAR AS assertion_status,
-      NULL::VARCHAR AS evidence_status,
-      NULL::VARCHAR AS alias_text,
-      NULL::VARCHAR AS alias_type,
-      NULL::REAL AS alias_quality_score,
-      NULL::VARCHAR AS alias_source,
-      isInBase AS is_in_base,
-      baseRank AS base_rank,
-      NULL::VARCHAR AS payload_json,
-      textAvailability AS text_availability,
-      isOpenAccess AS is_open_access,
-      hasOpenAccessPdf AS has_open_access_pdf,
-      paperAuthorCount AS paper_author_count,
-      paperReferenceCount AS paper_reference_count,
-      paperAssetCount AS paper_asset_count,
-      NULL::INTEGER AS paper_chunk_count,
-      paperEntityCount AS paper_entity_count,
-      paperRelationCount AS paper_relation_count,
-      NULL::INTEGER AS paper_sentence_count,
-      NULL::INTEGER AS paper_page_count,
-      NULL::INTEGER AS paper_table_count,
-      NULL::INTEGER AS paper_figure_count,
-      paperClusterIndex AS paper_cluster_index,
-      false AS has_table_context,
-      false AS has_figure_context
-    FROM active_points_web
-    WHERE ${id != null ? 'id = ?' : 'index = ?'}
-    LIMIT 1`,
-    [id ?? index ?? null]
-  )
-
-  return rows[0] ? buildGraphNode(rows[0]) : null
+export interface GraphPointSelectionRow {
+  index: number
+  id: string
+  paperId: string | null
+  nodeRole: 'primary' | 'overlay' | null
+  color: string
+  colorLight: string
+  x: number
+  y: number
+  clusterId: number | null
+  clusterLabel: string | null
+  clusterProbability: number | null
+  displayLabel: string | null
+  paperTitle: string | null
+  citekey: string | null
+  journal: string | null
+  year: number | null
+  semanticGroups: string | null
+  organSystems: string | null
+  relationCategories: string | null
+  textAvailability: string | null
+  paperAuthorCount: number | null
+  paperReferenceCount: number | null
+  paperEntityCount: number | null
+  paperRelationCount: number | null
+  isInBase: boolean | null
+  baseRank: number | null
+  isOverlayActive: boolean | null
 }
 
-export async function queryPaperPointSelection(
-  conn: AsyncDuckDBConnection,
-  selector: { id?: string; index?: number }
-): Promise<GraphNode | null> {
-  const { id, index } = selector
-  if (id == null && index == null) {
-    return null
+export function mapGraphPointRow(row: GraphPointSelectionRow): GraphPointRecord {
+  return {
+    index: row.index,
+    id: row.id,
+    paperId: row.paperId,
+    nodeKind: 'paper',
+    nodeRole: row.nodeRole ?? 'primary',
+    color: row.color,
+    colorLight: row.colorLight,
+    x: row.x,
+    y: row.y,
+    clusterId: row.clusterId ?? 0,
+    clusterLabel: row.clusterLabel,
+    clusterProbability: row.clusterProbability ?? 0,
+    displayLabel: row.displayLabel,
+    displayPreview: row.paperTitle ?? row.displayLabel,
+    paperTitle: row.paperTitle,
+    citekey: row.citekey,
+    journal: row.journal,
+    year: row.year,
+    semanticGroups: row.semanticGroups,
+    organSystems: row.organSystems,
+    relationCategories: row.relationCategories,
+    textAvailability: row.textAvailability,
+    paperAuthorCount: row.paperAuthorCount,
+    paperReferenceCount: row.paperReferenceCount,
+    paperEntityCount: row.paperEntityCount,
+    paperRelationCount: row.paperRelationCount,
+    isInBase: row.isInBase ?? false,
+    baseRank: row.baseRank,
+    isOverlayActive: row.isOverlayActive ?? false,
   }
-
-  const rows = await queryRows<GraphPointRow>(
-    conn,
-    `SELECT
-      index AS point_index,
-      id,
-      id AS node_id,
-      nodeKind AS node_kind,
-      nodeRole AS node_role,
-      paperId AS paper_id,
-      x,
-      y,
-      clusterId AS cluster_id,
-      clusterLabel AS cluster_label,
-      clusterProbability AS cluster_probability,
-      citekey,
-      paperTitle AS title,
-      journal,
-      year,
-      doi,
-      pmid,
-      pmcid,
-      NULL::VARCHAR AS stable_chunk_id,
-      NULL::INTEGER AS chunk_index,
-      NULL::VARCHAR AS section_canonical,
-      NULL::INTEGER AS page_number,
-      NULL::INTEGER AS token_count,
-      NULL::INTEGER AS char_count,
-      NULL::VARCHAR AS chunk_kind,
-      NULL::VARCHAR AS chunk_preview,
-      displayLabel AS display_label,
-      searchText AS search_text,
-      NULL::VARCHAR AS canonical_name,
-      NULL::VARCHAR AS category,
-      NULL::VARCHAR AS definition,
-      NULL::VARCHAR AS semantic_types_csv,
-      semanticGroups AS semantic_groups_csv,
-      organSystems AS organ_systems_csv,
-      topEntities AS top_entities_csv,
-      relationCategories AS relation_categories_csv,
-      NULL::REAL AS mention_count,
-      NULL::REAL AS paper_count,
-      NULL::REAL AS chunk_count,
-      paperRelationCount AS relation_count,
-      NULL::REAL AS alias_count,
-      NULL::VARCHAR AS relation_type,
-      NULL::VARCHAR AS relation_category,
-      NULL::VARCHAR AS relation_direction,
-      NULL::VARCHAR AS relation_certainty,
-      NULL::VARCHAR AS assertion_status,
-      NULL::VARCHAR AS evidence_status,
-      NULL::VARCHAR AS alias_text,
-      NULL::VARCHAR AS alias_type,
-      NULL::REAL AS alias_quality_score,
-      NULL::VARCHAR AS alias_source,
-      isInBase AS is_in_base,
-      baseRank AS base_rank,
-      NULL::VARCHAR AS payload_json,
-      textAvailability AS text_availability,
-      isOpenAccess AS is_open_access,
-      hasOpenAccessPdf AS has_open_access_pdf,
-      paperAuthorCount AS paper_author_count,
-      paperReferenceCount AS paper_reference_count,
-      paperAssetCount AS paper_asset_count,
-      NULL::INTEGER AS paper_chunk_count,
-      paperEntityCount AS paper_entity_count,
-      paperRelationCount AS paper_relation_count,
-      NULL::INTEGER AS paper_sentence_count,
-      NULL::INTEGER AS paper_page_count,
-      NULL::INTEGER AS paper_table_count,
-      NULL::INTEGER AS paper_figure_count,
-      paperClusterIndex AS paper_cluster_index,
-      false AS has_table_context,
-      false AS has_figure_context
-    FROM active_paper_points_web
-    WHERE ${id != null ? 'id = ?' : 'index = ?'}
-    LIMIT 1`,
-    [id ?? index ?? null]
-  )
-
-  return rows[0] ? buildPaperNodes(rows)[0] ?? null : null
 }
 
-export async function queryGeoPointSelection(
+export async function queryCorpusPointSelection(
   conn: AsyncDuckDBConnection,
   selector: { id?: string; index?: number }
-): Promise<GraphNode | null> {
+): Promise<GraphPointRecord | null> {
   const { id, index } = selector
   if (id == null && index == null) {
     return null
   }
 
-  const rows = await queryRows<GeoPointRow>(
+  const rows = await queryRows<GraphPointSelectionRow>(
     conn,
     `SELECT
-      index AS point_index,
+      index,
       id,
-      id AS node_id,
+      paperId,
+      nodeRole,
+      hexColor AS color,
+      hexColorLight AS colorLight,
       x,
       y,
-      clusterId AS cluster_id,
-      clusterLabel AS cluster_label,
-      hexColor AS color_hex,
-      sizeValue AS size_value,
-      institution,
-      rorId AS ror_id,
-      city,
-      region,
-      country,
-      countryCode AS country_code,
-      paperCount AS paper_count,
-      authorCount AS author_count,
-      firstYear AS first_year,
-      lastYear AS last_year
-    FROM geo_points_web
+      clusterId,
+      clusterLabel,
+      clusterProbability,
+      displayLabel,
+      paperTitle,
+      citekey,
+      journal,
+      year,
+      semanticGroups,
+      organSystems,
+      relationCategories,
+      textAvailability,
+      paperAuthorCount,
+      paperReferenceCount,
+      paperEntityCount,
+      paperRelationCount,
+      isInBase,
+      baseRank,
+      CASE
+        WHEN COALESCE(nodeRole, 'primary') = 'overlay' THEN true
+        ELSE false
+      END AS isOverlayActive
+    FROM current_points_web
     WHERE ${id != null ? 'id = ?' : 'index = ?'}
     LIMIT 1`,
     [id ?? index ?? null]
   )
 
-  return rows[0] ? buildGeoNodes(rows)[0] ?? null : null
+  return rows[0] ? mapGraphPointRow(rows[0]) : null
 }

@@ -1,42 +1,22 @@
-import { getLayerConfig } from './layers'
 import type { MapLayer } from '@/features/graph/types'
 
-interface PointIncludeColumnsArgs {
+interface PointIncludeColumnArgs {
   layer: MapLayer
   activePanel: string | null
   showTimeline: boolean
-  filterColumns: ReadonlyArray<{ column: string }>
-  timelineColumn?: string | null
+  filterColumns: Array<{ column: string; type: 'categorical' | 'numeric' }>
+  timelineColumn: string | null
+  pointColorColumn: string
+  pointSizeColumn: string
+  pointLabelColumn: string
+  positionXColumn: string
+  positionYColumn: string
 }
 
-/**
- * Keep Cosmograph's materialized point rows limited to the fields that its
- * mounted widgets actually query. This avoids SELECT * over wide bundle views
- * and keeps heavy text fields out of the initial Arrow table.
- */
-export function getPointIncludeColumns({
-  layer,
-  activePanel,
-  showTimeline,
-  filterColumns,
-  timelineColumn,
-}: PointIncludeColumnsArgs): string[] {
-  const layerConfig = getLayerConfig(layer)
-  if (layerConfig.rendererType !== 'cosmograph') {
-    return []
-  }
+const EMPTY_POINT_INCLUDE_COLUMNS: string[] = []
 
-  const columns = new Set<string>()
-
-  if (activePanel === 'filters') {
-    for (const filter of filterColumns) {
-      columns.add(filter.column)
-    }
-  }
-
-  if (showTimeline && timelineColumn) {
-    columns.add(timelineColumn)
-  }
-
-  return [...columns]
+export function getPointIncludeColumns(_args: PointIncludeColumnArgs): string[] {
+  // Keep Cosmograph on the dense render path only. Rich metadata stays DuckDB-native
+  // on the query views and heavy detail comes from the backend/API.
+  return EMPTY_POINT_INCLUDE_COLUMNS
 }

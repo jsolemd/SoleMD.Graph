@@ -11,11 +11,38 @@ living graph. The runtime contract is:
 - `base_points` is the always-loaded scaffold
 - `universe_points` is the mapped remainder available for later promotion
 - `overlay_points` is the promoted subset currently active in the canvas
+- `base_points` carries the exported dense `point_index` used for first paint
 - `active_points` is the dense browser-facing union of base plus overlay
 - `evidence_api` serves heavy retrieval and rich payloads
 
-There is no compatibility layer here. Old visibility-era names are intentionally
+There is no compatibility layer here. Old pre-base terminology is intentionally
 absent.
+
+Browser runtime notes:
+
+- browser DuckDB is an ephemeral analytical session over canonical Parquet bundle tables
+- the runtime does not persist a browser-local DuckDB catalog file; base, universe, and evidence remain bundle/API artifacts
+- startup autoload is explicitly `base` only; universe and evidence artifacts stay detached until a feature asks for them
+- `base_points_canvas_web` and `universe_points_canvas_web` are projection views over Parquet, not eager browser-local copies
+- `selected_point_indices`, `overlay_point_ids_by_producer`, and `overlay_point_ids`
+  are the only mutable browser-local graph state
+- `*_canvas_web` views are the Cosmograph-facing active point tables; they stay
+  limited to render fields plus the metadata needed by mounted native widgets
+- narrow point parquet fields are limited to ids, coordinates, cluster/color
+  columns, `display_label`, compact bibliographic metadata, compact summary
+  metrics, `text_availability`, `semantic_groups_csv`, `organ_systems_csv`,
+  `relation_categories_csv`, `is_in_base`, and `base_rank`
+- `current_points_canvas_web` / `current_points_web` / `current_paper_points_web`
+  are the canonical browser-facing active aliases for summaries, search,
+  selection resolution, and table pages; they point at base directly until
+  overlay activation requires the active union
+- `base_points_web` and `base_points_canvas_web` must reuse the exported `point_index`
+  directly instead of recomputing dense indices with runtime window functions
+- when no overlay is active, the active aliases point directly at
+  `base_points_canvas_web` and `base_paper_points_canvas_web`, so startup does
+  not pay for an unnecessary active-union reindex
+- when overlay is active, `active_points_canvas_web` appends only the promoted overlay rows
+  after the base index range; the full base scaffold is not recopied into a local temp table
 
 ---
 
@@ -33,7 +60,7 @@ overlay promotion.
 | pmid | INTEGER UNIQUE | PubMed id, link to PubTator3 |
 | doi | TEXT | External linking |
 | pmc_id | TEXT | PubMed Central cross-reference |
-| admission_reason | TEXT NOT NULL | Why the paper entered the corpus; e.g. direct evidence or curated base family |
+| admission_reason | TEXT NOT NULL | Why the paper entered the corpus; e.g. `journal_and_vocab`, `vocab_entity_match`, or other corpus-admission paths |
 | is_in_current_map | BOOLEAN NOT NULL DEFAULT false | True once the paper is present in the current published graph run |
 | is_in_current_base | BOOLEAN NOT NULL DEFAULT false | True once the paper is admitted into the current published `base_points` scaffold |
 | mapped_at | TIMESTAMPTZ | When the current run first mapped the paper |
@@ -82,22 +109,21 @@ which rule sets are active when a new graph run is built.
 |--------|------|-------|
 | policy_version | TEXT PK | Human-readable version string |
 | description | TEXT | Summary of the active base admission policy |
-| target_base_count | INTEGER NOT NULL DEFAULT `1160000` | Desired first-paint size |
+| target_base_count | INTEGER NOT NULL DEFAULT `1000000` | Desired first-paint size |
 | is_active | BOOLEAN NOT NULL DEFAULT false | At most one active row |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
 
 ### `solemd.base_journal_family`
 
-Curated family definitions for journals that belong in the base scaffold by
-default.
+Curated family definitions for journals used by base admission and audit.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | family_key | TEXT PK | Stable family identifier |
 | family_label | TEXT NOT NULL | Human-readable family name |
 | family_type | TEXT NOT NULL | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, or `specialty` |
-| include_in_base | BOOLEAN NOT NULL DEFAULT true | Whether the family admits papers into `base_points` |
+| include_in_base | BOOLEAN NOT NULL DEFAULT true | Whether the family remains available to the active base policy |
 | description | TEXT | Human-readable rationale |
 | added_at | TIMESTAMPTZ | |
 
@@ -116,8 +142,8 @@ more base journal families.
 
 ### `solemd.entity_rule`
 
-Entity-driven base admission rules. These are direct evidence rules, not
-visibility lanes.
+Entity-driven base admission rules. These are rule-backed domain anchors, not
+runtime visibility concepts.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -165,8 +191,8 @@ materialized-view compatibility layer.
 | has_entity_rule_hit | BOOLEAN NOT NULL DEFAULT false | Whether any entity_rule hit survived citation gating |
 | paper_relation_count | INTEGER NOT NULL DEFAULT 0 | Total PubTator relation rows matched to the paper |
 | has_relation_rule_hit | BOOLEAN NOT NULL DEFAULT false | Whether any relation_rule hit survived citation gating |
-| is_direct_evidence | BOOLEAN NOT NULL DEFAULT false | Direct evidence surface used by base admission |
-| is_journal_base | BOOLEAN NOT NULL DEFAULT false | Whether the paper also matches a curated base journal family |
+| has_rule_evidence | BOOLEAN NOT NULL DEFAULT false | Whether the paper has curated rule support through entity_rule or relation_rule |
+| has_curated_journal_family | BOOLEAN NOT NULL DEFAULT false | Whether the paper also matches a curated journal family |
 | journal_family_key | TEXT | Matched base journal family, if any |
 | journal_family_label | TEXT | Human-readable base journal family label |
 | journal_family_type | TEXT | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, or `specialty` |
@@ -206,6 +232,65 @@ Published graph runs and bundle metadata.
 `graph_runs.qa_summary` is also used during active builds to expose the current
 build stage and checkpoint directory before the final publish summary replaces
 that interim payload.
+
+### Browser DuckDB Runtime (local, not graph-db)
+
+The browser-side `overlay_points`, `active_points`, and active-link tables are
+DuckDB-local derived views, not PostgreSQL tables. The canonical local shape is:
+
+- `base_points_web` / `base_points_canvas_web`
+- `universe_points_web` / `universe_points_canvas_web`
+- `selected_point_indices`
+- `overlay_point_ids_by_producer`
+- `overlay_point_ids`
+- `overlay_points_web` / `overlay_points_canvas_web`
+- `active_point_index_lookup_web`
+- `current_points_web` / `current_points_canvas_web`
+- `current_paper_points_web`
+- `active_points_web` / `active_points_canvas_web`
+- `active_paper_points_web` / `active_paper_points_canvas_web`
+- `base_links_web`
+- `current_links_web`
+- `active_links_web` / `active_paper_links_web`
+
+Design rule:
+
+- canvas views stay narrow and carry only the preindexed render columns Cosmograph needs directly
+- query views stay richer and serve search, info-panel aggregation, and the data table without widening the canvas path
+- base and universe stay Parquet-backed; they are not copied into browser-local temp point tables at startup
+- selection state is SQL-native: Cosmograph intent clauses materialize into
+  `selected_point_indices` inside DuckDB instead of reinserting large JS-owned
+  index lists
+- React only mirrors scalar selection/scope state for UI invalidation:
+  `selectedPointCount`, `selectedPointRevision`, `currentPointScopeSql`, and
+  `currentScopeRevision`. Full selected-id membership stays inside DuckDB
+- overlay state is id-only: `overlay_point_ids_by_producer` and
+  `overlay_point_ids` are the only mutable local membership tables
+- `overlay_points_web` / `overlay_points_canvas_web` resolve promoted rows from
+  `universe_points`, rather than copying rich overlay rows into a second local
+  point table
+- metadata views can stay richer because they are queried on demand
+- point clicks resolve a narrow paper shell first; fuller document preview and evidence stay lazy behind follow-up DuckDB/API calls
+- universe artifacts remain detached until overlay activation needs them
+- full-base runtime reindexing is forbidden; only overlay rows may be renumbered
+  after the fixed base index range so Cosmograph keeps a dense active canvas
+- first-paint boot should never require the browser to materialize detail-only
+  columns such as `search_text`, `payload_json`, DOI/PMID/PMCID, open-access
+  flags, asset counts, or cold evidence payloads
+- `paper_documents` and `cluster_exemplars` are lazy local detail attachments, not first-paint dependencies
+- `cluster_exemplars` carries paper-level exemplar previews for cluster context;
+  it is not a chunk-mode graph surface
+- info-panel scope changes should batch widget aggregation by kind and reuse one
+  categorical summary result for both facet and bar widgets instead of scanning
+  the same scope twice
+- dataset categorical totals should be cached per overlay revision and merged
+  with fresh scoped counts instead of rescanning the full dataset on every
+  filter change
+- table pagination should use a count query plus a paged row query rather than a
+  wide `count(*) OVER ()` materialization on the full point projection
+- the canonical runtime is corpus-only; future graph layers must attach as
+  optional modules with their own DuckDB views/tables instead of branching
+  through the base corpus schema
 
 ### Graph Build Checkpoints (filesystem)
 
@@ -289,19 +374,19 @@ paper did or did not enter the base scaffold.
 |--------|------|-------|
 | graph_run_id | UUID FK→graph_runs | |
 | corpus_id | BIGINT FK→corpus | |
-| admission_reason | TEXT | Direct evidence or curated family reason |
+| admission_reason | TEXT | Corpus admission reason |
 | has_vocab_match | BOOLEAN | Whether corpus admission came through vocab-bearing gates |
 | citation_count | INTEGER | |
 | paper_entity_count | INTEGER | |
 | paper_relation_count | INTEGER | |
 | has_entity_rule_hit | BOOLEAN | |
 | has_relation_rule_hit | BOOLEAN | |
-| is_direct_evidence | BOOLEAN | Direct evidence admission surface after rule and vocab evaluation |
-| is_journal_base | BOOLEAN | Whether the paper also matches a curated base journal family |
+| has_rule_evidence | BOOLEAN | Whether the paper has curated rule support |
+| has_curated_journal_family | BOOLEAN | Whether the paper also matches a curated journal family |
 | journal_family_key | TEXT | Family key that triggered journal-side base admission, if any |
 | journal_family_label | TEXT | Human-readable journal family label |
 | journal_family_type | TEXT | Journal family type used for ranking/audit |
-| base_source | TEXT | `hidden`, `direct`, `journal`, or `direct+journal` |
+| base_reason | TEXT | `rule`, `flagship`, `vocab`, or `NULL` when the paper remains universe-only |
 | created_at | TIMESTAMPTZ | |
 
 ### `solemd.mapped_papers` view
@@ -350,8 +435,8 @@ once per graph publish.
 
 This summary should hold the expensive admission inputs:
 
-- direct entity-rule hits
-- direct relation-rule hits
+- entity-rule hits
+- relation-rule hits
 - family keys matched by journal curation
 - citation and metadata thresholds
 - per-paper evidence counts used by base admission
@@ -523,7 +608,7 @@ PubTator3 relations filtered to corpus PMIDs.
 1. `graph_points` carries the render decision through `is_in_base` and `base_rank`.
 2. `graph_clusters` stays geometric and descriptive; it does not decide first paint.
 3. `base_journal_family` and `journal_rule` define curated journal admission.
-4. `entity_rule` and `relation_rule` define direct evidence admission.
+4. `entity_rule` and `relation_rule` define rule-backed base admission.
 5. `mapped_papers` is a read model, not the source of truth.
 6. `pubtator.*` is the evidence substrate, not the graph-admission policy.
-7. There is no legacy lane policy in this schema.
+7. There is no legacy multi-tier policy in this schema.

@@ -1,30 +1,29 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type { MapLayer, OverlayActivationRequest, OverlayActivationResult } from '@/features/graph/types'
+import type { OverlayProducerId } from '@/features/graph/types'
 
-import { queryRows } from './queries'
-import { buildIndexWhereClause, getLayerTableName } from './sql-helpers'
+import { escapeSqlString, queryRows } from './queries'
+import { buildSelectedViewPredicate, getLayerTableName } from './sql-helpers'
 
-export function getOverlayUniversePredicate(layer: Exclude<MapLayer, 'geo'>, alias = 'u'): string {
-  if (layer === 'paper') {
-    return `${alias}.nodeKind = 'paper'`
-  }
+export interface OverlayActivationWriteResult
+  extends Omit<OverlayActivationResult, 'overlayCount'> {
+  applied: boolean
+}
 
-  return `COALESCE(${alias}.nodeKind, 'chunk') <> 'paper'`
+export function getOverlayUniversePredicate(layer: MapLayer, alias = 'u'): string {
+  void layer
+  void alias
+  return 'TRUE'
 }
 
 export function buildOverlayActivationFocusPredicate(args: OverlayActivationRequest): string | null {
   if (args.scope === 'selected') {
-    const selected = args.selectedPointIndices ?? []
-    return selected.length > 0 ? buildIndexWhereClause(selected) : null
+    return buildSelectedViewPredicate()
   }
 
   if (args.currentPointScopeSql && args.currentPointScopeSql.trim().length > 0) {
     return args.currentPointScopeSql
-  }
-
-  if (args.currentPointIndices && args.currentPointIndices.length > 0) {
-    return buildIndexWhereClause(args.currentPointIndices)
   }
 
   return null
@@ -32,19 +31,16 @@ export function buildOverlayActivationFocusPredicate(args: OverlayActivationRequ
 
 export async function activateOverlayByClusterNeighborhood(
   conn: AsyncDuckDBConnection,
-  args: OverlayActivationRequest
-): Promise<OverlayActivationResult> {
+  args: OverlayActivationRequest,
+  producerId: OverlayProducerId
+): Promise<OverlayActivationWriteResult> {
   const focusPredicate = buildOverlayActivationFocusPredicate(args)
   if (!focusPredicate) {
-    const rows = await queryRows<{ count: number }>(
-      conn,
-      `SELECT count(*)::INTEGER AS count FROM overlay_points_web`
-    )
     return {
+      applied: false,
       kind: args.kind,
       layer: args.layer,
       scope: args.scope,
-      overlayCount: rows[0]?.count ?? 0,
       addedCount: 0,
       seedCount: 0,
       clusterCount: 0,
@@ -56,6 +52,7 @@ export async function activateOverlayByClusterNeighborhood(
   const maxClusters = Math.max(1, Math.floor(args.maxClusters ?? 16))
   const perClusterLimit = Math.max(1, Math.floor(args.perClusterLimit ?? 250))
   const universePredicate = getOverlayUniversePredicate(args.layer)
+  const escapedProducerId = escapeSqlString(producerId)
 
   const candidateCteSql = `
     WITH focus AS (
@@ -107,7 +104,7 @@ export async function activateOverlayByClusterNeighborhood(
       FROM universe_points_web u
       JOIN limited_clusters lc
         ON lc.clusterId = u.clusterId
-      LEFT JOIN active_points_web active
+      LEFT JOIN current_points_web active
         ON active.id = u.id
       WHERE lc.clusterRank <= ${maxClusters}
         AND active.id IS NULL
@@ -144,27 +141,28 @@ export async function activateOverlayByClusterNeighborhood(
 
   const summary = summaryRows[0] ?? { seedCount: 0, clusterCount: 0, candidateCount: 0 }
 
-  await conn.query(`DELETE FROM overlay_point_ids`)
+  await conn.query(
+    `DELETE FROM overlay_point_ids_by_producer
+     WHERE producer_id = '${escapedProducerId}'`
+  )
+
   if (summary.candidateCount > 0) {
     await conn.query(
       `${candidateCteSql}
-       INSERT INTO overlay_point_ids
-       SELECT id
+       INSERT INTO overlay_point_ids_by_producer
+       SELECT
+         '${escapedProducerId}' AS producer_id,
+         id
        FROM limited_candidates
        WHERE globalRank <= ${maxPoints}`
     )
   }
 
-  const overlayRows = await queryRows<{ count: number }>(
-    conn,
-    `SELECT count(*)::INTEGER AS count FROM overlay_points_web`
-  )
-
   return {
+    applied: true,
     kind: args.kind,
     layer: args.layer,
     scope: args.scope,
-    overlayCount: overlayRows[0]?.count ?? 0,
     addedCount: summary.candidateCount,
     seedCount: summary.seedCount,
     clusterCount: summary.clusterCount,

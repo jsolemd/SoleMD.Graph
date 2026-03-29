@@ -7,30 +7,31 @@ import {
   getGraphRagQuery,
 } from '@/app/actions/graph'
 
-import type { GraphBundle, GraphNode } from '@/features/graph/types'
+import type { GraphBundle, GraphPointRecord } from '@/features/graph/types'
 import type {
   GraphAssetUrlResponsePayload,
   GraphDetailAsset,
   GraphNeighborhoodResponsePayload,
   GraphNodeDetailResponsePayload,
+  GraphRagErrorResponsePayload,
   GraphRagQueryResponsePayload,
 } from '@/features/graph/types/detail-service'
 
 interface FetchGraphNodeDetailArgs {
   bundle: GraphBundle
-  node: GraphNode
+  node: GraphPointRecord
 }
 
 interface RefreshGraphAssetUrlArgs {
   bundle: GraphBundle
-  node: GraphNode
+  node: GraphPointRecord
   asset: GraphDetailAsset
   expiresInSeconds?: number
 }
 
 interface FetchGraphNeighborhoodArgs {
   bundle: GraphBundle
-  node: GraphNode
+  node: GraphPointRecord
   limit?: number
   includeIncoming?: boolean
   includeOutgoing?: boolean
@@ -39,7 +40,7 @@ interface FetchGraphNeighborhoodArgs {
 interface FetchGraphRagQueryArgs {
   bundle: GraphBundle
   query: string
-  selectedNode?: GraphNode | null
+  selectedNode?: GraphPointRecord | null
   selectedClusterId?: number | null
   evidenceIntent?: 'support' | 'refute' | 'both' | null
   k?: number
@@ -51,6 +52,16 @@ interface FetchGraphRagQueryArgs {
 interface CacheEntry {
   promise: Promise<GraphNodeDetailResponsePayload>
   timestamp: number
+}
+
+export class GraphRagRequestError extends Error {
+  readonly payload: GraphRagErrorResponsePayload
+
+  constructor(payload: GraphRagErrorResponsePayload) {
+    super(payload.error_message)
+    this.name = 'GraphRagRequestError'
+    this.payload = payload
+  }
 }
 
 const detailCache = new Map<string, CacheEntry>()
@@ -85,8 +96,8 @@ function getGraphReleaseId(bundle: GraphBundle) {
   return bundle.bundleChecksum || bundle.runId || 'current'
 }
 
-export function supportsRemoteGraphNodeDetail(node: GraphNode) {
-  return node.nodeKind === 'paper' || node.nodeKind === 'chunk'
+export function supportsRemoteGraphNodeDetail(_node: GraphPointRecord) {
+  return false
 }
 
 export async function fetchGraphNodeDetail({
@@ -94,7 +105,7 @@ export async function fetchGraphNodeDetail({
   node,
 }: FetchGraphNodeDetailArgs): Promise<GraphNodeDetailResponsePayload> {
   if (!supportsRemoteGraphNodeDetail(node)) {
-    throw new Error(`Remote graph detail is not supported for node kind "${node.nodeKind}"`)
+    throw new Error('Remote graph detail is not enabled for the corpus runtime')
   }
   const cacheKey = `${getGraphReleaseId(bundle)}:${node.nodeKind}:${node.id}`
   const cached = cacheGet(cacheKey)
@@ -123,7 +134,7 @@ export async function refreshGraphAssetUrl({
   expiresInSeconds,
 }: RefreshGraphAssetUrlArgs): Promise<GraphAssetUrlResponsePayload> {
   if (!supportsRemoteGraphNodeDetail(node)) {
-    throw new Error(`Remote graph asset URLs are not supported for node kind "${node.nodeKind}"`)
+    throw new Error('Remote graph asset URLs are not enabled for the corpus runtime')
   }
 
   return getGraphAssetUrl({
@@ -145,7 +156,7 @@ export async function fetchGraphNeighborhood({
   includeOutgoing,
 }: FetchGraphNeighborhoodArgs): Promise<GraphNeighborhoodResponsePayload> {
   if (!supportsRemoteGraphNodeDetail(node)) {
-    throw new Error(`Remote graph neighborhoods are not supported for node kind "${node.nodeKind}"`)
+    throw new Error('Remote graph neighborhoods are not enabled for the corpus runtime')
   }
 
   return getGraphNeighborhood({
@@ -169,15 +180,10 @@ export async function fetchGraphRagQuery({
   useLexical,
   generateAnswer,
 }: FetchGraphRagQueryArgs): Promise<GraphRagQueryResponsePayload> {
-  return getGraphRagQuery({
+  const result = await getGraphRagQuery({
     graph_release_id: getGraphReleaseId(bundle),
     query,
-    selected_layer_key:
-      selectedNode?.nodeKind === 'paper'
-        ? 'paper'
-        : selectedNode?.nodeKind === 'chunk'
-          ? 'chunk'
-          : null,
+    selected_layer_key: selectedNode ? 'paper' : null,
     selected_node_id: selectedNode?.id ?? null,
     selected_paper_id: selectedNode?.paperId ?? selectedNode?.id ?? null,
     selected_cluster_id: selectedClusterId ?? null,
@@ -187,4 +193,10 @@ export async function fetchGraphRagQuery({
     use_lexical: useLexical,
     generate_answer: generateAnswer,
   })
+
+  if (!result.ok) {
+    throw new GraphRagRequestError(result.error)
+  }
+
+  return result.data
 }

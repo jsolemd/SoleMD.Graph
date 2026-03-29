@@ -15,8 +15,8 @@ export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
   // categorical identifiers, not numeric measures or long-form content.
   const LABEL_COLUMN_KEYS = new Set([
     'displayLabel', 'clusterLabel', 'paperTitle', 'citekey', 'journal',
-    'category', 'canonicalName', 'topEntities', 'id',
-    // Geo layer
+    'category', 'canonicalName', 'id',
+    // Harmless legacy extras if future modular layers add label-safe columns.
     'institution', 'country', 'city',
   ]);
   const labelColumnOptions = useMemo(

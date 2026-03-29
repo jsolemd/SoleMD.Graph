@@ -70,7 +70,16 @@ export function PromptBox({
   const isCollapsed = promptMinimized;
   const activePromptValue = isCreate ? writeContent : promptValue;
 
-  const { ragResponse, ragError, isSubmitting, handleSubmit, clearRag } = useRagQuery({
+  const {
+    ragResponse,
+    streamedAskAnswer,
+    ragError,
+    ragSession,
+    isSubmitting,
+    handleSubmit,
+    runEvidenceAssistQuery,
+    clearRag,
+  } = useRagQuery({
     bundle,
     queries,
     isAsk,
@@ -128,7 +137,7 @@ export function PromptBox({
     heightAnimatingRef.current = false;
     setPromptMaximized(false);
     setPromptMinimized(getModeConfig(newMode).layout.promptCollapsed);
-    clearRag(newMode === "ask");
+    clearRag();
     // Sync hasInput to the destination mode's content
     if (newMode === "create") {
       setHasInput(writeContent.length > 0);
@@ -258,6 +267,35 @@ export function PromptBox({
               }
             : {})}
         >
+          {!isCollapsed && (ragResponse || ragError || isSubmitting) && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                position: "absolute",
+                bottom: "calc(100% + 12px)",
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: `min(${isCreate ? 520 : 460}px, calc(100vw - 32px))`,
+                maxWidth: "100%",
+                zIndex: 2,
+                pointerEvents: "auto",
+              }}
+            >
+              <RagResponsePanel
+                ragResponse={ragResponse}
+                streamedAnswer={streamedAskAnswer}
+                ragError={ragError}
+                ragSession={ragSession}
+                isSubmitting={isSubmitting}
+                isFullHeightMode={isFullHeightMode}
+                selectedNode={selectedNode}
+                selectedScopeLabel={selectedScopeLabel}
+                onDismiss={() => clearRag()}
+              />
+            </div>
+          )}
+
           {/* Textarea — CSS grid row transition for smooth height animation */}
           <div
             onPointerDown={(e) => e.stopPropagation()}
@@ -286,6 +324,7 @@ export function PromptBox({
                 }}
                 onEmptyChange={(empty) => setHasInput(!empty)}
                 onSubmit={isAsk ? handleSubmit : undefined}
+                onEvidenceAssistIntent={isCreate ? runEvidenceAssistQuery : undefined}
                 ariaLabel={`${activeMode.label} prompt`}
                 debounceMs={isCreate ? 300 : 0}
                 compact={!isFullHeightMode}
@@ -382,17 +421,6 @@ export function PromptBox({
                 </div>
               )}
           </div>
-
-          {!isCollapsed && isAsk && (ragResponse || ragError || isSubmitting) && (
-            <RagResponsePanel
-              ragResponse={ragResponse}
-              ragError={ragError}
-              isSubmitting={isSubmitting}
-              isFullHeightMode={isFullHeightMode}
-              selectedNode={selectedNode}
-              selectedScopeLabel={selectedScopeLabel}
-            />
-          )}
 
           {/* Drag grip / recenter — always visible, widens when offset */}
           <div

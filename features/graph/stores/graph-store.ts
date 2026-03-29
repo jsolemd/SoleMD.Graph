@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import type { GraphMode, GraphNode } from '@/features/graph/types'
+import type { GraphMode, GraphPointRecord } from '@/features/graph/types'
 
 interface GraphUIStore {
-  selectedNode: GraphNode | null
+  selectedNode: GraphPointRecord | null
   mode: GraphMode
-  selectNode: (node: GraphNode | null) => void
+  selectNode: (node: GraphPointRecord | null) => void
   setMode: (mode: GraphMode) => void
 }
 

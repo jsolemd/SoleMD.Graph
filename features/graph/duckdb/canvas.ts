@@ -10,33 +10,48 @@ const ACTIVE_CANVAS_VIEW_SLOTS = ['a', 'b'] as const
 export function getActiveCanvasViewNames(overlayRevision: number) {
   const slot = ACTIVE_CANVAS_VIEW_SLOTS[overlayRevision % ACTIVE_CANVAS_VIEW_SLOTS.length]
   return {
-    chunkPoints: `active_points_${slot}_web`,
-    chunkLinks: `active_links_${slot}_web`,
-    paperPoints: `active_paper_points_${slot}_web`,
-    paperLinks: `active_paper_links_${slot}_web`,
+    corpusPoints: `active_points_${slot}_web`,
+    corpusLinks: `active_links_${slot}_web`,
   }
 }
 
 export async function registerActiveCanvasAliasViews(
   conn: AsyncDuckDBConnection,
-  overlayRevision: number
+  args: {
+    overlayRevision: number
+    overlayCount: number
+  }
 ) {
+  const { overlayRevision, overlayCount } = args
   const viewNames = getActiveCanvasViewNames(overlayRevision)
+  const hasOverlay = overlayCount > 0
   await conn.query(
-    `CREATE OR REPLACE VIEW ${viewNames.chunkPoints} AS
-     SELECT * FROM active_points_web`
+    `CREATE OR REPLACE VIEW ${viewNames.corpusPoints} AS
+     SELECT * FROM ${hasOverlay ? 'active_points_canvas_web' : 'base_points_canvas_web'}`
   )
   await conn.query(
-    `CREATE OR REPLACE VIEW ${viewNames.chunkLinks} AS
-     SELECT * FROM active_links_web`
+    `CREATE OR REPLACE VIEW ${viewNames.corpusLinks} AS
+     SELECT * FROM ${hasOverlay ? 'active_links_web' : 'base_links_web'}`
   )
   await conn.query(
-    `CREATE OR REPLACE VIEW ${viewNames.paperPoints} AS
-     SELECT * FROM active_paper_points_web`
+    `CREATE OR REPLACE VIEW current_points_canvas_web AS
+     SELECT * FROM ${viewNames.corpusPoints}`
   )
   await conn.query(
-    `CREATE OR REPLACE VIEW ${viewNames.paperLinks} AS
-     SELECT * FROM active_paper_links_web`
+    `CREATE OR REPLACE VIEW current_points_web AS
+     SELECT * FROM ${hasOverlay ? 'active_points_web' : 'base_points_web'}`
+  )
+  await conn.query(
+    `CREATE OR REPLACE VIEW current_paper_points_web AS
+     SELECT
+       index,
+       current_points_web.* EXCLUDE (index),
+       index AS paperIndex
+     FROM current_points_web`
+  )
+  await conn.query(
+    `CREATE OR REPLACE VIEW current_links_web AS
+     SELECT * FROM ${viewNames.corpusLinks}`
   )
 }
 
@@ -55,17 +70,9 @@ export function buildCanvasSource(args: {
       connection: conn,
     },
     layerTables: {
-      chunk: {
-        points: viewNames.chunkPoints,
-        links: viewNames.chunkLinks,
-      },
-      paper: {
-        points: viewNames.paperPoints,
-        links: viewNames.paperLinks,
-      },
-      geo: {
-        points: 'geo_points_web',
-        links: 'geo_links_web',
+      corpus: {
+        points: viewNames.corpusPoints,
+        links: viewNames.corpusLinks,
       },
     },
     pointCounts,
@@ -75,22 +82,20 @@ export function buildCanvasSource(args: {
 }
 
 export async function queryCanvasPointCounts(
-  conn: AsyncDuckDBConnection,
-  geoPointCount: number
+  conn: AsyncDuckDBConnection
 ): Promise<Record<MapLayer, number>> {
   const rows = await queryRows<{
-    chunkCount: number
-    paperCount: number
+    corpusCount: number
   }>(
     conn,
     `SELECT
-       (SELECT count(*)::INTEGER FROM active_points_web) AS chunkCount,
-       (SELECT count(*)::INTEGER FROM active_paper_points_web) AS paperCount`
+       (
+         (SELECT count(*)::INTEGER FROM base_points_canvas_web) +
+         (SELECT count(*)::INTEGER FROM overlay_points_canvas_web)
+       ) AS corpusCount`
   )
 
   return {
-    chunk: rows[0]?.chunkCount ?? 0,
-    paper: rows[0]?.paperCount ?? 0,
-    geo: geoPointCount,
+    corpus: rows[0]?.corpusCount ?? 0,
   }
 }

@@ -50,9 +50,13 @@ Current implementation tracker for the first evidence vertical slice:
 - [x] Next.js engine adapter landed
 - [x] Ask -> evidence -> graph-lighting baseline landed for already-active papers
 - [x] DuckDB universe point-id resolution helper landed for overlay promotion
-- [ ] Ask -> evidence -> overlay activation loop landed for non-active universe papers
-- [ ] answer surface finalized without obscuring the graph
-- [ ] `@`-triggered support/refute interaction finalized for composition mode
+- [x] Ask -> evidence -> overlay activation loop landed for non-active universe papers
+- [x] namespaced overlay ownership landed for concurrent overlay producers
+- [x] answer surface finalized without obscuring the graph
+- [x] `@`-triggered support/refute interaction finalized for composition mode
+- [x] shared engine-to-graph RAG adapter landed for server action and route reuse
+- [x] Ask-mode `Vercel AI SDK` streaming landed on top of the canonical evidence contract
+- [x] typed engine error envelope landed across server action and streaming route
 
 Implementation rule:
 
@@ -68,12 +72,44 @@ Current milestone note:
   immediate highlighting, then promote non-active evidence papers into the
   overlay/active canvas path through DuckDB instead of treating them as
   highlight-only misses
-- the DuckDB side now carries the universe point-id resolver needed for
-  evidence-driven overlay promotion; the remaining work is wiring that helper
-  into the Ask panel flow and active-canvas update path
-- the next milestone is not more retrieval depth first; it is standing up the
-  `Vercel AI SDK` response surface and the `@` support/refute interaction on
-  top of the same engine contract
+- the DuckDB side now carries both the universe point-id resolver and explicit
+  producer-owned overlay membership, so manual overlay expansion, Ask mode,
+  and future `@support` / `@refute` evidence overlays can coexist without
+  clobbering one another
+- overlay ownership is now a DuckDB session concern rather than a React ref
+  concern:
+  producer-backed memberships materialize into the existing overlay union table
+  so the active canvas and renderer stay unchanged while feature ownership
+  becomes explicit
+- the old prompt-level read/modify/write overlay reconcile path is gone:
+  Ask and compose flows now write only their own named overlay producer and
+  clear only that producer on replacement, failure, or reset
+- the prompt now uses a docked evidence tray above the composer instead of
+  expanding the prompt card downward, so answers and evidence stay visible while
+  the graph remains in view
+- create mode now has an `@`-triggered evidence assist command path that
+  extracts the current drafting context, sends explicit `support` / `refute` /
+  `both` intent through the existing evidence contract, and reuses the same
+  graph-lighting and overlay activation path as Ask mode
+- the Ask path now uses a dedicated `Vercel AI SDK` route handler that streams
+  assistant text to the docked response tray while still delivering the
+  canonical structured evidence payload as a typed data part; graph-lighting
+  and overlay activation continue to run from the same `GraphRagQueryResponsePayload`
+  contract instead of a parallel UI-only shape
+- the streaming route and one-shot server action path now share the same typed
+  engine error envelope, so rate limits, auth failures, and engine errors can
+  propagate through the frontend contract without ad hoc string handling
+- the one-shot detail-service path now throws a typed request error wrapper
+  instead of swallowing engine failures behind ad hoc casts, so both prompt
+  modes can react to structured backend failures consistently
+- compose-mode evidence assist intentionally stays on the simpler one-shot path
+  for now so support/refute drafting remains cheap and deterministic while the
+  deeper evidence warehouse is still pending
+- the next milestone is the Ask/composition UX pass:
+  place the streamed AI answer surface cleanly beside the graph, then extend
+  the `@` evidence-assist flow so support and refute can drive the same
+  producer-owned graph activation path without exposing retrieval internals in
+  the composer
 
 ## Locked Decisions
 
@@ -675,6 +711,9 @@ Rules:
 - graph highlighting remains derivable from the evidence response, but not
   entangled with renderer-specific state
 - new retrieval channels can be added without changing the graph state model
+- until overlay sources are namespaced, the Ask flow should reconcile only its
+  own last-query overlay subset instead of blindly replacing all overlay
+  membership or letting RAG overlay ids accumulate indefinitely
 
 ### Role of local SQL after evidence APIs land
 

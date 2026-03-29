@@ -9,7 +9,7 @@ import {
   Text,
 } from "@mantine/core";
 import { ExternalLink, Maximize2 } from "lucide-react";
-import type { GraphBundle, GraphDetailAsset, GraphNode } from "@/features/graph/types";
+import type { GraphBundle, GraphDetailAsset, GraphPointRecord } from "@/features/graph/types";
 import { useRefreshedAsset } from "../use-refreshed-asset";
 import {
   RemoteStatus,
@@ -23,7 +23,7 @@ function AssetCard({
   asset,
 }: {
   bundle: GraphBundle;
-  node: GraphNode;
+  node: GraphPointRecord;
   asset: GraphDetailAsset;
 }) {
   const [previewOpened, setPreviewOpened] = useState(false);
@@ -154,7 +154,7 @@ export function AssetGalleryContent({
   emptyLabel,
 }: {
   bundle: GraphBundle;
-  node: GraphNode;
+  node: GraphPointRecord;
   assets: GraphDetailAsset[] | undefined;
   loading: boolean;
   error: string | null;

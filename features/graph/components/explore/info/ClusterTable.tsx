@@ -1,9 +1,8 @@
 "use client";
 
 import { Table, Text } from "@mantine/core";
-import type { InfoScope } from "@/features/graph/hooks/use-info-stats";
 import { formatNumber } from "@/lib/helpers";
-import type { ClusterStat } from "@/features/graph/hooks/use-info-stats";
+import type { GraphInfoClusterStat, GraphInfoScope } from "@/features/graph/types";
 import {
   panelTableHeaderStyle,
   panelTextDimStyle,
@@ -11,9 +10,9 @@ import {
 } from "../../panels/PanelShell";
 
 interface ClusterTableProps {
-  topClusters: ClusterStat[];
+  topClusters: GraphInfoClusterStat[];
   clusterColors: Record<number, string>;
-  scope: InfoScope;
+  scope: GraphInfoScope;
 }
 
 export function ClusterTable({

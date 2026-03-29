@@ -17,7 +17,9 @@ The canonical runtime is now:
   - the stable first-paint scaffold
 - `universe_points`
   - the broader premapped coordinate universe
-- `overlay_point_ids -> overlay_points_web -> active_points_web`
+- `selected_point_indices`
+  - the DuckDB-local persistent selection relation
+- `overlay_point_ids_by_producer -> overlay_point_ids -> active_points_web`
   - the local DuckDB activation surface for living-graph expansion
 - versioned `active_*` alias views
   - the runtime-owned canvas tables that let Cosmograph receive in-place active-graph
@@ -32,6 +34,8 @@ The important constraints now in force are:
 - no compatibility aliases in the live runtime
 - no chunk/paper first-paint JS hydration
 - Cosmograph reads DuckDB tables directly
+- base and universe stay Parquet-backed in the browser instead of being copied
+  into full local temp point tables
 - point payloads stay compact and widget-driven
 - heavy evidence stays off the browser base path by default
 
@@ -39,6 +43,8 @@ The first live overlay path is also now present:
 
 - explicit `cluster-neighborhood` overlay activation from the info panel
 - `overlay_point_ids` mutates inside DuckDB, not in JS point arrays
+- only the promoted overlay rows are materialized locally; the base scaffold is
+  reused directly from the projected base views
 - the session publishes updated canvas snapshots to the renderer
 - Cosmograph consumes runtime-owned active table names, not hardcoded layer constants
 

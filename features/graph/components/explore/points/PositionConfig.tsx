@@ -8,7 +8,7 @@ import { getColumnsForLayer } from "@/features/graph/lib/columns";
 import type { MapLayer, NumericColumnKey } from "@/features/graph/types";
 import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
 
-export function PositionConfig({ activeLayer, isMapLayer }: { activeLayer: MapLayer; isMapLayer: boolean }) {
+export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
   const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
   const numericCols = useMemo(() => layerColumns.filter((c) => c.type === 'numeric'), [layerColumns]);
 
@@ -40,32 +40,29 @@ export function PositionConfig({ activeLayer, isMapLayer }: { activeLayer: MapLa
 
   return (
     <>
-      {/* Positions — geo layer uses real-world lat/lng, not configurable axes */}
-      {!isMapLayer && (
-        <div>
-          <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
-            Positions
-          </Text>
-          <Stack gap="xs">
-            <Select
-              size="xs"
-              label="X column"
-              data={positionOptions}
-              value={positionXColumn}
-              onChange={(v) => v && setPositionXColumn(v as NumericColumnKey)}
-              styles={panelSelectStyles}
-            />
-            <Select
-              size="xs"
-              label="Y column"
-              data={positionOptions}
-              value={positionYColumn}
-              onChange={(v) => v && setPositionYColumn(v as NumericColumnKey)}
-              styles={panelSelectStyles}
-            />
-          </Stack>
-        </div>
-      )}
+      <div>
+        <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+          Positions
+        </Text>
+        <Stack gap="xs">
+          <Select
+            size="xs"
+            label="X column"
+            data={positionOptions}
+            value={positionXColumn}
+            onChange={(v) => v && setPositionXColumn(v as NumericColumnKey)}
+            styles={panelSelectStyles}
+          />
+          <Select
+            size="xs"
+            label="Y column"
+            data={positionOptions}
+            value={positionYColumn}
+            onChange={(v) => v && setPositionYColumn(v as NumericColumnKey)}
+            styles={panelSelectStyles}
+          />
+        </Stack>
+      </div>
 
       {/* Timeline */}
       <div>

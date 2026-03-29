@@ -15,12 +15,44 @@ Current browser-delivery note:
   - `universe_points.parquet`
 - universe artifacts are present in the bundle manifest but are not attached
   on startup
+- browser DuckDB runs as an ephemeral in-memory analytic session over the
+  canonical Parquet artifacts
+- `base_points_canvas_web` and `universe_points_canvas_web` are projection
+  views over Parquet rather than eager browser-local copies
+- those point parquet files are intentionally narrow: canvas coordinates,
+  dense ids, cluster/color fields, compact bibliographic fields, compact
+  summary metrics, and first-paint filter/search columns only
 - local overlay activation is expressed through DuckDB membership/views:
-  `overlay_point_ids`, `overlay_points_web`, and `active_points_web`
+  `overlay_point_ids_by_producer`, `overlay_point_ids`,
+  `active_point_index_lookup_web`, and `active_points_canvas_web` for the
+  dense active union, with
+  `current_points_canvas_web`, `current_points_web`, and
+  `current_paper_points_web` as the stable browser-facing active aliases used
+  by table/search/filter/detail queries
+- persistent point selection is also DuckDB-native: Cosmograph intent clauses
+  resolve into `selected_point_indices` inside DuckDB, rather than shipping
+  large selected-index arrays back into SQL
+- React mirrors only scalar selection/scope invalidation state:
+  `selectedPointCount`, `selectedPointRevision`, `currentPointScopeSql`, and
+  `currentScopeRevision`
+- `pointIncludeColumns` stays minimal and widget-driven: only mounted native
+  filter/timeline accessors are exposed to Cosmograph, while richer detail
+  stays on narrow DuckDB queries and backend evidence fetches
+- when overlay is empty, the live canvas aliases point straight at base views so
+  first paint does not rebuild a synthetic active union
+- when overlay is active, only id membership mutates locally; overlay point rows
+  still resolve from `universe_points`, while the base scaffold stays
+  Parquet-backed and keeps its exported indices
 - `paper_documents.parquet` and `cluster_exemplars.parquet` now attach
-  only when detail queries ask for them
+  only when detail queries ask for them; `cluster_exemplars` is a paper-level
+  preview surface, not a graph chunk layer
+- info-panel scope changes batch widget summaries in DuckDB by widget kind and
+  reuse categorical summary results across facet/bar widgets
 - `evidence` remains the backend/API path for raw citation neighborhoods, full
   PubTator payloads, assets, and later full text
+- the shipping graph runtime is corpus-only; any future graph layer must arrive
+  as a self-contained module with its own bundle/query/UI path instead of
+  branching through the default base/universe/overlay boot flow
 
 ---
 
@@ -138,7 +170,8 @@ Current browser-delivery note:
 ║   ┌─────────────────────────────────────────────────────────────────┐   ║
 ║   │                    COSMOGRAPH (graph canvas)                     │   ║
 ║   │                                                                  │   ║
-║   │   Base scaffold rendered by GPU (WebGL)                        │   ║
+║   │   Base scaffold rendered by GPU (WebGL) over narrow canvas     │   ║
+║   │   views instead of the full metadata point rows                │   ║
 ║   │   Clustered by research community (UMAP layout)                 │   ║
 ║   │   Colored and scoped locally by cluster / year / journal /      │   ║
 ║   │   search budget over DuckDB-WASM tables                         │   ║
@@ -146,6 +179,9 @@ Current browser-delivery note:
 ║   │   Default first-load data source:                               │   ║
 ║   │     base_points.parquet + base_clusters.parquet                 │   ║
 ║   │   Universe premapped artifact: universe_points.parquet          │   ║
+║   │   Browser DuckDB storage: ephemeral analytic session           │   ║
+║   │   Base startup reuses exported point_index directly; it does   │   ║
+║   │   not recompute dense indices over the full base table         │   ║
 ║   │   Optional links remain outside the default base publish path   │   ║
 ║   └─────────────────────────────────────────────────────────────────┘   ║
 ║                                                                         ║

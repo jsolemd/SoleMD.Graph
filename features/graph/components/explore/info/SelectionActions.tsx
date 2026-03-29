@@ -3,14 +3,12 @@
 import { useState } from "react";
 import { Button, Group, Stack } from "@mantine/core";
 import { useGraphCamera } from "@/features/graph/cosmograph";
-import type { InfoScope } from "@/features/graph/hooks/use-info-stats";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getLayerConfig } from "@/features/graph/lib/layers";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphInfoScope } from "@/features/graph/types";
 import { PANEL_ACCENT } from "../../panels/PanelShell";
 
 interface SelectionActionsProps {
-  scope: InfoScope;
+  scope: GraphInfoScope;
   queries?: GraphBundleQueries;
   overlayCount?: number;
 }
@@ -22,31 +20,21 @@ export function SelectionActions({
 }: SelectionActionsProps) {
   const setTableOpen = useDashboardStore((s) => s.setTableOpen);
   const setTableView = useDashboardStore((s) => s.setTableView);
-  const selectedPointIndices = useDashboardStore(
-    (s) => s.selectedPointIndices,
-  );
-  const currentPointIndices = useDashboardStore(
-    (s) => s.currentPointIndices,
-  );
+  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
   const currentPointScopeSql = useDashboardStore(
     (s) => s.currentPointScopeSql,
   );
   const activeLayer = useDashboardStore((s) => s.activeLayer);
-  const mapControls = useDashboardStore((s) => s.mapControls);
-  const isMapLayer = getLayerConfig(activeLayer).rendererType === "maplibre";
-  const { fitView, fitViewByIndices } = useGraphCamera();
+  const { fitView, fitViewByCoordinates } = useGraphCamera();
   const [isResolvingCurrentScope, setIsResolvingCurrentScope] = useState(false);
   const [isActivatingOverlay, setIsActivatingOverlay] = useState(false);
   const [isClearingOverlay, setIsClearingOverlay] = useState(false);
 
   const hasCurrentSubset =
-    Boolean(currentPointScopeSql && currentPointScopeSql.trim().length > 0) ||
-    Boolean(currentPointIndices && currentPointIndices.length > 0);
+    Boolean(currentPointScopeSql && currentPointScopeSql.trim().length > 0);
   const canActivateOverlay =
-    !isMapLayer &&
-    activeLayer !== "geo" &&
     Boolean(queries) &&
-    ((scope === "selected" && selectedPointIndices.length > 0) ||
+    ((scope === "selected" && selectedPointCount > 0) ||
       (scope === "current" && hasCurrentSubset));
 
   const handleOpenTable = () => {
@@ -55,34 +43,16 @@ export function SelectionActions({
   };
 
   const handleFitSelection = async () => {
-    if (isMapLayer) {
-      mapControls?.fitView();
-      return;
-    }
-
-    if (scope === "selected" && selectedPointIndices.length > 0) {
-      fitViewByIndices(selectedPointIndices, 0, 0.15);
-      return;
-    }
-
-    if (scope === "current" && currentPointIndices && currentPointIndices.length > 0) {
-      fitViewByIndices(currentPointIndices, 0, 0.15);
-      return;
-    }
-
-    if (
-      scope === "current" &&
-      currentPointScopeSql &&
-      queries
-    ) {
+    if (queries && (scope === "selected" || scope === "current")) {
       setIsResolvingCurrentScope(true);
       try {
-        const indices = await queries.getPointIndicesForScope({
+        const coordinates = await queries.getScopeCoordinates({
           layer: activeLayer,
-          scopeSql: currentPointScopeSql,
+          scope,
+          currentPointScopeSql,
         });
-        if (indices.length > 0) {
-          fitViewByIndices(indices, 0, 0.15);
+        if (coordinates && coordinates.length > 0) {
+          fitViewByCoordinates(coordinates, 0, 0.15);
           return;
         }
       } finally {
@@ -94,7 +64,7 @@ export function SelectionActions({
   };
 
   const handleActivateOverlay = async () => {
-    if (!queries || activeLayer === "geo" || !canActivateOverlay) {
+    if (!queries || !canActivateOverlay) {
       return;
     }
 
@@ -104,9 +74,7 @@ export function SelectionActions({
         kind: "cluster-neighborhood",
         layer: activeLayer,
         scope: scope === "selected" ? "selected" : "current",
-        currentPointIndices,
         currentPointScopeSql,
-        selectedPointIndices,
       });
     } finally {
       setIsActivatingOverlay(false);
@@ -147,30 +115,28 @@ export function SelectionActions({
           Fit scope
         </Button>
       </Group>
-      {!isMapLayer && (
-        <Group grow>
-          <Button
-            size="compact-xs"
-            variant="subtle"
-            color={PANEL_ACCENT}
-            loading={isActivatingOverlay}
-            disabled={!canActivateOverlay}
-            onClick={handleActivateOverlay}
-          >
-            Expand overlay
-          </Button>
-          <Button
-            size="compact-xs"
-            variant="subtle"
-            color={PANEL_ACCENT}
-            loading={isClearingOverlay}
-            disabled={overlayCount === 0}
-            onClick={handleClearOverlay}
-          >
-            {overlayCount > 0 ? `Clear overlay (${overlayCount.toLocaleString()})` : "Clear overlay"}
-          </Button>
-        </Group>
-      )}
+      <Group grow>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color={PANEL_ACCENT}
+          loading={isActivatingOverlay}
+          disabled={!canActivateOverlay}
+          onClick={handleActivateOverlay}
+        >
+          Expand overlay
+        </Button>
+        <Button
+          size="compact-xs"
+          variant="subtle"
+          color={PANEL_ACCENT}
+          loading={isClearingOverlay}
+          disabled={overlayCount === 0}
+          onClick={handleClearOverlay}
+        >
+          {overlayCount > 0 ? `Clear overlay (${overlayCount.toLocaleString()})` : "Clear overlay"}
+        </Button>
+      </Group>
     </Stack>
   );
 }

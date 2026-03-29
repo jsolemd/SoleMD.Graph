@@ -14,10 +14,7 @@ export async function registerClusterViews(conn: AsyncDuckDBConnection) {
        member_count,
        centroid_x,
        centroid_y,
-       CASE
-         WHEN representative_node_kind = 'chunk' THEN representative_node_id
-         ELSE NULL
-       END AS representative_rag_chunk_id,
+       representative_node_id AS representative_point_id,
        label_source,
        candidate_count,
        NULL::INTEGER AS entity_candidate_count,

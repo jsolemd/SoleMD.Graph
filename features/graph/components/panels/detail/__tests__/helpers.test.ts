@@ -1,7 +1,5 @@
 import {
-  buildChunkNoteMarkdown,
   buildPaperNoteMarkdown,
-  findChunkNodeByChunkId,
   findPaperNodeByPaperId,
   getPreferredPaperPreview,
 } from '../helpers'
@@ -35,7 +33,7 @@ describe('detail panel helpers', () => {
     })
   })
 
-  it('resolves graph nodes by canonical paper or chunk id', () => {
+  it('resolves graph nodes by canonical paper id', () => {
     const paperNode = findPaperNodeByPaperId(
       [
         {
@@ -45,18 +43,8 @@ describe('detail panel helpers', () => {
       ] as any,
       'paper-1'
     )
-    const chunkNode = findChunkNodeByChunkId(
-      [
-        {
-          id: 'chunk-node-1',
-          stableChunkId: 'chunk-1',
-        },
-      ] as any,
-      'chunk-1'
-    )
 
     expect(paperNode?.id).toBe('paper-node-1')
-    expect(chunkNode?.id).toBe('chunk-node-1')
   })
 
   it('builds a copy-friendly markdown note for papers', () => {
@@ -84,33 +72,5 @@ describe('detail panel helpers', () => {
     expect(markdown).toContain('## Preview')
     expect(markdown).toContain('## Authors')
     expect(markdown).toContain('## Key Passages')
-  })
-
-  it('builds a copy-friendly markdown note for chunks with entities', () => {
-    const markdown = buildChunkNoteMarkdown({
-      node: {
-        paperTitle: 'Paper title',
-        sectionCanonical: 'Introduction',
-        pageNumber: 4,
-        chunkKind: 'paragraph',
-        chunkPreview: 'Fallback chunk text.',
-      } as any,
-      chunk: null,
-      serviceChunk: {
-        chunk_text: 'This is the exact evidence passage for the selection.',
-        entities: [
-          {
-            text: 'delirium',
-            label: 'disorder',
-            umls_cui: 'C0011206',
-            rxnorm_cui: null,
-          },
-        ],
-      } as any,
-    })
-
-    expect(markdown).toContain('### Passage')
-    expect(markdown).toContain('### Entities')
-    expect(markdown).toContain('delirium')
   })
 })

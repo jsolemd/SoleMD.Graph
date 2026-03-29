@@ -54,12 +54,15 @@ export function DataTable({
 
       <DataTableToolbar
         resolvedTableView={state.resolvedTableView}
-        selectedCount={state.selectedPointIndices.length}
+        selectedCount={state.selectedPointCount}
         totalPages={state.totalPages}
         safePage={state.safePage}
         pageLoading={state.pageLoading}
         pageRefreshing={state.pageRefreshing}
         totalRows={state.totalRows}
+        queries={queries}
+        activeLayer={state.activeLayer}
+        currentPointScopeSql={state.currentPointScopeSql}
       />
 
       <div className="flex-1 overflow-auto px-2">
@@ -70,8 +73,6 @@ export function DataTable({
           pageLoading={state.pageLoading}
           pageRefreshing={state.pageRefreshing}
           pageError={state.pageError}
-          selectedIndexSet={state.selectedIndexSet}
-          highlightedIndexSet={state.highlightedIndexSet}
           resolvedTableView={state.resolvedTableView}
         />
       </div>

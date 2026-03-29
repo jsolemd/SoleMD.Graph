@@ -1,16 +1,14 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type {
-  AuthorGeoRow,
-  ChunkNode,
   GraphBundleLoadProgress,
   GraphClusterDetail,
   GraphInfoFacetRow,
   GraphInfoHistogramBin,
+  GraphInfoHistogramResult,
   GraphInfoScope,
   GraphInfoSummary,
-  GraphData,
-  GraphNode,
+  GraphPointRecord,
   GraphSearchResult,
   GraphVisibilityBudget,
   GraphQueryResult,
@@ -19,8 +17,8 @@ import type {
   MapLayer,
   OverlayActivationRequest,
   OverlayActivationResult,
+  OverlayProducerId,
   PaperDocument,
-  PaperNode,
 } from '@/features/graph/types'
 
 export interface GraphCanvasSource {
@@ -40,64 +38,83 @@ export interface GraphBundleSession {
   availableLayers: MapLayer[]
   canvas: GraphCanvasSource
   subscribeCanvas: (listener: GraphCanvasListener) => () => void
-  getData: () => Promise<GraphData>
+  setSelectedPointIndices: (pointIndices: number[]) => Promise<void>
+  setSelectedPointScopeSql: (scopeSql: string | null) => Promise<void>
+  getOverlayPointIds: () => Promise<string[]>
+  setOverlayProducerPointIds: (args: {
+    producerId: OverlayProducerId
+    pointIds: string[]
+  }) => Promise<{ overlayCount: number }>
+  clearOverlayProducer: (producerId: OverlayProducerId) => Promise<{ overlayCount: number }>
+  reconcileOverlayPointIds: (args: {
+    previousPointIds: string[]
+    nextPointIds: string[]
+  }) => Promise<{ overlayCount: number }>
   setOverlayPointIds: (pointIds: string[]) => Promise<{ overlayCount: number }>
   clearOverlay: () => Promise<{ overlayCount: number }>
   activateOverlay: (args: OverlayActivationRequest) => Promise<OverlayActivationResult>
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
-  getInstitutionAuthors: (institutionKey: string) => Promise<AuthorGeoRow[]>
-  getAuthorInstitutions: (name: string, orcid: string | null) => Promise<AuthorGeoRow[]>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
-  getPaperNodesByPaperIds: (paperIds: string[]) => Promise<Record<string, PaperNode>>
+  getPaperNodesByPaperIds: (paperIds: string[]) => Promise<Record<string, GraphPointRecord>>
   getUniversePointIdsByPaperIds: (paperIds: string[]) => Promise<Record<string, string>>
-  getChunkNodesByChunkIds: (chunkIds: string[]) => Promise<Record<string, ChunkNode>>
   resolvePointSelection: (
     layer: MapLayer,
     selector: { id?: string; index?: number }
-  ) => Promise<GraphNode | null>
+  ) => Promise<GraphPointRecord | null>
   getTablePage: (args: {
     layer: MapLayer
     view: 'current' | 'selected'
     page: number
     pageSize: number
-    currentPointIndices: number[] | null
     currentPointScopeSql: string | null
-    selectedPointIndices: number[]
   }) => Promise<GraphTablePageResult>
   getInfoSummary: (args: {
     layer: MapLayer
     scope: GraphInfoScope
-    currentPointIndices: number[] | null
     currentPointScopeSql: string | null
-    selectedPointIndices: number[]
   }) => Promise<GraphInfoSummary>
   getInfoBars: (args: {
     layer: MapLayer
     scope: GraphInfoScope
     column: string
     maxItems?: number
-    currentPointIndices: number[] | null
     currentPointScopeSql: string | null
-    selectedPointIndices: number[]
   }) => Promise<Array<{ value: string; count: number }>>
   getInfoHistogram: (args: {
     layer: MapLayer
     scope: GraphInfoScope
     column: string
     bins?: number
-    currentPointIndices: number[] | null
     currentPointScopeSql: string | null
-    selectedPointIndices: number[]
-  }) => Promise<{ bins: GraphInfoHistogramBin[]; totalCount: number }>
+  }) => Promise<GraphInfoHistogramResult>
   getFacetSummary: (args: {
     layer: MapLayer
     scope: GraphInfoScope
     column: string
     maxItems?: number
-    currentPointIndices: number[] | null
     currentPointScopeSql: string | null
-    selectedPointIndices: number[]
   }) => Promise<GraphInfoFacetRow[]>
+  getFacetSummaries: (args: {
+    layer: MapLayer
+    scope: GraphInfoScope
+    columns: string[]
+    maxItems?: number
+    currentPointScopeSql: string | null
+  }) => Promise<Record<string, GraphInfoFacetRow[]>>
+  getInfoBarsBatch: (args: {
+    layer: MapLayer
+    scope: GraphInfoScope
+    columns: string[]
+    maxItems?: number
+    currentPointScopeSql: string | null
+  }) => Promise<Record<string, Array<{ value: string; count: number }>>>
+  getInfoHistogramsBatch: (args: {
+    layer: MapLayer
+    scope: GraphInfoScope
+    columns: string[]
+    bins?: number
+    currentPointScopeSql: string | null
+  }) => Promise<Record<string, GraphInfoHistogramResult>>
   searchPoints: (args: {
     layer: MapLayer
     column: string
@@ -109,12 +126,18 @@ export interface GraphBundleSession {
     selector: { id?: string; index?: number }
     scopeSql?: string | null
   }) => Promise<GraphVisibilityBudget | null>
-  getPointIndicesForScope: (args: {
+  getScopeCoordinates: (args: {
     layer: MapLayer
-    scopeSql: string
-  }) => Promise<number[]>
-  getSelectionDetail: (node: GraphNode) => Promise<GraphSelectionDetail>
+    scope: 'current' | 'selected'
+    currentPointScopeSql: string | null
+  }) => Promise<number[] | null>
+  getSelectionDetail: (point: GraphPointRecord) => Promise<GraphSelectionDetail>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
+  exportTableCsv: (args: {
+    layer: MapLayer
+    view: 'current' | 'selected'
+    currentPointScopeSql: string | null
+  }) => Promise<string>
 }
 
 export type ProgressCallback = (

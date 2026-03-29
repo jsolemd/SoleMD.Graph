@@ -13,6 +13,10 @@ export function useGraphCamera() {
     cosmograph?.fitViewByIndices(indices, duration, padding);
   }, [cosmograph]);
 
+  const fitViewByCoordinates = useCallback((coordinates: number[], duration?: number, padding?: number) => {
+    cosmograph?.fitViewByCoordinates(coordinates, duration, padding);
+  }, [cosmograph]);
+
   const zoomToPoint = useCallback((index: number, duration?: number) => {
     cosmograph?.zoomToPoint(index, duration);
   }, [cosmograph]);
@@ -35,5 +39,14 @@ export function useGraphCamera() {
     cosmograph?.setZoomLevel(level, duration);
   }, [cosmograph]);
 
-  return { fitView, fitViewByIndices, zoomToPoint, zoomIn, zoomOut, getZoomLevel, setZoomLevel };
+  return {
+    fitView,
+    fitViewByIndices,
+    fitViewByCoordinates,
+    zoomToPoint,
+    zoomIn,
+    zoomOut,
+    getZoomLevel,
+    setZoomLevel,
+  };
 }

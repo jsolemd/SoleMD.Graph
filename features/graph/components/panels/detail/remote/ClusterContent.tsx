@@ -1,9 +1,7 @@
 "use client";
 
-import { Badge, Button, Group, Stack, Text } from "@mantine/core";
-import { ArrowRight } from "lucide-react";
-import type { ChunkNode, ClusterExemplar, ClusterInfo } from "@/features/graph/types";
-import { findChunkNodeByChunkId } from "../helpers";
+import { Badge, Group, Stack, Text } from "@mantine/core";
+import type { ClusterExemplar, ClusterInfo } from "@/features/graph/types";
 import { KV, panelTextDimStyle, panelTextStyle } from "../ui";
 
 export function ClusterContent({ cluster }: { cluster: ClusterInfo | null }) {
@@ -26,24 +24,19 @@ export function ClusterContent({ cluster }: { cluster: ClusterInfo | null }) {
 
 export function ExemplarsContent({
   exemplars,
-  chunkNodes,
-  onNavigateToChunk,
 }: {
   exemplars: ClusterExemplar[];
-  chunkNodes: ChunkNode[];
-  onNavigateToChunk: (node: ChunkNode) => void;
 }) {
   if (exemplars.length === 0) {
-    return <Text style={panelTextDimStyle}>No related chunks available for this cluster.</Text>;
+    return <Text style={panelTextDimStyle}>No exemplar papers available for this cluster.</Text>;
   }
 
   return (
     <Stack gap="md">
       {exemplars.map((exemplar) => {
-        const graphNode = findChunkNodeByChunkId(chunkNodes, exemplar.ragChunkId);
         return (
           <div
-            key={`${exemplar.clusterId}:${exemplar.rank}:${exemplar.ragChunkId}`}
+            key={`${exemplar.clusterId}:${exemplar.rank}:${exemplar.pointId}`}
             className="rounded-xl px-3 py-3"
             style={{
               backgroundColor: "var(--mode-accent-subtle)",
@@ -58,31 +51,14 @@ export function ExemplarsContent({
                       Primary
                     </Badge>
                   )}
-                  {(exemplar.sectionCanonical || exemplar.pageNumber != null) && (
-                    <Badge size="xs" variant="outline" color="gray">
-                      {[exemplar.sectionCanonical, exemplar.pageNumber != null ? `p. ${exemplar.pageNumber}` : null]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </Badge>
-                  )}
                 </Group>
                 <Text fw={600} style={panelTextDimStyle}>
                   {exemplar.citekey ?? exemplar.paperTitle ?? "—"}
                 </Text>
                 <Text mt={4} style={panelTextStyle}>
-                  {exemplar.chunkPreview ?? "No preview available."}
+                  {exemplar.preview ?? "No preview available."}
                 </Text>
               </div>
-              {graphNode && (
-                <Button
-                  size="compact-xs"
-                  variant="light"
-                  leftSection={<ArrowRight size={12} />}
-                  onClick={() => onNavigateToChunk(graphNode)}
-                >
-                  Open
-                </Button>
-              )}
             </Group>
           </div>
         );

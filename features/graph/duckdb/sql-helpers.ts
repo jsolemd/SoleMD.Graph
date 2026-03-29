@@ -4,68 +4,29 @@ import type { GraphInfoScope, MapLayer } from '@/features/graph/types'
 
 import { validateTableName } from './utils'
 
-export function sliceScopeIndices(args: {
-  view: 'current' | 'selected'
-  page: number
-  pageSize: number
-  currentPointIndices: number[] | null
-  selectedPointIndices: number[]
-}) {
-  const { view, page, pageSize, currentPointIndices, selectedPointIndices } = args
-  const sourceIndices =
-    view === 'selected'
-      ? selectedPointIndices
-      : currentPointIndices
-
-  if (sourceIndices == null) {
-    return {
-      totalRows: null as number | null,
-      pageIndices: null as number[] | null,
-    }
-  }
-
-  const totalRows = sourceIndices.length
-  const start = Math.max(0, (Math.max(page, 1) - 1) * Math.max(pageSize, 1))
-  const end = Math.min(totalRows, start + Math.max(pageSize, 1))
-
-  return {
-    totalRows,
-    pageIndices: sourceIndices.slice(start, end),
-  }
-}
-
-export function buildIndexWhereClause(indices: number[]): string {
-  if (indices.length === 0) {
-    return '1 = 0'
-  }
-
-  return `index IN (${indices.map((value) => Number(value) || 0).join(', ')})`
+export function buildSelectedViewPredicate(): string {
+  return 'index IN (SELECT index FROM selected_point_indices)'
 }
 
 export function buildCurrentViewPredicate(args: {
-  currentPointIndices: number[] | null
   currentPointScopeSql: string | null
 }): string {
-  const { currentPointIndices, currentPointScopeSql } = args
+  const { currentPointScopeSql } = args
   if (currentPointScopeSql && currentPointScopeSql.trim().length > 0) {
     return currentPointScopeSql
-  }
-
-  if (currentPointIndices !== null) {
-    return buildIndexWhereClause(currentPointIndices)
   }
 
   return 'TRUE'
 }
 
 export function getLayerTableName(layer: MapLayer): string {
-  if (layer === 'paper') {
-    return 'active_paper_points_web'
-  }
-  if (layer === 'geo') {
-    return 'geo_points_web'
-  }
-  return 'active_points_web'
+  void layer
+  return 'current_points_web'
+}
+
+export function getLayerCanvasTableName(layer: MapLayer): string {
+  void layer
+  return 'current_points_canvas_web'
 }
 
 export function resolveInfoColumn(layer: MapLayer, column: string): string {
@@ -86,34 +47,23 @@ export function resolveSearchColumn(layer: MapLayer, column: string): string {
 }
 
 export function getSearchLabelExpression(layer: MapLayer): string {
-  if (layer === 'paper') {
-    return "COALESCE(NULLIF(paperTitle, ''), NULLIF(citekey, ''), NULLIF(clusterLabel, ''), id)"
-  }
-  if (layer === 'geo') {
-    return "COALESCE(NULLIF(institution, ''), NULLIF(country, ''), NULLIF(city, ''), id)"
-  }
+  void layer
   return "COALESCE(NULLIF(clusterLabel, ''), NULLIF(paperTitle, ''), NULLIF(citekey, ''), id)"
 }
 
 export function buildScopedLayerPredicate(
   layer: MapLayer,
   scope: GraphInfoScope,
-  currentPointIndices: number[] | null,
-  currentPointScopeSql: string | null,
-  selectedPointIndices: number[]
+  currentPointScopeSql: string | null
 ): string {
   void layer
   if (scope === 'selected') {
-    return buildIndexWhereClause(selectedPointIndices)
+    return buildSelectedViewPredicate()
   }
 
   if (scope === 'current') {
     if (currentPointScopeSql && currentPointScopeSql.trim().length > 0) {
       return currentPointScopeSql
-    }
-
-    if (currentPointIndices !== null) {
-      return buildIndexWhereClause(currentPointIndices)
     }
   }
 

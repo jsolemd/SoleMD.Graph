@@ -46,7 +46,11 @@ state, but the current runtime boundary is now:
 - base scaffold autoloaded on first paint
 - universe premapped artifact present in the bundle manifest but not autoloaded
 - overlay activation now has a native DuckDB surface:
-  `overlay_point_ids` -> `overlay_points_web` -> `active_points_web`
+  `overlay_point_ids_by_producer` -> `overlay_point_ids` -> `active_points_web`
+- persistent selection is also DuckDB-native:
+  `selected_point_indices` is materialized from live Cosmograph clauses
+- base and universe remain Parquet-backed projection views instead of being
+  copied into browser-local temp point tables at startup
 - universe document and exemplar artifacts attached only when detail queries ask
   for them
 - evidence/server retrieval for anything unmapped or too heavy for browser-local delivery
@@ -132,7 +136,9 @@ state, but the current runtime boundary is now:
 - the broader premapped universe is preserved as a separate universe artifact, not
   autoloaded on startup
 - the active canvas is a local DuckDB + Cosmograph runtime state
-- chunk/paper first paint stays DuckDB-native and no longer relies on a full
+- the active canvas keeps the exported base index range intact and appends only
+  promoted overlay rows with new dense indices
+- corpus first paint stays DuckDB-native and no longer relies on a full
   point-array metadata hydration step
 
 ---

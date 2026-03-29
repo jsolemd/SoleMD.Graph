@@ -1,3 +1,17 @@
+export type GraphApiLayerKey = 'paper' | 'chunk'
+
+export type GraphApiNodeKind = 'paper' | 'rag_chunk'
+
+export interface GraphApiReleaseDescriptor {
+  graph_release_id: string
+  graph_run_id: string
+  bundle_checksum: string | null
+  graph_name: string
+  layer_key: GraphApiLayerKey
+  node_kind: GraphApiNodeKind
+  is_current: boolean
+}
+
 export interface GraphDetailAssetAccess {
   access_kind: 'public' | 'signed' | 'unavailable'
   url: string | null
@@ -112,18 +126,10 @@ export interface GraphNodeDetailResponsePayload {
     duration_ms: number
     cache_control: string
   }
-  release: {
-    graph_release_id: string
-    graph_run_id: string
-    bundle_checksum: string | null
-    graph_name: string
-    layer_key: 'paper' | 'chunk'
-    node_kind: 'paper' | 'rag_chunk'
-    is_current: boolean
-  }
+  release: GraphApiReleaseDescriptor
   node_id: string
-  layer_key: 'paper' | 'chunk'
-  node_kind: 'paper' | 'rag_chunk'
+  layer_key: GraphApiLayerKey
+  node_kind: GraphApiNodeKind
   paper: {
     paper_id: string
     doc_hash: string
@@ -184,9 +190,9 @@ export interface GraphAssetUrlResponsePayload {
     duration_ms: number
     cache_control: string
   }
-  release: GraphNodeDetailResponsePayload['release']
+  release: GraphApiReleaseDescriptor
   node_id: string
-  layer_key: 'paper' | 'chunk'
+  layer_key: GraphApiLayerKey
   asset_id: string | null
   asset_type: string
   storage_path: string | null
@@ -215,10 +221,10 @@ export interface GraphNeighborhoodResponsePayload {
     duration_ms: number
     cache_control: string
   }
-  release: GraphNodeDetailResponsePayload['release']
+  release: GraphApiReleaseDescriptor
   node_id: string
-  layer_key: 'paper' | 'chunk'
-  node_kind: 'paper' | 'rag_chunk'
+  layer_key: GraphApiLayerKey
+  node_kind: GraphApiNodeKind
   paper_neighbors: GraphPaperNeighborhoodItem[]
   chunk_neighbors: GraphChunkNeighborhoodItem[]
 }
@@ -363,6 +369,45 @@ export interface GraphRagRetrievalChannelResult {
   hits: GraphRagRetrievalChannelHit[]
 }
 
+export interface GraphRagQueryRequestPayload {
+  graph_release_id: string
+  query: string
+  selected_layer_key: GraphApiLayerKey | null
+  selected_node_id: string | null
+  selected_paper_id?: string | null
+  selected_cluster_id: number | null
+  evidence_intent?: 'support' | 'refute' | 'both' | null
+  k?: number
+  rerank_topn?: number
+  use_lexical?: boolean
+  generate_answer?: boolean
+}
+
+export interface GraphRagErrorResponsePayload {
+  error_code:
+    | 'bad_request'
+    | 'unauthorized'
+    | 'forbidden'
+    | 'not_found'
+    | 'rate_limited'
+    | 'engine_request_failed'
+    | 'unknown_error'
+  error_message: string
+  request_id: string | null
+  retry_after: number | null
+  status: number
+}
+
+export type GraphRagQueryActionResponsePayload =
+  | {
+      ok: true
+      data: GraphRagQueryResponsePayload
+    }
+  | {
+      ok: false
+      error: GraphRagErrorResponsePayload
+    }
+
 export interface GraphRagQueryResponsePayload {
   meta: {
     request_id: string
@@ -371,9 +416,9 @@ export interface GraphRagQueryResponsePayload {
     cache_control: string
     retrieval_version: string
   }
-  release: GraphNodeDetailResponsePayload['release']
+  release: GraphApiReleaseDescriptor
   query: string
-  selected_layer_key: 'paper' | 'chunk' | null
+  selected_layer_key: GraphApiLayerKey | null
   selected_node_id: string | null
   selected_paper_id: string | null
   selected_cluster_id: number | null

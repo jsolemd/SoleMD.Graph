@@ -1,7 +1,7 @@
 "use client";
 
 import { Stack, Text } from "@mantine/core";
-import type { GraphBundle, GraphDetailAsset, GraphNode } from "@/features/graph/types";
+import type { GraphBundle, GraphDetailAsset, GraphPointRecord } from "@/features/graph/types";
 import { useRefreshedAsset } from "../use-refreshed-asset";
 import { ExtLink, RemoteStatus, panelTextDimStyle } from "../ui";
 
@@ -13,7 +13,7 @@ export function PdfContent({
   error,
 }: {
   bundle: GraphBundle;
-  node: GraphNode;
+  node: GraphPointRecord;
   asset: GraphDetailAsset | null | undefined;
   loading: boolean;
   error: string | null;

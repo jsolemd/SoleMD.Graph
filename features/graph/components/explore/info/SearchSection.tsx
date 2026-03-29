@@ -31,7 +31,7 @@ function truncateLabel(value: string | null, max = 96): string {
 
 export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
-  const isSelectionLocked = useDashboardStore((s) => s.lockedSelection !== null);
+  const isSelectionLocked = useDashboardStore((s) => s.selectionLocked);
   const applyVisibilityBudget = useDashboardStore((s) => s.applyVisibilityBudget);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
   const selectNode = useGraphStore((s) => s.selectNode);
@@ -166,6 +166,11 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
                 className="w-full rounded-xl px-2.5 py-2 text-left"
                 style={panelCardStyle}
                 onClick={async () => {
+                  const initialIndex = result.point.index;
+                  selectPoint(initialIndex, false, false);
+                  setFocusedPoint(initialIndex);
+                  zoomToPoint(initialIndex, 250);
+
                   const scopeSql = buildBudgetScopeSql(
                     getPointsSelection(),
                   );
@@ -177,20 +182,17 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
                     },
                     scopeSql,
                   });
-                  const node = await queries.resolvePointSelection(activeLayer, {
-                    id: result.id,
-                    index: result.index,
-                  });
+                  const node = result.point;
                   selectNode(node);
 
-                  if (activeLayer !== "geo" && node) {
-                    if (budget) {
-                      applyVisibilityBudget(activeLayer, budget);
-                    } else {
-                      clearVisibilityFocus();
-                    }
+                  if (budget) {
+                    applyVisibilityBudget(activeLayer, budget);
+                  } else {
+                    clearVisibilityFocus();
+                  }
 
-                    const targetIndex = budget?.seedIndex ?? result.index;
+                  const targetIndex = budget?.seedIndex ?? initialIndex;
+                  if (targetIndex !== initialIndex) {
                     selectPoint(targetIndex, false, false);
                     setFocusedPoint(targetIndex);
                     zoomToPoint(targetIndex, 250);

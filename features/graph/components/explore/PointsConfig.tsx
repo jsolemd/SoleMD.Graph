@@ -13,16 +13,14 @@ export function PointsConfig() {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const layerConfig = getLayerConfig(activeLayer);
   const hasLinks = layerConfig.hasLinks;
-  const isMapLayer = layerConfig.rendererType === "maplibre";
 
   return (
     <Stack gap="lg">
       <ColorConfig activeLayer={activeLayer} />
-      <SizeConfig activeLayer={activeLayer} isMapLayer={isMapLayer} />
-      {/* Labels — MapLibre handles its own label rendering via symbol layers */}
-      {!isMapLayer && <LabelConfig activeLayer={activeLayer} />}
-      <PositionConfig activeLayer={activeLayer} isMapLayer={isMapLayer} />
-      {hasLinks && <LinkConfig isMapLayer={isMapLayer} />}
+      <SizeConfig activeLayer={activeLayer} />
+      <LabelConfig activeLayer={activeLayer} />
+      <PositionConfig activeLayer={activeLayer} />
+      {hasLinks && <LinkConfig />}
     </Stack>
   );
 }

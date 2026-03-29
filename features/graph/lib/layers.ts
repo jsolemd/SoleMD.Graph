@@ -9,15 +9,10 @@ export const LINK_COLUMNS = {
   targetIndexBy: 'target_point_index',
 } as const
 
-/** Which WebGL/canvas renderer to use for a layer. */
-export type RendererType = 'cosmograph' | 'maplibre'
-
 /** Configuration for a single map layer. */
 export interface LayerConfig {
   key: MapLayer
   label: string
-  /** Which renderer to use — Cosmograph (scatter) or MapLibre (geographic map). */
-  rendererType: RendererType
   /** DuckDB table name for Cosmograph `points` prop */
   pointsTable: string
   /** DuckDB table name for Cosmograph `links` prop */
@@ -46,12 +41,11 @@ export interface LayerConfig {
 }
 
 export const LAYERS: Record<MapLayer, LayerConfig> = {
-  chunk: {
-    key: 'chunk',
+  corpus: {
+    key: 'corpus',
     label: 'Corpus',
-    rendererType: 'cosmograph',
-    pointsTable: 'active_points_web',
-    linksTable: 'active_links_web',
+    pointsTable: 'current_points_canvas_web',
+    linksTable: 'current_links_web',
     hasLinks: true,
     linkSourceBy: LINK_COLUMNS.sourceBy,
     linkSourceIndexBy: LINK_COLUMNS.sourceIndexBy,
@@ -66,89 +60,25 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     defaultInfoWidgets: [
       { column: 'journal', kind: 'facet-summary', label: 'Journals' },
       { column: 'semanticGroups', kind: 'facet-summary', label: 'Entity groups' },
+      { column: 'organSystems', kind: 'facet-summary', label: 'Organ systems' },
       { column: 'relationCategories', kind: 'facet-summary', label: 'Relation categories' },
     ],
     searchableFields: {
-      nodeKind: 'Node Kind',
       displayLabel: 'Label',
-      canonicalName: 'Canonical Name',
       clusterLabel: 'Cluster',
       paperTitle: 'Paper',
       journal: 'Journal',
-      category: 'Category',
-      relationType: 'Relation',
-      aliasText: 'Alias',
-      sectionCanonical: 'Section',
+      semanticGroups: 'Entity Groups',
+      relationCategories: 'Relation Categories',
       citekey: 'Citekey',
       year: 'Year',
       id: 'Node ID',
     },
   },
-  paper: {
-    key: 'paper',
-    label: 'Papers',
-    rendererType: 'cosmograph',
-    pointsTable: 'active_paper_points_web',
-    linksTable: 'active_paper_links_web',
-    hasLinks: true,
-    linkSourceBy: LINK_COLUMNS.sourceBy,
-    linkSourceIndexBy: LINK_COLUMNS.sourceIndexBy,
-    linkTargetBy: LINK_COLUMNS.targetBy,
-    linkTargetIndexBy: LINK_COLUMNS.targetIndexBy,
-    defaultColorColumn: 'journal',
-    defaultColorStrategy: 'categorical',
-    defaultSizeColumn: 'paperReferenceCount',
-    defaultSizeStrategy: 'auto',
-    pointSizeRange: [2, 8],
-    // Paper nodes are derived from corpus data — the paper layer is available
-    // whenever the corpus bundle includes paper-kind nodes.
-    requiredTable: 'base_points',
-    defaultInfoWidgets: [
-      { column: 'journal', kind: 'facet-summary', label: 'Journals' },
-    ],
-    searchableFields: {
-      clusterLabel: 'Cluster',
-      paperTitle: 'Paper',
-      journal: 'Journal',
-      citekey: 'Citekey',
-      year: 'Year',
-      id: 'Paper Node ID',
-    },
-  },
-  geo: {
-    key: 'geo',
-    label: 'Geography',
-    rendererType: 'maplibre',
-    pointsTable: 'geo_points_web',
-    linksTable: 'geo_links_web',
-    hasLinks: true,
-    linkSourceBy: LINK_COLUMNS.sourceBy,
-    linkSourceIndexBy: LINK_COLUMNS.sourceIndexBy,
-    linkTargetBy: LINK_COLUMNS.targetBy,
-    linkTargetIndexBy: LINK_COLUMNS.targetIndexBy,
-    defaultColorColumn: 'hexColor',
-    defaultColorStrategy: 'direct',
-    defaultSizeColumn: 'paperCount',
-    defaultSizeStrategy: 'auto',
-    pointSizeRange: [4, 24],
-    requiredTable: 'geo_points',
-    defaultInfoWidgets: [
-      { column: 'country', kind: 'facet-summary', label: 'Countries' },
-    ],
-    searchableFields: {
-      institution: 'Institution',
-      country: 'Country',
-      city: 'City',
-      countryCode: 'Country Code',
-      citekey: 'Citekey',
-      paperTitle: 'Paper',
-      year: 'Year',
-    },
-  },
 }
 
 /** Ordered list of layers for rendering in the UI. */
-export const LAYER_ORDER: MapLayer[] = ['chunk', 'paper', 'geo']
+export const LAYER_ORDER: MapLayer[] = ['corpus']
 
 /** Get layer config by key. */
 export function getLayerConfig(layer: MapLayer): LayerConfig {

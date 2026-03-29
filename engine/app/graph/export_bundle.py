@@ -27,8 +27,6 @@ POINTS_SCHEMA = pa.schema(
         ("point_index", pa.int32()),
         ("id", pa.string()),
         ("paper_id", pa.string()),
-        ("node_kind", pa.string()),
-        ("node_role", pa.string()),
         ("hex_color", pa.string()),
         ("hex_color_light", pa.string()),
         ("x", pa.float32()),
@@ -40,26 +38,17 @@ POINTS_SCHEMA = pa.schema(
         ("citekey", pa.string()),
         ("journal", pa.string()),
         ("year", pa.int32()),
-        ("doi", pa.string()),
-        ("pmid", pa.string()),
-        ("pmcid", pa.string()),
         ("display_label", pa.string()),
-        ("search_text", pa.string()),
         ("semantic_groups_csv", pa.string()),
         ("organ_systems_csv", pa.string()),
-        ("top_entities_csv", pa.string()),
         ("relation_categories_csv", pa.string()),
         ("is_in_base", pa.bool_()),
         ("base_rank", pa.float32()),
         ("text_availability", pa.string()),
-        ("is_open_access", pa.bool_()),
-        ("has_open_access_pdf", pa.bool_()),
         ("paper_author_count", pa.int32()),
         ("paper_reference_count", pa.int32()),
-        ("paper_asset_count", pa.int32()),
         ("paper_entity_count", pa.int32()),
         ("paper_relation_count", pa.int32()),
-        ("paper_cluster_index", pa.int32()),
     ]
 )
 
@@ -483,8 +472,6 @@ def _table_specs() -> list[BundleTableSpec]:
                 point_index,
                 'paper:' || corpus_id::TEXT AS id,
                 COALESCE(paper_id, 'corpus:' || corpus_id::TEXT) AS paper_id,
-                'paper' AS node_kind,
-                'primary' AS node_role,
                 CASE
                     WHEN COALESCE(cluster_id, 0) = 0 THEN '#555555'
                     ELSE (ARRAY[
@@ -514,29 +501,17 @@ def _table_specs() -> list[BundleTableSpec]:
                 NULL::TEXT AS citekey,
                 journal_name AS journal,
                 year,
-                doi,
-                pmid,
-                pmcid,
                 title AS display_label,
-                CONCAT_WS(' ', title, journal_name, semantic_groups_csv, top_entities_csv, relation_categories_csv) AS search_text,
                 semantic_groups_csv,
                 organ_systems_csv,
-                top_entities_csv,
                 relation_categories_csv,
                 is_in_base,
                 base_rank,
                 text_availability,
-                is_open_access,
-                (open_access_pdf_url IS NOT NULL AND open_access_pdf_url <> '') AS has_open_access_pdf,
                 author_count AS paper_author_count,
                 COALESCE(reference_count, 0) AS paper_reference_count,
-                asset_count AS paper_asset_count,
                 entity_count AS paper_entity_count,
-                relation_count AS paper_relation_count,
-                ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(cluster_id, 0)
-                    ORDER BY COALESCE(citation_count, 0) DESC, corpus_id
-                )::INTEGER - 1 AS paper_cluster_index
+                relation_count AS paper_relation_count
             FROM paper_base
             WHERE is_in_base
             ORDER BY point_index
@@ -553,8 +528,6 @@ def _table_specs() -> list[BundleTableSpec]:
                 point_index,
                 'paper:' || corpus_id::TEXT AS id,
                 COALESCE(paper_id, 'corpus:' || corpus_id::TEXT) AS paper_id,
-                'paper' AS node_kind,
-                'primary' AS node_role,
                 CASE
                     WHEN COALESCE(cluster_id, 0) = 0 THEN '#555555'
                     ELSE (ARRAY[
@@ -584,29 +557,17 @@ def _table_specs() -> list[BundleTableSpec]:
                 NULL::TEXT AS citekey,
                 journal_name AS journal,
                 year,
-                doi,
-                pmid,
-                pmcid,
                 title AS display_label,
-                CONCAT_WS(' ', title, journal_name, semantic_groups_csv, top_entities_csv, relation_categories_csv) AS search_text,
                 semantic_groups_csv,
                 organ_systems_csv,
-                top_entities_csv,
                 relation_categories_csv,
                 is_in_base,
                 base_rank,
                 text_availability,
-                is_open_access,
-                (open_access_pdf_url IS NOT NULL AND open_access_pdf_url <> '') AS has_open_access_pdf,
                 author_count AS paper_author_count,
                 COALESCE(reference_count, 0) AS paper_reference_count,
-                asset_count AS paper_asset_count,
                 entity_count AS paper_entity_count,
-                relation_count AS paper_relation_count,
-                ROW_NUMBER() OVER (
-                    PARTITION BY COALESCE(cluster_id, 0)
-                    ORDER BY COALESCE(citation_count, 0) DESC, corpus_id
-                )::INTEGER - 1 AS paper_cluster_index
+                relation_count AS paper_relation_count
             FROM paper_base
             WHERE NOT is_in_base
             ORDER BY

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { GraphBundle, GraphDetailAsset, GraphNode } from "@/features/graph/types";
+import type { GraphBundle, GraphDetailAsset, GraphPointRecord } from "@/features/graph/types";
 import { refreshGraphAssetUrl } from "@/features/graph/lib/detail-service";
 
 export function getSignedAssetRefreshDelayMs(asset: GraphDetailAsset | null | undefined) {
@@ -26,7 +26,7 @@ export function useRefreshedAsset({
   asset,
 }: {
   bundle: GraphBundle;
-  node: GraphNode;
+  node: GraphPointRecord;
   asset: GraphDetailAsset | null | undefined;
 }) {
   const [resolvedAsset, setResolvedAsset] = useState<GraphDetailAsset | null | undefined>(asset);

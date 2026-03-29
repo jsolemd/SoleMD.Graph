@@ -3,7 +3,6 @@ import { create } from 'zustand'
 import { createPanelSlice } from './slices/panel-slice'
 import { createConfigSlice } from './slices/config-slice'
 import { createSelectionSlice } from './slices/selection-slice'
-import { createGeoSlice } from './slices/geo-slice'
 import { createTimelineSlice } from './slices/timeline-slice'
 import { createLinksSlice } from './slices/links-slice'
 import { createVisibilitySlice } from './slices/visibility-slice'
@@ -11,16 +10,14 @@ import { createVisibilitySlice } from './slices/visibility-slice'
 import type { PanelSlice } from './slices/panel-slice'
 import type { ConfigSlice } from './slices/config-slice'
 import type { SelectionSlice } from './slices/selection-slice'
-import type { GeoSlice } from './slices/geo-slice'
 import type { TimelineSlice } from './slices/timeline-slice'
 import type { LinksSlice } from './slices/links-slice'
 import type { VisibilitySlice } from './slices/visibility-slice'
 
 /* ───── Convenience re-exports ───── */
 
-export type { ActivePanel, MapControls } from './slices/panel-slice'
+export type { ActivePanel } from './slices/panel-slice'
 export type { TableView, InfoScopeMode } from './slices/config-slice'
-export type { GeoSelection } from './slices/geo-slice'
 
 /* ───── Composite state type ───── */
 
@@ -28,7 +25,6 @@ export type DashboardState =
   PanelSlice &
   ConfigSlice &
   SelectionSlice &
-  GeoSlice &
   TimelineSlice &
   LinksSlice &
   VisibilitySlice
@@ -103,7 +99,6 @@ export const useDashboardStore = create<DashboardState>((...a) => ({
   ...createPanelSlice(...a),
   ...createConfigSlice(...a),
   ...createSelectionSlice(...a),
-  ...createGeoSlice(...a),
   ...createTimelineSlice(...a),
   ...createLinksSlice(...a),
   ...createVisibilitySlice(...a),

@@ -1,57 +1,79 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-export async function registerActivePointViews(conn: AsyncDuckDBConnection) {
+export async function registerActivePointViews(
+  conn: AsyncDuckDBConnection,
+  basePointCount: number
+) {
+  await conn.query(
+    `CREATE OR REPLACE VIEW overlay_points_canvas_web AS
+     SELECT
+       projected.* REPLACE ('overlay' AS nodeRole)
+     FROM universe_points_canvas_web projected
+     WHERE id IN (SELECT id FROM overlay_point_ids)
+       AND id NOT IN (SELECT id FROM base_points_canvas_web)
+     ORDER BY sourcePointIndex, id`
+  )
+
   await conn.query(
     `CREATE OR REPLACE VIEW overlay_points_web AS
      SELECT
-       * REPLACE ('overlay' AS nodeRole, true AS isOverlayActive)
-     FROM universe_points_web
+       projected.* REPLACE ('overlay' AS nodeRole)
+     FROM universe_points_web projected
      WHERE id IN (SELECT id FROM overlay_point_ids)
-       AND id NOT IN (SELECT id FROM base_points_web)`
+       AND id NOT IN (SELECT id FROM base_points_web)
+     ORDER BY sourcePointIndex, id`
+  )
+
+  await conn.query(
+    `CREATE OR REPLACE VIEW active_point_index_lookup_web AS
+     SELECT
+       id,
+       index
+     FROM base_points_canvas_web
+     UNION ALL
+     SELECT
+       id,
+       (${basePointCount} + ROW_NUMBER() OVER (ORDER BY sourcePointIndex, id) - 1)::INTEGER AS index
+     FROM overlay_points_canvas_web`
+  )
+
+  await conn.query(
+    `CREATE OR REPLACE VIEW active_points_canvas_web AS
+     SELECT * FROM base_points_canvas_web
+     UNION ALL
+     SELECT
+       overlay_points_canvas_web.* REPLACE (
+         (${basePointCount} + ROW_NUMBER() OVER (ORDER BY sourcePointIndex, id) - 1)::INTEGER AS index
+       )
+     FROM overlay_points_canvas_web`
   )
 
   await conn.query(
     `CREATE OR REPLACE VIEW active_points_web AS
-     WITH unioned AS (
-       SELECT * FROM base_points_web
-       UNION ALL
-       SELECT * FROM overlay_points_web
-     )
+     SELECT * FROM base_points_web
+     UNION ALL
      SELECT
-       ROW_NUMBER() OVER (
-         ORDER BY
-           CASE WHEN COALESCE(nodeRole, 'primary') = 'overlay' THEN 1 ELSE 0 END,
-           index,
-           sourcePointIndex,
-           id
-       )::INTEGER - 1 AS index,
-       unioned.* EXCLUDE (index)
-     FROM unioned`
+       overlay_points_web.* REPLACE (
+         (${basePointCount} + ROW_NUMBER() OVER (ORDER BY sourcePointIndex, id) - 1)::INTEGER AS index
+       )
+     FROM overlay_points_web`
+  )
+
+  await conn.query(
+    `CREATE OR REPLACE VIEW active_paper_points_canvas_web AS
+     SELECT
+       index,
+       active_points_canvas_web.* EXCLUDE (index),
+       index AS paperIndex
+     FROM active_points_canvas_web`
   )
 
   await conn.query(
     `CREATE OR REPLACE VIEW active_paper_points_web AS
-     WITH paper_points AS (
-       SELECT *
-       FROM active_points_web
-       WHERE nodeKind = 'paper'
-     )
      SELECT
-       ROW_NUMBER() OVER (
-         ORDER BY
-           CASE WHEN COALESCE(nodeRole, 'primary') = 'overlay' THEN 1 ELSE 0 END,
-           index,
-           sourcePointIndex,
-           id
-       )::INTEGER - 1 AS index,
-       paper_points.* EXCLUDE (index),
-       ROW_NUMBER() OVER (
-         ORDER BY
-           CASE WHEN COALESCE(nodeRole, 'primary') = 'overlay' THEN 1 ELSE 0 END,
-           index,
-           sourcePointIndex,
-           id
-       )::INTEGER - 1 AS paperIndex
-     FROM paper_points`
+       index,
+       active_points_web.* EXCLUDE (index),
+       index AS paperIndex
+     FROM active_points_web`
   )
 }

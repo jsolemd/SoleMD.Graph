@@ -14,7 +14,7 @@ const SIZE_STRATEGY_OPTIONS = [
   { value: "single", label: "Single (uniform)" },
 ];
 
-export function SizeConfig({ activeLayer, isMapLayer }: { activeLayer: MapLayer; isMapLayer: boolean }) {
+export function SizeConfig({ activeLayer }: { activeLayer: MapLayer }) {
   const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
   const numericCols = useMemo(() => layerColumns.filter((c) => c.type === 'numeric'), [layerColumns]);
 
@@ -76,26 +76,22 @@ export function SizeConfig({ activeLayer, isMapLayer }: { activeLayer: MapLayer;
             onChange={(v) => setPointSizeRange([pointSizeRange[0], v])}
           />
         </div>
-        {!isMapLayer && (
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Scale points on zoom"
-            checked={scalePointsOnZoom}
-            onChange={(e) => setScalePointsOnZoom(e.currentTarget.checked)}
-            styles={switchLabelStyle}
-          />
-        )}
-        {!isMapLayer && (
-          <Switch
-            size="xs"
-            color={PANEL_ACCENT}
-            label="Show size legend"
-            checked={showSizeLegend}
-            onChange={(e) => setShowSizeLegend(e.currentTarget.checked)}
-            styles={switchLabelStyle}
-          />
-        )}
+        <Switch
+          size="xs"
+          color={PANEL_ACCENT}
+          label="Scale points on zoom"
+          checked={scalePointsOnZoom}
+          onChange={(e) => setScalePointsOnZoom(e.currentTarget.checked)}
+          styles={switchLabelStyle}
+        />
+        <Switch
+          size="xs"
+          color={PANEL_ACCENT}
+          label="Show size legend"
+          checked={showSizeLegend}
+          onChange={(e) => setShowSizeLegend(e.currentTarget.checked)}
+          styles={switchLabelStyle}
+        />
       </Stack>
     </div>
   );

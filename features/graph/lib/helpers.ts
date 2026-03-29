@@ -1,11 +1,3 @@
-import type { GraphNode } from '@/features/graph/types';
-
-/** Safe property access on a graph node by column key. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getNodeProp(node: GraphNode, key: string): any {
-  return (node as never as Record<string, unknown>)[key];
-}
-
 /** Loop-safe min that avoids stack overflow from spread on large arrays. */
 export function safeMin(values: number[]): number {
   if (values.length === 0) return 0;

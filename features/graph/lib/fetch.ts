@@ -61,9 +61,6 @@ function buildGraphBundle(row: GraphRunRow): GraphBundle {
     bundleManifest: manifest,
     bundleUri: row.bundle_uri,
     bundleVersion: manifest.bundleVersion,
-    duckdbUrl: manifest.duckdbFile
-      ? buildBundleAssetUrl(row.bundle_checksum, manifest.duckdbFile.path)
-      : null,
     graphName: row.graph_name,
     manifestUrl: buildBundleAssetUrl(row.bundle_checksum, 'manifest.json'),
     nodeKind: row.node_kind,
@@ -177,11 +174,6 @@ export async function resolveGraphBundleDirectory(bundle: GraphBundle) {
 
 export function getGraphBundleAssetNames(bundle: GraphBundle) {
   const assetNames = new Set<string>(['manifest.json'])
-  const duckdbPath = bundle.bundleManifest.duckdbFile?.path
-
-  if (duckdbPath) {
-    assetNames.add(duckdbPath)
-  }
 
   for (const table of Object.values(bundle.bundleManifest.tables)) {
     assetNames.add(table.parquetFile)

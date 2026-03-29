@@ -2,7 +2,7 @@
 
 import { Badge } from "@mantine/core";
 import { motion, AnimatePresence } from "framer-motion";
-import type { InfoScope } from "@/features/graph/hooks/use-info-stats";
+import type { GraphInfoScope } from "@/features/graph/types";
 import { snappy } from "@/lib/motion";
 import { formatNumber } from "@/lib/helpers";
 import { badgeOutlineStyles } from "../../panels/PanelShell";
@@ -10,7 +10,7 @@ import { badgeOutlineStyles } from "../../panels/PanelShell";
 interface ScopeIndicatorProps {
   scopedCount: number;
   totalCount: number;
-  scope: InfoScope;
+  scope: GraphInfoScope;
   isSubset: boolean;
   selectionSource: string | null;
 }

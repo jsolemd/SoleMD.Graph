@@ -3,13 +3,6 @@ import type { DashboardState } from '../dashboard-store'
 
 export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | null
 
-/** Callbacks registered by MapCanvas so the Wordmark toolbar can control the map. */
-export interface MapControls {
-  zoomIn: () => void
-  zoomOut: () => void
-  fitView: () => void
-}
-
 export interface PanelSlice {
   // Panel visibility
   activePanel: ActivePanel
@@ -18,9 +11,6 @@ export interface PanelSlice {
   tableOpen: boolean
   tableHeight: number
   uiHidden: boolean
-
-  // Map controls — registered by MapCanvas, consumed by Wordmark
-  mapControls: MapControls | null
 
   // Prompt size: minimized (pill) / normal / maximized (full-height)
   promptMinimized: boolean
@@ -45,7 +35,6 @@ export interface PanelSlice {
   togglePromptMinimized: () => void
   togglePromptMaximized: () => void
   setWriteContent: (content: string) => void
-  setMapControls: (controls: MapControls | null) => void
 }
 
 export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> = (set) => ({
@@ -55,7 +44,6 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   tableOpen: false,
   tableHeight: 280,
   uiHidden: false,
-  mapControls: null,
   promptMinimized: false,
   promptMaximized: false,
   writeContent: '',
@@ -81,5 +69,4 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   togglePromptMinimized: () => set((s) => ({ promptMinimized: !s.promptMinimized, promptMaximized: false })),
   togglePromptMaximized: () => set((s) => ({ promptMaximized: !s.promptMaximized, promptMinimized: false })),
   setWriteContent: (content) => set({ writeContent: content }),
-  setMapControls: (controls) => set({ mapControls: controls }),
 })

@@ -43,7 +43,7 @@ const SAMPLE_QUERIES = [
   },
   {
     label: "Count Points",
-    sql: "SELECT count(*) AS point_count FROM active_points_web",
+    sql: "SELECT count(*) AS point_count FROM current_points_web",
   },
   {
     label: "Top Clusters",
@@ -56,7 +56,7 @@ const SAMPLE_QUERIES = [
   paperTitle,
   clusterLabel,
   year
-FROM active_points_web
+FROM current_points_web
 LIMIT 10`,
   },
 ] as const;
@@ -75,7 +75,7 @@ export function QueryPanel({
   const [running, setRunning] = useState(false);
 
   const availableTables = useMemo(
-    () => ["active_points_web", "active_paper_points_web", ...Object.keys(bundle.bundleManifest.tables).sort()],
+    () => ["current_points_canvas_web", "current_points_web", "current_paper_points_web", "current_links_web", ...Object.keys(bundle.bundleManifest.tables).sort()],
     [bundle.bundleManifest.tables]
   );
 
@@ -199,8 +199,9 @@ export function QueryPanel({
             </Group>
 
             <Text style={panelTextDimStyle}>
-              `active_points_web` is the live canvas view. `active_paper_points_web`
-              is the paper-layer projection of that same active set.
+              `current_points_canvas_web` is the canonical live render table read by Cosmograph.
+              `current_points_web` and `current_paper_points_web` are the query-facing active
+              views for widgets, selection, and table access.
             </Text>
           </Group>
 

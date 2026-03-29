@@ -1,6 +1,5 @@
 import { coerceNullableNumber, coerceNullableString } from '@/lib/helpers'
 import type {
-  ChunkDetail,
   ClusterExemplar,
   ClusterInfo,
   GraphPaperDetail,
@@ -23,21 +22,18 @@ export interface GraphClusterDetailRow {
   mean_outlier_score: number | null
   member_count: number
   paper_count: number | null
-  representative_rag_chunk_id: string | null
+  representative_point_id: string | null
 }
 
 export interface GraphClusterExemplarRow {
-  chunk_preview: string | null
   citekey: string | null
   cluster_id: number
   exemplar_score: number | null
   is_representative: boolean | null
-  page_number: number | null
   paper_id: string
-  rag_chunk_id: string
+  point_id: string
+  preview: string | null
   rank: number
-  section_canonical: string | null
-  section_type: string | null
   title: string | null
 }
 
@@ -71,37 +67,6 @@ export interface GraphPaperDetailRow {
   year: number | null
 }
 
-export interface GraphChunkDetailRow {
-  abstract: string | null
-  block_id: string | null
-  block_type: string | null
-  char_count: number | string | null
-  chunk_index: number | string | null
-  chunk_kind: string | null
-  chunk_preview: string | null
-  chunk_text: string | null
-  citekey: string | null
-  cluster_id: number | string | null
-  cluster_label: string | null
-  cluster_probability: number | null
-  doi: string | null
-  journal: string | null
-  outlier_score: number | null
-  page_number: number | string | null
-  paper_id: string
-  pmcid: string | null
-  pmid: number | string | null
-  rag_chunk_id: string
-  section_canonical: string | null
-  section_path: string | null
-  section_type: string | null
-  source_embedding_id: string | null
-  stable_chunk_id: string | null
-  title: string | null
-  token_count: number | string | null
-  year: number | null
-}
-
 export function mapCluster(row: GraphClusterDetailRow): ClusterInfo {
   return {
     clusterId: row.cluster_id,
@@ -111,7 +76,7 @@ export function mapCluster(row: GraphClusterDetailRow): ClusterInfo {
     memberCount: row.member_count,
     centroidX: row.centroid_x,
     centroidY: row.centroid_y,
-    representativeRagChunkId: row.representative_rag_chunk_id,
+    representativePointId: row.representative_point_id,
     candidateCount: row.candidate_count ?? null,
     entityCandidateCount: row.entity_candidate_count ?? null,
     lexicalCandidateCount: row.lexical_candidate_count ?? null,
@@ -126,16 +91,13 @@ export function mapExemplar(row: GraphClusterExemplarRow): ClusterExemplar {
   return {
     clusterId: row.cluster_id,
     rank: row.rank,
-    ragChunkId: row.rag_chunk_id,
+    pointId: row.point_id,
     paperId: row.paper_id,
     citekey: row.citekey,
     paperTitle: row.title,
-    sectionType: row.section_type,
-    sectionCanonical: row.section_canonical,
-    pageNumber: row.page_number ?? null,
     exemplarScore: row.exemplar_score ?? 0,
     isRepresentative: Boolean(row.is_representative),
-    chunkPreview: row.chunk_preview,
+    preview: row.preview,
   }
 }
 
@@ -209,39 +171,6 @@ export function mapPaper(row: GraphPaperDetailRow): GraphPaperDetail {
     tableCount: coerceNullableNumber(row.table_count),
     textAvailability: row.text_availability,
     title: row.title,
-    year: row.year ?? null,
-  }
-}
-
-export function mapChunkDetail(row: GraphChunkDetailRow): ChunkDetail {
-  return {
-    abstract: row.abstract,
-    blockId: row.block_id,
-    blockType: row.block_type,
-    charCount: coerceNullableNumber(row.char_count),
-    chunkIndex: coerceNullableNumber(row.chunk_index),
-    chunkKind: row.chunk_kind,
-    chunkPreview: row.chunk_preview,
-    chunkText: row.chunk_text,
-    citekey: row.citekey,
-    clusterId: coerceNullableNumber(row.cluster_id),
-    clusterLabel: row.cluster_label,
-    clusterProbability: row.cluster_probability ?? null,
-    doi: row.doi,
-    journal: row.journal,
-    outlierScore: row.outlier_score ?? null,
-    pageNumber: coerceNullableNumber(row.page_number),
-    paperId: row.paper_id,
-    pmcid: row.pmcid,
-    pmid: coerceNullableString(row.pmid),
-    ragChunkId: row.rag_chunk_id,
-    sectionCanonical: row.section_canonical,
-    sectionPath: row.section_path,
-    sectionType: row.section_type,
-    sourceEmbeddingId: row.source_embedding_id,
-    stableChunkId: row.stable_chunk_id,
-    title: row.title,
-    tokenCount: coerceNullableNumber(row.token_count),
     year: row.year ?? null,
   }
 }

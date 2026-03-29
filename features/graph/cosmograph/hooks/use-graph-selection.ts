@@ -34,5 +34,18 @@ export function useGraphSelection() {
     return cosmograph?.getActiveSelectionSourceId() ?? null;
   }, [cosmograph]);
 
-  return { selectPoint, setFocusedPoint, unselectAllPoints, clearSelections, getPointsSelection, getLinksSelection, getActiveSelectionSourceId };
+  const getSelectedPointIndices = useCallback(() => {
+    return cosmograph?.getSelectedPointIndices() ?? [];
+  }, [cosmograph]);
+
+  return {
+    selectPoint,
+    setFocusedPoint,
+    unselectAllPoints,
+    clearSelections,
+    getPointsSelection,
+    getLinksSelection,
+    getActiveSelectionSourceId,
+    getSelectedPointIndices,
+  };
 }

@@ -6,18 +6,11 @@ import type { GraphStats } from "@/features/graph/types";
 
 export function StatsBar({ stats }: { stats: GraphStats }) {
   const items = useMemo(() => {
-    const result = [
+    return [
       { label: stats.pointLabel, value: stats.points },
-    ];
-    // Show papers count only on chunk layer (cross-reference)
-    if (stats.pointLabel === 'chunks') {
-      result.push({ label: "papers", value: stats.papers });
-    }
-    result.push(
       { label: "clusters", value: stats.clusters },
       { label: "noise", value: stats.noise },
-    );
-    return result;
+    ];
   }, [stats]);
 
   return (

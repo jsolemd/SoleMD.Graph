@@ -8,7 +8,6 @@ import {
   BrainCircuit,
   Camera,
   Database,
-  Download,
   Eye,
   EyeOff,
   Filter,
@@ -53,21 +52,19 @@ export function Wordmark() {
   const renderLinks = useDashboardStore((s) => s.renderLinks);
   const setRenderLinks = useDashboardStore((s) => s.setRenderLinks);
   const selectedNode = useGraphStore((s) => s.selectedNode);
-  const mapControls = useDashboardStore((s) => s.mapControls);
   const layerConfig = getLayerConfig(activeLayer);
   const layerHasLinks = layerConfig.hasLinks;
-  const isMapLayer = layerConfig.rendererType === "maplibre";
   const { color: modeColor } = getModeConfig(mode);
   const [spinCount, setSpinCount] = useState(0);
   const { fitView, fitViewByIndices, zoomToPoint, zoomIn, zoomOut } = useGraphCamera();
-  const { selectPoint } = useGraphSelection();
-  const { captureScreenshot, exportDataAsCsv } = useGraphExport();
+  const { selectPoint, getSelectedPointIndices } = useGraphSelection();
+  const { captureScreenshot } = useGraphExport();
 
   // Context-aware links button:
   // - No selection: toggle link visibility (show/hide citation lines)
   // - Node selected: toggle connected select (expand/collapse neighbors)
   const handleLinksToggle = useCallback(() => {
-    if (selectedNode && !isMapLayer) {
+    if (selectedNode) {
       const turningOn = !connectedSelect;
       toggleConnectedSelect();
       if (turningOn) {
@@ -78,19 +75,15 @@ export function Wordmark() {
     } else {
       setRenderLinks(!renderLinks);
     }
-  }, [connectedSelect, isMapLayer, renderLinks, selectPoint, selectedNode, setRenderLinks, toggleConnectedSelect]);
+  }, [connectedSelect, renderLinks, selectPoint, selectedNode, setRenderLinks, toggleConnectedSelect]);
 
-  const linksButtonActive = selectedNode && !isMapLayer ? connectedSelect : renderLinks;
-  const linksButtonLabel = selectedNode && !isMapLayer
+  const linksButtonActive = selectedNode ? connectedSelect : renderLinks;
+  const linksButtonLabel = selectedNode
     ? (connectedSelect ? "Hide connected nodes" : "Show connected nodes")
     : (renderLinks ? "Hide links" : "Show links");
 
   const handleFitView = useCallback(() => {
-    if (isMapLayer) {
-      mapControls?.fitView();
-      return;
-    }
-    const selected = useDashboardStore.getState().selectedPointIndices;
+    const selected = getSelectedPointIndices();
     if (selected.length === 1) {
       zoomToPoint(selected[0], 250);
     } else if (selected.length > 1) {
@@ -98,31 +91,19 @@ export function Wordmark() {
     } else {
       fitView(250, 0.1);
     }
-  }, [fitView, fitViewByIndices, isMapLayer, mapControls, zoomToPoint]);
+  }, [fitView, fitViewByIndices, getSelectedPointIndices, zoomToPoint]);
 
   const handleZoomIn = useCallback(() => {
-    if (isMapLayer) {
-      mapControls?.zoomIn();
-      return;
-    }
     zoomIn();
-  }, [isMapLayer, mapControls, zoomIn]);
+  }, [zoomIn]);
 
   const handleZoomOut = useCallback(() => {
-    if (isMapLayer) {
-      mapControls?.zoomOut();
-      return;
-    }
     zoomOut();
-  }, [isMapLayer, mapControls, zoomOut]);
+  }, [zoomOut]);
 
   const handleScreenshot = useCallback(() => {
     captureScreenshot();
   }, [captureScreenshot]);
-
-  const handleExport = useCallback(async () => {
-    await exportDataAsCsv();
-  }, [exportDataAsCsv]);
 
   return (
     <>
@@ -256,36 +237,19 @@ export function Wordmark() {
                 <Minus />
               </ActionIcon>
             </Tooltip>
-            {!isMapLayer && (
-              <>
-                <Tooltip label="Save screenshot" position="bottom" withArrow>
-                  <ActionIcon
-                    variant="transparent"
-                    size="lg"
-                    radius="xl"
-                    className="graph-icon-btn"
-                    styles={iconBtnStyles}
-                    onClick={handleScreenshot}
-                    aria-label="Save screenshot"
-                  >
-                    <Camera />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label="Export data" position="bottom" withArrow>
-                  <ActionIcon
-                    variant="transparent"
-                    size="lg"
-                    radius="xl"
-                    className="graph-icon-btn"
-                    styles={iconBtnStyles}
-                    onClick={handleExport}
-                    aria-label="Export data"
-                  >
-                    <Download />
-                  </ActionIcon>
-                </Tooltip>
-              </>
-            )}
+            <Tooltip label="Save screenshot" position="bottom" withArrow>
+              <ActionIcon
+                variant="transparent"
+                size="lg"
+                radius="xl"
+                className="graph-icon-btn"
+                styles={iconBtnStyles}
+                onClick={handleScreenshot}
+                aria-label="Save screenshot"
+              >
+                <Camera />
+              </ActionIcon>
+            </Tooltip>
 
             <div className="mx-1 h-5 w-px" style={{ backgroundColor: "var(--graph-panel-border)" }} />
 

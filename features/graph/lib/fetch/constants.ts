@@ -44,7 +44,6 @@ export const DEPRECATED_BUNDLE_TABLES = [
   'graph_clusters',
   'graph_facets',
   'graph_cluster_exemplars',
-  'graph_chunk_details',
   'paper_points',
 ] as const
 

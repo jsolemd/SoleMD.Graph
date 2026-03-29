@@ -1,7 +1,7 @@
 # Corpus Filter
 
 > **Goal**: build a domain-rich corpus and a clean base scaffold
-> **Target base**: roughly `1.16M` high-quality points
+> **Target base**: roughly `1.0M` high-quality points
 > **Long-term universe**: mapped papers that remain available for later overlay promotion
 
 This document describes the corpus-admission pipeline, not the browser runtime.
@@ -18,7 +18,7 @@ The filter is driven by four inputs:
 1. A curated journal list for the neuro / psych / neuroscience domain.
 2. Venue patterns that catch NLM gaps.
 3. A curated vocab alias set for PubTator3 entity matching.
-4. PubTator3 annotations and relations for direct evidence admission.
+4. PubTator3 annotations and relations for rule-based admission.
 
 The important principle is that the filter should preserve breadth across
 medicine while still keeping the opening scaffold high quality.
@@ -27,7 +27,7 @@ medicine while still keeping the opening scaffold high quality.
 
 ## Canonical Admission Model
 
-The old visibility-era split is replaced by two simple decisions:
+The older multi-tier admission model is replaced by two simple decisions:
 
 - **Corpus admission**: does the paper belong in the mapped domain corpus?
 - **Base admission**: should the paper be in the always-loaded scaffold?
@@ -82,7 +82,7 @@ in the base scaffold.
 
 Base admission uses the simplified rule system:
 
-`base = direct evidence OR curated base journal family`
+`base = rule evidence OR flagship journal OR narrow vocab anchor`
 
 The rule sources are:
 
@@ -93,9 +93,10 @@ The rule sources are:
 
 This is where the schema simplification matters:
 
-- `base_journal_family` defines the families
+- `base_journal_family` defines curated journal families
 - `journal_rule` maps normalized venues into those families
-- `entity_rule` and `relation_rule` capture direct evidence
+- `entity_rule` and `relation_rule` capture rule evidence
+- corpus `admission_reason` distinguishes `vocab_entity_match` from broader venue-led admissions
 
 The output is written onto the mapped run tables as `is_in_base` and
 `base_rank`.
@@ -149,9 +150,9 @@ important overlap from other systems.
 
 The practical base mix is:
 
-- direct-evidence papers from the neuro / psych domain
-- flagship and prestige journals that reliably publish relevant overlap
-- curated organ-system overlap that belongs in the first-paint scaffold
+- rule-backed papers from the neuro / psych domain
+- flagship journals that reliably preserve foundational and clinical core coverage
+- narrow vocab-anchored overlap that belongs in the first-paint scaffold
 
 That means the base should include strong representation across:
 
@@ -165,6 +166,14 @@ That means the base should include strong representation across:
 
 The key is not to make base exhaustive. The key is to make it the right
 opening set.
+
+Practical exclusions:
+
+- `journal_match` alone is not enough for base admission
+- `pattern_match` alone is not enough for base admission
+- `journal_and_vocab` is not automatically rule evidence
+- broad specialty tails remain in `universe_points` unless they also carry
+  curated rule support or a narrow approved vocab-anchor path
 
 ---
 
@@ -202,7 +211,7 @@ the quality and domain requirements.
 
 ## What This Doc Does Not Use
 
-- no legacy lane policy
+- no legacy multi-tier policy
 - no extra first-paint tiering
 - no compatibility mapping from old naming
 

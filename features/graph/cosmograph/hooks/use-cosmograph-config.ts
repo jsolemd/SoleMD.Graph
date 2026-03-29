@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useComputedColorScheme } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
@@ -93,7 +93,6 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     [colorSchemeName, colorTheme, activeLayer, pointColorColumn],
   );
 
-  const [renderedPointCount, setRenderedPointCount] = useState<number | null>(null);
   const pointIncludeColumns = useMemo(
     () =>
       getPointIncludeColumns({
@@ -102,13 +101,29 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
         showTimeline,
         filterColumns,
         timelineColumn,
+        pointColorColumn,
+        pointSizeColumn,
+        pointLabelColumn,
+        positionXColumn,
+        positionYColumn,
       }),
-    [activeLayer, activePanel, filterColumns, showTimeline, timelineColumn],
+    [
+      activeLayer,
+      activePanel,
+      filterColumns,
+      pointColorColumn,
+      pointLabelColumn,
+      pointSizeColumn,
+      positionXColumn,
+      positionYColumn,
+      showTimeline,
+      timelineColumn,
+    ],
   );
 
   const totalPointCount = useMemo(() => {
-    return renderedPointCount ?? canvas.pointCounts[activeLayer] ?? 0;
-  }, [activeLayer, canvas.pointCounts, renderedPointCount]);
+    return canvas.pointCounts[activeLayer] ?? 0;
+  }, [activeLayer, canvas.pointCounts]);
 
   // Auto-scale opacity: sparse graphs stay a touch more opaque so individual
   // points are visible; dense graphs soften further to avoid glare.
@@ -173,7 +188,5 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     totalPointCount,
     effectiveOpacity,
     fitViewPadding,
-    renderedPointCount,
-    setRenderedPointCount,
   };
 }

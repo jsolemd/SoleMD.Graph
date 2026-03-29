@@ -2,15 +2,14 @@
 
 import { Progress, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
-import type { InfoStats } from "@/features/graph/hooks/use-info-stats";
-import type { MapLayer } from "@/features/graph/types";
+import type { GraphInfoSummary, MapLayer } from "@/features/graph/types";
 import {
   panelTextMutedStyle,
   panelTextStyle,
 } from "../../panels/PanelShell";
 
 interface OverviewGridProps {
-  info: InfoStats;
+  info: GraphInfoSummary;
   layer: MapLayer;
 }
 
@@ -66,6 +65,7 @@ function StatCard({
 }
 
 export function OverviewGrid({ info, layer }: OverviewGridProps) {
+  void layer;
   const {
     scopedCount,
     totalCount,
@@ -74,16 +74,13 @@ export function OverviewGrid({ info, layer }: OverviewGridProps) {
     isSubset,
     papers,
     clusters,
-    noise,
     yearRange,
   } = info;
-
-  const isPaper = layer === "paper";
 
   return (
     <div className="grid grid-cols-2 gap-2">
       <StatCard
-        label={isPaper ? "Papers" : "Points"}
+        label="Points"
         value={
           isSubset
             ? `${formatNumber(scopedCount)} / ${formatNumber(totalCount)}`
@@ -98,11 +95,7 @@ export function OverviewGrid({ info, layer }: OverviewGridProps) {
         value={formatNumber(baseCount)}
         proportion={totalCount > 0 ? baseCount / totalCount : undefined}
       />
-      {isPaper ? (
-        <StatCard label="Noise" value={formatNumber(noise)} />
-      ) : (
-        <StatCard label="Papers" value={formatNumber(papers)} />
-      )}
+      <StatCard label="Papers" value={formatNumber(papers)} />
       <StatCard label="Clusters" value={formatNumber(clusters)} />
       <StatCard
         label="Years"

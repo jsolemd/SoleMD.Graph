@@ -74,14 +74,18 @@ export function GraphBundleLoadingOverlay({
   progress: GraphBundleLoadProgress | null;
   canvasReady: boolean;
 }) {
-  const qaPointCount =
-    typeof bundle.qaSummary?.["point_count"] === "number"
-      ? bundle.qaSummary["point_count"]
-      : undefined;
+  const basePointCount =
+    bundle.bundleManifest.tables.base_points?.rowCount ??
+    (typeof bundle.qaSummary?.["base_count"] === "number"
+      ? bundle.qaSummary["base_count"]
+      : undefined);
   const qaClusterCount =
     typeof bundle.qaSummary?.["cluster_count"] === "number"
       ? bundle.qaSummary["cluster_count"]
       : undefined;
+  const baseBytes =
+    (bundle.bundleManifest.tables.base_points?.bytes ?? 0) +
+    (bundle.bundleManifest.tables.base_clusters?.bytes ?? 0);
   const rawPercent = progress?.percent ?? 0;
   const percent = canvasReady
     ? Math.max(rawPercent, 95)
@@ -149,10 +153,10 @@ export function GraphBundleLoadingOverlay({
 
           <div className="grid grid-cols-3 gap-3">
             <BundleStat
-              label="Points"
+              label="Base Points"
               value={
-                qaPointCount != null
-                  ? formatNumber(qaPointCount)
+                basePointCount != null
+                  ? formatNumber(basePointCount)
                   : "..."
               }
             />
@@ -165,8 +169,8 @@ export function GraphBundleLoadingOverlay({
               }
             />
             <BundleStat
-              label="Dataset"
-              value={formatBytes(bundle.bundleBytes)}
+              label="Base Size"
+              value={formatBytes(baseBytes || bundle.bundleBytes)}
             />
           </div>
         </Stack>

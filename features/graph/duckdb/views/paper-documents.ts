@@ -54,21 +54,21 @@ export async function registerPaperDocumentViews(
          COALESCE(MAX(p.paperTitle), MAX(d.title)) AS title,
          COALESCE(MAX(p.journal), MAX(d.journal)) AS journal,
          COALESCE(MAX(p.year), MAX(d.year)) AS year,
-         COALESCE(MAX(p.doi), MAX(d.doi)) AS doi,
-         COALESCE(MAX(p.pmid), MAX(d.pmid)) AS pmid,
-         COALESCE(MAX(p.pmcid), MAX(d.pmcid)) AS pmcid,
+         MAX(d.doi) AS doi,
+         MAX(d.pmid) AS pmid,
+         MAX(d.pmcid) AS pmcid,
          MAX(d.abstract) AS abstract,
          COALESCE(MAX(d.authors_json), '[]') AS authors_json,
          COALESCE(MAX(p.paperAuthorCount), MAX(d.author_count)) AS author_count,
          COALESCE(MAX(p.paperReferenceCount), MAX(d.reference_count)) AS reference_count,
-         COALESCE(MAX(p.paperAssetCount), MAX(d.asset_count)) AS asset_count,
-         COALESCE(MAX(p.paperChunkCount), MAX(d.chunk_count)) AS chunk_count,
+         MAX(d.asset_count) AS asset_count,
+         MAX(d.chunk_count) AS chunk_count,
          COALESCE(MAX(p.paperEntityCount), MAX(d.entity_count)) AS entity_count,
          COALESCE(MAX(p.paperRelationCount), MAX(d.relation_count)) AS relation_count,
          NULL::INTEGER AS sentence_count,
-         COALESCE(MAX(p.paperPageCount), MAX(d.page_count)) AS page_count,
-         COALESCE(MAX(p.paperTableCount), MAX(d.table_count)) AS table_count,
-         COALESCE(MAX(p.paperFigureCount), MAX(d.figure_count)) AS figure_count,
+         MAX(d.page_count) AS page_count,
+         MAX(d.table_count) AS table_count,
+         MAX(d.figure_count) AS figure_count,
          MAX(d.text_availability) AS text_availability,
          MAX(d.is_open_access) AS is_open_access,
          MAX(d.open_access_pdf_url) AS open_access_pdf_url,
@@ -76,9 +76,9 @@ export async function registerPaperDocumentViews(
          MAX(d.open_access_pdf_license) AS open_access_pdf_license,
          COUNT(*) FILTER (WHERE p.id IS NOT NULL) AS graph_point_count,
          COUNT(DISTINCT CASE WHEN p.clusterId > 0 THEN p.clusterId END) AS graph_cluster_count
-       FROM active_paper_points_web p
-       FULL OUTER JOIN paper_documents_web d
-         ON p.paperId = d.paper_id
+       FROM current_paper_points_web p
+         FULL OUTER JOIN paper_documents_web d
+           ON p.paperId = d.paper_id
        GROUP BY
          COALESCE(p.paperId, d.paper_id)`
     )

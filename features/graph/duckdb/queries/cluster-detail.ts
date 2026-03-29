@@ -20,7 +20,7 @@ export async function queryClusterRows(
       member_count,
       centroid_x,
       centroid_y,
-      representative_rag_chunk_id,
+      representative_point_id,
       label_source,
       candidate_count,
       entity_candidate_count,
@@ -45,16 +45,13 @@ export async function queryExemplarRows(
     `SELECT
       cluster_id,
       rank,
-      rag_chunk_id,
+      point_id,
       paper_id,
       citekey,
       title,
-      section_type,
-      section_canonical,
-      page_number,
       exemplar_score,
       is_representative,
-      chunk_preview
+      preview
     FROM graph_cluster_exemplars
     WHERE cluster_id = ?
     ORDER BY rank

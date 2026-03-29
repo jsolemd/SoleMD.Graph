@@ -7,17 +7,15 @@ import { useGraphStore } from "@/features/graph/stores";
 import { getTableColumnsForLayer, getColumnMetaForLayer } from "@/features/graph/lib/columns";
 import { formatCellValue } from "@/features/graph/lib/helpers";
 import { panelTableHeaderStyle, panelTextDimStyle } from "../../panels/PanelShell";
-import type { GraphNode, MapLayer } from "@/features/graph/types";
+import type { GraphPointRecord, MapLayer } from "@/features/graph/types";
 
 interface DataTableBodyProps {
   activeLayer: MapLayer;
-  pageRows: GraphNode[];
+  pageRows: GraphPointRecord[];
   startIdx: number;
   pageLoading: boolean;
   pageRefreshing: boolean;
   pageError: string | null;
-  selectedIndexSet: Set<number>;
-  highlightedIndexSet: Set<number>;
   resolvedTableView: string;
 }
 
@@ -28,26 +26,23 @@ export function DataTableBody({
   pageLoading,
   pageRefreshing,
   pageError,
-  selectedIndexSet,
-  highlightedIndexSet,
   resolvedTableView,
 }: DataTableBodyProps) {
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const selectNode = useGraphStore((s) => s.selectNode);
   const { zoomToPoint } = useGraphCamera();
-  const { setFocusedPoint } = useGraphSelection();
+  const { selectPoint, setFocusedPoint } = useGraphSelection();
 
   const tableColumns = useMemo(() => getTableColumnsForLayer(activeLayer), [activeLayer]);
 
   const handleRowClick = useCallback(
-    (node: GraphNode) => {
+    (node: GraphPointRecord) => {
       selectNode(node);
-      if (activeLayer !== "geo") {
-        setFocusedPoint(node.index);
-        zoomToPoint(node.index, 250);
-      }
+      selectPoint(node.index, false, false);
+      setFocusedPoint(node.index);
+      zoomToPoint(node.index, 250);
     },
-    [activeLayer, selectNode, setFocusedPoint, zoomToPoint]
+    [selectNode, selectPoint, setFocusedPoint, zoomToPoint]
   );
 
   if (pageLoading) {
@@ -106,13 +101,11 @@ export function DataTableBody({
         </Table.Thead>
         <Table.Tbody>
           {pageRows.map((node, i) => {
-            const isIntentSelected = selectedIndexSet.has(node.index);
-            const isHighlighted = highlightedIndexSet.has(node.index);
             const isFocused = selectedNode?.id === node.id;
             const showSelectedState =
               resolvedTableView === "selected"
-                ? isIntentSelected || isFocused
-                : isHighlighted || isFocused;
+                ? true
+                : isFocused;
 
             return (
               <Table.Tr
@@ -132,7 +125,7 @@ export function DataTableBody({
                     ? "3px solid var(--mode-accent)"
                     : "3px solid transparent",
                   backgroundColor:
-                    isHighlighted || isFocused
+                    showSelectedState
                       ? "var(--mode-accent-subtle)"
                       : undefined,
                 }}

@@ -106,6 +106,23 @@ features/graph/cosmograph/
 - `cosmograph-selection.ts` and `cosmograph-columns.ts` stay in `lib/`
   because they import `@uwdata/mosaic-core`, not Cosmograph
 
+### Layer Boundary Rule
+
+The canonical graph runtime is currently a single `corpus` layer. That is an
+intentional architecture constraint, not an implementation shortcut.
+
+Future layers must be treated as optional modules, not as permanent branches
+through the shared graph runtime. A new layer should bring its own:
+
+- bundle contract or API contract
+- DuckDB registration and query surface
+- UI entry point
+- canvas adapter, if it renders on the canvas at all
+
+The base corpus path must remain stable if those modules are disabled. In
+practice that means no deep coupling between future layers and the core store,
+bundle bootstrap, or first-paint Cosmograph configuration.
+
 ### Semantic Scholar (Academic Graph)
 
 The world's largest open academic graph. Provides everything we would otherwise
@@ -217,7 +234,7 @@ DuckDB is a one-time filter tool, not a data store.
 ### Canonical PostgreSQL Backbone
 
 The durable backbone is relational and now centered on base admission rather
-than visibility lanes.
+than older multi-tier first-paint policy.
 
 - `solemd.corpus`: domain membership, admission reason, and mapping readiness
 - `solemd.papers`: canonical paper metadata plus release-aware S2 enrichment
@@ -231,7 +248,7 @@ than visibility lanes.
 - `solemd.base_policy`: active base-admission policy record
 - `solemd.base_journal_family`: curated base journal families
 - `solemd.journal_rule`: normalized venue-to-family mapping
-- `solemd.entity_rule`: direct evidence base-admission rules
+- `solemd.entity_rule`: rule-backed base-admission rules
 - `solemd.relation_rule`: relation-driven overlap rules
 - `solemd.paper_evidence_summary`: durable per-paper evidence summary for restartable base admission
 - `solemd.graph_runs`: published run metadata and bundle manifest
@@ -517,7 +534,10 @@ File Delivery:
      premapped universe tail with stable appended point indices
      ──→ DuckDB ──→ universe_points.parquet
      local activation surface
-     ──→ DuckDB temp membership + views (`overlay_point_ids` → `overlay_points_web` → `active_points_web`)
+     ──→ DuckDB base/universe projection views + temp overlay membership
+     ──→ `overlay_point_ids_by_producer` → `overlay_point_ids` → `active_points_web`
+     point selection scope
+     ──→ DuckDB `selected_point_indices` materialized from Cosmograph clauses
      richer paper detail rows
      ──→ DuckDB ──→ paper_documents.parquet
      cluster exemplar previews

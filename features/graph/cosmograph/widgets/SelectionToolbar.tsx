@@ -116,10 +116,10 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
     // Clear tool activation when selection changes or locks
     useEffect(() => {
       const unsubscribe = useDashboardStore.subscribe((state, prevState) => {
-        const hasSelectionNow = state.selectedPointIndices.length > 0;
-        const hadSelection = prevState.selectedPointIndices.length > 0;
-        const isLockedNow = state.lockedSelection !== null;
-        const wasLocked = prevState.lockedSelection !== null;
+        const hasSelectionNow = state.selectedPointCount > 0;
+        const hadSelection = prevState.selectedPointCount > 0;
+        const isLockedNow = state.selectionLocked;
+        const wasLocked = prevState.selectionLocked;
 
         if ((hadSelection && !hasSelectionNow) || (!wasLocked && isLockedNow)) {
           setActivatedToolId(null);

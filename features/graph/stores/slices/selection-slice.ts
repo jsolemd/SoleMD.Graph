@@ -8,19 +8,19 @@ export interface SelectionSlice {
 
   // Crossfilter state mirrored from Cosmograph callbacks.
   // "Current" is visibility-scoped (filters, timeline, budget), not manual selection intent.
-  currentPointIndices: number[] | null
   currentPointScopeSql: string | null
-  selectedPointIndices: number[]
+  currentScopeRevision: number
+  selectedPointCount: number
+  selectedPointRevision: number
   highlightedPointIndices: number[]
   activeSelectionSourceId: string | null
-  lockedSelection: Set<number> | null
+  selectionLocked: boolean
 
   // Actions
   setConnectedSelect: (on: boolean) => void
   toggleConnectedSelect: () => void
-  setCurrentPointIndices: (indices: number[] | null) => void
   setCurrentPointScopeSql: (sql: string | null) => void
-  setSelectedPointIndices: (indices: number[]) => void
+  setSelectedPointCount: (count: number) => void
   setHighlightedPointIndices: (indices: number[]) => void
   setActiveSelectionSourceId: (sourceId: string | null) => void
   lockSelection: () => void
@@ -29,23 +29,39 @@ export interface SelectionSlice {
 
 export const createSelectionSlice: StateCreator<DashboardState, [], [], SelectionSlice> = (set) => ({
   connectedSelect: false,
-  currentPointIndices: null,
   currentPointScopeSql: null,
-  selectedPointIndices: [],
+  currentScopeRevision: 0,
+  selectedPointCount: 0,
+  selectedPointRevision: 0,
   highlightedPointIndices: [],
   activeSelectionSourceId: null,
-  lockedSelection: null,
+  selectionLocked: false,
 
   setConnectedSelect: (on) => set({ connectedSelect: on }),
   toggleConnectedSelect: () => set((s) => ({ connectedSelect: !s.connectedSelect })),
-  setCurrentPointIndices: (indices) => set({ currentPointIndices: indices }),
-  setCurrentPointScopeSql: (sql) => set({ currentPointScopeSql: sql }),
-  setSelectedPointIndices: (indices) => set({ selectedPointIndices: indices }),
+  setCurrentPointScopeSql: (sql) => set((state) => {
+    const next = sql?.trim() ? sql : null
+    return state.currentPointScopeSql === next
+      ? state
+      : {
+          currentPointScopeSql: next,
+          currentScopeRevision: state.currentScopeRevision + 1,
+        }
+  }),
+  setSelectedPointCount: (count) => set((state) => {
+    const normalized = Math.max(0, Math.floor(count))
+    return state.selectedPointCount === normalized
+      ? state
+      : {
+          selectedPointCount: normalized,
+          selectedPointRevision: state.selectedPointRevision + 1,
+        }
+  }),
   setHighlightedPointIndices: (indices) => set({ highlightedPointIndices: indices }),
   setActiveSelectionSourceId: (sourceId) => set({ activeSelectionSourceId: sourceId }),
   lockSelection: () => set((s) =>
-    s.selectedPointIndices.length === 0 ? s
-      : { lockedSelection: new Set(s.selectedPointIndices) }
+    s.selectedPointCount === 0 ? s
+      : { selectionLocked: true }
   ),
-  unlockSelection: () => set({ lockedSelection: null }),
+  unlockSelection: () => set({ selectionLocked: false }),
 })

@@ -1,13 +1,7 @@
 import type {
-  AliasNode,
-  ChunkDetail,
-  ChunkNode,
   GraphPaperDetail,
-  GraphNode,
   PaperDocument,
   PaperNode,
-  RelationAssertionNode,
-  TermNode,
   GraphNodeDetailResponsePayload,
 } from "@/features/graph/types";
 
@@ -96,18 +90,6 @@ export function findPaperNodeByPaperId(
   );
 }
 
-export function findChunkNodeByChunkId(
-  chunkNodes: ChunkNode[],
-  chunkId: string | null | undefined
-): ChunkNode | null {
-  if (!chunkId) return null;
-  return (
-    chunkNodes.find(
-      (node) => node.id === chunkId || node.stableChunkId === chunkId
-    ) ?? null
-  );
-}
-
 function normalizeTextBlock(value: string | null | undefined) {
   if (!value) return null;
   const normalized = collapseWhitespace(value);
@@ -165,108 +147,4 @@ export function buildPaperNoteMarkdown({
   }
 
   return lines.join("\n");
-}
-
-export function buildChunkNoteMarkdown({
-  node,
-  chunk,
-  serviceChunk,
-}: {
-  node: ChunkNode;
-  chunk: ChunkDetail | null;
-  serviceChunk: GraphNodeDetailResponsePayload["chunk"] | null;
-}) {
-  const title = serviceChunk?.paper?.title ?? chunk?.title ?? node.paperTitle;
-  const sourceMeta = joinNonEmpty([
-    serviceChunk?.section_canonical ?? chunk?.sectionCanonical ?? node.sectionCanonical,
-    serviceChunk?.page_number != null
-      ? `p. ${serviceChunk.page_number}`
-      : chunk?.pageNumber != null
-        ? `p. ${chunk.pageNumber}`
-        : node.pageNumber != null
-          ? `p. ${node.pageNumber}`
-          : null,
-    serviceChunk?.chunk_kind ?? chunk?.chunkKind ?? node.chunkKind,
-  ]);
-  const body =
-    normalizeTextBlock(serviceChunk?.chunk_text) ??
-    normalizeTextBlock(chunk?.chunkText) ??
-    normalizeTextBlock(node.chunkPreview) ??
-    "No chunk text available.";
-  const entities =
-    serviceChunk?.entities
-      ?.map((entity) =>
-        joinNonEmpty([
-          entity.text,
-          entity.label,
-          entity.umls_cui,
-          entity.rxnorm_cui,
-        ])
-      )
-      .filter(Boolean)
-      .slice(0, 8) ?? [];
-
-  const lines: string[] = [`## ${title}`];
-  if (sourceMeta) lines.push("", sourceMeta);
-  lines.push("", "### Passage", body);
-  if (entities.length) {
-    lines.push("", "### Entities", ...markdownBulletList(entities));
-  }
-
-  return lines.join("\n");
-}
-
-export function buildCorpusNodeNoteMarkdown(node: GraphNode) {
-  if (node.nodeKind === "term") {
-    const term = node as TermNode;
-    const lines: string[] = [`# ${term.displayLabel ?? term.canonicalName ?? term.id}`];
-    if (term.category) lines.push("", term.category);
-    const stats = [
-      term.mentionCount != null ? `mentions: ${term.mentionCount}` : null,
-      term.paperCount != null ? `papers: ${term.paperCount}` : null,
-      term.chunkCount != null ? `chunks: ${term.chunkCount}` : null,
-      term.relationCount != null ? `relations: ${term.relationCount}` : null,
-      term.aliasCount != null ? `aliases: ${term.aliasCount}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    if (stats) lines.push("", stats);
-    if (term.semanticGroups) lines.push("", `Semantic groups: ${term.semanticGroups}`);
-    if (term.organSystems) lines.push("", `Organ systems: ${term.organSystems}`);
-    return lines.join("\n");
-  }
-
-  if (node.nodeKind === "alias") {
-    const alias = node as AliasNode;
-    const lines: string[] = [`# ${alias.aliasText ?? alias.displayLabel ?? alias.id}`];
-    if (alias.canonicalName) lines.push("", `Canonical term: ${alias.canonicalName}`);
-    const meta = [
-      alias.aliasType,
-      alias.aliasSource,
-      alias.aliasQualityScore != null ? `quality ${alias.aliasQualityScore.toFixed(2)}` : null,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    if (meta) lines.push("", meta);
-    return lines.join("\n");
-  }
-
-  if (node.nodeKind === "relation_assertion") {
-    const relation = node as RelationAssertionNode;
-    const lines: string[] = [`# ${relation.relationType ?? relation.displayLabel ?? relation.id}`];
-    const meta = [
-      relation.relationCategory,
-      relation.relationDirection,
-      relation.relationCertainty,
-      relation.assertionStatus,
-      relation.evidenceStatus,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    if (meta) lines.push("", meta);
-    if (relation.chunkPreview) lines.push("", relation.chunkPreview);
-    return lines.join("\n");
-  }
-
-  return `# ${node.displayLabel ?? node.paperTitle ?? node.id}`;
 }

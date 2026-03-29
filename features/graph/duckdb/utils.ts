@@ -1,4 +1,4 @@
-import type { GraphBundle, GraphData } from '@/features/graph/types'
+import type { GraphBundle } from '@/features/graph/types'
 
 const CACHE_MAX_ENTRIES = 200
 
@@ -49,29 +49,7 @@ export function getBundleArtifactTableSet(
 }
 
 export function getAutoloadBundleTables(bundle: GraphBundle): string[] {
-  const lazyTables = getBundleArtifactTableSet(bundle, ['universe', 'evidence'])
-  return Object.keys(bundle.bundleManifest.tables).filter((tableName) => !lazyTables.has(tableName))
-}
-
-export function createEmptyGraphData(): GraphData {
-  return {
-    clusters: [],
-    facets: [],
-    nodes: [],
-    paperNodes: [],
-    geoNodes: [],
-    geoLinks: [],
-    geoCitationLinks: [],
-    paperStats: null,
-    geoStats: null,
-    stats: {
-      points: 0,
-      pointLabel: 'nodes',
-      papers: 0,
-      clusters: 0,
-      noise: 0,
-    },
-  }
+  return [...getBundleArtifactTableSet(bundle, ['base'])]
 }
 
 export function buildPlaceholderList(count: number): string {

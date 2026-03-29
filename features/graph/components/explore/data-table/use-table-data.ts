@@ -4,7 +4,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "@mantine/hooks";
 import { useDashboardStore } from "@/features/graph/stores";
 import { clamp } from "@/lib/helpers";
-import type { GraphBundleQueries, GraphNode, MapLayer } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphPointRecord, MapLayer } from "@/features/graph/types";
 
 interface UseTableDataOptions {
   queries: GraphBundleQueries;
@@ -13,7 +13,7 @@ interface UseTableDataOptions {
 
 export interface TableDataState {
   activeLayer: MapLayer;
-  pageRows: GraphNode[];
+  pageRows: GraphPointRecord[];
   totalRows: number;
   totalPages: number;
   safePage: number;
@@ -22,10 +22,9 @@ export interface TableDataState {
   pageRefreshing: boolean;
   pageError: string | null;
   resolvedTableView: string;
-  selectedIndexSet: Set<number>;
-  highlightedIndexSet: Set<number>;
   tablePageSize: number;
-  selectedPointIndices: number[];
+  currentPointScopeSql: string | null;
+  selectedPointCount: number;
 }
 
 export function useTableData({ queries, overlayRevision }: UseTableDataOptions): TableDataState {
@@ -33,48 +32,35 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
   const tablePage = useDashboardStore((s) => s.tablePage);
   const tablePageSize = useDashboardStore((s) => s.tablePageSize);
   const tableView = useDashboardStore((s) => s.tableView);
-  const currentPointIndices = useDashboardStore((s) => s.currentPointIndices);
   const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
+  const currentScopeRevision = useDashboardStore((s) => s.currentScopeRevision);
   const [debouncedCurrentPointScopeSql] = useDebouncedValue(currentPointScopeSql, 120);
   const deferredCurrentPointScopeSql = useDeferredValue(debouncedCurrentPointScopeSql);
-  const highlightedPointIndices = useDashboardStore((s) => s.highlightedPointIndices);
-  const selectedPointIndices = useDashboardStore((s) => s.selectedPointIndices);
+  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
+  const selectedPointRevision = useDashboardStore((s) => s.selectedPointRevision);
   const setTablePage = useDashboardStore((s) => s.setTablePage);
   const setTableView = useDashboardStore((s) => s.setTableView);
 
-  const [pageRows, setPageRows] = useState<GraphNode[]>([]);
+  const [pageRows, setPageRows] = useState<GraphPointRecord[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [lastResolvedKey, setLastResolvedKey] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
 
   const resolvedTableView =
-    tableView === "selected" && selectedPointIndices.length === 0
+    tableView === "selected" && selectedPointCount === 0
       ? "current"
       : tableView;
-  const selectedIndexSet = useMemo(
-    () => new Set(selectedPointIndices),
-    [selectedPointIndices]
-  );
-  const highlightedIndexSet = useMemo(
-    () => new Set(highlightedPointIndices),
-    [highlightedPointIndices]
-  );
-
+  const scopedCurrentPointScopeSql =
+    resolvedTableView === "current" ? deferredCurrentPointScopeSql : null;
+  const scopedCurrentScopeRevision =
+    resolvedTableView === "current" ? currentScopeRevision : 0;
+  const scopedSelectedPointCount =
+    resolvedTableView === "selected" ? selectedPointCount : 0;
+  const scopedSelectedPointRevision =
+    resolvedTableView === "selected" ? selectedPointRevision : 0;
   const totalPages = Math.max(1, Math.ceil(totalRows / tablePageSize));
   const safePage = clamp(tablePage, 1, totalPages);
   const startIdx = (safePage - 1) * tablePageSize;
-  const currentScopeKey = useMemo(
-    () =>
-      deferredCurrentPointScopeSql ?? {
-        currentCount: currentPointIndices?.length ?? null,
-        currentFirst: currentPointIndices?.[0] ?? null,
-        currentLast:
-          currentPointIndices && currentPointIndices.length > 0
-            ? currentPointIndices[currentPointIndices.length - 1]
-            : null,
-      },
-    [currentPointIndices, deferredCurrentPointScopeSql],
-  );
   const requestKey = useMemo(
     () =>
       JSON.stringify({
@@ -82,22 +68,21 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
         resolvedTableView,
         safePage,
         tablePageSize,
-        currentScope: currentScopeKey,
-        selectedCount: selectedPointIndices.length,
-        selectedFirst: selectedPointIndices[0] ?? null,
-        selectedLast:
-          selectedPointIndices.length > 0
-            ? selectedPointIndices[selectedPointIndices.length - 1]
-            : null,
+        currentScopeSql: scopedCurrentPointScopeSql,
+        currentScopeRevision: scopedCurrentScopeRevision,
+        selectedCount: scopedSelectedPointCount,
+        selectedPointRevision: scopedSelectedPointRevision,
         overlayRevision,
       }),
     [
       activeLayer,
-      currentScopeKey,
       overlayRevision,
       resolvedTableView,
       safePage,
-      selectedPointIndices,
+      scopedCurrentPointScopeSql,
+      scopedCurrentScopeRevision,
+      scopedSelectedPointCount,
+      scopedSelectedPointRevision,
       tablePageSize,
     ]
   );
@@ -111,10 +96,10 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
   }, [safePage, setTablePage, tablePage]);
 
   useEffect(() => {
-    if (tableView === "selected" && selectedPointIndices.length === 0) {
+    if (tableView === "selected" && selectedPointCount === 0) {
       setTableView("current");
     }
-  }, [selectedPointIndices.length, setTableView, tableView]);
+  }, [selectedPointCount, setTableView, tableView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,9 +110,7 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
         view: resolvedTableView,
         page: safePage,
         pageSize: tablePageSize,
-        currentPointIndices,
-        currentPointScopeSql: deferredCurrentPointScopeSql,
-        selectedPointIndices,
+        currentPointScopeSql: scopedCurrentPointScopeSql,
       })
       .then((result) => {
         if (cancelled) {
@@ -157,13 +140,11 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     };
   }, [
     activeLayer,
-    currentPointIndices,
-    deferredCurrentPointScopeSql,
     queries,
     resolvedTableView,
     requestKey,
     safePage,
-    selectedPointIndices,
+    scopedCurrentPointScopeSql,
     tablePageSize,
   ]);
 
@@ -178,9 +159,8 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     pageRefreshing,
     pageError,
     resolvedTableView,
-    selectedIndexSet,
-    highlightedIndexSet,
     tablePageSize,
-    selectedPointIndices,
+    currentPointScopeSql: scopedCurrentPointScopeSql,
+    selectedPointCount,
   };
 }

@@ -15,7 +15,13 @@ import { useEditor, EditorContent, useEditorState } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { Extension } from "@tiptap/core";
+import { Plugin } from "@tiptap/pm/state";
 import { EMPTY_TOOLBAR_STATE, EditorToolbar } from "./editor/EditorToolbar";
+import {
+  EVIDENCE_ASSIST_COMMANDS,
+  extractEvidenceAssistRequestFromEditor,
+  type EvidenceAssistRequest,
+} from "./prompt/evidence-assist";
 
 export interface CreateEditorHandle {
   focus: () => void;
@@ -28,6 +34,7 @@ interface CreateEditorProps {
   onContentChange: (md: string) => void;
   onEmptyChange: (empty: boolean) => void;
   onSubmit?: () => void;
+  onEvidenceAssistIntent?: (request: EvidenceAssistRequest) => void;
   ariaLabel: string;
   debounceMs?: number;
   compact?: boolean;
@@ -42,6 +49,7 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
       onContentChange,
       onEmptyChange,
       onSubmit,
+      onEvidenceAssistIntent,
       ariaLabel,
       debounceMs = 300,
       compact = false,
@@ -57,10 +65,20 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
     onEmptyChangeRef.current = onEmptyChange;
     const onContentChangeRef = useRef(onContentChange);
     onContentChangeRef.current = onContentChange;
+    const onEvidenceAssistIntentRef = useRef(onEvidenceAssistIntent);
+    onEvidenceAssistIntentRef.current = onEvidenceAssistIntent;
     const contentRef = useRef(content);
     contentRef.current = content;
 
     const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+    const editorFrameRef = useRef<HTMLDivElement | null>(null);
+    const evidenceAssistMenuRef = useRef<HTMLDivElement | null>(null);
+
+    const [evidenceAssistMenu, setEvidenceAssistMenu] = useState<{
+      x: number;
+      y: number;
+      selectedIndex: number;
+    } | null>(null);
 
     // Debounced markdown writeback
     const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,6 +121,48 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
       [debounceMs, getMarkdown],
     );
 
+    const closeEvidenceAssistMenu = useCallback(() => {
+      setEvidenceAssistMenu(null);
+    }, []);
+
+    const openEvidenceAssistMenu = useCallback((ed: ReturnType<typeof useEditor>, from: number) => {
+      if (!ed || !editorFrameRef.current || !onEvidenceAssistIntentRef.current) {
+        return;
+      }
+
+      const previousCharacter = getPreviousCharacter(ed);
+      if (previousCharacter && !/[\s([{'"“‘-]/.test(previousCharacter)) {
+        return;
+      }
+
+      const cursorCoordinates = ed.view.coordsAtPos(from);
+      const frameBounds = editorFrameRef.current.getBoundingClientRect();
+
+      setEvidenceAssistMenu({
+        x: cursorCoordinates.left - frameBounds.left,
+        y: cursorCoordinates.bottom - frameBounds.top + 8,
+        selectedIndex: 0,
+      });
+    }, []);
+
+    const submitEvidenceAssistIntent = useCallback((intent: EvidenceAssistRequest["intent"]) => {
+      const ed = editorRef.current;
+      const onEvidenceAssist = onEvidenceAssistIntentRef.current;
+
+      closeEvidenceAssistMenu();
+      if (!ed || !onEvidenceAssist) {
+        return;
+      }
+
+      const request = extractEvidenceAssistRequestFromEditor(ed, intent);
+      ed.commands.focus();
+      if (!request) {
+        return;
+      }
+
+      onEvidenceAssist(request);
+    }, [closeEvidenceAssistMenu]);
+
     const extensions = useMemo(
       () => [
         StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
@@ -121,8 +181,32 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
             };
           },
         }),
+        Extension.create({
+          name: "evidenceAssistTrigger",
+          addProseMirrorPlugins() {
+            return [
+              new Plugin({
+                props: {
+                  handleTextInput: (_view, from, _to, text) => {
+                    if (text !== "@" || !onEvidenceAssistIntentRef.current) {
+                      return false;
+                    }
+
+                    const currentEditor = editorRef.current;
+                    if (!currentEditor) {
+                      return false;
+                    }
+
+                    openEvidenceAssistMenu(currentEditor, from);
+                    return true;
+                  },
+                },
+              }),
+            ];
+          },
+        }),
       ],
-      [],
+      [openEvidenceAssistMenu],
     );
 
     const editor = useEditor({
@@ -206,6 +290,37 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
       if (!showToolbar && sourceMode) setSourceMode(false);
     }, [showToolbar, sourceMode]);
 
+    useEffect(() => {
+      if (sourceMode && evidenceAssistMenu) {
+        closeEvidenceAssistMenu();
+      }
+    }, [closeEvidenceAssistMenu, evidenceAssistMenu, sourceMode]);
+
+    useEffect(() => {
+      if (!evidenceAssistMenuRef.current) {
+        return;
+      }
+
+      evidenceAssistMenuRef.current.focus();
+    }, [evidenceAssistMenu]);
+
+    useEffect(() => {
+      if (!evidenceAssistMenu) {
+        return;
+      }
+
+      const handlePointerDown = (event: PointerEvent) => {
+        if (!evidenceAssistMenuRef.current?.contains(event.target as Node)) {
+          closeEvidenceAssistMenu();
+        }
+      };
+
+      window.addEventListener("pointerdown", handlePointerDown);
+      return () => {
+        window.removeEventListener("pointerdown", handlePointerDown);
+      };
+    }, [closeEvidenceAssistMenu, evidenceAssistMenu]);
+
     // Inward sync guard — only re-sync if external content truly differs
     const lastSyncedContent = useRef(content);
     useEffect(() => {
@@ -253,8 +368,113 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
             />
           )}
         </AnimatePresence>
-        <div style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        <div
+          ref={editorFrameRef}
+          style={{ position: "relative", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}
+        >
           {placeholder}
+          {evidenceAssistMenu && (
+            <div
+              ref={evidenceAssistMenuRef}
+              tabIndex={-1}
+              onKeyDown={(event) => {
+                if (!evidenceAssistMenu) {
+                  return;
+                }
+
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeEvidenceAssistMenu();
+                  editorRef.current?.commands.focus();
+                  return;
+                }
+
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setEvidenceAssistMenu((current) => current
+                    ? {
+                        ...current,
+                        selectedIndex:
+                          (current.selectedIndex + 1) % EVIDENCE_ASSIST_COMMANDS.length,
+                      }
+                    : current);
+                  return;
+                }
+
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setEvidenceAssistMenu((current) => current
+                    ? {
+                        ...current,
+                        selectedIndex:
+                          (current.selectedIndex - 1 + EVIDENCE_ASSIST_COMMANDS.length) %
+                          EVIDENCE_ASSIST_COMMANDS.length,
+                      }
+                    : current);
+                  return;
+                }
+
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitEvidenceAssistIntent(
+                    EVIDENCE_ASSIST_COMMANDS[evidenceAssistMenu.selectedIndex].intent,
+                  );
+                }
+              }}
+              className="rounded-2xl px-2 py-2"
+              style={{
+                position: "absolute",
+                top: evidenceAssistMenu.y,
+                left: evidenceAssistMenu.x,
+                minWidth: 240,
+                maxWidth: 280,
+                zIndex: 5,
+                backgroundColor: "var(--graph-prompt-bg)",
+                border: "1px solid var(--graph-prompt-border)",
+                boxShadow: "var(--graph-prompt-shadow)",
+              }}
+            >
+              <div style={{ display: "grid", gap: 4 }}>
+                {EVIDENCE_ASSIST_COMMANDS.map((command, index) => {
+                  const isActive = index === evidenceAssistMenu.selectedIndex;
+                  return (
+                    <button
+                      key={command.intent}
+                      type="button"
+                      className="rounded-xl px-3 py-2 text-left"
+                      onMouseEnter={() => {
+                        setEvidenceAssistMenu((current) => current
+                          ? { ...current, selectedIndex: index }
+                          : current);
+                      }}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        submitEvidenceAssistIntent(command.intent);
+                      }}
+                      style={{
+                        backgroundColor: isActive ? "var(--mode-accent-subtle)" : "transparent",
+                        border: "1px solid var(--mode-accent-border)",
+                        color: "var(--graph-prompt-text)",
+                      }}
+                    >
+                      <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+                        {command.label}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.72rem",
+                          lineHeight: 1.4,
+                          color: "var(--graph-prompt-placeholder)",
+                        }}
+                      >
+                        {command.description}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {sourceMode ? (
             <textarea
               className="tiptap-source"
@@ -276,3 +496,16 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
     );
   },
 );
+
+function getPreviousCharacter(ed: ReturnType<typeof useEditor>): string | null {
+  if (!ed) {
+    return null;
+  }
+
+  const { $from } = ed.state.selection;
+  if ($from.parentOffset === 0) {
+    return null;
+  }
+
+  return $from.parent.textContent.slice($from.parentOffset - 1, $from.parentOffset) || null;
+}

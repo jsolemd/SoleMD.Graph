@@ -119,6 +119,15 @@ export function buildVisibilityScopeSql(
   )
 }
 
+export function buildIntentSelectionScopeSql(
+  selection: Selection | null | undefined,
+): string | null {
+  return buildSelectionScopeSql(selection, (clause) => {
+    const sourceId = getSelectionSourceId(clause.source)
+    return sourceId !== null && !isVisibilitySelectionSourceId(sourceId)
+  })
+}
+
 function buildSelectionScopeSql(
   selection: Selection | null | undefined,
   shouldIncludeClause: (clause: SelectionClause) => boolean,

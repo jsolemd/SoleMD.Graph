@@ -1,7 +1,6 @@
 export { ScopeIndicator } from './ScopeIndicator'
 export { OverviewGrid } from './OverviewGrid'
 export { ClusterTable } from './ClusterTable'
-export { WidgetSlotRenderer } from './WidgetSlotRenderer'
 export { QueryWidgetSlotRenderer } from './QueryWidgetSlotRenderer'
 export { AddInsightButton } from './AddInsightButton'
 export { SearchSection } from './SearchSection'

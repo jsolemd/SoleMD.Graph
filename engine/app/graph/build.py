@@ -41,11 +41,11 @@ from app.graph.render_policy import base_point_predicate_sql
 from app.graph.layout import run_layout_from_matrix
 from app.graph.neighbors import NeighborGraphResult
 from app.graph.neighbors import build_neighbor_graph
-from app.graph.visibility_policy import PAPER_EVIDENCE_STAGES
-from app.graph.visibility_policy import get_active_base_policy_version
-from app.graph.visibility_policy import materialize_base_policy
-from app.graph.visibility_policy import refresh_paper_evidence_summary
-from app.graph.visibility_policy import refresh_paper_evidence_summary_stage
+from app.graph.base_policy import get_active_base_policy_version
+from app.graph.base_policy import materialize_base_admission
+from app.graph.paper_evidence import PAPER_EVIDENCE_STAGES
+from app.graph.paper_evidence import refresh_paper_evidence_summary
+from app.graph.paper_evidence import refresh_paper_evidence_summary_stage
 
 
 @dataclass(frozen=True, slots=True)
@@ -986,7 +986,7 @@ def publish_existing_graph_run(
         )
         cluster_count = cur.fetchone()["cluster_count"]
 
-    policy_summary = materialize_base_policy(graph_run_id)
+    policy_summary = materialize_base_admission(graph_run_id)
 
     bundle_dir = None
     bundle_checksum = None

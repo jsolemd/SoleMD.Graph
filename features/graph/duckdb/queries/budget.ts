@@ -2,7 +2,7 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type { GraphVisibilityBudget, MapLayer } from '@/features/graph/types'
 
-import { getLayerTableName } from '../sql-helpers'
+import { buildScopedLayerPredicate, getLayerTableName } from '../sql-helpers'
 
 import { queryRows } from './core'
 
@@ -181,28 +181,52 @@ export async function queryVisibilityBudget(
   }
 }
 
-export async function queryPointIndicesForScope(
+export async function queryScopeCoordinates(
   conn: AsyncDuckDBConnection,
   args: {
     layer: MapLayer
-    scopeSql: string
+    scope: 'current' | 'selected'
+    currentPointScopeSql: string | null
   }
-): Promise<number[]> {
-  const normalizedScopeSql = args.scopeSql.trim()
-  if (normalizedScopeSql.length === 0) {
-    return []
-  }
-
-  const tableName = getLayerTableName(args.layer)
-  const rows = await queryRows<{ index: number }>(
-    conn,
-    `SELECT index
-     FROM ${tableName}
-     WHERE ${normalizedScopeSql}
-     ORDER BY index`
+): Promise<number[] | null> {
+  const scopedPredicate = buildScopedLayerPredicate(
+    args.layer,
+    args.scope,
+    args.currentPointScopeSql
   )
 
-  return rows
-    .map((row) => row.index)
-    .filter((index): index is number => Number.isFinite(index))
+  const tableName = getLayerTableName(args.layer)
+  const rows = await queryRows<{
+    x_min: number | null
+    x_max: number | null
+    y_min: number | null
+    y_max: number | null
+    point_count: number
+  }>(
+    conn,
+    `SELECT
+       min(x) AS x_min,
+       max(x) AS x_max,
+       min(y) AS y_min,
+       max(y) AS y_max,
+       count(*)::INTEGER AS point_count
+     FROM ${tableName}
+     WHERE ${scopedPredicate}`
+  )
+
+  const row = rows[0]
+  if (!row || row.point_count <= 0 || row.x_min == null || row.y_min == null) {
+    return null
+  }
+
+  const epsilon = 1e-6
+  const xMax = row.x_max ?? row.x_min
+  const yMax = row.y_max ?? row.y_min
+
+  return [
+    row.x_min,
+    row.y_min,
+    xMax === row.x_min ? xMax + epsilon : xMax,
+    yMax === row.y_min ? yMax + epsilon : yMax,
+  ]
 }

@@ -35,9 +35,6 @@ const nextConfig: NextConfig = {
     optimizePackageImports: [
       '@mantine/core',
       '@mantine/hooks',
-      '@deck.gl/core',
-      '@deck.gl/layers',
-      '@deck.gl/mapbox',
       'lucide-react',
       'framer-motion',
       'zustand',

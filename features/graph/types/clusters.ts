@@ -6,7 +6,7 @@ export interface ClusterInfo {
   memberCount: number
   centroidX: number
   centroidY: number
-  representativeRagChunkId: string | null
+  representativePointId: string | null
   candidateCount: number | null
   entityCandidateCount: number | null
   lexicalCandidateCount: number | null
@@ -19,26 +19,13 @@ export interface ClusterInfo {
 export interface ClusterExemplar {
   clusterId: number
   rank: number
-  ragChunkId: string
+  pointId: string
   paperId: string
   citekey: string | null
   paperTitle: string | null
-  sectionType: string | null
-  sectionCanonical: string | null
-  pageNumber: number | null
   exemplarScore: number
   isRepresentative: boolean
-  chunkPreview: string | null
-}
-
-export interface GraphFacet {
-  facetName: string
-  facetValue: string
-  facetLabel: string | null
-  pointCount: number
-  paperCount: number
-  clusterCount: number
-  sortKey: string | null
+  preview: string | null
 }
 
 export interface GraphStats {
@@ -47,19 +34,4 @@ export interface GraphStats {
   papers: number
   clusters: number
   noise: number
-}
-
-import type { GraphNode, PaperNode, GeoNode, GeoLink, GeoCitationLink } from './nodes'
-
-export interface GraphData {
-  clusters: ClusterInfo[]
-  facets: GraphFacet[]
-  nodes: GraphNode[]
-  paperNodes: PaperNode[]
-  geoNodes: GeoNode[]
-  geoLinks: GeoLink[]
-  geoCitationLinks: GeoCitationLink[]
-  paperStats: GraphStats | null
-  geoStats: GraphStats | null
-  stats: GraphStats
 }

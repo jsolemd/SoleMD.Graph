@@ -6,6 +6,7 @@ import type {
   CosmographRef,
 } from "@cosmograph/react";
 import {
+  buildIntentSelectionScopeSql,
   buildBudgetScopeSql,
   buildVisibilityScopeSql,
   getSelectionSourceId,
@@ -15,29 +16,14 @@ import {
 import type { GraphBundleQueries, GraphVisibilityBudget, MapLayer } from "@/features/graph/types";
 import type { VisibilityFocus } from "@/features/graph/stores/slices/visibility-slice";
 
-function getFilteredPointIndices(filteredPoints: CosmographData): number[] {
-  const indexColumn = filteredPoints.getChild("index");
-  if (!indexColumn) {
-    return [];
-  }
-
-  return Array.from(indexColumn.toArray()).filter(
-    (index): index is number => typeof index === "number" && Number.isFinite(index),
-  );
-}
-
 export function usePointsFiltered(deps: {
   cosmographRef: RefObject<CosmographRef | undefined>;
   activeLayer: MapLayer;
-  totalPointCount: number;
-  tableOpen: boolean;
-  selectedPointIndices: number[];
-  lockedSelection: ReadonlySet<number> | null;
+  selectionLocked: boolean;
   visibilityFocus: VisibilityFocus | null;
   selectNode: (node: null) => void;
-  setCurrentPointIndices: (indices: number[] | null) => void;
   setCurrentPointScopeSql: (sql: string | null) => void;
-  setSelectedPointIndices: (indices: number[]) => void;
+  setSelectedPointCount: (count: number) => void;
   setHighlightedPointIndices: (indices: number[]) => void;
   setActiveSelectionSourceId: (id: string | null) => void;
   clearVisibilityFocus: () => void;
@@ -58,6 +44,7 @@ export function usePointsFiltered(deps: {
     filteredPoints: CosmographData,
     callbackSelectedPointIndices: number[] | null | undefined,
   ) => {
+    void filteredPoints;
     // --- getIntentClauseIds (inlined) ---
     const clauses = deps.cosmographRef.current?.pointsSelection?.clauses ?? [];
     const intentClauseIds = clauses
@@ -75,7 +62,6 @@ export function usePointsFiltered(deps: {
     // --- refreshVisibilityBudget (inlined as local async) ---
     const refreshVisibilityBudget = async () => {
       if (
-        deps.activeLayer === "geo" ||
         !deps.visibilityFocus ||
         deps.visibilityFocus.layer !== deps.activeLayer
       ) {
@@ -103,14 +89,6 @@ export function usePointsFiltered(deps: {
     };
 
     // --- Main handler logic ---
-    let filteredIndicesCache: number[] | null = null;
-    const getFilteredIndices = () => {
-      if (filteredIndicesCache === null) {
-        filteredIndicesCache = getFilteredPointIndices(filteredPoints);
-      }
-      return filteredIndicesCache;
-    };
-
     const pointsSelection = deps.cosmographRef.current?.pointsSelection ?? null;
     const normalizedSelected =
       callbackSelectedPointIndices?.filter(
@@ -119,6 +97,7 @@ export function usePointsFiltered(deps: {
     const sourceId = deps.cosmographRef.current?.getActiveSelectionSourceId() ?? null;
     const isVisibilitySource = isVisibilitySelectionSourceId(sourceId);
     const hasIntentClauses = intentClauseIds.length > 0;
+    const selectedPointScopeSql = buildIntentSelectionScopeSql(pointsSelection);
     const pointClauseCount =
       pointsSelection?.clauses?.length ?? 0;
     const linkClauseCount =
@@ -127,51 +106,24 @@ export function usePointsFiltered(deps: {
       pointClauseCount > 0
         ? buildVisibilityScopeSql(deps.cosmographRef.current?.pointsSelection)
         : null;
-    const hasCurrentScope =
-      (currentPointScopeSql != null &&
-        currentPointScopeSql.trim().length > 0) ||
-      linkClauseCount > 0;
     const shouldRefreshVisibilityBudget =
       isBudgetScopeSelectionSourceId(sourceId) &&
       deps.visibilityFocus != null &&
       deps.visibilityFocus.layer === deps.activeLayer;
-    const shouldKeepCurrentIndices =
-      hasCurrentScope &&
-      (deps.activeLayer === "geo" || currentPointScopeSql == null);
-    const shouldTrackHighlights =
-      deps.activeLayer === "geo" || deps.tableOpen;
-
-    const filteredIndices =
-      shouldKeepCurrentIndices || shouldTrackHighlights
-        ? getFilteredIndices()
-        : [];
-    const hasPartialCurrent =
-      filteredIndices.length > 0 && filteredIndices.length < deps.totalPointCount;
-    const nextHighlight =
-      normalizedSelected.length > 0
-        ? normalizedSelected
-        : hasPartialCurrent
-          ? filteredIndices
-          : [];
 
     deps.setCurrentPointScopeSql(currentPointScopeSql);
-    deps.setCurrentPointIndices(shouldKeepCurrentIndices ? filteredIndices : null);
 
     // Locked mode freezes persistent intent and lets filters only alter the
     // currently visible/highlighted subset. Intent-changing widgets should
     // be disabled natively while locked, but this keeps the store resilient.
-    if (deps.lockedSelection && deps.lockedSelection.size > 0) {
+    if (deps.selectionLocked) {
       if (isVisibilitySource) {
         if (shouldRefreshVisibilityBudget) {
           void refreshVisibilityBudget();
         }
-        deps.setHighlightedPointIndices(shouldTrackHighlights ? nextHighlight : []);
         return;
       }
 
-      deps.setHighlightedPointIndices(
-        shouldTrackHighlights ? deps.selectedPointIndices : [],
-      );
       return;
     }
 
@@ -181,7 +133,6 @@ export function usePointsFiltered(deps: {
       if (shouldRefreshVisibilityBudget) {
         void refreshVisibilityBudget();
       }
-      deps.setHighlightedPointIndices(shouldTrackHighlights ? nextHighlight : []);
       return;
     }
 
@@ -189,15 +140,20 @@ export function usePointsFiltered(deps: {
     // a live selection clause. This is what prevents "clear selection under
     // active filters" from rehydrating intent from the current intersection.
     if (!hasIntentClauses) {
-      deps.setSelectedPointIndices([]);
-      deps.setHighlightedPointIndices(shouldTrackHighlights ? nextHighlight : []);
+      void deps.queries.setSelectedPointIndices([]);
+      deps.setSelectedPointCount(0);
+      deps.setHighlightedPointIndices([]);
       deps.setActiveSelectionSourceId(null);
       deps.selectNode(null);
       return;
     }
 
-    deps.setSelectedPointIndices(normalizedSelected);
-    deps.setHighlightedPointIndices(normalizedSelected);
+    if (selectedPointScopeSql && selectedPointScopeSql.trim().length > 0) {
+      void deps.queries.setSelectedPointScopeSql(selectedPointScopeSql);
+    } else {
+      void deps.queries.setSelectedPointIndices(normalizedSelected);
+    }
+    deps.setSelectedPointCount(normalizedSelected.length);
     deps.setActiveSelectionSourceId(sourceId);
   };
 

@@ -5,10 +5,13 @@ import type { GraphBundle, MapLayer } from '@/features/graph/types'
 import { validateTableName, requireBundleTable } from '../utils'
 
 import { registerActivePointViews } from './active-points'
-import { createPointViewSelectBuilder, registerBasePointsView } from './base-points'
+import {
+  createPointCanvasProjectionSql,
+  createPointQueryProjectionSql,
+  registerBasePointsView,
+} from './base-points'
 import { registerClusterViews } from './clusters'
-import { registerGraphChunkDetailsView, registerClusterExemplarView } from './details'
-import { registerGeoViews } from './geo'
+import { registerClusterExemplarView } from './details'
 import { initializeOverlayMembershipTable } from './overlay'
 import { registerPaperDocumentViews } from './paper-documents'
 import { resolveBundleRelations } from './relations'
@@ -17,8 +20,17 @@ import { registerUniverseLinksViews, registerUniversePointView } from './univers
 export interface SessionViewState {
   availableLayers: MapLayer[]
   attachedTableSet: Set<string>
-  bundleAttached: boolean
-  buildPointViewSelect: (sourceTable: string, indexSql: string) => string
+  buildPointCanvasProjectionSql: (sourceTable: string, indexSql: string) => string
+  buildPointQueryProjectionSql: (sourceTable: string, indexSql: string) => string
+}
+
+async function runBootstrapStep<T>(label: string, operation: () => Promise<T>) {
+  try {
+    return await operation()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Graph bundle bootstrap failed at ${label}: ${message}`)
+  }
 }
 
 export async function registerInitialSessionViews(
@@ -26,54 +38,60 @@ export async function registerInitialSessionViews(
   bundle: GraphBundle,
   autoloadTables: string[]
 ): Promise<SessionViewState> {
-  const bundleAttached = await resolveBundleRelations(conn, bundle, autoloadTables)
+  await runBootstrapStep('bundle relation registration', () =>
+    resolveBundleRelations(conn, bundle, autoloadTables)
+  )
   const attachedTableSet = new Set(autoloadTables)
 
   requireBundleTable(bundle, 'base_points')
   requireBundleTable(bundle, 'base_clusters')
+  const basePointCount = requireBundleTable(bundle, 'base_points').rowCount
 
-  const buildPointViewSelect = createPointViewSelectBuilder(bundle)
-  await registerBasePointsView(conn, buildPointViewSelect)
-
-  await registerUniversePointView(conn, {
-    sourceTable: attachedTableSet.has('universe_points')
-      ? validateTableName('universe_points')
-      : null,
-    selectSql: buildPointViewSelect,
-  })
-
-  await initializeOverlayMembershipTable(conn)
-  await registerActivePointViews(conn)
-
-  await registerUniverseLinksViews(conn, {
-    universeLinksTable: attachedTableSet.has('universe_links')
-      ? validateTableName('universe_links')
-      : null,
-  })
-
-  await registerClusterViews(conn)
-
-  const availableLayers: MapLayer[] = ['chunk']
-
-  await registerPaperDocumentViews(
-    conn,
-    attachedTableSet.has('paper_documents')
-      ? validateTableName('paper_documents')
-      : null
-  )
-  await registerGraphChunkDetailsView(conn)
-  await registerClusterExemplarView(
-    conn,
-    attachedTableSet.has('cluster_exemplars')
-      ? validateTableName('cluster_exemplars')
-      : null
+  const buildPointCanvasProjectionSql = createPointCanvasProjectionSql(bundle)
+  const buildPointQueryProjectionSql = createPointQueryProjectionSql(bundle)
+  await runBootstrapStep('base point views', () =>
+    registerBasePointsView(
+      conn,
+      buildPointCanvasProjectionSql,
+      buildPointQueryProjectionSql
+    )
   )
 
-  availableLayers.push('paper')
+  await runBootstrapStep('universe point views', () =>
+    registerUniversePointView(conn, {
+      sourceTable: attachedTableSet.has('universe_points')
+        ? validateTableName('universe_points')
+        : null,
+      selectCanvasSql: buildPointCanvasProjectionSql,
+      selectQuerySql: buildPointQueryProjectionSql,
+    })
+  )
 
-  await registerGeoViews(conn, bundle, availableLayers)
+  await runBootstrapStep('overlay membership table', () =>
+    initializeOverlayMembershipTable(conn)
+  )
+  await runBootstrapStep('active point views', () =>
+    registerActivePointViews(conn, basePointCount)
+  )
 
-  return { availableLayers, attachedTableSet, bundleAttached, buildPointViewSelect }
+  await runBootstrapStep('universe link views', () =>
+    registerUniverseLinksViews(conn, {
+      universeLinksTable: attachedTableSet.has('universe_links')
+        ? validateTableName('universe_links')
+        : null,
+    })
+  )
+
+  await runBootstrapStep('cluster views', () => registerClusterViews(conn))
+
+  const availableLayers: MapLayer[] = ['corpus']
+
+  return {
+    availableLayers,
+    attachedTableSet,
+    buildPointCanvasProjectionSql,
+    buildPointQueryProjectionSql,
+  }
 }
 
 export function createEnsureOptionalBundleTables(
@@ -100,11 +118,9 @@ export function createEnsureOptionalBundleTables(
       }
 
       ensurePromise = (async () => {
-        state.bundleAttached = await resolveBundleRelations(
-          conn,
-          bundle,
-          requested,
-          state.bundleAttached
+        await runBootstrapStep(
+          `optional relation registration (${requested.join(', ')})`,
+          () => resolveBundleRelations(conn, bundle, requested)
         )
 
         for (const tableName of requested) {
@@ -112,27 +128,35 @@ export function createEnsureOptionalBundleTables(
         }
 
         if (requested.includes('universe_points')) {
-          await registerUniversePointView(conn, {
-            sourceTable: validateTableName('universe_points'),
-            selectSql: state.buildPointViewSelect,
-          })
+          await runBootstrapStep('optional universe point views', () =>
+            registerUniversePointView(conn, {
+              sourceTable: validateTableName('universe_points'),
+              selectCanvasSql: state.buildPointCanvasProjectionSql,
+              selectQuerySql: state.buildPointQueryProjectionSql,
+            })
+          )
         }
 
         if (requested.includes('universe_links')) {
-          await registerUniverseLinksViews(conn, {
-            universeLinksTable: validateTableName('universe_links'),
-          })
+          await runBootstrapStep('optional universe link views', () =>
+            registerUniverseLinksViews(conn, {
+              universeLinksTable: validateTableName('universe_links'),
+            })
+          )
         }
 
         if (requested.includes('paper_documents')) {
-          await registerPaperDocumentViews(conn, validateTableName('paper_documents'))
-          await registerGraphChunkDetailsView(conn)
+          await runBootstrapStep('optional paper document views', () =>
+            registerPaperDocumentViews(conn, validateTableName('paper_documents'))
+          )
         }
 
         if (requested.includes('cluster_exemplars')) {
-          await registerClusterExemplarView(
-            conn,
-            validateTableName('cluster_exemplars')
+          await runBootstrapStep('optional cluster exemplar views', () =>
+            registerClusterExemplarView(
+              conn,
+              validateTableName('cluster_exemplars')
+            )
           )
         }
       })().finally(() => {

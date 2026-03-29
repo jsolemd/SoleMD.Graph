@@ -219,7 +219,7 @@ export function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`
 }
 
-/** Convert a CSS color string to an RGBA tuple for deck.gl accessors. */
+/** Convert a CSS color string to an RGBA tuple for graph color accessors. */
 export function hexToRgba(
   color: string,
   alpha = 160,

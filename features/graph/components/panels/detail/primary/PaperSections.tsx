@@ -44,9 +44,7 @@ export function PaperDocumentSection({
       <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
         Preview
       </Text>
-      {loading ? (
-        <Text style={panelTextDimStyle}>Loading paper document…</Text>
-      ) : error ? (
+      {error ? (
         <Text style={panelTextDimStyle}>{error}</Text>
       ) : preview.text ? (
         <>
@@ -64,7 +62,14 @@ export function PaperDocumentSection({
               Preview text is truncated for the graph bundle.
             </Text>
           )}
+          {loading && preview.source !== "display" && (
+            <Text mt={6} style={panelTextDimStyle}>
+              Loading fuller document preview…
+            </Text>
+          )}
         </>
+      ) : loading ? (
+        <Text style={panelTextDimStyle}>Loading paper document…</Text>
       ) : paperDocument || paper ? (
         <Text style={panelTextDimStyle}>No preview text available in the bundle.</Text>
       ) : (

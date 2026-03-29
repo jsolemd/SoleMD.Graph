@@ -172,8 +172,8 @@ describe("SelectionToolbar", () => {
     // Simulate store transition: had selection -> no selection
     act(() => {
       storeListener?.(
-        { selectedPointIndices: [], lockedSelection: null },
-        { selectedPointIndices: [1, 2], lockedSelection: null },
+        { selectedPointCount: 0, selectionLocked: false },
+        { selectedPointCount: 2, selectionLocked: false },
       );
     });
 
@@ -190,8 +190,8 @@ describe("SelectionToolbar", () => {
     // Simulate store transition: unlocked -> locked
     act(() => {
       storeListener?.(
-        { selectedPointIndices: [1], lockedSelection: [1] },
-        { selectedPointIndices: [1], lockedSelection: null },
+        { selectedPointCount: 1, selectionLocked: true },
+        { selectedPointCount: 1, selectionLocked: false },
       );
     });
 

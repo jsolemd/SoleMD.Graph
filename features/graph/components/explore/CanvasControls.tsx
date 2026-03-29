@@ -25,7 +25,7 @@ import { snappy } from "@/lib/motion";
  *   - The user clicks the OTHER selection tool (switches active tool)
  *
  * `activatedToolId` tracks state (1).  The store's `activeSelectionSourceId`
- * + `selectedPointIndices` track state (2).  The button is highlighted for
+ * + `selectedPointCount` track state (2).  The button is highlighted for
  * the union of both.
  */
 
@@ -72,30 +72,26 @@ function usePortalTarget(selector: string) {
 export function CanvasControls() {
   const portalTarget = usePortalTarget("[data-wordmark-toolbar]");
   const toolbarRef = useRef<SelectionToolbarHandle>(null);
-  const hasSelection = useDashboardStore((s) => s.selectedPointIndices.length > 0);
+  const hasSelection = useDashboardStore((s) => s.selectedPointCount > 0);
   const hasCurrentScope = useDashboardStore(
-    (s) => s.currentPointIndices !== null || s.currentPointScopeSql !== null,
+    (s) => s.currentPointScopeSql !== null,
   );
   const activeSourceId = useDashboardStore((s) => s.activeSelectionSourceId);
-  const lockedSelection = useDashboardStore((s) => s.lockedSelection);
+  const isLocked = useDashboardStore((s) => s.selectionLocked);
   const timelineSelection = useDashboardStore((s) => s.timelineSelection);
   const lockSelection = useDashboardStore((s) => s.lockSelection);
   const unlockSelection = useDashboardStore((s) => s.unlockSelection);
-  const isLocked = lockedSelection !== null;
   const hasResettableScope =
     hasSelection || hasCurrentScope || timelineSelection !== undefined;
 
   const selectNode = useGraphStore((s) => s.selectNode);
-  const setCurrentPointIndices = useDashboardStore(
-    (s) => s.setCurrentPointIndices
-  );
   const setCurrentPointScopeSql = useDashboardStore(
     (s) => s.setCurrentPointScopeSql
   );
   const setHighlightedPointIndices = useDashboardStore(
     (s) => s.setHighlightedPointIndices
   );
-  const setSelectedPointIndices = useDashboardStore((s) => s.setSelectedPointIndices);
+  const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
   const setTableView = useDashboardStore((s) => s.setTableView);
@@ -105,10 +101,9 @@ export function CanvasControls() {
   const handleStoreClear = useCallback(() => {
     selectNode(null);
     clearVisibilityFocus();
-    setCurrentPointIndices(null);
     setCurrentPointScopeSql(null);
     setHighlightedPointIndices([]);
-    setSelectedPointIndices([]);
+    setSelectedPointCount(0);
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
     setTableView("current");
@@ -118,11 +113,10 @@ export function CanvasControls() {
     clearVisibilityFocus,
     selectNode,
     setActiveSelectionSourceId,
-    setCurrentPointIndices,
     setCurrentPointScopeSql,
     setHighlightedPointIndices,
     setInfoScopeMode,
-    setSelectedPointIndices,
+    setSelectedPointCount,
     setTableView,
     setTimelineSelection,
     unlockSelection,

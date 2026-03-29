@@ -3,7 +3,6 @@ import type { DashboardState } from '../dashboard-store'
 
 export interface LinksSlice {
   renderLinks: boolean
-  renderCitationLinks: boolean
   linkOpacity: number
   linkGreyoutOpacity: number
   linkVisibilityDistanceRange: [number, number]
@@ -14,7 +13,6 @@ export interface LinksSlice {
   scaleLinksOnZoom: boolean
 
   setRenderLinks: (show: boolean) => void
-  setRenderCitationLinks: (show: boolean) => void
   setLinkOpacity: (opacity: number) => void
   setLinkGreyoutOpacity: (opacity: number) => void
   setLinkVisibilityDistanceRange: (range: [number, number]) => void
@@ -27,7 +25,6 @@ export interface LinksSlice {
 
 export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> = (set) => ({
   renderLinks: false,
-  renderCitationLinks: false,
   linkOpacity: 1.0,
   linkGreyoutOpacity: 0.1,
   linkVisibilityDistanceRange: [50, 150] as [number, number],
@@ -38,7 +35,6 @@ export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> 
   scaleLinksOnZoom: false,
 
   setRenderLinks: (show) => set({ renderLinks: show }),
-  setRenderCitationLinks: (show) => set({ renderCitationLinks: show }),
   setLinkOpacity: (opacity) => set({ linkOpacity: opacity }),
   setLinkGreyoutOpacity: (opacity) => set({ linkGreyoutOpacity: opacity }),
   setLinkVisibilityDistanceRange: (range) => set({ linkVisibilityDistanceRange: range }),

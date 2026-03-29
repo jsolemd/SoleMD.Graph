@@ -167,9 +167,13 @@ export interface EngineRagSearchResponse {
 
 export function searchEvidence(
   request: EngineRagSearchRequest,
+  options?: {
+    signal?: AbortSignal
+  },
 ): Promise<EngineRagSearchResponse> {
   return postEngineJson<EngineRagSearchRequest, EngineRagSearchResponse>(
     '/api/v1/evidence/search',
     request,
+    options,
   )
 }

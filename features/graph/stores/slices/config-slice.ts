@@ -19,32 +19,19 @@ export type TableView = 'current' | 'selected'
 export type InfoScopeMode = 'current' | 'selected' | 'dataset'
 
 /** Curated default filters — one per concept, no redundant pairs. */
-const CHUNK_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
-  { column: 'nodeKind', type: 'categorical' },
-  { column: 'clusterLabel', type: 'categorical' },
-  { column: 'category', type: 'categorical' },
-  { column: 'relationCertainty', type: 'categorical' },
-  { column: 'journal', type: 'categorical' },
-  { column: 'sectionCanonical', type: 'categorical' },
-  { column: 'chunkKind', type: 'categorical' },
-  { column: 'year', type: 'numeric' },
-]
-
-const PAPER_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
+const CORPUS_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
   { column: 'clusterLabel', type: 'categorical' },
   { column: 'journal', type: 'categorical' },
+  { column: 'semanticGroups', type: 'categorical' },
+  { column: 'relationCategories', type: 'categorical' },
+  { column: 'textAvailability', type: 'categorical' },
   { column: 'year', type: 'numeric' },
-]
-
-const GEO_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
-  { column: 'clusterLabel', type: 'categorical' },
-  { column: 'year', type: 'numeric' },
+  { column: 'paperReferenceCount', type: 'numeric' },
 ]
 
 function getDefaultFiltersForLayer(layer: MapLayer) {
-  if (layer === 'paper') return PAPER_FILTER_COLUMNS
-  if (layer === 'geo') return GEO_FILTER_COLUMNS
-  return CHUNK_FILTER_COLUMNS
+  void layer
+  return CORPUS_FILTER_COLUMNS
 }
 
 export interface ConfigSlice {
@@ -118,21 +105,21 @@ export interface ConfigSlice {
 }
 
 export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice> = (set) => ({
-  activeLayer: 'chunk',
-  availableLayers: ['chunk'],
+  activeLayer: 'corpus',
+  availableLayers: ['corpus'],
 
   pointColorColumn: 'hexColor',
   pointColorStrategy: 'direct',
   pointSizeColumn: 'paperReferenceCount',
   pointSizeRange: [1.5, 5],
-  pointLabelColumn: 'displayLabel',
+  pointLabelColumn: 'clusterLabel',
   showPointLabels: true,
   showDynamicLabels: true,
   positionXColumn: 'x',
   positionYColumn: 'y',
 
-  infoWidgets: getLayerConfig('chunk').defaultInfoWidgets,
-  filterColumns: CHUNK_FILTER_COLUMNS,
+  infoWidgets: getLayerConfig('corpus').defaultInfoWidgets,
+  filterColumns: CORPUS_FILTER_COLUMNS,
 
   tablePage: 1,
   tablePageSize: 100,
@@ -208,32 +195,31 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         pointSizeStrategy: config.defaultSizeStrategy,
         pointSizeRange: config.pointSizeRange,
         renderLinks: false,
-        linkVisibilityDistanceRange: layer === 'paper'
-          ? [0, 10000] as [number, number]
-          : [50, 150] as [number, number],
-        linkVisibilityMinTransparency: layer === 'paper' ? 0.8 : 0.25,
-        linkDefaultWidth: layer === 'paper' ? 2 : 1,
-        linkGreyoutOpacity: layer === 'paper' ? 0.1 : 0,
+        linkVisibilityDistanceRange: [50, 150] as [number, number],
+        linkVisibilityMinTransparency: 0.25,
+        linkDefaultWidth: 1,
+        linkGreyoutOpacity: 0,
         connectedSelect: false,
-        currentPointIndices: null,
         currentPointScopeSql: null,
-        selectedPointIndices: [],
+        currentScopeRevision: 0,
+        selectedPointCount: 0,
+        selectedPointRevision: 0,
         highlightedPointIndices: [],
         activeSelectionSourceId: null,
-        lockedSelection: null,
+        selectionLocked: false,
         tablePage: 1,
         tableView: 'current',
         infoScopeMode: 'current',
         pointLabelColumn: (() => {
           const layerColumns = getColumnsForLayer(layer)
-          return layerColumns.some(c => c.key === 'displayLabel')
+          return layerColumns.some(c => c.key === 'clusterLabel')
+            ? 'clusterLabel' as DataColumnKey
+            : layerColumns.some(c => c.key === 'displayLabel')
             ? 'displayLabel' as DataColumnKey
             : (layerColumns[0]?.key ?? 'displayLabel') as DataColumnKey
         })(),
         filterColumns: getDefaultFiltersForLayer(layer),
         infoWidgets: config.defaultInfoWidgets,
-        geoFilters: {},
-        geoSelection: null,
       }
     })
     // Intentional cross-store coordination: clearing graph-store's selected node
