@@ -17,6 +17,10 @@ canonical graph layer in the browser today: the corpus paper map. Future
 layers may exist, but they must arrive as optional modules rather than as
 cross-cutting branches through the base graph runtime.
 
+This narrowing is not just cleanup. It is the reason speed, responsiveness,
+and overall runtime predictability are improving. We are intentionally
+stabilizing this foundation before expanding the feature surface above it.
+
 The target base size should be large enough to preserve organ-system overlap,
 but still small enough to remain stable and fast in the browser. The exact
 count is a policy decision, not a runtime invariant.
@@ -137,9 +141,10 @@ Implementation detail:
 - `current_points_canvas_web` is the render-facing alias for Cosmograph;
   `current_points_web` is the query-facing alias for search, table, and widget
   aggregation
-- `pointIncludeColumns` is limited to the accessors required by mounted native
-  widgets such as filters and the timeline; richer detail still resolves
-  through narrow DuckDB queries or the backend API
+- `pointIncludeColumns` stays empty on the live graph page; filters, timeline,
+  search, table, selection, and info widgets query `current_points_web` /
+  `current_paper_points_web` directly through DuckDB instead of hydrating rich
+  point metadata through Cosmograph
 - `selected_point_indices` is materialized from Cosmograph selection clauses in
   DuckDB; selection should not be mirrored back into SQL through huge
   placeholder lists
@@ -172,6 +177,8 @@ Current rule:
 - the shipping runtime has one canonical graph layer: `corpus`
 - Cosmograph and DuckDB should only boot the corpus canvas path
 - there should be no paper/chunk/geo mode switching in the base runtime
+- no new layer should widen the core canvas/query contract until the corpus
+  runtime foundation is demonstrably stable and fast
 
 If a future layer is added, it must be self-contained:
 

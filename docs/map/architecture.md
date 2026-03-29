@@ -88,9 +88,9 @@ features/graph/cosmograph/
 │   ├── use-graph-selection.ts    # select, focus, clear, selection objects
 │   └── use-graph-export.ts       # screenshot, CSV export
 └── widgets/
-    ├── TimelineWidget.tsx         # CosmographTimeline + PlayPause
-    ├── FilterBarWidget.tsx        # CosmographBars (categorical)
-    ├── FilterHistogramWidget.tsx  # CosmographHistogram (numeric)
+    ├── TimelineWidget.tsx         # DuckDB-query-backed timeline control
+    ├── FilterBarWidget.tsx        # DuckDB-query-backed categorical filter
+    ├── FilterHistogramWidget.tsx  # DuckDB-query-backed numeric filter
     ├── SelectionToolbar.tsx       # Rect/poly selection buttons + state machine
     ├── ColorLegends.tsx           # Type or range color legend
     └── SizeLegend.tsx             # Size legend
@@ -101,8 +101,9 @@ features/graph/cosmograph/
   from `@cosmograph/react` or `@cosmograph/cosmograph`
 - Hooks expose app-shaped APIs (e.g. `fitView(duration, padding)`) — not
   raw Cosmograph ref methods
-- Widgets accept app-level props (e.g. `{ column, onSelection }`) and
-  translate to Cosmograph-specific props internally
+- Widgets may use Cosmograph selection clauses for intent, but filter/timeline
+  data itself should come from DuckDB query views rather than Cosmograph point
+  metadata hydration
 - `cosmograph-selection.ts` and `cosmograph-columns.ts` stay in `lib/`
   because they import `@uwdata/mosaic-core`, not Cosmograph
 
@@ -110,6 +111,11 @@ features/graph/cosmograph/
 
 The canonical graph runtime is currently a single `corpus` layer. That is an
 intentional architecture constraint, not an implementation shortcut.
+
+This is the right direction precisely because it makes the app faster and more
+responsive. Foundational runtime cleanup outranks feature expansion: until the
+corpus-only DuckDB/Cosmograph path is clean, adding more layers or richer
+branches is out of order.
 
 Future layers must be treated as optional modules, not as permanent branches
 through the shared graph runtime. A new layer should bring its own:
@@ -122,6 +128,30 @@ through the shared graph runtime. A new layer should bring its own:
 The base corpus path must remain stable if those modules are disabled. In
 practice that means no deep coupling between future layers and the core store,
 bundle bootstrap, or first-paint Cosmograph configuration.
+
+### Browser Runtime Contract
+
+The browser path is split on purpose:
+
+- render path:
+  `current_points_canvas_web`, `current_links_web`, and the dense active canvas
+  aliases only
+- DuckDB query path:
+  `current_points_web`, `current_paper_points_web`, and related query-facing
+  views for filters, timeline, search, table, and local point resolution
+- evidence path:
+  release-scoped FastAPI responses for heavy detail, citation payloads,
+  assets, full text, and answer grounding
+
+Hard rules:
+
+- `pointIncludeColumns` stays empty on the live graph page
+- do not query rich fields from `*_canvas_web`
+- do not rebuild graph interactivity through JS point hydration
+- use DuckDB for local scope, selection, overlay, and point-id resolution only
+- use the backend contract for evidence semantics, not frontend shortcuts
+- the registration layer under these aliases may use narrow local tables or
+  narrow local views with strict canonical columns, but the alias contract stays stable
 
 ### Semantic Scholar (Academic Graph)
 
@@ -186,9 +216,17 @@ The "Why not" column captures the key reason alternatives were rejected.
 
 ### Backend Platform + Data Storage
 
-| Decision | **Self-hosted PostgreSQL (US)** + **Auth.js or Supabase Auth** + **Drizzle ORM** |
-|----------|----------------------------------------------------------------------------------------|
+| Decision | **Self-hosted PostgreSQL (US)** + **FastAPI evidence API** + **Auth.js or Supabase Auth** + optional thin web SQL client |
+|----------|---------------------------------------------------------------------------------------------------------------------------|
 | Why | Domain-filtered data is 50-150 GB — too large for Supabase Cloud ($1,870+/month for required compute) but trivial for a US dedicated server (~$189/month for 128 GB RAM, 3.84 TB NVMe). |
+
+Important boundary rule:
+
+- FastAPI owns canonical evidence semantics, release scoping, retrieval, and later
+  vector-store orchestration
+- any frontend SQL client that remains is metadata-only scaffolding, not part of
+  the graph hot path or the evidence contract
+- the browser graph runtime is DuckDB-first and Parquet-backed, not JS-hydrated
 
 **Why NOT Supabase Cloud for the database**: Supabase Cloud Pro includes 8 GB.
 Our domain-filtered dataset is 50-150 GB with pgvector HNSW indexes that need
@@ -202,6 +240,13 @@ US hosting is required for this project.
 - **Supabase Auth (self-hosted)**: Run just GoTrue + Kong containers pointed at your PG. Get Supabase Auth features without Supabase Cloud pricing.
 - **Supabase Cloud Free tier**: Use Supabase Cloud solely for Auth (50K MAU free), keep data on self-hosted PG.
 - **Clerk**: Managed auth ($25+/month), excellent DX, but adds vendor dependency.
+
+Implementation note:
+
+- Drizzle may remain only as a thin Next.js metadata/read helper where it is
+  already useful. It is not a required part of the evidence or RAG architecture.
+- FastAPI remains the canonical evidence API boundary over PostgreSQL, with
+  Qdrant added later only behind that boundary.
 
 **Data storage architecture — Base/Evidence split**:
 
@@ -570,23 +615,25 @@ Current API constraint:
 ```
 TYPING → entities light up:
   User types "dopamine receptor"
-  → DuckDB-WASM: SQL over the base scaffold table (client-side, <10ms)
+  → DuckDB-WASM: SQL over `current_points_web` / `current_paper_points_web`
+    (client-side, <10ms)
   → Cosmograph highlights matching nodes
 
 @ CITATION insertion:
   User types @, sentence = "D2 receptor antagonism in schizophrenia"
-  → Vercel AI SDK embeds sentence via MedCPT query encoder (~50ms)
-  → pgvector HNSW search (~20ms)
-  → Return top-10 papers → autocomplete dropdown (~100ms total)
+  → Next.js captures the current drafting context
+  → FastAPI evidence endpoint receives support/refute intent + recent sentences
+  → Engine handles retrieval and returns typed evidence bundles + graph signals
+  → Browser resolves/promotes the returned papers through DuckDB overlay paths
 
 RAG SEARCH + synthesis:
   User asks "What's the evidence for lithium in bipolar maintenance?"
-  → MedCPT query encoder embeds question
-  → pgvector hybrid search (vector + tsvector) across abstracts + chunks
-  → Optional: Cohere Rerank 3.5 on top-50 candidates
-  → Vercel AI SDK: streamText with Gemini 2.5 Flash + retrieved context
-  → Streaming answer with inline citations (5-30 seconds)
-  → Cited papers highlighted on graph
+  → Next.js Ask surface streams through Vercel AI SDK
+  → FastAPI resolves graph release + retrieval channels + evidence bundles
+  → backend returns stable paper ids / graph signals, not renderer indices
+  → browser DuckDB resolves active papers locally and promotes non-active papers
+    through overlay membership
+  → Streaming answer and graph activation stay visible together
 ```
 
 ---

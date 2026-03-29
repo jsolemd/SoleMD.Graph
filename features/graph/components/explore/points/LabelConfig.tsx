@@ -4,12 +4,15 @@ import { useMemo } from "react";
 import { Select, Switch, Stack, Text } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getColumnsForLayer } from "@/features/graph/lib/columns";
+import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
 import type { DataColumnKey, MapLayer } from "@/features/graph/types";
 import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
 
 export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
-  const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
+  const layerColumns = useMemo(
+    () => getRenderableColumnsForLayer(activeLayer),
+    [activeLayer],
+  );
 
   // Only show columns that make sense as point labels — short text or
   // categorical identifiers, not numeric measures or long-form content.

@@ -9,7 +9,8 @@ SELECT
 FROM solemd.graph_runs
 WHERE
     status = 'completed'
-    AND node_kind = 'paper'
+    AND graph_name = 'cosmograph'
+    AND node_kind = 'corpus'
     AND (
         %s = 'current'
         AND is_current = true

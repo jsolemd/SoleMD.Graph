@@ -1,5 +1,8 @@
 import type { StateCreator } from 'zustand'
-import { getColumnMeta, getColumnsForLayer } from '@/features/graph/lib/columns'
+import {
+  getColumnMeta,
+  getRenderableColumnsForLayer,
+} from '@/features/graph/lib/columns'
 import type { InfoWidgetSlot } from '@/features/graph/lib/info-widgets'
 import { getLayerConfig } from '@/features/graph/lib/layers'
 import { useGraphStore } from '../graph-store'
@@ -204,14 +207,13 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         currentScopeRevision: 0,
         selectedPointCount: 0,
         selectedPointRevision: 0,
-        highlightedPointIndices: [],
         activeSelectionSourceId: null,
         selectionLocked: false,
         tablePage: 1,
         tableView: 'current',
         infoScopeMode: 'current',
         pointLabelColumn: (() => {
-          const layerColumns = getColumnsForLayer(layer)
+          const layerColumns = getRenderableColumnsForLayer(layer)
           return layerColumns.some(c => c.key === 'clusterLabel')
             ? 'clusterLabel' as DataColumnKey
             : layerColumns.some(c => c.key === 'displayLabel')

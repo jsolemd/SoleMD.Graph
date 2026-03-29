@@ -88,9 +88,6 @@ export function CanvasControls() {
   const setCurrentPointScopeSql = useDashboardStore(
     (s) => s.setCurrentPointScopeSql
   );
-  const setHighlightedPointIndices = useDashboardStore(
-    (s) => s.setHighlightedPointIndices
-  );
   const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
@@ -102,7 +99,6 @@ export function CanvasControls() {
     selectNode(null);
     clearVisibilityFocus();
     setCurrentPointScopeSql(null);
-    setHighlightedPointIndices([]);
     setSelectedPointCount(0);
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
@@ -114,7 +110,6 @@ export function CanvasControls() {
     selectNode,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
-    setHighlightedPointIndices,
     setInfoScopeMode,
     setSelectedPointCount,
     setTableView,

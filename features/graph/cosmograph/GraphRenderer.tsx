@@ -51,14 +51,13 @@ export default function CosmographRenderer({
   // Selection & interaction state
   const {
     setCurrentPointScopeSql, selectedPointCount,
-    setSelectedPointCount, setHighlightedPointIndices,
+    setSelectedPointCount,
     setActiveSelectionSourceId, selectionLocked,
     visibilityFocus, clearVisibilityFocus, applyVisibilityBudget,
   } = useDashboardStore(useShallow((s) => ({
     setCurrentPointScopeSql: s.setCurrentPointScopeSql,
     selectedPointCount: s.selectedPointCount,
     setSelectedPointCount: s.setSelectedPointCount,
-    setHighlightedPointIndices: s.setHighlightedPointIndices,
     setActiveSelectionSourceId: s.setActiveSelectionSourceId,
     selectionLocked: s.selectionLocked,
     visibilityFocus: s.visibilityFocus,
@@ -106,7 +105,6 @@ export default function CosmographRenderer({
       clearVisibilityFocus();
       setCurrentPointScopeSql(null);
       setSelectedPointCount(0);
-      setHighlightedPointIndices([]);
       setActiveSelectionSourceId(null);
     }
 
@@ -119,7 +117,6 @@ export default function CosmographRenderer({
     clearVisibilityFocus,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
-    setHighlightedPointIndices,
     setSelectedPointCount,
   ]);
 
@@ -163,7 +160,6 @@ export default function CosmographRenderer({
     selectNode,
     setCurrentPointScopeSql,
     setSelectedPointCount,
-    setHighlightedPointIndices,
     setActiveSelectionSourceId,
     clearVisibilityFocus,
     applyVisibilityBudget,

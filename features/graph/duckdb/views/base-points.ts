@@ -70,6 +70,38 @@ export function createPointCanvasProjectionSql(bundle: GraphBundle) {
       citekey,
       journal,
       year,
+      CAST(paper_author_count AS DOUBLE) AS paperAuthorCount,
+      CAST(paper_reference_count AS DOUBLE) AS paperReferenceCount,
+      CAST(paper_entity_count AS DOUBLE) AS paperEntityCount,
+      CAST(paper_relation_count AS DOUBLE) AS paperRelationCount
+    FROM ${sourceTable}`
+}
+
+export function createPointQueryProjectionSql(bundle: GraphBundle) {
+  assertCanonicalPointColumns(bundle, 'base_points')
+  if (bundle.bundleManifest.tables.universe_points) {
+    assertCanonicalPointColumns(bundle, 'universe_points')
+  }
+
+  return (sourceTable: string, indexSql: string) => `
+    SELECT
+      ${indexSql} AS index,
+      point_index AS sourcePointIndex,
+      id,
+      'primary' AS nodeRole,
+      hex_color AS hexColor,
+      hex_color_light AS hexColorLight,
+      x,
+      y,
+      COALESCE(cluster_id, 0) AS clusterId,
+      cluster_label AS clusterLabel,
+      COALESCE(cluster_probability, 0) AS clusterProbability,
+      paper_id AS paperId,
+      COALESCE(display_label, title, citekey, id) AS displayLabel,
+      title AS paperTitle,
+      citekey,
+      journal,
+      year,
       semantic_groups_csv AS semanticGroups,
       organ_systems_csv AS organSystems,
       relation_categories_csv AS relationCategories,
@@ -81,12 +113,6 @@ export function createPointCanvasProjectionSql(bundle: GraphBundle) {
       CAST(paper_entity_count AS DOUBLE) AS paperEntityCount,
       CAST(paper_relation_count AS DOUBLE) AS paperRelationCount
     FROM ${sourceTable}`
-}
-
-export function createPointQueryProjectionSql(bundle: GraphBundle) {
-  const buildCanvasProjectionSql = createPointCanvasProjectionSql(bundle)
-  return (sourceTable: string, indexSql: string) =>
-    buildCanvasProjectionSql(sourceTable, indexSql)
 }
 
 export async function registerBasePointsView(

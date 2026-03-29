@@ -24,7 +24,6 @@ export function usePointsFiltered(deps: {
   selectNode: (node: null) => void;
   setCurrentPointScopeSql: (sql: string | null) => void;
   setSelectedPointCount: (count: number) => void;
-  setHighlightedPointIndices: (indices: number[]) => void;
   setActiveSelectionSourceId: (id: string | null) => void;
   clearVisibilityFocus: () => void;
   applyVisibilityBudget: (layer: MapLayer, budget: GraphVisibilityBudget) => void;
@@ -142,7 +141,6 @@ export function usePointsFiltered(deps: {
     if (!hasIntentClauses) {
       void deps.queries.setSelectedPointIndices([]);
       deps.setSelectedPointCount(0);
-      deps.setHighlightedPointIndices([]);
       deps.setActiveSelectionSourceId(null);
       deps.selectNode(null);
       return;

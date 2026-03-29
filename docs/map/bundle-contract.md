@@ -166,19 +166,28 @@ Rules:
 - `active_points_web` is the dense browser-facing union of base + overlay
 - `active_links_web` and `active_paper_links_web` remap to active ids so links follow the canvas
 - when overlay is empty, the active canvas should alias base directly rather than materializing a synthetic active copy
-- `pointIncludeColumns` should include only the accessors required by mounted
-  native Cosmograph widgets; richer detail stays on DuckDB query paths or the
-  backend evidence API rather than mirrored JS point objects
+- `pointIncludeColumns` should stay empty on the live graph page; richer detail
+  stays on DuckDB query paths or the backend evidence API rather than mirrored
+  JS point objects
+- `current_points_canvas_web` and related `*_canvas_web` views are render-only
+  inputs; rich query/detail paths should not be rebuilt on top of them
 - info-panel widget queries should batch by scope change, not fan out one DuckDB roundtrip per widget
 
 This keeps the active canvas stable while still allowing the user to promote
 relevant papers in place.
+
+It also keeps the optimization target explicit: stronger foundations first,
+feature expansion second.
 
 ---
 
 ## Evidence Contract
 
 Evidence data should be preserved, but fetched only when explicitly needed.
+
+Evidence is also release-scoped. The frontend should not invent release
+metadata or bypass the backend when a user is working inside a specific
+published graph release.
 
 Evidence includes:
 
@@ -192,6 +201,10 @@ Evidence includes:
 
 Evidence is served through detail/data services rather than the always-present
 graph bundle.
+
+Chunk-capable evidence may exist behind that API in the future, but chunk
+assumptions must not leak back into the corpus graph runtime or the live bundle
+contract.
 
 ---
 

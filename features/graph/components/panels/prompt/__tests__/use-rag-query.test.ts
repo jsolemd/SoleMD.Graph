@@ -159,9 +159,7 @@ describe("useRagQuery", () => {
       chatOptions = options;
       return chatMock as never;
     });
-    mockedSyncRagGraphSignals.mockResolvedValue({
-      highlightedPointIndices: [3],
-    });
+    mockedSyncRagGraphSignals.mockResolvedValue();
   });
 
   it("ignores late responses from older compose requests", async () => {
@@ -172,7 +170,6 @@ describe("useRagQuery", () => {
       .mockReturnValueOnce(secondRequest.promise);
 
     const queries = createQueries();
-    const setHighlightedPointIndices = jest.fn();
     let promptText = "first question";
 
     const { result } = renderHook(() =>
@@ -182,7 +179,6 @@ describe("useRagQuery", () => {
         isAsk: false,
         selectedNode: null,
         getPromptText: () => promptText,
-        setHighlightedPointIndices,
       }),
     );
 
@@ -226,7 +222,6 @@ describe("useRagQuery", () => {
 
   it("submits ask requests through the AI SDK transport with the current graph context", async () => {
     const queries = createQueries();
-    const setHighlightedPointIndices = jest.fn();
     const selectedNode = { id: "paper-7", paperId: "paper-7", nodeKind: "paper" } as GraphNode;
     const promptText = "working question";
 
@@ -237,7 +232,6 @@ describe("useRagQuery", () => {
         isAsk: true,
         selectedNode,
         getPromptText: () => promptText,
-        setHighlightedPointIndices,
       }),
     );
 
@@ -268,7 +262,6 @@ describe("useRagQuery", () => {
 
   it("clears previously-owned overlay ids when the ask stream emits an engine error", async () => {
     const queries = createQueries();
-    const setHighlightedPointIndices = jest.fn();
 
     const { result } = renderHook(() =>
       useRagQuery({
@@ -277,7 +270,6 @@ describe("useRagQuery", () => {
         isAsk: true,
         selectedNode: null as GraphNode | null,
         getPromptText: () => "working question",
-        setHighlightedPointIndices,
       }),
     );
 
@@ -318,12 +310,10 @@ describe("useRagQuery", () => {
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
     });
-    expect(setHighlightedPointIndices).toHaveBeenLastCalledWith([]);
   });
 
   it("ignores stale ask data parts from older client request ids", async () => {
     const queries = createQueries();
-    const setHighlightedPointIndices = jest.fn();
     let promptText = "first question";
 
     const { result } = renderHook(() =>
@@ -333,7 +323,6 @@ describe("useRagQuery", () => {
         isAsk: true,
         selectedNode: null,
         getPromptText: () => promptText,
-        setHighlightedPointIndices,
       }),
     );
 
@@ -374,7 +363,6 @@ describe("useRagQuery", () => {
 
   it("ignores stale ask onFinish payloads from older client request ids", async () => {
     const queries = createQueries();
-    const setHighlightedPointIndices = jest.fn();
     let promptText = "first question";
 
     const { result } = renderHook(() =>
@@ -384,7 +372,6 @@ describe("useRagQuery", () => {
         isAsk: true,
         selectedNode: null,
         getPromptText: () => promptText,
-        setHighlightedPointIndices,
       }),
     );
 

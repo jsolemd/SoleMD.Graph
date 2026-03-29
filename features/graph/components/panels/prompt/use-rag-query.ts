@@ -35,14 +35,12 @@ export function useRagQuery({
   isAsk,
   selectedNode,
   getPromptText,
-  setHighlightedPointIndices,
 }: {
   bundle: GraphBundle;
   queries: GraphBundleQueries | null;
   isAsk: boolean;
   selectedNode: GraphPointRecord | null;
   getPromptText: () => string;
-  setHighlightedPointIndices: (indices: number[]) => void;
 }) {
   const [ragResponse, setRagResponse] = useState<GraphRagQueryResponsePayload | null>(null);
   const [ragError, setRagError] = useState<string | null>(null);
@@ -92,7 +90,6 @@ export function useRagQuery({
         setIsSubmitting(false);
         setRagResponse(null);
         setRagError(part.data.error_message);
-        setHighlightedPointIndices([]);
         clearOwnedOverlay();
         return;
       }
@@ -101,7 +98,6 @@ export function useRagQuery({
       setIsSubmitting(false);
       setRagResponse(null);
       setRagError(error.message);
-      setHighlightedPointIndices([]);
       clearOwnedOverlay();
     },
     onFinish: ({ messages }) => {
@@ -137,16 +133,13 @@ export function useRagQuery({
       queries,
       ragResponse,
     })
-      .then(({ highlightedPointIndices }) => {
+      .then(() => {
         if (cancelled) {
           return;
         }
-
-        setHighlightedPointIndices(highlightedPointIndices);
       })
       .catch(() => {
         if (!cancelled) {
-          setHighlightedPointIndices([]);
           clearOwnedOverlay(producerId);
         }
       });
@@ -154,7 +147,7 @@ export function useRagQuery({
     return () => {
       cancelled = true;
     };
-  }, [clearOwnedOverlay, queries, ragResponse, setHighlightedPointIndices]);
+  }, [clearOwnedOverlay, queries, ragResponse]);
 
   const runQuery = useCallback(({
     query,
@@ -184,7 +177,6 @@ export function useRagQuery({
       evidenceIntent,
       queryPreview,
     });
-    setHighlightedPointIndices([]);
     fetchGraphRagQuery({
       bundle,
       query,
@@ -208,7 +200,6 @@ export function useRagQuery({
         }
         setRagResponse(null);
         setRagError(error instanceof Error ? error.message : "Failed to query the graph");
-        setHighlightedPointIndices([]);
         clearOwnedOverlay(nextOverlayProducerId);
       })
       .finally(() => {
@@ -216,7 +207,7 @@ export function useRagQuery({
           setIsSubmitting(false);
         }
       });
-  }, [bundle, clearOwnedOverlay, selectedNode, setHighlightedPointIndices]);
+  }, [bundle, clearOwnedOverlay, selectedNode]);
 
   const handleSubmit = useCallback(() => {
     const query = getPromptText().trim();
@@ -239,7 +230,6 @@ export function useRagQuery({
       evidenceIntent: null,
       queryPreview: null,
     });
-    setHighlightedPointIndices([]);
     askChat.clearError();
     askChat.setMessages([]);
     void askChat.sendMessage(
@@ -266,7 +256,6 @@ export function useRagQuery({
       setIsSubmitting(false);
       setRagResponse(null);
       setRagError(error instanceof Error ? error.message : "Failed to query the graph");
-      setHighlightedPointIndices([]);
       clearOwnedOverlay(activeOverlayProducerIdRef.current);
     });
   }, [
@@ -278,7 +267,6 @@ export function useRagQuery({
     isAsk,
     isSubmitting,
     selectedNode,
-    setHighlightedPointIndices,
   ]);
 
   const runEvidenceAssistQuery = useCallback((request: EvidenceAssistRequest) => {
@@ -301,10 +289,9 @@ export function useRagQuery({
       askChat.setMessages([]);
       setRagResponse(null);
       setRagSession(null);
-      setHighlightedPointIndices([]);
       clearOwnedOverlay();
     }
-  }, [askChat, clearOwnedOverlay, setHighlightedPointIndices]);
+  }, [askChat, clearOwnedOverlay]);
 
   return {
     ragResponse,

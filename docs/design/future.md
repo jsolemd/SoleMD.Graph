@@ -36,8 +36,12 @@ The important constraints now in force are:
 - Cosmograph reads DuckDB tables directly
 - base and universe stay Parquet-backed in the browser instead of being copied
   into full local temp point tables
-- point payloads stay compact and widget-driven
+- point payloads stay compact and render-driven
 - heavy evidence stays off the browser base path by default
+
+We are treating this as prerequisite work, not optional cleanup. Additional
+layers and richer behaviors should wait until this corpus-only foundation is
+stable, fast, and well understood.
 
 The first live overlay path is also now present:
 

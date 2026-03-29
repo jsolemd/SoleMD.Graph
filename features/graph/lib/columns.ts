@@ -34,6 +34,26 @@ export const COLUMNS: ColumnMeta[] = [
 
 export const NUMERIC_COLUMNS = COLUMNS.filter((column) => column.type === 'numeric')
 export const ALL_DATA_COLUMNS = COLUMNS
+const RENDER_COLUMN_KEYS = new Set([
+  'clusterId',
+  'clusterLabel',
+  'journal',
+  'year',
+  'paperAuthorCount',
+  'paperReferenceCount',
+  'paperEntityCount',
+  'paperRelationCount',
+  'clusterProbability',
+  'x',
+  'y',
+  'id',
+  'displayLabel',
+  'paperTitle',
+  'citekey',
+])
+export const RENDER_COLUMNS = COLUMNS.filter((column) =>
+  RENDER_COLUMN_KEYS.has(column.key)
+)
 
 export const TABLE_COLUMNS: string[] = [
   'paperTitle',
@@ -64,6 +84,11 @@ export const GEO_TABLE_COLUMNS: string[] = []
 export function getColumnsForLayer(layer: MapLayer): ColumnMeta[] {
   void layer
   return ALL_DATA_COLUMNS
+}
+
+export function getRenderableColumnsForLayer(layer: MapLayer): ColumnMeta[] {
+  void layer
+  return RENDER_COLUMNS
 }
 
 export function getTableColumnsForLayer(layer: MapLayer): string[] {

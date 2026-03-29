@@ -27,7 +27,8 @@ Browser runtime notes:
 - `selected_point_indices`, `overlay_point_ids_by_producer`, and `overlay_point_ids`
   are the only mutable browser-local graph state
 - `*_canvas_web` views are the Cosmograph-facing active point tables; they stay
-  limited to render fields plus the metadata needed by mounted native widgets
+  limited to render fields and other preindexed columns required for live
+  canvas styling, not rich query/widget payloads
 - narrow point parquet fields are limited to ids, coordinates, cluster/color
   columns, `display_label`, compact bibliographic metadata, compact summary
   metrics, `text_availability`, `semantic_groups_csv`, `organ_systems_csv`,
@@ -36,6 +37,8 @@ Browser runtime notes:
   are the canonical browser-facing active aliases for summaries, search,
   selection resolution, and table pages; they point at base directly until
   overlay activation requires the active union
+- filters, timeline, search, selection, table, and info widgets read the
+  query-facing aliases, not `*_canvas_web`
 - `base_points_web` and `base_points_canvas_web` must reuse the exported `point_index`
   directly instead of recomputing dense indices with runtime window functions
 - when no overlay is active, the active aliases point directly at
@@ -43,6 +46,10 @@ Browser runtime notes:
   not pay for an unnecessary active-union reindex
 - when overlay is active, `active_points_canvas_web` appends only the promoted overlay rows
   after the base index range; the full base scaffold is not recopied into a local temp table
+
+This is the optimization path we are committing to. We are not widening the
+canvas path for convenience features before the corpus-only runtime foundation
+is strong.
 
 ---
 

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { Select, Switch, Slider, Stack, Text } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getColumnsForLayer } from "@/features/graph/lib/columns";
+import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
 import type { MapLayer, PointSizeStrategy, SizeColumnKey } from "@/features/graph/types";
 import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
 
@@ -15,7 +15,10 @@ const SIZE_STRATEGY_OPTIONS = [
 ];
 
 export function SizeConfig({ activeLayer }: { activeLayer: MapLayer }) {
-  const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
+  const layerColumns = useMemo(
+    () => getRenderableColumnsForLayer(activeLayer),
+    [activeLayer],
+  );
   const numericCols = useMemo(() => layerColumns.filter((c) => c.type === 'numeric'), [layerColumns]);
 
   const sizeColumnOptions = useMemo(() => [

@@ -51,7 +51,6 @@ export function PromptBox({
   const promptMaximized = useDashboardStore((s) => s.promptMaximized);
   const setPromptMinimized = useDashboardStore((s) => s.setPromptMinimized);
   const setPromptMaximized = useDashboardStore((s) => s.setPromptMaximized);
-  const setHighlightedPointIndices = useDashboardStore((s) => s.setHighlightedPointIndices);
   const bottomClearance = useDashboardStore(selectBottomClearance);
   const leftClearance = useDashboardStore(selectLeftClearance);
   const rightClearance = useDashboardStore(selectRightClearance);
@@ -85,7 +84,6 @@ export function PromptBox({
     isAsk,
     selectedNode,
     getPromptText: useCallback(() => editorRef.current?.getText() ?? activePromptValue, [activePromptValue]),
-    setHighlightedPointIndices,
   });
 
   const leftPanelBottom = useDashboardStore((s) => s.panelBottomY.left);

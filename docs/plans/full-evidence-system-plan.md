@@ -1,7 +1,7 @@
 # SoleMD.Graph Evidence and RAG Plan
 
 Status: Canonical plan  
-Updated: 2026-03-28  
+Updated: 2026-03-29  
 Project: `SoleMD.Graph`  
 Scope: canonical evidence substrate, engine API, frontend integration, retrieval baseline, future evidence warehouse, and future Qdrant retrieval plane  
 Supersedes: duplicate implementation-spec draft now archived at `docs/archive/plans/full-evidence-system-schema-and-api-spec.md`
@@ -57,6 +57,7 @@ Current implementation tracker for the first evidence vertical slice:
 - [x] shared engine-to-graph RAG adapter landed for server action and route reuse
 - [x] Ask-mode `Vercel AI SDK` streaming landed on top of the canonical evidence contract
 - [x] typed engine error envelope landed across server action and streaming route
+- [x] DuckDB/Cosmograph runtime hard constraint documented for future RAG work
 
 Implementation rule:
 
@@ -105,11 +106,13 @@ Current milestone note:
 - compose-mode evidence assist intentionally stays on the simpler one-shot path
   for now so support/refute drafting remains cheap and deterministic while the
   deeper evidence warehouse is still pending
-- the next milestone is the Ask/composition UX pass:
-  place the streamed AI answer surface cleanly beside the graph, then extend
-  the `@` evidence-assist flow so support and refute can drive the same
-  producer-owned graph activation path without exposing retrieval internals in
-  the composer
+- the next milestone starts with runtime-contract hygiene before more feature
+  surface:
+  finish the remaining query-layer cleanup so non-canvas lookups consistently
+  use `current_points_web` / `current_paper_points_web`, remove stale
+  chunk-era naming where it still leaks through graph query modules, and keep
+  render/query/evidence responsibilities explicit before broadening the Ask and
+  composition UX further
 
 ## Locked Decisions
 
@@ -146,6 +149,19 @@ Current milestone note:
 17. Launch-scale retrieval must be hierarchical. Do not assume one global sentence ANN index over the entire corpus is the default serving path.
 18. Supabase is not the canonical evidence backend. If it is used later, it should complement the stack with managed infrastructure capabilities, not replace PostgreSQL plus FastAPI evidence orchestration.
 19. Supabase Edge Functions are not the primary runtime for evidence retrieval, parsing, or warehouse orchestration.
+20. The browser graph runtime stays DuckDB-first and corpus-only:
+    `current_points_canvas_web` is render-only, while `current_points_web` and
+    `current_paper_points_web` are the query/detail aliases.
+21. `pointIncludeColumns` stays empty on the live graph page.
+    RAG work must not widen point payloads for convenience.
+22. Browser DuckDB is a local graph-state engine, not a second evidence service.
+    Release-scoped evidence retrieval and rich payloads stay behind FastAPI.
+23. Graph-side RAG integration resolves engine-returned ids through canonical
+    DuckDB aliases and producer-owned overlay membership. It must not depend on
+    older broad union views or rebuild graph state in JS.
+24. The DuckDB registration layer may evolve between narrow local tables and
+    narrow local views with strict canonical columns, but consumers must depend
+    only on the stable alias contract above.
 
 ## Scale Target
 
@@ -200,6 +216,28 @@ The live graph design is already clear in `docs/design/living-graph.md`:
 - `evidence_api` is the heavy retrieval path
 
 That split is correct and should remain.
+
+### Hard constraint for all future RAG work
+
+All future evidence, AI, and RAG work must preserve the hardened browser/runtime
+contract:
+
+- the render path is `current_points_canvas_web` and the dense active link/canvas
+  aliases only
+- the DuckDB query path is `current_points_web` and `current_paper_points_web`
+  for search, filters, tables, info widgets, and bundle-local point resolution
+- `pointIncludeColumns` stays empty on the live graph page; rich metadata is not
+  mirrored back into Cosmograph point payloads for convenience
+- heavy detail, release-scoped evidence retrieval, and answer grounding stay in
+  the FastAPI evidence boundary rather than becoming a second frontend SQL layer
+- DuckDB local SQL is for bundle-local resolution, scope, and overlay activation,
+  not a substitute evidence backend
+- the implementation under those aliases may use narrow local tables or narrow
+  local views when needed for stable row/filter behavior, but the alias contract
+  stays canonical
+- the graph runtime remains corpus/paper-only; chunk-capable evidence may exist
+  API-side, but it must not reintroduce chunk assumptions into the live graph
+  runtime
 
 ### Current canonical PostgreSQL substrate
 
@@ -537,6 +575,15 @@ The evidence API should be able to return lightweight graph hints:
 The graph runtime still owns spatial state.
 The engine returns evidence semantics, not canvas instructions.
 
+Graph-side evidence resolution must follow the runtime split:
+
+- active point lookup resolves through `current_paper_points_web`
+- overlay promotion writes through producer-owned DuckDB overlay membership
+- non-canvas graph widgets stay on `current_points_web` or
+  `current_paper_points_web`, never `*_canvas_web`
+- rich evidence context, citation neighborhoods, and answer grounding still come
+  from FastAPI, not widened point payloads or ad hoc frontend SQL
+
 ### Synthesis and streaming
 
 Retrieval and synthesis are distinct stages, but the Ask workflow needs both.
@@ -622,6 +669,17 @@ Do not treat graph-lighting as a separate bolt-on after retrieval.
 It is part of the same evidence interaction contract, but it must remain
 logically distinct from rendering state.
 
+Implementation constraint for this slice:
+
+- the engine may return graph semantics only
+- Next.js may stream AI interaction only
+- DuckDB may resolve ids and manage overlay/selection only
+- Cosmograph may render the dense active canvas only
+
+If a step needs rich paper detail, citation payloads, or release-aware evidence
+semantics, it belongs on the backend contract rather than in hydrated point
+metadata or ad hoc frontend SQL.
+
 ### Response surface requirement
 
 The answer surface cannot be designed as if the graph disappears during retrieval.
@@ -669,7 +727,8 @@ not browser-specific point indices.
 The frontend graph path should be:
 
 1. engine response returns `corpus_id` or stable paper ids
-2. the browser runtime resolves those ids through DuckDB against the active canvas
+2. the browser runtime resolves those ids through DuckDB against the canonical
+   active/query aliases, not through JS-hydrated point payloads
 3. active hits provide point indices for immediate graph-lighting
 4. non-active hits must flow through the overlay activation seam so they become active canvas points instead of remaining passive evidence rows
 5. the UI can still write `highlightedPointIndices` for secondary emphasis, but overlay promotion is the native path for bringing new evidence into view
@@ -685,7 +744,7 @@ flat list of highlighted ids.
 
 Important current constraint:
 
-- `getPaperNodesByPaperIds(...)` resolves against `active_paper_points_web`, not the full universe
+- `getPaperNodesByPaperIds(...)` resolves against `current_paper_points_web`, not the full universe
 - evidence-driven overlay activation therefore also needs a universe-resolution helper that can map returned `paper_id` values to universe point ids before calling `setOverlayPointIds(...)`
 - this is a frontend graph-integration task, not a reason to distort the engine response contract
 
@@ -719,6 +778,19 @@ Rules:
 
 Do not grow a second evidence access layer in Next.js.
 Once evidence APIs exist, evidence flows through the engine.
+
+Allowed role for local SQL:
+
+- graph-local DuckDB resolution against bundle-backed aliases
+- filter/timeline/search/table aggregation over `current_points_web`
+- active/universe point resolution and overlay membership management
+
+Disallowed role for local SQL:
+
+- canonical evidence retrieval
+- release resolution
+- citation-context assembly
+- answer grounding that bypasses the engine contract
 
 If the web app still needs a tiny metadata-only SQL surface, that can remain as:
 
@@ -1303,4 +1375,8 @@ This pass is done when:
 - FastAPI guidance on APIRouter structure and response-model validation
 - Pydantic guidance on schema generation and typed validation
 - Supabase guidance on Data APIs, direct Postgres connections, and platform architecture
+- DuckDB guidance on querying Parquet directly, projection/filter pushdown, and
+  choosing views versus loaded tables
+- Cosmograph guidance on `pointIndexBy`, `pointIncludeColumns`, dense indexed
+  point tables, and local database update callbacks
 - Qdrant guidance on hybrid search and reranking for future sentence and block serving

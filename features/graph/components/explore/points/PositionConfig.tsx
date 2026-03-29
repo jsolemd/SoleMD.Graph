@@ -4,13 +4,27 @@ import { useMemo } from "react";
 import { Select, Switch, Stack, Text } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getColumnsForLayer } from "@/features/graph/lib/columns";
+import {
+  getColumnsForLayer,
+  getRenderableColumnsForLayer,
+} from "@/features/graph/lib/columns";
 import type { MapLayer, NumericColumnKey } from "@/features/graph/types";
 import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
 
 export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
+  const renderColumns = useMemo(
+    () => getRenderableColumnsForLayer(activeLayer),
+    [activeLayer],
+  );
   const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
-  const numericCols = useMemo(() => layerColumns.filter((c) => c.type === 'numeric'), [layerColumns]);
+  const numericCols = useMemo(
+    () => renderColumns.filter((c) => c.type === 'numeric'),
+    [renderColumns],
+  );
+  const queryNumericCols = useMemo(
+    () => layerColumns.filter((c) => c.type === 'numeric'),
+    [layerColumns],
+  );
 
   const positionOptions = useMemo(
     () => numericCols.map((c) => ({ value: c.key, label: c.label })),
@@ -19,10 +33,10 @@ export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
 
   const timeColumnOptions = useMemo(() => [
     { value: "year", label: "Publication Year" },
-    ...numericCols
+    ...queryNumericCols
       .filter((c) => c.key !== "year" && c.key !== "x" && c.key !== "y")
       .map((c) => ({ value: c.key, label: c.label })),
-  ], [numericCols]);
+  ], [queryNumericCols]);
 
   const {
     positionXColumn, positionYColumn, timelineColumn, showTimeline,

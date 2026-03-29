@@ -123,7 +123,7 @@ describe("rag-graph-sync", () => {
       ],
     });
 
-    const result = await syncRagGraphSignals({
+    await syncRagGraphSignals({
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse(["paper-1"]),
@@ -136,9 +136,6 @@ describe("rag-graph-sync", () => {
     expect(queries.clearOverlayProducer).toHaveBeenCalledWith(RAG_ASK_OVERLAY_PRODUCER);
     expect(queries.setOverlayPointIds).not.toHaveBeenCalled();
     expect(queries.clearOverlay).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      highlightedPointIndices: [7],
-    });
   });
 
   it("promotes non-active papers into the RAG producer without dropping other overlay producers", async () => {
@@ -158,7 +155,7 @@ describe("rag-graph-sync", () => {
       },
     });
 
-    const result = await syncRagGraphSignals({
+    await syncRagGraphSignals({
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse(["paper-2"]),
@@ -173,9 +170,6 @@ describe("rag-graph-sync", () => {
     await expect(queries.getOverlayPointIds()).resolves.toEqual(
       expect.arrayContaining(["external-1", "rag-new"]),
     );
-    expect(result).toEqual({
-      highlightedPointIndices: [12],
-    });
   });
 
   it("clears the RAG overlay producer when clearing ask state", async () => {
@@ -192,15 +186,12 @@ describe("rag-graph-sync", () => {
   it("clears the RAG overlay producer when no graph signals remain", async () => {
     const queries = createQueries();
 
-    const result = await syncRagGraphSignals({
+    await syncRagGraphSignals({
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse([]),
     });
 
     expect(queries.clearOverlayProducer).toHaveBeenCalledWith(RAG_ASK_OVERLAY_PRODUCER);
-    expect(result).toEqual({
-      highlightedPointIndices: [],
-    });
   });
 });

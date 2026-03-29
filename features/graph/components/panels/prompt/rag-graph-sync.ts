@@ -4,10 +4,6 @@ import type {
   GraphRagQueryResponsePayload,
 } from "@/features/graph/types";
 
-export interface RagGraphSyncResult {
-  highlightedPointIndices: number[];
-}
-
 export function collectSignalPaperIds(
   ragResponse: GraphRagQueryResponsePayload,
 ): string[] {
@@ -28,16 +24,14 @@ export async function syncRagGraphSignals({
   producerId: OverlayProducerId;
   queries: GraphBundleQueries;
   ragResponse: GraphRagQueryResponsePayload;
-}): Promise<RagGraphSyncResult> {
+}): Promise<void> {
   const paperIds = collectSignalPaperIds(ragResponse);
   if (paperIds.length === 0) {
     await queries.clearOverlayProducer(producerId);
-    return {
-      highlightedPointIndices: [],
-    };
+    return;
   }
 
-  let paperNodes = await queries.getPaperNodesByPaperIds(paperIds);
+  const paperNodes = await queries.getPaperNodesByPaperIds(paperIds);
   const unresolvedPaperIds = paperIds.filter((paperId) => !(paperId in paperNodes));
   const universePointIds =
     unresolvedPaperIds.length > 0
@@ -50,18 +44,9 @@ export async function syncRagGraphSignals({
       producerId,
       pointIds: nextRagOverlayPointIds,
     });
-    paperNodes = await queries.getPaperNodesByPaperIds(paperIds);
   } else {
     await queries.clearOverlayProducer(producerId);
   }
-
-  return {
-    highlightedPointIndices: uniqueNumbers(
-      Object.values(paperNodes)
-        .map((node) => node.index)
-        .filter((index) => Number.isFinite(index)),
-    ),
-  };
 }
 
 export async function clearRagGraphOverlay({
@@ -76,8 +61,4 @@ export async function clearRagGraphOverlay({
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
-}
-
-function uniqueNumbers(values: number[]): number[] {
-  return Array.from(new Set(values));
 }

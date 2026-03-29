@@ -12,7 +12,6 @@ export interface SelectionSlice {
   currentScopeRevision: number
   selectedPointCount: number
   selectedPointRevision: number
-  highlightedPointIndices: number[]
   activeSelectionSourceId: string | null
   selectionLocked: boolean
 
@@ -21,7 +20,6 @@ export interface SelectionSlice {
   toggleConnectedSelect: () => void
   setCurrentPointScopeSql: (sql: string | null) => void
   setSelectedPointCount: (count: number) => void
-  setHighlightedPointIndices: (indices: number[]) => void
   setActiveSelectionSourceId: (sourceId: string | null) => void
   lockSelection: () => void
   unlockSelection: () => void
@@ -33,7 +31,6 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
   currentScopeRevision: 0,
   selectedPointCount: 0,
   selectedPointRevision: 0,
-  highlightedPointIndices: [],
   activeSelectionSourceId: null,
   selectionLocked: false,
 
@@ -57,7 +54,6 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
           selectedPointRevision: state.selectedPointRevision + 1,
         }
   }),
-  setHighlightedPointIndices: (indices) => set({ highlightedPointIndices: indices }),
   setActiveSelectionSourceId: (sourceId) => set({ activeSelectionSourceId: sourceId }),
   lockSelection: () => set((s) =>
     s.selectedPointCount === 0 ? s

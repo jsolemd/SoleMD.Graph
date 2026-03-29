@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.rag import queries
 from app.rag.repository import PostgresRagRepository
 
 
@@ -30,13 +31,36 @@ def test_search_papers_maps_rows(mock_conn):
     )
     repo = PostgresRagRepository(connect=lambda: conn)
 
-    hits = repo.search_papers("melatonin delirium", limit=5)
+    hits = repo.search_papers("run-1", "melatonin delirium", limit=5)
 
     assert len(hits) == 1
     assert hits[0].paper_id == "paper-101"
     assert hits[0].semantic_scholar_paper_id == "paper-101"
     assert hits[0].journal_name == "JAMA"
     assert hits[0].reference_count == 11
+
+
+def test_resolve_graph_release_targets_current_cosmograph_corpus_run(mock_conn):
+    conn = mock_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = {
+        "graph_run_id": "run-1",
+        "graph_name": "cosmograph",
+        "is_current": True,
+        "bundle_checksum": "bundle-1",
+    }
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    release = repo.resolve_graph_release("bundle-1")
+
+    assert "graph_name = 'cosmograph'" in queries.GRAPH_RELEASE_LOOKUP_SQL
+    assert "node_kind = 'corpus'" in queries.GRAPH_RELEASE_LOOKUP_SQL
+    cur.execute.assert_called_once_with(
+        queries.GRAPH_RELEASE_LOOKUP_SQL,
+        ("bundle-1", "bundle-1", "bundle-1"),
+    )
+    assert release.graph_release_id == "bundle-1"
+    assert release.graph_run_id == "run-1"
 
 
 def test_fetch_entity_matches_normalizes_mentions(mock_conn):

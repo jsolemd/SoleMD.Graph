@@ -35,9 +35,9 @@ Current browser-delivery note:
 - React mirrors only scalar selection/scope invalidation state:
   `selectedPointCount`, `selectedPointRevision`, `currentPointScopeSql`, and
   `currentScopeRevision`
-- `pointIncludeColumns` stays minimal and widget-driven: only mounted native
-  filter/timeline accessors are exposed to Cosmograph, while richer detail
-  stays on narrow DuckDB queries and backend evidence fetches
+- `pointIncludeColumns` stays empty on the live graph page: filter, timeline,
+  table, search, selection, and info state stays DuckDB-native instead of
+  widening Cosmograph point payloads
 - when overlay is empty, the live canvas aliases point straight at base views so
   first paint does not rebuild a synthetic active union
 - when overlay is active, only id membership mutates locally; overlay point rows
@@ -50,6 +50,17 @@ Current browser-delivery note:
   reuse categorical summary results across facet/bar widgets
 - `evidence` remains the backend/API path for raw citation neighborhoods, full
   PubTator payloads, assets, and later full text
+- the browser contract is split intentionally:
+  `current_points_canvas_web` is the render path,
+  `current_points_web` / `current_paper_points_web` are the local query path,
+  and release-scoped FastAPI evidence endpoints are the heavy retrieval path
+- frontend code must not fabricate release metadata or bypass the engine with
+  global/current evidence shortcuts when the user is interacting with a
+  specific published graph release
+
+This foundation-first split is deliberate. The observed gains in speed and
+responsiveness come from keeping the render path narrow and preindexed while
+leaving richer interaction state in DuckDB query views or the backend API.
 - the shipping graph runtime is corpus-only; any future graph layer must arrive
   as a self-contained module with its own bundle/query/UI path instead of
   branching through the default base/universe/overlay boot flow
@@ -199,11 +210,10 @@ Current browser-delivery note:
 ║   │                    RAG SEARCH + CHAT                             │   ║
 ║   │                                                                  │   ║
 ║   │   User asks: "What's the evidence for lithium in bipolar?"      │   ║
-║   │     → Server Action embeds the question (MedCPT)                │   ║
-║   │     → PostgreSQL vector search finds relevant papers            │   ║
-║   │     → Gemini Flash synthesizes answer with citations            │   ║
-║   │     → Streams back to browser via Vercel AI SDK                 │   ║
-║   │     → Cited papers highlight on the graph                       │   ║
+║   │     → Next.js Ask surface streams via Vercel AI SDK             │   ║
+║   │     → FastAPI resolves release-scoped evidence retrieval        │   ║
+║   │     → Browser DuckDB resolves/activates returned papers         │   ║
+║   │     → Answer and graph stay visible together                    │   ║
 ║   └─────────────────────────────────────────────────────────────────┘   ║
 ║                                                                         ║
 ║   ┌─────────────────────────────────────────────────────────────────┐   ║

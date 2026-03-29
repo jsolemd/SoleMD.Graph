@@ -5,7 +5,7 @@ import { Select, Switch, Stack, Text } from "@mantine/core";
 import type { ComboboxItem } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getColumnsForLayer } from "@/features/graph/lib/columns";
+import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
 import { COLOR_SCHEME_OPTIONS, getPaletteColors } from "@/features/graph/lib/colors";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
 import type { ColorSchemeName, DataColumnKey, MapLayer, PointColorStrategy } from "@/features/graph/types";
@@ -56,7 +56,10 @@ function renderSchemeOption({ option }: { option: ComboboxItem; checked?: boolea
 }
 
 export function ColorConfig({ activeLayer }: { activeLayer: MapLayer }) {
-  const layerColumns = useMemo(() => getColumnsForLayer(activeLayer), [activeLayer]);
+  const layerColumns = useMemo(
+    () => getRenderableColumnsForLayer(activeLayer),
+    [activeLayer],
+  );
 
   const colorColumnOptions = useMemo(() => [
     { value: "hexColor", label: "Hex color (pre-computed)" },
