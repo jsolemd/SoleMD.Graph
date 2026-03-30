@@ -10,7 +10,6 @@ export interface GraphPointRecord {
   y: number
   clusterId: number
   clusterLabel: string | null
-  clusterProbability: number
   displayLabel: string | null
   displayPreview: string | null
   paperTitle: string | null
@@ -18,7 +17,6 @@ export interface GraphPointRecord {
   journal: string | null
   year: number | null
   semanticGroups: string | null
-  organSystems: string | null
   relationCategories: string | null
   textAvailability: string | null
   paperAuthorCount: number | null

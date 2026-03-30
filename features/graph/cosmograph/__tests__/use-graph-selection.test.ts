@@ -3,6 +3,7 @@
  */
 import { renderHook } from "@testing-library/react";
 import { swapCosmographMock } from "./test-utils";
+import { useGraphStore } from "@/features/graph/stores";
 
 const mockPointsSelection = { reset: jest.fn() };
 const mockLinksSelection = { reset: jest.fn() };
@@ -22,7 +23,10 @@ jest.mock("@cosmograph/react", () => ({
 
 import { useGraphSelection } from "../hooks/use-graph-selection";
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  useGraphStore.setState({ selectedNode: null, focusedPointIndex: null, mode: "ask" });
+});
 
 describe("useGraphSelection", () => {
   it("delegates selectPoint to cosmograph", () => {
@@ -35,6 +39,15 @@ describe("useGraphSelection", () => {
     const { result } = renderHook(() => useGraphSelection());
     result.current.setFocusedPoint(7);
     expect(mockCosmograph.setFocusedPoint).toHaveBeenCalledWith(7);
+    expect(useGraphStore.getState().focusedPointIndex).toBe(7);
+  });
+
+  it("delegates clearFocusedPoint to cosmograph", () => {
+    const { result } = renderHook(() => useGraphSelection());
+    useGraphStore.getState().setFocusedPointIndex(7);
+    result.current.clearFocusedPoint();
+    expect(mockCosmograph.setFocusedPoint).toHaveBeenCalledWith(undefined);
+    expect(useGraphStore.getState().focusedPointIndex).toBeNull();
   });
 
   it("delegates unselectAllPoints to cosmograph", () => {

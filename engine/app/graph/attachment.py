@@ -118,7 +118,6 @@ point_base AS (
         COALESCE(p.reference_count, 0) AS reference_count,
         COALESCE(er.entity_count, 0) AS entity_count,
         er.semantic_groups_csv,
-        NULL::TEXT AS organ_systems_csv,
         COALESCE(rr.relation_count, 0) AS relation_count,
         rr.relation_categories_csv
     FROM requested_points rp

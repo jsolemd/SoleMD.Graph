@@ -38,11 +38,14 @@ export function DataTableBody({
   const handleRowClick = useCallback(
     (node: GraphPointRecord) => {
       selectNode(node);
-      selectPoint(node.index, false, false);
       setFocusedPoint(node.index);
       zoomToPoint(node.index, 250);
+
+      if (resolvedTableView === "dataset") {
+        selectPoint(node.index, false, false);
+      }
     },
-    [selectNode, selectPoint, setFocusedPoint, zoomToPoint]
+    [resolvedTableView, selectNode, selectPoint, setFocusedPoint, zoomToPoint]
   );
 
   if (pageLoading) {

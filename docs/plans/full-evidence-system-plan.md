@@ -129,13 +129,19 @@ Current implementation tracker for the first evidence vertical slice:
 - [x] deferred warehouse migration-sequencing contract now exists in code, so the future DDL rollout order is explicit before any migration is applied
 - [x] deferred warehouse index matrix now exists in code, with explicit initial-schema vs post-load posture for lineage, grounding, serving, and lexical-fallback indexes
 - [x] deferred non-executing warehouse write preview now exists in code, so planned stages and SQL templates can be rendered end-to-end without touching PostgreSQL
-- [x] deferred DDL preview generation now lives under `engine/db/previews` rather than `engine/app/rag`, so one-off migration helpers do not pollute the runtime RAG package
+- [x] deferred DB helper previews now live under `engine/db/scripts` rather than `engine/app/rag`, so one-off helpers do not pollute the runtime RAG package
+- [x] chunk-runtime helper names are now simplified around `chunk_seed.py`, `chunk_cutover.py`, and `engine/db/scripts/*`, reducing awkward runtime/one-off naming drift
+- [x] operational chunk-runtime readiness inspection now exists under `engine/db/scripts/inspect_chunk_runtime.py`, so live table presence, chunk-version coverage, post-load index presence, and pending cutover phases can be checked from one script
+- [x] first executable chunk cutover helper now exists under `engine/db/scripts/seed_chunk_version.py`, and live execution currently returns the expected deferred result because `paper_chunk_versions` is not yet present
 - [x] first real warehouse migrations are now applied for canonical document/source/section tables plus canonical block/sentence and aligned citation/entity mention tables
 - [x] source-plan -> warehouse-write-batch builder now exists, so parsed/selected sources can be converted into validated core/span/mention write batches without inventing row shapes ad hoc
 - [x] first runtime warehouse writer/repository path now exists for the live canonical tables, using staged COPY/upsert execution for documents, sources, sections, blocks, sentences, citations, and entities
 - [x] source-plan -> runtime-writer orchestration now exists in code, so parsed sources can be selected, batched, and applied through one ingest seam without ad hoc SQL
 - [x] runtime writer now explicitly defers logical `references` and chunk stages instead of pretending they already map cleanly to live physical storage
 - [x] first read-side warehouse grounding bridge now exists in code: if aligned citation spans are present for answer-linked papers, the service can build a structured `grounded_answer`; otherwise the field remains `null`
+- [x] grounded-answer reads are now explicitly gated on chunk-runtime readiness, so the live service will not populate `grounded_answer` unless required chunk tables exist, the default chunk version is seeded, and chunk rows are backfilled for the answer-linked papers
+- [x] the future read-side cutover now has a concrete chunk-lineage path in code, so once runtime readiness is true the service reads cited spans through `paper_chunk_members` / `paper_chunks` instead of pretending raw warehouse rows are the final serving shape
+- [x] live inspection now confirms the current expected posture: `paper_chunk_versions`, `paper_chunks`, and `paper_chunk_members` are still absent, so chunk-backed grounded answers remain correctly disabled today
 - [x] runtime bibliography adapter now maps logical `paper_reference_entries` onto the existing `solemd.paper_references` substrate, while chunk stages remain deferred
 - [x] derived chunk rows can now be appended to warehouse write batches from
   canonical blocks/sentences, and the first runtime chunk lane is explicitly
@@ -143,6 +149,35 @@ Current implementation tracker for the first evidence vertical slice:
   member rows remain deferred
 - [x] default chunk policy seed now exists in code as `default-structural-v1`,
   with conservative section-role/block-kind inclusion and no-overlap defaults
+- [x] deferred derived-serving migration file now exists for
+  `paper_chunk_versions`, `paper_chunks`, and `paper_chunk_members`, plus a
+  DB-side preview helper for seeding the canonical default chunk-version row
+- [x] runtime chunk-version seeder now exists, so the first chunk policy row
+  can be pushed through the existing write repository the moment
+  `paper_chunk_versions` is live
+- [x] runtime chunk backfill writer contract now exists, so canonical
+  block/sentence rows can be converted into chunk write batches and passed
+  through the same repository seam once chunk tables are live
+- [x] executable chunk-content backfill helper now exists under
+  `engine/db/scripts/backfill_chunks.py`, loading canonical
+  `paper_blocks` / `paper_sentences`, backfilling per-corpus chunk rows
+  through the existing repository seam, and reporting executed vs deferred
+  vs missing-canonical-row state cleanly
+- [x] runtime chunk backfill now treats chunk-version seeding as a separate
+  operational step, so per-paper backfill batches remain content-only and
+  do not keep re-upserting the default chunk-version row
+- [x] runtime chunk backfill is now batch-oriented rather than strictly
+  per-paper, so multi-paper chunk rows can be assembled and written through
+  one staged COPY/upsert batch
+- [x] warehouse ingest is now able to merge multiple grounding plans into
+  one validated write batch and apply them through one repository write,
+  matching the bulk-load posture already used elsewhere in the engine
+- [x] runtime chunk backfill now has resumable filesystem checkpoints under
+  `engine/db/scripts`, with `--run-id` / `--reset-run` and a repo-local
+  `.tmp` fallback when the mounted graph tmp root is unavailable
+- [x] BioC source-document ids are now normalized against standard identifier
+  forms (`PMID`, `PMCID`, `DOI`) before warehouse/audit resolution onto
+  canonical `corpus_id`
 
 Implementation rule:
 
@@ -167,6 +202,17 @@ Near-term work should stay bounded by the current paper-level baseline:
   explicit chunk-runtime cutover
 - [x] define the first default chunk-version seed in code so backfill and
   cutover work can reference one canonical policy key and inclusion posture
+- [x] place the deferred derived-serving migration and default chunk-version
+  seed preview under `engine/db` so chunk-runtime cutover assets stay out of
+  the runtime RAG package
+- [x] wire a runtime seeder for the default chunk-version row so the first
+  chunk-policy lane is usable without improvising ad hoc batch shapes
+- [x] add a paired runtime chunk-content backfill helper under
+  `engine/db/scripts` so derived chunk rows can be loaded from canonical
+  spans through the same write seam without polluting the runtime RAG package
+- [x] switch the chunk-content backfill helper from one-paper-at-a-time
+  writes to configurable multi-paper staged batches so it is structurally
+  aligned with large backfill workloads
 - [x] document the current backend honestly as a paper-level baseline wherever the UI could otherwise imply sentence-grounded verification
 - [x] plan the deeper `s2orc_v2` + BioCXML structural parsing pass as a separate warehouse-phase design effort rather than leaking premature chunk/span contracts into the current app boundary
 - [x] finalize the first warehouse serving hierarchy explicitly as
@@ -182,6 +228,16 @@ Near-term work should stay bounded by the current paper-level baseline:
   retrieval, cited-span assembly, and citation semantics stay in FastAPI; the
   AI SDK route remains a streaming/presentation layer
 - [x] define provisional cited-span and inline-citation payload shapes in docs
+- [x] normalize BioC source document ids through standard `PMID` / `PMCID` /
+  `DOI` handling before canonical `corpus_id` resolution, while keeping any
+  remaining unresolved ids explicit instead of silently coercing them
+- [x] make chunk-content backfill resumable with script-owned filesystem
+  checkpoints so large derived-serving backfills can resume safely
+- [ ] build the first resumable canonical warehouse ingest runner so
+  `paper_documents` / `paper_sections` / `paper_blocks` / `paper_sentences`
+  can actually be populated at batch scale
+- [ ] define the reconciliation lane for unresolved BioC source ids that are
+  neither directly mappable PMIDs nor locally resolvable PMCIDs/DOIs
   before adding any warehouse-era Pydantic fields
 - [x] plan how inline citations will stream and render in the response tray
 - [x] keep inline citation transport on the existing `data-evidence-response` path rather than introducing a second AI SDK stream protocol
@@ -229,10 +285,17 @@ Near-term work should stay bounded by the current paper-level baseline:
   migrations are applied
 - [x] keep an explicit optimization register in the docs so query-shape wins,
   deferred DDL, and likely structural upgrades are tracked as work advances
+- [x] align the warehouse write path with existing graph/corpus bulk-load
+  posture: staged COPY/upsert for large mutable tables, pooled short-lived
+  metadata access, and dedicated non-pooled connections reserved for long
+  COPY lanes
+- [x] record the current embedding recommendation explicitly: `SPECTER2` for
+  paper recall, `MedCPT` for chunk retrieval, and `MedCPT-Cross-Encoder`
+  for chunk reranking once dense retrieval is live
 - [x] add an explicit deferred chunk-runtime cutover contract so derived serving
   tables, chunk writes, backfill, grounded-packet reads, and post-load indexes
   have a real staged plan before any runtime switch is attempted
-- [x] add a structured chunk-runtime cutover preview under `engine/db/previews`
+- [x] add a structured chunk-runtime cutover preview under `engine/db/scripts`
   so deferred serving cutover can be inspected without applying DDL
 
 Confirmed live posture from the running graph DB:
@@ -304,6 +367,9 @@ Likely next safe current-table wins:
 - if citation expansion begins to dominate latency, prioritize the deferred
   citation-direction partial indexes before attempting any broader citation
   matching semantics
+- if BioC canonical resolution becomes a sustained ingest hotspot, add
+  `solemd.corpus (pmc_id) WHERE pmc_id IS NOT NULL` and a normalized DOI
+  lookup index before widening any non-PMID source-id reconciliation path
 
 Deferred DDL/index wins:
 
@@ -317,6 +383,10 @@ Deferred DDL/index wins:
   recall remains scan-heavy under live workloads
 - citation-direction partial indexes aligned with
   `(citing_corpus_id)`, `(cited_corpus_id)`, and `context_count > 0`
+- `solemd.corpus (pmc_id) WHERE pmc_id IS NOT NULL` if BioC PMCID resolution
+  becomes a regular ingest/runtime workload
+- normalized DOI lookup index or normalized DOI column strategy if BioC/other
+  source-id reconciliation starts depending on DOI resolution at scale
 - re-check PubTator signature indexes after relation- and entity-seeded recall
   are exercised on broader live traces
 
@@ -528,6 +598,20 @@ Current milestone note:
   source parsers emit normalized document/section/block/sentence/reference/
   citation records with lossless provenance, while chunking and cross-source
   alignment remain downstream phases
+- the first broader raw-source parser audit is now concrete instead of assumed:
+  a 200-row S2ORC audit across 4 shards parsed cleanly with strong structural
+  yield (`avg_blocks ~= 57.56`, `avg_sentences ~= 211.56`,
+  `matched_reference_fraction ~= 0.6792`, fallback sentences in `37/200`
+  docs), and a fast 200-document BioC pilot across 2 archives now parses
+  `199/200` after dropping empty-text block/reference passages
+- BioC source-id handling is now split correctly:
+  canonical ingest/audit resolution uses standard `PMID` / `PMCID` / `DOI`
+  normalization against `solemd.corpus`, while parser-quality audits can still
+  structurally review unresolved PMID docs via explicit source-native fallback
+  without pretending they are canonically ingested
+- current 200-document BioC pilot posture:
+  `59` canonically resolved docs, `140` structurally parseable PMID docs
+  without a current corpus-table match, and `1` remaining unresolved PMCID
 - the next milestone starts with runtime-contract hygiene before more feature
   surface:
   finish the remaining query-layer cleanup so non-canvas lookups consistently
@@ -2266,7 +2350,7 @@ Code contract:
    default chunk-version backfill exist
    - `paper_chunks`
    - `paper_chunk_members`
-   - inspect the deferred cutover preview under `engine/db/previews` before
+   - inspect the deferred cutover preview under `engine/db/scripts` before
      applying any runtime-serving switch
 6. only then stage the heavier secondary indexes, preferably with concurrent
    creation where appropriate

@@ -7,6 +7,7 @@
 > - `database.md` — schema details for `solemd.*` and `pubtator.*` tables
 > - `data.md` — data flow from PubTator3 and Semantic Scholar into PostgreSQL
 > - `architecture.md` — full system stack overview
+> - `graph-layout.md` — build pipeline, layout, bundle export
 
 ---
 
@@ -164,7 +165,7 @@ merge_graph_signals()              Deduplicated graph-lighting signals
 generate_baseline_answer()         Extractive answer from top bundles
   |
   v
-build_grounded_answer_from_warehouse()   (if warehouse spans exist)
+build_grounded_answer_from_runtime()     (only if chunk runtime is actually ready)
   |
   v
 serialize_search_result()          Pydantic response
@@ -236,6 +237,11 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 | `parse_contract.py` | Base contract: document/section/block/sentence/mention record types |
 | `rag_schema_contract.py` | Physical warehouse table specs and row types |
 | `write_sql_contract.py` | SQL templates for staged COPY/upsert warehouse writes |
+| `chunk_policy.py` | Default chunk-version policy (`default-structural-v1`) and token budgets |
+| `chunk_runtime_contract.py` | Phased chunk runtime cutover: migration gates, write-stage guards |
+| `chunk_cutover.py` | Step-by-step cutover workflow for chunk-backed serving |
+| `index_contract.py` | Deferred warehouse index matrix (build phases, index roles) |
+| `migration_contract.py` | Migration-sequencing contract (stages, table bundles, dependency ordering) |
 
 ### Grounding (source parsing + alignment)
 
@@ -246,6 +252,8 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 | `source_grounding.py` | Align parsed sources to canonical ordinals, build cited-span packets |
 | `alignment.py` | `align_span_to_canonical_ordinals()` — conservative offset alignment |
 | `grounding_packets.py` | `build_cited_span_packet()`, `build_inline_citation_anchors()` |
+| `grounded_runtime.py` | Runtime gate for chunk-backed grounded answers |
+| `chunk_grounding.py` | Chunk-lineage read path for future grounded answer packets |
 | `chunking.py` | `assemble_structural_chunks()` — derived chunks from blocks/sentences |
 
 ### Warehouse (write pipeline)
@@ -253,10 +261,12 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 | Module | Purpose |
 |--------|---------|
 | `warehouse_grounding.py` | Read-side: build grounded answer from live warehouse tables |
-| `warehouse_writer.py` | `RagWarehouseWriter.ingest_sources()` — orchestrate full ingest |
-| `write_batch_builder.py` | Convert grounding plans to `RagWarehouseWriteBatch` |
+| `warehouse_writer.py` | `RagWarehouseWriter.ingest_sources()` / `ingest_grounding_plans()` — orchestrate single-paper and bulk ingest |
+| `write_batch_builder.py` | Convert grounding plans to `RagWarehouseWriteBatch` and merge many batches |
 | `write_repository.py` | `PostgresRagWriteRepository` — staged COPY/upsert execution |
+| `chunk_backfill.py` | Derived chunk backfill writer with multi-paper staged-write support |
 | `write_preview.py` | Dry-run renderer: show planned SQL without executing |
+| `corpus_resolution.py` | Canonical BioC source-id normalization and `corpus_id` resolution (`PMID`, `PMCID`, `DOI`) |
 
 ---
 
@@ -270,6 +280,11 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 | Serving | `serving_contract.py` | `PaperChunkVersionRecord`, `PaperChunkRecord`, `CitedSpanPacket`, `InlineCitationAnchor`, `GroundedAnswerRecord` | Derived retrieval + answer-grounding units |
 | Write | `write_contract.py` | `RagWarehouseWriteBatch` | Validated batch for all warehouse stages |
 | Write SQL | `write_sql_contract.py` | `StageSqlTemplateSpec` | Per-table COPY/upsert SQL templates |
+| Chunk Policy | `chunk_policy.py` | `DEFAULT_CHUNK_VERSION_KEY`, `build_default_chunk_version_record()` | Canonical defaults for chunk derivation |
+| Chunk Runtime | `chunk_runtime_contract.py` | `ChunkRuntimePhase`, `ChunkRuntimeCutoverSpec` | Phased runtime cutover gates |
+| Cutover | `chunk_cutover.py` | `ChunkCutoverStepKey`, `ChunkCutoverStep` | Step-level chunk serving cutover |
+| Index | `index_contract.py` | `IndexBuildPhase`, `IndexRole`, `RagIndexMethod` | Warehouse index lifecycle |
+| Migration | `migration_contract.py` | `MigrationStage`, `RagMigrationBundleSpec` | Warehouse migration ordering |
 
 ---
 
@@ -372,6 +387,26 @@ mentions when both sources exist for the same paper.
 Stages 1-8 are live. Stage 9 is conditional on table existence. Stages 10-11
 are deferred until the chunk storage migration is complete.
 
+### Bulk-load posture
+
+For corpus-scale loads, the intended posture is:
+
+- parse many papers off-DB
+- build many `GroundingSourcePlan`s
+- merge them into one `RagWarehouseWriteBatch`
+- execute one staged `COPY -> temp table -> set-based merge` per batch
+
+Operational rules:
+
+- keep per-paper ingest for online repair and targeted reprocessing only
+- use batched warehouse writes for backfills and release-scale ingest
+- use `db.pooled()` for short metadata reads and transactional batch merges
+- use dedicated non-pooled connections only for long COPY lanes or parallel
+  bulk workers
+- never hold database connections open during XML/JSON parsing
+- defer non-essential lexical and serving indexes until after bulk loads and
+  run `ANALYZE` after the load/index phase
+
 ---
 
 ## Answer Generation
@@ -381,9 +416,10 @@ The current answer path is extractive:
 1. `select_answer_grounding_bundles()` picks the top 2 bundles
 2. `generate_baseline_answer()` builds a text answer from paper titles,
    years, and snippet text
-3. If warehouse citation spans exist for answer-linked papers,
-   `build_grounded_answer_from_warehouse()` constructs a structured
-   `GroundedAnswerRecord` with segments, inline citations, and cited spans
+3. If the chunk-backed grounding runtime is actually ready for the answer-linked
+   papers, `build_grounded_answer_from_runtime()` gates into the chunk-lineage
+   read path and constructs a structured `GroundedAnswerRecord` with segments,
+   inline citations, and cited spans
 4. The response includes both `answer` (plain text) and optionally
    `grounded_answer` (structured, when warehouse data is available)
 
@@ -466,6 +502,171 @@ Hard rules:
 
 ---
 
+## Mental Model
+
+The shortest useful summary:
+
+```
+CURRENT                                 FUTURE
+───────                                 ──────
+User                                    User
+  -> Next.js UI + AI SDK stream           -> same Next.js UI + AI SDK stream
+  -> typed web adapter                    -> same typed web adapter
+  -> FastAPI paper-level retrieval        -> FastAPI evidence orchestrator
+  -> PostgreSQL current tables            -> PostgreSQL warehouse + Qdrant
+  -> paper evidence bundles + graph refs  -> cited spans + inline citations + graph refs
+  -> DuckDB local graph resolution        -> same DuckDB graph resolution
+  -> overlay producers                    -> same overlay producers
+  -> Cosmograph render                    -> same Cosmograph render
+```
+
+What changes later is the **backend grounding depth**.
+What does **not** change is the graph activation boundary:
+
+```
+backend returns graph refs
+  -> DuckDB resolves them locally
+  -> overlay producers activate them
+  -> active canvas updates
+  -> Cosmograph renders them
+```
+
+No JS point hydration. No backend point indices. No second client-side graph engine.
+
+---
+
+## Future Vision
+
+### Future Layer Stack
+
+```
++-------------------------------------------------------------------+
+| FASTAPI EVIDENCE ORCHESTRATOR                                     |
+|  - paper recall                                                   |
+|  - chunk / block / sentence retrieval                             |
+|  - cited-span assembly                                            |
+|  - inline citation packet assembly                                |
+|  - LLM synthesis from grounded spans                              |
++----------------------------+--------------------------------------+
+                             |
+         +-------------------+-------------------+
+         |                                       |
+         v                                       v
++----------------------------+   +-------------------------------+
+| POSTGRESQL WAREHOUSE       |   | QDRANT / VECTOR SERVING       |
+| canonical spine            |   | derived retrieval units        |
+|  - paper_documents         |   |  - chunk embeddings            |
+|  - paper_sections          |   |  - later sentence/block search |
+|  - paper_blocks            |   +-------------------------------+
+|  - paper_sentences         |
+|  - paper_entity_mentions   |
+|  - paper_citation_mentions |
+|  - paper_chunks (derived)  |
++----------------------------+
+```
+
+### Future Grounding Model
+
+```
+paper
+  |
+  +-> sections
+        |
+        +-> blocks
+              |
+              +-> sentences
+                    |
+                    +-> entity mentions
+                    +-> citation mentions
+                    +-> later chunk membership
+```
+
+### Future Demand-Attach Graph Materialization
+
+When the graphable corpus exceeds the locally attached universe:
+
+```
+DuckDB checks:
+  1. already active?
+  2. already in local universe?
+  3. not local yet?
+       |
+       +-> fetch narrow graph rows only for missing refs
+       +-> attach/materialize them in DuckDB
+       +-> overlay producer promotes them
+       +-> active canvas updates
+```
+
+### Current vs Future: What Changes
+
+```
+STAYS THE SAME                          UPGRADES LATER
+──────────────                          ──────────────
+Next.js UI                              backend retrieval depth
+AI SDK streaming surface                evidence warehouse
+typed web adapter                       chunk/block/sentence grounding
+FastAPI as evidence boundary            cited-span packets
+DuckDB local graph resolution           inline citations
+overlay producers                       final LLM synthesis quality
+Cosmograph active-canvas rendering      demand-attachment for graph rows
+answer-linked papers become selected
+```
+
+---
+
+## User Perspective
+
+### Ask Today
+
+```
+I ask:
+  "What evidence links melatonin to delirium?"
+
+System today:
+  1. finds relevant papers
+  2. ranks them at paper level
+  3. returns a paper-grounded answer
+  4. selects answer-linked papers on the graph
+  5. may also promote related papers into overlay
+
+What I see:
+  - answer text
+  - evidence papers
+  - selected studies on the graph
+```
+
+### Ask In The Future
+
+```
+System later:
+  1. recalls papers
+  2. retrieves grounded blocks/sentences
+  3. synthesizes answer from those cited spans
+  4. returns inline citations
+  5. selects cited papers on the graph
+
+What I see:
+  - answer text with inline citations
+  - cited evidence spans
+  - cited studies selected on the graph
+  - related studies available to explore around them
+```
+
+---
+
+## Hard Rules
+
+```
+DO                                          DO NOT
+──                                          ──────
+keep graph activation paper-level           hydrate full point metadata into JS
+keep evidence semantics backend-owned       send backend point indices
+keep DuckDB for local graph resolution      put heavy evidence objects into point payloads
+keep Cosmograph on dense active tables      make the browser parse LLM text for citations
+```
+
+---
+
 ## Roadmap
 
 ### Warehouse population at scale
@@ -474,6 +675,33 @@ The canonical warehouse tables exist in the schema but are not yet populated
 at corpus scale. The write pipeline (source parsers, alignment, batch builder,
 staged writer) is implemented and tested. The next step is running bulk
 ingestion against the S2ORC v2 and BioCXML datasets.
+
+The write path is now explicitly batch-oriented:
+- `merge_write_batches()` combines many paper batches into one validated
+  warehouse batch
+- `RagWarehouseWriter.ingest_grounding_plans()` / `ingest_source_groups()`
+  apply many parsed papers through one repository write
+- `engine/db/scripts/backfill_chunks.py` backfills chunks in configurable
+  multi-paper batches instead of one transaction per paper
+- `engine/db/scripts/backfill_chunks.py --run-id ...` now persists resumable
+  filesystem checkpoints, with the preferred graph tmp root falling back to
+  repo-local `.tmp/` when the mounted graph tmp path is unavailable
+- the long-running operational posture is now explicit:
+  `db.pooled()` for short metadata reads and direct `db.connect()` write lanes
+  for staged COPY/upsert work
+
+Current raw-source audit snapshot:
+- S2ORC pilot: `200/200` parsed across 4 shards with `avg_blocks ~= 57.56`,
+  `avg_sentences ~= 211.56`, and `matched_reference_fraction ~= 0.6792`
+- BioC pilot: `199/200` structurally parsed across 2 archives after skipping
+  empty-text block/reference passages, with canonical `corpus_id` resolution
+  now measured separately from structural parser quality
+- BioC document ids are now normalized against standard source identifiers
+  first (`PMID`, `PMCID`, `DOI`); unresolved ids remain explicit reconciliation
+  work and are not silently promoted into canonical warehouse ingest
+- in the current 200-document pilot, `59` BioC docs resolved directly onto
+  canonical `corpus_id`, `140` were structurally parseable PMID docs without a
+  current corpus-table match, and `1` PMCID remained unresolved
 
 ### Chunk-backed retrieval
 
@@ -504,6 +732,30 @@ This means the future chunk lifecycle is:
 - backfill `paper_chunk_members`
 - then enable chunk-backed retrieval and cited-span grounding
 
+The DB-side artifacts for that path now exist in the repo:
+- deferred migration file:
+  `engine/db/migrations/031_rag_derived_serving.sql`
+- default chunk-version seed preview:
+  `engine/db/scripts/preview_chunk_seed.py`
+- executable chunk-version seed helper:
+  `engine/db/scripts/seed_chunk_version.py`
+- executable chunk-content backfill helper:
+  `engine/db/scripts/backfill_chunks.py`
+- runtime readiness inspector:
+  `engine/db/scripts/inspect_chunk_runtime.py`
+- runtime chunk-version seeder:
+  `engine/app/rag/chunk_seed.py`
+- runtime chunk backfill writer contract:
+  `engine/app/rag/chunk_backfill.py`
+
+Operational rule:
+- seed the default chunk version once
+- backfill chunk content in staged multi-paper batches from canonical
+  `paper_blocks` and `paper_sentences`
+- inspect readiness before cutover
+- do not keep re-upserting the chunk-version row inside every per-paper
+  backfill batch
+
 ### Inline-cited answer synthesis
 
 When warehouse spans are populated at scale, the answer path upgrades from
@@ -513,9 +765,18 @@ wired through the full stack.
 
 ### Dense vector retrieval
 
-Qdrant (or equivalent) for ANN search over chunk embeddings. The canonical
-warehouse stores lexical fallback and provenance; dense retrieval stays
-external to PostgreSQL.
+Qdrant (or equivalent) for ANN search over paper and chunk embeddings. The
+canonical warehouse stores lexical fallback and provenance; dense retrieval
+stays external to PostgreSQL.
+
+Current recommendation:
+- paper-level recall: `SPECTER2`
+- chunk/span retrieval: `MedCPT`
+- chunk reranking: `MedCPT-Cross-Encoder`
+
+The `embedding_model` field on `paper_chunk_versions` is currently metadata
+only. It records the intended embedding family for a chunk version, but the
+live paper-level baseline does not embed or retrieve chunk vectors yet.
 
 ### Demand-attach graph materialization
 

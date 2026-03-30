@@ -14,6 +14,7 @@ import {
   PILL_LEFT,
   cardWidth,
 } from "./constants";
+import { resolvePromptAutoPosition, type PromptAvoidRect } from "./avoidance";
 
 export function usePromptPosition({
   isCreate,
@@ -25,6 +26,7 @@ export function usePromptPosition({
   rightClearance,
   leftPanelBottom,
   rightPanelBottom,
+  avoidRects,
   vw,
   vh,
   cardRef,
@@ -38,6 +40,7 @@ export function usePromptPosition({
   rightClearance: number;
   leftPanelBottom: number;
   rightPanelBottom: number;
+  avoidRects?: PromptAvoidRect[];
   vw: number;
   vh: number;
   cardRef: React.RefObject<HTMLDivElement | null>;
@@ -46,6 +49,7 @@ export function usePromptPosition({
   const userDragX = useRef(0);
   const userDragY = useRef(0);
   const autoTargetXRef = useRef(0);
+  const autoTargetYRef = useRef(0);
   const dragControls = useDragControls();
   const dragX = useMotionValue(0);
   const dragY = useMotionValue(0);
@@ -108,6 +112,7 @@ export function usePromptPosition({
         fullHeightEnteredRef.current = true;
       }
       autoTargetXRef.current = targetX;
+      autoTargetYRef.current = targetY;
       posAnim.current.x = animate(dragX, targetX, smooth);
       posAnim.current.y = animate(dragY, targetY, smooth);
       posAnim.current.h = animate(cardHeight, targetH, smooth);
@@ -131,6 +136,7 @@ export function usePromptPosition({
       if (posMode === "collapsed") {
         const targetX = PILL_LEFT - vw / 2;
         autoTargetXRef.current = targetX;
+        autoTargetYRef.current = targetY;
         if (modeChanged) { userDragX.current = targetX; userDragY.current = targetY; }
         posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
         posAnim.current.y = animate(dragY, Math.min(userDragY.current, targetY), smooth);
@@ -142,6 +148,7 @@ export function usePromptPosition({
         const centeredRight = centeredLeft + cardW;
         let minX = VIEWPORT_MARGIN - centeredLeft;
         let maxX = (vw - VIEWPORT_MARGIN) - centeredRight;
+        const maxUp = -(vh - BOTTOM_BASE - cardH - VIEWPORT_MARGIN);
 
         if (leftClearance > 0 && leftPanelBottom > promptTop && centeredLeft < leftClearance) {
           minX = leftClearance - centeredLeft;
@@ -150,18 +157,41 @@ export function usePromptPosition({
           maxX = (vw - rightClearance) - centeredRight;
         }
 
-        const targetX = minX <= maxX
+        const baseTargetX = minX <= maxX
           ? Math.max(minX, Math.min(0, maxX))
           : Math.max(Math.min(0, minX), maxX);
+        const resolvedAutoPosition = resolvePromptAutoPosition({
+          vw,
+          vh,
+          cardW,
+          cardH,
+          baseX: baseTargetX,
+          baseY: targetY,
+          minX,
+          maxX,
+          minY: maxUp,
+          maxY: targetY,
+          bottomBase: BOTTOM_BASE,
+          avoidRects,
+        });
+        const targetX = resolvedAutoPosition.x;
+        const autoY = resolvedAutoPosition.y;
 
         if (modeChanged) { userDragX.current = 0; userDragY.current = 0; }
         if (autoTargetXRef.current !== targetX) {
           userDragX.current = 0;
           setIsOffset(userDragY.current !== 0);
         }
+        if (autoTargetYRef.current !== autoY) {
+          userDragY.current = 0;
+          setIsOffset(userDragX.current !== 0);
+        }
         autoTargetXRef.current = targetX;
+        autoTargetYRef.current = autoY;
         posAnim.current.x = animate(dragX, userDragX.current || targetX, smooth);
-        const target = Math.min(userDragY.current, targetY);
+        const target = userDragY.current !== 0
+          ? Math.min(userDragY.current, targetY)
+          : autoY;
         posAnim.current.y = animate(dragY, target, smooth);
       }
     }
@@ -172,7 +202,7 @@ export function usePromptPosition({
       // eslint-disable-next-line react-hooks/exhaustive-deps
       if (!heightAnimatingRef.current) posAnim.current.h?.stop();
     };
-  }, [isCreate, isCollapsed, promptMaximized, panelsVisible, bottomClearance, leftClearance, rightClearance, leftPanelBottom, rightPanelBottom, targetY, vw, vh, dragX, dragY, cardHeight, startHeightAnim, cardRef]);
+  }, [isCreate, isCollapsed, promptMaximized, panelsVisible, bottomClearance, leftClearance, rightClearance, leftPanelBottom, rightPanelBottom, avoidRects, targetY, vw, vh, dragX, dragY, cardHeight, startHeightAnim, cardRef]);
 
   // FLIP measurement
   useLayoutEffect(() => {
@@ -197,6 +227,7 @@ export function usePromptPosition({
     userDragX,
     userDragY,
     autoTargetXRef,
+    autoTargetYRef,
     dragControls,
     dragX,
     dragY,

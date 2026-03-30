@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from app.rag.answer import generate_baseline_answer, select_answer_grounding_bundles
 from app.rag.bundle import assemble_evidence_bundles, merge_graph_signals
+from app.rag.grounded_runtime import build_grounded_answer_from_runtime
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
@@ -34,7 +35,6 @@ from app.rag.types import (
     RetrievalChannel,
     RetrievalScope,
 )
-from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse
 
 
 def _normalize_terms(values: list[str]) -> list[str]:
@@ -360,7 +360,7 @@ class RagService:
         if warehouse_grounder is not None:
             self._warehouse_grounder = warehouse_grounder
         elif isinstance(self._repository, PostgresRagRepository):
-            self._warehouse_grounder = build_grounded_answer_from_warehouse
+            self._warehouse_grounder = build_grounded_answer_from_runtime
         else:
             self._warehouse_grounder = None
 

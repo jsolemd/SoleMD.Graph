@@ -65,7 +65,6 @@ export type FilterableColumnKey =
   >
 
 export type NumericColumnKey =
-  | 'clusterProbability'
   | 'year'
   | 'paperAuthorCount'
   | 'paperReferenceCount'

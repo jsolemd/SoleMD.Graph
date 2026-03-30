@@ -5,7 +5,6 @@ import { X } from "lucide-react";
 import type {
   GraphInfoFacetRow,
   GraphInfoHistogramResult,
-  GraphInfoScope,
 } from "@/features/graph/types";
 import type { InfoWidgetSlot } from "@/features/graph/lib/info-widgets";
 import { useDashboardStore } from "@/features/graph/stores";
@@ -25,35 +24,35 @@ import { queryWidgetThemeVars } from "../widget-theme";
 
 interface QueryWidgetSlotRendererProps {
   slot: InfoWidgetSlot;
-  scope: GraphInfoScope;
+  subsetActive: boolean;
   prefetchedFacetRows?: GraphInfoFacetRow[] | null;
-  prefetchedBarRows?: Array<{ value: string; count: number }> | null;
-  prefetchedHistogram?: GraphInfoHistogramResult | null;
+  prefetchedBarRows?: GraphInfoFacetRow[] | null;
+  prefetchedDatasetHistogram?: GraphInfoHistogramResult | null;
+  prefetchedSubsetHistogram?: GraphInfoHistogramResult | null;
 }
 
 export function QueryWidgetSlotRenderer({
   slot,
-  scope,
+  subsetActive,
   prefetchedFacetRows = null,
   prefetchedBarRows = null,
-  prefetchedHistogram = null,
+  prefetchedDatasetHistogram = null,
+  prefetchedSubsetHistogram = null,
 }: QueryWidgetSlotRendererProps) {
   const removeInfoWidget = useDashboardStore((state) => state.removeInfoWidget);
+
   const metaBadges =
-    slot.kind === "histogram" && prefetchedHistogram
+    slot.kind === "histogram" && prefetchedDatasetHistogram
       ? [
-          `${prefetchedHistogram.bins.length} bins`,
-          `${formatNumber(prefetchedHistogram.totalCount)} values`,
+          `${prefetchedDatasetHistogram.bins.length} bins`,
+          subsetActive && prefetchedSubsetHistogram
+            ? `${formatNumber(prefetchedSubsetHistogram.totalCount)} / ${formatNumber(prefetchedDatasetHistogram.totalCount)} values`
+            : `${formatNumber(prefetchedDatasetHistogram.totalCount)} values`,
         ]
       : slot.kind === "facet-summary" && prefetchedFacetRows
-        ? [`top ${prefetchedFacetRows.length}`, scope]
+        ? [`top ${prefetchedFacetRows.length}`]
         : slot.kind === "bars" && prefetchedBarRows
-          ? [
-              `top ${prefetchedBarRows.length}`,
-              `${formatNumber(
-                prefetchedBarRows.reduce((sum, row) => sum + row.count, 0),
-              )} values`,
-            ]
+          ? [`top ${prefetchedBarRows.length}`]
           : [];
 
   return (
@@ -93,23 +92,27 @@ export function QueryWidgetSlotRenderer({
       </div>
 
       {slot.kind === "histogram" ? (
-        prefetchedHistogram ? (
+        prefetchedDatasetHistogram ? (
           <QueryInfoHistogram
-            bins={prefetchedHistogram.bins}
-            totalCount={prefetchedHistogram.totalCount}
+            bins={prefetchedDatasetHistogram.bins}
+            totalCount={prefetchedDatasetHistogram.totalCount}
             column={slot.column}
+            highlightBins={subsetActive ? prefetchedSubsetHistogram?.bins ?? null : null}
+            highlightTotalCount={
+              subsetActive ? prefetchedSubsetHistogram?.totalCount ?? 0 : null
+            }
           />
         ) : (
           <Text style={panelTextDimStyle}>No numeric data</Text>
         )
       ) : slot.kind === "facet-summary" ? (
         prefetchedFacetRows ? (
-          <QueryFacetSummary rows={prefetchedFacetRows} scope={scope} />
+          <QueryFacetSummary rows={prefetchedFacetRows} subsetActive={subsetActive} />
         ) : (
           <Text style={panelTextDimStyle}>No data</Text>
         )
       ) : prefetchedBarRows ? (
-        <QueryInfoBars rows={prefetchedBarRows} />
+        <QueryInfoBars rows={prefetchedBarRows} subsetActive={subsetActive} />
       ) : (
         <Text style={panelTextDimStyle}>No data</Text>
       )}

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
+import { useCosmograph } from "@cosmograph/react";
 import {
   motion,
   animate,
@@ -33,6 +34,7 @@ import {
 } from "./prompt/constants";
 import { PromptIconBtn } from "./prompt/PromptIconBtn";
 import { usePromptPosition } from "./prompt/use-prompt-position";
+import { useFocusedAvoidanceRects } from "./prompt/use-focused-avoidance-rects";
 import { RagResponsePanel } from "./prompt/RagResponsePanel";
 import {
   getSelectionScopeToggleLabel,
@@ -50,6 +52,7 @@ export function PromptBox({
 }) {
   const mode = useGraphStore((s) => s.mode);
   const selectedNode = useGraphStore((s) => s.selectedNode);
+  const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
   const writeContent = useDashboardStore((s) => s.writeContent);
   const setWriteContent = useDashboardStore((s) => s.setWriteContent);
   const panelsVisible = useDashboardStore((s) => s.panelsVisible);
@@ -72,9 +75,10 @@ export function PromptBox({
   const [promptValue, setPromptValue] = useState("");
   const [showFormattingTools, setShowFormattingTools] = useState(false);
   const [selectionScopeManuallyDisabled, setSelectionScopeManuallyDisabled] = useState(false);
-  const { width: vw } = useViewportSize();
+  const { width: vw, height: vh } = useViewportSize();
   const editorRef = useRef<CreateEditorHandle>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const { cosmograph } = useCosmograph();
   const isCreate = mode === "create";
   const isAsk = mode === "ask";
   const isCollapsed = promptMinimized;
@@ -114,12 +118,23 @@ export function PromptBox({
 
   const leftPanelBottom = useDashboardStore((s) => s.panelBottomY.left);
   const rightPanelBottom = useDashboardStore((s) => s.panelBottomY.right);
+  const focusedLabelText =
+    selectedNode?.displayLabel ??
+    selectedNode?.paperTitle ??
+    selectedNode?.clusterLabel ??
+    null;
+  const avoidRects = useFocusedAvoidanceRects({
+    enabled: Boolean(cosmograph) && focusedPointIndex != null && !isCollapsed && !isCreate,
+    focusedPointIndex,
+    labelText: focusedLabelText,
+  });
 
   const {
     isDragging,
     userDragX,
     userDragY,
     autoTargetXRef,
+    autoTargetYRef,
     dragControls,
     dragX,
     dragY,
@@ -144,8 +159,9 @@ export function PromptBox({
     rightClearance,
     leftPanelBottom,
     rightPanelBottom,
+    avoidRects,
     vw,
-    vh: useViewportSize().height,
+    vh,
     cardRef,
   });
 
@@ -262,7 +278,10 @@ export function PromptBox({
           if (curY !== safeY) animate(dragY, safeY, responsive);
           userDragX.current = safeX;
           userDragY.current = safeY;
-          setIsOffset(safeX !== 0 || safeY !== 0);
+          setIsOffset(
+            Math.abs(safeX - autoTargetXRef.current) > 1 ||
+              Math.abs(safeY - autoTargetYRef.current) > 1,
+          );
           setTimeout(() => {
             isDragging.current = false;
           }, 0);
@@ -478,7 +497,7 @@ export function PromptBox({
                 e.stopPropagation();
                 if (!isOffset) return;
                 animate(dragX, autoTargetXRef.current, responsive);
-                animate(dragY, targetY, responsive);
+                animate(dragY, autoTargetYRef.current, responsive);
                 userDragX.current = 0;
                 userDragY.current = 0;
                 setIsOffset(false);

@@ -4,17 +4,17 @@ import { useState } from "react";
 import { Button, Group, Stack } from "@mantine/core";
 import { useGraphCamera } from "@/features/graph/cosmograph";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphBundleQueries, GraphInfoScope } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@/features/graph/types";
 import { PANEL_ACCENT } from "../../panels/PanelShell";
 
 interface SelectionActionsProps {
-  scope: GraphInfoScope;
+  subsetScope: "current" | "selected" | null;
   queries?: GraphBundleQueries;
   overlayCount?: number;
 }
 
 export function SelectionActions({
-  scope,
+  subsetScope,
   queries,
   overlayCount = 0,
 }: SelectionActionsProps) {
@@ -34,21 +34,21 @@ export function SelectionActions({
     Boolean(currentPointScopeSql && currentPointScopeSql.trim().length > 0);
   const canActivateOverlay =
     Boolean(queries) &&
-    ((scope === "selected" && selectedPointCount > 0) ||
-      (scope === "current" && hasCurrentSubset));
+    ((subsetScope === "selected" && selectedPointCount > 0) ||
+      (subsetScope === "current" && hasCurrentSubset));
 
   const handleOpenTable = () => {
     setTableOpen(true);
-    setTableView(scope === "dataset" ? "dataset" : "selection");
+    setTableView(subsetScope ? "selection" : "dataset");
   };
 
   const handleFitSelection = async () => {
-    if (queries && (scope === "selected" || scope === "current")) {
+    if (queries && subsetScope) {
       setIsResolvingCurrentScope(true);
       try {
         const coordinates = await queries.getScopeCoordinates({
           layer: activeLayer,
-          scope,
+          scope: subsetScope,
           currentPointScopeSql,
         });
         if (coordinates && coordinates.length > 0) {
@@ -73,7 +73,7 @@ export function SelectionActions({
       await queries.activateOverlay({
         kind: "cluster-neighborhood",
         layer: activeLayer,
-        scope: scope === "selected" ? "selected" : "current",
+        scope: subsetScope ?? "current",
         currentPointScopeSql,
       });
     } finally {

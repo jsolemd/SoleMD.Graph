@@ -7,7 +7,7 @@ describe('cosmograph-columns', () => {
         layer: 'corpus',
         activePanel: 'info',
         showTimeline: true,
-        filterColumns: [{ column: 'organSystems', type: 'categorical' }],
+        filterColumns: [{ column: 'relationCategories', type: 'categorical' }],
         timelineColumn: 'year',
         pointColorColumn: 'hexColor',
         pointSizeColumn: 'paperReferenceCount',

@@ -15,7 +15,10 @@ from app.rag.serving_contract import (
 )
 from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
 from app.rag.source_selection import build_grounding_source_plan
-from app.rag.write_batch_builder import build_write_batch_from_grounding_plan
+from app.rag.write_batch_builder import (
+    build_write_batch_from_grounding_plan,
+    merge_write_batches,
+)
 
 
 def _build_s2orc_source():
@@ -172,3 +175,43 @@ def test_build_write_batch_from_grounding_plan_can_append_structural_chunks():
     assert batch.chunks[0].chunk_version_key == "default-v1"
     assert batch.chunks[0].corpus_id == 12345
     assert len(batch.chunk_members) == 2
+
+
+def test_merge_write_batches_combines_distinct_corpus_batches():
+    first_plan = build_grounding_source_plan([_build_s2orc_source(), _build_bioc_overlay()])
+    second_source = parse_s2orc_row(
+        {
+            "corpusid": 67890,
+            "title": "Second trial",
+            "openaccessinfo": {"license": "CC-BY"},
+            "body": {
+                "text": "Results\nDexmedetomidine improved sleep.",
+                "annotations": {
+                    "section_header": json.dumps(
+                        [{"start": 0, "end": len("Results"), "attributes": {}}]
+                    ),
+                    "paragraph": json.dumps(
+                        [{"start": 8, "end": len("Results\nDexmedetomidine improved sleep."), "attributes": {}}]
+                    ),
+                    "sentence": json.dumps(
+                        [{"start": 8, "end": len("Results\nDexmedetomidine improved sleep."), "attributes": {}}]
+                    ),
+                    "bib_ref": json.dumps([]),
+                },
+            },
+            "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+        },
+        source_revision="2026-03-10",
+        parser_version="parser-v1",
+    )
+    second_plan = build_grounding_source_plan([second_source])
+
+    merged = merge_write_batches(
+        [
+            build_write_batch_from_grounding_plan(first_plan),
+            build_write_batch_from_grounding_plan(second_plan),
+        ]
+    )
+
+    assert sorted(row.corpus_id for row in merged.documents) == [12345, 67890]
+    assert len(merged.blocks) == 2

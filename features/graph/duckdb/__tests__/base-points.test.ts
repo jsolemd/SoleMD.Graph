@@ -15,14 +15,12 @@ const REQUIRED_COLUMNS = [
   'y',
   'cluster_id',
   'cluster_label',
-  'cluster_probability',
   'title',
   'citekey',
   'journal',
   'year',
   'display_label',
   'semantic_groups_csv',
-  'organ_systems_csv',
   'relation_categories_csv',
   'text_availability',
   'is_in_base',
@@ -90,7 +88,6 @@ describe('base point projections', () => {
     expect(canvasSql).not.toContain('relationCategories')
     expect(canvasSql).not.toContain('textAvailability')
     expect(canvasSql).not.toContain('baseRank')
-    expect(querySql).toContain('organSystems')
     expect(querySql).toContain('semanticGroups')
     expect(querySql).toContain('relationCategories')
     expect(querySql).toContain('textAvailability')

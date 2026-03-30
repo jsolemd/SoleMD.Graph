@@ -15,14 +15,12 @@ export interface GraphPointSelectionRow {
   y: number
   clusterId: number | null
   clusterLabel: string | null
-  clusterProbability: number | null
   displayLabel: string | null
   paperTitle: string | null
   citekey: string | null
   journal: string | null
   year: number | null
   semanticGroups: string | null
-  organSystems: string | null
   relationCategories: string | null
   textAvailability: string | null
   paperAuthorCount: number | null
@@ -47,7 +45,6 @@ export function mapGraphPointRow(row: GraphPointSelectionRow): GraphPointRecord 
     y: row.y,
     clusterId: row.clusterId ?? 0,
     clusterLabel: row.clusterLabel,
-    clusterProbability: row.clusterProbability ?? 0,
     displayLabel: row.displayLabel,
     displayPreview: row.paperTitle ?? row.displayLabel,
     paperTitle: row.paperTitle,
@@ -55,7 +52,6 @@ export function mapGraphPointRow(row: GraphPointSelectionRow): GraphPointRecord 
     journal: row.journal,
     year: row.year,
     semanticGroups: row.semanticGroups,
-    organSystems: row.organSystems,
     relationCategories: row.relationCategories,
     textAvailability: row.textAvailability,
     paperAuthorCount: row.paperAuthorCount,
@@ -90,14 +86,12 @@ export async function queryCorpusPointSelection(
       y,
       clusterId,
       clusterLabel,
-      clusterProbability,
       displayLabel,
       paperTitle,
       citekey,
       journal,
       year,
       semanticGroups,
-      organSystems,
       relationCategories,
       textAvailability,
       paperAuthorCount,

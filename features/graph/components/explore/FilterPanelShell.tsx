@@ -20,7 +20,6 @@ import {
 } from "../panels/PanelShell";
 
 const DEFAULT_VISIBLE_FILTERS = 4;
-const FILTER_EXCLUDED_COLUMNS = new Set(["organSystems"]);
 
 interface FilterPanelShellProps {
   /** Renders the per-filter widget (histogram, range slider, etc.) */
@@ -47,7 +46,6 @@ export function FilterPanelShell({
   const selectNode = useGraphStore((s) => s.selectNode);
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
   const setCurrentPointScopeSql = useDashboardStore((s) => s.setCurrentPointScopeSql);
-  const setInfoScopeMode = useDashboardStore((s) => s.setInfoScopeMode);
   const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
   const setTableView = useDashboardStore((s) => s.setTableView);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
@@ -66,7 +64,6 @@ export function FilterPanelShell({
         .filter(
           (col) =>
             col.type !== "text" &&
-            !FILTER_EXCLUDED_COLUMNS.has(col.key) &&
             !filterColumns.some((f) => f.column === col.key),
         )
         .map((col) => ({ value: col.key, label: col.label })),
@@ -95,7 +92,6 @@ export function FilterPanelShell({
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
     setTableView("selection");
-    setInfoScopeMode("current");
     unlockSelection();
   };
 

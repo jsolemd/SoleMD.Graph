@@ -6,7 +6,6 @@ import { formatNumber } from "@/lib/helpers";
 import type {
   GraphInfoFacetRow,
   GraphInfoHistogramBin,
-  GraphInfoScope,
 } from "@/features/graph/types";
 import { panelTextDimStyle, panelTextStyle } from "../../panels/PanelShell";
 
@@ -30,52 +29,12 @@ const getInfoFillStyle = (widthPct: number, color: string, opacity = 1) =>
 
 export function QueryInfoBars({
   rows,
+  subsetActive,
 }: {
-  rows: Array<{ value: string; count: number }>;
+  rows: GraphInfoFacetRow[];
+  subsetActive: boolean;
 }) {
-  if (rows.length === 0) {
-    return <Text style={panelTextDimStyle}>No data</Text>;
-  }
-
-  const maxCount = rows[0]?.count ?? 0;
-  const totalCount = rows.reduce((sum, row) => sum + row.count, 0);
-
-  return (
-    <Stack gap={5}>
-      {rows.map((row) => (
-        <div key={row.value}>
-          <Group justify="space-between" mb={1}>
-            <Text
-              style={{
-                ...panelTextStyle,
-                maxWidth: 180,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {row.value}
-            </Text>
-            <Text style={panelTextDimStyle}>
-              {formatNumber(row.count)}
-              {totalCount > 0
-                ? ` (${((row.count / totalCount) * 100).toFixed(1)}%)`
-                : ""}
-            </Text>
-          </Group>
-          <div style={infoTrackStyle}>
-            <div
-              style={getInfoFillStyle(
-                maxCount > 0 ? (row.count / maxCount) * 100 : 0,
-                "var(--filter-bar-active)",
-                0.95,
-              )}
-            />
-          </div>
-        </div>
-      ))}
-    </Stack>
-  );
+  return <QueryFacetSummary rows={rows} subsetActive={subsetActive} />;
 }
 
 const YEAR_COLUMNS = new Set(["year", "pageNumber"]);
@@ -176,16 +135,15 @@ export function QueryInfoHistogram({
 
 export function QueryFacetSummary({
   rows,
-  scope,
+  subsetActive,
 }: {
   rows: GraphInfoFacetRow[];
-  scope: GraphInfoScope;
+  subsetActive: boolean;
 }) {
   if (rows.length === 0) {
     return <Text style={panelTextDimStyle}>No data</Text>;
   }
 
-  const isSubset = scope !== "dataset";
   const maxCount = Math.max(...rows.map((row) => row.totalCount), 0);
   const totalFacetCount = rows.reduce((sum, row) => sum + row.totalCount, 0);
 
@@ -193,7 +151,7 @@ export function QueryFacetSummary({
     <Stack gap={6}>
       {rows.map((row) => {
         const totalPct = maxCount > 0 ? (row.totalCount / maxCount) * 100 : 0;
-        const scopedPct = isSubset
+        const scopedPct = subsetActive
           ? maxCount > 0
             ? (row.scopedCount / maxCount) * 100
             : 0
@@ -216,13 +174,13 @@ export function QueryFacetSummary({
                 {row.value}
               </Text>
               <Text style={panelTextDimStyle}>
-                {isSubset
+                {subsetActive
                   ? `${formatNumber(row.scopedCount)} / ${formatNumber(row.totalCount)} (${subsetPct.toFixed(1)}%)`
                   : `${formatNumber(row.totalCount)} (${totalFacetCount > 0 ? ((row.totalCount / totalFacetCount) * 100).toFixed(1) : "0.0"}%)`}
               </Text>
             </Group>
             <div className="relative" style={infoTrackStyle}>
-              {isSubset ? (
+              {subsetActive ? (
                 <div
                   style={getInfoFillStyle(
                     totalPct,
@@ -232,7 +190,7 @@ export function QueryFacetSummary({
                 />
               ) : null}
               <div
-                className={isSubset ? "absolute inset-0" : undefined}
+                className={subsetActive ? "absolute inset-0" : undefined}
                 style={getInfoFillStyle(
                   scopedPct,
                   "var(--filter-bar-active)",

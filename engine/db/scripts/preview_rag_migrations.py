@@ -1,4 +1,4 @@
-"""DDL preview generation for deferred RAG warehouse migrations."""
+"""One-off DDL preview generation for deferred RAG warehouse migrations."""
 
 from __future__ import annotations
 

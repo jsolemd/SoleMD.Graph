@@ -16,14 +16,12 @@ export const COLUMNS: ColumnMeta[] = [
   { key: 'journal', facetName: 'journal', label: 'Journal', type: 'categorical' },
   { key: 'textAvailability', facetName: 'text_availability', label: 'Text Availability', type: 'categorical' },
   { key: 'semanticGroups', facetName: 'semantic_groups_csv', label: 'Entity Groups', type: 'categorical', isMultiValue: true },
-  { key: 'organSystems', facetName: 'organ_systems_csv', label: 'Organ Systems', type: 'categorical', isMultiValue: true },
   { key: 'relationCategories', facetName: 'relation_categories_csv', label: 'Relation Categories', type: 'categorical', isMultiValue: true },
   { key: 'year', facetName: 'year', label: 'Publication Year', type: 'numeric' },
   { key: 'paperAuthorCount', label: 'Author Count', type: 'numeric' },
   { key: 'paperReferenceCount', label: 'Reference Count', type: 'numeric' },
   { key: 'paperEntityCount', label: 'Entity Count', type: 'numeric' },
   { key: 'paperRelationCount', label: 'Relation Count', type: 'numeric' },
-  { key: 'clusterProbability', label: 'Cluster Probability', type: 'numeric' },
   { key: 'x', label: 'X', type: 'numeric' },
   { key: 'y', label: 'Y', type: 'numeric' },
   { key: 'id', label: 'Point ID', type: 'text' },
@@ -44,7 +42,6 @@ const RENDER_COLUMN_KEYS = new Set([
   'paperReferenceCount',
   'paperEntityCount',
   'paperRelationCount',
-  'clusterProbability',
   'x',
   'y',
   'id',
@@ -62,7 +59,6 @@ export const TABLE_COLUMNS: string[] = [
   'journal',
   'textAvailability',
   'semanticGroups',
-  'organSystems',
   'relationCategories',
   'year',
   'clusterLabel',
@@ -70,7 +66,6 @@ export const TABLE_COLUMNS: string[] = [
   'paperReferenceCount',
   'paperEntityCount',
   'paperRelationCount',
-  'clusterProbability',
 ]
 
 export const PAPER_COLUMNS = COLUMNS

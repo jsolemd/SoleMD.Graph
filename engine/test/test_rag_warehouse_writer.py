@@ -224,3 +224,65 @@ def test_rag_warehouse_writer_can_include_structural_chunk_rows():
     assert len(repository.batch.chunks) == 1
     assert len(repository.batch.chunk_members) == 2
     assert result.deferred_stage_names == [WriteStage.CHUNK_VERSIONS]
+
+
+def test_rag_warehouse_writer_can_merge_multiple_grounding_plans_into_one_batch():
+    class FakeBatchWriter:
+        def __init__(self):
+            self.batch = None
+
+        def apply_write_batch(self, batch):
+            self.batch = batch
+            return RagWriteExecutionResult(
+                total_rows=12,
+                written_rows=12,
+                stages=[
+                    RuntimeWriteStageResult(
+                        stage=WriteStage.DOCUMENTS,
+                        logical_table_name="paper_documents",
+                        physical_table_name="paper_documents",
+                        status=RuntimeWriteStatus.EXECUTED,
+                        row_count=2,
+                    )
+                ],
+            )
+
+    second_row = {
+        "corpusid": 67890,
+        "title": "Second trial",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": "Results\nDexmedetomidine improved sleep.",
+            "annotations": {
+                "section_header": json.dumps(
+                    [{"start": 0, "end": len("Results"), "attributes": {}}]
+                ),
+                "paragraph": json.dumps(
+                    [{"start": 8, "end": len("Results\nDexmedetomidine improved sleep."), "attributes": {}}]
+                ),
+                "sentence": json.dumps(
+                    [{"start": 8, "end": len("Results\nDexmedetomidine improved sleep."), "attributes": {}}]
+                ),
+                "bib_ref": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+    second_source = parse_s2orc_row(
+        second_row, source_revision="2026-03-10", parser_version="parser-v1"
+    )
+
+    repository = FakeBatchWriter()
+    writer = RagWarehouseWriter(repository=repository)
+    result = writer.ingest_source_groups(
+        [
+            [_build_s2orc_source(), _build_bioc_overlay()],
+            [second_source],
+        ],
+        source_citation_keys_by_corpus={12345: ["b1"]},
+    )
+
+    assert repository.batch is not None
+    assert sorted(row.corpus_id for row in repository.batch.documents) == [12345, 67890]
+    assert len(result.papers) == 2
+    assert result.written_rows == 12

@@ -166,6 +166,9 @@ Hard rules:
 - widget adapters may materialize small column-specific arrays in JS for the
   mounted native UI control, but that is not permission to rehydrate full point
   objects or rebuild query/search/detail on the client
+- focused-node drill-in is a UI-local accent state layered on top of the real
+  selection state; preserve the underlying DuckDB/Cosmograph selection and use
+  focus only for ring/label/detail emphasis
 
 For evidence integration, this runtime split is paired with a second hard rule:
 

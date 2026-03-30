@@ -423,7 +423,6 @@ def _point_documents_cte() -> str:
             asset_rollup.open_access_pdf_license,
             COALESCE(entity_rollup.entity_count, 0) AS entity_count,
             entity_rollup.semantic_groups_csv,
-            NULL::TEXT AS organ_systems_csv,
             entity_rollup.top_entities_csv,
             COALESCE(relation_rollup.relation_count, 0) AS relation_count,
             relation_rollup.relation_categories_csv
@@ -679,7 +678,6 @@ def _materialize_export_views(graph_run_id: str) -> None:
                 asr.open_access_pdf_license,
                 COALESCE(er.entity_count, 0) AS entity_count,
                 er.semantic_groups_csv,
-                NULL::TEXT AS organ_systems_csv,
                 er.top_entities_csv,
                 COALESCE(rr.relation_count, 0) AS relation_count,
                 rr.relation_categories_csv

@@ -1,4 +1,4 @@
-"""Read-side helpers for building grounded answers from live warehouse tables."""
+"""Read-side helpers for building grounded answers from persisted warehouse rows."""
 
 from __future__ import annotations
 
@@ -70,25 +70,32 @@ ORDER BY
 """
 
 
-def build_grounded_answer_from_warehouse(
+def fetch_warehouse_grounding_rows(
     *,
     corpus_ids: Sequence[int],
-    segment_texts: Sequence[str],
     limit_per_paper: int = 1,
-    connect=None,
-) -> GroundedAnswerRecord | None:
-    """Build a structured grounded answer from persisted warehouse spans if available."""
+    cursor,
+) -> tuple[list[dict], list[dict]]:
+    """Fetch persisted citation/entity rows for grounded answer assembly."""
 
     normalized_corpus_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
     if not normalized_corpus_ids:
-        return None
+        return [], []
 
-    connect_fn = connect or db.pooled
-    with connect_fn() as conn, conn.cursor() as cur:
-        cur.execute(WAREHOUSE_CITATION_PACKET_SQL, (normalized_corpus_ids, limit_per_paper))
-        citation_rows = cur.fetchall()
-        cur.execute(WAREHOUSE_ENTITY_PACKET_SQL, (normalized_corpus_ids,))
-        entity_rows = cur.fetchall()
+    cursor.execute(WAREHOUSE_CITATION_PACKET_SQL, (normalized_corpus_ids, limit_per_paper))
+    citation_rows = cursor.fetchall()
+    cursor.execute(WAREHOUSE_ENTITY_PACKET_SQL, (normalized_corpus_ids,))
+    entity_rows = cursor.fetchall()
+    return citation_rows, entity_rows
+
+
+def build_grounded_answer_from_warehouse_rows(
+    *,
+    citation_rows: Sequence[dict],
+    entity_rows: Sequence[dict],
+    segment_texts: Sequence[str],
+) -> GroundedAnswerRecord | None:
+    """Build a grounded answer from already-fetched warehouse rows."""
 
     if not citation_rows:
         return None
@@ -151,4 +158,32 @@ def build_grounded_answer_from_warehouse(
     return build_grounded_answer_from_packets(
         segment_texts=segment_texts,
         packets=packets,
+    )
+
+
+def build_grounded_answer_from_warehouse(
+    *,
+    corpus_ids: Sequence[int],
+    segment_texts: Sequence[str],
+    limit_per_paper: int = 1,
+    connect=None,
+) -> GroundedAnswerRecord | None:
+    """Build a structured grounded answer from persisted warehouse spans if available."""
+
+    normalized_corpus_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
+    if not normalized_corpus_ids:
+        return None
+
+    connect_fn = connect or db.pooled
+    with connect_fn() as conn, conn.cursor() as cur:
+        citation_rows, entity_rows = fetch_warehouse_grounding_rows(
+            corpus_ids=normalized_corpus_ids,
+            limit_per_paper=limit_per_paper,
+            cursor=cur,
+        )
+
+    return build_grounded_answer_from_warehouse_rows(
+        citation_rows=citation_rows,
+        entity_rows=entity_rows,
+        segment_texts=segment_texts,
     )

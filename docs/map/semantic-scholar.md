@@ -65,33 +65,33 @@ Source: `GET https://api.semanticscholar.org/datasets/v1/release/latest`
 | Dataset | Records | Size | Description | We use it? |
 |---------|---------|------|-------------|-----------|
 | `papers` | 200M | 45 GB | Title, authors, year, venue, fields of study, external IDs | **Yes** — already downloaded (60 shards) |
-| `abstracts` | 100M | 54 GB | Full abstract text | **Phase 1.5** — bulk download replaces Batch API for abstracts |
-| `tldrs` | 58M | 6 GB | Machine-generated single-sentence summaries | **Phase 1.5** — bulk download, DuckDB filter by corpus_id |
-| `citations` | 2.4B | 255 GB | Directed edges with context, intent, influential flag | **Phase 2** — bulk download for graph edges |
+| `abstracts` | 100M | 54 GB | Full abstract text | **Planned** — bulk download replaces Batch API for abstracts |
+| `tldrs` | 58M | 6 GB | Machine-generated single-sentence summaries | **Planned** — bulk download, DuckDB filter by corpus_id |
+| `citations` | 2.4B | 255 GB | Directed edges with context, intent, influential flag | **Planned** — bulk download for graph edges |
 | `embeddings-specter_v2` | 120M | 840 GB | SPECTER2 768d float vectors | **Batch API only** — 840 GB too large for 2.5M papers |
 | `embeddings-specter_v1` | 120M | 840 GB | Original SPECTER vectors | No — v2 preferred |
 | `paper-ids` | 450M | 15 GB | Cross-reference mapping (PMID, DOI, arXiv, etc.) | Maybe later |
 | `authors` | 75M | 3 GB | Author metadata + affiliations | Maybe later |
 | `publication-venues` | — | — | Venue/journal metadata | Maybe later |
 | `s2orc` | 10M | 120 GB | Full-text parsed from open-access PDFs (v1) | No — v2 preferred |
-| `s2orc_v2` | 16M | 180 GB | Full-text with improved structural annotation | **Phase 3** — RAG over full paper text |
+| `s2orc_v2` | 16M | 180 GB | Full-text with improved structural annotation | **Future** — RAG over full paper text |
 
 ### Enrichment Strategy: Bulk vs Batch API
 
-For enriching our ~14M candidate / ~1.98M mapped-universe corpus, two paths:
+For enriching our ~14M candidate / ~1.98M base corpus, two paths:
 
 | Data | Bulk download | Batch API | Our choice |
 |------|--------------|-----------|-----------|
-| Abstracts | 54 GB, DuckDB filter | 1 req/500 papers, ~1.1h for 1.98M | **Phase 1: Batch API** (mapped-universe only). **Phase 1.5: Bulk** (all candidate). |
-| TLDRs | 6 GB, DuckDB filter | Same calls as abstracts | **Phase 1: Batch API**. **Phase 1.5: Bulk** (cheap, covers everything). |
+| Abstracts | 54 GB, DuckDB filter | 1 req/500 papers, ~1.1h for 1.98M | **Current: Batch API** (base only). **Later: Bulk** (all candidates). |
+| TLDRs | 6 GB, DuckDB filter | Same calls as abstracts | **Current: Batch API**. **Later: Bulk** (cheap, covers everything). |
 | SPECTER2 | 840 GB download | Same calls as abstracts | **Batch API always** — 840 GB for 1.98M papers is absurd. |
-| Citations | 255 GB, DuckDB filter | Separate batch calls | **Phase 2: Bulk** — gets ALL edges, no API budget. |
-| Full text | 180 GB (s2orc_v2, 16M papers) | Not available via batch | **Phase 3: Bulk** — only source for full text. |
+| Citations | 255 GB, DuckDB filter | Separate batch calls | **Planned: Bulk** — gets ALL edges, no API budget. |
+| Full text | 180 GB (s2orc_v2, 16M papers) | Not available via batch | **Future: Bulk** — only source for full text. |
 
 **Why hybrid**: Batch API is ideal when you need a small subset fast (1.98M of 200M).
 Bulk is ideal when you want everything or most of a dataset (abstracts for all 14M,
 all citation edges). The 840 GB SPECTER2 bulk is never worth it — we only need
-embeddings for mapped-universe papers.
+embeddings for base papers.
 
 **Monthly refresh**: Bulk datasets support incremental diffs via
 `GET /diffs/{start_release}/to/{end_release}/{dataset_name}`.
@@ -263,7 +263,7 @@ Instead of downloading every S2 bulk dataset (~1.2 TB), we download only the
 | `citations` | **Derived from references** initially; dedicated citations dataset if richer metadata is required | ~0 (API) or 255 GB bulk later | Build domain-domain edges without overfetching, upgrade only if intent/influence/context is needed |
 | `embeddings` | **Batch API** (`fields=embedding.specter_v2`) | ~0 (API) | Pull only domain vectors -- no need for 840 GB bulk |
 | `tldrs` | **Batch API** (`fields=tldr`) | ~0 (API) | Pull only domain TLDRs -- no need for 3 GB bulk |
-| `s2orc` | Defer to Phase 2 | - | Only needed for deep RAG |
+| `s2orc` | Deferred | - | Only needed for deep RAG |
 | `authors` | **Batch API** (`fields=authors.*`) | ~0 (API) | Needed for paper detail and future geo layer |
 | `publication-venues` | **Batch API** (`fields=publicationVenue`) | ~0 (API) | Needed for normalized venue metadata |
 
@@ -289,7 +289,7 @@ and references come through the S2 Graph Batch API after filtering.
 - **Bandwidth**: Expect 2-6 hours for bulk download depending on connection
 - **Tools**: Python 3.11+, `requests`, `tqdm`, `duckdb`
 
-### Phase 1: Bulk Download (Papers + Paper-IDs Only)
+### Bulk Download (Papers + Paper-IDs Only)
 
 Only two datasets are downloaded in full. Everything else comes from the batch
 API after domain filtering.
@@ -415,7 +415,7 @@ for f in data/semantic-scholar/raw/papers/*.jsonl.gz; do
 done
 ```
 
-### Phase 2: Batch API for Domain Data
+### Batch API for Domain Data
 
 After DuckDB filtering produces the domain corpus ID list (see Section 5), pull
 embeddings, abstracts, stable paper metadata, and references via the S2 batch API. This avoids
@@ -583,10 +583,10 @@ intermediate files. They flow directly from the batch API into PostgreSQL.
 Start with a narrow domain and expand:
 
 ```
-Phase A:  200K psychiatry-core papers         →  ~7 min API time
-Phase B:  500K neuro/psych papers             →  ~17 min API time
-Phase C:  2M full domain (Medicine+Biology+Psychology, MeSH-filtered)
-Phase D:  5-10M expanded (+ 1st-order citation neighbors)
+Step 1:  200K psychiatry-core papers         →  ~7 min API time
+Step 2:  500K neuro/psych papers             →  ~17 min API time
+Step 3:  2M full domain (Medicine+Biology+Psychology, MeSH-filtered)
+Step 4:  5-10M expanded (+ 1st-order citation neighbors)
 ```
 
 Each phase reuses the same pipeline -- just expand the corpus ID list and re-run
@@ -1053,7 +1053,7 @@ CREATE INDEX CONCURRENTLY idx_papers_embedding_hnsw
 | **Total** | | **~3-4 hr** |
 
 The batch API at 1 req/sec is the bottleneck, not PostgreSQL I/O. For 200K
-papers (Phase A), total load time drops to ~30 min.
+papers (Step 1), total load time drops to ~30 min.
 
 ---
 
@@ -1400,7 +1400,7 @@ SoleMD.Graph architecture.
 | S2 Data | Integration | Pipeline |
 |---------|-------------|----------|
 | Abstracts | MedCPT Article Encoder embedding | Abstract -> MedCPT -> pgvector HNSW -> retrieval |
-| S2ORC full-text (Phase 2) | Chunking + MedCPT embedding | Sections -> chunks -> MedCPT -> pgvector -> deeper RAG |
+| S2ORC full-text (planned) | Chunking + MedCPT embedding | Sections -> chunks -> MedCPT -> pgvector -> deeper RAG |
 | Citation context | Evidence enrichment | Show how a cited paper was referenced in its citing papers |
 
 ### Cross-Source Bridge
@@ -1440,7 +1440,7 @@ Semantic Scholar
     |   |                 -> derive -> solemd.citations
     |   |                 -> optional universe/evidence citation neighborhoods later
     |
-    +-- s2orc ------------> (Phase 2) chunk + MedCPT -> deep RAG
+    +-- s2orc ------------> (planned) chunk + MedCPT -> deep RAG
 ```
 
 ### API Rate Limits (Reference)

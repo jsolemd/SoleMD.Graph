@@ -1,13 +1,15 @@
 "use client";
 
 import { useCallback } from "react";
-import { Stack } from "@mantine/core";
-import { useGraphStore } from "@/features/graph/stores";
+import { ActionIcon, Stack, Tooltip } from "@mantine/core";
+import { ArrowLeft } from "lucide-react";
+import { useGraphSelection, useGraphCamera } from "@/features/graph/cosmograph";
+import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import type {
   GraphBundle,
   GraphBundleQueries,
 } from "@/features/graph/types";
-import { PanelShell } from "./PanelShell";
+import { iconBtnStyles, PanelShell } from "./PanelShell";
 import {
   buildPaperNoteMarkdown,
 } from "./detail/helpers";
@@ -31,10 +33,28 @@ export function DetailPanel({
   const selectedNode = useGraphStore((state) => state.selectedNode);
   const selectNode = useGraphStore((state) => state.selectNode);
   const setMode = useGraphStore((state) => state.setMode);
+  const currentPointScopeSql = useDashboardStore((state) => state.currentPointScopeSql);
+  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const { clearFocusedPoint, getSelectedPointIndices } = useGraphSelection();
+  const { fitViewByIndices } = useGraphCamera();
+
+  const hasSelectionContext =
+    Boolean(currentPointScopeSql?.trim().length) || selectedPointCount > 1;
 
   const closePanel = useCallback(() => {
     selectNode(null);
-  }, [selectNode]);
+    clearFocusedPoint();
+  }, [clearFocusedPoint, selectNode]);
+
+  const handleBackToSelection = useCallback(() => {
+    selectNode(null);
+    clearFocusedPoint();
+
+    const selectedIndices = getSelectedPointIndices();
+    if (selectedIndices.length > 1) {
+      fitViewByIndices(selectedIndices, 250, 0.1);
+    }
+  }, [clearFocusedPoint, fitViewByIndices, getSelectedPointIndices, selectNode]);
 
   const {
     detail,
@@ -71,7 +91,29 @@ export function DetailPanel({
   if (!selectedNode) return null;
 
   return (
-    <PanelShell title="Selection" side="right" width={380} onClose={closePanel}>
+    <PanelShell
+      title="Selection"
+      side="right"
+      width={380}
+      onClose={closePanel}
+      headerActions={
+        hasSelectionContext ? (
+          <Tooltip label="Back to selection" position="bottom" withArrow>
+            <ActionIcon
+              variant="transparent"
+              size={28}
+              radius="xl"
+              className="graph-icon-btn"
+              styles={iconBtnStyles}
+              onClick={handleBackToSelection}
+              aria-label="Back to selection"
+            >
+              <ArrowLeft size={14} />
+            </ActionIcon>
+          </Tooltip>
+        ) : null
+      }
+    >
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <Stack gap="lg">
           <DetailHeader node={selectedNode} paper={detail?.paper ?? null} />

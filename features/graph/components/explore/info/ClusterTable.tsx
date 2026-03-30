@@ -2,46 +2,62 @@
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
-import type { GraphInfoClusterStat, GraphInfoScope } from "@/features/graph/types";
 import {
   badgeOutlineStyles,
-  panelCardStyle,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
 } from "../../panels/PanelShell";
 
+export interface InfoClusterRow {
+  clusterId: number;
+  label: string;
+  totalCount: number;
+  scopedCount: number;
+}
+
 interface ClusterTableProps {
-  topClusters: GraphInfoClusterStat[];
+  rows: InfoClusterRow[];
   clusterColors: Record<number, string>;
-  scope: GraphInfoScope;
+  subsetActive: boolean;
 }
 
 export function ClusterTable({
-  topClusters,
+  rows,
   clusterColors,
-  scope,
+  subsetActive,
 }: ClusterTableProps) {
-  if (topClusters.length === 0) return null;
+  if (rows.length === 0) return null;
 
-  const scopeLabel =
-    scope === "selected" ? " (selected)" : scope === "current" ? " (current)" : "";
-  const maxCount = Math.max(...topClusters.map((cluster) => cluster.count), 0);
+  const maxCount = Math.max(
+    ...rows.map((cluster) => Math.max(cluster.totalCount, cluster.scopedCount)),
+    0,
+  );
 
   return (
     <div>
       <Group gap={6} mb={4}>
         <Text fw={600} style={sectionLabelStyle}>
-          Top Clusters{scopeLabel}
+          Top Clusters
         </Text>
         <Badge variant="outline" size="xs" styles={badgeOutlineStyles}>
-          {topClusters.length} shown
+          {rows.length} shown
         </Badge>
       </Group>
       <Stack gap={6}>
-        {topClusters.map((cluster) => {
-          const widthPct =
-            maxCount > 0 ? (cluster.count / maxCount) * 100 : 0;
+        {rows.map((cluster) => {
+          const safeTotalCount = Math.max(cluster.totalCount, cluster.scopedCount);
+          const totalPct =
+            maxCount > 0 ? (safeTotalCount / maxCount) * 100 : 0;
+          const scopedPct =
+            subsetActive && maxCount > 0
+              ? (cluster.scopedCount / maxCount) * 100
+              : totalPct;
+          const subsetPct =
+            safeTotalCount > 0
+              ? (cluster.scopedCount / safeTotalCount) * 100
+              : 0;
+
           return (
             <div key={cluster.clusterId}>
               <Group justify="space-between" mb={2} gap={8}>
@@ -70,24 +86,42 @@ export function ClusterTable({
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {formatNumber(cluster.count)}
+                  {subsetActive
+                    ? cluster.totalCount > 0
+                      ? `${formatNumber(cluster.scopedCount)} / ${formatNumber(cluster.totalCount)} (${subsetPct.toFixed(1)}%)`
+                      : formatNumber(cluster.scopedCount)
+                    : formatNumber(safeTotalCount)}
                 </Text>
               </Group>
               <div
-                className="overflow-hidden rounded-full"
-                style={panelCardStyle}
+                className="relative overflow-hidden rounded-full"
+                style={{
+                  height: 6,
+                  backgroundColor: "var(--graph-panel-input-bg)",
+                }}
               >
                 <div
-                  className="rounded-full"
+                  className="absolute inset-y-0 left-0 rounded-full"
                   style={{
-                    height: 6,
-                    width: `${widthPct}%`,
+                    width: `${totalPct}%`,
                     backgroundColor:
                       clusterColors[cluster.clusterId] ??
                       "var(--filter-bar-active)",
-                    opacity: 0.95,
+                    opacity: subsetActive ? 0.3 : 0.95,
                   }}
                 />
+                {subsetActive ? (
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full"
+                    style={{
+                      width: `${scopedPct}%`,
+                      backgroundColor:
+                        clusterColors[cluster.clusterId] ??
+                        "var(--filter-bar-active)",
+                      opacity: 0.98,
+                    }}
+                  />
+                ) : null}
               </div>
             </div>
           );

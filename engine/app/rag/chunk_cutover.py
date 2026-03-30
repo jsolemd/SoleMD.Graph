@@ -1,4 +1,4 @@
-"""Deferred cutover contract for enabling chunk-backed runtime serving."""
+"""Deferred chunk cutover contract for enabling chunk-backed runtime serving."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from app.rag.parse_contract import ParseContractModel
 from app.rag.write_repository import WriteStage
 
 
-class ChunkRuntimeCutoverStepKey(StrEnum):
+class ChunkCutoverStepKey(StrEnum):
     SEED_CHUNK_VERSION = "seed_chunk_version"
     BACKFILL_CHUNKS = "backfill_chunks"
     BACKFILL_CHUNK_MEMBERS = "backfill_chunk_members"
@@ -22,8 +22,8 @@ class ChunkRuntimeCutoverStepKey(StrEnum):
     ENABLE_RUNTIME_SERVING = "enable_runtime_serving"
 
 
-class ChunkRuntimeCutoverStep(ParseContractModel):
-    step: ChunkRuntimeCutoverStepKey
+class ChunkCutoverStep(ParseContractModel):
+    step: ChunkCutoverStepKey
     description: str
     dependency_migration_stages: list[MigrationStage] = Field(default_factory=list)
     dependency_write_stages: list[WriteStage] = Field(default_factory=list)
@@ -33,11 +33,11 @@ class ChunkRuntimeCutoverStep(ParseContractModel):
     validation_focus: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_step(self) -> "ChunkRuntimeCutoverStep":
+    def validate_step(self) -> "ChunkCutoverStep":
         if not self.description:
             raise ValueError("description must not be empty")
         if (
-            self.step != ChunkRuntimeCutoverStepKey.APPLY_POST_LOAD_INDEXES
+            self.step != ChunkCutoverStepKey.APPLY_POST_LOAD_INDEXES
             and not self.runtime_tables
             and not self.runtime_surfaces
         ):
@@ -45,9 +45,9 @@ class ChunkRuntimeCutoverStep(ParseContractModel):
         return self
 
 
-_CHUNK_RUNTIME_CUTOVER_STEPS: tuple[ChunkRuntimeCutoverStep, ...] = (
-    ChunkRuntimeCutoverStep(
-        step=ChunkRuntimeCutoverStepKey.SEED_CHUNK_VERSION,
+_CHUNK_CUTOVER_STEPS: tuple[ChunkCutoverStep, ...] = (
+    ChunkCutoverStep(
+        step=ChunkCutoverStepKey.SEED_CHUNK_VERSION,
         description=(
             "Seed one explicit paper_chunk_versions policy before any derived chunk "
             "rows are written so every downstream record is version-keyed from day one."
@@ -64,8 +64,8 @@ _CHUNK_RUNTIME_CUTOVER_STEPS: tuple[ChunkRuntimeCutoverStep, ...] = (
             "chunk policy is immutable and replayable",
         ],
     ),
-    ChunkRuntimeCutoverStep(
-        step=ChunkRuntimeCutoverStepKey.BACKFILL_CHUNKS,
+    ChunkCutoverStep(
+        step=ChunkCutoverStepKey.BACKFILL_CHUNKS,
         description=(
             "Backfill paper_chunks from canonical blocks using one seeded chunk "
             "version and without introducing chunk-local grounding semantics."
@@ -78,8 +78,8 @@ _CHUNK_RUNTIME_CUTOVER_STEPS: tuple[ChunkRuntimeCutoverStep, ...] = (
             "chunk text stays derived from canonical members",
         ],
     ),
-    ChunkRuntimeCutoverStep(
-        step=ChunkRuntimeCutoverStepKey.BACKFILL_CHUNK_MEMBERS,
+    ChunkCutoverStep(
+        step=ChunkCutoverStepKey.BACKFILL_CHUNK_MEMBERS,
         description=(
             "Backfill paper_chunk_members only after paper_chunks exist so block "
             "and sentence lineage is preserved for future cited-span grounding."
@@ -97,8 +97,8 @@ _CHUNK_RUNTIME_CUTOVER_STEPS: tuple[ChunkRuntimeCutoverStep, ...] = (
             "sentence-level members only exist when canonical sentence ordinals are known",
         ],
     ),
-    ChunkRuntimeCutoverStep(
-        step=ChunkRuntimeCutoverStepKey.VALIDATE_LINEAGE,
+    ChunkCutoverStep(
+        step=ChunkCutoverStepKey.VALIDATE_LINEAGE,
         description=(
             "Validate that chunk lineage is compatible with aligned citation and "
             "entity mentions before the runtime depends on chunk-backed grounding."
@@ -118,8 +118,8 @@ _CHUNK_RUNTIME_CUTOVER_STEPS: tuple[ChunkRuntimeCutoverStep, ...] = (
             "entity mentions remain anchored after chunk derivation",
         ],
     ),
-    ChunkRuntimeCutoverStep(
-        step=ChunkRuntimeCutoverStepKey.APPLY_POST_LOAD_INDEXES,
+    ChunkCutoverStep(
+        step=ChunkCutoverStepKey.APPLY_POST_LOAD_INDEXES,
         description=(
             "Apply the heavier post-load lexical and lookup indexes only after the "
             "chunk tables are backfilled and the rebuild-safe window is open."
@@ -133,8 +133,8 @@ _CHUNK_RUNTIME_CUTOVER_STEPS: tuple[ChunkRuntimeCutoverStep, ...] = (
             "no ANN index is introduced on canonical span tables",
         ],
     ),
-    ChunkRuntimeCutoverStep(
-        step=ChunkRuntimeCutoverStepKey.ENABLE_RUNTIME_SERVING,
+    ChunkCutoverStep(
+        step=ChunkCutoverStepKey.ENABLE_RUNTIME_SERVING,
         description=(
             "Enable chunk-backed retrieval and grounded answer serving only after "
             "chunk tables, lineage checks, and post-load indexes are all in place."
@@ -151,5 +151,5 @@ _CHUNK_RUNTIME_CUTOVER_STEPS: tuple[ChunkRuntimeCutoverStep, ...] = (
 )
 
 
-def build_chunk_runtime_cutover_steps() -> list[ChunkRuntimeCutoverStep]:
-    return list(_CHUNK_RUNTIME_CUTOVER_STEPS)
+def build_chunk_cutover_steps() -> list[ChunkCutoverStep]:
+    return list(_CHUNK_CUTOVER_STEPS)

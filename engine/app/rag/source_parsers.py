@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.rag.corpus_resolution import CorpusIdResolver
 from app.rag.parse_contract import (
     PaperBlockKind,
     PaperBlockRecord,
@@ -36,17 +37,57 @@ class ParsedPaperSource:
     entities: list[PaperEntityMentionRecord] = field(default_factory=list)
 
 
+def _parse_biocxml_document_elem(xml_text: str) -> tuple[ET.Element, str]:
+    root = ET.fromstring(xml_text)
+    document_elem = root.find(".//document") if root.tag != "document" else root
+    if document_elem is None:
+        raise ValueError("No <document> element found in BioCXML payload")
+    document_id = (document_elem.findtext("id") or "").strip()
+    if not document_id:
+        raise ValueError("BioCXML document must contain a non-empty <id>")
+    return document_elem, document_id
+
+
+def extract_biocxml_document_id(xml_text: str) -> str:
+    """Return the source document identifier from a BioCXML payload."""
+
+    _, document_id = _parse_biocxml_document_elem(xml_text)
+    return document_id
+
+
 def _decode_annotation_group(raw_value: Any) -> list[dict[str, Any]]:
     if raw_value in (None, "", "null"):
         return []
     if isinstance(raw_value, str):
         decoded = json.loads(raw_value)
-        return decoded if isinstance(decoded, list) else []
-    return raw_value if isinstance(raw_value, list) else []
+        values = decoded if isinstance(decoded, list) else []
+    else:
+        values = raw_value if isinstance(raw_value, list) else []
+
+    normalized: list[dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        coerced = dict(item)
+        if "start" in coerced and coerced["start"] is not None:
+            coerced["start"] = int(coerced["start"])
+        if "end" in coerced and coerced["end"] is not None:
+            coerced["end"] = int(coerced["end"])
+        normalized.append(coerced)
+    return normalized
 
 
 def _span_text(text: str, start: int, end: int) -> str:
     return text[start:end]
+
+
+def _coerce_optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped or None
+    return str(value)
 
 
 def _normalize_header_label(value: str | None) -> list[str]:
@@ -421,9 +462,10 @@ def parse_s2orc_row(
                 source_start_offset=item["start"],
                 source_end_offset=item["end"],
                 text=_span_text(bibliography_text, item["start"], item["end"]),
-                source_reference_key=attrs.get("id") or f"bib:{ordinal}",
+                source_reference_key=_coerce_optional_string(attrs.get("id"))
+                or f"bib:{ordinal}",
                 reference_ordinal=ordinal,
-                matched_paper_id=attrs.get("matched_paper_id"),
+                matched_paper_id=_coerce_optional_string(attrs.get("matched_paper_id")),
             )
         )
 
@@ -454,12 +496,12 @@ def parse_s2orc_row(
                 source_start_offset=item["start"],
                 source_end_offset=item["end"],
                 text=_span_text(body_text, item["start"], item["end"]),
-                source_citation_key=attrs.get("ref_id")
+                source_citation_key=_coerce_optional_string(attrs.get("ref_id"))
                 or f"cite:{item['start']}:{item['end']}",
                 block_ordinal=block_ordinal,
                 section_ordinal=section_ordinal,
                 sentence_ordinal=sentence_ordinal,
-                matched_paper_id=attrs.get("matched_paper_id"),
+                matched_paper_id=_coerce_optional_string(attrs.get("matched_paper_id")),
             )
         )
 
@@ -478,18 +520,18 @@ def parse_biocxml_document(
     *,
     source_revision: str,
     parser_version: str,
+    corpus_id: int | None = None,
+    corpus_id_resolver: CorpusIdResolver | None = None,
 ) -> ParsedPaperSource:
     """Parse one BioCXML document into normalized parse-contract records."""
 
-    root = ET.fromstring(xml_text)
-    document_elem = root.find(".//document") if root.tag != "document" else root
-    if document_elem is None:
-        raise ValueError("No <document> element found in BioCXML payload")
-
-    document_id = (document_elem.findtext("id") or "").strip()
-    if not document_id.isdigit():
-        raise ValueError("BioCXML document id must be numeric for corpus mapping")
-    corpus_id = int(document_id)
+    document_elem, document_id = _parse_biocxml_document_elem(xml_text)
+    if corpus_id is None and corpus_id_resolver is not None:
+        corpus_id = corpus_id_resolver(document_id)
+    if corpus_id is None:
+        if not document_id.isdigit():
+            raise ValueError("BioCXML document id must resolve to a canonical corpus_id")
+        corpus_id = int(document_id)
 
     title_passage = document_elem.find("./passage")
     title_text = title_passage.findtext("text") if title_passage is not None else None
@@ -523,6 +565,7 @@ def parse_biocxml_document(
         passage_type = infons.get("type")
         section_type = infons.get("section_type")
         passage_text = passage.findtext("text") or ""
+        normalized_passage_text = passage_text.strip()
         offset = int((passage.findtext("offset") or "0").strip() or "0")
         end_offset = offset + len(passage_text)
 
@@ -532,6 +575,8 @@ def parse_biocxml_document(
         )
 
         if passage_type and passage_type.startswith("title"):
+            if not normalized_passage_text:
+                continue
             section_counter += 1
             current_section_ordinal = section_counter
             current_section_role = section_role
@@ -569,6 +614,8 @@ def parse_biocxml_document(
         )
 
         if passage_type == "ref" or section_role == SectionRole.REFERENCE:
+            if not normalized_passage_text:
+                continue
             references.append(
                 PaperReferenceEntryRecord(
                     corpus_id=corpus_id,
@@ -589,6 +636,8 @@ def parse_biocxml_document(
             continue
 
         if block_kind is None:
+            continue
+        if not normalized_passage_text:
             continue
 
         linked_asset_ref = infons.get("id") or infons.get("file")

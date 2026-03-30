@@ -1,10 +1,10 @@
-"""Structured preview of the deferred chunk-runtime cutover plan."""
+"""One-off preview of the deferred chunk-runtime cutover plan."""
 
 from __future__ import annotations
 
 from pydantic import Field
 
-from app.rag.cutover_contract import build_chunk_runtime_cutover_steps
+from app.rag.chunk_cutover import build_chunk_cutover_steps
 from app.rag.index_contract import IndexBuildPhase, RagIndexSpec, build_index_matrix
 from app.rag.parse_contract import ParseContractModel
 
@@ -41,7 +41,7 @@ def build_chunk_runtime_cutover_previews() -> list[ChunkRuntimeCutoverPreview]:
     index_specs = build_index_matrix()
 
     previews: list[ChunkRuntimeCutoverPreview] = []
-    for step in build_chunk_runtime_cutover_steps():
+    for step in build_chunk_cutover_steps():
         previews.append(
             ChunkRuntimeCutoverPreview(
                 step=step.step,

@@ -92,7 +92,6 @@ export function CanvasControls() {
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
   const setTableView = useDashboardStore((s) => s.setTableView);
-  const setInfoScopeMode = useDashboardStore((s) => s.setInfoScopeMode);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
 
   const handleStoreClear = useCallback(() => {
@@ -103,14 +102,12 @@ export function CanvasControls() {
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
     setTableView("selection");
-    setInfoScopeMode("current");
     unlockSelection();
   }, [
     clearVisibilityFocus,
     selectNode,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
-    setInfoScopeMode,
     setSelectedPointCount,
     setTableView,
     setTimelineSelection,

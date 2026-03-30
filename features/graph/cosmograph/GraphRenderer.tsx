@@ -19,6 +19,7 @@ import type { GraphCanvasSource } from "@/features/graph/duckdb";
 import { useCosmographConfig } from "./hooks/use-cosmograph-config";
 import { useZoomLabels } from "./hooks/use-zoom-labels";
 import { usePointsFiltered } from "./hooks/use-points-filtered";
+import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
 
 // Static label style strings — no need to recreate per render
 const POINT_LABEL_STYLE =
@@ -42,6 +43,9 @@ export default function CosmographRenderer({
     () => createSelectionSource(BUDGET_FOCUS_SOURCE_ID),
     [],
   );
+  const selectedNode = useGraphStore((s) => s.selectedNode);
+  const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
+  const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
   const selectNode = useGraphStore((s) => s.selectNode);
 
   const config = useCosmographConfig(canvas);
@@ -68,7 +72,14 @@ export default function CosmographRenderer({
   })));
   const isLocked = selectionLocked;
 
-  const { zoomedIn, isActivelyZooming, handleZoomStart, handleZoom, handleZoomEnd } =
+  const {
+    zoomedIn,
+    isActivelyZooming,
+    syncZoomState,
+    handleZoomStart,
+    handleZoom,
+    handleZoomEnd,
+  } =
     useZoomLabels(cosmographRef);
 
   const resolveAndSelectNode = useCallback(
@@ -86,10 +97,11 @@ export default function CosmographRenderer({
   );
 
   const handleLabelClick = useCallback(
-    (_index: number, id: string) => {
+    (index: number, id: string) => {
+      setFocusedPointIndex(index);
       void resolveAndSelectNode({ id });
     },
-    [resolveAndSelectNode]
+    [resolveAndSelectNode, setFocusedPointIndex]
   );
 
   // Track the logical layer so future active-table versioning or overlay
@@ -104,8 +116,10 @@ export default function CosmographRenderer({
       hasFittedView.current = true;
       lastFittedLayer.current = activeLayer;
       cosmographRef.current?.fitView(0, fitViewPadding);
+      syncZoomState();
       onFirstPaint?.();
       clearVisibilityFocus();
+      setFocusedPointIndex(null);
       setCurrentPointScopeSql(null);
       setSelectedPointCount(0);
       setActiveSelectionSourceId(null);
@@ -113,6 +127,7 @@ export default function CosmographRenderer({
 
     if (lastFittedLayer.current === null) {
       lastFittedLayer.current = activeLayer;
+      syncZoomState();
       onFirstPaint?.();
     }
   }, [
@@ -120,26 +135,30 @@ export default function CosmographRenderer({
     fitViewPadding,
     onFirstPaint,
     clearVisibilityFocus,
+    setFocusedPointIndex,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
     setSelectedPointCount,
+    syncZoomState,
   ]);
 
   const handlePointClick = useCallback(
     (index: number) => {
+      setFocusedPointIndex(index);
       void resolveAndSelectNode({ index });
     },
-    [resolveAndSelectNode]
+    [resolveAndSelectNode, setFocusedPointIndex]
   );
 
   const handleBackgroundClick = useCallback(() => {
     selectionRequestId.current += 1;
     clearVisibilityFocus();
+    setFocusedPointIndex(null);
     selectNode(null);
     // Explicitly clear programmatic selections (selectPoint calls)
     // that resetSelectionOnEmptyCanvasClick may not reach
     cosmographRef.current?.unselectAllPoints();
-  }, [clearVisibilityFocus, selectNode]);
+  }, [clearVisibilityFocus, selectNode, setFocusedPointIndex]);
 
   useEffect(() => {
     const pointsSelection = cosmographRef.current?.pointsSelection;
@@ -170,6 +189,20 @@ export default function CosmographRenderer({
     applyVisibilityBudget,
     queries,
   });
+  const labelMode = resolveGraphLabelMode({
+    pointLabelColumn: config.pointLabelColumn,
+    showPointLabels: config.showPointLabels,
+    showDynamicLabels: config.showDynamicLabels,
+    zoomedIn,
+    isActivelyZooming,
+    hasFocusedPoint: focusedPointIndex != null,
+    focusedPointId: selectedNode?.id ?? null,
+    hasSelection: selectedPointCount > 0,
+  });
+  const pointLabelWeightBy =
+    labelMode.effectivePointLabelColumn === "clusterLabel"
+      ? undefined
+      : "paperReferenceCount";
 
   return (
     <Cosmograph
@@ -187,7 +220,10 @@ export default function CosmographRenderer({
       pointColorPalette={config.palette}
       pointSizeBy={config.pointSizeColumn === "none" ? undefined : config.pointSizeColumn}
       pointSizeStrategy={config.pointSizeStrategy}
-      pointLabelBy={config.pointLabelColumn}
+      focusedPointIndex={focusedPointIndex ?? undefined}
+      pointLabelBy={labelMode.effectivePointLabelColumn}
+      pointLabelWeightBy={pointLabelWeightBy}
+      showLabelsFor={labelMode.showLabelsFor}
       pointIncludeColumns={
         config.pointIncludeColumns.length > 0 ? config.pointIncludeColumns : undefined
       }
@@ -211,13 +247,15 @@ export default function CosmographRenderer({
       pointOpacity={config.effectiveOpacity}
       pointGreyoutOpacity={config.colors.greyout}
       scalePointsOnZoom={config.scalePointsOnZoom}
-      showClusterLabels={config.showPointLabels && !zoomedIn}
-      showLabels={config.showPointLabels}
-      showDynamicLabels={config.showPointLabels && config.showDynamicLabels}
-      showTopLabels={config.showPointLabels && !isActivelyZooming}
-      showSelectedLabels={false}
-      showFocusedPointLabel={false}
-      pointSamplingDistance={350}
+      showClusterLabels={labelMode.showClusterLabels}
+      showLabels={labelMode.showLabels}
+      showDynamicLabels={labelMode.showDynamicLabels}
+      showTopLabels={labelMode.showTopLabels}
+      showSelectedLabels={labelMode.showSelectedLabels}
+      showUnselectedPointLabels={labelMode.showUnselectedPointLabels}
+      selectedPointLabelsLimit={labelMode.selectedPointLabelsLimit}
+      showFocusedPointLabel={labelMode.showFocusedPointLabel}
+      pointSamplingDistance={170}
       preservePointPositionsOnDataUpdate
       // Hover labels are still DuckDB-backed natively, so suspend them during
       // camera motion and keep the adapter around Cosmograph itself thin.
@@ -229,7 +267,9 @@ export default function CosmographRenderer({
       pointLabelClassName={POINT_LABEL_STYLE}
       clusterLabelClassName={CLUSTER_LABEL_STYLE}
       selectPointOnClick={isLocked ? false : config.hasLinks ? true : "single"}
+      selectPointOnLabelClick={isLocked ? false : config.hasLinks ? true : "single"}
       focusPointOnClick={!isLocked}
+      focusPointOnLabelClick={!isLocked}
       resetSelectionOnEmptyCanvasClick={!isLocked}
       disableLogging
       onZoomStart={handleZoomStart}

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from db.previews.rag_chunk_runtime_preview import build_chunk_runtime_cutover_previews
+from db.scripts.preview_chunk_runtime import build_chunk_runtime_cutover_previews
 
 
 def test_chunk_runtime_preview_carries_post_load_chunk_indexes():

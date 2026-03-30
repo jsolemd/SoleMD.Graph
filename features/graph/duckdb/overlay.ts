@@ -59,7 +59,6 @@ export async function activateOverlayByClusterNeighborhood(
       SELECT
         id,
         clusterId,
-        COALESCE(clusterProbability, 0) AS clusterProbability,
         COALESCE(paperReferenceCount, 0) AS paperReferenceCount
       FROM ${focusTable}
       WHERE (${focusPredicate})
@@ -69,7 +68,6 @@ export async function activateOverlayByClusterNeighborhood(
       SELECT
         clusterId,
         count(*)::INTEGER AS seedCount,
-        AVG(clusterProbability) AS avgSeedProbability,
         MAX(paperReferenceCount) AS maxSeedReferences
       FROM focus
       GROUP BY clusterId
@@ -82,7 +80,6 @@ export async function activateOverlayByClusterNeighborhood(
           ORDER BY
             seedCount DESC,
             maxSeedReferences DESC,
-            avgSeedProbability DESC,
             clusterId
         )::INTEGER AS clusterRank
       FROM focus_clusters
@@ -96,7 +93,6 @@ export async function activateOverlayByClusterNeighborhood(
           PARTITION BY u.clusterId
           ORDER BY
             COALESCE(u.paperReferenceCount, 0) DESC,
-            COALESCE(u.clusterProbability, 0) DESC,
             COALESCE(u.year, 0) DESC,
             COALESCE(u.sourcePointIndex, 0),
             u.id

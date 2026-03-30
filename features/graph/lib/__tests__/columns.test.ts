@@ -18,13 +18,11 @@ describe('renderable columns', () => {
     )
     expect(renderable).not.toEqual(expect.arrayContaining([
       'semanticGroups',
-      'organSystems',
       'relationCategories',
       'textAvailability',
     ]))
     expect(queryColumns).toEqual(expect.arrayContaining([
       'semanticGroups',
-      'organSystems',
       'relationCategories',
       'textAvailability',
     ]))

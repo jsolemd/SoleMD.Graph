@@ -109,6 +109,7 @@ def build_chunk_write_batch_from_rows(
     chunk_version: PaperChunkVersionRecord,
     blocks: Sequence[PaperBlockRow],
     sentences: Sequence[PaperSentenceRow],
+    include_chunk_version_row: bool = True,
 ) -> RagWarehouseWriteBatch:
     assembly = assemble_structural_chunks(
         version=chunk_version,
@@ -116,7 +117,7 @@ def build_chunk_write_batch_from_rows(
         sentences=list(sentences),
     )
     return RagWarehouseWriteBatch(
-        chunk_versions=[chunk_version],
+        chunk_versions=[chunk_version] if include_chunk_version_row else [],
         chunks=list(assembly.chunks),
         chunk_members=list(assembly.members),
     )
@@ -162,6 +163,81 @@ def extend_write_batch_with_structural_chunks(
             ),
         ),
     )
+
+
+def merge_write_batches(
+    batches: Sequence[RagWarehouseWriteBatch],
+) -> RagWarehouseWriteBatch:
+    merged = RagWarehouseWriteBatch()
+    for batch in batches:
+        merged.documents = _merge_rows(
+            merged.documents,
+            batch.documents,
+            key=lambda row: row.corpus_id,
+        )
+        merged.document_sources = _merge_rows(
+            merged.document_sources,
+            batch.document_sources,
+            key=lambda row: (row.corpus_id, row.document_source_ordinal),
+        )
+        merged.sections = _merge_rows(
+            merged.sections,
+            batch.sections,
+            key=lambda row: (row.corpus_id, row.section_ordinal),
+        )
+        merged.blocks = _merge_rows(
+            merged.blocks,
+            batch.blocks,
+            key=lambda row: (row.corpus_id, row.block_ordinal),
+        )
+        merged.sentences = _merge_rows(
+            merged.sentences,
+            batch.sentences,
+            key=lambda row: (row.corpus_id, row.block_ordinal, row.sentence_ordinal),
+        )
+        merged.references = _merge_rows(
+            merged.references,
+            batch.references,
+            key=lambda row: (row.corpus_id, row.source_reference_key),
+        )
+        merged.citations = _merge_rows(
+            merged.citations,
+            batch.citations,
+            key=lambda row: (row.corpus_id, row.source_system, row.source_start_offset, row.text),
+        )
+        merged.entities = _merge_rows(
+            merged.entities,
+            batch.entities,
+            key=lambda row: (
+                row.corpus_id,
+                row.source_system,
+                row.source_start_offset,
+                row.text,
+                row.concept_namespace,
+                row.concept_id,
+            ),
+        )
+        merged.chunk_versions = _merge_rows(
+            merged.chunk_versions,
+            batch.chunk_versions,
+            key=lambda row: row.chunk_version_key,
+        )
+        merged.chunks = _merge_rows(
+            merged.chunks,
+            batch.chunks,
+            key=lambda row: (row.chunk_version_key, row.corpus_id, row.chunk_ordinal),
+        )
+        merged.chunk_members = _merge_rows(
+            merged.chunk_members,
+            batch.chunk_members,
+            key=lambda row: (
+                row.chunk_version_key,
+                row.corpus_id,
+                row.chunk_ordinal,
+                row.member_ordinal,
+            ),
+        )
+    return merged
 
 
 def _build_document_source_rows(

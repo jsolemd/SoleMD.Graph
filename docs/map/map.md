@@ -23,12 +23,11 @@ Semantic Scholar     ──┘      PostgreSQL            │      │          
 External data sources (PubTator3, Semantic Scholar) feed into a graph engine that
 computes layout, clusters, and embeddings. The engine exports Parquet bundles served
 to the browser, where Cosmograph renders the unified experience. Full data-flow
-details live in [data.md](data.md). Deferred ideas and post-freeze roadmap items live
-in [future.md](../design/future.md). The graph delivery contract for `base`,
+details live in [data.md](data.md). Roadmap and design vision live in
+[living-graph.md](../design/living-graph.md). The graph delivery contract for `base`,
 `universe`, and `evidence` bundle data lives in [bundle-contract.md](bundle-contract.md).
 The stable evidence/RAG architecture and current contract state live in
-[rag.md](rag.md). A diagram-first explainer for the current and future RAG
-stack lives in [rag-diagrams.md](rag-diagrams.md).
+[rag.md](rag.md).
 
 ---
 
@@ -334,6 +333,11 @@ you look at — it's the space you learn in.
 | **Corpus filter** | `docs/map/corpus-filter.md` | Domain corpus identification via DuckDB |
 | **Base admission** | `docs/map/database.md` | Direct evidence + curated base journal families |
 | **Living graph** | `docs/design/living-graph.md` | Three-layer dynamic data architecture |
+| **RAG system** | `docs/map/rag.md` | Retrieval, ranking, evidence bundles, grounding, warehouse |
+| **Graph layout** | `docs/map/graph-layout.md` | Build pipeline, UMAP layout, cluster export |
+| **Bundle contract** | `docs/map/bundle-contract.md` | Parquet bundle schema and versioning |
 | **Architecture** | `docs/map/architecture.md` | Detailed technical architecture |
+| **Living graph** | `docs/design/living-graph.md` | Three-layer architecture, overlay activation, roadmap |
 | **Brand** | `docs/design/brand.md` | Visual identity and design tokens |
+| **Evidence plan** | `docs/plans/full-evidence-system-plan.md` | Active implementation plan |
 | Archive (`docs/archive/`) | `modes_explore.md`, `modes_ask.md`, `modes_write.md`, `modes_learn.md` | Extended thinking — brainstorming, not committed specs |

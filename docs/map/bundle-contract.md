@@ -73,12 +73,12 @@ The base point schema should include the smallest useful set of typed columns:
 |----------|--------|
 | identity | `point_index`, `id`, `paper_id` |
 | layout | `x`, `y` |
-| cluster | `cluster_id`, `cluster_label`, `cluster_probability` |
+| cluster | `cluster_id`, `cluster_label` |
 | bibliographic | `title`, `citekey`, `journal`, `year`, `display_label` |
 | quality | `paper_author_count`, `paper_reference_count`, `paper_entity_count`, `paper_relation_count` |
 | base admission | `is_in_base`, `base_rank` |
 | compact rendering | `hex_color`, `hex_color_light`, `text_availability` |
-| compact evidence summaries | `semantic_groups_csv`, `organ_systems_csv`, `relation_categories_csv` |
+| compact evidence summaries | `semantic_groups_csv`, `relation_categories_csv` |
 
 ### What belongs in base
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.rag.migration_contract import MigrationStage
-from db.previews.rag_migration_sql_preview import build_migration_stage_sql_previews
+from db.scripts.preview_rag_migrations import build_migration_stage_sql_previews
 
 
 def test_build_migration_stage_sql_previews_preserves_stage_order():

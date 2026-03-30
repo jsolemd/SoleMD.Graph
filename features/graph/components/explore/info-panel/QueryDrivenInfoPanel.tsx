@@ -1,26 +1,21 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Loader, SegmentedControl, Stack, Text } from "@mantine/core";
+import { Loader, Stack, Text } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { getClusterColor } from "@/features/graph/lib/colors";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
 import { useDashboardStore } from "@/features/graph/stores";
-import type {
-  GraphBundleQueries,
-  GraphInfoScope,
-  GraphInfoSummary,
-} from "@/features/graph/types";
+import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
 import { PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
 import {
-  ScopeIndicator,
-  OverviewGrid,
-  ClusterTable,
   AddInsightButton,
+  ClusterTable,
+  OverviewGrid,
+  QueryWidgetSlotRenderer,
   SearchSection,
   SelectionActions,
 } from "../info";
-import { QueryWidgetSlotRenderer } from "../info";
 import { useInfoWidgetData } from "./use-info-widget-data";
 
 interface QueryDrivenInfoPanelProps {
@@ -36,36 +31,45 @@ export function QueryDrivenInfoPanel({
 }: QueryDrivenInfoPanelProps) {
   const setActivePanel = useDashboardStore((state) => state.setActivePanel);
   const activeLayer = useDashboardStore((state) => state.activeLayer);
-  const currentPointScopeSql = useDashboardStore((state) => state.currentPointScopeSql);
-  const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
-  const [debouncedCurrentPointScopeSql] = useDebouncedValue(currentPointScopeSql, 120);
-  const deferredCurrentPointScopeSql = useDeferredValue(debouncedCurrentPointScopeSql);
-  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
-  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
-  const activeSelectionSourceId = useDashboardStore(
-    (state) => state.activeSelectionSourceId,
+  const currentPointScopeSql = useDashboardStore(
+    (state) => state.currentPointScopeSql,
   );
-  const infoScopeMode = useDashboardStore((state) => state.infoScopeMode);
-  const setInfoScopeMode = useDashboardStore((state) => state.setInfoScopeMode);
+  const currentScopeRevision = useDashboardStore(
+    (state) => state.currentScopeRevision,
+  );
+  const [debouncedCurrentPointScopeSql] = useDebouncedValue(
+    currentPointScopeSql,
+    120,
+  );
+  const deferredCurrentPointScopeSql = useDeferredValue(
+    debouncedCurrentPointScopeSql,
+  );
+  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const selectedPointRevision = useDashboardStore(
+    (state) => state.selectedPointRevision,
+  );
   const infoWidgets = useDashboardStore((state) => state.infoWidgets);
   const colorTheme = useGraphColorTheme();
 
   const hasSelection = selectedPointCount > 0;
   const hasCurrentSubset =
-    typeof currentPointScopeSql === "string" &&
-    currentPointScopeSql.trim().length > 0;
-  const preferredSelectionScope: GraphInfoScope | null = hasCurrentSubset
+    typeof deferredCurrentPointScopeSql === "string" &&
+    deferredCurrentPointScopeSql.trim().length > 0;
+  const subsetScope = hasCurrentSubset
     ? "current"
     : hasSelection
       ? "selected"
       : null;
-  const scope: GraphInfoScope =
-    infoScopeMode === "dataset"
-      ? "dataset"
-      : preferredSelectionScope ?? "dataset";
-  const uiScope = scope === "dataset" ? "dataset" : "selection";
+  const subsetScopeSql =
+    subsetScope === "current" ? deferredCurrentPointScopeSql : null;
+  const subsetScopeRevision =
+    subsetScope === "current" && subsetScopeSql ? currentScopeRevision : 0;
+  const subsetSelectionCount = subsetScope === "selected" ? selectedPointCount : 0;
+  const subsetSelectionRevision =
+    subsetScope === "selected" ? selectedPointRevision : 0;
 
-  const [info, setInfo] = useState<GraphInfoSummary | null>(null);
+  const [datasetInfo, setDatasetInfo] = useState<GraphInfoSummary | null>(null);
+  const [subsetInfo, setSubsetInfo] = useState<GraphInfoSummary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [lastSummaryKey, setLastSummaryKey] = useState<string | null>(null);
 
@@ -80,33 +84,26 @@ export function QueryDrivenInfoPanel({
         ),
     [infoWidgets],
   );
-  const scopedCurrentPointScopeSql =
-    scope === "current" ? deferredCurrentPointScopeSql : null;
-  const scopedCurrentScopeRevision =
-    scope === "current" && deferredCurrentPointScopeSql ? currentScopeRevision : 0;
-  const scopedSelectedPointCount = scope === "selected" ? selectedPointCount : 0;
-  const scopedSelectedPointRevision =
-    scope === "selected" ? selectedPointRevision : 0;
 
   const summaryRequestKey = useMemo(
     () =>
       JSON.stringify({
         activeLayer,
-        scope,
-        currentScopeSql: scopedCurrentPointScopeSql,
-        currentScopeRevision: scopedCurrentScopeRevision,
-        selectedCount: scopedSelectedPointCount,
-        selectedPointRevision: scopedSelectedPointRevision,
+        subsetScope,
+        subsetScopeSql,
+        subsetScopeRevision,
+        subsetSelectionCount,
+        subsetSelectionRevision,
         overlayRevision,
       }),
     [
       activeLayer,
       overlayRevision,
-      scopedCurrentPointScopeSql,
-      scopedCurrentScopeRevision,
-      scopedSelectedPointCount,
-      scopedSelectedPointRevision,
-      scope,
+      subsetScope,
+      subsetScopeRevision,
+      subsetScopeSql,
+      subsetSelectionCount,
+      subsetSelectionRevision,
     ],
   );
   const [debouncedWidgetRequestKey] = useDebouncedValue(
@@ -126,31 +123,41 @@ export function QueryDrivenInfoPanel({
   } = useInfoWidgetData({
     queries,
     activeLayer,
-    scope,
-    currentPointScopeSql: scopedCurrentPointScopeSql,
+    subsetScope,
+    currentPointScopeSql: subsetScopeSql,
     widgetDescriptors,
     requestKey: deferredWidgetRequestKey,
   });
-  const loading = info == null && lastSummaryKey !== summaryRequestKey;
+  const loading = datasetInfo == null && lastSummaryKey !== summaryRequestKey;
   const refreshing =
-    (info != null && lastSummaryKey !== summaryRequestKey) ||
+    (datasetInfo != null && lastSummaryKey !== summaryRequestKey) ||
     lastWidgetKey !== deferredWidgetRequestKey;
   const showHeaderLoader = loading || refreshing;
 
   useEffect(() => {
     let cancelled = false;
 
-    queries
-      .getInfoSummary({
+    Promise.all([
+      queries.getInfoSummary({
         layer: activeLayer,
-        scope,
-        currentPointScopeSql: scopedCurrentPointScopeSql,
-      })
-      .then((summary) => {
+        scope: "dataset",
+        currentPointScopeSql: null,
+      }),
+      subsetScope
+        ? queries.getInfoSummary({
+            layer: activeLayer,
+            scope: subsetScope,
+            currentPointScopeSql: subsetScopeSql,
+          })
+        : Promise.resolve<GraphInfoSummary | null>(null),
+    ])
+      .then(([nextDatasetInfo, nextSubsetInfo]) => {
         if (cancelled) {
           return;
         }
-        setInfo(summary);
+
+        setDatasetInfo(nextDatasetInfo);
+        setSubsetInfo(nextSubsetInfo);
         setSummaryError(null);
         setLastSummaryKey(summaryRequestKey);
       })
@@ -158,6 +165,9 @@ export function QueryDrivenInfoPanel({
         if (cancelled) {
           return;
         }
+
+        setDatasetInfo(null);
+        setSubsetInfo(null);
         setSummaryError(
           queryError instanceof Error
             ? queryError.message
@@ -169,24 +179,68 @@ export function QueryDrivenInfoPanel({
     return () => {
       cancelled = true;
     };
-  }, [
-    activeLayer,
-    queries,
-    scopedCurrentPointScopeSql,
-    scope,
-    summaryRequestKey,
-  ]);
+  }, [activeLayer, queries, subsetScope, subsetScopeSql, summaryRequestKey]);
 
   const clusterColors = useMemo(
     () =>
       Object.fromEntries(
-        (info?.topClusters ?? []).map((cluster) => [
-          cluster.clusterId,
-          getClusterColor(cluster.clusterId, colorTheme),
-        ]),
+        [...(datasetInfo?.topClusters ?? []), ...(subsetInfo?.topClusters ?? [])].map(
+          (cluster) => [
+            cluster.clusterId,
+            getClusterColor(cluster.clusterId, colorTheme),
+          ],
+        ),
       ),
-    [colorTheme, info?.topClusters],
+    [colorTheme, datasetInfo?.topClusters, subsetInfo?.topClusters],
   );
+  const clusterRows = useMemo(() => {
+    if (!datasetInfo) {
+      return [];
+    }
+
+    const datasetClusters = new Map(
+      datasetInfo.topClusters.map((cluster) => [cluster.clusterId, cluster] as const),
+    );
+    const subsetClusters = new Map(
+      (subsetInfo?.topClusters ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
+    );
+
+    return Array.from(
+      new Set([
+        ...datasetInfo.topClusters.map((cluster) => cluster.clusterId),
+        ...(subsetInfo?.topClusters ?? []).map((cluster) => cluster.clusterId),
+      ]),
+    )
+      .map((clusterId) => ({
+        clusterId,
+        label:
+          datasetClusters.get(clusterId)?.label ??
+          subsetClusters.get(clusterId)?.label ??
+          `Cluster ${clusterId}`,
+        totalCount: datasetClusters.get(clusterId)?.count ?? 0,
+        scopedCount: subsetInfo
+          ? (subsetClusters.get(clusterId)?.count ?? 0)
+          : (datasetClusters.get(clusterId)?.count ?? 0),
+      }))
+      .sort((left, right) =>
+        subsetInfo
+          ? right.scopedCount === left.scopedCount
+            ? right.totalCount === left.totalCount
+              ? left.label.localeCompare(right.label)
+              : right.totalCount - left.totalCount
+            : right.scopedCount - left.scopedCount
+          : right.totalCount === left.totalCount
+            ? left.label.localeCompare(right.label)
+            : right.totalCount - left.totalCount,
+      )
+      .slice(
+        0,
+        Math.max(
+          datasetInfo.topClusters.length,
+          subsetInfo?.topClusters.length ?? 0,
+        ),
+      );
+  }, [datasetInfo, subsetInfo]);
 
   return (
     <PanelShell
@@ -202,27 +256,6 @@ export function QueryDrivenInfoPanel({
     >
       <div className="flex-1 overflow-y-auto px-3 pb-3">
         <Stack gap="sm">
-          <SegmentedControl
-            size="xs"
-            fullWidth
-            data={[
-              {
-                label: "Selection",
-                value: "selection",
-                disabled: !preferredSelectionScope,
-              },
-              { label: "All", value: "dataset" },
-            ]}
-            value={uiScope}
-            onChange={(value) =>
-              setInfoScopeMode(
-                value === "dataset"
-                  ? "dataset"
-                  : preferredSelectionScope ?? "current",
-              )
-            }
-          />
-
           {loading ? (
             <Text size="sm" style={panelTextDimStyle}>
               Querying DuckDB summaries…
@@ -231,31 +264,21 @@ export function QueryDrivenInfoPanel({
             <Text size="sm" style={panelTextDimStyle}>
               {summaryError}
             </Text>
-          ) : info ? (
+          ) : datasetInfo ? (
             <>
-              <ScopeIndicator
-                scopedCount={info.scopedCount}
-                totalCount={info.totalCount}
-                scope={info.scope}
-                isSubset={info.isSubset}
-                selectionSource={
-                  info.scope === "selected" ? activeSelectionSourceId : null
-                }
-              />
-
-              <OverviewGrid info={info} layer={activeLayer} />
+              <OverviewGrid datasetInfo={datasetInfo} subsetInfo={subsetInfo} />
 
               <ClusterTable
-                topClusters={info.topClusters}
+                rows={clusterRows}
                 clusterColors={clusterColors}
-                scope={info.scope}
+                subsetActive={subsetInfo != null}
               />
 
               {infoWidgets.map((slot) => (
                 <QueryWidgetSlotRenderer
                   key={slot.column}
                   slot={slot}
-                  scope={info.scope}
+                  subsetActive={subsetInfo != null}
                   prefetchedFacetRows={
                     slot.kind === "facet-summary"
                       ? facetSummaries[slot.column] ?? null
@@ -266,9 +289,14 @@ export function QueryDrivenInfoPanel({
                       ? barSummaries[slot.column] ?? null
                       : null
                   }
-                  prefetchedHistogram={
+                  prefetchedDatasetHistogram={
                     slot.kind === "histogram"
-                      ? histograms[slot.column] ?? null
+                      ? histograms[slot.column]?.dataset ?? null
+                      : null
+                  }
+                  prefetchedSubsetHistogram={
+                    slot.kind === "histogram"
+                      ? histograms[slot.column]?.subset ?? null
                       : null
                   }
                 />
@@ -283,7 +311,7 @@ export function QueryDrivenInfoPanel({
               <AddInsightButton />
               <SearchSection key={activeLayer} queries={queries} />
               <SelectionActions
-                scope={info.scope}
+                subsetScope={subsetScope}
                 queries={queries}
                 overlayCount={overlayCount}
               />

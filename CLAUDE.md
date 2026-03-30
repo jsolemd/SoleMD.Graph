@@ -52,7 +52,13 @@ cd engine && uv run pytest     # Engine tests
 | Topic | Location |
 |-------|----------|
 | System vision map | `docs/map/map.md` |
+| Architecture | `docs/map/architecture.md` |
 | Data flow | `docs/map/data.md` |
+| Database schema | `docs/map/database.md` |
+| Graph layout + build | `docs/map/graph-layout.md` |
+| Corpus filter | `docs/map/corpus-filter.md` |
+| Bundle contract | `docs/map/bundle-contract.md` |
+| RAG system | `docs/map/rag.md` |
 | PubTator3 pipeline | `docs/map/pubtator3.md` |
 | Semantic Scholar | `docs/map/semantic-scholar.md` |
-| Database schema | `docs/map/database.md` |
+| Living graph design | `docs/design/living-graph.md` |

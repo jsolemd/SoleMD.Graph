@@ -156,6 +156,9 @@ Implementation detail:
   placeholder lists
 - React should only mirror scalar invalidation state for selection/scope; the
   selected row set itself remains in DuckDB
+- focused point drill-in stays separate from selection intent: keep the real
+  selection intact in DuckDB/Cosmograph, and layer focus as a ring/label/detail
+  accent for the currently inspected point
 - `overlay_point_ids_by_producer -> overlay_point_ids -> active_point_index_lookup_web`
 - `active_points_canvas_web` / `active_points_web` are the browser-facing dense
   base-plus-overlay views

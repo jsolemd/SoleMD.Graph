@@ -3,7 +3,7 @@
 import { type RefObject, useCallback, useRef, useState } from "react";
 import type { CosmographRef } from "@cosmograph/react";
 
-const ZOOM_LABEL_THRESHOLD = 1.2;
+const ZOOM_LABEL_THRESHOLD = 1.08;
 
 export function useZoomLabels(
   cosmographRef: RefObject<CosmographRef | undefined>,
@@ -46,6 +46,7 @@ export function useZoomLabels(
   return {
     zoomedIn,
     isActivelyZooming,
+    syncZoomState: updateZoomState,
     handleZoomStart,
     handleZoom,
     handleZoomEnd,

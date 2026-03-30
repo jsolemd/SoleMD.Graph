@@ -19,7 +19,6 @@ import type {
 } from '@/features/graph/types'
 
 export type TableView = 'selection' | 'dataset'
-export type InfoScopeMode = 'current' | 'selected' | 'dataset'
 
 /** Curated default filters — one per concept, no redundant pairs. */
 const CORPUS_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
@@ -63,7 +62,6 @@ export interface ConfigSlice {
   tablePage: number
   tablePageSize: number
   tableView: TableView
-  infoScopeMode: InfoScopeMode
 
   // Color scheme
   colorScheme: ColorSchemeName
@@ -95,7 +93,6 @@ export interface ConfigSlice {
   setTablePage: (page: number) => void
   setTablePageSize: (size: number) => void
   setTableView: (view: TableView) => void
-  setInfoScopeMode: (mode: InfoScopeMode) => void
   setColorScheme: (scheme: ColorSchemeName) => void
   setShowColorLegend: (show: boolean) => void
   setPointSizeStrategy: (strategy: PointSizeStrategy) => void
@@ -127,7 +124,6 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   tablePage: 1,
   tablePageSize: 100,
   tableView: 'selection',
-  infoScopeMode: 'current',
 
   colorScheme: 'vibrant',
   showColorLegend: false,
@@ -179,7 +175,6 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   setTablePage: (page) => set({ tablePage: page }),
   setTablePageSize: (size) => set({ tablePageSize: size }),
   setTableView: (view) => set({ tableView: view }),
-  setInfoScopeMode: (mode) => set({ infoScopeMode: mode }),
   setColorScheme: (scheme) => set({ colorScheme: scheme }),
   setShowColorLegend: (show) => set({ showColorLegend: show }),
   setPointSizeStrategy: (strategy) => set({ pointSizeStrategy: strategy }),
@@ -211,7 +206,6 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         selectionLocked: false,
         tablePage: 1,
         tableView: 'selection',
-        infoScopeMode: 'current',
         pointLabelColumn: (() => {
           const layerColumns = getRenderableColumnsForLayer(layer)
           return layerColumns.some(c => c.key === 'clusterLabel')

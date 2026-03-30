@@ -2,7 +2,7 @@
 
 > **Status**: canonical graph-db schema for base admission, mapped canvas state, and evidence substrate
 > **Port**: 5433 (Docker, `pgvector/pgvector:pg16`)
-> **Extensions**: `vector` (pgvector), `pg_trgm` (trigram FTS)
+> **Extensions**: `vector` (pgvector), `pg_trgm` (trigram FTS), `pgcrypto` (UUID generation)
 > **Schemas**: `solemd` (application), `pubtator` (reference data)
 
 This document describes the target graph-db model used to build and publish the
@@ -31,7 +31,7 @@ Browser runtime notes:
   canvas styling, not rich query/widget payloads
 - narrow point parquet fields are limited to ids, coordinates, cluster/color
   columns, `display_label`, compact bibliographic metadata, compact summary
-  metrics, `text_availability`, `semantic_groups_csv`, `organ_systems_csv`,
+  metrics, `text_availability`, `semantic_groups_csv`,
   `relation_categories_csv`, `is_in_base`, and `base_rank`
 - `current_points_canvas_web` / `current_points_web` / `current_paper_points_web`
   are the canonical browser-facing active aliases for summaries, search,
@@ -110,7 +110,6 @@ overlay promotion.
 | layout_status | TEXT NOT NULL DEFAULT 'candidate' | `candidate` or `mapped` — whether the paper has been promoted into the coordinate universe |
 | is_in_current_map | BOOLEAN NOT NULL DEFAULT false | True once the paper is present in the current published graph run |
 | is_in_current_base | BOOLEAN NOT NULL DEFAULT false | True once the paper is admitted into the current published `base_points` scaffold |
-| mapped_at | TIMESTAMPTZ | When the current run first mapped the paper |
 | created_at | TIMESTAMPTZ | |
 
 ### `solemd.papers`
@@ -153,6 +152,23 @@ Typical columns:
 - `s2_references_release_id`
 - `created_at`
 - `updated_at`
+
+### `solemd.load_history`
+
+ETL operations log for debugging and resume support.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | SERIAL PK | |
+| operation | TEXT NOT NULL | `filter_papers`, `filter_pubtator`, `batch_api`, etc. |
+| source | TEXT | Filename or API endpoint |
+| rows_processed | INTEGER DEFAULT 0 | |
+| rows_loaded | INTEGER DEFAULT 0 | |
+| status | TEXT NOT NULL DEFAULT 'running' | |
+| started_at | TIMESTAMPTZ | |
+| completed_at | TIMESTAMPTZ | |
+| error_message | TEXT | |
+| metadata | JSONB | |
 
 ### `solemd.base_policy`
 
@@ -379,7 +395,7 @@ and cluster assignments. Base admission decisions are stored separately in
 | y | REAL NOT NULL | UMAP dimension 2 |
 | cluster_id | INTEGER | Leiden community id |
 | micro_cluster_id | INTEGER | Optional finer-grained local cluster id |
-| cluster_probability | REAL | Optional confidence score |
+| cluster_probability | REAL | Reserved confidence field; currently unset for the Leiden pipeline |
 | outlier_score | REAL | Spatial outlier score |
 | is_noise | BOOLEAN NOT NULL DEFAULT false | Noise flag retained for QA |
 | created_at | TIMESTAMPTZ | |
@@ -423,11 +439,10 @@ and hierarchical parent groups.
 | centroid_y | REAL | |
 | representative_node_id | TEXT | Representative point id |
 | representative_node_kind | TEXT | `paper` |
+| candidate_count | INTEGER | Candidate papers considered |
 | mean_cluster_probability | REAL | |
 | mean_outlier_score | REAL | |
 | is_noise | BOOLEAN | |
-| base_count | INTEGER | Papers in base for this cluster |
-| base_fraction | REAL | `base_count / paper_count` |
 
 **Labeling pipeline** (modular, each step re-runnable independently):
 
@@ -474,30 +489,21 @@ paper did or did not enter the base scaffold.
 
 ### `solemd.mapped_papers` view
 
-Export-ready view joining corpus membership, paper metadata, and mapped
-coordinates. This is the canonical read model for graph export and analysis.
+Quality-filtered mapped universe view joining corpus + papers. Used for graph
+layout, base admission, and bundle export (NOT for enrichment — enrichment
+targets all mapped papers including low-cite items).
 
-Typical shape:
+The view applies quality filters: excludes pre-1945 papers, low-cite
+news/letters/editorials, and null-type low-cite papers.
 
 ```sql
-SELECT
-  c.corpus_id,
-  c.pmid,
-  c.admission_reason,
-  c.is_in_current_map,
-  c.is_in_current_base,
-  p.title,
-  p.year,
-  p.venue,
-  p.citation_count,
-  gp.graph_run_id,
-  gp.point_index,
-  gp.x,
-  gp.y,
-  gp.cluster_id
-FROM solemd.corpus c
-JOIN solemd.papers p ON p.corpus_id = c.corpus_id
-JOIN solemd.graph_points gp ON gp.corpus_id = c.corpus_id;
+SELECT p.*, c.layout_status, c.admission_reason,
+       c.is_in_current_map, c.is_in_current_base
+FROM solemd.papers p
+JOIN solemd.corpus c ON c.corpus_id = p.corpus_id
+WHERE c.layout_status = 'mapped'
+  AND (p.year >= 1945 OR p.year IS NULL)
+  AND NOT (... quality exclusions ...);
 ```
 
 ### `solemd.bulk_citation_ingest_batches`
@@ -517,6 +523,123 @@ Enables resumable multi-shard loading.
 | started_at | TIMESTAMPTZ | |
 | completed_at | TIMESTAMPTZ | |
 | **PK** | (`release_id`, `batch_index`) | |
+
+### `solemd.publication_venues`
+
+Semantic Scholar venue registry. Populated during S2 enrichment.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| publication_venue_id | TEXT PK | S2 venue identifier |
+| name | TEXT NOT NULL | Venue name |
+| venue_type | TEXT | Journal, conference, etc. |
+| issn | TEXT | |
+| url | TEXT | |
+| alternate_names | TEXT[] | |
+| alternate_urls | TEXT[] | |
+| source | TEXT DEFAULT 'semantic_scholar_graph_api' | |
+| last_seen_release_id | TEXT | S2 release stamp |
+
+### `solemd.authors`
+
+Semantic Scholar author registry.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| author_id | TEXT PK | S2 author identifier |
+| name | TEXT NOT NULL | |
+| external_ids | JSONB | ORCID, DBLP, etc. |
+| source | TEXT DEFAULT 'semantic_scholar_graph_api' | |
+| last_seen_release_id | TEXT | |
+
+### `solemd.paper_authors`
+
+Per-paper author snapshot from S2 Graph API. Source for future geo enrichment.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| corpus_id | BIGINT FK→papers | |
+| author_position | INTEGER | Ordinal position on paper |
+| author_id | TEXT FK→authors | Nullable (some authors lack S2 IDs) |
+| name | TEXT NOT NULL | |
+| affiliations | TEXT[] | Raw affiliation strings |
+| external_ids | JSONB | |
+| source_release_id | TEXT | |
+| **PK** | (`corpus_id`, `author_position`) | |
+
+### `solemd.author_affiliations`
+
+Normalized affiliations derived from paper_authors. Structured for geo enrichment.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| corpus_id | BIGINT | |
+| author_position | INTEGER | |
+| affiliation_index | INTEGER | |
+| raw_affiliation | TEXT NOT NULL | Original affiliation string |
+| institution | TEXT | Parsed institution name |
+| department | TEXT | |
+| city | TEXT | |
+| region | TEXT | |
+| country | TEXT | |
+| country_code | TEXT | |
+| latitude | DOUBLE PRECISION | |
+| longitude | DOUBLE PRECISION | |
+| ror_id | TEXT | Research Organization Registry identifier |
+| **PK** | (`corpus_id`, `author_position`, `affiliation_index`) | |
+
+### `solemd.paper_assets`
+
+External or mirrored paper assets such as open-access PDFs.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| asset_id | BIGSERIAL PK | |
+| corpus_id | BIGINT FK→papers | |
+| asset_kind | TEXT NOT NULL | `open_access_pdf`, etc. |
+| source | TEXT DEFAULT 'semantic_scholar_graph_api' | |
+| remote_url | TEXT | |
+| storage_path | TEXT | Local mirror path |
+| access_status | TEXT | |
+| license | TEXT | |
+| disclaimer | TEXT | |
+| metadata | JSONB | |
+| **UNIQUE** | (`corpus_id`, `asset_kind`, `source`) | |
+
+### `solemd.paper_references`
+
+Outgoing reference list per paper from S2 Graph API.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| reference_id | BIGSERIAL PK | |
+| corpus_id | BIGINT FK→papers | |
+| reference_index | INTEGER NOT NULL | Order in reference list |
+| referenced_paper_id | TEXT | S2 paperId of the cited paper |
+| referenced_corpus_id | BIGINT FK→corpus | Populated when the cited paper is in our domain |
+| title | TEXT | |
+| year | INTEGER | |
+| external_ids | JSONB | DOI, PMID, etc. |
+| source_release_id | TEXT | |
+| **UNIQUE** | (`corpus_id`, `reference_index`) | |
+
+### `solemd.citations`
+
+Domain-domain citation edges. Primary graph edge source from S2 bulk dataset.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| citing_corpus_id | BIGINT FK→corpus | |
+| cited_corpus_id | BIGINT FK→corpus | |
+| citation_id | BIGINT | S2 bulk dataset identifier |
+| cited_paper_id | TEXT | S2 paperId |
+| contexts | JSONB DEFAULT '[]' | Citation context snippets from S2 bulk |
+| intents | JSONB DEFAULT '[]' | Citation intent labels |
+| is_influential | BOOLEAN | S2 influential citation flag |
+| context_count | INTEGER DEFAULT 0 | Convenience count |
+| source | TEXT DEFAULT 'semantic_scholar_graph_api' | |
+| source_release_id | TEXT | |
+| **PK** | (`citing_corpus_id`, `cited_corpus_id`) | |
 
 ---
 
@@ -673,18 +796,20 @@ Aligned entity mentions with concept identifiers. Hash-partitioned ×16.
 │  citation_count       │                              │  entity_rule_families    │
 │  embedding(768)       │                              │  domain_score inputs     │
 │  abstract, tldr       │                              └──────────────────────────┘
+│  publication_venue_id─┼──→ publication_venues
 └────────┬──────────────┘
-         │ 1:N                                1:N
-         ├──────────────────────────┬──────────────────────────────┐
-         │                          │                              │
-┌────────┴──────────┐   ┌──────────┴──────────┐   ┌───────────────┴──────────┐
-│  paper_references │   │   paper_authors     │   │    paper_documents       │
-│  corpus_id (FK)   │   │   corpus_id (FK)    │   │    corpus_id (PK/FK)     │
-│  ref_corpus_id    │   │   author_id (FK)    │   │    → sections → blocks   │
-│  title, year, doi │   │   name, affiliations│   │      → sentences         │
-└───────────────────┘   └─────────────────────┘   │      → entity_mentions   │
-                                                   │      → citation_mentions │
-                                                   └──────────────────────────┘
+         │ 1:N
+         ├──────────────┬──────────────┬───────────────┬───────────────┐
+         │              │              │               │               │
+┌────────┴────────┐ ┌───┴───────────┐ ┌┴──────────────┐ ┌┴────────────┐ ┌┴──────────────┐
+│ paper_references│ │ paper_authors │ │paper_documents│ │ paper_assets│ │   citations   │
+│ corpus_id (FK)  │ │ corpus_id(FK) │ │corpus_id(PK) │ │corpus_id(FK)│ │citing/cited FK│
+│ ref_corpus_id   │ │ author_id(FK) │ │→ sections    │ │asset_kind   │ │contexts,intents│
+│ title, year     │ │ name, affils  │ │  → blocks    │ │remote_url   │ │is_influential │
+└─────────────────┘ │  ↓            │ │    → sents   │ └─────────────┘ └───────────────┘
+                    │ author_affils │ │  → cit_ments │
+                    └───────────────┘ │  → ent_ments │
+                                      └──────────────┘
 
 ┌──────────────────────────────────────────────────────────────────┐
 │                       solemd.graph_runs                          │
@@ -998,6 +1123,18 @@ PubTator3 relations filtered to corpus PMIDs.
 
 Both tables were originally created as UNLOGGED for fast bulk loading.
 Migration 013 converted them to LOGGED after an unclean shutdown lost 342M rows.
+
+---
+
+## Functions
+
+### `solemd.clean_venue(TEXT)`
+
+Normalize venue names for journal-rule matching. Mirrors Python `_clean_venue()`
+and DuckDB `clean_venue()` macro. Transformations: lowercase, strip trailing dot,
+strip leading "the ", strip subtitle after ":", strip trailing parenthetical.
+
+Declared `IMMUTABLE PARALLEL SAFE` for use in indexes and parallel queries.
 
 ---
 

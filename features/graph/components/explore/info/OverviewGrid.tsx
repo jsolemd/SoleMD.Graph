@@ -1,95 +1,140 @@
 "use client";
 
-import { Text } from "@mantine/core";
+import { Group, Stack, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
-import type { GraphInfoSummary, MapLayer } from "@/features/graph/types";
+import type { GraphInfoSummary } from "@/features/graph/types";
 import {
-  panelCardStyle,
-  panelTextMutedStyle,
+  panelTextDimStyle,
   panelTextStyle,
+  sectionLabelStyle,
 } from "../../panels/PanelShell";
 
 interface OverviewGridProps {
-  info: GraphInfoSummary;
-  layer: MapLayer;
+  datasetInfo: GraphInfoSummary;
+  subsetInfo?: GraphInfoSummary | null;
 }
 
-function StatChip({
+function formatScopedValue(total: number, subset?: number | null) {
+  return subset != null
+    ? `${formatNumber(subset)} / ${formatNumber(total)}`
+    : formatNumber(total);
+}
+
+function SummaryRow({
   label,
   value,
+  totalValue,
+  scopedValue,
+  subsetActive,
 }: {
   label: string;
   value: string;
+  totalValue: number | null;
+  scopedValue: number | null;
+  subsetActive: boolean;
 }) {
+  const totalPct =
+    totalValue != null && totalValue > 0 ? 100 : 0;
+  const scopedPct =
+    subsetActive &&
+    totalValue != null &&
+    totalValue > 0 &&
+    scopedValue != null
+      ? (scopedValue / totalValue) * 100
+      : totalPct;
+
   return (
-    <div
-      className="min-w-0 rounded-lg px-2 py-1"
-      style={{
-        ...panelCardStyle,
-        backgroundColor:
-          "color-mix(in srgb, var(--graph-panel-input-bg) 94%, white 6%)",
-      }}
-    >
-      <div className="flex items-baseline gap-1.5">
-        <Text
-          fw={500}
-          style={{
-            ...panelTextMutedStyle,
-            fontSize: 7,
-            lineHeight: "9px",
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            flexShrink: 0,
-          }}
-        >
-          {label}
-        </Text>
+    <div>
+      <Group justify="space-between" mb={2}>
+        <Text style={panelTextStyle}>{label}</Text>
         <Text
           style={{
-            ...panelTextStyle,
-            fontSize: 11,
-            lineHeight: "12px",
-            fontWeight: 500,
+            ...panelTextDimStyle,
             fontVariantNumeric: "tabular-nums",
           }}
         >
           {value}
         </Text>
+      </Group>
+      <div
+        className="relative overflow-hidden rounded-full"
+        style={{
+          height: 6,
+          backgroundColor: "var(--graph-panel-input-bg)",
+        }}
+      >
+        <div
+          className="absolute inset-y-0 left-0 rounded-full"
+          style={{
+            width: `${totalPct}%`,
+            backgroundColor: subsetActive
+              ? "var(--filter-bar-base)"
+              : "var(--filter-bar-active)",
+            opacity: subsetActive ? 0.45 : 0.98,
+          }}
+        />
+        {subsetActive ? (
+          <div
+            className="absolute inset-y-0 left-0 rounded-full"
+            style={{
+              width: `${Math.max(0, Math.min(100, scopedPct))}%`,
+              backgroundColor: "var(--filter-bar-active)",
+              opacity: 0.98,
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );
 }
 
-export function OverviewGrid({ info, layer }: OverviewGridProps) {
-  void layer;
-  const {
-    scopedCount,
-    totalCount,
-    baseCount,
-    overlayCount,
-    isSubset,
-    papers,
-    clusters,
-    yearRange,
-  } = info;
-
-  const pointsValue = isSubset
-    ? `${formatNumber(scopedCount)} / ${formatNumber(totalCount)}`
-    : formatNumber(totalCount);
-  const yearsValue = yearRange
-    ? yearRange.min === yearRange.max
-      ? String(yearRange.min)
-      : `${yearRange.min}-${yearRange.max}`
-    : "—";
+export function OverviewGrid({ datasetInfo, subsetInfo = null }: OverviewGridProps) {
+  const subsetActive = subsetInfo != null;
 
   return (
-    <div className="flex flex-wrap gap-1.5">
-      <StatChip label="Points" value={pointsValue} />
-      <StatChip label="Base" value={formatNumber(baseCount)} />
-      <StatChip label="Papers" value={formatNumber(papers)} />
-      <StatChip label="Clusters" value={formatNumber(clusters)} />
-      <StatChip label="Years" value={yearsValue} />
-      <StatChip label="Overlay" value={formatNumber(overlayCount)} />
+    <div>
+      <Group gap={6} mb={4}>
+        <Text fw={600} style={sectionLabelStyle}>
+          {subsetActive ? "Selection" : "All"}
+        </Text>
+      </Group>
+      <Stack gap={6}>
+        <SummaryRow
+          label="Points"
+          value={formatScopedValue(datasetInfo.totalCount, subsetInfo?.scopedCount)}
+          totalValue={datasetInfo.totalCount}
+          scopedValue={subsetInfo?.scopedCount ?? null}
+          subsetActive={subsetActive}
+        />
+        <SummaryRow
+          label="Base"
+          value={formatScopedValue(datasetInfo.baseCount, subsetInfo?.baseCount)}
+          totalValue={datasetInfo.baseCount}
+          scopedValue={subsetInfo?.baseCount ?? null}
+          subsetActive={subsetActive}
+        />
+        <SummaryRow
+          label="Papers"
+          value={formatScopedValue(datasetInfo.papers, subsetInfo?.papers)}
+          totalValue={datasetInfo.papers}
+          scopedValue={subsetInfo?.papers ?? null}
+          subsetActive={subsetActive}
+        />
+        <SummaryRow
+          label="Clusters"
+          value={formatScopedValue(datasetInfo.clusters, subsetInfo?.clusters)}
+          totalValue={datasetInfo.clusters}
+          scopedValue={subsetInfo?.clusters ?? null}
+          subsetActive={subsetActive}
+        />
+        <SummaryRow
+          label="Overlay"
+          value={formatScopedValue(datasetInfo.overlayCount, subsetInfo?.overlayCount)}
+          totalValue={datasetInfo.overlayCount}
+          scopedValue={subsetInfo?.overlayCount ?? null}
+          subsetActive={subsetActive}
+        />
+      </Stack>
     </div>
   );
 }

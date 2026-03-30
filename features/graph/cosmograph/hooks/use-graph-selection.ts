@@ -1,17 +1,25 @@
 "use client";
 import { useCallback } from "react";
 import { useCosmograph } from "@cosmograph/react";
+import { useGraphStore } from "@/features/graph/stores";
 
 export function useGraphSelection() {
   const { cosmograph } = useCosmograph();
+  const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
 
   const selectPoint = useCallback((index: number, addToSelection?: boolean, expandLinks?: boolean) => {
     cosmograph?.selectPoint(index, addToSelection, expandLinks);
   }, [cosmograph]);
 
   const setFocusedPoint = useCallback((index: number) => {
+    setFocusedPointIndex(index);
     cosmograph?.setFocusedPoint(index);
-  }, [cosmograph]);
+  }, [cosmograph, setFocusedPointIndex]);
+
+  const clearFocusedPoint = useCallback(() => {
+    setFocusedPointIndex(null);
+    cosmograph?.setFocusedPoint(undefined);
+  }, [cosmograph, setFocusedPointIndex]);
 
   const unselectAllPoints = useCallback(() => {
     cosmograph?.unselectAllPoints();
@@ -41,6 +49,7 @@ export function useGraphSelection() {
   return {
     selectPoint,
     setFocusedPoint,
+    clearFocusedPoint,
     unselectAllPoints,
     clearSelections,
     getPointsSelection,

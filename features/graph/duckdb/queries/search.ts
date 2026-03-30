@@ -40,14 +40,12 @@ export async function queryPointSearch(
     y: number
     clusterId: number | null
     clusterLabel: string | null
-    clusterProbability: number | null
     displayLabel: string | null
     paperTitle: string | null
     citekey: string | null
     journal: string | null
     year: number | null
     semanticGroups: string | null
-    organSystems: string | null
     relationCategories: string | null
     textAvailability: string | null
     paperAuthorCount: number | null
@@ -75,14 +73,12 @@ export async function queryPointSearch(
        y,
        clusterId,
        clusterLabel,
-       clusterProbability,
        displayLabel,
        paperTitle,
        citekey,
        journal,
        year,
        semanticGroups,
-       organSystems,
        relationCategories,
        textAvailability,
        paperAuthorCount,
