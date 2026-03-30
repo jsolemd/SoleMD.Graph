@@ -212,6 +212,7 @@ export async function createGraphBundleSession(
       totalRows: initialPointCounts.corpus,
     })
 
+    const pointSelectionCache = createBoundedCache<string, Promise<GraphPointRecord | null>>()
     const selectionCache = createBoundedCache<string, Promise<GraphSelectionDetail>>()
     const clusterCache = createBoundedCache<number, Promise<GraphClusterDetail>>()
     const paperDocumentCache = createBoundedCache<string, Promise<PaperDocument | null>>()
@@ -246,6 +247,7 @@ export async function createGraphBundleSession(
     }
 
     const resetOverlayDependentCaches = () => {
+      pointSelectionCache.clear()
       searchCache.clear()
       visibilityBudgetCache.clear()
       scopeCoordinatesCache.clear()
@@ -254,6 +256,46 @@ export async function createGraphBundleSession(
       summaryDatasetCache.clear()
       categoricalValueDatasetCache.clear()
       numericValueDatasetCache.clear()
+    }
+
+    const getCachedDatasetScopeCoordinates = (
+      layer: Parameters<typeof queryScopeCoordinates>[1]['layer']
+    ) => {
+      const datasetScopeKey = JSON.stringify({
+        layer,
+        scope: 'current',
+        currentPointScopeSql: null,
+      })
+      const cached = scopeCoordinatesCache.get(datasetScopeKey)
+      if (cached) {
+        return cached
+      }
+
+      const next = queryScopeCoordinates(conn, {
+        layer,
+        scope: 'current',
+        currentPointScopeSql: null,
+      })
+      scopeCoordinatesCache.set(datasetScopeKey, next)
+      return next
+    }
+
+    const getCachedClusterDetail = (clusterId: number) => {
+      const cached = clusterCache.get(clusterId)
+      if (cached) return cached
+      const next = (async (): Promise<GraphClusterDetail> => {
+        await ensureOptionalBundleTables(['cluster_exemplars'])
+        const [clusterRows_, exemplarRows] = await Promise.all([
+          queryClusterRows(conn, clusterId),
+          queryExemplarRows(conn, clusterId),
+        ])
+        return {
+          cluster: clusterRows_[0] ? mapCluster(clusterRows_[0]) : null,
+          exemplars: exemplarRows.map(mapExemplar),
+        }
+      })()
+      clusterCache.set(clusterId, next)
+      return next
     }
 
     const getCachedDatasetFacetSummaries = (args: {
@@ -822,8 +864,16 @@ export async function createGraphBundleSession(
         return queryUniversePointIdsByGraphPaperRefs(conn, graphPaperRefs)
       },
       resolvePointSelection(layer, selector) {
-        void layer
-        return queryCorpusPointSelection(conn, selector)
+        const cacheKey = JSON.stringify({
+          layer,
+          id: selector.id ?? null,
+          index: selector.index ?? null,
+        })
+        const cached = pointSelectionCache.get(cacheKey)
+        if (cached) return cached
+        const next = queryCorpusPointSelection(conn, selector)
+        pointSelectionCache.set(cacheKey, next)
+        return next
       },
       getTablePage(args) {
         return queryCorpusTablePage(conn, args)
@@ -1090,7 +1140,34 @@ export async function createGraphBundleSession(
         })
         const cached = visibilityBudgetCache.get(cacheKey)
         if (cached) return cached
-        const next = queryVisibilityBudget(conn, args)
+        const next = (async () => {
+          const normalizedScopeSql =
+            typeof args.scopeSql === 'string' && args.scopeSql.trim().length > 0
+              ? args.scopeSql.trim()
+              : null
+          const scopeCoordinates = (() => {
+            if (normalizedScopeSql != null) {
+              return Promise.resolve<number[] | null>(null)
+            }
+            return getCachedDatasetScopeCoordinates(args.layer)
+          })()
+
+          const resolvedScopeCoordinates = await scopeCoordinates
+
+          return queryVisibilityBudget(conn, {
+            ...args,
+            scopeCoordinates:
+              resolvedScopeCoordinates == null ||
+              resolvedScopeCoordinates.length !== 4
+              ? null
+              : [
+                  resolvedScopeCoordinates[0],
+                  resolvedScopeCoordinates[1],
+                  resolvedScopeCoordinates[2],
+                  resolvedScopeCoordinates[3],
+                ],
+          })
+        })()
         visibilityBudgetCache.set(cacheKey, next)
         return next
       },
@@ -1103,37 +1180,21 @@ export async function createGraphBundleSession(
         return next
       },
       getClusterDetail(clusterId: number) {
-        const cached = clusterCache.get(clusterId)
-        if (cached) return cached
-        const next = (async (): Promise<GraphClusterDetail> => {
-          await ensureOptionalBundleTables(['cluster_exemplars'])
-          const [clusterRows_, exemplarRows] = await Promise.all([
-            queryClusterRows(conn, clusterId),
-            queryExemplarRows(conn, clusterId),
-          ])
-          return {
-            cluster: clusterRows_[0] ? mapCluster(clusterRows_[0]) : null,
-            exemplars: exemplarRows.map(mapExemplar),
-          }
-        })()
-        clusterCache.set(clusterId, next)
-        return next
+        return getCachedClusterDetail(clusterId)
       },
       getSelectionDetail(point: GraphPointRecord) {
         const cached = selectionCache.get(point.id)
         if (cached) return cached
 
         const next = (async (): Promise<GraphSelectionDetail> => {
-          await ensureOptionalBundleTables(['cluster_exemplars'])
-          const [clusterRows_, exemplarRows, paperRows] = await Promise.all([
-            queryClusterRows(conn, point.clusterId),
-            queryExemplarRows(conn, point.clusterId),
+          const [clusterDetail, paperRows] = await Promise.all([
+            getCachedClusterDetail(point.clusterId),
             queryPaperDetail(conn, point.paperId ?? point.id),
           ])
 
           return {
-            cluster: clusterRows_[0] ? mapCluster(clusterRows_[0]) : null,
-            exemplars: exemplarRows.map(mapExemplar),
+            cluster: clusterDetail.cluster,
+            exemplars: clusterDetail.exemplars,
             paper: paperRows[0] ? mapPaper(paperRows[0]) : null,
             paperDocument: null,
           }

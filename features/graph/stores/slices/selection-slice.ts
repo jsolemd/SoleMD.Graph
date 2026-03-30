@@ -55,9 +55,16 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
         }
   }),
   setActiveSelectionSourceId: (sourceId) => set({ activeSelectionSourceId: sourceId }),
-  lockSelection: () => set((s) =>
-    s.selectedPointCount === 0 ? s
-      : { selectionLocked: true }
-  ),
+  lockSelection: () => set((s) => {
+    const hasCurrentSubset =
+      typeof s.currentPointScopeSql === 'string' &&
+      s.currentPointScopeSql.trim().length > 0
+
+    if (s.selectedPointCount === 0 && !hasCurrentSubset) {
+      return s
+    }
+
+    return { selectionLocked: true }
+  }),
   unlockSelection: () => set({ selectionLocked: false }),
 })

@@ -98,10 +98,15 @@ export default function CosmographRenderer({
 
   const handleLabelClick = useCallback(
     (index: number, id: string) => {
-      setFocusedPointIndex(index);
+      if (focusedPointIndex !== index) {
+        setFocusedPointIndex(index);
+      }
+      if (selectedNode?.id === id && selectedNode.index === index) {
+        return;
+      }
       void resolveAndSelectNode({ id });
     },
-    [resolveAndSelectNode, setFocusedPointIndex]
+    [focusedPointIndex, resolveAndSelectNode, selectedNode, setFocusedPointIndex]
   );
 
   // Track the logical layer so future active-table versioning or overlay
@@ -144,21 +149,32 @@ export default function CosmographRenderer({
 
   const handlePointClick = useCallback(
     (index: number) => {
-      setFocusedPointIndex(index);
+      if (focusedPointIndex !== index) {
+        setFocusedPointIndex(index);
+      }
+      if (selectedNode?.index === index) {
+        return;
+      }
       void resolveAndSelectNode({ index });
     },
-    [resolveAndSelectNode, setFocusedPointIndex]
+    [focusedPointIndex, resolveAndSelectNode, selectedNode, setFocusedPointIndex]
   );
 
   const handleBackgroundClick = useCallback(() => {
     selectionRequestId.current += 1;
+    if (isLocked) {
+      setFocusedPointIndex(null);
+      selectNode(null);
+      return;
+    }
+
     clearVisibilityFocus();
     setFocusedPointIndex(null);
     selectNode(null);
     // Explicitly clear programmatic selections (selectPoint calls)
     // that resetSelectionOnEmptyCanvasClick may not reach
     cosmographRef.current?.unselectAllPoints();
-  }, [clearVisibilityFocus, selectNode, setFocusedPointIndex]);
+  }, [clearVisibilityFocus, isLocked, selectNode, setFocusedPointIndex]);
 
   useEffect(() => {
     const pointsSelection = cosmographRef.current?.pointsSelection;
@@ -180,6 +196,7 @@ export default function CosmographRenderer({
     cosmographRef,
     activeLayer,
     selectionLocked,
+    selectedPointCount,
     visibilityFocus,
     selectNode,
     setCurrentPointScopeSql,

@@ -9,10 +9,10 @@ import {
   TextInput,
   UnstyledButton,
 } from "@mantine/core";
-import { useGraphCamera, useGraphSelection } from "@/features/graph/cosmograph";
+import { useGraphFocus, useGraphSelection } from "@/features/graph/cosmograph";
 import { buildBudgetScopeSql } from "@/features/graph/lib/cosmograph-selection";
 import { getLayerConfig } from "@/features/graph/lib/layers";
-import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
+import { useDashboardStore } from "@/features/graph/stores";
 import type {
   GraphBundleQueries,
   GraphSearchResult,
@@ -34,9 +34,9 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
   const isSelectionLocked = useDashboardStore((s) => s.selectionLocked);
   const applyVisibilityBudget = useDashboardStore((s) => s.applyVisibilityBudget);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
-  const selectNode = useGraphStore((s) => s.selectNode);
-  const { zoomToPoint } = useGraphCamera();
-  const { selectPoint, setFocusedPoint, getPointsSelection } = useGraphSelection();
+  const visibilityFocus = useDashboardStore((s) => s.visibilityFocus);
+  const { focusNode } = useGraphFocus();
+  const { getPointsSelection } = useGraphSelection();
 
   const searchFields = useMemo(
     () => getLayerConfig(activeLayer).searchableFields,
@@ -166,10 +166,19 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
                 className="w-full rounded-xl px-2.5 py-2 text-left"
                 style={panelCardStyle}
                 onClick={async () => {
-                  const initialIndex = result.point.index;
-                  selectPoint(initialIndex, false, false);
-                  setFocusedPoint(initialIndex);
-                  zoomToPoint(initialIndex, 250);
+                  const focusChanged = focusNode(result.point, {
+                    zoomDuration: 250,
+                    selectPoint: true,
+                    addToSelection: false,
+                    expandLinks: false,
+                  });
+                  const sameVisibilityFocus =
+                    visibilityFocus?.layer === activeLayer &&
+                    visibilityFocus.seedIndex === result.point.index;
+
+                  if (!focusChanged && sameVisibilityFocus) {
+                    return;
+                  }
 
                   const scopeSql = buildBudgetScopeSql(
                     getPointsSelection(),
@@ -182,20 +191,11 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
                     },
                     scopeSql,
                   });
-                  const node = result.point;
-                  selectNode(node);
 
                   if (budget) {
                     applyVisibilityBudget(activeLayer, budget);
                   } else {
                     clearVisibilityFocus();
-                  }
-
-                  const targetIndex = budget?.seedIndex ?? initialIndex;
-                  if (targetIndex !== initialIndex) {
-                    selectPoint(targetIndex, false, false);
-                    setFocusedPoint(targetIndex);
-                    zoomToPoint(targetIndex, 250);
                   }
                 }}
               >

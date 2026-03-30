@@ -25,6 +25,7 @@ import {
   setNativeHistogramData,
   setNativeHistogramHighlight,
 } from "./native-histogram-adapter";
+import { resolveWidgetBaselineScope } from "./widget-baseline";
 
 const YEAR_LIKE_COLUMNS = new Set(["year", "pageNumber"]);
 const FILTER_HISTOGRAM_HEIGHT = 72;
@@ -67,6 +68,9 @@ export function FilterHistogramWidget({
   const { cosmograph } = useCosmograph();
   const activeLayer = useDashboardStore((state) => state.activeLayer);
   const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
+  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
+  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
   const [error, setError] = useState<string | null>(null);
   const [widgetRevision, setWidgetRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -79,6 +83,15 @@ export function FilterHistogramWidget({
   const sourceId = `filter:${column}`;
   const source = useMemo(() => createSelectionSource(sourceId), [sourceId]);
   const tableName = useMemo(() => getLayerTableName(activeLayer), [activeLayer]);
+  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
+    () =>
+      resolveWidgetBaselineScope({
+        selectionLocked,
+        selectedPointCount,
+        selectedPointRevision,
+      }),
+    [selectedPointCount, selectedPointRevision, selectionLocked],
+  );
   const scopeSql = useMemo(
     () =>
       buildVisibilityScopeSqlExcludingSource(
@@ -188,7 +201,7 @@ export function FilterHistogramWidget({
     }
 
     const requestId = ++datasetRequestIdRef.current;
-    const datasetKey = `${bundleChecksum}:${activeLayer}:${column}:${overlayRevision}:histogram`;
+    const datasetKey = `${bundleChecksum}:${activeLayer}:${column}:${overlayRevision}:${baselineCacheKey}:histogram`;
     widget.setLoadingState();
 
     const datasetPromise = (async () => {
@@ -201,7 +214,7 @@ export function FilterHistogramWidget({
 
         latestHistogram = await queries.getInfoHistogram({
           layer: activeLayer,
-          scope: "dataset",
+          scope: baselineScope,
           column,
           bins: 20,
           currentPointScopeSql: null,
@@ -248,7 +261,16 @@ export function FilterHistogramWidget({
           queryError instanceof Error ? queryError.message : "Failed to load filter",
         );
       });
-  }, [activeLayer, bundleChecksum, column, overlayRevision, queries, widgetRevision]);
+  }, [
+    activeLayer,
+    baselineCacheKey,
+    baselineScope,
+    bundleChecksum,
+    column,
+    overlayRevision,
+    queries,
+    widgetRevision,
+  ]);
 
   useEffect(() => {
     const widget = widgetRef.current;

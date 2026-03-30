@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { Loader, Stack, Table, Text } from "@mantine/core";
-import { useGraphCamera, useGraphSelection } from "@/features/graph/cosmograph";
+import { useGraphFocus } from "@/features/graph/cosmograph";
 import { useGraphStore } from "@/features/graph/stores";
 import { getTableColumnsForLayer, getColumnMetaForLayer } from "@/features/graph/lib/columns";
 import { formatCellValue } from "@/features/graph/lib/helpers";
@@ -29,23 +29,25 @@ export function DataTableBody({
   resolvedTableView,
 }: DataTableBodyProps) {
   const selectedNode = useGraphStore((s) => s.selectedNode);
-  const selectNode = useGraphStore((s) => s.selectNode);
-  const { zoomToPoint } = useGraphCamera();
-  const { selectPoint, setFocusedPoint } = useGraphSelection();
+  const { focusNode } = useGraphFocus();
 
   const tableColumns = useMemo(() => getTableColumnsForLayer(activeLayer), [activeLayer]);
 
   const handleRowClick = useCallback(
     (node: GraphPointRecord) => {
-      selectNode(node);
-      setFocusedPoint(node.index);
-      zoomToPoint(node.index, 250);
-
       if (resolvedTableView === "dataset") {
-        selectPoint(node.index, false, false);
+        focusNode(node, {
+          zoomDuration: 250,
+          selectPoint: true,
+          addToSelection: false,
+          expandLinks: false,
+        });
+        return;
       }
+
+      focusNode(node, { zoomDuration: 250 });
     },
-    [resolvedTableView, selectNode, selectPoint, setFocusedPoint, zoomToPoint]
+    [focusNode, resolvedTableView]
   );
 
   if (pageLoading) {

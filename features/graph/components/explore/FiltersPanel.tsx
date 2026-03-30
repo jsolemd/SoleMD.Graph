@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CosmographWidgetBoundary } from "../canvas/CosmographWidgetBoundary";
 import { FilterBarWidget } from "@/features/graph/cosmograph/widgets/FilterBarWidget";
 import { FilterHistogramWidget } from "@/features/graph/cosmograph/widgets/FilterHistogramWidget";
+import { toFacetRowsFromBarCounts } from "@/features/graph/cosmograph/widgets/facet-rows";
 import {
   getCachedCategoricalDataset,
   getWidgetDatasetCacheKeyWithRevision,
   setCachedCategoricalDataset,
 } from "@/features/graph/cosmograph/widgets/dataset-cache";
 import { NATIVE_BARS_DATA_LIMIT } from "@/features/graph/cosmograph/widgets/native-bars-adapter";
+import { resolveWidgetBaselineScope } from "@/features/graph/cosmograph/widgets/widget-baseline";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoFacetRow } from "@/features/graph/types";
 import { FilterPanelShell } from "./FilterPanelShell";
@@ -63,6 +65,9 @@ export function FiltersPanel({
   overlayRevision: number;
 }) {
   const activeLayer = useDashboardStore((state) => state.activeLayer);
+  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
+  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
   const [visibleFilters, setVisibleFilters] = useState<
     Array<{ column: string; type: string }>
   >([]);
@@ -72,15 +77,24 @@ export function FiltersPanel({
   const [loadingColumns, setLoadingColumns] = useState<Record<string, boolean>>({});
   const requestIdRef = useRef(0);
 
-  useEffect(() => {
-    setPrimedDatasets({});
-    setLoadingColumns({});
-  }, [activeLayer, bundleChecksum, overlayRevision]);
-
   const visibleCategoricalFilters = useMemo(
     () => visibleFilters.filter((filter) => filter.type !== "numeric"),
     [visibleFilters],
   );
+  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
+    () =>
+      resolveWidgetBaselineScope({
+        selectionLocked,
+        selectedPointCount,
+        selectedPointRevision,
+      }),
+    [selectedPointCount, selectedPointRevision, selectionLocked],
+  );
+
+  useEffect(() => {
+    setPrimedDatasets({});
+    setLoadingColumns({});
+  }, [activeLayer, baselineCacheKey, bundleChecksum, overlayRevision]);
 
   useEffect(() => {
     if (visibleCategoricalFilters.length === 0) {
@@ -96,6 +110,7 @@ export function FiltersPanel({
           activeLayer,
           filter.column,
           overlayRevision,
+          baselineCacheKey,
         );
         const cachedRows = getCachedCategoricalDataset(cacheKey);
         return cachedRows ? [[filter.column, cachedRows] as const] : [];
@@ -123,9 +138,9 @@ export function FiltersPanel({
     );
 
     queries
-      .getFacetSummaries({
+      .getInfoBarsBatch({
         layer: activeLayer,
-        scope: "dataset",
+        scope: baselineScope,
         columns: missingColumns,
         maxItems: NATIVE_BARS_DATA_LIMIT,
         currentPointScopeSql: null,
@@ -136,13 +151,14 @@ export function FiltersPanel({
         }
 
         for (const column of missingColumns) {
-          const rows = results[column] ?? [];
+          const rows = toFacetRowsFromBarCounts(results[column] ?? []);
           setCachedCategoricalDataset(
             getWidgetDatasetCacheKeyWithRevision(
               bundleChecksum,
               activeLayer,
               column,
               overlayRevision,
+              baselineCacheKey,
             ),
             rows,
           );
@@ -150,7 +166,12 @@ export function FiltersPanel({
 
         setPrimedDatasets((current) => ({
           ...current,
-          ...results,
+          ...Object.fromEntries(
+            Object.entries(results).map(([column, rows]) => [
+              column,
+              toFacetRowsFromBarCounts(rows),
+            ]),
+          ),
         }));
         setLoadingColumns({});
       })
@@ -163,6 +184,8 @@ export function FiltersPanel({
       });
   }, [
     activeLayer,
+    baselineCacheKey,
+    baselineScope,
     bundleChecksum,
     overlayRevision,
     queries,

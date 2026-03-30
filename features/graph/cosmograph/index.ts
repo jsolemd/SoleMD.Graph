@@ -5,6 +5,7 @@ export { GraphShell } from "./GraphShell";
 export { default as GraphRenderer } from "./GraphRenderer";
 
 export { useGraphCamera } from "./hooks/use-graph-camera";
+export { useGraphFocus } from "./hooks/use-graph-focus";
 export { useGraphSelection } from "./hooks/use-graph-selection";
 export { useGraphExport } from "./hooks/use-graph-export";
 

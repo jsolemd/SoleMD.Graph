@@ -21,6 +21,7 @@ import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoFacetRow } from "@/features/graph/types";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
+import { toFacetRowsFromBarCounts } from "./facet-rows";
 import {
   getCachedCategoricalDataset,
   getWidgetDatasetCacheKeyWithRevision,
@@ -31,6 +32,7 @@ import {
   setNativeBarsFacetData,
   setNativeBarsFacetHighlight,
 } from "./native-bars-adapter";
+import { resolveWidgetBaselineScope } from "./widget-baseline";
 
 const FILTER_BAR_HEIGHT = 120;
 
@@ -52,6 +54,9 @@ export function FilterBarWidget({
   const { cosmograph } = useCosmograph();
   const activeLayer = useDashboardStore((state) => state.activeLayer);
   const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
+  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
+  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
   const [error, setError] = useState<string | null>(null);
   const [widgetRevision, setWidgetRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -64,6 +69,15 @@ export function FilterBarWidget({
   const sourceId = `filter:${column}`;
   const source = useMemo(() => createSelectionSource(sourceId), [sourceId]);
   const tableName = useMemo(() => getLayerTableName(activeLayer), [activeLayer]);
+  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
+    () =>
+      resolveWidgetBaselineScope({
+        selectionLocked,
+        selectedPointCount,
+        selectedPointRevision,
+      }),
+    [selectedPointCount, selectedPointRevision, selectionLocked],
+  );
   const scopeSql = useMemo(
     () =>
       buildVisibilityScopeSqlExcludingSource(
@@ -175,6 +189,7 @@ export function FilterBarWidget({
       activeLayer,
       column,
       overlayRevision,
+      baselineCacheKey,
     );
     const cachedDataset = getCachedCategoricalDataset(datasetCacheKey);
     const seededDataset =
@@ -204,16 +219,18 @@ export function FilterBarWidget({
               await new Promise((resolve) => globalThis.setTimeout(resolve, delay));
             }
 
-            const datasetValues = await queries.getFacetSummary({
-              layer: activeLayer,
-              scope: "dataset",
-              column,
-              maxItems: NATIVE_BARS_DATA_LIMIT,
-              currentPointScopeSql: null,
-            });
+            const normalizedRows = toFacetRowsFromBarCounts(
+              await queries.getInfoBars({
+                layer: activeLayer,
+                scope: baselineScope,
+                column,
+                maxItems: NATIVE_BARS_DATA_LIMIT,
+                currentPointScopeSql: null,
+              }),
+            );
 
-            if (datasetValues.length > 0) {
-              return datasetValues;
+            if (normalizedRows.length > 0) {
+              return normalizedRows;
             }
           }
 
@@ -260,6 +277,8 @@ export function FilterBarWidget({
       });
   }, [
     activeLayer,
+    baselineCacheKey,
+    baselineScope,
     bundleChecksum,
     column,
     datasetLoading,
@@ -286,20 +305,23 @@ export function FilterBarWidget({
 
     const requestId = ++scopedRequestIdRef.current;
     queries
-      .getFacetSummary({
+      .getInfoBars({
         layer: activeLayer,
         scope: "current",
         column,
         maxItems: NATIVE_BARS_DATA_LIMIT,
         currentPointScopeSql: scopeSql,
       })
-      .then((scopedValues: GraphInfoFacetRow[]) => {
+      .then((scopedValues) => {
         if (requestId !== scopedRequestIdRef.current || !widgetRef.current) {
           return;
         }
 
         setError(null);
-        setNativeBarsFacetHighlight(widget, scopedValues);
+        setNativeBarsFacetHighlight(
+          widget,
+          toFacetRowsFromBarCounts(scopedValues),
+        );
       })
       .catch((queryError: unknown) => {
         if (requestId !== scopedRequestIdRef.current) {

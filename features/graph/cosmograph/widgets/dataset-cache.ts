@@ -10,8 +10,9 @@ export function getWidgetDatasetCacheKeyWithRevision(
   layer: string,
   column: string,
   overlayRevision: number,
+  baselineScopeKey = "dataset",
 ): string {
-  return `${bundleChecksum}:${layer}:${column}:${overlayRevision}`;
+  return `${bundleChecksum}:${layer}:${column}:${overlayRevision}:${baselineScopeKey}`;
 }
 
 export function getCachedCategoricalDataset(key: string): GraphInfoFacetRow[] | null {

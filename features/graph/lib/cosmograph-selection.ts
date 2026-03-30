@@ -17,6 +17,8 @@ const VISIBILITY_SOURCE_PREFIXES = ["filter:", "timeline:", "budget:"] as const
 const BUDGET_SCOPE_SOURCE_PREFIXES = ["filter:", "timeline:"] as const
 
 export const BUDGET_FOCUS_SOURCE_ID = 'budget:focus-cluster'
+export const SELECTED_POINT_INDICES_SCOPE_SQL =
+  'index IN (SELECT index FROM selected_point_indices)'
 
 export function isVisibilitySelectionSourceId(
   sourceId: string | null | undefined,
@@ -188,6 +190,47 @@ export function buildIntentSelectionScopeSql(
     const sourceId = getSelectionSourceId(clause.source)
     return sourceId !== null && !isVisibilitySelectionSourceId(sourceId)
   })
+}
+
+export function buildActivePointSelectionScopeSql(
+  selection: Selection | null | undefined,
+): string | null {
+  return buildSelectionScopeSql(selection, () => true)
+}
+
+export function buildCurrentPointScopeSql(args: {
+  selection: Selection | null | undefined
+  selectionLocked: boolean
+  hasSelectedBaseline: boolean
+}): string | null {
+  const visibilityScopeSql = buildVisibilityScopeSql(args.selection)
+
+  if (!args.selectionLocked || !args.hasSelectedBaseline) {
+    return visibilityScopeSql
+  }
+
+  return combineScopeSqlClauses(
+    SELECTED_POINT_INDICES_SCOPE_SQL,
+    visibilityScopeSql,
+  )
+}
+
+export function combineScopeSqlClauses(
+  ...clauses: Array<string | null | undefined>
+): string | null {
+  const normalizedClauses = clauses
+    .map((clause) => clause?.trim() ?? '')
+    .filter((clause) => clause.length > 0)
+
+  if (normalizedClauses.length === 0) {
+    return null
+  }
+
+  if (normalizedClauses.length === 1) {
+    return normalizedClauses[0] ?? null
+  }
+
+  return normalizedClauses.map((clause) => `(${clause})`).join(' AND ')
 }
 
 function buildSelectionScopeSql(

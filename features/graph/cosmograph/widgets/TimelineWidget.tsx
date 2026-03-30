@@ -24,6 +24,7 @@ import {
   getWidgetDatasetCacheKeyWithRevision,
   setCachedNumericDataset,
 } from "./dataset-cache";
+import { resolveWidgetBaselineScope } from "./widget-baseline";
 
 const TIMELINE_THEME: React.CSSProperties = {
   "--cosmograph-ui-background": "transparent",
@@ -99,6 +100,9 @@ export function TimelineWidget({
   const { cosmograph } = useCosmograph();
   const activeLayer = useDashboardStore((state) => state.activeLayer);
   const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
+  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
+  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
   const [error, setError] = useState<string | null>(null);
   const [widgetRevision, setWidgetRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -111,6 +115,15 @@ export function TimelineWidget({
   const sourceId = `timeline:${column}`;
   const source = useMemo(() => createSelectionSource(sourceId), [sourceId]);
   const tableName = useMemo(() => getLayerTableName(activeLayer), [activeLayer]);
+  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
+    () =>
+      resolveWidgetBaselineScope({
+        selectionLocked,
+        selectedPointCount,
+        selectedPointRevision,
+      }),
+    [selectedPointCount, selectedPointRevision, selectionLocked],
+  );
   const scopeSql = useMemo(
     () =>
       buildVisibilityScopeSqlExcludingSource(
@@ -229,6 +242,7 @@ export function TimelineWidget({
       activeLayer,
       column,
       overlayRevision,
+      baselineCacheKey,
     );
     const cachedDataset = getCachedNumericDataset(datasetCacheKey);
     if (cachedDataset && hasRenderableTimelineData(cachedDataset)) {
@@ -254,7 +268,7 @@ export function TimelineWidget({
 
             latestValues = await queries.getNumericValues({
               layer: activeLayer,
-              scope: "dataset",
+              scope: baselineScope,
               column,
               currentPointScopeSql: null,
             });
@@ -301,7 +315,16 @@ export function TimelineWidget({
           queryError instanceof Error ? queryError.message : "Failed to load timeline",
         );
       });
-  }, [activeLayer, bundleChecksum, column, overlayRevision, queries, widgetRevision]);
+  }, [
+    activeLayer,
+    baselineCacheKey,
+    baselineScope,
+    bundleChecksum,
+    column,
+    overlayRevision,
+    queries,
+    widgetRevision,
+  ]);
 
   useEffect(() => {
     const widget = widgetRef.current;

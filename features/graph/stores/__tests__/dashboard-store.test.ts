@@ -88,3 +88,33 @@ describe('selectRightClearance', () => {
     expect(selectRightClearance(makeState({ panelBottomY: { left: 0, right: 100 } }))).toBe(404)
   })
 })
+
+describe('selection locking', () => {
+  afterEach(() => {
+    useDashboardStore.setState({
+      currentPointScopeSql: null,
+      selectedPointCount: 0,
+      selectionLocked: false,
+    })
+  })
+
+  it('does not lock when there is no active subset', () => {
+    useDashboardStore.getState().lockSelection()
+    expect(useDashboardStore.getState().selectionLocked).toBe(false)
+  })
+
+  it('locks when there is a manual selection', () => {
+    useDashboardStore.setState({ selectedPointCount: 3 })
+    useDashboardStore.getState().lockSelection()
+    expect(useDashboardStore.getState().selectionLocked).toBe(true)
+  })
+
+  it('locks when there is a current filtered subset', () => {
+    useDashboardStore.setState({
+      currentPointScopeSql: 'index IN (1, 2, 3)',
+      selectedPointCount: 0,
+    })
+    useDashboardStore.getState().lockSelection()
+    expect(useDashboardStore.getState().selectionLocked).toBe(true)
+  })
+})

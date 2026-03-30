@@ -29,7 +29,9 @@ import {
   setCachedCategoricalDataset,
   setCachedNumericDataset,
 } from "@/features/graph/cosmograph/widgets/dataset-cache";
+import { toFacetRowsFromBarCounts } from "@/features/graph/cosmograph/widgets/facet-rows";
 import { NATIVE_BARS_DATA_LIMIT } from "@/features/graph/cosmograph/widgets/native-bars-adapter";
+import { resolveWidgetBaselineScope } from "@/features/graph/cosmograph/widgets/widget-baseline";
 
 const legendStyle: React.CSSProperties = {
   borderRadius: 12,
@@ -65,6 +67,8 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const pointColorStrategy = useDashboardStore((s) => s.pointColorStrategy);
   const isSelectionLocked = useDashboardStore((s) => s.selectionLocked);
+  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
+  const selectedPointRevision = useDashboardStore((s) => s.selectedPointRevision);
   const { canvas, error, loading, progress, queries } = useGraphBundle(bundle);
 
   const promptMinimized = useDashboardStore((s) => s.promptMinimized);
@@ -72,6 +76,11 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const isCreate = mode === "create";
   const canvasShifted = isCreate && !promptMinimized;
   const isContinuousColor = pointColorStrategy === "continuous";
+  const { scope: baselineScope, cacheKey: baselineCacheKey } = resolveWidgetBaselineScope({
+    selectionLocked: isSelectionLocked,
+    selectedPointCount,
+    selectedPointRevision,
+  });
 
   const setShowTimeline = useDashboardStore((s) => s.setShowTimeline);
   const setTableOpen = useDashboardStore((s) => s.setTableOpen);
@@ -138,9 +147,9 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         return;
       }
 
-      const results = await queries.getFacetSummaries({
+      const results = await queries.getInfoBarsBatch({
         layer: activeLayer,
-        scope: "dataset",
+        scope: baselineScope,
         columns: categoricalFilters.map((filter) => filter.column),
         maxItems: NATIVE_BARS_DATA_LIMIT,
         currentPointScopeSql: null,
@@ -158,8 +167,9 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
             activeLayer,
             filter.column,
             canvas.overlayRevision,
+            baselineCacheKey,
           ),
-          rows,
+          toFacetRowsFromBarCounts(rows),
         );
       }
     };
@@ -176,7 +186,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         numericFilters.map(async (filter) => {
           await queries.getInfoHistogram({
             layer: activeLayer,
-            scope: "dataset",
+            scope: baselineScope,
             column: filter.column,
             bins: 20,
             currentPointScopeSql: null,
@@ -192,7 +202,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
 
       const values = await queries.getNumericValues({
         layer: activeLayer,
-        scope: "dataset",
+        scope: baselineScope,
         column: timelineColumn,
         currentPointScopeSql: null,
       });
@@ -203,6 +213,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
             activeLayer,
             timelineColumn,
             canvas.overlayRevision,
+            baselineCacheKey,
           ),
           values,
         );
@@ -255,6 +266,8 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
     };
   }, [
     activeLayer,
+    baselineCacheKey,
+    baselineScope,
     canvas,
     canvas?.overlayRevision,
     filterColumns,
@@ -412,7 +425,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         )}
 
         <AnimatePresence>
-          {!uiHidden && panelsVisible && <CanvasControls />}
+          {!uiHidden && panelsVisible && <CanvasControls queries={queries} />}
         </AnimatePresence>
 
         <AnimatePresence>

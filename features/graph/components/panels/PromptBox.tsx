@@ -53,6 +53,7 @@ export function PromptBox({
   const mode = useGraphStore((s) => s.mode);
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
+  const focusedPointRevision = useGraphStore((s) => s.focusedPointRevision);
   const writeContent = useDashboardStore((s) => s.writeContent);
   const setWriteContent = useDashboardStore((s) => s.setWriteContent);
   const panelsVisible = useDashboardStore((s) => s.panelsVisible);
@@ -126,6 +127,7 @@ export function PromptBox({
   const avoidRects = useFocusedAvoidanceRects({
     enabled: Boolean(cosmograph) && focusedPointIndex != null && !isCollapsed && !isCreate,
     focusedPointIndex,
+    focusSessionRevision: focusedPointRevision,
     labelText: focusedLabelText,
   });
 

@@ -5,8 +5,14 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { Lock, Unlock, X } from "lucide-react";
+import { useGraphSelection } from "@/features/graph/cosmograph";
+import {
+  buildActivePointSelectionScopeSql,
+  buildCurrentPointScopeSql,
+} from "@/features/graph/lib/cosmograph-selection";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { SelectionToolbar, type SelectionToolbarHandle } from "@/features/graph/cosmograph";
+import type { GraphBundleQueries } from "@/features/graph/types";
 import { iconBtnStyles } from "../panels/PanelShell";
 import { snappy } from "@/lib/motion";
 
@@ -69,10 +75,11 @@ function usePortalTarget(selector: string) {
 
 /* ── Component ─────────────────────────────────────────────────── */
 
-export function CanvasControls() {
+export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
   const portalTarget = usePortalTarget("[data-wordmark-toolbar]");
   const toolbarRef = useRef<SelectionToolbarHandle>(null);
   const hasSelection = useDashboardStore((s) => s.selectedPointCount > 0);
+  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
   const hasCurrentScope = useDashboardStore(
     (s) => s.currentPointScopeSql !== null,
   );
@@ -81,6 +88,7 @@ export function CanvasControls() {
   const timelineSelection = useDashboardStore((s) => s.timelineSelection);
   const lockSelection = useDashboardStore((s) => s.lockSelection);
   const unlockSelection = useDashboardStore((s) => s.unlockSelection);
+  const canLockSelection = hasSelection || hasCurrentScope;
   const hasResettableScope =
     hasSelection || hasCurrentScope || timelineSelection !== undefined;
 
@@ -93,9 +101,15 @@ export function CanvasControls() {
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);
   const setTableView = useDashboardStore((s) => s.setTableView);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
+  const {
+    clearFocusedPoint,
+    getPointsSelection,
+    getSelectedPointIndices,
+  } = useGraphSelection();
 
   const handleStoreClear = useCallback(() => {
     selectNode(null);
+    clearFocusedPoint();
     clearVisibilityFocus();
     setCurrentPointScopeSql(null);
     setSelectedPointCount(0);
@@ -104,6 +118,7 @@ export function CanvasControls() {
     setTableView("selection");
     unlockSelection();
   }, [
+    clearFocusedPoint,
     clearVisibilityFocus,
     selectNode,
     setActiveSelectionSourceId,
@@ -121,6 +136,63 @@ export function CanvasControls() {
       handleStoreClear();
     }
   }, [handleStoreClear]);
+
+  const handleLockSelection = useCallback(async () => {
+    if (!canLockSelection || isLocked) {
+      return;
+    }
+
+    const pointsSelection = getPointsSelection();
+    const activeScopeSql = buildActivePointSelectionScopeSql(pointsSelection);
+    const nextSelectedPointCount = getSelectedPointIndices().length;
+
+    if (activeScopeSql && activeScopeSql.trim().length > 0) {
+      try {
+        await queries.setSelectedPointScopeSql(activeScopeSql);
+      } catch {
+        return;
+      }
+    }
+
+    setSelectedPointCount(nextSelectedPointCount);
+    setActiveSelectionSourceId(null);
+    lockSelection();
+    setCurrentPointScopeSql(
+      buildCurrentPointScopeSql({
+        selection: pointsSelection,
+        selectionLocked: true,
+        hasSelectedBaseline: nextSelectedPointCount > 0,
+      }),
+    );
+  }, [
+    canLockSelection,
+    getPointsSelection,
+    getSelectedPointIndices,
+    isLocked,
+    lockSelection,
+    queries,
+    setActiveSelectionSourceId,
+    setCurrentPointScopeSql,
+    setSelectedPointCount,
+  ]);
+
+  const handleUnlockSelection = useCallback(() => {
+    const pointsSelection = getPointsSelection();
+
+    unlockSelection();
+    setCurrentPointScopeSql(
+      buildCurrentPointScopeSql({
+        selection: pointsSelection,
+        selectionLocked: false,
+        hasSelectedBaseline: selectedPointCount > 0,
+      }),
+    );
+  }, [
+    getPointsSelection,
+    selectedPointCount,
+    setCurrentPointScopeSql,
+    unlockSelection,
+  ]);
 
   if (!portalTarget) return null;
 
@@ -166,8 +238,8 @@ export function CanvasControls() {
           radius="xl"
           className="graph-icon-btn"
           styles={iconBtnStyles}
-          onClick={() => isLocked ? unlockSelection() : lockSelection()}
-          style={!hasSelection && !isLocked ? { opacity: 0.35, pointerEvents: "none" } : undefined}
+          onClick={() => void (isLocked ? handleUnlockSelection() : handleLockSelection())}
+          style={!canLockSelection && !isLocked ? { opacity: 0.35, pointerEvents: "none" } : undefined}
           aria-label={isLocked ? "Unlock selection" : "Lock selection"}
           aria-pressed={isLocked}
         >

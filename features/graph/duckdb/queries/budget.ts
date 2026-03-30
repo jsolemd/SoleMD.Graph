@@ -12,9 +12,10 @@ export async function queryVisibilityBudget(
     layer: MapLayer
     selector: { id?: string; index?: number }
     scopeSql?: string | null
+    scopeCoordinates?: [number, number, number, number] | null
   }
 ): Promise<GraphVisibilityBudget | null> {
-  const { layer, selector, scopeSql } = args
+  const { layer, selector, scopeSql, scopeCoordinates } = args
   const { id, index } = selector
   if (id == null && index == null) {
     return null
@@ -26,6 +27,38 @@ export async function queryVisibilityBudget(
     typeof scopeSql === 'string' && scopeSql.trim().length > 0
       ? scopeSql.trim()
       : null
+  const normalizedScopeCoordinates =
+    normalizedScopeSql == null &&
+    Array.isArray(scopeCoordinates) &&
+    scopeCoordinates.length === 4 &&
+    scopeCoordinates.every((value) => Number.isFinite(value))
+      ? scopeCoordinates
+      : null
+  const scopeWidth =
+    normalizedScopeCoordinates == null
+      ? null
+      : normalizedScopeCoordinates[2] - normalizedScopeCoordinates[0]
+  const scopeHeight =
+    normalizedScopeCoordinates == null
+      ? null
+      : normalizedScopeCoordinates[3] - normalizedScopeCoordinates[1]
+  const scopeExtentsCte =
+    scopeWidth != null && scopeHeight != null
+      ? `scope_extents AS (
+       SELECT
+         CAST(? AS DOUBLE) AS scope_width,
+         CAST(? AS DOUBLE) AS scope_height
+     ),`
+      : `scope_extents AS (
+       SELECT
+         max(x) - min(x) AS scope_width,
+         max(y) - min(y) AS scope_height
+       FROM scoped
+     ),`
+  const queryParams = [id ?? index ?? null]
+  if (scopeWidth != null && scopeHeight != null) {
+    queryParams.push(scopeWidth, scopeHeight)
+  }
 
   const rows = await queryRows<{
     seed_index: number
@@ -55,12 +88,7 @@ export async function queryVisibilityBudget(
        FROM ${tableName}
        ${normalizedScopeSql == null ? '' : `WHERE ${normalizedScopeSql}`}
      ),
-     scope_extents AS (
-       SELECT
-         max(x) - min(x) AS scope_width,
-         max(y) - min(y) AS scope_height
-       FROM scoped
-     ),
+     ${scopeExtentsCte}
      cluster_scope AS (
        SELECT
          count(*)::INTEGER AS cluster_count,
@@ -162,7 +190,7 @@ export async function queryVisibilityBudget(
      FROM seed
      LEFT JOIN scope_extents ON TRUE
      LEFT JOIN cluster_scope ON TRUE`,
-    [id ?? index ?? null]
+    queryParams
   )
 
   const row = rows[0]

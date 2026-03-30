@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCosmograph } from "@cosmograph/react";
 import {
   FOCUSED_LABEL_ESTIMATED_CHAR_WIDTH,
@@ -16,6 +16,12 @@ import {
 } from "./avoidance";
 
 const CSS_LABELS_CONTAINER_CLASS = "css-label--labels-container";
+const FOCUSED_MOTION_EPSILON_PX = 1.5;
+const FOCUSED_MOTION_IDLE_MS = 72;
+const FOCUSED_MOTION_DETECTION_MS = 180;
+const FOCUSED_LABEL_QUIET_MS = 96;
+const FOCUSED_LABEL_SETTLE_TIMEOUT_MS = 260;
+const FOCUSED_LABEL_FALLBACK_MIN_WIDTH = 220;
 
 function getFocusedPointText(labelText: string | null): string {
   const trimmed = labelText?.trim();
@@ -41,7 +47,7 @@ function getActualFocusedLabelRect({
   container: HTMLElement;
   viewportX: number;
   viewportY: number;
-  labelText: string;
+  labelText?: string | null;
 }): PromptAvoidRect | null {
   const labelsContainer = container.querySelector(
     `.${CSS_LABELS_CONTAINER_CLASS}`,
@@ -61,17 +67,17 @@ function getActualFocusedLabelRect({
     return null;
   }
 
-  const normalizedLabelText = labelText.trim().toLowerCase();
+  const normalizedLabelText = labelText?.trim().toLowerCase() ?? null;
   const scoredCandidates = labelElements.map((element) => {
     const rect = element.getBoundingClientRect();
     const text = (element.textContent ?? "").trim().toLowerCase();
-    const matchesText = text === normalizedLabelText;
+    const matchesText =
+      normalizedLabelText != null && text === normalizedLabelText;
     const horizontalDistance = Math.abs(rect.left + rect.width / 2 - viewportX);
     const verticalDistance = Math.abs(rect.bottom - viewportY);
     const distanceScore = horizontalDistance + verticalDistance * 1.25;
 
     return {
-      element,
       rect,
       matchesText,
       distanceScore,
@@ -92,9 +98,9 @@ function getActualFocusedLabelRect({
 
   const textMatched = best.matchesText;
   const nearFocusedPoint =
-    Math.abs(best.rect.left + best.rect.width / 2 - viewportX) < 120 &&
+    Math.abs(best.rect.left + best.rect.width / 2 - viewportX) < 140 &&
     best.rect.bottom <= viewportY + 24 &&
-    best.rect.bottom >= viewportY - 120;
+    best.rect.bottom >= viewportY - 144;
 
   if (!textMatched && !nearFocusedPoint) {
     return null;
@@ -128,26 +134,31 @@ function rectsEqual(a: PromptAvoidRect[], b: PromptAvoidRect[]): boolean {
   });
 }
 
-interface CosmographEventSource {
-  addEventListener?: (type: string, listener: EventListener) => void;
-  removeEventListener?: (type: string, listener: EventListener) => void;
+interface ScreenPointGeometry {
+  container: HTMLElement;
+  viewportX: number;
+  viewportY: number;
+  pointRadius: number;
 }
 
 export function useFocusedAvoidanceRects({
   enabled,
   focusedPointIndex,
+  focusSessionRevision,
   labelText,
 }: {
   enabled: boolean;
   focusedPointIndex: number | null;
+  focusSessionRevision: number;
   labelText: string | null;
 }) {
   const { cosmograph } = useCosmograph();
   const [avoidRects, setAvoidRects] = useState<PromptAvoidRect[]>([]);
-  const resolvedLabelText = useMemo(
-    () => getFocusedPointText(labelText),
-    [labelText],
-  );
+  const resolvedLabelTextRef = useRef(getFocusedPointText(labelText));
+
+  useEffect(() => {
+    resolvedLabelTextRef.current = getFocusedPointText(labelText);
+  }, [labelText]);
 
   useEffect(() => {
     if (!enabled || focusedPointIndex == null || !cosmograph) {
@@ -155,13 +166,19 @@ export function useFocusedAvoidanceRects({
       return;
     }
 
-    let rafHandle: number | null = null;
-    let burstRafHandle: number | null = null;
-    const timeoutHandles: number[] = [];
-    let burstActive = false;
-    let burstStart = 0;
+    let motionRaf: number | null = null;
+    let settleRafOne: number | null = null;
+    let settleRafTwo: number | null = null;
+    let labelVerificationRaf: number | null = null;
+    let labelMutationObserver: MutationObserver | null = null;
+    let sessionSettled = false;
+    let sawGeometryMotion = false;
+    let lastScreenPosition: { x: number; y: number } | null = null;
+    let lastMotionAt = performance.now();
+    let lastLabelMutationAt = performance.now();
+    let labelVerificationStartedAt = 0;
 
-    const computeRect = (): PromptAvoidRect[] => {
+    const getScreenGeometry = (): ScreenPointGeometry | null => {
       const labelsContainer = document.querySelector(
         `.${CSS_LABELS_CONTAINER_CLASS}`,
       ) as HTMLElement | null;
@@ -170,24 +187,44 @@ export function useFocusedAvoidanceRects({
         (document.querySelector("canvas") as HTMLCanvasElement | null);
       const pointPosition = cosmograph.getPointPositionByIndex(focusedPointIndex);
       if (!container || !pointPosition) {
-        return [];
+        return null;
       }
 
       const screenPosition = cosmograph.spaceToScreenPosition(pointPosition);
       if (!screenPosition) {
-        return [];
+        return null;
       }
 
       const [screenX, screenY] = screenPosition;
       const containerRect = container.getBoundingClientRect();
-      const viewportX = containerRect.left + screenX;
-      const viewportY = containerRect.top + screenY;
-      const pointRadius = Math.max(
-        cosmograph.getPointScreenRadiusByIndex(focusedPointIndex) || 0,
-        6,
-      );
-      const paddedRadius = pointRadius + FOCUSED_POINT_AVOIDANCE_PADDING;
 
+      return {
+        container,
+        viewportX: containerRect.left + screenX,
+        viewportY: containerRect.top + screenY,
+        pointRadius: Math.max(
+          cosmograph.getPointScreenRadiusByIndex(focusedPointIndex) || 0,
+          6,
+        ),
+      };
+    };
+
+    const computeAvoidanceGeometry = (): {
+      rects: PromptAvoidRect[];
+      hasActualLabelRect: boolean;
+    } => {
+      const geometry = getScreenGeometry();
+      if (!geometry) {
+        return { rects: [], hasActualLabelRect: false };
+      }
+
+      const {
+        container,
+        viewportX,
+        viewportY,
+        pointRadius,
+      } = geometry;
+      const paddedRadius = pointRadius + FOCUSED_POINT_AVOIDANCE_PADDING;
       const pointRect: PromptAvoidRect = {
         left: viewportX - paddedRadius,
         right: viewportX + paddedRadius,
@@ -195,7 +232,11 @@ export function useFocusedAvoidanceRects({
         bottom: viewportY + paddedRadius,
       };
 
-      const labelWidth = estimateLabelWidth(resolvedLabelText);
+      const labelTextForRect = resolvedLabelTextRef.current;
+      const labelWidth = Math.max(
+        estimateLabelWidth(labelTextForRect),
+        FOCUSED_LABEL_FALLBACK_MIN_WIDTH,
+      );
       const estimatedLabelRect: PromptAvoidRect = {
         left: viewportX - labelWidth / 2,
         right: viewportX + labelWidth / 2,
@@ -206,103 +247,182 @@ export function useFocusedAvoidanceRects({
           FOCUSED_POINT_LABEL_GAP -
           FOCUSED_LABEL_HEIGHT,
       };
-      const actualLabelRect = labelsContainer
-        ? getActualFocusedLabelRect({
-            container,
-            viewportX,
-            viewportY,
-            labelText: resolvedLabelText,
-          })
-        : null;
-      const labelRect = actualLabelRect ?? estimatedLabelRect;
+      const actualLabelRect = getActualFocusedLabelRect({
+        container,
+        viewportX,
+        viewportY,
+        labelText: labelTextForRect,
+      });
+      const union = unionPromptAvoidRects(
+        actualLabelRect
+          ? [pointRect, estimatedLabelRect, actualLabelRect]
+          : [pointRect, estimatedLabelRect],
+      );
 
-      const union = unionPromptAvoidRects([pointRect, labelRect]);
-      return union ? [union] : [pointRect];
+      return {
+        rects: union ? [union] : [pointRect],
+        hasActualLabelRect: actualLabelRect != null,
+      };
     };
 
     const applyRect = () => {
-      const next = computeRect();
+      const { rects: next } = computeAvoidanceGeometry();
       setAvoidRects((current) => (rectsEqual(current, next) ? current : next));
     };
 
-    const cancelBurst = () => {
-      if (burstRafHandle != null) {
-        cancelAnimationFrame(burstRafHandle);
-        burstRafHandle = null;
+    const clearScheduledWork = () => {
+      if (motionRaf != null) {
+        cancelAnimationFrame(motionRaf);
+        motionRaf = null;
       }
-      burstActive = false;
+      if (settleRafOne != null) {
+        cancelAnimationFrame(settleRafOne);
+        settleRafOne = null;
+      }
+      if (settleRafTwo != null) {
+        cancelAnimationFrame(settleRafTwo);
+        settleRafTwo = null;
+      }
+      if (labelVerificationRaf != null) {
+        cancelAnimationFrame(labelVerificationRaf);
+        labelVerificationRaf = null;
+      }
     };
 
-    const startBurst = () => {
-      burstStart = performance.now();
-      if (burstActive) {
-        return;
+    const clearVerificationWindow = () => {
+      if (labelMutationObserver) {
+        labelMutationObserver.disconnect();
+        labelMutationObserver = null;
       }
-      burstActive = true;
-
-      const tick = (now: number) => {
-        applyRect();
-        if (now - burstStart < 500) {
-          burstRafHandle = requestAnimationFrame(tick);
-          return;
-        }
-        burstActive = false;
-        burstRafHandle = null;
-      };
-
-      burstRafHandle = requestAnimationFrame(tick);
     };
 
-    const scheduleUpdate = () => {
-      if (rafHandle != null) {
-        cancelAnimationFrame(rafHandle);
-      }
-      rafHandle = requestAnimationFrame(() => {
-        applyRect();
+    const scheduleSettledApply = () => {
+      clearScheduledWork();
+      settleRafOne = requestAnimationFrame(() => {
+        settleRafTwo = requestAnimationFrame(() => {
+          applyRect();
+        });
       });
     };
 
-    const handleGeometryChange = () => {
-      scheduleUpdate();
-      startBurst();
+    const finalizeFocusPlacement = () => {
+      if (sessionSettled) {
+        return;
+      }
+
+      sessionSettled = true;
+      scheduleSettledApply();
     };
 
-    applyRect();
-    startBurst();
+    const sampleLabelVerification = () => {
+      if (sessionSettled) {
+        return;
+      }
 
-    timeoutHandles.push(
-      window.setTimeout(handleGeometryChange, 120),
-      window.setTimeout(handleGeometryChange, 260),
-      window.setTimeout(handleGeometryChange, 420),
-    );
+      const now = performance.now();
+      const { hasActualLabelRect } = computeAvoidanceGeometry();
+      const quietFor = now - lastLabelMutationAt;
+      const verificationElapsed = now - labelVerificationStartedAt;
 
-    const eventSource = cosmograph as unknown as CosmographEventSource;
-    const eventNames = [
-      "onZoom",
-      "zoomEnded",
-      "onDrag",
-      "pointSizeScaleUpdated",
-    ];
+      if (
+        (hasActualLabelRect && quietFor >= FOCUSED_LABEL_QUIET_MS) ||
+        verificationElapsed >= FOCUSED_LABEL_SETTLE_TIMEOUT_MS
+      ) {
+        clearVerificationWindow();
+        finalizeFocusPlacement();
+        return;
+      }
 
-    for (const eventName of eventNames) {
-      eventSource.addEventListener?.(eventName, handleGeometryChange);
-    }
-    window.addEventListener("resize", handleGeometryChange);
+      labelVerificationRaf = requestAnimationFrame(sampleLabelVerification);
+    };
+
+    const startLabelVerificationWindow = () => {
+      if (sessionSettled) {
+        return;
+      }
+
+      labelVerificationStartedAt = performance.now();
+      lastLabelMutationAt = labelVerificationStartedAt;
+
+      const labelsContainer =
+        document.querySelector(`.${CSS_LABELS_CONTAINER_CLASS}`) ??
+        document.body;
+      if (labelsContainer instanceof Node) {
+        labelMutationObserver = new MutationObserver(() => {
+          lastLabelMutationAt = performance.now();
+        });
+        labelMutationObserver.observe(labelsContainer, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+          attributes: true,
+        });
+      }
+
+      labelVerificationRaf = requestAnimationFrame(sampleLabelVerification);
+    };
+
+    const handleResize = () => {
+      if (!sessionSettled) {
+        return;
+      }
+      scheduleSettledApply();
+    };
+
+    const motionDetectionStartedAt = performance.now();
+    const sampleMotion = () => {
+      if (sessionSettled) {
+        return;
+      }
+
+      const now = performance.now();
+      const geometry = getScreenGeometry();
+
+      if (geometry) {
+        const next = {
+          x: geometry.viewportX,
+          y: geometry.viewportY,
+        };
+
+        if (lastScreenPosition) {
+          const movement = Math.hypot(
+            next.x - lastScreenPosition.x,
+            next.y - lastScreenPosition.y,
+          );
+          if (movement > FOCUSED_MOTION_EPSILON_PX) {
+            sawGeometryMotion = true;
+            lastMotionAt = now;
+          }
+        }
+
+        lastScreenPosition = next;
+      }
+
+      const motionDetectionElapsed = now - motionDetectionStartedAt;
+      const quietFor = now - lastMotionAt;
+      const motionSettled =
+        sawGeometryMotion && quietFor >= FOCUSED_MOTION_IDLE_MS;
+      const noMotionDetected =
+        !sawGeometryMotion &&
+        motionDetectionElapsed >= FOCUSED_MOTION_DETECTION_MS;
+
+      if (motionSettled || noMotionDetected) {
+        startLabelVerificationWindow();
+        return;
+      }
+
+      motionRaf = requestAnimationFrame(sampleMotion);
+    };
+
+    motionRaf = requestAnimationFrame(sampleMotion);
+    window.addEventListener("resize", handleResize);
 
     return () => {
-      if (rafHandle != null) {
-        cancelAnimationFrame(rafHandle);
-      }
-      cancelBurst();
-      for (const timeoutHandle of timeoutHandles) {
-        window.clearTimeout(timeoutHandle);
-      }
-      for (const eventName of eventNames) {
-        eventSource.removeEventListener?.(eventName, handleGeometryChange);
-      }
-      window.removeEventListener("resize", handleGeometryChange);
+      clearScheduledWork();
+      clearVerificationWindow();
+      window.removeEventListener("resize", handleResize);
     };
-  }, [cosmograph, enabled, focusedPointIndex, resolvedLabelText]);
+  }, [cosmograph, enabled, focusedPointIndex, focusSessionRevision]);
 
   return avoidRects;
 }

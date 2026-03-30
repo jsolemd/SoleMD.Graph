@@ -6,9 +6,9 @@ import type {
   CosmographRef,
 } from "@cosmograph/react";
 import {
+  buildCurrentPointScopeSql,
   buildIntentSelectionScopeSql,
   buildBudgetScopeSql,
-  buildVisibilityScopeSql,
   getSelectionSourceId,
   isBudgetScopeSelectionSourceId,
   isVisibilitySelectionSourceId,
@@ -20,6 +20,7 @@ export function usePointsFiltered(deps: {
   cosmographRef: RefObject<CosmographRef | undefined>;
   activeLayer: MapLayer;
   selectionLocked: boolean;
+  selectedPointCount: number;
   visibilityFocus: VisibilityFocus | null;
   selectNode: (node: null) => void;
   setCurrentPointScopeSql: (sql: string | null) => void;
@@ -104,7 +105,11 @@ export function usePointsFiltered(deps: {
       deps.cosmographRef.current?.linksSelection?.clauses?.length ?? 0;
     const currentPointScopeSql =
       pointClauseCount > 0
-        ? buildVisibilityScopeSql(deps.cosmographRef.current?.pointsSelection)
+        ? buildCurrentPointScopeSql({
+            selection: deps.cosmographRef.current?.pointsSelection,
+            selectionLocked: deps.selectionLocked,
+            hasSelectedBaseline: deps.selectedPointCount > 0,
+          })
         : null;
     const shouldRefreshVisibilityBudget =
       isBudgetScopeSelectionSourceId(sourceId) &&
