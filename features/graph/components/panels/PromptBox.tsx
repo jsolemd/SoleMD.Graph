@@ -54,6 +54,7 @@ export function PromptBox({
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
   const focusedPointRevision = useGraphStore((s) => s.focusedPointRevision);
+  const cameraSettledRevision = useGraphStore((s) => s.cameraSettledRevision);
   const writeContent = useDashboardStore((s) => s.writeContent);
   const setWriteContent = useDashboardStore((s) => s.setWriteContent);
   const panelsVisible = useDashboardStore((s) => s.panelsVisible);
@@ -128,6 +129,7 @@ export function PromptBox({
     enabled: Boolean(cosmograph) && focusedPointIndex != null && !isCollapsed && !isCreate,
     focusedPointIndex,
     focusSessionRevision: focusedPointRevision,
+    cameraSettledRevision,
     labelText: focusedLabelText,
   });
 

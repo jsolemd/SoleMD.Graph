@@ -145,16 +145,21 @@ export function useFocusedAvoidanceRects({
   enabled,
   focusedPointIndex,
   focusSessionRevision,
+  cameraSettledRevision,
   labelText,
 }: {
   enabled: boolean;
   focusedPointIndex: number | null;
   focusSessionRevision: number;
+  cameraSettledRevision: number;
   labelText: string | null;
 }) {
   const { cosmograph } = useCosmograph();
   const [avoidRects, setAvoidRects] = useState<PromptAvoidRect[]>([]);
   const resolvedLabelTextRef = useRef(getFocusedPointText(labelText));
+  const lastFocusedPointIndexRef = useRef<number | null>(null);
+  const lastFocusSessionRevisionRef = useRef<number | null>(null);
+  const lastCameraSettledRevisionRef = useRef<number | null>(null);
 
   useEffect(() => {
     resolvedLabelTextRef.current = getFocusedPointText(labelText);
@@ -163,18 +168,32 @@ export function useFocusedAvoidanceRects({
   useEffect(() => {
     if (!enabled || focusedPointIndex == null || !cosmograph) {
       setAvoidRects([]);
+      lastFocusedPointIndexRef.current = focusedPointIndex;
+      lastFocusSessionRevisionRef.current = focusSessionRevision;
+      lastCameraSettledRevisionRef.current = cameraSettledRevision;
       return;
     }
+    const focusChanged =
+      lastFocusedPointIndexRef.current !== focusedPointIndex ||
+      lastFocusSessionRevisionRef.current !== focusSessionRevision;
+    const cameraSettledChanged =
+      lastCameraSettledRevisionRef.current !== cameraSettledRevision;
+
+    lastFocusedPointIndexRef.current = focusedPointIndex;
+    lastFocusSessionRevisionRef.current = focusSessionRevision;
+    lastCameraSettledRevisionRef.current = cameraSettledRevision;
 
     let motionRaf: number | null = null;
     let settleRafOne: number | null = null;
     let settleRafTwo: number | null = null;
     let labelVerificationRaf: number | null = null;
     let labelMutationObserver: MutationObserver | null = null;
+    let disposed = false;
     let sessionSettled = false;
     let sawGeometryMotion = false;
     let lastScreenPosition: { x: number; y: number } | null = null;
     let lastMotionAt = performance.now();
+    let motionDetectionStartedAt = performance.now();
     let lastLabelMutationAt = performance.now();
     let labelVerificationStartedAt = 0;
 
@@ -255,7 +274,7 @@ export function useFocusedAvoidanceRects({
       });
       const union = unionPromptAvoidRects(
         actualLabelRect
-          ? [pointRect, estimatedLabelRect, actualLabelRect]
+          ? [pointRect, actualLabelRect]
           : [pointRect, estimatedLabelRect],
       );
 
@@ -290,6 +309,10 @@ export function useFocusedAvoidanceRects({
     };
 
     const clearVerificationWindow = () => {
+      if (labelVerificationRaf != null) {
+        cancelAnimationFrame(labelVerificationRaf);
+        labelVerificationRaf = null;
+      }
       if (labelMutationObserver) {
         labelMutationObserver.disconnect();
         labelMutationObserver = null;
@@ -306,7 +329,7 @@ export function useFocusedAvoidanceRects({
     };
 
     const finalizeFocusPlacement = () => {
-      if (sessionSettled) {
+      if (disposed || sessionSettled) {
         return;
       }
 
@@ -337,10 +360,11 @@ export function useFocusedAvoidanceRects({
     };
 
     const startLabelVerificationWindow = () => {
-      if (sessionSettled) {
+      if (disposed || sessionSettled) {
         return;
       }
 
+      clearVerificationWindow();
       labelVerificationStartedAt = performance.now();
       lastLabelMutationAt = labelVerificationStartedAt;
 
@@ -362,16 +386,29 @@ export function useFocusedAvoidanceRects({
       labelVerificationRaf = requestAnimationFrame(sampleLabelVerification);
     };
 
-    const handleResize = () => {
-      if (!sessionSettled) {
+    const queueMotionSample = () => {
+      if (motionRaf != null || disposed) {
         return;
       }
-      scheduleSettledApply();
+
+      motionRaf = requestAnimationFrame(sampleMotion);
     };
 
-    const motionDetectionStartedAt = performance.now();
+    const startMotionTracking = () => {
+      clearScheduledWork();
+      clearVerificationWindow();
+      sessionSettled = false;
+      sawGeometryMotion = false;
+      lastMotionAt = performance.now();
+      motionDetectionStartedAt = lastMotionAt;
+      lastScreenPosition = null;
+      queueMotionSample();
+    };
+
     const sampleMotion = () => {
-      if (sessionSettled) {
+      motionRaf = null;
+
+      if (disposed || sessionSettled) {
         return;
       }
 
@@ -411,18 +448,40 @@ export function useFocusedAvoidanceRects({
         return;
       }
 
-      motionRaf = requestAnimationFrame(sampleMotion);
+      queueMotionSample();
     };
 
-    motionRaf = requestAnimationFrame(sampleMotion);
+    const handleResize = () => {
+      if (disposed) {
+        return;
+      }
+
+      startLabelVerificationWindow();
+    };
+
+    if (focusChanged) {
+      startMotionTracking();
+    } else if (cameraSettledChanged) {
+      startLabelVerificationWindow();
+    } else {
+      applyRect();
+    }
+
     window.addEventListener("resize", handleResize);
 
     return () => {
+      disposed = true;
       clearScheduledWork();
       clearVerificationWindow();
       window.removeEventListener("resize", handleResize);
     };
-  }, [cosmograph, enabled, focusedPointIndex, focusSessionRevision]);
+  }, [
+    cameraSettledRevision,
+    cosmograph,
+    enabled,
+    focusedPointIndex,
+    focusSessionRevision,
+  ]);
 
   return avoidRects;
 }

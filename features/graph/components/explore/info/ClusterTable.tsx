@@ -8,31 +8,37 @@ import {
   panelTextStyle,
   sectionLabelStyle,
 } from "../../panels/PanelShell";
-
-export interface InfoClusterRow {
-  clusterId: number;
-  label: string;
-  totalCount: number;
-  scopedCount: number;
-}
+import {
+  getInfoComparisonDisplayValue,
+  getInfoComparisonOpacities,
+  type InfoComparisonClusterRow,
+  type InfoComparisonState,
+} from "./comparison-layers";
 
 interface ClusterTableProps {
-  rows: InfoClusterRow[];
+  rows: InfoComparisonClusterRow[];
   clusterColors: Record<number, string>;
-  subsetActive: boolean;
+  comparisonState: InfoComparisonState;
 }
 
 export function ClusterTable({
   rows,
   clusterColors,
-  subsetActive,
+  comparisonState,
 }: ClusterTableProps) {
   if (rows.length === 0) return null;
 
   const maxCount = Math.max(
-    ...rows.map((cluster) => Math.max(cluster.totalCount, cluster.scopedCount)),
+    ...rows.map((cluster) =>
+      Math.max(
+        cluster.totalCount,
+        cluster.selectionCount ?? 0,
+        cluster.filteredCount ?? 0,
+      ),
+    ),
     0,
   );
+  const opacities = getInfoComparisonOpacities(comparisonState);
 
   return (
     <div>
@@ -46,17 +52,21 @@ export function ClusterTable({
       </Group>
       <Stack gap={6}>
         {rows.map((cluster) => {
-          const safeTotalCount = Math.max(cluster.totalCount, cluster.scopedCount);
-          const totalPct =
-            maxCount > 0 ? (safeTotalCount / maxCount) * 100 : 0;
-          const scopedPct =
-            subsetActive && maxCount > 0
-              ? (cluster.scopedCount / maxCount) * 100
-              : totalPct;
-          const subsetPct =
-            safeTotalCount > 0
-              ? (cluster.scopedCount / safeTotalCount) * 100
+          const totalPct = maxCount > 0 ? (cluster.totalCount / maxCount) * 100 : 0;
+          const selectionPct =
+            comparisonState.hasSelection &&
+            cluster.selectionCount != null &&
+            maxCount > 0
+              ? (cluster.selectionCount / maxCount) * 100
               : 0;
+          const filteredPct =
+            comparisonState.hasFiltered &&
+            cluster.filteredCount != null &&
+            maxCount > 0
+              ? (cluster.filteredCount / maxCount) * 100
+              : 0;
+          const clusterColor =
+            clusterColors[cluster.clusterId] ?? "var(--filter-bar-active)";
 
           return (
             <div key={cluster.clusterId}>
@@ -86,11 +96,12 @@ export function ClusterTable({
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {subsetActive
-                    ? cluster.totalCount > 0
-                      ? `${formatNumber(cluster.scopedCount)} / ${formatNumber(cluster.totalCount)} (${subsetPct.toFixed(1)}%)`
-                      : formatNumber(cluster.scopedCount)
-                    : formatNumber(safeTotalCount)}
+                  {getInfoComparisonDisplayValue({
+                    totalCount: cluster.totalCount,
+                    selectionCount: cluster.selectionCount,
+                    filteredCount: cluster.filteredCount,
+                    format: (value) => formatNumber(value),
+                  })}
                 </Text>
               </Group>
               <div
@@ -104,21 +115,27 @@ export function ClusterTable({
                   className="absolute inset-y-0 left-0 rounded-full"
                   style={{
                     width: `${totalPct}%`,
-                    backgroundColor:
-                      clusterColors[cluster.clusterId] ??
-                      "var(--filter-bar-active)",
-                    opacity: subsetActive ? 0.3 : 0.95,
+                    backgroundColor: clusterColor,
+                    opacity: opacities.all,
                   }}
                 />
-                {subsetActive ? (
+                {comparisonState.hasSelection ? (
                   <div
                     className="absolute inset-y-0 left-0 rounded-full"
                     style={{
-                      width: `${scopedPct}%`,
-                      backgroundColor:
-                        clusterColors[cluster.clusterId] ??
-                        "var(--filter-bar-active)",
-                      opacity: 0.98,
+                      width: `${selectionPct}%`,
+                      backgroundColor: clusterColor,
+                      opacity: opacities.selection,
+                    }}
+                  />
+                ) : null}
+                {comparisonState.hasFiltered ? (
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full"
+                    style={{
+                      width: `${filteredPct}%`,
+                      backgroundColor: clusterColor,
+                      opacity: opacities.filtered,
                     }}
                   />
                 ) : null}

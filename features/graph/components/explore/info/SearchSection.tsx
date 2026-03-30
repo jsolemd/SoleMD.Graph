@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Loader,
   Select,
@@ -9,20 +9,17 @@ import {
   TextInput,
   UnstyledButton,
 } from "@mantine/core";
-import { useGraphFocus, useGraphSelection } from "@/features/graph/cosmograph";
-import { buildBudgetScopeSql } from "@/features/graph/lib/cosmograph-selection";
 import { getLayerConfig } from "@/features/graph/lib/layers";
 import { useDashboardStore } from "@/features/graph/stores";
-import type {
-  GraphBundleQueries,
-  GraphSearchResult,
-} from "@/features/graph/types";
+import type { GraphBundleQueries } from "@/features/graph/types";
 import {
   panelCardStyle,
   panelTextDimStyle,
   panelTextStyle,
 } from "../../panels/PanelShell";
 import { sectionLabelStyle } from "../../panels/PanelShell";
+import { useSearchDrillIn } from "./use-search-drill-in";
+import { useSearchResults } from "./use-search-results";
 
 function truncateLabel(value: string | null, max = 96): string {
   if (!value) return ""
@@ -32,11 +29,8 @@ function truncateLabel(value: string | null, max = 96): string {
 export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const isSelectionLocked = useDashboardStore((s) => s.selectionLocked);
-  const applyVisibilityBudget = useDashboardStore((s) => s.applyVisibilityBudget);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
-  const visibilityFocus = useDashboardStore((s) => s.visibilityFocus);
-  const { focusNode } = useGraphFocus();
-  const { getPointsSelection } = useGraphSelection();
+  const drillIntoSearchResult = useSearchDrillIn({ queries });
 
   const searchFields = useMemo(
     () => getLayerConfig(activeLayer).searchableFields,
@@ -53,58 +47,21 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
 
   const [field, setField] = useState(fieldOptions[0]?.value ?? "clusterLabel");
   const [query, setQuery] = useState("");
-  const deferredQuery = useDeferredValue(query.trim());
-  const [results, setResults] = useState<GraphSearchResult[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [lastResolvedKey, setLastResolvedKey] = useState<string | null>(null);
-  const canSearch = !isSelectionLocked && deferredQuery.length >= 2;
-  const requestKey = canSearch
-    ? JSON.stringify({
-        activeLayer,
-        field,
-        query: deferredQuery,
-      })
-    : null;
-  const loading = canSearch && lastResolvedKey !== requestKey;
+  const { canSearch, error, loading, results } = useSearchResults({
+    queries,
+    activeLayer,
+    field,
+    query,
+    disabled: isSelectionLocked,
+  });
 
   useEffect(() => {
-    if (!canSearch) {
+    if (fieldOptions.some((option) => option.value === field)) {
       return;
     }
 
-    let cancelled = false;
-
-    queries
-      .searchPoints({
-        layer: activeLayer,
-        column: field,
-        query: deferredQuery,
-      })
-      .then((next) => {
-        if (cancelled) {
-          return;
-        }
-        setResults(next);
-        setError(null);
-        setLastResolvedKey(requestKey);
-      })
-      .catch((searchError: unknown) => {
-        if (cancelled) {
-          return;
-        }
-        setResults([]);
-        setError(
-          searchError instanceof Error
-            ? searchError.message
-            : "Search failed",
-        );
-        setLastResolvedKey(requestKey);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeLayer, canSearch, deferredQuery, field, queries, requestKey]);
+    setField(fieldOptions[0]?.value ?? "clusterLabel");
+  }, [field, fieldOptions]);
 
   return (
     <div style={{ overflow: "clip" }}>
@@ -165,39 +122,7 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
                 key={`${result.id}:${result.index}`}
                 className="w-full rounded-xl px-2.5 py-2 text-left"
                 style={panelCardStyle}
-                onClick={async () => {
-                  const focusChanged = focusNode(result.point, {
-                    zoomDuration: 250,
-                    selectPoint: true,
-                    addToSelection: false,
-                    expandLinks: false,
-                  });
-                  const sameVisibilityFocus =
-                    visibilityFocus?.layer === activeLayer &&
-                    visibilityFocus.seedIndex === result.point.index;
-
-                  if (!focusChanged && sameVisibilityFocus) {
-                    return;
-                  }
-
-                  const scopeSql = buildBudgetScopeSql(
-                    getPointsSelection(),
-                  );
-                  const budget = await queries.getVisibilityBudget({
-                    layer: activeLayer,
-                    selector: {
-                      id: result.id,
-                      index: result.index,
-                    },
-                    scopeSql,
-                  });
-
-                  if (budget) {
-                    applyVisibilityBudget(activeLayer, budget);
-                  } else {
-                    clearVisibilityFocus();
-                  }
-                }}
+                onClick={() => void drillIntoSearchResult(result)}
               >
                 <Text style={panelTextStyle}>
                   {truncateLabel(result.label)}

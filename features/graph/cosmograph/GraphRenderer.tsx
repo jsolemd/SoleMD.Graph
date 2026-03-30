@@ -46,6 +46,7 @@ export default function CosmographRenderer({
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
   const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
+  const markCameraSettled = useGraphStore((s) => s.markCameraSettled);
   const selectNode = useGraphStore((s) => s.selectNode);
 
   const config = useCosmographConfig(canvas);
@@ -81,6 +82,14 @@ export default function CosmographRenderer({
     handleZoomEnd,
   } =
     useZoomLabels(cosmographRef);
+
+  const handleViewportSettled = useCallback(() => {
+    handleZoomEnd();
+
+    if (focusedPointIndex != null) {
+      markCameraSettled();
+    }
+  }, [focusedPointIndex, handleZoomEnd, markCameraSettled]);
 
   const resolveAndSelectNode = useCallback(
     async (selector: { id?: string; index?: number }) => {
@@ -291,7 +300,7 @@ export default function CosmographRenderer({
       disableLogging
       onZoomStart={handleZoomStart}
       onZoom={handleZoom}
-      onZoomEnd={handleZoomEnd}
+      onZoomEnd={handleViewportSettled}
       onLabelClick={handleLabelClick}
       onGraphRebuilt={handleGraphRebuilt}
       onPointsFiltered={handlePointsFiltered}

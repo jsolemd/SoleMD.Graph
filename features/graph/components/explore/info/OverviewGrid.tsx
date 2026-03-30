@@ -4,56 +4,71 @@ import { Group, Stack, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
 import type { GraphInfoSummary } from "@/features/graph/types";
 import {
-  panelTextDimStyle,
-  panelTextStyle,
   sectionLabelStyle,
 } from "../../panels/PanelShell";
+import {
+  getInfoComparisonColors,
+  getInfoComparisonDisplayValue,
+  getInfoComparisonHeading,
+  getInfoComparisonOpacities,
+  type InfoComparisonState,
+} from "./comparison-layers";
 
 interface OverviewGridProps {
   datasetInfo: GraphInfoSummary;
-  subsetInfo?: GraphInfoSummary | null;
-}
-
-function formatScopedValue(total: number, subset?: number | null) {
-  return subset != null
-    ? `${formatNumber(subset)} / ${formatNumber(total)}`
-    : formatNumber(total);
+  selectedInfo?: GraphInfoSummary | null;
+  filteredInfo?: GraphInfoSummary | null;
+  comparisonState: InfoComparisonState;
 }
 
 function SummaryRow({
   label,
-  value,
   totalValue,
-  scopedValue,
-  subsetActive,
+  selectionValue,
+  filteredValue,
+  comparisonState,
 }: {
   label: string;
-  value: string;
   totalValue: number | null;
-  scopedValue: number | null;
-  subsetActive: boolean;
+  selectionValue: number | null;
+  filteredValue: number | null;
+  comparisonState: InfoComparisonState;
 }) {
-  const totalPct =
-    totalValue != null && totalValue > 0 ? 100 : 0;
-  const scopedPct =
-    subsetActive &&
+  const colors = getInfoComparisonColors(comparisonState);
+  const opacities = getInfoComparisonOpacities(comparisonState);
+  const totalPct = totalValue != null && totalValue > 0 ? 100 : 0;
+  const selectionPct =
+    comparisonState.hasSelection &&
     totalValue != null &&
     totalValue > 0 &&
-    scopedValue != null
-      ? (scopedValue / totalValue) * 100
-      : totalPct;
+    selectionValue != null
+      ? (selectionValue / totalValue) * 100
+      : 0;
+  const filteredPct =
+    comparisonState.hasFiltered &&
+    totalValue != null &&
+    totalValue > 0 &&
+    filteredValue != null
+      ? (filteredValue / totalValue) * 100
+      : 0;
 
   return (
     <div>
       <Group justify="space-between" mb={2}>
-        <Text style={panelTextStyle}>{label}</Text>
+        <Text size="xs" c="var(--graph-panel-text)">
+          {label}
+        </Text>
         <Text
-          style={{
-            ...panelTextDimStyle,
-            fontVariantNumeric: "tabular-nums",
-          }}
+          size="xs"
+          c="var(--graph-panel-text-dim)"
+          style={{ fontVariantNumeric: "tabular-nums" }}
         >
-          {value}
+          {getInfoComparisonDisplayValue({
+            totalCount: totalValue ?? 0,
+            selectionCount: selectionValue,
+            filteredCount: filteredValue,
+            format: (value) => formatNumber(value),
+          })}
         </Text>
       </Group>
       <div
@@ -62,24 +77,32 @@ function SummaryRow({
           height: 6,
           backgroundColor: "var(--graph-panel-input-bg)",
         }}
-      >
-        <div
-          className="absolute inset-y-0 left-0 rounded-full"
-          style={{
-            width: `${totalPct}%`,
-            backgroundColor: subsetActive
-              ? "var(--filter-bar-base)"
-              : "var(--filter-bar-active)",
-            opacity: subsetActive ? 0.45 : 0.98,
-          }}
-        />
-        {subsetActive ? (
+        >
           <div
             className="absolute inset-y-0 left-0 rounded-full"
             style={{
-              width: `${Math.max(0, Math.min(100, scopedPct))}%`,
-              backgroundColor: "var(--filter-bar-active)",
-              opacity: 0.98,
+              width: `${totalPct}%`,
+              backgroundColor: colors.all,
+              opacity: opacities.all,
+            }}
+          />
+        {comparisonState.hasSelection ? (
+          <div
+            className="absolute inset-y-0 left-0 rounded-full"
+            style={{
+              width: `${Math.max(0, Math.min(100, selectionPct))}%`,
+              backgroundColor: colors.selection,
+              opacity: opacities.selection,
+            }}
+          />
+        ) : null}
+        {comparisonState.hasFiltered ? (
+          <div
+            className="absolute inset-y-0 left-0 rounded-full"
+            style={{
+              width: `${Math.max(0, Math.min(100, filteredPct))}%`,
+              backgroundColor: colors.filtered,
+              opacity: opacities.filtered,
             }}
           />
         ) : null}
@@ -88,51 +111,54 @@ function SummaryRow({
   );
 }
 
-export function OverviewGrid({ datasetInfo, subsetInfo = null }: OverviewGridProps) {
-  const subsetActive = subsetInfo != null;
-
+export function OverviewGrid({
+  datasetInfo,
+  selectedInfo = null,
+  filteredInfo = null,
+  comparisonState,
+}: OverviewGridProps) {
   return (
     <div>
       <Group gap={6} mb={4}>
         <Text fw={600} style={sectionLabelStyle}>
-          {subsetActive ? "Selection" : "All"}
+          {getInfoComparisonHeading(comparisonState)}
         </Text>
       </Group>
       <Stack gap={6}>
         <SummaryRow
           label="Points"
-          value={formatScopedValue(datasetInfo.totalCount, subsetInfo?.scopedCount)}
           totalValue={datasetInfo.totalCount}
-          scopedValue={subsetInfo?.scopedCount ?? null}
-          subsetActive={subsetActive}
+          selectionValue={selectedInfo?.scopedCount ?? null}
+          filteredValue={filteredInfo?.scopedCount ?? null}
+          comparisonState={comparisonState}
         />
         <SummaryRow
           label="Base"
-          value={formatScopedValue(datasetInfo.baseCount, subsetInfo?.baseCount)}
           totalValue={datasetInfo.baseCount}
-          scopedValue={subsetInfo?.baseCount ?? null}
-          subsetActive={subsetActive}
+          selectionValue={selectedInfo?.baseCount ?? null}
+          filteredValue={filteredInfo?.baseCount ?? null}
+          comparisonState={comparisonState}
         />
         <SummaryRow
           label="Papers"
-          value={formatScopedValue(datasetInfo.papers, subsetInfo?.papers)}
           totalValue={datasetInfo.papers}
-          scopedValue={subsetInfo?.papers ?? null}
-          subsetActive={subsetActive}
+          selectionValue={selectedInfo?.papers ?? null}
+          filteredValue={filteredInfo?.papers ?? null}
+          comparisonState={comparisonState}
         />
         <SummaryRow
           label="Clusters"
-          value={formatScopedValue(datasetInfo.clusters, subsetInfo?.clusters)}
           totalValue={datasetInfo.clusters}
-          scopedValue={subsetInfo?.clusters ?? null}
-          subsetActive={subsetActive}
+          selectionValue={selectedInfo?.clusters ?? null}
+          filteredValue={filteredInfo?.clusters ?? null}
+          comparisonState={comparisonState}
         />
         <SummaryRow
           label="Overlay"
-          value={formatScopedValue(datasetInfo.overlayCount, subsetInfo?.overlayCount)}
           totalValue={datasetInfo.overlayCount}
-          scopedValue={subsetInfo?.overlayCount ?? null}
-          subsetActive={subsetActive}
+          selectionValue={selectedInfo?.overlayCount ?? null}
+          filteredValue={filteredInfo?.overlayCount ?? null}
+          comparisonState={comparisonState}
         />
       </Stack>
     </div>

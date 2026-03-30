@@ -3,68 +3,37 @@
 import { useEffect, useMemo, useState } from "react";
 import type {
   GraphBundleQueries,
-  GraphInfoFacetRow,
   GraphInfoHistogramResult,
 } from "@/features/graph/types";
 import { useQuantileHistogram } from "@/features/graph/lib/histogram-strategy";
+import {
+  type InfoComparisonFacetRow,
+  type InfoHistogramComparison,
+  mergeInfoComparisonRows,
+} from "../info/comparison-layers";
 
 type WidgetDescriptor = {
   column: string;
   kind: "histogram" | "bars" | "facet-summary";
 };
 
-export interface InfoHistogramOverlay {
-  dataset: GraphInfoHistogramResult;
-  subset: GraphInfoHistogramResult | null;
-}
-
 const DEFAULT_BAR_ITEMS = 8;
+const DEFAULT_FACET_ITEMS = 6;
 const DEFAULT_HISTOGRAM_BINS = 16;
-
-function mergeBarRows(args: {
-  datasetRows: GraphInfoFacetRow[];
-  subsetRows: GraphInfoFacetRow[];
-}): GraphInfoFacetRow[] {
-  const datasetMap = new Map(
-    args.datasetRows.map((row) => [row.value, row.totalCount] as const),
-  );
-  const subsetMap = new Map(
-    args.subsetRows.map((row) => [row.value, row.scopedCount] as const),
-  );
-  const values = new Set<string>([
-    ...args.datasetRows.map((row) => row.value),
-    ...args.subsetRows.map((row) => row.value),
-  ]);
-
-  return Array.from(values)
-    .map((value) => ({
-      value,
-      scopedCount: subsetMap.get(value) ?? datasetMap.get(value) ?? 0,
-      totalCount: datasetMap.get(value) ?? 0,
-    }))
-    .sort((left, right) =>
-      right.scopedCount === left.scopedCount
-        ? right.totalCount === left.totalCount
-          ? left.value.localeCompare(right.value)
-          : right.totalCount - left.totalCount
-        : right.scopedCount - left.scopedCount,
-    )
-    .slice(0, DEFAULT_BAR_ITEMS);
-}
 
 interface UseInfoWidgetDataArgs {
   queries: GraphBundleQueries;
-  activeLayer: Parameters<GraphBundleQueries["getFacetSummaries"]>[0]["layer"];
-  subsetScope: "current" | "selected" | null;
-  currentPointScopeSql: string | null;
+  activeLayer: Parameters<GraphBundleQueries["getInfoBarsBatch"]>[0]["layer"];
+  includeSelectionLayer: boolean;
+  includeFilteredLayer: boolean;
+  filteredPointScopeSql: string | null;
   widgetDescriptors: WidgetDescriptor[];
   requestKey: string;
 }
 
 interface UseInfoWidgetDataResult {
-  facetSummaries: Record<string, GraphInfoFacetRow[]>;
-  barSummaries: Record<string, GraphInfoFacetRow[]>;
-  histograms: Record<string, InfoHistogramOverlay>;
+  categoricalSummaries: Record<string, InfoComparisonFacetRow[]>;
+  histograms: Record<string, InfoHistogramComparison>;
   widgetError: string | null;
   lastLoadedKey: string | null;
 }
@@ -72,97 +41,98 @@ interface UseInfoWidgetDataResult {
 export function useInfoWidgetData({
   queries,
   activeLayer,
-  subsetScope,
-  currentPointScopeSql: subsetCurrentPointScopeSql,
+  includeSelectionLayer,
+  includeFilteredLayer,
+  filteredPointScopeSql,
   widgetDescriptors,
   requestKey,
 }: UseInfoWidgetDataArgs): UseInfoWidgetDataResult {
-  const [facetSummaries, setFacetSummaries] = useState<
-    Record<string, GraphInfoFacetRow[]>
-  >({});
-  const [barSummaries, setBarSummaries] = useState<
-    Record<string, GraphInfoFacetRow[]>
+  const [categoricalSummaries, setCategoricalSummaries] = useState<
+    Record<string, InfoComparisonFacetRow[]>
   >({});
   const [histograms, setHistograms] = useState<
-    Record<string, InfoHistogramOverlay>
+    Record<string, InfoHistogramComparison>
   >({});
   const [widgetError, setWidgetError] = useState<string | null>(null);
   const [lastLoadedKey, setLastLoadedKey] = useState<string | null>(null);
 
-  const { facetColumns, barColumns, histogramColumns, quantileHistogramColumns, linearHistogramColumns } = useMemo(() => {
-      const uniqueFacetColumns = [
-        ...new Set(
-          widgetDescriptors
-            .filter((slot) => slot.kind === "facet-summary")
-            .map((slot) => slot.column),
-        ),
-      ];
-      const uniqueBarColumns = [
-        ...new Set(
-          widgetDescriptors
-            .filter((slot) => slot.kind === "bars")
-            .map((slot) => slot.column),
-        ),
-      ];
-      const uniqueHistogramColumns = [
-        ...new Set(
-          widgetDescriptors
-            .filter((slot) => slot.kind === "histogram")
-            .map((slot) => slot.column),
-        ),
-      ];
-      const uniqueQuantileHistogramColumns = uniqueHistogramColumns.filter((column) =>
-        useQuantileHistogram(column),
-      );
-      const uniqueLinearHistogramColumns = uniqueHistogramColumns.filter(
-        (column) => !useQuantileHistogram(column),
-      );
+  const {
+    categoricalColumns,
+    categoricalMaxItemsByColumn,
+    categoricalMergeDepth,
+    histogramColumns,
+    quantileHistogramColumns,
+    linearHistogramColumns,
+  } = useMemo(() => {
+    const categoricalSlots = widgetDescriptors.filter(
+      (slot) => slot.kind === "bars" || slot.kind === "facet-summary",
+    );
+    const categoricalColumnSet = new Set<string>();
+    const nextCategoricalMaxItemsByColumn: Record<string, number> = {};
 
-      return {
-        facetColumns: uniqueFacetColumns,
-        barColumns: uniqueBarColumns,
-        histogramColumns: uniqueHistogramColumns,
-        quantileHistogramColumns: uniqueQuantileHistogramColumns,
-        linearHistogramColumns: uniqueLinearHistogramColumns,
-      };
-    }, [widgetDescriptors]);
+    for (const slot of categoricalSlots) {
+      categoricalColumnSet.add(slot.column);
+      nextCategoricalMaxItemsByColumn[slot.column] =
+        slot.kind === "bars" ? DEFAULT_BAR_ITEMS : DEFAULT_FACET_ITEMS;
+    }
+
+    const uniqueHistogramColumns = [
+      ...new Set(
+        widgetDescriptors
+          .filter((slot) => slot.kind === "histogram")
+          .map((slot) => slot.column),
+      ),
+    ];
+
+    return {
+      categoricalColumns: [...categoricalColumnSet],
+      categoricalMaxItemsByColumn: nextCategoricalMaxItemsByColumn,
+      categoricalMergeDepth: Math.max(
+        DEFAULT_BAR_ITEMS,
+        DEFAULT_FACET_ITEMS,
+        24,
+      ),
+      histogramColumns: uniqueHistogramColumns,
+      quantileHistogramColumns: uniqueHistogramColumns.filter((column) =>
+        useQuantileHistogram(column),
+      ),
+      linearHistogramColumns: uniqueHistogramColumns.filter(
+        (column) => !useQuantileHistogram(column),
+      ),
+    };
+  }, [widgetDescriptors]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const activeCategoricalScope = subsetScope ?? "dataset";
-
     Promise.all([
-      facetColumns.length > 0
-        ? queries.getFacetSummaries({
-            layer: activeLayer,
-            scope: activeCategoricalScope,
-            columns: facetColumns,
-            currentPointScopeSql:
-              activeCategoricalScope === "current"
-                ? subsetCurrentPointScopeSql
-                : null,
-          })
-        : Promise.resolve<Record<string, GraphInfoFacetRow[]>>({}),
-      barColumns.length > 0
-        ? queries.getFacetSummaries({
+      categoricalColumns.length > 0
+        ? queries.getInfoBarsBatch({
             layer: activeLayer,
             scope: "dataset",
-            columns: barColumns,
-            maxItems: DEFAULT_BAR_ITEMS,
+            columns: categoricalColumns,
+            maxItems: categoricalMergeDepth,
             currentPointScopeSql: null,
           })
-        : Promise.resolve<Record<string, GraphInfoFacetRow[]>>({}),
-      subsetScope && barColumns.length > 0
-        ? queries.getFacetSummaries({
+        : Promise.resolve<Record<string, Array<{ value: string; count: number }>>>({}),
+      includeSelectionLayer && categoricalColumns.length > 0
+        ? queries.getInfoBarsBatch({
             layer: activeLayer,
-            scope: subsetScope,
-            columns: barColumns,
-            maxItems: DEFAULT_BAR_ITEMS,
-            currentPointScopeSql:
-              subsetScope === "current" ? subsetCurrentPointScopeSql : null,
+            scope: "selected",
+            columns: categoricalColumns,
+            maxItems: categoricalMergeDepth,
+            currentPointScopeSql: null,
           })
-        : Promise.resolve<Record<string, GraphInfoFacetRow[]>>({}),
+        : Promise.resolve<Record<string, Array<{ value: string; count: number }>>>({}),
+      includeFilteredLayer && categoricalColumns.length > 0
+        ? queries.getInfoBarsBatch({
+            layer: activeLayer,
+            scope: "current",
+            columns: categoricalColumns,
+            maxItems: categoricalMergeDepth,
+            currentPointScopeSql: filteredPointScopeSql,
+          })
+        : Promise.resolve<Record<string, Array<{ value: string; count: number }>>>({}),
       linearHistogramColumns.length > 0
         ? queries.getInfoHistogramsBatch({
             layer: activeLayer,
@@ -184,9 +154,9 @@ export function useInfoWidgetData({
         : Promise.resolve<Record<string, GraphInfoHistogramResult>>({}),
     ])
       .then(async ([
-        nextFacetSummaries,
         datasetBarRows,
-        subsetBarRows,
+        selectionBarRows,
+        filteredBarRows,
         linearDatasetHistograms,
         quantileDatasetHistograms,
       ]) => {
@@ -194,8 +164,8 @@ export function useInfoWidgetData({
           ...linearDatasetHistograms,
           ...quantileDatasetHistograms,
         };
-        const subsetHistogramEntries =
-          subsetScope && histogramColumns.length > 0
+        const selectionHistogramEntries =
+          includeSelectionLayer && histogramColumns.length > 0
             ? await Promise.all(
                 histogramColumns.map(async (column) => {
                   const datasetHistogram = datasetHistograms[column] ?? {
@@ -213,12 +183,9 @@ export function useInfoWidgetData({
 
                   const subsetHistogram = await queries.getInfoHistogram({
                     layer: activeLayer,
-                    scope: subsetScope,
+                    scope: "selected",
                     column,
-                    currentPointScopeSql:
-                      subsetScope === "current"
-                        ? subsetCurrentPointScopeSql
-                        : null,
+                    currentPointScopeSql: null,
                     bins: Math.max(
                       datasetHistogram.bins.length,
                       DEFAULT_HISTOGRAM_BINS,
@@ -230,22 +197,60 @@ export function useInfoWidgetData({
                 }),
               )
             : [];
+        const filteredHistogramEntries =
+          includeFilteredLayer && histogramColumns.length > 0
+            ? await Promise.all(
+                histogramColumns.map(async (column) => {
+                  const datasetHistogram = datasetHistograms[column] ?? {
+                    bins: [],
+                    totalCount: 0,
+                  };
+                  const extent =
+                    datasetHistogram.bins.length > 0
+                      ? ([
+                          datasetHistogram.bins[0].min,
+                          datasetHistogram.bins[datasetHistogram.bins.length - 1]
+                            .max,
+                        ] as [number, number])
+                      : null;
+
+                  const filteredHistogram = await queries.getInfoHistogram({
+                    layer: activeLayer,
+                    scope: "current",
+                    column,
+                    currentPointScopeSql: filteredPointScopeSql,
+                    bins: Math.max(
+                      datasetHistogram.bins.length,
+                      DEFAULT_HISTOGRAM_BINS,
+                    ),
+                    extent,
+                  });
+
+                  return [column, filteredHistogram] as const;
+                }),
+              )
+            : [];
 
         if (cancelled) {
           return;
         }
 
-        const subsetHistogramMap = Object.fromEntries(subsetHistogramEntries);
-        setFacetSummaries(
-          nextFacetSummaries,
-        );
-        setBarSummaries(
+        const selectionHistogramMap = Object.fromEntries(selectionHistogramEntries);
+        const filteredHistogramMap = Object.fromEntries(filteredHistogramEntries);
+        setCategoricalSummaries(
           Object.fromEntries(
-            barColumns.map((column) => [
+            categoricalColumns.map((column) => [
               column,
-              mergeBarRows({
+              mergeInfoComparisonRows({
                 datasetRows: datasetBarRows[column] ?? [],
-                subsetRows: subsetBarRows[column] ?? [],
+                selectionRows: includeSelectionLayer
+                  ? selectionBarRows[column] ?? []
+                  : [],
+                filteredRows: includeFilteredLayer
+                  ? filteredBarRows[column] ?? []
+                  : [],
+                maxItems:
+                  categoricalMaxItemsByColumn[column] ?? DEFAULT_BAR_ITEMS,
               }),
             ]),
           ),
@@ -256,8 +261,11 @@ export function useInfoWidgetData({
               column,
               {
                 dataset: datasetHistograms[column] ?? { bins: [], totalCount: 0 },
-                subset: subsetScope
-                  ? (subsetHistogramMap[column] ?? { bins: [], totalCount: 0 })
+                selection: includeSelectionLayer
+                  ? (selectionHistogramMap[column] ?? { bins: [], totalCount: 0 })
+                  : null,
+                filtered: includeFilteredLayer
+                  ? (filteredHistogramMap[column] ?? { bins: [], totalCount: 0 })
                   : null,
               },
             ]),
@@ -284,20 +292,21 @@ export function useInfoWidgetData({
     };
   }, [
     activeLayer,
-    barColumns,
-    facetColumns,
+    categoricalColumns,
+    categoricalMaxItemsByColumn,
+    categoricalMergeDepth,
+    filteredPointScopeSql,
     histogramColumns,
+    includeFilteredLayer,
+    includeSelectionLayer,
     linearHistogramColumns,
     queries,
     quantileHistogramColumns,
     requestKey,
-    subsetCurrentPointScopeSql,
-    subsetScope,
   ]);
 
   return {
-    facetSummaries,
-    barSummaries,
+    categoricalSummaries,
     histograms,
     widgetError,
     lastLoadedKey,

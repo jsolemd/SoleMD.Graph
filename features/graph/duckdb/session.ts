@@ -258,27 +258,44 @@ export async function createGraphBundleSession(
       numericValueDatasetCache.clear()
     }
 
-    const getCachedDatasetScopeCoordinates = (
+    const getCachedScopeCoordinates = (args: {
       layer: Parameters<typeof queryScopeCoordinates>[1]['layer']
-    ) => {
-      const datasetScopeKey = JSON.stringify({
-        layer,
-        scope: 'current',
-        currentPointScopeSql: null,
+      scope: Parameters<typeof queryScopeCoordinates>[1]['scope']
+      currentPointScopeSql: string | null
+    }) => {
+      const cacheKey = JSON.stringify({
+        layer: args.layer,
+        scope: args.scope,
+        currentPointScopeSql: args.currentPointScopeSql,
       })
-      const cached = scopeCoordinatesCache.get(datasetScopeKey)
+      const cached = scopeCoordinatesCache.get(cacheKey)
       if (cached) {
         return cached
       }
 
-      const next = queryScopeCoordinates(conn, {
+      const next = queryScopeCoordinates(conn, args)
+      scopeCoordinatesCache.set(cacheKey, next)
+      return next
+    }
+
+    const getCachedDatasetScopeCoordinates = (
+      layer: Parameters<typeof queryScopeCoordinates>[1]['layer']
+    ) =>
+      getCachedScopeCoordinates({
         layer,
         scope: 'current',
         currentPointScopeSql: null,
       })
-      scopeCoordinatesCache.set(datasetScopeKey, next)
-      return next
-    }
+
+    const getCachedCurrentScopeCoordinates = (
+      layer: Parameters<typeof queryScopeCoordinates>[1]['layer'],
+      currentPointScopeSql: string
+    ) =>
+      getCachedScopeCoordinates({
+        layer,
+        scope: 'current',
+        currentPointScopeSql,
+      })
 
     const getCachedClusterDetail = (clusterId: number) => {
       const cached = clusterCache.get(clusterId)
@@ -394,11 +411,13 @@ export async function createGraphBundleSession(
       layer: Parameters<typeof queryInfoHistogramsBatch>[1]['layer']
       columns: string[]
       bins: number
+      useQuantiles?: boolean
     }) => {
       const cacheKey = JSON.stringify({
         layer: args.layer,
         columns: [...new Set(args.columns)].sort(),
         bins: args.bins,
+        useQuantiles: args.useQuantiles === true,
         overlayRevision,
       })
       const cached = histogramDatasetCache.get(cacheKey)
@@ -411,6 +430,7 @@ export async function createGraphBundleSession(
         scope: 'dataset',
         columns: args.columns,
         bins: args.bins,
+        useQuantiles: args.useQuantiles === true,
         currentPointScopeSql: null,
       }).then((result) => {
         const hasAnyBins = Object.values(result).some(
@@ -1000,13 +1020,13 @@ export async function createGraphBundleSession(
 
         if (
           !hasCustomExtent &&
-          !useQuantiles &&
           (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope))
         ) {
           return getCachedDatasetInfoHistograms({
             layer: args.layer,
             columns: [args.column],
             bins: safeBins,
+            useQuantiles,
           }).then((result) => result[args.column] ?? { bins: [], totalCount: 0 })
         }
 
@@ -1026,13 +1046,13 @@ export async function createGraphBundleSession(
 
         if (
           !hasCustomExtent &&
-          !useQuantiles &&
           (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope))
         ) {
           return getCachedDatasetInfoHistograms({
             layer: args.layer,
             columns: args.columns,
             bins: safeBins,
+            useQuantiles,
           })
         }
 
@@ -1145,12 +1165,10 @@ export async function createGraphBundleSession(
             typeof args.scopeSql === 'string' && args.scopeSql.trim().length > 0
               ? args.scopeSql.trim()
               : null
-          const scopeCoordinates = (() => {
-            if (normalizedScopeSql != null) {
-              return Promise.resolve<number[] | null>(null)
-            }
-            return getCachedDatasetScopeCoordinates(args.layer)
-          })()
+          const scopeCoordinates =
+            normalizedScopeSql != null
+              ? getCachedCurrentScopeCoordinates(args.layer, normalizedScopeSql)
+              : getCachedDatasetScopeCoordinates(args.layer)
 
           const resolvedScopeCoordinates = await scopeCoordinates
 
@@ -1172,12 +1190,7 @@ export async function createGraphBundleSession(
         return next
       },
       getScopeCoordinates(args) {
-        const cacheKey = JSON.stringify(args)
-        const cached = scopeCoordinatesCache.get(cacheKey)
-        if (cached) return cached
-        const next = queryScopeCoordinates(conn, args)
-        scopeCoordinatesCache.set(cacheKey, next)
-        return next
+        return getCachedScopeCoordinates(args)
       },
       getClusterDetail(clusterId: number) {
         return getCachedClusterDetail(clusterId)

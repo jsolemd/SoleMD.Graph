@@ -2,10 +2,6 @@
 
 import { ActionIcon, Badge, Group, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
-import type {
-  GraphInfoFacetRow,
-  GraphInfoHistogramResult,
-} from "@/features/graph/types";
 import type { InfoWidgetSlot } from "@/features/graph/lib/info-widgets";
 import { useDashboardStore } from "@/features/graph/stores";
 import { formatNumber } from "@/lib/helpers";
@@ -16,43 +12,43 @@ import {
   panelTextStyle,
 } from "../../panels/PanelShell";
 import {
-  QueryFacetSummary,
-  QueryInfoBars,
-  QueryInfoHistogram,
-} from "./QueryWidgetVisualizations";
+  getInfoComparisonDisplayValue,
+  type InfoComparisonFacetRow,
+  type InfoComparisonState,
+  type InfoHistogramComparison,
+} from "./comparison-layers";
+import { QueryFacetSummary, QueryInfoBars, QueryInfoHistogram } from "./QueryWidgetVisualizations";
 import { queryWidgetThemeVars } from "../widget-theme";
 
 interface QueryWidgetSlotRendererProps {
   slot: InfoWidgetSlot;
-  subsetActive: boolean;
-  prefetchedFacetRows?: GraphInfoFacetRow[] | null;
-  prefetchedBarRows?: GraphInfoFacetRow[] | null;
-  prefetchedDatasetHistogram?: GraphInfoHistogramResult | null;
-  prefetchedSubsetHistogram?: GraphInfoHistogramResult | null;
+  comparisonState: InfoComparisonState;
+  prefetchedCategoricalRows?: InfoComparisonFacetRow[] | null;
+  prefetchedHistogram?: InfoHistogramComparison | null;
 }
 
 export function QueryWidgetSlotRenderer({
   slot,
-  subsetActive,
-  prefetchedFacetRows = null,
-  prefetchedBarRows = null,
-  prefetchedDatasetHistogram = null,
-  prefetchedSubsetHistogram = null,
+  comparisonState,
+  prefetchedCategoricalRows = null,
+  prefetchedHistogram = null,
 }: QueryWidgetSlotRendererProps) {
   const removeInfoWidget = useDashboardStore((state) => state.removeInfoWidget);
 
   const metaBadges =
-    slot.kind === "histogram" && prefetchedDatasetHistogram
+    slot.kind === "histogram" && prefetchedHistogram
       ? [
-          `${prefetchedDatasetHistogram.bins.length} bins`,
-          subsetActive && prefetchedSubsetHistogram
-            ? `${formatNumber(prefetchedSubsetHistogram.totalCount)} / ${formatNumber(prefetchedDatasetHistogram.totalCount)} values`
-            : `${formatNumber(prefetchedDatasetHistogram.totalCount)} values`,
+          `${prefetchedHistogram.dataset.bins.length} bins`,
+          getInfoComparisonDisplayValue({
+            totalCount: prefetchedHistogram.dataset.totalCount,
+            selectionCount: prefetchedHistogram.selection?.totalCount ?? null,
+            filteredCount: prefetchedHistogram.filtered?.totalCount ?? null,
+            format: (value) => formatNumber(value),
+          }) + " values",
         ]
-      : slot.kind === "facet-summary" && prefetchedFacetRows
-        ? [`top ${prefetchedFacetRows.length}`]
-        : slot.kind === "bars" && prefetchedBarRows
-          ? [`top ${prefetchedBarRows.length}`]
+      : (slot.kind === "facet-summary" || slot.kind === "bars") &&
+          prefetchedCategoricalRows
+        ? [`top ${prefetchedCategoricalRows.length}`]
           : [];
 
   return (
@@ -92,27 +88,34 @@ export function QueryWidgetSlotRenderer({
       </div>
 
       {slot.kind === "histogram" ? (
-        prefetchedDatasetHistogram ? (
+        prefetchedHistogram ? (
           <QueryInfoHistogram
-            bins={prefetchedDatasetHistogram.bins}
-            totalCount={prefetchedDatasetHistogram.totalCount}
+            bins={prefetchedHistogram.dataset.bins}
+            totalCount={prefetchedHistogram.dataset.totalCount}
             column={slot.column}
-            highlightBins={subsetActive ? prefetchedSubsetHistogram?.bins ?? null : null}
-            highlightTotalCount={
-              subsetActive ? prefetchedSubsetHistogram?.totalCount ?? 0 : null
-            }
+            comparisonState={comparisonState}
+            selectionBins={prefetchedHistogram.selection?.bins ?? null}
+            selectionTotalCount={prefetchedHistogram.selection?.totalCount ?? null}
+            filteredBins={prefetchedHistogram.filtered?.bins ?? null}
+            filteredTotalCount={prefetchedHistogram.filtered?.totalCount ?? null}
           />
         ) : (
           <Text style={panelTextDimStyle}>No numeric data</Text>
         )
       ) : slot.kind === "facet-summary" ? (
-        prefetchedFacetRows ? (
-          <QueryFacetSummary rows={prefetchedFacetRows} subsetActive={subsetActive} />
+        prefetchedCategoricalRows ? (
+          <QueryFacetSummary
+            rows={prefetchedCategoricalRows}
+            comparisonState={comparisonState}
+          />
         ) : (
           <Text style={panelTextDimStyle}>No data</Text>
         )
-      ) : prefetchedBarRows ? (
-        <QueryInfoBars rows={prefetchedBarRows} subsetActive={subsetActive} />
+      ) : prefetchedCategoricalRows ? (
+        <QueryInfoBars
+          rows={prefetchedCategoricalRows}
+          comparisonState={comparisonState}
+        />
       ) : (
         <Text style={panelTextDimStyle}>No data</Text>
       )}

@@ -5,9 +5,11 @@ interface GraphUIStore {
   selectedNode: GraphPointRecord | null
   focusedPointIndex: number | null
   focusedPointRevision: number
+  cameraSettledRevision: number
   mode: GraphMode
   selectNode: (node: GraphPointRecord | null) => void
   setFocusedPointIndex: (index: number | null) => void
+  markCameraSettled: () => void
   setMode: (mode: GraphMode) => void
 }
 
@@ -24,6 +26,7 @@ export const useGraphStore = create<GraphUIStore>((set) => ({
   selectedNode: null,
   focusedPointIndex: null,
   focusedPointRevision: 0,
+  cameraSettledRevision: 0,
   mode: 'ask',
   selectNode: (node) => set((state) => (
     isSameNode(state.selectedNode, node)
@@ -38,5 +41,8 @@ export const useGraphStore = create<GraphUIStore>((set) => ({
           focusedPointRevision: state.focusedPointRevision + 1,
         }
   )),
+  markCameraSettled: () => set((state) => ({
+    cameraSettledRevision: state.cameraSettledRevision + 1,
+  })),
   setMode: (mode) => set({ mode }),
 }))

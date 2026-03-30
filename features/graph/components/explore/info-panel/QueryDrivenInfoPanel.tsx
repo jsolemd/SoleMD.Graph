@@ -16,6 +16,11 @@ import {
   SearchSection,
   SelectionActions,
 } from "../info";
+import {
+  areInfoSummariesEquivalent,
+  getInfoComparisonState,
+  type InfoComparisonClusterRow,
+} from "../info/comparison-layers";
 import { useInfoWidgetData } from "./use-info-widget-data";
 
 interface QueryDrivenInfoPanelProps {
@@ -48,6 +53,7 @@ export function QueryDrivenInfoPanel({
   const selectedPointRevision = useDashboardStore(
     (state) => state.selectedPointRevision,
   );
+  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
   const infoWidgets = useDashboardStore((state) => state.infoWidgets);
   const colorTheme = useGraphColorTheme();
 
@@ -55,21 +61,9 @@ export function QueryDrivenInfoPanel({
   const hasCurrentSubset =
     typeof deferredCurrentPointScopeSql === "string" &&
     deferredCurrentPointScopeSql.trim().length > 0;
-  const subsetScope = hasCurrentSubset
-    ? "current"
-    : hasSelection
-      ? "selected"
-      : null;
-  const subsetScopeSql =
-    subsetScope === "current" ? deferredCurrentPointScopeSql : null;
-  const subsetScopeRevision =
-    subsetScope === "current" && subsetScopeSql ? currentScopeRevision : 0;
-  const subsetSelectionCount = subsetScope === "selected" ? selectedPointCount : 0;
-  const subsetSelectionRevision =
-    subsetScope === "selected" ? selectedPointRevision : 0;
-
   const [datasetInfo, setDatasetInfo] = useState<GraphInfoSummary | null>(null);
-  const [subsetInfo, setSubsetInfo] = useState<GraphInfoSummary | null>(null);
+  const [selectedInfo, setSelectedInfo] = useState<GraphInfoSummary | null>(null);
+  const [currentInfo, setCurrentInfo] = useState<GraphInfoSummary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [lastSummaryKey, setLastSummaryKey] = useState<string | null>(null);
 
@@ -89,42 +83,53 @@ export function QueryDrivenInfoPanel({
     () =>
       JSON.stringify({
         activeLayer,
-        subsetScope,
-        subsetScopeSql,
-        subsetScopeRevision,
-        subsetSelectionCount,
-        subsetSelectionRevision,
+        hasSelection,
+        hasCurrentSubset,
+        filteredPointScopeSql: deferredCurrentPointScopeSql,
+        currentScopeRevision,
+        selectedPointCount,
+        selectedPointRevision,
+        selectionLocked,
         overlayRevision,
       }),
     [
       activeLayer,
+      currentScopeRevision,
+      deferredCurrentPointScopeSql,
+      hasCurrentSubset,
+      hasSelection,
       overlayRevision,
-      subsetScope,
-      subsetScopeRevision,
-      subsetScopeSql,
-      subsetSelectionCount,
-      subsetSelectionRevision,
+      selectedPointCount,
+      selectedPointRevision,
+      selectionLocked,
     ],
   );
+  const includeSelectionLayer = selectedInfo != null;
+  const includeFilteredLayer =
+    currentInfo != null &&
+    !areInfoSummariesEquivalent(selectedInfo, currentInfo) &&
+    (selectedInfo == null || selectionLocked);
   const [debouncedWidgetRequestKey] = useDebouncedValue(
     JSON.stringify({
       summaryRequestKey,
       widgets: widgetDescriptors,
+      includeSelectionLayer,
+      includeFilteredLayer,
     }),
     180,
   );
   const deferredWidgetRequestKey = useDeferredValue(debouncedWidgetRequestKey);
   const {
-    facetSummaries,
-    barSummaries,
+    categoricalSummaries,
     histograms,
     widgetError,
     lastLoadedKey: lastWidgetKey,
   } = useInfoWidgetData({
     queries,
     activeLayer,
-    subsetScope,
-    currentPointScopeSql: subsetScopeSql,
+    includeSelectionLayer,
+    includeFilteredLayer,
+    filteredPointScopeSql: deferredCurrentPointScopeSql,
     widgetDescriptors,
     requestKey: deferredWidgetRequestKey,
   });
@@ -143,21 +148,29 @@ export function QueryDrivenInfoPanel({
         scope: "dataset",
         currentPointScopeSql: null,
       }),
-      subsetScope
+      hasSelection
         ? queries.getInfoSummary({
             layer: activeLayer,
-            scope: subsetScope,
-            currentPointScopeSql: subsetScopeSql,
+            scope: "selected",
+            currentPointScopeSql: null,
+          })
+        : Promise.resolve<GraphInfoSummary | null>(null),
+      hasCurrentSubset
+        ? queries.getInfoSummary({
+            layer: activeLayer,
+            scope: "current",
+            currentPointScopeSql: deferredCurrentPointScopeSql,
           })
         : Promise.resolve<GraphInfoSummary | null>(null),
     ])
-      .then(([nextDatasetInfo, nextSubsetInfo]) => {
+      .then(([nextDatasetInfo, nextSelectedInfo, nextCurrentInfo]) => {
         if (cancelled) {
           return;
         }
 
         setDatasetInfo(nextDatasetInfo);
-        setSubsetInfo(nextSubsetInfo);
+        setSelectedInfo(nextSelectedInfo);
+        setCurrentInfo(nextCurrentInfo);
         setSummaryError(null);
         setLastSummaryKey(summaryRequestKey);
       })
@@ -167,7 +180,8 @@ export function QueryDrivenInfoPanel({
         }
 
         setDatasetInfo(null);
-        setSubsetInfo(null);
+        setSelectedInfo(null);
+        setCurrentInfo(null);
         setSummaryError(
           queryError instanceof Error
             ? queryError.message
@@ -179,21 +193,63 @@ export function QueryDrivenInfoPanel({
     return () => {
       cancelled = true;
     };
-  }, [activeLayer, queries, subsetScope, subsetScopeSql, summaryRequestKey]);
+  }, [
+    activeLayer,
+    deferredCurrentPointScopeSql,
+    hasCurrentSubset,
+    hasSelection,
+    queries,
+    summaryRequestKey,
+  ]);
+
+  const filteredInfo = useMemo(() => {
+    if (!currentInfo) {
+      return null;
+    }
+
+    if (selectedInfo && !selectionLocked) {
+      return null;
+    }
+
+    if (selectedInfo && areInfoSummariesEquivalent(selectedInfo, currentInfo)) {
+      return null;
+    }
+
+    return currentInfo;
+  }, [currentInfo, selectedInfo, selectionLocked]);
+
+  const comparisonState = useMemo(
+    () =>
+      getInfoComparisonState({
+        hasSelection: selectedInfo != null,
+        hasFiltered: filteredInfo != null,
+      }),
+    [filteredInfo, selectedInfo],
+  );
+
+  const activeSubsetScope = filteredInfo
+    ? "current"
+    : selectedInfo
+      ? "selected"
+      : hasCurrentSubset
+        ? "current"
+        : null;
 
   const clusterColors = useMemo(
     () =>
       Object.fromEntries(
-        [...(datasetInfo?.topClusters ?? []), ...(subsetInfo?.topClusters ?? [])].map(
-          (cluster) => [
-            cluster.clusterId,
-            getClusterColor(cluster.clusterId, colorTheme),
-          ],
-        ),
+        [
+          ...(datasetInfo?.topClusters ?? []),
+          ...(selectedInfo?.topClusters ?? []),
+          ...(filteredInfo?.topClusters ?? []),
+        ].map((cluster) => [
+          cluster.clusterId,
+          getClusterColor(cluster.clusterId, colorTheme),
+        ]),
       ),
-    [colorTheme, datasetInfo?.topClusters, subsetInfo?.topClusters],
+    [colorTheme, datasetInfo?.topClusters, filteredInfo?.topClusters, selectedInfo?.topClusters],
   );
-  const clusterRows = useMemo(() => {
+  const clusterRows = useMemo<InfoComparisonClusterRow[]>(() => {
     if (!datasetInfo) {
       return [];
     }
@@ -201,34 +257,50 @@ export function QueryDrivenInfoPanel({
     const datasetClusters = new Map(
       datasetInfo.topClusters.map((cluster) => [cluster.clusterId, cluster] as const),
     );
-    const subsetClusters = new Map(
-      (subsetInfo?.topClusters ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
+    const selectedClusters = new Map(
+      (selectedInfo?.topClusters ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
+    );
+    const filteredClusters = new Map(
+      (filteredInfo?.topClusters ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
     );
 
     return Array.from(
       new Set([
         ...datasetInfo.topClusters.map((cluster) => cluster.clusterId),
-        ...(subsetInfo?.topClusters ?? []).map((cluster) => cluster.clusterId),
+        ...(selectedInfo?.topClusters ?? []).map((cluster) => cluster.clusterId),
+        ...(filteredInfo?.topClusters ?? []).map((cluster) => cluster.clusterId),
       ]),
     )
       .map((clusterId) => ({
         clusterId,
         label:
           datasetClusters.get(clusterId)?.label ??
-          subsetClusters.get(clusterId)?.label ??
+          selectedClusters.get(clusterId)?.label ??
+          filteredClusters.get(clusterId)?.label ??
           `Cluster ${clusterId}`,
         totalCount: datasetClusters.get(clusterId)?.count ?? 0,
-        scopedCount: subsetInfo
-          ? (subsetClusters.get(clusterId)?.count ?? 0)
-          : (datasetClusters.get(clusterId)?.count ?? 0),
+        selectionCount: selectedInfo
+          ? (selectedClusters.get(clusterId)?.count ?? 0)
+          : null,
+        filteredCount: filteredInfo
+          ? (filteredClusters.get(clusterId)?.count ?? 0)
+          : null,
       }))
       .sort((left, right) =>
-        subsetInfo
-          ? right.scopedCount === left.scopedCount
-            ? right.totalCount === left.totalCount
-              ? left.label.localeCompare(right.label)
-              : right.totalCount - left.totalCount
-            : right.scopedCount - left.scopedCount
+        filteredInfo
+          ? (right.filteredCount ?? 0) === (left.filteredCount ?? 0)
+            ? (right.selectionCount ?? 0) === (left.selectionCount ?? 0)
+              ? right.totalCount === left.totalCount
+                ? left.label.localeCompare(right.label)
+                : right.totalCount - left.totalCount
+              : (right.selectionCount ?? 0) - (left.selectionCount ?? 0)
+            : (right.filteredCount ?? 0) - (left.filteredCount ?? 0)
+          : selectedInfo
+            ? (right.selectionCount ?? 0) === (left.selectionCount ?? 0)
+              ? right.totalCount === left.totalCount
+                ? left.label.localeCompare(right.label)
+                : right.totalCount - left.totalCount
+              : (right.selectionCount ?? 0) - (left.selectionCount ?? 0)
           : right.totalCount === left.totalCount
             ? left.label.localeCompare(right.label)
             : right.totalCount - left.totalCount,
@@ -237,10 +309,11 @@ export function QueryDrivenInfoPanel({
         0,
         Math.max(
           datasetInfo.topClusters.length,
-          subsetInfo?.topClusters.length ?? 0,
+          selectedInfo?.topClusters.length ?? 0,
+          filteredInfo?.topClusters.length ?? 0,
         ),
       );
-  }, [datasetInfo, subsetInfo]);
+  }, [datasetInfo, filteredInfo, selectedInfo]);
 
   return (
     <PanelShell
@@ -266,37 +339,32 @@ export function QueryDrivenInfoPanel({
             </Text>
           ) : datasetInfo ? (
             <>
-              <OverviewGrid datasetInfo={datasetInfo} subsetInfo={subsetInfo} />
+              <OverviewGrid
+                datasetInfo={datasetInfo}
+                selectedInfo={selectedInfo}
+                filteredInfo={filteredInfo}
+                comparisonState={comparisonState}
+              />
 
               <ClusterTable
                 rows={clusterRows}
                 clusterColors={clusterColors}
-                subsetActive={subsetInfo != null}
+                comparisonState={comparisonState}
               />
 
               {infoWidgets.map((slot) => (
                 <QueryWidgetSlotRenderer
                   key={slot.column}
                   slot={slot}
-                  subsetActive={subsetInfo != null}
-                  prefetchedFacetRows={
-                    slot.kind === "facet-summary"
-                      ? facetSummaries[slot.column] ?? null
+                  comparisonState={comparisonState}
+                  prefetchedCategoricalRows={
+                    slot.kind === "facet-summary" || slot.kind === "bars"
+                      ? categoricalSummaries[slot.column] ?? null
                       : null
                   }
-                  prefetchedBarRows={
-                    slot.kind === "bars"
-                      ? barSummaries[slot.column] ?? null
-                      : null
-                  }
-                  prefetchedDatasetHistogram={
+                  prefetchedHistogram={
                     slot.kind === "histogram"
-                      ? histograms[slot.column]?.dataset ?? null
-                      : null
-                  }
-                  prefetchedSubsetHistogram={
-                    slot.kind === "histogram"
-                      ? histograms[slot.column]?.subset ?? null
+                      ? histograms[slot.column] ?? null
                       : null
                   }
                 />
@@ -311,7 +379,7 @@ export function QueryDrivenInfoPanel({
               <AddInsightButton />
               <SearchSection key={activeLayer} queries={queries} />
               <SelectionActions
-                subsetScope={subsetScope}
+                subsetScope={activeSubsetScope}
                 queries={queries}
                 overlayCount={overlayCount}
               />

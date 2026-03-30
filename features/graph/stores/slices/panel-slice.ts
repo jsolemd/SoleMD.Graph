@@ -39,7 +39,7 @@ export interface PanelSlice {
 
 export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> = (set) => ({
   activePanel: null,
-  panelsVisible: false,
+  panelsVisible: true,
   panelBottomY: { left: 0, right: 0 },
   tableOpen: false,
   tableHeight: 280,
