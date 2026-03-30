@@ -302,17 +302,53 @@ leaving richer interaction state in DuckDB query views or the backend API.
                            ▼
   ┌─────────────────────────────────────────────────────────┐
   │  REFRESH EVIDENCE + REBUILD GRAPH                        │
-  │  pubtator + papers -> paper_evidence_summary            │
-  │  embeddings -> PCA layout matrix -> shared kNN          │
-  │  shared kNN -> GPU UMAP + GPU Leiden                    │
-  │  run checkpoints -> coordinates / clusters / outliers   │
-  │  base admission reads evidence summary, then exports:   │
-  │    - base_points.parquet                                │
-  │    - base_clusters.parquet                              │
-  │  Export premapped universe artifact:                    │
-  │    - universe_points.parquet                            │
-  │  Optional universe/evidence artifacts follow the bundle │
-  │  contract; links are not part of the default publish    │
+  │                                                          │
+  │  The pipeline below is modular and checkpointed.         │
+  │  Each stage can be re-run independently on new data      │
+  │  releases without re-running upstream stages.            │
+  │                                                          │
+  │  Stage 1: EVIDENCE (repeats monthly on new PubTator)     │
+  │    pubtator + papers → paper_evidence_summary            │
+  │    572 domain entity_rules from curated vocab_terms      │
+  │    103 relation_rules + 149 journal_rules                │
+  │    Output: has_rule_evidence per paper                   │
+  │                                                          │
+  │  Stage 2: LAYOUT (repeats on new S2 embeddings)          │
+  │    DB → binary COPY 100K-row chunks → L2-normalize       │
+  │    → SparseRandomProjection (768D→50D, single-pass)      │
+  │    → shared kNN → GPU UMAP (2D coordinates)              │
+  │    Streaming: ~2 GB peak, never materializes full matrix  │
+  │    Checkpointed: layout matrix, kNN, coordinates on disk │
+  │                                                          │
+  │  Stage 3: CLUSTERING (reuses kNN from Stage 2)           │
+  │    shared kNN → GPU Leiden (resolution 3.0)              │
+  │    → ~200-300 research community clusters                │
+  │    → cluster repulsion + outlier detection               │
+  │    Tunable independently of layout                       │
+  │                                                          │
+  │  Stage 4: LABELING                                       │
+  │    c-TF-IDF keyword extraction per cluster               │
+  │    → Gemini 2.5 Flash: clinical/scientific labels        │
+  │    → hierarchical grouping (ward linkage on c-TF-IDF)    │
+  │    → Gemini: parent category labels                      │
+  │    Cost: < $0.10 per full relabeling run                 │
+  │                                                          │
+  │  Stage 5: BASE ADMISSION (reuses evidence from Stage 1)  │
+  │    paper_evidence_summary → continuous domain_score       │
+  │    family diversity² × min(rules,20) + core family bonus │
+  │    + relation hits + flagship journal + citation impact   │
+  │    + annotation density + recency                        │
+  │    Top target_base_count (~500K) enter base; rest=universe│
+  │                                                          │
+  │  Stage 6: EXPORT                                         │
+  │    base_points.parquet + base_clusters.parquet            │
+  │    universe_points.parquet                                │
+  │    manifest.json with checksums (drives frontend cache)   │
+  │                                                          │
+  │  Monthly refresh: Stages 1→5→6 (new evidence + rebase)   │
+  │  New embeddings: Stages 2→3→4→5→6 (full rebuild)         │
+  │  Relabel only: Stages 4→6 (cluster IDs unchanged)        │
+  │  Recluster only: Stages 3→4→5→6 (reuses kNN/coords)     │
   └─────────────────────────────────────────────────────────┘
 ```
 
@@ -332,7 +368,8 @@ leaving richer interaction state in DuckDB query views or the backend API.
   Graph viz          Cosmograph + DuckDB-WASM
   LLM streaming      Vercel AI SDK 6 + Gemini 2.5 Flash
   Batch processing   DuckDB (embedded in Python)
-  Graph layout       GPU cuML UMAP + Leiden clustering
+  Graph layout       GPU cuML UMAP + Leiden clustering (cuGraph)
+  Cluster labeling   Gemini 2.5 Flash (c-TF-IDF context → LLM labels)
 ```
 ## End Vision: OpenEvidence-Style Graph RAG
 

@@ -29,7 +29,9 @@ class GraphSignalKind(StrEnum):
     RELATION_MATCH = "relation_match"
     CITATION_NEIGHBOR = "citation_neighbor"
     SEMANTIC_NEIGHBOR = "semantic_neighbor"
+    ANSWER_EVIDENCE = "answer_evidence"
     ANSWER_SUPPORT = "answer_support"
+    ANSWER_REFUTE = "answer_refute"
 
 
 class CitationDirection(StrEnum):
@@ -47,6 +49,13 @@ class EvidenceIntent(StrEnum):
     BOTH = "both"
 
 
+class RetrievalScope(StrEnum):
+    """How broadly the backend should search for evidence."""
+
+    GLOBAL = "global"
+    SELECTION_ONLY = "selection_only"
+
+
 DEFAULT_RETRIEVAL_VERSION = "baseline-postgres-v1"
 DEFAULT_GRAPH_NAME = "living_graph"
 DEFAULT_GRAPH_CACHE_CONTROL = "no-store"
@@ -61,7 +70,9 @@ RETRIEVAL_CHANNEL_ORDER = (
 )
 
 GRAPH_SIGNAL_ORDER = (
+    GraphSignalKind.ANSWER_EVIDENCE,
     GraphSignalKind.ANSWER_SUPPORT,
+    GraphSignalKind.ANSWER_REFUTE,
     GraphSignalKind.ENTITY_MATCH,
     GraphSignalKind.RELATION_MATCH,
     GraphSignalKind.CITATION_NEIGHBOR,

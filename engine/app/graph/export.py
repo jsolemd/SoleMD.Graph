@@ -3,6 +3,15 @@
 This module is intentionally small and declarative. It defines which artifacts
 belong to the mandatory base bundle, which remain browser-local universe
 artifacts, and which stay behind evidence fetch paths / APIs.
+
+The `evidence` artifact set is a manifest-level contract only. It does not
+authorize widening the live browser hot path or autoattaching evidence payloads
+to the graph runtime.
+
+The autoload rule is stricter than the artifact taxonomy:
+- `base` is the only mandatory first-load set
+- `universe` is browser-attachable on demand only
+- `evidence` stays off the startup browser path
 """
 
 from __future__ import annotations
@@ -23,6 +32,9 @@ class GraphBundleArtifactSet:
         "paper_documents",
         "cluster_exemplars",
     )
+    # Evidence artifacts describe lazy/on-demand evidence-domain surfaces.
+    # `universe_links` is the overlay-activation exception: browser-attachable
+    # when needed, but still not a first-load hot-path artifact.
     evidence: tuple[str, ...] = (
         "universe_links",
         "citation_neighborhood",

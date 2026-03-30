@@ -21,9 +21,17 @@ const CosmographRenderer = dynamic(
 export function GraphCanvas({
   canvas,
   queries,
+  onFirstPaint,
 }: {
   canvas: GraphCanvasSource;
   queries: GraphBundleQueries;
+  onFirstPaint?: () => void;
 }) {
-  return <CosmographRenderer canvas={canvas} queries={queries} />;
+  return (
+    <CosmographRenderer
+      canvas={canvas}
+      queries={queries}
+      onFirstPaint={onFirstPaint}
+    />
+  );
 }

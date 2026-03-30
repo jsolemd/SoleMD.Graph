@@ -4,6 +4,11 @@
 > **Scope**: Biomedical knowledge graph web app powered by PubTator3 + Semantic
 > Scholar, visualized through Cosmograph, with RAG-powered evidence retrieval.
 
+Detailed stable evidence/RAG boundaries and current contract state live in
+[`docs/map/rag.md`](rag.md). This architecture doc stays broader; the RAG doc is
+the canonical place for "stable now" versus "warehouse-provisional" evidence
+behavior.
+
 ---
 
 ## 1. The Goal
@@ -150,8 +155,33 @@ Hard rules:
 - do not rebuild graph interactivity through JS point hydration
 - use DuckDB for local scope, selection, overlay, and point-id resolution only
 - use the backend contract for evidence semantics, not frontend shortcuts
+- the frontend binds literally to `current_points_canvas_web` /
+  `current_links_web`; any internal swap views remain implementation detail
 - the registration layer under these aliases may use narrow local tables or
   narrow local views with strict canonical columns, but the alias contract stays stable
+- filter and timeline UI may mount native `@cosmograph/ui` controls, but only
+  through adapters that bind filtering clients to `current_points_web`; do not
+  reconnect the higher Cosmograph accessor widgets that require
+  `pointIncludeColumns`
+- widget adapters may materialize small column-specific arrays in JS for the
+  mounted native UI control, but that is not permission to rehydrate full point
+  objects or rebuild query/search/detail on the client
+
+For evidence integration, this runtime split is paired with a second hard rule:
+
+- the frontend may adapt to what the backend can currently provide
+- but those adaptations must happen at typed integration points
+- do not collapse frontend and backend concerns back into one layer for
+  convenience
+
+At launch scale, this also implies a three-domain model:
+
+- globally mapped corpus offline
+- demand-attached local graph rows in browser DuckDB
+- dense active render subset in Cosmograph
+
+RAG may search the larger corpus, but only the returned graph rows needed for
+the current interaction should be attached and materialized locally.
 
 ### Semantic Scholar (Academic Graph)
 
@@ -342,7 +372,7 @@ Geo note:
 |----------|--------------------------------|
 | Why | FastAPI for the operations API + inline MedCPT reranking. Dramatiq workers for hours-long batch jobs (PubTator load, embedding, graph build) with crash recovery. |
 | Why Dramatiq over Celery | Ack-after-completion by default — if a 1.6B row load crashes at row 800M, the task retries instead of being silently dropped. |
-| Phase 2 | **Prefect 3** — web UI for pipeline monitoring, scheduled monthly refreshes, asset-aware caching. Compelling when log-diving becomes painful. |
+| Upgrade path | **Prefect 3** — web UI for pipeline monitoring, scheduled monthly refreshes, asset-aware caching. Compelling when log-diving becomes painful. |
 | Eliminated | Temporal (4 processes, 1-month learning curve for solo dev), Ray (overkill for single machine), Go/Rust/Node.js (no numpy/scipy/sklearn/transformers ecosystem), Supabase Edge Functions (2-second CPU limit) |
 
 ### LLM Providers
@@ -380,9 +410,9 @@ intellectual lineage.
 
 ### Graph Layout
 
-| Decision | **GPU PCA-space kNN → cuML UMAP + cuGraph Leiden** |
+| Decision | **Streaming dimensionality reduction → shared kNN → cuML UMAP + cuGraph Leiden** |
 |----------|-----------------------------------------------------|
-| Why | One shared PCA-space kNN graph now feeds both layout and clustering. That removes duplicated neighbor search, keeps the two stages aligned, and gives the build a durable checkpoint boundary. |
+| Why | One shared kNN graph feeds both layout and clustering. Streaming pipeline never materializes full embeddings (~2 GB peak vs 10+ GB before). |
 | Cost per rebuild | ~$1-3 GPU rental (one H100 hour) + ~$0.30-5 LLM cluster labels = under $10 total |
 | CPU fallback | PaCMAP (60-90 min, best global structure of CPU methods) |
 | Why not Cosmograph force layout | Cosmograph embedding mode requires pre-computed 2D coordinates. It cannot do dimensionality reduction from 768d. Force layout is for graph topology, not manifold learning. |
@@ -391,12 +421,13 @@ intellectual lineage.
 
 Implementation notes:
 
-- preprocess SPECTER2 embeddings once
-- reduce to a shared PCA-space layout matrix
-- build one self-inclusive kNN graph
+- stream SPECTER2 embeddings from DB via binary COPY (pgvector `vector_send`, no text parsing)
+- L2-normalize per chunk, reduce via SparseRandomProjection (single-pass, JL-lemma) or IncrementalPCA (two-pass)
+- build one self-inclusive kNN graph from the 50-dim layout matrix
 - reuse that graph through UMAP `precomputed_knn`
 - run Leiden from the same kNN graph
 - persist run-scoped checkpoints on disk so failed runs resume from the last durable artifact
+- `mem_limit: 20g` on GPU container — cgroup kills container on OOM, not the VM
 
 ### Caching
 
@@ -423,11 +454,11 @@ Implementation notes:
 
 ### Monitoring
 
-| Decision | **Langfuse + Sentry + Vercel Analytics** (Phase 1) |
-|----------|------------------------------------------------------|
-| Phase 1 | Langfuse (LLM tracing, already have it), Sentry (error tracking, free tier), Vercel Analytics (frontend vitals) |
-| Phase 2 | PostHog (session replay on graph interactions, understand usage patterns) |
-| Phase 3 | OpenTelemetry + Grafana (cross-service tracing, only if debugging latency) |
+| Decision | **Langfuse + Sentry + Vercel Analytics** |
+|----------|---------------------------------------------|
+| Launch | Langfuse (LLM tracing, already have it), Sentry (error tracking, free tier), Vercel Analytics (frontend vitals) |
+| Growth | PostHog (session replay on graph interactions, understand usage patterns) |
+| Scale | OpenTelemetry + Grafana (cross-service tracing, only if debugging latency) |
 
 ---
 
@@ -537,10 +568,12 @@ File Delivery:
    PubTator3 FTP ──→ Download tab files (~11 GB) ──→ Stream + filter into PostgreSQL
    S2 Datasets API ──→ Download papers dataset only (~45 GB) ──→ Local disk
 
-2. FILTER
-   DuckDB reads S2 papers dump ──→ Filter by Medicine + Biology + Psychology
-              ──→ Cross-ref PMIDs with PubMed MeSH for neuro/psych/neuro
-              ──→ 500K-2M domain paper IDs
+2. FILTER (two-signal admission — see corpus-filter.md)
+   Stream PubTator3 → build curated vocab PMID set
+   DuckDB reads S2 papers dump ──→ two-signal domain filter
+              journal identity (curated NLM journals + venue patterns)
+            + vocab entity match (curated aliases × PubTator3 NER)
+              ──→ domain corpus IDs
               ──→ Load `solemd.corpus` + base `solemd.papers`
 
 3. FETCH + LOAD
@@ -568,6 +601,12 @@ File Delivery:
    shared kNN ──→ GPU Leiden ──→ cluster ids
    coordinates + cluster ids ──→ durable run checkpoints
    Cluster exemplars ──→ GPT-4o-mini ──→ Natural language labels
+
+5b. BASE ADMISSION (see corpus-filter.md)
+   paper_evidence_summary (entity/relation/journal evidence per paper)
+   ──→ continuous domain-density scoring (base_policy.py)
+   ──→ top target_base_count papers → graph_base_points (is_in_base + base_rank)
+   ──→ remainder stays in universe layer
 
 6. BUNDLE
    Mandatory first-load bundle (`Base`)
@@ -693,7 +732,7 @@ what each service does and why it was chosen.
 | 22 | **Langfuse** | LLM tracing — token costs, latency, trace hierarchy | `langfuse.md` |
 | 23 | **Sentry** | Error tracking — stack traces, breadcrumbs, releases | `sentry.md` |
 
-### Phase 2 Services (Add When Justified)
+### Deferred Services (Add When Justified)
 
 | Service | Trigger | Role |
 |---------|---------|------|
@@ -924,7 +963,7 @@ deep-dive documents, not in this overview.
    BlockNote) where writing is live-connected to the knowledge graph — citations
    auto-suggested from context, entities recognized and highlighted on the graph
    as you type, prose potentially becoming nodes in the same embedding space as
-   papers. Not a Phase 1 requirement, but a compelling long-term direction that
+   papers. Not a launch requirement, but a compelling long-term direction that
    should inform architectural choices (e.g., ensure the `@` citation pattern
    from chat search generalizes to an editor context). Investigate when the
    simpler tools (chat + search + explore) reveal what's actually missing.
@@ -991,60 +1030,49 @@ SoleMD.Graph/                         # Renamed from SoleMD.Web
 
 ---
 
-## 11. What's Next — Sequenced Action Plan
+## 11. Build Sequence — Current State
 
-The first priority is **data acquisition and storage** because downloads take
-time and everything else depends on having data to work with.
+### Completed — Foundation + First Graph
 
-### Phase 0: Repo Setup + Data Acquisition (Start Here)
+Repo setup, data acquisition, and the first visible graph are done.
 
-These happen in parallel — set up the repo while data downloads.
+| Area | What was delivered |
+|------|--------------------|
+| Repo | SoleMD.Web renamed to SoleMD.Graph, marketing pages removed |
+| Engine | `engine/` Python project with FastAPI, Dramatiq workers, uv-managed |
+| Infrastructure | `docker/compose.yaml` — PostgreSQL 16 + pgvector, Redis |
+| PubTator3 | Tab files downloaded, domain-filtered, loaded into `pubtator` schema |
+| Semantic Scholar | Papers dataset filtered via DuckDB, domain metadata fetched via Batch API |
+| Schema | `solemd` + `pubtator` schemas with 30 migrations |
+| Layout | GPU UMAP + Leiden on SPECTER2 embeddings → 2D coordinates + clusters |
+| Bundle | `base_points.parquet` + `universe_points.parquet` exported, Cosmograph rendering live |
+| Base admission | Continuous domain-density scoring via `base_policy.py` → `is_in_base` + `base_rank` |
 
-| Step | Action | Deep-Dive Doc |
+### In Progress — Evidence + RAG
+
+RAG retrieval and LLM synthesis are being built on top of the graph.
+
+| Area | Status | Deep-Dive Doc |
 |------|--------|---------------|
-| 0a | Rename SoleMD.Web → SoleMD.Graph, delete marketing pages | — |
-| 0b | Create `engine/` Python project (pyproject.toml, FastAPI skeleton) | — |
-| 0c | Create `docker/compose.yaml` (PostgreSQL + Redis) | `postgresql.md` |
-| 0d | **Download PubTator3** tab-delimited files (~11 GB) to `data/pubtator/` | `pubtator3.md` |
-| 0e | **Download S2 papers** dataset (~45 GB) to `data/semantic-scholar/`; remaining data via Batch API after filtering | `semantic-scholar.md` |
-| 0f | Design PostgreSQL schema (solemd + pubtator schemas) | `postgresql.md` |
+| MedCPT embedding of domain abstracts → pgvector HNSW | Infrastructure ready | `medcpt.md` + `pgvector.md` |
+| RAG search (vector + full-text hybrid) | Active development | `pgvector.md` |
+| Vercel AI SDK streaming with Gemini Flash | Streaming chat functional | `vercel-ai-sdk.md` + `gemini.md` |
+| `@` citation autocomplete | Active development | `vercel-ai-sdk.md` |
+| Entity highlighting as you type (DuckDB-WASM client-side) | Active development | `duckdb-wasm.md` |
 
-### Phase 1: Data Processing + First Graph
+See [`rag.md`](rag.md) for current evidence/RAG contract state.
 
-Once data is downloaded, process it into the database and build the first graph.
-
-| Step | Action | Deep-Dive Doc |
-|------|--------|---------------|
-| 1a | Stream PubTator3 tab files → domain-filter → load into PostgreSQL | `pubtator3.md` |
-| 1b | DuckDB filter S2 papers → domain IDs → S2 Batch API → PostgreSQL | `semantic-scholar.md` |
-| 1c | Load domain subset into PostgreSQL | `postgresql.md` |
-| 1d | GPU UMAP + Leiden on SPECTER2 embeddings → 2D layout + clusters | `cuml-umap.md` |
-| 1e | Build graph Parquet bundle → load in Cosmograph | `cosmograph.md` |
-| 1f | **First visible graph** — papers clustered, filterable | — |
-
-### Phase 2: Search + RAG
-
-Add retrieval and LLM synthesis on top of the graph.
-
-| Step | Action | Deep-Dive Doc |
-|------|--------|---------------|
-| 2a | MedCPT embedding of domain abstracts → pgvector HNSW | `medcpt.md` + `pgvector.md` |
-| 2b | RAG search (vector + full-text hybrid) | `pgvector.md` |
-| 2c | Vercel AI SDK streaming with Gemini Flash | `vercel-ai-sdk.md` + `gemini.md` |
-| 2d | `@` citation autocomplete | `vercel-ai-sdk.md` |
-| 2e | Entity highlighting as you type (DuckDB-WASM client-side) | `duckdb-wasm.md` |
-
-### Phase 3: Auth + Polish + Deploy
+### Remaining — Auth + Polish + Deploy
 
 Prepare for real users.
 
-| Step | Action | Deep-Dive Doc |
+| Area | Action | Deep-Dive Doc |
 |------|--------|---------------|
-| 3a | Auth (Auth.js or Supabase GoTrue) | `auth.md` |
-| 3b | Paper detail panel (abstract, entities, TLDR, citations) | — |
-| 3c | Cluster label generation (c-TF-IDF + LLM) | `cluster-labels.md` |
-| 3d | Deploy to US dedicated server (ReliableSite) | `deployment.md` |
-| 3e | Cloudflare CDN + R2 for Parquet serving | `cloudflare-r2.md` |
+| Auth | Auth.js or Supabase GoTrue | `auth.md` |
+| Detail panel | Paper detail (abstract, entities, TLDR, citations) | — |
+| Cluster labels | c-TF-IDF + LLM cluster labeling | `cluster-labels.md` |
+| Deployment | US dedicated server (ReliableSite) | `deployment.md` |
+| CDN | Cloudflare CDN + R2 for Parquet serving | `cloudflare-r2.md` |
 
 ### SoleMD.App Status
 

@@ -1,5 +1,16 @@
 import type { ClauseSource, Selection, SelectionClause } from '@uwdata/mosaic-core'
-import { and, duckDBCodeGenerator, eq, isBetween, or } from '@uwdata/mosaic-sql'
+import {
+  and,
+  column as sqlColumn,
+  duckDBCodeGenerator,
+  eq,
+  isBetween,
+  isNull,
+  literal,
+  or,
+  sql,
+} from '@uwdata/mosaic-sql'
+import { getColumnMeta } from '@/features/graph/lib/columns'
 import type { VisibilityFocus } from '@/features/graph/stores/slices/visibility-slice'
 
 const VISIBILITY_SOURCE_PREFIXES = ["filter:", "timeline:", "budget:"] as const
@@ -19,6 +30,20 @@ export function isVisibilitySelectionSourceId(
 
 export interface SelectionSource extends ClauseSource {
   id: string
+}
+
+export function matchesSelectionSourceId(
+  actualSourceId: string | null | undefined,
+  expectedSourceId: string | null | undefined,
+): boolean {
+  if (!actualSourceId || !expectedSourceId) {
+    return false
+  }
+
+  return (
+    actualSourceId === expectedSourceId ||
+    actualSourceId.startsWith(`${expectedSourceId}-`)
+  )
 }
 
 export function getSelectionSourceId(
@@ -56,6 +81,29 @@ export function clearSelectionClause(
 ): void {
   if (!selection) {
     return
+  }
+
+  const sourceId = getSelectionSourceId(source)
+  if (sourceId) {
+    const matchingClauses = selection.clauses.filter((clause) =>
+      matchesSelectionSourceId(getSelectionSourceId(clause.source), sourceId)
+    )
+
+    if (matchingClauses.length > 0) {
+      for (const clause of matchingClauses) {
+        if (typeof clause.source?.reset === 'function') {
+          clause.source.reset()
+        } else {
+          selection.update({
+            source: clause.source,
+            value: null,
+            predicate: null,
+            meta: { type: 'point' },
+          })
+        }
+      }
+      return
+    }
   }
 
   selection.update({
@@ -127,7 +175,7 @@ export function buildVisibilityScopeSqlExcludingSource(
     const sourceId = getSelectionSourceId(clause.source)
     return (
       sourceId !== null &&
-      sourceId !== excludedSourceId &&
+      !matchesSelectionSourceId(sourceId, excludedSourceId) &&
       isVisibilitySelectionSourceId(sourceId)
     )
   })
@@ -184,10 +232,60 @@ export function getSelectionValueForSource<T>(
   }
 
   const clause = selection.clauses.find(
-    (candidate) => getSelectionSourceId(candidate.source) === sourceId,
+    (candidate) =>
+      matchesSelectionSourceId(getSelectionSourceId(candidate.source), sourceId),
   )
 
-  return (clause?.value as T | undefined) ?? null
+  if (!clause) {
+    return null
+  }
+
+  const resolvedValue = resolveSelectionValue(clause)
+  return (resolvedValue as T | undefined) ?? null
+}
+
+function resolveSelectionValue(clause: SelectionClause): unknown {
+  if (clause.value == null) {
+    return null
+  }
+
+  if (typeof clause.value !== 'object') {
+    return clause.value
+  }
+
+  const predicate = clause.predicate
+  if (!predicate || typeof predicate !== 'object' || !('type' in predicate)) {
+    return clause.value
+  }
+
+  if (predicate.type === 'BETWEEN' && 'extent' in predicate) {
+    const extent = predicate.extent
+    if (Array.isArray(extent) && extent.length === 2) {
+      const left = extractLiteralValue(extent[0])
+      const right = extractLiteralValue(extent[1])
+      if (left != null && right != null) {
+        return [left, right]
+      }
+    }
+  }
+
+  if (predicate.type === 'BINARY' && 'op' in predicate && predicate.op === '=') {
+    return 'right' in predicate ? extractLiteralValue(predicate.right) : clause.value
+  }
+
+  return clause.value
+}
+
+function extractLiteralValue(node: unknown): unknown {
+  if (typeof node !== 'object' || node === null || !('type' in node)) {
+    return null
+  }
+
+  if (node.type !== 'LITERAL' || !('value' in node)) {
+    return null
+  }
+
+  return node.value
 }
 
 export function buildCategoricalFilterClause(
@@ -195,10 +293,18 @@ export function buildCategoricalFilterClause(
   column: string,
   value: string,
 ): SelectionClause {
+  const columnMeta = getColumnMeta(column)
+  const predicate =
+    value === 'null'
+      ? isNull(column)
+      : columnMeta?.isMultiValue
+        ? sql`list_contains(string_split_regex(CAST(${sqlColumn(column)} AS VARCHAR), '\\s*,\\s*'), ${literal(value)})`
+        : eq(column, literal(value))
+
   return {
     source,
     value,
-    predicate: eq(column, value),
+    predicate,
     meta: { type: 'point' },
   }
 }

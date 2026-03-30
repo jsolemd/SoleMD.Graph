@@ -10,11 +10,15 @@ export { queryScopeCoordinates, queryVisibilityBudget } from './budget'
 export { queryClusterRows, queryExemplarRows } from './cluster-detail'
 export { queryFacetSummaries, queryFacetSummary } from './facets'
 export {
-  queryPaperNodesByPaperIds,
-  queryUniversePointIdsByPaperIds,
+  queryPaperNodesByGraphPaperRefs,
+  queryUniversePointIdsByGraphPaperRefs,
   queryOverlayPointIds,
 } from './node-lookup'
-export { mapGraphPointRow, queryCorpusPointSelection } from './node-selection'
+export {
+  mapGraphPointRow,
+  queryCorpusPointSelection,
+  querySelectedGraphPaperRefs,
+} from './node-selection'
 export { queryPaperDocument, queryPaperDetail } from './paper-detail'
 export { queryPointSearch } from './search'
 export {
@@ -24,4 +28,5 @@ export {
   queryInfoHistogram,
   queryInfoHistogramsBatch,
 } from './summary'
+export { queryCategoricalValues, queryNumericValues } from './values'
 export { exportCorpusTableCsv, queryCorpusTablePage } from './table-chunk'

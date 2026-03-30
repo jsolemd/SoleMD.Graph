@@ -20,7 +20,10 @@ import { EMPTY_TOOLBAR_STATE, EditorToolbar } from "./editor/EditorToolbar";
 import {
   EVIDENCE_ASSIST_COMMANDS,
   extractEvidenceAssistRequestFromEditor,
+  getEvidenceAssistDefaultCommandIndex,
+  resolveEvidenceAssistTriggerMatch,
   type EvidenceAssistRequest,
+  type EvidenceAssistTrigger,
 } from "./prompt/evidence-assist";
 
 export interface CreateEditorHandle {
@@ -125,23 +128,31 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
       setEvidenceAssistMenu(null);
     }, []);
 
-    const openEvidenceAssistMenu = useCallback((ed: ReturnType<typeof useEditor>, from: number) => {
+    const openEvidenceAssistMenu = useCallback((
+      ed: ReturnType<typeof useEditor>,
+      from: number,
+      trigger: EvidenceAssistTrigger,
+      deletePrefixChars = 0,
+    ) => {
       if (!ed || !editorFrameRef.current || !onEvidenceAssistIntentRef.current) {
         return;
       }
-
-      const previousCharacter = getPreviousCharacter(ed);
-      if (previousCharacter && !/[\s([{'"“‘-]/.test(previousCharacter)) {
-        return;
+      const anchorPos = Math.max(1, from - deletePrefixChars);
+      if (deletePrefixChars > 0) {
+        ed
+          .chain()
+          .focus()
+          .deleteRange({ from: Math.max(0, from - deletePrefixChars), to: from })
+          .run();
       }
 
-      const cursorCoordinates = ed.view.coordsAtPos(from);
+      const cursorCoordinates = ed.view.coordsAtPos(anchorPos);
       const frameBounds = editorFrameRef.current.getBoundingClientRect();
 
       setEvidenceAssistMenu({
         x: cursorCoordinates.left - frameBounds.left,
         y: cursorCoordinates.bottom - frameBounds.top + 8,
-        selectedIndex: 0,
+        selectedIndex: getEvidenceAssistDefaultCommandIndex(trigger.defaultIntent),
       });
     }, []);
 
@@ -188,7 +199,7 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
               new Plugin({
                 props: {
                   handleTextInput: (_view, from, _to, text) => {
-                    if (text !== "@" || !onEvidenceAssistIntentRef.current) {
+                    if (!onEvidenceAssistIntentRef.current) {
                       return false;
                     }
 
@@ -197,7 +208,38 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
                       return false;
                     }
 
-                    openEvidenceAssistMenu(currentEditor, from);
+                    const textBeforeCursor =
+                      currentEditor.state.selection.$from.parent.textContent.slice(
+                        0,
+                        currentEditor.state.selection.$from.parentOffset,
+                      );
+                    const triggerMatch = resolveEvidenceAssistTriggerMatch({
+                      textBeforeCursor,
+                      insertedText: text,
+                    });
+                    if (!triggerMatch) {
+                      return false;
+                    }
+
+                    if (triggerMatch.trigger.action === "intent") {
+                      currentEditor
+                        .chain()
+                        .focus()
+                        .deleteRange({
+                          from: Math.max(0, from - triggerMatch.deletePrefixChars),
+                          to: from,
+                        })
+                        .run();
+                      submitEvidenceAssistIntent(triggerMatch.trigger.defaultIntent);
+                      return true;
+                    }
+
+                    openEvidenceAssistMenu(
+                      currentEditor,
+                      from,
+                      triggerMatch.trigger,
+                      triggerMatch.deletePrefixChars,
+                    );
                     return true;
                   },
                 },
@@ -206,7 +248,7 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
           },
         }),
       ],
-      [openEvidenceAssistMenu],
+      [openEvidenceAssistMenu, submitEvidenceAssistIntent],
     );
 
     const editor = useEditor({
@@ -496,16 +538,3 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
     );
   },
 );
-
-function getPreviousCharacter(ed: ReturnType<typeof useEditor>): string | null {
-  if (!ed) {
-    return null;
-  }
-
-  const { $from } = ed.state.selection;
-  if ($from.parentOffset === 0) {
-    return null;
-  }
-
-  return $from.parent.textContent.slice($from.parentOffset - 1, $from.parentOffset) || null;
-}

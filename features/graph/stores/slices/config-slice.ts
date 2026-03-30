@@ -18,18 +18,18 @@ import type {
   SizeColumnKey,
 } from '@/features/graph/types'
 
-export type TableView = 'current' | 'selected'
+export type TableView = 'selection' | 'dataset'
 export type InfoScopeMode = 'current' | 'selected' | 'dataset'
 
 /** Curated default filters — one per concept, no redundant pairs. */
 const CORPUS_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric' | 'categorical' }> = [
-  { column: 'clusterLabel', type: 'categorical' },
-  { column: 'journal', type: 'categorical' },
-  { column: 'semanticGroups', type: 'categorical' },
-  { column: 'relationCategories', type: 'categorical' },
   { column: 'textAvailability', type: 'categorical' },
+  { column: 'clusterLabel', type: 'categorical' },
   { column: 'year', type: 'numeric' },
   { column: 'paperReferenceCount', type: 'numeric' },
+  { column: 'journal', type: 'categorical' },
+  { column: 'relationCategories', type: 'categorical' },
+  { column: 'semanticGroups', type: 'categorical' },
 ]
 
 function getDefaultFiltersForLayer(layer: MapLayer) {
@@ -126,7 +126,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
 
   tablePage: 1,
   tablePageSize: 100,
-  tableView: 'current',
+  tableView: 'selection',
   infoScopeMode: 'current',
 
   colorScheme: 'vibrant',
@@ -210,7 +210,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         activeSelectionSourceId: null,
         selectionLocked: false,
         tablePage: 1,
-        tableView: 'current',
+        tableView: 'selection',
         infoScopeMode: 'current',
         pointLabelColumn: (() => {
           const layerColumns = getRenderableColumnsForLayer(layer)

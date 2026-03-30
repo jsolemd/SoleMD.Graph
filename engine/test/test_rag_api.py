@@ -26,12 +26,15 @@ class FakeService:
                 is_current=True,
                 selected_layer_key=request.selected_layer_key,
                 selected_node_id=request.selected_node_id,
+                selected_graph_paper_ref=request.selected_graph_paper_ref,
                 selected_paper_id=request.selected_paper_id,
                 selected_cluster_id=request.selected_cluster_id,
             ),
             query=request.query,
             answer=None,
             answer_model=None,
+            answer_corpus_ids=[],
+            grounded_answer=None,
             evidence_bundles=[],
             graph_signals=[],
             retrieval_channels=[],
@@ -84,3 +87,25 @@ def test_search_evidence_endpoint_maps_unknown_release_to_404():
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Unknown graph release: missing-release"
+
+
+def test_search_evidence_endpoint_accepts_null_scope_defaults():
+    app.dependency_overrides[get_rag_service] = lambda: FakeService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/evidence/search",
+        json={
+            "graph_release_id": "release-1",
+            "query": "melatonin delirium",
+            "selection_graph_paper_refs": None,
+            "scope_mode": None,
+        },
+    )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["graph_context"]["selection_graph_paper_refs"] == []
+    assert payload["graph_context"]["scope_mode"] == "global"

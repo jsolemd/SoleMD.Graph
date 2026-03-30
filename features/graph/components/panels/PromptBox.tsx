@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
 import {
   motion,
@@ -11,6 +11,7 @@ import {
   Type,
   ChevronDown,
   ChevronUp,
+  Target,
 } from "lucide-react";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { selectBottomClearance, selectLeftClearance, selectRightClearance } from "@/features/graph/stores/dashboard-store";
@@ -33,6 +34,11 @@ import {
 import { PromptIconBtn } from "./prompt/PromptIconBtn";
 import { usePromptPosition } from "./prompt/use-prompt-position";
 import { RagResponsePanel } from "./prompt/RagResponsePanel";
+import {
+  getSelectionScopeToggleLabel,
+  isSelectionScopeAvailable,
+  isSelectionScopeEnabled,
+} from "./prompt/selection-scope";
 import { useRagQuery } from "./prompt/use-rag-query";
 
 export function PromptBox({
@@ -51,6 +57,10 @@ export function PromptBox({
   const promptMaximized = useDashboardStore((s) => s.promptMaximized);
   const setPromptMinimized = useDashboardStore((s) => s.setPromptMinimized);
   const setPromptMaximized = useDashboardStore((s) => s.setPromptMaximized);
+  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
+  const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
+  const activeSelectionSourceId = useDashboardStore((s) => s.activeSelectionSourceId);
+  const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
   const bottomClearance = useDashboardStore(selectBottomClearance);
   const leftClearance = useDashboardStore(selectLeftClearance);
   const rightClearance = useDashboardStore(selectRightClearance);
@@ -61,6 +71,7 @@ export function PromptBox({
   const [hasInput, setHasInput] = useState(false);
   const [promptValue, setPromptValue] = useState("");
   const [showFormattingTools, setShowFormattingTools] = useState(false);
+  const [selectionScopeManuallyDisabled, setSelectionScopeManuallyDisabled] = useState(false);
   const { width: vw } = useViewportSize();
   const editorRef = useRef<CreateEditorHandle>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -68,12 +79,23 @@ export function PromptBox({
   const isAsk = mode === "ask";
   const isCollapsed = promptMinimized;
   const activePromptValue = isCreate ? writeContent : promptValue;
+  const selectionScopeAvailable = isSelectionScopeAvailable({
+    hasQueries: Boolean(queries),
+    selectedPointCount,
+    hasSelectedNode: Boolean(selectedNode),
+    activeSelectionSourceId,
+  });
+  const selectionOnlyEnabled = isSelectionScopeEnabled({
+    available: selectionScopeAvailable,
+    manuallyDisabled: selectionScopeManuallyDisabled,
+  });
 
   const {
     ragResponse,
     streamedAskAnswer,
     ragError,
     ragSession,
+    ragGraphAvailability,
     isSubmitting,
     handleSubmit,
     runEvidenceAssistQuery,
@@ -83,6 +105,10 @@ export function PromptBox({
     queries,
     isAsk,
     selectedNode,
+    selectionScopeEnabled: selectionOnlyEnabled,
+    activeSelectionSourceId,
+    setSelectedPointCount,
+    setActiveSelectionSourceId,
     getPromptText: useCallback(() => editorRef.current?.getText() ?? activePromptValue, [activePromptValue]),
   });
 
@@ -126,6 +152,17 @@ export function PromptBox({
   const selectedScopeLabel = selectedNode
     ? (SCOPE_LABELS[selectedNode.nodeKind] ?? "node")
     : null;
+  const selectionScopeToggleLabel = getSelectionScopeToggleLabel({
+    available: selectionScopeAvailable,
+    selectedPointCount,
+    activeSelectionSourceId,
+  });
+
+  useEffect(() => {
+    if (!selectionScopeAvailable) {
+      setSelectionScopeManuallyDisabled(false);
+    }
+  }, [selectionScopeAvailable]);
 
   const handleModeChange = useCallback((newMode: GraphMode) => {
     editorRef.current?.flush();
@@ -283,11 +320,12 @@ export function PromptBox({
               <RagResponsePanel
                 ragResponse={ragResponse}
                 streamedAnswer={streamedAskAnswer}
-                ragError={ragError}
-                ragSession={ragSession}
-                isSubmitting={isSubmitting}
-                isFullHeightMode={isFullHeightMode}
-                selectedNode={selectedNode}
+              ragError={ragError}
+              ragSession={ragSession}
+              ragGraphAvailability={ragGraphAvailability}
+              isSubmitting={isSubmitting}
+              isFullHeightMode={isFullHeightMode}
+              selectedNode={selectedNode}
                 selectedScopeLabel={selectedScopeLabel}
                 onDismiss={() => clearRag()}
               />
@@ -405,6 +443,20 @@ export function PromptBox({
                     onClick={() => setShowFormattingTools((c) => !c)}
                     active={showFormattingTools}
                     aria-pressed={showFormattingTools}
+                  />
+
+                  <PromptIconBtn
+                    icon={Target}
+                    label={selectionScopeToggleLabel}
+                    onClick={() => {
+                      if (!selectionScopeAvailable) {
+                        return;
+                      }
+                      setSelectionScopeManuallyDisabled((current) => !current);
+                    }}
+                    active={selectionOnlyEnabled}
+                    aria-pressed={selectionOnlyEnabled}
+                    disabled={!selectionScopeAvailable}
                   />
 
                   {/* Submit — handleSubmit guards against non-ask modes internally */}

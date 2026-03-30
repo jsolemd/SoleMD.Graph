@@ -4,11 +4,11 @@ import type {
   GraphBundleLoadProgress,
   GraphClusterDetail,
   GraphInfoFacetRow,
-  GraphInfoHistogramBin,
   GraphInfoHistogramResult,
   GraphInfoScope,
   GraphInfoSummary,
   GraphPointRecord,
+  GraphPaperAvailabilityResult,
   GraphSearchResult,
   GraphVisibilityBudget,
   GraphQueryResult,
@@ -26,7 +26,6 @@ export interface GraphCanvasSource {
     connection: AsyncDuckDBConnection
     duckdb: import('@duckdb/duckdb-wasm').AsyncDuckDB
   }
-  layerTables: Record<MapLayer, { points: string; links: string }>
   pointCounts: Record<MapLayer, number>
   overlayCount: number
   overlayRevision: number
@@ -37,6 +36,7 @@ export type GraphCanvasListener = (canvas: GraphCanvasSource) => void
 export interface GraphBundleSession {
   availableLayers: MapLayer[]
   canvas: GraphCanvasSource
+  dispose: () => Promise<void>
   subscribeCanvas: (listener: GraphCanvasListener) => () => void
   setSelectedPointIndices: (pointIndices: number[]) => Promise<void>
   setSelectedPointScopeSql: (scopeSql: string | null) => Promise<void>
@@ -55,8 +55,16 @@ export interface GraphBundleSession {
   activateOverlay: (args: OverlayActivationRequest) => Promise<OverlayActivationResult>
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
-  getPaperNodesByPaperIds: (paperIds: string[]) => Promise<Record<string, GraphPointRecord>>
-  getUniversePointIdsByPaperIds: (paperIds: string[]) => Promise<Record<string, string>>
+  getSelectedGraphPaperRefs: () => Promise<string[]>
+  getPaperNodesByGraphPaperRefs: (
+    graphPaperRefs: string[]
+  ) => Promise<Record<string, GraphPointRecord>>
+  ensureGraphPaperRefsAvailable: (
+    graphPaperRefs: string[]
+  ) => Promise<GraphPaperAvailabilityResult>
+  getUniversePointIdsByGraphPaperRefs: (
+    graphPaperRefs: string[]
+  ) => Promise<Record<string, string>>
   resolvePointSelection: (
     layer: MapLayer,
     selector: { id?: string; index?: number }
@@ -73,6 +81,18 @@ export interface GraphBundleSession {
     scope: GraphInfoScope
     currentPointScopeSql: string | null
   }) => Promise<GraphInfoSummary>
+  getCategoricalValues: (args: {
+    layer: MapLayer
+    scope: GraphInfoScope
+    column: string
+    currentPointScopeSql: string | null
+  }) => Promise<string[]>
+  getNumericValues: (args: {
+    layer: MapLayer
+    scope: GraphInfoScope
+    column: string
+    currentPointScopeSql: string | null
+  }) => Promise<number[]>
   getInfoBars: (args: {
     layer: MapLayer
     scope: GraphInfoScope
@@ -85,6 +105,8 @@ export interface GraphBundleSession {
     scope: GraphInfoScope
     column: string
     bins?: number
+    extent?: [number, number] | null
+    useQuantiles?: boolean
     currentPointScopeSql: string | null
   }) => Promise<GraphInfoHistogramResult>
   getFacetSummary: (args: {
@@ -113,6 +135,8 @@ export interface GraphBundleSession {
     scope: GraphInfoScope
     columns: string[]
     bins?: number
+    extent?: [number, number] | null
+    useQuantiles?: boolean
     currentPointScopeSql: string | null
   }) => Promise<Record<string, GraphInfoHistogramResult>>
   searchPoints: (args: {

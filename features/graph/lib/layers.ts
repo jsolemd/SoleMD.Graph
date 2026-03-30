@@ -60,7 +60,6 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     defaultInfoWidgets: [
       { column: 'journal', kind: 'facet-summary', label: 'Journals' },
       { column: 'semanticGroups', kind: 'facet-summary', label: 'Entity groups' },
-      { column: 'organSystems', kind: 'facet-summary', label: 'Organ systems' },
       { column: 'relationCategories', kind: 'facet-summary', label: 'Relation categories' },
     ],
     searchableFields: {

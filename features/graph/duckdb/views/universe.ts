@@ -1,5 +1,35 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
+import { LOCAL_POINT_RUNTIME_COLUMNS } from './base-points'
+
+export const ATTACHED_UNIVERSE_POINTS_TABLE = 'attached_universe_points'
+
+export async function initializeAttachedUniversePointTable(
+  conn: AsyncDuckDBConnection
+) {
+  await conn.query(
+    `CREATE TEMP TABLE IF NOT EXISTS ${ATTACHED_UNIVERSE_POINTS_TABLE} AS
+     SELECT ${LOCAL_POINT_RUNTIME_COLUMNS.join(', ')}
+     FROM base_points
+     WHERE false`
+  )
+}
+
+function buildUniverseSourceSql(sourceTable: string | null) {
+  const tables = [
+    sourceTable,
+    ATTACHED_UNIVERSE_POINTS_TABLE,
+  ].filter((tableName): tableName is string => Boolean(tableName))
+
+  if (tables.length === 0) {
+    return null
+  }
+
+  return tables
+    .map((tableName) => `SELECT * FROM ${tableName}`)
+    .join('\nUNION ALL\n')
+}
+
 export async function registerUniverseLinksViews(
   conn: AsyncDuckDBConnection,
   args: {
@@ -108,14 +138,17 @@ export async function registerUniversePointView(
   }
 ) {
   const { sourceTable, selectCanvasSql, selectQuerySql } = args
-  if (sourceTable) {
+  const sourceSql = buildUniverseSourceSql(sourceTable)
+
+  if (sourceSql) {
+    const sourceRelation = `(${sourceSql}) AS universe_source`
     await conn.query(
       `CREATE OR REPLACE VIEW universe_points_canvas_web AS
-       ${selectCanvasSql(sourceTable, 'point_index')}`
+       ${selectCanvasSql(sourceRelation, 'point_index')}`
     )
     await conn.query(
       `CREATE OR REPLACE VIEW universe_points_web AS
-       ${selectQuerySql(sourceTable, 'point_index')}`
+       ${selectQuerySql(sourceRelation, 'point_index')}`
     )
     return
   }

@@ -16,7 +16,7 @@ interface DataTableBodyProps {
   pageLoading: boolean;
   pageRefreshing: boolean;
   pageError: string | null;
-  resolvedTableView: string;
+  resolvedTableView: "selection" | "dataset";
 }
 
 export function DataTableBody({
@@ -68,6 +68,18 @@ export function DataTableBody({
     );
   }
 
+  if (pageRows.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center px-4 py-6">
+        <Text size="sm" style={panelTextDimStyle}>
+          {resolvedTableView === "selection"
+            ? "No rows in the current selection."
+            : "No rows available."}
+        </Text>
+      </div>
+    );
+  }
+
   return (
     <Stack gap="xs" h="100%">
       {pageRefreshing && (
@@ -102,10 +114,7 @@ export function DataTableBody({
         <Table.Tbody>
           {pageRows.map((node, i) => {
             const isFocused = selectedNode?.id === node.id;
-            const showSelectedState =
-              resolvedTableView === "selected"
-                ? true
-                : isFocused;
+            const showSelectedState = isFocused;
 
             return (
               <Table.Tr

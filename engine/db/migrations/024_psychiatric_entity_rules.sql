@@ -30,6 +30,8 @@ FROM solemd.vocab_terms vt
 WHERE vt.mesh_id IS NOT NULL
   AND vt.pubtator_entity_type IS NOT NULL
   AND vt.entity_rule_family IS NOT NULL
+  -- Only domain-specific families; broad medical (cl_disorder, clinical_symptom) excluded
+  AND vt.entity_rule_family NOT IN ('cl_disorder', 'clinical_symptom')
   AND EXISTS (
       SELECT 1 FROM pubtator.entity_annotations ea
       WHERE ea.concept_id = 'MESH:' || vt.mesh_id

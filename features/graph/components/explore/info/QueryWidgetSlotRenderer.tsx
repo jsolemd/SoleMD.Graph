@@ -1,6 +1,6 @@
 "use client";
 
-import { ActionIcon, Text, Tooltip } from "@mantine/core";
+import { ActionIcon, Badge, Group, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
 import type {
   GraphInfoFacetRow,
@@ -9,7 +9,9 @@ import type {
 } from "@/features/graph/types";
 import type { InfoWidgetSlot } from "@/features/graph/lib/info-widgets";
 import { useDashboardStore } from "@/features/graph/stores";
+import { formatNumber } from "@/lib/helpers";
 import {
+  badgeOutlineStyles,
   iconBtnStyles,
   panelTextDimStyle,
   panelTextStyle,
@@ -19,6 +21,7 @@ import {
   QueryInfoBars,
   QueryInfoHistogram,
 } from "./QueryWidgetVisualizations";
+import { queryWidgetThemeVars } from "../widget-theme";
 
 interface QueryWidgetSlotRendererProps {
   slot: InfoWidgetSlot;
@@ -36,13 +39,45 @@ export function QueryWidgetSlotRenderer({
   prefetchedHistogram = null,
 }: QueryWidgetSlotRendererProps) {
   const removeInfoWidget = useDashboardStore((state) => state.removeInfoWidget);
+  const metaBadges =
+    slot.kind === "histogram" && prefetchedHistogram
+      ? [
+          `${prefetchedHistogram.bins.length} bins`,
+          `${formatNumber(prefetchedHistogram.totalCount)} values`,
+        ]
+      : slot.kind === "facet-summary" && prefetchedFacetRows
+        ? [`top ${prefetchedFacetRows.length}`, scope]
+        : slot.kind === "bars" && prefetchedBarRows
+          ? [
+              `top ${prefetchedBarRows.length}`,
+              `${formatNumber(
+                prefetchedBarRows.reduce((sum, row) => sum + row.count, 0),
+              )} values`,
+            ]
+          : [];
 
   return (
-    <div>
+    <div style={queryWidgetThemeVars}>
       <div className="mb-1 flex items-center justify-between">
-        <Text size="xs" fw={600} style={panelTextStyle}>
-          {slot.label}
-        </Text>
+        <div className="min-w-0">
+          <Text size="xs" fw={600} style={panelTextStyle}>
+            {slot.label}
+          </Text>
+          {metaBadges.length > 0 ? (
+            <Group gap={6} mt={2}>
+              {metaBadges.map((badge) => (
+                <Badge
+                  key={badge}
+                  variant="outline"
+                  size="xs"
+                  styles={badgeOutlineStyles}
+                >
+                  {badge}
+                </Badge>
+              ))}
+            </Group>
+          ) : null}
+        </div>
         <Tooltip label={`Remove ${slot.label}`} position="left" withArrow>
           <ActionIcon
             variant="subtle"

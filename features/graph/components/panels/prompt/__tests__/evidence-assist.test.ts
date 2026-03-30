@@ -1,5 +1,7 @@
 import {
   extractEvidenceAssistRequestFromEditor,
+  getEvidenceAssistDefaultCommandIndex,
+  resolveEvidenceAssistTriggerMatch,
   selectEvidenceAssistExcerpt,
 } from "../evidence-assist";
 
@@ -50,5 +52,35 @@ describe("evidence-assist", () => {
       previewText: paragraphText,
       paragraphText,
     });
+  });
+
+  it("matches the support trigger at a valid boundary", () => {
+    expect(
+      resolveEvidenceAssistTriggerMatch({
+        textBeforeCursor: "This claim suggests ",
+        insertedText: "@",
+      }),
+    ).toMatchObject({
+      trigger: {
+        pattern: "@",
+        defaultIntent: "support",
+      },
+      deletePrefixChars: 0,
+    });
+  });
+
+  it("does not fire triggers inside words", () => {
+    expect(
+      resolveEvidenceAssistTriggerMatch({
+        textBeforeCursor: "email",
+        insertedText: "@",
+      }),
+    ).toBeNull();
+  });
+
+  it("maps default intents to the correct menu selection index", () => {
+    expect(getEvidenceAssistDefaultCommandIndex("support")).toBe(0);
+    expect(getEvidenceAssistDefaultCommandIndex("refute")).toBe(1);
+    expect(getEvidenceAssistDefaultCommandIndex("both")).toBe(0);
   });
 });

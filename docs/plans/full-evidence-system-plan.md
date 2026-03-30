@@ -6,6 +6,11 @@ Project: `SoleMD.Graph`
 Scope: canonical evidence substrate, engine API, frontend integration, retrieval baseline, future evidence warehouse, and future Qdrant retrieval plane  
 Supersedes: duplicate implementation-spec draft now archived at `docs/archive/plans/full-evidence-system-schema-and-api-spec.md`
 
+Stable architecture and current contract state now live in
+`docs/map/rag.md`.
+This file is the implementation tracker, milestone list, and future/provisional
+work plan.
+
 ## Why This Rewrite Exists
 
 The prior evidence documents were directionally strong but too split, too
@@ -35,6 +40,30 @@ The immediate implementation posture also matters:
 The right move now is to lock the contracts, own the backend boundary, and build
 the cheap engine-side retrieval baseline on the current tables.
 
+## Stable vs Provisional Doc Split
+
+Use the docs this way:
+
+- `docs/map/rag.md`
+  - stable-now RAG architecture
+  - stable integration points between frontend, DuckDB/Cosmograph, FastAPI,
+    and PostgreSQL
+  - current paper-level baseline behavior
+  - explicit warehouse-era unknowns
+- `docs/plans/full-evidence-system-plan.md`
+  - active implementation tracker
+  - open tasks and next milestones
+  - provisional warehouse design
+  - future Qdrant and parsing work
+
+Rule:
+
+- do not treat this plan file as the canonical stable contract
+- move finalized behavior into `docs/map/rag.md`
+- keep open questions, sequencing, and provisional designs here
+- keep DB-side preview and migration-helper code under `engine/db`; keep
+  runtime retrieval/parsing/serving code under `engine/app/rag`
+
 ## Implementation Tracker
 
 Current implementation tracker for the first evidence vertical slice:
@@ -58,10 +87,313 @@ Current implementation tracker for the first evidence vertical slice:
 - [x] Ask-mode `Vercel AI SDK` streaming landed on top of the canonical evidence contract
 - [x] typed engine error envelope landed across server action and streaming route
 - [x] DuckDB/Cosmograph runtime hard constraint documented for future RAG work
+- [x] paper-centric RAG result adapter naming normalized away from legacy `chunk_*` result slots
+- [x] bundle artifact taxonomy clarified as distinct from browser startup/autoload policy
+- [x] DuckDB graph-resolution helpers renamed around explicit `graph_paper_ref` semantics
+- [x] frontend-to-engine request contract now separates selected graph paper refs from canonical paper ids
+- [x] compose evidence-assist trigger parsing moved into a modular registry rather than hard-coded `@` editor logic
+- [x] selected-paper semantic neighbors now participate in evidence candidate ranking instead of graph-lighting only
+- [x] support/refute intent now shapes baseline answer framing and primary answer graph-signal semantics
+- [x] selection-only evidence scope added as an explicit backend contract rather than inferred frontend state
+- [x] prompt-surface selection-only toggle now sends explicit selected graph-paper refs through DuckDB-backed query resolution
+- [x] prompt selection scope now auto-applies by default when graph selection exists, with manual opt-out
+- [x] support/refute intent now influences baseline paper ordering through bounded cue-language affinity heuristics
+- [x] Ask-mode AI SDK streaming now preserves explicit selection scope through the backend contract instead of dropping it at the route-schema seam
+- [x] DuckDB graph activation now depends on an explicit `ensureGraphPaperRefsAvailable(...)` seam rather than an implicit local-universe side effect
+- [x] safe engine optimization pass landed for the current paper-level baseline: empty-result searches now bail out before enrichment work, and paper-search SQL now computes shared search expressions once per query instead of repeating them inline
+- [x] answer-linked paper grounding is now explicit in the paper-level baseline contract: the engine returns an answer-grounding subset, overlay activation can stay broader, and DuckDB selection is applied only to the answer-linked subset
+- [x] optional structured `grounded_answer` payload now flows end to end through the existing evidence response contract, with no second citation-specific stream protocol
+- [x] live Ask submit path debugged and fixed for local development: request null/default normalization now matches the FastAPI contract, engine transport failures now surface actionable messages instead of raw `fetch failed`, and the global lexical candidate stage now uses the indexed title path so submit stays responsive on the live schema
+- [x] graph-resolution buckets are now explicit in the prompt interaction layer: already-active evidence, universe-promoted evidence, and evidence-only papers are tracked separately after DuckDB resolution instead of being implicit side effects
+- [x] stable evidence transport now omits null/default request noise at the web -> engine boundary, so the outer seam stays compact and aligned with backend defaults instead of depending on serializer chatter
+- [x] future demand-attachment seam is now implemented behind `ensureGraphPaperRefsAvailable(...)` as an optional registered provider hook, with no current behavior change until a real non-base row fetch/materialization path is wired in
+- [x] remote narrow-row demand attachment is now live behind `ensureGraphPaperRefsAvailable(...)`: missing graph-paper refs fetch bundle-shaped Arrow rows from FastAPI, materialize into local DuckDB `attached_universe_points`, and continue through the existing overlay/canvas contract
+- [x] live graph-row demand attachment is now fully wired end to end: FastAPI `/api/v1/graph/attach-points`, Next.js `/api/graph/attach-points`, and browser-side DuckDB Arrow IPC insertion all use the same narrow point-row contract
+- [x] bounded entity-normalized paper recall landed on the live paper-level backend via `solemd.entities` concept normalization plus PubTator joins, without claiming warehouse-era span grounding
+- [x] bounded relation-normalized paper recall landed on the live paper-level backend through exact normalized `pubtator.relations.relation_type` matches, preserving the indexed current-table posture
+- [x] bounded citation-neighbor candidate expansion landed on the live paper-level backend by pulling only from citation neighbors of the already-bounded candidate set, avoiding a global citation-context scan
+- [x] lightweight engine-side parser contract/types scaffold landed with fixture-based tests, without starting warehouse migrations or backfills
+- [x] parser-contract entity grounding now preserves raw source identifiers plus explicit `concept_namespace` / `concept_id` fields when source parsing can infer them safely
+- [x] provisional warehouse-row contract now separates parser outputs from persisted citation/entity mention rows, with explicit `span_origin`, `alignment_status`, `alignment_confidence`, and canonical ordinals only after alignment
+- [x] conservative alignment helper now codifies `exact`, `bounded`, and `source_local_only` outcomes against canonical block/sentence containment, with fixture-based tests
+- [x] code-level serving contract now exists for `paper_chunk_versions`, `paper_chunks`, `paper_chunk_members`, `cited_span_packets`, `inline_citations`, and answer segments
+- [x] first structural chunk assembler now exists against the code-level serving contract, with conservative section-boundary and caption-standalone behavior validated by fixtures
+- [x] first cited-span packet and inline-anchor assembler now exists against aligned warehouse rows, with fixture coverage for sentence-grounded packets and answer-linked paper derivation
+- [x] non-DB source-grounding adapters now bridge parsed `s2orc_v2` citation mentions and BioCXML entity overlays into cited-span packets and structured grounded-answer records
+- [x] non-DB source-selection seam now chooses a primary structured text source plus annotation overlays, preferring viable `s2orc_v2` text and keeping BioCXML as an entity/offset overlay when both exist
+- [x] end-to-end contract fixture now proves the intended future path: parse -> align -> warehouse mention rows -> cited-span packet -> inline anchor -> answer-linked papers
+- [x] deferred warehouse table/index contract now exists in code for documents, sources, sections, blocks, sentences, references, mentions, chunk versions, chunks, and chunk members, without applying migrations
+- [x] deferred warehouse write-batch contract now exists for validated parent-child persistence ordering, still without any live writes or migrations
+- [x] deferred warehouse write-stage planner and repository seam now exist in code, with explicit stage order and COPY/staging-versus-upsert posture for future SQL writers
+- [x] deferred warehouse SQL-template contract now exists in code, with canonical staging-table names, conflict keys, merge posture, and update-column derivation per logical write stage
+- [x] deferred warehouse migration-sequencing contract now exists in code, so the future DDL rollout order is explicit before any migration is applied
+- [x] deferred warehouse index matrix now exists in code, with explicit initial-schema vs post-load posture for lineage, grounding, serving, and lexical-fallback indexes
+- [x] deferred non-executing warehouse write preview now exists in code, so planned stages and SQL templates can be rendered end-to-end without touching PostgreSQL
+- [x] deferred DDL preview generation now lives under `engine/db/previews` rather than `engine/app/rag`, so one-off migration helpers do not pollute the runtime RAG package
+- [x] first real warehouse migrations are now applied for canonical document/source/section tables plus canonical block/sentence and aligned citation/entity mention tables
+- [x] source-plan -> warehouse-write-batch builder now exists, so parsed/selected sources can be converted into validated core/span/mention write batches without inventing row shapes ad hoc
+- [x] first runtime warehouse writer/repository path now exists for the live canonical tables, using staged COPY/upsert execution for documents, sources, sections, blocks, sentences, citations, and entities
+- [x] source-plan -> runtime-writer orchestration now exists in code, so parsed sources can be selected, batched, and applied through one ingest seam without ad hoc SQL
+- [x] runtime writer now explicitly defers logical `references` and chunk stages instead of pretending they already map cleanly to live physical storage
+- [x] first read-side warehouse grounding bridge now exists in code: if aligned citation spans are present for answer-linked papers, the service can build a structured `grounded_answer`; otherwise the field remains `null`
+- [x] runtime bibliography adapter now maps logical `paper_reference_entries` onto the existing `solemd.paper_references` substrate, while chunk stages remain deferred
+- [x] derived chunk rows can now be appended to warehouse write batches from
+  canonical blocks/sentences, and the first runtime chunk lane is explicitly
+  narrowed to conditional `paper_chunk_versions` writes while chunk content and
+  member rows remain deferred
+- [x] default chunk policy seed now exists in code as `default-structural-v1`,
+  with conservative section-role/block-kind inclusion and no-overlap defaults
 
 Implementation rule:
 
 - update this checklist and the milestone notes as scope is uncovered during implementation
+
+## Immediate Queue
+
+Near-term work should stay bounded by the current paper-level baseline:
+
+- [x] audit the live request/response contract against `docs/map/rag.md` and avoid adding speculative warehouse fields to the stable outer seam
+- [ ] keep engine retrieval-quality work inside current-table paper retrieval rather than warehouse-era claim-verification logic
+- [x] keep the live service honest: `grounded_answer` remains `null` unless warehouse-backed cited spans are actually available for the answer-linked papers
+- [x] add bounded entity-driven paper recall to the current baseline through `solemd.entities` normalization and PubTator joins, while keeping the response contract paper-level
+- [x] add bounded relation-driven paper recall to the current baseline through exact normalized `pubtator.relations.relation_type` matches, while keeping the response contract paper-level
+- [x] add bounded citation-neighbor candidate expansion to the current baseline without introducing a global citation-context retrieval scan
+- [x] implement the explicit runtime adapter from logical `paper_reference_entries`
+  onto the current `solemd.paper_references` substrate before marking
+  bibliography persistence live in the warehouse ingest path
+- [x] decide the first chunk-table migration/runtime writer lane:
+  `paper_chunk_versions` first as a conditional runtime policy-table write,
+  with `paper_chunks` / `paper_chunk_members` still deferred behind the
+  explicit chunk-runtime cutover
+- [x] define the first default chunk-version seed in code so backfill and
+  cutover work can reference one canonical policy key and inclusion posture
+- [x] document the current backend honestly as a paper-level baseline wherever the UI could otherwise imply sentence-grounded verification
+- [x] plan the deeper `s2orc_v2` + BioCXML structural parsing pass as a separate warehouse-phase design effort rather than leaking premature chunk/span contracts into the current app boundary
+- [x] finalize the first warehouse serving hierarchy explicitly as
+  `papers -> block-rooted chunks -> sentences`, with chunks derived from the
+  canonical block/sentence spine rather than replacing it
+- [x] define the first canonical block taxonomy and first `paper_chunk_version`
+  policy from real source samples, including caption/table handling and
+  sentence-fallback rules
+- [x] define the future warehouse answer-grounding contract so `answer-linked`
+  papers can later become cited block/span sets without changing the graph
+  activation boundary
+- [x] document the future engine-owned LLM answer path explicitly:
+  retrieval, cited-span assembly, and citation semantics stay in FastAPI; the
+  AI SDK route remains a streaming/presentation layer
+- [x] define provisional cited-span and inline-citation payload shapes in docs
+  before adding any warehouse-era Pydantic fields
+- [x] plan how inline citations will stream and render in the response tray
+- [x] keep inline citation transport on the existing `data-evidence-response` path rather than introducing a second AI SDK stream protocol
+- [x] add source-parser fixture tests for `s2orc_v2` citation bridging and
+  BioCXML entity/caption/reference handling before any warehouse write path
+  without making the browser parse model text for citation meaning
+- [x] treat captions, tables, and other structurally meaningful spans as
+  first-class warehouse grounding targets, not abstract-only or body-only
+  afterthoughts
+- [x] move the future answer-grounding shape into `docs/map/rag.md` so the
+  stable map explicitly distinguishes current paper-grounded answers from the
+  later warehouse + LLM + inline-citation answer path
+- [ ] decide whether local dev should keep requiring a separately started
+  FastAPI engine or add a supported combined `web + engine` dev workflow
+- [ ] keep frontend adaptation work at typed integration points; do not add graph hot-path shortcuts to compensate for missing backend capability
+- [x] add a backend-owned query-enrichment seam so live Ask requests can
+  populate `entity_terms` / `relation_terms` conservatively without pushing
+  brittle extraction logic into the frontend
+- [ ] define future semantic-expansion and contrast/diversity retrieval channels behind the same backend -> DuckDB alias resolution -> overlay producer path instead of inventing a second activation mechanism for non-base papers
+- [x] design the demand-attachment path for globally mapped non-base papers so backend-returned graph refs can fetch only needed graph rows into local DuckDB before overlay promotion, rather than assuming the full mapped corpus is already browser-attached
+- [x] implement the remote narrow-row attachment path behind `ensureGraphPaperRefsAvailable(...)` so non-base papers can be materialized on demand without changing the overlay/canvas contract
+- [ ] once warehouse writes are live, upgrade the service from paper-level
+  `answer` + `answer_graph_paper_refs` to real populated `grounded_answer`
+  packets sourced from cited spans, while keeping graph selection paper-only
+- [x] implement the first runtime warehouse writer/repository path for the new
+  canonical core/span/mention tables, with the current logical
+  `paper_reference_entries` -> physical `solemd.paper_references` adapter made
+  explicit
+- [ ] implement the first runtime chunk-table writer lane only after chunk
+  storage is migrated into PostgreSQL and the deferred cutover contract is
+  ready to execute
+- [x] confirm the live index posture for `solemd.papers`, `solemd.graph_points`, `solemd.citations`, `solemd.corpus`, and `pubtator.*` from the running graph DB so deferred DDL can target real gaps instead of assumed ones
+- [x] validate the provisional warehouse taxonomy and chunk-version policy on
+  additional `s2orc_v2` shards and BioCXML archives before any warehouse
+  migration work starts
+- [x] define the parser-output contract for `paper_documents`,
+  `paper_sections`, `paper_blocks`, `paper_sentences`,
+  `paper_reference_entries`, and `paper_citation_mentions` before any
+  migration or backfill work starts
+- [x] define the deferred index matrix for the warehouse tables before
+  migrations, including lineage indexes, lexical fallback indexes, and the
+  boundary between PostgreSQL and future Qdrant serving
+- [x] define deferred stage-level SQL merge templates for the future warehouse
+  writer so COPY/staging and upsert paths are already specified before any
+  migrations are applied
+- [x] keep an explicit optimization register in the docs so query-shape wins,
+  deferred DDL, and likely structural upgrades are tracked as work advances
+- [x] add an explicit deferred chunk-runtime cutover contract so derived serving
+  tables, chunk writes, backfill, grounded-packet reads, and post-load indexes
+  have a real staged plan before any runtime switch is attempted
+- [x] add a structured chunk-runtime cutover preview under `engine/db/previews`
+  so deferred serving cutover can be inspected without applying DDL
+
+Confirmed live posture from the running graph DB:
+
+- [x] `pg_trgm` and `vector` extensions are installed
+- [x] current cosmograph corpus release is ~2.45M graph points; `pubtator.relations` is ~24.8M rows; `pubtator.entity_annotations` is ~318M rows
+- [x] `solemd.graph_points` already has unique `(graph_run_id, corpus_id)` support
+- [x] `solemd.corpus (pmid)` is indexed
+- [x] `pubtator.entity_annotations` and `pubtator.relations` already have PMIDs and signature indexes aligned with the current joins
+- [x] `solemd.papers` currently has title-only FTS, not title+abstract FTS
+- [x] `solemd.citations` currently has `cited_corpus_id` support but not the fuller two-direction/context-count index posture
+
+Deferred PostgreSQL optimization candidates, based on the current query shape and confirmed live schema:
+
+- [ ] upgrade paper lexical search from title-only FTS to a stored/generated
+  title+abstract search vector with a GIN index
+- [ ] add a trigram/expression index for normalized title lookup once the
+  lexical fallback operator is finalized
+- [ ] add citation-direction indexes aligned with
+  `citing_corpus_id`, `cited_corpus_id`, and `context_count > 0`
+
+## Optimization Register
+
+This section is the running optimization list for the RAG stack. It should be
+updated whenever a real query-shape, schema, or serving insight appears during
+implementation.
+
+Confirmed wins already landed:
+
+- paper-search SQL now computes shared search expressions once per query stage
+- empty-result retrieval bails out before enrichment/reference/asset work
+- compact web -> engine transport now omits null/default request noise
+- entity-normalized paper recall now uses `solemd.entities` plus PubTator joins
+  instead of depending only on lexical paper search
+- backend query enrichment now preserves exact concept-id matches when the raw
+  query already contains them, so MeSH-style identifiers can stay exact and
+  indexed instead of being rewritten into fuzzy name matches
+- entity-seeded paper recall now aggregates matched concept hits by PMID before
+  joining into corpus and graph scope, reducing duplicate annotation rows in
+  later paper joins
+- live Ask outage from entity-term SQL alias/parameter drift is fixed, and the
+  global entity recall branch now joins graph scope through the indexed
+  `solemd.graph_points (graph_run_id, corpus_id)` path instead of a redundant
+  scoped-corpus materialization
+- relation-normalized paper recall now uses exact normalized
+  `pubtator.relations.relation_type` matches instead of depending only on
+  post-retrieval relation enrichment
+- relation-seeded paper recall now aggregates matches by PMID before joining
+  into corpus and graph scope, which keeps paper-level relation recall from
+  dragging the full relation row set through later joins
+- citation-neighbor candidate expansion now only pulls from neighbors of the
+  already-bounded candidate set instead of scanning citation contexts globally
+
+Likely next safe current-table wins:
+
+- if relation-intent traffic starts using broader natural-language verbs instead
+  of canonical relation labels, introduce a deliberate normalization table or
+  map rather than widening the current exact-match query into a fuzzy scan
+- if live entity-seeded plans remain heavy even after exact-first query
+  splitting, add a composite `pubtator.entity_annotations (entity_type,
+  concept_id, pmid)` index before broadening entity semantics
+- keep auto-enriched plain-text entity names on the lighter enrichment/ranking
+  path unless they resolve to explicit concept ids or the user explicitly sends
+  entity terms; do not reopen the heaviest seeded paper-recall path by default
+  without a measured index-backed improvement
+- if live relation-seeded plans remain heavy even after PMID pre-aggregation,
+  add a composite `pubtator.relations (relation_type, pmid)` index before
+  broadening relation semantics
+- if citation expansion begins to dominate latency, prioritize the deferred
+  citation-direction partial indexes before attempting any broader citation
+  matching semantics
+
+Deferred DDL/index wins:
+
+- weighted stored/generated `title + abstract` search vector with GIN on
+  `solemd.papers`
+- normalized-title trigram/expression index once the lexical fallback shape is
+  stable
+- composite `pubtator.entity_annotations (entity_type, concept_id, pmid)` if
+  exact-first entity recall remains annotation-join heavy under live workloads
+- composite `pubtator.relations (relation_type, pmid)` if exact relation-seeded
+  recall remains scan-heavy under live workloads
+- citation-direction partial indexes aligned with
+  `(citing_corpus_id)`, `(cited_corpus_id)`, and `context_count > 0`
+- re-check PubTator signature indexes after relation- and entity-seeded recall
+  are exercised on broader live traces
+
+Measured recommendation after the current-table optimization pass:
+
+- the live paper-level backend is now structurally in the right place
+- remaining current-table uplift is mostly justified DDL/index work rather than
+  more retrieval-channel invention
+- representative live entity/relation `EXPLAIN ANALYZE` probes still remained
+  active past ~45s after the SQL-shape fixes, which justifies keeping the next
+  uplift focused on composite PubTator join indexes rather than more semantic
+  widening
+- after the deferred DDL list is stabilized, the next major engineering lane
+  should shift back to warehouse write/migration implementation
+
+Deferred warehouse structural wins:
+
+- persist `paper_entity_mentions` and `paper_citation_mentions` so answer-time
+  grounding does not repeat raw source joins
+- add chunk lexical fallback indexes only after chunk-serving policy is fixed
+- add answer-grounding join indexes only once cited-span packet access patterns
+  are frozen
+
+Deferred warehouse index matrix to design before any migrations:
+
+- current paper-level baseline
+  - `solemd.papers`
+    - generated/stored weighted search vector over `title + abstract`
+    - GIN on that search vector
+    - normalized-title trigram or expression index for fallback similarity
+  - `solemd.citations`
+    - partial btree on `(citing_corpus_id)` where `context_count > 0`
+    - partial btree on `(cited_corpus_id)` where `context_count > 0`
+  - `solemd.paper_references`
+    - current corpus/reference indexes are sufficient for the baseline
+  - `solemd.paper_assets`
+    - current `corpus_id + asset_kind + source` posture is sufficient for the baseline
+- future warehouse lineage tables
+  - `paper_documents`
+    - unique `(corpus_id, source_system, source_revision)`
+  - `paper_sections`
+    - unique `(document_id, section_ordinal)`
+    - btree on `(document_id, section_role)`
+  - `paper_blocks`
+    - unique `(document_id, block_ordinal)`
+    - btree on `(document_id, section_id, block_ordinal)`
+    - btree on `(corpus_id, block_kind, section_role)` for filtered scans
+  - `paper_sentences`
+    - unique `(block_id, sentence_ordinal)`
+    - btree on `(document_id, sentence_ordinal)` only if cross-block replay needs it
+  - `paper_reference_entries`
+    - unique `(document_id, reference_index)` or stable source ref id when present
+    - btree on `(referenced_corpus_id)` and `(referenced_paper_id)` when populated
+  - `paper_citation_mentions`
+    - btree on `(document_id, ref_id)`
+    - btree on `(sentence_id)` and `(block_id)` for answer-grounding joins
+  - `paper_entity_mentions`
+    - btree on `(document_id, entity_type, identifier)`
+    - btree on `(sentence_id)` / `(block_id)` for local grounding joins
+  - `paper_chunk_versions`
+    - unique natural key over the version-defining policy fields or a stable
+      content hash
+  - `paper_chunks`
+    - unique `(chunk_version_id, corpus_id, chunk_ordinal)`
+    - btree on `(chunk_version_id, corpus_id)`
+    - optional GIN search vector only if PostgreSQL remains the lexical fallback
+      for chunk search
+  - `paper_chunk_members`
+    - unique `(chunk_id, member_ordinal)`
+    - reverse lookup on `(member_kind, member_id)` for lineage replay
+
+Boundary rule:
+
+- PostgreSQL should own canonical lineage, lexical fallback, and exact answer
+  grounding joins
+- Qdrant should later own high-scale ANN serving over derived chunks or other
+  retrieval units, not the canonical evidence model
 
 Current milestone note:
 
@@ -103,9 +435,99 @@ Current milestone note:
 - the one-shot detail-service path now throws a typed request error wrapper
   instead of swallowing engine failures behind ad hoc casts, so both prompt
   modes can react to structured backend failures consistently
+- the frontend evidence adapter now keeps `corpus_id` and nullable `paper_id`
+  distinct while deriving an explicit `graph_paper_ref` for browser-side graph
+  resolution, instead of overloading pseudo-paper ids as canonical identifiers
+- the DuckDB/session query seam now names that contract explicitly:
+  graph-to-point resolution happens through graph paper refs, not through a
+  misleading “paper ids only” abstraction
+- the prompt/evidence request contract now mirrors that split:
+  `selected_graph_paper_ref` carries the browser/runtime graph selection key,
+  while `selected_paper_id` remains available for canonical upstream paper ids
+- compose-mode evidence assist now resolves trigger symbols through a shared
+  trigger registry:
+  `@` now opens a simple support/refute evidence menu, and the symbol mapping
+  can still be changed later without rewriting the editor plugin
+- the engine baseline now promotes selected-paper semantic neighbors into the
+  same candidate pool as lexical hits before final ranking:
+  semantically close papers can become real evidence bundles and not just
+  graph-side highlight signals
+- the current baseline fusion is now split into two stages:
+  lexical and semantic channels seed release-scoped paper candidates first,
+  then citation/entity/relation signals rerank within that bounded set
+- the support/refute interaction contract is now semantically honest at the
+  engine boundary:
+  generic Ask returns `answer_evidence`, support flows return
+  `answer_support`, refute flows return `answer_refute`, and the baseline
+  answer text uses the same framing instead of labeling every request as
+  support-oriented
+- selection scoping is now an explicit evidence-contract concern:
+  when the frontend turns on `selection_only`, it must send the concrete
+  selected graph-paper refs to the engine, and the engine must stay inside
+  that release-scoped paper set instead of silently widening back to global
+- the prompt surface now implements that contract end-to-end:
+  a local toggle reads the current selected graph-paper refs from DuckDB’s
+  `selected_point_indices` state, passes them through the canonical evidence
+  request, and the response tray reflects when retrieval was limited to the
+  selected paper set
+- selection scope defaults to on whenever a graph selection exists:
+  users do not need to remember to enable it each time, but they can still
+  turn it off explicitly when they want the same selected context visible on
+  canvas while querying the broader release
+- support/refute intent now affects ordering as well as framing, but only in a
+  bounded, honest way:
+  the baseline uses cue-language affinity from citation contexts and paper
+  summaries to lightly reorder candidate papers and expose `intent_affinity`
+  in bundle rank features; it does not claim sentence-grounded contradiction
+  detection or true claim verification yet
+- the current baseline optimization lane is now explicit:
+  safe code-level improvements happen immediately inside `engine/app/rag`,
+  while DDL/index work is treated as deferred operational work until the graph
+  rebuild window is clear
+- the first safe optimization pass is landed:
+  empty-result searches return before citation/entity/relation/reference/asset
+  enrichment, and the lexical paper-search SQL now computes the tsquery,
+  normalized title query, and search vector once per query row path instead of
+  recomputing those expressions multiple times inline
+- the current paper-level baseline now separates two graph-facing sets:
+  broader retrieval graph signals may activate multiple related papers, but the
+  explicit answer-linked subset is returned separately and becomes the
+  answer-owned DuckDB selection so users can immediately inspect the studies
+  the answer was actually grounded on
+- that answer-linked selection is intentionally still paper-level:
+  the future warehouse phase must upgrade it to cited block/span grounding
+  rather than implying sentence-level verification today
+- bundle contract constants and export metadata now say the startup rule
+  explicitly:
+  `base` autoloads, `universe` attaches on demand, and `evidence` remains off
+  the startup browser path even when artifacts are listed in the manifest
 - compose-mode evidence assist intentionally stays on the simpler one-shot path
   for now so support/refute drafting remains cheap and deterministic while the
   deeper evidence warehouse is still pending
+- the future warehouse lane is now documented explicitly:
+  engine-owned LLM synthesis must sit on top of cited span packets and
+  structured inline citation anchors, while the graph boundary stays paper-level
+  and continues to resolve answer-linked papers through DuckDB plus overlay
+  producers rather than exposing citation spans to the graph hot path
+- the future streaming citation rule is now explicit as well:
+  `answer_linked_papers` should ultimately be derived from structured cited
+  anchors / cited spans, and the response tray should render inline citations
+  from typed data parts instead of reparsing free-form model citation text
+- the current graph regression suite now locks the paper-selection rule:
+  broader graph signals may promote additional studies into overlay/active, but
+  only the explicit answer-linked subset should become the selected graph set
+- the first warehouse hierarchy decision is now explicit:
+  canonical truth stays `documents -> sections -> blocks -> sentences`, while
+  scalable serving uses `papers -> block-rooted chunks -> sentences` so chunks
+  remain derived retrieval products rather than the evidence spine
+- the first warehouse taxonomy decision is now explicit as well:
+  `section_role` and `paper_block_kind` remain separate axes, so methods/result
+  location is not collapsed into paragraph/caption structure and retrieval
+  policy can evolve without rewriting lineage
+- the parser-output contract is now explicit too:
+  source parsers emit normalized document/section/block/sentence/reference/
+  citation records with lossless provenance, while chunking and cross-source
+  alignment remain downstream phases
 - the next milestone starts with runtime-contract hygiene before more feature
   surface:
   finish the remaining query-layer cleanup so non-canvas lookups consistently
@@ -113,6 +535,11 @@ Current milestone note:
   chunk-era naming where it still leaks through graph query modules, and keep
   render/query/evidence responsibilities explicit before broadening the Ask and
   composition UX further
+- after that hygiene lane, the next bounded engine retrieval-quality step is to
+  let `evidence_intent` influence retrieval ordering itself rather than only
+  answer framing:
+  do this inside `engine/app/rag` with cheap, testable heuristics over the
+  current tables rather than speculative warehouse-era logic
 
 ## Locked Decisions
 
@@ -162,6 +589,10 @@ Current milestone note:
 24. The DuckDB registration layer may evolve between narrow local tables and
     narrow local views with strict canonical columns, but consumers must depend
     only on the stable alias contract above.
+25. Selection-scoped evidence requests are explicit backend input:
+    the frontend may derive the selected set from DuckDB/Cosmograph state, but
+    it must pass concrete graph-paper refs to FastAPI instead of expecting the
+    engine to reconstruct browser selection state on its own.
 
 ## Scale Target
 
@@ -269,7 +700,7 @@ Relevant live code surfaces:
 - `app/actions/graph.ts` is still stubbed for graph detail, neighborhoods, and RAG
 - `features/graph/lib/detail-service.ts` already defines the frontend contracts that a real evidence API must satisfy
 - `features/graph/components/panels/PromptBox.tsx` already asks for generated answers
-- `features/graph/duckdb/session.ts` already provides `getPaperNodesByPaperIds(...)` for paper-id to point-index resolution
+- `features/graph/duckdb/session.ts` already provides `getPaperNodesByGraphPaperRefs(...)` for graph-paper-ref to point resolution
 - `lib/db/index.ts` and `lib/db/schema.ts` show the current frontend use of Drizzle for graph metadata reads, but that is current scaffolding rather than a target architectural dependency
 
 The architecture work therefore needs to close a real gap between the docs and
@@ -281,10 +712,30 @@ Small direct probes of the local bulk assets confirm several design-critical fac
 
 From sampled `s2orc_v2` rows:
 
+- the top-level shape is `authors`, `bibliography`, `body`, `corpusid`,
+  `openaccessinfo`, `title`
 - `body.text` and `bibliography.text` are present
 - `body.annotations` includes `section_header`, `paragraph`, `bib_ref`, and sometimes `sentence`
 - each annotation kind is itself a JSON-encoded string and requires a second decode step
+- annotation spans are character offsets, and `bib_ref` annotations carry
+  reference linkage such as `attributes.ref_id`
+- bibliography annotations expose `bib_entry` spans whose `attributes.id`
+  values are the usable bridge target for `body.annotations.bib_ref.ref_id`
 - `sentence` is absent in some rows, so deterministic sentence fallback remains necessary
+- bibliography subfields are not uniformly populated, so author-name or venue
+  substructures should not be treated as required canonical fields
+- in a wider 300-row local probe across five shards (`60` rows per shard),
+  `paragraph` remained universal, `section_header` appeared in `299/300`
+  rows, `bib_ref` in `293/300`, and `sentence` in `240/300`
+- across that same five-shard probe, roughly two thirds of both `bib_ref` and
+  bibliography `bib_entry` annotations carried `matched_paper_id`
+  (`0.655` and `0.659` respectively), so source-native citation linkage is
+  useful but still not universal
+- section-header numbering tokens are common (`1792` numbered headers across
+  the 300-row probe), which is useful for section normalization but still too
+  noisy to treat as retrieval blocks by default
+- section-header spans are structurally useful but noisy enough that they
+  should remain section metadata, not retrieval blocks by default
 
 From sampled BioCXML members:
 
@@ -292,11 +743,356 @@ From sampled BioCXML members:
 - passages carry `section_type` and `type`
 - front matter contains identifiers and license metadata in `<infon>` tags
 - inline `<annotation>` tags carry exact mention offsets
+- annotation identifiers may appear in source-native `<id>` elements rather
+  than only in `<infon key="identifier">`, so parser adapters must preserve
+  both forms before normalization
+- sampled offsets behave like document-global offsets rather than
+  passage-relative offsets
+- bibliography entries appear as separate `REF` passages with structured
+  citation metadata such as PMID, source, year, and alternative citation text
+- broader local inspection also shows frequent `FIG`, `TABLE`, `REF`,
+  `INTRO`, `METHODS`, `RESULTS`, `DISCUSS`, and `CONCL` passage types, which
+  supports treating captions and table-adjacent text as first-class block kinds
+- in a broader 120-document cross-archive BioCXML probe, `paragraph` and `ref`
+  passages dominated, but `fig_caption` (`555`), `table` (`270`),
+  `table_caption` (`207`), and `table_footnote` (`166`) were all common enough
+  to justify distinct block kinds instead of a generic table/caption bucket
+- that same probe showed `REF` as the most common `section_type` by a wide
+  margin, reinforcing the need to keep reference passages lineage-first by
+  default rather than blindly mixing them into retrieval chunks
+- annotation ids in the BioC probe were predominantly namespaced and usable for
+  safe normalization, led by `mesh` (`17451`), with smaller but real `cvcl`,
+  `tmvar`, and `omim` populations
+- sampled `FIG` passages expose explicit `fig_caption` content and optional
+  inline annotations
+- sampled `TABLE` passages expose both `table_caption` text and richer table XML
+  payloads or footnotes, which argues for separating `table_caption`,
+  `table_footnote`, and `table_body_text`
+- additional sample members also exposed `fig_caption`, `table_caption`,
+  `table_footnote`, `table`, and `ref` passage types across multiple articles,
+  which supports treating the first warehouse taxonomy as general rather than
+  article-specific
+- sampled BioCXML documents did not reliably expose `<relation>` elements, so
+  relation mentions should remain optional/sparse warehouse inputs rather than
+  assumed first-class dense content
 
 Implication:
 
 - `s2orc_v2` remains the likely primary text spine
 - BioCXML is strong enough to justify a parallel annotation and caption enrichment track
+
+## Future Warehouse Answer Grounding
+
+This is the next major design lane after the current paper-level baseline.
+
+The target is not "an LLM answer with some papers nearby." The target is:
+
+- retrieval over the full paper universe
+- bounded evidence recall within grounded paper candidates
+- cited spans with stable warehouse lineage
+- inline citations rendered from structured backend data
+- answer-linked papers projected back into the graph through the existing
+  DuckDB resolution and overlay path
+
+### Durable principles
+
+1. The model may contribute reasoning and synthesis, but the answer must be
+   grounded on retrieved study content.
+2. The engine owns retrieval, grounding, citation assembly, and answer
+   semantics.
+3. The Next.js / `Vercel AI SDK` layer owns streaming transport and UI
+   presentation, not evidence semantics.
+4. Graph activation remains paper-level even when the answer is grounded on
+   blocks or sentences.
+5. Cited spans remain evidence-panel detail, not graph-hot-path state.
+6. Inline citations should come from structured anchors, not from reparsing raw
+   model text after the fact.
+7. Query entity terms should normalize toward concept ids where possible, and
+   answer grounding should preserve aligned entity mentions inside cited spans.
+
+### Intended warehouse-era answer flow
+
+1. Retrieve candidate papers from the global paper universe.
+2. Retrieve candidate blocks/spans inside that bounded paper set.
+3. Resolve citation mentions, bibliography entries, and provenance for the
+   cited spans.
+4. Assemble cited evidence packets:
+   - paper ref
+   - span/block id
+   - section and caption context
+   - source offsets / provenance
+   - short quoted text for inspection
+5. Run answer synthesis from those packets.
+6. Return:
+   - answer text
+   - answer-linked papers
+   - cited spans
+   - inline citation anchors
+7. Resolve answer-linked papers through DuckDB and apply answer-owned graph
+   selection / overlay activation.
+
+### Biomedical parsing implications
+
+The warehouse phase must preserve more than abstract or body paragraphs.
+
+Required posture:
+
+- keep `s2orc_v2` as the likely primary text and inline-citation spine
+- use BioCXML as a parallel offset and annotation enrichment layer
+- preserve section labels, caption/table context, bibliography entries, and
+  mention offsets as first-class warehouse provenance
+- support deterministic sentence fallback where `s2orc_v2` does not provide
+  sentence annotations
+- do not collapse full-text evidence into regex-derived chunks
+
+### Recommended hierarchy and chunking decision
+
+The current recommended design is:
+
+- **canonical warehouse spine**
+  - `paper_documents -> paper_sections -> paper_blocks -> paper_sentences`
+- **citation/provenance siblings**
+  - `paper_reference_entries`
+  - `paper_citation_mentions`
+  - `paper_entity_mentions`
+  - `paper_relation_mentions`
+  - `paper_assets`
+- **derived serving layer**
+  - `paper_chunk_versions -> paper_chunks -> paper_chunk_members`
+
+Recommended retrieval funnel:
+
+1. global paper recall
+2. block-rooted chunk recall inside the bounded paper set
+3. sentence and citation-mention grounding for answer assembly and inline
+   citation display
+
+Decision:
+
+- we **do** need chunks for scalable retrieval and embeddings
+- we **do not** want chunks to become the canonical evidence unit
+
+Rationale:
+
+- blocks are the best human-visible evidence units for scientific articles
+  because they preserve paragraph, caption, and table-adjacent structure
+- sentences are necessary for exact grounding but too fine-grained and costly
+  as the default first-pass retrieval unit
+- derived chunks remain useful because embedding models and token budgets will
+  evolve, but chunk boundaries should be replaceable without rewriting the
+  canonical evidence spine
+
+Chunking rule:
+
+- build chunks from canonical block/sentence members
+- prefer chunks that stay inside one section or caption context
+- avoid arbitrary windows that cross section boundaries
+- if adjacent tiny blocks are merged for serving efficiency, track that only in
+  `paper_chunk_members`; do not collapse the block model itself
+
+### Provisional first warehouse taxonomy and chunk policy
+
+This is a provisional serving policy, not a finalized schema contract.
+
+The first warehouse schema should keep **section role** and **block kind**
+separate.
+
+Recommended first `section_role` normalization:
+
+- `abstract`
+- `introduction`
+- `methods`
+- `results`
+- `discussion`
+- `conclusion`
+- `supplement`
+- `reference`
+- `front_matter`
+- `other`
+
+Recommended first `paper_block_kind` normalization:
+
+- `narrative_paragraph`
+- `figure_caption`
+- `table_caption`
+- `table_footnote`
+- `table_body_text`
+
+Why this is the right split:
+
+- `methods` vs `results` is narrative location, not structural kind
+- `paragraph` vs `fig_caption` vs `table_footnote` is structural kind, not
+  narrative role
+- collapsing those into one enum would make retrieval policy and warehouse
+  lineage harder to evolve later
+
+Non-block structural objects should stay separate:
+
+- section headers stay section metadata or lightweight context, not standalone
+  retrieval blocks by default
+- bibliography entries stay `paper_reference_entries`
+- citation mentions stay `paper_citation_mentions`
+- document title and front-matter metadata stay on the document/section plane,
+  not as generic retrieval chunks
+
+Provisional warehouse table sketch:
+
+- `paper_documents`
+  - one canonical document/version row per source text plane
+  - keep source system, source key, source hash, language, and document-level
+    metadata
+- `paper_sections`
+  - `section_role`, display label, parent/child section lineage, and absolute
+    source offsets
+- `paper_blocks`
+  - `block_kind`, section linkage, block ordinal, absolute source offsets,
+    cleaned text, and retrieval-default flags
+- `paper_sentences`
+  - sentence ordinal inside block, absolute source offsets, and segmentation
+    provenance (`s2orc_annotation` vs deterministic fallback)
+- `paper_reference_entries`
+  - bibliography entry lineage from `bib_entry.id` and/or BioC `REF` passages,
+    with matched paper/corpus ids when available
+- `paper_citation_mentions`
+  - inline citation anchors keyed by source `ref_id`, sentence/block lineage,
+    offsets, and matched paper ids when present
+- `paper_entity_mentions`
+  - source-specific mention spans, identifiers, entity type, and raw attrs/infons
+- `paper_relation_mentions`
+  - optional/sparse relation spans when a source truly provides them; do not
+    assume uniform density from BioCXML alone
+
+First `paper_chunk_version` posture:
+
+- chunk from canonical sentence and block members, not raw text slices
+- keep chunks inside one section/caption context
+- allow merging adjacent tiny `narrative_paragraph` blocks only when they are
+  contiguous and semantically local
+- keep `figure_caption` and `table_caption` blocks standalone by default
+- keep chunk membership lineage explicit so chunk policies can change later
+
+Recommended first `paper_chunk_version` fields:
+
+- parser/source versions:
+  - source system and source revision/hash
+  - parser version
+  - text-normalization version
+- segmentation policy:
+  - sentence source policy (`s2orc_annotation` first, deterministic fallback
+    second)
+  - included `section_role` values
+  - included `paper_block_kind` values
+  - caption/table merge policy
+- sizing policy:
+  - tokenizer name/version
+  - target token budget
+  - hard max tokens
+  - sentence overlap policy
+- retrieval policy:
+  - embedding model/version
+  - lexical normalization flags
+  - retrieval-default flag
+
+First code-level serving contract now exists for:
+
+- `paper_chunk_version_record`
+- `paper_chunk_record`
+- `paper_chunk_member_record`
+- `cited_span_packet`
+- `inline_citation_anchor`
+- `answer_segment`
+
+Current rule:
+
+- cited-answer packets derive from aligned warehouse rows
+- answer-linked papers derive from inline-citation anchors
+- this keeps graph selection tied to structured grounding rather than to raw
+  model prose or the broader retrieved-paper pool
+- chunk assembly currently remains conservative and structural:
+  section-bounded, caption-safe, and driven by canonical block/sentence members
+
+First sizing posture to validate:
+
+- narrative chunks should start around the model-sized embedding window range
+  rather than full paragraphs of arbitrary length
+- sentence-aware overlap is acceptable when needed for retrieval continuity
+- exact sentence grounding should still be resolved from canonical
+  `paper_sentences`, not from the chunk text itself
+
+Initial retrieval-default policy:
+
+- `abstract` and body `narrative_paragraph` blocks are retrieval candidates
+- `figure_caption`, `table_caption`, and parseable `table_body_text` blocks are
+  retrieval candidates
+- `methods` blocks remain searchable, but are candidates for later answer-time
+  downweighting rather than exclusion from the canonical warehouse
+- raw `REF` passages remain lineage-first and non-retrieval by default
+
+Open validation questions for the next pass:
+
+- should abstract narrative blocks be embedded and served separately from
+  full-text body narrative chunks
+- should some `table_body_text` content be stored only as parsed table assets
+  when the textual projection is noisy
+- should `table_footnote` blocks be retrieval-default or display-only at first
+- what overlap policy is sufficient for continuity without duplicating too many
+  near-identical biomedical spans
+
+### Provisional payload shape to design before code
+
+Do not implement these fields yet, but design toward them:
+
+- `retrieved_papers`
+- `answer_linked_papers`
+- `cited_spans`
+- `inline_citations`
+- optional answer segments or anchors that let the UI render citations inline
+  without guessing
+
+### Inline citation streaming contract
+
+The future streaming answer should keep one authoritative rule:
+
+- the browser does not infer citation meaning by parsing raw model text
+
+Preferred shape:
+
+- assistant text may still stream normally
+- citation meaning should arrive as structured data parts or typed payloads
+- the authoritative answer-linked paper set should be derived from those
+  structured citation anchors, not from the broader retrieval set
+
+Provisional design target:
+
+- `answer_segments`
+  - ordered visible answer segments
+  - each segment carries zero or more citation-anchor ids
+- `inline_citations`
+  - anchor id
+  - cited paper ref
+  - cited span ids
+  - optional short quote / evidence label
+- `answer_linked_papers`
+  - unique paper refs referenced by the inline-citation anchors
+
+UI implication:
+
+- the `Vercel AI SDK` layer can stream answer text and typed citation parts
+- the response tray renders citations from structured anchors
+- DuckDB selection should use `answer_linked_papers`
+- cited spans remain panel detail and never become graph-hot-path state
+
+### Immediate milestone sequence for this lane
+
+1. Finish the docs-level contract for cited spans and inline citations.
+2. Do the deeper `s2orc_v2` + BioCXML parse-design pass on broader samples.
+3. Finalize warehouse tables for document / section / block / sentence /
+   citation mention / bibliography lineage.
+4. Define `paper_chunk_versions` and first chunk-member policies from the
+   canonical block/sentence model.
+5. Build bounded chunk/block retrieval before attempting global evidence ANN.
+6. Add LLM answer generation only after cited-span packets exist.
+7. Keep the graph activation boundary unchanged throughout.
 
 ## Evidence Artifact Reconciliation
 
@@ -743,7 +1539,7 @@ flat list of highlighted ids.
 
 Important current constraint:
 
-- `getPaperNodesByPaperIds(...)` resolves against `current_paper_points_web`, not the full universe
+- `getPaperNodesByGraphPaperRefs(...)` resolves against `current_paper_points_web`, not the full universe
 - evidence-driven overlay activation therefore also needs a universe-resolution helper that can map returned `paper_id` values to universe point ids before calling `setOverlayPointIds(...)`
 - this is a frontend graph-integration task, not a reason to distort the engine response contract
 
@@ -1054,6 +1850,195 @@ This matches the observed source strengths:
 - `s2orc_v2` is strong on structural full text and bibliography linkage
 - BioCXML is strong on exact entity offsets, passage metadata, and caption/table surface
 
+### Parser-output contract
+
+Before any warehouse migration or backfill work, define one parser-output
+contract that all source-specific parsers target.
+
+The parser stage should emit **normalized parse records**, not chunks,
+embeddings, or answer-ready packets.
+
+Every parse record should carry these common fields:
+
+- `corpus_id`
+- `source_system`
+  - `s2orc_v2`, `biocxml`, or another explicit source id
+- `source_revision`
+  - source release or content hash
+- `source_document_key`
+  - source-native document identifier within that source
+- `source_plane`
+  - e.g. `body`, `bibliography`, `passage`, `front_matter`, `table_xml`
+- `parser_version`
+- `raw_attrs_json`
+  - decoded source attrs/infons for lossless provenance
+
+Every text-bearing parse record should also carry:
+
+- `source_start_offset`
+- `source_end_offset`
+- `text`
+
+The first parser-output objects should be:
+
+- `paper_document_record`
+  - document-level metadata, title, license, language, and source availability
+- `paper_section_record`
+  - section ordinal
+  - parent section ordinal when nested
+  - normalized `section_role`
+  - display label / numbering token
+  - source offsets when available
+- `paper_block_record`
+  - block ordinal
+  - linked section ordinal
+  - normalized `paper_block_kind`
+  - `is_retrieval_default`
+  - optional linked asset ref for figure/table surfaces
+- `paper_sentence_record`
+  - sentence ordinal inside block
+  - linked block ordinal
+  - segmentation source
+    - `s2orc_annotation` or deterministic fallback
+- `paper_reference_entry_record`
+  - source reference key
+    - `bib_entry.id` from `s2orc_v2` or a BioC `REF`-derived key
+  - reference ordinal
+  - raw citation text
+  - matched paper/corpus ids when directly present
+- `paper_citation_mention_record`
+  - source citation key
+    - `bib_ref.ref_id` or aligned equivalent
+  - linked block ordinal
+  - linked sentence ordinal when known
+  - surface text and offsets
+  - matched paper/corpus ids when directly present
+
+Optional parse outputs can follow the same contract later:
+
+- `paper_entity_mention_record`
+- `paper_relation_mention_record`
+- `paper_asset_record`
+
+Entity-mention records should be designed for grounding, not just filtering.
+
+Minimum fields:
+
+- `entity_type`
+- `source_identifier`
+  - source-native concept or mention identifier as emitted by the source
+- `concept_namespace`
+  - populated only when the parser can map the source identifier safely
+- `concept_id`
+  - normalized concept id inside that namespace
+- linked block / sentence ordinals when alignment is known
+
+Normalization rule:
+
+- preserve raw source identifiers even when namespace inference is uncertain
+- only populate `concept_namespace` when the source semantics make that mapping
+  safe
+- do not force brittle one-size-fits-all inference for every disease, chemical,
+  or mutation id at parse time
+- later query-time entity normalization should target the same
+  `concept_namespace` / `concept_id` pair used in the warehouse mention layer
+
+Source-specific mapping rules:
+
+- `s2orc_v2`
+  - `body.annotations.section_header` -> `paper_section_record`
+  - `body.annotations.paragraph` -> `paper_block_record`
+  - `body.annotations.sentence` -> `paper_sentence_record` when present
+  - `body.annotations.bib_ref` -> `paper_citation_mention_record`
+  - `bibliography.annotations.bib_entry` -> `paper_reference_entry_record`
+- BioCXML
+  - `passage.section_type` + `passage.type` -> section and block records
+  - `fig_caption` -> `paper_block_record(block_kind='figure_caption')`
+  - `table_caption` -> `paper_block_record(block_kind='table_caption')`
+  - `table_footnote` -> `paper_block_record(block_kind='table_footnote')`
+  - `type='table'` with XML payload -> `paper_asset_record` plus optional
+    `paper_block_record(block_kind='table_body_text')` when a stable text
+    projection exists
+  - `section_type='REF'` / `type='ref'` -> `paper_reference_entry_record`
+  - inline `<annotation>` -> `paper_entity_mention_record`
+
+Parser invariants:
+
+1. Preserve source order. Section, block, sentence, and reference ordinals must
+   reflect source order, not downstream ranking order.
+2. Keep offsets lossless. Do not replace source offsets with normalized offsets;
+   carry both if later alignment adds canonical offsets.
+3. Do not fabricate exact structure. If sentence alignment or section nesting is
+   uncertain, record bounded confidence instead of pretending it is exact.
+4. Keep parse and alignment separate. Parsers emit source-normalized records;
+   the alignment layer decides canonical merges or conflicts across sources.
+5. Do not emit chunks here. Chunk derivation belongs after canonical span
+   assembly.
+
+### Provisional warehouse-row contract for grounded mentions
+
+After parser output, but before chunks or synthesis, the warehouse should
+persist aligned mention rows separately from source-local parse records.
+
+First row families:
+
+- `paper_citation_mentions`
+- `paper_entity_mentions`
+
+Every persisted mention row should carry:
+
+- common source provenance
+  - `corpus_id`
+  - `source_system`
+  - `source_revision`
+  - `source_document_key`
+  - `source_plane`
+  - `parser_version`
+  - `raw_attrs_json`
+- source-local text payload
+  - `source_start_offset`
+  - `source_end_offset`
+  - `text`
+- alignment metadata
+  - `span_origin`
+    - `primary_text` or `annotation_overlay`
+  - `alignment_status`
+    - `exact`, `bounded`, or `source_local_only`
+  - `alignment_confidence`
+  - canonical ordinals when known
+    - `canonical_section_ordinal`
+    - `canonical_block_ordinal`
+    - `canonical_sentence_ordinal`
+
+`paper_citation_mentions` should also carry:
+
+- `source_citation_key`
+- `source_reference_key`
+- matched paper/corpus ids when available
+
+`paper_entity_mentions` should also carry:
+
+- `entity_type`
+- `source_identifier`
+- `concept_namespace`
+- `concept_id`
+
+Rule:
+
+- parse records may carry source-local ordinals
+- warehouse mention rows may carry canonical ordinals
+- do not silently reuse source-local ordinals as canonical ordinals for overlay
+  sources like BioCXML unless an alignment step explicitly says so
+
+Non-goals for the parser stage:
+
+- no regex citation recovery
+- no chunk generation
+- no embeddings
+- no answer synthesis
+- no forced cross-source deduplication beyond direct matched ids already
+  present in the source
+
 ### Alignment rules
 
 Canonical text choice and canonical annotation choice are separate decisions.
@@ -1146,6 +2131,145 @@ beginning for:
 
 Partitioning details can be finalized later, but the schema should not assume a
 single small-table posture.
+
+### Provisional deferred DDL posture
+
+The warehouse migration design should now follow the explicit code contract in:
+
+- `engine/app/rag/migration_contract.py`
+- `engine/app/rag/index_contract.py`
+- `engine/app/rag/rag_schema_contract.py`
+- `engine/app/rag/write_contract.py`
+- `engine/app/rag/write_repository.py`
+- `engine/app/rag/write_sql_contract.py`
+
+Current intended table posture:
+
+- non-partitioned:
+  - `paper_documents`
+  - `paper_document_sources`
+  - `paper_sections`
+  - `paper_reference_entries`
+  - `paper_chunk_versions`
+- hash-partitioned on `corpus_id`:
+  - `paper_blocks`
+  - `paper_sentences`
+  - `paper_citation_mentions`
+  - `paper_entity_mentions`
+  - `paper_chunks`
+  - `paper_chunk_members`
+
+Current intended key/index posture:
+
+- `paper_document_sources`
+  - unique source identity across
+    `(source_system, source_revision, source_document_key, source_plane)`
+- `paper_sections`
+  - primary key `(corpus_id, section_ordinal)`
+  - parent-section lookup index
+- `paper_blocks`
+  - primary key `(corpus_id, block_ordinal)`
+  - section lookup index
+  - retrieval-default partial index by `(corpus_id, section_role, block_kind)`
+- `paper_sentences`
+  - primary key `(corpus_id, block_ordinal, sentence_ordinal)`
+  - block lookup index
+- `paper_reference_entries`
+  - primary key `(corpus_id, reference_ordinal)`
+  - unique `(corpus_id, source_reference_key)`
+  - partial lookup on `matched_corpus_id`
+- `paper_citation_mentions`
+  - canonical-span lookup index
+  - source-citation-key lookup index
+- `paper_entity_mentions`
+  - concept lookup index on `(concept_namespace, concept_id, corpus_id)`
+  - canonical-span lookup index
+- `paper_chunks`
+  - primary key `(chunk_version_key, corpus_id, chunk_ordinal)`
+  - lookup index on `(chunk_version_key, corpus_id)`
+- `paper_chunk_members`
+  - primary key `(chunk_version_key, corpus_id, chunk_ordinal, member_ordinal)`
+  - block lineage lookup index
+  - partial sentence lineage lookup index
+- heavier lexical-fallback indexes on `paper_blocks.search_tsv` and
+  `paper_chunks.search_tsv`
+  - deferred to a post-load / rebuild-safe phase
+  - should be built concurrently if the tables are already live
+- no pgvector ANN index should be the first warehouse default on canonical
+  span tables
+  - PostgreSQL owns structural lookup, lineage, grounding, and lexical fallback
+  - first-pass dense ANN remains a future Qdrant concern
+
+### Provisional deferred write posture
+
+The future warehouse writer should now follow the explicit stage planner in:
+
+- `engine/app/rag/write_repository.py`
+- `engine/app/rag/write_sql_contract.py`
+
+Current intended stage order:
+
+1. `documents`
+2. `document_sources`
+3. `sections`
+4. `blocks`
+5. `sentences`
+6. `references`
+7. `citations`
+8. `entities`
+9. `chunk_versions`
+10. `chunks`
+11. `chunk_members`
+
+Current intended write-method posture:
+
+- default to `copy_stage_upsert` for row-heavy warehouse tables, including
+  documents, sections, references, canonical spans, mentions, chunks, and
+  chunk members
+- reserve `upsert_rows` for tiny policy/config tables such as
+  `paper_chunk_versions`
+- keep SQL templates repo-native:
+  `_stg_*` temp tables, explicit COPY column order, and
+  `INSERT ... SELECT ... ON CONFLICT` merges for staged tables
+- keep this as a deferred contract only until the rebuild-safe window opens;
+  do not implement live warehouse writes yet
+
+Operational rule:
+
+- this is still a deferred migration contract
+- do not apply these tables or indexes while the graph rebuild / publish work is
+  still running
+- when the time comes, index creation must be staged and measured rather than
+  fired indiscriminately
+
+Deferred migration sequence when the rebuild window is clear:
+
+Code contract:
+
+- `engine/app/rag/migration_contract.py`
+
+1. low-volume canonical tables first
+   - `paper_documents`
+   - `paper_document_sources`
+   - `paper_sections`
+   - `paper_reference_entries`
+   - `paper_chunk_versions`
+2. high-volume canonical span tables next
+   - `paper_blocks`
+   - `paper_sentences`
+3. aligned mention tables after canonical spans exist
+   - `paper_citation_mentions`
+   - `paper_entity_mentions`
+   - optional `paper_relation_mentions`
+4. derived serving tables last
+5. chunk runtime cutover only after derived serving tables, chunk writes, and
+   default chunk-version backfill exist
+   - `paper_chunks`
+   - `paper_chunk_members`
+   - inspect the deferred cutover preview under `engine/db/previews` before
+     applying any runtime-serving switch
+6. only then stage the heavier secondary indexes, preferably with concurrent
+   creation where appropriate
 
 ## Workstream Dependencies
 

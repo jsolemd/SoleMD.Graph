@@ -1,4 +1,12 @@
-"""Canonical base admission for mapped graph runs."""
+"""Canonical base admission for mapped graph runs.
+
+Base admission uses continuous domain-density scoring.  Every mapped paper
+receives a ``domain_score`` and the top ``target_base_count`` papers (from
+``solemd.base_policy``) enter base; the rest stay in universe.
+
+The score rewards family diversity (squared), core psych/neuro family hits,
+citation impact, annotation density, flagship journal membership, and recency.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +16,38 @@ from app.graph.render_policy import renderable_point_predicate_sql
 
 
 FLAGSHIP_FAMILY_SQL = "'domain_flagship', 'general_flagship'"
-EXCLUDED_VOCAB_FAMILY_SQL = "'critical_care_specialty', 'palliative_specialty'"
+
+# ── Domain-density score formula ──────────────────────────────────────
+# Weights calibrated to produce ~500K base from 2.6M mapped papers.
+# See docs/map/database.md § Base Scoring for rationale.
+DOMAIN_SCORE_SQL = f"""
+    -- Family diversity: n_families² × min(n_rules, 20), capped at 2000
+    LEAST(
+        pes.entity_rule_families * pes.entity_rule_families
+        * LEAST(pes.entity_rule_count, 20),
+        2000
+    )::REAL
+    -- Core family bonus (psych disorder, neuro disorder, psych med, NT system)
+    + pes.entity_core_families * 200::REAL
+    -- Relation rule hit
+    + CASE WHEN pes.has_relation_rule_hit THEN 500::REAL ELSE 0::REAL END
+    -- Flagship journal
+    + CASE WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL})
+           THEN 800::REAL ELSE 0::REAL END
+    -- Citation impact (log-scaled)
+    + LN(1 + pes.citation_count::REAL) * 40::REAL
+    -- Annotation density
+    + LN(1 + pes.paper_entity_count::REAL) * 10::REAL
+    + LN(1 + pes.paper_relation_count::REAL) * 15::REAL
+    -- Recency
+    + CASE
+        WHEN p.year >= 2020 THEN 30::REAL
+        WHEN p.year >= 2015 THEN 20::REAL
+        WHEN p.year >= 2010 THEN 10::REAL
+        WHEN p.year >= 2000 THEN  5::REAL
+        ELSE 0::REAL
+      END
+"""
 
 
 def load_active_base_policy(cur) -> dict:
@@ -36,6 +75,7 @@ def get_active_base_policy_version() -> str:
 def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
     renderable_predicate = renderable_point_predicate_sql("gp")
 
+    # Phase 1: Validate, TRUNCATE, compute, INSERT — then commit to release lock
     with db.pooled() as conn, conn.cursor() as cur:
         apply_build_session_settings(cur)
         policy = load_active_base_policy(cur)
@@ -59,11 +99,13 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
                 "refresh evidence summary before materializing base admission"
             )
 
-        cur.execute(
-            "DELETE FROM solemd.graph_base_features WHERE graph_run_id = %s",
-            (graph_run_id,),
-        )
+        target_base_count = int(policy["target_base_count"])
 
+        cur.execute("SET LOCAL lock_timeout = '10s'")
+        cur.execute("TRUNCATE solemd.graph_base_features")
+        cur.execute("TRUNCATE solemd.graph_base_points")
+
+        # Score every mapped paper with the continuous domain-density formula
         cur.execute(
             f"""
             CREATE TEMP TABLE tmp_graph_base_features
@@ -80,41 +122,18 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
                 pes.journal_family_key,
                 pes.journal_family_label,
                 pes.journal_family_type,
+                -- Descriptive label (not a gate — the score decides admission)
                 CASE
                     WHEN pes.has_rule_evidence THEN 'rule'
                     WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL}) THEN 'flagship'
-                    WHEN pes.admission_reason = 'vocab_entity_match'
-                     AND (
-                        pes.journal_family_key IS NULL
-                        OR pes.journal_family_key NOT IN ({EXCLUDED_VOCAB_FAMILY_SQL})
-                     )
-                    THEN 'vocab'
-                    ELSE NULL
+                    WHEN pes.has_vocab_match THEN 'vocab'
+                    ELSE 'scored'
                 END AS base_reason,
                 pes.citation_count,
                 pes.paper_entity_count,
                 pes.paper_relation_count,
-                CASE
-                    WHEN pes.has_rule_evidence THEN 3000::REAL
-                    WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL}) THEN 2000::REAL
-                    WHEN pes.admission_reason = 'vocab_entity_match'
-                     AND (
-                        pes.journal_family_key IS NULL
-                        OR pes.journal_family_key NOT IN ({EXCLUDED_VOCAB_FAMILY_SQL})
-                     )
-                    THEN 1000::REAL
-                    ELSE 0::REAL
-                END
-                + (LN(1 + pes.citation_count::REAL) * 20::REAL)
-                + (LN(1 + pes.paper_entity_count::REAL) * 8::REAL)
-                + (LN(1 + pes.paper_relation_count::REAL) * 10::REAL)
-                + CASE
-                    WHEN p.year >= 2020 THEN 6::REAL
-                    WHEN p.year >= 2010 THEN 4::REAL
-                    WHEN p.year >= 2000 THEN 2::REAL
-                    ELSE 0::REAL
-                  END
-                AS base_rank
+                ({DOMAIN_SCORE_SQL}) AS domain_score,
+                COALESCE(gp.outlier_score, 0) AS outlier_score
             FROM solemd.graph_points gp
             JOIN solemd.paper_evidence_summary pes ON pes.corpus_id = gp.corpus_id
             JOIN solemd.papers p ON p.corpus_id = gp.corpus_id
@@ -126,73 +145,67 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
         cur.execute(
             """
             INSERT INTO solemd.graph_base_features (
-                graph_run_id,
-                corpus_id,
-                admission_reason,
-                has_vocab_match,
-                has_entity_rule_hit,
-                has_relation_rule_hit,
-                has_rule_evidence,
-                has_curated_journal_family,
-                journal_family_key,
-                journal_family_label,
-                journal_family_type,
-                base_reason,
-                citation_count,
-                paper_entity_count,
-                paper_relation_count
+                graph_run_id, corpus_id, admission_reason,
+                has_vocab_match, has_entity_rule_hit, has_relation_rule_hit,
+                has_rule_evidence, has_curated_journal_family,
+                journal_family_key, journal_family_label, journal_family_type,
+                base_reason, citation_count, paper_entity_count, paper_relation_count
             )
             SELECT
-                graph_run_id,
-                corpus_id,
-                admission_reason,
-                has_vocab_match,
-                has_entity_rule_hit,
-                has_relation_rule_hit,
-                has_rule_evidence,
-                has_curated_journal_family,
-                journal_family_key,
-                journal_family_label,
-                journal_family_type,
-                base_reason,
-                citation_count,
-                paper_entity_count,
-                paper_relation_count
+                graph_run_id, corpus_id, admission_reason,
+                has_vocab_match, has_entity_rule_hit, has_relation_rule_hit,
+                has_rule_evidence, has_curated_journal_family,
+                journal_family_key, journal_family_label, journal_family_type,
+                base_reason, citation_count, paper_entity_count, paper_relation_count
             FROM tmp_graph_base_features
             """
         )
 
+        # Top-K by domain_score: only non-outlier papers enter base
         cur.execute(
-            f"""
-            UPDATE solemd.graph_points gp
-            SET is_in_base = (
-                    ({renderable_predicate})
-                    AND tmp.base_reason IS NOT NULL
-                ),
-                base_rank = CASE
-                    WHEN ({renderable_predicate}) AND tmp.base_reason IS NOT NULL
-                    THEN COALESCE(tmp.base_rank, 0)
-                    ELSE 0
-                END
-            FROM tmp_graph_base_features tmp
-            WHERE gp.graph_run_id = %s
-              AND gp.graph_run_id = tmp.graph_run_id
-              AND gp.corpus_id = tmp.corpus_id
+            """
+            INSERT INTO solemd.graph_base_points (
+                graph_run_id, corpus_id, base_reason, base_rank
+            )
+            SELECT graph_run_id, corpus_id, base_reason, domain_score
+            FROM (
+                SELECT *,
+                    ROW_NUMBER() OVER (ORDER BY domain_score DESC) AS rn
+                FROM tmp_graph_base_features
+                WHERE outlier_score = 0
+            ) ranked
+            WHERE rn <= %s
             """,
-            (graph_run_id,),
+            (target_base_count,),
         )
+        conn.commit()
+
+    # Phase 2: ANALYZE (autocommit, no lock held)
+    with db.connect_autocommit() as conn, conn.cursor() as cur:
+        cur.execute("ANALYZE solemd.graph_base_features")
+        cur.execute("ANALYZE solemd.graph_base_points")
+
+    # Phase 3: Reporting queries — lightweight reads, no exclusive lock
+    with db.pooled() as conn, conn.cursor() as cur:
+        apply_build_session_settings(cur)
 
         cur.execute(
             f"""
             SELECT
-                COUNT(*) FILTER (WHERE gp.is_in_base)::INTEGER AS base_count,
                 COUNT(*) FILTER (
                     WHERE ({renderable_predicate})
-                      AND gp.is_in_base = false
+                      AND bp.corpus_id IS NOT NULL
+                )::INTEGER AS base_count,
+                COUNT(*) FILTER (
+                    WHERE ({renderable_predicate})
+                      AND bp.corpus_id IS NULL
                 )::INTEGER AS universe_count,
                 COUNT(*) FILTER (WHERE ({renderable_predicate}))::INTEGER AS renderable_count,
                 COUNT(*) FILTER (WHERE NOT ({renderable_predicate}))::INTEGER AS non_renderable_count
             FROM solemd.graph_points gp
+            LEFT JOIN solemd.graph_base_points bp
+              ON bp.graph_run_id = gp.graph_run_id
+             AND bp.corpus_id = gp.corpus_id
             WHERE gp.graph_run_id = %s
             """,
             (graph_run_id,),
@@ -204,10 +217,9 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
             SELECT
                 c.admission_reason,
                 COUNT(*)::INTEGER AS paper_count
-            FROM solemd.graph_points gp
-            JOIN solemd.corpus c ON c.corpus_id = gp.corpus_id
-            WHERE gp.graph_run_id = %s
-              AND gp.is_in_base = true
+            FROM solemd.graph_base_points bp
+            JOIN solemd.corpus c ON c.corpus_id = bp.corpus_id
+            WHERE bp.graph_run_id = %s
             GROUP BY c.admission_reason
             ORDER BY paper_count DESC, c.admission_reason
             """,
@@ -222,9 +234,8 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
             SELECT
                 base_reason,
                 COUNT(*)::INTEGER AS paper_count
-            FROM solemd.graph_base_features
+            FROM solemd.graph_base_points
             WHERE graph_run_id = %s
-              AND base_reason IS NOT NULL
             GROUP BY base_reason
             ORDER BY paper_count DESC, base_reason
             """,
@@ -237,17 +248,16 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
         cur.execute(
             """
             SELECT
-                journal_family_key,
+                f.journal_family_key,
                 COUNT(*)::INTEGER AS paper_count
             FROM solemd.graph_base_features f
-            JOIN solemd.graph_points gp
-              ON gp.graph_run_id = f.graph_run_id
-             AND gp.corpus_id = f.corpus_id
+            JOIN solemd.graph_base_points bp
+              ON bp.graph_run_id = f.graph_run_id
+             AND bp.corpus_id = f.corpus_id
             WHERE f.graph_run_id = %s
-              AND gp.is_in_base = true
               AND f.journal_family_key IS NOT NULL
-            GROUP BY journal_family_key
-            ORDER BY paper_count DESC, journal_family_key
+            GROUP BY f.journal_family_key
+            ORDER BY paper_count DESC, f.journal_family_key
             LIMIT 15
             """,
             (graph_run_id,),
@@ -255,8 +265,6 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
         top_journal_families = {
             row["journal_family_key"]: row["paper_count"] for row in cur.fetchall()
         }
-
-        conn.commit()
 
     return {
         "policy_version": policy_version,

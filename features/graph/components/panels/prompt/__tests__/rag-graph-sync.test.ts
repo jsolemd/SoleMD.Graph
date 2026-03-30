@@ -6,15 +6,18 @@ import type {
 import { RAG_ASK_OVERLAY_PRODUCER } from "@/features/graph/lib/overlay-producers";
 import {
   clearRagGraphOverlay,
-  collectSignalPaperIds,
+  collectAnswerGraphPaperRefs,
+  collectSignalGraphPaperRefs,
   syncRagGraphSignals,
 } from "../rag-graph-sync";
 
 function createQueries({
+  activeGraphPaperRefs = [],
   activePaperNodeResponses = [],
   universePointIds = {},
   initialProducerPointIds = {},
 }: {
+  activeGraphPaperRefs?: string[];
   activePaperNodeResponses?: Array<Record<string, PaperNode>>;
   universePointIds?: Record<string, string>;
   initialProducerPointIds?: Record<string, string[]>;
@@ -28,7 +31,6 @@ function createQueries({
   let nextOverlayPointIds = Array.from(
     new Set(Array.from(producerPointIds.values()).flat()),
   );
-  let activeCallCount = 0;
 
   return {
     getOverlayPointIds: jest.fn(async () => [...nextOverlayPointIds]),
@@ -62,15 +64,37 @@ function createQueries({
     getClusterDetail: jest.fn(),
     getSelectionDetail: jest.fn(),
     getPaperDocument: jest.fn(),
-    getPaperNodesByPaperIds: jest.fn(async () => {
-      const response =
-        activePaperNodeResponses[activeCallCount] ??
-        activePaperNodeResponses[activePaperNodeResponses.length - 1] ??
-        {};
-      activeCallCount += 1;
-      return response;
+    getSelectedGraphPaperRefs: jest.fn(async () => []),
+    ensureGraphPaperRefsAvailable: jest.fn(async (graphPaperRefs: string[]) => {
+      const resolvedActiveGraphPaperRefs = graphPaperRefs.filter((graphPaperRef) =>
+        activeGraphPaperRefs.includes(graphPaperRef),
+      );
+      const unresolvedAfterActive = graphPaperRefs.filter(
+        (graphPaperRef) => !resolvedActiveGraphPaperRefs.includes(graphPaperRef),
+      );
+      const universePointIdsByGraphPaperRef = Object.fromEntries(
+        unresolvedAfterActive
+          .filter((graphPaperRef) => graphPaperRef in universePointIds)
+          .map((graphPaperRef) => [graphPaperRef, universePointIds[graphPaperRef]]),
+      );
+
+      return {
+        activeGraphPaperRefs: resolvedActiveGraphPaperRefs,
+        universePointIdsByGraphPaperRef,
+        unresolvedGraphPaperRefs: unresolvedAfterActive.filter(
+          (graphPaperRef) => !(graphPaperRef in universePointIdsByGraphPaperRef),
+        ),
+      };
     }),
-    getUniversePointIdsByPaperIds: jest.fn(async () => universePointIds),
+    getPaperNodesByGraphPaperRefs: jest.fn(async (graphPaperRefs: string[]) => {
+      const combinedResponses = Object.assign({}, ...activePaperNodeResponses);
+      return Object.fromEntries(
+        graphPaperRefs
+          .filter((graphPaperRef) => graphPaperRef in combinedResponses)
+          .map((graphPaperRef) => [graphPaperRef, combinedResponses[graphPaperRef]]),
+      );
+    }),
+    getUniversePointIdsByGraphPaperRefs: jest.fn(async () => universePointIds),
     getChunkNodesByChunkIds: jest.fn(),
     resolvePointSelection: jest.fn(),
     getTablePage: jest.fn(),
@@ -90,8 +114,12 @@ function createRagResponse(
   paperIds: Array<string | null>,
 ): GraphRagQueryResponsePayload {
   return {
+    answer_graph_paper_refs: paperIds
+      .slice(0, 2)
+      .map((paperId, index) => paperId ?? `corpus:${index + 1}`),
     graph_signals: paperIds.map((paperId, index) => ({
       corpus_id: index + 1,
+      graph_paper_ref: paperId ?? `corpus:${index + 1}`,
       paper_id: paperId,
       signal_kind: "semantic_neighbor",
       channel: "semantic_neighbor",
@@ -108,14 +136,21 @@ describe("rag-graph-sync", () => {
     jest.clearAllMocks();
   });
 
-  it("collects unique paper ids from graph signals", () => {
+  it("collects unique graph paper refs from graph signals", () => {
     expect(
-      collectSignalPaperIds(createRagResponse(["paper-1", "paper-1", null])),
+      collectSignalGraphPaperRefs(createRagResponse(["paper-1", "paper-1", null])),
+    ).toEqual(["paper-1", "corpus:3"]);
+  });
+
+  it("collects explicit answer-linked graph paper refs", () => {
+    expect(
+      collectAnswerGraphPaperRefs(createRagResponse(["paper-1", "paper-1", null])),
     ).toEqual(["paper-1"]);
   });
 
   it("highlights already-active paper nodes without touching overlay membership", async () => {
     const queries = createQueries({
+      activeGraphPaperRefs: ["paper-1"],
       activePaperNodeResponses: [
         {
           "paper-1": { index: 7 } as PaperNode,
@@ -123,25 +158,33 @@ describe("rag-graph-sync", () => {
       ],
     });
 
-    await syncRagGraphSignals({
+    const result = await syncRagGraphSignals({
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse(["paper-1"]),
     });
 
-    expect(queries.getPaperNodesByPaperIds).toHaveBeenCalledTimes(1);
-    expect(queries.getPaperNodesByPaperIds).toHaveBeenCalledWith(["paper-1"]);
-    expect(queries.getUniversePointIdsByPaperIds).not.toHaveBeenCalled();
+    expect(queries.ensureGraphPaperRefsAvailable).toHaveBeenCalledTimes(1);
+    expect(queries.ensureGraphPaperRefsAvailable).toHaveBeenCalledWith([
+      "paper-1",
+    ]);
+    expect(queries.getUniversePointIdsByGraphPaperRefs).not.toHaveBeenCalled();
     expect(queries.setOverlayProducerPointIds).not.toHaveBeenCalled();
     expect(queries.clearOverlayProducer).toHaveBeenCalledWith(RAG_ASK_OVERLAY_PRODUCER);
     expect(queries.setOverlayPointIds).not.toHaveBeenCalled();
     expect(queries.clearOverlay).not.toHaveBeenCalled();
+    expect(result.graphAvailabilitySummary).toEqual({
+      activeResolvedGraphPaperRefs: ["paper-1"],
+      overlayPromotedGraphPaperRefs: [],
+      evidenceOnlyGraphPaperRefs: [],
+    });
+    expect(result.answerSelectedPointIndices).toEqual([7]);
   });
 
   it("promotes non-active papers into the RAG producer without dropping other overlay producers", async () => {
     const queries = createQueries({
+      activeGraphPaperRefs: [],
       activePaperNodeResponses: [
-        {},
         {
           "paper-2": { index: 12 } as PaperNode,
         },
@@ -155,14 +198,16 @@ describe("rag-graph-sync", () => {
       },
     });
 
-    await syncRagGraphSignals({
+    const result = await syncRagGraphSignals({
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse(["paper-2"]),
     });
 
-    expect(queries.getPaperNodesByPaperIds).toHaveBeenNthCalledWith(1, ["paper-2"]);
-    expect(queries.getUniversePointIdsByPaperIds).toHaveBeenCalledWith(["paper-2"]);
+    expect(queries.ensureGraphPaperRefsAvailable).toHaveBeenCalledWith([
+      "paper-2",
+    ]);
+    expect(queries.getUniversePointIdsByGraphPaperRefs).not.toHaveBeenCalled();
     expect(queries.setOverlayProducerPointIds).toHaveBeenCalledWith({
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       pointIds: ["rag-new"],
@@ -170,6 +215,43 @@ describe("rag-graph-sync", () => {
     await expect(queries.getOverlayPointIds()).resolves.toEqual(
       expect.arrayContaining(["external-1", "rag-new"]),
     );
+    expect(result.graphAvailabilitySummary).toEqual({
+      activeResolvedGraphPaperRefs: [],
+      overlayPromotedGraphPaperRefs: ["paper-2"],
+      evidenceOnlyGraphPaperRefs: [],
+    });
+    expect(result.answerSelectedPointIndices).toEqual([12]);
+  });
+
+  it("selects only the explicit answer-linked subset when broader graph signals are present", async () => {
+    const queries = createQueries({
+      activeGraphPaperRefs: ["paper-1"],
+      activePaperNodeResponses: [
+        {
+          "paper-1": { index: 7 } as PaperNode,
+          "paper-2": { index: 12 } as PaperNode,
+        },
+      ],
+      universePointIds: {
+        "paper-2": "rag-new",
+      },
+    });
+
+    const ragResponse = createRagResponse(["paper-1", "paper-2", "paper-3"]);
+    ragResponse.answer_graph_paper_refs = ["paper-1"];
+
+    const result = await syncRagGraphSignals({
+      producerId: RAG_ASK_OVERLAY_PRODUCER,
+      queries,
+      ragResponse,
+    });
+
+    expect(result.graphAvailabilitySummary).toEqual({
+      activeResolvedGraphPaperRefs: ["paper-1"],
+      overlayPromotedGraphPaperRefs: ["paper-2"],
+      evidenceOnlyGraphPaperRefs: ["paper-3"],
+    });
+    expect(result.answerSelectedPointIndices).toEqual([7]);
   });
 
   it("clears the RAG overlay producer when clearing ask state", async () => {
@@ -186,12 +268,18 @@ describe("rag-graph-sync", () => {
   it("clears the RAG overlay producer when no graph signals remain", async () => {
     const queries = createQueries();
 
-    await syncRagGraphSignals({
+    const result = await syncRagGraphSignals({
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse([]),
     });
 
     expect(queries.clearOverlayProducer).toHaveBeenCalledWith(RAG_ASK_OVERLAY_PRODUCER);
+    expect(result.graphAvailabilitySummary).toEqual({
+      activeResolvedGraphPaperRefs: [],
+      overlayPromotedGraphPaperRefs: [],
+      evidenceOnlyGraphPaperRefs: [],
+    });
+    expect(result.answerSelectedPointIndices).toEqual([]);
   });
 });

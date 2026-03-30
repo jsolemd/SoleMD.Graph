@@ -5,11 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.types import (
     CitationDirection,
     EvidenceIntent,
     GraphSignalKind,
     NodeLayer,
+    RetrievalScope,
     RetrievalChannel,
 )
 
@@ -25,8 +27,11 @@ class PaperRetrievalQuery:
     relation_terms: list[str] = field(default_factory=list)
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
+    selected_graph_paper_ref: str | None = None
     selected_paper_id: str | None = None
+    selection_graph_paper_refs: list[str] = field(default_factory=list)
     selected_cluster_id: int | None = None
+    scope_mode: RetrievalScope = RetrievalScope.GLOBAL
     evidence_intent: EvidenceIntent | None = None
     k: int = 6
     rerank_topn: int = 18
@@ -70,6 +75,7 @@ class PaperEvidenceHit:
     entity_score: float = 0.0
     relation_score: float = 0.0
     semantic_score: float = 0.0
+    intent_score: float = 0.0
     fused_score: float = 0.0
     rank: int = 0
     matched_channels: list[RetrievalChannel] = field(default_factory=list)
@@ -207,5 +213,7 @@ class RagSearchResult:
     bundles: list[EvidenceBundle]
     graph_signals: list[GraphSignal]
     channels: list[RetrievalChannelResult]
+    answer_corpus_ids: list[int] = field(default_factory=list)
     answer: str | None = None
     answer_model: str | None = None
+    grounded_answer: GroundedAnswerRecord | None = None

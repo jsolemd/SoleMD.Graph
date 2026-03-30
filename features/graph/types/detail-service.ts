@@ -232,8 +232,13 @@ export interface GraphNeighborhoodResponsePayload {
   chunk_neighbors: GraphChunkNeighborhoodItem[]
 }
 
+// RAG search results are paper-centric in the current baseline. They may later
+// be backed by block/chunk evidence, but the list contract itself should not
+// pretend the current paper baseline is a chunk graph surface.
 export interface GraphRagResult {
-  chunk_id: string
+  result_id: string
+  corpus_id: number
+  graph_paper_ref: string
   paper_id: string | null
   citekey: string | null
   doi: string | null
@@ -241,7 +246,7 @@ export interface GraphRagResult {
   paper_year: number | null
   section: string | null
   kind: string
-  chunk_index: number
+  result_index: number
   page: number | null
   text: string
   dense_score: number
@@ -251,7 +256,9 @@ export interface GraphRagResult {
 }
 
 export interface GraphEvidencePaper {
-  paper_id: string
+  corpus_id: number
+  graph_paper_ref: string
+  paper_id: string | null
   semantic_scholar_paper_id: string | null
   title: string | null
   journal_name: string | null
@@ -319,7 +326,9 @@ export interface GraphEvidenceAsset {
 }
 
 export interface GraphEvidenceBundle {
-  paper_id: string
+  corpus_id: number
+  graph_paper_ref: string
+  paper_id: string | null
   paper: GraphEvidencePaper
   score: number
   rank: number
@@ -334,15 +343,65 @@ export interface GraphEvidenceBundle {
   assets: GraphEvidenceAsset[]
 }
 
+export interface GraphCitedEntityPacket {
+  entity_type: string
+  text: string
+  concept_namespace: string | null
+  concept_id: string | null
+  source_identifier: string | null
+}
+
+export interface GraphCitedSpanPacket {
+  packet_id: string
+  corpus_id: number
+  canonical_section_ordinal: number
+  canonical_block_ordinal: number
+  canonical_sentence_ordinal: number | null
+  section_role: string
+  block_kind: string
+  span_origin: string
+  alignment_status: string
+  alignment_confidence: number | null
+  text: string
+  quote_text: string | null
+  source_citation_keys: string[]
+  source_reference_keys: string[]
+  entity_mentions: GraphCitedEntityPacket[]
+}
+
+export interface GraphInlineCitationAnchor {
+  anchor_id: string
+  label: string
+  cited_span_ids: string[]
+  cited_corpus_ids: number[]
+  short_evidence_label: string | null
+}
+
+export interface GraphAnswerSegment {
+  segment_ordinal: number
+  text: string
+  citation_anchor_ids: string[]
+}
+
+export interface GraphGroundedAnswer {
+  segments: GraphAnswerSegment[]
+  inline_citations: GraphInlineCitationAnchor[]
+  cited_spans: GraphCitedSpanPacket[]
+  answer_linked_corpus_ids: number[]
+}
+
 export interface GraphRagGraphSignal {
   corpus_id: number
+  graph_paper_ref: string
   paper_id: string | null
   signal_kind:
     | 'entity_match'
     | 'relation_match'
     | 'citation_neighbor'
     | 'semantic_neighbor'
+    | 'answer_evidence'
     | 'answer_support'
+    | 'answer_refute'
   channel:
     | 'lexical'
     | 'entity_match'
@@ -377,8 +436,11 @@ export interface GraphRagQueryRequestPayload {
   query: string
   selected_layer_key: GraphApiLayerKey | null
   selected_node_id: string | null
+  selected_graph_paper_ref?: string | null
   selected_paper_id?: string | null
+  selection_graph_paper_refs?: string[] | null
   selected_cluster_id: number | null
+  scope_mode?: 'global' | 'selection_only' | null
   evidence_intent?: 'support' | 'refute' | 'both' | null
   k?: number
   rerank_topn?: number
@@ -423,10 +485,15 @@ export interface GraphRagQueryResponsePayload {
   query: string
   selected_layer_key: GraphApiLayerKey | null
   selected_node_id: string | null
+  selected_graph_paper_ref: string | null
   selected_paper_id: string | null
+  selection_graph_paper_refs: string[]
   selected_cluster_id: number | null
+  scope_mode: 'global' | 'selection_only'
   answer: string | null
   answer_model: string | null
+  answer_graph_paper_refs: string[]
+  grounded_answer: GraphGroundedAnswer | null
   results: GraphRagResult[]
   evidence_bundles: GraphEvidenceBundle[]
   graph_signals: GraphRagGraphSignal[]

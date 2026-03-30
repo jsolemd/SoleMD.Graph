@@ -118,3 +118,19 @@ export async function queryCorpusPointSelection(
 
   return rows[0] ? mapGraphPointRow(rows[0]) : null
 }
+
+export async function querySelectedGraphPaperRefs(
+  conn: AsyncDuckDBConnection,
+): Promise<string[]> {
+  const rows = await queryRows<{ graphPaperRef: string }>(
+    conn,
+    `SELECT DISTINCT COALESCE(paperId, id) AS graphPaperRef
+     FROM current_points_web
+     WHERE index IN (SELECT index FROM selected_point_indices)
+       AND COALESCE(paperId, id) IS NOT NULL
+       AND LENGTH(TRIM(COALESCE(paperId, id))) > 0
+     ORDER BY graphPaperRef`
+  )
+
+  return rows.map((row) => row.graphPaperRef)
+}

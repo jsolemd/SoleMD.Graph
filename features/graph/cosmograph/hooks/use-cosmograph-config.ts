@@ -19,7 +19,6 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
   // Active layer — determines which DuckDB table Cosmograph reads from
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const layerConfig = getLayerConfig(activeLayer);
-  const activeCanvasTables = canvas.layerTables[activeLayer];
   const activePanel = useDashboardStore((s) => s.activePanel);
   const filterColumns = useDashboardStore((s) => s.filterColumns);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
@@ -121,6 +120,25 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     ],
   );
 
+  const pointColorByFn = useMemo(
+    () =>
+      // Cosmograph only treats same-table DuckDB updates as point-data changes
+      // when one of the point config accessors changes. Keep the public table
+      // contract on `current_points_canvas_web`, and use an overlay-scoped
+      // identity accessor to force a re-read of that canonical view on overlay
+      // revision changes without leaking swap-view names into the render path.
+      ((value: unknown) => value as string | [number, number, number, number]),
+    [activeLayer, pointColorColumn, canvas.overlayRevision],
+  );
+
+  const linkColorByFn = useMemo(
+    () =>
+      // Same reason as `pointColorByFn`: keep the renderer bound to the
+      // canonical current links alias while still making link reloads explicit.
+      ((value: unknown) => value as string | [number, number, number, number]),
+    [activeLayer, canvas.overlayRevision],
+  );
+
   const totalPointCount = useMemo(() => {
     return canvas.pointCounts[activeLayer] ?? 0;
   }, [activeLayer, canvas.pointCounts]);
@@ -153,13 +171,13 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     // Layer
     activeLayer,
     layerConfig,
-    activeCanvasTables,
     activePanel,
     tableOpen,
     // Point config
     pointColorColumn,
     effectiveColorColumn,
     effectiveColorStrategy,
+    pointColorByFn,
     palette,
     pointSizeColumn,
     pointSizeRange,
@@ -184,6 +202,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     curvedLinks,
     linkDefaultArrows,
     scaleLinksOnZoom,
+    linkColorByFn,
     // Computed
     totalPointCount,
     effectiveOpacity,

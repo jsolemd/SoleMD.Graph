@@ -21,19 +21,37 @@ from app.rag.models import (
 )
 from app.rag.types import CitationDirection, GraphSignalKind, RetrievalChannel
 
+ENTITY_FUZZY_SIMILARITY_THRESHOLD = 0.3
+ENTITY_TOP_CONCEPTS_PER_TERM = 3
+
 
 class RagRepository(Protocol):
     """Read-only repository contract used by the service."""
 
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease: ...
 
+    def resolve_query_entity_terms(
+        self,
+        *,
+        query_phrases: Sequence[str],
+        limit: int = 5,
+    ) -> list[str]: ...
+
     def resolve_selected_corpus_id(
         self,
         *,
         graph_run_id: str,
+        selected_graph_paper_ref: str | None,
         selected_paper_id: str | None,
         selected_node_id: str | None,
     ) -> int | None: ...
+
+    def resolve_scope_corpus_ids(
+        self,
+        *,
+        graph_run_id: str,
+        graph_paper_refs: Sequence[str],
+    ) -> list[int]: ...
 
     def search_papers(
         self,
@@ -41,6 +59,31 @@ class RagRepository(Protocol):
         query: str,
         *,
         limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]: ...
+
+    def search_entity_papers(
+        self,
+        graph_run_id: str,
+        *,
+        entity_terms: Sequence[str],
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]: ...
+
+    def fetch_papers_by_corpus_ids(
+        self,
+        graph_run_id: str,
+        corpus_ids: Sequence[int],
+    ) -> list[PaperEvidenceHit]: ...
+
+    def search_relation_papers(
+        self,
+        graph_run_id: str,
+        *,
+        relation_terms: Sequence[str],
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
     ) -> list[PaperEvidenceHit]: ...
 
     def fetch_citation_contexts(
@@ -87,6 +130,7 @@ class RagRepository(Protocol):
         graph_run_id: str,
         selected_corpus_id: int,
         limit: int = 6,
+        scope_corpus_ids: Sequence[int] | None = None,
     ) -> list[GraphSignal]: ...
 
 
@@ -168,17 +212,42 @@ class PostgresRagRepository:
             is_current=bool(row.get("is_current")),
         )
 
+    def resolve_query_entity_terms(
+        self,
+        *,
+        query_phrases: Sequence[str],
+        limit: int = 5,
+    ) -> list[str]:
+        normalized_phrases = list(
+            dict.fromkeys(phrase.strip() for phrase in query_phrases if phrase and phrase.strip())
+        )
+        if not normalized_phrases:
+            return []
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.QUERY_ENTITY_TERM_MATCH_SQL,
+                    (normalized_phrases, limit),
+                )
+                rows = cur.fetchall()
+
+        return [str(row["normalized_term"]) for row in rows if row.get("normalized_term")]
+
     def resolve_selected_corpus_id(
         self,
         *,
         graph_run_id: str,
+        selected_graph_paper_ref: str | None,
         selected_paper_id: str | None,
         selected_node_id: str | None,
     ) -> int | None:
-        if selected_paper_id:
+        selected_lookup_ref = selected_graph_paper_ref or selected_paper_id
+
+        if selected_lookup_ref:
             for prefix in ("paper:", "corpus:"):
-                if selected_paper_id.startswith(prefix):
-                    suffix = selected_paper_id.split(":", 1)[1]
+                if selected_lookup_ref.startswith(prefix):
+                    suffix = selected_lookup_ref.split(":", 1)[1]
                     if suffix.isdigit():
                         return int(suffix)
 
@@ -192,7 +261,7 @@ class PostgresRagRepository:
             if selected_node_id.isdigit():
                 return int(selected_node_id)
 
-        if not selected_paper_id:
+        if not selected_lookup_ref:
             return None
 
         with self._connect() as conn:
@@ -201,15 +270,43 @@ class PostgresRagRepository:
                     queries.SELECTED_CORPUS_LOOKUP_SQL,
                     (
                         graph_run_id,
-                        selected_paper_id,
-                        selected_paper_id,
-                        selected_paper_id,
-                        selected_paper_id,
+                        selected_lookup_ref,
+                        selected_lookup_ref,
+                        selected_lookup_ref,
+                        selected_lookup_ref,
                     ),
                 )
                 row = cur.fetchone()
 
         return int(row["corpus_id"]) if row else None
+
+    def resolve_scope_corpus_ids(
+        self,
+        *,
+        graph_run_id: str,
+        graph_paper_refs: Sequence[str],
+    ) -> list[int]:
+        normalized_refs = list(
+            dict.fromkeys(ref.strip() for ref in graph_paper_refs if ref and ref.strip())
+        )
+        if not normalized_refs:
+            return []
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.SCOPE_CORPUS_LOOKUP_SQL,
+                    (
+                        graph_run_id,
+                        normalized_refs,
+                        normalized_refs,
+                        normalized_refs,
+                        normalized_refs,
+                    ),
+                )
+                rows = cur.fetchall()
+
+        return [int(row["corpus_id"]) for row in rows]
 
     def search_papers(
         self,
@@ -217,11 +314,25 @@ class PostgresRagRepository:
         query: str,
         *,
         limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
     ) -> list[PaperEvidenceHit]:
-        params = (graph_run_id, query, query, query, query, query, 0.1, limit)
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            sql = queries.PAPER_SEARCH_IN_SELECTION_SQL
+            params = (
+                query,
+                query,
+                unique_scope_ids,
+                0.1,
+                limit,
+            )
+        else:
+            candidate_limit = max(limit * 20, 120)
+            sql = queries.PAPER_SEARCH_SQL
+            params = (graph_run_id, query, query, candidate_limit, limit)
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.PAPER_SEARCH_SQL, params)
+                cur.execute(sql, params)
                 rows = cur.fetchall()
 
         hits: list[PaperEvidenceHit] = []
@@ -246,6 +357,168 @@ class PostgresRagRepository:
                     reference_count=row.get("reference_count"),
                     lexical_score=float(row.get("lexical_score") or 0.0),
                     title_similarity=float(row.get("title_similarity") or 0.0),
+                )
+            )
+        return hits
+
+    def fetch_papers_by_corpus_ids(
+        self,
+        graph_run_id: str,
+        corpus_ids: Sequence[int],
+    ) -> list[PaperEvidenceHit]:
+        if not corpus_ids:
+            return []
+
+        unique_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(queries.PAPER_LOOKUP_SQL, (graph_run_id, unique_ids))
+                rows = cur.fetchall()
+
+        hits: list[PaperEvidenceHit] = []
+        for row in rows:
+            hits.append(
+                PaperEvidenceHit(
+                    corpus_id=int(row["corpus_id"]),
+                    paper_id=row.get("paper_id"),
+                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
+                    or row.get("paper_id"),
+                    title=row.get("title"),
+                    journal_name=row.get("journal_name"),
+                    year=row.get("year"),
+                    doi=row.get("doi"),
+                    pmid=row.get("pmid"),
+                    pmcid=row.get("pmcid"),
+                    abstract=row.get("abstract"),
+                    tldr=row.get("tldr"),
+                    text_availability=row.get("text_availability"),
+                    is_open_access=row.get("is_open_access"),
+                    citation_count=row.get("citation_count"),
+                    reference_count=row.get("reference_count"),
+                )
+            )
+        return hits
+
+    def search_relation_papers(
+        self,
+        graph_run_id: str,
+        *,
+        relation_terms: Sequence[str],
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]:
+        normalized_terms = list(
+            dict.fromkeys(term.strip() for term in relation_terms if term and term.strip())
+        )
+        if not normalized_terms:
+            return []
+
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            sql = queries.PAPER_RELATION_SEARCH_IN_SELECTION_SQL
+            params = (
+                normalized_terms,
+                unique_scope_ids,
+                limit,
+            )
+        else:
+            sql = queries.PAPER_RELATION_SEARCH_SQL
+            params = (
+                graph_run_id,
+                normalized_terms,
+                limit,
+            )
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        hits: list[PaperEvidenceHit] = []
+        for row in rows:
+            hits.append(
+                PaperEvidenceHit(
+                    corpus_id=int(row["corpus_id"]),
+                    paper_id=row.get("paper_id"),
+                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
+                    or row.get("paper_id"),
+                    title=row.get("title"),
+                    journal_name=row.get("journal_name"),
+                    year=row.get("year"),
+                    doi=row.get("doi"),
+                    pmid=row.get("pmid"),
+                    pmcid=row.get("pmcid"),
+                    abstract=row.get("abstract"),
+                    tldr=row.get("tldr"),
+                    text_availability=row.get("text_availability"),
+                    is_open_access=row.get("is_open_access"),
+                    citation_count=row.get("citation_count"),
+                    reference_count=row.get("reference_count"),
+                    relation_score=float(row.get("relation_candidate_score") or 0.0),
+                )
+            )
+        return hits
+
+    def search_entity_papers(
+        self,
+        graph_run_id: str,
+        *,
+        entity_terms: Sequence[str],
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]:
+        normalized_terms = list(
+            dict.fromkeys(term.strip() for term in entity_terms if term and term.strip())
+        )
+        if not normalized_terms:
+            return []
+
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            sql = queries.PAPER_ENTITY_SEARCH_IN_SELECTION_SQL
+            params = (
+                normalized_terms,
+                ENTITY_FUZZY_SIMILARITY_THRESHOLD,
+                ENTITY_TOP_CONCEPTS_PER_TERM,
+                unique_scope_ids,
+                limit,
+            )
+        else:
+            sql = queries.PAPER_ENTITY_SEARCH_SQL
+            params = (
+                normalized_terms,
+                ENTITY_FUZZY_SIMILARITY_THRESHOLD,
+                ENTITY_TOP_CONCEPTS_PER_TERM,
+                graph_run_id,
+                limit,
+            )
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        hits: list[PaperEvidenceHit] = []
+        for row in rows:
+            hits.append(
+                PaperEvidenceHit(
+                    corpus_id=int(row["corpus_id"]),
+                    paper_id=row.get("paper_id"),
+                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
+                    or row.get("paper_id"),
+                    title=row.get("title"),
+                    journal_name=row.get("journal_name"),
+                    year=row.get("year"),
+                    doi=row.get("doi"),
+                    pmid=row.get("pmid"),
+                    pmcid=row.get("pmcid"),
+                    abstract=row.get("abstract"),
+                    tldr=row.get("tldr"),
+                    text_availability=row.get("text_availability"),
+                    is_open_access=row.get("is_open_access"),
+                    citation_count=row.get("citation_count"),
+                    reference_count=row.get("reference_count"),
+                    entity_score=float(row.get("entity_candidate_score") or 0.0),
                 )
             )
         return hits
@@ -475,16 +748,27 @@ class PostgresRagRepository:
         graph_run_id: str,
         selected_corpus_id: int,
         limit: int = 6,
+        scope_corpus_ids: Sequence[int] | None = None,
     ) -> list[GraphSignal]:
         if selected_corpus_id <= 0:
             return []
 
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            sql = queries.SEMANTIC_NEIGHBOR_IN_SELECTION_SQL
+            params = (
+                selected_corpus_id,
+                unique_scope_ids,
+                unique_scope_ids,
+                limit,
+            )
+        else:
+            sql = queries.SEMANTIC_NEIGHBOR_SQL
+            params = (graph_run_id, selected_corpus_id, limit)
+
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    queries.SEMANTIC_NEIGHBOR_SQL,
-                    (graph_run_id, selected_corpus_id, limit),
-                )
+                cur.execute(sql, params)
                 rows = cur.fetchall()
 
         signals: list[GraphSignal] = []

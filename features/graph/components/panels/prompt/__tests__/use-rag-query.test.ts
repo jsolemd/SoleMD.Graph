@@ -8,6 +8,7 @@ import {
   GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART,
 } from "@/features/graph/lib/rag-chat";
 import {
+  RAG_ANSWER_SELECTION_SOURCE_ID,
   RAG_ASK_OVERLAY_PRODUCER,
   RAG_EVIDENCE_ASSIST_SUPPORT_OVERLAY_PRODUCER,
 } from "@/features/graph/lib/overlay-producers";
@@ -92,6 +93,8 @@ function createChatMock() {
 
 function createQueries(): jest.Mocked<GraphBundleQueries> {
   return {
+    setSelectedPointIndices: jest.fn(),
+    setSelectedPointScopeSql: jest.fn(),
     getOverlayPointIds: jest.fn(),
     setOverlayProducerPointIds: jest.fn(),
     clearOverlayProducer: jest.fn(),
@@ -101,8 +104,16 @@ function createQueries(): jest.Mocked<GraphBundleQueries> {
     getClusterDetail: jest.fn(),
     getSelectionDetail: jest.fn(),
     getPaperDocument: jest.fn(),
-    getPaperNodesByPaperIds: jest.fn(),
-    getUniversePointIdsByPaperIds: jest.fn(),
+    getSelectedGraphPaperRefs: jest.fn(async () => []),
+    getPaperNodesByGraphPaperRefs: jest.fn(),
+    ensureGraphPaperRefsAvailable: jest.fn(async (graphPaperRefs: string[]) => ({
+      activeGraphPaperRefs: [],
+      universePointIdsByGraphPaperRef: Object.fromEntries(
+        graphPaperRefs.map((graphPaperRef) => [graphPaperRef, graphPaperRef]),
+      ),
+      unresolvedGraphPaperRefs: [],
+    })),
+    getUniversePointIdsByGraphPaperRefs: jest.fn(),
     getChunkNodesByChunkIds: jest.fn(),
     resolvePointSelection: jest.fn(),
     getTablePage: jest.fn(),
@@ -143,10 +154,15 @@ function createResponse(query: string): GraphRagQueryResponsePayload {
     },
     selected_layer_key: null,
     selected_node_id: null,
+    selected_graph_paper_ref: null,
     selected_paper_id: null,
+    selection_graph_paper_refs: [],
     selected_cluster_id: null,
+    scope_mode: "global",
     answer: `Answer for ${query}`,
     answer_model: "test-model",
+    answer_graph_paper_refs: [],
+    grounded_answer: null,
   };
 }
 
@@ -159,7 +175,19 @@ describe("useRagQuery", () => {
       chatOptions = options;
       return chatMock as never;
     });
-    mockedSyncRagGraphSignals.mockResolvedValue();
+    mockedSyncRagGraphSignals.mockResolvedValue({
+      availability: {
+        activeGraphPaperRefs: [],
+        universePointIdsByGraphPaperRef: {},
+        unresolvedGraphPaperRefs: [],
+      },
+      graphAvailabilitySummary: {
+        activeResolvedGraphPaperRefs: [],
+        overlayPromotedGraphPaperRefs: [],
+        evidenceOnlyGraphPaperRefs: [],
+      },
+      answerSelectedPointIndices: [],
+    });
   });
 
   it("ignores late responses from older compose requests", async () => {
@@ -171,6 +199,8 @@ describe("useRagQuery", () => {
 
     const queries = createQueries();
     let promptText = "first question";
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
 
     const { result } = renderHook(() =>
       useRagQuery({
@@ -178,6 +208,9 @@ describe("useRagQuery", () => {
         queries,
         isAsk: false,
         selectedNode: null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
         getPromptText: () => promptText,
       }),
     );
@@ -224,6 +257,8 @@ describe("useRagQuery", () => {
     const queries = createQueries();
     const selectedNode = { id: "paper-7", paperId: "paper-7", nodeKind: "paper" } as GraphNode;
     const promptText = "working question";
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
 
     const { result } = renderHook(() =>
       useRagQuery({
@@ -231,6 +266,9 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
         getPromptText: () => promptText,
       }),
     );
@@ -247,8 +285,11 @@ describe("useRagQuery", () => {
           graph_release_id: "bundle-checksum",
           selected_layer_key: "paper",
           selected_node_id: "paper-7",
-          selected_paper_id: "paper-7",
+          selected_graph_paper_ref: "paper-7",
+          selected_paper_id: null,
+          selection_graph_paper_refs: null,
           selected_cluster_id: null,
+          scope_mode: null,
           client_request_id: 1,
           evidence_intent: null,
           k: 6,
@@ -262,6 +303,8 @@ describe("useRagQuery", () => {
 
   it("clears previously-owned overlay ids when the ask stream emits an engine error", async () => {
     const queries = createQueries();
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
 
     const { result } = renderHook(() =>
       useRagQuery({
@@ -269,6 +312,9 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode: null as GraphNode | null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
         getPromptText: () => "working question",
       }),
     );
@@ -315,6 +361,8 @@ describe("useRagQuery", () => {
   it("ignores stale ask data parts from older client request ids", async () => {
     const queries = createQueries();
     let promptText = "first question";
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
 
     const { result } = renderHook(() =>
       useRagQuery({
@@ -322,6 +370,9 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode: null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
         getPromptText: () => promptText,
       }),
     );
@@ -364,6 +415,8 @@ describe("useRagQuery", () => {
   it("ignores stale ask onFinish payloads from older client request ids", async () => {
     const queries = createQueries();
     let promptText = "first question";
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
 
     const { result } = renderHook(() =>
       useRagQuery({
@@ -371,6 +424,9 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode: null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
         getPromptText: () => promptText,
       }),
     );
@@ -413,5 +469,103 @@ describe("useRagQuery", () => {
     });
 
     expect(result.current.ragResponse).toBeNull();
+  });
+
+  it("passes selected graph paper refs when selection scope is enabled", async () => {
+    const queries = createQueries();
+    queries.getSelectedGraphPaperRefs.mockResolvedValue(["paper-7", "paper-9"]);
+    const selectedNode = { id: "paper-7", paperId: "paper-7", nodeKind: "paper" } as GraphNode;
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
+
+    const { result } = renderHook(() =>
+      useRagQuery({
+        bundle: { bundleChecksum: "bundle-checksum", runId: "run-id" } as GraphBundle,
+        queries,
+        isAsk: true,
+        selectedNode,
+        selectionScopeEnabled: true,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
+        getPromptText: () => "working question",
+      }),
+    );
+
+    await act(async () => {
+      result.current.handleSubmit();
+      await flushMicrotasks();
+    });
+
+    expect(queries.getSelectedGraphPaperRefs).toHaveBeenCalledTimes(1);
+    expect(chatMock.sendMessage).toHaveBeenCalledWith(
+      { text: "working question" },
+      expect.objectContaining({
+        body: expect.objectContaining({
+          selection_graph_paper_refs: ["paper-7", "paper-9"],
+          scope_mode: "selection_only",
+        }),
+      }),
+    );
+  });
+
+  it("selects answer-linked point indices without making them the next auto-scope source", async () => {
+    const queries = createQueries();
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
+    mockedFetchGraphRagQuery.mockResolvedValue(
+      createResponse("grounded question"),
+    );
+    mockedSyncRagGraphSignals.mockResolvedValue({
+      availability: {
+        activeGraphPaperRefs: ["paper-11", "paper-22"],
+        universePointIdsByGraphPaperRef: {},
+        unresolvedGraphPaperRefs: [],
+      },
+      graphAvailabilitySummary: {
+        activeResolvedGraphPaperRefs: ["paper-11", "paper-22"],
+        overlayPromotedGraphPaperRefs: [],
+        evidenceOnlyGraphPaperRefs: [],
+      },
+      answerSelectedPointIndices: [7, 9],
+    });
+
+    const { result } = renderHook(() =>
+      useRagQuery({
+        bundle: { bundleChecksum: "bundle-checksum", runId: "run-id" } as GraphBundle,
+        queries,
+        isAsk: false,
+        selectedNode: null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
+        getPromptText: () => "grounded question",
+      }),
+    );
+
+    await act(async () => {
+      result.current.runEvidenceAssistQuery({
+        intent: "support",
+        queryText: "grounded question",
+        previewText: "grounded question",
+        paragraphText: "grounded question",
+      });
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(queries.setSelectedPointIndices).toHaveBeenCalledWith([7, 9]);
+    expect(setSelectedPointCount).toHaveBeenCalledWith(2);
+    expect(setActiveSelectionSourceId).toHaveBeenCalledWith(
+      RAG_ANSWER_SELECTION_SOURCE_ID,
+    );
+    expect(result.current.ragGraphAvailability).toEqual({
+      activeResolvedGraphPaperRefs: ["paper-11", "paper-22"],
+      overlayPromotedGraphPaperRefs: [],
+      evidenceOnlyGraphPaperRefs: [],
+    });
   });
 });

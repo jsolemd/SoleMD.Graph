@@ -206,19 +206,47 @@ def save_cache(cache: dict[str, str | None]) -> None:
     logger.info("Cache saved: %d entries -> %s", len(cache), CACHE_FILE)
 
 
+def _extract_mesh_descriptor(atoms: list[dict]) -> str | None:
+    """Extract MeSH descriptor ID from UMLS atoms response.
+
+    Prefers termType 'MH' (Main Heading). Falls back to any atom with
+    a sourceDescriptor containing a MeSH D-number.
+    """
+    for atom in atoms:
+        desc = atom.get("sourceDescriptor", "")
+        tt = atom.get("termType", "")
+        if tt == "MH" and "/MSH/" in desc:
+            # URL like .../source/MSH/D012559 -> D012559
+            return desc.rsplit("/", 1)[-1]
+
+    # Fallback: any atom with a MeSH descriptor
+    for atom in atoms:
+        desc = atom.get("sourceDescriptor", "")
+        if "/MSH/" in desc:
+            mesh_id = desc.rsplit("/", 1)[-1]
+            if mesh_id.startswith("D"):
+                return mesh_id
+    return None
+
+
 async def fetch_mesh_id(
     client: httpx.AsyncClient,
     sem: asyncio.Semaphore,
     cui: str,
     cache: dict[str, str | None],
 ) -> tuple[str, str | None]:
-    """Fetch MeSH descriptor UI for a single UMLS CUI."""
+    """Fetch MeSH descriptor UI for a single UMLS CUI via atoms endpoint."""
     if cui in cache:
         return cui, cache[cui]
 
     async with sem:
-        url = f"{UMLS_API_BASE}/crosswalk/current/source/UMLS/{cui}"
-        params = {"targetSource": "MSH", "apiKey": UMLS_API_KEY}
+        # Use CUI atoms endpoint filtered to MeSH source
+        url = f"{UMLS_API_BASE}/content/current/CUI/{cui}/atoms"
+        params = {
+            "sabs": "MSH",
+            "language": "ENG",
+            "apiKey": UMLS_API_KEY,
+        }
 
         for attempt in range(4):
             try:
@@ -226,14 +254,10 @@ async def fetch_mesh_id(
 
                 if resp.status_code == 200:
                     data = resp.json()
-                    results = data.get("result", [])
-                    if results:
-                        mesh_ui = results[0].get("ui")
-                        if mesh_ui and mesh_ui != "NONE":
-                            cache[cui] = mesh_ui
-                            return cui, mesh_ui
-                    cache[cui] = None
-                    return cui, None
+                    atoms = data.get("result", [])
+                    mesh_id = _extract_mesh_descriptor(atoms)
+                    cache[cui] = mesh_id
+                    return cui, mesh_id
 
                 if resp.status_code in (429, 503):
                     wait = 2 ** (attempt + 1)
@@ -339,38 +363,126 @@ async def run_crosswalk() -> dict[str, str | None]:
 
 
 # ---------------------------------------------------------------------------
-# Step 4: PubTator paper counts per MeSH ID
+# Step 4: PubTator paper counts via PubTator3 search API
 # ---------------------------------------------------------------------------
 
+PUBTATOR_API_BASE = "https://www.ncbi.nlm.nih.gov/research/pubtator3-api"
+PUBTATOR_CONCURRENCY = 3  # NCBI public API; 3 concurrent + 0.2s delay
 
-def count_pubtator_papers() -> int:
-    """Count distinct PMIDs per MeSH concept_id in PubTator annotations."""
-    logger.info("Step 4: Counting PubTator papers per MeSH ID...")
+ENTITY_TYPE_TO_PUBTATOR_PREFIX: dict[str, str] = {
+    "disease": "DISEASE",
+    "chemical": "CHEMICAL",
+    "gene": "GENE",
+}
+
+
+async def fetch_pubtator_count(
+    client: httpx.AsyncClient,
+    sem: asyncio.Semaphore,
+    mesh_id: str,
+    entity_type: str,
+) -> tuple[str, int]:
+    """Get paper count for a MeSH ID from PubTator3 search API."""
+    prefix = ENTITY_TYPE_TO_PUBTATOR_PREFIX.get(entity_type, "DISEASE")
+    query = f"@{prefix}_MESH:{mesh_id}"
+
+    async with sem:
+        # Small delay between requests to stay under NCBI rate limits
+        await asyncio.sleep(0.2)
+        for attempt in range(5):
+            try:
+                resp = await client.get(
+                    f"{PUBTATOR_API_BASE}/search/",
+                    params={"text": query, "page_size": 1},
+                    timeout=30.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return mesh_id, data.get("count", 0)
+
+                if resp.status_code in (429, 503):
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(
+                        "PubTator rate limited on %s (HTTP %d), retrying in %ds...",
+                        mesh_id, resp.status_code, wait,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+
+                logger.warning("PubTator HTTP %d for %s", resp.status_code, mesh_id)
+                return mesh_id, 0
+
+            except httpx.HTTPError as exc:
+                wait = 2 ** (attempt + 1)
+                logger.warning("PubTator error for %s: %s, retrying...", mesh_id, exc)
+                await asyncio.sleep(wait)
+
+    return mesh_id, 0
+
+
+async def count_pubtator_papers_async() -> int:
+    """Get paper counts via PubTator3 search API for all enriched vocab_terms.
+
+    Uses sequential batching (batch of 3 + 1s pause) to respect NCBI rate limits.
+    """
+    logger.info("Step 4: Counting PubTator papers via API...")
 
     with db.connect() as conn:
-        # Get all mesh_ids that need counts
-        result = conn.execute(
+        rows = conn.execute(
             """
-            UPDATE solemd.vocab_terms vt
-            SET pubtator_paper_count = sub.cnt,
-                updated_at = now()
-            FROM (
-                SELECT ea.concept_id, COUNT(DISTINCT ea.pmid) AS cnt
-                FROM pubtator.entity_annotations ea
-                INNER JOIN solemd.vocab_terms vt2
-                    ON ea.concept_id = 'MESH:' || vt2.mesh_id
-                WHERE vt2.mesh_id IS NOT NULL
-                GROUP BY ea.concept_id
-            ) sub
-            WHERE 'MESH:' || vt.mesh_id = sub.concept_id
-            RETURNING vt.id
+            SELECT DISTINCT mesh_id, pubtator_entity_type
+            FROM solemd.vocab_terms
+            WHERE mesh_id IS NOT NULL
+              AND pubtator_entity_type IS NOT NULL
+              AND (pubtator_paper_count IS NULL OR pubtator_paper_count = 0)
             """
-        )
-        updated = len(result.fetchall())
-        conn.commit()
+        ).fetchall()
 
-    logger.info("PubTator paper counts updated for %d terms", updated)
-    return updated
+    total = len(rows)
+    logger.info("Fetching paper counts for %d MeSH IDs...", total)
+
+    results: list[tuple[str, int]] = []
+    sem = asyncio.Semaphore(PUBTATOR_CONCURRENCY)
+    batch_size = PUBTATOR_CONCURRENCY
+
+    async with httpx.AsyncClient() as client:
+        for i in range(0, total, batch_size):
+            batch = rows[i : i + batch_size]
+            batch_tasks = [
+                fetch_pubtator_count(client, sem, r["mesh_id"], r["pubtator_entity_type"])
+                for r in batch
+            ]
+            batch_results = await asyncio.gather(*batch_tasks)
+            results.extend(batch_results)
+
+            done = min(i + batch_size, total)
+            if done % 50 == 0 or done == total:
+                logger.info("PubTator progress: %d/%d", done, total)
+
+            # Pause between batches to stay under NCBI rate limits
+            await asyncio.sleep(1.0)
+
+    # Bulk update
+    updates = [(count, mesh_id) for mesh_id, count in results if count > 0]
+    if updates:
+        with db.connect() as conn:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    UPDATE solemd.vocab_terms
+                    SET pubtator_paper_count = %s,
+                        updated_at = now()
+                    WHERE mesh_id = %s
+                    """,
+                    updates,
+                )
+            conn.commit()
+
+    logger.info(
+        "PubTator paper counts: %d/%d MeSH IDs have papers",
+        len(updates), total,
+    )
+    return len(updates)
 
 
 # ---------------------------------------------------------------------------
@@ -486,8 +598,8 @@ def main() -> None:
     # Step 3: UMLS -> MeSH crosswalk
     asyncio.run(run_crosswalk())
 
-    # Step 4: PubTator paper counts
-    count_pubtator_papers()
+    # Step 4: PubTator paper counts (via API — much faster than local JOIN)
+    asyncio.run(count_pubtator_papers_async())
 
     # Report
     print_report()

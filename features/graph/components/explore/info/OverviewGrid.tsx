@@ -1,9 +1,10 @@
 "use client";
 
-import { Progress, Text } from "@mantine/core";
+import { Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
 import type { GraphInfoSummary, MapLayer } from "@/features/graph/types";
 import {
+  panelCardStyle,
   panelTextMutedStyle,
   panelTextStyle,
 } from "../../panels/PanelShell";
@@ -13,53 +14,48 @@ interface OverviewGridProps {
   layer: MapLayer;
 }
 
-function StatCard({
+function StatChip({
   label,
   value,
-  proportion,
 }: {
   label: string;
   value: string;
-  proportion?: number;
 }) {
   return (
     <div
-      className="rounded-lg px-2.5 py-1.5"
+      className="min-w-0 rounded-lg px-2 py-1"
       style={{
-        backgroundColor: "var(--graph-panel-input-bg)",
-        border: "1px solid var(--graph-panel-border)",
+        ...panelCardStyle,
+        backgroundColor:
+          "color-mix(in srgb, var(--graph-panel-input-bg) 94%, white 6%)",
       }}
     >
-      <Text
-        fw={600}
-        style={{
-          ...panelTextMutedStyle,
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
-          fontSize: "0.55rem",
-          lineHeight: 1,
-        }}
-      >
-        {label}
-      </Text>
-      <Text mt={1} size="xs" fw={600} style={panelTextStyle}>
-        {value}
-      </Text>
-      {proportion != null && (
-        <Progress
-          size={3}
-          radius="xl"
-          value={proportion * 100}
-          color="var(--mode-accent)"
-          mt={4}
-          styles={{
-            root: {
-              backgroundColor: "var(--graph-panel-input-bg)",
-              border: "1px solid var(--graph-panel-border)",
-            },
+      <div className="flex items-baseline gap-1.5">
+        <Text
+          fw={500}
+          style={{
+            ...panelTextMutedStyle,
+            fontSize: 7,
+            lineHeight: "9px",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            flexShrink: 0,
           }}
-        />
-      )}
+        >
+          {label}
+        </Text>
+        <Text
+          style={{
+            ...panelTextStyle,
+            fontSize: 11,
+            lineHeight: "12px",
+            fontWeight: 500,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {value}
+        </Text>
+      </div>
     </div>
   );
 }
@@ -77,59 +73,23 @@ export function OverviewGrid({ info, layer }: OverviewGridProps) {
     yearRange,
   } = info;
 
+  const pointsValue = isSubset
+    ? `${formatNumber(scopedCount)} / ${formatNumber(totalCount)}`
+    : formatNumber(totalCount);
+  const yearsValue = yearRange
+    ? yearRange.min === yearRange.max
+      ? String(yearRange.min)
+      : `${yearRange.min}-${yearRange.max}`
+    : "—";
+
   return (
-    <div className="grid grid-cols-2 gap-2">
-      <StatCard
-        label="Points"
-        value={
-          isSubset
-            ? `${formatNumber(scopedCount)} / ${formatNumber(totalCount)}`
-            : formatNumber(totalCount)
-        }
-        proportion={
-          isSubset && totalCount > 0 ? scopedCount / totalCount : undefined
-        }
-      />
-      <StatCard
-        label="Base"
-        value={formatNumber(baseCount)}
-        proportion={totalCount > 0 ? baseCount / totalCount : undefined}
-      />
-      <StatCard label="Papers" value={formatNumber(papers)} />
-      <StatCard label="Clusters" value={formatNumber(clusters)} />
-      <StatCard
-        label="Years"
-        value={
-          yearRange
-            ? yearRange.min === yearRange.max
-              ? String(yearRange.min)
-              : `${yearRange.min}–${yearRange.max}`
-            : "—"
-        }
-      />
-      <div
-        className="col-span-2 rounded-lg px-2.5 py-1.5"
-        style={{
-          backgroundColor: "var(--graph-panel-input-bg)",
-          border: "1px solid var(--graph-panel-border)",
-        }}
-      >
-        <Text
-          fw={600}
-          style={{
-            ...panelTextMutedStyle,
-            letterSpacing: "0.05em",
-            textTransform: "uppercase",
-            fontSize: "0.55rem",
-            lineHeight: 1,
-          }}
-        >
-          Overlay
-        </Text>
-        <Text mt={1} size="xs" fw={600} style={panelTextStyle}>
-          {formatNumber(overlayCount)}
-        </Text>
-      </div>
+    <div className="flex flex-wrap gap-1.5">
+      <StatChip label="Points" value={pointsValue} />
+      <StatChip label="Base" value={formatNumber(baseCount)} />
+      <StatChip label="Papers" value={formatNumber(papers)} />
+      <StatChip label="Clusters" value={formatNumber(clusters)} />
+      <StatChip label="Years" value={yearsValue} />
+      <StatChip label="Overlay" value={formatNumber(overlayCount)} />
     </div>
   );
 }

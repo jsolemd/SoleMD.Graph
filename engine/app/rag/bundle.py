@@ -14,7 +14,12 @@ from app.rag.models import (
     PaperReferenceRecord,
     RelationMatchedPaperHit,
 )
-from app.rag.types import GRAPH_SIGNAL_ORDER, GraphSignalKind, RetrievalChannel
+from app.rag.types import (
+    GRAPH_SIGNAL_ORDER,
+    EvidenceIntent,
+    GraphSignalKind,
+    RetrievalChannel,
+)
 
 
 def build_preview_text(
@@ -39,6 +44,8 @@ def build_bundle_graph_signals(
     citation_hits: list[CitationContextHit],
     entity_hits: list[EntityMatchedPaperHit],
     relation_hits: list[RelationMatchedPaperHit],
+    *,
+    evidence_intent: EvidenceIntent | None = None,
 ) -> list[GraphSignal]:
     """Derive graph-lighting signals from one paper bundle."""
 
@@ -51,11 +58,11 @@ def build_bundle_graph_signals(
         GraphSignal(
             corpus_id=paper.corpus_id,
             paper_id=paper.paper_id,
-            signal_kind=GraphSignalKind.ANSWER_SUPPORT,
+            signal_kind=_answer_signal_kind(evidence_intent),
             channel=primary_channel,
             score=paper.fused_score,
             rank=paper.rank,
-            reason="Top supporting paper for the current query",
+            reason=_answer_signal_reason(evidence_intent),
         )
     ]
 
@@ -98,9 +105,9 @@ def build_bundle_graph_signals(
                 channel=RetrievalChannel.CITATION_CONTEXT,
                 score=item.score,
                 rank=paper.rank,
-                reason=(
-                    f"{item.direction.value.capitalize()} citation context "
-                    "linked to a supporting paper"
+                reason=_citation_neighbor_reason(
+                    direction=item.direction.value.capitalize(),
+                    evidence_intent=evidence_intent,
                 ),
                 matched_terms=item.intents,
             )
@@ -139,6 +146,7 @@ def assemble_evidence_bundles(
                     "entity_match": paper.entity_score,
                     "relation_match": paper.relation_score,
                     "semantic_neighbor": paper.semantic_score,
+                    "intent_affinity": paper.intent_score,
                 },
                 citation_contexts=paper_citation_hits,
                 entity_hits=paper_entity_hits,
@@ -153,6 +161,7 @@ def assemble_evidence_bundles(
 def merge_graph_signals(
     bundles: list[EvidenceBundle],
     *,
+    evidence_intent: EvidenceIntent | None = None,
     semantic_neighbors: list[GraphSignal] | None = None,
 ) -> list[GraphSignal]:
     """Merge and deduplicate graph-lighting signals across bundles."""
@@ -164,6 +173,7 @@ def merge_graph_signals(
             bundle.citation_contexts,
             bundle.entity_hits,
             bundle.relation_hits,
+            evidence_intent=evidence_intent,
         ):
             key = (signal.signal_kind.value, signal.corpus_id)
             current = best_by_key.get(key)
@@ -187,3 +197,27 @@ def merge_graph_signals(
             signal.rank = index
             merged.append(signal)
     return merged
+
+
+def _answer_signal_kind(evidence_intent: EvidenceIntent | None) -> GraphSignalKind:
+    if evidence_intent == EvidenceIntent.SUPPORT:
+        return GraphSignalKind.ANSWER_SUPPORT
+    if evidence_intent == EvidenceIntent.REFUTE:
+        return GraphSignalKind.ANSWER_REFUTE
+    return GraphSignalKind.ANSWER_EVIDENCE
+
+
+def _answer_signal_reason(evidence_intent: EvidenceIntent | None) -> str:
+    if evidence_intent == EvidenceIntent.SUPPORT:
+        return "Top supporting paper for the current query"
+    if evidence_intent == EvidenceIntent.REFUTE:
+        return "Top refuting paper for the current query"
+    return "Top evidence paper for the current query"
+
+
+def _citation_neighbor_reason(*, direction: str, evidence_intent: EvidenceIntent | None) -> str:
+    if evidence_intent == EvidenceIntent.SUPPORT:
+        return f"{direction} citation context linked to a supporting paper"
+    if evidence_intent == EvidenceIntent.REFUTE:
+        return f"{direction} citation context linked to a refuting paper"
+    return f"{direction} citation context linked to a top evidence paper"

@@ -8,8 +8,9 @@ import { panelTextDimStyle } from "../../panels/PanelShell";
 import { iconBtnStyles } from "../../panels/PanelShell";
 
 interface DataTableToolbarProps {
-  resolvedTableView: string;
-  selectedCount: number;
+  resolvedTableView: "selection" | "dataset";
+  queryTableView: "current" | "selected";
+  selectionAvailable: boolean;
   totalPages: number;
   safePage: number;
   pageLoading: boolean;
@@ -22,7 +23,8 @@ interface DataTableToolbarProps {
 
 export function DataTableToolbar({
   resolvedTableView,
-  selectedCount,
+  queryTableView,
+  selectionAvailable,
   totalPages,
   safePage,
   pageLoading,
@@ -34,16 +36,18 @@ export function DataTableToolbar({
 }: DataTableToolbarProps) {
   const setTablePage = useDashboardStore((s) => s.setTablePage);
   const setTableView = useDashboardStore((s) => s.setTableView);
+  const scopeLabel = resolvedTableView === "selection" ? "selection" : "all";
+  const rowLabel = totalRows === 1 ? "row" : "rows";
   const rowCountLabel = pageLoading
-    ? "Loading rows..."
+    ? `Loading ${scopeLabel} rows...`
     : pageRefreshing
-      ? `Updating... ${totalRows.toLocaleString()} rows`
-      : `${totalRows.toLocaleString()} rows`;
+      ? `Updating ${scopeLabel}... ${totalRows.toLocaleString()} ${rowLabel}`
+      : `${totalRows.toLocaleString()} ${scopeLabel} ${rowLabel}`;
 
   const handleExport = async () => {
     const csv = await queries.exportTableCsv({
       layer: activeLayer,
-      view: resolvedTableView as "current" | "selected",
+      view: queryTableView,
       currentPointScopeSql,
     });
 
@@ -66,20 +70,23 @@ export function DataTableToolbar({
         <SegmentedControl
           size="xs"
           data={[
-            { label: "Current", value: "current" },
             {
-              label: "Selected",
-              value: "selected",
-              disabled: selectedCount === 0,
+              label: "Selection",
+              value: "selection",
+              disabled: !selectionAvailable,
+            },
+            {
+              label: "All",
+              value: "dataset",
             },
           ]}
           value={resolvedTableView}
-          onChange={(value) => setTableView(value as "current" | "selected")}
+          onChange={(value) => setTableView(value as "selection" | "dataset")}
         />
         <Text size="xs" style={panelTextDimStyle}>
           {rowCountLabel}
         </Text>
-        <Tooltip label="Export visible graph data" position="bottom" withArrow>
+        <Tooltip label="Export table rows" position="bottom" withArrow>
           <ActionIcon
             variant="subtle"
             size="sm"

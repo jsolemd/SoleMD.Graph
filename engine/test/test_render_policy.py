@@ -13,5 +13,6 @@ def test_base_predicate_requires_renderable_and_base_membership():
     base_predicate = base_point_predicate_sql(alias)
 
     assert renderable == "COALESCE(g.outlier_score, 0) = 0"
-    assert "COALESCE(g.is_in_base, false)" in base_predicate
+    assert "graph_base_points" in base_predicate
+    assert "EXISTS" in base_predicate
     assert renderable in base_predicate

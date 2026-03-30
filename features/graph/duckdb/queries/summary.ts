@@ -268,9 +268,19 @@ export async function queryInfoHistogram(
     column: string
     bins: number
     currentPointScopeSql: string | null
+    extent?: [number, number] | null
+    useQuantiles?: boolean
   }
 ): Promise<GraphInfoHistogramResult> {
-  const { layer, scope, column, bins, currentPointScopeSql } = args
+  const {
+    layer,
+    scope,
+    column,
+    bins,
+    currentPointScopeSql,
+    extent,
+    useQuantiles = false,
+  } = args
   const { tableName, scopedPredicate } = getSafeScopedContext({
     layer,
     scope,
@@ -282,6 +292,8 @@ export async function queryInfoHistogram(
     return { bins: [], totalCount: 0 }
   }
   const safeBins = Math.max(1, Math.min(64, bins))
+  const minExtent = Array.isArray(extent) ? Number(extent[0]) : null
+  const maxExtent = Array.isArray(extent) ? Number(extent[1]) : null
 
   const rows = await queryRows<{
     bin_min: number
@@ -296,23 +308,71 @@ export async function queryInfoHistogram(
          AND ${safeColumn} IS NOT NULL
      ),
      stats AS (
-       SELECT min(value) AS min_value, max(value) AS max_value, count(*)::INTEGER AS total_count
+       SELECT
+         min(value) AS min_value,
+         max(value) AS max_value,
+         quantile_cont(value, 0.05) AS q05_value,
+         quantile_cont(value, 0.95) AS q95_value,
+         count(*)::INTEGER AS total_count
        FROM scoped
+     ),
+     bounds AS (
+       SELECT
+         CASE
+           WHEN total_count = 0 THEN NULL
+           WHEN ? IS NOT NULL THEN ?
+           WHEN ${useQuantiles ? 'TRUE' : 'FALSE'} THEN COALESCE(q05_value, min_value)
+           ELSE min_value
+         END AS lower_bound,
+         CASE
+           WHEN total_count = 0 THEN NULL
+           WHEN ? IS NOT NULL THEN ?
+           WHEN ${useQuantiles ? 'TRUE' : 'FALSE'} THEN COALESCE(q95_value, max_value)
+           ELSE max_value
+         END AS upper_bound,
+         total_count
+       FROM stats
      ),
      binned AS (
        SELECT
          CASE
-           WHEN stats.min_value = stats.max_value THEN stats.min_value
-           ELSE stats.min_value + ((stats.max_value - stats.min_value) / ${safeBins}) *
-             LEAST(FLOOR((value - stats.min_value) / ((stats.max_value - stats.min_value) / ${safeBins})), ${safeBins - 1})
+           WHEN bounds.lower_bound = bounds.upper_bound THEN bounds.lower_bound
+           ELSE bounds.lower_bound + ((bounds.upper_bound - bounds.lower_bound) / ${safeBins}) *
+             LEAST(
+               GREATEST(
+                 FLOOR(
+                   (
+                     LEAST(GREATEST(value, bounds.lower_bound), bounds.upper_bound) -
+                     bounds.lower_bound
+                   ) / ((bounds.upper_bound - bounds.lower_bound) / ${safeBins})
+                 ),
+                 0
+               ),
+               ${safeBins - 1}
+             )
          END AS bin_min,
          CASE
-           WHEN stats.min_value = stats.max_value THEN stats.max_value
-           ELSE stats.min_value + ((stats.max_value - stats.min_value) / ${safeBins}) *
-             (LEAST(FLOOR((value - stats.min_value) / ((stats.max_value - stats.min_value) / ${safeBins})), ${safeBins - 1}) + 1)
+           WHEN bounds.lower_bound = bounds.upper_bound THEN bounds.upper_bound
+           ELSE bounds.lower_bound + ((bounds.upper_bound - bounds.lower_bound) / ${safeBins}) *
+             (
+               LEAST(
+                 GREATEST(
+                   FLOOR(
+                     (
+                       LEAST(GREATEST(value, bounds.lower_bound), bounds.upper_bound) -
+                       bounds.lower_bound
+                     ) / ((bounds.upper_bound - bounds.lower_bound) / ${safeBins})
+                   ),
+                   0
+                 ),
+                 ${safeBins - 1}
+               ) + 1
+             )
          END AS bin_max
-       FROM scoped, stats
-       WHERE stats.total_count > 0
+       FROM scoped, bounds
+       WHERE bounds.total_count > 0
+         AND bounds.lower_bound IS NOT NULL
+         AND bounds.upper_bound IS NOT NULL
      )
      SELECT
        bin_min,
@@ -320,7 +380,8 @@ export async function queryInfoHistogram(
        count(*)::INTEGER AS count
      FROM binned
      GROUP BY bin_min, bin_max
-     ORDER BY bin_min`
+     ORDER BY bin_min`,
+    [minExtent, minExtent, maxExtent, maxExtent]
   )
 
   const totalCount = rows.reduce((sum, row) => sum + row.count, 0)
@@ -422,9 +483,11 @@ export async function queryInfoHistogramsBatch(
     columns: string[]
     bins: number
     currentPointScopeSql: string | null
+    extent?: [number, number] | null
+    useQuantiles?: boolean
   }
 ): Promise<Record<string, GraphInfoHistogramResult>> {
-  const { layer, scope, columns, bins, currentPointScopeSql } = args
+  const { layer, scope, columns, bins, currentPointScopeSql, extent, useQuantiles = false } = args
   const safeColumns = [...new Set(columns)].filter(
     (column) => getColumnMetaForLayer(column, layer)?.type === 'numeric'
   )
@@ -438,6 +501,8 @@ export async function queryInfoHistogramsBatch(
     currentPointScopeSql,
   })
   const safeBins = Math.max(1, Math.min(64, bins))
+  const minExtent = Array.isArray(extent) ? Number(extent[0]) : null
+  const maxExtent = Array.isArray(extent) ? Number(extent[1]) : null
   const unions = safeColumns.map((column) => {
     const safeColumn = resolveInfoColumn(layer, column)
     return `SELECT
@@ -464,42 +529,89 @@ export async function queryInfoHistogramsBatch(
          column_key,
          min(value) AS min_value,
          max(value) AS max_value,
+         quantile_cont(value, 0.05) AS q05_value,
+         quantile_cont(value, 0.95) AS q95_value,
          count(*)::INTEGER AS total_count
        FROM values_by_column
        GROUP BY column_key
+     ),
+     bounds AS (
+       SELECT
+         column_key,
+         CASE
+           WHEN total_count = 0 THEN NULL
+           WHEN ? IS NOT NULL THEN ?
+           WHEN ${useQuantiles ? 'TRUE' : 'FALSE'} THEN COALESCE(q05_value, min_value)
+           ELSE min_value
+         END AS lower_bound,
+         CASE
+           WHEN total_count = 0 THEN NULL
+           WHEN ? IS NOT NULL THEN ?
+           WHEN ${useQuantiles ? 'TRUE' : 'FALSE'} THEN COALESCE(q95_value, max_value)
+           ELSE max_value
+         END AS upper_bound,
+         total_count
+       FROM stats
      ),
      binned AS (
        SELECT
          values_by_column.column_key,
          CASE
-           WHEN stats.min_value = stats.max_value THEN stats.min_value
-           ELSE stats.min_value + ((stats.max_value - stats.min_value) / ${safeBins}) *
-             LEAST(FLOOR((value - stats.min_value) / ((stats.max_value - stats.min_value) / ${safeBins})), ${safeBins - 1})
+           WHEN bounds.lower_bound = bounds.upper_bound THEN bounds.lower_bound
+           ELSE bounds.lower_bound + ((bounds.upper_bound - bounds.lower_bound) / ${safeBins}) *
+             LEAST(
+               GREATEST(
+                 FLOOR(
+                   (
+                     LEAST(GREATEST(value, bounds.lower_bound), bounds.upper_bound) -
+                     bounds.lower_bound
+                   ) / ((bounds.upper_bound - bounds.lower_bound) / ${safeBins})
+                 ),
+                 0
+               ),
+               ${safeBins - 1}
+             )
          END AS bin_min,
          CASE
-           WHEN stats.min_value = stats.max_value THEN stats.max_value
-           ELSE stats.min_value + ((stats.max_value - stats.min_value) / ${safeBins}) *
-             (LEAST(FLOOR((value - stats.min_value) / ((stats.max_value - stats.min_value) / ${safeBins})), ${safeBins - 1}) + 1)
+           WHEN bounds.lower_bound = bounds.upper_bound THEN bounds.upper_bound
+           ELSE bounds.lower_bound + ((bounds.upper_bound - bounds.lower_bound) / ${safeBins}) *
+             (
+               LEAST(
+                 GREATEST(
+                   FLOOR(
+                     (
+                       LEAST(GREATEST(value, bounds.lower_bound), bounds.upper_bound) -
+                       bounds.lower_bound
+                     ) / ((bounds.upper_bound - bounds.lower_bound) / ${safeBins})
+                   ),
+                   0
+                 ),
+                 ${safeBins - 1}
+               ) + 1
+             )
          END AS bin_max
        FROM values_by_column
-       JOIN stats
-         ON stats.column_key = values_by_column.column_key
-       WHERE stats.total_count > 0
+       JOIN bounds
+         ON bounds.column_key = values_by_column.column_key
+       WHERE bounds.total_count > 0
+         AND bounds.lower_bound IS NOT NULL
+         AND bounds.upper_bound IS NOT NULL
      )
      SELECT
        binned.column_key,
        binned.bin_min,
        binned.bin_max,
        count(*)::INTEGER AS count,
-       max(stats.total_count)::INTEGER AS total_count
+       max(bounds.total_count)::INTEGER AS total_count
      FROM binned
-     JOIN stats
-       ON stats.column_key = binned.column_key
+     JOIN bounds
+       ON bounds.column_key = binned.column_key
      GROUP BY
        binned.column_key,
        binned.bin_min,
        binned.bin_max
-     ORDER BY binned.column_key, binned.bin_min`
+     ORDER BY binned.column_key, binned.bin_min`,
+    [minExtent, minExtent, maxExtent, maxExtent]
   )
 
   const result: Record<string, GraphInfoHistogramResult> = {}

@@ -1,11 +1,13 @@
 "use client";
 
-import { Table, Text } from "@mantine/core";
+import { Badge, Group, Stack, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
 import type { GraphInfoClusterStat, GraphInfoScope } from "@/features/graph/types";
 import {
-  panelTableHeaderStyle,
+  badgeOutlineStyles,
+  panelCardStyle,
   panelTextDimStyle,
+  panelTextStyle,
   sectionLabelStyle,
 } from "../../panels/PanelShell";
 
@@ -24,77 +26,73 @@ export function ClusterTable({
 
   const scopeLabel =
     scope === "selected" ? " (selected)" : scope === "current" ? " (current)" : "";
+  const maxCount = Math.max(...topClusters.map((cluster) => cluster.count), 0);
 
   return (
     <div>
-      <Text fw={600} mb={4} style={sectionLabelStyle}>
-        Top Clusters{scopeLabel}
-      </Text>
-      <div
-        className="overflow-auto rounded-xl"
-        style={{
-          border: "1px solid var(--graph-panel-border)",
-          maxHeight: 200,
-        }}
-      >
-        <Table
-          style={{ fontSize: "0.65rem" }}
-          styles={{
-            table: { borderColor: "transparent" },
-            th: {
-              backgroundColor: "var(--graph-panel-input-bg)",
-              borderColor: "var(--graph-panel-border)",
-            },
-            td: { borderColor: "var(--graph-panel-border)" },
-            tr: { backgroundColor: "transparent" },
-          }}
-        >
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th style={panelTableHeaderStyle}>Cluster</Table.Th>
-              <Table.Th style={{ ...panelTableHeaderStyle, textAlign: "right" }}>
-                Points
-              </Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {topClusters.map((c) => (
-              <Table.Tr key={c.clusterId}>
-                <Table.Td>
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className="inline-block h-2 w-2 flex-shrink-0 rounded-full"
-                      style={{
-                        backgroundColor:
-                          clusterColors[c.clusterId] ??
-                          "var(--graph-panel-text-dim)",
-                      }}
-                    />
-                    <span
-                      className="truncate"
-                      style={{
-                        color: "var(--graph-panel-text)",
-                        maxWidth: 180,
-                      }}
-                    >
-                      {c.label}
-                    </span>
-                  </div>
-                </Table.Td>
-                <Table.Td
+      <Group gap={6} mb={4}>
+        <Text fw={600} style={sectionLabelStyle}>
+          Top Clusters{scopeLabel}
+        </Text>
+        <Badge variant="outline" size="xs" styles={badgeOutlineStyles}>
+          {topClusters.length} shown
+        </Badge>
+      </Group>
+      <Stack gap={6}>
+        {topClusters.map((cluster) => {
+          const widthPct =
+            maxCount > 0 ? (cluster.count / maxCount) * 100 : 0;
+          return (
+            <div key={cluster.clusterId}>
+              <Group justify="space-between" mb={2} gap={8}>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span
+                    className="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                    style={{
+                      backgroundColor:
+                        clusterColors[cluster.clusterId] ??
+                        "var(--graph-panel-text-dim)",
+                    }}
+                  />
+                  <Text
+                    className="truncate"
+                    style={{
+                      ...panelTextStyle,
+                      maxWidth: 190,
+                    }}
+                  >
+                    {cluster.label}
+                  </Text>
+                </div>
+                <Text
                   style={{
                     ...panelTextDimStyle,
-                    textAlign: "right",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {formatNumber(c.count)}
-                </Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </div>
+                  {formatNumber(cluster.count)}
+                </Text>
+              </Group>
+              <div
+                className="overflow-hidden rounded-full"
+                style={panelCardStyle}
+              >
+                <div
+                  className="rounded-full"
+                  style={{
+                    height: 6,
+                    width: `${widthPct}%`,
+                    backgroundColor:
+                      clusterColors[cluster.clusterId] ??
+                      "var(--filter-bar-active)",
+                    opacity: 0.95,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </Stack>
     </div>
   );
 }

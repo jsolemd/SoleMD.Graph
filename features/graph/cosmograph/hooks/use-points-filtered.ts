@@ -30,6 +30,7 @@ export function usePointsFiltered(deps: {
   queries: GraphBundleQueries;
 }) {
   const visibilityBudgetRequestId = useRef(0);
+  const selectionWriteRequestId = useRef(0);
 
   // Stable ref that always points to the latest onPointsFiltered logic.
   // This avoids Cosmograph re-registering the handler every time any of
@@ -109,6 +110,35 @@ export function usePointsFiltered(deps: {
       isBudgetScopeSelectionSourceId(sourceId) &&
       deps.visibilityFocus != null &&
       deps.visibilityFocus.layer === deps.activeLayer;
+    const persistSelectionIntent = async (args: {
+      scopeSql?: string | null;
+      pointIndices?: number[];
+      selectedCount: number;
+      selectionSourceId: string | null;
+      clearNode: boolean;
+    }) => {
+      const requestId = ++selectionWriteRequestId.current;
+
+      try {
+        if (args.scopeSql && args.scopeSql.trim().length > 0) {
+          await deps.queries.setSelectedPointScopeSql(args.scopeSql);
+        } else {
+          await deps.queries.setSelectedPointIndices(args.pointIndices ?? []);
+        }
+      } catch {
+        return;
+      }
+
+      if (requestId !== selectionWriteRequestId.current) {
+        return;
+      }
+
+      deps.setSelectedPointCount(args.selectedCount);
+      deps.setActiveSelectionSourceId(args.selectionSourceId);
+      if (args.clearNode) {
+        deps.selectNode(null);
+      }
+    };
 
     deps.setCurrentPointScopeSql(currentPointScopeSql);
 
@@ -139,20 +169,22 @@ export function usePointsFiltered(deps: {
     // a live selection clause. This is what prevents "clear selection under
     // active filters" from rehydrating intent from the current intersection.
     if (!hasIntentClauses) {
-      void deps.queries.setSelectedPointIndices([]);
-      deps.setSelectedPointCount(0);
-      deps.setActiveSelectionSourceId(null);
-      deps.selectNode(null);
+      void persistSelectionIntent({
+        pointIndices: [],
+        selectedCount: 0,
+        selectionSourceId: null,
+        clearNode: true,
+      });
       return;
     }
 
-    if (selectedPointScopeSql && selectedPointScopeSql.trim().length > 0) {
-      void deps.queries.setSelectedPointScopeSql(selectedPointScopeSql);
-    } else {
-      void deps.queries.setSelectedPointIndices(normalizedSelected);
-    }
-    deps.setSelectedPointCount(normalizedSelected.length);
-    deps.setActiveSelectionSourceId(sourceId);
+    void persistSelectionIntent({
+      scopeSql: selectedPointScopeSql,
+      pointIndices: normalizedSelected,
+      selectedCount: normalizedSelected.length,
+      selectionSourceId: sourceId,
+      clearNode: false,
+    });
   };
 
   // Stable wrapper — identity never changes, so Cosmograph never re-registers

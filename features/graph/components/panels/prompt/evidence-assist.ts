@@ -1,11 +1,20 @@
 import type { Editor } from "@tiptap/core";
 
 export type EvidenceAssistIntent = "support" | "refute" | "both";
+export type EvidenceAssistTriggerAction = "menu" | "intent";
 
 export interface EvidenceAssistCommand {
   intent: EvidenceAssistIntent;
   label: string;
   description: string;
+}
+
+export interface EvidenceAssistTrigger {
+  pattern: string;
+  action: EvidenceAssistTriggerAction;
+  label: string;
+  description: string;
+  defaultIntent: EvidenceAssistIntent;
 }
 
 export interface EvidenceAssistRequest {
@@ -39,12 +48,22 @@ export const EVIDENCE_ASSIST_COMMANDS: EvidenceAssistCommand[] = [
     label: "Refute",
     description: "Find studies that challenge the current claim.",
   },
-  {
-    intent: "both",
-    label: "Support + Refute",
-    description: "Find supporting and conflicting studies.",
-  },
 ];
+
+export const EVIDENCE_ASSIST_TRIGGERS: readonly EvidenceAssistTrigger[] = [
+  {
+    pattern: "@",
+    action: "menu",
+    label: "@ Evidence",
+    description: "Open evidence assist with support/refute options.",
+    defaultIntent: "support",
+  },
+] as const;
+
+export interface EvidenceAssistTriggerMatch {
+  trigger: EvidenceAssistTrigger;
+  deletePrefixChars: number;
+}
 
 export function selectEvidenceAssistExcerpt({
   paragraphText,
@@ -102,6 +121,51 @@ export function extractEvidenceAssistRequestFromEditor(
     previewText: buildPreviewText(queryText),
     paragraphText,
   };
+}
+
+export function getEvidenceAssistDefaultCommandIndex(
+  intent: EvidenceAssistIntent,
+): number {
+  const index = EVIDENCE_ASSIST_COMMANDS.findIndex(
+    (command) => command.intent === intent,
+  );
+  return index >= 0 ? index : 0;
+}
+
+export function resolveEvidenceAssistTriggerMatch({
+  textBeforeCursor,
+  insertedText,
+}: {
+  textBeforeCursor: string;
+  insertedText: string;
+}): EvidenceAssistTriggerMatch | null {
+  const candidateText = `${textBeforeCursor}${insertedText}`;
+  if (!candidateText.trim()) {
+    return null;
+  }
+
+  const triggers = [...EVIDENCE_ASSIST_TRIGGERS].sort(
+    (left, right) => right.pattern.length - left.pattern.length,
+  );
+  for (const trigger of triggers) {
+    if (!candidateText.endsWith(trigger.pattern)) {
+      continue;
+    }
+
+    const boundaryIndex = candidateText.length - trigger.pattern.length - 1;
+    const boundaryCharacter =
+      boundaryIndex >= 0 ? candidateText.slice(boundaryIndex, boundaryIndex + 1) : null;
+    if (boundaryCharacter && !/[\s([{'"“‘-]/.test(boundaryCharacter)) {
+      continue;
+    }
+
+    return {
+      trigger,
+      deletePrefixChars: Math.max(0, trigger.pattern.length - insertedText.length),
+    };
+  }
+
+  return null;
 }
 
 function buildPreviewText(text: string, maxChars = 160): string {

@@ -1,0 +1,23 @@
+"use client";
+
+export const queryWidgetThemeVars: React.CSSProperties = {
+  "--cosmograph-ui-background": "transparent",
+  "--cosmograph-ui-text": "var(--graph-panel-text)",
+  "--cosmograph-ui-tick-font-size": "11px",
+  "--cosmograph-ui-font-size": "12px",
+  "--cosmograph-ui-font-family": "inherit",
+  "--cosmograph-ui-element-color": "var(--filter-bar-base)",
+  "--cosmograph-ui-highlighted-element-color": "var(--filter-bar-active)",
+  "--cosmograph-ui-selection-control-color":
+    "color-mix(in srgb, var(--mode-accent) 45%, transparent)",
+  "--cosmograph-scrollbar-background": "rgba(255, 255, 255, 0.12)",
+  "--cosmograph-histogram-bar-color": "var(--filter-bar-base)",
+  "--cosmograph-histogram-highlighted-bar-color": "var(--filter-bar-active)",
+  "--cosmograph-histogram-background": "transparent",
+  "--cosmograph-histogram-axis-color": "var(--graph-panel-text)",
+  "--cosmograph-histogram-selection-color":
+    "color-mix(in srgb, var(--mode-accent) 45%, transparent)",
+  "--cosmograph-bars-background": "var(--filter-bar-base)",
+  "--cosmograph-bars-highlighted-color": "var(--filter-bar-active)",
+  "--cosmograph-bars-font-color": "var(--graph-panel-text)",
+} as React.CSSProperties;

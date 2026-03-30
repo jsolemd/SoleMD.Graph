@@ -80,26 +80,31 @@ in the base scaffold.
 
 ### Step 4 - Apply base admission
 
-Base admission uses the simplified rule system:
+Base admission uses domain entity evidence as the primary gate:
 
-`base = rule evidence OR flagship journal OR narrow vocab anchor`
+`base = domain entity evidence OR flagship journal OR narrow vocab anchor`
+
+A paper earns base if PubTator annotated it with at least one entity from
+the curated domain vocabulary (572 entity rules across psychiatry, neurology,
+neuropsychiatry, neuroscience). Papers from any organ system qualify — a
+nephrology paper mentioning lithium toxicity gets base via the
+`psychiatric_medication` entity rule for lithium.
 
 The rule sources are:
 
-- `solemd.entity_rule`
-- `solemd.relation_rule`
-- `solemd.base_journal_family`
-- `solemd.journal_rule`
+- `solemd.entity_rule` — 572 domain-specific entity rules from `vocab_terms`
+- `solemd.relation_rule` — 103 relation rules (e.g. chemical → treat → psychiatric disorder)
+- `solemd.base_journal_family` — curated journal family definitions
+- `solemd.journal_rule` — venue → family mappings
 
-This is where the schema simplification matters:
+The evidence pipeline (`paper_evidence.py`) pre-computes per-paper evidence
+into `solemd.paper_evidence_summary`, then base admission
+(`base_policy.py`) materializes the final `is_in_base` and `base_rank`
+decisions onto `solemd.graph_points`.
 
-- `base_journal_family` defines curated journal families
-- `journal_rule` maps normalized venues into those families
-- `entity_rule` and `relation_rule` capture rule evidence
-- corpus `admission_reason` distinguishes `vocab_entity_match` from broader venue-led admissions
-
-The output is written onto the mapped run tables as `is_in_base` and
-`base_rank`.
+Broad medical entities (e.g. hypertension, diabetes, nausea) are not entity
+rules. Papers mentioning only those conditions stay in the universe layer,
+available for exploration but not in the opening scaffold.
 
 ### Step 5 - Build the mapped graph tables
 

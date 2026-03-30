@@ -7,6 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.rag.serving_contract import (
+    AnswerSegment,
+    CitedSpanPacket,
+    InlineCitationAnchor,
+)
 from app.rag.types import (
     DEFAULT_GRAPH_CACHE_CONTROL,
     DEFAULT_GRAPH_NAME,
@@ -15,6 +20,7 @@ from app.rag.types import (
     EvidenceIntent,
     GraphSignalKind,
     NodeLayer,
+    RetrievalScope,
     RetrievalChannel,
 )
 
@@ -41,8 +47,11 @@ class GraphContext(RagSchema):
     is_current: bool = False
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
+    selected_graph_paper_ref: str | None = None
     selected_paper_id: str | None = None
+    selection_graph_paper_refs: list[str] = Field(default_factory=list)
     selected_cluster_id: int | None = None
+    scope_mode: RetrievalScope = RetrievalScope.GLOBAL
 
 
 class PaperEvidenceHit(RagSchema):
@@ -158,13 +167,23 @@ class RetrievalChannelResult(RagSchema):
     hits: list[RetrievalChannelHit] = Field(default_factory=list)
 
 
+class GroundedAnswer(RagSchema):
+    segments: list[AnswerSegment] = Field(default_factory=list)
+    inline_citations: list[InlineCitationAnchor] = Field(default_factory=list)
+    cited_spans: list[CitedSpanPacket] = Field(default_factory=list)
+    answer_linked_corpus_ids: list[int] = Field(default_factory=list)
+
+
 class RagSearchRequest(RagSchema):
     graph_release_id: str
     query: str
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
+    selected_graph_paper_ref: str | None = None
     selected_paper_id: str | None = None
+    selection_graph_paper_refs: list[str] = Field(default_factory=list)
     selected_cluster_id: int | None = None
+    scope_mode: RetrievalScope = RetrievalScope.GLOBAL
     entity_terms: list[str] = Field(default_factory=list)
     relation_terms: list[str] = Field(default_factory=list)
     evidence_intent: EvidenceIntent | None = None
@@ -181,6 +200,24 @@ class RagSearchRequest(RagSchema):
             raise ValueError("query must not be empty")
         return stripped
 
+    @field_validator("selection_graph_paper_refs", mode="before")
+    @classmethod
+    def normalize_selection_graph_paper_refs(
+        cls, value: list[str] | None
+    ) -> list[str]:
+        if value is None:
+            return []
+        return value
+
+    @field_validator("scope_mode", mode="before")
+    @classmethod
+    def normalize_scope_mode(
+        cls, value: RetrievalScope | str | None
+    ) -> RetrievalScope | str:
+        if value is None:
+            return RetrievalScope.GLOBAL
+        return value
+
 
 class RagSearchResponse(RagSchema):
     meta: ResponseMeta
@@ -188,6 +225,8 @@ class RagSearchResponse(RagSchema):
     query: str
     answer: str | None = None
     answer_model: str | None = None
+    answer_corpus_ids: list[int] = Field(default_factory=list)
+    grounded_answer: GroundedAnswer | None = None
     evidence_bundles: list[EvidenceBundle] = Field(default_factory=list)
     graph_signals: list[GraphSignal] = Field(default_factory=list)
     retrieval_channels: list[RetrievalChannelResult] = Field(default_factory=list)

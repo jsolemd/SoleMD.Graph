@@ -41,6 +41,8 @@ interface FetchGraphRagQueryArgs {
   bundle: GraphBundle
   query: string
   selectedNode?: GraphPointRecord | null
+  selectionGraphPaperRefs?: string[] | null
+  scopeMode?: 'global' | 'selection_only' | null
   selectedClusterId?: number | null
   evidenceIntent?: 'support' | 'refute' | 'both' | null
   k?: number
@@ -173,6 +175,8 @@ export async function fetchGraphRagQuery({
   bundle,
   query,
   selectedNode,
+  selectionGraphPaperRefs,
+  scopeMode,
   selectedClusterId,
   evidenceIntent,
   k,
@@ -185,8 +189,11 @@ export async function fetchGraphRagQuery({
     query,
     selected_layer_key: selectedNode ? 'paper' : null,
     selected_node_id: selectedNode?.id ?? null,
-    selected_paper_id: selectedNode?.paperId ?? selectedNode?.id ?? null,
+    selected_graph_paper_ref: selectedNode?.paperId ?? selectedNode?.id ?? null,
+    selected_paper_id: null,
+    selection_graph_paper_refs: selectionGraphPaperRefs ?? null,
     selected_cluster_id: selectedClusterId ?? null,
+    scope_mode: scopeMode ?? null,
     evidence_intent: evidenceIntent ?? null,
     k,
     rerank_topn: rerankTopn,

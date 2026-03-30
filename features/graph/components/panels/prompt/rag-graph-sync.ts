@@ -1,17 +1,40 @@
 import type {
   GraphBundleQueries,
+  GraphPaperAvailabilityResult,
   OverlayProducerId,
   GraphRagQueryResponsePayload,
 } from "@/features/graph/types";
 
-export function collectSignalPaperIds(
+export interface RagGraphSyncResult {
+  availability: GraphPaperAvailabilityResult;
+  graphAvailabilitySummary: {
+    activeResolvedGraphPaperRefs: string[];
+    overlayPromotedGraphPaperRefs: string[];
+    evidenceOnlyGraphPaperRefs: string[];
+  };
+  answerSelectedPointIndices: number[];
+}
+
+export function collectSignalGraphPaperRefs(
   ragResponse: GraphRagQueryResponsePayload,
 ): string[] {
   return Array.from(
     new Set(
       ragResponse.graph_signals
-        .map((signal) => signal.paper_id)
-        .filter((paperId): paperId is string => Boolean(paperId)),
+        .map((signal) => signal.graph_paper_ref)
+        .filter((paperRef): paperRef is string => Boolean(paperRef)),
+    ),
+  );
+}
+
+export function collectAnswerGraphPaperRefs(
+  ragResponse: GraphRagQueryResponsePayload,
+): string[] {
+  return Array.from(
+    new Set(
+      ragResponse.answer_graph_paper_refs.filter(
+        (paperRef): paperRef is string => Boolean(paperRef),
+      ),
     ),
   );
 }
@@ -24,20 +47,31 @@ export async function syncRagGraphSignals({
   producerId: OverlayProducerId;
   queries: GraphBundleQueries;
   ragResponse: GraphRagQueryResponsePayload;
-}): Promise<void> {
-  const paperIds = collectSignalPaperIds(ragResponse);
-  if (paperIds.length === 0) {
+}): Promise<RagGraphSyncResult> {
+  const graphPaperRefs = collectSignalGraphPaperRefs(ragResponse);
+  if (graphPaperRefs.length === 0) {
     await queries.clearOverlayProducer(producerId);
-    return;
+    return {
+      availability: {
+        activeGraphPaperRefs: [],
+        universePointIdsByGraphPaperRef: {},
+        unresolvedGraphPaperRefs: [],
+      },
+      graphAvailabilitySummary: {
+        activeResolvedGraphPaperRefs: [],
+        overlayPromotedGraphPaperRefs: [],
+        evidenceOnlyGraphPaperRefs: [],
+      },
+      answerSelectedPointIndices: [],
+    };
   }
 
-  const paperNodes = await queries.getPaperNodesByPaperIds(paperIds);
-  const unresolvedPaperIds = paperIds.filter((paperId) => !(paperId in paperNodes));
-  const universePointIds =
-    unresolvedPaperIds.length > 0
-      ? await queries.getUniversePointIdsByPaperIds(unresolvedPaperIds)
-      : {};
-  const nextRagOverlayPointIds = uniqueStrings(Object.values(universePointIds));
+  const availability = await queries.ensureGraphPaperRefsAvailable(
+    graphPaperRefs,
+  );
+  const nextRagOverlayPointIds = uniqueStrings(
+    Object.values(availability.universePointIdsByGraphPaperRef),
+  );
 
   if (nextRagOverlayPointIds.length > 0) {
     await queries.setOverlayProducerPointIds({
@@ -47,6 +81,30 @@ export async function syncRagGraphSignals({
   } else {
     await queries.clearOverlayProducer(producerId);
   }
+
+  const answerGraphPaperRefs = collectAnswerGraphPaperRefs(ragResponse);
+  const answerSelectedPointIndices =
+    answerGraphPaperRefs.length > 0
+      ? uniqueNumbers(
+          Object.values(
+            await queries.getPaperNodesByGraphPaperRefs(answerGraphPaperRefs),
+          )
+            .map((node) => node.index)
+            .filter((index) => Number.isFinite(index)),
+        )
+      : [];
+
+  return {
+    availability,
+    graphAvailabilitySummary: {
+      activeResolvedGraphPaperRefs: availability.activeGraphPaperRefs,
+      overlayPromotedGraphPaperRefs: graphPaperRefs.filter(
+        (graphPaperRef) => graphPaperRef in availability.universePointIdsByGraphPaperRef,
+      ),
+      evidenceOnlyGraphPaperRefs: availability.unresolvedGraphPaperRefs,
+    },
+    answerSelectedPointIndices,
+  };
 }
 
 export async function clearRagGraphOverlay({
@@ -61,4 +119,8 @@ export async function clearRagGraphOverlay({
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((value) => value.trim().length > 0)));
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values));
 }

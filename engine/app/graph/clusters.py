@@ -34,10 +34,45 @@ class ClusterResult:
     backend: str
 
 
+def _vectorized_edge_dedup(
+    sources: "numpy.ndarray",
+    targets: "numpy.ndarray",
+    dists: "numpy.ndarray",
+) -> tuple[list[tuple[int, int]], list[float]]:
+    """Deduplicate undirected edges using numpy structured arrays.
+
+    Replaces a Python set of tuples (~1.9 GB at 37.5M edges) with numpy
+    vectorized canonicalization + np.unique (~600 MB). ~10x faster.
+    """
+    np = require_numpy()
+
+    # Remove self-loops
+    valid = sources != targets
+    sources, targets, dists = sources[valid], targets[valid], dists[valid]
+
+    # Canonical ordering: (min, max) for undirected dedup
+    lo = np.minimum(sources, targets)
+    hi = np.maximum(sources, targets)
+
+    # Structured array for composite key dedup
+    edges_arr = np.empty(len(lo), dtype=[("lo", np.int32), ("hi", np.int32)])
+    edges_arr["lo"] = lo
+    edges_arr["hi"] = hi
+    _, unique_idx = np.unique(edges_arr, return_index=True)
+
+    lo = lo[unique_idx]
+    hi = hi[unique_idx]
+    weights = np.maximum(np.float32(0.0), np.float32(1.0) - dists[unique_idx])
+
+    edge_tuples = list(zip(lo.tolist(), hi.tolist()))
+    return edge_tuples, weights.tolist()
+
+
 def _edge_list(
     embeddings: "numpy.ndarray",
     config: ClusterConfig,
 ) -> tuple[Iterable[tuple[int, int]], list[float]]:
+    np = require_numpy()
     try:
         from sklearn.neighbors import NearestNeighbors
     except ImportError as exc:  # pragma: no cover - optional dependency
@@ -51,23 +86,16 @@ def _edge_list(
     model.fit(embeddings)
     distances, indices = model.kneighbors(embeddings)
 
-    seen: set[tuple[int, int]] = set()
-    edges: list[tuple[int, int]] = []
-    weights: list[float] = []
+    n_points = embeddings.shape[0]
+    k = neighbor_count - 1  # skip self-neighbor at column 0
+    if k <= 0:
+        return [], []
 
-    for source, (row_distances, row_indices) in enumerate(zip(distances, indices, strict=False)):
-        for distance, target in zip(row_distances[1:], row_indices[1:], strict=False):
-            if source == target:
-                continue
-            edge = (source, int(target))
-            undirected = edge if edge[0] < edge[1] else (edge[1], edge[0])
-            if undirected in seen:
-                continue
-            seen.add(undirected)
-            edges.append(undirected)
-            weights.append(max(0.0, 1.0 - float(distance)))
+    sources = np.repeat(np.arange(n_points, dtype=np.int32), k)
+    targets = indices[:, 1:].ravel().astype(np.int32)
+    dists = distances[:, 1:].ravel().astype(np.float32)
 
-    return edges, weights
+    return _vectorized_edge_dedup(sources, targets, dists)
 
 
 def _edge_list_from_knn(
@@ -75,34 +103,18 @@ def _edge_list_from_knn(
     knn_distances: "numpy.ndarray",
     config: ClusterConfig,
 ) -> tuple[Iterable[tuple[int, int]], list[float]]:
+    np = require_numpy()
     neighbor_columns = min(knn_indices.shape[1], config.n_neighbors + 1)
-    seen: set[tuple[int, int]] = set()
-    edges: list[tuple[int, int]] = []
-    weights: list[float] = []
+    n_points = knn_indices.shape[0]
+    k = neighbor_columns - 1  # skip self-neighbor at column 0
+    if k <= 0:
+        return [], []
 
-    for source, (row_distances, row_indices) in enumerate(
-        zip(
-            knn_distances[:, :neighbor_columns],
-            knn_indices[:, :neighbor_columns],
-            strict=False,
-        )
-    ):
-        for distance, target in zip(
-            row_distances[1:neighbor_columns],
-            row_indices[1:neighbor_columns],
-            strict=False,
-        ):
-            if source == target:
-                continue
-            edge = (source, int(target))
-            undirected = edge if edge[0] < edge[1] else (edge[1], edge[0])
-            if undirected in seen:
-                continue
-            seen.add(undirected)
-            edges.append(undirected)
-            weights.append(max(0.0, 1.0 - float(distance)))
+    sources = np.repeat(np.arange(n_points, dtype=np.int32), k)
+    targets = knn_indices[:, 1:neighbor_columns].ravel().astype(np.int32)
+    dists = knn_distances[:, 1:neighbor_columns].ravel().astype(np.float32)
 
-    return edges, weights
+    return _vectorized_edge_dedup(sources, targets, dists)
 
 
 def _run_leiden_gpu(

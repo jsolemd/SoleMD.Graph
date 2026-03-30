@@ -4,12 +4,21 @@ export const GRAPH_NAME = 'cosmograph'
 export const NODE_KIND = 'corpus'
 export const GRAPH_BUNDLE_ROOT =
   process.env.GRAPH_BUNDLE_ROOT ??
-  '/mnt/e/SoleMD.Graph/graph/bundles'
+  '/mnt/solemd-graph/bundles'
 
+// Contract taxonomy is not bootstrap policy:
+// - `base` is the only mandatory first-load/autoload set
+// - `universe` is browser-attachable only on demand
+// - `evidence` stays off the startup browser path
 export const DEFAULT_BUNDLE_CONTRACT: GraphBundleContract = {
   artifactSets: {
     base: ['base_points', 'base_clusters'],
     universe: ['universe_points', 'paper_documents', 'cluster_exemplars'],
+    // These describe optional non-hot-path evidence surfaces in the manifest.
+    // They are not permission to autoattach evidence payloads to the live graph
+    // runtime or to widen the browser render/query path. `universe_links` is
+    // the overlay-activation exception: browser-attachable when needed, but
+    // still not a first-load artifact.
     evidence: [
       'universe_links',
       'citation_neighborhood',
@@ -32,6 +41,7 @@ export const DEFAULT_BUNDLE_CONTRACT: GraphBundleContract = {
 }
 
 export const CANONICAL_BUNDLE_VERSION = '4'
+// Only the base tables belong to the mandatory browser startup path.
 export const REQUIRED_BUNDLE_TABLES = ['base_points', 'base_clusters'] as const
 export const DEPRECATED_BUNDLE_TABLES = [
   'corpus_points',

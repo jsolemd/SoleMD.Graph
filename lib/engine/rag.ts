@@ -18,8 +18,11 @@ export interface EngineGraphContext {
   is_current: boolean
   selected_layer_key: 'paper' | 'chunk' | null
   selected_node_id: string | null
+  selected_graph_paper_ref: string | null
   selected_paper_id: string | null
+  selection_graph_paper_refs: string[]
   selected_cluster_id: number | null
+  scope_mode: 'global' | 'selection_only'
 }
 
 export interface EnginePaperSummary {
@@ -93,6 +96,53 @@ export interface EnginePaperAsset {
   metadata: Record<string, unknown>
 }
 
+export interface EngineCitedEntityPacket {
+  entity_type: string
+  text: string
+  concept_namespace: string | null
+  concept_id: string | null
+  source_identifier: string | null
+}
+
+export interface EngineCitedSpanPacket {
+  packet_id: string
+  corpus_id: number
+  canonical_section_ordinal: number
+  canonical_block_ordinal: number
+  canonical_sentence_ordinal: number | null
+  section_role: string
+  block_kind: string
+  span_origin: string
+  alignment_status: string
+  alignment_confidence: number | null
+  text: string
+  quote_text: string | null
+  source_citation_keys: string[]
+  source_reference_keys: string[]
+  entity_mentions: EngineCitedEntityPacket[]
+}
+
+export interface EngineInlineCitationAnchor {
+  anchor_id: string
+  label: string
+  cited_span_ids: string[]
+  cited_corpus_ids: number[]
+  short_evidence_label: string | null
+}
+
+export interface EngineAnswerSegment {
+  segment_ordinal: number
+  text: string
+  citation_anchor_ids: string[]
+}
+
+export interface EngineGroundedAnswer {
+  segments: EngineAnswerSegment[]
+  inline_citations: EngineInlineCitationAnchor[]
+  cited_spans: EngineCitedSpanPacket[]
+  answer_linked_corpus_ids: number[]
+}
+
 export interface EngineGraphSignal {
   corpus_id: number
   paper_id: string | null
@@ -101,7 +151,9 @@ export interface EngineGraphSignal {
     | 'relation_match'
     | 'citation_neighbor'
     | 'semantic_neighbor'
+    | 'answer_evidence'
     | 'answer_support'
+    | 'answer_refute'
   channel:
     | 'lexical'
     | 'entity_match'
@@ -146,10 +198,13 @@ export interface EngineRetrievalChannelResult {
 export interface EngineRagSearchRequest {
   graph_release_id: string
   query: string
-  selected_layer_key: 'paper' | 'chunk' | null
-  selected_node_id: string | null
-  selected_paper_id: string | null
-  selected_cluster_id: number | null
+  selected_layer_key?: 'paper' | 'chunk' | null
+  selected_node_id?: string | null
+  selected_graph_paper_ref?: string | null
+  selected_paper_id?: string | null
+  selection_graph_paper_refs?: string[] | null
+  selected_cluster_id?: number | null
+  scope_mode?: 'global' | 'selection_only' | null
   evidence_intent?: 'support' | 'refute' | 'both' | null
   k?: number
   rerank_topn?: number
@@ -163,6 +218,8 @@ export interface EngineRagSearchResponse {
   query: string
   answer: string | null
   answer_model: string | null
+  answer_corpus_ids: number[]
+  grounded_answer: EngineGroundedAnswer | null
   evidence_bundles: EngineEvidenceBundle[]
   graph_signals: EngineGraphSignal[]
   retrieval_channels: EngineRetrievalChannelResult[]

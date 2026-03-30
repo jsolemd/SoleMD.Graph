@@ -63,17 +63,10 @@ export function buildCanvasSource(args: {
   overlayRevision: number
 }): GraphCanvasSource {
   const { conn, db, pointCounts, overlayCount, overlayRevision } = args
-  const viewNames = getActiveCanvasViewNames(overlayRevision)
   return {
     duckDBConnection: {
       duckdb: db,
       connection: conn,
-    },
-    layerTables: {
-      corpus: {
-        points: viewNames.corpusPoints,
-        links: viewNames.corpusLinks,
-      },
     },
     pointCounts,
     overlayCount,

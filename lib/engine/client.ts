@@ -48,12 +48,83 @@ function getEngineHeaders() {
   return headers
 }
 
+function buildEngineRequestInit(body: unknown, signal?: AbortSignal, accept?: string) {
+  const headers = getEngineHeaders()
+  if (accept) {
+    headers.Accept = accept
+  }
+
+  return {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+    cache: 'no-store' as const,
+    signal,
+  }
+}
+
 async function parseErrorBody(response: Response) {
   const contentType = response.headers.get('content-type') || ''
   if (contentType.includes('application/json')) {
     return response.json().catch(() => null)
   }
   return response.text().catch(() => null)
+}
+
+function getErrorMessage(status: number, errorBody: unknown) {
+  if (typeof errorBody === 'string' && errorBody.trim().length > 0) {
+    return errorBody
+  }
+
+  if (!errorBody || typeof errorBody !== 'object') {
+    return `Engine request failed with ${status}`
+  }
+
+  const body = errorBody as {
+    error_message?: unknown
+    detail?: unknown
+  }
+
+  if (typeof body.error_message === 'string' && body.error_message.trim().length > 0) {
+    return body.error_message
+  }
+
+  if (typeof body.detail === 'string' && body.detail.trim().length > 0) {
+    return body.detail
+  }
+
+  if (Array.isArray(body.detail)) {
+    const parts = body.detail
+      .map((item) => formatValidationError(item))
+      .filter((message): message is string => Boolean(message))
+    if (parts.length > 0) {
+      return parts.join('; ')
+    }
+  }
+
+  return `Engine request failed with ${status}`
+}
+
+function formatValidationError(value: unknown) {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  const item = value as {
+    loc?: unknown
+    msg?: unknown
+  }
+  const location = Array.isArray(item.loc)
+    ? item.loc
+        .filter((part): part is string | number => typeof part === 'string' || typeof part === 'number')
+        .join('.')
+    : null
+  const message = typeof item.msg === 'string' ? item.msg : null
+
+  if (location && message) {
+    return `${location}: ${message}`
+  }
+  return message
 }
 
 export async function postEngineJson<TRequest, TResponse>(
@@ -63,24 +134,71 @@ export async function postEngineJson<TRequest, TResponse>(
     signal?: AbortSignal
   },
 ): Promise<TResponse> {
-  const response = await fetch(`${getEngineUrl()}${path}`, {
-    method: 'POST',
-    headers: getEngineHeaders(),
-    body: JSON.stringify(body),
-    cache: 'no-store',
-    signal: init?.signal,
-  })
+  let response: Response
+  try {
+    response = await fetch(`${getEngineUrl()}${path}`, {
+      ...buildEngineRequestInit(body, init?.signal),
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error
+    }
+
+    throw new EngineApiError(
+      `Evidence engine unavailable at ${getEngineUrl()}. Start the engine or set ENGINE_URL.`,
+      503,
+      {
+        error_code: 'engine_request_failed',
+        request_id: null,
+        retry_after: null,
+      },
+    )
+  }
 
   if (!response.ok) {
     const errorBody = await parseErrorBody(response)
-    const message =
-      typeof errorBody === 'string'
-        ? errorBody
-        : (errorBody as { error_message?: string; detail?: string } | null)?.error_message ||
-          (errorBody as { detail?: string } | null)?.detail ||
-          `Engine request failed with ${response.status}`
+    const message = getErrorMessage(response.status, errorBody)
     throw new EngineApiError(message, response.status, errorBody)
   }
 
   return response.json() as Promise<TResponse>
+}
+
+export async function postEngineBinary<TRequest>(
+  path: string,
+  body: TRequest,
+  init?: {
+    signal?: AbortSignal
+    accept?: string
+  },
+): Promise<Uint8Array> {
+  let response: Response
+  try {
+    response = await fetch(
+      `${getEngineUrl()}${path}`,
+      buildEngineRequestInit(body, init?.signal, init?.accept),
+    )
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error
+    }
+
+    throw new EngineApiError(
+      `Evidence engine unavailable at ${getEngineUrl()}. Start the engine or set ENGINE_URL.`,
+      503,
+      {
+        error_code: 'engine_request_failed',
+        request_id: null,
+        retry_after: null,
+      },
+    )
+  }
+
+  if (!response.ok) {
+    const errorBody = await parseErrorBody(response)
+    const message = getErrorMessage(response.status, errorBody)
+    throw new EngineApiError(message, response.status, errorBody)
+  }
+
+  return new Uint8Array(await response.arrayBuffer())
 }

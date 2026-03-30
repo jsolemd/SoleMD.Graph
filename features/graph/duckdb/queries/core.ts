@@ -12,6 +12,7 @@ const READ_ONLY_QUERY_PREFIXES = new Set([
   'with',
 ])
 const MAX_READ_ONLY_QUERY_ROWS = 200
+const connectionReadQueue = new WeakMap<AsyncDuckDBConnection, Promise<void>>()
 
 export function getAbsoluteUrl(relativeOrAbsoluteUrl: string) {
   if (/^https?:\/\//.test(relativeOrAbsoluteUrl)) {
@@ -70,6 +71,35 @@ function normalizeReadOnlySql(sql: string) {
   return sql.trim().replace(/;+$/g, '').trim()
 }
 
+async function enqueueConnectionRead<T>(
+  conn: AsyncDuckDBConnection,
+  task: () => Promise<T>
+): Promise<T> {
+  const previous = connectionReadQueue.get(conn) ?? Promise.resolve()
+  let release!: () => void
+  const current = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
+  connectionReadQueue.set(
+    conn,
+    previous
+      .catch(() => undefined)
+      .then(() => current)
+  )
+
+  await previous.catch(() => undefined)
+
+  try {
+    return await task()
+  } finally {
+    release()
+    if (connectionReadQueue.get(conn) === current) {
+      connectionReadQueue.delete(conn)
+    }
+  }
+}
+
 export function buildReadOnlyQuery(sql: string) {
   const normalized = normalizeReadOnlySql(sql)
 
@@ -107,19 +137,21 @@ export async function executeReadOnlyQuery(
   conn: AsyncDuckDBConnection,
   sql: string
 ): Promise<GraphQueryResult> {
-  const query = buildReadOnlyQuery(sql)
-  const startedAt = performance.now()
-  const resultTable = await conn.query(query.sql)
-  const rows = mapQueryRows<Record<string, unknown>>(resultTable)
+  return enqueueConnectionRead(conn, async () => {
+    const query = buildReadOnlyQuery(sql)
+    const startedAt = performance.now()
+    const resultTable = await conn.query(query.sql)
+    const rows = mapQueryRows<Record<string, unknown>>(resultTable)
 
-  return {
-    appliedLimit: query.appliedLimit,
-    columns: getQueryColumns(resultTable, rows),
-    durationMs: Number((performance.now() - startedAt).toFixed(1)),
-    executedSql: query.sql,
-    rowCount: rows.length,
-    rows,
-  }
+    return {
+      appliedLimit: query.appliedLimit,
+      columns: getQueryColumns(resultTable, rows),
+      durationMs: Number((performance.now() - startedAt).toFixed(1)),
+      executedSql: query.sql,
+      rowCount: rows.length,
+      rows,
+    }
+  })
 }
 
 export async function queryRows<T>(
@@ -127,15 +159,17 @@ export async function queryRows<T>(
   sql: string,
   params: unknown[] = []
 ) {
-  if (params.length === 0) {
-    return mapQueryRows<T>(await conn.query(sql))
-  }
+  return enqueueConnectionRead(conn, async () => {
+    if (params.length === 0) {
+      return mapQueryRows<T>(await conn.query(sql))
+    }
 
-  const statement = await conn.prepare(sql)
+    const statement = await conn.prepare(sql)
 
-  try {
-    return mapQueryRows<T>(await statement.query(...params))
-  } finally {
-    await statement.close()
-  }
+    try {
+      return mapQueryRows<T>(await statement.query(...params))
+    } finally {
+      await statement.close()
+    }
+  })
 }

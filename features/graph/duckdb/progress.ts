@@ -44,6 +44,24 @@ export function subscribeToGraphBundleProgress(
   }
 }
 
+export function invalidateGraphBundleSessionCache(bundleChecksum?: string) {
+  if (bundleChecksum) {
+    const session = sessionCache.get(bundleChecksum)
+    session?.then((resolved) => resolved.dispose()).catch(() => {})
+    sessionCache.delete(bundleChecksum)
+    progressCache.delete(bundleChecksum)
+    progressListeners.delete(bundleChecksum)
+    return
+  }
+
+  for (const [checksum, session] of sessionCache.entries()) {
+    session.then((resolved) => resolved.dispose()).catch(() => {})
+    progressCache.delete(checksum)
+    progressListeners.delete(checksum)
+  }
+  sessionCache.clear()
+}
+
 export function loadGraphBundle(bundle: GraphBundle) {
   let session = sessionCache.get(bundle.bundleChecksum)
 

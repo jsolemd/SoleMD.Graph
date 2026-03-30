@@ -29,9 +29,11 @@ const CLUSTER_LABEL_STYLE =
 export default function CosmographRenderer({
   canvas,
   queries,
+  onFirstPaint,
 }: {
   canvas: GraphCanvasSource;
   queries: GraphBundleQueries;
+  onFirstPaint?: () => void;
 }) {
   const cosmographRef = useRef<CosmographRef>(undefined);
   const hasFittedView = useRef(false);
@@ -66,7 +68,7 @@ export default function CosmographRenderer({
   })));
   const isLocked = selectionLocked;
 
-  const { zoomedIn, isActivelyZooming, handleZoomStart, handleZoomEnd } =
+  const { zoomedIn, isActivelyZooming, handleZoomStart, handleZoom, handleZoomEnd } =
     useZoomLabels(cosmographRef);
 
   const resolveAndSelectNode = useCallback(
@@ -102,6 +104,7 @@ export default function CosmographRenderer({
       hasFittedView.current = true;
       lastFittedLayer.current = activeLayer;
       cosmographRef.current?.fitView(0, fitViewPadding);
+      onFirstPaint?.();
       clearVisibilityFocus();
       setCurrentPointScopeSql(null);
       setSelectedPointCount(0);
@@ -110,10 +113,12 @@ export default function CosmographRenderer({
 
     if (lastFittedLayer.current === null) {
       lastFittedLayer.current = activeLayer;
+      onFirstPaint?.();
     }
   }, [
     activeLayer,
     fitViewPadding,
+    onFirstPaint,
     clearVisibilityFocus,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
@@ -170,13 +175,14 @@ export default function CosmographRenderer({
     <Cosmograph
       ref={cosmographRef}
       duckDBConnection={canvas.duckDBConnection}
-      points={config.activeCanvasTables.points}
-      links={config.activeCanvasTables.links}
+      points={config.layerConfig.pointsTable}
+      links={config.layerConfig.linksTable}
       pointIdBy="id"
       pointIndexBy="index"
       pointXBy={config.positionXColumn}
       pointYBy={config.positionYColumn}
       pointColorBy={config.effectiveColorColumn}
+      pointColorByFn={config.pointColorByFn}
       pointColorStrategy={config.effectiveColorStrategy}
       pointColorPalette={config.palette}
       pointSizeBy={config.pointSizeColumn === "none" ? undefined : config.pointSizeColumn}
@@ -190,6 +196,7 @@ export default function CosmographRenderer({
       linkTargetBy={config.layerConfig.linkTargetBy}
       linkTargetIndexBy={config.layerConfig.linkTargetIndexBy}
       renderLinks={config.hasLinks && (config.renderLinks || selectedPointCount > 0)}
+      linkColorByFn={config.hasLinks ? config.linkColorByFn : undefined}
       linkOpacity={config.hasLinks ? config.linkOpacity : undefined}
       linkGreyoutOpacity={config.hasLinks ? (config.renderLinks ? config.linkGreyoutOpacity : 0) : undefined}
       linkVisibilityDistanceRange={config.hasLinks ? config.linkVisibilityDistanceRange : undefined}
@@ -206,8 +213,8 @@ export default function CosmographRenderer({
       scalePointsOnZoom={config.scalePointsOnZoom}
       showClusterLabels={config.showPointLabels && !zoomedIn}
       showLabels={config.showPointLabels}
-      showDynamicLabels={config.showPointLabels && config.showDynamicLabels && zoomedIn && !isActivelyZooming}
-      showTopLabels={false}
+      showDynamicLabels={config.showPointLabels && config.showDynamicLabels}
+      showTopLabels={config.showPointLabels && !isActivelyZooming}
       showSelectedLabels={false}
       showFocusedPointLabel={false}
       pointSamplingDistance={350}
@@ -226,6 +233,7 @@ export default function CosmographRenderer({
       resetSelectionOnEmptyCanvasClick={!isLocked}
       disableLogging
       onZoomStart={handleZoomStart}
+      onZoom={handleZoom}
       onZoomEnd={handleZoomEnd}
       onLabelClick={handleLabelClick}
       onGraphRebuilt={handleGraphRebuilt}

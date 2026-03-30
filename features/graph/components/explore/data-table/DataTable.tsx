@@ -54,7 +54,8 @@ export function DataTable({
 
       <DataTableToolbar
         resolvedTableView={state.resolvedTableView}
-        selectedCount={state.selectedPointCount}
+        queryTableView={state.queryTableView}
+        selectionAvailable={state.selectionAvailable}
         totalPages={state.totalPages}
         safePage={state.safePage}
         pageLoading={state.pageLoading}

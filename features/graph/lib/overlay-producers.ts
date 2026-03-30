@@ -12,6 +12,7 @@ export const RAG_EVIDENCE_ASSIST_REFUTE_OVERLAY_PRODUCER =
   "rag:evidence-assist:refute" satisfies OverlayProducerId;
 export const RAG_EVIDENCE_ASSIST_BOTH_OVERLAY_PRODUCER =
   "rag:evidence-assist:both" satisfies OverlayProducerId;
+export const RAG_ANSWER_SELECTION_SOURCE_ID = "rag:answer-selection";
 
 export function getRagOverlayProducerId(args: {
   origin: "ask" | "compose";

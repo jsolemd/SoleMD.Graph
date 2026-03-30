@@ -1,27 +1,34 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ActionIcon, Group, RangeSlider, Stack, Text } from "@mantine/core";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCosmograph } from "@cosmograph/react";
-import { X } from "lucide-react";
+import type { Cosmograph } from "@cosmograph/cosmograph";
+import { getInternalApi } from "@cosmograph/cosmograph/cosmograph/internal";
+import { FilteringClient } from "@cosmograph/cosmograph/cosmograph/crossfilter/filtering-client";
+import { Histogram } from "@cosmograph/ui";
+import { Text } from "@mantine/core";
 import {
-  buildNumericRangeFilterClause,
   buildVisibilityScopeSqlExcludingSource,
   clearSelectionClause,
   createSelectionSource,
+  getSelectionSourceId,
   getSelectionValueForSource,
+  matchesSelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
+import { getLayerTableName } from "@/features/graph/duckdb/sql-helpers";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoHistogramResult } from "@/features/graph/types";
-import { QueryInfoHistogram } from "@/features/graph/components/explore/info/QueryWidgetVisualizations";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
+import {
+  getHistogramExtent,
+  setNativeHistogramData,
+  setNativeHistogramHighlight,
+} from "./native-histogram-adapter";
 
 const YEAR_LIKE_COLUMNS = new Set(["year", "pageNumber"]);
-
-function rangesEqual(left: [number, number], right: [number, number]) {
-  return Math.abs(left[0] - right[0]) < 1e-6 && Math.abs(left[1] - right[1]) < 1e-6;
-}
+const FILTER_HISTOGRAM_HEIGHT = 72;
+const HISTOGRAM_DATASET_RETRY_DELAYS_MS = [0, 150, 450];
 
 function normalizeRange(
   value: [number, number],
@@ -38,22 +45,40 @@ function normalizeRange(
   return [Number(min.toFixed(3)), Number(max.toFixed(3))];
 }
 
+function rangesEqual(left: [number, number], right: [number, number]) {
+  return Math.abs(left[0] - right[0]) < 1e-6 && Math.abs(left[1] - right[1]) < 1e-6;
+}
+
+function hasRenderableHistogramData(result: GraphInfoHistogramResult): boolean {
+  return result.totalCount > 1 && getHistogramExtent(result) !== null;
+}
+
 export function FilterHistogramWidget({
   column,
   queries,
+  bundleChecksum,
+  overlayRevision,
 }: {
   column: string;
   queries: GraphBundleQueries;
+  bundleChecksum: string;
+  overlayRevision: number;
 }) {
   const { cosmograph } = useCosmograph();
   const activeLayer = useDashboardStore((state) => state.activeLayer);
   const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
-  const [histogram, setHistogram] = useState<GraphInfoHistogramResult | null>(null);
-  const [pendingRange, setPendingRange] = useState<[number, number] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [widgetRevision, setWidgetRevision] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const widgetRef = useRef<Histogram | null>(null);
+  const clientRef = useRef<FilteringClient | null>(null);
+  const datasetRequestIdRef = useRef(0);
+  const scopedRequestIdRef = useRef(0);
+  const extentRef = useRef<[number, number] | null>(null);
+  const renderedDatasetKeyRef = useRef<string | null>(null);
   const sourceId = `filter:${column}`;
   const source = useMemo(() => createSelectionSource(sourceId), [sourceId]);
-
+  const tableName = useMemo(() => getLayerTableName(activeLayer), [activeLayer]);
   const scopeSql = useMemo(
     () =>
       buildVisibilityScopeSqlExcludingSource(
@@ -62,6 +87,7 @@ export function FilterHistogramWidget({
       ),
     [cosmograph, currentScopeRevision, sourceId],
   );
+  const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;
   const selectedRange = useMemo(
     () =>
       getSelectionValueForSource<[number, number]>(
@@ -72,136 +98,222 @@ export function FilterHistogramWidget({
   );
 
   useEffect(() => {
-    let cancelled = false;
+    if (!containerRef.current || !cosmograph) {
+      return;
+    }
 
+    const step = YEAR_LIKE_COLUMNS.has(column) ? 1 : 0.01;
+    const widget = new Histogram(containerRef.current, {
+      barCount: 20,
+      allowSelection: true,
+      stickySelection: true,
+      formatter: (value) =>
+        YEAR_LIKE_COLUMNS.has(column)
+          ? String(Math.round(value))
+          : formatNumber(value, { maximumFractionDigits: 2 }),
+      onBrush: (range) => {
+        const client = clientRef.current;
+        const extent = extentRef.current;
+        if (!client || !extent) {
+          return;
+        }
+
+        if (!range) {
+          clearSelectionClause(cosmograph.pointsSelection, source);
+          return;
+        }
+
+        const normalized = normalizeRange(range, extent, step);
+        if (rangesEqual(normalized, extent)) {
+          clearSelectionClause(cosmograph.pointsSelection, source);
+          return;
+        }
+
+        client.applyRangeFilter(normalized);
+      },
+    });
+
+    const internalApi = getInternalApi(cosmograph as unknown as Cosmograph);
+    let client: FilteringClient | null = null;
+
+    const initializeClient = async () => {
+      await internalApi.dbReady();
+      if (!internalApi.dbCoordinator) {
+        return;
+      }
+
+      client = FilteringClient.getOrCreateClient({
+        coordinator: internalApi.dbCoordinator,
+        getTableName: () => tableName,
+        getSelection: () => internalApi.crossfilter.pointsSelection,
+        getAccessor: () => column,
+        includeFields: () => [internalApi.config.pointIndexBy].filter(Boolean) as string[],
+        onFiltered: (result) => {
+          if (
+            client &&
+            matchesSelectionSourceId(
+              getSelectionSourceId(
+                internalApi.crossfilter.pointsSelection.active?.source,
+              ),
+              sourceId,
+            )
+          ) {
+            internalApi.crossfilter.onPointsFiltered(result);
+          }
+        },
+        id: sourceId,
+      });
+      client.setActive(true);
+      clientRef.current = client;
+    };
+
+    void initializeClient();
+
+    widgetRef.current = widget;
+    setWidgetRevision((current) => current + 1);
+
+    return () => {
+      widget.destroy();
+      widgetRef.current = null;
+      if (clientRef.current === client) {
+        clientRef.current = null;
+      }
+    };
+  }, [column, cosmograph, source, sourceId, tableName]);
+
+  useEffect(() => {
+    const widget = widgetRef.current;
+    if (!widget) {
+      return;
+    }
+
+    const requestId = ++datasetRequestIdRef.current;
+    const datasetKey = `${bundleChecksum}:${activeLayer}:${column}:${overlayRevision}:histogram`;
+    widget.setLoadingState();
+
+    const datasetPromise = (async () => {
+      let latestHistogram: GraphInfoHistogramResult = { bins: [], totalCount: 0 };
+
+      for (const delay of HISTOGRAM_DATASET_RETRY_DELAYS_MS) {
+        if (delay > 0) {
+          await new Promise((resolve) => globalThis.setTimeout(resolve, delay));
+        }
+
+        latestHistogram = await queries.getInfoHistogram({
+          layer: activeLayer,
+          scope: "dataset",
+          column,
+          bins: 20,
+          currentPointScopeSql: null,
+        });
+
+        if (hasRenderableHistogramData(latestHistogram)) {
+          return latestHistogram;
+        }
+      }
+
+      return latestHistogram;
+    })();
+
+    datasetPromise
+      .then((datasetHistogram: GraphInfoHistogramResult) => {
+        if (requestId !== datasetRequestIdRef.current) {
+          return;
+        }
+
+        const extent = getHistogramExtent(datasetHistogram);
+        extentRef.current = extent;
+        if (!widgetRef.current) {
+          return;
+        }
+
+        setError(null);
+        setNativeHistogramData(widget, datasetHistogram);
+        renderedDatasetKeyRef.current = hasRenderableHistogramData(datasetHistogram)
+          ? datasetKey
+          : null;
+        widget.setSelection(
+          selectedRange && extent
+            ? normalizeRange(selectedRange, extent, YEAR_LIKE_COLUMNS.has(column) ? 1 : 0.01)
+            : undefined,
+          true,
+        );
+      })
+      .catch((queryError: unknown) => {
+        if (requestId !== datasetRequestIdRef.current) {
+          return;
+        }
+
+        setError(
+          queryError instanceof Error ? queryError.message : "Failed to load filter",
+        );
+      });
+  }, [activeLayer, bundleChecksum, column, overlayRevision, queries, widgetRevision]);
+
+  useEffect(() => {
+    const widget = widgetRef.current;
+    if (!widget) {
+      return;
+    }
+
+    if (!isSubset || !scopeSql) {
+      setNativeHistogramHighlight(widget, undefined);
+      return;
+    }
+
+    const requestId = ++scopedRequestIdRef.current;
     queries
       .getInfoHistogram({
         layer: activeLayer,
         scope: "current",
         column,
-        currentPointScopeSql: scopeSql,
         bins: 20,
+        currentPointScopeSql: scopeSql,
+        extent: extentRef.current,
       })
-      .then((nextHistogram) => {
-        if (cancelled) {
+      .then((scopedHistogram: GraphInfoHistogramResult) => {
+        if (requestId !== scopedRequestIdRef.current || !widgetRef.current) {
           return;
         }
 
-        setHistogram(nextHistogram);
         setError(null);
+        setNativeHistogramHighlight(widget, scopedHistogram);
       })
       .catch((queryError: unknown) => {
-        if (cancelled) {
+        if (requestId !== scopedRequestIdRef.current) {
           return;
         }
 
-        setHistogram(null);
         setError(
-          queryError instanceof Error ? queryError.message : "Failed to load filter",
+          queryError instanceof Error ? queryError.message : "Failed to update filter scope",
         );
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeLayer, column, queries, scopeSql]);
-
-  const extent = useMemo<[number, number] | null>(() => {
-    if (!histogram || histogram.bins.length === 0) {
-      return null;
-    }
-
-    return [
-      histogram.bins[0]?.min ?? 0,
-      histogram.bins[histogram.bins.length - 1]?.max ?? 0,
-    ];
-  }, [histogram]);
-  const step = YEAR_LIKE_COLUMNS.has(column) ? 1 : 0.01;
+  }, [activeLayer, column, isSubset, queries, scopeSql, widgetRevision]);
 
   useEffect(() => {
-    if (!extent) {
-      setPendingRange(null);
+    const widget = widgetRef.current;
+    const extent = extentRef.current;
+    if (!widget || !extent) {
       return;
     }
 
-    setPendingRange(selectedRange ? normalizeRange(selectedRange, extent, step) : extent);
-  }, [extent, selectedRange, step]);
-
-  const handleApply = (nextRange: [number, number]) => {
-    const selection = cosmograph?.pointsSelection;
-    if (!selection || !extent) {
-      return;
-    }
-
-    const normalized = normalizeRange(nextRange, extent, step);
-    setPendingRange(normalized);
-
-    if (rangesEqual(normalized, extent)) {
-      clearSelectionClause(selection, source);
-      return;
-    }
-
-    selection.update(buildNumericRangeFilterClause(source, column, normalized));
-  };
+    widget.setSelection(
+      selectedRange
+        ? normalizeRange(selectedRange, extent, YEAR_LIKE_COLUMNS.has(column) ? 1 : 0.01)
+        : undefined,
+      true,
+    );
+  }, [column, selectedRange, widgetRevision]);
 
   if (error) {
     return <Text style={panelTextDimStyle}>{error}</Text>;
   }
 
-  if (!histogram || !extent || histogram.bins.length === 0) {
-    return <Text style={panelTextDimStyle}>No numeric data</Text>;
-  }
-
   return (
-    <Stack gap={6}>
-      <QueryInfoHistogram
-        bins={histogram.bins}
-        totalCount={histogram.totalCount}
-        column={column}
-      />
-
-      <RangeSlider
-        size="xs"
-        min={extent[0]}
-        max={extent[1]}
-        step={step}
-        minRange={step}
-        value={pendingRange ?? extent}
-        onChange={(value) => setPendingRange(value as [number, number])}
-        onChangeEnd={(value) => handleApply(value as [number, number])}
-        label={(value) =>
-          YEAR_LIKE_COLUMNS.has(column)
-            ? String(Math.round(value))
-            : formatNumber(value, { maximumFractionDigits: 2 })
-        }
-        styles={{
-          track: { backgroundColor: "var(--graph-panel-input-bg)" },
-          bar: { backgroundColor: "var(--mode-accent)" },
-          thumb: { borderColor: "var(--mode-accent)" },
-        }}
-      />
-
-      {selectedRange ? (
-        <Group justify="space-between" gap="xs">
-          <Text style={panelTextDimStyle}>
-            {YEAR_LIKE_COLUMNS.has(column)
-              ? `${Math.round(selectedRange[0])}–${Math.round(selectedRange[1])}`
-              : `${formatNumber(selectedRange[0], {
-                  maximumFractionDigits: 2,
-                })}–${formatNumber(selectedRange[1], {
-                  maximumFractionDigits: 2,
-                })}`}
-          </Text>
-          <ActionIcon
-            size="sm"
-            variant="subtle"
-            onClick={() => handleApply(extent)}
-            aria-label={`Clear ${column} filter`}
-          >
-            <X size={12} />
-          </ActionIcon>
-        </Group>
-      ) : null}
-    </Stack>
+    <div
+      ref={containerRef}
+      className="w-full"
+      style={{ height: FILTER_HISTOGRAM_HEIGHT }}
+    />
   );
 }

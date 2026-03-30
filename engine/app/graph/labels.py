@@ -225,6 +225,61 @@ def load_vocabulary_terms(
     return vocab
 
 
+def get_cluster_keyword_context(
+    graph_run_id: str,
+    top_n_keywords: int = 10,
+    top_n_titles: int = 20,
+) -> dict[int, dict]:
+    """Return c-TF-IDF keywords and representative titles per cluster.
+
+    Used by llm_labels.py as context for LLM-based labeling.
+    Returns {cluster_id: {"keywords": [...], "titles": [...]}}.
+    """
+    from app import db
+    from app.graph.build import _load_cluster_texts
+
+    cluster_texts = _load_cluster_texts(graph_run_id=graph_run_id)
+    terms_by_cluster, _ = _ctfidf_top_terms(cluster_texts, top_n=top_n_keywords)
+
+    # Fetch top papers by citation count per cluster for representative titles
+    titles_by_cluster: dict[int, list[str]] = {}
+    with db.pooled() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH ranked AS (
+                SELECT
+                    g.cluster_id,
+                    p.title,
+                    row_number() OVER (
+                        PARTITION BY g.cluster_id
+                        ORDER BY COALESCE(p.citation_count, 0) DESC, g.corpus_id
+                    ) AS rn
+                FROM solemd.graph_points g
+                JOIN solemd.papers p ON p.corpus_id = g.corpus_id
+                WHERE g.graph_run_id = %s
+                  AND g.cluster_id != 0
+                  AND p.title IS NOT NULL
+            )
+            SELECT cluster_id, title
+            FROM ranked
+            WHERE rn <= %s
+            ORDER BY cluster_id, rn
+            """,
+            (graph_run_id, top_n_titles),
+        )
+        for row in cur.fetchall():
+            cid = int(row["cluster_id"])
+            titles_by_cluster.setdefault(cid, []).append(row["title"])
+
+    result: dict[int, dict] = {}
+    for cid in sorted(set(terms_by_cluster) | set(titles_by_cluster)):
+        result[cid] = {
+            "keywords": terms_by_cluster.get(cid, []),
+            "titles": titles_by_cluster.get(cid, []),
+        }
+    return result
+
+
 def build_cluster_labels(
     cluster_texts: dict[int, list[str]],
 ) -> list[ClusterLabel]:

@@ -15,7 +15,11 @@ import { registerClusterExemplarView } from './details'
 import { initializeOverlayMembershipTable } from './overlay'
 import { registerPaperDocumentViews } from './paper-documents'
 import { resolveBundleRelations } from './relations'
-import { registerUniverseLinksViews, registerUniversePointView } from './universe'
+import {
+  initializeAttachedUniversePointTable,
+  registerUniverseLinksViews,
+  registerUniversePointView,
+} from './universe'
 
 export interface SessionViewState {
   availableLayers: MapLayer[]
@@ -55,6 +59,9 @@ export async function registerInitialSessionViews(
       buildPointCanvasProjectionSql,
       buildPointQueryProjectionSql
     )
+  )
+  await runBootstrapStep('attached universe point table', () =>
+    initializeAttachedUniversePointTable(conn)
   )
 
   await runBootstrapStep('universe point views', () =>

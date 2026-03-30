@@ -163,6 +163,8 @@ Rules:
 - `active_point_index_lookup_web` remaps ids to dense active indices
 - `current_points_canvas_web` / `current_points_web` / `current_paper_points_web`
   are the canonical browser-facing active aliases
+- the frontend render path binds directly to `current_points_canvas_web` /
+  `current_links_web`; any swap views behind those aliases are not public contract
 - `active_points_web` is the dense browser-facing union of base + overlay
 - `active_links_web` and `active_paper_links_web` remap to active ids so links follow the canvas
 - when overlay is empty, the active canvas should alias base directly rather than materializing a synthetic active copy
@@ -171,6 +173,10 @@ Rules:
   JS point objects
 - `current_points_canvas_web` and related `*_canvas_web` views are render-only
   inputs; rich query/detail paths should not be rebuilt on top of them
+- native filter/timeline UI may be mounted from `@cosmograph/ui`, but only
+  through adapters that bind filtering clients to `current_points_web`; do not
+  switch back to the accessor-driven Cosmograph components that depend on point
+  metadata columns
 - info-panel widget queries should batch by scope change, not fan out one DuckDB roundtrip per widget
 
 This keeps the active canvas stable while still allowing the user to promote

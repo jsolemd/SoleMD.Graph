@@ -1,3 +1,5 @@
+import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
+
 import type {
   GraphBundle,
   GraphClusterDetail,
@@ -21,9 +23,11 @@ import {
   queryCanvasPointCounts,
   registerActiveCanvasAliasViews,
 } from './canvas'
+import { maybeAttachGraphPaperRefs } from './attachment'
 import { createConnection, closeConnection } from './connection'
 import { mapCluster, mapExemplar, mapPaper } from './mappers'
 import { activateOverlayByClusterNeighborhood } from './overlay'
+import { getColumnMetaForLayer } from './sql-helpers'
 import {
   executeReadOnlyQuery,
   exportCorpusTableCsv,
@@ -31,6 +35,7 @@ import {
   queryCorpusTablePage,
   queryClusterRows,
   queryExemplarRows,
+  queryFacetSummary,
   queryFacetSummaries,
   queryInfoBars,
   queryInfoBarsBatch,
@@ -40,11 +45,14 @@ import {
   queryOverlayPointIds,
   queryPaperDetail,
   queryPaperDocument,
-  queryPaperNodesByPaperIds,
-  queryScopeCoordinates,
   queryPointSearch,
+  queryPaperNodesByGraphPaperRefs,
+  querySelectedGraphPaperRefs,
+  queryScopeCoordinates,
   queryRows,
-  queryUniversePointIdsByPaperIds,
+  queryUniversePointIdsByGraphPaperRefs,
+  queryCategoricalValues,
+  queryNumericValues,
   queryVisibilityBudget,
 } from './queries'
 import type { GraphBundleSession, GraphCanvasListener, ProgressCallback } from './types'
@@ -65,6 +73,90 @@ function normalizeOverlayPointIds(pointIds: string[]): string[] {
   return [...new Set(pointIds.filter((pointId) => pointId.trim().length > 0))]
 }
 
+function partitionFacetColumns(
+  layer: Parameters<typeof queryFacetSummaries>[1]['layer'],
+  columns: string[]
+) {
+  const simpleColumns: string[] = []
+  const multiValueColumns: string[] = []
+
+  for (const column of columns) {
+    if (getColumnMetaForLayer(column, layer)?.isMultiValue) {
+      multiValueColumns.push(column)
+    } else {
+      simpleColumns.push(column)
+    }
+  }
+
+  return { simpleColumns, multiValueColumns }
+}
+
+function mapBarsToFacetRows(
+  rows: Array<{ value: string; count: number }>
+): GraphInfoFacetRow[] {
+  return rows.map((row) => ({
+    value: row.value,
+    scopedCount: row.count,
+    totalCount: row.count,
+  }))
+}
+
+async function getScopedFacetBarCounts(
+  conn: AsyncDuckDBConnection,
+  args: {
+    layer: Parameters<typeof queryFacetSummaries>[1]['layer']
+    columns: string[]
+    maxItems: number
+    scope: 'current' | 'selected'
+    currentPointScopeSql: string | null
+  }
+): Promise<Record<string, Array<{ value: string; count: number }>>> {
+  const { simpleColumns, multiValueColumns } = partitionFacetColumns(
+    args.layer,
+    args.columns
+  )
+
+  const [simpleResults, multiValueResults] = await Promise.all([
+    simpleColumns.length > 0
+      ? queryInfoBarsBatch(conn, {
+          layer: args.layer,
+          scope: args.scope,
+          columns: simpleColumns,
+          maxItems: args.maxItems,
+          currentPointScopeSql: args.currentPointScopeSql,
+        })
+      : Promise.resolve({} as Record<string, Array<{ value: string; count: number }>>),
+    multiValueColumns.length > 0
+      ? Promise.all(
+          multiValueColumns.map(async (column) => {
+            const rows = await queryFacetSummary(conn, {
+              layer: args.layer,
+              scope: args.scope,
+              column,
+              maxItems: args.maxItems,
+              currentPointScopeSql: args.currentPointScopeSql,
+            })
+
+            return [
+              column,
+              rows
+                .filter((row: GraphInfoFacetRow) => row.scopedCount > 0)
+                .map((row: GraphInfoFacetRow) => ({
+                  value: row.value,
+                  count: row.scopedCount,
+                })),
+            ] as const
+          })
+        ).then((entries) => Object.fromEntries(entries))
+      : Promise.resolve({} as Record<string, Array<{ value: string; count: number }>>),
+  ])
+
+  return {
+    ...simpleResults,
+    ...multiValueResults,
+  }
+}
+
 function haveSamePointIds(left: string[], right: string[]): boolean {
   if (left.length !== right.length) {
     return false
@@ -74,12 +166,17 @@ function haveSamePointIds(left: string[], right: string[]): boolean {
   return left.every((pointId) => rightPointIdSet.has(pointId))
 }
 
+function normalizeGraphPaperRefs(graphPaperRefs: string[]): string[] {
+  return [...new Set(graphPaperRefs.filter((graphPaperRef) => graphPaperRef.trim().length > 0))]
+}
+
 export async function createGraphBundleSession(
   bundle: GraphBundle,
   onProgress: ProgressCallback
 ): Promise<GraphBundleSession> {
   const { conn, db, worker } = await createConnection()
   const autoloadTables = getAutoloadBundleTables(bundle)
+  let disposed = false
 
   try {
     onProgress(bundle.bundleChecksum, {
@@ -130,6 +227,8 @@ export async function createGraphBundleSession(
       Promise<Record<string, GraphInfoHistogramResult>>
     >()
     const summaryDatasetCache = createBoundedCache<string, Promise<GraphInfoSummary>>()
+    const categoricalValueDatasetCache = createBoundedCache<string, Promise<string[]>>()
+    const numericValueDatasetCache = createBoundedCache<string, Promise<number[]>>()
 
     let canvas = buildCanvasSource({
       conn, db, pointCounts: initialPointCounts, overlayCount: 0, overlayRevision,
@@ -153,6 +252,8 @@ export async function createGraphBundleSession(
       facetDatasetCache.clear()
       histogramDatasetCache.clear()
       summaryDatasetCache.clear()
+      categoricalValueDatasetCache.clear()
+      numericValueDatasetCache.clear()
     }
 
     const getCachedDatasetFacetSummaries = (args: {
@@ -171,13 +272,56 @@ export async function createGraphBundleSession(
         return cached
       }
 
-      const next = queryFacetSummaries(conn, {
-        layer: args.layer,
-        scope: 'dataset',
-        columns: args.columns,
-        maxItems: args.maxItems,
-        currentPointScopeSql: null,
-      })
+      const next = (async () => {
+        const { simpleColumns, multiValueColumns } = partitionFacetColumns(
+          args.layer,
+          args.columns
+        )
+
+        const [simpleResults, multiValueResults] = await Promise.all([
+          simpleColumns.length > 0
+            ? queryInfoBarsBatch(conn, {
+                layer: args.layer,
+                scope: 'dataset',
+                columns: simpleColumns,
+                maxItems: args.maxItems,
+                currentPointScopeSql: null,
+              })
+            : Promise.resolve({} as Record<string, Array<{ value: string; count: number }>>),
+          multiValueColumns.length > 0
+            ? queryFacetSummaries(conn, {
+                layer: args.layer,
+                scope: 'dataset',
+                columns: multiValueColumns,
+                maxItems: args.maxItems,
+                currentPointScopeSql: null,
+              })
+            : Promise.resolve({} as Record<string, GraphInfoFacetRow[]>),
+        ])
+
+        const result: Record<string, GraphInfoFacetRow[]> = {}
+
+        for (const column of simpleColumns) {
+          result[column] = mapBarsToFacetRows(simpleResults[column] ?? [])
+        }
+
+        for (const column of multiValueColumns) {
+          result[column] = multiValueResults[column] ?? []
+        }
+
+        return result
+      })()
+        .then((result) => {
+          const hasAnyRows = Object.values(result).some((rows) => rows.length > 0)
+          if (!hasAnyRows) {
+            facetDatasetCache.delete(cacheKey)
+          }
+          return result
+        })
+        .catch((error) => {
+          facetDatasetCache.delete(cacheKey)
+          throw error
+        })
       facetDatasetCache.set(cacheKey, next)
       return next
     }
@@ -196,6 +340,9 @@ export async function createGraphBundleSession(
         layer,
         scope: 'dataset',
         currentPointScopeSql: null,
+      }).catch((error) => {
+        summaryDatasetCache.delete(cacheKey)
+        throw error
       })
       summaryDatasetCache.set(cacheKey, next)
       return next
@@ -223,8 +370,83 @@ export async function createGraphBundleSession(
         columns: args.columns,
         bins: args.bins,
         currentPointScopeSql: null,
+      }).then((result) => {
+        const hasAnyBins = Object.values(result).some(
+          (entry) => entry.totalCount > 0 || entry.bins.length > 0
+        )
+        if (!hasAnyBins) {
+          histogramDatasetCache.delete(cacheKey)
+        }
+        return result
+      }).catch((error) => {
+        histogramDatasetCache.delete(cacheKey)
+        throw error
       })
       histogramDatasetCache.set(cacheKey, next)
+      return next
+    }
+
+    const getCachedCategoricalValues = (args: {
+      layer: Parameters<typeof queryCategoricalValues>[1]['layer']
+      column: string
+    }) => {
+      const cacheKey = JSON.stringify({
+        layer: args.layer,
+        column: args.column,
+        overlayRevision,
+      })
+      const cached = categoricalValueDatasetCache.get(cacheKey)
+      if (cached) {
+        return cached
+      }
+
+      const next = queryCategoricalValues(conn, {
+        layer: args.layer,
+        scope: 'dataset',
+        column: args.column,
+        currentPointScopeSql: null,
+      }).then((values) => {
+        if (values.length === 0) {
+          categoricalValueDatasetCache.delete(cacheKey)
+        }
+        return values
+      }).catch((error) => {
+        categoricalValueDatasetCache.delete(cacheKey)
+        throw error
+      })
+      categoricalValueDatasetCache.set(cacheKey, next)
+      return next
+    }
+
+    const getCachedNumericValues = (args: {
+      layer: Parameters<typeof queryNumericValues>[1]['layer']
+      column: string
+    }) => {
+      const cacheKey = JSON.stringify({
+        layer: args.layer,
+        column: args.column,
+        overlayRevision,
+      })
+      const cached = numericValueDatasetCache.get(cacheKey)
+      if (cached) {
+        return cached
+      }
+
+      const next = queryNumericValues(conn, {
+        layer: args.layer,
+        scope: 'dataset',
+        column: args.column,
+        currentPointScopeSql: null,
+      }).then((values) => {
+        if (values.length === 0) {
+          numericValueDatasetCache.delete(cacheKey)
+        }
+        return values
+      }).catch((error) => {
+        numericValueDatasetCache.delete(cacheKey)
+        throw error
+      })
+      numericValueDatasetCache.set(cacheKey, next)
       return next
     }
 
@@ -416,6 +638,13 @@ export async function createGraphBundleSession(
     return {
       availableLayers,
       canvas,
+      async dispose() {
+        if (disposed) {
+          return
+        }
+        disposed = true
+        await closeConnection(conn, db, worker)
+      },
       subscribeCanvas,
       async setSelectedPointIndices(pointIndices: number[]) {
         const normalized = [...new Set(
@@ -518,12 +747,79 @@ export async function createGraphBundleSession(
         paperDocumentCache.set(paperId, next)
         return next
       },
-      getPaperNodesByPaperIds(paperIds: string[]) {
-        return queryPaperNodesByPaperIds(conn, paperIds)
+      getSelectedGraphPaperRefs() {
+        return querySelectedGraphPaperRefs(conn)
       },
-      async getUniversePointIdsByPaperIds(paperIds: string[]) {
+      getPaperNodesByGraphPaperRefs(graphPaperRefs: string[]) {
+        return queryPaperNodesByGraphPaperRefs(conn, graphPaperRefs)
+      },
+      async ensureGraphPaperRefsAvailable(graphPaperRefs: string[]) {
+        const requestedGraphPaperRefs = normalizeGraphPaperRefs(graphPaperRefs)
+        if (requestedGraphPaperRefs.length === 0) {
+          return {
+            activeGraphPaperRefs: [],
+            universePointIdsByGraphPaperRef: {},
+            unresolvedGraphPaperRefs: [],
+          }
+        }
+
+        const activePaperNodes = await queryPaperNodesByGraphPaperRefs(
+          conn,
+          requestedGraphPaperRefs
+        )
+        const activeGraphPaperRefSet = new Set(Object.keys(activePaperNodes))
+        const unresolvedGraphPaperRefs = requestedGraphPaperRefs.filter(
+          (graphPaperRef) => !activeGraphPaperRefSet.has(graphPaperRef)
+        )
+
+        if (unresolvedGraphPaperRefs.length === 0) {
+          return {
+            activeGraphPaperRefs: requestedGraphPaperRefs,
+            universePointIdsByGraphPaperRef: {},
+            unresolvedGraphPaperRefs: [],
+          }
+        }
+
         await ensureOptionalBundleTables(['universe_points'])
-        return queryUniversePointIdsByPaperIds(conn, paperIds)
+        let universePointIdsByGraphPaperRef = await queryUniversePointIdsByGraphPaperRefs(
+          conn,
+          unresolvedGraphPaperRefs
+        )
+        let stillUnresolvedGraphPaperRefs = unresolvedGraphPaperRefs.filter(
+          (graphPaperRef) => !(graphPaperRef in universePointIdsByGraphPaperRef)
+        )
+
+        if (stillUnresolvedGraphPaperRefs.length > 0) {
+          const attached = await maybeAttachGraphPaperRefs({
+            bundle,
+            conn,
+            graphPaperRefs: stillUnresolvedGraphPaperRefs,
+            ensureOptionalBundleTables,
+          })
+
+          if (attached) {
+            await ensureOptionalBundleTables(['universe_points'])
+            const attachedUniversePointIdsByGraphPaperRef =
+              await queryUniversePointIdsByGraphPaperRefs(conn, stillUnresolvedGraphPaperRefs)
+            universePointIdsByGraphPaperRef = {
+              ...universePointIdsByGraphPaperRef,
+              ...attachedUniversePointIdsByGraphPaperRef,
+            }
+            stillUnresolvedGraphPaperRefs = stillUnresolvedGraphPaperRefs.filter(
+              (graphPaperRef) => !(graphPaperRef in attachedUniversePointIdsByGraphPaperRef)
+            )
+          }
+        }
+
+        return {
+          activeGraphPaperRefs: Object.keys(activePaperNodes),
+          universePointIdsByGraphPaperRef,
+          unresolvedGraphPaperRefs: stillUnresolvedGraphPaperRefs,
+        }
+      },
+      async getUniversePointIdsByGraphPaperRefs(graphPaperRefs: string[]) {
+        await ensureOptionalBundleTables(['universe_points'])
+        return queryUniversePointIdsByGraphPaperRefs(conn, graphPaperRefs)
       },
       resolvePointSelection(layer, selector) {
         void layer
@@ -549,6 +845,34 @@ export async function createGraphBundleSession(
           datasetTotalCount: canvas.pointCounts[args.layer] ?? 0,
         })
       },
+      getCategoricalValues(args) {
+        const hasCurrentScope =
+          typeof args.currentPointScopeSql === 'string' &&
+          args.currentPointScopeSql.trim().length > 0
+
+        if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope)) {
+          return getCachedCategoricalValues({
+            layer: args.layer,
+            column: args.column,
+          })
+        }
+
+        return queryCategoricalValues(conn, args)
+      },
+      getNumericValues(args) {
+        const hasCurrentScope =
+          typeof args.currentPointScopeSql === 'string' &&
+          args.currentPointScopeSql.trim().length > 0
+
+        if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope)) {
+          return getCachedNumericValues({
+            layer: args.layer,
+            column: args.column,
+          })
+        }
+
+        return queryNumericValues(conn, args)
+      },
       getInfoBars(args) {
         const safeMaxItems = args.maxItems ?? 8
         const hasCurrentScope =
@@ -566,6 +890,16 @@ export async function createGraphBundleSession(
               count: row.totalCount,
             }))
           )
+        }
+
+        if (getColumnMetaForLayer(args.column, args.layer)?.isMultiValue) {
+          return getScopedFacetBarCounts(conn, {
+            layer: args.layer,
+            scope: args.scope,
+            columns: [args.column],
+            maxItems: safeMaxItems,
+            currentPointScopeSql: args.currentPointScopeSql,
+          }).then((result) => result[args.column] ?? [])
         }
 
         return queryInfoBars(conn, { ...args, maxItems: safeMaxItems })
@@ -594,15 +928,31 @@ export async function createGraphBundleSession(
           )
         }
 
-        return queryInfoBarsBatch(conn, { ...args, maxItems: safeMaxItems })
+        return getScopedFacetBarCounts(conn, {
+          layer: args.layer,
+          scope: args.scope,
+          columns: args.columns,
+          maxItems: safeMaxItems,
+          currentPointScopeSql: args.currentPointScopeSql,
+        })
       },
       getInfoHistogram(args) {
         const safeBins = args.bins ?? 16
+        const hasCustomExtent =
+          Array.isArray(args.extent) &&
+          args.extent.length === 2 &&
+          Number.isFinite(args.extent[0]) &&
+          Number.isFinite(args.extent[1])
+        const useQuantiles = args.useQuantiles === true
         const hasCurrentScope =
           typeof args.currentPointScopeSql === 'string' &&
           args.currentPointScopeSql.trim().length > 0
 
-        if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope)) {
+        if (
+          !hasCustomExtent &&
+          !useQuantiles &&
+          (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope))
+        ) {
           return getCachedDatasetInfoHistograms({
             layer: args.layer,
             columns: [args.column],
@@ -614,11 +964,21 @@ export async function createGraphBundleSession(
       },
       getInfoHistogramsBatch(args) {
         const safeBins = args.bins ?? 16
+        const hasCustomExtent =
+          Array.isArray(args.extent) &&
+          args.extent.length === 2 &&
+          Number.isFinite(args.extent[0]) &&
+          Number.isFinite(args.extent[1])
+        const useQuantiles = args.useQuantiles === true
         const hasCurrentScope =
           typeof args.currentPointScopeSql === 'string' &&
           args.currentPointScopeSql.trim().length > 0
 
-        if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope)) {
+        if (
+          !hasCustomExtent &&
+          !useQuantiles &&
+          (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope))
+        ) {
           return getCachedDatasetInfoHistograms({
             layer: args.layer,
             columns: args.columns,
@@ -642,6 +1002,13 @@ export async function createGraphBundleSession(
           }).then((result) => result[args.column] ?? [])
         }
 
+        if (getColumnMetaForLayer(args.column, args.layer)?.isMultiValue) {
+          return queryFacetSummary(conn, {
+            ...args,
+            maxItems: safeMaxItems,
+          })
+        }
+
         const mergeDepth = Math.max(safeMaxItems, 24)
         return Promise.all([
           getCachedDatasetFacetSummaries({
@@ -649,7 +1016,7 @@ export async function createGraphBundleSession(
             columns: [args.column],
             maxItems: mergeDepth,
           }),
-          queryInfoBarsBatch(conn, {
+          getScopedFacetBarCounts(conn, {
             layer: args.layer,
             scope: args.scope,
             columns: [args.column],
@@ -685,7 +1052,7 @@ export async function createGraphBundleSession(
             columns: args.columns,
             maxItems: mergeDepth,
           }),
-          queryInfoBarsBatch(conn, {
+          getScopedFacetBarCounts(conn, {
             layer: args.layer,
             scope: args.scope,
             columns: args.columns,
@@ -777,6 +1144,7 @@ export async function createGraphBundleSession(
       },
     }
   } catch (error) {
+    disposed = true
     await closeConnection(conn, db, worker)
     throw error
   }

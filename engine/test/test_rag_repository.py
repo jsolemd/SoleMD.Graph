@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from app.rag import queries
-from app.rag.repository import PostgresRagRepository
+from app.rag.repository import (
+    ENTITY_FUZZY_SIMILARITY_THRESHOLD,
+    ENTITY_TOP_CONCEPTS_PER_TERM,
+    PostgresRagRepository,
+)
 
 
 def test_search_papers_maps_rows(mock_conn):
@@ -38,6 +42,238 @@ def test_search_papers_maps_rows(mock_conn):
     assert hits[0].semantic_scholar_paper_id == "paper-101"
     assert hits[0].journal_name == "JAMA"
     assert hits[0].reference_count == 11
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_SEARCH_SQL,
+        ("run-1", "melatonin delirium", "melatonin delirium", 120, 5),
+    )
+
+
+def test_resolve_query_entity_terms_maps_exact_canonical_matches(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {"normalized_term": "melatonin"},
+            {"normalized_term": "delirium"},
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    terms = repo.resolve_query_entity_terms(
+        query_phrases=["melatonin", "delirium", "melatonin delirium"],
+        limit=5,
+    )
+
+    assert terms == ["melatonin", "delirium"]
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.QUERY_ENTITY_TERM_MATCH_SQL,
+        (["melatonin", "delirium", "melatonin delirium"], 5),
+    )
+
+
+def test_resolve_query_entity_terms_preserves_exact_concept_ids(mock_conn):
+    conn = mock_conn(rows=[{"normalized_term": "MESH:D008874"}])
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    terms = repo.resolve_query_entity_terms(
+        query_phrases=["mesh:d008874", "melatonin"],
+        limit=5,
+    )
+
+    assert terms == ["MESH:D008874"]
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.QUERY_ENTITY_TERM_MATCH_SQL,
+        (["mesh:d008874", "melatonin"], 5),
+    )
+
+
+def test_search_papers_can_scope_to_selected_corpus_ids(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    repo.search_papers(
+        "run-1",
+        "melatonin delirium",
+        limit=5,
+        scope_corpus_ids=[101, 202, 101],
+    )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_SEARCH_IN_SELECTION_SQL,
+        ("melatonin delirium", "melatonin delirium", [101, 202], 0.1, 5),
+    )
+
+
+def test_search_entity_papers_maps_rows(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 101,
+                "paper_id": "paper-101",
+                "title": "Melatonin and delirium",
+                "abstract": "Abstract text",
+                "tldr": "TLDR text",
+                "journal_name": "JAMA",
+                "year": 2024,
+                "doi": "10.1/example",
+                "pmid": 12345,
+                "pmcid": "PMC123",
+                "text_availability": "fulltext",
+                "is_open_access": True,
+                "citation_count": 7,
+                "reference_count": 11,
+                "entity_candidate_score": 0.88,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    hits = repo.search_entity_papers("run-1", entity_terms=["melatonin"], limit=5)
+
+    assert len(hits) == 1
+    assert hits[0].paper_id == "paper-101"
+    assert hits[0].entity_score == 0.88
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_ENTITY_SEARCH_SQL,
+        (
+            ["melatonin"],
+            ENTITY_FUZZY_SIMILARITY_THRESHOLD,
+            ENTITY_TOP_CONCEPTS_PER_TERM,
+            "run-1",
+            5,
+        ),
+    )
+
+
+def test_search_entity_papers_can_scope_to_selected_corpus_ids(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    repo.search_entity_papers(
+        "run-1",
+        entity_terms=["melatonin", "melatonin"],
+        limit=5,
+        scope_corpus_ids=[101, 202, 101],
+    )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_ENTITY_SEARCH_IN_SELECTION_SQL,
+        (
+            ["melatonin"],
+            ENTITY_FUZZY_SIMILARITY_THRESHOLD,
+            ENTITY_TOP_CONCEPTS_PER_TERM,
+            [101, 202],
+            5,
+        ),
+    )
+
+
+def test_search_relation_papers_maps_rows(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 202,
+                "paper_id": "paper-202",
+                "title": "Melatonin treatment paper",
+                "abstract": "Abstract text",
+                "tldr": None,
+                "journal_name": "Lancet",
+                "year": 2025,
+                "doi": None,
+                "pmid": 22222,
+                "pmcid": None,
+                "text_availability": "abstract",
+                "is_open_access": False,
+                "citation_count": 4,
+                "reference_count": 9,
+                "relation_candidate_score": 1.0,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    hits = repo.search_relation_papers("run-1", relation_terms=["treat"], limit=5)
+
+    assert len(hits) == 1
+    assert hits[0].paper_id == "paper-202"
+    assert hits[0].relation_score == 1.0
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_RELATION_SEARCH_SQL,
+        ("run-1", ["treat"], 5),
+    )
+
+
+def test_search_relation_papers_can_scope_to_selected_corpus_ids(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    repo.search_relation_papers(
+        "run-1",
+        relation_terms=["positive_correlate", "positive_correlate"],
+        limit=5,
+        scope_corpus_ids=[101, 202, 101],
+    )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_RELATION_SEARCH_IN_SELECTION_SQL,
+        (["positive_correlate"], [101, 202], 5),
+    )
+
+
+def test_fetch_papers_by_corpus_ids_maps_rows(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 202,
+                "paper_id": "paper-202",
+                "title": "Selected paper semantic neighbor",
+                "abstract": "Abstract text",
+                "tldr": None,
+                "journal_name": "Lancet",
+                "year": 2025,
+                "doi": None,
+                "pmid": 22222,
+                "pmcid": None,
+                "text_availability": "abstract",
+                "is_open_access": False,
+                "citation_count": 4,
+                "reference_count": 9,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    hits = repo.fetch_papers_by_corpus_ids("run-1", [202, 202])
+
+    assert len(hits) == 1
+    assert hits[0].corpus_id == 202
+    assert hits[0].paper_id == "paper-202"
+    assert hits[0].journal_name == "Lancet"
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(queries.PAPER_LOOKUP_SQL, ("run-1", [202]))
+
+
+def test_resolve_scope_corpus_ids_maps_graph_refs(mock_conn):
+    conn = mock_conn(rows=[{"corpus_id": 11}, {"corpus_id": 22}])
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    corpus_ids = repo.resolve_scope_corpus_ids(
+        graph_run_id="run-1",
+        graph_paper_refs=["paper-11", "paper:22", "paper-11"],
+    )
+
+    assert corpus_ids == [11, 22]
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.SCOPE_CORPUS_LOOKUP_SQL,
+        ("run-1", ["paper-11", "paper:22"], ["paper-11", "paper:22"], ["paper-11", "paper:22"], ["paper-11", "paper:22"]),
+    )
 
 
 def test_resolve_graph_release_targets_current_cosmograph_corpus_run(mock_conn):
@@ -81,3 +317,12 @@ def test_fetch_entity_matches_normalizes_mentions(mock_conn):
     assert 101 in hits
     assert hits[101][0].concept_id == "MESH:D008874"
     assert hits[101][0].matched_terms == ["melatonin"]
+
+
+def test_paper_queries_source_doi_from_corpus_table():
+    assert "c.doi" in queries.PAPER_SEARCH_SQL
+    assert "c.doi" in queries.PAPER_SEARCH_IN_SELECTION_SQL
+    assert "c.doi" in queries.PAPER_LOOKUP_SQL
+    assert "p.doi" not in queries.PAPER_SEARCH_SQL
+    assert "p.doi" not in queries.PAPER_SEARCH_IN_SELECTION_SQL
+    assert "p.doi" not in queries.PAPER_LOOKUP_SQL

@@ -21,10 +21,12 @@ export interface TableDataState {
   pageLoading: boolean;
   pageRefreshing: boolean;
   pageError: string | null;
-  resolvedTableView: string;
+  resolvedTableView: "selection" | "dataset";
+  queryTableView: "current" | "selected";
   tablePageSize: number;
   currentPointScopeSql: string | null;
   selectedPointCount: number;
+  selectionAvailable: boolean;
 }
 
 export function useTableData({ queries, overlayRevision }: UseTableDataOptions): TableDataState {
@@ -46,18 +48,35 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
   const [lastResolvedKey, setLastResolvedKey] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  const resolvedTableView =
-    tableView === "selected" && selectedPointCount === 0
+  const hasCurrentSubset =
+    typeof deferredCurrentPointScopeSql === "string" &&
+    deferredCurrentPointScopeSql.trim().length > 0;
+  const hasManualSelection = selectedPointCount > 0;
+  const preferredSelectionQueryView: "current" | "selected" | null =
+    hasCurrentSubset ? "current" : hasManualSelection ? "selected" : null;
+  const selectionAvailable = preferredSelectionQueryView !== null;
+  const resolvedTableView: "selection" | "dataset" =
+    tableView === "dataset" || !selectionAvailable ? "dataset" : "selection";
+  const queryTableView: "current" | "selected" =
+    resolvedTableView === "dataset"
       ? "current"
-      : tableView;
+      : preferredSelectionQueryView ?? "current";
   const scopedCurrentPointScopeSql =
-    resolvedTableView === "current" ? deferredCurrentPointScopeSql : null;
+    resolvedTableView === "selection" && queryTableView === "current"
+      ? deferredCurrentPointScopeSql
+      : null;
   const scopedCurrentScopeRevision =
-    resolvedTableView === "current" ? currentScopeRevision : 0;
+    resolvedTableView === "selection" && queryTableView === "current"
+      ? currentScopeRevision
+      : 0;
   const scopedSelectedPointCount =
-    resolvedTableView === "selected" ? selectedPointCount : 0;
+    resolvedTableView === "selection" && queryTableView === "selected"
+      ? selectedPointCount
+      : 0;
   const scopedSelectedPointRevision =
-    resolvedTableView === "selected" ? selectedPointRevision : 0;
+    resolvedTableView === "selection" && queryTableView === "selected"
+      ? selectedPointRevision
+      : 0;
   const totalPages = Math.max(1, Math.ceil(totalRows / tablePageSize));
   const safePage = clamp(tablePage, 1, totalPages);
   const startIdx = (safePage - 1) * tablePageSize;
@@ -66,6 +85,7 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
       JSON.stringify({
         activeLayer,
         resolvedTableView,
+        queryTableView,
         safePage,
         tablePageSize,
         currentScopeSql: scopedCurrentPointScopeSql,
@@ -76,6 +96,7 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
       }),
     [
       activeLayer,
+      queryTableView,
       overlayRevision,
       resolvedTableView,
       safePage,
@@ -96,18 +117,12 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
   }, [safePage, setTablePage, tablePage]);
 
   useEffect(() => {
-    if (tableView === "selected" && selectedPointCount === 0) {
-      setTableView("current");
-    }
-  }, [selectedPointCount, setTableView, tableView]);
-
-  useEffect(() => {
     let cancelled = false;
 
     queries
       .getTablePage({
         layer: activeLayer,
-        view: resolvedTableView,
+        view: queryTableView,
         page: safePage,
         pageSize: tablePageSize,
         currentPointScopeSql: scopedCurrentPointScopeSql,
@@ -141,7 +156,7 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
   }, [
     activeLayer,
     queries,
-    resolvedTableView,
+    queryTableView,
     requestKey,
     safePage,
     scopedCurrentPointScopeSql,
@@ -159,8 +174,10 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     pageRefreshing,
     pageError,
     resolvedTableView,
+    queryTableView,
     tablePageSize,
     currentPointScopeSql: scopedCurrentPointScopeSql,
     selectedPointCount,
+    selectionAvailable,
   };
 }

@@ -141,10 +141,16 @@ Implementation detail:
 - `current_points_canvas_web` is the render-facing alias for Cosmograph;
   `current_points_web` is the query-facing alias for search, table, and widget
   aggregation
+- the frontend binds directly to `current_points_canvas_web` /
+  `current_links_web`; internal swap views are runtime detail, not app contract
 - `pointIncludeColumns` stays empty on the live graph page; filters, timeline,
   search, table, selection, and info widgets query `current_points_web` /
   `current_paper_points_web` directly through DuckDB instead of hydrating rich
   point metadata through Cosmograph
+- the filter panel and timeline may still use the native `@cosmograph/ui`
+  controls, but only behind a thin adapter layer that binds filtering clients
+  to `current_points_web`; the accessor-driven canvas-table path remains
+  off-limits because it would reopen point hydration on the graph path
 - `selected_point_indices` is materialized from Cosmograph selection clauses in
   DuckDB; selection should not be mirrored back into SQL through huge
   placeholder lists
@@ -163,8 +169,23 @@ Implementation detail:
 - search results carry a narrow point shell so search-select does not need a
   second point-resolution query before opening the detail panel
 
+Important scale note:
+
+- a future globally mapped corpus may be much larger than the browser-attached
+  universe
+- the backend may retrieve against that larger mapped corpus
+- the browser should still attach only the needed graph rows for returned refs,
+  then materialize them locally through overlay/active aliases
+
+That is how the graph can stay clean and fast while the evidence backend works
+over a much larger paper domain.
+
 This is the clean boundary: base and universe are data, active is runtime state,
 evidence is a service.
+
+The stable evidence/RAG contract that sits beside this runtime now lives in
+[`docs/map/rag.md`](../map/rag.md). Keep this document focused on graph runtime
+behavior; keep stable evidence/backend semantics in the RAG map.
 
 ---
 
@@ -201,44 +222,76 @@ The design target is additive modules, not shared branching logic.
 
 ## Base Admission Policy
 
-The simplified admission model is:
+The admission model is:
 
-`base = rule evidence OR flagship journal OR narrow vocab anchor`
+`base = domain entity evidence OR flagship journal OR narrow vocab anchor`
 
-That is the whole policy shape. Everything else is secondary to the goal of
-producing a strong opening scaffold.
+A paper enters **base** if PubTator annotated it with at least one entity
+from our curated domain vocabulary (psychiatry, neurology, neuropsychiatry,
+neuroscience). Papers from any organ system qualify as long as they carry a
+domain entity — a cardiology paper about QT prolongation from haloperidol
+gets base because haloperidol is a `psychiatric_medication` entity rule.
 
-Practical implications:
+### Three tiers
+
+| Tier | Score | Gate |
+|------|-------|------|
+| `rule` | 3000 + bonuses | `has_rule_evidence` — entity or relation rule hit from domain vocabulary |
+| `flagship` | 2000 + bonuses | Paper in a domain-flagship or general-flagship journal |
+| `vocab` | 1000 + bonuses | `vocab_entity_match` admission and not in excluded specialties |
+
+### Entity rules — vocab-driven
+
+572 entity rules across 14 domain families, generated from the curated
+`data/vocab_terms.tsv` vocabulary (3,361 terms with UMLS CUIs):
+
+| Family | Rules | Source |
+|--------|-------|--------|
+| `psychiatric_medication` | 183 | Specific psychotropics (haloperidol, SSRIs, lithium, etc.) |
+| `neurological_disorder` | 129 | Neurological diagnoses (Alzheimer's, Parkinson's, MS, etc.) |
+| `psychiatric_disorder` | 82 | DSM diagnoses tagged `{psychiatric}` in vocab_terms |
+| `drug_class` | 47 | Pharmacologic classes (SSRIs, antipsychotics, benzodiazepines) |
+| `neurotransmitter_system` | 45 | Dopamine, serotonin, GABA, glutamate, etc. |
+| `neuropsych_symptom` | 29 | Anhedonia, psychomotor retardation, suicidality, etc. |
+| `biomarker` | 17 | Domain biomarkers (cortisol, BDNF protein, etc.) |
+| `behavior` | 14 | Aggression, catatonia, delirium, hallucinations |
+| `systemic_bridge` | 7 | C-L bridges (encephalopathy, hyponatremia) |
+| `iatrogenic_syndrome` | 6 | NMS, serotonin syndrome, EPS, QT prolongation |
+| `neuropsych_disease` | 5 | Epilepsy, FTD, akathisia, PNES |
+| `neurotransmitter_gene` | 5 | BDNF, COMT, MAOA, DAT, SERT |
+| `endocrine_metabolic` | 2 | DKA, myxedema |
+| `psychiatric_gene` | 1 | FKBP5 |
+
+Broad medical entities (`cl_disorder`, `clinical_symptom`) are deliberately
+excluded from entity rules. Conditions like hypertension, diabetes, nausea,
+and headache belong in the universe layer — they appear across all of medicine
+and would flood base with non-domain papers.
+
+### Infrastructure
 
 - `entity_rule` and `relation_rule` define rule evidence
 - `journal_rule` and `base_journal_family` define curated journal metadata
 - `paper_evidence_summary` is the durable per-paper stage that base admission reuses
 - `graph_points.is_in_base` records the final admission decision
 - `graph_points.base_rank` orders base points for export and QA
-- graph-build layout state is checkpointed per run on disk so failed runs resume
-  from PCA / kNN / coordinates artifacts instead of restarting the whole build
-
-This is deliberately simpler than the old visibility-lane approach because the
-runtime no longer needs the base to double as the entire expansion policy.
+- `solemd.vocab_terms` is the PostgreSQL-backed curated vocabulary with UMLS CUIs and MeSH crosswalks
 
 ---
 
 ## Target Composition
 
-A good base is not just neurology and psychiatry. It should also carry the
-right amount of overlap from the rest of medicine.
+Base is the domain core — psychiatry, neurology, neuropsychiatry, and
+neuroscience. It includes papers from all organ systems that demonstrate
+domain relevance through entity annotation overlap.
 
-The current target composition is:
-
-- strong rule-backed backbone across neuro / psych
-- flagship journals that preserve foundational neurology, psychiatry, and neuroscience
-- explicit organ-system coverage where neuro / psych concepts show up in clinical medicine
-- a small vocab-anchor slice that preserves real overlap without letting venue-only tails flood first paint
+- **~1.6M papers** with domain entity evidence (rule tier)
+- **~50K papers** from flagship journals without entity overlap (flagship tier)
+- **~3K papers** from vocab-anchor matches (vocab tier)
 
 The useful mental model is:
 
-- `base_points` is curated, not exhaustive
-- `universe_points` is comprehensive for the mapped corpus
+- `base_points` is the domain-relevant curated scaffold (~1.6M)
+- `universe_points` is everything else in the mapped corpus (scaling toward 200M+ from S2)
 - `overlay_points` is the user-driven expansion surface
 
 ---
@@ -263,7 +316,9 @@ reset spatial memory.
 
 The same principle now applies to the offline build:
 
-- one shared PCA-space kNN graph feeds both UMAP and Leiden
+- embeddings stream from DB via binary COPY in 100K-row chunks (~2 GB peak)
+- SparseRandomProjection (default) or IncrementalPCA reduces 768D → 50D
+- one shared kNN graph feeds both UMAP and Leiden
 - `paper_evidence_summary` is the database-side reusable evidence stage
 - `graph/tmp/graph_build/<graph_run_id>/` is the filesystem-side layout stage
 - publish/export is a later step, not the place where raw evidence or neighbor
@@ -284,3 +339,134 @@ policy logic. In the new architecture:
 - evidence stays backend-driven until needed
 
 That is the clean separation the graph needs.
+
+---
+
+## Overlay Activation (Implemented)
+
+The first overlay activation path is live. It validates the
+`base / universe / overlay / active / evidence` model in the browser
+without falling back to JS point hydration.
+
+Design goals:
+
+- Cosmograph binds to DuckDB table names, not `Record<string, unknown>[]`
+- Overlay activation updates the active canvas in place
+- Overlay triggers are modular — future entity, relation, citation, and RAG
+  flows reuse the same plumbing
+- Info/table surfaces refresh when active overlay membership changes
+
+Canonical activation flow:
+
+```
+overlay_point_ids_by_producer
+  → overlay_point_ids
+  → overlay_points_web (view-backed from universe_points)
+  → active_points_web (dense union: base + overlay)
+```
+
+Implemented trigger: explicit cluster-neighborhood expansion from the info
+panel. The runtime publishes versioned active alias views so Cosmograph
+receives a real table-name update on overlay changes while preserving point
+positions by id.
+
+Evidence retrieval stays backend/API-driven and is not part of the
+browser-side overlay slice.
+
+---
+
+## Roadmap
+
+### 1. Expand the Trigger Family
+
+Expand beyond cluster-neighborhood activation while keeping the same overlay
+contract.
+
+Recommended order:
+
+1. citation-neighborhood expansion
+2. entity / relation-driven expansion
+3. semantic / RAG-associated expansion
+4. backend-ranked mixed expansion
+
+### 2. In-Place Overlay Validation
+
+Validate living-graph behavior in the browser with real overlay promotion:
+
+- no remount
+- no camera reset
+- no disruptive flicker
+- stable spatial memory for base points
+
+The runtime uses versioned active alias views plus
+`preservePointPositionsOnDataUpdate`; what remains is browser validation and
+tuning rather than more architectural rewiring.
+
+### 3. Visual Emphasis Policy
+
+Define how active overlay material should change the canvas visually:
+
+- brighten overlay points
+- slightly enlarge or otherwise emphasize overlay points
+- dim unrelated base regions rather than hard-removing them by default
+- keep orientation and spatial continuity intact
+
+This likely needs a small style/state contract, but should stay DuckDB-first.
+
+### 4. Backend Ranking Path for Overlay Candidates
+
+Build the backend selection path that returns a small candidate set to promote
+from the premapped universe. This bridges `universe_points` and `evidence_api`.
+
+Supported retrieval modes:
+
+- graph-neighbor retrieval
+- cluster-context retrieval
+- citation-based candidate expansion
+- entity/relation-matched candidate expansion
+- semantic/RAG-driven candidate expansion
+
+### 5. Universe-Scale Summaries
+
+Decide which summaries remain local to `active_points` and which should become
+universe-aware via backend or remote DuckDB aggregation.
+
+Likely split:
+
+- local: current active canvas widgets and crossfilter
+- remote/backend: universe-wide previews, expansion estimates, global counts
+
+### 6. Universe Detail Storage Choice
+
+Keep Parquet-first for wide point tables. Revisit remote read-only `.duckdb`
+attach only if universe detail tables become numerous enough that a structured
+read-only database is cleaner than many individual Parquet artifacts.
+
+### 7. Release-Scale Build Split
+
+The intended release cadence is:
+
+1. `paper_evidence_summary`
+2. `universe_layout`
+3. `base_admission`
+4. `publish`
+
+The schema-level rationale and table responsibilities live in
+[`../map/database.md`](../map/database.md#rebuild-strategy-at-scale).
+
+Implementation notes:
+
+- keep heavy PubTator entity/relation scans tied to permanent mapped-paper
+  tables so PostgreSQL can plan parallel workers
+- use temporary tables only for smaller downstream staging steps
+- keep summary refresh resumable by stage
+- keep layout resumable by durable filesystem checkpoints
+- reuse one PCA-space kNN graph for both UMAP and Leiden
+
+### Not Planned
+
+The browser should not own the full universe as hydrated JS objects:
+
+- no return to `Record<string, unknown>[]` point hydration for chunk/paper layers
+- no full-universe first-paint payload
+- no browser-side reinvention of visibility or ranking policy

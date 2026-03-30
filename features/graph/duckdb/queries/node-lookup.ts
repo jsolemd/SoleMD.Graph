@@ -10,12 +10,14 @@ import {
   type GraphPointSelectionRow,
 } from './node-selection'
 
-export async function queryPaperNodesByPaperIds(
+// In the browser runtime, `paperId` is the graph paper ref emitted by the
+// bundle contract. It may be a raw paper id or a `corpus:<id>` fallback.
+export async function queryPaperNodesByGraphPaperRefs(
   conn: AsyncDuckDBConnection,
-  paperIds: string[]
+  graphPaperRefs: string[]
 ): Promise<Record<string, GraphPointRecord>> {
-  const uniqueIds = [...new Set(paperIds.filter((paperId) => paperId.trim().length > 0))]
-  if (uniqueIds.length === 0) {
+  const uniqueRefs = [...new Set(graphPaperRefs.filter((paperRef) => paperRef.trim().length > 0))]
+  if (uniqueRefs.length === 0) {
     return {}
   }
 
@@ -53,8 +55,8 @@ export async function queryPaperNodesByPaperIds(
         ELSE false
       END AS isOverlayActive
     FROM current_paper_points_web
-    WHERE paperId IN (${buildPlaceholderList(uniqueIds.length)})`,
-    uniqueIds
+    WHERE paperId IN (${buildPlaceholderList(uniqueRefs.length)})`,
+    uniqueRefs
   )
 
   return Object.fromEntries(
@@ -65,12 +67,12 @@ export async function queryPaperNodesByPaperIds(
   )
 }
 
-export async function queryUniversePointIdsByPaperIds(
+export async function queryUniversePointIdsByGraphPaperRefs(
   conn: AsyncDuckDBConnection,
-  paperIds: string[]
+  graphPaperRefs: string[]
 ): Promise<Record<string, string>> {
-  const uniqueIds = [...new Set(paperIds.filter((paperId) => paperId.trim().length > 0))]
-  if (uniqueIds.length === 0) {
+  const uniqueRefs = [...new Set(graphPaperRefs.filter((paperRef) => paperRef.trim().length > 0))]
+  if (uniqueRefs.length === 0) {
     return {}
   }
 
@@ -80,8 +82,8 @@ export async function queryUniversePointIdsByPaperIds(
       paperId AS paper_id,
       id AS node_id
     FROM universe_points_web
-    WHERE paperId IN (${buildPlaceholderList(uniqueIds.length)})`,
-    uniqueIds
+    WHERE paperId IN (${buildPlaceholderList(uniqueRefs.length)})`,
+    uniqueRefs
   )
 
   return Object.fromEntries(

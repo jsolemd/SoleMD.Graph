@@ -1,49 +1,69 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ActionIcon, Stack, Text, TextInput, UnstyledButton } from "@mantine/core";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCosmograph } from "@cosmograph/react";
-import { Search, X } from "lucide-react";
+import type { Cosmograph } from "@cosmograph/cosmograph";
+import { getInternalApi } from "@cosmograph/cosmograph/cosmograph/internal";
+import { FilteringClient } from "@cosmograph/cosmograph/cosmograph/crossfilter/filtering-client";
+import { Bars, type BarData } from "@cosmograph/ui";
+import { Text } from "@mantine/core";
 import {
   buildCategoricalFilterClause,
   buildVisibilityScopeSqlExcludingSource,
   clearSelectionClause,
   createSelectionSource,
+  getSelectionSourceId,
   getSelectionValueForSource,
+  matchesSelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
+import { getLayerTableName } from "@/features/graph/duckdb/sql-helpers";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoFacetRow } from "@/features/graph/types";
 import { formatNumber } from "@/lib/helpers";
+import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
 import {
-  panelTextDimStyle,
-  panelTextStyle,
-} from "@/features/graph/components/panels/PanelShell";
+  getCachedCategoricalDataset,
+  getWidgetDatasetCacheKeyWithRevision,
+  setCachedCategoricalDataset,
+} from "./dataset-cache";
+import {
+  NATIVE_BARS_DATA_LIMIT,
+  setNativeBarsFacetData,
+  setNativeBarsFacetHighlight,
+} from "./native-bars-adapter";
 
-const SEARCH_INPUT_STYLES = {
-  input: {
-    backgroundColor: "var(--graph-panel-input-bg)",
-    borderColor: "var(--graph-panel-border)",
-    color: "var(--graph-panel-text)",
-  },
-} as const;
+const FILTER_BAR_HEIGHT = 120;
 
 export function FilterBarWidget({
   column,
   queries,
+  bundleChecksum,
+  overlayRevision,
+  initialDatasetRows,
+  datasetLoading = false,
 }: {
   column: string;
   queries: GraphBundleQueries;
+  bundleChecksum: string;
+  overlayRevision: number;
+  initialDatasetRows?: GraphInfoFacetRow[];
+  datasetLoading?: boolean;
 }) {
   const { cosmograph } = useCosmograph();
   const activeLayer = useDashboardStore((state) => state.activeLayer);
   const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
-  const [rows, setRows] = useState<GraphInfoFacetRow[]>([]);
-  const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const deferredSearch = useDeferredValue(search.trim().toLowerCase());
+  const [widgetRevision, setWidgetRevision] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const widgetRef = useRef<Bars | null>(null);
+  const clientRef = useRef<FilteringClient | null>(null);
+  const datasetRequestIdRef = useRef(0);
+  const scopedRequestIdRef = useRef(0);
+  const datasetReadyRef = useRef(false);
+  const selectedValueRef = useRef<string | null>(null);
   const sourceId = `filter:${column}`;
   const source = useMemo(() => createSelectionSource(sourceId), [sourceId]);
-
+  const tableName = useMemo(() => getLayerTableName(activeLayer), [activeLayer]);
   const scopeSql = useMemo(
     () =>
       buildVisibilityScopeSqlExcludingSource(
@@ -57,167 +77,258 @@ export function FilterBarWidget({
       getSelectionValueForSource<string>(cosmograph?.pointsSelection, sourceId),
     [cosmograph, currentScopeRevision, sourceId],
   );
+  const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;
+
+  selectedValueRef.current = selectedValue;
 
   useEffect(() => {
-    let cancelled = false;
+    if (!containerRef.current || !cosmograph) {
+      return;
+    }
 
+    const widget = new Bars(containerRef.current, {
+      maxDisplayedItems: 10,
+      showSearch: true,
+      showSortingBlock: true,
+      showTotalWhenFiltered: true,
+      noDataMessage: false,
+      loadingMessage: "Loading filters...",
+      countFormatter: (count) => formatNumber(count),
+      onClick: (item?: BarData) => {
+        const client = clientRef.current;
+        const value = item?.label;
+        if (!client || !value) {
+          return;
+        }
+
+        if (selectedValueRef.current === value) {
+          clearSelectionClause(cosmograph.pointsSelection, source);
+          return;
+        }
+
+        cosmograph.pointsSelection.update(
+          buildCategoricalFilterClause(client, column, value),
+        );
+      },
+    });
+    widget.setLoadingState();
+
+    const internalApi = getInternalApi(cosmograph as unknown as Cosmograph);
+    let client: FilteringClient | null = null;
+
+    const initializeClient = async () => {
+      await internalApi.dbReady();
+      if (!internalApi.dbCoordinator) {
+        return;
+      }
+
+      client = FilteringClient.getOrCreateClient({
+        coordinator: internalApi.dbCoordinator,
+        getTableName: () => tableName,
+        getSelection: () => internalApi.crossfilter.pointsSelection,
+        getAccessor: () => column,
+        includeFields: () => [internalApi.config.pointIndexBy].filter(Boolean) as string[],
+        onFiltered: (result) => {
+          if (
+            client &&
+            matchesSelectionSourceId(
+              getSelectionSourceId(
+                internalApi.crossfilter.pointsSelection.active?.source,
+              ),
+              sourceId,
+            )
+          ) {
+            internalApi.crossfilter.onPointsFiltered(result);
+          }
+        },
+        id: sourceId,
+      });
+      client.setActive(true);
+      clientRef.current = client;
+    };
+
+    void initializeClient();
+
+    widgetRef.current = widget;
+    datasetReadyRef.current = false;
+    setWidgetRevision((current) => current + 1);
+
+    return () => {
+      widget.destroy();
+      widgetRef.current = null;
+      datasetReadyRef.current = false;
+      if (clientRef.current === client) {
+        clientRef.current = null;
+      }
+    };
+  }, [column, cosmograph, source, sourceId, tableName]);
+
+  useEffect(() => {
+    const widget = widgetRef.current;
+    if (!widget) {
+      return;
+    }
+
+    const requestId = ++datasetRequestIdRef.current;
+    const datasetCacheKey = getWidgetDatasetCacheKeyWithRevision(
+      bundleChecksum,
+      activeLayer,
+      column,
+      overlayRevision,
+    );
+    const cachedDataset = getCachedCategoricalDataset(datasetCacheKey);
+    const seededDataset =
+      initialDatasetRows && initialDatasetRows.length > 0
+        ? initialDatasetRows
+        : cachedDataset;
+
+    if (seededDataset) {
+      setNativeBarsFacetData(widget, seededDataset);
+      datasetReadyRef.current = true;
+    } else {
+      widget.setLoadingState();
+      datasetReadyRef.current = false;
+    }
+
+    if (!seededDataset && datasetLoading) {
+      return;
+    }
+
+    const datasetPromise = seededDataset
+      ? Promise.resolve(seededDataset)
+      : (async () => {
+          const delays = [0, 150, 450];
+
+          for (const delay of delays) {
+            if (delay > 0) {
+              await new Promise((resolve) => globalThis.setTimeout(resolve, delay));
+            }
+
+            const datasetValues = await queries.getFacetSummary({
+              layer: activeLayer,
+              scope: "dataset",
+              column,
+              maxItems: NATIVE_BARS_DATA_LIMIT,
+              currentPointScopeSql: null,
+            });
+
+            if (datasetValues.length > 0) {
+              return datasetValues;
+            }
+          }
+
+          return [];
+        })();
+
+    datasetPromise.then((datasetValues: GraphInfoFacetRow[]) => {
+        if (requestId !== datasetRequestIdRef.current) {
+          return;
+        }
+
+        const resolvedDataset =
+          datasetValues.length > 0
+            ? datasetValues
+            : (getCachedCategoricalDataset(datasetCacheKey) ?? []);
+
+        setCachedCategoricalDataset(datasetCacheKey, resolvedDataset);
+        if (!widgetRef.current) {
+          return;
+        }
+
+        setError(null);
+        if (resolvedDataset.length === 0) {
+          datasetReadyRef.current = false;
+          widget.showState("No bars data");
+          return;
+        }
+        setNativeBarsFacetData(widget, resolvedDataset);
+        datasetReadyRef.current = true;
+        widget.setSelectedItem(
+          selectedValueRef.current
+            ? { label: selectedValueRef.current, count: 0 }
+            : undefined,
+        );
+      })
+      .catch((queryError: unknown) => {
+        if (requestId !== datasetRequestIdRef.current) {
+          return;
+        }
+
+        setError(
+          queryError instanceof Error ? queryError.message : "Failed to load filter",
+        );
+      });
+  }, [
+    activeLayer,
+    bundleChecksum,
+    column,
+    datasetLoading,
+    initialDatasetRows,
+    overlayRevision,
+    queries,
+    widgetRevision,
+  ]);
+
+  useEffect(() => {
+    const widget = widgetRef.current;
+    if (!widget) {
+      return;
+    }
+
+    if (!datasetReadyRef.current) {
+      return;
+    }
+
+    if (!isSubset || !scopeSql) {
+      setNativeBarsFacetHighlight(widget, undefined);
+      return;
+    }
+
+    const requestId = ++scopedRequestIdRef.current;
     queries
       .getFacetSummary({
         layer: activeLayer,
         scope: "current",
         column,
+        maxItems: NATIVE_BARS_DATA_LIMIT,
         currentPointScopeSql: scopeSql,
-        maxItems: 12,
       })
-      .then((nextRows) => {
-        if (cancelled) {
+      .then((scopedValues: GraphInfoFacetRow[]) => {
+        if (requestId !== scopedRequestIdRef.current || !widgetRef.current) {
           return;
         }
 
-        setRows(nextRows);
         setError(null);
+        setNativeBarsFacetHighlight(widget, scopedValues);
       })
       .catch((queryError: unknown) => {
-        if (cancelled) {
+        if (requestId !== scopedRequestIdRef.current) {
           return;
         }
 
-        setRows([]);
         setError(
-          queryError instanceof Error ? queryError.message : "Failed to load filter",
+          queryError instanceof Error ? queryError.message : "Failed to update filter scope",
         );
       });
+  }, [activeLayer, column, isSubset, queries, scopeSql, widgetRevision]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeLayer, column, queries, scopeSql]);
-
-  const visibleRows = useMemo(() => {
-    if (!deferredSearch) {
-      return rows;
-    }
-
-    return rows.filter((row) =>
-      row.value.toLowerCase().includes(deferredSearch),
+  useEffect(() => {
+    widgetRef.current?.setSelectedItem(
+      selectedValue
+        ? { label: selectedValue, count: 0 }
+        : undefined,
     );
-  }, [deferredSearch, rows]);
-
-  const maxCount = useMemo(
-    () => Math.max(...rows.map((row) => row.totalCount), 0),
-    [rows],
-  );
-  const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;
-
-  const handleToggle = (value: string) => {
-    const selection = cosmograph?.pointsSelection;
-    if (!selection) {
-      return;
-    }
-
-    if (selectedValue === value) {
-      clearSelectionClause(selection, source);
-      return;
-    }
-
-    selection.update(buildCategoricalFilterClause(source, column, value));
-  };
+  }, [selectedValue, widgetRevision]);
 
   if (error) {
     return <Text style={panelTextDimStyle}>{error}</Text>;
   }
 
-  if (rows.length === 0) {
-    return <Text style={panelTextDimStyle}>No data</Text>;
-  }
-
   return (
-    <Stack gap={6}>
-      {rows.length > 6 ? (
-        <TextInput
-          size="xs"
-          value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-          placeholder="Filter values"
-          leftSection={<Search size={12} />}
-          rightSection={
-            search ? (
-              <ActionIcon
-                size="sm"
-                variant="transparent"
-                onClick={() => setSearch("")}
-                aria-label="Clear filter search"
-              >
-                <X size={12} />
-              </ActionIcon>
-            ) : null
-          }
-          styles={SEARCH_INPUT_STYLES}
-        />
-      ) : null}
-
-      {visibleRows.length === 0 ? (
-        <Text style={panelTextDimStyle}>No matching values</Text>
-      ) : (
-        visibleRows.map((row) => {
-          const isSelected = selectedValue === row.value;
-          const width = maxCount > 0 ? (row.totalCount / maxCount) * 100 : 0;
-
-          return (
-            <UnstyledButton
-              key={row.value}
-              onClick={() => handleToggle(row.value)}
-              aria-pressed={isSelected}
-              style={{
-                borderRadius: 8,
-                border: "1px solid var(--graph-panel-border)",
-                backgroundColor: isSelected
-                  ? "var(--interactive-hover)"
-                  : "var(--graph-panel-bg)",
-                padding: "6px 8px",
-              }}
-            >
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <Text
-                  style={{
-                    ...panelTextStyle,
-                    maxWidth: 190,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {row.value}
-                </Text>
-                <Text style={panelTextDimStyle}>
-                  {isSubset
-                    ? `${formatNumber(row.scopedCount)} / ${formatNumber(row.totalCount)}`
-                    : formatNumber(row.totalCount)}
-                </Text>
-              </div>
-              <div
-                style={{
-                  height: 4,
-                  borderRadius: 9999,
-                  backgroundColor: "var(--graph-panel-input-bg)",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    height: "100%",
-                    width: `${width}%`,
-                    borderRadius: 9999,
-                    backgroundColor: isSelected
-                      ? "var(--mode-accent)"
-                      : "var(--filter-bar-base)",
-                  }}
-                />
-              </div>
-            </UnstyledButton>
-          );
-        })
-      )}
-    </Stack>
+    <div
+      ref={containerRef}
+      className="w-full"
+      style={{ minHeight: FILTER_BAR_HEIGHT }}
+    />
   );
 }

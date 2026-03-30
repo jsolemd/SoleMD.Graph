@@ -102,7 +102,7 @@ export function CanvasControls() {
     setSelectedPointCount(0);
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
-    setTableView("current");
+    setTableView("selection");
     setInfoScopeMode("current");
     unlockSelection();
   }, [

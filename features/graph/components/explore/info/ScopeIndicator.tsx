@@ -1,11 +1,14 @@
 "use client";
 
-import { Badge } from "@mantine/core";
+import { Badge, Group } from "@mantine/core";
 import { motion, AnimatePresence } from "framer-motion";
 import type { GraphInfoScope } from "@/features/graph/types";
 import { snappy } from "@/lib/motion";
 import { formatNumber } from "@/lib/helpers";
-import { badgeOutlineStyles } from "../../panels/PanelShell";
+import {
+  badgeAccentStyles,
+  badgeOutlineStyles,
+} from "../../panels/PanelShell";
 
 interface ScopeIndicatorProps {
   scopedCount: number;
@@ -37,14 +40,21 @@ export function ScopeIndicator({
   isSubset,
   selectionSource,
 }: ScopeIndicatorProps) {
-  const label =
+  const scopeLabel = scope === "dataset" ? "All" : "Selection";
+  const countLabel =
     scope === "selected"
-      ? `${formatNumber(scopedCount)} of ${formatNumber(totalCount)} selected · ${formatSelectionSource(selectionSource)}`
+      ? `${formatNumber(scopedCount)} points`
       : scope === "current"
         ? isSubset
-          ? `${formatNumber(scopedCount)} of ${formatNumber(totalCount)} current`
-          : `Current · all ${formatNumber(totalCount)}`
-        : "Dataset";
+          ? `${formatNumber(scopedCount)} / ${formatNumber(totalCount)} points`
+          : `${formatNumber(totalCount)} points`
+        : `${formatNumber(totalCount)} points`;
+  const sourceLabel =
+    scope === "selected"
+      ? formatSelectionSource(selectionSource)
+      : scope === "current" && isSubset
+        ? "Filters"
+        : null;
 
   return (
     <AnimatePresence mode="wait">
@@ -55,13 +65,19 @@ export function ScopeIndicator({
         exit={{ opacity: 0, y: 4 }}
         transition={snappy}
       >
-        <Badge
-          variant="outline"
-          size="sm"
-          styles={badgeOutlineStyles}
-        >
-          {label}
-        </Badge>
+        <Group gap={6} wrap="wrap">
+          <Badge variant="light" size="xs" styles={badgeAccentStyles}>
+            {scopeLabel}
+          </Badge>
+          <Badge variant="outline" size="xs" styles={badgeOutlineStyles}>
+            {countLabel}
+          </Badge>
+          {sourceLabel ? (
+            <Badge variant="outline" size="xs" styles={badgeOutlineStyles}>
+              {sourceLabel}
+            </Badge>
+          ) : null}
+        </Group>
       </motion.div>
     </AnimatePresence>
   );

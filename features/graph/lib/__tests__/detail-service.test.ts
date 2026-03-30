@@ -78,6 +78,7 @@ describe('detail-service', () => {
           generated_at: '2026-03-14T00:00:00Z',
           duration_ms: 18,
           cache_control: 'no-store',
+          retrieval_version: 'test',
         },
         release: {
           graph_release_id: 'bundle-checksum',
@@ -91,10 +92,19 @@ describe('detail-service', () => {
         query: 'What is the role of melatonin in delirium?',
         selected_layer_key: 'paper',
         selected_node_id: 'paper-node',
+        selected_graph_paper_ref: 'paper-node',
+        selection_graph_paper_refs: [],
         selected_cluster_id: null,
+        scope_mode: 'global',
+        selected_paper_id: null,
         answer: 'Melatonin may reduce delirium risk in selected studies.',
         answer_model: 'gemini-test',
+        answer_graph_paper_refs: ['paper-node'],
+        grounded_answer: null,
         results: [],
+        evidence_bundles: [],
+        graph_signals: [],
+        retrieval_channels: [],
       },
     } as never)
 
@@ -123,8 +133,11 @@ describe('detail-service', () => {
       query: 'What is the role of melatonin in delirium?',
       selected_layer_key: 'paper',
       selected_node_id: 'paper-node',
-      selected_paper_id: 'paper-node',
+      selected_graph_paper_ref: 'paper-node',
+      selected_paper_id: null,
+      selection_graph_paper_refs: null,
       selected_cluster_id: null,
+      scope_mode: null,
       evidence_intent: null,
       k: 6,
       rerank_topn: 18,
@@ -132,6 +145,7 @@ describe('detail-service', () => {
       generate_answer: true,
     })
     expect(result.answer).toContain('Melatonin')
+    expect(result.answer_graph_paper_refs).toEqual(['paper-node'])
   })
 
   it('throws a typed graph rag request error when the server action returns an error envelope', async () => {

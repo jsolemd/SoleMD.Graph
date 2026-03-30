@@ -39,7 +39,7 @@ export function SelectionActions({
 
   const handleOpenTable = () => {
     setTableOpen(true);
-    setTableView(scope === "selected" ? "selected" : "current");
+    setTableView(scope === "dataset" ? "dataset" : "selection");
   };
 
   const handleFitSelection = async () => {

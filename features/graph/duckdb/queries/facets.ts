@@ -4,6 +4,7 @@ import type { GraphInfoFacetRow, GraphInfoScope, MapLayer } from '@/features/gra
 
 import {
   buildScopedLayerPredicate,
+  getColumnMetaForLayer,
   getLayerTableName,
   resolveInfoColumn,
 } from '../sql-helpers'
@@ -24,18 +25,27 @@ function buildFacetCountsSql(args: {
 
   const unions = columns.map((column) => {
     const safeColumn = resolveInfoColumn(layer, column)
+    const columnMeta = getColumnMetaForLayer(column, layer)
+    const valueExpr = columnMeta?.isMultiValue
+      ? 'TRIM(CAST(split_value AS VARCHAR))'
+      : `CAST(${safeColumn} AS VARCHAR)`
+    const fromExpr = columnMeta?.isMultiValue
+      ? `${tableName}, UNNEST(string_split_regex(CAST(${safeColumn} AS VARCHAR), '\\s*,\\s*')) AS split(split_value)`
+      : tableName
     const whereClause = scopedPredicate
       ? `WHERE ${scopedPredicate}
          AND ${safeColumn} IS NOT NULL
-         AND CAST(${safeColumn} AS VARCHAR) <> ''`
+         AND CAST(${safeColumn} AS VARCHAR) <> ''
+         AND ${valueExpr} <> ''`
       : `WHERE ${safeColumn} IS NOT NULL
-         AND CAST(${safeColumn} AS VARCHAR) <> ''`
+         AND CAST(${safeColumn} AS VARCHAR) <> ''
+         AND ${valueExpr} <> ''`
 
     return `SELECT
               '${safeColumn}' AS column_key,
-              CAST(${safeColumn} AS VARCHAR) AS value,
+              ${valueExpr} AS value,
               count(*)::INTEGER AS count
-            FROM ${tableName}
+            FROM ${fromExpr}
             ${whereClause}
             GROUP BY 1, 2`
   })
@@ -76,35 +86,44 @@ export async function queryFacetSummary(
   const { layer, scope, column, maxItems, currentPointScopeSql } = args
   const tableName = getLayerTableName(layer)
   const safeColumn = resolveInfoColumn(layer, column)
+  const columnMeta = getColumnMetaForLayer(column, layer)
   const safeMaxItems = Math.max(1, maxItems)
   const scopedPredicate = buildScopedLayerPredicate(layer, scope, currentPointScopeSql)
+  const valueExpr = columnMeta?.isMultiValue
+    ? 'TRIM(CAST(split_value AS VARCHAR))'
+    : `CAST(${safeColumn} AS VARCHAR)`
+  const fromExpr = columnMeta?.isMultiValue
+    ? `${tableName}, UNNEST(string_split_regex(CAST(${safeColumn} AS VARCHAR), '\\s*,\\s*')) AS split(split_value)`
+    : tableName
 
   const allRows = await queryRows<{ value: string | null; count: number }>(
     conn,
     `SELECT
-       CAST(${safeColumn} AS VARCHAR) AS value,
+       ${valueExpr} AS value,
        count(*)::INTEGER AS count
-     FROM ${tableName}
+     FROM ${fromExpr}
      WHERE ${safeColumn} IS NOT NULL
        AND CAST(${safeColumn} AS VARCHAR) <> ''
-     GROUP BY CAST(${safeColumn} AS VARCHAR)
+       AND ${valueExpr} <> ''
+     GROUP BY ${valueExpr}
      ORDER BY count DESC, value
      LIMIT ${safeMaxItems * 4}`
   )
 
   const scopedRows =
     scope === 'dataset'
-      ? allRows
+        ? allRows
       : await queryRows<{ value: string | null; count: number }>(
           conn,
           `SELECT
-             CAST(${safeColumn} AS VARCHAR) AS value,
+             ${valueExpr} AS value,
              count(*)::INTEGER AS count
-           FROM ${tableName}
+           FROM ${fromExpr}
            WHERE ${scopedPredicate}
              AND ${safeColumn} IS NOT NULL
              AND CAST(${safeColumn} AS VARCHAR) <> ''
-           GROUP BY CAST(${safeColumn} AS VARCHAR)
+             AND ${valueExpr} <> ''
+           GROUP BY ${valueExpr}
            ORDER BY count DESC, value
            LIMIT ${safeMaxItems * 4}`
         )
@@ -190,7 +209,7 @@ export async function queryFacetSummaries(
   })
   const scopedSql =
     scope === 'dataset'
-      ? datasetSql
+      ? null
       : buildFacetCountsSql({
           tableName,
           scopedPredicate,

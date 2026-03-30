@@ -56,8 +56,9 @@ export const badgeAccentStyles = {
 /** Badge with outline — for section, page number, neutral metadata. */
 export const badgeOutlineStyles = {
   root: {
+    backgroundColor: "color-mix(in srgb, var(--graph-panel-input-bg) 92%, white 8%)",
     borderColor: "var(--graph-panel-border)",
-    color: "var(--graph-panel-text-dim)",
+    color: "var(--graph-panel-text)",
   },
 } as const;
 
@@ -66,6 +67,7 @@ interface PanelShellProps {
   title: string;
   side: "left" | "right";
   width?: number;
+  headerActions?: ReactNode;
   onClose: () => void;
 }
 
@@ -85,6 +87,7 @@ export function PanelShell({
   title,
   side,
   width = 300,
+  headerActions,
   onClose,
 }: PanelShellProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -150,23 +153,26 @@ export function PanelShell({
         >
           {title}
         </Text>
-        <Tooltip
-          label={`Close ${title.toLowerCase()}`}
-          position="bottom"
-          withArrow
-        >
-          <ActionIcon
-            variant="transparent"
-            size={28}
-            radius="xl"
-            className="graph-icon-btn"
-            styles={iconBtnStyles}
-            onClick={onClose}
-            aria-label={`Close ${title.toLowerCase()} panel`}
+        <div className="flex items-center gap-1">
+          {headerActions}
+          <Tooltip
+            label={`Close ${title.toLowerCase()}`}
+            position="bottom"
+            withArrow
           >
-            <X size={14} />
-          </ActionIcon>
-        </Tooltip>
+            <ActionIcon
+              variant="transparent"
+              size={28}
+              radius="xl"
+              className="graph-icon-btn"
+              styles={iconBtnStyles}
+              onClick={onClose}
+              aria-label={`Close ${title.toLowerCase()} panel`}
+            >
+              <X size={14} />
+            </ActionIcon>
+          </Tooltip>
+        </div>
       </div>
       {children}
     </motion.div>

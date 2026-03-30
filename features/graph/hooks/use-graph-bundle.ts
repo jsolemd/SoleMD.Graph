@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import {
+  invalidateGraphBundleSessionCache,
   loadGraphBundle,
+  registerGraphPaperAttachmentProvider,
   subscribeToGraphBundleProgress,
 } from '@/features/graph/duckdb'
+import { remoteGraphPaperAttachmentProvider } from '@/features/graph/duckdb/remote-attachment'
 import type { GraphCanvasSource } from '@/features/graph/duckdb'
 import { useDashboardStore } from '@/features/graph/stores'
 import type {
@@ -39,8 +42,18 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
     })
 
   useEffect(() => {
+    registerGraphPaperAttachmentProvider(remoteGraphPaperAttachmentProvider)
+    return () => {
+      registerGraphPaperAttachmentProvider(null)
+    }
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
     let unsubscribeCanvas = () => {}
+    if (process.env.NODE_ENV !== 'production') {
+      invalidateGraphBundleSessionCache(bundle.bundleChecksum)
+    }
     const unsubscribeProgress = subscribeToGraphBundleProgress(
       bundle.bundleChecksum,
       (progress) => {
@@ -87,6 +100,8 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           activateOverlay: session.activateOverlay,
           getClusterDetail: session.getClusterDetail,
           getInfoSummary: session.getInfoSummary,
+          getCategoricalValues: session.getCategoricalValues,
+          getNumericValues: session.getNumericValues,
           getInfoBars: session.getInfoBars,
           getInfoBarsBatch: session.getInfoBarsBatch,
           getInfoHistogram: session.getInfoHistogram,
@@ -98,8 +113,12 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           getScopeCoordinates: session.getScopeCoordinates,
           getSelectionDetail: session.getSelectionDetail,
           getPaperDocument: session.getPaperDocument,
-          getPaperNodesByPaperIds: session.getPaperNodesByPaperIds,
-          getUniversePointIdsByPaperIds: session.getUniversePointIdsByPaperIds,
+          getSelectedGraphPaperRefs: session.getSelectedGraphPaperRefs,
+          getPaperNodesByGraphPaperRefs: session.getPaperNodesByGraphPaperRefs,
+          ensureGraphPaperRefsAvailable:
+            session.ensureGraphPaperRefsAvailable,
+          getUniversePointIdsByGraphPaperRefs:
+            session.getUniversePointIdsByGraphPaperRefs,
           resolvePointSelection: session.resolvePointSelection,
           getTablePage: session.getTablePage,
           runReadOnlyQuery: session.runReadOnlyQuery,

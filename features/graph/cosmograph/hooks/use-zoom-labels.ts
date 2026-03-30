@@ -3,7 +3,7 @@
 import { type RefObject, useCallback, useRef, useState } from "react";
 import type { CosmographRef } from "@cosmograph/react";
 
-const ZOOM_LABEL_THRESHOLD = 1.5;
+const ZOOM_LABEL_THRESHOLD = 1.2;
 
 export function useZoomLabels(
   cosmographRef: RefObject<CosmographRef | undefined>,
@@ -13,19 +13,9 @@ export function useZoomLabels(
   const [isActivelyZooming, setIsActivelyZooming] = useState(false);
   const isActivelyZoomingRef = useRef(false);
 
-  const handleZoomStart = useCallback(() => {
-    if (!isActivelyZoomingRef.current) {
-      isActivelyZoomingRef.current = true;
-      setIsActivelyZooming(true);
-    }
-  }, []);
-
-  const handleZoomEnd = useCallback(() => {
-    isActivelyZoomingRef.current = false;
-
+  const updateZoomState = useCallback(() => {
     const zoom = cosmographRef.current?.getZoomLevel();
     if (zoom == null) {
-      setIsActivelyZooming(false);
       return;
     }
 
@@ -34,15 +24,30 @@ export function useZoomLabels(
       zoomedInRef.current = isZoomed;
       setZoomedIn(isZoomed);
     }
+  }, [cosmographRef]);
 
-    setIsActivelyZooming(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- cosmographRef is a stable ref
+  const handleZoomStart = useCallback(() => {
+    if (!isActivelyZoomingRef.current) {
+      isActivelyZoomingRef.current = true;
+      setIsActivelyZooming(true);
+    }
   }, []);
+
+  const handleZoom = useCallback(() => {
+    updateZoomState();
+  }, [updateZoomState]);
+
+  const handleZoomEnd = useCallback(() => {
+    isActivelyZoomingRef.current = false;
+    updateZoomState();
+    setIsActivelyZooming(false);
+  }, [updateZoomState]);
 
   return {
     zoomedIn,
     isActivelyZooming,
     handleZoomStart,
+    handleZoom,
     handleZoomEnd,
   };
 }

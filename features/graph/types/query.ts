@@ -104,6 +104,12 @@ export interface GraphVisibilityBudget {
   yMax: number | null
 }
 
+export interface GraphPaperAvailabilityResult {
+  activeGraphPaperRefs: string[]
+  universePointIdsByGraphPaperRef: Record<string, string>
+  unresolvedGraphPaperRefs: string[]
+}
+
 export interface GraphScopeQueryArgs {
   layer: MapLayer
   scope: GraphInfoScope
@@ -125,8 +131,16 @@ export interface GraphBundleQueries {
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getSelectionDetail: (point: GraphPointRecord) => Promise<GraphSelectionDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
-  getPaperNodesByPaperIds: (paperIds: string[]) => Promise<Record<string, GraphPointRecord>>
-  getUniversePointIdsByPaperIds: (paperIds: string[]) => Promise<Record<string, string>>
+  getSelectedGraphPaperRefs: () => Promise<string[]>
+  getPaperNodesByGraphPaperRefs: (
+    graphPaperRefs: string[]
+  ) => Promise<Record<string, GraphPointRecord>>
+  ensureGraphPaperRefsAvailable: (
+    graphPaperRefs: string[]
+  ) => Promise<GraphPaperAvailabilityResult>
+  getUniversePointIdsByGraphPaperRefs: (
+    graphPaperRefs: string[]
+  ) => Promise<Record<string, string>>
   resolvePointSelection: (
     layer: MapLayer,
     selector: { id?: string; index?: number }
@@ -139,11 +153,22 @@ export interface GraphBundleQueries {
     currentPointScopeSql: string | null
   }) => Promise<GraphTablePageResult>
   getInfoSummary: (args: GraphScopeQueryArgs) => Promise<GraphInfoSummary>
+  getCategoricalValues: (
+    args: GraphScopeQueryArgs & { column: string }
+  ) => Promise<string[]>
+  getNumericValues: (
+    args: GraphScopeQueryArgs & { column: string }
+  ) => Promise<number[]>
   getInfoBars: (
     args: GraphScopeQueryArgs & { column: string; maxItems?: number }
   ) => Promise<Array<{ value: string; count: number }>>
   getInfoHistogram: (
-    args: GraphScopeQueryArgs & { column: string; bins?: number }
+    args: GraphScopeQueryArgs & {
+      column: string
+      bins?: number
+      extent?: [number, number] | null
+      useQuantiles?: boolean
+    }
   ) => Promise<GraphInfoHistogramResult>
   getFacetSummary: (
     args: GraphScopeQueryArgs & { column: string; maxItems?: number }
@@ -155,7 +180,12 @@ export interface GraphBundleQueries {
     args: GraphScopeQueryArgs & { columns: string[]; maxItems?: number }
   ) => Promise<Record<string, Array<{ value: string; count: number }>>>
   getInfoHistogramsBatch: (
-    args: GraphScopeQueryArgs & { columns: string[]; bins?: number }
+    args: GraphScopeQueryArgs & {
+      columns: string[]
+      bins?: number
+      extent?: [number, number] | null
+      useQuantiles?: boolean
+    }
   ) => Promise<Record<string, GraphInfoHistogramResult>>
   searchPoints: (args: {
     layer: MapLayer

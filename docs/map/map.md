@@ -26,6 +26,9 @@ to the browser, where Cosmograph renders the unified experience. Full data-flow
 details live in [data.md](data.md). Deferred ideas and post-freeze roadmap items live
 in [future.md](../design/future.md). The graph delivery contract for `base`,
 `universe`, and `evidence` bundle data lives in [bundle-contract.md](bundle-contract.md).
+The stable evidence/RAG architecture and current contract state live in
+[rag.md](rag.md). A diagram-first explainer for the current and future RAG
+stack lives in [rag-diagrams.md](rag-diagrams.md).
 
 ---
 

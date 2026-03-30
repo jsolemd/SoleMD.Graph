@@ -7,6 +7,7 @@ export interface ColumnMeta {
   facetName?: string
   label: string
   type: ColumnType
+  isMultiValue?: boolean
 }
 
 export const COLUMNS: ColumnMeta[] = [
@@ -14,9 +15,9 @@ export const COLUMNS: ColumnMeta[] = [
   { key: 'clusterLabel', facetName: 'cluster_label', label: 'Cluster Label', type: 'categorical' },
   { key: 'journal', facetName: 'journal', label: 'Journal', type: 'categorical' },
   { key: 'textAvailability', facetName: 'text_availability', label: 'Text Availability', type: 'categorical' },
-  { key: 'semanticGroups', facetName: 'semantic_groups_csv', label: 'Entity Groups', type: 'categorical' },
-  { key: 'organSystems', facetName: 'organ_systems_csv', label: 'Organ Systems', type: 'categorical' },
-  { key: 'relationCategories', facetName: 'relation_categories_csv', label: 'Relation Categories', type: 'categorical' },
+  { key: 'semanticGroups', facetName: 'semantic_groups_csv', label: 'Entity Groups', type: 'categorical', isMultiValue: true },
+  { key: 'organSystems', facetName: 'organ_systems_csv', label: 'Organ Systems', type: 'categorical', isMultiValue: true },
+  { key: 'relationCategories', facetName: 'relation_categories_csv', label: 'Relation Categories', type: 'categorical', isMultiValue: true },
   { key: 'year', facetName: 'year', label: 'Publication Year', type: 'numeric' },
   { key: 'paperAuthorCount', label: 'Author Count', type: 'numeric' },
   { key: 'paperReferenceCount', label: 'Reference Count', type: 'numeric' },
