@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useComputedColorScheme } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors";
+import { boostForLight, getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors";
 import { getPointIncludeColumns } from "@/features/graph/lib/cosmograph-columns";
 import { getLayerConfig } from "@/features/graph/lib/layers";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
@@ -121,14 +121,29 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
   );
 
   const pointColorByFn = useMemo(
-    () =>
+    () => {
+      // Dark mode or non-direct strategy: identity passthrough.
       // Cosmograph only treats same-table DuckDB updates as point-data changes
       // when one of the point config accessors changes. Keep the public table
       // contract on `current_points_canvas_web`, and use an overlay-scoped
       // identity accessor to force a re-read of that canonical view on overlay
       // revision changes without leaking swap-view names into the render path.
-      ((value: unknown) => value as string | [number, number, number, number]),
-    [activeLayer, pointColorColumn, canvas.overlayRevision],
+      if (isDark || effectiveColorStrategy !== 'direct') {
+        return (value: unknown) => value as string | [number, number, number, number];
+      }
+      // Light mode + direct strategy: boost saturation with memoized cache
+      const cache = new Map<string, string>();
+      return (value: unknown) => {
+        const raw = value as string;
+        let boosted = cache.get(raw);
+        if (!boosted) {
+          boosted = boostForLight(raw);
+          cache.set(raw, boosted);
+        }
+        return boosted;
+      };
+    },
+    [isDark, effectiveColorStrategy, activeLayer, pointColorColumn, canvas.overlayRevision],
   );
 
   const linkColorByFn = useMemo(
@@ -151,8 +166,8 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
       Math.log10(Math.max(pointCount, 1)) / Math.log10(2_500_000),
       1,
     );
-    const minOpacity = isDark ? 0.42 : 0.28;
-    const maxOpacity = isDark ? 0.72 : 0.56;
+    const minOpacity = isDark ? 0.42 : 0.62;
+    const maxOpacity = isDark ? 0.72 : 0.92;
     return maxOpacity - density * (maxOpacity - minOpacity);
   }, [isDark, totalPointCount]);
 

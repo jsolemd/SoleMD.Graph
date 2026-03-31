@@ -17,15 +17,17 @@ import type { GraphBundleQueries } from "@/features/graph/types";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
 
 import { useCosmographConfig } from "./hooks/use-cosmograph-config";
+import { useThemeCrossfade } from "./hooks/use-theme-crossfade";
 import { useZoomLabels } from "./hooks/use-zoom-labels";
 import { usePointsFiltered } from "./hooks/use-points-filtered";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
+import { resolveGraphContentContrastLevel } from "@/features/graph/lib/control-contrast";
 
 // Static label style strings — no need to recreate per render
 const POINT_LABEL_STYLE =
   "background: var(--graph-label-bg); border-radius: 4px; box-shadow: var(--graph-label-shadow);";
 const CLUSTER_LABEL_STYLE =
-  "background: var(--graph-cluster-label-bg); font-weight: 500; border-radius: 4px;";
+  "background: var(--graph-cluster-label-bg); font-weight: 500; border-radius: 4px; box-shadow: var(--graph-cluster-label-shadow);";
 
 export default function CosmographRenderer({
   canvas,
@@ -47,9 +49,13 @@ export default function CosmographRenderer({
   const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
   const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
   const markCameraSettled = useGraphStore((s) => s.markCameraSettled);
+  const setGraphContentContrastLevel = useGraphStore(
+    (s) => s.setGraphContentContrastLevel,
+  );
   const selectNode = useGraphStore((s) => s.selectNode);
 
   const config = useCosmographConfig(canvas);
+  const crossfadeOpacity = useThemeCrossfade(config.isDark);
   // Destructure values referenced in useCallback deps so the linter can track them
   const {
     activeLayer, fitViewPadding,
@@ -229,6 +235,19 @@ export default function CosmographRenderer({
     labelMode.effectivePointLabelColumn === "clusterLabel"
       ? undefined
       : "paperReferenceCount";
+  const graphContentContrastLevel = resolveGraphContentContrastLevel({
+    showLabels: labelMode.showLabels,
+    showDynamicLabels: labelMode.showDynamicLabels,
+    showTopLabels: labelMode.showTopLabels,
+  });
+
+  useEffect(() => {
+    setGraphContentContrastLevel(graphContentContrastLevel);
+
+    return () => {
+      setGraphContentContrastLevel(0);
+    };
+  }, [graphContentContrastLevel, setGraphContentContrastLevel]);
 
   return (
     <Cosmograph
@@ -306,7 +325,12 @@ export default function CosmographRenderer({
       onPointsFiltered={handlePointsFiltered}
       onPointClick={handlePointClick}
       onBackgroundClick={handleBackgroundClick}
-      style={{ width: "100%", height: "100%" }}
+      style={{
+        width: "100%",
+        height: "100%",
+        opacity: crossfadeOpacity,
+        transition: "opacity 160ms ease-out",
+      }}
     />
   );
 }

@@ -245,12 +245,26 @@ export function hexToRgba(
   return [r, g, b, alpha]
 }
 
+/**
+ * Boost color saturation and darken for visibility on light backgrounds.
+ * Handles hex (#RRGGBB) and rgba() strings; returns hex.
+ */
+export function boostForLight(color: string): string {
+  const [r, g, b] = hexToRgba(color, 255)
+  const hex = `#${[r, g, b].map((c) => c.toString(16).padStart(2, '0')).join('')}`
+  const { h, s, l } = hexToHsl(hex)
+  // Pull saturation toward 85% by 35% of gap; darken by 18%
+  const boostedS = Math.min(s + (85 - s) * 0.35, 92)
+  const boostedL = Math.max(l * 0.82, 18)
+  return hslToHex(h, boostedS, boostedL)
+}
+
 export function getPaletteColors(
   schemeName: ColorSchemeName,
   theme: ColorTheme = 'dark',
 ): string[] {
-  void theme
-  return [...COLOR_PALETTES[schemeName]]
+  const raw = COLOR_PALETTES[schemeName]
+  return theme === 'light' ? raw.map(boostForLight) : [...raw]
 }
 
 export function resolvePaletteSelection(
