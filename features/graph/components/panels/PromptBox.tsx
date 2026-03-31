@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmograph } from "@/features/graph/cosmograph";
 import {
   motion,
   animate,
@@ -261,12 +261,9 @@ export function PromptBox({
           // Clamp so the full prompt box stays within the viewport
           const viewportW = window.innerWidth;
           const vh = window.innerHeight;
-          const boxW = cardRef.current
-            ? cardRef.current.offsetWidth
-            : cardWidth(viewportW, 0, 0);
-          const boxH = cardRef.current
-            ? cardRef.current.offsetHeight
-            : 120;
+          const el = cardRef.current;
+          const boxW = el ? el.offsetWidth : cardWidth(viewportW, 0, 0);
+          const boxH = el ? el.offsetHeight : 120;
           const curX = dragX.get();
           const curY = dragY.get();
           // Pill uses transform:none (left-aligned), others use translateX(-50%) (centered)

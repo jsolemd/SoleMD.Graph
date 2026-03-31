@@ -9,7 +9,7 @@ import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
 import { COLOR_SCHEME_OPTIONS, getPaletteColors } from "@/features/graph/lib/colors";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
 import type { ColorSchemeName, DataColumnKey, MapLayer, PointColorStrategy } from "@/features/graph/types";
-import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
+import { sectionLabelStyle, panelSelectStyles, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
 const COLOR_STRATEGY_OPTIONS = [
   { value: "direct", label: "Direct (hex values)" },
@@ -82,26 +82,28 @@ export function ColorConfig({ activeLayer }: { activeLayer: MapLayer }) {
 
   return (
     <div>
-      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+      <Text size="xs" fw={600} mb={4} style={sectionLabelStyle}>
         Coloring
       </Text>
       <Stack gap="xs">
-        <Select
-          size="xs"
-          label="Column"
-          data={colorColumnOptions}
-          value={pointColorColumn}
-          onChange={(v) => v && setPointColorColumn(v as DataColumnKey | 'hexColor')}
-          styles={panelSelectStyles}
-        />
-        <Select
-          size="xs"
-          label="Strategy"
-          data={COLOR_STRATEGY_OPTIONS}
-          value={pointColorStrategy}
-          onChange={(v) => v && setPointColorStrategy(v as PointColorStrategy)}
-          styles={panelSelectStyles}
-        />
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            size="xs"
+            label="Column"
+            data={colorColumnOptions}
+            value={pointColorColumn}
+            onChange={(v) => v && setPointColorColumn(v as DataColumnKey | 'hexColor')}
+            styles={panelSelectStyles}
+          />
+          <Select
+            size="xs"
+            label="Strategy"
+            data={COLOR_STRATEGY_OPTIONS}
+            value={pointColorStrategy}
+            onChange={(v) => v && setPointColorStrategy(v as PointColorStrategy)}
+            styles={panelSelectStyles}
+          />
+        </div>
         <div>
           <Select
             size="xs"
@@ -120,7 +122,7 @@ export function ColorConfig({ activeLayer }: { activeLayer: MapLayer }) {
           label="Show color legend"
           checked={showColorLegend}
           onChange={(e) => setShowColorLegend(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
         />
       </Stack>
     </div>

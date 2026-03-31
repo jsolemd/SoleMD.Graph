@@ -94,9 +94,8 @@ export function DataTableBody({
       )}
       <Table
         stickyHeader
-        style={{ fontSize: "0.75rem" }}
+        style={{ fontSize: "0.7rem" }}
         styles={{
-          table: { borderColor: "transparent" },
           thead: { backgroundColor: "var(--graph-bg)" },
           th: { backgroundColor: "var(--graph-bg)", borderColor: "var(--graph-panel-border)" },
           td: { borderColor: "var(--graph-panel-border)" },
@@ -105,7 +104,7 @@ export function DataTableBody({
       >
         <Table.Thead>
           <Table.Tr style={{ backgroundColor: "var(--graph-bg)" }}>
-            <Table.Th style={{ ...panelTableHeaderStyle, width: 40 }}>#</Table.Th>
+            <Table.Th style={{ ...panelTableHeaderStyle, width: 32 }}>#</Table.Th>
             {tableColumns.map((key) => {
               const meta = getColumnMetaForLayer(key, activeLayer);
               return (
@@ -135,6 +134,7 @@ export function DataTableBody({
                 }}
                 style={{
                   cursor: "pointer",
+                  transition: "background-color 80ms ease-out",
                   borderLeft: showSelectedState
                     ? "3px solid var(--mode-accent)"
                     : "3px solid transparent",

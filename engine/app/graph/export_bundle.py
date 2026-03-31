@@ -480,6 +480,59 @@ def _write_query_to_parquet(
     return summary
 
 
+def _write_query_to_parquet_copy(
+    conn,
+    *,
+    sql: str,
+    params: dict,
+    schema: pa.Schema,
+    output_path: Path,
+) -> BundleFileSummary:
+    """Fast export via COPY TO STDOUT → CSV temp file → pyarrow → Parquet.
+
+    Bypasses Python dict creation by streaming raw CSV bytes from PostgreSQL
+    directly to a temp file, then letting pyarrow's C++ CSV reader parse it.
+    """
+    import pyarrow.csv as pa_csv
+
+    copy_sql = f"COPY ({sql}) TO STDOUT (FORMAT csv, HEADER true)"
+    csv_path = output_path.with_suffix(".csv.tmp")
+
+    try:
+        with open(csv_path, "wb") as f:
+            with conn.cursor() as cur:
+                with cur.copy(copy_sql, params) as copy:
+                    for data in copy:
+                        f.write(data)
+
+        convert_options = pa_csv.ConvertOptions(column_types=schema)
+        table = pa_csv.read_csv(str(csv_path), convert_options=convert_options)
+
+        writer = pq.ParquetWriter(output_path, schema, compression="zstd")
+        for offset in range(0, table.num_rows, PARQUET_ROW_GROUP_SIZE):
+            writer.write_table(
+                table.slice(offset, PARQUET_ROW_GROUP_SIZE),
+                row_group_size=PARQUET_ROW_GROUP_SIZE,
+            )
+        writer.close()
+        row_count = table.num_rows
+    finally:
+        csv_path.unlink(missing_ok=True)
+
+    if row_count == 0:
+        writer = pq.ParquetWriter(output_path, schema, compression="zstd")
+        writer.close()
+
+    return BundleFileSummary(
+        parquet_file=output_path.name,
+        bytes=output_path.stat().st_size,
+        row_count=row_count,
+        sha256=_hash_file(output_path),
+        columns=schema.names,
+        schema=[{"name": field.name, "type": str(field.type)} for field in schema],
+    )
+
+
 EXPORT_WORKERS = 4
 
 
@@ -718,7 +771,7 @@ def _materialized_table_specs(bundle_profile: str) -> list[BundleTableSpec]:
             sql=build_point_projection_select_sql(
                 mat,
                 where="is_in_base",
-                order_by="point_index",
+                order_by="cluster_id DESC, point_index",
             ),
         ),
         BundleTableSpec(
@@ -907,14 +960,29 @@ def _export_single_table(
     params: dict,
     bundle_dir: Path,
 ) -> tuple[str, BundleFileSummary]:
+    output_path = bundle_dir / spec.parquet_file
     with db.connect() as conn:
-        summary = _write_query_to_parquet(
-            conn,
-            sql=spec.sql,
-            params=params,
-            schema=spec.schema,
-            output_path=bundle_dir / spec.parquet_file,
-        )
+        try:
+            summary = _write_query_to_parquet_copy(
+                conn,
+                sql=spec.sql,
+                params=params,
+                schema=spec.schema,
+                output_path=output_path,
+            )
+        except Exception:
+            log.warning(
+                "COPY export failed for %s, falling back to cursor",
+                spec.name,
+                exc_info=True,
+            )
+            summary = _write_query_to_parquet(
+                conn,
+                sql=spec.sql,
+                params=params,
+                schema=spec.schema,
+                output_path=output_path,
+            )
     return spec.name, summary
 
 

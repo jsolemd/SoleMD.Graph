@@ -10,9 +10,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.config import settings
-from app.rag.orchestrator import _load_corpus_ids_file, _unique_ints
+from app.rag_ingest.orchestrator import _load_corpus_ids_file, _unique_ints
 from app.rag.parse_contract import ParseSourceSystem
-from app.rag.source_locator import SidecarRagSourceLocatorRepository, locator_sidecar_path
+from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository, locator_sidecar_path
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

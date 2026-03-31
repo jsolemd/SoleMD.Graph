@@ -256,8 +256,10 @@ def _ensure_scored_coordinates(
     )
     outlier_result = compute_spatial_outlier_scores(
         repulsed,
+        cluster_ids=cluster_ids,
         n_neighbors=layout_config.outlier_lof_neighbors,
         contamination=layout_config.outlier_contamination,
+        radial_percentile=layout_config.outlier_radial_percentile,
     )
     save_array(checkpoint_paths_.coordinates_path, repulsed)
     save_array(checkpoint_paths_.outlier_scores_path, outlier_result.outlier_scores)

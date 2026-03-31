@@ -3,7 +3,7 @@
 import { Switch, Slider, Stack, Text } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { sectionLabelStyle, panelTextMutedStyle, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
+import { sectionLabelStyle, panelTextMutedStyle, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
 function LabeledSlider({
   label,
@@ -75,7 +75,7 @@ export function LinkConfig() {
 
   return (
     <>
-      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+      <Text size="xs" fw={600} mb={4} style={sectionLabelStyle}>
         Links
       </Text>
       <Stack gap="xs">
@@ -85,7 +85,7 @@ export function LinkConfig() {
           label="Show links"
           checked={renderLinks}
           onChange={(e) => setRenderLinks(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
         />
         <LabeledSlider
           label={`Opacity: ${linkOpacity.toFixed(2)}`}
@@ -128,7 +128,7 @@ export function LinkConfig() {
           label="Curved links"
           checked={curvedLinks}
           onChange={(e) => setCurvedLinks(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
           disabled={linkControlsDisabled}
         />
         <Switch
@@ -137,7 +137,7 @@ export function LinkConfig() {
           label="Show arrows"
           checked={linkDefaultArrows}
           onChange={(e) => setLinkDefaultArrows(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
           disabled={linkControlsDisabled}
         />
         <Switch
@@ -146,7 +146,7 @@ export function LinkConfig() {
           label="Scale on zoom"
           checked={scaleLinksOnZoom}
           onChange={(e) => setScaleLinksOnZoom(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
           disabled={linkControlsDisabled}
         />
       </Stack>

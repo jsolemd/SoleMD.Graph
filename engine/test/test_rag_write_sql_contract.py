@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.rag.write_repository import WriteMethod, WriteStage
-from app.rag.write_sql_contract import build_stage_sql_templates
+from app.rag_ingest.write_repository import WriteMethod, WriteStage
+from app.rag_ingest.write_sql_contract import build_stage_sql_templates
 
 
 def test_build_stage_sql_templates_tracks_all_planned_stages():

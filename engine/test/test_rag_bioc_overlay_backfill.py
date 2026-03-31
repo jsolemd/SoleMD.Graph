@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.rag.bioc_overlay_backfill import run_bioc_overlay_backfill
+from app.rag_ingest.bioc_overlay_backfill import run_bioc_overlay_backfill
 
 
 def test_bioc_overlay_backfill_archive_discovery_requires_s2_source():
@@ -48,6 +48,7 @@ def test_bioc_overlay_backfill_archive_discovery_requires_s2_source():
         assert kwargs["require_existing_documents"] is True
         assert kwargs["require_existing_s2_source"] is True
         assert kwargs["skip_existing_bioc"] is True
+        assert kwargs["start_document_ordinal"] == 750
         return _Result()
 
     def _locator_refresher(**kwargs):
@@ -82,6 +83,7 @@ def test_bioc_overlay_backfill_archive_discovery_requires_s2_source():
         run_id="overlay-archive-discovery-test",
         parser_version="parser-v1",
         archive_name="BioCXML.0.tar.gz",
+        discovery_start_document_ordinal=750,
         limit=2,
         discovery_max_documents=500,
         archive_target_discoverer=_archive_target_discoverer,

@@ -5,7 +5,7 @@ import json
 from app.rag.alignment import align_span_to_canonical_ordinals
 from app.rag.grounding_packets import build_cited_span_packet, build_inline_citation_anchors
 from app.rag.serving_contract import derive_answer_linked_corpus_ids
-from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
+from app.rag_ingest.source_parsers import parse_biocxml_document, parse_s2orc_row
 from app.rag.warehouse_contract import (
     SpanOrigin,
     citation_row_from_parse,

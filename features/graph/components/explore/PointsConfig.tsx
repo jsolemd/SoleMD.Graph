@@ -3,6 +3,7 @@
 import { Stack } from "@mantine/core";
 import { useDashboardStore } from "@/features/graph/stores";
 import { getLayerConfig } from "@/features/graph/lib/layers";
+import { PanelDivider } from "../panels/PanelShell";
 import { ColorConfig } from "./points/ColorConfig";
 import { SizeConfig } from "./points/SizeConfig";
 import { LabelConfig } from "./points/LabelConfig";
@@ -15,12 +16,15 @@ export function PointsConfig() {
   const hasLinks = layerConfig.hasLinks;
 
   return (
-    <Stack gap="lg">
+    <Stack gap="sm">
       <ColorConfig activeLayer={activeLayer} />
+      <PanelDivider />
       <SizeConfig activeLayer={activeLayer} />
+      <PanelDivider />
       <LabelConfig activeLayer={activeLayer} />
+      <PanelDivider />
       <PositionConfig activeLayer={activeLayer} />
-      {hasLinks && <LinkConfig />}
+      {hasLinks && <><PanelDivider /><LinkConfig /></>}
     </Stack>
   );
 }

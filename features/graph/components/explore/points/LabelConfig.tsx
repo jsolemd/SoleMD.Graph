@@ -3,10 +3,10 @@
 import { useMemo } from "react";
 import { Select, Switch, Stack, Text } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
-import { useDashboardStore } from "@/features/graph/stores";
+import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
 import type { DataColumnKey, MapLayer } from "@/features/graph/types";
-import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
+import { sectionLabelStyle, panelSelectStyles, panelSwitchStyles, PANEL_ACCENT, GatedSwitch } from "../../panels/PanelShell";
 
 export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
   const layerColumns = useMemo(
@@ -30,27 +30,31 @@ export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
     [layerColumns]
   );
 
+  const zoomedIn = useGraphStore((s) => s.zoomedIn);
+
   const {
     pointLabelColumn, showPointLabels, showDynamicLabels,
-    showHoveredPointLabel, renderHoveredPointRing,
+    showHoveredPointLabel, hoverLabelAlwaysOn, renderHoveredPointRing,
     setPointLabelColumn, setShowPointLabels, setShowDynamicLabels,
-    setShowHoveredPointLabel, setRenderHoveredPointRing,
+    setShowHoveredPointLabel, setHoverLabelAlwaysOn, setRenderHoveredPointRing,
   } = useDashboardStore(useShallow((s) => ({
     pointLabelColumn: s.pointLabelColumn,
     showPointLabels: s.showPointLabels,
     showDynamicLabels: s.showDynamicLabels,
     showHoveredPointLabel: s.showHoveredPointLabel,
+    hoverLabelAlwaysOn: s.hoverLabelAlwaysOn,
     renderHoveredPointRing: s.renderHoveredPointRing,
     setPointLabelColumn: s.setPointLabelColumn,
     setShowPointLabels: s.setShowPointLabels,
     setShowDynamicLabels: s.setShowDynamicLabels,
     setShowHoveredPointLabel: s.setShowHoveredPointLabel,
+    setHoverLabelAlwaysOn: s.setHoverLabelAlwaysOn,
     setRenderHoveredPointRing: s.setRenderHoveredPointRing,
   })));
 
   return (
     <div>
-      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+      <Text size="xs" fw={600} mb={4} style={sectionLabelStyle}>
         Labels
       </Text>
       <Stack gap="xs">
@@ -68,7 +72,7 @@ export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
           label="Show labels"
           checked={showPointLabels}
           onChange={(e) => setShowPointLabels(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
         />
         <Switch
           size="xs"
@@ -76,15 +80,15 @@ export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
           label="Dynamic labels"
           checked={showDynamicLabels}
           onChange={(e) => setShowDynamicLabels(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
         />
-        <Switch
-          size="xs"
-          color={PANEL_ACCENT}
-          label="Show hovered point label"
+        <GatedSwitch
+          gateActive={zoomedIn}
           checked={showHoveredPointLabel}
           onChange={(e) => setShowHoveredPointLabel(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          label="Hover label"
+          override={hoverLabelAlwaysOn}
+          onOverrideChange={setHoverLabelAlwaysOn}
         />
         <Switch
           size="xs"
@@ -92,7 +96,7 @@ export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
           label="Hovered point ring"
           checked={renderHoveredPointRing}
           onChange={(e) => setRenderHoveredPointRing(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
         />
       </Stack>
     </div>

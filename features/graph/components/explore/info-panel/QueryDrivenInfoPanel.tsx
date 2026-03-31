@@ -1,13 +1,13 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Loader, Stack, Text } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { getClusterColor } from "@/features/graph/lib/colors";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
-import { PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
+import { PANEL_BODY_CLASS, PanelDivider, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
 import {
   AddInsightButton,
   ClusterTable,
@@ -109,10 +109,14 @@ export function QueryDrivenInfoPanel({
     currentInfo != null &&
     !areInfoSummariesEquivalent(selectedInfo, currentInfo) &&
     (selectedInfo == null || selectionLocked);
+  const widgetKey = useMemo(
+    () => infoWidgets.map(w => `${w.column}:${w.kind}`).sort().join(","),
+    [infoWidgets],
+  );
   const [debouncedWidgetRequestKey] = useDebouncedValue(
     JSON.stringify({
       summaryRequestKey,
-      widgets: widgetDescriptors,
+      widgets: widgetKey,
       includeSelectionLayer,
       includeFilteredLayer,
     }),
@@ -122,6 +126,7 @@ export function QueryDrivenInfoPanel({
   const {
     categoricalSummaries,
     histograms,
+    numericStats,
     widgetError,
     lastLoadedKey: lastWidgetKey,
   } = useInfoWidgetData({
@@ -235,6 +240,20 @@ export function QueryDrivenInfoPanel({
         ? "current"
         : null;
 
+  const clusterIdKey = useMemo(
+    () =>
+      [
+        ...(datasetInfo?.topClusters ?? []),
+        ...(selectedInfo?.topClusters ?? []),
+        ...(filteredInfo?.topClusters ?? []),
+      ]
+        .map((c) => c.clusterId)
+        .sort()
+        .join(","),
+    [datasetInfo?.topClusters, selectedInfo?.topClusters, filteredInfo?.topClusters],
+  );
+
+  /* eslint-disable react-hooks/preserve-manual-memoization -- intentional: clusterIdKey is a stable string derived from topClusters IDs, avoiding re-computation when array references change but IDs don't */
   const clusterColors = useMemo(
     () =>
       Object.fromEntries(
@@ -247,28 +266,33 @@ export function QueryDrivenInfoPanel({
           getClusterColor(cluster.clusterId, colorTheme),
         ]),
       ),
-    [colorTheme, datasetInfo?.topClusters, filteredInfo?.topClusters, selectedInfo?.topClusters],
+    [colorTheme, clusterIdKey],
   );
+  /* eslint-enable react-hooks/preserve-manual-memoization */
+  const datasetClustersArr = datasetInfo?.topClusters;
+  const selectedClustersArr = selectedInfo?.topClusters;
+  const filteredClustersArr = filteredInfo?.topClusters;
+
   const clusterRows = useMemo<InfoComparisonClusterRow[]>(() => {
-    if (!datasetInfo) {
+    if (!datasetClustersArr) {
       return [];
     }
 
     const datasetClusters = new Map(
-      datasetInfo.topClusters.map((cluster) => [cluster.clusterId, cluster] as const),
+      datasetClustersArr.map((cluster) => [cluster.clusterId, cluster] as const),
     );
     const selectedClusters = new Map(
-      (selectedInfo?.topClusters ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
+      (selectedClustersArr ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
     );
     const filteredClusters = new Map(
-      (filteredInfo?.topClusters ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
+      (filteredClustersArr ?? []).map((cluster) => [cluster.clusterId, cluster] as const),
     );
 
     return Array.from(
       new Set([
-        ...datasetInfo.topClusters.map((cluster) => cluster.clusterId),
-        ...(selectedInfo?.topClusters ?? []).map((cluster) => cluster.clusterId),
-        ...(filteredInfo?.topClusters ?? []).map((cluster) => cluster.clusterId),
+        ...datasetClustersArr.map((cluster) => cluster.clusterId),
+        ...(selectedClustersArr ?? []).map((cluster) => cluster.clusterId),
+        ...(filteredClustersArr ?? []).map((cluster) => cluster.clusterId),
       ]),
     )
       .map((clusterId) => ({
@@ -279,15 +303,15 @@ export function QueryDrivenInfoPanel({
           filteredClusters.get(clusterId)?.label ??
           `Cluster ${clusterId}`,
         totalCount: datasetClusters.get(clusterId)?.count ?? 0,
-        selectionCount: selectedInfo
+        selectionCount: selectedClustersArr != null
           ? (selectedClusters.get(clusterId)?.count ?? 0)
           : null,
-        filteredCount: filteredInfo
+        filteredCount: filteredClustersArr != null
           ? (filteredClusters.get(clusterId)?.count ?? 0)
           : null,
       }))
       .sort((left, right) =>
-        filteredInfo
+        filteredClustersArr != null
           ? (right.filteredCount ?? 0) === (left.filteredCount ?? 0)
             ? (right.selectionCount ?? 0) === (left.selectionCount ?? 0)
               ? right.totalCount === left.totalCount
@@ -295,7 +319,7 @@ export function QueryDrivenInfoPanel({
                 : right.totalCount - left.totalCount
               : (right.selectionCount ?? 0) - (left.selectionCount ?? 0)
             : (right.filteredCount ?? 0) - (left.filteredCount ?? 0)
-          : selectedInfo
+          : selectedClustersArr != null
             ? (right.selectionCount ?? 0) === (left.selectionCount ?? 0)
               ? right.totalCount === left.totalCount
                 ? left.label.localeCompare(right.label)
@@ -308,12 +332,12 @@ export function QueryDrivenInfoPanel({
       .slice(
         0,
         Math.max(
-          datasetInfo.topClusters.length,
-          selectedInfo?.topClusters.length ?? 0,
-          filteredInfo?.topClusters.length ?? 0,
+          datasetClustersArr.length,
+          selectedClustersArr?.length ?? 0,
+          filteredClustersArr?.length ?? 0,
         ),
       );
-  }, [datasetInfo, filteredInfo, selectedInfo]);
+  }, [datasetClustersArr, selectedClustersArr, filteredClustersArr]);
 
   return (
     <PanelShell
@@ -327,7 +351,7 @@ export function QueryDrivenInfoPanel({
       }
       onClose={() => setActivePanel(null)}
     >
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
+      <div className={PANEL_BODY_CLASS}>
         <Stack gap="sm">
           {loading ? (
             <Text size="sm" style={panelTextDimStyle}>
@@ -339,50 +363,75 @@ export function QueryDrivenInfoPanel({
             </Text>
           ) : datasetInfo ? (
             <>
-              <OverviewGrid
-                datasetInfo={datasetInfo}
-                selectedInfo={selectedInfo}
-                filteredInfo={filteredInfo}
-                comparisonState={comparisonState}
-              />
+              {/* Flat sections array — dividers auto-interleaved */}
+              {(
+                [
+                  <OverviewGrid
+                    key="overview"
+                    datasetInfo={datasetInfo}
+                    selectedInfo={selectedInfo}
+                    filteredInfo={filteredInfo}
+                    comparisonState={comparisonState}
+                  />,
 
-              <ClusterTable
-                rows={clusterRows}
-                clusterColors={clusterColors}
-                comparisonState={comparisonState}
-              />
+                  clusterRows.length > 0 ? (
+                    <ClusterTable
+                      key="clusters"
+                      rows={clusterRows}
+                      totalClusters={datasetInfo.clusters}
+                      clusterColors={clusterColors}
+                      comparisonState={comparisonState}
+                    />
+                  ) : null,
 
-              {infoWidgets.map((slot) => (
-                <QueryWidgetSlotRenderer
-                  key={slot.column}
-                  slot={slot}
-                  comparisonState={comparisonState}
-                  prefetchedCategoricalRows={
-                    slot.kind === "facet-summary" || slot.kind === "bars"
-                      ? categoricalSummaries[slot.column] ?? null
-                      : null
-                  }
-                  prefetchedHistogram={
-                    slot.kind === "histogram"
-                      ? histograms[slot.column] ?? null
-                      : null
-                  }
-                />
-              ))}
+                  /* Each widget is its own section so dividers work when added/removed */
+                  ...infoWidgets.map((slot) => (
+                    <QueryWidgetSlotRenderer
+                      key={slot.column}
+                      slot={slot}
+                      comparisonState={comparisonState}
+                      prefetchedCategoricalRows={
+                        slot.kind === "facet-summary" || slot.kind === "bars"
+                          ? categoricalSummaries[slot.column] ?? null
+                          : null
+                      }
+                      prefetchedHistogram={
+                        slot.kind === "histogram"
+                          ? histograms[slot.column] ?? null
+                          : null
+                      }
+                      prefetchedNumericStats={
+                        slot.kind === "histogram"
+                          ? numericStats[slot.column] ?? null
+                          : null
+                      }
+                    />
+                  )),
 
-              {widgetError && (
-                <Text size="xs" style={panelTextDimStyle}>
-                  {widgetError}
-                </Text>
-              )}
+                  widgetError ? (
+                    <Text key="widget-error" size="xs" style={panelTextDimStyle}>
+                      {widgetError}
+                    </Text>
+                  ) : null,
 
-              <AddInsightButton />
-              <SearchSection key={activeLayer} queries={queries} />
-              <SelectionActions
-                subsetScope={activeSubsetScope}
-                queries={queries}
-                overlayCount={overlayCount}
-              />
+                  <AddInsightButton key="add-insight" />,
+
+                  <SearchSection key={`search-${activeLayer}`} queries={queries} />,
+
+                  <SelectionActions
+                    key="actions"
+                    subsetScope={activeSubsetScope}
+                    queries={queries}
+                    overlayCount={overlayCount}
+                  />,
+                ] as (ReactNode | null)[]
+              )
+                .filter(Boolean)
+                .flatMap((section, i) =>
+                  i > 0
+                    ? [<PanelDivider key={`div-${i}`} />, section]
+                    : [section],
+                )}
             </>
           ) : null}
         </Stack>

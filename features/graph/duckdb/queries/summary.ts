@@ -1,7 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type {
-  GraphInfoHistogramBin,
   GraphInfoHistogramResult,
   GraphInfoScope,
   GraphInfoSummary,
@@ -40,9 +39,11 @@ export async function queryInfoSummary(
     scope: GraphInfoScope
     currentPointScopeSql: string | null
     datasetTotalCount?: number | null
+    clusterLimit?: number
   }
 ): Promise<GraphInfoSummary> {
-  const { layer, scope, currentPointScopeSql, datasetTotalCount } = args
+  const { layer, scope, currentPointScopeSql, datasetTotalCount, clusterLimit = 8 } = args
+  const safeClusterLimit = Math.max(1, Math.min(100, clusterLimit))
   const { tableName, scopedPredicate } = getSafeScopedContext({
     layer,
     scope,
@@ -90,7 +91,7 @@ export async function queryInfoSummary(
        WHERE COALESCE(clusterId, 0) > 0
        GROUP BY COALESCE(clusterId, 0), COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR))
        ORDER BY member_count DESC, cluster_id
-       LIMIT 8
+       LIMIT ${safeClusterLimit}
      )
      SELECT
        'summary' AS row_type,
@@ -148,7 +149,7 @@ export async function queryInfoSummary(
        WHERE COALESCE(clusterId, 0) > 0
        GROUP BY COALESCE(clusterId, 0), COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR))
        ORDER BY member_count DESC, cluster_id
-       LIMIT 8
+       LIMIT ${safeClusterLimit}
      )
      SELECT
        'summary' AS row_type,
@@ -628,6 +629,71 @@ export async function queryInfoHistogramsBatch(
       count: row.count,
     })
     result[row.column_key] = current
+  }
+
+  return result
+}
+
+export interface NumericStatsRow {
+  min: number
+  median: number
+  avg: number
+  max: number
+}
+
+export async function queryNumericStatsBatch(
+  conn: AsyncDuckDBConnection,
+  args: {
+    layer: MapLayer
+    scope: GraphInfoScope
+    columns: string[]
+    currentPointScopeSql: string | null
+  }
+): Promise<Record<string, NumericStatsRow>> {
+  const { layer, scope, columns, currentPointScopeSql } = args
+  const safeColumns = [...new Set(columns)].filter(
+    (column) => getColumnMetaForLayer(column, layer)?.type === 'numeric'
+  )
+  if (safeColumns.length === 0) {
+    return {}
+  }
+
+  const { tableName, scopedPredicate } = getSafeScopedContext({
+    layer,
+    scope,
+    currentPointScopeSql,
+  })
+
+  const unions = safeColumns.map((column) => {
+    const safeColumn = resolveInfoColumn(layer, column)
+    return `SELECT
+              '${escapeSqlLiteral(column)}' AS column_key,
+              MIN(${safeColumn})::DOUBLE AS min_val,
+              quantile_cont(${safeColumn}::DOUBLE, 0.5)::DOUBLE AS median_val,
+              AVG(${safeColumn}::DOUBLE)::DOUBLE AS avg_val,
+              MAX(${safeColumn})::DOUBLE AS max_val
+            FROM ${tableName}
+            WHERE ${scopedPredicate}
+              AND ${safeColumn} IS NOT NULL`
+  })
+
+  const rows = await queryRows<{
+    column_key: string
+    min_val: number | null
+    median_val: number | null
+    avg_val: number | null
+    max_val: number | null
+  }>(conn, unions.join('\nUNION ALL\n'))
+
+  const result: Record<string, NumericStatsRow> = {}
+  for (const row of rows) {
+    if (row.min_val == null || row.max_val == null) continue
+    result[row.column_key] = {
+      min: row.min_val,
+      median: row.median_val ?? row.min_val,
+      avg: row.avg_val ?? row.min_val,
+      max: row.max_val,
+    }
   }
 
   return result

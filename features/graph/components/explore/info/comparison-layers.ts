@@ -13,6 +13,7 @@ export interface InfoComparisonFacetRow {
   totalCount: number;
   selectionCount: number | null;
   filteredCount: number | null;
+  enrichment?: number;
 }
 
 export interface InfoHistogramComparison {
@@ -177,13 +178,23 @@ export function mergeInfoComparisonRows(args: {
     ...(args.filteredRows ?? []).map((row) => row.value),
   ]);
 
+  const datasetTotal = args.datasetRows.reduce((sum, row) => sum + row.count, 0);
+  const selectionTotal = (args.selectionRows ?? []).reduce((sum, row) => sum + row.count, 0);
+  const hasSelection = args.selectionRows != null && args.selectionRows.length > 0;
+
   return Array.from(values)
-    .map((value) => ({
-      value,
-      totalCount: datasetMap.get(value) ?? 0,
-      selectionCount: selectionMap.has(value) ? (selectionMap.get(value) ?? 0) : null,
-      filteredCount: filteredMap.has(value) ? (filteredMap.get(value) ?? 0) : null,
-    }))
+    .map((value) => {
+      const totalCount = datasetMap.get(value) ?? 0;
+      const selectionCount = selectionMap.has(value) ? (selectionMap.get(value) ?? 0) : null;
+      const filteredCount = filteredMap.has(value) ? (filteredMap.get(value) ?? 0) : null;
+
+      let enrichment: number | undefined;
+      if (hasSelection && selectionCount != null && selectionCount > 0 && totalCount > 0 && datasetTotal > 0 && selectionTotal > 0) {
+        enrichment = (selectionCount / selectionTotal) / (totalCount / datasetTotal);
+      }
+
+      return { value, totalCount, selectionCount, filteredCount, enrichment };
+    })
     .sort((left, right) => {
       const rightActive = getActiveComparisonCount(right);
       const leftActive = getActiveComparisonCount(left);

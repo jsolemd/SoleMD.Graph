@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmograph } from "@/features/graph/cosmograph";
 import {
   FOCUSED_LABEL_ESTIMATED_CHAR_WIDTH,
   FOCUSED_LABEL_HEIGHT,
@@ -56,21 +56,18 @@ function getActualFocusedLabelRect({
     return null;
   }
 
-  const labelElements = Array.from(labelsContainer.children)
+  const normalizedLabelText = labelText?.trim().toLowerCase() ?? null;
+  const measured = Array.from(labelsContainer.children)
     .filter((node): node is HTMLElement => node instanceof HTMLElement)
-    .filter((element) => {
-      const rect = element.getBoundingClientRect();
-      return rect.width > 0 && rect.height > 0;
-    });
+    .map((el) => ({ el, rect: el.getBoundingClientRect() }));
+  const visible = measured.filter(({ rect }) => rect.width > 0 && rect.height > 0);
 
-  if (labelElements.length === 0) {
+  if (visible.length === 0) {
     return null;
   }
 
-  const normalizedLabelText = labelText?.trim().toLowerCase() ?? null;
-  const scoredCandidates = labelElements.map((element) => {
-    const rect = element.getBoundingClientRect();
-    const text = (element.textContent ?? "").trim().toLowerCase();
+  const scoredCandidates = visible.map(({ el, rect }) => {
+    const text = (el.textContent ?? "").trim().toLowerCase();
     const matchesText =
       normalizedLabelText != null && text === normalizedLabelText;
     const horizontalDistance = Math.abs(rect.left + rect.width / 2 - viewportX);
@@ -379,7 +376,6 @@ export function useFocusedAvoidanceRects({
           childList: true,
           subtree: true,
           characterData: true,
-          attributes: true,
         });
       }
 

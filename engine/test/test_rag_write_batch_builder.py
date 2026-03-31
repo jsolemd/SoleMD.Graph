@@ -13,9 +13,9 @@ from app.rag.serving_contract import (
     PaperChunkVersionRecord,
     SentenceOverlapPolicy,
 )
-from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
+from app.rag_ingest.source_parsers import parse_biocxml_document, parse_s2orc_row
 from app.rag.source_selection import build_grounding_source_plan
-from app.rag.write_batch_builder import (
+from app.rag_ingest.write_batch_builder import (
     build_write_batch_from_grounding_plan,
     estimate_write_batch_bytes_from_grounding_plan,
     estimate_write_batch_rows_from_grounding_plan,

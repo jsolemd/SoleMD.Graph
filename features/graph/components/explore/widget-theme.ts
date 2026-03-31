@@ -1,10 +1,8 @@
-"use client";
-
 export const queryWidgetThemeVars: React.CSSProperties = {
   "--cosmograph-ui-background": "transparent",
   "--cosmograph-ui-text": "var(--graph-panel-text)",
-  "--cosmograph-ui-tick-font-size": "11px",
-  "--cosmograph-ui-font-size": "12px",
+  "--cosmograph-ui-tick-font-size": "9px",
+  "--cosmograph-ui-font-size": "10px",
   "--cosmograph-ui-font-family": "inherit",
   "--cosmograph-ui-element-color": "var(--filter-bar-base)",
   "--cosmograph-ui-highlighted-element-color": "var(--filter-bar-active)",
@@ -20,4 +18,7 @@ export const queryWidgetThemeVars: React.CSSProperties = {
   "--cosmograph-bars-background": "var(--filter-bar-base)",
   "--cosmograph-bars-highlighted-color": "var(--filter-bar-active)",
   "--cosmograph-bars-font-color": "var(--graph-panel-text)",
+  "--cosmograph-bars-bar-height": "16px",
+  "--cosmograph-bars-bar-bottom-margin": "1px",
+  "--cosmograph-bars-ui-font-size": "9px",
 } as React.CSSProperties;

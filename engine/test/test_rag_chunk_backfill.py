@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from app.rag.chunk_backfill import ChunkBackfillRowGroup, RagChunkBackfillWriter
-from app.rag.chunk_policy import build_default_chunk_version
 from app.rag.parse_contract import PaperBlockKind, SectionRole, SentenceSegmentationSource
 from app.rag.rag_schema_contract import PaperBlockRow, PaperSentenceRow
-from app.rag.write_repository import (
+from app.rag_ingest.chunk_backfill import ChunkBackfillRowGroup, RagChunkBackfillWriter
+from app.rag_ingest.chunk_policy import build_default_chunk_version
+from app.rag_ingest.write_repository import (
     RagWriteExecutionResult,
     RuntimeWriteStageResult,
     RuntimeWriteStatus,
@@ -16,9 +16,11 @@ def test_chunk_backfill_writer_builds_chunk_rows_and_surfaces_deferred_stages():
     class FakeBatchWriter:
         def __init__(self):
             self.batch = None
+            self.replace_existing = None
 
-        def apply_write_batch(self, batch):
+        def apply_write_batch(self, batch, *, replace_existing=False):
             self.batch = batch
+            self.replace_existing = replace_existing
             return RagWriteExecutionResult(
                 total_rows=2,
                 written_rows=0,
@@ -75,6 +77,7 @@ def test_chunk_backfill_writer_builds_chunk_rows_and_surfaces_deferred_stages():
     )
 
     assert repository.batch is not None
+    assert repository.replace_existing is True
     assert repository.batch.chunk_versions == []
     assert len(repository.batch.chunks) == 1
     assert len(repository.batch.chunk_members) == 1
@@ -92,9 +95,11 @@ def test_chunk_backfill_writer_can_batch_multiple_corpus_groups_into_one_write_b
     class FakeBatchWriter:
         def __init__(self):
             self.batch = None
+            self.replace_existing = None
 
-        def apply_write_batch(self, batch):
+        def apply_write_batch(self, batch, *, replace_existing=False):
             self.batch = batch
+            self.replace_existing = replace_existing
             return RagWriteExecutionResult(
                 total_rows=4,
                 written_rows=4,
@@ -176,6 +181,7 @@ def test_chunk_backfill_writer_can_batch_multiple_corpus_groups_into_one_write_b
     )
 
     assert repository.batch is not None
+    assert repository.replace_existing is True
     assert repository.batch.chunk_versions == []
     assert len(repository.batch.chunks) == 2
     assert len(repository.batch.chunk_members) == 2

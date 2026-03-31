@@ -14,7 +14,7 @@ from pydantic import Field
 
 from app import db
 from app.rag.chunk_cutover import ChunkCutoverStepKey, build_chunk_cutover_steps
-from app.rag.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
+from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag.chunk_runtime_contract import (
     ChunkRuntimePhase,
     build_chunk_runtime_cutover_plan,

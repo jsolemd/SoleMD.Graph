@@ -9,7 +9,7 @@ import {
   getRenderableColumnsForLayer,
 } from "@/features/graph/lib/columns";
 import type { MapLayer, NumericColumnKey } from "@/features/graph/types";
-import { sectionLabelStyle, panelSelectStyles, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
+import { sectionLabelStyle, panelSelectStyles, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
 export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
   const renderColumns = useMemo(
@@ -55,10 +55,10 @@ export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
   return (
     <>
       <div>
-        <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+        <Text size="xs" fw={600} mb={4} style={sectionLabelStyle}>
           Positions
         </Text>
-        <Stack gap="xs">
+        <div className="grid grid-cols-2 gap-2">
           <Select
             size="xs"
             label="X column"
@@ -75,12 +75,12 @@ export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
             onChange={(v) => v && setPositionYColumn(v as NumericColumnKey)}
             styles={panelSelectStyles}
           />
-        </Stack>
+        </div>
       </div>
 
       {/* Timeline */}
       <div>
-        <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+        <Text size="xs" fw={600} mb={4} style={sectionLabelStyle}>
           Timeline
         </Text>
         <Stack gap="xs">
@@ -98,7 +98,7 @@ export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
             label="Show timeline"
             checked={showTimeline}
             onChange={(e) => setShowTimeline(e.currentTarget.checked)}
-            styles={switchLabelStyle}
+            styles={panelSwitchStyles}
           />
         </Stack>
       </div>

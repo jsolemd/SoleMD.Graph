@@ -4,7 +4,7 @@ import json
 
 from app.rag.parse_contract import ParseSourceSystem
 from app.rag.source_grounding import build_grounded_answer_from_plan
-from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
+from app.rag_ingest.source_parsers import parse_biocxml_document, parse_s2orc_row
 from app.rag.source_selection import build_grounding_source_plan, profile_parsed_source
 
 

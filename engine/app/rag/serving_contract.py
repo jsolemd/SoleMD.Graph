@@ -18,6 +18,7 @@ from app.rag.warehouse_contract import AlignmentStatus, SpanOrigin
 class CaptionMergePolicy(StrEnum):
     STANDALONE = "standalone"
     NARRATIVE_ONLY_ADJACENT = "narrative_only_adjacent"
+    STRUCTURAL_CONTEXT = "structural_context"
 
 
 class SentenceOverlapPolicy(StrEnum):

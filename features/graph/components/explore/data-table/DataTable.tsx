@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useDashboardStore } from "@/features/graph/stores";
-import { edgeReveal } from "@/lib/motion";
+import { smooth } from "@/lib/motion";
 import { useDragResize } from "@/features/graph/hooks/use-drag-resize";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import { useTableData } from "./use-table-data";
@@ -31,20 +31,28 @@ export function DataTable({
 
   return (
     <motion.div
-      {...edgeReveal(40)}
-      className="absolute left-0 right-0 z-20 flex flex-col"
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 40 }}
+      transition={{
+        y: smooth,
+        opacity: { duration: 0.1, ease: "easeOut" },
+      }}
+      className="absolute left-0 right-0 z-20 flex flex-col rounded-t-xl"
       style={{
         bottom: showTimeline ? 44 : 0,
         height: tableHeight,
-        backgroundColor: "var(--graph-bg)",
+        backgroundColor: "var(--graph-panel-bg)",
+        border: "1px solid var(--graph-panel-border)",
+        boxShadow: "var(--graph-panel-shadow)",
       }}
     >
       <div
-        className="flex h-3 cursor-row-resize items-center justify-center transition-colors hover:bg-[var(--interactive-hover)]"
+        className="flex h-2.5 cursor-row-resize items-center justify-center transition-colors hover:bg-[var(--interactive-hover)]"
         onMouseDown={handleDragStart}
       >
         <div
-          className="h-1 w-10 rounded-full"
+          className="h-0.5 w-8 rounded-full"
           style={{ backgroundColor: "var(--graph-panel-text-dim)" }}
         />
       </div>
@@ -63,7 +71,7 @@ export function DataTable({
         currentPointScopeSql={state.currentPointScopeSql}
       />
 
-      <div className="flex-1 overflow-auto px-2">
+      <div className="flex-1 overflow-auto px-2.5">
         <DataTableBody
           activeLayer={state.activeLayer}
           pageRows={state.pageRows}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.rag.orchestrator import RagTargetCorpusRow
-from app.rag.source_locator_refresh import refresh_rag_source_locator
+from app.rag_ingest.orchestrator import RagTargetCorpusRow
+from app.rag_ingest.source_locator_refresh import refresh_rag_source_locator
 
 
 class _FakeTargetLoader:
@@ -29,7 +29,7 @@ class _FakeRepository:
         return len(entries)
 
     def fetch_entries(self, *, corpus_ids, source_system, source_revision):
-        from app.rag.source_locator import RagSourceLocatorLookup
+        from app.rag_ingest.source_locator import RagSourceLocatorLookup
 
         rows = [
             row
@@ -67,7 +67,7 @@ def test_refresh_rag_source_locator_reuses_existing_sidecar_coverage(monkeypatch
     )
 
     monkeypatch.setattr(
-        "app.rag.source_locator_refresh.PostgresTargetCorpusLoader",
+        "app.rag_ingest.source_locator_refresh.PostgresTargetCorpusLoader",
         lambda: _FakeTargetLoader([RagTargetCorpusRow(corpus_id=12345, pmid=12345)]),
     )
 
@@ -81,8 +81,8 @@ def test_refresh_rag_source_locator_reuses_existing_sidecar_coverage(monkeypatch
         scan_calls["bioc"] += 1
         yield from ()
 
-    monkeypatch.setattr("app.rag.source_locator_refresh._iter_s2_rows", _iter_s2_rows)
-    monkeypatch.setattr("app.rag.source_locator_refresh._iter_bioc_documents", _iter_bioc_documents)
+    monkeypatch.setattr("app.rag_ingest.source_locator_refresh._iter_s2_rows", _iter_s2_rows)
+    monkeypatch.setattr("app.rag_ingest.source_locator_refresh._iter_bioc_documents", _iter_bioc_documents)
 
     report = refresh_rag_source_locator(
         run_id="locator-refresh-existing-coverage",

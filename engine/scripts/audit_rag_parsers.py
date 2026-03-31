@@ -25,7 +25,7 @@ from app.rag.corpus_resolution import (
 )
 from app.config import settings
 from app.rag.parse_contract import ParseContractModel
-from app.rag.source_parsers import (
+from app.rag_ingest.source_parsers import (
     extract_biocxml_document_id,
     parse_biocxml_document,
     parse_s2orc_row,

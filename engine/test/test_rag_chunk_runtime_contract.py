@@ -6,7 +6,7 @@ from app.rag.chunk_runtime_contract import (
 )
 from app.rag.index_contract import IndexBuildPhase
 from app.rag.migration_contract import MigrationStage
-from app.rag.write_repository import WriteStage
+from app.rag_ingest.write_repository import WriteStage
 
 
 def test_chunk_runtime_cutover_plan_preserves_expected_phase_order():

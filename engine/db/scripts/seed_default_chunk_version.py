@@ -10,11 +10,11 @@ from typing import Protocol
 # Add engine/ to path so app imports work when run directly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app import db
 from pydantic import Field
 
-from app.rag.chunk_seed import ChunkSeedResult, RagChunkSeeder
+from app import db
 from app.rag.parse_contract import ParseContractModel
+from app.rag_ingest.chunk_seed import ChunkSeedResult, RagChunkSeeder
 
 
 class ChunkSeedRunner(Protocol):
@@ -24,6 +24,7 @@ class ChunkSeedRunner(Protocol):
         source_revision_keys: list[str],
         parser_version: str,
         embedding_model: str | None = None,
+        chunk_version_key: str | None = None,
     ) -> ChunkSeedResult: ...
 
 
@@ -42,6 +43,7 @@ def seed_default_chunk_version(
     source_revision_keys: list[str],
     parser_version: str,
     embedding_model: str | None = None,
+    chunk_version_key: str | None = None,
     runner: ChunkSeedRunner | None = None,
 ) -> ChunkSeedExecutionReport:
     seeder = runner or RagChunkSeeder()
@@ -49,6 +51,7 @@ def seed_default_chunk_version(
         source_revision_keys=source_revision_keys,
         parser_version=parser_version,
         embedding_model=embedding_model,
+        chunk_version_key=chunk_version_key,
     )
     return ChunkSeedExecutionReport(
         chunk_version_key=result.chunk_version_key,
@@ -78,6 +81,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Parser version used for the canonical span parse.",
     )
     parser.add_argument(
+        "--chunk-version-key",
+        default=None,
+        help="Optional override chunk version key for preview or cutover backfills.",
+    )
+    parser.add_argument(
         "--embedding-model",
         default=None,
         help="Optional embedding model to record on the chunk version row.",
@@ -92,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
             source_revision_keys=args.source_revision_keys,
             parser_version=args.parser_version,
             embedding_model=args.embedding_model,
+            chunk_version_key=args.chunk_version_key,
         )
         print(report.model_dump_json(indent=2))
     finally:

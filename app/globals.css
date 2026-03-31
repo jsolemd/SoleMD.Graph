@@ -88,6 +88,7 @@
   --interactive-active: rgba(116, 124, 170, 0.10);
 
   /* ── Graph canvas (unique values only — rest reference foundations) ── */
+  --graph-canvas-filter: saturate(1.8) brightness(0.85);
   --graph-bg: #f8f9fa;
   --graph-panel-bg: var(--graph-bg);
   --graph-panel-border: var(--border-subtle);
@@ -110,15 +111,16 @@
   --graph-wordmark-text: rgba(0, 0, 0, 0.55);
   --graph-wordmark-accent: var(--brand-accent);
   --graph-stats-text: rgba(0, 0, 0, 0.32);
-  --graph-label-bg: rgba(255, 255, 255, 0.95);
-  --graph-label-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
-  --graph-cluster-label-bg: rgba(255, 255, 255, 0.95);
-  --graph-cluster-label-shadow: 0 1px 4px rgba(0, 0, 0, 0.10);
+  --graph-label-bg: rgba(255, 255, 255, 0.97);
+  --graph-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.10);
+  --graph-cluster-label-bg: rgba(255, 255, 255, 0.97);
+  --graph-cluster-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.10);
   --graph-greyout-opacity: 0.25;
 
   /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
   --filter-bar-base: color-mix(in srgb, var(--mode-accent) 18%, transparent);
   --filter-bar-active: var(--mode-accent);
+  --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 82%, black);
 
   /* ── Active mode accent (set by ModeColorSync, default = ask) ── */
   --mode-accent: var(--color-soft-blue);
@@ -247,6 +249,7 @@ html:root {
   --interactive-active: rgba(168, 197, 233, 0.12);
 
   /* ── Graph canvas (only values that diverge from foundations) ── */
+  --graph-canvas-filter: none;
   --graph-bg: #111113;
   --graph-panel-input-bg: #19191d;
 
@@ -262,15 +265,16 @@ html:root {
   --graph-prompt-divider: rgba(168, 197, 233, 0.2);
   --graph-wordmark-text: rgba(255, 255, 255, 0.6);
   --graph-stats-text: rgba(255, 255, 255, 0.32);
-  --graph-label-bg: rgba(28, 29, 33, 0.85);
-  --graph-label-shadow: none;
-  --graph-cluster-label-bg: rgba(28, 29, 33, 0.80);
-  --graph-cluster-label-shadow: none;
+  --graph-label-bg: rgba(17, 17, 19, 0.88);
+  --graph-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.4);
+  --graph-cluster-label-bg: rgba(17, 17, 19, 0.88);
+  --graph-cluster-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.4);
   --graph-greyout-opacity: 0.15;
 
   /* ── Filter/timeline bars — boost active brightness on dark surfaces ── */
   --filter-bar-base: color-mix(in srgb, var(--mode-accent) 20%, transparent);
   --filter-bar-active: color-mix(in oklch, var(--mode-accent) 70%, white);
+  --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 55%, black);
 
   /* ── Mode accent — higher opacity needed against dark surfaces ── */
   --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, transparent);
@@ -650,6 +654,21 @@ html.dark {
     color: var(--foreground);
   }
 
+}
+
+/* ── Graph canvas filter ──
+   Boosts saturation + darkens point colors in light mode.
+   Canvas uses transparent WebGL background so the filter only
+   hits colored WebGL content — labels and background are unaffected.
+   Values live in --graph-canvas-filter (set per theme above).
+   NOT in @layer — Cosmograph's module-scoped styles would override.
+   IMPORTANT: CSS filter creates a new stacking context on the canvas,
+   which paints it above the d3-brush SVG overlay used for rect/poly
+   selection.  The GraphRenderer component compensates by setting
+   z-index:2 on the brush SVG via a useEffect. */
+[data-graph-canvas] canvas {
+  filter: var(--graph-canvas-filter);
+  transition: filter 80ms ease-out;
 }
 
 /* ═══════════════════════════════════════════════════════════════════

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from app.rag.chunk_seed import RagChunkSeeder
-from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
-from app.rag.write_repository import (
+from app.rag_ingest.chunk_seed import RagChunkSeeder
+from app.rag_ingest.source_parsers import parse_biocxml_document, parse_s2orc_row
+from app.rag_ingest.write_repository import (
     RagWriteExecutionResult,
     RuntimeWriteStageResult,
     RuntimeWriteStatus,
@@ -125,3 +125,40 @@ def test_chunk_seeder_builds_default_batch_for_sources():
     assert result.batch_total_rows == 1
     assert result.written_rows == 0
     assert result.deferred_stage_names == [WriteStage.CHUNK_VERSIONS]
+
+
+def test_chunk_seeder_allows_preview_key_override():
+    class FakeBatchWriter:
+        def __init__(self):
+            self.batch = None
+
+        def apply_write_batch(self, batch):
+            self.batch = batch
+            return RagWriteExecutionResult(
+                total_rows=1,
+                written_rows=1,
+                stages=[
+                    RuntimeWriteStageResult(
+                        stage=WriteStage.CHUNK_VERSIONS,
+                        logical_table_name="paper_chunk_versions",
+                        physical_table_name="paper_chunk_versions",
+                        status=RuntimeWriteStatus.EXECUTED,
+                        row_count=1,
+                    )
+                ],
+            )
+
+    repository = FakeBatchWriter()
+    seeder = RagChunkSeeder(repository=repository)
+
+    result = seeder.seed_default(
+        source_revision_keys=["s2orc_v2:2026-03-10"],
+        parser_version="mixed:parser-v1,parser-v2",
+        chunk_version_key="preview-stanza-hybrid-v1",
+    )
+
+    assert repository.batch is not None
+    assert [row.chunk_version_key for row in repository.batch.chunk_versions] == [
+        "preview-stanza-hybrid-v1"
+    ]
+    assert result.chunk_version_key == "preview-stanza-hybrid-v1"

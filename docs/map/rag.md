@@ -704,7 +704,7 @@ The write path is now explicitly batch-oriented:
   warehouse batch
 - `RagWarehouseWriter.ingest_grounding_plans()` / `ingest_source_groups()`
   apply many parsed papers through one repository write
-- `engine/app/rag/orchestrator.py` is now the engine-owned refresh
+- `engine/app/rag_ingest/orchestrator.py` is now the engine-owned refresh
   orchestrator for current downloaded release data, and
   `engine/db/scripts/refresh_rag_warehouse.py` is the canonical thin operator
   wrapper
@@ -727,7 +727,7 @@ The write path is now explicitly batch-oriented:
 - filesystem refresh checkpoints are now worker-local report state rather than
   the shared source of truth; parallel workers write under
   `rag_refresh/<run_id>/<worker-key>/`
-- `engine/app/rag/chunk_backfill_runtime.py` now owns reusable chunk-backfill
+- `engine/app/rag_ingest/chunk_backfill_runtime.py` now owns reusable chunk-backfill
   runtime logic, and `engine/db/scripts/backfill_structural_chunks.py` is the
   canonical operator wrapper for currently ingested canonical span tables
 - `engine/db/scripts/backfill_structural_chunks.py` backfills chunks in configurable
@@ -870,18 +870,19 @@ Storage rule for large refreshes:
 - the active canonical dataset roots are now:
   - `/home/workbench/SoleMD/SoleMD.Graph-data/data/pubtator`
   - `/home/workbench/SoleMD/SoleMD.Graph-data/data/semantic-scholar`
-- current canonical warehouse totals after the latest native refreshes are:
-  - `paper_documents = 244`
-  - `paper_sections = 3030`
-  - `paper_blocks = 7414`
-  - `paper_sentences = 34373`
-  - `paper_references = 9991`
+- current canonical warehouse totals after the latest native refreshes, BioC
+  growth, low-value BioC cleanup, and the newest later-window BioC batches are:
+  - `paper_documents = 355`
+  - `paper_sections = 4054`
+  - `paper_blocks = 9494`
+  - `paper_sentences = 45331`
+  - `paper_references = 12603`
   - `paper_chunk_versions = 1`
-  - `paper_chunks = 648`
-  - `paper_chunk_members = 4996`
+  - `paper_chunks = 2269`
+  - `paper_chunk_members = 15785`
 - current live canonical source coverage is now:
-  - `solemd.paper_document_sources = 210` `s2orc_v2` rows
-  - `solemd.paper_document_sources = 34` `biocxml` rows
+  - `solemd.paper_document_sources = 248` `s2orc_v2` rows
+  - `solemd.paper_document_sources = 107` `biocxml` rows
 - explicit targeted refresh now routes through release-sidecar corpus locators
   when available:
   - S2 sidecar:
@@ -893,6 +894,22 @@ Storage rule for large refreshes:
   resulting shard/archive coverage in the same run
 - inline locator refresh now reuses existing sidecar coverage and only scans
   missing corpus ids, which keeps rerunnable explicit refreshes bounded
+- operational refresh/backfill/archive workflows now live under:
+  `engine/app/rag_ingest/`
+- the active retrieval/grounding/runtime surface remains under:
+  `engine/app/rag/`
+- `engine/app/rag_ingest/` now owns:
+  - release refresh orchestration
+  - source locator refresh/inspection
+  - warehouse writer, staged-write planning, and direct-refresh write helpers
+  - chunk seed/backfill and resumable checkpoint logic
+  - BioC archive discovery, prewarm, ingest, and overlay backfill
+  - warehouse QA and other operator-facing ingest helpers
+- `engine/app/rag/` now owns:
+  - live query enrichment, retrieval, ranking, and evidence bundling
+  - structured grounding/runtime read paths
+  - chunk-serving/runtime gates and answer synthesis
+  - canonical parse/alignment/write contracts shared by ingest and serving
 - operator inspection for sidecar coverage now lives in:
   `engine/db/scripts/inspect_rag_source_locator.py`
 - bounded BioC archive target discovery now lives in:
@@ -900,6 +917,116 @@ Storage rule for large refreshes:
 - bounded new-ingest BioC archive execution with direct locator seeding now
   lives in:
   `engine/db/scripts/ingest_bioc_archive_targets.py`
+- bounded BioC archive-member cache prewarm now lives in:
+  `engine/db/scripts/prewarm_bioc_archive_member_cache.py`
+- a one-command bounded BioC window runner now lives in:
+  `engine/db/scripts/ingest_bioc_archive_window.py`
+- that operator can now also ingest directly from a bounded precomputed
+  discovery report via `--discovery-report-path`, so archive-window prewarm
+  and bounded ingest compose without rerunning candidate discovery
+- the default path for that operator is now direct archive-member ingest for
+  bounded BioC-only new papers:
+  - it fetches only the selected archive members
+  - reuses the warehouse writer, chunk seed/backfill, and QA seams directly
+  - and avoids routing those small archive-targeted runs through the full
+    generic refresh orchestrator
+- the member-cache prewarm path is now live-validated:
+  `prewarm_bioc_archive_member_cache.py --archive-name BioCXML.5.tar.gz --discovery-report-path ... --limit 6`
+  fetched `6` selected members into the release-sidecar cache with
+  `cache_hits = 0` and `archive_reads = 6`
+- the sequential cache-backed ingest proof is now live-validated too:
+  `ingest_bioc_archive_targets.py --archive-name BioCXML.5.tar.gz --discovery-report-path ... --limit 6 --seed-chunk-version --backfill-chunks --inspect-quality`
+  then reported `member_fetch.cache_hits = 6` and
+  `member_fetch.archive_reads = 0`, ingested `5` BioC papers, skipped
+  `1` low-value shell paper, wrote `520` canonical rows, and backfilled
+  `50` chunk rows plus `239` chunk-member rows with a zero-flag QA report
+- the same cache-backed pattern also now holds at a slightly larger batch size:
+  `ingest_bioc_archive_targets.py --archive-name BioCXML.6.tar.gz --discovery-report-path ... --limit 10 --seed-chunk-version --backfill-chunks --inspect-quality`
+  reported `member_fetch.cache_hits = 10` and
+  `member_fetch.archive_reads = 0`, ingested `7` BioC papers, skipped
+  `3` low-value shell papers, wrote `254` canonical rows, and backfilled
+  `9` chunk rows plus `86` chunk-member rows with a zero-flag QA report
+- the joined one-command window runner is now live-validated too:
+  `ingest_bioc_archive_window.py --archive-name BioCXML.7.tar.gz --start-document-ordinal 1001 --limit 4 --max-documents 200 --seed-chunk-version --backfill-chunks --inspect-quality`
+  discovered a bounded later window, prewarmed `4` members, then ingested the
+  same `4` papers with `member_fetch.cache_hits = 4` and
+  `member_fetch.archive_reads = 0`, wrote `1031` canonical rows, and
+  backfilled `43` chunk rows plus `468` chunk-member rows with a zero-flag QA
+  report
+- the slightly larger later-window pattern is now live-validated too:
+  `ingest_bioc_archive_window.py --archive-name BioCXML.8.tar.gz --start-document-ordinal 1001 --limit 8 --max-documents 300 --seed-chunk-version --backfill-chunks --inspect-quality`
+  scanned `110` docs, reused `30` manifest rows, prewarmed `8` members, then
+  ingested `7` BioC papers with `member_fetch.cache_hits = 8` and
+  `member_fetch.archive_reads = 0`, skipped `1` low-value shell paper, wrote
+  `823` canonical rows, and backfilled `42` chunk rows plus `293`
+  chunk-member rows with a zero-flag QA report
+- the next archive also holds at a larger bounded window:
+  `ingest_bioc_archive_window.py --archive-name BioCXML.9.tar.gz --start-document-ordinal 1001 --limit 10 --max-documents 350 --seed-chunk-version --backfill-chunks --inspect-quality`
+  scanned `100` docs, prewarmed `10` members, then ingested `10` BioC papers
+  with `member_fetch.cache_hits = 10` and `member_fetch.archive_reads = 0`,
+  wrote `740` canonical rows, and backfilled `46` chunk rows plus `266`
+  chunk-member rows with a zero-flag QA report
+- the generic S2 refresh path is now quality-aware too:
+  `refresh_rag_warehouse.py --limit 8 --max-s2-shards 1 --skip-bioc-fallback --seed-chunk-version --backfill-chunks --inspect-quality`
+  ingested `8` new `s2orc_v2` papers, wrote `3022` canonical rows, backfilled
+  `217` chunk rows plus `1466` chunk-member rows, and returned a zero-flag QA
+  report for all `8` ingested papers
+- the same generic S2 path also now holds under byte-budgeted staged writes:
+  `refresh_rag_warehouse.py --limit 6 --max-s2-shards 1 --skip-bioc-fallback --seed-chunk-version --backfill-chunks --inspect-quality --stage-row-budget 0 --stage-byte-budget 350000`
+  ingested `6` new `s2orc_v2` papers, wrote `2574` canonical rows across `5`
+  staged writes, backfilled `206` chunk rows plus `1433` chunk-member rows,
+  and returned a zero-flag QA report for all `6` ingested papers
+- the bounded generic S2 path also holds cleanly at a slightly larger size:
+  `refresh_rag_warehouse.py --limit 12 --max-s2-shards 1 --skip-bioc-fallback --seed-chunk-version --backfill-chunks --inspect-quality --stage-row-budget 0 --stage-byte-budget 500000`
+  ingested `12` new `s2orc_v2` papers, wrote `3551` canonical rows across `6`
+  staged writes, backfilled `267` chunk rows plus `1894` chunk-member rows,
+  and returned a zero-flag QA report for all `12` ingested papers
+- a sequential bounded S2 campaign runner now also exists:
+  `engine/db/scripts/run_s2_refresh_campaign.py`
+- that campaign path is now live-validated too:
+  `run_s2_refresh_campaign.py --run-count 2 --limit-per-run 6 --max-s2-shards 1 --stage-row-budget 0 --stage-byte-budget 450000 --seed-chunk-version --backfill-chunks --inspect-quality`
+  ran two source-driven S2 refreshes with aggregate results:
+  - `12` selected targets
+  - `12` ingested papers
+  - `4399` canonical rows
+  - `303` chunk rows
+  - `2072` chunk-member rows
+  - `0` QA-flagged papers
+- the sequential bounded campaign runner is now live-validated too:
+  `ingest_bioc_archive_campaign.py --archive-name BioCXML.8.tar.gz --start-document-ordinal 1301 --window-count 2 --max-documents-per-window 180 --limit-per-window 6 --seed-chunk-version --backfill-chunks --inspect-quality`
+  ran two later windows with aggregate results:
+  - `12` selected candidates
+  - `7` ingested papers
+  - `5` low-value shell skips
+  - `2920` canonical rows
+  - `172` chunk rows
+  - `1041` chunk-member rows
+  - `0` QA-flagged papers
+  - prewarm remained the only archive-read cost: `12` prewarm reads,
+    `12` ingest cache hits, `0` ingest archive reads
+- a second campaign over the next archive also now holds:
+  `ingest_bioc_archive_campaign.py --archive-name BioCXML.9.tar.gz --start-document-ordinal 1201 --window-count 2 --max-documents-per-window 200 --limit-per-window 6 --seed-chunk-version --backfill-chunks --inspect-quality`
+  ran two later windows with aggregate results:
+  - `12` selected candidates
+  - `10` ingested papers
+  - `2` low-value shell skips
+  - `2332` canonical rows
+  - `156` chunk rows
+  - `867` chunk-member rows
+  - `0` QA-flagged papers
+  - prewarm remained the only archive-read cost: `12` prewarm reads,
+    `12` ingest cache hits, `0` ingest archive reads
+- release-sidecar BioC archive manifests now live in:
+  `data/pubtator/releases/<PUBTATOR_RELEASE_ID>/manifests/biocxml.archive_manifest.sqlite`
+- bounded BioC archive discovery and one-step ingest now support
+  `--start-document-ordinal`, so later archive windows can be scanned
+  deliberately and rerun deterministically
+- bounded warehouse-quality inspection now lives in:
+  `engine/db/scripts/inspect_rag_warehouse_quality.py`
+- that QA layer is now slightly semantic-aware too:
+  it still primarily checks structural warehouse shape, but it now flags
+  suspicious structural document titles like `Introduction` so a green report
+  is less likely to mask a bad BioC title promotion
 - same-corpus BioC overlay discovery can now be requested directly from that
   path with `--existing-s2-only`, so archive scans can target
   "already-ingested S2 paper, still missing BioC overlay" instead of general
@@ -928,6 +1055,73 @@ Storage rule for large refreshes:
   discovered `3` new BioC candidates, seeded `3` BioC locator entries
   directly from discovery results, and ingested `631` canonical rows without a
   separate locator-refresh pass
+- the archive-ingest path can now also seed/backfill chunks inline:
+  `ingest_bioc_archive_targets.py --archive-name BioCXML.1.tar.gz --limit 2 --seed-chunk-version --backfill-chunks`
+  ingested `2` BioC papers, seeded chunk version metadata, and backfilled
+  `2` chunk rows plus `23` chunk-member rows in the same run
+- the same operator can now also run bounded post-ingest warehouse QA:
+  `ingest_bioc_archive_targets.py --archive-name BioCXML.2.tar.gz --limit 2 --seed-chunk-version --backfill-chunks --inspect-quality`
+  ingested `2` BioC papers, backfilled `19` chunk rows plus `114`
+  chunk-member rows, and returned a zero-flag quality report for the batch
+- later-window BioC ingest is now live-validated too:
+  `ingest_bioc_archive_targets.py --archive-name BioCXML.2.tar.gz --start-document-ordinal 1001 --limit 2 --max-documents 120 --seed-chunk-version --backfill-chunks --inspect-quality`
+  scanned archive ordinals `1001..1120`, ingested `2` BioC papers, wrote
+  `120` canonical rows, backfilled `4` chunk rows plus `34` chunk-member
+  rows, and returned a zero-flag quality report for both papers
+- a second later-window batch is also validated:
+  `ingest_bioc_archive_targets.py --archive-name BioCXML.3.tar.gz --start-document-ordinal 1001 --limit 2 --max-documents 120 --seed-chunk-version --backfill-chunks --inspect-quality`
+  scanned archive ordinals `1001..1120`, ingested `2` BioC papers, wrote
+  `54` canonical rows, backfilled `2` chunk rows plus `22` chunk-member rows,
+  and returned a zero-flag quality report for both papers
+- later-window `.tar.gz` BioC scans remain sequential at the archive level
+  even with `--start-document-ordinal`; the flag is good for bounded
+  progression and reproducible windows, not true random access
+- BioC archive discovery now writes a narrow manifest sidecar as it scans:
+  archive name, document ordinal, member name, and document id
+- repeat discovery over a covered window now reuses that manifest instead of
+  rescanning the tar stream:
+  - cold `BioCXML.4.tar.gz` window at `--start-document-ordinal 1001 --limit 2`
+    scanned `25` docs, wrote `25` manifest entries, and selected
+    `211023453` / `211070939`
+  - immediate repeat of the same window scanned the same bounded logical
+    window but reported `manifest_entries_used = 25` and
+    `manifest_entries_written = 0`
+- low-value BioC shell documents are now explicitly excluded from warehouse
+  persistence:
+  - title-only / empty-abstract BioC docs with `0` blocks, `0` sentences, and
+    `0` references are skipped before write time
+  - archive manifests now remember those rows as
+    `low_value_shell_document`, so later-window discovery advances past them
+    instead of rediscovering them
+  - two existing shell docs (`32037055`, `19630648`) were removed from the
+    warehouse and marked in the manifest sidecar
+  - BioC source locators now preserve `member_name` alongside
+    `archive_name + document_ordinal`, so later targeted ingest work has a
+    stable archive-member identity to hang cache/index strategies off
+  - precomputed discovery reports can now be loaded even when they predate the
+    `member_name` field; warmed report reuse no longer breaks on that model
+    evolution
+  - direct archive ingest now also consults manifest skip memory before fetch,
+    so a warmed rerun drops known low-value shell docs before reopening the
+    archive
+  - warehouse QA now reports `empty_shell_bioc_docs = 0`
+- manifest coverage accounting now advances past skipped ordinals too, so a
+  skipped manifest row still counts as covered for later-window discovery
+- the remaining dominant cost on later-window BioC runs is now the actual
+  archive parse traversal to the selected member ordinals, not candidate
+  rediscovery; the next real speedup on this lane is archive parse/index
+  strategy rather than more discovery plumbing
+- direct live validation now exists for the tighter operator path too:
+  - `bioc-archive-direct-live-20260331-a` used
+    `--discovery-report-path .tmp/bioc-discovery-prewarm-20260330-c.json`
+    with `--limit 2 --seed-chunk-version --backfill-chunks --inspect-quality`
+  - it ingested `41325340`, skipped low-value shell `37535630`, wrote `26`
+    canonical rows, and backfilled `1` chunk plus `8` chunk-member rows
+  - immediate rerun `bioc-archive-direct-live-20260331-b` became a fast no-op:
+    one candidate was already ingested and the other was dropped from fetch by
+    manifest skip memory
+- that means the next real optimization step is expanding manifest coverage for
+  hot BioC archives, not adding more archive-window CLI knobs
 - the canonical graph temp/checkpoint path is WSL-native and should remain on
   ext4-backed storage
 - if that storage lives physically on the `E:` drive, it should be the WSL
@@ -1028,21 +1222,29 @@ The DB-side artifacts for that path now exist in the repo:
 - runtime readiness inspector:
   `engine/db/scripts/inspect_chunk_runtime.py`
 - runtime chunk-version seeder:
-  `engine/app/rag/chunk_seed.py`
+  `engine/app/rag_ingest/chunk_seed.py`
 
 Live chunk runtime status:
 - `paper_chunk_versions = 1`
 - current live totals after bounded backfill plus chunk-quality rebackfill:
-  - `paper_chunks = 648`
-  - `paper_chunk_members = 4996`
+  - `paper_chunks = 675`
+  - `paper_chunk_members = 5189`
 - bounded backfill and rebackfill have now executed across the initial covered
   subset plus the residual oversize-chunk papers
+- later-window covered BioC papers are also chunk-runtime ready:
+  - `inspect_chunk_runtime.py --corpus-id 20499589 --corpus-id 211088512 --corpus-id 210934160 --corpus-id 211023499`
+    returned:
+    - `grounded_answer_runtime_ready = true`
+    - `full_cutover_ready = true`
+    - `chunk_rows = 6`
+    - `chunk_member_rows = 56`
+    - `entity_mention_rows = 102`
 - `inspect_chunk_runtime.py` now reports:
   - `grounded_answer_runtime_ready = true` for covered papers
   - `full_cutover_ready = true` for a covered paper such as `283349924`
     after the post-load lexical fallback indexes were applied
 - runtime chunk backfill writer contract:
-  `engine/app/rag/chunk_backfill.py`
+  `engine/app/rag_ingest/chunk_backfill.py`
 - end-to-end bounded refresh + chunk lane is also live:
   `refresh-chunk-lane-smoke-20260330-b` ingested `2` new papers, wrote `401`
   canonical rows, seeded the default chunk-version row, and backfilled `36`

@@ -58,9 +58,10 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     pointSizeRange: [1.5, 5],
     requiredTable: 'base_points',
     defaultInfoWidgets: [
+      { column: 'year', kind: 'histogram', label: 'Year' },
+      { column: 'paperReferenceCount', kind: 'histogram', label: 'References' },
       { column: 'journal', kind: 'facet-summary', label: 'Journals' },
-      { column: 'semanticGroups', kind: 'facet-summary', label: 'Entity groups' },
-      { column: 'relationCategories', kind: 'facet-summary', label: 'Relation categories' },
+      { column: 'semanticGroups', kind: 'facet-summary', label: 'Entity Groups' },
     ],
     searchableFields: {
       displayLabel: 'Label',

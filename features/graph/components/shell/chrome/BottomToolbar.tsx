@@ -1,6 +1,6 @@
 "use client";
 
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmograph } from "@/features/graph/cosmograph";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { GanttChart, Table2 } from "lucide-react";
 import {

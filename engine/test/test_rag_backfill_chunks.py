@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from app.rag.chunk_backfill import ChunkBackfillPaperResult, ChunkBackfillResult
 from app.rag.parse_contract import (
     PaperBlockKind,
     SectionRole,
     SentenceSegmentationSource,
 )
 from app.rag.rag_schema_contract import PaperBlockRow, PaperSentenceRow
+from app.rag_ingest.chunk_backfill import ChunkBackfillPaperResult, ChunkBackfillResult
 from db.scripts.backfill_structural_chunks import (
     CanonicalChunkRows,
     backfill_default_chunks,
@@ -90,6 +90,58 @@ def test_backfill_default_chunks_reports_execution_and_missing_corpus_ids():
     assert report.papers[0].executed is True
     assert report.papers[0].written_rows == 2
     assert report.papers[1].skipped_reason == "no_block_rows"
+
+
+def test_backfill_default_chunks_allows_preview_key_override():
+    class FakeLoader:
+        def load_rows(self, *, corpus_ids):
+            assert corpus_ids == [12345]
+            return {
+                12345: CanonicalChunkRows(
+                    corpus_id=12345,
+                    blocks=[
+                        PaperBlockRow(
+                            corpus_id=12345,
+                            block_ordinal=0,
+                            section_ordinal=1,
+                            section_role=SectionRole.RESULTS,
+                            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+                            text="Melatonin reduced delirium incidence.",
+                        )
+                    ],
+                    sentences=[],
+                )
+            }
+
+    class FakeRunner:
+        def backfill_row_groups(self, *, chunk_version, row_groups):
+            assert chunk_version.chunk_version_key == "preview-stanza-hybrid-v1"
+            return ChunkBackfillResult(
+                chunk_version_key=chunk_version.chunk_version_key,
+                chunk_rows=1,
+                chunk_member_rows=1,
+                batch_total_rows=2,
+                written_rows=2,
+                papers=[
+                    ChunkBackfillPaperResult(
+                        corpus_id=row_groups[0].corpus_id,
+                        chunk_rows=1,
+                        chunk_member_rows=1,
+                    )
+                ],
+                deferred_stage_names=[],
+            )
+
+    report = backfill_default_chunks(
+        corpus_ids=[12345],
+        source_revision_keys=["s2orc_v2:2026-03-10"],
+        parser_version="mixed:parser-v1,parser-v2",
+        chunk_version_key="preview-stanza-hybrid-v1",
+        loader=FakeLoader(),
+        runner=FakeRunner(),
+    )
+
+    assert report.chunk_version_key == "preview-stanza-hybrid-v1"
 
 
 def test_backfill_default_chunks_surfaces_deferred_stage_names():

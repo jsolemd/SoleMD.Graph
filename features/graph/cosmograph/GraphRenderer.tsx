@@ -15,19 +15,15 @@ import {
 } from "@/features/graph/lib/cosmograph-selection";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
-
 import { useCosmographConfig } from "./hooks/use-cosmograph-config";
-import { useThemeCrossfade } from "./hooks/use-theme-crossfade";
 import { useZoomLabels } from "./hooks/use-zoom-labels";
 import { usePointsFiltered } from "./hooks/use-points-filtered";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
 import { resolveGraphContentContrastLevel } from "@/features/graph/lib/control-contrast";
 
-// Static label style strings — no need to recreate per render
-const POINT_LABEL_STYLE =
-  "background: var(--graph-label-bg); border-radius: 4px; box-shadow: var(--graph-label-shadow);";
-const CLUSTER_LABEL_STYLE =
-  "background: var(--graph-cluster-label-bg); font-weight: 500; border-radius: 4px; box-shadow: var(--graph-cluster-label-shadow);";
+// Shared label style — point, cluster, and hover labels all use the same treatment
+const LABEL_STYLE =
+  "background: var(--graph-label-bg); border-radius: 4px; box-shadow: var(--graph-label-shadow); font-weight: 400 !important; text-shadow: 0 0 0.1px currentColor;";
 
 export default function CosmographRenderer({
   canvas,
@@ -52,10 +48,10 @@ export default function CosmographRenderer({
   const setGraphContentContrastLevel = useGraphStore(
     (s) => s.setGraphContentContrastLevel,
   );
+  const setZoomedIn = useGraphStore((s) => s.setZoomedIn);
   const selectNode = useGraphStore((s) => s.selectNode);
 
   const config = useCosmographConfig(canvas);
-  const crossfadeOpacity = useThemeCrossfade(config.isDark);
   // Destructure values referenced in useCallback deps so the linter can track them
   const {
     activeLayer, fitViewPadding,
@@ -225,6 +221,8 @@ export default function CosmographRenderer({
     pointLabelColumn: config.pointLabelColumn,
     showPointLabels: config.showPointLabels,
     showDynamicLabels: config.showDynamicLabels,
+    showHoveredPointLabel: config.showHoveredPointLabel,
+    hoverLabelAlwaysOn: config.hoverLabelAlwaysOn,
     zoomedIn,
     isActivelyZooming,
     hasFocusedPoint: focusedPointIndex != null,
@@ -249,7 +247,39 @@ export default function CosmographRenderer({
     };
   }, [graphContentContrastLevel, setGraphContentContrastLevel]);
 
+  useEffect(() => {
+    setZoomedIn(zoomedIn);
+  }, [zoomedIn, setZoomedIn]);
+
+  // The CSS filter on [data-graph-canvas] canvas creates a stacking context
+  // that paints the WebGL canvas above the d3-brush SVG overlay, blocking
+  // rect/poly selection.  Elevate the brush SVG so it stacks on top.
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = wrapperRef.current;
+    if (!container) return;
+    const brushSvg = container.querySelector<SVGSVGElement>("svg");
+    if (brushSvg?.querySelector(".brush-group")) {
+      brushSvg.style.zIndex = "2";
+    }
+  }, []);
+
+  // data-graph-canvas drives the CSS rule in globals.css that applies
+  // --graph-canvas-filter to the <canvas> only (not labels).  In light mode
+  // the WebGL background is transparent so the filter only hits colored points;
+  // the visible background lives on the sibling div behind the canvas.
   return (
+    <div ref={wrapperRef} data-graph-canvas style={{ position: "relative", width: "100%", height: "100%" }}>
+    {/* Theme background — unaffected by the canvas CSS filter */}
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: config.colors.bg,
+        transition: "background 80ms ease-out",
+        pointerEvents: "none",
+      }}
+    />
     <Cosmograph
       ref={cosmographRef}
       duckDBConnection={canvas.duckDBConnection}
@@ -287,7 +317,7 @@ export default function CosmographRenderer({
       linkDefaultArrows={config.hasLinks ? config.linkDefaultArrows : undefined}
       scaleLinksOnZoom={config.hasLinks ? config.scaleLinksOnZoom : undefined}
       enableSimulation={false}
-      backgroundColor={config.colors.bg}
+      backgroundColor={config.isDark ? config.colors.bg : "transparent"}
       pointSizeRange={config.pointSizeRange}
       pointOpacity={config.effectiveOpacity}
       pointGreyoutOpacity={config.colors.greyout}
@@ -302,15 +332,14 @@ export default function CosmographRenderer({
       showFocusedPointLabel={labelMode.showFocusedPointLabel}
       pointSamplingDistance={170}
       preservePointPositionsOnDataUpdate
-      // Hover labels are still DuckDB-backed natively, so suspend them during
-      // camera motion and keep the adapter around Cosmograph itself thin.
-      showHoveredPointLabel={config.showHoveredPointLabel && !isActivelyZooming}
+      showHoveredPointLabel={labelMode.showHoveredPointLabel}
       renderHoveredPointRing={config.renderHoveredPointRing}
       hoveredPointRingColor={config.colors.ring}
       pointLabelFontSize={11}
       pointLabelColor={config.colors.label}
-      pointLabelClassName={POINT_LABEL_STYLE}
-      clusterLabelClassName={CLUSTER_LABEL_STYLE}
+      pointLabelClassName={LABEL_STYLE}
+      clusterLabelClassName={LABEL_STYLE}
+      hoveredPointLabelClassName={LABEL_STYLE}
       selectPointOnClick={isLocked ? false : config.hasLinks ? true : "single"}
       selectPointOnLabelClick={isLocked ? false : config.hasLinks ? true : "single"}
       focusPointOnClick={!isLocked}
@@ -325,12 +354,8 @@ export default function CosmographRenderer({
       onPointsFiltered={handlePointsFiltered}
       onPointClick={handlePointClick}
       onBackgroundClick={handleBackgroundClick}
-      style={{
-        width: "100%",
-        height: "100%",
-        opacity: crossfadeOpacity,
-        transition: "opacity 80ms ease-out",
-      }}
+      style={{ position: "relative", width: "100%", height: "100%" }}
     />
+    </div>
   );
 }

@@ -16,3 +16,5 @@ export { FilterBarWidget } from "./widgets/FilterBarWidget";
 export { FilterHistogramWidget } from "./widgets/FilterHistogramWidget";
 export { ColorLegends } from "./widgets/ColorLegends";
 export { SizeLegend } from "./widgets/SizeLegend";
+
+export { useCosmograph } from "@cosmograph/react";

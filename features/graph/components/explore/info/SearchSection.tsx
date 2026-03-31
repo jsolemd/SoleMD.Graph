@@ -14,10 +14,11 @@ import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import {
   panelCardStyle,
+  panelSelectStyles,
   panelTextDimStyle,
   panelTextStyle,
+  sectionLabelStyle,
 } from "../../panels/PanelShell";
-import { sectionLabelStyle } from "../../panels/PanelShell";
 import { useSearchDrillIn } from "./use-search-drill-in";
 import { useSearchResults } from "./use-search-results";
 
@@ -81,6 +82,7 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
               setField(value);
             }
           }}
+          styles={panelSelectStyles}
         />
 
         <TextInput
@@ -96,21 +98,22 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
             clearVisibilityFocus();
             setQuery(event.currentTarget.value);
           }}
+          styles={{ input: panelSelectStyles.input }}
         />
 
         {canSearch && loading ? (
           <div className="flex items-center gap-2">
             <Loader size="xs" color="var(--brand-accent)" />
-            <Text size="xs" style={panelTextDimStyle}>
+            <Text style={panelTextDimStyle}>
               Searching DuckDB…
             </Text>
           </div>
         ) : canSearch && error ? (
-          <Text size="xs" style={panelTextDimStyle}>
+          <Text style={panelTextDimStyle}>
             {error}
           </Text>
         ) : canSearch && results.length === 0 ? (
-          <Text size="xs" style={panelTextDimStyle}>
+          <Text style={panelTextDimStyle}>
             No matches
           </Text>
         ) : null}
@@ -129,12 +132,12 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
                 </Text>
                 {result.matchedValue &&
                   result.matchedValue !== result.label && (
-                    <Text size="xs" style={panelTextDimStyle}>
+                    <Text style={panelTextDimStyle}>
                       {truncateLabel(result.matchedValue, 112)}
                     </Text>
                   )}
                 {result.subtitle && (
-                  <Text size="xs" style={panelTextDimStyle}>
+                  <Text style={panelTextDimStyle}>
                     {truncateLabel(result.subtitle, 112)}
                   </Text>
                 )}

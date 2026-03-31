@@ -18,9 +18,9 @@ from app.rag.serving_contract import (
     PaperChunkVersionRecord,
     SentenceOverlapPolicy,
 )
-from app.rag.write_contract import RagWarehouseWriteBatch
-from app.rag.write_preview import build_write_preview
-from app.rag.write_repository import WriteMethod, WriteStage
+from app.rag_ingest.write_contract import RagWarehouseWriteBatch
+from app.rag_ingest.write_preview import build_write_preview
+from app.rag_ingest.write_repository import WriteMethod, WriteStage
 
 
 def test_build_write_preview_joins_plan_and_sql_templates():

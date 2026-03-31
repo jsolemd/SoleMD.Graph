@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "framer-motion";
-import { Loader, Text } from "@mantine/core";
 import { GraphShell, ColorLegends, SizeLegend } from "@/features/graph/cosmograph";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { getModeConfig } from "@/features/graph/lib/modes";
@@ -21,7 +20,7 @@ import { QueryPanel } from "../explore/query-panel";
 import { DataTable } from "../explore/data-table";
 import { DetailPanel } from "../panels/DetailPanel";
 import { AboutPanel } from "../panels/AboutPanel";
-import { GraphBundleErrorState } from "./loading";
+import { GraphBundleErrorState, GraphBundleLoadingOverlay } from "./loading";
 import { GraphAttribution, TIMELINE_HEIGHT, BottomToolbar } from "./chrome";
 import type { GraphBundle, GraphStats } from "@/features/graph/types";
 import {
@@ -43,13 +42,6 @@ const legendStyle: React.CSSProperties = {
 
 const PREFETCH_FILTER_COUNT = 4;
 const DEFERRED_CATEGORICAL_WARM_DELAY_MS = 2500;
-const GRAPH_LOADING_LINES = [
-  "Placing papers into the canvas.",
-  "Settling clusters into their neighborhoods.",
-  "Warming filters for the first pass.",
-  "Composing the active corpus view.",
-];
-const GRAPH_LOADING_COPY_INTERVAL_MS = 2200;
 
 export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const mode = useGraphStore((s) => s.mode);
@@ -86,26 +78,6 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const setShowTimeline = useDashboardStore((s) => s.setShowTimeline);
   const setTableOpen = useDashboardStore((s) => s.setTableOpen);
   const [graphPaintReady, setGraphPaintReady] = useState(false);
-  const [loadingCopyIndex, setLoadingCopyIndex] = useState(0);
-
-  useEffect(() => {
-    setLoadingCopyIndex(0);
-  }, [bundle.bundleChecksum]);
-
-  useEffect(() => {
-    const shouldAnimateCopy = loading || !canvas || !queries || !graphPaintReady;
-    if (!shouldAnimateCopy) {
-      return;
-    }
-
-    const interval = globalThis.setInterval(() => {
-      setLoadingCopyIndex((current) => (current + 1) % GRAPH_LOADING_LINES.length);
-    }, GRAPH_LOADING_COPY_INTERVAL_MS);
-
-    return () => {
-      globalThis.clearInterval(interval);
-    };
-  }, [canvas, graphPaintReady, loading, queries]);
 
   useEffect(() => {
     if (layout.autoShowPanels) setPanelsVisible(true);
@@ -279,51 +251,28 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
     bundle.bundleChecksum,
   ]);
 
-  const loadingCopy = GRAPH_LOADING_LINES[loadingCopyIndex] ?? GRAPH_LOADING_LINES[0];
-
   if (error) {
     return <GraphBundleErrorState error={error} />;
   }
 
-  if (loading || !canvas || !queries) {
-    return (
-      <GraphShell>
-        <ModeColorSync />
-        <div
-          className="fixed inset-0"
-          style={{ backgroundColor: "var(--graph-bg)" }}
-        >
-          <Wordmark />
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-            <Loader size="sm" color="var(--mode-accent)" />
-            <Text size="xs" c="dimmed">
-              {loadingCopy}
-            </Text>
-            {progress?.message ? (
-              <Text size="10px" c="dimmed" ta="center" maw={320}>
-                {progress.message}
-              </Text>
-            ) : null}
-          </div>
-          {!uiHidden && <PromptBox bundle={bundle} queries={null} />}
-        </div>
-      </GraphShell>
-    );
-  }
+  const isReady = !loading && canvas != null && queries != null;
+  const showLoading = !isReady || !graphPaintReady;
 
-  const stats: GraphStats = {
-    points: canvas.pointCounts.corpus,
-    pointLabel: "points",
-    papers: 0,
-    clusters:
-      typeof bundle.qaSummary?.["cluster_count"] === "number"
-        ? bundle.qaSummary["cluster_count"] as number
-        : 0,
-    noise:
-      typeof bundle.qaSummary?.["noise_count"] === "number"
-        ? bundle.qaSummary["noise_count"] as number
-        : 0,
-  };
+  const stats: GraphStats | null = canvas
+    ? {
+        points: canvas.pointCounts.corpus,
+        pointLabel: "points",
+        papers: 0,
+        clusters:
+          typeof bundle.qaSummary?.["cluster_count"] === "number"
+            ? (bundle.qaSummary["cluster_count"] as number)
+            : 0,
+        noise:
+          typeof bundle.qaSummary?.["noise_count"] === "number"
+            ? (bundle.qaSummary["noise_count"] as number)
+            : 0,
+      }
+    : null;
 
   return (
     <GraphShell>
@@ -332,33 +281,111 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         className="fixed inset-0"
         style={{ backgroundColor: "var(--graph-bg)" }}
       >
-        <div
-          className="absolute inset-0 overflow-hidden"
-          style={{
-            transform: canvasShifted ? "translateX(min(280px, 22.5vw))" : undefined,
-            transition: "transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
-          }}
-        >
-          <GraphCanvas
-            canvas={canvas}
-            queries={queries}
-            onFirstPaint={() => setGraphPaintReady(true)}
-          />
-        </div>
-
-        {!graphPaintReady && (
-          <div
-            className="absolute inset-0 z-20 flex items-center justify-center"
-            style={{ backgroundColor: "var(--graph-bg)" }}
-          >
-            <div className="flex flex-col items-center gap-2">
-              <Loader size="sm" color="var(--mode-accent)" />
-              <Text size="xs" c="dimmed">
-                {loadingCopy}
-              </Text>
+        {/* Canvas + data-dependent panels — only mount when data available */}
+        {!loading && canvas && queries && (
+          <>
+            <div
+              className="absolute inset-0 overflow-hidden"
+              style={{
+                transform: canvasShifted ? "translateX(min(280px, 22.5vw))" : undefined,
+                transition: "transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
+              }}
+            >
+              <GraphCanvas
+                canvas={canvas}
+                queries={queries}
+                onFirstPaint={() => setGraphPaintReady(true)}
+              />
             </div>
-          </div>
+
+            {/* Left panels share one AnimatePresence with mode="wait" so
+                switching (e.g. Config → Filters) exits before entering. */}
+            <AnimatePresence mode="wait">
+              {!uiHidden && panelsVisible && activePanel === "config" && (
+                <ConfigPanel key="config" />
+              )}
+              {!uiHidden && panelsVisible && activePanel === "filters" && (
+                <FiltersPanel
+                  key="filters"
+                  queries={queries}
+                  bundleChecksum={bundle.bundleChecksum}
+                  overlayRevision={canvas.overlayRevision}
+                />
+              )}
+              {!uiHidden && panelsVisible && activePanel === "info" && (
+                <InfoPanel key="info" queries={queries} canvas={canvas} />
+              )}
+              {!uiHidden && panelsVisible && activePanel === "query" && (
+                <QueryPanel
+                  key="query"
+                  bundle={bundle}
+                  runReadOnlyQuery={queries.runReadOnlyQuery}
+                />
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {!uiHidden && (
+                <DetailPanel bundle={bundle} queries={queries} />
+              )}
+            </AnimatePresence>
+
+            {!uiHidden && (showColorLegend || showSizeLegend) && (
+              <div
+                className="absolute right-4 z-30 flex flex-col gap-2 transition-[bottom] duration-200"
+                style={{
+                  bottom: 32
+                    + (showTimeline ? TIMELINE_HEIGHT : 0)
+                    + (tableOpen ? tableHeight : 0),
+                }}
+              >
+                {showSizeLegend && (
+                  <SizeLegend
+                    selectOnClick={!isSelectionLocked}
+                    style={legendStyle}
+                  />
+                )}
+                {showColorLegend && (
+                  <ColorLegends
+                    variant={isContinuousColor ? "range" : "type"}
+                    selectOnClick={!isSelectionLocked}
+                    style={legendStyle}
+                  />
+                )}
+              </div>
+            )}
+
+            <AnimatePresence>
+              {!uiHidden && panelsVisible && <CanvasControls queries={queries} />}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {!uiHidden && showTimeline && (
+                <TimelineBar
+                  queries={queries}
+                  bundleChecksum={bundle.bundleChecksum}
+                  overlayRevision={canvas.overlayRevision}
+                />
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {!uiHidden && tableOpen && (
+                <DataTable queries={queries} overlayRevision={canvas.overlayRevision} />
+              )}
+            </AnimatePresence>
+          </>
         )}
+
+        {/* Loading overlay — covers canvas until first paint */}
+        <AnimatePresence>
+          {showLoading && (
+            <GraphBundleLoadingOverlay
+              bundle={bundle}
+              progress={progress}
+              canvasReady={isReady}
+            />
+          )}
+        </AnimatePresence>
 
         <Wordmark />
 
@@ -366,87 +393,11 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
           {!uiHidden && activePanel === "about" && <AboutPanel />}
         </AnimatePresence>
 
-        {/* Left panels share one AnimatePresence with mode="wait" so
-            switching (e.g. Config → Filters) exits before entering. */}
-        <AnimatePresence mode="wait">
-          {!uiHidden && panelsVisible && activePanel === "config" && (
-            <ConfigPanel key="config" />
-          )}
-          {!uiHidden && panelsVisible && activePanel === "filters" && (
-            <FiltersPanel
-              key="filters"
-              queries={queries}
-              bundleChecksum={bundle.bundleChecksum}
-              overlayRevision={canvas.overlayRevision}
-            />
-          )}
-          {!uiHidden && panelsVisible && activePanel === "info" && (
-            <InfoPanel key="info" queries={queries} canvas={canvas} />
-          )}
-          {!uiHidden && panelsVisible && activePanel === "query" && (
-            <QueryPanel
-              key="query"
-              bundle={bundle}
-              runReadOnlyQuery={queries.runReadOnlyQuery}
-            />
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {!uiHidden && (
-            <DetailPanel bundle={bundle} queries={queries} />
-          )}
-        </AnimatePresence>
-
-        {!uiHidden && (showColorLegend || showSizeLegend) && (
-          <div
-            className="absolute right-4 z-30 flex flex-col gap-2 transition-[bottom] duration-200"
-            style={{
-              bottom: 16
-                + (showTimeline ? TIMELINE_HEIGHT : 0)
-                + (tableOpen ? tableHeight : 0),
-            }}
-          >
-            {showSizeLegend && (
-              <SizeLegend
-                selectOnClick={!isSelectionLocked}
-                style={legendStyle}
-              />
-            )}
-            {showColorLegend && (
-              <ColorLegends
-                variant={isContinuousColor ? "range" : "type"}
-                selectOnClick={!isSelectionLocked}
-                style={legendStyle}
-              />
-            )}
-          </div>
-        )}
-
-        <AnimatePresence>
-          {!uiHidden && panelsVisible && <CanvasControls queries={queries} />}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {!uiHidden && showTimeline && (
-            <TimelineBar
-              queries={queries}
-              bundleChecksum={bundle.bundleChecksum}
-              overlayRevision={canvas.overlayRevision}
-            />
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {!uiHidden && tableOpen && (
-            <DataTable queries={queries} overlayRevision={canvas.overlayRevision} />
-          )}
-        </AnimatePresence>
-
+        {/* Chrome — always rendered for stable layout */}
         {!uiHidden && panelsVisible && <BottomToolbar />}
         {!uiHidden && <GraphAttribution />}
-
-        {!uiHidden && <PromptBox bundle={bundle} queries={queries} />}
-        {!uiHidden && layout.showStatsBar && (
+        {!uiHidden && <PromptBox bundle={bundle} queries={queries ?? null} />}
+        {!uiHidden && layout.showStatsBar && stats != null && (
           <div className="absolute right-3 top-[52px] z-40 flex flex-col items-end gap-1.5">
             <StatsBar stats={stats} />
           </div>

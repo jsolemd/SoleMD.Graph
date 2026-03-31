@@ -61,8 +61,10 @@ Rule:
 - do not treat this plan file as the canonical stable contract
 - move finalized behavior into `docs/map/rag.md`
 - keep open questions, sequencing, and provisional designs here
-- keep DB-side preview and migration-helper code under `engine/db`; keep
-  runtime retrieval/parsing/serving code under `engine/app/rag`
+- keep DB-side preview and migration-helper code under `engine/db`
+- keep active retrieval/grounding/serving code under `engine/app/rag`
+- keep refresh/backfill/archive/source-locator operations under
+  `engine/app/rag_ingest`
 
 ## Implementation Tracker
 
@@ -217,7 +219,8 @@ Current implementation tracker for the first evidence vertical slice:
   not silently include fallback sentence segmentation when a chunk version
   disallows it
 - [x] engine-owned refresh orchestration now exists in
-  `engine/app/rag/orchestrator.py`, with `engine/db/scripts/refresh_rag_warehouse.py`
+  `engine/app/rag_ingest/orchestrator.py`, with
+  `engine/db/scripts/refresh_rag_warehouse.py`
   as a thin wrapper and rerunnable operator flags for
   `--corpus-ids-file`, `--checkpoint-root`, `--report-path`,
   `--skip-s2-primary`, `--seed-chunk-version`, and `--backfill-chunks`
@@ -225,8 +228,8 @@ Current implementation tracker for the first evidence vertical slice:
   `refresh_rag_warehouse.py`, `backfill_structural_chunks.py`, and
   `seed_default_chunk_version.py`, with one canonical flag spelling per option
 - [x] reusable chunk-backfill runtime logic now lives in
-  `engine/app/rag/chunk_backfill_runtime.py`, so the backfill script is a thin
-  wrapper instead of the main implementation surface
+  `engine/app/rag_ingest/chunk_backfill_runtime.py`, so the backfill script is
+  a thin wrapper instead of the main implementation surface
 - [x] row-wise warehouse COPY SQL now uses plain `COPY ... FROM STDIN`
   semantics aligned with psycopg3 `copy.write_row(...)`, rather than mixing
   row-wise COPY with CSV-format clauses
@@ -291,14 +294,15 @@ Near-term work should stay bounded by the current paper-level baseline:
     `refresh-row-budget-smoke-20260330` honored `requested_limit = 3` and
     `stage_row_budget = 100`, wrote `1007` canonical rows, and split the S2
     ingest into `3` staged writes with `max_batch_total_rows = 422`
-  - current canonical warehouse totals after the latest native batches:
-    `paper_documents = 244`, `paper_sections = 3030`, `paper_blocks = 7414`,
-    `paper_sentences = 34373`, `paper_references = 9991`,
-    `paper_chunk_versions = 1`, `paper_chunks = 648`,
-    `paper_chunk_members = 4996`
+  - current canonical warehouse totals after the latest native batches, BioC
+    growth, low-value BioC cleanup, and the newest later-window BioC runs:
+    `paper_documents = 355`, `paper_sections = 4054`, `paper_blocks = 9494`,
+    `paper_sentences = 45331`, `paper_references = 12603`,
+    `paper_chunk_versions = 1`, `paper_chunks = 2269`,
+    `paper_chunk_members = 15785`
   - live canonical warehouse source coverage is now:
-    `solemd.paper_document_sources = 210` `s2orc_v2` rows and
-    `solemd.paper_document_sources = 34` `biocxml` rows
+    `solemd.paper_document_sources = 248` `s2orc_v2` rows and
+    `solemd.paper_document_sources = 107` `biocxml` rows
   - explicit targeted refresh now has a release-sidecar locator path under
     release `manifests/` instead of scanning broad S2/BioC unit sets whenever
     the locator exists:
@@ -311,12 +315,69 @@ Near-term work should stay bounded by the current paper-level baseline:
     coverage in the same run
   - inline locator refresh now reuses existing sidecar coverage and only scans
     missing corpus ids, which keeps rerunnable targeted refreshes bounded
+  - operational refresh/backfill/archive workflows now live under
+    `engine/app/rag_ingest/`, while active retrieval/grounding/runtime stays
+    under `engine/app/rag/`
+  - `engine/app/rag_ingest/` now also owns the warehouse writer,
+    staged-write planning, chunk seed/backfill, and resumable ingest
+    checkpoint helpers that support monthly refreshes
   - operator inspection for current sidecar coverage now lives in
     `engine/db/scripts/inspect_rag_source_locator.py`
   - bounded BioC archive target discovery now lives in
     `engine/db/scripts/discover_bioc_archive_targets.py`
   - bounded new-ingest BioC archive execution with direct locator seeding now
     lives in `engine/db/scripts/ingest_bioc_archive_targets.py`
+  - bounded BioC archive-member cache prewarm now lives in
+    `engine/db/scripts/prewarm_bioc_archive_member_cache.py`
+  - a one-command bounded BioC window runner now lives in
+    `engine/db/scripts/ingest_bioc_archive_window.py`
+  - that same operator can now ingest directly from a bounded precomputed
+    discovery report via `--discovery-report-path`, so archive-window prewarm
+    and bounded ingest no longer require a second candidate-discovery pass
+  - the one-command later-window runner is now validated at larger batch sizes:
+    - `BioCXML.8`, `--limit 8`, `--max-documents 300`:
+      `7` ingested, `1` low-value shell skip, `823` canonical rows,
+      `42` chunk rows, `293` chunk-member rows, zero QA flags
+    - `BioCXML.9`, `--limit 10`, `--max-documents 350`:
+      `10` ingested, `0` low-value shell skips, `740` canonical rows,
+      `46` chunk rows, `266` chunk-member rows, zero QA flags
+  - the generic S2 refresh path now also supports inline warehouse QA through
+    `--inspect-quality`
+  - bounded live S2 proofs now exist on that generic path too:
+    - `s2-quality-20260331-a`:
+      `8` ingested `s2orc_v2` papers, `3022` canonical rows,
+      `217` chunk rows, `1466` chunk-member rows, zero QA flags
+    - `s2-quality-20260331-b` with byte-budgeted staged writes:
+      `6` ingested `s2orc_v2` papers, `2574` canonical rows across `5`
+      staged writes, `206` chunk rows, `1433` chunk-member rows,
+      zero QA flags
+    - `s2-quality-20260331-c` with a larger bounded byte budget:
+      `12` ingested `s2orc_v2` papers, `3551` canonical rows across `6`
+      staged writes, `267` chunk rows, `1894` chunk-member rows,
+      zero QA flags
+  - a sequential bounded S2 campaign path is now validated too:
+    `s2-campaign-20260331-a` ran two source-driven S2 refreshes with
+    `limit_per_run = 6` and aggregate results of `12` selected targets,
+    `12` ingested papers, `4399` canonical rows, `303` chunk rows,
+    `2072` chunk-member rows, and `0` QA-flagged papers
+  - the sequential BioC campaign path is now live-validated too:
+    `bioc-campaign-20260331-8b` ran two later windows over `BioCXML.8`
+    with aggregate results of `12` selected candidates, `7` ingested papers,
+    `5` low-value shell skips, `2920` canonical rows, `172` chunk rows,
+    `1041` chunk-member rows, and `0` QA-flagged papers
+  - a second sequential BioC campaign is now also validated:
+    `bioc-campaign-20260331-9b` ran two later windows over `BioCXML.9`
+    with aggregate results of `12` selected candidates, `10` ingested papers,
+    `2` low-value shell skips, `2332` canonical rows, `156` chunk rows,
+    `867` chunk-member rows, and `0` QA-flagged papers
+  - release-sidecar BioC archive manifests now live in
+    `manifests/biocxml.archive_manifest.sqlite`
+  - bounded warehouse-quality inspection now lives in
+    `engine/db/scripts/inspect_rag_warehouse_quality.py`
+  - QA is no longer purely structural: it now also flags suspicious structural
+    titles like `Introduction`, after a live spot-audit showed that a BioC
+    paper with otherwise good sections/blocks/chunks could still persist a bad
+    document title and pass the old zero-flag report
   - same-corpus overlay discovery can now target only already-ingested
     S2-backed warehouse papers with `--existing-s2-only`
   - bounded BioC overlay backfill over existing S2-backed warehouse papers now
@@ -351,6 +412,93 @@ Near-term work should stay bounded by the current paper-level baseline:
     discovered `3` new BioC targets, seeded `3` locator entries directly from
     discovery results, and ingested `631` canonical rows without a second
     locator-refresh scan
+  - the same operator can now seed/backfill chunks inline as well:
+    `ingest_bioc_archive_targets.py --archive-name BioCXML.1.tar.gz --limit 2 --seed-chunk-version --backfill-chunks`
+    ingested `2` BioC papers and backfilled `2` chunk rows plus `23`
+    chunk-member rows in the same bounded run
+  - the same operator can now also run bounded warehouse QA inline:
+    `ingest_bioc_archive_targets.py --archive-name BioCXML.2.tar.gz --limit 2 --seed-chunk-version --backfill-chunks --inspect-quality`
+    ingested `2` BioC papers, backfilled `19` chunk rows plus `114`
+    chunk-member rows, and returned a zero-flag quality report for the batch
+  - later-window BioC archive execution is now live-validated too:
+    `ingest_bioc_archive_targets.py --archive-name BioCXML.2.tar.gz --start-document-ordinal 1001 --limit 2 --max-documents 120 --seed-chunk-version --backfill-chunks --inspect-quality`
+    scanned ordinals `1001..1120`, ingested `2` BioC papers, wrote `120`
+    canonical rows, backfilled `4` chunk rows plus `34` chunk-member rows,
+    and returned a zero-flag quality report
+  - a second later-window validation batch also succeeded:
+    `ingest_bioc_archive_targets.py --archive-name BioCXML.3.tar.gz --start-document-ordinal 1001 --limit 2 --max-documents 120 --seed-chunk-version --backfill-chunks --inspect-quality`
+    scanned ordinals `1001..1120`, ingested `2` BioC papers, wrote `54`
+    canonical rows, backfilled `2` chunk rows plus `22` chunk-member rows,
+    and returned a zero-flag quality report
+  - the member-cache prewarm path is now live-validated too:
+    `prewarm_bioc_archive_member_cache.py --archive-name BioCXML.5.tar.gz --discovery-report-path ... --limit 6`
+    fetched `6` selected members into the release-sidecar cache with
+    `cache_hits = 0` and `archive_reads = 6`
+  - the sequential cache-backed direct-ingest proof is now live too:
+    `ingest_bioc_archive_targets.py --archive-name BioCXML.5.tar.gz --discovery-report-path ... --limit 6 --seed-chunk-version --backfill-chunks --inspect-quality`
+    then reported `member_fetch.cache_hits = 6`,
+    `member_fetch.archive_reads = 0`, ingested `5` BioC papers, skipped
+    `1` low-value shell paper, wrote `520` canonical rows, backfilled
+    `50` chunk rows plus `239` chunk-member rows, and returned a zero-flag QA
+    report for the covered papers
+  - the same cache-backed direct-ingest pattern is now validated at a larger
+    bounded batch size too:
+    `ingest_bioc_archive_targets.py --archive-name BioCXML.6.tar.gz --discovery-report-path ... --limit 10 --seed-chunk-version --backfill-chunks --inspect-quality`
+    reported `member_fetch.cache_hits = 10`,
+    `member_fetch.archive_reads = 0`, ingested `7` BioC papers, skipped
+    `3` low-value shell papers, wrote `254` canonical rows, backfilled
+    `9` chunk rows plus `86` chunk-member rows, and returned a zero-flag QA
+    report for the covered papers
+  - the joined one-command window runner is now live too:
+    `ingest_bioc_archive_window.py --archive-name BioCXML.7.tar.gz --start-document-ordinal 1001 --limit 4 --max-documents 200 --seed-chunk-version --backfill-chunks --inspect-quality`
+    discovered a bounded later window, prewarmed `4` members, then ingested
+    the same `4` papers with `member_fetch.cache_hits = 4`,
+    `member_fetch.archive_reads = 0`, wrote `1031` canonical rows, backfilled
+    `43` chunk rows plus `468` chunk-member rows, and returned a zero-flag QA
+    report for the covered papers
+  - the important operational constraint is now explicit: later-window scans on
+    gzipped BioC archives remain sequential at the archive layer even with
+    `--start-document-ordinal`; the new flag gives bounded reproducible windows
+    but not true random access
+  - BioC discovery now writes a narrow archive-manifest sidecar as it scans,
+    and repeat discovery over a covered window reuses that sidecar instead of
+    rescanning the tar stream
+  - live manifest reuse is now validated on `BioCXML.4.tar.gz`:
+    - first pass at `--start-document-ordinal 1001 --limit 2` scanned `25`
+      docs and wrote `25` manifest rows
+    - immediate repeat used `25` manifest rows and wrote `0`
+  - low-value BioC shell documents are now explicitly excluded:
+    - title-only / empty-abstract BioC docs with `0` blocks, `0` sentences,
+      and `0` references are skipped before warehouse persistence
+    - archive manifests now remember those rows as
+      `low_value_shell_document`, so later-window discovery advances past them
+      instead of rediscovering them
+    - two existing shell docs (`32037055`, `19630648`) were removed from the
+      warehouse and marked in the manifest sidecar
+    - BioC source locators now preserve `member_name` alongside
+      `archive_name + document_ordinal`, so the next cache/index pass can key
+      off a stable archive-member identity
+    - precomputed discovery reports can now be loaded even when they predate
+      the `member_name` field, so warmed reports remain usable across this
+      schema evolution
+    - the direct archive-ingest path now also consults manifest skip memory
+      before fetch, so reruns do not reopen the archive for known low-value
+      shell docs
+    - bounded warehouse QA now reports `empty_shell_bioc_docs = 0`
+  - manifest coverage accounting now advances past skipped ordinals too, so a
+    skipped manifest row still counts as covered for later-window discovery
+  - after that change, the dominant remaining cost on later-window BioC runs
+    is actual archive parse traversal to the selected member ordinals, not
+    candidate rediscovery; the next material speedup on this lane is archive
+    parse/index strategy rather than more discovery plumbing
+  - the one-step BioC operator now has a direct default path for bounded new
+    papers from precomputed reports:
+    - `bioc-archive-direct-live-20260331-a` ingested `41325340`, skipped
+      low-value shell `37535630`, wrote `26` canonical rows, and backfilled
+      `1` chunk plus `8` chunk-member rows
+    - immediate rerun `bioc-archive-direct-live-20260331-b` collapsed to a
+      fast no-op because one candidate was already ingested and the other was
+      filtered by manifest skip memory before fetch
   - same-corpus BioC overlay backfill remains the right long-term path for
     already-ingested S2 papers, but a bounded probe over the first `1000`
     documents of `BioCXML.0.tar.gz` did not intersect the current S2-backed
@@ -363,6 +511,9 @@ Near-term work should stay bounded by the current paper-level baseline:
   - broader bounded sampling over the first `500` documents of
     `BioCXML.0.tar.gz` through `BioCXML.9.tar.gz` also found no same-corpus
     overlay hits for the current S2-backed warehouse subset
+  - next meaningful optimization on this lane is manifest coverage growth /
+    refresh for hot BioC archives, so repeated later-window discovery stays
+    cheap before we tackle true random-access alternatives
   - write-batch normalization now clears unresolved `source_reference_key`
     links on citation mentions before persistence rather than inventing fake
     bibliography rows or weakening the strict warehouse validator
@@ -389,7 +540,8 @@ Near-term work should stay bounded by the current paper-level baseline:
   source-unit claims before attempting true 200M-scale refresh runs
   - refresh source-unit ownership now lives in
     `solemd.rag_refresh_source_units`
-  - `engine/app/rag/orchestrator_units.py` now provides atomic worker-safe
+  - `engine/app/rag_ingest/orchestrator_units.py` now provides atomic
+    worker-safe
     claims over `s2_shard` / `bioc_archive` units using PostgreSQL
   - worker-local report/checkpoint files now live under
     `rag_refresh/<run_id>/<worker-key>/` instead of sharing one checkpoint JSON
@@ -496,8 +648,9 @@ Near-term work should stay bounded by the current paper-level baseline:
 - [x] build the first resumable canonical warehouse ingest runner so
   `paper_documents` / `paper_sections` / `paper_blocks` / `paper_sentences`
   can actually be populated at batch scale
-  - the engine-owned runner is now `engine/app/rag/orchestrator.py` with the
-    operator wrapper at `engine/db/scripts/refresh_rag_warehouse.py`
+  - the engine-owned runner is now
+    `engine/app/rag_ingest/orchestrator.py` with the operator wrapper at
+    `engine/db/scripts/refresh_rag_warehouse.py`
   - targeted, source-driven, and worker-partitioned runs are now all live
     exercised
   - targeted parallel smoke `refresh-parallel-smoke2` claimed two S2 shards via
@@ -620,8 +773,9 @@ Confirmed wins already landed:
   dragging the full relation row set through later joins
 - citation-neighbor candidate expansion now only pulls from neighbors of the
   already-bounded candidate set instead of scanning citation contexts globally
-- reusable refresh orchestration now lives in `engine/app/rag/orchestrator.py`
-  with thin operator wrappers under `engine/db/scripts`
+- reusable refresh orchestration now lives in
+  `engine/app/rag_ingest/orchestrator.py` with thin operator wrappers under
+  `engine/db/scripts`
 - row-wise warehouse COPY now uses plain `COPY ... FROM STDIN` semantics that
   match psycopg3 `copy.write_row(...)`
 - warehouse merge/upsert SQL now guards updates with `IS DISTINCT FROM` so
@@ -1596,6 +1750,8 @@ FastAPI should be structured as a real application, not a single-file app:
 - `engine/app/main.py` becomes app assembly
 - `engine/app/api/` owns routers
 - `engine/app/rag/` owns evidence retrieval logic
+- `engine/app/rag_ingest/` owns refresh/backfill/archive/source-locator
+  operations
 
 ### Server Actions versus Route Handlers
 
@@ -2516,9 +2672,9 @@ The warehouse migration design should now follow the explicit code contract in:
 - `engine/app/rag/migration_contract.py`
 - `engine/app/rag/index_contract.py`
 - `engine/app/rag/rag_schema_contract.py`
-- `engine/app/rag/write_contract.py`
-- `engine/app/rag/write_repository.py`
-- `engine/app/rag/write_sql_contract.py`
+- `engine/app/rag_ingest/write_contract.py`
+- `engine/app/rag_ingest/write_repository.py`
+- `engine/app/rag_ingest/write_sql_contract.py`
 
 Current intended table posture:
 
@@ -2582,8 +2738,8 @@ Current intended key/index posture:
 
 The future warehouse writer should now follow the explicit stage planner in:
 
-- `engine/app/rag/write_repository.py`
-- `engine/app/rag/write_sql_contract.py`
+- `engine/app/rag_ingest/write_repository.py`
+- `engine/app/rag_ingest/write_sql_contract.py`
 
 Current intended stage order:
 

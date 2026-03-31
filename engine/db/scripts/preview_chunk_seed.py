@@ -6,9 +6,12 @@ from collections.abc import Sequence
 
 from pydantic import Field
 
-from app.rag.chunk_policy import build_default_chunk_version
 from app.rag.parse_contract import ParseContractModel
 from app.rag.serving_contract import PaperChunkVersionRecord
+from app.rag_ingest.chunk_policy import (
+    DEFAULT_CHUNK_VERSION_KEY,
+    build_default_chunk_version,
+)
 
 
 class ChunkVersionSeedPreview(ParseContractModel):
@@ -22,11 +25,13 @@ def build_default_chunk_version_seed_preview(
     source_revision_keys: Sequence[str],
     parser_version: str,
     embedding_model: str | None = None,
+    chunk_version_key: str | None = None,
 ) -> ChunkVersionSeedPreview:
     version = build_default_chunk_version(
         source_revision_keys=source_revision_keys,
         parser_version=parser_version,
         embedding_model=embedding_model,
+        chunk_version_key=chunk_version_key or DEFAULT_CHUNK_VERSION_KEY,
     )
     return ChunkVersionSeedPreview(
         chunk_version_key=version.chunk_version_key,
@@ -91,8 +96,7 @@ def _build_upsert_sql(version: PaperChunkVersionRecord) -> str:
         "updated_at",
     ]
     update_sql = ",\n    ".join(
-        [f"{column} = EXCLUDED.{column}" for column in update_columns[:-1]]
-        + ["updated_at = now()"]
+        [f"{column} = EXCLUDED.{column}" for column in update_columns[:-1]] + ["updated_at = now()"]
     )
     return (
         "INSERT INTO solemd.paper_chunk_versions (\n    "

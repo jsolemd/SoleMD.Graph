@@ -24,7 +24,7 @@ class LayoutConfig:
     pca_components: int = 50
     pca_batch_size: int = 10_000
     n_neighbors: int = 30
-    min_dist: float = 0.5
+    min_dist: float = 0.3
     spread: float = 1.0
     metric: str = "cosine"
     random_state: int = 42
@@ -44,6 +44,7 @@ class LayoutConfig:
     cluster_relaxation_step: float = 0.35
     outlier_lof_neighbors: int = 20
     outlier_contamination: float = 0.02
+    outlier_radial_percentile: float = 99.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -872,6 +873,7 @@ def _relax_cluster_centroids(
 def compute_spatial_outlier_scores(
     coordinates: numpy.ndarray,
     *,
+    cluster_ids: numpy.ndarray | None = None,
     n_neighbors: int = 20,
     contamination: float = 0.02,
     radial_percentile: float = 99.0,
@@ -929,6 +931,12 @@ def compute_spatial_outlier_scores(
     distances = np.sqrt(np.sum((coordinates - median) ** 2, axis=1))
     radial_threshold = np.percentile(distances, radial_percentile)
     is_radial_outlier = distances > radial_threshold
+
+    # Exempt points belonging to real clusters from the radial pass.
+    # Leiden assigns cluster_id >= 1 to community members; only noise
+    # points (cluster_id <= 0) remain eligible for radial filtering.
+    if cluster_ids is not None:
+        is_radial_outlier = is_radial_outlier & (cluster_ids < 1)
 
     # Union of both passes
     is_spatial_outlier = is_lof_outlier | is_radial_outlier

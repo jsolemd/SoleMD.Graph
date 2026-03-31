@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, call
 
-from psycopg.types.json import Jsonb
-
 from app.rag.parse_contract import (
     PaperBlockKind,
     ParseSourceSystem,
@@ -28,8 +26,8 @@ from app.rag.serving_contract import (
     SentenceOverlapPolicy,
 )
 from app.rag.warehouse_contract import AlignmentStatus, PaperCitationMentionRow, SpanOrigin
-from app.rag.write_contract import RagWarehouseWriteBatch
-from app.rag.write_repository import (
+from app.rag_ingest.write_contract import RagWarehouseWriteBatch
+from app.rag_ingest.write_repository import (
     PostgresRagWriteRepository,
     RuntimeWriteStatus,
     WriteMethod,
@@ -373,3 +371,54 @@ def test_postgres_rag_write_repository_can_replace_existing_canonical_rows():
     ]
     for expected in delete_calls:
         assert expected in cur.execute.call_args_list
+
+
+def test_postgres_rag_write_repository_can_replace_existing_chunk_rows_only():
+    conn = MagicMock()
+    cur = MagicMock()
+    copy = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.copy.return_value.__enter__.return_value = copy
+    cur.copy.return_value.__exit__.return_value = False
+
+    sample = _sample_write_batch()
+    chunk_only_batch = RagWarehouseWriteBatch(
+        chunks=list(sample.chunks),
+        chunk_members=list(sample.chunk_members),
+    )
+
+    repo = PostgresRagWriteRepository(
+        connect=lambda: conn,
+        table_exists_probe=lambda _cur, schema_name, table_name: (
+            schema_name == "solemd" and table_name in {"paper_chunks", "paper_chunk_members"}
+        ),
+    )
+
+    result = repo.apply_write_batch(chunk_only_batch, replace_existing=True)
+
+    assert result.total_rows == 2
+    assert (
+        call(
+            """
+                DELETE FROM solemd.paper_chunk_members
+                 WHERE corpus_id = ANY(%s)
+                   AND chunk_version_key = ANY(%s)
+                """,
+            ([12345], ["v1"]),
+        )
+        in cur.execute.call_args_list
+    )
+    assert (
+        call(
+            """
+                DELETE FROM solemd.paper_chunks
+                 WHERE corpus_id = ANY(%s)
+                   AND chunk_version_key = ANY(%s)
+                """,
+            ([12345], ["v1"]),
+        )
+        in cur.execute.call_args_list
+    )

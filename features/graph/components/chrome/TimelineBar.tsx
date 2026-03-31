@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmograph } from "@/features/graph/cosmograph";
 import { ActionIcon, Badge, Text, Tooltip } from "@mantine/core";
 import { X } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";

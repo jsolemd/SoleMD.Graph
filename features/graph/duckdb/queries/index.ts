@@ -27,6 +27,8 @@ export {
   queryInfoBarsBatch,
   queryInfoHistogram,
   queryInfoHistogramsBatch,
+  queryNumericStatsBatch,
 } from './summary'
+export type { NumericStatsRow } from './summary'
 export { queryCategoricalValues, queryNumericValues } from './values'
 export { exportCorpusTableCsv, queryCorpusTablePage } from './table-chunk'

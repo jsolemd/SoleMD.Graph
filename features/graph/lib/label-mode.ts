@@ -2,6 +2,8 @@ export interface GraphLabelModeInput {
   pointLabelColumn: string;
   showPointLabels: boolean;
   showDynamicLabels: boolean;
+  showHoveredPointLabel: boolean;
+  hoverLabelAlwaysOn: boolean;
   zoomedIn: boolean;
   isActivelyZooming: boolean;
   hasFocusedPoint: boolean;
@@ -14,6 +16,7 @@ export interface GraphLabelMode {
   showLabels: boolean;
   showDynamicLabels: boolean;
   showTopLabels: boolean;
+  showHoveredPointLabel: boolean;
   showFocusedPointLabel: boolean;
   showSelectedLabels: boolean;
   showUnselectedPointLabels: boolean;
@@ -28,6 +31,8 @@ export function resolveGraphLabelMode({
   pointLabelColumn,
   showPointLabels,
   showDynamicLabels,
+  showHoveredPointLabel,
+  hoverLabelAlwaysOn,
   zoomedIn,
   isActivelyZooming,
   hasFocusedPoint,
@@ -56,6 +61,10 @@ export function resolveGraphLabelMode({
       !isActivelyZooming &&
       !hasFocusedPoint &&
       !hasSelection,
+    showHoveredPointLabel:
+      showHoveredPointLabel &&
+      (hoverLabelAlwaysOn || zoomedIn) &&
+      !isActivelyZooming,
     showFocusedPointLabel: hasFocusedPoint,
     showSelectedLabels: labelsEnabled && hasSelection,
     showUnselectedPointLabels: !hasSelection,

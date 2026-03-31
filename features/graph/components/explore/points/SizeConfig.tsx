@@ -6,7 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
 import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
 import type { MapLayer, PointSizeStrategy, SizeColumnKey } from "@/features/graph/types";
-import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle, switchLabelStyle, PANEL_ACCENT } from "../../panels/PanelShell";
+import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
 const SIZE_STRATEGY_OPTIONS = [
   { value: "auto", label: "Auto" },
@@ -44,26 +44,28 @@ export function SizeConfig({ activeLayer }: { activeLayer: MapLayer }) {
 
   return (
     <div>
-      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+      <Text size="xs" fw={600} mb={4} style={sectionLabelStyle}>
         Sizing
       </Text>
       <Stack gap="xs">
-        <Select
-          size="xs"
-          label="Column"
-          data={sizeColumnOptions}
-          value={pointSizeColumn}
-          onChange={(v) => v && setPointSizeColumn(v as SizeColumnKey)}
-          styles={panelSelectStyles}
-        />
-        <Select
-          size="xs"
-          label="Strategy"
-          data={SIZE_STRATEGY_OPTIONS}
-          value={pointSizeStrategy}
-          onChange={(v) => v && setPointSizeStrategy(v as PointSizeStrategy)}
-          styles={panelSelectStyles}
-        />
+        <div className="grid grid-cols-2 gap-2">
+          <Select
+            size="xs"
+            label="Column"
+            data={sizeColumnOptions}
+            value={pointSizeColumn}
+            onChange={(v) => v && setPointSizeColumn(v as SizeColumnKey)}
+            styles={panelSelectStyles}
+          />
+          <Select
+            size="xs"
+            label="Strategy"
+            data={SIZE_STRATEGY_OPTIONS}
+            value={pointSizeStrategy}
+            onChange={(v) => v && setPointSizeStrategy(v as PointSizeStrategy)}
+            styles={panelSelectStyles}
+          />
+        </div>
         <div>
           <Text size="xs" mb={4} style={panelTextMutedStyle}>
             {`Size range: ${pointSizeRange[0]} \u2013 ${pointSizeRange[1]}`}
@@ -85,7 +87,7 @@ export function SizeConfig({ activeLayer }: { activeLayer: MapLayer }) {
           label="Scale points on zoom"
           checked={scalePointsOnZoom}
           onChange={(e) => setScalePointsOnZoom(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
         />
         <Switch
           size="xs"
@@ -93,7 +95,7 @@ export function SizeConfig({ activeLayer }: { activeLayer: MapLayer }) {
           label="Show size legend"
           checked={showSizeLegend}
           onChange={(e) => setShowSizeLegend(e.currentTarget.checked)}
-          styles={switchLabelStyle}
+          styles={panelSwitchStyles}
         />
       </Stack>
     </div>

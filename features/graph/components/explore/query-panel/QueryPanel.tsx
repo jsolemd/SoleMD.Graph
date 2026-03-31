@@ -19,6 +19,7 @@ import type {
 } from "@/features/graph/types";
 import {
   PANEL_ACCENT,
+  PANEL_BODY_CLASS,
   PanelShell,
   panelErrorStyle,
   panelTextStyle,
@@ -103,7 +104,7 @@ export function QueryPanel({
       width={420}
       onClose={() => setActivePanel(null)}
     >
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className={PANEL_BODY_CLASS}>
         <Stack gap="sm">
           <Text style={panelTextDimStyle}>
             Run SQL queries against the graph data loaded in your browser.

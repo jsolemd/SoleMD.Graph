@@ -5,6 +5,10 @@ import { ArrowRight } from "lucide-react";
 import type { GraphDetailCitation, GraphDetailReference, PaperNode } from "@/features/graph/types";
 import { findPaperNodeByPaperId } from "../helpers";
 import {
+  panelAccentCardClassName,
+  panelAccentCardStyle,
+} from "@/features/graph/components/panels/PanelShell";
+import {
   ExtLink,
   RemoteStatus,
   panelTextDimStyle,
@@ -143,7 +147,7 @@ export function ReferencesContent({
   };
 
   return (
-    <Stack gap="lg">
+    <Stack gap="sm">
       {renderReferenceGroup("References in graph", grouped.inGraph)}
       {renderReferenceGroup("References outside graph", grouped.external)}
       {renderReferenceGroup("Unresolved references", grouped.unresolved)}

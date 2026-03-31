@@ -1,7 +1,7 @@
 "use client";
 
 import { useDashboardStore } from "@/features/graph/stores";
-import { PanelShell } from "../panels/PanelShell";
+import { PANEL_BODY_CLASS, PanelShell } from "../panels/PanelShell";
 import { PointsConfig } from "./PointsConfig";
 
 export function ConfigPanel() {
@@ -13,7 +13,7 @@ export function ConfigPanel() {
       side="left"
       onClose={() => setActivePanel(null)}
     >
-      <div className="config-scroll flex-1 min-h-0 overflow-y-auto px-4 py-2">
+      <div className={`config-scroll min-h-0 ${PANEL_BODY_CLASS}`}>
         <PointsConfig />
       </div>
     </PanelShell>

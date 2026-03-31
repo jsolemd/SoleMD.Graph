@@ -4,8 +4,7 @@ import { ActionIcon, Group, Pagination, SegmentedControl, Text, Tooltip } from "
 import { Download } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, MapLayer } from "@/features/graph/types";
-import { panelTextDimStyle } from "../../panels/PanelShell";
-import { iconBtnStyles } from "../../panels/PanelShell";
+import { panelTextDimStyle, iconBtnStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
 interface DataTableToolbarProps {
   resolvedTableView: "selection" | "dataset";
@@ -65,10 +64,11 @@ export function DataTableToolbar({
   };
 
   return (
-    <div className="flex items-center justify-between px-4 py-1.5">
+    <div className="flex items-center justify-between px-2.5 py-1.5">
       <Group gap="sm">
         <SegmentedControl
           size="xs"
+          color={PANEL_ACCENT}
           data={[
             {
               label: "Selection",
@@ -82,6 +82,23 @@ export function DataTableToolbar({
           ]}
           value={resolvedTableView}
           onChange={(value) => setTableView(value as "selection" | "dataset")}
+          styles={{
+            root: {
+              height: 22,
+              backgroundColor: "var(--graph-panel-input-bg)",
+              border: "1px solid var(--graph-panel-border)",
+              borderRadius: 6,
+            },
+            label: {
+              fontSize: 9,
+              padding: "2px 8px",
+              color: "var(--graph-panel-text-dim)",
+            },
+            indicator: {
+              borderRadius: 5,
+              boxShadow: "none",
+            },
+          }}
         />
         <Text size="xs" style={panelTextDimStyle}>
           {rowCountLabel}
@@ -110,6 +127,9 @@ export function DataTableToolbar({
             border: "none",
             backgroundColor: "transparent",
             color: "var(--graph-panel-text-dim)",
+            minWidth: 20,
+            height: 20,
+            fontSize: 9,
           },
         }}
       />

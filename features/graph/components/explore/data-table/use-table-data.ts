@@ -77,8 +77,10 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     resolvedTableView === "selection" && queryTableView === "selected"
       ? selectedPointRevision
       : 0;
+  const [debouncedSelectedRevision] = useDebouncedValue(scopedSelectedPointRevision, 80);
   const totalPages = Math.max(1, Math.ceil(totalRows / tablePageSize));
   const safePage = clamp(tablePage, 1, totalPages);
+  const [debouncedSafePage] = useDebouncedValue(safePage, 80);
   const startIdx = (safePage - 1) * tablePageSize;
   const requestKey = useMemo(
     () =>
@@ -86,12 +88,12 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
         activeLayer,
         resolvedTableView,
         queryTableView,
-        safePage,
+        safePage: debouncedSafePage,
         tablePageSize,
         currentScopeSql: scopedCurrentPointScopeSql,
         currentScopeRevision: scopedCurrentScopeRevision,
         selectedCount: scopedSelectedPointCount,
-        selectedPointRevision: scopedSelectedPointRevision,
+        selectedPointRevision: debouncedSelectedRevision,
         overlayRevision,
       }),
     [
@@ -99,11 +101,11 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
       queryTableView,
       overlayRevision,
       resolvedTableView,
-      safePage,
+      debouncedSafePage,
       scopedCurrentPointScopeSql,
       scopedCurrentScopeRevision,
       scopedSelectedPointCount,
-      scopedSelectedPointRevision,
+      debouncedSelectedRevision,
       tablePageSize,
     ]
   );
@@ -123,7 +125,7 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
       .getTablePage({
         layer: activeLayer,
         view: queryTableView,
-        page: safePage,
+        page: debouncedSafePage,
         pageSize: tablePageSize,
         currentPointScopeSql: scopedCurrentPointScopeSql,
       })
@@ -158,7 +160,7 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     queries,
     queryTableView,
     requestKey,
-    safePage,
+    debouncedSafePage,
     scopedCurrentPointScopeSql,
     tablePageSize,
   ]);

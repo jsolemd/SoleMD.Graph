@@ -6,7 +6,7 @@ from app.rag.source_grounding import (
     build_cited_span_packets_from_sources,
     build_grounded_answer_from_packets,
 )
-from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
+from app.rag_ingest.source_parsers import parse_biocxml_document, parse_s2orc_row
 
 
 def _build_s2orc_source():

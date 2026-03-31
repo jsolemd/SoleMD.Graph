@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ActionIcon, Button, Select, Stack, Text } from "@mantine/core";
-import { useCosmograph } from "@cosmograph/react";
+import { useCosmograph } from "@/features/graph/cosmograph";
 import { Plus, X } from "lucide-react";
 import {
   clearSelectionClause,
@@ -14,6 +14,8 @@ import type { FilterableColumnKey } from "@/features/graph/types";
 import {
   iconBtnStyles,
   PANEL_ACCENT,
+  PANEL_BODY_CLASS,
+  PanelDivider,
   PanelShell,
   panelSelectStyles,
   panelTextStyle,
@@ -111,13 +113,13 @@ export function FilterPanelShell({
       )}
       onClose={() => setActivePanel(null)}
     >
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <Stack gap="lg">
-          {visibleFilters.map((filter) => {
+      <div className={PANEL_BODY_CLASS}>
+        <Stack gap="sm">
+          {visibleFilters.flatMap((filter, i) => {
             const meta = getColumnMeta(filter.column);
-            if (!meta) return null;
+            if (!meta) return [];
 
-            return (
+            const item = (
               <div key={filter.column} style={filterItemStyle}>
                 <div className="mb-1 flex items-center justify-between">
                   <Text size="xs" fw={600} style={panelTextStyle}>
@@ -143,6 +145,10 @@ export function FilterPanelShell({
                 {renderWidget(filter)}
               </div>
             );
+
+            return i > 0
+              ? [<PanelDivider key={`div-${filter.column}`} />, item]
+              : [item];
           })}
 
           {hiddenFilterCount > 0 && !showAllFilters && (
@@ -166,6 +172,8 @@ export function FilterPanelShell({
               Show Fewer Filters
             </Button>
           )}
+
+          {visibleFilters.length > 0 && <PanelDivider />}
 
           {showAddSelect ? (
             <Select

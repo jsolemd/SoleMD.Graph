@@ -585,7 +585,10 @@ def main() -> None:
     parser.add_argument(
         "--llm-labels",
         action="store_true",
-        help="Run LLM-based cluster relabeling after c-TF-IDF label generation",
+        help=(
+            "Standalone: relabel current graph run's clusters with LLM. "
+            "With --run: also relabel after c-TF-IDF generation."
+        ),
     )
     parser.add_argument(
         "--cleanup",
@@ -594,35 +597,51 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # --llm-labels is standalone OR a modifier on --run
+    llm_labels_standalone = args.llm_labels and not args.run
     selected_modes = [
         args.run,
         args.sync_current,
         args.refresh_evidence,
         bool(args.publish_run),
         args.cleanup,
+        llm_labels_standalone,
     ]
     if sum(1 for selected in selected_modes if selected) > 1:
         raise ValueError(
-            "choose only one of --run, --sync-current, --refresh-evidence, --publish-run, or --cleanup"
+            "choose only one of --run, --sync-current, --refresh-evidence, "
+            "--publish-run, --cleanup, or --llm-labels (standalone)"
         )
     if args.resume_run and not args.run:
         raise ValueError("--resume-run can only be used with --run")
     if args.resume_run and args.limit:
         raise ValueError("--resume-run cannot be combined with --limit")
 
-    # For --run builds, dispatch to GPU container unless --local or already inside it
-    if args.run and not args.local and not _is_gpu_container():
+    # Dispatch to GPU container for operations that touch bundle/checkpoint files.
+    # --sync-current and --refresh-evidence only touch the database, so they stay local.
+    needs_gpu_dispatch = (
+        (args.run or bool(args.publish_run) or llm_labels_standalone or args.cleanup)
+        and not args.local
+        and not _is_gpu_container()
+    )
+    if needs_gpu_dispatch:
         if _gpu_container_running():
-            # Rebuild argv without --local, forwarding all other flags
             forward = [a for a in sys.argv[1:] if a != "--local"]
             rc = _dispatch_to_gpu(forward)
             sys.exit(rc)
-        else:
+        elif args.run:
             raise RuntimeError(
                 f"GPU container '{GPU_CONTAINER}' is not running.\n"
                 f"Start it: docker compose -f docker/compose.yaml --profile gpu up -d graph\n"
                 f"Or use --local to force CPU execution "
                 f"(requires ~20GB RAM for 2.6M points)."
+            )
+        else:
+            import warnings
+            warnings.warn(
+                f"GPU container '{GPU_CONTAINER}' not running; "
+                f"proceeding locally (may hit permission issues on bundle files).",
+                stacklevel=2,
             )
 
     try:
@@ -656,6 +675,19 @@ def main() -> None:
             )
         elif args.sync_current:
             payload = sync_current_graph_membership()
+        elif llm_labels_standalone:
+            from app.graph.llm_labels import relabel_graph_run
+
+            with db.connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM solemd.graph_runs "
+                    "WHERE is_current = true LIMIT 1"
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise RuntimeError("No current graph run found")
+                current_run_id = str(row["id"])
+            payload = relabel_graph_run(current_run_id)
         else:
             payload = asdict(load_graph_build_summary())
 

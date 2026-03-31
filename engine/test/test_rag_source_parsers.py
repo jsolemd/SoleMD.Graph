@@ -7,7 +7,8 @@ from app.rag.parse_contract import (
     SectionRole,
     SentenceSegmentationSource,
 )
-from app.rag.source_parsers import (
+from app.rag_ingest.sentence_segmentation import SyntokSentenceSegmenter
+from app.rag_ingest.source_parsers import (
     extract_biocxml_document_id,
     parse_biocxml_document,
     parse_s2orc_row,
@@ -16,8 +17,7 @@ from app.rag.source_parsers import (
 
 def test_parse_s2orc_row_emits_reference_and_citation_bridge_records():
     body_text = (
-        "Introduction\n"
-        "Patients improved after treatment. No adverse events were observed [1]."
+        "Introduction\nPatients improved after treatment. No adverse events were observed [1]."
     )
     bibliography_text = "1. Example trial paper."
     paragraph_start = body_text.index("Patients")
@@ -100,9 +100,7 @@ def test_parse_s2orc_row_emits_reference_and_citation_bridge_records():
         },
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert len(parsed.blocks) == 1
     assert len(parsed.sentences) == 2
@@ -112,10 +110,7 @@ def test_parse_s2orc_row_emits_reference_and_citation_bridge_records():
     assert parsed.citations[0].source_citation_key == "b0"
     assert parsed.citations[0].sentence_ordinal == 1
     assert parsed.citations[0].matched_paper_id == "S2:paper-1"
-    assert (
-        parsed.sentences[0].segmentation_source
-        == SentenceSegmentationSource.S2ORC_ANNOTATION
-    )
+    assert parsed.sentences[0].segmentation_source == SentenceSegmentationSource.S2ORC_ANNOTATION
 
 
 def test_parse_s2orc_row_coerces_numeric_reference_and_match_identifiers_to_strings():
@@ -172,9 +167,7 @@ def test_parse_s2orc_row_coerces_numeric_reference_and_match_identifiers_to_stri
         },
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert parsed.references[0].source_reference_key == "101"
     assert parsed.references[0].matched_paper_id == "1149154"
@@ -183,11 +176,7 @@ def test_parse_s2orc_row_coerces_numeric_reference_and_match_identifiers_to_stri
 
 
 def test_parse_s2orc_row_adds_implicit_preamble_section_for_preheader_paragraphs():
-    body_text = (
-        "Keywords: severe dengue.\n"
-        "Introduction\n"
-        "Patients improved after treatment."
-    )
+    body_text = "Keywords: severe dengue.\nIntroduction\nPatients improved after treatment."
     row = {
         "corpusid": 79346632,
         "title": "Preamble example",
@@ -233,9 +222,7 @@ def test_parse_s2orc_row_adds_implicit_preamble_section_for_preheader_paragraphs
         "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert parsed.sections[0].section_ordinal == 0
     assert parsed.sections[0].display_label == "Preamble"
@@ -279,9 +266,7 @@ def test_parse_s2orc_row_maps_background_header_to_introduction():
         "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert parsed.sections[0].section_role == SectionRole.INTRODUCTION
     assert parsed.blocks[0].section_role == SectionRole.INTRODUCTION
@@ -355,9 +340,7 @@ def test_parse_s2orc_row_inherits_contextual_section_role_for_unrecognized_subhe
         "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert parsed.sections[1].section_role == SectionRole.RESULTS
     assert parsed.sections[2].section_role == SectionRole.RESULTS
@@ -415,9 +398,7 @@ def test_parse_s2orc_row_skips_empty_bibliography_entries():
         },
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert parsed.references == []
 
@@ -464,9 +445,7 @@ def test_parse_s2orc_row_trims_and_skips_whitespace_only_paragraph_blocks():
         "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert len(parsed.blocks) == 1
     assert parsed.blocks[0].text == "Meaningful finding here."
@@ -514,13 +493,60 @@ def test_parse_s2orc_row_marks_author_contributions_as_front_matter_and_not_retr
         "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v2"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v2")
 
     assert parsed.sections[0].section_role == SectionRole.FRONT_MATTER
     assert parsed.blocks[0].section_role == SectionRole.FRONT_MATTER
     assert parsed.blocks[0].is_retrieval_default is False
+
+
+def test_parse_s2orc_row_uses_syntok_fallback_for_et_al_citation_sequences():
+    body_text = (
+        "Results\n"
+        "Chen et al. [6] proposed a time-related susceptibility-infection-recovery model. "
+        "Wangping et al. [7] proposed a dynamic extended SIR model."
+    )
+    row = {
+        "corpusid": 260425880,
+        "title": "Fallback segmentation example",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [{"start": 0, "end": len("Results"), "attributes": {"n": "1."}}]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": len("Results\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "sentence": json.dumps([]),
+                "bib_ref": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+
+    parsed = parse_s2orc_row(
+        row,
+        source_revision="2026-03-10",
+        parser_version="parser-v2",
+        sentence_segmenter=SyntokSentenceSegmenter(),
+    )
+
+    assert [sentence.text for sentence in parsed.sentences] == [
+        "Chen et al. [6] proposed a time-related susceptibility-infection-recovery model.",
+        "Wangping et al. [7] proposed a dynamic extended SIR model.",
+    ]
+    assert all(
+        sentence.segmentation_source == SentenceSegmentationSource.SYNTOK
+        for sentence in parsed.sentences
+    )
 
 
 def test_parse_s2orc_row_coerces_string_annotation_offsets_to_ints():
@@ -583,9 +609,7 @@ def test_parse_s2orc_row_coerces_string_annotation_offsets_to_ints():
         },
     }
 
-    parsed = parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert parsed.sections[0].source_start_offset == 0
     assert parsed.blocks[0].source_end_offset == len(body_text)
@@ -696,6 +720,36 @@ def test_parse_biocxml_document_preserves_mesh_identifier_when_namespaced():
     assert parsed.entities[0].concept_id == "D008550"
 
 
+def test_parse_biocxml_document_does_not_emit_sentence_rows_for_table_body_blocks():
+    xml_text = """
+    <collection>
+      <document>
+        <id>12345</id>
+        <passage>
+          <infon key="type">title_1</infon>
+          <infon key="section_type">TITLE</infon>
+          <offset>0</offset>
+          <text>Example paper</text>
+        </passage>
+        <passage>
+          <infon key="type">table</infon>
+          <infon key="section_type">RESULTS</infon>
+          <offset>20</offset>
+          <text>Characteristic\tIntervention\tControl\tAge\t52.5\t51.6</text>
+        </passage>
+      </document>
+    </collection>
+    """
+
+    parsed = parse_biocxml_document(
+        xml_text, source_revision="2026-03-21", parser_version="parser-v2"
+    )
+
+    assert len(parsed.blocks) == 1
+    assert parsed.blocks[0].block_kind == PaperBlockKind.TABLE_BODY_TEXT
+    assert parsed.sentences == []
+
+
 def test_parse_biocxml_document_skips_empty_reference_and_block_passages():
     xml_text = """
     <collection>
@@ -789,6 +843,36 @@ def test_parse_biocxml_document_uses_first_title_passage_for_document_title():
     )
 
     assert parsed.document.title == "Canonical title"
+
+
+def test_parse_biocxml_document_does_not_promote_structural_heading_to_document_title():
+    xml_text = """
+    <collection>
+      <document>
+        <id>12345</id>
+        <passage>
+          <infon key="type">title_2</infon>
+          <infon key="section_type">INTRO</infon>
+          <offset>0</offset>
+          <text>Introduction</text>
+        </passage>
+        <passage>
+          <infon key="type">paragraph</infon>
+          <infon key="section_type">INTRO</infon>
+          <offset>13</offset>
+          <text>Substantive narrative content remains available.</text>
+        </passage>
+      </document>
+    </collection>
+    """
+
+    parsed = parse_biocxml_document(
+        xml_text, source_revision="2026-03-21", parser_version="parser-v1"
+    )
+
+    assert parsed.document.title is None
+    assert parsed.sections[0].display_label == "Introduction"
+    assert parsed.blocks[0].text == "Substantive narrative content remains available."
 
 
 def test_parse_biocxml_document_uses_resolver_for_noncanonical_document_keys():

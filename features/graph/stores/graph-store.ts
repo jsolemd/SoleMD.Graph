@@ -7,11 +7,13 @@ interface GraphUIStore {
   focusedPointRevision: number
   cameraSettledRevision: number
   graphContentContrastLevel: 0 | 1 | 2
+  zoomedIn: boolean
   mode: GraphMode
   selectNode: (node: GraphPointRecord | null) => void
   setFocusedPointIndex: (index: number | null) => void
   markCameraSettled: () => void
   setGraphContentContrastLevel: (level: 0 | 1 | 2) => void
+  setZoomedIn: (zoomedIn: boolean) => void
   setMode: (mode: GraphMode) => void
 }
 
@@ -30,6 +32,7 @@ export const useGraphStore = create<GraphUIStore>((set) => ({
   focusedPointRevision: 0,
   cameraSettledRevision: 0,
   graphContentContrastLevel: 0,
+  zoomedIn: false,
   mode: 'ask',
   selectNode: (node) => set((state) => (
     isSameNode(state.selectedNode, node)
@@ -51,6 +54,9 @@ export const useGraphStore = create<GraphUIStore>((set) => ({
     state.graphContentContrastLevel === level
       ? state
       : { graphContentContrastLevel: level }
+  )),
+  setZoomedIn: (zoomedIn) => set((state) => (
+    state.zoomedIn === zoomedIn ? state : { zoomedIn }
   )),
   setMode: (mode) => set({ mode }),
 }))

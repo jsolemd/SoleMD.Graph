@@ -5,6 +5,10 @@ import type { GraphDetailCitation, PaperNode } from "@/features/graph/types";
 import { findPaperNodeByPaperId } from "../helpers";
 import { getPaperRefMeta, ItemActions } from "./ReferencesContent";
 import {
+  panelAccentCardClassName,
+  panelAccentCardStyle,
+} from "@/features/graph/components/panels/PanelShell";
+import {
   RemoteStatus,
   panelTextDimStyle,
   panelTextStyle,
@@ -68,18 +72,15 @@ export function ConnectionsContent({
           <Text size="xs" fw={600} mb={6} style={sectionLabelStyle}>
             {groupLabel}
           </Text>
-          <Stack gap="md">
+          <Stack gap="sm">
             {groupItems.map(({ citation, graphNode }) => {
               const paper = citation.related_paper;
 
               return (
                 <div
                   key={`${groupLabel}:${citation.citation_id}`}
-                  className="rounded-xl px-3 py-3"
-                  style={{
-                    backgroundColor: "var(--mode-accent-subtle)",
-                    border: "1px solid var(--mode-accent-border)",
-                  }}
+                  className={panelAccentCardClassName}
+                  style={panelAccentCardStyle}
                 >
                   <Group gap={6} mb={6}>
                     <Badge size="xs" variant="outline" color="gray">
@@ -114,7 +115,7 @@ export function ConnectionsContent({
         <Text size="xs" fw={600} mb={6} style={sectionLabelStyle}>
           {label}
         </Text>
-        <Stack gap="lg">
+        <Stack gap="sm">
           {renderCitationGroup(`${label} in graph`, grouped.inGraph)}
           {renderCitationGroup(`${label} outside graph`, grouped.outside)}
         </Stack>
@@ -123,7 +124,7 @@ export function ConnectionsContent({
   };
 
   return (
-    <Stack gap="lg">
+    <Stack gap="sm">
       {renderItems(outgoing, "Cites")}
       {renderItems(incoming, "Cited by")}
     </Stack>

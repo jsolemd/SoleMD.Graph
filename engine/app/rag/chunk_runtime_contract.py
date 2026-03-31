@@ -9,7 +9,7 @@ from pydantic import Field, model_validator
 from app.rag.index_contract import IndexBuildPhase
 from app.rag.migration_contract import MigrationStage
 from app.rag.parse_contract import ParseContractModel
-from app.rag.write_repository import WriteStage
+from app.rag_ingest.write_repository import WriteStage
 
 
 class ChunkRuntimePhase(StrEnum):

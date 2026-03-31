@@ -48,36 +48,6 @@ const innerStyle: React.CSSProperties = {
   filter: "none",
 };
 
-/* ── Hooks ─────────────────────────────────────────────────────── */
-
-/**
- * Read the Cosmograph-assigned `id` from the rendered button `<div>`.
- * IDs are auto-generated (e.g. "c", "n") so we discover them at mount
- * via ref callback + MutationObserver fallback for async rendering.
- */
-function useCosmographButtonId() {
-  const [id, setId] = useState<string | null>(null);
-  const observerRef = useRef<MutationObserver | null>(null);
-
-  const ref = useCallback((el: HTMLDivElement | null) => {
-    observerRef.current?.disconnect();
-    observerRef.current = null;
-
-    if (el) {
-      const inner = el.querySelector<HTMLElement>("[id]");
-      if (inner?.id) { setId(inner.id); return; }
-      const obs = new MutationObserver(() => {
-        const found = el.querySelector<HTMLElement>("[id]");
-        if (found?.id) { setId(found.id); obs.disconnect(); observerRef.current = null; }
-      });
-      obs.observe(el, { childList: true, subtree: true });
-      observerRef.current = obs;
-    }
-  }, []);
-
-  return { ref, id };
-}
-
 /* ── Component ─────────────────────────────────────────────────── */
 
 export interface SelectionToolbarHandle {
@@ -94,24 +64,82 @@ interface SelectionToolbarProps {
   onClear: () => void;
 }
 
+/**
+ * Selection tool buttons — thin adapter over Cosmograph native controls.
+ *
+ * Architecture: the native `CosmographButtonRectangularSelection` and
+ * `CosmographButtonPolygonalSelection` own all click→activate→drag→select
+ * behavior internally. Our adapter only tracks which tool is active for
+ * `aria-pressed` styling and exposes `clearSelections` for the parent.
+ *
+ * No wrapper `onClick` handlers — native buttons are the sole click target.
+ */
 export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionToolbarProps>(
   function SelectionToolbar(
-    { isLocked, activeSourceId, hasSelection, onActivate, onClear },
+    { isLocked, activeSourceId, hasSelection, onClear },
     ref,
   ) {
-    const { ref: rectButtonRef, id: rectButtonId } = useCosmographButtonId();
-    const { ref: polyButtonRef, id: polyButtonId } = useCosmographButtonId();
-    const [activatedToolId, setActivatedToolId] = useState<string | null>(null);
+    const rectRef = useRef<HTMLDivElement>(null);
+    const polyRef = useRef<HTMLDivElement>(null);
+    const [activeToolId, setActiveToolId] = useState<string | null>(null);
     const { cosmograph } = useCosmograph();
 
     const clearSelections = useCallback(() => {
       cosmograph?.pointsSelection?.reset();
       cosmograph?.linksSelection?.reset();
-      setActivatedToolId(null);
+      setActiveToolId(null);
       onClear();
     }, [cosmograph, onClear]);
 
     useImperativeHandle(ref, () => ({ clearSelections }), [clearSelections]);
+
+    // Discover Cosmograph-assigned button IDs by observing the rendered DOM.
+    // Native buttons render a child `<div id="...">` asynchronously.
+    const [rectButtonId, setRectButtonId] = useState<string | null>(null);
+    const [polyButtonId, setPolyButtonId] = useState<string | null>(null);
+
+    useEffect(() => {
+      const discover = (container: HTMLElement | null, setter: (id: string) => void) => {
+        if (!container) return () => {};
+        const found = container.querySelector<HTMLElement>("[id]");
+        if (found?.id) { setter(found.id); return () => {}; }
+        const obs = new MutationObserver(() => {
+          const el = container.querySelector<HTMLElement>("[id]");
+          if (el?.id) { setter(el.id); obs.disconnect(); }
+        });
+        obs.observe(container, { childList: true, subtree: true });
+        return () => obs.disconnect();
+      };
+      const cleanupRect = discover(rectRef.current, setRectButtonId);
+      const cleanupPoly = discover(polyRef.current, setPolyButtonId);
+      return () => { cleanupRect(); cleanupPoly(); };
+    }, []);
+
+    // Track which tool the user activates via click on the native buttons.
+    // Listen for native click events (capture phase) on the wrappers so we
+    // know when a tool was activated without intercepting the native handler.
+    useEffect(() => {
+      const rectEl = rectRef.current;
+      const polyEl = polyRef.current;
+      if (!rectEl || !polyEl) return;
+
+      const handleRectClick = () => {
+        if (!isLocked) setActiveToolId(rectButtonId);
+      };
+      const handlePolyClick = () => {
+        if (!isLocked) setActiveToolId(polyButtonId);
+      };
+
+      // Capture phase — observe only, don't call activation methods.
+      // The native CosmographButton already calls activateRectSelection()
+      // in its own click handler; duplicating that can confuse internal state.
+      rectEl.addEventListener("click", handleRectClick, true);
+      polyEl.addEventListener("click", handlePolyClick, true);
+      return () => {
+        rectEl.removeEventListener("click", handleRectClick, true);
+        polyEl.removeEventListener("click", handlePolyClick, true);
+      };
+    }, [isLocked, rectButtonId, polyButtonId]);
 
     // Clear tool activation when selection changes or locks
     useEffect(() => {
@@ -122,7 +150,7 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
         const wasLocked = prevState.selectionLocked;
 
         if ((hadSelection && !hasSelectionNow) || (!wasLocked && isLockedNow)) {
-          setActivatedToolId(null);
+          setActiveToolId(null);
         }
       });
       return unsubscribe;
@@ -131,50 +159,38 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
     // Clear tool activation on Escape
     useEffect(() => {
       const handler = (e: KeyboardEvent) => {
-        if (e.key === "Escape") setActivatedToolId(null);
+        if (e.key === "Escape") setActiveToolId(null);
       };
       window.addEventListener("keydown", handler);
       return () => window.removeEventListener("keydown", handler);
     }, []);
 
     const rectOn = !isLocked && (
-      activatedToolId === rectButtonId
+      activeToolId === rectButtonId
       || (hasSelection && activeSourceId === rectButtonId)
     );
     const polyOn = !isLocked && (
-      activatedToolId === polyButtonId
+      activeToolId === polyButtonId
       || (hasSelection && activeSourceId === polyButtonId)
     );
 
     return (
       <>
         <div
-          ref={rectButtonRef}
+          ref={rectRef}
           className="graph-icon-btn"
           style={isLocked ? { ...wrapperStyle, opacity: 0.35, pointerEvents: "none" } : wrapperStyle}
           aria-pressed={rectOn}
           aria-disabled={isLocked}
-          onClick={() => {
-            if (!isLocked) {
-              setActivatedToolId(rectButtonId);
-              onActivate("rect");
-            }
-          }}
         >
           <CosmographButtonRectangularSelection style={innerStyle} />
         </div>
         <div
-          ref={polyButtonRef}
+          ref={polyRef}
           className="graph-icon-btn"
           style={isLocked ? { ...wrapperStyle, opacity: 0.35, pointerEvents: "none" } : wrapperStyle}
           aria-pressed={polyOn}
           aria-disabled={isLocked}
-          onClick={() => {
-            if (!isLocked) {
-              setActivatedToolId(polyButtonId);
-              onActivate("poly");
-            }
-          }}
         >
           <CosmographButtonPolygonalSelection style={innerStyle} />
         </div>

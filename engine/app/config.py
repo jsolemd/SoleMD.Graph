@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     s2_release_id: str = ""
     pubtator_release_id: str = ""
 
+    # RAG ingest NLP
+    rag_stanza_use_gpu: bool = True
+
     # DuckDB (for citations pipeline and heavy in-memory queries)
     duckdb_memory_limit: str = "8GB"
 

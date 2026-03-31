@@ -1,8 +1,14 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { Group, Stack, Text, Tooltip } from "@mantine/core";
+import { Badge, Group, Stack, Text, Tooltip } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
+
+export interface HistogramHighlightValue {
+  value: number;
+  label: string;
+  color: string;
+}
 import type {
   GraphInfoHistogramBin,
 } from "@/features/graph/types";
@@ -36,11 +42,13 @@ const getInfoFillStyle = (widthPct: number, color: string, opacity = 1) =>
 export function QueryInfoBars({
   rows,
   comparisonState,
+  visibleCount,
 }: {
   rows: InfoComparisonFacetRow[];
   comparisonState: InfoComparisonState;
+  visibleCount?: number;
 }) {
-  return <QueryFacetSummary rows={rows} comparisonState={comparisonState} />;
+  return <QueryFacetSummary rows={rows} comparisonState={comparisonState} visibleCount={visibleCount} />;
 }
 
 const YEAR_COLUMNS = new Set(["year", "pageNumber"]);
@@ -54,6 +62,7 @@ export function QueryInfoHistogram({
   selectionTotalCount,
   filteredBins,
   filteredTotalCount,
+  highlightValues,
 }: {
   bins: GraphInfoHistogramBin[];
   totalCount: number;
@@ -63,6 +72,7 @@ export function QueryInfoHistogram({
   selectionTotalCount?: number | null;
   filteredBins?: GraphInfoHistogramBin[] | null;
   filteredTotalCount?: number | null;
+  highlightValues?: HistogramHighlightValue[] | null;
 }) {
   if (bins.length === 0) {
     return <Text style={panelTextDimStyle}>No numeric data</Text>;
@@ -86,7 +96,7 @@ export function QueryInfoHistogram({
 
   return (
     <div>
-      <div className="flex items-end gap-px" style={{ height }}>
+      <div className="relative flex items-end gap-px" style={{ height }}>
         {bins.map((bin, index) => {
           const barHeight =
             maxBinCount > 0 ? (bin.count / maxBinCount) * height : 0;
@@ -163,6 +173,36 @@ export function QueryInfoHistogram({
             </Tooltip>
           );
         })}
+        {highlightValues?.map((hl) => {
+          const extMin = bins[0].min;
+          const extMax = bins[bins.length - 1].max;
+          const range = extMax - extMin;
+          if (range <= 0) return null;
+          const pct = ((hl.value - extMin) / range) * 100;
+          if (pct < 0 || pct > 100) return null;
+          return (
+            <Tooltip
+              key={hl.label}
+              label={`${hl.label} ${fmtAxis(hl.value)}`}
+              position="top"
+              withArrow
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  left: `${pct}%`,
+                  top: 0,
+                  bottom: 0,
+                  width: 1.8,
+                  transform: "translateX(-50%)",
+                  backgroundColor: hl.color,
+                  pointerEvents: "auto",
+                  zIndex: 20,
+                }}
+              />
+            </Tooltip>
+          );
+        })}
       </div>
       <Group justify="space-between" mt={4}>
         <Text style={panelTextDimStyle}>{fmtAxis(bins[0]?.min ?? 0)}</Text>
@@ -185,21 +225,24 @@ export function QueryInfoHistogram({
 export function QueryFacetSummary({
   rows,
   comparisonState,
+  visibleCount,
 }: {
   rows: InfoComparisonFacetRow[];
   comparisonState: InfoComparisonState;
+  visibleCount?: number;
 }) {
   if (rows.length === 0) {
     return <Text style={panelTextDimStyle}>No data</Text>;
   }
 
+  const displayRows = visibleCount != null ? rows.slice(0, visibleCount) : rows;
   const maxCount = Math.max(...rows.map((row) => row.totalCount), 0);
   const colors = getInfoComparisonColors(comparisonState);
   const opacities = getInfoComparisonOpacities(comparisonState);
 
   return (
     <Stack gap={6}>
-      {rows.map((row) => {
+      {displayRows.map((row) => {
         const totalPct = maxCount > 0 ? (row.totalCount / maxCount) * 100 : 0;
         const selectionPct =
           comparisonState.hasSelection &&
@@ -214,13 +257,20 @@ export function QueryFacetSummary({
             ? (row.filteredCount / maxCount) * 100
             : 0;
 
+        const enrichmentBadge =
+          row.enrichment != null && row.enrichment > 1.5
+            ? { label: `${row.enrichment.toFixed(1)}×`, accent: true }
+            : row.enrichment != null && row.enrichment < 0.5 && row.enrichment > 0
+              ? { label: `${row.enrichment.toFixed(1)}×`, accent: false }
+              : null;
+
         return (
           <div key={row.value}>
-            <Group justify="space-between" mb={2}>
+            <Group justify="space-between" mb={2} gap={4}>
               <Text
                 style={{
                   ...panelTextStyle,
-                  maxWidth: 180,
+                  maxWidth: enrichmentBadge ? 150 : 180,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
@@ -228,14 +278,41 @@ export function QueryFacetSummary({
               >
                 {row.value}
               </Text>
-              <Text style={panelTextDimStyle}>
-                {getInfoComparisonDisplayValue({
-                  totalCount: row.totalCount,
-                  selectionCount: row.selectionCount,
-                  filteredCount: row.filteredCount,
-                  format: (value) => formatNumber(value),
-                })}
-              </Text>
+              <div className="flex shrink-0 items-center gap-1">
+                {enrichmentBadge && (
+                  <Badge
+                    size="xs"
+                    styles={{
+                      root: {
+                        backgroundColor: enrichmentBadge.accent
+                          ? "var(--mode-accent-subtle)"
+                          : "var(--graph-panel-input-bg)",
+                        color: enrichmentBadge.accent
+                          ? "var(--mode-accent)"
+                          : "var(--graph-panel-text-dim)",
+                        border: `1px solid ${enrichmentBadge.accent ? "var(--mode-accent-border)" : "var(--graph-panel-border)"}`,
+                        height: 14,
+                        minHeight: 14,
+                        paddingLeft: 3,
+                        paddingRight: 3,
+                        fontSize: 8,
+                        lineHeight: 1,
+                      },
+                      label: { lineHeight: 1 },
+                    }}
+                  >
+                    {enrichmentBadge.label}
+                  </Badge>
+                )}
+                <Text style={panelTextDimStyle}>
+                  {getInfoComparisonDisplayValue({
+                    totalCount: row.totalCount,
+                    selectionCount: row.selectionCount,
+                    filteredCount: row.filteredCount,
+                    format: (value) => formatNumber(value),
+                  })}
+                </Text>
+              </div>
             </Group>
             <div className="relative" style={infoTrackStyle}>
               <div

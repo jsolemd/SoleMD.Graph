@@ -88,12 +88,12 @@ export const accordionStyles = {
   control: {
     paddingLeft: 0,
     paddingRight: 0,
-    paddingTop: 6,
-    paddingBottom: 6,
+    paddingTop: 4,
+    paddingBottom: 4,
     backgroundColor: "transparent",
   },
   label: {
-    fontSize: "0.7rem",
+    fontSize: "0.6rem",
     fontWeight: 600,
     textTransform: "uppercase" as const,
     letterSpacing: "0.04em",
@@ -106,7 +106,7 @@ export const accordionStyles = {
     height: 14,
     transition: "color 150ms ease",
   },
-  content: { paddingLeft: 0, paddingRight: 0, paddingBottom: 12 },
+  content: { paddingLeft: 0, paddingRight: 0, paddingBottom: 8 },
 } as const;
 
 export { panelTextDimStyle, panelTextStyle, sectionLabelStyle };

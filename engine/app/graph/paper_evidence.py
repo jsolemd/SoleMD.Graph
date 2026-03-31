@@ -116,7 +116,8 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                                 'psychiatric_disorder',
                                 'neurological_disorder',
                                 'psychiatric_medication',
-                                'neurotransmitter_system'
+                                'neurotransmitter_system',
+                                'neuropsych_symptom'
                             )), 0)::INTEGER
                         AS entity_core_families
                 FROM source src
@@ -132,7 +133,17 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                 SELECT
                     src.corpus_id,
                     COUNT(r.*)::INTEGER AS paper_relation_count,
-                    COALESCE(BOOL_OR(rr.subject_type IS NOT NULL), false) AS has_relation_rule_hit
+                    COALESCE(BOOL_OR(
+                        rr.subject_type IS NOT NULL
+                        AND (
+                            rr.relation_type = 'treat'
+                            OR EXISTS (
+                                SELECT 1 FROM solemd.entity_rule med
+                                WHERE med.family_key = 'psychiatric_medication'
+                                  AND med.concept_id = r.subject_id
+                            )
+                        )
+                    ), false) AS has_relation_rule_hit
                 FROM source src
                 LEFT JOIN pubtator.relations r ON r.pmid = src.pmid
                 LEFT JOIN solemd.relation_rule rr

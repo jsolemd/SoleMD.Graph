@@ -42,6 +42,7 @@ import {
   queryInfoHistogram,
   queryInfoHistogramsBatch,
   queryInfoSummary,
+  queryNumericStatsBatch,
   queryOverlayPointIds,
   queryPaperDetail,
   queryPaperDocument,
@@ -55,6 +56,7 @@ import {
   queryNumericValues,
   queryVisibilityBudget,
 } from './queries'
+import type { NumericStatsRow } from './queries'
 import type { GraphBundleSession, GraphCanvasListener, ProgressCallback } from './types'
 import { createBoundedCache, getAutoloadBundleTables } from './utils'
 import {
@@ -227,6 +229,10 @@ export async function createGraphBundleSession(
       string,
       Promise<Record<string, GraphInfoHistogramResult>>
     >()
+    const numericStatsDatasetCache = createBoundedCache<
+      string,
+      Promise<Record<string, NumericStatsRow>>
+    >()
     const summaryDatasetCache = createBoundedCache<string, Promise<GraphInfoSummary>>()
     const categoricalValueDatasetCache = createBoundedCache<string, Promise<string[]>>()
     const numericValueDatasetCache = createBoundedCache<string, Promise<number[]>>()
@@ -253,6 +259,7 @@ export async function createGraphBundleSession(
       scopeCoordinatesCache.clear()
       facetDatasetCache.clear()
       histogramDatasetCache.clear()
+      numericStatsDatasetCache.clear()
       summaryDatasetCache.clear()
       categoricalValueDatasetCache.clear()
       numericValueDatasetCache.clear()
@@ -445,6 +452,39 @@ export async function createGraphBundleSession(
         throw error
       })
       histogramDatasetCache.set(cacheKey, next)
+      return next
+    }
+
+    const getCachedDatasetNumericStats = (args: {
+      layer: Parameters<typeof queryNumericStatsBatch>[1]['layer']
+      columns: string[]
+    }) => {
+      const sortedColumns = [...new Set(args.columns)].sort()
+      const cacheKey = JSON.stringify({
+        layer: args.layer,
+        columns: sortedColumns,
+        overlayRevision,
+      })
+      const cached = numericStatsDatasetCache.get(cacheKey)
+      if (cached) {
+        return cached
+      }
+
+      const next = queryNumericStatsBatch(conn, {
+        layer: args.layer,
+        scope: 'dataset',
+        columns: args.columns,
+        currentPointScopeSql: null,
+      }).then((result) => {
+        if (Object.keys(result).length === 0) {
+          numericStatsDatasetCache.delete(cacheKey)
+        }
+        return result
+      }).catch((error) => {
+        numericStatsDatasetCache.delete(cacheKey)
+        throw error
+      })
+      numericStatsDatasetCache.set(cacheKey, next)
       return next
     }
 
@@ -1057,6 +1097,20 @@ export async function createGraphBundleSession(
         }
 
         return queryInfoHistogramsBatch(conn, { ...args, bins: safeBins })
+      },
+      getNumericStatsBatch(args) {
+        const hasCurrentScope =
+          typeof args.currentPointScopeSql === 'string' &&
+          args.currentPointScopeSql.trim().length > 0
+
+        if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope)) {
+          return getCachedDatasetNumericStats({
+            layer: args.layer,
+            columns: args.columns,
+          })
+        }
+
+        return queryNumericStatsBatch(conn, args)
       },
       getFacetSummary(args) {
         const safeMaxItems = args.maxItems ?? 6

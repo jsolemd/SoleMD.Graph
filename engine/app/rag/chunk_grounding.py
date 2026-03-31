@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app import db
-from app.rag.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
+from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse_rows
 

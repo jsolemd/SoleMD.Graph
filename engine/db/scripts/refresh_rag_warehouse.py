@@ -8,7 +8,7 @@ from pathlib import Path
 # Add engine/ to path so app imports work when run directly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from app.rag.orchestrator import main
+from app.rag_ingest.orchestrator import main
 
 
 if __name__ == "__main__":

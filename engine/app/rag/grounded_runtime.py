@@ -8,7 +8,7 @@ from pydantic import Field
 
 from app import db
 from app.rag.chunk_grounding import fetch_chunk_grounding_rows
-from app.rag.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
+from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag.parse_contract import ParseContractModel
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse_rows

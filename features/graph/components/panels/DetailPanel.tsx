@@ -10,7 +10,7 @@ import type {
   GraphBundle,
   GraphBundleQueries,
 } from "@/features/graph/types";
-import { iconBtnStyles, PanelShell } from "./PanelShell";
+import { iconBtnStyles, PANEL_BODY_CLASS, PanelDivider, PanelShell } from "./PanelShell";
 import {
   buildPaperNoteMarkdown,
 } from "./detail/helpers";
@@ -102,21 +102,21 @@ export function DetailPanel({
           <Tooltip label="Back to selection" position="bottom" withArrow>
             <ActionIcon
               variant="transparent"
-              size={28}
+              size={24}
               radius="xl"
               className="graph-icon-btn"
               styles={iconBtnStyles}
               onClick={handleBackToSelection}
               aria-label="Back to selection"
             >
-              <ArrowLeft size={14} />
+              <ArrowLeft size={12} />
             </ActionIcon>
           </Tooltip>
         ) : null
       }
     >
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
-        <Stack gap="lg">
+      <div className={PANEL_BODY_CLASS}>
+        <Stack gap="sm">
           <DetailHeader node={selectedNode} paper={detail?.paper ?? null} />
 
           <SelectionActionBar
@@ -128,7 +128,7 @@ export function DetailPanel({
             openGraphPaperLabel={undefined}
           />
 
-          <div style={{ height: 1, backgroundColor: "var(--graph-panel-border)" }} />
+          <PanelDivider />
 
           <PaperDocumentSection
             nodeDisplayPreview={selectedNode.displayPreview}

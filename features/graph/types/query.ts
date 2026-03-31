@@ -3,6 +3,7 @@ import type { GraphClusterDetail } from './detail'
 import type { PaperDocument } from './detail'
 import type { GraphSelectionDetail } from './detail'
 import type { MapLayer } from './config'
+import type { NumericStatsRow } from '@/features/graph/duckdb/queries'
 
 export interface GraphQueryResult {
   appliedLimit: number | null
@@ -189,6 +190,9 @@ export interface GraphBundleQueries {
       useQuantiles?: boolean
     }
   ) => Promise<Record<string, GraphInfoHistogramResult>>
+  getNumericStatsBatch: (
+    args: GraphScopeQueryArgs & { columns: string[] }
+  ) => Promise<Record<string, NumericStatsRow>>
   searchPoints: (args: {
     layer: MapLayer
     column: string

@@ -1,25 +1,21 @@
-import { resolveGraphLabelMode } from "../label-mode";
+import { resolveGraphLabelMode, type GraphLabelModeInput } from "../label-mode";
+
+const BASE: GraphLabelModeInput = {
+  pointLabelColumn: "clusterLabel",
+  showPointLabels: true,
+  showDynamicLabels: true,
+  showHoveredPointLabel: true,
+  hoverLabelAlwaysOn: false,
+  zoomedIn: false,
+  isActivelyZooming: false,
+  hasFocusedPoint: false,
+  hasSelection: false,
+};
 
 describe("label-mode", () => {
   it("keeps cluster labels at overview and switches to display labels on zoom", () => {
-    const overview = resolveGraphLabelMode({
-      pointLabelColumn: "clusterLabel",
-      showPointLabels: true,
-      showDynamicLabels: true,
-      zoomedIn: false,
-      isActivelyZooming: false,
-      hasFocusedPoint: false,
-      hasSelection: false,
-    });
-    const zoomed = resolveGraphLabelMode({
-      pointLabelColumn: "clusterLabel",
-      showPointLabels: true,
-      showDynamicLabels: true,
-      zoomedIn: true,
-      isActivelyZooming: false,
-      hasFocusedPoint: false,
-      hasSelection: false,
-    });
+    const overview = resolveGraphLabelMode(BASE);
+    const zoomed = resolveGraphLabelMode({ ...BASE, zoomedIn: true });
 
     expect(overview.effectivePointLabelColumn).toBe("clusterLabel");
     expect(overview.showDynamicLabels).toBe(true);
@@ -28,11 +24,7 @@ describe("label-mode", () => {
 
   it("promotes focused and selected points to native selected-label behavior", () => {
     const focused = resolveGraphLabelMode({
-      pointLabelColumn: "clusterLabel",
-      showPointLabels: true,
-      showDynamicLabels: true,
-      zoomedIn: false,
-      isActivelyZooming: false,
+      ...BASE,
       hasFocusedPoint: true,
       focusedPointId: "paper-7",
       hasSelection: true,
@@ -46,5 +38,36 @@ describe("label-mode", () => {
     expect(focused.showDynamicLabels).toBe(false);
     expect(focused.showTopLabels).toBe(false);
     expect(focused.showLabelsFor).toEqual(["paper-7"]);
+  });
+
+  it("gates hover labels on zoom level", () => {
+    const zoomedOut = resolveGraphLabelMode(BASE);
+    const zoomedIn = resolveGraphLabelMode({ ...BASE, zoomedIn: true });
+    const activelyZooming = resolveGraphLabelMode({
+      ...BASE,
+      zoomedIn: true,
+      isActivelyZooming: true,
+    });
+
+    expect(zoomedOut.showHoveredPointLabel).toBe(false);
+    expect(zoomedIn.showHoveredPointLabel).toBe(true);
+    expect(activelyZooming.showHoveredPointLabel).toBe(false);
+  });
+
+  it("always-on override bypasses zoom gate for hover labels", () => {
+    const overrideOff = resolveGraphLabelMode(BASE);
+    const overrideOn = resolveGraphLabelMode({
+      ...BASE,
+      hoverLabelAlwaysOn: true,
+    });
+    const overrideWhileZooming = resolveGraphLabelMode({
+      ...BASE,
+      hoverLabelAlwaysOn: true,
+      isActivelyZooming: true,
+    });
+
+    expect(overrideOff.showHoveredPointLabel).toBe(false);
+    expect(overrideOn.showHoveredPointLabel).toBe(true);
+    expect(overrideWhileZooming.showHoveredPointLabel).toBe(false);
   });
 });

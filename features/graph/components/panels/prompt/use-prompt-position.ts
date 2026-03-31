@@ -52,6 +52,7 @@ export function usePromptPosition({
   const dragControls = useDragControls();
   const dragX = useMotionValue(0);
   const dragY = useMotionValue(0);
+  const cardHeightRef = useRef(100);
 
   // Animated card height for full-height modes.
   const cardHeight = useMotionValue(0);
@@ -243,7 +244,9 @@ export function usePromptPosition({
 
     pendingExitRef.current = null;
 
-    const targetH = cardRef.current?.offsetHeight ?? (pendingExit.targetMode === "collapsed" ? PILL_H : 100);
+    const measuredH = cardRef.current?.offsetHeight;
+    if (measuredH != null) cardHeightRef.current = measuredH;
+    const targetH = measuredH ?? (pendingExit.targetMode === "collapsed" ? PILL_H : 100);
     const targetPosition =
       pendingExit.targetMode === "collapsed"
         ? resolveCollapsedTarget()
@@ -293,7 +296,7 @@ export function usePromptPosition({
       posAnim.current.x = animate(dragX, userDragX.current || target.x, responsive);
       posAnim.current.y = animate(dragY, Math.min(userDragY.current || target.y, targetY), responsive);
     } else {
-      const cardH = cardRef.current?.offsetHeight ?? 100;
+      const cardH = cardRef.current?.offsetHeight ?? cardHeightRef.current;
       const target = resolveNormalTarget(cardH, true);
 
       if (autoTargetXRef.current !== target.x) {

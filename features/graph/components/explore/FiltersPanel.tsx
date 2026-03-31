@@ -94,7 +94,7 @@ export function FiltersPanel({
   useEffect(() => {
     setPrimedDatasets({});
     setLoadingColumns({});
-  }, [activeLayer, baselineCacheKey, bundleChecksum, overlayRevision]);
+  }, [activeLayer, baselineScope, bundleChecksum, overlayRevision]);
 
   useEffect(() => {
     if (visibleCategoricalFilters.length === 0) {

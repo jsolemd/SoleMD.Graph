@@ -1,5 +1,8 @@
 import type { ColumnType } from './columns'
 
+/** Default number of visible rows for info-panel sections (clusters, facets, bars). */
+export const DEFAULT_INFO_ROWS = 6
+
 export type InfoWidgetKind = 'histogram' | 'bars' | 'facet-summary'
 
 export interface InfoWidgetSlot {

@@ -50,6 +50,8 @@ class PaperBlockKind(StrEnum):
 
 class SentenceSegmentationSource(StrEnum):
     S2ORC_ANNOTATION = "s2orc_annotation"
+    STANZA_BIOMEDICAL = "stanza_biomedical"
+    SYNTOK = "syntok"
     DETERMINISTIC_FALLBACK = "deterministic_fallback"
 
 

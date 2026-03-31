@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.rag.chunk_backfill_checkpoint import (
+from app.rag_ingest.chunk_backfill_checkpoint import (
     checkpoint_paths,
     load_checkpoint_state,
     load_checkpoint_paper_reports,

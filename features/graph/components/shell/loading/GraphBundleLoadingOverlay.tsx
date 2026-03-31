@@ -1,68 +1,43 @@
 "use client";
 
-import { Group, Loader, Stack, Text } from "@mantine/core";
+import { useState } from "react";
+import {
+  ActionIcon,
+  Loader,
+  Text,
+  Tooltip,
+  useMantineColorScheme,
+  useComputedColorScheme,
+} from "@mantine/core";
+import { useMounted } from "@mantine/hooks";
 import { motion } from "framer-motion";
-import { formatBytes, formatNumber } from "@/lib/helpers";
-import { panelCardClassName, panelCardStyle, panelTextStyle, panelTextDimStyle } from "../../panels/PanelShell";
+import { Sun, Moon } from "lucide-react";
+import { settle } from "@/lib/motion";
 import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
 
 function getUserFriendlyMessage(
   stage: GraphBundleLoadProgress["stage"] | undefined,
   canvasReady: boolean,
-  loadedRows?: number,
-  totalRows?: number,
 ): string {
-  if (canvasReady) return "Rendering your visualization...";
+  if (canvasReady) return "Rendering...";
   switch (stage) {
     case "resolving":
-      return "Connecting to graph dataset...";
+      return "Connecting...";
     case "views":
-      return "Preparing data tables...";
+      return "Preparing tables...";
     case "points":
-      if (loadedRows != null && totalRows != null) {
-        return `Loading points (${formatNumber(loadedRows)} of ${formatNumber(totalRows)})...`;
-      }
-      return "Loading graph points...";
+      return "Loading points...";
     case "clusters":
       return "Organizing clusters...";
     case "facets":
       return "Building facets...";
     case "hydrating":
-      return "Preparing graph layout...";
+      return "Preparing layout...";
     case "ready":
-      return "Rendering your visualization...";
+      return "Rendering...";
     default:
-      return "Loading knowledge graph...";
+      return "Loading...";
   }
-}
-
-function BundleStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className={panelCardClassName}
-      style={panelCardStyle}
-    >
-      <Text
-        size="xs"
-        fw={600}
-        style={{
-          color: "var(--graph-panel-text-muted)",
-          letterSpacing: "0.05em",
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </Text>
-      <Text
-        mt={4}
-        size="sm"
-        fw={600}
-        style={panelTextStyle}
-      >
-        {value}
-      </Text>
-    </div>
-  );
 }
 
 export function GraphBundleLoadingOverlay({
@@ -74,18 +49,14 @@ export function GraphBundleLoadingOverlay({
   progress: GraphBundleLoadProgress | null;
   canvasReady: boolean;
 }) {
-  const basePointCount =
-    bundle.bundleManifest.tables.base_points?.rowCount ??
-    (typeof bundle.qaSummary?.["base_count"] === "number"
-      ? bundle.qaSummary["base_count"]
-      : undefined);
-  const qaClusterCount =
-    typeof bundle.qaSummary?.["cluster_count"] === "number"
-      ? bundle.qaSummary["cluster_count"]
-      : undefined;
-  const baseBytes =
-    (bundle.bundleManifest.tables.base_points?.bytes ?? 0) +
-    (bundle.bundleManifest.tables.base_clusters?.bytes ?? 0);
+  const { toggleColorScheme } = useMantineColorScheme();
+  const computedColorScheme = useComputedColorScheme("light");
+  const mounted = useMounted();
+  const [spinCount, setSpinCount] = useState(0);
+
+  const isDark = mounted ? computedColorScheme === "dark" : false;
+  const themeLabel = isDark ? "Switch to light mode" : "Switch to dark mode";
+
   const rawPercent = progress?.percent ?? 0;
   const percent = canvasReady
     ? Math.max(rawPercent, 95)
@@ -93,87 +64,85 @@ export function GraphBundleLoadingOverlay({
 
   return (
     <motion.div
-      className="fixed inset-0 z-[60] flex items-center justify-center"
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-5"
       style={{ backgroundColor: "var(--graph-bg)" }}
       initial={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: "easeInOut" }}
     >
-      <div
-        className="w-[min(420px,90vw)] rounded-3xl px-6 py-7"
-        style={{
-          backgroundColor: "var(--graph-panel-bg)",
-          border: "1px solid var(--graph-panel-border)",
-          boxShadow: "var(--graph-panel-shadow)",
-        }}
-      >
-        <Stack gap="md">
-          <Group justify="space-between" align="flex-start">
-            <div>
-              <Text
-                size="xs"
-                fw={700}
-                style={{
-                  color: "var(--graph-panel-text-muted)",
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                }}
-              >
-                Knowledge Graph
-              </Text>
-              <Text mt={4} size="lg" fw={600} style={panelTextStyle}>
-                {bundle.graphName}
-              </Text>
-            </div>
-            <Loader size="sm" color="var(--brand-accent)" />
-          </Group>
-
-          <Text size="sm" style={panelTextDimStyle}>
-            {getUserFriendlyMessage(
-              progress?.stage,
-              canvasReady,
-              progress?.loadedRows,
-              progress?.totalRows,
-            )}
-          </Text>
-
-          <div
-            className="overflow-hidden rounded-full"
-            style={{ backgroundColor: "var(--graph-panel-border)", height: 8 }}
+      {/* Theme toggle — top-right corner */}
+      <div className="absolute right-3 top-3">
+        <Tooltip label={themeLabel} position="bottom" withArrow>
+          <ActionIcon
+            onClick={() => {
+              setSpinCount((c) => c + 1);
+              toggleColorScheme();
+            }}
+            variant="transparent"
+            size="lg"
+            radius="xl"
+            className="graph-icon-btn"
+            aria-label={themeLabel}
           >
-            <div
-              style={{
-                width: `${percent}%`,
-                height: "100%",
-                backgroundColor: "var(--brand-accent)",
-                transition: "width 300ms ease",
-              }}
-            />
-          </div>
+            <motion.div
+              className="flex items-center justify-center"
+              animate={{ rotate: spinCount * 360 }}
+              transition={settle}
+            >
+              {isDark ? <Sun size={18} /> : <Moon size={18} />}
+            </motion.div>
+          </ActionIcon>
+        </Tooltip>
+      </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <BundleStat
-              label="Base Points"
-              value={
-                basePointCount != null
-                  ? formatNumber(basePointCount)
-                  : "..."
-              }
-            />
-            <BundleStat
-              label="Clusters"
-              value={
-                qaClusterCount != null
-                  ? formatNumber(qaClusterCount)
-                  : "..."
-              }
-            />
-            <BundleStat
-              label="Base Size"
-              value={formatBytes(baseBytes || bundle.bundleBytes)}
-            />
-          </div>
-        </Stack>
+      {/* Branding + graph name */}
+      <div className="flex flex-col items-center gap-1">
+        <Text
+          size="xs"
+          fw={600}
+          style={{
+            color: "var(--text-tertiary)",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+          }}
+        >
+          SoleMD
+        </Text>
+        <Text size="md" fw={500} style={{ color: "var(--text-primary)" }}>
+          {bundle.graphName}
+        </Text>
+        <Text
+          size="10px"
+          style={{
+            color: "var(--text-tertiary)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          Powered by Semantic Scholar
+        </Text>
+      </div>
+
+      {/* Progress bar + status */}
+      <div className="flex w-[min(280px,70vw)] flex-col items-center gap-3">
+        <div
+          className="w-full overflow-hidden rounded-full"
+          style={{ backgroundColor: "var(--graph-panel-border)", height: 4 }}
+        >
+          <div
+            style={{
+              width: `${percent}%`,
+              height: "100%",
+              backgroundColor: "var(--brand-accent)",
+              transition: "width 300ms ease",
+            }}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Loader size={12} color="var(--text-tertiary)" />
+          <Text size="xs" style={{ color: "var(--text-tertiary)" }}>
+            {getUserFriendlyMessage(progress?.stage, canvasReady)}
+          </Text>
+        </div>
       </div>
     </motion.div>
   );

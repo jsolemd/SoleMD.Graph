@@ -20,6 +20,7 @@ import type {
   OverlayProducerId,
   PaperDocument,
 } from '@/features/graph/types'
+import type { NumericStatsRow } from './queries'
 
 export interface GraphCanvasSource {
   duckDBConnection: {
@@ -141,6 +142,12 @@ export interface GraphBundleSession {
     useQuantiles?: boolean
     currentPointScopeSql: string | null
   }) => Promise<Record<string, GraphInfoHistogramResult>>
+  getNumericStatsBatch: (args: {
+    layer: MapLayer
+    scope: GraphInfoScope
+    columns: string[]
+    currentPointScopeSql: string | null
+  }) => Promise<Record<string, NumericStatsRow>>
   searchPoints: (args: {
     layer: MapLayer
     column: string

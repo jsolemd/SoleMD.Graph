@@ -44,19 +44,42 @@ _INITIAL_BACKOFF = 6.0  # seconds
 # Prompt templates
 # ---------------------------------------------------------------------------
 _CLUSTER_LABEL_PROMPT = """\
-You are a biomedical research librarian. Given a batch of paper clusters from a \
-neuroscience / psychiatry knowledge graph, produce a concise clinical label and \
-description for each cluster.
+You are a consultation-liaison psychiatrist and neuropsychiatry expert labeling \
+research community clusters in a knowledge graph that spans psychiatry, neurology, \
+and overlapping medical specialties.
 
-Each cluster below has:
+Each cluster represents a RESEARCH COMMUNITY — papers clustered by semantic \
+similarity of their embeddings. A single disease (e.g., schizophrenia) may appear \
+in multiple clusters representing different research approaches (genetics vs \
+pharmacology vs neuroimaging).
+
+For each cluster you receive:
 - cluster_id: integer identifier
-- keywords: the top c-TF-IDF terms (most distinctive words)
-- titles: the 20 highest-cited paper titles in the cluster
+- member_count: total papers in the cluster
+- keywords: the most distinctive terms (c-TF-IDF — terms that distinguish THIS \
+  cluster from all others)
+- entity_families: which curated entity families are most represented \
+  (e.g., psychiatric_disorder, neurological_disorder, psychiatric_medication)
+- top_entities: the most frequent curated medical/psychiatric entities with paper counts
+- titles: 20 representative paper titles (stratified: 5 landmark, 5 recent, 10 random)
+
+Rules for labels:
+1. Labels MUST identify the specific RESEARCH QUESTION or APPROACH, not just a \
+   brain region, cell type, or generic noun. "Cortex" is never acceptable — \
+   "Prefrontal Cortex in Schizophrenia" or "Cortical Mapping Methods" would be.
+2. If the cluster spans a disease + method, name BOTH: "Depression Neuroimaging" \
+   not "Depression" or "fMRI".
+3. If entity_families shows mixed psychiatric and neurological, the label should \
+   reflect the INTERSECTION: "Autoimmune Encephalitis Psychiatry" not just \
+   "Encephalitis".
+4. Use clinical terminology a psychiatrist would recognize.
+5. 3-8 words, title case.
+6. The description should state what makes this cluster DISTINCT from related clusters.
 
 Return a JSON array (no markdown fences) of objects with exactly these keys:
 - "cluster_id": integer (echo back the input cluster_id)
-- "label": string, 3-7 words, clinical/scientific terminology, title case
-- "description": string, max 20 words summarizing the research theme
+- "label": string, 3-8 words, specific clinical/research terminology, title case
+- "description": string, 15-25 words stating the distinct research focus
 
 Clusters:
 {clusters_json}
@@ -83,8 +106,11 @@ Return a JSON object (no markdown fences) with exactly these keys:
 class ClusterContext:
     """Input context for one cluster sent to the LLM."""
     cluster_id: int
+    member_count: int
     keywords: list[str]
     titles: list[str]
+    entity_families: dict[str, int]    # family_key → paper_count
+    top_entities: list[tuple[str, str, int]]  # (name, family, count) — top 10
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,71 +212,149 @@ def _get_client() -> genai.Client:
 # ---------------------------------------------------------------------------
 @observe(name="graph.clusterLabeling.loadContext")
 def get_cluster_label_context(graph_run_id: str) -> list[ClusterContext]:
-    """Load keywords and representative titles for each cluster.
+    """Load keywords, stratified titles, and entity signal for each cluster.
 
     Keywords come from the existing c-TF-IDF labels in graph_clusters.
-    Titles are the top 20 papers per cluster ranked by citation count.
+    Titles are stratified: 5 landmark (highest-cited), 5 recent, 10 random.
+    Entity families and top entities come from entity_rule + entity_annotations.
     """
-    contexts: dict[int, ClusterContext] = {}
-
     with db.connect() as conn, conn.cursor() as cur:
-        # Load existing c-TF-IDF labels as keyword proxies
+        # ── Keywords + member counts from c-TF-IDF labels ─────────
         cur.execute(
             """
-            SELECT cluster_id, label
+            SELECT cluster_id, label, member_count
             FROM solemd.graph_clusters
             WHERE graph_run_id = %s
               AND cluster_id != 0
+              AND hierarchy_level = 0
               AND label IS NOT NULL
             ORDER BY cluster_id
             """,
             (graph_run_id,),
         )
         cluster_keywords: dict[int, list[str]] = {}
+        cluster_member_counts: dict[int, int] = {}
         for row in cur.fetchall():
             cid = int(row["cluster_id"])
             label = row["label"]
-            # c-TF-IDF labels may be compound ("Pain & Delirium") — split for keywords
             keywords = [w.strip() for w in label.replace("&", ",").split(",") if w.strip()]
             cluster_keywords[cid] = keywords
+            cluster_member_counts[cid] = int(row["member_count"] or 0)
 
-        # Load top 20 titles per cluster by citation count
+        # ── Stratified title sampling ─────────────────────────────
+        # 5 highest-cited (landmark), 5 most-recent, 10 random (deterministic)
         cur.execute(
             """
             WITH ranked AS (
                 SELECT
-                    g.cluster_id,
-                    p.title,
+                    g.cluster_id, p.title,
                     ROW_NUMBER() OVER (
                         PARTITION BY g.cluster_id
                         ORDER BY COALESCE(p.citation_count, 0) DESC, g.corpus_id
-                    ) AS rn
+                    ) AS cite_rank,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY g.cluster_id
+                        ORDER BY p.year DESC NULLS LAST, g.corpus_id
+                    ) AS recency_rank,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY g.cluster_id
+                        ORDER BY hashtext(g.corpus_id::text)
+                    ) AS random_rank
                 FROM solemd.graph_points g
                 JOIN solemd.papers p ON p.corpus_id = g.corpus_id
                 WHERE g.graph_run_id = %s
                   AND g.cluster_id IS NOT NULL
                   AND g.cluster_id != 0
+                  AND p.title IS NOT NULL
             )
             SELECT cluster_id, title
             FROM ranked
-            WHERE rn <= 20
-            ORDER BY cluster_id, rn
+            WHERE cite_rank <= 5 OR recency_rank <= 5 OR random_rank <= 10
+            ORDER BY cluster_id, cite_rank
             """,
             (graph_run_id,),
         )
         cluster_titles: dict[int, list[str]] = defaultdict(list)
         for row in cur.fetchall():
             cid = int(row["cluster_id"])
-            if row["title"]:
-                cluster_titles[cid].append(row["title"])
+            title = row["title"]
+            # Deduplicate — a paper may qualify for multiple strata
+            if title and title not in cluster_titles[cid]:
+                cluster_titles[cid].append(title)
 
-    # Merge keywords + titles into ClusterContext objects
-    all_cids = sorted(set(cluster_keywords) | set(cluster_titles))
+        # ── Entity family distribution per cluster ────────────────
+        cur.execute(
+            """
+            SELECT g.cluster_id, er.family_key,
+                COUNT(DISTINCT g.corpus_id)::INTEGER AS paper_count
+            FROM solemd.graph_points g
+            JOIN solemd.corpus c ON c.corpus_id = g.corpus_id
+            JOIN pubtator.entity_annotations ea ON ea.pmid = c.pmid
+            JOIN solemd.entity_rule er
+                ON er.entity_type = ea.entity_type AND er.concept_id = ea.concept_id
+            WHERE g.graph_run_id = %s
+              AND g.cluster_id IS NOT NULL AND g.cluster_id != 0
+            GROUP BY g.cluster_id, er.family_key
+            ORDER BY g.cluster_id, paper_count DESC
+            """,
+            (graph_run_id,),
+        )
+        cluster_entity_families: dict[int, dict[str, int]] = defaultdict(dict)
+        for row in cur.fetchall():
+            cid = int(row["cluster_id"])
+            cluster_entity_families[cid][row["family_key"]] = row["paper_count"]
+
+        # ── Top entity concepts per cluster (top 10) ──────────────
+        cur.execute(
+            """
+            WITH entity_counts AS (
+                SELECT g.cluster_id, er.canonical_name, er.family_key,
+                    COUNT(DISTINCT g.corpus_id)::INTEGER AS paper_count,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY g.cluster_id
+                        ORDER BY COUNT(DISTINCT g.corpus_id) DESC
+                    ) AS rn
+                FROM solemd.graph_points g
+                JOIN solemd.corpus c ON c.corpus_id = g.corpus_id
+                JOIN pubtator.entity_annotations ea ON ea.pmid = c.pmid
+                JOIN solemd.entity_rule er
+                    ON er.entity_type = ea.entity_type
+                   AND er.concept_id = ea.concept_id
+                   AND er.confidence = 'high'
+                WHERE g.graph_run_id = %s
+                  AND g.cluster_id IS NOT NULL AND g.cluster_id != 0
+                GROUP BY g.cluster_id, er.canonical_name, er.family_key
+            )
+            SELECT cluster_id, canonical_name, family_key, paper_count
+            FROM entity_counts
+            WHERE rn <= 10
+            ORDER BY cluster_id, paper_count DESC
+            """,
+            (graph_run_id,),
+        )
+        cluster_top_entities: dict[int, list[tuple[str, str, int]]] = defaultdict(list)
+        for row in cur.fetchall():
+            cid = int(row["cluster_id"])
+            cluster_top_entities[cid].append(
+                (row["canonical_name"], row["family_key"], row["paper_count"])
+            )
+
+    # ── Merge all signals into ClusterContext ─────────────────────
+    all_cids = sorted(
+        set(cluster_keywords) | set(cluster_titles)
+        | set(cluster_entity_families) | set(cluster_top_entities)
+    )
+    contexts = []
     for cid in all_cids:
-        contexts[cid] = ClusterContext(
-            cluster_id=cid,
-            keywords=cluster_keywords.get(cid, []),
-            titles=cluster_titles.get(cid, []),
+        contexts.append(
+            ClusterContext(
+                cluster_id=cid,
+                member_count=cluster_member_counts.get(cid, 0),
+                keywords=cluster_keywords.get(cid, []),
+                titles=cluster_titles.get(cid, [])[:20],
+                entity_families=dict(cluster_entity_families.get(cid, {})),
+                top_entities=cluster_top_entities.get(cid, [])[:10],
+            )
         )
 
     logger.info(
@@ -258,7 +362,7 @@ def get_cluster_label_context(graph_run_id: str) -> list[ClusterContext]:
         len(contexts),
         graph_run_id,
     )
-    return sorted(contexts.values(), key=lambda c: c.cluster_id)
+    return contexts
 
 
 # ---------------------------------------------------------------------------
@@ -305,7 +409,13 @@ def label_clusters_with_llm(
             [
                 {
                     "cluster_id": c.cluster_id,
+                    "member_count": c.member_count,
                     "keywords": c.keywords,
+                    "entity_families": c.entity_families,
+                    "top_entities": [
+                        {"name": name, "family": fam, "papers": count}
+                        for name, fam, count in c.top_entities[:10]
+                    ],
                     "titles": c.titles[:20],
                 }
                 for c in batch

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from collections.abc import Sequence
 
 from app.rag.parse_contract import ParseSourceSystem
-from app.rag.source_parsers import ParsedPaperSource
+from app.rag_ingest.source_parsers import ParsedPaperSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +60,10 @@ def profile_parsed_source(source: ParsedPaperSource) -> ParsedSourceStructuralPr
         reference_count=len(source.references),
         entity_count=len(source.entities),
     )
+
+
+def parsed_source_has_warehouse_value(source: ParsedPaperSource) -> bool:
+    return profile_parsed_source(source).has_annotation_value
 
 
 def select_primary_text_source(

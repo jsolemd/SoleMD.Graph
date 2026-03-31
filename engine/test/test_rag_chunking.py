@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from app.rag.chunking import assemble_structural_chunks
 from app.rag.parse_contract import (
     PaperBlockKind,
     PaperBlockRecord,
@@ -16,6 +15,7 @@ from app.rag.serving_contract import (
     PaperChunkVersionRecord,
     SentenceOverlapPolicy,
 )
+from app.rag_ingest.chunking import assemble_structural_chunks
 
 
 def _common_identity() -> dict[str, object]:
@@ -51,6 +51,31 @@ def _chunk_version() -> PaperChunkVersionRecord:
         hard_max_tokens=16,
         sentence_overlap_policy=SentenceOverlapPolicy.NONE,
     )
+
+
+def test_assemble_structural_chunks_skips_low_value_single_fragment_narrative_block():
+    common = _common_identity()
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=3,
+            text="Our",
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+
+    result = assemble_structural_chunks(
+        version=_chunk_version(),
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert result.chunks == []
+    assert result.members == []
 
 
 def test_assemble_structural_chunks_merges_adjacent_narrative_blocks_within_budget():
@@ -109,6 +134,46 @@ def test_assemble_structural_chunks_merges_adjacent_narrative_blocks_within_budg
     assert len(result.members) == 2
 
 
+def test_assemble_structural_chunks_force_merges_small_adjacent_narrative_blocks_under_hard_max():
+    common = _common_identity()
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=17,
+            text="Our findings",
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+        PaperBlockRecord(
+            **common,
+            source_start_offset=18,
+            source_end_offset=63,
+            text="reduced postoperative delirium in older adults.",
+            block_ordinal=1,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+    version = _chunk_version().model_copy(update={"target_token_budget": 4, "hard_max_tokens": 8})
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert len(result.chunks) == 1
+    assert (
+        result.chunks[0].text == "Our findings\n\nreduced postoperative delirium in older adults."
+    )
+    assert result.chunks[0].token_count_estimate == 8
+    assert len(result.members) == 2
+
+
 def test_assemble_structural_chunks_keeps_captions_standalone():
     common = _common_identity()
     blocks = [
@@ -134,9 +199,7 @@ def test_assemble_structural_chunks_keeps_captions_standalone():
         ),
     ]
 
-    result = assemble_structural_chunks(
-        version=_chunk_version(), blocks=blocks, sentences=[]
-    )
+    result = assemble_structural_chunks(version=_chunk_version(), blocks=blocks, sentences=[])
 
     assert len(result.chunks) == 2
     assert result.chunks[0].primary_block_kind == PaperBlockKind.FIGURE_CAPTION
@@ -168,9 +231,7 @@ def test_assemble_structural_chunks_respects_section_boundaries():
         ),
     ]
 
-    result = assemble_structural_chunks(
-        version=_chunk_version(), blocks=blocks, sentences=[]
-    )
+    result = assemble_structural_chunks(version=_chunk_version(), blocks=blocks, sentences=[])
 
     assert len(result.chunks) == 2
     assert [chunk.canonical_section_ordinal for chunk in result.chunks] == [0, 1]
@@ -292,9 +353,7 @@ def test_assemble_structural_chunks_splits_oversized_narrative_block_on_sentence
             segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
         ),
     ]
-    version = _chunk_version().model_copy(
-        update={"target_token_budget": 10, "hard_max_tokens": 12}
-    )
+    version = _chunk_version().model_copy(update={"target_token_budget": 10, "hard_max_tokens": 12})
 
     result = assemble_structural_chunks(
         version=version,
@@ -432,9 +491,7 @@ def test_assemble_structural_chunks_splits_oversized_single_block_by_sentences()
             segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
         ),
     ]
-    version = _chunk_version().model_copy(
-        update={"target_token_budget": 4, "hard_max_tokens": 6}
-    )
+    version = _chunk_version().model_copy(update={"target_token_budget": 4, "hard_max_tokens": 6})
 
     result = assemble_structural_chunks(
         version=version,
@@ -449,3 +506,94 @@ def test_assemble_structural_chunks_splits_oversized_single_block_by_sentences()
     ]
     assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
     assert [member.canonical_sentence_ordinal for member in result.members] == [0, 1, 2, 3]
+
+
+def test_assemble_structural_chunks_splits_oversized_table_body_block_on_structural_units():
+    common = _common_identity()
+    table_text = (
+        "Characteristic\tIntervention\tControl\t"
+        "Mean age years\t52.5\t51.6\t"
+        "Body mass index\t26.2\t25.4"
+    )
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(table_text),
+            text=table_text,
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.TABLE_BODY_TEXT,
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={
+            "included_block_kinds": [PaperBlockKind.TABLE_BODY_TEXT],
+            "target_token_budget": 5,
+            "hard_max_tokens": 6,
+        }
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert len(result.chunks) == 3
+    assert [chunk.text for chunk in result.chunks] == [
+        "Characteristic\nIntervention\nControl",
+        "Mean age years\n52.5\n51.6",
+        "Body mass index\n26.2\n25.4",
+    ]
+    assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
+    assert all(member.member_kind == ChunkMemberKind.BLOCK for member in result.members)
+    assert all(member.canonical_block_ordinal == 0 for member in result.members)
+
+
+def test_assemble_structural_chunks_ignores_table_sentence_rows_and_chunks_from_block_units():
+    common = _common_identity()
+    table_text = "Outcome\tIntervention\tControl\tAnxiety\t4.2\t5.1\tDepression\t3.1\t4.4"
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(table_text),
+            text=table_text,
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.TABLE_BODY_TEXT,
+        ),
+    ]
+    sentences = [
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(table_text),
+            text=table_text,
+            sentence_ordinal=0,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.DETERMINISTIC_FALLBACK,
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={
+            "included_block_kinds": [PaperBlockKind.TABLE_BODY_TEXT],
+            "target_token_budget": 5,
+            "hard_max_tokens": 6,
+        }
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=sentences,
+    )
+
+    assert len(result.chunks) >= 2
+    assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
+    assert all(member.member_kind == ChunkMemberKind.BLOCK for member in result.members)
+    assert all(member.canonical_sentence_ordinal is None for member in result.members)

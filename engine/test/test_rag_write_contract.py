@@ -26,7 +26,7 @@ from app.rag.serving_contract import (
     SentenceOverlapPolicy,
 )
 from app.rag.warehouse_contract import AlignmentStatus, PaperCitationMentionRow, SpanOrigin
-from app.rag.write_contract import RagWarehouseWriteBatch
+from app.rag_ingest.write_contract import RagWarehouseWriteBatch
 
 
 def test_write_batch_accepts_consistent_parent_child_rows():

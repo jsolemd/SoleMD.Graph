@@ -4,6 +4,8 @@ import { Group, Stack, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
 import type { GraphInfoSummary } from "@/features/graph/types";
 import {
+  panelTextDimStyle,
+  panelTextStyle,
   sectionLabelStyle,
 } from "../../panels/PanelShell";
 import {
@@ -54,14 +56,19 @@ function SummaryRow({
 
   return (
     <div>
-      <Group justify="space-between" mb={2}>
-        <Text size="xs" c="var(--graph-panel-text)">
+      <Group justify="space-between" mb={2} wrap="nowrap" gap={4}>
+        <Text style={{ ...panelTextStyle, whiteSpace: "nowrap" }}>
           {label}
         </Text>
         <Text
-          size="xs"
-          c="var(--graph-panel-text-dim)"
-          style={{ fontVariantNumeric: "tabular-nums" }}
+          style={{
+            ...panelTextDimStyle,
+            fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            minWidth: 0,
+          }}
         >
           {getInfoComparisonDisplayValue({
             totalCount: totalValue ?? 0,
@@ -132,34 +139,36 @@ export function OverviewGrid({
           filteredValue={filteredInfo?.scopedCount ?? null}
           comparisonState={comparisonState}
         />
-        <SummaryRow
-          label="Base"
-          totalValue={datasetInfo.baseCount}
-          selectionValue={selectedInfo?.baseCount ?? null}
-          filteredValue={filteredInfo?.baseCount ?? null}
-          comparisonState={comparisonState}
-        />
-        <SummaryRow
-          label="Papers"
-          totalValue={datasetInfo.papers}
-          selectionValue={selectedInfo?.papers ?? null}
-          filteredValue={filteredInfo?.papers ?? null}
-          comparisonState={comparisonState}
-        />
-        <SummaryRow
-          label="Clusters"
-          totalValue={datasetInfo.clusters}
-          selectionValue={selectedInfo?.clusters ?? null}
-          filteredValue={filteredInfo?.clusters ?? null}
-          comparisonState={comparisonState}
-        />
-        <SummaryRow
-          label="Overlay"
-          totalValue={datasetInfo.overlayCount}
-          selectionValue={selectedInfo?.overlayCount ?? null}
-          filteredValue={filteredInfo?.overlayCount ?? null}
-          comparisonState={comparisonState}
-        />
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+          <SummaryRow
+            label="Base"
+            totalValue={datasetInfo.baseCount}
+            selectionValue={selectedInfo?.baseCount ?? null}
+            filteredValue={filteredInfo?.baseCount ?? null}
+            comparisonState={comparisonState}
+          />
+          <SummaryRow
+            label="Overlay"
+            totalValue={datasetInfo.overlayCount}
+            selectionValue={selectedInfo?.overlayCount ?? null}
+            filteredValue={filteredInfo?.overlayCount ?? null}
+            comparisonState={comparisonState}
+          />
+          <SummaryRow
+            label="Papers"
+            totalValue={datasetInfo.papers}
+            selectionValue={selectedInfo?.papers ?? null}
+            filteredValue={filteredInfo?.papers ?? null}
+            comparisonState={comparisonState}
+          />
+          <SummaryRow
+            label="Clusters"
+            totalValue={datasetInfo.clusters}
+            selectionValue={selectedInfo?.clusters ?? null}
+            filteredValue={filteredInfo?.clusters ?? null}
+            comparisonState={comparisonState}
+          />
+        </div>
       </Stack>
     </div>
   );

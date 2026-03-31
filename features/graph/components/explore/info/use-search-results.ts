@@ -37,16 +37,17 @@ export function useSearchResults({
   const [debouncedQuery] = useDebouncedValue(query.trim(), 140);
   const deferredQuery = useDeferredValue(debouncedQuery);
   const canSearch = !disabled && deferredQuery.length >= 2;
+  const [debouncedField] = useDebouncedValue(field, 100);
   const requestKey = useMemo(
     () =>
       canSearch
         ? JSON.stringify({
             activeLayer,
-            field,
+            field: debouncedField,
             query: deferredQuery,
           })
         : null,
-    [activeLayer, canSearch, deferredQuery, field],
+    [activeLayer, canSearch, deferredQuery, debouncedField],
   );
   const loading = canSearch && lastResolvedKey !== requestKey;
 
@@ -63,7 +64,7 @@ export function useSearchResults({
     queries
       .searchPoints({
         layer: activeLayer,
-        column: field,
+        column: debouncedField,
         query: deferredQuery,
       })
       .then((next) => {
@@ -92,7 +93,7 @@ export function useSearchResults({
     return () => {
       cancelled = true;
     };
-  }, [activeLayer, canSearch, deferredQuery, field, queries, requestKey]);
+  }, [canSearch, deferredQuery, debouncedField, queries, requestKey]);
 
   return {
     canSearch,

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { NumericStatsRow } from "@/features/graph/duckdb/queries";
 import type {
   GraphBundleQueries,
   GraphInfoHistogramResult,
 } from "@/features/graph/types";
 import { useQuantileHistogram } from "@/features/graph/lib/histogram-strategy";
+import { DEFAULT_INFO_ROWS } from "@/features/graph/lib/info-widgets";
 import {
   type InfoComparisonFacetRow,
   type InfoHistogramComparison,
@@ -17,8 +19,8 @@ type WidgetDescriptor = {
   kind: "histogram" | "bars" | "facet-summary";
 };
 
-const DEFAULT_BAR_ITEMS = 8;
-const DEFAULT_FACET_ITEMS = 6;
+const DEFAULT_BAR_ITEMS = DEFAULT_INFO_ROWS;
+const DEFAULT_FACET_ITEMS = DEFAULT_INFO_ROWS;
 const DEFAULT_HISTOGRAM_BINS = 16;
 
 interface UseInfoWidgetDataArgs {
@@ -31,9 +33,16 @@ interface UseInfoWidgetDataArgs {
   requestKey: string;
 }
 
+export interface NumericStatsComparison {
+  dataset: NumericStatsRow;
+  selection?: NumericStatsRow;
+  filtered?: NumericStatsRow;
+}
+
 interface UseInfoWidgetDataResult {
   categoricalSummaries: Record<string, InfoComparisonFacetRow[]>;
   histograms: Record<string, InfoHistogramComparison>;
+  numericStats: Record<string, NumericStatsComparison>;
   widgetError: string | null;
   lastLoadedKey: string | null;
 }
@@ -52,6 +61,9 @@ export function useInfoWidgetData({
   >({});
   const [histograms, setHistograms] = useState<
     Record<string, InfoHistogramComparison>
+  >({});
+  const [numericStats, setNumericStats] = useState<
+    Record<string, NumericStatsComparison>
   >({});
   const [widgetError, setWidgetError] = useState<string | null>(null);
   const [lastLoadedKey, setLastLoadedKey] = useState<string | null>(null);
@@ -152,6 +164,14 @@ export function useInfoWidgetData({
             currentPointScopeSql: null,
           })
         : Promise.resolve<Record<string, GraphInfoHistogramResult>>({}),
+      histogramColumns.length > 0
+        ? queries.getNumericStatsBatch({
+            layer: activeLayer,
+            scope: "dataset",
+            columns: histogramColumns,
+            currentPointScopeSql: null,
+          })
+        : Promise.resolve<Record<string, NumericStatsRow>>({}),
     ])
       .then(async ([
         datasetBarRows,
@@ -159,6 +179,7 @@ export function useInfoWidgetData({
         filteredBarRows,
         linearDatasetHistograms,
         quantileDatasetHistograms,
+        datasetNumericStats,
       ]) => {
         const datasetHistograms = {
           ...linearDatasetHistograms,
@@ -231,6 +252,25 @@ export function useInfoWidgetData({
               )
             : [];
 
+        const selectionNumericStats =
+          includeSelectionLayer && histogramColumns.length > 0
+            ? await queries.getNumericStatsBatch({
+                layer: activeLayer,
+                scope: "selected",
+                columns: histogramColumns,
+                currentPointScopeSql: null,
+              })
+            : {};
+        const filteredNumericStats =
+          includeFilteredLayer && histogramColumns.length > 0
+            ? await queries.getNumericStatsBatch({
+                layer: activeLayer,
+                scope: "current",
+                columns: histogramColumns,
+                currentPointScopeSql: filteredPointScopeSql,
+              })
+            : {};
+
         if (cancelled) {
           return;
         }
@@ -271,6 +311,24 @@ export function useInfoWidgetData({
             ]),
           ),
         );
+        setNumericStats(
+          Object.fromEntries(
+            histogramColumns
+              .filter((column) => datasetNumericStats[column] != null)
+              .map((column) => [
+                column,
+                {
+                  dataset: datasetNumericStats[column],
+                  selection: includeSelectionLayer
+                    ? selectionNumericStats[column]
+                    : undefined,
+                  filtered: includeFilteredLayer
+                    ? filteredNumericStats[column]
+                    : undefined,
+                },
+              ]),
+          ),
+        );
         setWidgetError(null);
         setLastLoadedKey(requestKey);
       })
@@ -308,6 +366,7 @@ export function useInfoWidgetData({
   return {
     categoricalSummaries,
     histograms,
+    numericStats,
     widgetError,
     lastLoadedKey,
   };

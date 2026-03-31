@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import json
 
-from app.rag.chunk_policy import (
+from app.rag.parse_contract import (
+    PaperBlockKind,
+    SectionRole,
+    SentenceSegmentationSource,
+)
+from app.rag_ingest.chunk_policy import (
     DEFAULT_CHUNK_VERSION_KEY,
     build_default_chunk_version,
     build_default_chunk_version_for_sources,
 )
-from app.rag.parse_contract import PaperBlockKind, SectionRole
-from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
+from app.rag_ingest.source_parsers import parse_biocxml_document, parse_s2orc_row
 
 
 def _build_s2orc_source():
-    body_text = (
-        "Results\n"
-        "Melatonin reduced delirium incidence [1]. Sleep quality improved."
-    )
+    body_text = "Results\nMelatonin reduced delirium incidence [1]. Sleep quality improved."
     bibliography_text = "1. Example trial paper."
     row = {
         "corpusid": 12345,
@@ -33,9 +34,7 @@ def _build_s2orc_source():
                         }
                     ]
                 ),
-                "paragraph": json.dumps(
-                    [{"start": 8, "end": len(body_text), "attributes": {}}]
-                ),
+                "paragraph": json.dumps([{"start": 8, "end": len(body_text), "attributes": {}}]),
                 "sentence": json.dumps(
                     [
                         {"start": 8, "end": 48, "attributes": {}},
@@ -68,9 +67,7 @@ def _build_s2orc_source():
             },
         },
     }
-    return parse_s2orc_row(
-        row, source_revision="2026-03-10", parser_version="parser-v1"
-    )
+    return parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
 
 def _build_bioc_overlay():
@@ -119,6 +116,25 @@ def test_build_default_chunk_version_uses_canonical_policy_defaults():
         "biocxml:2026-03-21",
         "s2orc_v2:2026-03-10",
     ]
+    assert version.tokenizer_name == "stanza_biomedical_tokens"
+    assert version.tokenizer_version is not None
+    assert "craft,genia" in version.tokenizer_version
+    assert version.sentence_source_policy == [
+        SentenceSegmentationSource.S2ORC_ANNOTATION,
+        SentenceSegmentationSource.STANZA_BIOMEDICAL,
+        SentenceSegmentationSource.SYNTOK,
+        SentenceSegmentationSource.DETERMINISTIC_FALLBACK,
+    ]
+
+
+def test_build_default_chunk_version_allows_preview_key_override():
+    version = build_default_chunk_version(
+        source_revision_keys=["s2orc_v2:2026-03-10"],
+        parser_version="parser-v1",
+        chunk_version_key="preview-stanza-hybrid-v1",
+    )
+
+    assert version.chunk_version_key == "preview-stanza-hybrid-v1"
 
 
 def test_build_default_chunk_version_for_sources_uses_primary_parser_and_unique_revisions():
@@ -130,6 +146,7 @@ def test_build_default_chunk_version_for_sources_uses_primary_parser_and_unique_
     assert version.chunk_version_key == DEFAULT_CHUNK_VERSION_KEY
     assert version.parser_version == "parser-v1"
     assert version.embedding_model == "text-embedding-3-large"
+    assert version.tokenizer_name == "stanza_biomedical_tokens"
     assert version.source_revision_keys == [
         "biocxml:2026-03-21",
         "s2orc_v2:2026-03-10",

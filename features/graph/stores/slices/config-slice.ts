@@ -74,6 +74,7 @@ export interface ConfigSlice {
 
   // Hover & interaction
   showHoveredPointLabel: boolean
+  hoverLabelAlwaysOn: boolean
   renderHoveredPointRing: boolean
 
   // Actions
@@ -99,6 +100,7 @@ export interface ConfigSlice {
   setScalePointsOnZoom: (scale: boolean) => void
   setShowSizeLegend: (show: boolean) => void
   setShowHoveredPointLabel: (show: boolean) => void
+  setHoverLabelAlwaysOn: (on: boolean) => void
   setRenderHoveredPointRing: (show: boolean) => void
   setActiveLayer: (layer: MapLayer) => void
   setAvailableLayers: (layers: MapLayer[]) => void
@@ -108,8 +110,8 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   activeLayer: 'corpus',
   availableLayers: ['corpus'],
 
-  pointColorColumn: 'hexColor',
-  pointColorStrategy: 'direct',
+  pointColorColumn: 'clusterLabel',
+  pointColorStrategy: 'categorical',
   pointSizeColumn: 'paperReferenceCount',
   pointSizeRange: [1.5, 5],
   pointLabelColumn: 'clusterLabel',
@@ -126,13 +128,14 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   tableView: 'selection',
 
   colorScheme: 'vibrant',
-  showColorLegend: false,
+  showColorLegend: true,
 
   pointSizeStrategy: 'auto',
   scalePointsOnZoom: true,
   showSizeLegend: false,
 
   showHoveredPointLabel: true,
+  hoverLabelAlwaysOn: false,
   renderHoveredPointRing: true,
 
   setPointColorColumn: (col) => set({ pointColorColumn: col }),
@@ -181,6 +184,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   setScalePointsOnZoom: (scale) => set({ scalePointsOnZoom: scale }),
   setShowSizeLegend: (show) => set({ showSizeLegend: show }),
   setShowHoveredPointLabel: (show) => set({ showHoveredPointLabel: show }),
+  setHoverLabelAlwaysOn: (on) => set({ hoverLabelAlwaysOn: on }),
   setRenderHoveredPointRing: (show) => set({ renderHoveredPointRing: show }),
   setActiveLayer: (layer) => {
     set(() => {

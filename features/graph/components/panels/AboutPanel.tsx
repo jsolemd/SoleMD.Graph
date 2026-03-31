@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import {
+  PANEL_BODY_CLASS,
   PanelShell,
   panelTextStyle,
   panelTextMutedStyle,
@@ -67,8 +68,8 @@ export function AboutPanel() {
       width={320}
       onClose={() => setActivePanel(null)}
     >
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
-        <Stack gap="md">
+      <div className={PANEL_BODY_CLASS}>
+        <Stack gap="sm">
           {/* Photo + name */}
           <div className="flex items-center gap-3">
             <Image

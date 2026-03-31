@@ -3,19 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from app.rag.orchestrator import (
+from app.rag_ingest.orchestrator import (
     RagRefreshReport,
     RagTargetCorpusRow,
     _load_corpus_ids_file,
     _parse_args,
     run_rag_refresh,
 )
-from app.rag.orchestrator_units import (
+from app.rag_ingest.orchestrator_units import (
     RagRefreshUnitClaim,
     RagRefreshUnitStatus,
 )
-from app.rag.source_locator import RagSourceLocatorLookup
-from app.rag.warehouse_writer import (
+from app.rag_ingest.source_locator import RagSourceLocatorLookup
+from app.rag_ingest.warehouse_writer import (
     RagWarehouseBulkIngestPaperResult,
     RagWarehouseBulkIngestResult,
 )
@@ -92,6 +92,21 @@ def _bioc_xml(document_id: str) -> str:
           <infon key=\"section_type\">RESULTS</infon>
           <offset>8</offset>
           <text>Resolved through BioC fallback.</text>
+        </passage>
+      </document>
+    </collection>
+    """
+
+
+def _bioc_title_only_xml(document_id: str, *, title: str = "Title only") -> str:
+    return f"""
+    <collection>
+      <document>
+        <id>{document_id}</id>
+        <passage>
+          <infon key=\"type\">title_1</infon>
+          <offset>0</offset>
+          <text>{title}</text>
         </passage>
       </document>
     </collection>
@@ -404,6 +419,85 @@ def test_run_rag_refresh_ingests_s2_then_bioc_fallback_and_calls_chunk_backfill(
     assert chunk_backfill.calls[0]["corpus_ids"] == [12345, 67890]
     assert chunk_backfill.calls[0]["checkpoint_root"] == tmp_path
     assert report.checkpoint_dir is not None
+
+
+def test_run_rag_refresh_can_inspect_quality_for_ingested_papers(tmp_path):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [RagTargetCorpusRow(corpus_id=12345, pmid=12345)]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return [tmp_path / "s2orc_v2-000.jsonl.gz"]
+
+        def iter_rows(self, shard_path):
+            yield _s2_row(12345)
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return []
+
+        def iter_documents(self, archive_path):
+            yield from ()
+
+    class FakeWriter:
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 3,
+                written_rows=len(source_groups) * 3,
+                deferred_stage_names=[],
+            )
+
+    quality_calls: list[list[int]] = []
+
+    class FakeQualityReport:
+        def model_dump(self, mode="python"):
+            return {
+                "requested_corpus_ids": [12345],
+                "flagged_corpus_ids": [],
+                "papers": [{"corpus_id": 12345, "flags": []}],
+            }
+
+    def fake_quality_inspector(*, corpus_ids):
+        quality_calls.append(list(corpus_ids))
+        return FakeQualityReport()
+
+    report = run_rag_refresh(
+        parser_version="parser-v1",
+        run_id="quality-demo",
+        corpus_ids=[12345],
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=FakeWriter(),
+        unit_store=FakeUnitStore(),
+        source_locator_repository=FakeSourceLocatorRepository(),
+        inspect_quality=True,
+        quality_inspector=fake_quality_inspector,
+    )
+
+    assert quality_calls == [[12345]]
+    assert report.quality_report == {
+        "requested_corpus_ids": [12345],
+        "flagged_corpus_ids": [],
+        "papers": [{"corpus_id": 12345, "flags": []}],
+    }
 
 
 def test_run_rag_refresh_resumes_completed_units_from_checkpoint(tmp_path):
@@ -768,6 +862,82 @@ def test_run_rag_refresh_can_refresh_source_locators_inline_for_explicit_targets
         "s2_stage": {"located_corpus_ids": [12345]},
         "bioc_stage": {"located_corpus_ids": [12345]},
     }
+
+
+def test_run_rag_refresh_skips_low_value_bioc_shell_documents(tmp_path):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [RagTargetCorpusRow(corpus_id=12345, pmid=12345)]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return []
+
+        def iter_rows(self, shard_path):
+            yield from ()
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return [tmp_path / "BioCXML.9.tar.gz"]
+
+        def iter_documents(self, archive_path):
+            yield "12345", _bioc_title_only_xml("12345", title="Friends.")
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append(source_groups)
+            return RagWarehouseBulkIngestResult(
+                papers=[],
+                batch_total_rows=0,
+                written_rows=0,
+                deferred_stage_names=[],
+            )
+
+    locator_repository = FakeSourceLocatorRepository()
+    locator_repository.upsert_entries(
+        [
+            {
+                "corpus_id": 12345,
+                "source_system": "biocxml",
+                "source_revision": "2026-03-21",
+                "source_kind": "bioc_archive",
+                "unit_name": "BioCXML.9.tar.gz",
+                "unit_ordinal": 1,
+                "source_document_key": "12345",
+            },
+        ]
+    )
+
+    writer = FakeWriter()
+    report = run_rag_refresh(
+        parser_version="parser-v1",
+        run_id="skip-low-value-bioc",
+        corpus_ids=[12345],
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=locator_repository,
+        skip_s2_primary=True,
+    )
+
+    assert writer.calls == []
+    assert report.bioc_fallback_stage.discovered_papers == 1
+    assert report.bioc_fallback_stage.ingested_papers == 0
+    assert report.bioc_fallback_stage.ingested_corpus_ids == []
+    assert report.bioc_fallback_stage.skipped_low_value_papers == 1
+    assert report.bioc_fallback_stage.skipped_low_value_corpus_ids == [12345]
 
 
 def test_run_rag_refresh_rejects_stage_row_budget_mismatch_on_resume(tmp_path):

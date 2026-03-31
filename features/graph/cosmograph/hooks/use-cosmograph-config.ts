@@ -4,11 +4,10 @@ import { useMemo } from "react";
 import { useComputedColorScheme } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { boostForLight, getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors";
+import { getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors";
 import { getPointIncludeColumns } from "@/features/graph/lib/cosmograph-columns";
 import { getLayerConfig } from "@/features/graph/lib/layers";
-import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
-import { BRAND } from "@/features/graph/lib/brand-colors";
+import { BRAND, CANVAS } from "@/features/graph/lib/brand-colors";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
 
 export function useCosmographConfig(canvas: GraphCanvasSource) {
@@ -30,7 +29,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     pointColorColumn, pointColorStrategy, colorScheme: colorSchemeName,
     pointSizeColumn, pointSizeRange, pointSizeStrategy, scalePointsOnZoom,
     pointLabelColumn, showPointLabels, showDynamicLabels,
-    showHoveredPointLabel, renderHoveredPointRing,
+    showHoveredPointLabel, hoverLabelAlwaysOn, renderHoveredPointRing,
     positionXColumn, positionYColumn,
   } = useDashboardStore(useShallow((s) => ({
     pointColorColumn: s.pointColorColumn,
@@ -44,6 +43,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     showPointLabels: s.showPointLabels,
     showDynamicLabels: s.showDynamicLabels,
     showHoveredPointLabel: s.showHoveredPointLabel,
+    hoverLabelAlwaysOn: s.hoverLabelAlwaysOn,
     renderHoveredPointRing: s.renderHoveredPointRing,
     positionXColumn: s.positionXColumn,
     positionYColumn: s.positionYColumn,
@@ -67,8 +67,10 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     scaleLinksOnZoom: s.scaleLinksOnZoom,
   })));
 
-  const colorTheme = useGraphColorTheme();
-
+  // Always resolve palette/column as 'dark' — the CSS saturate() filter on the
+  // canvas element handles light-mode boosting.  This keeps pointColorBy and
+  // pointColorPalette stable across theme toggles so Cosmograph never re-reads
+  // millions of points from DuckDB just because the user flipped the theme.
   const {
     colorColumn: effectiveColorColumn,
     colorStrategy: effectiveColorStrategy,
@@ -78,18 +80,18 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
         pointColorColumn,
         pointColorStrategy,
         colorSchemeName,
-        colorTheme,
+        'dark',
       ),
-    [pointColorColumn, pointColorStrategy, colorSchemeName, colorTheme],
+    [pointColorColumn, pointColorStrategy, colorSchemeName],
   );
 
   // Include activeLayer + pointColorColumn so Cosmograph receives a fresh array
   // reference on layer/column switches — without this, Cosmograph skips re-coloring
   // when the palette values haven't changed but the data table has.
   const palette = useMemo(
-    () => getPaletteColors(colorSchemeName, colorTheme),
+    () => getPaletteColors(colorSchemeName, 'dark'),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [colorSchemeName, colorTheme, activeLayer, pointColorColumn],
+    [colorSchemeName, activeLayer, pointColorColumn],
   );
 
   const pointIncludeColumns = useMemo(
@@ -120,30 +122,14 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     ],
   );
 
+  // Identity passthrough — theme-independent so toggling dark/light never
+  // invalidates the function reference and forces Cosmograph to re-read
+  // millions of points. Light-mode color boost is handled by a CSS filter
+  // on the canvas element instead (GPU-composited, instant).
   const pointColorByFn = useMemo(
-    () => {
-      // Dark mode or non-direct strategy: identity passthrough.
-      // Cosmograph only treats same-table DuckDB updates as point-data changes
-      // when one of the point config accessors changes. Keep the public table
-      // contract on `current_points_canvas_web`, and use an overlay-scoped
-      // identity accessor to force a re-read of that canonical view on overlay
-      // revision changes without leaking swap-view names into the render path.
-      if (isDark || effectiveColorStrategy !== 'direct') {
-        return (value: unknown) => value as string | [number, number, number, number];
-      }
-      // Light mode + direct strategy: boost saturation with memoized cache
-      const cache = new Map<string, string>();
-      return (value: unknown) => {
-        const raw = value as string;
-        let boosted = cache.get(raw);
-        if (!boosted) {
-          boosted = boostForLight(raw);
-          cache.set(raw, boosted);
-        }
-        return boosted;
-      };
-    },
-    [isDark, effectiveColorStrategy, activeLayer, pointColorColumn, canvas.overlayRevision],
+    () => (value: unknown) => value as string | [number, number, number, number],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeLayer, pointColorColumn, canvas.overlayRevision],
   );
 
   const linkColorByFn = useMemo(
@@ -160,16 +146,14 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
 
   // Auto-scale opacity: sparse graphs stay a touch more opaque so individual
   // points are visible; dense graphs soften further to avoid glare.
+  // Theme-independent — the CSS filter handles light-mode contrast.
   const effectiveOpacity = useMemo(() => {
-    const pointCount = totalPointCount;
     const density = Math.min(
-      Math.log10(Math.max(pointCount, 1)) / Math.log10(2_500_000),
+      Math.log10(Math.max(totalPointCount, 1)) / Math.log10(2_500_000),
       1,
     );
-    const minOpacity = isDark ? 0.42 : 0.62;
-    const maxOpacity = isDark ? 0.72 : 0.92;
-    return maxOpacity - density * (maxOpacity - minOpacity);
-  }, [isDark, totalPointCount]);
+    return CANVAS.maxOpacity - density * (CANVAS.maxOpacity - CANVAS.minOpacity);
+  }, [totalPointCount]);
 
   const fitViewPadding = useMemo(() => {
     const pointCount = totalPointCount;
@@ -179,7 +163,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     return 0.1;
   }, [totalPointCount]);
 
-  return {
+  return useMemo(() => ({
     // Theme
     isDark,
     colors,
@@ -202,6 +186,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     showPointLabels,
     showDynamicLabels,
     showHoveredPointLabel,
+    hoverLabelAlwaysOn,
     renderHoveredPointRing,
     positionXColumn,
     positionYColumn,
@@ -222,5 +207,44 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     totalPointCount,
     effectiveOpacity,
     fitViewPadding,
-  };
+  }), [
+    isDark,
+    colors,
+    activeLayer,
+    layerConfig,
+    activePanel,
+    tableOpen,
+    pointColorColumn,
+    effectiveColorColumn,
+    effectiveColorStrategy,
+    pointColorByFn,
+    palette,
+    pointSizeColumn,
+    pointSizeRange,
+    pointSizeStrategy,
+    scalePointsOnZoom,
+    pointLabelColumn,
+    showPointLabels,
+    showDynamicLabels,
+    showHoveredPointLabel,
+    hoverLabelAlwaysOn,
+    renderHoveredPointRing,
+    positionXColumn,
+    positionYColumn,
+    pointIncludeColumns,
+    hasLinks,
+    renderLinks,
+    linkOpacity,
+    linkGreyoutOpacity,
+    linkVisibilityDistanceRange,
+    linkVisibilityMinTransparency,
+    linkDefaultWidth,
+    curvedLinks,
+    linkDefaultArrows,
+    scaleLinksOnZoom,
+    linkColorByFn,
+    totalPointCount,
+    effectiveOpacity,
+    fitViewPadding,
+  ]);
 }

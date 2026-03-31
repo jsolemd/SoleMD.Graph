@@ -13,7 +13,7 @@ from app.rag.grounding_packets import (
 )
 from app.rag.serving_contract import AnswerSegment, CitedSpanPacket, GroundedAnswerRecord
 from app.rag.source_selection import GroundingSourcePlan
-from app.rag.source_parsers import ParsedPaperSource
+from app.rag_ingest.source_parsers import ParsedPaperSource
 from app.rag.warehouse_contract import (
     AlignmentStatus,
     PaperCitationMentionRow,

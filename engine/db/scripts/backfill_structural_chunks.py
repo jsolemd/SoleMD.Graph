@@ -10,11 +10,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app import db
-from app.rag.chunk_backfill_runtime import (
+from app.rag_ingest.chunk_backfill_runtime import (
     CanonicalChunkRows,
     backfill_default_chunks,
     run_chunk_backfill,
 )
+
+__all__ = [
+    "CanonicalChunkRows",
+    "backfill_default_chunks",
+    "run_chunk_backfill",
+    "main",
+]
 
 
 def _load_corpus_ids_file(path: Path) -> list[int]:
@@ -58,6 +65,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Parser version used for the canonical span parse.",
     )
     parser.add_argument(
+        "--chunk-version-key",
+        default=None,
+        help="Optional override chunk version key for preview or cutover backfills.",
+    )
+    parser.add_argument(
         "--embedding-model",
         default=None,
         help="Optional embedding model to record on the chunk version row.",
@@ -95,11 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     corpus_ids = list(
         dict.fromkeys(
             (args.corpus_ids or [])
-            + (
-                _load_corpus_ids_file(args.corpus_ids_file)
-                if args.corpus_ids_file
-                else []
-            )
+            + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
         )
     )
     try:
@@ -108,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             source_revision_keys=args.source_revision_keys,
             parser_version=args.parser_version,
             embedding_model=args.embedding_model,
+            chunk_version_key=args.chunk_version_key,
             batch_size=args.batch_size,
             run_id=args.run_id,
             reset_run=args.reset_run,

@@ -3,6 +3,10 @@
 import { Group, Text } from "@mantine/core";
 import type { GraphNodeDetailResponsePayload, GraphPaperDetail, PaperDocument } from "@/features/graph/types";
 import {
+  panelAccentCardClassName,
+  panelAccentCardStyle,
+} from "@/features/graph/components/panels/PanelShell";
+import {
   InlineStats,
   ExtLink,
   panelTextDimStyle,
@@ -41,7 +45,7 @@ export function PaperDocumentSection({
 
   return (
     <div>
-      <Text size="xs" fw={600} mb={8} style={sectionLabelStyle}>
+      <Text size="xs" fw={600} mb={4} style={sectionLabelStyle}>
         Preview
       </Text>
       {error ? (
@@ -49,11 +53,8 @@ export function PaperDocumentSection({
       ) : preview.text ? (
         <>
           <div
-            className="rounded-xl px-3 py-3 mb-2"
-            style={{
-              backgroundColor: "var(--mode-accent-subtle)",
-              border: "1px solid var(--mode-accent-border)",
-            }}
+            className={`${panelAccentCardClassName} mb-2`}
+            style={panelAccentCardStyle}
           >
             <Text style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}>{preview.text}</Text>
           </div>

@@ -1,9 +1,11 @@
 "use client";
 
-import { Badge, Group, Stack, Text } from "@mantine/core";
+import { useState } from "react";
+import { Badge, Group, Stack, Text, UnstyledButton } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
+import { DEFAULT_INFO_ROWS } from "@/features/graph/lib/info-widgets";
 import {
-  badgeOutlineStyles,
+  panelPillStyles,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
@@ -17,16 +19,23 @@ import {
 
 interface ClusterTableProps {
   rows: InfoComparisonClusterRow[];
+  totalClusters: number;
   clusterColors: Record<number, string>;
   comparisonState: InfoComparisonState;
 }
 
 export function ClusterTable({
   rows,
+  totalClusters,
   clusterColors,
   comparisonState,
 }: ClusterTableProps) {
+  const [expanded, setExpanded] = useState(false);
   if (rows.length === 0) return null;
+
+  const visibleRows = expanded ? rows : rows.slice(0, DEFAULT_INFO_ROWS);
+  const hiddenCount = rows.length - DEFAULT_INFO_ROWS;
+  const canExpand = rows.length > DEFAULT_INFO_ROWS;
 
   const maxCount = Math.max(
     ...rows.map((cluster) =>
@@ -46,12 +55,12 @@ export function ClusterTable({
         <Text fw={600} style={sectionLabelStyle}>
           Top Clusters
         </Text>
-        <Badge variant="outline" size="xs" styles={badgeOutlineStyles}>
-          {rows.length} shown
+        <Badge size="xs" styles={panelPillStyles}>
+          {visibleRows.length} of {totalClusters}
         </Badge>
       </Group>
       <Stack gap={6}>
-        {rows.map((cluster) => {
+        {visibleRows.map((cluster) => {
           const totalPct = maxCount > 0 ? (cluster.totalCount / maxCount) * 100 : 0;
           const selectionPct =
             comparisonState.hasSelection &&
@@ -143,6 +152,15 @@ export function ClusterTable({
             </div>
           );
         })}
+        {canExpand && (
+          <UnstyledButton
+            onClick={() => setExpanded((prev) => !prev)}
+            style={panelTextDimStyle}
+            className="mt-0.5"
+          >
+            {expanded ? "show fewer" : `${hiddenCount} more…`}
+          </UnstyledButton>
+        )}
       </Stack>
     </div>
   );

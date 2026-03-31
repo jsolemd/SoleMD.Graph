@@ -21,25 +21,18 @@ FLAGSHIP_FAMILY_SQL = "'domain_flagship', 'general_flagship'"
 # Weights calibrated to produce ~500K base from 2.6M mapped papers.
 # See docs/map/database.md § Base Scoring for rationale.
 DOMAIN_SCORE_SQL = f"""
-    -- Family diversity: n_families² × min(n_rules, 20), capped at 2000
+(
+    -- Base domain score (everything except flagship)
     LEAST(
         pes.entity_rule_families * pes.entity_rule_families
         * LEAST(pes.entity_rule_count, 20),
         2000
     )::REAL
-    -- Core family bonus (psych disorder, neuro disorder, psych med, NT system)
     + pes.entity_core_families * 200::REAL
-    -- Relation rule hit
     + CASE WHEN pes.has_relation_rule_hit THEN 500::REAL ELSE 0::REAL END
-    -- Flagship journal
-    + CASE WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL})
-           THEN 800::REAL ELSE 0::REAL END
-    -- Citation impact (log-scaled)
     + LN(1 + pes.citation_count::REAL) * 40::REAL
-    -- Annotation density
     + LN(1 + pes.paper_entity_count::REAL) * 10::REAL
     + LN(1 + pes.paper_relation_count::REAL) * 15::REAL
-    -- Recency
     + CASE
         WHEN p.year >= 2020 THEN 30::REAL
         WHEN p.year >= 2015 THEN 20::REAL
@@ -47,6 +40,22 @@ DOMAIN_SCORE_SQL = f"""
         WHEN p.year >= 2000 THEN  5::REAL
         ELSE 0::REAL
       END
+)
+-- Flagship amplifier: 1.5x for papers with domain signal, 1.0x otherwise
+* CASE
+    WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL})
+         AND (pes.entity_core_families > 0
+              OR pes.entity_rule_families > 0
+              OR pes.has_relation_rule_hit)
+    THEN 1.5::REAL
+    ELSE 1.0::REAL
+  END
+-- Flagship venue floor: 200 for being in a quality venue regardless
++ CASE
+    WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL})
+    THEN 200::REAL
+    ELSE 0::REAL
+  END
 """
 
 
