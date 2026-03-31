@@ -329,7 +329,7 @@ export default function CosmographRenderer({
         width: "100%",
         height: "100%",
         opacity: crossfadeOpacity,
-        transition: "opacity 160ms ease-out",
+        transition: "opacity 80ms ease-out",
       }}
     />
   );

@@ -14,10 +14,8 @@ export function useThemeCrossfade(isDark: boolean): number {
   useEffect(() => {
     if (prevRef.current === isDark) return
     prevRef.current = isDark
-    // Fade out — CSS transition handles the visual easing
     setOpacity(0)
-    // Fade back in after Cosmograph has repainted with new colors
-    const timer = setTimeout(() => setOpacity(1), 120)
+    const timer = setTimeout(() => setOpacity(1), 50)
     return () => clearTimeout(timer)
   }, [isDark])
 
