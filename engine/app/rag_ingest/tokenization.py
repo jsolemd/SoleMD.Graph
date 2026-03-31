@@ -317,7 +317,11 @@ class TiktokenChunkTokenBudgeter:
         resolved_encoding_name, _ = resolve_tiktoken_encoding(resolved_input)
         tiktoken_version = _distribution_version("tiktoken")
         self.tokenizer_name = f"tiktoken:{resolved_encoding_name}"
-        version_parts = [part for part in (tiktoken_version, _normalize_model_tokenizer_name(model_name)) if part]
+        version_parts = [
+            part
+            for part in (tiktoken_version, _normalize_model_tokenizer_name(model_name))
+            if part
+        ]
         self.tokenizer_version = "+".join(version_parts) or None
         self._encoding_name = resolved_encoding_name
         self._fallback_spans = RegexFallbackChunkTokenBudgeter()
@@ -387,6 +391,18 @@ def build_chunk_token_budgeter(
     normalized_tokenizer_name = _normalize_model_tokenizer_name(tokenizer_name)
     normalized_embedding_model = _normalize_model_tokenizer_name(embedding_model)
 
+    if normalized_tokenizer_name and normalized_tokenizer_name.startswith("tiktoken:"):
+        encoding_name = normalized_tokenizer_name.split(":", 1)[1]
+        return FallbackChunkTokenBudgeter(
+            primary=TiktokenChunkTokenBudgeter(encoding_name=encoding_name),
+        )
+
+    if normalized_tokenizer_name == StanzaBiomedicalChunkTokenBudgeter.tokenizer_name:
+        return build_default_chunk_token_budgeter()
+
+    if normalized_tokenizer_name in {"regex_fallback", "simple"}:
+        return RegexFallbackChunkTokenBudgeter()
+
     if normalized_embedding_model:
         try:
             return FallbackChunkTokenBudgeter(
@@ -394,15 +410,6 @@ def build_chunk_token_budgeter(
             )
         except TokenizationUnavailable:
             pass
-
-    if normalized_tokenizer_name and normalized_tokenizer_name.startswith("tiktoken:"):
-        encoding_name = normalized_tokenizer_name.split(":", 1)[1]
-        return FallbackChunkTokenBudgeter(
-            primary=TiktokenChunkTokenBudgeter(encoding_name=encoding_name),
-        )
-
-    if normalized_tokenizer_name in {"regex_fallback", "simple"}:
-        return RegexFallbackChunkTokenBudgeter()
 
     return build_default_chunk_token_budgeter()
 

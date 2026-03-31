@@ -109,11 +109,8 @@ export function ReferencesContent({
           {items.map(({ reference, graphNode }) => (
             <div
               key={`${label}:${reference.ref_index}:${reference.title ?? reference.raw_citation_text ?? "reference"}`}
-              className="rounded-xl px-3 py-3"
-              style={{
-                backgroundColor: "var(--mode-accent-subtle)",
-                border: "1px solid var(--mode-accent-border)",
-              }}
+              className={panelAccentCardClassName}
+              style={panelAccentCardStyle}
             >
               <Group gap={6} mb={6}>
                 {reference.resolved_paper_id && (

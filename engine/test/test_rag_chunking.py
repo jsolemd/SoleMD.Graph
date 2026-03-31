@@ -597,3 +597,125 @@ def test_assemble_structural_chunks_ignores_table_sentence_rows_and_chunks_from_
     assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
     assert all(member.member_kind == ChunkMemberKind.BLOCK for member in result.members)
     assert all(member.canonical_sentence_ordinal is None for member in result.members)
+
+
+def test_assemble_structural_chunks_repeats_table_header_across_split_table_chunks():
+    common = _common_identity()
+    table_text = "Characteristic\tIntervention\tControl\t \tAge\t52\t51\t \tBMI\t26\t25"
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(table_text),
+            text=table_text,
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.TABLE_BODY_TEXT,
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={
+            "included_block_kinds": [PaperBlockKind.TABLE_BODY_TEXT],
+            "target_token_budget": 6,
+            "hard_max_tokens": 6,
+        }
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert [chunk.text for chunk in result.chunks] == [
+        "Characteristic\nIntervention\nControl\nAge\n52\n51",
+        "Characteristic\nIntervention\nControl\nBMI\n26\n25",
+    ]
+    assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
+
+
+def test_assemble_structural_chunks_omits_repeated_table_header_on_overflow():
+    common = _common_identity()
+    table_text = "Outcome label\tIntervention group\tControl\t \tAge\t52\t51\t \tBMI\t26\t25"
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(table_text),
+            text=table_text,
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.TABLE_BODY_TEXT,
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={
+            "included_block_kinds": [PaperBlockKind.TABLE_BODY_TEXT],
+            "target_token_budget": 5,
+            "hard_max_tokens": 6,
+        }
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert [chunk.text for chunk in result.chunks] == [
+        "Age\n52\n51",
+        "BMI\n26\n25",
+    ]
+    assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
+
+
+def test_assemble_structural_chunks_merges_table_caption_with_linked_table_body_context():
+    common = _common_identity()
+    caption_text = "Table 1. Baseline characteristics"
+    table_text = "Characteristic\tIntervention\tControl\t \tAge\t52\t51"
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(caption_text),
+            text=caption_text,
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.TABLE_CAPTION,
+            linked_asset_ref="Tab1",
+        ),
+        PaperBlockRecord(
+            **common,
+            source_start_offset=len(caption_text) + 1,
+            source_end_offset=len(caption_text) + 1 + len(table_text),
+            text=table_text,
+            block_ordinal=1,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.TABLE_BODY_TEXT,
+            linked_asset_ref="Tab1",
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={
+            "included_block_kinds": [PaperBlockKind.TABLE_CAPTION, PaperBlockKind.TABLE_BODY_TEXT],
+            "caption_merge_policy": CaptionMergePolicy.STRUCTURAL_CONTEXT,
+            "target_token_budget": 12,
+            "hard_max_tokens": 16,
+        }
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert len(result.chunks) == 1
+    assert result.chunks[0].primary_block_kind == PaperBlockKind.TABLE_BODY_TEXT
+    assert result.chunks[0].text.startswith("Table 1. Baseline characteristics")
+    assert "Characteristic\nIntervention\nControl" in result.chunks[0].text
+    assert [member.canonical_block_ordinal for member in result.members] == [0, 1]

@@ -94,17 +94,17 @@ export function DataTableBody({
       )}
       <Table
         stickyHeader
-        style={{ fontSize: "0.7rem" }}
+        style={{ fontSize: 10 }}
         styles={{
           thead: { backgroundColor: "var(--graph-bg)" },
-          th: { backgroundColor: "var(--graph-bg)", borderColor: "var(--graph-panel-border)" },
-          td: { borderColor: "var(--graph-panel-border)" },
+          th: { backgroundColor: "var(--graph-bg)", borderColor: "var(--graph-panel-border)", padding: "4px 6px" },
+          td: { borderColor: "var(--graph-panel-border)", padding: "3px 6px" },
           tr: { backgroundColor: "transparent" },
         }}
       >
         <Table.Thead>
           <Table.Tr style={{ backgroundColor: "var(--graph-bg)" }}>
-            <Table.Th style={{ ...panelTableHeaderStyle, width: 32 }}>#</Table.Th>
+            <Table.Th style={{ ...panelTableHeaderStyle, width: 28 }}>#</Table.Th>
             {tableColumns.map((key) => {
               const meta = getColumnMetaForLayer(key, activeLayer);
               return (
@@ -144,14 +144,13 @@ export function DataTableBody({
                       : undefined,
                 }}
               >
-                <Table.Td style={{ fontSize: "0.7rem", color: "var(--mode-accent)" }}>
+                <Table.Td style={{ color: "var(--mode-accent)" }}>
                   {startIdx + i + 1}
                 </Table.Td>
                 {tableColumns.map((key) => (
                   <Table.Td
                     key={key}
                     style={{
-                      fontSize: "0.7rem",
                       maxWidth: key === "paperTitle" ? 200 : 120,
                       overflow: "hidden",
                       textOverflow: "ellipsis",

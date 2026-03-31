@@ -11,7 +11,7 @@ import {
 } from "@mantine/core";
 import { useMounted } from "@mantine/hooks";
 import { motion } from "framer-motion";
-import { Sun, Moon } from "lucide-react";
+import { BrainCircuit, Sun, Moon } from "lucide-react";
 import { settle } from "@/lib/motion";
 import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
 
@@ -70,6 +70,23 @@ export function GraphBundleLoadingOverlay({
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: "easeInOut" }}
     >
+      {/* Wordmark — same position as post-load Wordmark (top-left) */}
+      <div className="absolute left-3 top-3 flex items-center gap-2">
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-full"
+          style={{ backgroundColor: "var(--graph-wordmark-accent)" }}
+        >
+          <BrainCircuit size={16} color="white" />
+        </div>
+        <span
+          className="text-lg font-semibold select-none"
+          style={{ color: "var(--graph-wordmark-text)" }}
+        >
+          Sole
+          <span style={{ color: "var(--graph-wordmark-accent)" }}>MD</span>
+        </span>
+      </div>
+
       {/* Theme toggle — top-right corner */}
       <div className="absolute right-3 top-3">
         <Tooltip label={themeLabel} position="bottom" withArrow>

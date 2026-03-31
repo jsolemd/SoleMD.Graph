@@ -64,8 +64,8 @@ export function DataTableToolbar({
   };
 
   return (
-    <div className="flex items-center justify-between px-2.5 py-1.5">
-      <Group gap="sm">
+    <div className="flex items-center justify-between px-2.5 py-1">
+      <Group gap={6}>
         <SegmentedControl
           size="xs"
           color={PANEL_ACCENT}
@@ -84,35 +84,36 @@ export function DataTableToolbar({
           onChange={(value) => setTableView(value as "selection" | "dataset")}
           styles={{
             root: {
-              height: 22,
+              height: 20,
               backgroundColor: "var(--graph-panel-input-bg)",
               border: "1px solid var(--graph-panel-border)",
-              borderRadius: 6,
+              borderRadius: 5,
             },
             label: {
               fontSize: 9,
-              padding: "2px 8px",
+              padding: "1px 6px",
               color: "var(--graph-panel-text-dim)",
             },
             indicator: {
-              borderRadius: 5,
+              borderRadius: 4,
               boxShadow: "none",
             },
           }}
         />
-        <Text size="xs" style={panelTextDimStyle}>
+        <Text style={panelTextDimStyle}>
           {rowCountLabel}
         </Text>
         <Tooltip label="Export table rows" position="bottom" withArrow>
           <ActionIcon
-            variant="subtle"
-            size="sm"
+            variant="transparent"
+            size={20}
             radius="xl"
             onClick={() => void handleExport()}
             aria-label="Export graph data"
+            className="graph-icon-btn"
             styles={iconBtnStyles}
           >
-            <Download size={14} />
+            <Download size={12} />
           </ActionIcon>
         </Tooltip>
       </Group>
@@ -127,8 +128,8 @@ export function DataTableToolbar({
             border: "none",
             backgroundColor: "transparent",
             color: "var(--graph-panel-text-dim)",
-            minWidth: 20,
-            height: 20,
+            minWidth: 18,
+            height: 18,
             fontSize: 9,
           },
         }}

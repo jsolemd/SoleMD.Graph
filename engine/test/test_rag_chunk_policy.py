@@ -7,6 +7,7 @@ from app.rag.parse_contract import (
     SectionRole,
     SentenceSegmentationSource,
 )
+from app.rag.serving_contract import CaptionMergePolicy
 from app.rag_ingest.chunk_policy import (
     DEFAULT_CHUNK_VERSION_KEY,
     build_default_chunk_version,
@@ -116,9 +117,16 @@ def test_build_default_chunk_version_uses_canonical_policy_defaults():
         "biocxml:2026-03-21",
         "s2orc_v2:2026-03-10",
     ]
+    assert version.caption_merge_policy == CaptionMergePolicy.STRUCTURAL_CONTEXT
     assert version.tokenizer_name == "stanza_biomedical_tokens"
     assert version.tokenizer_version is not None
     assert "craft,genia" in version.tokenizer_version
+    assert version.lexical_normalization_flags == [
+        "chunker:hybrid_structural_v2",
+        "table_header_repeat",
+        "table_header_omit_on_overflow",
+        "peer_merge_by_context",
+    ]
     assert version.sentence_source_policy == [
         SentenceSegmentationSource.S2ORC_ANNOTATION,
         SentenceSegmentationSource.STANZA_BIOMEDICAL,
@@ -146,7 +154,9 @@ def test_build_default_chunk_version_for_sources_uses_primary_parser_and_unique_
     assert version.chunk_version_key == DEFAULT_CHUNK_VERSION_KEY
     assert version.parser_version == "parser-v1"
     assert version.embedding_model == "text-embedding-3-large"
-    assert version.tokenizer_name == "stanza_biomedical_tokens"
+    assert version.tokenizer_name.startswith("tiktoken:")
+    assert version.tokenizer_version is not None
+    assert "text-embedding-3-large" in version.tokenizer_version
     assert version.source_revision_keys == [
         "biocxml:2026-03-21",
         "s2orc_v2:2026-03-10",

@@ -161,11 +161,15 @@ Delivered changes:
   - deterministic fallback last
 - shared token-budget backend in `engine/app/rag_ingest/tokenization.py`
   - Stanza token spans are now reused for chunk budgeting, not only sentence splitting
+  - supported embedding models now resolve to `tiktoken` for chunk-budget fidelity
 - tokenizer-aware structural chunking in `engine/app/rag_ingest/chunking.py`
   - narrative chunking stays sentence-based
   - table-body chunking ignores prose sentence rows and chunks by structural units
   - tiny low-value narrative fragments are suppressed
   - bounded adjacent narrative peers can merge when contract-safe
+  - linked table captions can merge into the first table-body chunk under structural context policy
+  - compact table headers can repeat across split table chunks and drop on overflow
+  - chunk member lineage is deduplicated when repeated context is emitted
 - chunk QA extensions in `engine/app/rag_ingest/warehouse_quality.py`
   - optional `chunk_version_key` filtering for preview-vs-default QA
   - oversize / tiny / low-value / repeated-label checks tightened
@@ -178,7 +182,7 @@ Delivered changes:
 Code validation:
 
 - focused engine suite passed:
-  - `61 passed`
+  - `67 passed`
 - targeted Ruff checks on touched ingest files passed
 - Stanza benchmark on real warehouse blocks loaded on `cuda`
 
@@ -215,6 +219,37 @@ Residual quality signal intentionally preserved:
 
 These are materially better than the old one-token / two-token junk fragments, but QA correctly keeps them visible as short narrative content that may still warrant policy refinement.
 
+Docling-style preview validation:
+
+- seeded a second preview chunk version:
+  - `preview-docling-hybrid-sample-v2`
+  - `parser_version = mixed:parser-v1,parser-v2,parser-v3`
+  - `tokenizer_name = tiktoken:cl100k_base`
+  - `tokenizer_version = 0.12.0+text-embedding-3-large`
+  - `caption_merge_policy = structural_context`
+  - `lexical_normalization_flags = [chunker:hybrid_structural_v2, table_header_repeat, table_header_omit_on_overflow, peer_merge_by_context]`
+- backfilled the same audited papers under the Docling-style preview key:
+  - corpus ids `225487656`, `260425880`, `261698615`, `276778215`, `52845261`
+  - wrote `229` chunk rows and `1058` chunk-member rows
+- persisted table chunks now carry structural table context:
+  - first split table chunk includes the linked table caption plus table header
+  - later split table chunks repeat the compact header without duplicating caption membership
+  - `paper_chunk_members` confirms first table chunks include both caption and table-body block members for `Tab1`-`Tab4` in `276778215`
+- the table failures remain fixed under the Docling-style preview:
+  - `276778215`: `oversize_chunks = 0`
+  - `276778215`: `oversize_table_chunks = 0`
+- junk one-word rows remain absent:
+  - no persisted `Our`, `The`, or `Not applicable.` chunks in the preview key
+
+Residual quality signal on the Docling-style preview:
+
+- `225487656` now has one `tiny_narrative_chunks` flag under embedding-token counting
+  - the affected row is a real clinical sentence, not a junk fragment:
+    - `The patient had a history of Miller Fisher syndrome, hypertension, and dyslipidemia.`
+  - this is a tokenizer-count fidelity change rather than a structural fragment regression
+- `261698615` still has three short narrative/admin sentences flagged
+- `52845261` still flags repeated noisy non-structural section labels
+
 ## Cutover Note
 
 The live warehouse currently mixes canonical parser versions:
@@ -227,7 +262,7 @@ Because of that, I did not overwrite the global runtime default key with the new
 
 Instead:
 
-- the canonical ingest code now defaults to the Stanza-backed policy for new writes
+- the canonical ingest code now defaults to the upgraded hybrid policy for new writes
 - preview backfills can be seeded under explicit version keys
 - runtime default cutover should happen only after a deliberate version-key migration or a broader canonical refresh
 

@@ -251,6 +251,30 @@ export default function CosmographRenderer({
     setZoomedIn(zoomedIn);
   }, [zoomedIn, setZoomedIn]);
 
+  // Cosmograph's onGraphRebuilt fires after the first RAF-driven paint.
+  // When the tab is backgrounded during load, RAF is paused so the callback
+  // never fires and the loading overlay stays forever.  Retry on visibility.
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState !== "visible" || hasFittedView.current) {
+        return;
+      }
+      // Give Cosmograph one frame to paint now that RAF is active again
+      requestAnimationFrame(() => {
+        if (hasFittedView.current) {
+          return;
+        }
+        cosmographRef.current?.fitView(0, fitViewPadding);
+        hasFittedView.current = true;
+        lastFittedLayer.current = activeLayer;
+        syncZoomState();
+        onFirstPaint?.();
+      });
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, [activeLayer, fitViewPadding, onFirstPaint, syncZoomState]);
+
   // The CSS filter on [data-graph-canvas] canvas creates a stacking context
   // that paints the WebGL canvas above the d3-brush SVG overlay, blocking
   // rect/poly selection.  Elevate the brush SVG so it stacks on top.

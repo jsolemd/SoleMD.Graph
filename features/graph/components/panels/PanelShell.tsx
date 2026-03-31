@@ -83,7 +83,9 @@ export const pillInactiveColors = {
   border: "1px solid var(--graph-panel-border)",
 } as const;
 
-/** Base layout for raw-span interactive pills (not Mantine Badge). */
+/** Base layout for raw-span interactive pills (not Mantine Badge).
+ *  `position: relative` + `zIndex: 1` lifts the pill above Mantine Switch's
+ *  invisible full-width `<input>` overlay so clicks hit the pill first. */
 const interactivePillBase: React.CSSProperties = {
   fontSize: 8,
   lineHeight: 1,
@@ -92,6 +94,8 @@ const interactivePillBase: React.CSSProperties = {
   cursor: "pointer",
   userSelect: "none",
   transition: "all 80ms ease-out",
+  position: "relative",
+  zIndex: 1,
 };
 
 /**

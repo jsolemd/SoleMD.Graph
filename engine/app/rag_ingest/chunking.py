@@ -240,6 +240,9 @@ def _table_text_units(text: str) -> list[_TableTextUnit]:
             )
         )
 
+    if len(units) == 1 and units[0].cell_count == len(nonempty_cells):
+        return [_TableTextUnit(text=cell, cell_count=1) for cell in nonempty_cells]
+
     if units:
         return units
     return [_TableTextUnit(text=cell, cell_count=1) for cell in nonempty_cells]
@@ -259,6 +262,8 @@ def _partition_table_units(
     units: list[_TableTextUnit],
 ) -> tuple[list[_TableTextUnit], list[_TableTextUnit]]:
     if len(units) <= 1:
+        return [], units
+    if all(unit.cell_count == 1 for unit in units):
         return [], units
 
     header_units: list[_TableTextUnit] = []
@@ -451,51 +456,48 @@ def _build_table_chunk_groups(
     while pending_unit_texts:
         include_caption = caption_block is not None and chunk_index == 0
         include_header = bool(header_text)
-        prefix_slices: list[_ChunkBlockSlice] = []
 
-        def rebuild_prefix_slices() -> tuple[list[_ChunkBlockSlice], int]:
-            slices: list[_ChunkBlockSlice] = []
+        def rebuild_prefix_state() -> tuple[_ChunkBlockSlice | None, int]:
+            caption_slice: _ChunkBlockSlice | None = None
             prefix_tokens = 0
             if include_caption and caption_text:
-                slices.append(
-                    _ChunkBlockSlice(
-                        block=caption_block,
-                        text=caption_text,
-                        token_count=caption_tokens,
-                        is_partial_block=bool(header_text) or len(body_units) > 0,
-                    )
+                caption_slice = _ChunkBlockSlice(
+                    block=caption_block,
+                    text=caption_text,
+                    token_count=caption_tokens,
+                    is_partial_block=bool(header_text) or len(body_units) > 0,
                 )
                 prefix_tokens += caption_tokens
             if include_header and header_text:
-                slices.append(
-                    _ChunkBlockSlice(
-                        block=table_block,
-                        text=header_text,
-                        token_count=header_tokens,
-                        is_partial_block=True,
-                    )
-                )
                 prefix_tokens += header_tokens
-            return slices, prefix_tokens
+            return caption_slice, prefix_tokens
 
-        prefix_slices, prefix_tokens = rebuild_prefix_slices()
+        caption_slice, prefix_tokens = rebuild_prefix_state()
         if include_caption and prefix_tokens >= hard_max_tokens:
             include_caption = False
-            prefix_slices, prefix_tokens = rebuild_prefix_slices()
+            caption_slice, prefix_tokens = rebuild_prefix_state()
         if include_header and prefix_tokens >= hard_max_tokens:
             include_header = False
-            prefix_slices, prefix_tokens = rebuild_prefix_slices()
+            caption_slice, prefix_tokens = rebuild_prefix_state()
 
         next_unit_text = pending_unit_texts[0]
         next_unit_tokens = max(token_budgeter.count_tokens(next_unit_text), 1)
         available_hard = max(hard_max_tokens - prefix_tokens, 1)
-        if include_header and next_unit_tokens <= hard_max_tokens and next_unit_tokens > available_hard:
+        if (
+            include_header
+            and next_unit_tokens <= hard_max_tokens
+            and next_unit_tokens > available_hard
+        ):
             include_header = False
-            prefix_slices, prefix_tokens = rebuild_prefix_slices()
+            caption_slice, prefix_tokens = rebuild_prefix_state()
             available_hard = max(hard_max_tokens - prefix_tokens, 1)
-        if include_caption and next_unit_tokens <= hard_max_tokens and next_unit_tokens > available_hard:
+        if (
+            include_caption
+            and next_unit_tokens <= hard_max_tokens
+            and next_unit_tokens > available_hard
+        ):
             include_caption = False
-            prefix_slices, prefix_tokens = rebuild_prefix_slices()
+            caption_slice, prefix_tokens = rebuild_prefix_state()
             available_hard = max(hard_max_tokens - prefix_tokens, 1)
 
         available_target = max(target_token_budget - prefix_tokens, 1)
@@ -526,19 +528,37 @@ def _build_table_chunk_groups(
                     block=table_block,
                     text=unit_text,
                     token_count=unit_tokens,
-                    is_partial_block=len(body_units) > 1 or bool(prefix_slices),
+                    is_partial_block=len(body_units) > 1 or include_header,
                 )
             )
             current_body_tokens += unit_tokens
             pending_unit_texts.pop(0)
 
         if not current_body_slices:
-            if prefix_slices:
-                table_groups.append(prefix_slices)
+            if caption_slice is not None:
+                table_groups.append([caption_slice])
                 caption_consumed = caption_consumed or include_caption
             break
 
-        table_groups.append([*prefix_slices, *current_body_slices])
+        table_parts = []
+        table_tokens = current_body_tokens
+        if include_header and header_text:
+            table_parts.append(header_text)
+            table_tokens += header_tokens
+        table_parts.extend(
+            block_slice.text for block_slice in current_body_slices if block_slice.text
+        )
+
+        combined_table_slice = _ChunkBlockSlice(
+            block=table_block,
+            text=_join_nonempty(table_parts),
+            token_count=max(table_tokens, 1),
+            is_partial_block=len(body_units) > 1 or include_header,
+        )
+        if caption_slice is not None:
+            table_groups.append([caption_slice, combined_table_slice])
+        else:
+            table_groups.append([combined_table_slice])
         caption_consumed = caption_consumed or include_caption
         chunk_index += 1
 
@@ -757,11 +777,15 @@ def assemble_structural_chunks(
         if not (same_section and adjacent_blocks and both_narrative):
             return False
 
-        group_slices = [block_slice for group_block in group_blocks for block_slice in build_block_slices(group_block)]
+        group_slices = [
+            block_slice
+            for group_block in group_blocks
+            for block_slice in build_block_slices(group_block)
+        ]
         next_slices = build_block_slices(next_block)
-        no_partial_blocks = all(not block_slice.is_partial_block for block_slice in group_slices) and all(
-            not block_slice.is_partial_block for block_slice in next_slices
-        )
+        no_partial_blocks = all(
+            not block_slice.is_partial_block for block_slice in group_slices
+        ) and all(not block_slice.is_partial_block for block_slice in next_slices)
         if not no_partial_blocks:
             return False
 
