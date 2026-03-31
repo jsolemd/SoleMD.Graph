@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Sequence
+import json
 
 from app.rag.chunking import assemble_structural_chunks
 from app.rag.rag_schema_contract import (
@@ -17,7 +18,138 @@ from app.rag.rag_schema_contract import (
 from app.rag.source_grounding import build_aligned_mention_rows_from_plan
 from app.rag.source_selection import GroundingSourcePlan
 from app.rag.serving_contract import PaperChunkVersionRecord
+from app.rag.warehouse_contract import PaperCitationMentionRow
 from app.rag.write_contract import RagWarehouseWriteBatch
+
+
+_ESTIMATED_ROW_OVERHEAD_BYTES = 96
+
+
+def _utf8_len(value: str | None) -> int:
+    return len(value.encode("utf-8")) if value else 0
+
+
+def _json_len(value: object) -> int:
+    if value in ({}, [], None, ""):
+        return 0
+    return len(json.dumps(value, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+
+
+def estimate_write_batch_rows_from_grounding_plan(
+    plan: GroundingSourcePlan,
+    *,
+    source_citation_keys: Sequence[str] | None = None,
+) -> int:
+    primary = plan.primary_source
+    allowed_keys = (
+        set(item for item in source_citation_keys if item)
+        if source_citation_keys is not None
+        else None
+    )
+    citation_count = (
+        sum(
+            1
+            for citation in primary.citations
+            if allowed_keys is None or citation.source_citation_key in allowed_keys
+        )
+        if primary.citations
+        else 0
+    )
+    entity_count = len(primary.entities) + sum(
+        len(source.entities)
+        for source in plan.annotation_sources
+        if source.document.corpus_id == primary.document.corpus_id
+    )
+    document_source_keys = {
+        (
+            source.document.source_system,
+            source.document.source_revision,
+            source.document.source_document_key,
+            source.document.source_plane,
+        )
+        for source in [primary, *plan.annotation_sources]
+    }
+    return (
+        1  # documents
+        + len(document_source_keys)
+        + len(primary.sections)
+        + len(primary.blocks)
+        + len(primary.sentences)
+        + len(primary.references)
+        + citation_count
+        + entity_count
+    )
+
+
+def estimate_write_batch_bytes_from_grounding_plan(
+    plan: GroundingSourcePlan,
+    *,
+    source_citation_keys: Sequence[str] | None = None,
+) -> int:
+    primary = plan.primary_source
+    citations, entities = build_aligned_mention_rows_from_plan(
+        plan,
+        source_citation_keys=source_citation_keys,
+    )
+
+    total = 0
+
+    total += _ESTIMATED_ROW_OVERHEAD_BYTES
+    total += _utf8_len(primary.document.title)
+    total += _utf8_len(primary.document.language)
+    total += _utf8_len(primary.document.source_availability)
+    total += _utf8_len(primary.document.source_system)
+
+    source_rows = _build_document_source_rows(plan)
+    for row in source_rows:
+        total += _ESTIMATED_ROW_OVERHEAD_BYTES
+        total += _utf8_len(row.source_system)
+        total += _utf8_len(row.source_revision)
+        total += _utf8_len(row.source_document_key)
+        total += _utf8_len(row.source_plane)
+        total += _utf8_len(row.parser_version)
+        total += _json_len(row.raw_attrs_json)
+
+    for section in primary.sections:
+        total += _ESTIMATED_ROW_OVERHEAD_BYTES
+        total += _utf8_len(section.text)
+        total += _utf8_len(section.display_label)
+        total += _utf8_len(section.numbering_token)
+
+    for block in primary.blocks:
+        total += _ESTIMATED_ROW_OVERHEAD_BYTES
+        total += _utf8_len(block.text)
+        total += _utf8_len(block.block_kind)
+        total += _utf8_len(block.section_role)
+        total += _utf8_len(block.linked_asset_ref)
+
+    for sentence in primary.sentences:
+        total += _ESTIMATED_ROW_OVERHEAD_BYTES
+        total += _utf8_len(sentence.text)
+        total += _utf8_len(sentence.segmentation_source)
+
+    for reference in primary.references:
+        total += _ESTIMATED_ROW_OVERHEAD_BYTES
+        total += _utf8_len(reference.text)
+        total += _utf8_len(reference.source_reference_key)
+        total += _utf8_len(reference.matched_paper_id)
+
+    for citation in citations:
+        total += _ESTIMATED_ROW_OVERHEAD_BYTES
+        total += _utf8_len(citation.text)
+        total += _utf8_len(citation.source_citation_key)
+        total += _utf8_len(citation.source_reference_key)
+        total += _utf8_len(citation.matched_paper_id)
+
+    for entity in entities:
+        total += _ESTIMATED_ROW_OVERHEAD_BYTES
+        total += _utf8_len(entity.text)
+        total += _utf8_len(entity.entity_type)
+        total += _utf8_len(entity.source_identifier)
+        total += _utf8_len(entity.concept_namespace)
+        total += _utf8_len(entity.concept_id)
+
+    return total
 
 
 def build_write_batch_from_grounding_plan(
@@ -31,6 +163,21 @@ def build_write_batch_from_grounding_plan(
     citations, entities = build_aligned_mention_rows_from_plan(
         plan,
         source_citation_keys=source_citation_keys,
+    )
+    references = [
+        PaperReferenceEntryRow(
+            corpus_id=reference.corpus_id,
+            reference_ordinal=reference.reference_ordinal,
+            source_reference_key=reference.source_reference_key,
+            text=reference.text,
+            matched_paper_id=reference.matched_paper_id,
+            matched_corpus_id=reference.matched_corpus_id,
+        )
+        for reference in primary.references
+    ]
+    citations = _sanitize_citation_reference_links(
+        citations,
+        references=references,
     )
 
     source_rows = _build_document_source_rows(plan)
@@ -82,17 +229,7 @@ def build_write_batch_from_grounding_plan(
             )
             for sentence in primary.sentences
         ],
-        references=[
-            PaperReferenceEntryRow(
-                corpus_id=reference.corpus_id,
-                reference_ordinal=reference.reference_ordinal,
-                source_reference_key=reference.source_reference_key,
-                text=reference.text,
-                matched_paper_id=reference.matched_paper_id,
-                matched_corpus_id=reference.matched_corpus_id,
-            )
-            for reference in primary.references
-        ],
+        references=references,
         citations=citations,
         entities=entities,
     )
@@ -163,6 +300,28 @@ def extend_write_batch_with_structural_chunks(
             ),
         ),
     )
+
+
+def _sanitize_citation_reference_links(
+    citations: Sequence[PaperCitationMentionRow],
+    *,
+    references: Sequence[PaperReferenceEntryRow],
+) -> list[PaperCitationMentionRow]:
+    valid_reference_keys = {row.source_reference_key for row in references}
+    if not valid_reference_keys:
+        return [
+            row.model_copy(update={"source_reference_key": None})
+            if row.source_reference_key
+            else row
+            for row in citations
+        ]
+    sanitized = []
+    for row in citations:
+        if row.source_reference_key and row.source_reference_key not in valid_reference_keys:
+            sanitized.append(row.model_copy(update={"source_reference_key": None}))
+            continue
+        sanitized.append(row)
+    return sanitized
 
 
 def merge_write_batches(

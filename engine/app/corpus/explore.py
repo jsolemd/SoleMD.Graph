@@ -25,7 +25,7 @@ import duckdb
 from app.config import settings
 from app.corpus._etl import read_expr as _shared_read_expr
 
-S2_DIR = settings.semantic_scholar_raw_papers_dir_path
+S2_DIR = settings.semantic_scholar_papers_dir_path
 
 # Only the columns we need for exploration — much faster than parsing every field
 COLUMNS = {

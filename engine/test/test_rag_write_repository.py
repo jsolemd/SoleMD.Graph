@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from psycopg.types.json import Jsonb
 
@@ -34,6 +34,7 @@ from app.rag.write_repository import (
     RuntimeWriteStatus,
     WriteMethod,
     WriteStage,
+    _table_exists_with_cursor,
     build_runtime_write_stage_support_map,
     build_write_stage_specs,
     plan_write_batch,
@@ -303,3 +304,72 @@ def test_postgres_rag_write_repository_can_enable_chunk_version_stage_when_table
     assert result.stages[0].physical_table_name == "paper_chunk_versions"
     cur.executemany.assert_called_once()
     conn.commit.assert_called_once()
+
+
+def test_table_exists_with_cursor_accepts_mapping_rows():
+    cur = MagicMock()
+    cur.fetchone.return_value = {"to_regclass": "paper_chunk_versions"}
+
+    assert _table_exists_with_cursor(cur, "solemd", "paper_chunk_versions") is True
+
+
+def test_postgres_rag_write_repository_can_enable_chunk_content_stages_when_tables_exist():
+    conn = MagicMock()
+    cur = MagicMock()
+    copy = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.copy.return_value.__enter__.return_value = copy
+    cur.copy.return_value.__exit__.return_value = False
+
+    repo = PostgresRagWriteRepository(
+        connect=lambda: conn,
+        table_exists_probe=lambda _cur, schema_name, table_name: (
+            schema_name == "solemd"
+            and table_name in {"paper_chunk_versions", "paper_chunks", "paper_chunk_members"}
+        ),
+    )
+
+    result = repo.apply_write_batch(_sample_write_batch())
+
+    stage_status = {stage.stage: stage for stage in result.stages}
+    assert stage_status[WriteStage.CHUNK_VERSIONS].status == RuntimeWriteStatus.EXECUTED
+    assert stage_status[WriteStage.CHUNKS].status == RuntimeWriteStatus.EXECUTED
+    assert stage_status[WriteStage.CHUNK_MEMBERS].status == RuntimeWriteStatus.EXECUTED
+
+
+def test_postgres_rag_write_repository_can_replace_existing_canonical_rows():
+    conn = MagicMock()
+    cur = MagicMock()
+    copy = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.copy.return_value.__enter__.return_value = copy
+    cur.copy.return_value.__exit__.return_value = False
+
+    repo = PostgresRagWriteRepository(
+        connect=lambda: conn,
+        table_exists_probe=lambda _cur, schema_name, table_name: schema_name == "solemd",
+    )
+
+    result = repo.apply_write_batch(_sample_write_batch(), replace_existing=True)
+
+    assert result.total_rows == 10
+    delete_calls = [
+        call("DELETE FROM solemd.paper_chunk_members WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_chunks WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_citation_mentions WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_entity_mentions WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_sentences WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_blocks WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_sections WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_document_sources WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_references WHERE corpus_id = ANY(%s)", ([12345],)),
+        call("DELETE FROM solemd.paper_documents WHERE corpus_id = ANY(%s)", ([12345],)),
+    ]
+    for expected in delete_calls:
+        assert expected in cur.execute.call_args_list

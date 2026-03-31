@@ -118,3 +118,84 @@ describe('selection locking', () => {
     expect(useDashboardStore.getState().selectionLocked).toBe(true)
   })
 })
+
+describe('prompt mode actions', () => {
+  afterEach(() => {
+    useDashboardStore.setState({
+      promptMode: 'normal',
+      lastExpandedPromptMode: 'normal',
+    })
+  })
+
+  it('collapses and expands through a single canonical prompt mode', () => {
+    useDashboardStore.getState().collapsePrompt()
+    expect(useDashboardStore.getState().promptMode).toBe('collapsed')
+
+    useDashboardStore.getState().expandPrompt()
+    expect(useDashboardStore.getState().promptMode).toBe('normal')
+  })
+
+  it('maximizes and restores without overlapping collapsed state', () => {
+    useDashboardStore.getState().maximizePrompt()
+    expect(useDashboardStore.getState().promptMode).toBe('maximized')
+
+    useDashboardStore.getState().setPromptMode('normal')
+    expect(useDashboardStore.getState().promptMode).toBe('normal')
+  })
+
+  it('toggles collapsed state from the current mode', () => {
+    useDashboardStore.getState().togglePromptCollapsed()
+    expect(useDashboardStore.getState().promptMode).toBe('collapsed')
+
+    useDashboardStore.getState().togglePromptCollapsed()
+    expect(useDashboardStore.getState().promptMode).toBe('normal')
+  })
+
+  it('restores the prior expanded size when reopening after collapse', () => {
+    useDashboardStore.getState().maximizePrompt()
+    useDashboardStore.getState().collapsePrompt()
+    expect(useDashboardStore.getState().promptMode).toBe('collapsed')
+
+    useDashboardStore.getState().expandPrompt()
+    expect(useDashboardStore.getState().promptMode).toBe('maximized')
+  })
+
+  it('resets restored prompt size when a graph mode applies a new default', () => {
+    useDashboardStore.getState().maximizePrompt()
+    useDashboardStore.getState().applyPromptModeDefault('collapsed')
+    expect(useDashboardStore.getState().promptMode).toBe('collapsed')
+
+    useDashboardStore.getState().expandPrompt()
+    expect(useDashboardStore.getState().promptMode).toBe('normal')
+  })
+
+  it('can apply maximized as a graph-mode default', () => {
+    useDashboardStore.getState().applyPromptModeDefault('maximized')
+    expect(useDashboardStore.getState().promptMode).toBe('maximized')
+
+    useDashboardStore.getState().collapsePrompt()
+    useDashboardStore.getState().expandPrompt()
+    expect(useDashboardStore.getState().promptMode).toBe('maximized')
+  })
+
+  it('steps prompt size down through maximized, normal, then collapsed', () => {
+    useDashboardStore.getState().maximizePrompt()
+    useDashboardStore.getState().stepPromptDown()
+    expect(useDashboardStore.getState().promptMode).toBe('normal')
+    expect(useDashboardStore.getState().lastExpandedPromptMode).toBe('normal')
+
+    useDashboardStore.getState().stepPromptDown()
+    expect(useDashboardStore.getState().promptMode).toBe('collapsed')
+    expect(useDashboardStore.getState().lastExpandedPromptMode).toBe('normal')
+  })
+
+  it('steps prompt size up through normal, then maximized', () => {
+    useDashboardStore.getState().collapsePrompt()
+    useDashboardStore.getState().stepPromptUp()
+    expect(useDashboardStore.getState().promptMode).toBe('normal')
+
+    useDashboardStore.getState().stepPromptUp()
+    expect(useDashboardStore.getState().promptMode).toBe('maximized')
+    expect(useDashboardStore.getState().lastExpandedPromptMode).toBe('maximized')
+  })
+})

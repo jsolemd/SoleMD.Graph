@@ -7,6 +7,43 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ═══════════════════════════════════════════════════════════════════
+   REGISTERED PROPERTIES — Graph control contrast system
+   @property tells Lightning CSS these vars are real and mutable at
+   runtime, preventing it from resolving var() fallbacks statically
+   and stripping the [data-graph-control-contrast] override rules.
+   ═══════════════════════════════════════════════════════════════════ */
+@property --graph-control-icon-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-idle-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-idle-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-hover-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-pressed-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-active-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
    DESIGN TOKENS — Tailwind v4 utility generation
    ═══════════════════════════════════════════════════════════════════ */
 @theme {
@@ -63,7 +100,7 @@
   --graph-panel-shadow: 0 2px 12px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04);
 
   /* ── Graph overlays (PromptBox, Wordmark, StatsBar) ── */
-  --graph-prompt-bg: var(--surface);
+  --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: var(--border-default);
   --graph-prompt-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 8px 32px rgba(0, 0, 0, 0.08);
   --graph-prompt-text: var(--text-primary);
@@ -73,9 +110,10 @@
   --graph-wordmark-text: rgba(0, 0, 0, 0.55);
   --graph-wordmark-accent: var(--brand-accent);
   --graph-stats-text: rgba(0, 0, 0, 0.32);
-  --graph-label-bg: rgba(255, 255, 255, 0.88);
-  --graph-label-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --graph-cluster-label-bg: rgba(255, 255, 255, 0.90);
+  --graph-label-bg: rgba(255, 255, 255, 0.95);
+  --graph-label-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  --graph-cluster-label-bg: rgba(255, 255, 255, 0.95);
+  --graph-cluster-label-shadow: 0 1px 4px rgba(0, 0, 0, 0.10);
   --graph-greyout-opacity: 0.25;
 
   /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
@@ -91,6 +129,12 @@
   /* ── Toolbar icons (single source of truth for lucide + Cosmograph) ── */
   --icon-size: 16px;
   --icon-stroke-width: 1.5;
+  --graph-control-icon-color: var(--graph-panel-text-dim);
+  --graph-control-idle-bg: transparent;
+  --graph-control-idle-border: transparent;
+  --graph-control-hover-bg: var(--mode-accent-subtle);
+  --graph-control-pressed-bg: var(--mode-accent-subtle);
+  --graph-control-active-bg: var(--mode-accent-hover);
 
   /* ── Error states ── */
   --error-bg: rgba(255, 107, 107, 0.08);
@@ -204,11 +248,12 @@ html:root {
 
   /* ── Graph canvas (only values that diverge from foundations) ── */
   --graph-bg: #111113;
+  --graph-panel-input-bg: #19191d;
 
   --graph-panel-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.45);
 
   /* ── Graph overlays (matte floating cards) ── */
-  --graph-prompt-bg: var(--surface);
+  --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: transparent;
   --graph-prompt-shadow: 0 0 0 1px rgba(255,255,255,0.07), 0 4px 24px rgba(0,0,0,0.5);
   --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
@@ -220,6 +265,7 @@ html:root {
   --graph-label-bg: rgba(28, 29, 33, 0.85);
   --graph-label-shadow: none;
   --graph-cluster-label-bg: rgba(28, 29, 33, 0.80);
+  --graph-cluster-label-shadow: none;
   --graph-greyout-opacity: 0.15;
 
   /* ── Filter/timeline bars — boost active brightness on dark surfaces ── */
@@ -447,6 +493,24 @@ html.dark {
   background: var(--mode-accent-subtle);
 }
 
+/* Mantine dropdowns — use graph panel tokens instead of Mantine defaults.
+   Override the popover background and option hover to match the panel surface. */
+.mantine-Popover-dropdown {
+  background-color: var(--graph-panel-input-bg) !important;
+  border-color: var(--graph-panel-border) !important;
+}
+.mantine-Select-option:hover,
+.mantine-Select-option[data-combobox-active],
+.mantine-Select-option[data-combobox-selected] {
+  background-color: var(--mode-accent-subtle) !important;
+}
+
+.mantine-Tooltip-tooltip {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
 /* DataTable pagination — minimal, mode-colored active page */
 .table-pagination [data-active] {
   background-color: transparent !important;
@@ -470,18 +534,47 @@ html.dark {
    like Cosmograph wrappers.  !important on backgrounds ensures our
    hover/active overrides beat any Mantine variant styling. */
 .graph-icon-btn {
-  color: var(--graph-panel-text-dim);
+  color: var(--graph-control-icon-color, var(--graph-panel-text-dim));
   cursor: pointer;
-  transition: background-color 150ms ease;
+  background-color: var(--graph-control-idle-bg, transparent) !important;
+  box-shadow: inset 0 0 0 1px var(--graph-control-idle-border, transparent);
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
 }
 .graph-icon-btn:hover {
-  background-color: var(--mode-accent-subtle) !important;
+  background-color: var(--graph-control-hover-bg, var(--mode-accent-subtle)) !important;
 }
 .graph-icon-btn[aria-pressed="true"] {
-  background-color: var(--mode-accent-subtle) !important;
+  background-color: var(--graph-control-pressed-bg, var(--mode-accent-subtle)) !important;
 }
 .graph-icon-btn:active {
-  background-color: var(--mode-accent-hover) !important;
+  background-color: var(--graph-control-active-bg, var(--mode-accent-hover)) !important;
+}
+[data-graph-control-contrast="0"] {
+  --graph-control-icon-color: var(--graph-panel-text-dim);
+  --graph-control-idle-bg: transparent;
+  --graph-control-idle-border: transparent;
+  --graph-control-hover-bg: var(--mode-accent-subtle);
+  --graph-control-pressed-bg: var(--mode-accent-subtle);
+  --graph-control-active-bg: var(--mode-accent-hover);
+}
+[data-graph-control-contrast="1"] {
+  --graph-control-icon-color: var(--graph-panel-text);
+  --graph-control-idle-bg: color-mix(in srgb, var(--graph-panel-bg) 24%, transparent);
+  --graph-control-idle-border: color-mix(in srgb, var(--graph-panel-border) 55%, transparent);
+  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent-subtle) 72%, var(--graph-control-idle-bg));
+  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent-hover) 50%, var(--graph-control-idle-bg));
+  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent-hover) 72%, var(--graph-control-idle-bg));
+}
+[data-graph-control-contrast="2"] {
+  --graph-control-icon-color: var(--graph-panel-text);
+  --graph-control-idle-bg: color-mix(in srgb, var(--graph-panel-bg) 46%, transparent);
+  --graph-control-idle-border: color-mix(in srgb, var(--graph-panel-border) 82%, transparent);
+  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent-subtle) 78%, var(--graph-control-idle-bg));
+  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent-hover) 58%, var(--graph-control-idle-bg));
+  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent-hover) 82%, var(--graph-control-idle-bg));
 }
 /* Lucide icons inside graph buttons — centralized size + stroke from vars.
    Lucide renders <svg class="lucide ..."> with width/height/stroke-width

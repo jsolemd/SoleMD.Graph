@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { Text, ActionIcon, Tooltip } from "@mantine/core";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
-import { smooth } from "@/lib/motion";
+import { panelReveal } from "@/lib/motion";
 import { useDashboardStore } from "@/features/graph/stores";
 
 const panelChromeTextClassName = "uppercase tracking-[0.08em]";
@@ -41,7 +41,7 @@ export const panelErrorStyle: React.CSSProperties = {
  * Hover/active backgrounds are handled by the `.graph-icon-btn` CSS class.
  */
 export const iconBtnStyles = {
-  root: { color: "var(--graph-panel-text-dim)" },
+  root: { color: "var(--graph-control-icon-color, var(--graph-panel-text-dim))" },
 } as const;
 
 /** Badge with mode-accent background — for cluster labels, "Primary" tags. */
@@ -80,8 +80,6 @@ export const PANEL_ACCENT = "var(--mode-accent)";
 /** Shared label color for Mantine Switch components inside panels. */
 export const switchLabelStyle = { label: { color: "var(--graph-panel-text)" } };
 
-const PANEL_ANIMATION = { initial: { opacity: 0, y: -16 }, exit: { opacity: 0, y: -16 } };
-
 export function PanelShell({
   children,
   title,
@@ -90,6 +88,7 @@ export function PanelShell({
   headerActions,
   onClose,
 }: PanelShellProps) {
+  const reveal = panelReveal[side];
   const panelRef = useRef<HTMLDivElement>(null);
   const setPanelBottomY = useDashboardStore((s) => s.setPanelBottomY);
 
@@ -130,12 +129,13 @@ export function PanelShell({
   return (
     <motion.div
       ref={panelRef}
-      initial={PANEL_ANIMATION.initial}
-      animate={{ opacity: 1, y: 0 }}
-      exit={PANEL_ANIMATION.exit}
-      transition={smooth}
+      initial={reveal.initial}
+      animate={reveal.animate}
+      exit={reveal.exit}
+      transition={reveal.transition}
       className="absolute z-30 flex flex-col overflow-hidden rounded-2xl"
       style={{
+        ...reveal.style,
         top: PANEL_TOP,
         ...(side === "left" ? { left: 12 } : { right: 12 }),
         width,
@@ -197,14 +197,29 @@ export const panelTableHeaderStyle: React.CSSProperties = {
   color: "var(--graph-panel-text-muted)",
 };
 
-/** Shared styles for Select/input components inside panels. */
+/** Shared styles for Select/input components inside panels — compact & minimal. */
 export const panelSelectStyles = {
   input: {
     backgroundColor: "var(--graph-panel-input-bg)",
     borderColor: "var(--graph-panel-border)",
     color: "var(--graph-panel-text)",
+    minHeight: 26,
+    height: 26,
+    fontSize: 11,
+    borderRadius: 8,
+    paddingLeft: 8,
+    paddingRight: 24,
   },
   label: {
     color: "var(--graph-panel-text-muted)",
+  },
+  option: {
+    fontSize: 11,
+    padding: "4px 8px",
+    borderRadius: 6,
+  },
+  dropdown: {
+    borderRadius: 10,
+    padding: 4,
   },
 };

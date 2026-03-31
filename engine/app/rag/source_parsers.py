@@ -117,13 +117,15 @@ def _normalize_section_role(
         return SectionRole.SUPPLEMENT
     if type_key == "REF":
         return SectionRole.REFERENCE
-    if type_key in {"TITLE", "AUTH_CONT", "ACK_FUND", "COMP_INT"}:
+    if type_key in {"TITLE", "AUTH_CONT", "ACK_FUND", "COMP_INT", "FUND", "KEY"}:
         return SectionRole.FRONT_MATTER
 
     tokens = _normalize_header_label(header_text)
     token_text = " ".join(tokens)
     if "abstract" in tokens:
         return SectionRole.ABSTRACT
+    if "background" in tokens:
+        return SectionRole.INTRODUCTION
     if "introduction" in tokens or token_text == "intro":
         return SectionRole.INTRODUCTION
     if "method" in token_text or "materials and methods" in token_text:
@@ -138,9 +140,42 @@ def _normalize_section_role(
         return SectionRole.SUPPLEMENT
     if "reference" in token_text or "references" in token_text:
         return SectionRole.REFERENCE
-    if "ethics" in token_text or "conflict" in token_text:
+    if (
+        "acknowledg" in token_text
+        or "acknowledgement" in token_text
+        or "acknowledgment" in token_text
+        or "author contribution" in token_text
+        or "author contributions" in token_text
+        or token_text == "contributors"
+        or "contributor" in token_text
+        or "funding" in token_text
+        or "data availability" in token_text
+        or "availability of data" in token_text
+        or "ethics" in token_text
+        or "ethical consideration" in token_text
+        or "ethical considerations" in token_text
+        or "conflict" in token_text
+        or "competing interest" in token_text
+        or "competing interests" in token_text
+        or "abbreviation" in token_text
+        or "abbreviations" in token_text
+        or "keyword" in token_text
+        or "keywords" in token_text
+    ):
         return SectionRole.FRONT_MATTER
     return SectionRole.OTHER
+
+
+def _is_retrieval_default_section(section_role: SectionRole) -> bool:
+    return section_role not in {SectionRole.REFERENCE, SectionRole.FRONT_MATTER}
+
+
+def _is_contextual_section_role(section_role: SectionRole) -> bool:
+    return section_role not in {
+        SectionRole.OTHER,
+        SectionRole.REFERENCE,
+        SectionRole.FRONT_MATTER,
+    }
 
 
 def _normalize_block_kind_from_bioc(passage_type: str | None) -> PaperBlockKind | None:
@@ -156,6 +191,28 @@ def _normalize_block_kind_from_bioc(passage_type: str | None) -> PaperBlockKind 
     if type_key == "table":
         return PaperBlockKind.TABLE_BODY_TEXT
     return None
+
+
+def _bioc_section_key(
+    *,
+    section_type: str | None,
+    section_role: SectionRole,
+) -> tuple[str, SectionRole]:
+    normalized_type = (section_type or "").strip().upper()
+    return ((normalized_type or section_role.value).upper(), section_role)
+
+
+def _bioc_section_label(
+    *,
+    section_type: str | None,
+    section_role: SectionRole,
+    title_text: str | None = None,
+) -> str:
+    if title_text and title_text.strip():
+        return title_text.strip()
+    if section_type and section_type.strip():
+        return section_type.strip().replace("_", " ").title()
+    return section_role.value.replace("_", " ").title()
 
 
 def _extract_bioc_annotation_identifier(
@@ -312,10 +369,73 @@ def parse_s2orc_row(
         _decode_annotation_group(body_annotations.get("section_header")),
         key=lambda item: (item["start"], item["end"]),
     )
+    paragraphs = sorted(
+        _decode_annotation_group(body_annotations.get("paragraph")),
+        key=lambda item: (item["start"], item["end"]),
+    )
+    first_section_start = section_headers[0]["start"] if section_headers else None
+    if paragraphs and (
+        first_section_start is None or paragraphs[0]["start"] < first_section_start
+    ):
+        preamble_start = paragraphs[0]["start"]
+        preamble_end = (
+            first_section_start if first_section_start is not None else paragraphs[-1]["end"]
+        )
+        trimmed_preamble = _trimmed_relative_span(body_text, preamble_start, preamble_end)
+        if trimmed_preamble is not None:
+            start, end = trimmed_preamble
+            sections.append(
+                PaperSectionRecord(
+                    corpus_id=corpus_id,
+                    source_system=ParseSourceSystem.S2ORC_V2,
+                    source_revision=source_revision,
+                    source_document_key=str(corpus_id),
+                    source_plane=SourcePlane.BODY,
+                    parser_version=parser_version,
+                    raw_attrs_json={"implicit": True, "kind": "preamble"},
+                    source_start_offset=start,
+                    source_end_offset=end,
+                    text=_span_text(body_text, start, end),
+                    section_ordinal=0,
+                    parent_section_ordinal=None,
+                    section_role=SectionRole.OTHER,
+                    display_label="Preamble",
+                    numbering_token=None,
+                )
+            )
+    current_context_role = SectionRole.OTHER
     for ordinal, item in enumerate(section_headers, start=1):
         attrs = item.get("attributes") or {}
         header_text = _span_text(body_text, item["start"], item["end"]).strip()
         numbering_token = attrs.get("n")
+        parent_section_ordinal = _derive_parent_section_ordinal(
+            numbering_token, numbering_map
+        )
+        normalized_section_role = _normalize_section_role(header_text=header_text)
+        parent_section = (
+            next(
+                (
+                    section
+                    for section in sections
+                    if section.section_ordinal == parent_section_ordinal
+                ),
+                None,
+            )
+            if parent_section_ordinal is not None
+            else None
+        )
+        section_role = normalized_section_role
+        if (
+            section_role == SectionRole.OTHER
+            and parent_section is not None
+            and _is_contextual_section_role(parent_section.section_role)
+        ):
+            section_role = parent_section.section_role
+        elif (
+            section_role == SectionRole.OTHER
+            and _is_contextual_section_role(current_context_role)
+        ):
+            section_role = current_context_role
         section = PaperSectionRecord(
             corpus_id=corpus_id,
             source_system=ParseSourceSystem.S2ORC_V2,
@@ -328,16 +448,16 @@ def parse_s2orc_row(
             source_end_offset=item["end"],
             text=header_text,
             section_ordinal=ordinal,
-            parent_section_ordinal=_derive_parent_section_ordinal(
-                numbering_token, numbering_map
-            ),
-            section_role=_normalize_section_role(header_text=header_text),
+            parent_section_ordinal=parent_section_ordinal,
+            section_role=section_role,
             display_label=header_text,
             numbering_token=numbering_token,
         )
         sections.append(section)
         if numbering_token:
             numbering_map[numbering_token] = ordinal
+        if _is_contextual_section_role(section_role):
+            current_context_role = section_role
 
     def resolve_section_for_span(start: int) -> tuple[int, SectionRole]:
         current = next(
@@ -351,15 +471,14 @@ def parse_s2orc_row(
         if current is None:
             return 0, SectionRole.OTHER
         return current.section_ordinal, current.section_role
-
     blocks: list[PaperBlockRecord] = []
-    paragraphs = sorted(
-        _decode_annotation_group(body_annotations.get("paragraph")),
-        key=lambda item: (item["start"], item["end"]),
-    )
     for ordinal, item in enumerate(paragraphs):
-        text = _span_text(body_text, item["start"], item["end"])
-        section_ordinal, section_role = resolve_section_for_span(item["start"])
+        trimmed_span = _trimmed_relative_span(body_text, item["start"], item["end"])
+        if trimmed_span is None:
+            continue
+        start, end = trimmed_span
+        text = _span_text(body_text, start, end)
+        section_ordinal, section_role = resolve_section_for_span(start)
         blocks.append(
             PaperBlockRecord(
                 corpus_id=corpus_id,
@@ -369,14 +488,14 @@ def parse_s2orc_row(
                 source_plane=SourcePlane.BODY,
                 parser_version=parser_version,
                 raw_attrs_json=item.get("attributes") or {},
-                source_start_offset=item["start"],
-                source_end_offset=item["end"],
+                source_start_offset=start,
+                source_end_offset=end,
                 text=text,
                 block_ordinal=ordinal,
                 section_ordinal=section_ordinal,
                 block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
                 section_role=section_role,
-                is_retrieval_default=section_role != SectionRole.REFERENCE,
+                is_retrieval_default=_is_retrieval_default_section(section_role),
             )
         )
 
@@ -450,6 +569,9 @@ def parse_s2orc_row(
     )
     for ordinal, item in enumerate(bib_entries):
         attrs = item.get("attributes") or {}
+        reference_text = _span_text(bibliography_text, item["start"], item["end"]).strip()
+        if not reference_text:
+            continue
         references.append(
             PaperReferenceEntryRecord(
                 corpus_id=corpus_id,
@@ -461,7 +583,7 @@ def parse_s2orc_row(
                 raw_attrs_json=attrs,
                 source_start_offset=item["start"],
                 source_end_offset=item["end"],
-                text=_span_text(bibliography_text, item["start"], item["end"]),
+                text=reference_text,
                 source_reference_key=_coerce_optional_string(attrs.get("id"))
                 or f"bib:{ordinal}",
                 reference_ordinal=ordinal,
@@ -533,8 +655,17 @@ def parse_biocxml_document(
             raise ValueError("BioCXML document id must resolve to a canonical corpus_id")
         corpus_id = int(document_id)
 
-    title_passage = document_elem.find("./passage")
-    title_text = title_passage.findtext("text") if title_passage is not None else None
+    title_text = None
+    for passage in document_elem.findall("passage"):
+        infons = {
+            child.attrib.get("key"): (child.text or "") for child in passage.findall("infon")
+        }
+        passage_type = infons.get("type")
+        if passage_type and passage_type.startswith("title"):
+            candidate = (passage.findtext("text") or "").strip()
+            if candidate:
+                title_text = candidate
+                break
 
     document = PaperDocumentRecord(
         corpus_id=corpus_id,
@@ -552,11 +683,64 @@ def parse_biocxml_document(
     section_counter = 0
     current_section_ordinal = 0
     current_section_role = SectionRole.OTHER
+    current_section_key: tuple[str, SectionRole] | None = None
 
     blocks: list[PaperBlockRecord] = []
     sentences: list[PaperSentenceRecord] = []
     references: list[PaperReferenceEntryRecord] = []
     entities: list[PaperEntityMentionRecord] = []
+
+    def ensure_section(
+        *,
+        offset: int,
+        end_offset: int,
+        passage_text: str,
+        infons: dict[str, str],
+        section_type: str | None,
+        section_role: SectionRole,
+        title_text: str | None = None,
+        force_new: bool = False,
+    ) -> tuple[int, SectionRole]:
+        nonlocal section_counter, current_section_ordinal, current_section_role, current_section_key
+        next_key = _bioc_section_key(
+            section_type=section_type,
+            section_role=section_role,
+        )
+        if not force_new and current_section_key == next_key and current_section_ordinal > 0:
+            current_section_role = section_role
+            return current_section_ordinal, current_section_role
+
+        label = _bioc_section_label(
+            section_type=section_type,
+            section_role=section_role,
+            title_text=title_text,
+        )
+        section_counter += 1
+        current_section_ordinal = section_counter
+        current_section_role = section_role
+        current_section_key = next_key
+        section_text = passage_text if passage_text.strip() else label
+        sections.append(
+            PaperSectionRecord(
+                corpus_id=corpus_id,
+                source_system=ParseSourceSystem.BIOCXML,
+                source_revision=source_revision,
+                source_document_key=document_id,
+                source_plane=SourcePlane.PASSAGE,
+                parser_version=parser_version,
+                raw_attrs_json={
+                    **infons,
+                    "implicit": not force_new,
+                },
+                source_start_offset=offset,
+                source_end_offset=end_offset,
+                text=section_text,
+                section_ordinal=current_section_ordinal,
+                section_role=section_role,
+                display_label=label,
+            )
+        )
+        return current_section_ordinal, current_section_role
 
     for passage in document_elem.findall("passage"):
         infons = {
@@ -569,38 +753,45 @@ def parse_biocxml_document(
         offset = int((passage.findtext("offset") or "0").strip() or "0")
         end_offset = offset + len(passage_text)
 
-        section_role = _normalize_section_role(
+        normalized_section_role = _normalize_section_role(
             header_text=passage_text if passage_type and passage_type.startswith("title") else None,
             section_type=section_type,
         )
+        section_role = normalized_section_role
+        if (
+            passage_type
+            and passage_type.startswith("title")
+            and section_role == SectionRole.OTHER
+            and _is_contextual_section_role(current_section_role)
+        ):
+            section_role = current_section_role
 
         if passage_type and passage_type.startswith("title"):
             if not normalized_passage_text:
                 continue
-            section_counter += 1
-            current_section_ordinal = section_counter
-            current_section_role = section_role
-            sections.append(
-                PaperSectionRecord(
-                    corpus_id=corpus_id,
-                    source_system=ParseSourceSystem.BIOCXML,
-                    source_revision=source_revision,
-                    source_document_key=document_id,
-                    source_plane=SourcePlane.PASSAGE,
-                    parser_version=parser_version,
-                    raw_attrs_json=infons,
-                    source_start_offset=offset,
-                    source_end_offset=end_offset,
-                    text=passage_text,
-                    section_ordinal=current_section_ordinal,
-                    section_role=section_role,
-                    display_label=passage_text,
-                )
+            ensure_section(
+                offset=offset,
+                end_offset=end_offset,
+                passage_text=passage_text,
+                infons=infons,
+                section_type=section_type,
+                section_role=section_role,
+                title_text=passage_text,
+                force_new=True,
             )
             continue
 
         block_kind = _normalize_block_kind_from_bioc(passage_type)
-        if section_role not in {SectionRole.OTHER, SectionRole.REFERENCE}:
+        if block_kind is not None or passage_type == "ref" or section_role == SectionRole.REFERENCE:
+            ensure_section(
+                offset=offset,
+                end_offset=end_offset,
+                passage_text=passage_text,
+                infons=infons,
+                section_type=section_type,
+                section_role=section_role,
+            )
+        if _is_contextual_section_role(section_role):
             current_section_role = section_role
         role_for_block = (
             current_section_role
@@ -660,7 +851,7 @@ def parse_biocxml_document(
             section_ordinal=current_section_ordinal,
             block_kind=block_kind,
             section_role=role_for_block,
-            is_retrieval_default=section_role != SectionRole.REFERENCE,
+            is_retrieval_default=_is_retrieval_default_section(role_for_block),
             linked_asset_ref=linked_asset_ref,
         )
         blocks.append(block)

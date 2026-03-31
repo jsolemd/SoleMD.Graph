@@ -24,8 +24,9 @@ import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { getLayerConfig } from "@/features/graph/lib/layers";
 import { iconBtnStyles } from "../panels/PanelShell";
-import { settle } from "@/lib/motion";
+import { settle, chromeToggle } from "@/lib/motion";
 import type { ActivePanel } from "@/features/graph/stores";
+import { useGraphControlContrast } from "./use-graph-control-contrast";
 
 const PANEL_ITEMS: Array<{
   panel: Exclude<ActivePanel, null>;
@@ -59,6 +60,7 @@ export function Wordmark() {
   const { fitView, fitViewByIndices, zoomToPoint, zoomIn, zoomOut } = useGraphCamera();
   const { selectPoint, getSelectedPointIndices } = useGraphSelection();
   const { captureScreenshot } = useGraphExport();
+  const { contrastAttr, contrastBlurClass } = useGraphControlContrast();
 
   // Context-aware links button:
   // - No selection: toggle link visibility (show/hide citation lines)
@@ -108,7 +110,10 @@ export function Wordmark() {
   return (
     <>
       {/* Left: logo + panel icon row */}
-      <div className="absolute top-3 left-3 z-40 flex flex-col gap-2">
+      <div
+        className={`absolute top-3 left-3 z-40 flex flex-col gap-2 ${contrastBlurClass}`}
+        {...contrastAttr}
+      >
         <div className="flex items-center gap-3">
           {!uiHidden && (
             <Tooltip label="About SoleMD" position="right" withArrow>
@@ -145,10 +150,7 @@ export function Wordmark() {
           {panelsVisible && !uiHidden && (
             <motion.div
               className="flex items-center gap-0.5"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.15 }}
+              {...chromeToggle}
             >
               {PANEL_ITEMS.map(({ panel, icon: Icon, label }) => {
                 const isActive = activePanel === panel;
@@ -176,7 +178,11 @@ export function Wordmark() {
       </div>
 
       {/* Right: toolbar buttons */}
-      <div data-wordmark-toolbar className="absolute right-3 top-3 z-40 flex items-center gap-0.5">
+      <div
+        data-wordmark-toolbar
+        className={`absolute right-3 top-3 z-40 flex items-center gap-0.5 ${contrastBlurClass}`}
+        {...contrastAttr}
+      >
         {!uiHidden && (
           <>
             {layerHasLinks && (

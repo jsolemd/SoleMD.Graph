@@ -14,12 +14,19 @@ def test_build_index_matrix_includes_post_load_lexical_fallback_on_blocks_and_ch
 
     assert indexes["idx_paper_blocks_search_tsv"].build_phase == IndexBuildPhase.POST_LOAD
     assert indexes["idx_paper_blocks_search_tsv"].method == RagIndexMethod.GIN
-    assert indexes["idx_paper_blocks_search_tsv"].expression_sql == "search_tsv"
+    assert (
+        indexes["idx_paper_blocks_search_tsv"].expression_sql
+        == "to_tsvector('english', coalesce(text, ''))"
+    )
     assert indexes["idx_paper_blocks_search_tsv"].concurrent_if_live is True
 
     assert indexes["idx_paper_chunks_search_tsv"].build_phase == IndexBuildPhase.POST_LOAD
     assert indexes["idx_paper_chunks_search_tsv"].method == RagIndexMethod.GIN
     assert indexes["idx_paper_chunks_search_tsv"].role == IndexRole.LEXICAL_FALLBACK
+    assert (
+        indexes["idx_paper_chunks_search_tsv"].expression_sql
+        == "to_tsvector('english', coalesce(text, ''))"
+    )
 
 
 def test_index_matrix_keeps_sentence_table_out_of_global_lexical_fallback():

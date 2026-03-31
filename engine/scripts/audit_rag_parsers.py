@@ -264,7 +264,7 @@ def _select_evenly_spaced_paths(paths: list[Path], count: int) -> list[Path]:
 def _resolve_s2_shards(*, explicit_shard: Path | None, shard_count: int) -> list[Path]:
     if explicit_shard is not None:
         return [explicit_shard]
-    available_shards = sorted(settings.semantic_scholar_raw_s2orc_v2_dir_path.glob("s2orc_v2-*.jsonl.gz"))
+    available_shards = sorted(settings.semantic_scholar_s2orc_v2_dir_path.glob("s2orc_v2-*.jsonl.gz"))
     return _select_evenly_spaced_paths(available_shards, shard_count)
 
 

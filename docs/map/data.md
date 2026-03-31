@@ -91,7 +91,7 @@ leaving richer interaction state in DuckDB query views or the backend API.
 ╔══════════════════════════════════════════════════════════════════════════╗
 ║                    LOCAL DISK  (data/ directory, .gitignored)            ║
 ║                                                                         ║
-║   data/pubtator/raw/                  data/semantic-scholar/raw/         ║
+║   data/pubtator/releases/<id>/        data/semantic-scholar/releases/<id>/║
 ║     bioconcepts2pubtator3.gz            papers/*.jsonl.gz (~45 GB)      ║
 ║     relation2pubtator3.gz                                               ║
 ║                                       Only the papers dataset is a full ║

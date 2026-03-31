@@ -399,7 +399,7 @@ def download_dataset(dataset_name: str, output_dir: Path) -> None:
 
 # Usage -- only papers and paper-ids are downloaded in bulk
 if __name__ == "__main__":
-    base = Path("data/semantic-scholar/raw")
+    base = Path("data/semantic-scholar/releases/2026-03-10")
     for ds in ["paper-ids", "papers"]:
         download_dataset(ds, base / ds)
 ```
@@ -408,9 +408,9 @@ if __name__ == "__main__":
 
 ```bash
 # Check shard counts match manifest
-ls -la data/semantic-scholar/raw/papers/ | wc -l
+ls -la data/semantic-scholar/releases/2026-03-10/papers/ | wc -l
 # Verify gzip integrity
-for f in data/semantic-scholar/raw/papers/*.jsonl.gz; do
+for f in data/semantic-scholar/releases/2026-03-10/papers/*.jsonl.gz; do
   gzip -t "$f" && echo "OK: $f" || echo "CORRUPT: $f"
 done
 ```
@@ -565,10 +565,11 @@ temporarily blocked.
 
 ```
 data/semantic-scholar/
-├── raw/                       # Downloaded .jsonl.gz shards (bulk only)
-│   ├── paper-ids/             # ~10 shards, ~8 GB total
-│   ├── papers/                # ~30 shards, ~45 GB total
-│   └── publication-venues/    # 1 shard, ~10 MB
+├── releases/
+│   └── <S2_RELEASE_ID>/
+│       ├── paper-ids/         # ~10 shards, ~8 GB total
+│       ├── papers/            # ~30 shards, ~45 GB total
+│       └── publication-venues/
 ├── filtered/                  # DuckDB-filtered domain corpus IDs
 │   ├── domain_corpus_ids.parquet
 │   └── expanded_corpus_ids.parquet
@@ -639,7 +640,7 @@ SELECT
     externalids->>'DOI' AS doi,
     externalids->>'PubMedCentral' AS pmc
 FROM read_json(
-    'data/semantic-scholar/raw/paper-ids/*.jsonl.gz',
+    'data/semantic-scholar/releases/2026-03-10/paper-ids/*.jsonl.gz',
     format = 'newline_delimited',
     compression = 'gzip',
     columns = {corpusid: 'BIGINT', externalids: 'JSON'}
@@ -685,7 +686,7 @@ field-of-study criteria:
 CREATE TABLE domain_papers AS
 SELECT p.*
 FROM read_json(
-    'data/semantic-scholar/raw/papers/*.jsonl.gz',
+    'data/semantic-scholar/releases/2026-03-10/papers/*.jsonl.gz',
     format = 'newline_delimited',
     compression = 'gzip',
     columns = {

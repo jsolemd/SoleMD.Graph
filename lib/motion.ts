@@ -49,6 +49,13 @@ export const settle: SpringTransition = {
   damping: 25,
 };
 
+/** Crisp — panel appear/dismiss. Short travel, no visible bounce. ~180ms settle. */
+export const crisp: SpringTransition = {
+  type: "spring",
+  stiffness: 320,
+  damping: 28,
+};
+
 /* ───── Standardized hover conventions ─────
  *
  * Use these on `whileHover` to communicate interactivity:
@@ -74,3 +81,57 @@ export const dblHoverHint = {
   y: [0, 3, 0, 0, 3, 0] as number[],
   transition: { duration: 0.7, ease: "easeInOut" as const },
 };
+
+/* ───── Reveal presets ─────
+ *
+ * Complete { initial, animate, exit, transition } objects for enter/exit
+ * gestures. Spread onto motion.div: <motion.div {...panelReveal.left}>
+ *
+ * Naming is semantic (what the motion DOES), not structural (where it's used).
+ * Opacity uses a fast tween (not the spring) so backgrounds reach full
+ * strength almost instantly — prevents ghosting over the WebGL canvas.
+ */
+
+/** Panel scale-reveal — grows from anchor corner, fast opacity (no ghosting). */
+export const panelReveal = {
+  left: {
+    initial: { scale: 0.92, opacity: 0 },
+    animate: { scale: 1, opacity: 1 },
+    exit: { scale: 0.92, opacity: 0 },
+    transition: { scale: crisp, opacity: { duration: 0.1, ease: "easeOut" as const } },
+    style: { transformOrigin: "top left" as const },
+  },
+  right: {
+    initial: { scale: 0.92, opacity: 0 },
+    animate: { scale: 1, opacity: 1 },
+    exit: { scale: 0.92, opacity: 0 },
+    transition: { scale: crisp, opacity: { duration: 0.1, ease: "easeOut" as const } },
+    style: { transformOrigin: "top right" as const },
+  },
+} as const;
+
+/** Edge reveal — slides from an anchored edge (bottom bar, timeline). */
+export function edgeReveal(travel: number) {
+  return {
+    initial: { opacity: 0, y: travel },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: travel },
+    transition: smooth,
+  } as const;
+}
+
+/** Chrome toggle — tiny y-shift for toolbar elements appearing/hiding. */
+export const chromeToggle = {
+  initial: { opacity: 0, y: -4 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -4 },
+  transition: { y: crisp, opacity: { duration: 0.1 } },
+} as const;
+
+/** Pop — scale-up for action buttons appearing/disappearing. */
+export const pop = {
+  initial: { opacity: 0, scale: 0.85 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.85 },
+  transition: { scale: snappy, opacity: { duration: 0.1 } },
+} as const;

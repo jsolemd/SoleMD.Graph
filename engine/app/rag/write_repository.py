@@ -140,14 +140,18 @@ _RUNTIME_SUPPORTED_STAGE_TABLES: dict[WriteStage, str] = {
 
 _RUNTIME_CONDITIONAL_STAGE_TABLES: dict[WriteStage, str] = {
     WriteStage.CHUNK_VERSIONS: "paper_chunk_versions",
+    WriteStage.CHUNKS: "paper_chunks",
+    WriteStage.CHUNK_MEMBERS: "paper_chunk_members",
 }
 
 _RUNTIME_DEFERRED_STAGE_REASONS: dict[WriteStage, str] = {
     WriteStage.CHUNK_VERSIONS: (
         "Chunk-version writes stay deferred until paper_chunk_versions exists in the live schema."
     ),
-    WriteStage.CHUNKS: "Chunk tables are still deferred until chunk storage is migrated.",
-    WriteStage.CHUNK_MEMBERS: "Chunk tables are still deferred until chunk storage is migrated.",
+    WriteStage.CHUNKS: "Chunk writes stay deferred until paper_chunks exists in the live schema.",
+    WriteStage.CHUNK_MEMBERS: (
+        "Chunk-member writes stay deferred until paper_chunk_members exists in the live schema."
+    ),
 }
 
 
@@ -298,9 +302,15 @@ def build_runtime_write_stage_support_map() -> dict[WriteStage, RuntimeWriteStag
 def _table_exists_with_cursor(cur: Any, schema_name: str, table_name: str) -> bool:
     cur.execute("SELECT to_regclass(%s)", (f"{schema_name}.{table_name}",))
     row = cur.fetchone()
-    if not isinstance(row, (tuple, list)) or not row:
+    if row is None:
         return False
-    return row[0] is not None
+    if isinstance(row, dict):
+        return row.get("to_regclass") is not None
+    if hasattr(row, "keys") and "to_regclass" in row.keys():
+        return row["to_regclass"] is not None
+    if isinstance(row, (tuple, list)):
+        return bool(row) and row[0] is not None
+    return False
 
 
 def _serialize_stage_value(value):
@@ -346,7 +356,7 @@ _REFERENCE_ADAPTER_CREATE_STAGE_SQL = (
 )
 _REFERENCE_ADAPTER_COPY_SQL = (
     f"COPY {_REFERENCE_ADAPTER_STAGING_TABLE} ({', '.join(_REFERENCE_ADAPTER_COLUMNS)}) "
-    "FROM STDIN WITH (FORMAT CSV, HEADER FALSE)"
+    "FROM STDIN"
 )
 _REFERENCE_ADAPTER_DELETE_SQL = (
     "DELETE FROM solemd.paper_references "
@@ -357,6 +367,19 @@ _REFERENCE_ADAPTER_INSERT_SQL = (
     f"({', '.join(_REFERENCE_ADAPTER_COLUMNS)}) "
     f"SELECT {', '.join(_REFERENCE_ADAPTER_COLUMNS)} "
     f"FROM {_REFERENCE_ADAPTER_STAGING_TABLE}"
+)
+
+_REPLACE_EXISTING_DELETE_TABLES: tuple[str, ...] = (
+    "paper_chunk_members",
+    "paper_chunks",
+    "paper_citation_mentions",
+    "paper_entity_mentions",
+    "paper_sentences",
+    "paper_blocks",
+    "paper_sections",
+    "paper_document_sources",
+    "paper_references",
+    "paper_documents",
 )
 
 
@@ -437,7 +460,12 @@ class PostgresRagWriteRepository:
             conn.commit()
         return written
 
-    def apply_write_batch(self, batch: RagWarehouseWriteBatch) -> RagWriteExecutionResult:
+    def apply_write_batch(
+        self,
+        batch: RagWarehouseWriteBatch,
+        *,
+        replace_existing: bool = False,
+    ) -> RagWriteExecutionResult:
         plan = plan_write_batch(batch)
         if not plan.stages:
             return RagWriteExecutionResult(total_rows=0, written_rows=0, stages=[])
@@ -446,6 +474,8 @@ class PostgresRagWriteRepository:
         written_rows = 0
 
         with self._connect() as conn, conn.cursor() as cur:
+            if replace_existing:
+                self._replace_existing_rows_with_cursor(cur=cur, batch=batch)
             runtime_support_map = self._build_runtime_support_with_cursor(cur)
             for planned_stage in plan.stages:
                 rows = stage_rows(batch, planned_stage.stage)
@@ -494,6 +524,18 @@ class PostgresRagWriteRepository:
             written_rows=written_rows,
             stages=stage_results,
         )
+
+    def _replace_existing_rows_with_cursor(self, *, cur, batch: RagWarehouseWriteBatch) -> None:
+        corpus_ids = sorted({int(row.corpus_id) for row in batch.documents})
+        if not corpus_ids:
+            return
+        for table_name in _REPLACE_EXISTING_DELETE_TABLES:
+            if not self._table_exists_probe(cur, "solemd", table_name):
+                continue
+            cur.execute(
+                f"DELETE FROM solemd.{table_name} WHERE corpus_id = ANY(%s)",
+                (corpus_ids,),
+            )
 
     def _build_runtime_support_with_cursor(
         self,

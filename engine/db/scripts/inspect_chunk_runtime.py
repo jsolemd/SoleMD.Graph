@@ -62,13 +62,14 @@ WITH requested(index_name) AS (
 )
 SELECT
     r.index_name,
-    EXISTS (
-        SELECT 1
-        FROM pg_indexes i
-        WHERE i.schemaname = 'solemd'
-          AND i.indexname = r.index_name
-    ) AS is_present
+    c.oid IS NOT NULL AS is_present,
+    COALESCE(i.indisvalid, FALSE) AS is_valid
 FROM requested r
+LEFT JOIN pg_class c
+  ON c.relname = r.index_name
+ AND c.relnamespace = 'solemd'::regnamespace
+LEFT JOIN pg_index i
+  ON i.indexrelid = c.oid
 ORDER BY r.index_name
 """
 
@@ -142,8 +143,16 @@ def _load_post_load_index_presence(*, cursor) -> tuple[list[str], list[str]]:
 
     cursor.execute(_INDEX_STATUS_SQL, (requested,))
     rows = cursor.fetchall()
-    present = [row["index_name"] for row in rows if row["is_present"]]
-    missing = [row["index_name"] for row in rows if not row["is_present"]]
+    present = [
+        row["index_name"]
+        for row in rows
+        if row["is_present"] and row.get("is_valid", row["is_present"])
+    ]
+    missing = [
+        row["index_name"]
+        for row in rows
+        if not row["is_present"] or not row.get("is_valid", row["is_present"])
+    ]
     return present, missing
 
 
@@ -259,11 +268,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    inspection = inspect_chunk_runtime(
-        corpus_ids=args.corpus_ids,
-        chunk_version_key=args.chunk_version_key,
-    )
-    print(inspection.model_dump_json(indent=2))
+    try:
+        inspection = inspect_chunk_runtime(
+            corpus_ids=args.corpus_ids,
+            chunk_version_key=args.chunk_version_key,
+        )
+        print(inspection.model_dump_json(indent=2))
+    finally:
+        db.close_pool()
     return 0
 
 

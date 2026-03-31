@@ -32,9 +32,12 @@ def test_copy_stage_templates_define_staging_sql_and_merge_sql():
         "CREATE TEMP TABLE _stg_paper_citation_mentions "
         "(LIKE solemd.paper_citation_mentions INCLUDING DEFAULTS) ON COMMIT DROP"
     )
-    assert "COPY _stg_paper_citation_mentions" in citations.copy_sql
+    assert citations.copy_sql is not None
+    assert citations.copy_sql.startswith("COPY _stg_paper_citation_mentions (")
+    assert citations.copy_sql.endswith(") FROM STDIN")
     assert "ON CONFLICT (corpus_id, source_system, source_revision, source_citation_key, source_start_offset)" in citations.merge_sql
     assert "alignment_status = EXCLUDED.alignment_status" in citations.merge_sql
+    assert "IS DISTINCT FROM EXCLUDED.alignment_status" in citations.merge_sql
 
 
 def test_upsert_rows_template_uses_named_placeholders_without_staging():
@@ -56,3 +59,4 @@ def test_merge_sql_uses_non_primary_columns_for_updates():
     assert documents.primary_key_columns == ["corpus_id"]
     assert "corpus_id = EXCLUDED.corpus_id" not in documents.merge_sql
     assert "title = EXCLUDED.title" in documents.merge_sql
+    assert "solemd.paper_documents.title IS DISTINCT FROM EXCLUDED.title" in documents.merge_sql

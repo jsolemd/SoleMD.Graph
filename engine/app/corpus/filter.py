@@ -40,7 +40,7 @@ from app.corpus.vocab import load_vocab_aliases, stream_pubtator_matches
 
 logger = logging.getLogger(__name__)
 
-S2_DIR = settings.semantic_scholar_raw_papers_dir_path
+S2_DIR = settings.semantic_scholar_papers_dir_path
 
 # DuckDB column spec — only the columns we need from S2 papers JSONL.
 # Explicit schema avoids auto-detection overhead on 51 GB of data.

@@ -55,7 +55,9 @@ export interface GraphBundleSession {
   activateOverlay: (args: OverlayActivationRequest) => Promise<OverlayActivationResult>
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
-  getSelectedGraphPaperRefs: () => Promise<string[]>
+  getSelectionScopeGraphPaperRefs: (args: {
+    currentPointScopeSql: string | null
+  }) => Promise<string[]>
   getPaperNodesByGraphPaperRefs: (
     graphPaperRefs: string[]
   ) => Promise<Record<string, GraphPointRecord>>

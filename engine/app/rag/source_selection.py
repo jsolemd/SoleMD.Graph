@@ -32,6 +32,15 @@ class ParsedSourceStructuralProfile:
     def has_citation_spine(self) -> bool:
         return self.citation_count > 0 or self.reference_count > 0
 
+    @property
+    def has_annotation_value(self) -> bool:
+        return (
+            self.block_count > 0
+            or self.sentence_count > 0
+            or self.reference_count > 0
+            or self.entity_count > 0
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class GroundingSourcePlan:
@@ -86,12 +95,13 @@ def build_grounding_source_plan(
 ) -> GroundingSourcePlan:
     primary_source, primary_reason = select_primary_text_source(sources)
     primary_corpus_id = primary_source.document.corpus_id
+    profiles = {id(source): profile_parsed_source(source) for source in sources}
     annotation_sources = tuple(
         source
         for source in sources
         if source is not primary_source
         and source.document.corpus_id == primary_corpus_id
-        and len(source.entities) > 0
+        and profiles[id(source)].has_annotation_value
     )
     return GroundingSourcePlan(
         primary_source=primary_source,

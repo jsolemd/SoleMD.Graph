@@ -64,7 +64,7 @@ function createQueries({
     getClusterDetail: jest.fn(),
     getSelectionDetail: jest.fn(),
     getPaperDocument: jest.fn(),
-    getSelectedGraphPaperRefs: jest.fn(async () => []),
+    getSelectionScopeGraphPaperRefs: jest.fn(async () => []),
     ensureGraphPaperRefsAvailable: jest.fn(async (graphPaperRefs: string[]) => {
       const resolvedActiveGraphPaperRefs = graphPaperRefs.filter((graphPaperRef) =>
         activeGraphPaperRefs.includes(graphPaperRef),

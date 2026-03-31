@@ -182,6 +182,347 @@ def test_parse_s2orc_row_coerces_numeric_reference_and_match_identifiers_to_stri
     assert parsed.citations[0].matched_paper_id == "1149154"
 
 
+def test_parse_s2orc_row_adds_implicit_preamble_section_for_preheader_paragraphs():
+    body_text = (
+        "Keywords: severe dengue.\n"
+        "Introduction\n"
+        "Patients improved after treatment."
+    )
+    row = {
+        "corpusid": 79346632,
+        "title": "Preamble example",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Introduction"),
+                            "end": body_text.index("Introduction") + len("Introduction"),
+                            "attributes": {"n": "1."},
+                        }
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": 0,
+                            "end": body_text.index("\n") + 1,
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index("Patients"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Patients"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "bib_ref": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+
+    parsed = parse_s2orc_row(
+        row, source_revision="2026-03-10", parser_version="parser-v1"
+    )
+
+    assert parsed.sections[0].section_ordinal == 0
+    assert parsed.sections[0].display_label == "Preamble"
+    assert parsed.blocks[0].section_ordinal == 0
+    assert parsed.blocks[0].section_role == SectionRole.OTHER
+
+
+def test_parse_s2orc_row_maps_background_header_to_introduction():
+    body_text = "Background\nPatients improved after treatment."
+    row = {
+        "corpusid": 12345,
+        "title": "Background example",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [{"start": 0, "end": len("Background"), "attributes": {"n": "1."}}]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Patients"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Patients"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "bib_ref": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+
+    parsed = parse_s2orc_row(
+        row, source_revision="2026-03-10", parser_version="parser-v1"
+    )
+
+    assert parsed.sections[0].section_role == SectionRole.INTRODUCTION
+    assert parsed.blocks[0].section_role == SectionRole.INTRODUCTION
+
+
+def test_parse_s2orc_row_inherits_contextual_section_role_for_unrecognized_subheaders():
+    body_text = (
+        "RESULTS\n"
+        "Patient characteristics\n"
+        "Melatonin reduced delirium incidence.\n"
+        "Statistical analysis\n"
+        "Adjusted models remained significant."
+    )
+    row = {
+        "corpusid": 1829181,
+        "title": "Subclassed sections",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {"start": 0, "end": len("RESULTS"), "attributes": {"n": "1."}},
+                        {
+                            "start": body_text.index("Patient characteristics"),
+                            "end": body_text.index("Patient characteristics")
+                            + len("Patient characteristics"),
+                            "attributes": {"n": "1.1"},
+                        },
+                        {
+                            "start": body_text.index("Statistical analysis"),
+                            "end": body_text.index("Statistical analysis")
+                            + len("Statistical analysis"),
+                            "attributes": {"n": "1.2"},
+                        },
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Melatonin"),
+                            "end": body_text.index("Melatonin")
+                            + len("Melatonin reduced delirium incidence."),
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index("Adjusted"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Melatonin"),
+                            "end": body_text.index("Melatonin")
+                            + len("Melatonin reduced delirium incidence."),
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index("Adjusted"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+                "bib_ref": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+
+    parsed = parse_s2orc_row(
+        row, source_revision="2026-03-10", parser_version="parser-v1"
+    )
+
+    assert parsed.sections[1].section_role == SectionRole.RESULTS
+    assert parsed.sections[2].section_role == SectionRole.RESULTS
+    assert all(block.section_role == SectionRole.RESULTS for block in parsed.blocks)
+
+
+def test_parse_s2orc_row_skips_empty_bibliography_entries():
+    body_text = "Results\nSignal changed [1]."
+    row = {
+        "corpusid": 279796856,
+        "title": "Empty bibliography span example",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [{"start": 0, "end": len("Results"), "attributes": {"n": "1."}}]
+                ),
+                "paragraph": json.dumps(
+                    [{"start": len("Results\n"), "end": len(body_text), "attributes": {}}]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": len("Results\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "bib_ref": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("[1]"),
+                            "end": body_text.index("[1]") + 3,
+                            "attributes": {"ref_id": "b1", "matched_paper_id": "1714520"},
+                        }
+                    ]
+                ),
+            },
+        },
+        "bibliography": {
+            "text": "",
+            "annotations": {
+                "bib_entry": json.dumps(
+                    [
+                        {
+                            "start": 0,
+                            "end": 0,
+                            "attributes": {"id": "b1", "matched_paper_id": "1714520"},
+                        }
+                    ]
+                )
+            },
+        },
+    }
+
+    parsed = parse_s2orc_row(
+        row, source_revision="2026-03-10", parser_version="parser-v1"
+    )
+
+    assert parsed.references == []
+
+
+def test_parse_s2orc_row_trims_and_skips_whitespace_only_paragraph_blocks():
+    body_text = "Results\n   \nMeaningful finding here."
+    paragraph_start = body_text.index("   ")
+    row = {
+        "corpusid": 319991001,
+        "title": "Whitespace paragraph example",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [{"start": 0, "end": len("Results"), "attributes": {"n": "1."}}]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": paragraph_start,
+                            "end": paragraph_start + 4,
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index("Meaningful"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Meaningful"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "bib_ref": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+
+    parsed = parse_s2orc_row(
+        row, source_revision="2026-03-10", parser_version="parser-v1"
+    )
+
+    assert len(parsed.blocks) == 1
+    assert parsed.blocks[0].text == "Meaningful finding here."
+
+
+def test_parse_s2orc_row_marks_author_contributions_as_front_matter_and_not_retrieval_default():
+    body_text = "AUTHOR CONTRIBUTIONS\nAlice drafted the manuscript."
+    row = {
+        "corpusid": 411100001,
+        "title": "Author contribution example",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {
+                            "start": 0,
+                            "end": len("AUTHOR CONTRIBUTIONS"),
+                            "attributes": {"n": "1."},
+                        }
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Alice"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Alice"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "bib_ref": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+
+    parsed = parse_s2orc_row(
+        row, source_revision="2026-03-10", parser_version="parser-v2"
+    )
+
+    assert parsed.sections[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].is_retrieval_default is False
+
+
 def test_parse_s2orc_row_coerces_string_annotation_offsets_to_ints():
     body_text = "Results\nSignal changed [1]."
     bibliography_text = "1. Example trial paper."
@@ -397,6 +738,59 @@ def test_parse_biocxml_document_skips_empty_reference_and_block_passages():
     assert parsed.blocks[0].text == "Valid content remains."
 
 
+def test_parse_biocxml_document_creates_implicit_section_when_title_passage_is_absent():
+    xml_text = """
+    <collection>
+      <document>
+        <id>12345</id>
+        <passage>
+          <infon key="type">paragraph</infon>
+          <infon key="section_type">RESULTS</infon>
+          <offset>20</offset>
+          <text>Valid content remains.</text>
+        </passage>
+      </document>
+    </collection>
+    """
+
+    parsed = parse_biocxml_document(
+        xml_text, source_revision="2026-03-21", parser_version="parser-v1"
+    )
+
+    assert parsed.document.title is None
+    assert len(parsed.sections) == 1
+    assert parsed.sections[0].section_role == SectionRole.RESULTS
+    assert parsed.blocks[0].section_ordinal == parsed.sections[0].section_ordinal
+
+
+def test_parse_biocxml_document_uses_first_title_passage_for_document_title():
+    xml_text = """
+    <collection>
+      <document>
+        <id>12345</id>
+        <passage>
+          <infon key="type">paragraph</infon>
+          <infon key="section_type">ABSTRACT</infon>
+          <offset>0</offset>
+          <text>Abstract text comes first in the XML.</text>
+        </passage>
+        <passage>
+          <infon key="type">title_1</infon>
+          <infon key="section_type">ABSTRACT</infon>
+          <offset>40</offset>
+          <text>Canonical title</text>
+        </passage>
+      </document>
+    </collection>
+    """
+
+    parsed = parse_biocxml_document(
+        xml_text, source_revision="2026-03-21", parser_version="parser-v1"
+    )
+
+    assert parsed.document.title == "Canonical title"
+
+
 def test_parse_biocxml_document_uses_resolver_for_noncanonical_document_keys():
     xml_text = """
     <collection>
@@ -427,3 +821,42 @@ def test_parse_biocxml_document_uses_resolver_for_noncanonical_document_keys():
 
     assert parsed.document.corpus_id == 67890
     assert parsed.document.source_document_key == "PMC12345"
+
+
+def test_parse_biocxml_document_marks_funding_as_front_matter_and_not_retrieval_default():
+    xml_text = """
+    <collection>
+      <document>
+        <id>12345</id>
+        <passage>
+          <infon key="type">title_1</infon>
+          <infon key="section_type">TITLE</infon>
+          <offset>0</offset>
+          <text>Example paper</text>
+        </passage>
+        <passage>
+          <infon key="type">title_2</infon>
+          <infon key="section_type">FUND</infon>
+          <offset>20</offset>
+          <text>Funding</text>
+        </passage>
+        <passage>
+          <infon key="type">paragraph</infon>
+          <infon key="section_type">FUND</infon>
+          <offset>28</offset>
+          <text>This study was funded by Example Grant.</text>
+        </passage>
+      </document>
+    </collection>
+    """
+
+    parsed = parse_biocxml_document(
+        xml_text,
+        source_revision="2026-03-21",
+        parser_version="parser-v2",
+        corpus_id=12345,
+    )
+
+    assert parsed.sections[-1].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].is_retrieval_default is False

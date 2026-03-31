@@ -131,7 +131,9 @@ export interface GraphBundleQueries {
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getSelectionDetail: (point: GraphPointRecord) => Promise<GraphSelectionDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>
-  getSelectedGraphPaperRefs: () => Promise<string[]>
+  getSelectionScopeGraphPaperRefs: (args: {
+    currentPointScopeSql: string | null
+  }) => Promise<string[]>
   getPaperNodesByGraphPaperRefs: (
     graphPaperRefs: string[]
   ) => Promise<Record<string, GraphPointRecord>>

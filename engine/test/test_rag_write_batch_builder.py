@@ -17,6 +17,8 @@ from app.rag.source_parsers import parse_biocxml_document, parse_s2orc_row
 from app.rag.source_selection import build_grounding_source_plan
 from app.rag.write_batch_builder import (
     build_write_batch_from_grounding_plan,
+    estimate_write_batch_bytes_from_grounding_plan,
+    estimate_write_batch_rows_from_grounding_plan,
     merge_write_batches,
 )
 
@@ -86,6 +88,57 @@ def _build_s2orc_source():
     )
 
 
+def _build_s2orc_source_with_unresolved_bib_ref():
+    body_text = (
+        "Results\n"
+        "Melatonin reduced delirium incidence [1]. Sleep quality improved."
+    )
+    row = {
+        "corpusid": 24680,
+        "title": "Unresolved bibliography example",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {
+                            "start": 0,
+                            "end": len("Results"),
+                            "attributes": {"n": "1."},
+                        }
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [{"start": 8, "end": len(body_text), "attributes": {}}]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {"start": 8, "end": 48, "attributes": {}},
+                        {"start": 49, "end": len(body_text), "attributes": {}},
+                    ]
+                ),
+                "bib_ref": json.dumps(
+                    [
+                        {
+                            "start": 45,
+                            "end": 48,
+                            "attributes": {
+                                "ref_id": "missing-ref",
+                                "matched_paper_id": "S2:paper-1",
+                            },
+                        }
+                    ]
+                ),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {"bib_entry": json.dumps([])}},
+    }
+    return parse_s2orc_row(
+        row, source_revision="2026-03-10", parser_version="parser-v1"
+    )
+
+
 def _build_bioc_overlay():
     xml_text = """
     <collection>
@@ -148,6 +201,37 @@ def test_build_write_batch_from_grounding_plan_preserves_primary_source_entities
     assert batch.entities[0].text == "Melatonin"
 
 
+def test_estimate_write_batch_rows_from_grounding_plan_matches_current_non_chunk_batch_shape():
+    plan = build_grounding_source_plan([_build_s2orc_source(), _build_bioc_overlay()])
+
+    estimated = estimate_write_batch_rows_from_grounding_plan(plan)
+    batch = build_write_batch_from_grounding_plan(plan)
+
+    actual = (
+        len(batch.documents)
+        + len(batch.document_sources)
+        + len(batch.sections)
+        + len(batch.blocks)
+        + len(batch.sentences)
+        + len(batch.references)
+        + len(batch.citations)
+        + len(batch.entities)
+    )
+
+    assert estimated == actual
+
+
+def test_estimate_write_batch_bytes_from_grounding_plan_grows_with_more_structural_content():
+    base_plan = build_grounding_source_plan([_build_s2orc_source()])
+    richer_plan = build_grounding_source_plan([_build_s2orc_source(), _build_bioc_overlay()])
+
+    base_estimate = estimate_write_batch_bytes_from_grounding_plan(base_plan)
+    richer_estimate = estimate_write_batch_bytes_from_grounding_plan(richer_plan)
+
+    assert base_estimate > 0
+    assert richer_estimate > base_estimate
+
+
 def test_build_write_batch_from_grounding_plan_can_append_structural_chunks():
     plan = build_grounding_source_plan([_build_s2orc_source(), _build_bioc_overlay()])
     chunk_version = PaperChunkVersionRecord(
@@ -175,6 +259,17 @@ def test_build_write_batch_from_grounding_plan_can_append_structural_chunks():
     assert batch.chunks[0].chunk_version_key == "default-v1"
     assert batch.chunks[0].corpus_id == 12345
     assert len(batch.chunk_members) == 2
+
+
+def test_build_write_batch_from_grounding_plan_drops_unresolved_reference_link_from_citation():
+    plan = build_grounding_source_plan([_build_s2orc_source_with_unresolved_bib_ref()])
+
+    batch = build_write_batch_from_grounding_plan(plan)
+
+    assert len(batch.references) == 0
+    assert len(batch.citations) == 1
+    assert batch.citations[0].source_reference_key is None
+    assert batch.citations[0].source_citation_key == "missing-ref"
 
 
 def test_merge_write_batches_combines_distinct_corpus_batches():

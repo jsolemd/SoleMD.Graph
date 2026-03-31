@@ -62,7 +62,10 @@ def test_secondary_index_previews_note_partitioned_parent_and_expression_targets
     blocks_fts = secondary["idx_paper_blocks_search_tsv"]
     reverse_lookup = secondary["idx_paper_citation_mentions_matched_corpus_lookup"]
 
-    assert "CREATE INDEX IF NOT EXISTS idx_paper_blocks_search_tsv ON ONLY solemd.paper_blocks USING gin ((search_tsv))" in blocks_fts.sql
+    assert (
+        "CREATE INDEX IF NOT EXISTS idx_paper_blocks_search_tsv ON ONLY solemd.paper_blocks "
+        "USING gin ((to_tsvector('english', coalesce(text, ''))))"
+    ) in blocks_fts.sql
     assert blocks_fts.execution_note is not None
     assert "Partitioned post-load index preview" in blocks_fts.execution_note
     assert "expression target" in blocks_fts.execution_note

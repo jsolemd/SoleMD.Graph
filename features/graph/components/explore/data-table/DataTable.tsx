@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { useDashboardStore } from "@/features/graph/stores";
-import { smooth } from "@/lib/motion";
+import { edgeReveal } from "@/lib/motion";
 import { useDragResize } from "@/features/graph/hooks/use-drag-resize";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import { useTableData } from "./use-table-data";
@@ -31,10 +31,7 @@ export function DataTable({
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 40 }}
-      transition={smooth}
+      {...edgeReveal(40)}
       className="absolute left-0 right-0 z-20 flex flex-col"
       style={{
         bottom: showTimeline ? 44 : 0,

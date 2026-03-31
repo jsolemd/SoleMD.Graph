@@ -256,6 +256,20 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 | `chunk_grounding.py` | Chunk-lineage read path for future grounded answer packets |
 | `chunking.py` | `assemble_structural_chunks()` — derived chunks from blocks/sentences |
 
+Current parser/grounding quality rules:
+- BioC parsing must create a real canonical section row even when no title
+  passage exists; section fidelity is driven by structured `section_type`,
+  not by assuming title passages are always present
+- BioC document titles come from the first actual title passage, not the first
+  arbitrary passage in the XML
+- same-corpus overlay sources are retained when they contribute structural or
+  reference/entity value, not only when they carry entities
+- entity mentions may enrich a cited span, but they must not manufacture a
+  standalone inline-citation packet on their own
+- chunk assembly must honor `sentence_source_policy`; stored chunk lineage
+  cannot silently mix in fallback sentence segmentation when the chunk version
+  disallows it
+
 ### Warehouse (write pipeline)
 
 | Module | Purpose |
@@ -381,11 +395,12 @@ mentions when both sources exist for the same paper.
 | 7 | citations | `paper_citation_mentions` | COPY/upsert | blocks, references |
 | 8 | entities | `paper_entity_mentions` | COPY/upsert | blocks, sentences |
 | 9 | chunk_versions | `paper_chunk_versions` | row upsert | — (conditional) |
-| 10 | chunks | `paper_chunks` | COPY/upsert | chunk_versions, blocks (deferred) |
-| 11 | chunk_members | `paper_chunk_members` | COPY/upsert | chunks, blocks, sentences (deferred) |
+| 10 | chunks | `paper_chunks` | COPY/upsert | chunk_versions, blocks (conditional) |
+| 11 | chunk_members | `paper_chunk_members` | COPY/upsert | chunks, blocks, sentences (conditional) |
 
-Stages 1-8 are live. Stage 9 is conditional on table existence. Stages 10-11
-are deferred until the chunk storage migration is complete.
+Stages 1-8 are live. Stages 9-11 are now runtime-conditional on live table
+presence, which means the same write seam can seed the chunk policy row and
+backfill chunk rows once the derived-serving migration is applied.
 
 ### Bulk-load posture
 
@@ -395,6 +410,12 @@ For corpus-scale loads, the intended posture is:
 - build many `GroundingSourcePlan`s
 - merge them into one `RagWarehouseWriteBatch`
 - execute one staged `COPY -> temp table -> set-based merge` per batch
+- for row-wise psycopg3 COPY, use plain `COPY ... FROM STDIN` and
+  `copy.write_row(...)`; do not mix row-wise COPY with CSV-format clauses
+- when rerunning canonical paper ingest in `refresh_existing` mode, treat the
+  batch as a replace operation for that paper set: delete existing
+  paper-scoped warehouse rows for the batch `corpus_id`s inside the same
+  transaction, then rewrite the canonical rows
 
 Operational rules:
 
@@ -403,6 +424,8 @@ Operational rules:
 - use `db.pooled()` for short metadata reads and transactional batch merges
 - use dedicated non-pooled connections only for long COPY lanes or parallel
   bulk workers
+- guard `ON CONFLICT DO UPDATE` merges with `IS DISTINCT FROM` checks so retry
+  writes do not rewrite identical rows and churn WAL unnecessarily
 - never hold database connections open during XML/JSON parsing
 - defer non-essential lexical and serving indexes until after bulk loads and
   run `ANALYZE` after the load/index phase
@@ -681,16 +704,238 @@ The write path is now explicitly batch-oriented:
   warehouse batch
 - `RagWarehouseWriter.ingest_grounding_plans()` / `ingest_source_groups()`
   apply many parsed papers through one repository write
-- `engine/db/scripts/backfill_chunks.py` backfills chunks in configurable
+- `engine/app/rag/orchestrator.py` is now the engine-owned refresh
+  orchestrator for current downloaded release data, and
+  `engine/db/scripts/refresh_rag_warehouse.py` is the canonical thin operator
+  wrapper
+- refresh source-unit progress is now DB-backed in
+  `solemd.rag_refresh_source_units`, with atomic worker-safe claims over
+  `s2_shard` and `bioc_archive` units
+- unit-level resume progress is now DB-backed too:
+  `solemd.rag_refresh_source_units.metadata` stores per-unit progress ordinals
+  such as `last_processed_ordinal` and `last_corpus_id`, so the same worker can
+  reclaim an interrupted `running` unit and resume inside the shard or archive
+  instead of restarting the entire unit
+- source-driven run-global budgeting is now DB-backed too:
+  `solemd.rag_refresh_runs` stores the requested limit and selected-target
+  count, and `solemd.rag_refresh_selected_targets` prevents workers from
+  overshooting the shared run budget when they discover candidates in parallel
+- staged canonical writes now have an explicit row-budget control too:
+  `--stage-row-budget` caps approximate warehouse rows per staged write batch,
+  using structural counts from the normalized parsed sources rather than file
+  size heuristics; the current default is `25000`
+- filesystem refresh checkpoints are now worker-local report state rather than
+  the shared source of truth; parallel workers write under
+  `rag_refresh/<run_id>/<worker-key>/`
+- `engine/app/rag/chunk_backfill_runtime.py` now owns reusable chunk-backfill
+  runtime logic, and `engine/db/scripts/backfill_structural_chunks.py` is the
+  canonical operator wrapper for currently ingested canonical span tables
+- `engine/db/scripts/backfill_structural_chunks.py` backfills chunks in configurable
   multi-paper batches instead of one transaction per paper
-- `engine/db/scripts/backfill_chunks.py --run-id ...` now persists resumable
+- `engine/db/scripts/backfill_structural_chunks.py --run-id ...` now persists resumable
   filesystem checkpoints, with the preferred graph tmp root falling back to
   repo-local `.tmp/` when the mounted graph tmp path is unavailable
+- chunk-backfill checkpoints now store static metadata plus per-batch paper
+  report files, so long runs do not rewrite one ever-growing report JSON after
+  every batch
 - the long-running operational posture is now explicit:
   `db.pooled()` for short metadata reads and direct `db.connect()` write lanes
   for staged COPY/upsert work
+- the canonical warehouse write path is now live-validated: a bounded refresh
+  smoke over `corpus_id = 9787212` wrote canonical rows into
+  `paper_documents`, `paper_sections`, `paper_blocks`, `paper_sentences`, and
+  `paper_references`
+- the first bounded native multi-paper refresh is also live-validated:
+  `refresh-batch-20260330-b` ingested `253313057`, `280634650`, and
+  `284324019`, skipped already-present `9787212`, and wrote `1345` canonical
+  rows from the WSL-native Semantic Scholar release root
+- a second native batch is also live-validated: `refresh-batch-20260330-c`
+  ingested `2766040`, `52078348`, `202759708`, `237454355`, and `277656163`,
+  skipped four already-present papers, and wrote `1832` canonical rows
+- the source-driven default is also live-validated: a plain `--limit 5`
+  refresh without explicit corpus ids selected supported non-existing papers
+  directly from `s2orc_v2-0000.jsonl.gz`, skipped nine already-present papers,
+  and ingested `263615713`, `269327934`, `276284199`, `277853448`, and
+  `281946597` with `1281` canonical rows written
+- a larger source-driven native batch is also live-validated:
+  `refresh-batch-20260330-f` ran with plain `--limit 50`, skipped forty-five
+  already-present papers, and ingested fifty new canonical papers from
+  `s2orc_v2-0000.jsonl.gz` with `15254` rows written
+- write-batch normalization now clears unresolved citation-to-reference links
+  before persistence; the warehouse validator remains strict, but ingest no
+  longer fails when a parsed citation mention has no matching normalized
+  bibliography row in the same paper
+- S2ORC parsing now emits an implicit preamble section for paragraphs that
+  appear before the first `section_header`, so canonical blocks always resolve
+  against a real section row
+- refresh orchestrator behavior is now explicit:
+  - with `--corpus-id` / `--corpus-ids-file`, refresh is targeted against the
+    canonical corpus table
+  - without explicit corpus ids, refresh is source-driven from the active S2
+    shards and still filters discovered ids through the canonical target loader
+    before any write
+  - `--worker-count` / `--worker-index` now partition source units across
+    parallel refresh workers
+  - source-driven parallel refresh now supports a run-global `--limit`; worker
+    claims stay unit-local, while selected targets are reserved centrally in
+    `solemd.rag_refresh_selected_targets`
+- targeted parallel refresh is now live-validated: `refresh-parallel-smoke2`
+  ran as `worker-00-of-02` and `worker-01-of-02`, claimed
+  `s2orc_v2-0000.jsonl.gz` and `s2orc_v2-0001.jsonl.gz` independently through
+  `solemd.rag_refresh_source_units`, and ingested `209447147` and `246836000`
+  into canonical warehouse tables
+- source-driven parallel budget coordination is also live-validated:
+  `refresh-bench-v3-1w-20260331`, `refresh-bench-v3-2w-20260331`, and
+  `refresh-bench-v3-4w-20260331` all honored the same shared
+  `requested_limit = 16` and `selected_target_count = 16` through
+  `solemd.rag_refresh_runs` plus `solemd.rag_refresh_selected_targets`
+- measured bounded-refresh benchmark result currently favors single-worker
+  source-driven refresh:
+  - `1 worker`: `0.589s`, `16` papers, `5705` rows
+  - `2 workers`: `0.744s`, `16` papers, `6078` rows
+  - `4 workers`: `65.051s`, `16` papers, `5865` rows
+  - current recommendation: use `1 worker` for bounded source-driven refresh
+    with a shared global limit; keep multi-worker mode for targeted runs or
+    materially larger shard/domain sweeps where overscan is amortized
+- the next larger single-worker source-driven run is also live-validated:
+  `refresh-batch-20260331-g` honored `requested_limit = 50`,
+  `selected_target_count = 50`, ingested fifty new papers from
+  `s2orc_v2-0000.jsonl.gz`, skipped ninety-six already-present papers, and
+  wrote `16550` canonical rows
+- the next bounded native source-driven batch is also live-validated:
+  `refresh-batch-20260331-h` honored `requested_limit = 25`,
+  `selected_target_count = 25`, skipped one hundred fifty-nine
+  already-present papers, and wrote `5850` canonical rows
+- stage-row-budgeted batching is also live-validated:
+  `refresh-row-budget-smoke-20260330` ran with `requested_limit = 3`,
+  `stage_row_budget = 100`, ingested three new papers, wrote `1007` canonical
+  rows, and split the S2 ingest into `3` staged writes with
+  `max_batch_total_rows = 422`
+- stage-byte-budgeted batching is now live-validated too:
+  `refresh-byte-budget-smoke-20260330` ran with `requested_limit = 3`,
+  `stage_byte_budget = 2000`, ingested three new papers, wrote `754`
+  canonical rows, and split the S2 ingest into `3` staged writes based on
+  estimated serialized payload size
+  - this byte budget is a flush threshold, not a hard cap; a single paper can
+    still exceed it and will be written alone rather than dropped or split;
+    the live smoke saw `estimated_bytes_total = 224775` and
+    `max_batch_estimated_bytes = 108586`
+- fine-grained per-unit resume is now live-validated too:
+  `refresh-progress-smoke-20260330` ran with `batch_size = 1`, ingested two
+  new papers with `2` staged writes, and the completed
+  `s2orc_v2-0000.jsonl.gz` claim row recorded
+  `metadata.last_processed_ordinal = 567` plus `metadata.last_corpus_id`
+- fine-grained source-unit resume is now test-validated:
+  targeted tests cover reclaiming an interrupted S2 shard for the same worker
+  and resuming from the saved progress ordinal instead of reprocessing the
+  whole shard
+- the bounded single-row staged-write posture is also still live-validated
+  after the progress changes:
+  `refresh-progress-smoke-20260330` ran with `requested_limit = 2`,
+  `batch_size = 1`, ingested two new papers, wrote `507` canonical rows, and
+  split the S2 ingest into `2` staged writes
+- `engine/db/scripts/inspect_chunk_runtime.py` now closes the psycopg pool on
+  exit, so one-off readiness checks do not leave background worker threads
 
-Current raw-source audit snapshot:
+Operator entrypoints:
+- refresh current downloaded release data:
+  `cd engine && uv run python db/scripts/refresh_rag_warehouse.py --run-id refresh-2026-03-30 --parser-version parser-v1 --batch-size 100 --corpus-ids-file /tmp/corpus_ids.txt --checkpoint-root /tmp/rag-refresh --report-path /tmp/rag-refresh.json`
+- source-driven bounded refresh from the active S2 release without a hand-built
+  corpus-id file:
+  `cd engine && uv run python db/scripts/refresh_rag_warehouse.py --run-id refresh-2026-03-30-auto --parser-version parser-v1 --limit 5 --batch-size 5 --max-s2-shards 1 --skip-bioc-fallback`
+- source-driven refresh with an explicit staged-write row budget:
+  `cd engine && uv run python db/scripts/refresh_rag_warehouse.py --run-id refresh-2026-03-30-rows --parser-version parser-v1 --limit 3 --batch-size 50 --stage-row-budget 100 --max-s2-shards 1 --skip-bioc-fallback`
+- source-driven refresh with an explicit staged-write byte budget:
+  `cd engine && timeout 30s uv run python db/scripts/refresh_rag_warehouse.py --run-id refresh-2026-03-30-bytes --reset-run --parser-version parser-v1 --limit 3 --batch-size 50 --stage-row-budget 0 --stage-byte-budget 2000 --max-s2-shards 1 --skip-bioc-fallback`
+- targeted parallel refresh worker:
+  `cd engine && uv run python db/scripts/refresh_rag_warehouse.py --run-id refresh-2026-03-30-parallel --parser-version parser-v1 --corpus-id 209447147 --corpus-id 246836000 --max-s2-shards 2 --skip-bioc-fallback --worker-count 2 --worker-index 0`
+- source-driven parallel refresh worker with a shared global budget:
+  `cd engine && uv run python db/scripts/refresh_rag_warehouse.py --run-id refresh-2026-03-31-budgeted --parser-version parser-v1 --limit 16 --batch-size 8 --max-s2-shards 4 --skip-bioc-fallback --worker-count 2 --worker-index 0`
+- run BioC fallback only for a reconciliation pass:
+  `cd engine && uv run python db/scripts/refresh_rag_warehouse.py --run-id bioc-fallback-2026-03-30 --parser-version parser-v1 --skip-s2-primary --max-bioc-archives 4`
+- backfill derived chunks for already-ingested canonical spans:
+  `cd engine && uv run python db/scripts/backfill_structural_chunks.py --corpus-id 12345 --source-revision-key s2orc_v2:2026-03-10 --parser-version parser-v1 --run-id chunk-backfill-2026-03-30`
+- seed the default chunk version row:
+  `cd engine && uv run python db/scripts/seed_default_chunk_version.py --source-revision-key s2orc_v2:2026-03-10 --parser-version parser-v1`
+
+Storage rule for large refreshes:
+- canonical source truth is release-aware:
+  `data/pubtator/releases/<PUBTATOR_RELEASE_ID>/...` and
+  `data/semantic-scholar/releases/<S2_RELEASE_ID>/...`
+- older repo-level `raw` symlinks were convenience indirection, not the
+  canonical runtime contract, and should be removed instead of recreated moving forward
+- repo-local dataset mounts should either be direct roots
+  (`data/pubtator -> <canonical-root>`, `data/semantic-scholar -> <canonical-root>`)
+  or release-aware directories under those roots, not nested `raw` aliases
+- the active canonical dataset roots are now:
+  - `/home/workbench/SoleMD/SoleMD.Graph-data/data/pubtator`
+  - `/home/workbench/SoleMD/SoleMD.Graph-data/data/semantic-scholar`
+- current canonical warehouse totals after the latest native refreshes are:
+  - `paper_documents = 244`
+  - `paper_sections = 3030`
+  - `paper_blocks = 7414`
+  - `paper_sentences = 34373`
+  - `paper_references = 9991`
+  - `paper_chunk_versions = 1`
+  - `paper_chunks = 648`
+  - `paper_chunk_members = 4996`
+- current live canonical source coverage is now:
+  - `solemd.paper_document_sources = 210` `s2orc_v2` rows
+  - `solemd.paper_document_sources = 34` `biocxml` rows
+- explicit targeted refresh now routes through release-sidecar corpus locators
+  when available:
+  - S2 sidecar:
+    `data/semantic-scholar/releases/<S2_RELEASE_ID>/manifests/s2orc_v2.corpus_locator.sqlite`
+  - BioC sidecar:
+    `data/pubtator/releases/<PUBTATOR_RELEASE_ID>/manifests/biocxml.corpus_locator.sqlite`
+- explicit targeted refresh can now refresh those source locators inline before
+  the warehouse run via `--refresh-source-locators`, then immediately use the
+  resulting shard/archive coverage in the same run
+- inline locator refresh now reuses existing sidecar coverage and only scans
+  missing corpus ids, which keeps rerunnable explicit refreshes bounded
+- operator inspection for sidecar coverage now lives in:
+  `engine/db/scripts/inspect_rag_source_locator.py`
+- bounded BioC archive target discovery now lives in:
+  `engine/db/scripts/discover_bioc_archive_targets.py`
+- bounded new-ingest BioC archive execution with direct locator seeding now
+  lives in:
+  `engine/db/scripts/ingest_bioc_archive_targets.py`
+- same-corpus BioC overlay discovery can now be requested directly from that
+  path with `--existing-s2-only`, so archive scans can target
+  "already-ingested S2 paper, still missing BioC overlay" instead of general
+  new-ingest candidates or generic existing-document matches
+- bounded BioC overlay backfill over existing S2-backed warehouse papers now
+  has a clean operator wrapper in:
+  `engine/db/scripts/backfill_bioc_overlays.py`
+- that overlay backfill path can now drive archive-aware discovery inline via
+  `--archive-name` and `--discovery-max-documents`, so operators no longer need
+  a manual two-step corpus-id file just to test same-corpus overlays
+- a cheap live BioC-only explicit targeted refresh is now validated:
+  `refresh-explicit-bioc-inline-20260330` refreshed the BioC sidecar inline,
+  located `corpus_id = 249973141` in `BioCXML.0.tar.gz`, and wrote a live
+  `biocxml` warehouse source row without a separate manual prep step
+- a first bounded live BioC batch is also validated:
+  `refresh-explicit-bioc-batch0-20260330` refreshed locator coverage inline
+  from `BioCXML.0.tar.gz`, located `10` corpus ids, and wrote `216` canonical
+  rows as a clean bounded `biocxml` ingest batch
+- a discovery-driven follow-up batch is also validated:
+  `discover_bioc_archive_targets.py --archive-name BioCXML.0.tar.gz --limit 20`
+  produced a reusable corpus-id file, and
+  `refresh-explicit-bioc-batch1-20260330` ingested those `20` corpus ids with
+  inline locator refresh for `2062` canonical rows
+- a cleaner archive-ingest fast path is now validated too:
+  `ingest_bioc_archive_targets.py --archive-name BioCXML.1.tar.gz --limit 3`
+  discovered `3` new BioC candidates, seeded `3` BioC locator entries
+  directly from discovery results, and ingested `631` canonical rows without a
+  separate locator-refresh pass
+- the canonical graph temp/checkpoint path is WSL-native and should remain on
+  ext4-backed storage
+- if that storage lives physically on the `E:` drive, it should be the WSL
+  distro/VHD-backed filesystem on `E:`, not `/mnt/e`
+- future bulk downloads should land there directly so refreshes avoid a second
+  relocation step
+
+Current source audit snapshot:
 - S2ORC pilot: `200/200` parsed across 4 shards with `avg_blocks ~= 57.56`,
   `avg_sentences ~= 211.56`, and `matched_reference_fraction ~= 0.6792`
 - BioC pilot: `199/200` structurally parsed across 2 archives after skipping
@@ -702,14 +947,52 @@ Current raw-source audit snapshot:
 - in the current 200-document pilot, `59` BioC docs resolved directly onto
   canonical `corpus_id`, `140` were structurally parseable PMID docs without a
   current corpus-table match, and `1` PMCID remained unresolved
+- live locator snapshot:
+  - S2 sidecar currently covers:
+    - `209447147 -> s2orc_v2-0000.jsonl.gz:355`
+    - `246836000 -> s2orc_v2-0001.jsonl.gz:2`
+  - BioC sidecar currently covers:
+    - `249973141 -> BioCXML.0.tar.gz:4` (`source_document_key = 36326328`)
+    - `7663300 -> BioCXML.0.tar.gz:262` (`source_document_key = 219141`)
+    - `11749986 -> BioCXML.0.tar.gz:156` (`source_document_key = 2055851`)
+    - `20333404 -> BioCXML.0.tar.gz:186` (`source_document_key = 2086540`)
+    - `20896083 -> BioCXML.0.tar.gz:134` (`source_document_key = 2035088`)
+    - `25521573 -> BioCXML.0.tar.gz:75` (`source_document_key = 1979981`)
+    - `35135583 -> BioCXML.0.tar.gz:249` (`source_document_key = 2149940`)
+    - `35957843 -> BioCXML.0.tar.gz:157` (`source_document_key = 2057132`)
+    - `37481902 -> BioCXML.0.tar.gz:97` (`source_document_key = 2000522`)
+    - `38659950 -> BioCXML.0.tar.gz:187` (`source_document_key = 2087684`)
+    - `39897528 -> BioCXML.0.tar.gz:109` (`source_document_key = 2012103`)
+- rerunnable locator validation is also live:
+  - covered-set S2 refresh now exits without rescanning:
+    `locator-covered-s2-fast-20260330b` returned `scanned_units = []`,
+    `scanned_documents = 0`, and reused existing sidecar coverage for
+    `209447147` and `246836000`
+  - covered-set BioC refresh now exits without rescanning:
+    `locator-covered-bioc-fast-20260330` returned `scanned_units = []`,
+    `scanned_documents = 0`, and reused existing sidecar coverage for
+    `249973141`
+- current same-corpus overlay posture:
+  - the first `1000` documents in `BioCXML.0.tar.gz` do not intersect the
+    current `s2orc_v2`-backed warehouse paper set with missing BioC overlays
+  - a tighter archive-aware operator smoke is now validated too:
+    `backfill_bioc_overlays.py --archive-name BioCXML.0.tar.gz --limit 5 --discovery-max-documents 100`
+    exits cleanly with `candidate_corpus_ids = []` and no warehouse writes
+    while still proving real archive traversal and canonical ID resolution
+  - broader bounded sampling over the first `500` documents of
+    `BioCXML.0.tar.gz` through `BioCXML.9.tar.gz` also found no same-corpus
+    overlay hits against the current S2-backed warehouse subset
+  - so the most effective current expansion path is still bounded new BioC
+    warehouse ingest plus continued locator growth, not forcing a slow
+    overlay-only backfill against mismatched archive windows
 
 ### Chunk-backed retrieval
 
-Chunk tables (`paper_chunks`, `paper_chunk_members`) remain deferred until:
-1. `paper_chunk_versions` is live in the schema
-2. Derived chunks are backfilled from canonical blocks/sentences
-3. Lineage validation confirms chunk-member integrity
-4. Post-load indexes are in place
+Chunk-backed retrieval is now partially live:
+1. `paper_chunk_versions`, `paper_chunks`, and `paper_chunk_members` exist in the schema
+2. the default chunk policy row is seeded
+3. bounded chunk backfill has executed for a first covered paper subset
+4. full cutover still waits on broader coverage plus post-load chunk lexical indexes
 
 The default chunk policy is now codified, not just documented:
 - canonical key: `default-structural-v1`
@@ -725,28 +1008,60 @@ The default chunk policy is now codified, not just documented:
 - current token posture is `256` target / `384` hard max under the simple
   tokenizer contract
 
-This means the future chunk lifecycle is:
+The active chunk lifecycle is now:
 - parse canonical spans
 - seed one default `paper_chunk_versions` row
 - backfill `paper_chunks`
 - backfill `paper_chunk_members`
-- then enable chunk-backed retrieval and cited-span grounding
+- enable grounded cited-span reads for covered papers
+- apply post-load indexes and broaden coverage before full cutover
 
 The DB-side artifacts for that path now exist in the repo:
-- deferred migration file:
+- derived-serving migration file:
   `engine/db/migrations/031_rag_derived_serving.sql`
 - default chunk-version seed preview:
   `engine/db/scripts/preview_chunk_seed.py`
 - executable chunk-version seed helper:
-  `engine/db/scripts/seed_chunk_version.py`
+  `engine/db/scripts/seed_default_chunk_version.py`
 - executable chunk-content backfill helper:
-  `engine/db/scripts/backfill_chunks.py`
+  `engine/db/scripts/backfill_structural_chunks.py`
 - runtime readiness inspector:
   `engine/db/scripts/inspect_chunk_runtime.py`
 - runtime chunk-version seeder:
   `engine/app/rag/chunk_seed.py`
+
+Live chunk runtime status:
+- `paper_chunk_versions = 1`
+- current live totals after bounded backfill plus chunk-quality rebackfill:
+  - `paper_chunks = 648`
+  - `paper_chunk_members = 4996`
+- bounded backfill and rebackfill have now executed across the initial covered
+  subset plus the residual oversize-chunk papers
+- `inspect_chunk_runtime.py` now reports:
+  - `grounded_answer_runtime_ready = true` for covered papers
+  - `full_cutover_ready = true` for a covered paper such as `283349924`
+    after the post-load lexical fallback indexes were applied
 - runtime chunk backfill writer contract:
   `engine/app/rag/chunk_backfill.py`
+- end-to-end bounded refresh + chunk lane is also live:
+  `refresh-chunk-lane-smoke-20260330-b` ingested `2` new papers, wrote `401`
+  canonical rows, seeded the default chunk-version row, and backfilled `36`
+  chunk rows plus `222` chunk-member rows in the same operator pass
+- S2 paragraph parsing now trims block spans structurally and skips
+  whitespace-only paragraphs before canonical persistence, and chunk assembly
+  can fall back to sentence text or skip empty blocks defensively during
+  backfill
+- chunk assembly now splits oversized single-block chunks by canonical
+  sentence groups when sentence lineage is available; live `paper_chunks` are
+  now at `0` hard-max violations with `max_tokens = 379`
+- section-role normalization now treats obvious front-matter headers such as
+  acknowledgements, author contributions, funding, conflicts, ethics/data
+  availability, abbreviations, and keywords as `front_matter`, and
+  front-matter blocks are no longer marked `is_retrieval_default`
+- the post-load lexical fallback contract is now aligned with the live schema:
+  `idx_paper_blocks_search_tsv` and `idx_paper_chunks_search_tsv` are valid
+  expression indexes on `to_tsvector('english', coalesce(text, ''))`, not
+  fictional `search_tsv` columns
 
 Operational rule:
 - seed the default chunk version once

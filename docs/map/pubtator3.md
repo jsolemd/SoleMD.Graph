@@ -266,10 +266,11 @@ character-level offsets is confirmed.
 
 ```
 data/pubtator/
-├── raw/                    # Downloaded gz files
-│   ├── bioconcepts2pubtator3.gz
-│   ├── relation2pubtator3.gz
-│   └── checksums.md5
+├── releases/
+│   └── <PUBTATOR_RELEASE_ID>/
+│       ├── bioconcepts2pubtator3.gz
+│       ├── relation2pubtator3.gz
+│       └── manifests/
 ├── parquet/                # Processed domain-filtered output
 │   ├── entities/
 │   │   ├── entity_type=Gene/
@@ -290,7 +291,8 @@ Download priority: entities first (5.6 GB), then relations (276 MB).
 
 ```bash
 PUBTATOR_FTP="https://ftp.ncbi.nlm.nih.gov/pub/lu/PubTator3"
-DATA_DIR="./data/pubtator/raw"
+RELEASE_ID="2026-03-21"
+DATA_DIR="./data/pubtator/releases/${RELEASE_ID}"
 mkdir -p "$DATA_DIR"
 
 # 1. Entity annotations (5.6 GB, ~2-3 min on gigabit)
@@ -439,7 +441,7 @@ SELECT DISTINCT pmid FROM read_parquet('data/semantic-scholar/domain_papers.parq
 COPY (
     SELECT *
     FROM read_csv(
-        'data/pubtator/raw/bioconcepts2pubtator3.gz',
+        'data/pubtator/releases/2026-03-21/bioconcepts2pubtator3.gz',
         delim = '\t',
         header = false,
         compression = 'gzip',
@@ -462,7 +464,7 @@ TO 'data/pubtator/parquet/entities'
 COPY (
     SELECT *
     FROM read_csv(
-        'data/pubtator/raw/relation2pubtator3.gz',
+        'data/pubtator/releases/2026-03-21/relation2pubtator3.gz',
         delim = '\t',
         header = false,
         compression = 'gzip',
@@ -804,7 +806,7 @@ ANALYZE pubtator.relations;
 
 ```
 1. CHECK    curl -sI to compare FTP Last-Modified against load_history
-2. DOWNLOAD curl -C - to data/pubtator/raw/ (resume-safe)
+2. DOWNLOAD curl -C - to `data/pubtator/releases/<PUBTATOR_RELEASE_ID>/` (resume-safe)
 3. FILTER   DuckDB: stream gz --> filter to domain PMIDs --> Parquet
 4. STAGE    CREATE UNLOGGED staging tables
 5. LOAD     COPY domain-filtered data into staging tables

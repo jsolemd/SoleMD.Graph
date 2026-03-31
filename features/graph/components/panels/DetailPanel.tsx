@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { ActionIcon, Stack, Tooltip } from "@mantine/core";
 import { ArrowLeft } from "lucide-react";
 import { useGraphSelection, useGraphCamera } from "@/features/graph/cosmograph";
+import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import type {
   GraphBundle,
@@ -32,7 +33,7 @@ export function DetailPanel({
 }) {
   const selectedNode = useGraphStore((state) => state.selectedNode);
   const selectNode = useGraphStore((state) => state.selectNode);
-  const setMode = useGraphStore((state) => state.setMode);
+  const { applyMode } = useGraphModeController();
   const currentPointScopeSql = useDashboardStore((state) => state.currentPointScopeSql);
   const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
   const { clearFocusedPoint, getSelectedPointIndices } = useGraphSelection();
@@ -67,8 +68,8 @@ export function DetailPanel({
   const { copyLabel, setCopied } = useCopyFeedback(selectedNode?.id ?? null);
 
   const handleAsk = useCallback(() => {
-    setMode("ask");
-  }, [setMode]);
+    applyMode("ask");
+  }, [applyMode]);
 
   const handleCopyNote = useCallback(async () => {
     if (!selectedNode) return;

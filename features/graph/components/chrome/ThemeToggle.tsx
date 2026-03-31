@@ -11,6 +11,7 @@ import { useMounted } from "@mantine/hooks";
 import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 import { settle } from "@/lib/motion";
+import { iconBtnStyles } from "../panels/PanelShell";
 
 export default function ThemeToggle() {
   const { toggleColorScheme } = useMantineColorScheme();
@@ -33,11 +34,7 @@ export default function ThemeToggle() {
         radius="xl"
         className="graph-icon-btn"
         aria-label={label}
-        styles={{
-          root: {
-            color: "var(--graph-panel-text-dim)",
-          },
-        }}
+        styles={iconBtnStyles}
       >
         <motion.div
           className="flex items-center justify-center"

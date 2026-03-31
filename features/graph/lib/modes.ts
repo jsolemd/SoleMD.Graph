@@ -1,5 +1,5 @@
 import type { GraphMode } from '@/features/graph/types'
-import type { ActivePanel } from '@/features/graph/stores'
+import type { ActivePanel, PromptMode } from '@/features/graph/stores'
 
 /** What chrome/controls each mode makes available in the dashboard. */
 export interface ModeLayout {
@@ -19,8 +19,8 @@ export interface ModeLayout {
   showLegends: boolean
   /** Show the data table */
   showDataTable: boolean
-  /** Collapse the prompt box to a compact pill (icons only) */
-  promptCollapsed: boolean
+  /** Default prompt size when entering this graph mode */
+  defaultPromptMode: PromptMode
   /** Which side panels are available to open */
   availablePanels: ActivePanel[]
 }
@@ -68,7 +68,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
-      promptCollapsed: false,
+      defaultPromptMode: 'normal',
       availablePanels: SHARED_PANELS,
     },
   },
@@ -87,7 +87,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
-      promptCollapsed: true,
+      defaultPromptMode: 'collapsed',
       availablePanels: SHARED_PANELS,
     },
   },
@@ -106,7 +106,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
-      promptCollapsed: false,
+      defaultPromptMode: 'normal',
       availablePanels: SHARED_PANELS,
     },
   },
@@ -125,7 +125,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
-      promptCollapsed: false,
+      defaultPromptMode: 'maximized',
       availablePanels: SHARED_PANELS,
     },
   },

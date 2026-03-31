@@ -113,7 +113,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           getScopeCoordinates: session.getScopeCoordinates,
           getSelectionDetail: session.getSelectionDetail,
           getPaperDocument: session.getPaperDocument,
-          getSelectedGraphPaperRefs: session.getSelectedGraphPaperRefs,
+          getSelectionScopeGraphPaperRefs: session.getSelectionScopeGraphPaperRefs,
           getPaperNodesByGraphPaperRefs: session.getPaperNodesByGraphPaperRefs,
           ensureGraphPaperRefsAvailable:
             session.ensureGraphPaperRefsAvailable,

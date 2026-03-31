@@ -2,6 +2,8 @@ import type { StateCreator } from 'zustand'
 import type { DashboardState } from '../dashboard-store'
 
 export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | null
+export type PromptMode = 'collapsed' | 'normal' | 'maximized'
+type ExpandedPromptMode = Exclude<PromptMode, 'collapsed'>
 
 export interface PanelSlice {
   // Panel visibility
@@ -12,9 +14,10 @@ export interface PanelSlice {
   tableHeight: number
   uiHidden: boolean
 
-  // Prompt size: minimized (pill) / normal / maximized (full-height)
-  promptMinimized: boolean
-  promptMaximized: boolean
+  // Prompt size: collapsed pill / normal / maximized full-height
+  promptMode: PromptMode
+  lastExpandedPromptMode: ExpandedPromptMode
+  promptShellFullHeight: boolean
 
   // Write mode
   writeContent: string
@@ -30,10 +33,15 @@ export interface PanelSlice {
   setTableHeight: (height: number) => void
   setUiHidden: (hidden: boolean) => void
   toggleUiHidden: () => void
-  setPromptMinimized: (minimized: boolean) => void
-  setPromptMaximized: (maximized: boolean) => void
-  togglePromptMinimized: () => void
-  togglePromptMaximized: () => void
+  setPromptMode: (mode: PromptMode) => void
+  setPromptShellFullHeight: (fullHeight: boolean) => void
+  applyPromptModeDefault: (mode: PromptMode) => void
+  collapsePrompt: () => void
+  expandPrompt: () => void
+  maximizePrompt: () => void
+  stepPromptDown: () => void
+  stepPromptUp: () => void
+  togglePromptCollapsed: () => void
   setWriteContent: (content: string) => void
 }
 
@@ -44,8 +52,9 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   tableOpen: false,
   tableHeight: 280,
   uiHidden: false,
-  promptMinimized: false,
-  promptMaximized: false,
+  promptMode: 'normal',
+  lastExpandedPromptMode: 'normal',
+  promptShellFullHeight: false,
   writeContent: '',
 
   setActivePanel: (panel) => set({ activePanel: panel }),
@@ -64,9 +73,73 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   setTableHeight: (height) => set({ tableHeight: height }),
   setUiHidden: (hidden) => set({ uiHidden: hidden }),
   toggleUiHidden: () => set((s) => ({ uiHidden: !s.uiHidden })),
-  setPromptMinimized: (minimized) => set({ promptMinimized: minimized, promptMaximized: false }),
-  setPromptMaximized: (maximized) => set({ promptMaximized: maximized, promptMinimized: false }),
-  togglePromptMinimized: () => set((s) => ({ promptMinimized: !s.promptMinimized, promptMaximized: false })),
-  togglePromptMaximized: () => set((s) => ({ promptMaximized: !s.promptMaximized, promptMinimized: false })),
+  setPromptMode: (promptMode) =>
+    set((s) => ({
+      promptMode,
+      lastExpandedPromptMode:
+        promptMode === 'collapsed'
+          ? (s.promptMode === 'collapsed' ? s.lastExpandedPromptMode : s.promptMode)
+          : promptMode,
+    })),
+  setPromptShellFullHeight: (promptShellFullHeight) => set({ promptShellFullHeight }),
+  applyPromptModeDefault: (promptMode) =>
+    set({
+      promptMode,
+      lastExpandedPromptMode:
+        promptMode === 'collapsed' ? 'normal' : promptMode,
+      promptShellFullHeight: false,
+    }),
+  collapsePrompt: () =>
+    set((s) => ({
+      promptMode: 'collapsed',
+      lastExpandedPromptMode:
+        s.promptMode === 'collapsed' ? s.lastExpandedPromptMode : s.promptMode,
+    })),
+  expandPrompt: () =>
+    set((s) => ({
+      promptMode: s.lastExpandedPromptMode,
+    })),
+  maximizePrompt: () =>
+    set({
+      promptMode: 'maximized',
+      lastExpandedPromptMode: 'maximized',
+    }),
+  stepPromptDown: () =>
+    set((s) => {
+      if (s.promptMode === 'maximized') {
+        return {
+          promptMode: 'normal',
+          lastExpandedPromptMode: 'normal',
+        }
+      }
+      if (s.promptMode === 'normal') {
+        return {
+          promptMode: 'collapsed',
+          lastExpandedPromptMode: 'normal',
+        }
+      }
+      return s
+    }),
+  stepPromptUp: () =>
+    set((s) => {
+      if (s.promptMode === 'collapsed') {
+        return {
+          promptMode: s.lastExpandedPromptMode,
+        }
+      }
+      if (s.promptMode === 'normal') {
+        return {
+          promptMode: 'maximized',
+          lastExpandedPromptMode: 'maximized',
+        }
+      }
+      return s
+    }),
+  togglePromptCollapsed: () =>
+    set((s) => ({
+      promptMode: s.promptMode === 'collapsed' ? s.lastExpandedPromptMode : 'collapsed',
+      lastExpandedPromptMode:
+        s.promptMode === 'collapsed' ? s.lastExpandedPromptMode : s.promptMode,
+    })),
   setWriteContent: (content) => set({ writeContent: content }),
 })

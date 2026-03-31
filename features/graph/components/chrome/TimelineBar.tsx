@@ -12,7 +12,7 @@ import {
   createSelectionSource,
 } from "@/features/graph/lib/cosmograph-selection";
 import type { GraphBundleQueries } from "@/features/graph/types";
-import { smooth } from "@/lib/motion";
+import { edgeReveal } from "@/lib/motion";
 import {
   badgeAccentStyles,
   badgeOutlineStyles,
@@ -65,10 +65,7 @@ export function TimelineBar({
   return (
     <motion.div
       className="absolute bottom-0 left-0 right-0 z-20 flex items-stretch"
-      initial={{ opacity: 0, y: 44 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 44 }}
-      transition={smooth}
+      {...edgeReveal(44)}
       style={timelineStyle}
     >
       <div

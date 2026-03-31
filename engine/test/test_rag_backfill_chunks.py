@@ -7,7 +7,7 @@ from app.rag.parse_contract import (
     SentenceSegmentationSource,
 )
 from app.rag.rag_schema_contract import PaperBlockRow, PaperSentenceRow
-from db.scripts.backfill_chunks import (
+from db.scripts.backfill_structural_chunks import (
     CanonicalChunkRows,
     backfill_default_chunks,
     run_chunk_backfill,
@@ -142,6 +142,7 @@ def test_backfill_default_chunks_surfaces_deferred_stage_names():
     assert report.executed is False
     assert report.deferred_stage_names == ["chunk_members", "chunks"]
     assert report.papers[0].deferred_stage_names == ["chunks", "chunk_members"]
+    assert report.papers[0].skipped_reason == "deferred_runtime_stage"
 
 
 def test_backfill_default_chunks_batches_multiple_papers_into_one_runner_call():

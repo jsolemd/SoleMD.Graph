@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # Data directories
     data_dir: str = "data"
-    graph_dir: str = "/mnt/e/SoleMD.Graph/graph"
+    graph_dir: str = "/mnt/solemd-graph"
     pubtator_dir: str = "data/pubtator"
     semantic_scholar_dir: str = "data/semantic-scholar"
 
@@ -106,31 +106,29 @@ class Settings(BaseSettings):
     def pubtator_releases_root_path(self) -> Path:
         return self.pubtator_root_path / "releases"
 
-    @property
-    def pubtator_active_release_path(self) -> Path:
-        return self.pubtator_root_path / "raw"
-
     def pubtator_release_path(self, release_id: str | None = None) -> Path:
         resolved = release_id or self.pubtator_release_id
         if not resolved:
-            return self.pubtator_active_release_path
+            raise ValueError(
+                "PubTator release id required: pass release_id or set PUBTATOR_RELEASE_ID"
+            )
         return self.pubtator_releases_root_path / resolved
 
     @property
-    def pubtator_raw_dir_path(self) -> Path:
+    def pubtator_source_dir_path(self) -> Path:
         return self.pubtator_release_path()
 
     @property
     def pubtator_entities_path(self) -> Path:
-        return self.pubtator_raw_dir_path / "bioconcepts2pubtator3.gz"
+        return self.pubtator_source_dir_path / "bioconcepts2pubtator3.gz"
 
     @property
     def pubtator_relations_path(self) -> Path:
-        return self.pubtator_raw_dir_path / "relation2pubtator3.gz"
+        return self.pubtator_source_dir_path / "relation2pubtator3.gz"
 
     @property
     def pubtator_biocxml_dir_path(self) -> Path:
-        return self.pubtator_raw_dir_path / "biocxml"
+        return self.pubtator_source_dir_path / "biocxml"
 
     @property
     def semantic_scholar_root_path(self) -> Path:
@@ -140,45 +138,43 @@ class Settings(BaseSettings):
     def semantic_scholar_releases_root_path(self) -> Path:
         return self.semantic_scholar_root_path / "releases"
 
-    @property
-    def semantic_scholar_active_release_path(self) -> Path:
-        return self.semantic_scholar_root_path / "raw"
-
     def semantic_scholar_release_path(self, release_id: str | None = None) -> Path:
         resolved = release_id or self.s2_release_id
         if not resolved:
-            return self.semantic_scholar_active_release_path
+            raise ValueError(
+                "Semantic Scholar release id required: pass release_id or set S2_RELEASE_ID"
+            )
         return self.semantic_scholar_releases_root_path / resolved
 
     def semantic_scholar_dataset_path(self, dataset_name: str, release_id: str | None = None) -> Path:
         return self.semantic_scholar_release_path(release_id) / dataset_name
 
     @property
-    def semantic_scholar_raw_papers_dir_path(self) -> Path:
+    def semantic_scholar_papers_dir_path(self) -> Path:
         return self.semantic_scholar_dataset_path("papers")
 
     @property
-    def semantic_scholar_raw_abstracts_dir_path(self) -> Path:
+    def semantic_scholar_abstracts_dir_path(self) -> Path:
         return self.semantic_scholar_dataset_path("abstracts")
 
     @property
-    def semantic_scholar_raw_tldrs_dir_path(self) -> Path:
+    def semantic_scholar_tldrs_dir_path(self) -> Path:
         return self.semantic_scholar_dataset_path("tldrs")
 
     @property
-    def semantic_scholar_raw_citations_dir_path(self) -> Path:
+    def semantic_scholar_citations_dir_path(self) -> Path:
         return self.semantic_scholar_dataset_path("citations")
 
     @property
-    def semantic_scholar_raw_authors_dir_path(self) -> Path:
+    def semantic_scholar_authors_dir_path(self) -> Path:
         return self.semantic_scholar_dataset_path("authors")
 
     @property
-    def semantic_scholar_raw_paper_ids_dir_path(self) -> Path:
+    def semantic_scholar_paper_ids_dir_path(self) -> Path:
         return self.semantic_scholar_dataset_path("paper-ids")
 
     @property
-    def semantic_scholar_raw_s2orc_v2_dir_path(self) -> Path:
+    def semantic_scholar_s2orc_v2_dir_path(self) -> Path:
         return self.semantic_scholar_dataset_path("s2orc_v2")
 
     @property

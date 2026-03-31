@@ -3,7 +3,7 @@
 import { Badge, Group } from "@mantine/core";
 import { motion, AnimatePresence } from "framer-motion";
 import type { GraphInfoScope } from "@/features/graph/types";
-import { snappy } from "@/lib/motion";
+import { chromeToggle } from "@/lib/motion";
 import { formatNumber } from "@/lib/helpers";
 import {
   badgeAccentStyles,
@@ -60,10 +60,7 @@ export function ScopeIndicator({
     <AnimatePresence mode="wait">
       <motion.div
         key={scope}
-        initial={{ opacity: 0, y: -4 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 4 }}
-        transition={snappy}
+        {...chromeToggle}
       >
         <Group gap={6} wrap="wrap">
           <Badge variant="light" size="xs" styles={badgeAccentStyles}>

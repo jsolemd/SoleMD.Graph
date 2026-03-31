@@ -10,6 +10,7 @@ import {
 import { useDashboardStore } from "@/features/graph/stores";
 import { iconBtnStyles } from "../../panels/PanelShell";
 import { TIMELINE_HEIGHT } from "./GraphAttribution";
+import { useGraphControlContrast } from "../../chrome/use-graph-control-contrast";
 
 /** Bottom-left toggle bar for timeline and data table. */
 export function BottomToolbar() {
@@ -21,6 +22,7 @@ export function BottomToolbar() {
   const tableHeight = useDashboardStore((s) => s.tableHeight);
   const toggleTimeline = useDashboardStore((s) => s.toggleTimeline);
   const toggleTable = useDashboardStore((s) => s.toggleTable);
+  const { contrastAttr, contrastBlurClass } = useGraphControlContrast();
 
   // Float above whichever bottom widgets are visible
   let bottomOffset = 12;
@@ -29,8 +31,9 @@ export function BottomToolbar() {
 
   return (
     <div
-      className="absolute left-3 z-20 flex items-center gap-0.5 transition-[bottom] duration-200"
+      className={`absolute left-3 z-20 flex items-center gap-0.5 transition-[bottom] duration-200 ${contrastBlurClass}`}
       style={{ bottom: bottomOffset }}
+      {...contrastAttr}
     >
       <Tooltip label={showTimeline ? "Hide timeline" : "Show timeline"} position="top" withArrow>
         <ActionIcon

@@ -17,7 +17,7 @@ export {
 export {
   mapGraphPointRow,
   queryCorpusPointSelection,
-  querySelectedGraphPaperRefs,
+  querySelectionScopeGraphPaperRefs,
 } from './node-selection'
 export { queryPaperDocument, queryPaperDetail } from './paper-detail'
 export { queryPointSearch } from './search'

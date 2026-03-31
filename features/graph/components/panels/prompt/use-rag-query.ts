@@ -43,6 +43,7 @@ export function useRagQuery({
   queries,
   isAsk,
   selectedNode,
+  currentPointScopeSql,
   getPromptText,
   selectionScopeEnabled = false,
   activeSelectionSourceId,
@@ -53,6 +54,7 @@ export function useRagQuery({
   queries: GraphBundleQueries | null;
   isAsk: boolean;
   selectedNode: GraphPointRecord | null;
+  currentPointScopeSql: string | null;
   getPromptText: () => string;
   selectionScopeEnabled?: boolean;
   activeSelectionSourceId: string | null;
@@ -112,20 +114,26 @@ export function useRagQuery({
       } as const;
     }
 
-    const selectedGraphPaperRefs = queries
+    const hasCurrentScope =
+      typeof currentPointScopeSql === "string" &&
+      currentPointScopeSql.trim().length > 0;
+    const selectionGraphPaperRefs = queries
       ? Array.from(
           new Set(
-            (await queries.getSelectedGraphPaperRefs()).filter(
+            (await queries.getSelectionScopeGraphPaperRefs({
+              currentPointScopeSql,
+            })).filter(
               (graphPaperRef) => graphPaperRef.trim().length > 0,
             ),
           ),
         )
       : [];
-    const fallbackGraphPaperRef = selectedNode?.paperId ?? selectedNode?.id ?? null;
+    const fallbackGraphPaperRef =
+      !hasCurrentScope ? (selectedNode?.paperId ?? selectedNode?.id ?? null) : null;
 
-    if (selectedGraphPaperRefs.length > 0) {
+    if (selectionGraphPaperRefs.length > 0) {
       return {
-        selectionGraphPaperRefs: selectedGraphPaperRefs,
+        selectionGraphPaperRefs,
         scopeMode: "selection_only" as const,
       };
     }
@@ -137,8 +145,10 @@ export function useRagQuery({
       };
     }
 
-    throw new Error("Selection scope is enabled, but no graph papers are selected.");
-  }, [queries, selectedNode, selectionScopeEnabled]);
+    throw new Error(
+      "Selection scope is enabled, but no graph papers are available in the current graph selection.",
+    );
+  }, [currentPointScopeSql, queries, selectedNode, selectionScopeEnabled]);
 
   const askChat = useChat<GraphAskChatMessage>({
     transport: askTransport,

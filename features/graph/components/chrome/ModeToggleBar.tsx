@@ -9,7 +9,7 @@ import {
   BookOpen,
   PenLine,
 } from "lucide-react";
-import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
+import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
 import { MODE_ORDER, getModeConfig } from "@/features/graph/lib/modes";
 import { bouncy, settle, dblHoverHint } from "@/lib/motion";
 import type { GraphMode } from "@/features/graph/types";
@@ -45,14 +45,10 @@ function ModeDivider() {
 /** Shared mode toggle bar. */
 export function ModeToggleBar({
   compact = false,
-  onModeChange,
 }: {
   compact?: boolean;
-  onModeChange?: (mode: GraphMode) => void;
 }) {
-  const mode = useGraphStore((s) => s.mode);
-  const setMode = useGraphStore((s) => s.setMode);
-  const togglePromptMinimized = useDashboardStore((s) => s.togglePromptMinimized);
+  const { mode, applyMode, stepPromptDown } = useGraphModeController();
   const lastActiveClickRef = useRef<number>(0);
 
   const handleClick = useCallback(
@@ -60,7 +56,7 @@ export function ModeToggleBar({
       if (key === mode) {
         const now = Date.now();
         if (now - lastActiveClickRef.current < 400) {
-          togglePromptMinimized();
+          stepPromptDown();
           lastActiveClickRef.current = 0;
           return;
         }
@@ -68,10 +64,9 @@ export function ModeToggleBar({
         return;
       }
       lastActiveClickRef.current = 0;
-      setMode(key);
-      onModeChange?.(key);
+      applyMode(key);
     },
-    [mode, setMode, onModeChange, togglePromptMinimized],
+    [applyMode, mode, stepPromptDown],
   );
 
   return (

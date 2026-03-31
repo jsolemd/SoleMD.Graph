@@ -24,17 +24,21 @@ class RagRefreshCheckpointState(ParseContractModel):
     run_id: str
     parser_version: str
     refresh_existing: bool = False
+    source_driven: bool = False
     explicit_corpus_ids: list[int] = []
     limit: int | None = None
-    completed_s2_shards: list[str] = []
-    completed_bioc_archives: list[str] = []
+    batch_size: int = 100
+    stage_row_budget: int | None = None
+    stage_byte_budget: int | None = None
+    worker_count: int = 1
+    worker_index: int = 0
     report_json: dict[str, object]
-
 
 def checkpoint_paths(
     run_id: str,
     *,
     root: Path | None = None,
+    worker_suffix: str | None = None,
 ) -> RagRefreshCheckpointPaths:
     candidate_roots = (
         [root]
@@ -49,6 +53,8 @@ def checkpoint_paths(
     for candidate_root in candidate_roots:
         try:
             candidate_run_root = candidate_root / run_id
+            if worker_suffix:
+                candidate_run_root = candidate_run_root / worker_suffix
             candidate_run_root.mkdir(parents=True, exist_ok=True)
             run_root = candidate_run_root
             break
@@ -80,7 +86,6 @@ def save_checkpoint_state(
     tmp_path.write_text(state.model_dump_json(indent=2))
     tmp_path.replace(paths.metadata_path)
     return state
-
 
 def reset_checkpoint_state(paths: RagRefreshCheckpointPaths) -> None:
     if paths.metadata_path.exists():

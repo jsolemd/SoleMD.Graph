@@ -16,7 +16,7 @@ import type { VisibilitySlice } from './slices/visibility-slice'
 
 /* ───── Convenience re-exports ───── */
 
-export type { ActivePanel } from './slices/panel-slice'
+export type { ActivePanel, PromptMode } from './slices/panel-slice'
 export type { TableView } from './slices/config-slice'
 
 /* ───── Composite state type ───── */

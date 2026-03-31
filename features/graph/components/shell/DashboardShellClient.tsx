@@ -71,10 +71,11 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const selectedPointRevision = useDashboardStore((s) => s.selectedPointRevision);
   const { canvas, error, loading, progress, queries } = useGraphBundle(bundle);
 
-  const promptMinimized = useDashboardStore((s) => s.promptMinimized);
+  const promptMode = useDashboardStore((s) => s.promptMode);
+  const promptShellFullHeight = useDashboardStore((s) => s.promptShellFullHeight);
   const { layout } = getModeConfig(mode);
   const isCreate = mode === "create";
-  const canvasShifted = isCreate && !promptMinimized;
+  const canvasShifted = isCreate && (promptMode === "maximized" || promptShellFullHeight);
   const isContinuousColor = pointColorStrategy === "continuous";
   const { scope: baselineScope, cacheKey: baselineCacheKey } = resolveWidgetBaselineScope({
     selectionLocked: isSelectionLocked,
@@ -335,7 +336,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
           className="absolute inset-0 overflow-hidden"
           style={{
             transform: canvasShifted ? "translateX(min(280px, 22.5vw))" : undefined,
-            transition: "transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+            transition: "transform 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
           <GraphCanvas
@@ -365,28 +366,26 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
           {!uiHidden && activePanel === "about" && <AboutPanel />}
         </AnimatePresence>
 
-        <AnimatePresence>
+        {/* Left panels share one AnimatePresence with mode="wait" so
+            switching (e.g. Config → Filters) exits before entering. */}
+        <AnimatePresence mode="wait">
           {!uiHidden && panelsVisible && activePanel === "config" && (
-            <ConfigPanel />
+            <ConfigPanel key="config" />
           )}
-        </AnimatePresence>
-        <AnimatePresence>
           {!uiHidden && panelsVisible && activePanel === "filters" && (
             <FiltersPanel
+              key="filters"
               queries={queries}
               bundleChecksum={bundle.bundleChecksum}
               overlayRevision={canvas.overlayRevision}
             />
           )}
-        </AnimatePresence>
-        <AnimatePresence>
           {!uiHidden && panelsVisible && activePanel === "info" && (
-            <InfoPanel queries={queries} canvas={canvas} />
+            <InfoPanel key="info" queries={queries} canvas={canvas} />
           )}
-        </AnimatePresence>
-        <AnimatePresence>
           {!uiHidden && panelsVisible && activePanel === "query" && (
             <QueryPanel
+              key="query"
               bundle={bundle}
               runReadOnlyQuery={queries.runReadOnlyQuery}
             />

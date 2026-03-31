@@ -138,3 +138,12 @@ def test_build_grounded_answer_from_packets_derives_segments_anchors_and_answer_
     assert grounded_answer.segments[0].citation_anchor_ids == ["anchor:1"]
     assert grounded_answer.inline_citations[0].cited_span_ids == [packets[0].packet_id]
     assert grounded_answer.answer_linked_corpus_ids == [12345]
+
+
+def test_build_cited_span_packets_from_sources_does_not_emit_entity_only_packets():
+    packets = build_cited_span_packets_from_sources(
+        primary_source=_build_bioc_overlay(),
+        annotation_sources=[],
+    )
+
+    assert packets == []

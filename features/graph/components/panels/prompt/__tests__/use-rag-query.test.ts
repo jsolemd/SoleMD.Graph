@@ -104,7 +104,7 @@ function createQueries(): jest.Mocked<GraphBundleQueries> {
     getClusterDetail: jest.fn(),
     getSelectionDetail: jest.fn(),
     getPaperDocument: jest.fn(),
-    getSelectedGraphPaperRefs: jest.fn(async () => []),
+    getSelectionScopeGraphPaperRefs: jest.fn(async () => []),
     getPaperNodesByGraphPaperRefs: jest.fn(),
     ensureGraphPaperRefsAvailable: jest.fn(async (graphPaperRefs: string[]) => ({
       activeGraphPaperRefs: [],
@@ -208,6 +208,7 @@ describe("useRagQuery", () => {
         queries,
         isAsk: false,
         selectedNode: null,
+        currentPointScopeSql: null,
         activeSelectionSourceId: null,
         setSelectedPointCount,
         setActiveSelectionSourceId,
@@ -266,6 +267,7 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode,
+        currentPointScopeSql: null,
         activeSelectionSourceId: null,
         setSelectedPointCount,
         setActiveSelectionSourceId,
@@ -312,6 +314,7 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode: null as GraphNode | null,
+        currentPointScopeSql: null,
         activeSelectionSourceId: null,
         setSelectedPointCount,
         setActiveSelectionSourceId,
@@ -370,6 +373,7 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode: null,
+        currentPointScopeSql: null,
         activeSelectionSourceId: null,
         setSelectedPointCount,
         setActiveSelectionSourceId,
@@ -424,6 +428,7 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode: null,
+        currentPointScopeSql: null,
         activeSelectionSourceId: null,
         setSelectedPointCount,
         setActiveSelectionSourceId,
@@ -473,7 +478,7 @@ describe("useRagQuery", () => {
 
   it("passes selected graph paper refs when selection scope is enabled", async () => {
     const queries = createQueries();
-    queries.getSelectedGraphPaperRefs.mockResolvedValue(["paper-7", "paper-9"]);
+    queries.getSelectionScopeGraphPaperRefs.mockResolvedValue(["paper-7", "paper-9"]);
     const selectedNode = { id: "paper-7", paperId: "paper-7", nodeKind: "paper" } as GraphNode;
     const setSelectedPointCount = jest.fn();
     const setActiveSelectionSourceId = jest.fn();
@@ -484,6 +489,7 @@ describe("useRagQuery", () => {
         queries,
         isAsk: true,
         selectedNode,
+        currentPointScopeSql: "clusterId = 7",
         selectionScopeEnabled: true,
         activeSelectionSourceId: null,
         setSelectedPointCount,
@@ -497,7 +503,10 @@ describe("useRagQuery", () => {
       await flushMicrotasks();
     });
 
-    expect(queries.getSelectedGraphPaperRefs).toHaveBeenCalledTimes(1);
+    expect(queries.getSelectionScopeGraphPaperRefs).toHaveBeenCalledTimes(1);
+    expect(queries.getSelectionScopeGraphPaperRefs).toHaveBeenCalledWith({
+      currentPointScopeSql: "clusterId = 7",
+    });
     expect(chatMock.sendMessage).toHaveBeenCalledWith(
       { text: "working question" },
       expect.objectContaining({
@@ -536,6 +545,7 @@ describe("useRagQuery", () => {
         queries,
         isAsk: false,
         selectedNode: null,
+        currentPointScopeSql: null,
         activeSelectionSourceId: null,
         setSelectedPointCount,
         setActiveSelectionSourceId,

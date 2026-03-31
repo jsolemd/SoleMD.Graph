@@ -165,7 +165,9 @@ def build_cited_span_packets_from_sources(
         key = _entity_group_key(row)
         if key is None:
             continue
-        entry = grouped.setdefault(key, {"citations": [], "entities": []})
+        entry = grouped.get(key)
+        if entry is None:
+            continue
         entry["entities"].append(row)
 
     packets: list[CitedSpanPacket] = []
@@ -176,6 +178,8 @@ def build_cited_span_packets_from_sources(
     }
 
     for (section_ordinal, block_ordinal, sentence_ordinal), grouped_rows in grouped.items():
+        if not grouped_rows["citations"]:
+            continue
         block = block_by_ordinal.get(block_ordinal)
         if block is None:
             continue

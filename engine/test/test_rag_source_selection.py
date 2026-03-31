@@ -107,6 +107,32 @@ def _build_bioc_source():
     )
 
 
+def _build_bioc_caption_source():
+    xml_text = """
+    <collection>
+      <document>
+        <id>12345</id>
+        <passage>
+          <infon key="type">title_1</infon>
+          <infon key="section_type">RESULTS</infon>
+          <offset>0</offset>
+          <text>Results</text>
+        </passage>
+        <passage>
+          <infon key="type">fig_caption</infon>
+          <infon key="section_type">RESULTS</infon>
+          <infon key="id">fig1</infon>
+          <offset>8</offset>
+          <text>Figure 1. Trial flow and enrollment.</text>
+        </passage>
+      </document>
+    </collection>
+    """
+    return parse_biocxml_document(
+        xml_text, source_revision="2026-03-21", parser_version="parser-v1"
+    )
+
+
 def test_profile_parsed_source_reports_structural_counts():
     profile = profile_parsed_source(_build_s2orc_source())
 
@@ -124,6 +150,14 @@ def test_build_grounding_source_plan_prefers_viable_s2orc_and_keeps_bioc_as_anno
     assert plan.primary_reason == "preferred_s2orc_viable"
     assert len(plan.annotation_sources) == 1
     assert plan.annotation_sources[0].document.source_system == ParseSourceSystem.BIOCXML
+
+
+def test_build_grounding_source_plan_keeps_same_corpus_structural_overlay_without_entities():
+    plan = build_grounding_source_plan([_build_s2orc_source(), _build_bioc_caption_source()])
+
+    assert plan.primary_source.document.source_system == ParseSourceSystem.S2ORC_V2
+    assert len(plan.annotation_sources) == 1
+    assert plan.annotation_sources[0].blocks[0].block_kind == "figure_caption"
 
 
 def test_build_grounding_source_plan_falls_back_when_s2orc_is_structurally_weaker():

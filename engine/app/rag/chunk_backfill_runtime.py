@@ -1,14 +1,9 @@
-"""Backfill derived chunk rows from canonical block and sentence tables."""
+"""Runtime helpers for chunk backfill over canonical warehouse span tables."""
 
 from __future__ import annotations
 
-import argparse
-import sys
 from pathlib import Path
 from typing import Protocol
-
-# Add engine/ to path so app imports work when run directly.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from pydantic import Field
 
@@ -18,16 +13,21 @@ from app.rag.chunk_backfill import (
     ChunkBackfillRowGroup,
     RagChunkBackfillWriter,
 )
+from app.rag.chunk_backfill_checkpoint import (
+    ChunkBackfillCheckpointState,
+    checkpoint_paths as chunk_backfill_checkpoint_paths,
+    list_paper_report_batch_paths,
+    load_checkpoint_state,
+    load_checkpoint_paper_reports,
+    reset_checkpoint_state,
+    save_checkpoint_paper_report_batch,
+    save_checkpoint_state,
+)
 from app.rag.chunk_policy import build_default_chunk_version
 from app.rag.parse_contract import ParseContractModel
 from app.rag.rag_schema_contract import PaperBlockRow, PaperSentenceRow
 from app.rag.write_repository import PostgresRagWriteRepository
-from db.scripts.chunk_backfill_checkpoint import (
-    checkpoint_paths as chunk_backfill_checkpoint_paths,
-    load_checkpoint_state,
-    reset_checkpoint_state,
-    save_checkpoint_state,
-)
+
 
 _BLOCK_ROWS_SQL = """
 SELECT
@@ -125,7 +125,7 @@ class PostgresCanonicalChunkLoader:
         *,
         corpus_ids: list[int],
     ) -> dict[int, CanonicalChunkRows]:
-        normalized = _normalize_corpus_ids(corpus_ids)
+        normalized = normalize_corpus_ids(corpus_ids)
         if not normalized:
             return {}
 
@@ -151,15 +151,15 @@ class PostgresCanonicalChunkLoader:
         return by_corpus
 
 
-def _normalize_corpus_ids(corpus_ids: list[int] | tuple[int, ...]) -> list[int]:
+def normalize_corpus_ids(corpus_ids: list[int] | tuple[int, ...]) -> list[int]:
     return list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
 
 
-def _is_terminal_paper_report(report: ChunkBackfillPaperReport) -> bool:
+def is_terminal_paper_report(report: ChunkBackfillPaperReport) -> bool:
     return report.executed or report.skipped_reason is not None
 
 
-def _merge_paper_reports(
+def merge_paper_reports(
     existing: list[ChunkBackfillPaperReport],
     additions: list[ChunkBackfillPaperReport],
     *,
@@ -175,7 +175,7 @@ def _merge_paper_reports(
     ]
 
 
-def _build_execution_report(
+def build_execution_report(
     *,
     chunk_version_key: str,
     source_revision_keys: list[str],
@@ -227,7 +227,7 @@ def backfill_default_chunks(
     loader: CanonicalChunkLoader | None = None,
     runner: ChunkBackfillRunner | None = None,
 ) -> ChunkBackfillExecutionReport:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
+    normalized_corpus_ids = normalize_corpus_ids(corpus_ids)
     normalized_source_revision_keys = list(dict.fromkeys(source_revision_keys))
     chunk_version = build_default_chunk_version(
         source_revision_keys=normalized_source_revision_keys,
@@ -295,8 +295,14 @@ def backfill_default_chunks(
             )
             paper_report.deferred_stage_names = list(result.deferred_stage_names)
             paper_report.executed = result.written_rows > 0
+            if (
+                not paper_report.executed
+                and paper_report.deferred_stage_names
+                and paper_report.skipped_reason is None
+            ):
+                paper_report.skipped_reason = "deferred_runtime_stage"
 
-    return _build_execution_report(
+    return build_execution_report(
         chunk_version_key=chunk_version.chunk_version_key,
         source_revision_keys=list(chunk_version.source_revision_keys),
         parser_version=parser_version,
@@ -318,7 +324,7 @@ def run_chunk_backfill(
     loader: CanonicalChunkLoader | None = None,
     runner: ChunkBackfillRunner | None = None,
 ) -> ChunkBackfillExecutionReport:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
+    normalized_corpus_ids = normalize_corpus_ids(corpus_ids)
     normalized_source_revision_keys = list(dict.fromkeys(source_revision_keys))
     if not run_id:
         return backfill_default_chunks(
@@ -339,25 +345,28 @@ def run_chunk_backfill(
         reset_checkpoint_state(checkpoint_paths)
 
     checkpoint_state = load_checkpoint_state(checkpoint_paths)
-    prior_report = (
-        ChunkBackfillExecutionReport.model_validate(checkpoint_state.report_json)
+    prior_papers = (
+        [
+            ChunkBackfillPaperReport.model_validate(payload)
+            for payload in load_checkpoint_paper_reports(checkpoint_paths)
+        ]
         if checkpoint_state is not None
-        else None
+        else []
     )
-    if prior_report is not None:
-        if prior_report.parser_version != parser_version:
+    if checkpoint_state is not None:
+        if checkpoint_state.parser_version != parser_version:
             raise ValueError("checkpoint run parser_version does not match requested parser_version")
-        if list(prior_report.source_revision_keys) != normalized_source_revision_keys:
+        if list(checkpoint_state.source_revision_keys) != normalized_source_revision_keys:
             raise ValueError(
                 "checkpoint run source_revision_keys do not match requested source_revision_keys"
             )
-        if list(prior_report.corpus_ids) != normalized_corpus_ids:
+        if list(checkpoint_state.corpus_ids) != normalized_corpus_ids:
             raise ValueError("checkpoint run corpus_ids do not match requested corpus_ids")
     resumed_from_checkpoint = checkpoint_state is not None
     completed_or_skipped = {
         paper.corpus_id
-        for paper in (prior_report.papers if prior_report is not None else [])
-        if _is_terminal_paper_report(paper)
+        for paper in prior_papers
+        if is_terminal_paper_report(paper)
     }
     pending_corpus_ids = [
         corpus_id
@@ -365,16 +374,19 @@ def run_chunk_backfill(
         if corpus_id not in completed_or_skipped
     ]
 
-    merged_report = prior_report or _build_execution_report(
-        chunk_version_key=build_default_chunk_version(
-            source_revision_keys=normalized_source_revision_keys,
-            parser_version=parser_version,
-            embedding_model=embedding_model,
-        ).chunk_version_key,
+    chunk_version_key = build_default_chunk_version(
+        source_revision_keys=normalized_source_revision_keys,
+        parser_version=parser_version,
+        embedding_model=embedding_model,
+    ).chunk_version_key
+    merged_report = build_execution_report(
+        chunk_version_key=(
+            checkpoint_state.chunk_version_key if checkpoint_state is not None else chunk_version_key
+        ),
         source_revision_keys=normalized_source_revision_keys,
         parser_version=parser_version,
         corpus_ids=normalized_corpus_ids,
-        papers=[],
+        papers=prior_papers,
         checkpoint_run_id=run_id,
         checkpoint_dir=str(checkpoint_paths.root),
         resumed_from_checkpoint=resumed_from_checkpoint,
@@ -386,14 +398,20 @@ def run_chunk_backfill(
     if not pending_corpus_ids:
         save_checkpoint_state(
             checkpoint_paths,
-            run_id=run_id,
-            report_json=merged_report.model_dump(mode="python"),
+            state=ChunkBackfillCheckpointState(
+                run_id=run_id,
+                chunk_version_key=merged_report.chunk_version_key,
+                source_revision_keys=normalized_source_revision_keys,
+                parser_version=parser_version,
+                corpus_ids=normalized_corpus_ids,
+            ),
         )
         return merged_report
 
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
 
+    next_batch_index = len(list_paper_report_batch_paths(checkpoint_paths))
     for start in range(0, len(pending_corpus_ids), batch_size):
         batch_ids = pending_corpus_ids[start : start + batch_size]
         batch_report = backfill_default_chunks(
@@ -405,12 +423,18 @@ def run_chunk_backfill(
             loader=loader,
             runner=runner,
         )
-        merged_papers = _merge_paper_reports(
+        save_checkpoint_paper_report_batch(
+            checkpoint_paths,
+            batch_index=next_batch_index,
+            paper_reports=[paper.model_dump(mode="python") for paper in batch_report.papers],
+        )
+        next_batch_index += 1
+        merged_papers = merge_paper_reports(
             merged_report.papers,
             batch_report.papers,
             requested_corpus_ids=normalized_corpus_ids,
         )
-        merged_report = _build_execution_report(
+        merged_report = build_execution_report(
             chunk_version_key=batch_report.chunk_version_key,
             source_revision_keys=list(batch_report.source_revision_keys),
             parser_version=parser_version,
@@ -422,78 +446,13 @@ def run_chunk_backfill(
         )
         save_checkpoint_state(
             checkpoint_paths,
-            run_id=run_id,
-            report_json=merged_report.model_dump(mode="python"),
+            state=ChunkBackfillCheckpointState(
+                run_id=run_id,
+                chunk_version_key=merged_report.chunk_version_key,
+                source_revision_keys=normalized_source_revision_keys,
+                parser_version=parser_version,
+                corpus_ids=normalized_corpus_ids,
+            ),
         )
 
     return merged_report
-
-
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Backfill default structural chunks from canonical block/sentence rows.",
-    )
-    parser.add_argument(
-        "--corpus-id",
-        dest="corpus_ids",
-        action="append",
-        type=int,
-        required=True,
-        help="Corpus ID to backfill. Repeat for multiple papers.",
-    )
-    parser.add_argument(
-        "--source-revision-key",
-        dest="source_revision_keys",
-        action="append",
-        required=True,
-        help="Source revision key, e.g. s2orc_v2:2026-03-10",
-    )
-    parser.add_argument(
-        "--parser-version",
-        required=True,
-        help="Parser version used for the canonical span parse.",
-    )
-    parser.add_argument(
-        "--embedding-model",
-        default=None,
-        help="Optional embedding model to record on the chunk version row.",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=250,
-        help="Number of corpus IDs to backfill per staged write batch.",
-    )
-    parser.add_argument(
-        "--run-id",
-        default=None,
-        help="Optional checkpoint run id for resumable chunk backfill.",
-    )
-    parser.add_argument(
-        "--reset-run",
-        action="store_true",
-        help="Reset any existing checkpoint metadata for --run-id before backfilling.",
-    )
-    return parser.parse_args(argv)
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(argv)
-    try:
-        report = run_chunk_backfill(
-            corpus_ids=args.corpus_ids,
-            source_revision_keys=args.source_revision_keys,
-            parser_version=args.parser_version,
-            embedding_model=args.embedding_model,
-            batch_size=args.batch_size,
-            run_id=args.run_id,
-            reset_run=args.reset_run,
-        )
-        print(report.model_dump_json(indent=2))
-    finally:
-        db.close_pool()
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

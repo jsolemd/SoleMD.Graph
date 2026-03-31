@@ -103,12 +103,12 @@ export function RagResponsePanel({
             )}
             {selectedNode && (
               <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
-                Scoped to {selectedScopeLabel}: {selectedNode.displayLabel || selectedNode.citekey || selectedNode.paperTitle || selectedNode.id}
+                Focused {selectedScopeLabel}: {selectedNode.displayLabel || selectedNode.citekey || selectedNode.paperTitle || selectedNode.id}
               </Text>
             )}
             {selectionScopeCount > 0 && (
               <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
-                Retrieval limited to {selectionScopeCount} selected paper{selectionScopeCount === 1 ? "" : "s"}
+                Retrieval limited to {selectionScopeCount} paper{selectionScopeCount === 1 ? "" : "s"} in the current graph selection
               </Text>
             )}
             {answerGroundingCount > 0 && (

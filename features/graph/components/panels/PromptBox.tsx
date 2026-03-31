@@ -19,7 +19,7 @@ import { selectBottomClearance, selectLeftClearance, selectRightClearance } from
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { MODE_EXAMPLES, pickRandom } from "@/features/graph/lib/mode-examples";
 import { responsive } from "@/lib/motion";
-import type { GraphBundle, GraphBundleQueries, GraphMode } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
 import { useTypewriter } from "@/features/graph/hooks/use-typewriter";
 import { ModeToggleBar } from "../chrome/ModeToggleBar";
 import { CreateEditor, type CreateEditorHandle } from "./CreateEditor";
@@ -58,14 +58,15 @@ export function PromptBox({
   const writeContent = useDashboardStore((s) => s.writeContent);
   const setWriteContent = useDashboardStore((s) => s.setWriteContent);
   const panelsVisible = useDashboardStore((s) => s.panelsVisible);
-  const promptMinimized = useDashboardStore((s) => s.promptMinimized);
-  const promptMaximized = useDashboardStore((s) => s.promptMaximized);
-  const setPromptMinimized = useDashboardStore((s) => s.setPromptMinimized);
-  const setPromptMaximized = useDashboardStore((s) => s.setPromptMaximized);
+  const promptMode = useDashboardStore((s) => s.promptMode);
+  const stepPromptDown = useDashboardStore((s) => s.stepPromptDown);
+  const stepPromptUp = useDashboardStore((s) => s.stepPromptUp);
+  const expandPrompt = useDashboardStore((s) => s.expandPrompt);
   const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
   const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
   const activeSelectionSourceId = useDashboardStore((s) => s.activeSelectionSourceId);
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
+  const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
   const bottomClearance = useDashboardStore(selectBottomClearance);
   const leftClearance = useDashboardStore(selectLeftClearance);
   const rightClearance = useDashboardStore(selectRightClearance);
@@ -83,10 +84,13 @@ export function PromptBox({
   const { cosmograph } = useCosmograph();
   const isCreate = mode === "create";
   const isAsk = mode === "ask";
-  const isCollapsed = promptMinimized;
+  const isCollapsed = promptMode === "collapsed";
+  const isMaximized = promptMode === "maximized";
+  const isCreateMaximized = isCreate && isMaximized;
   const activePromptValue = isCreate ? writeContent : promptValue;
   const selectionScopeAvailable = isSelectionScopeAvailable({
     hasQueries: Boolean(queries),
+    currentPointScopeSql,
     selectedPointCount,
     hasSelectedNode: Boolean(selectedNode),
     activeSelectionSourceId,
@@ -111,6 +115,7 @@ export function PromptBox({
     queries,
     isAsk,
     selectedNode,
+    currentPointScopeSql,
     selectionScopeEnabled: selectionOnlyEnabled,
     activeSelectionSourceId,
     setSelectedPointCount,
@@ -126,7 +131,7 @@ export function PromptBox({
     selectedNode?.clusterLabel ??
     null;
   const avoidRects = useFocusedAvoidanceRects({
-    enabled: Boolean(cosmograph) && focusedPointIndex != null && !isCollapsed && !isCreate,
+    enabled: Boolean(cosmograph) && focusedPointIndex != null && !isCollapsed && !isMaximized,
     focusedPointIndex,
     focusSessionRevision: focusedPointRevision,
     cameraSettledRevision,
@@ -144,19 +149,13 @@ export function PromptBox({
     dragY,
     cardHeight,
     heightOverride,
-    setHeightOverride,
     isFullHeightMode,
-    isFullHeight,
     isOffset,
     setIsOffset,
     targetY,
-    pendingFlipRef,
-    fullHeightEnteredRef,
-    heightAnimatingRef,
   } = usePromptPosition({
     isCreate,
-    isCollapsed,
-    promptMaximized,
+    promptMode,
     panelsVisible,
     bottomClearance,
     leftClearance,
@@ -173,8 +172,10 @@ export function PromptBox({
     ? (SCOPE_LABELS[selectedNode.nodeKind] ?? "node")
     : null;
   const selectionScopeToggleLabel = getSelectionScopeToggleLabel({
-    available: selectionScopeAvailable,
+    hasQueries: Boolean(queries),
+    currentPointScopeSql,
     selectedPointCount,
+    hasSelectedNode: Boolean(selectedNode),
     activeSelectionSourceId,
   });
 
@@ -184,34 +185,32 @@ export function PromptBox({
     }
   }, [selectionScopeAvailable]);
 
-  const handleModeChange = useCallback((newMode: GraphMode) => {
-    editorRef.current?.flush();
-    // Clear stale animation state from previous transitions
-    pendingFlipRef.current = null;
-    fullHeightEnteredRef.current = false;
-    heightAnimatingRef.current = false;
-    setPromptMaximized(false);
-    setPromptMinimized(getModeConfig(newMode).layout.promptCollapsed);
-    clearRag();
-    // Sync hasInput to the destination mode's content
-    if (newMode === "create") {
-      setHasInput(writeContent.length > 0);
-    } else {
-      setHasInput(promptValue.length > 0);
+  const previousModeRef = useRef(mode);
+
+  useEffect(() => {
+    if (previousModeRef.current === mode) {
+      return;
     }
-    setTimeout(() => editorRef.current?.focus(), 100);
-  }, [writeContent, promptValue, clearRag, setPromptMinimized, setPromptMaximized, pendingFlipRef, fullHeightEnteredRef, heightAnimatingRef]);
+
+    previousModeRef.current = mode;
+    editorRef.current?.flush();
+    clearRag();
+    setHasInput(mode === "create" ? writeContent.length > 0 : promptValue.length > 0);
+
+    const focusHandle = globalThis.setTimeout(() => {
+      editorRef.current?.focus();
+    }, 100);
+
+    return () => {
+      globalThis.clearTimeout(focusHandle);
+    };
+  }, [mode, writeContent, promptValue, clearRag]);
 
   const handlePillClick = useCallback(() => {
     if (isDragging.current) return;
-    // Clear any stale animation state from previous transitions
-    pendingFlipRef.current = null;
-    fullHeightEnteredRef.current = false;
-    heightAnimatingRef.current = false;
-    setHeightOverride(false);
-    setPromptMinimized(false);
+    expandPrompt();
     setTimeout(() => editorRef.current?.focus(), 100);
-  }, [setPromptMinimized, isDragging, pendingFlipRef, fullHeightEnteredRef, heightAnimatingRef, setHeightOverride]);
+  }, [expandPrompt, isDragging]);
 
   const handlePillKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -225,9 +224,12 @@ export function PromptBox({
 
   const startDrag = useCallback(
     (e: React.PointerEvent) => {
+      if (isFullHeightMode) {
+        return;
+      }
       dragControls.start(e);
     },
-    [dragControls],
+    [dragControls, isFullHeightMode],
   );
 
   // Normal-mode width — constrain when panels are present (keeps card compact).
@@ -298,7 +300,7 @@ export function PromptBox({
           style={{
             width: isCollapsed
               ? undefined
-              : isCreate
+              : isCreateMaximized
                 ? `clamp(${MIN_CARD_W_CREATE}px, 50vw, ${MAX_CARD_W}px)`
                 : normalWidth,
             transform: isCollapsed ? "none" : "translateX(-50%)",
@@ -310,9 +312,10 @@ export function PromptBox({
             boxShadow: "var(--graph-prompt-shadow)",
             height: heightOverride ? cardHeight : "auto",
             overflow: heightOverride ? "hidden" : "visible",
-            cursor: "grab",
+            cursor: isFullHeightMode ? "default" : "grab",
             touchAction: "none",
-            transition: "width 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
+            transition:
+              "width 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
           onPointerDown={startDrag}
           {...(isCollapsed
@@ -363,14 +366,14 @@ export function PromptBox({
               display: "grid",
               gridTemplateRows: isCollapsed ? "0fr" : "1fr",
               opacity: isCollapsed ? 0 : 1,
-              flex: isFullHeight ? 1 : undefined,
-              minHeight: isFullHeight ? 0 : undefined,
+              flex: isFullHeightMode ? 1 : undefined,
+              minHeight: isFullHeightMode ? 0 : undefined,
               cursor: "default",
               transition:
                 "grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
             }}
           >
-            <div style={{ overflow: "hidden", minHeight: 0, height: isFullHeight ? "100%" : undefined }}>
+            <div style={{ overflow: "hidden", minHeight: 0, height: isFullHeightMode ? "100%" : undefined }}>
               <CreateEditor
                 ref={editorRef}
                 content={activePromptValue}
@@ -436,7 +439,6 @@ export function PromptBox({
               >
                 <ModeToggleBar
                   compact={isCollapsed}
-                  onModeChange={handleModeChange}
                 />
               </div>
 
@@ -450,12 +452,12 @@ export function PromptBox({
                   {/* Size chevrons — grouped tightly */}
                   <div className="flex items-center -space-x-1">
                     {!isFullHeightMode && (
-                      <PromptIconBtn icon={ChevronUp} label="Expand" onClick={() => setPromptMaximized(true)} />
+                      <PromptIconBtn icon={ChevronUp} label="Expand" onClick={stepPromptUp} />
                     )}
                     <PromptIconBtn
                       icon={ChevronDown}
-                      label={promptMaximized ? "Shrink" : "Collapse"}
-                      onClick={() => promptMaximized ? setPromptMaximized(false) : setPromptMinimized(true)}
+                      label={isMaximized ? "Shrink" : "Collapse"}
+                      onClick={stepPromptDown}
                     />
                   </div>
 

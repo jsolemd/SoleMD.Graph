@@ -10,6 +10,7 @@ describe("selection-scope helpers", () => {
     expect(
       isSelectionScopeAvailable({
         hasQueries: true,
+        currentPointScopeSql: null,
         selectedPointCount: 3,
         hasSelectedNode: false,
         activeSelectionSourceId: null,
@@ -19,6 +20,7 @@ describe("selection-scope helpers", () => {
     expect(
       isSelectionScopeAvailable({
         hasQueries: true,
+        currentPointScopeSql: null,
         selectedPointCount: 0,
         hasSelectedNode: true,
         activeSelectionSourceId: null,
@@ -28,6 +30,7 @@ describe("selection-scope helpers", () => {
     expect(
       isSelectionScopeAvailable({
         hasQueries: false,
+        currentPointScopeSql: null,
         selectedPointCount: 3,
         hasSelectedNode: true,
         activeSelectionSourceId: null,
@@ -37,11 +40,22 @@ describe("selection-scope helpers", () => {
     expect(
       isSelectionScopeAvailable({
         hasQueries: true,
+        currentPointScopeSql: null,
         selectedPointCount: 3,
         hasSelectedNode: false,
         activeSelectionSourceId: RAG_ANSWER_SELECTION_SOURCE_ID,
       }),
     ).toBe(false);
+
+    expect(
+      isSelectionScopeAvailable({
+        hasQueries: true,
+        currentPointScopeSql: "clusterId = 7",
+        selectedPointCount: 0,
+        hasSelectedNode: false,
+        activeSelectionSourceId: null,
+      }),
+    ).toBe(true);
   });
 
   it("auto-enables selection scope until the user manually turns it off", () => {
@@ -70,32 +84,50 @@ describe("selection-scope helpers", () => {
   it("describes selection scope in user-facing labels", () => {
     expect(
       getSelectionScopeToggleLabel({
-        available: false,
+        hasQueries: true,
+        currentPointScopeSql: null,
         selectedPointCount: 0,
+        hasSelectedNode: false,
         activeSelectionSourceId: null,
       }),
-    ).toBe("Select papers on the graph to enable selection scope");
+    ).toBe("Select papers on the graph or narrow the current view to enable selection scope");
 
     expect(
       getSelectionScopeToggleLabel({
-        available: true,
+        hasQueries: true,
+        currentPointScopeSql: null,
         selectedPointCount: 5,
+        hasSelectedNode: false,
         activeSelectionSourceId: null,
       }),
     ).toBe("Limit evidence to the current selection (5 papers)");
 
     expect(
       getSelectionScopeToggleLabel({
-        available: true,
+        hasQueries: true,
+        currentPointScopeSql: "clusterId = 7",
         selectedPointCount: 0,
+        hasSelectedNode: false,
+        activeSelectionSourceId: null,
+      }),
+    ).toBe("Limit evidence to the current graph selection");
+
+    expect(
+      getSelectionScopeToggleLabel({
+        hasQueries: true,
+        currentPointScopeSql: null,
+        selectedPointCount: 0,
+        hasSelectedNode: true,
         activeSelectionSourceId: null,
       }),
     ).toBe("Limit evidence to the focused paper");
 
     expect(
       getSelectionScopeToggleLabel({
-        available: false,
+        hasQueries: true,
+        currentPointScopeSql: null,
         selectedPointCount: 2,
+        hasSelectedNode: false,
         activeSelectionSourceId: RAG_ANSWER_SELECTION_SOURCE_ID,
       }),
     ).toBe(

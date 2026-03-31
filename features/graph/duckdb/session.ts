@@ -47,7 +47,7 @@ import {
   queryPaperDocument,
   queryPointSearch,
   queryPaperNodesByGraphPaperRefs,
-  querySelectedGraphPaperRefs,
+  querySelectionScopeGraphPaperRefs,
   queryScopeCoordinates,
   queryRows,
   queryUniversePointIdsByGraphPaperRefs,
@@ -809,8 +809,8 @@ export async function createGraphBundleSession(
         paperDocumentCache.set(paperId, next)
         return next
       },
-      getSelectedGraphPaperRefs() {
-        return querySelectedGraphPaperRefs(conn)
+      getSelectionScopeGraphPaperRefs(args) {
+        return querySelectionScopeGraphPaperRefs(conn, args)
       },
       getPaperNodesByGraphPaperRefs(graphPaperRefs: string[]) {
         return queryPaperNodesByGraphPaperRefs(conn, graphPaperRefs)

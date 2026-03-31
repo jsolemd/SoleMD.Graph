@@ -144,3 +144,49 @@ def test_inspect_chunk_runtime_reports_full_cutover_ready_when_all_signals_prese
     assert inspection.full_cutover_ready is True
     assert inspection.pending_runtime_phases == []
     assert inspection.pending_cutover_steps == []
+
+
+def test_inspect_chunk_runtime_treats_invalid_parent_index_as_missing():
+    conn = _mock_connection(
+        fetchone_side_effect=[
+            {
+                "has_chunk_versions": True,
+                "has_chunks": True,
+                "has_chunk_members": True,
+                "has_citation_mentions": True,
+                "has_entity_mentions": True,
+            },
+            {
+                "has_chunk_version": True,
+                "missing_corpus_ids": [],
+            },
+            {
+                "chunk_version_rows": 1,
+                "chunk_rows": 10,
+                "chunk_member_rows": 24,
+                "citation_mention_rows": 4,
+                "entity_mention_rows": 6,
+                "chunk_covered_corpus_ids": 1,
+                "chunk_member_covered_corpus_ids": 1,
+            },
+        ],
+        fetchall_side_effect=[
+            [
+                {
+                    "index_name": "idx_paper_chunks_search_tsv",
+                    "is_present": True,
+                    "is_valid": False,
+                },
+            ]
+        ],
+    )
+
+    inspection = inspect_chunk_runtime(
+        corpus_ids=[12345],
+        connect=lambda: conn,
+    )
+
+    assert inspection.grounded_answer_runtime_ready is True
+    assert inspection.full_cutover_ready is False
+    assert inspection.present_post_load_indexes == []
+    assert inspection.missing_post_load_indexes == ["idx_paper_chunks_search_tsv"]

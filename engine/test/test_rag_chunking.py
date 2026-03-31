@@ -12,6 +12,7 @@ from app.rag.parse_contract import (
 )
 from app.rag.serving_contract import (
     CaptionMergePolicy,
+    ChunkMemberKind,
     PaperChunkVersionRecord,
     SentenceOverlapPolicy,
 )
@@ -173,3 +174,278 @@ def test_assemble_structural_chunks_respects_section_boundaries():
 
     assert len(result.chunks) == 2
     assert [chunk.canonical_section_ordinal for chunk in result.chunks] == [0, 1]
+
+
+def test_assemble_structural_chunks_filters_members_by_sentence_source_policy():
+    common = _common_identity()
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=30,
+            text="Melatonin reduced delirium.",
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+    sentences = [
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=15,
+            text="Melatonin reduced",
+            sentence_ordinal=0,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=16,
+            source_end_offset=30,
+            text="delirium.",
+            sentence_ordinal=1,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.DETERMINISTIC_FALLBACK,
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={"sentence_source_policy": [SentenceSegmentationSource.S2ORC_ANNOTATION]}
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=sentences,
+    )
+
+    assert len(result.chunks) == 1
+    assert result.chunks[0].text == "Melatonin reduced"
+    assert len(result.members) == 1
+    assert result.members[0].canonical_sentence_ordinal == 0
+
+
+def test_assemble_structural_chunks_splits_oversized_narrative_block_on_sentence_boundaries():
+    common = _common_identity()
+    block_text = (
+        "Melatonin reduced delirium incidence in older adults. "
+        "Sleep quality improved across follow-up visits. "
+        "No serious adverse events were attributed to treatment."
+    )
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(block_text),
+            text=block_text,
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+        PaperBlockRecord(
+            **common,
+            source_start_offset=len(block_text) + 1,
+            source_end_offset=len(block_text) + 1 + len("Follow-up remained complete."),
+            text="Follow-up remained complete.",
+            block_ordinal=1,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+    first = "Melatonin reduced delirium incidence in older adults."
+    second = "Sleep quality improved across follow-up visits."
+    third = "No serious adverse events were attributed to treatment."
+    sentences = [
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(first),
+            text=first,
+            sentence_ordinal=0,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=len(first) + 1,
+            source_end_offset=len(first) + 1 + len(second),
+            text=second,
+            sentence_ordinal=1,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=len(first) + len(second) + 2,
+            source_end_offset=len(first) + len(second) + 2 + len(third),
+            text=third,
+            sentence_ordinal=2,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={"target_token_budget": 10, "hard_max_tokens": 12}
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=sentences,
+    )
+
+    assert len(result.chunks) == 4
+    assert result.chunks[0].text == first
+    assert result.chunks[1].text == second
+    assert result.chunks[2].text == third
+    assert result.chunks[3].text == "Follow-up remained complete."
+    assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
+    assert [member.canonical_sentence_ordinal for member in result.members] == [0, 1, 2, None]
+
+
+def test_assemble_structural_chunks_uses_sentence_text_when_block_text_is_blank():
+    common = _common_identity()
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=3,
+            text=" \n ",
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+    sentences = [
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=28,
+            text="Melatonin reduced delirium.",
+            sentence_ordinal=0,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+    ]
+
+    result = assemble_structural_chunks(
+        version=_chunk_version(),
+        blocks=blocks,
+        sentences=sentences,
+    )
+
+    assert len(result.chunks) == 1
+    assert result.chunks[0].text == "Melatonin reduced delirium."
+    assert len(result.members) == 1
+    assert result.members[0].member_kind == ChunkMemberKind.SENTENCE
+
+
+def test_assemble_structural_chunks_skips_blocks_without_any_retrievable_text():
+    common = _common_identity()
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=3,
+            text=" \n ",
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+
+    result = assemble_structural_chunks(
+        version=_chunk_version(),
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert result.chunks == []
+    assert result.members == []
+
+
+def test_assemble_structural_chunks_splits_oversized_single_block_by_sentences():
+    common = _common_identity()
+    block_text = "Sentence one. Sentence two. Sentence three. Sentence four."
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=len(block_text),
+            text=block_text,
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+    sentences = [
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=13,
+            text="Sentence one.",
+            sentence_ordinal=0,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=14,
+            source_end_offset=27,
+            text="Sentence two.",
+            sentence_ordinal=1,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=28,
+            source_end_offset=43,
+            text="Sentence three.",
+            sentence_ordinal=2,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+        PaperSentenceRecord(
+            **common,
+            source_start_offset=44,
+            source_end_offset=len(block_text),
+            text="Sentence four.",
+            sentence_ordinal=3,
+            block_ordinal=0,
+            section_ordinal=1,
+            segmentation_source=SentenceSegmentationSource.S2ORC_ANNOTATION,
+        ),
+    ]
+    version = _chunk_version().model_copy(
+        update={"target_token_budget": 4, "hard_max_tokens": 6}
+    )
+
+    result = assemble_structural_chunks(
+        version=version,
+        blocks=blocks,
+        sentences=sentences,
+    )
+
+    assert len(result.chunks) == 2
+    assert [chunk.text for chunk in result.chunks] == [
+        "Sentence one. Sentence two.",
+        "Sentence three. Sentence four.",
+    ]
+    assert all(chunk.token_count_estimate <= version.hard_max_tokens for chunk in result.chunks)
+    assert [member.canonical_sentence_ordinal for member in result.members] == [0, 1, 2, 3]

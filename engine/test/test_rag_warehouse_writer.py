@@ -123,9 +123,11 @@ def test_rag_warehouse_writer_builds_batch_and_reports_deferred_stage_names():
     class FakeBatchWriter:
         def __init__(self):
             self.batch = None
+            self.replace_existing = None
 
-        def apply_write_batch(self, batch):
+        def apply_write_batch(self, batch, *, replace_existing=False):
             self.batch = batch
+            self.replace_existing = replace_existing
             return RagWriteExecutionResult(
                 total_rows=7,
                 written_rows=6,
@@ -163,15 +165,18 @@ def test_rag_warehouse_writer_builds_batch_and_reports_deferred_stage_names():
     assert result.batch_total_rows == 7
     assert result.written_rows == 6
     assert result.deferred_stage_names == [WriteStage.REFERENCES]
+    assert repository.replace_existing is False
 
 
 def test_rag_warehouse_writer_can_include_structural_chunk_rows():
     class FakeBatchWriter:
         def __init__(self):
             self.batch = None
+            self.replace_existing = None
 
-        def apply_write_batch(self, batch):
+        def apply_write_batch(self, batch, *, replace_existing=False):
             self.batch = batch
+            self.replace_existing = replace_existing
             return RagWriteExecutionResult(
                 total_rows=10,
                 written_rows=7,
@@ -224,15 +229,18 @@ def test_rag_warehouse_writer_can_include_structural_chunk_rows():
     assert len(repository.batch.chunks) == 1
     assert len(repository.batch.chunk_members) == 2
     assert result.deferred_stage_names == [WriteStage.CHUNK_VERSIONS]
+    assert repository.replace_existing is False
 
 
 def test_rag_warehouse_writer_can_merge_multiple_grounding_plans_into_one_batch():
     class FakeBatchWriter:
         def __init__(self):
             self.batch = None
+            self.replace_existing = None
 
-        def apply_write_batch(self, batch):
+        def apply_write_batch(self, batch, *, replace_existing=False):
             self.batch = batch
+            self.replace_existing = replace_existing
             return RagWriteExecutionResult(
                 total_rows=12,
                 written_rows=12,

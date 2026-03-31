@@ -14,7 +14,7 @@ import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { SelectionToolbar, type SelectionToolbarHandle } from "@/features/graph/cosmograph";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import { iconBtnStyles } from "../panels/PanelShell";
-import { snappy } from "@/lib/motion";
+import { pop } from "@/lib/motion";
 
 /**
  * Selection tools portaled into the Wordmark toolbar.
@@ -202,10 +202,7 @@ export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
         {hasResettableScope && (
           <motion.div
             key="clear-selection"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={snappy}
+            {...pop}
           >
             <Tooltip label="Clear selection and filters" position="bottom" withArrow>
               <ActionIcon

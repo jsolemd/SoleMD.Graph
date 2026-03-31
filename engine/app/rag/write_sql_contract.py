@@ -84,10 +84,7 @@ def _columns_for_stage(stage: WriteStage) -> list[str]:
 
 def _build_copy_sql(staging_table_name: str, columns: list[str]) -> str:
     column_sql = ", ".join(columns)
-    return (
-        f"COPY {staging_table_name} ({column_sql}) "
-        "FROM STDIN WITH (FORMAT CSV, HEADER FALSE)"
-    )
+    return f"COPY {staging_table_name} ({column_sql}) FROM STDIN"
 
 
 def _build_merge_sql(
@@ -106,7 +103,11 @@ def _build_merge_sql(
             f"{column} = EXCLUDED.{column}"
             for column in update_columns
         )
-        conflict_clause = f"DO UPDATE SET\n    {update_sql}"
+        update_guard = " OR ".join(
+            f"solemd.{table_name}.{column} IS DISTINCT FROM EXCLUDED.{column}"
+            for column in update_columns
+        )
+        conflict_clause = f"DO UPDATE SET\n    {update_sql}\nWHERE {update_guard}"
     else:
         conflict_clause = "DO NOTHING"
     return (
@@ -131,7 +132,11 @@ def _build_upsert_rows_sql(
             f"{column} = EXCLUDED.{column}"
             for column in update_columns
         )
-        conflict_clause = f"DO UPDATE SET\n    {update_sql}"
+        update_guard = " OR ".join(
+            f"solemd.{table_name}.{column} IS DISTINCT FROM EXCLUDED.{column}"
+            for column in update_columns
+        )
+        conflict_clause = f"DO UPDATE SET\n    {update_sql}\nWHERE {update_guard}"
     else:
         conflict_clause = "DO NOTHING"
     return (

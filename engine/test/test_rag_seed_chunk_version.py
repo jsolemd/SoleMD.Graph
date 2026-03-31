@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.rag.chunk_seed import ChunkSeedResult
-from db.scripts.seed_chunk_version import seed_default_chunk_version
+from db.scripts.seed_default_chunk_version import seed_default_chunk_version
 
 
 def test_seed_default_chunk_version_reports_execution_state_from_runner():

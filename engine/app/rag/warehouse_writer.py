@@ -20,7 +20,12 @@ from app.rag.write_repository import PostgresRagWriteRepository, RagWriteExecuti
 
 
 class RagWarehouseBatchWriter(Protocol):
-    def apply_write_batch(self, batch: RagWarehouseWriteBatch) -> RagWriteExecutionResult: ...
+    def apply_write_batch(
+        self,
+        batch: RagWarehouseWriteBatch,
+        *,
+        replace_existing: bool = False,
+    ) -> RagWriteExecutionResult: ...
 
 
 class RagWarehouseIngestResult(ParseContractModel):
@@ -59,12 +64,14 @@ class RagWarehouseWriter:
         *,
         source_citation_keys: Sequence[str] | None = None,
         chunk_version: PaperChunkVersionRecord | None = None,
+        replace_existing: bool = False,
     ) -> RagWarehouseIngestResult:
         plan = build_grounding_source_plan(sources)
         return self.ingest_grounding_plan(
             plan,
             source_citation_keys=source_citation_keys,
             chunk_version=chunk_version,
+            replace_existing=replace_existing,
         )
 
     def ingest_source_groups(
@@ -73,12 +80,14 @@ class RagWarehouseWriter:
         *,
         source_citation_keys_by_corpus: dict[int, Sequence[str]] | None = None,
         chunk_version: PaperChunkVersionRecord | None = None,
+        replace_existing: bool = False,
     ) -> RagWarehouseBulkIngestResult:
         plans = [build_grounding_source_plan(sources) for sources in source_groups]
         return self.ingest_grounding_plans(
             plans,
             source_citation_keys_by_corpus=source_citation_keys_by_corpus,
             chunk_version=chunk_version,
+            replace_existing=replace_existing,
         )
 
     def ingest_grounding_plan(
@@ -87,13 +96,17 @@ class RagWarehouseWriter:
         *,
         source_citation_keys: Sequence[str] | None = None,
         chunk_version: PaperChunkVersionRecord | None = None,
+        replace_existing: bool = False,
     ) -> RagWarehouseIngestResult:
         batch = build_write_batch_from_grounding_plan(
             plan,
             source_citation_keys=source_citation_keys,
             chunk_version=chunk_version,
         )
-        execution = self._repository.apply_write_batch(batch)
+        execution = self._repository.apply_write_batch(
+            batch,
+            replace_existing=replace_existing,
+        )
         return RagWarehouseIngestResult(
             corpus_id=plan.primary_source.document.corpus_id,
             primary_source_system=plan.primary_source.document.source_system,
@@ -114,6 +127,7 @@ class RagWarehouseWriter:
         *,
         source_citation_keys_by_corpus: dict[int, Sequence[str]] | None = None,
         chunk_version: PaperChunkVersionRecord | None = None,
+        replace_existing: bool = False,
     ) -> RagWarehouseBulkIngestResult:
         if not plans:
             return RagWarehouseBulkIngestResult(
@@ -153,7 +167,10 @@ class RagWarehouseWriter:
             )
 
         merged_batch = merge_write_batches(batches)
-        execution = self._repository.apply_write_batch(merged_batch)
+        execution = self._repository.apply_write_batch(
+            merged_batch,
+            replace_existing=replace_existing,
+        )
         return RagWarehouseBulkIngestResult(
             papers=paper_results,
             batch_total_rows=execution.total_rows,

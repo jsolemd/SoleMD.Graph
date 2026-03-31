@@ -10,6 +10,7 @@ from typing import Protocol
 # Add engine/ to path so app imports work when run directly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from app import db
 from pydantic import Field
 
 from app.rag.chunk_seed import ChunkSeedResult, RagChunkSeeder
@@ -86,12 +87,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    report = seed_default_chunk_version(
-        source_revision_keys=args.source_revision_keys,
-        parser_version=args.parser_version,
-        embedding_model=args.embedding_model,
-    )
-    print(report.model_dump_json(indent=2))
+    try:
+        report = seed_default_chunk_version(
+            source_revision_keys=args.source_revision_keys,
+            parser_version=args.parser_version,
+            embedding_model=args.embedding_model,
+        )
+        print(report.model_dump_json(indent=2))
+    finally:
+        db.close_pool()
     return 0
 
 
