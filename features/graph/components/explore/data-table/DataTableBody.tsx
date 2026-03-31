@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Loader, Stack, Table, Text } from "@mantine/core";
 import { useGraphFocus } from "@/features/graph/cosmograph";
 import { useGraphStore } from "@/features/graph/stores";
@@ -30,24 +30,24 @@ export function DataTableBody({
 }: DataTableBodyProps) {
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const { focusNode } = useGraphFocus();
+  const focusedRowRef = useRef<HTMLTableRowElement>(null);
 
   const tableColumns = useMemo(() => getTableColumnsForLayer(activeLayer), [activeLayer]);
 
+  // Scroll the focused row into view when the selected node changes
+  useEffect(() => {
+    focusedRowRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedNode?.id]);
+
   const handleRowClick = useCallback(
     (node: GraphPointRecord) => {
-      if (resolvedTableView === "dataset") {
-        focusNode(node, {
-          zoomDuration: 250,
-          selectPoint: true,
-          addToSelection: false,
-          expandLinks: false,
-        });
-        return;
-      }
-
+      // Focus + zoom only — never trigger Cosmograph's selectPoint here.
+      // Selection is for multi-select tools (lasso, rect, filters), not
+      // single-row navigation.  selectNode() inside focusNode already
+      // sets the detail panel highlight and table row accent.
       focusNode(node, { zoomDuration: 250 });
     },
-    [focusNode, resolvedTableView]
+    [focusNode]
   );
 
   if (pageLoading) {
@@ -123,6 +123,7 @@ export function DataTableBody({
             return (
               <Table.Tr
                 key={node.id}
+                ref={isFocused ? focusedRowRef : undefined}
                 tabIndex={0}
                 aria-selected={showSelectedState}
                 onClick={() => handleRowClick(node)}

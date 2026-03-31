@@ -66,7 +66,6 @@ export function usePromptPosition({
       : promptMode === "maximized"
         ? (isCreate ? "create" : "maximized")
         : "normal";
-  const isCollapsed = layoutMode === "collapsed";
   const isFullHeightMode = layoutMode === "create" || layoutMode === "maximized";
 
   const [isOffset, setIsOffset] = useState(false);
@@ -318,9 +317,10 @@ export function usePromptPosition({
       );
     }
 
+    const currentPosAnim = posAnim.current;
     return () => {
-      posAnim.current.x?.stop();
-      posAnim.current.y?.stop();
+      currentPosAnim.x?.stop();
+      currentPosAnim.y?.stop();
     };
   }, [
     cardRef,

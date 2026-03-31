@@ -9,6 +9,7 @@ from app.rag.parse_contract import (
     SentenceSegmentationSource,
     SourcePlane,
 )
+from app.rag.rag_schema_contract import PaperSectionRow
 from app.rag.serving_contract import (
     CaptionMergePolicy,
     ChunkMemberKind,
@@ -172,6 +173,99 @@ def test_assemble_structural_chunks_force_merges_small_adjacent_narrative_blocks
     )
     assert result.chunks[0].token_count_estimate == 8
     assert len(result.members) == 2
+
+
+def test_assemble_structural_chunks_prefixes_informative_section_heading_when_sections_provided():
+    common = _common_identity()
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=55,
+            text="The patient had a history of Miller Fisher syndrome.",
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+    sections = [
+        PaperSectionRow(
+            corpus_id=12345,
+            section_ordinal=1,
+            parent_section_ordinal=None,
+            section_role=SectionRole.RESULTS,
+            display_label="PAST MEDICAL HISTORY",
+            numbering_token=None,
+            text="PAST MEDICAL HISTORY",
+        ),
+    ]
+
+    result = assemble_structural_chunks(
+        version=_chunk_version(),
+        sections=sections,
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert len(result.chunks) == 1
+    assert result.chunks[0].text.startswith("PAST MEDICAL HISTORY\n")
+    assert result.chunks[0].text.endswith("The patient had a history of Miller Fisher syndrome.")
+
+
+def test_assemble_structural_chunks_skips_repeated_nonstructural_section_prefixes():
+    common = _common_identity()
+    blocks = [
+        PaperBlockRecord(
+            **common,
+            source_start_offset=0,
+            source_end_offset=28,
+            text="Melatonin reduced delirium.",
+            block_ordinal=0,
+            section_ordinal=1,
+            section_role=SectionRole.RESULTS,
+            block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        ),
+    ]
+    sections = [
+        PaperSectionRow(
+            corpus_id=12345,
+            section_ordinal=1,
+            parent_section_ordinal=None,
+            section_role=SectionRole.RESULTS,
+            display_label="Journal of Medicinal Chemistry",
+            numbering_token=None,
+            text="Journal of Medicinal Chemistry",
+        ),
+        PaperSectionRow(
+            corpus_id=12345,
+            section_ordinal=2,
+            parent_section_ordinal=None,
+            section_role=SectionRole.RESULTS,
+            display_label="Journal of Medicinal Chemistry",
+            numbering_token=None,
+            text="Journal of Medicinal Chemistry",
+        ),
+        PaperSectionRow(
+            corpus_id=12345,
+            section_ordinal=3,
+            parent_section_ordinal=None,
+            section_role=SectionRole.RESULTS,
+            display_label="Journal of Medicinal Chemistry",
+            numbering_token=None,
+            text="Journal of Medicinal Chemistry",
+        ),
+    ]
+
+    result = assemble_structural_chunks(
+        version=_chunk_version(),
+        sections=sections,
+        blocks=blocks,
+        sentences=[],
+    )
+
+    assert len(result.chunks) == 1
+    assert result.chunks[0].text == "Melatonin reduced delirium."
 
 
 def test_assemble_structural_chunks_keeps_captions_standalone():

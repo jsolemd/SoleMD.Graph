@@ -98,6 +98,6 @@ export function useTypewriter(
   }, [state, speed, deleteSpeed, waitTime, initialDelay]);
 
   const done = state.phase === "done";
-  const isLast = state.textIdx >= textsRef.current.length - 1;
+  const isLast = state.textIdx >= texts.length - 1;
   return { text: state.display, done, isLast };
 }

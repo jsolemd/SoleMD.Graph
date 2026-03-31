@@ -17,6 +17,7 @@ from app.rag_ingest.chunk_quality import (
     MIN_USEFUL_NARRATIVE_TOKENS,
 )
 from app.rag_ingest.orchestrator import _load_corpus_ids_file, _unique_ints
+from app.rag_ingest.section_context import looks_like_structural_heading
 
 _WAREHOUSE_QUALITY_SQL = """
 WITH requested AS (
@@ -290,54 +291,6 @@ class PostgresWarehouseQualityLoader:
             return [dict(row) for row in cur.fetchall()]
 
 
-def _normalize_label_tokens(value: str | None) -> list[str]:
-    if not value:
-        return []
-    lowered = value.lower()
-    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in lowered)
-    return cleaned.split()
-
-
-def _looks_like_structural_heading(value: str | None) -> bool:
-    tokens = _normalize_label_tokens(value)
-    token_text = " ".join(tokens)
-    return (
-        "abstract" in tokens
-        or "background" in tokens
-        or "introduction" in tokens
-        or token_text == "intro"
-        or "method" in token_text
-        or "materials and methods" in token_text
-        or "result" in token_text
-        or "discussion" in token_text
-        or "discuss" in token_text
-        or "conclusion" in token_text
-        or "conclusions" in token_text
-        or "supplement" in token_text
-        or "reference" in token_text
-        or "references" in token_text
-        or "acknowledg" in token_text
-        or "author contribution" in token_text
-        or "author contributions" in token_text
-        or token_text == "contributors"
-        or "contributor" in token_text
-        or "funding" in token_text
-        or "data availability" in token_text
-        or "availability of data" in token_text
-        or "ethics" in token_text
-        or "ethical consideration" in token_text
-        or "ethical considerations" in token_text
-        or "conflict" in token_text
-        or "competing interest" in token_text
-        or "competing interests" in token_text
-        or "abbreviation" in token_text
-        or "abbreviations" in token_text
-        or "keyword" in token_text
-        or "keywords" in token_text
-        or token_text == "experimental section"
-    )
-
-
 def _derive_flags(row: dict[str, object]) -> list[str]:
     flags: list[str] = []
     title = (row.get("title") or "").strip()
@@ -377,7 +330,7 @@ def _derive_flags(row: dict[str, object]) -> list[str]:
         flags.append("low_value_narrative_chunks")
     if int(row["max_repeated_nonstructural_section_label_count"]) >= 3:
         flags.append("repeated_nonstructural_section_labels")
-    if title and _looks_like_structural_heading(title):
+    if title and looks_like_structural_heading(title):
         flags.append("suspicious_structural_title")
     return flags
 

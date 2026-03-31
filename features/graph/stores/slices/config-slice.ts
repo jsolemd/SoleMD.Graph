@@ -125,7 +125,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
 
   tablePage: 1,
   tablePageSize: 100,
-  tableView: 'selection',
+  tableView: 'dataset',
 
   colorScheme: 'vibrant',
   showColorLegend: true,
@@ -209,7 +209,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         activeSelectionSourceId: null,
         selectionLocked: false,
         tablePage: 1,
-        tableView: 'selection',
+        tableView: 'dataset',
         pointLabelColumn: (() => {
           const layerColumns = getRenderableColumnsForLayer(layer)
           return layerColumns.some(c => c.key === 'clusterLabel')

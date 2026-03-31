@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
@@ -36,6 +36,51 @@ class ChunkTokenBudgeter(Protocol):
     def count_tokens(self, text: str) -> int: ...
 
     def split_text(self, text: str, *, max_tokens: int) -> list[str]: ...
+
+
+def split_text_semantically(
+    text: str,
+    *,
+    max_tokens: int,
+    token_counter: Callable[[str], int],
+    fallback_splitter: Callable[[str, int], list[str]] | None = None,
+) -> list[str]:
+    """Split prose with semantic boundaries before falling back to plain token windows."""
+
+    if max_tokens <= 0:
+        raise ValueError("max_tokens must be positive")
+    stripped = text.strip()
+    if not stripped:
+        return []
+
+    try:
+        import semchunk
+    except ImportError:  # pragma: no cover - exercised when semchunk is unavailable
+        if fallback_splitter is None:
+            raise TokenizationUnavailable(
+                "Semantic chunk refinement requires semchunk. Install with: uv sync"
+            ) from None
+        return fallback_splitter(stripped, max_tokens)
+
+    try:
+        fragments = semchunk.chunk(
+            stripped,
+            max_tokens,
+            token_counter,
+        )
+    except Exception:  # pragma: no cover - depends on third-party tokenizer behavior
+        if fallback_splitter is None:
+            raise
+        return fallback_splitter(stripped, max_tokens)
+
+    normalized_fragments = [
+        fragment.strip() for fragment in fragments if fragment and fragment.strip()
+    ]
+    if normalized_fragments:
+        return normalized_fragments
+    if fallback_splitter is None:
+        return []
+    return fallback_splitter(stripped, max_tokens)
 
 
 def _distribution_version(distribution_name: str) -> str | None:
@@ -318,9 +363,7 @@ class TiktokenChunkTokenBudgeter:
         tiktoken_version = _distribution_version("tiktoken")
         self.tokenizer_name = f"tiktoken:{resolved_encoding_name}"
         version_parts = [
-            part
-            for part in (tiktoken_version, _normalize_model_tokenizer_name(model_name))
-            if part
+            part for part in (tiktoken_version, _normalize_model_tokenizer_name(model_name)) if part
         ]
         self.tokenizer_version = "+".join(version_parts) or None
         self._encoding_name = resolved_encoding_name

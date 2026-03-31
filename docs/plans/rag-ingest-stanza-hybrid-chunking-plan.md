@@ -162,8 +162,15 @@ Delivered changes:
 - shared token-budget backend in `engine/app/rag_ingest/tokenization.py`
   - Stanza token spans are now reused for chunk budgeting, not only sentence splitting
   - supported embedding models now resolve to `tiktoken` for chunk-budget fidelity
+  - oversize prose refinement now uses `semchunk` before falling back to plain token windows
+- shared section-context helpers in `engine/app/rag_ingest/section_context.py`
+  - chunk contextualization and QA now use the same section-label normalization logic
+  - repeated noisy non-structural labels are suppressed before they can contaminate chunk text
 - tokenizer-aware structural chunking in `engine/app/rag_ingest/chunking.py`
   - narrative chunking stays sentence-based
+  - narrative chunk text can inherit canonical section-heading context when it is informative
+  - narrative budgeting now accounts for heading-context token cost before chunk emission
+  - adjacent narrative peers now merge by contextual heading signature instead of raw section ordinal alone
   - table-body chunking ignores prose sentence rows and chunks by structural units
   - tiny low-value narrative fragments are suppressed
   - bounded adjacent narrative peers can merge when contract-safe
@@ -182,7 +189,7 @@ Delivered changes:
 Code validation:
 
 - focused engine suite passed:
-  - `67 passed`
+  - `79 passed`
 - targeted Ruff checks on touched ingest files passed
 - Stanza benchmark on real warehouse blocks loaded on `cuda`
 
@@ -249,6 +256,33 @@ Residual quality signal on the Docling-style preview:
   - this is a tokenizer-count fidelity change rather than a structural fragment regression
 - `261698615` still has three short narrative/admin sentences flagged
 - `52845261` still flags repeated noisy non-structural section labels
+
+Docling-style narrative-context preview validation:
+
+- seeded a third preview chunk version:
+  - `preview-docling-hybrid-narrative-v3`
+  - `parser_version = mixed:parser-v1,parser-v2,parser-v3`
+  - `tokenizer_name = tiktoken:cl100k_base`
+  - `tokenizer_version = 0.12.0+text-embedding-3-large`
+  - `caption_merge_policy = structural_context`
+  - `lexical_normalization_flags = [chunker:hybrid_structural_v3, table_header_repeat, table_header_omit_on_overflow, peer_merge_by_context, section_heading_context, section_context_excludes_repeated_nonstructural_labels, semchunk_overflow_refinement]`
+- backfilled the same audited papers under the narrative-context preview key:
+  - corpus ids `225487656`, `260425880`, `261698615`, `276778215`, `52845261`
+  - wrote `230` chunk rows and `1058` chunk-member rows
+- persisted narrative chunks now inherit canonical section context when it is useful:
+  - `225487656`, chunk `0`: `PAST MEDICAL HISTORY` + clinical sentence
+  - `225487656`, chunk `1`: `DIFFERENTIAL DIAGNOSIS` + diagnostic sentence
+  - `52845261` chunk text starts with structural headings such as `■ INTRODUCTION`, not the repeated noisy label `Journal of Medicinal Chemistry`
+- narrative quality improved further versus `preview-docling-hybrid-sample-v2`:
+  - `225487656`: `tiny_narrative_chunks` cleared
+  - `260425880`: still clear
+  - `276778215`: oversize chunk/table fixes remain intact
+  - junk rows `Our`, `The`, and `Not applicable.` remain absent
+- residual narrative signal is now narrower and more interpretable:
+  - `261698615` still has three short but context-bearing narrative/admin chunks:
+    - `Abstract` + online supplementary-material sentence
+    - `Studies design` + randomized-controlled-trial sentence
+    - `Consent for publication` + publication-consent sentence
 
 ## Cutover Note
 

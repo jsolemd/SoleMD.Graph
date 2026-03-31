@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.rag_ingest.tokenization import (
     build_chunk_token_budgeter,
     default_chunk_tokenizer_metadata,
+    split_text_semantically,
 )
 
 
@@ -36,3 +37,19 @@ def test_embedding_token_budgeter_split_text_respects_token_limit():
 
     assert len(fragments) >= 2
     assert all(budgeter.count_tokens(fragment) <= 10 for fragment in fragments)
+
+
+def test_split_text_semantically_prefers_sentence_boundaries_when_they_fit():
+    text = "Alpha beta gamma delta. Epsilon zeta eta theta. Iota kappa lambda mu."
+
+    fragments = split_text_semantically(
+        text,
+        max_tokens=6,
+        token_counter=lambda value: len(value.split()),
+    )
+
+    assert fragments == [
+        "Alpha beta gamma delta.",
+        "Epsilon zeta eta theta.",
+        "Iota kappa lambda mu.",
+    ]

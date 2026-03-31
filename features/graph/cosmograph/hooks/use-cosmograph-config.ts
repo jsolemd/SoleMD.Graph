@@ -137,6 +137,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
       // Same reason as `pointColorByFn`: keep the renderer bound to the
       // canonical current links alias while still making link reloads explicit.
       ((value: unknown) => value as string | [number, number, number, number]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeLayer, canvas.overlayRevision],
   );
 

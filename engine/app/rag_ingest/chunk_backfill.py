@@ -8,7 +8,7 @@ from typing import Protocol
 from pydantic import Field
 
 from app.rag.parse_contract import ParseContractModel
-from app.rag.rag_schema_contract import PaperBlockRow, PaperSentenceRow
+from app.rag.rag_schema_contract import PaperBlockRow, PaperSectionRow, PaperSentenceRow
 from app.rag.serving_contract import PaperChunkVersionRecord
 from app.rag_ingest.write_batch_builder import build_chunk_write_batch_from_rows
 from app.rag_ingest.write_contract import RagWarehouseWriteBatch
@@ -26,6 +26,7 @@ class ChunkBackfillBatchWriter(Protocol):
 
 class ChunkBackfillRowGroup(ParseContractModel):
     corpus_id: int
+    sections: list[PaperSectionRow] = Field(default_factory=list)
     blocks: list[PaperBlockRow] = Field(default_factory=list)
     sentences: list[PaperSentenceRow] = Field(default_factory=list)
 
@@ -56,10 +57,11 @@ class RagChunkBackfillWriter:
         self,
         *,
         chunk_version: PaperChunkVersionRecord,
+        sections: Sequence[PaperSectionRow] = (),
         blocks: Sequence[PaperBlockRow],
         sentences: Sequence[PaperSentenceRow],
     ) -> ChunkBackfillResult:
-        corpus_ids = {int(row.corpus_id) for row in [*blocks, *sentences]}
+        corpus_ids = {int(row.corpus_id) for row in [*sections, *blocks, *sentences]}
         if not corpus_ids:
             return ChunkBackfillResult(
                 chunk_version_key=chunk_version.chunk_version_key,
@@ -78,6 +80,7 @@ class RagChunkBackfillWriter:
             row_groups=[
                 ChunkBackfillRowGroup(
                     corpus_id=corpus_id,
+                    sections=list(sections),
                     blocks=list(blocks),
                     sentences=list(sentences),
                 )
@@ -112,6 +115,7 @@ class RagChunkBackfillWriter:
 
             chunk_batch = build_chunk_write_batch_from_rows(
                 chunk_version=chunk_version,
+                sections=row_group.sections,
                 blocks=row_group.blocks,
                 sentences=row_group.sentences,
                 include_chunk_version_row=False,

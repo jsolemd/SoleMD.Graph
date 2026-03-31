@@ -76,7 +76,7 @@ interface SelectionToolbarProps {
  */
 export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionToolbarProps>(
   function SelectionToolbar(
-    { isLocked, activeSourceId, hasSelection, onClear },
+    { isLocked, activeSourceId, hasSelection, onActivate, onClear },
     ref,
   ) {
     const rectRef = useRef<HTMLDivElement>(null);
@@ -124,10 +124,16 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
       if (!rectEl || !polyEl) return;
 
       const handleRectClick = () => {
-        if (!isLocked) setActiveToolId(rectButtonId);
+        if (!isLocked) {
+          setActiveToolId(rectButtonId);
+          onActivate("rect");
+        }
       };
       const handlePolyClick = () => {
-        if (!isLocked) setActiveToolId(polyButtonId);
+        if (!isLocked) {
+          setActiveToolId(polyButtonId);
+          onActivate("poly");
+        }
       };
 
       // Capture phase — observe only, don't call activation methods.
@@ -139,7 +145,7 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
         rectEl.removeEventListener("click", handleRectClick, true);
         polyEl.removeEventListener("click", handlePolyClick, true);
       };
-    }, [isLocked, rectButtonId, polyButtonId]);
+    }, [isLocked, rectButtonId, polyButtonId, onActivate]);
 
     // Clear tool activation when selection changes or locks
     useEffect(() => {

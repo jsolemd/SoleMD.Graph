@@ -152,7 +152,6 @@ export function PromptBox({
     isFullHeightMode,
     isOffset,
     setIsOffset,
-    targetY,
   } = usePromptPosition({
     isCreate,
     promptMode,

@@ -253,7 +253,6 @@ export function QueryDrivenInfoPanel({
     [datasetInfo?.topClusters, selectedInfo?.topClusters, filteredInfo?.topClusters],
   );
 
-  /* eslint-disable react-hooks/preserve-manual-memoization -- intentional: clusterIdKey is a stable string derived from topClusters IDs, avoiding re-computation when array references change but IDs don't */
   const clusterColors = useMemo(
     () =>
       Object.fromEntries(
@@ -266,9 +265,9 @@ export function QueryDrivenInfoPanel({
           getClusterColor(cluster.clusterId, colorTheme),
         ]),
       ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clusterIdKey is a stable string proxy for the topClusters arrays; re-computing only when cluster IDs actually change
     [colorTheme, clusterIdKey],
   );
-  /* eslint-enable react-hooks/preserve-manual-memoization */
   const datasetClustersArr = datasetInfo?.topClusters;
   const selectedClustersArr = selectedInfo?.topClusters;
   const filteredClustersArr = filteredInfo?.topClusters;

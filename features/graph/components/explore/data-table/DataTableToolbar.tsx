@@ -69,6 +69,7 @@ export function DataTableToolbar({
         <SegmentedControl
           size="xs"
           color={PANEL_ACCENT}
+          className="table-scope-toggle"
           data={[
             {
               label: "Selection",
@@ -84,15 +85,16 @@ export function DataTableToolbar({
           onChange={(value) => setTableView(value as "selection" | "dataset")}
           styles={{
             root: {
-              height: 20,
               backgroundColor: "var(--graph-panel-input-bg)",
               border: "1px solid var(--graph-panel-border)",
-              borderRadius: 5,
+              borderRadius: 6,
+              padding: 2,
+              gap: 2,
             },
             label: {
               fontSize: 9,
-              padding: "1px 6px",
-              color: "var(--graph-panel-text-dim)",
+              lineHeight: 1,
+              padding: "3px 6px",
             },
             indicator: {
               borderRadius: 4,

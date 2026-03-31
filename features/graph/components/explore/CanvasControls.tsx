@@ -48,7 +48,6 @@ function usePortalTarget(selector: string) {
       wrapper = document.createElement("div");
       wrapper.style.display = "contents";
       native.insertBefore(wrapper, native.firstChild);
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Portal target must trigger re-render after DOM insertion
       setTarget(wrapper);
       return () => { wrapper?.remove(); };
     }
@@ -78,6 +77,7 @@ function usePortalTarget(selector: string) {
 export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
   const portalTarget = usePortalTarget("[data-wordmark-toolbar]");
   const toolbarRef = useRef<SelectionToolbarHandle>(null);
+  const toolActivatedRef = useRef(false);
   const hasSelection = useDashboardStore((s) => s.selectedPointCount > 0);
   const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
   const hasCurrentScope = useDashboardStore(
@@ -107,6 +107,10 @@ export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
     getSelectedPointIndices,
   } = useGraphSelection();
 
+  const handleToolActivate = useCallback(() => {
+    toolActivatedRef.current = true;
+  }, []);
+
   const handleStoreClear = useCallback(() => {
     selectNode(null);
     clearFocusedPoint();
@@ -115,8 +119,9 @@ export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
     setSelectedPointCount(0);
     setActiveSelectionSourceId(null);
     setTimelineSelection(undefined);
-    setTableView("selection");
+    setTableView("dataset");
     unlockSelection();
+    toolActivatedRef.current = false;
   }, [
     clearFocusedPoint,
     clearVisibilityFocus,
@@ -194,6 +199,24 @@ export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
     unlockSelection,
   ]);
 
+  // Auto-switch table to "Selection" when a tool-based selection produces results.
+  // toolActivatedRef is set when the user clicks a selection tool (rect/poly); the
+  // subscription fires once the selection count increases, then resets the flag so
+  // subsequent click-based selections don't re-trigger the switch.
+  useEffect(() => {
+    const unsubscribe = useDashboardStore.subscribe((state, prevState) => {
+      if (
+        toolActivatedRef.current &&
+        state.selectedPointCount > 0 &&
+        state.selectedPointCount !== prevState.selectedPointCount
+      ) {
+        toolActivatedRef.current = false;
+        state.setTableView("selection");
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   if (!portalTarget) return null;
 
   return createPortal(
@@ -225,7 +248,7 @@ export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
         isLocked={isLocked}
         activeSourceId={activeSourceId}
         hasSelection={hasSelection}
-        onActivate={() => {}}
+        onActivate={handleToolActivate}
         onClear={handleStoreClear}
       />
       <Tooltip label={isLocked ? "Unlock selection" : "Lock selection"} position="bottom" withArrow>

@@ -41,7 +41,6 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
   const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
   const selectedPointRevision = useDashboardStore((s) => s.selectedPointRevision);
   const setTablePage = useDashboardStore((s) => s.setTablePage);
-  const setTableView = useDashboardStore((s) => s.setTableView);
 
   const [pageRows, setPageRows] = useState<GraphPointRecord[]>([]);
   const [totalRows, setTotalRows] = useState(0);

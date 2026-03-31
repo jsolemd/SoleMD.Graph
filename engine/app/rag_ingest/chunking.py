@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from app.rag.parse_contract import (
@@ -22,9 +22,15 @@ from app.rag_ingest.chunk_quality import (
     MIN_USEFUL_NARRATIVE_TOKENS,
     is_low_value_narrative_text,
 )
+from app.rag_ingest.section_context import (
+    SectionContext,
+    SectionLike,
+    build_section_contexts,
+)
 from app.rag_ingest.tokenization import (
     ChunkTokenBudgeter,
     build_chunk_token_budgeter,
+    split_text_semantically,
 )
 
 
@@ -47,6 +53,13 @@ class _ChunkBlockSlice:
 class _TableTextUnit:
     text: str
     cell_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class _NarrativeChunkContext:
+    heading_path: tuple[str, ...] = ()
+    prefix_text: str = ""
+    prefix_token_count: int = 0
 
 
 _TOKEN_RE = re.compile(r"\S+")
@@ -77,6 +90,10 @@ def _split_text_by_count_function(
 
 def _join_nonempty(parts: list[str], *, separator: str = "\n") -> str:
     return separator.join(part for part in parts if part).strip()
+
+
+def _raw_chunk_text(block_slices: list[_ChunkBlockSlice]) -> str:
+    return "\n\n".join(block_slice.text for block_slice in block_slices if block_slice.text).strip()
 
 
 class _LegacyFunctionTokenBudgeter:
@@ -307,9 +324,12 @@ def _build_sentence_atoms(
                 )
             )
             continue
-        for fragment in token_budgeter.split_text(
-            sentence_text,
-            max_tokens=target_token_budget,
+        for fragment in _split_text_for_budget(
+            text=sentence_text,
+            token_budgeter=token_budgeter,
+            target_token_budget=target_token_budget,
+            hard_max_tokens=hard_max_tokens,
+            semantic_split=True,
         ):
             fragment_tokens = max(token_budgeter.count_tokens(fragment), 1)
             atoms.append(
@@ -352,9 +372,12 @@ def _build_block_atoms_without_sentences(
                 )
             )
             continue
-        for fragment in token_budgeter.split_text(
-            unit.text,
-            max_tokens=target_token_budget,
+        for fragment in _split_text_for_budget(
+            text=unit.text,
+            token_budgeter=token_budgeter,
+            target_token_budget=target_token_budget,
+            hard_max_tokens=hard_max_tokens,
+            semantic_split=block.block_kind != PaperBlockKind.TABLE_BODY_TEXT,
         ):
             fragment_tokens = max(token_budgeter.count_tokens(fragment), 1)
             atoms.append(
@@ -394,15 +417,114 @@ def _split_text_for_budget(
     token_budgeter: ChunkTokenBudgeter,
     target_token_budget: int,
     hard_max_tokens: int,
+    semantic_split: bool = False,
 ) -> list[str]:
     token_count = max(token_budgeter.count_tokens(text), 1)
     if token_count <= hard_max_tokens:
         return [text]
     split_budget = max(min(target_token_budget, hard_max_tokens), 1)
-    fragments = token_budgeter.split_text(text, max_tokens=split_budget)
+    fragments = (
+        split_text_semantically(
+            text,
+            max_tokens=split_budget,
+            token_counter=token_budgeter.count_tokens,
+            fallback_splitter=lambda value, limit: token_budgeter.split_text(
+                value,
+                max_tokens=limit,
+            ),
+        )
+        if semantic_split
+        else token_budgeter.split_text(text, max_tokens=split_budget)
+    )
     if fragments:
         return fragments
     return [text]
+
+
+def _resolve_narrative_chunk_context(
+    *,
+    section_ordinal: int,
+    section_contexts: dict[int, SectionContext],
+    token_budgeter: ChunkTokenBudgeter,
+    target_token_budget: int,
+    hard_max_tokens: int,
+) -> _NarrativeChunkContext:
+    section_context = section_contexts.get(section_ordinal)
+    if section_context is None or not section_context.heading_path:
+        return _NarrativeChunkContext()
+
+    full_path = tuple(label.strip() for label in section_context.heading_path if label.strip())
+    if not full_path:
+        return _NarrativeChunkContext()
+
+    prefix_budget_limit = max(min(target_token_budget, hard_max_tokens) - 1, 0)
+    if prefix_budget_limit <= 0:
+        return _NarrativeChunkContext()
+
+    candidate_paths = [full_path]
+    if len(full_path) > 1:
+        candidate_paths.append((full_path[-1],))
+    candidate_paths.append(())
+
+    for heading_path in candidate_paths:
+        prefix_text = "\n".join(heading_path).strip()
+        if not prefix_text:
+            return _NarrativeChunkContext()
+        prefix_tokens = max(token_budgeter.count_tokens(prefix_text), 1)
+        if prefix_tokens <= prefix_budget_limit:
+            return _NarrativeChunkContext(
+                heading_path=heading_path,
+                prefix_text=prefix_text,
+                prefix_token_count=prefix_tokens,
+            )
+    return _NarrativeChunkContext()
+
+
+def _contextualize_narrative_text(
+    *,
+    text: str,
+    narrative_context: _NarrativeChunkContext,
+) -> str:
+    if not narrative_context.prefix_text:
+        return text
+    return _join_nonempty([narrative_context.prefix_text, text], separator="\n")
+
+
+def _serialize_chunk_text(
+    *,
+    block_slices_for_chunk: list[_ChunkBlockSlice],
+    token_budgeter: ChunkTokenBudgeter,
+    section_contexts: dict[int, SectionContext],
+    target_token_budget: int,
+    hard_max_tokens: int,
+) -> str:
+    raw_text = _raw_chunk_text(block_slices_for_chunk)
+    if not raw_text:
+        return ""
+    if _resolve_primary_block_kind(block_slices_for_chunk) != PaperBlockKind.NARRATIVE_PARAGRAPH:
+        return raw_text
+    narrative_context = _resolve_narrative_chunk_context(
+        section_ordinal=block_slices_for_chunk[0].block.section_ordinal,
+        section_contexts=section_contexts,
+        token_budgeter=token_budgeter,
+        target_token_budget=target_token_budget,
+        hard_max_tokens=hard_max_tokens,
+    )
+    return _contextualize_narrative_text(
+        text=raw_text,
+        narrative_context=narrative_context,
+    )
+
+
+def _narrative_context_signature(
+    *,
+    block: PaperBlockRecord,
+    section_contexts: dict[int, SectionContext],
+) -> tuple[object, ...]:
+    section_context = section_contexts.get(block.section_ordinal)
+    if section_context is not None and section_context.heading_path:
+        return (block.section_role, *section_context.heading_path)
+    return (block.section_role, f"section:{block.section_ordinal}")
 
 
 def _build_table_chunk_groups(
@@ -570,6 +692,7 @@ def assemble_structural_chunks(
     version: PaperChunkVersionRecord,
     blocks: list[PaperBlockRecord],
     sentences: list[PaperSentenceRecord],
+    sections: Sequence[SectionLike] | None = None,
     token_counter: Callable[[str], int] | None = None,
     token_budgeter: ChunkTokenBudgeter | None = None,
 ) -> ChunkAssemblyResult:
@@ -631,23 +754,31 @@ def assemble_structural_chunks(
         eligible_blocks.append(block)
 
     result = ChunkAssemblyResult()
+    section_contexts = build_section_contexts(sections or [])
 
     def append_chunk(
         *,
         block_slices_for_chunk: list[_ChunkBlockSlice],
-        chunk_text: str,
     ) -> None:
         first_block = block_slices_for_chunk[0].block
+        raw_chunk_text = _raw_chunk_text(block_slices_for_chunk)
         if (
             first_block.block_kind == PaperBlockKind.NARRATIVE_PARAGRAPH
             and len(block_slices_for_chunk) == 1
-            and is_low_value_narrative_text(chunk_text)
+            and is_low_value_narrative_text(raw_chunk_text)
         ):
             return
-        chunk_ordinal = len(result.chunks)
-        token_count_estimate = sum(
-            max(block_slice.token_count, 1) for block_slice in block_slices_for_chunk
+        chunk_text = _serialize_chunk_text(
+            block_slices_for_chunk=block_slices_for_chunk,
+            token_budgeter=active_token_budgeter,
+            section_contexts=section_contexts,
+            target_token_budget=version.target_token_budget,
+            hard_max_tokens=version.hard_max_tokens,
         )
+        if not chunk_text:
+            return
+        chunk_ordinal = len(result.chunks)
+        token_count_estimate = max(active_token_budgeter.count_tokens(chunk_text), 1)
         result.chunks.append(
             PaperChunkRecord(
                 chunk_version_key=version.chunk_version_key,
@@ -707,6 +838,25 @@ def assemble_structural_chunks(
         cached = block_slices_cache.get(block.block_ordinal)
         if cached is not None:
             return cached
+        narrative_context = (
+            _resolve_narrative_chunk_context(
+                section_ordinal=block.section_ordinal,
+                section_contexts=section_contexts,
+                token_budgeter=active_token_budgeter,
+                target_token_budget=version.target_token_budget,
+                hard_max_tokens=version.hard_max_tokens,
+            )
+            if block.block_kind == PaperBlockKind.NARRATIVE_PARAGRAPH
+            else _NarrativeChunkContext()
+        )
+        target_token_budget = max(
+            version.target_token_budget - narrative_context.prefix_token_count,
+            1,
+        )
+        hard_max_tokens = max(
+            version.hard_max_tokens - narrative_context.prefix_token_count,
+            1,
+        )
         sentences_for_block = (
             []
             if block.block_kind == PaperBlockKind.TABLE_BODY_TEXT
@@ -717,28 +867,28 @@ def assemble_structural_chunks(
                 block=block,
                 sentence_rows=sentences_for_block,
                 token_budgeter=active_token_budgeter,
-                target_token_budget=version.target_token_budget,
-                hard_max_tokens=version.hard_max_tokens,
+                target_token_budget=target_token_budget,
+                hard_max_tokens=hard_max_tokens,
             )
             if sentences_for_block
             else _build_block_atoms_without_sentences(
                 block=block,
                 token_budgeter=active_token_budgeter,
-                target_token_budget=version.target_token_budget,
-                hard_max_tokens=version.hard_max_tokens,
+                target_token_budget=target_token_budget,
+                hard_max_tokens=hard_max_tokens,
             )
         )
         block_slices = _group_block_slices_with_budget(
             block=block,
             atoms=atoms,
-            target_token_budget=version.target_token_budget,
-            hard_max_tokens=version.hard_max_tokens,
+            target_token_budget=target_token_budget,
+            hard_max_tokens=hard_max_tokens,
         )
         if block.block_kind == PaperBlockKind.NARRATIVE_PARAGRAPH:
             block_slices = _rebalance_small_narrative_slices(
                 block=block,
                 block_slices=block_slices,
-                hard_max_tokens=version.hard_max_tokens,
+                hard_max_tokens=hard_max_tokens,
             )
         block_slices_cache[block.block_ordinal] = block_slices
         return block_slices
@@ -746,12 +896,7 @@ def assemble_structural_chunks(
     def emit_block_slices_as_chunks(block_slices: list[_ChunkBlockSlice]) -> None:
         if not block_slices:
             return
-        chunk_text = "\n\n".join(
-            block_slice.text for block_slice in block_slices if block_slice.text
-        )
-        if not chunk_text:
-            return
-        append_chunk(block_slices_for_chunk=block_slices, chunk_text=chunk_text)
+        append_chunk(block_slices_for_chunk=block_slices)
 
     def emit_standalone_block(block: PaperBlockRecord) -> None:
         block_slices = build_block_slices(block)
@@ -768,13 +913,19 @@ def assemble_structural_chunks(
         if not group_blocks:
             return False
         previous = group_blocks[-1]
-        same_section = previous.section_ordinal == next_block.section_ordinal
         adjacent_blocks = previous.block_ordinal + 1 == next_block.block_ordinal
         both_narrative = (
             previous.block_kind == PaperBlockKind.NARRATIVE_PARAGRAPH
             and next_block.block_kind == PaperBlockKind.NARRATIVE_PARAGRAPH
         )
-        if not (same_section and adjacent_blocks and both_narrative):
+        same_context = _narrative_context_signature(
+            block=previous,
+            section_contexts=section_contexts,
+        ) == _narrative_context_signature(
+            block=next_block,
+            section_contexts=section_contexts,
+        )
+        if not (same_context and adjacent_blocks and both_narrative):
             return False
 
         group_slices = [
@@ -789,9 +940,33 @@ def assemble_structural_chunks(
         if not no_partial_blocks:
             return False
 
-        current_group_tokens = _slices_token_total(group_slices)
-        next_block_tokens = _slices_token_total(next_slices)
-        merged_token_count = current_group_tokens + next_block_tokens
+        current_group_tokens = active_token_budgeter.count_tokens(
+            _serialize_chunk_text(
+                block_slices_for_chunk=group_slices,
+                token_budgeter=active_token_budgeter,
+                section_contexts=section_contexts,
+                target_token_budget=version.target_token_budget,
+                hard_max_tokens=version.hard_max_tokens,
+            )
+        )
+        next_block_tokens = active_token_budgeter.count_tokens(
+            _serialize_chunk_text(
+                block_slices_for_chunk=next_slices,
+                token_budgeter=active_token_budgeter,
+                section_contexts=section_contexts,
+                target_token_budget=version.target_token_budget,
+                hard_max_tokens=version.hard_max_tokens,
+            )
+        )
+        merged_token_count = active_token_budgeter.count_tokens(
+            _serialize_chunk_text(
+                block_slices_for_chunk=[*group_slices, *next_slices],
+                token_budgeter=active_token_budgeter,
+                section_contexts=section_contexts,
+                target_token_budget=version.target_token_budget,
+                hard_max_tokens=version.hard_max_tokens,
+            )
+        )
         needs_minimum_merge = (
             current_group_tokens < MIN_USEFUL_NARRATIVE_TOKENS
             or next_block_tokens < MIN_USEFUL_NARRATIVE_TOKENS

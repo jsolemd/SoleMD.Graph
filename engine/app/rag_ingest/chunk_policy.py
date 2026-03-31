@@ -23,10 +23,13 @@ DEFAULT_TEXT_NORMALIZATION_VERSION = "canonical-text-v1"
 DEFAULT_TARGET_TOKEN_BUDGET = 256
 DEFAULT_HARD_MAX_TOKENS = 384
 DEFAULT_LEXICAL_NORMALIZATION_FLAGS: tuple[str, ...] = (
-    "chunker:hybrid_structural_v2",
+    "chunker:hybrid_structural_v3",
     "table_header_repeat",
     "table_header_omit_on_overflow",
     "peer_merge_by_context",
+    "section_heading_context",
+    "section_context_excludes_repeated_nonstructural_labels",
+    "semchunk_overflow_refinement",
 )
 
 DEFAULT_INCLUDED_SECTION_ROLES: tuple[SectionRole, ...] = (

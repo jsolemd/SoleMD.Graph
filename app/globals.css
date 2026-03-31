@@ -523,6 +523,16 @@ html.dark {
   font-weight: 700;
 }
 
+/* DataTable scope toggle — dim inactive, strong active on accent indicator */
+.table-scope-toggle .mantine-SegmentedControl-label {
+  color: var(--graph-panel-text-dim);
+}
+.table-scope-toggle .mantine-SegmentedControl-label[data-active] {
+  --sc-label-color: white !important;
+  color: white !important;
+  font-weight: 600;
+}
+
 /* Graph prompt — typewriter placeholder in mode accent color */
 .graph-prompt-input::placeholder {
   color: var(--mode-accent, var(--graph-prompt-placeholder));

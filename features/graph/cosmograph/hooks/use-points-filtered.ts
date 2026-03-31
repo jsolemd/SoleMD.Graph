@@ -40,7 +40,6 @@ export function usePointsFiltered(deps: {
     (filteredPoints: CosmographData, selectedIndices: number[] | null | undefined) => void
   >(undefined);
 
-  // eslint-disable-next-line react-hooks/refs -- intentional stable-ref pattern for Cosmograph
   handlePointsFilteredRef.current = (
     filteredPoints: CosmographData,
     callbackSelectedPointIndices: number[] | null | undefined,
@@ -101,8 +100,6 @@ export function usePointsFiltered(deps: {
     const selectedPointScopeSql = buildIntentSelectionScopeSql(pointsSelection);
     const pointClauseCount =
       pointsSelection?.clauses?.length ?? 0;
-    const linkClauseCount =
-      deps.cosmographRef.current?.linksSelection?.clauses?.length ?? 0;
     const currentPointScopeSql =
       pointClauseCount > 0
         ? buildCurrentPointScopeSql({

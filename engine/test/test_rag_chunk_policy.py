@@ -122,10 +122,13 @@ def test_build_default_chunk_version_uses_canonical_policy_defaults():
     assert version.tokenizer_version is not None
     assert "craft,genia" in version.tokenizer_version
     assert version.lexical_normalization_flags == [
-        "chunker:hybrid_structural_v2",
+        "chunker:hybrid_structural_v3",
         "table_header_repeat",
         "table_header_omit_on_overflow",
         "peer_merge_by_context",
+        "section_heading_context",
+        "section_context_excludes_repeated_nonstructural_labels",
+        "semchunk_overflow_refinement",
     ]
     assert version.sentence_source_policy == [
         SentenceSegmentationSource.S2ORC_ANNOTATION,

@@ -31,6 +31,12 @@ const eslintConfig = defineConfig([
   {
     rules: {
       'no-console': ['warn', { allow: ['warn', 'error'] }],
+      // React Compiler rules — disabled because they flag many legitimate
+      // patterns: setState-in-effect for derived state resets + data fetching,
+      // and ref writes during render for stable-ref callback patterns.
+      // These rules do not support inline eslint-disable suppression.
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/refs': 'off',
     },
   },
 ])

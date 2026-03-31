@@ -6,7 +6,7 @@ import type {
   GraphBundleQueries,
   GraphInfoHistogramResult,
 } from "@/features/graph/types";
-import { useQuantileHistogram } from "@/features/graph/lib/histogram-strategy";
+import { shouldUseQuantileHistogram } from "@/features/graph/lib/histogram-strategy";
 import { DEFAULT_INFO_ROWS } from "@/features/graph/lib/info-widgets";
 import {
   type InfoComparisonFacetRow,
@@ -106,10 +106,10 @@ export function useInfoWidgetData({
       ),
       histogramColumns: uniqueHistogramColumns,
       quantileHistogramColumns: uniqueHistogramColumns.filter((column) =>
-        useQuantileHistogram(column),
+        shouldUseQuantileHistogram(column),
       ),
       linearHistogramColumns: uniqueHistogramColumns.filter(
-        (column) => !useQuantileHistogram(column),
+        (column) => !shouldUseQuantileHistogram(column),
       ),
     };
   }, [widgetDescriptors]);

@@ -128,24 +128,29 @@ export default function CosmographRenderer({
     const isFirstFit = !hasFittedView.current;
     const isLayerChange = lastFittedLayer.current !== null && lastFittedLayer.current !== activeLayer;
 
-    if (isFirstFit || isLayerChange) {
-      hasFittedView.current = true;
-      lastFittedLayer.current = activeLayer;
+    if (!isFirstFit && !isLayerChange) return;
+
+    hasFittedView.current = true;
+    lastFittedLayer.current = activeLayer;
+
+    // Native fitViewOnInit handles the initial fit (configured via props:
+    // fitViewDelay=0, fitViewDuration=0, fitViewPadding).  Manual fitView
+    // is only needed for layer changes, which the native won't re-trigger.
+    if (isLayerChange) {
       cosmographRef.current?.fitView(0, fitViewPadding);
-      syncZoomState();
-      onFirstPaint?.();
-      clearVisibilityFocus();
-      setFocusedPointIndex(null);
-      setCurrentPointScopeSql(null);
-      setSelectedPointCount(0);
-      setActiveSelectionSourceId(null);
     }
 
-    if (lastFittedLayer.current === null) {
-      lastFittedLayer.current = activeLayer;
-      syncZoomState();
+    syncZoomState();
+    // Defer onFirstPaint by one frame so the WebGL canvas has rendered
+    // the fitted view before the loading overlay starts fading.
+    requestAnimationFrame(() => {
       onFirstPaint?.();
-    }
+    });
+    clearVisibilityFocus();
+    setFocusedPointIndex(null);
+    setCurrentPointScopeSql(null);
+    setSelectedPointCount(0);
+    setActiveSelectionSourceId(null);
   }, [
     activeLayer,
     fitViewPadding,
@@ -268,7 +273,11 @@ export default function CosmographRenderer({
         hasFittedView.current = true;
         lastFittedLayer.current = activeLayer;
         syncZoomState();
-        onFirstPaint?.();
+        // Defer onFirstPaint so the WebGL canvas renders the fitted view
+        // before the loading overlay starts fading.
+        requestAnimationFrame(() => {
+          onFirstPaint?.();
+        });
       });
     };
     document.addEventListener("visibilitychange", handler);
@@ -340,6 +349,10 @@ export default function CosmographRenderer({
       curvedLinks={config.hasLinks ? config.curvedLinks : undefined}
       linkDefaultArrows={config.hasLinks ? config.linkDefaultArrows : undefined}
       scaleLinksOnZoom={config.hasLinks ? config.scaleLinksOnZoom : undefined}
+      fitViewOnInit
+      fitViewDelay={0}
+      fitViewDuration={0}
+      fitViewPadding={fitViewPadding}
       enableSimulation={false}
       backgroundColor={config.isDark ? config.colors.bg : "transparent"}
       pointSizeRange={config.pointSizeRange}

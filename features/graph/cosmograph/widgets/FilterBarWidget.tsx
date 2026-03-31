@@ -84,11 +84,13 @@ export function FilterBarWidget({
         cosmograph?.pointsSelection,
         sourceId,
       ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
     [cosmograph, currentScopeRevision, sourceId],
   );
   const selectedValue = useMemo(
     () =>
       getSelectionValueForSource<string>(cosmograph?.pointsSelection, sourceId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
     [cosmograph, currentScopeRevision, sourceId],
   );
   const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;

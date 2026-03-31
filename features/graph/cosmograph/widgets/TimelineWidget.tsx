@@ -130,6 +130,7 @@ export function TimelineWidget({
         cosmograph?.pointsSelection,
         sourceId,
       ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
     [cosmograph, currentScopeRevision, sourceId],
   );
   const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;
@@ -139,6 +140,7 @@ export function TimelineWidget({
         cosmograph?.pointsSelection,
         sourceId,
       ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
     [cosmograph, currentScopeRevision, sourceId],
   );
 
@@ -315,6 +317,7 @@ export function TimelineWidget({
           queryError instanceof Error ? queryError.message : "Failed to load timeline",
         );
       });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedRange is read for initial widget setup only; the dedicated selectedRange effect (below) handles ongoing updates
   }, [
     activeLayer,
     baselineCacheKey,

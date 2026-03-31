@@ -93,7 +93,7 @@ export function useSearchResults({
     return () => {
       cancelled = true;
     };
-  }, [canSearch, deferredQuery, debouncedField, queries, requestKey]);
+  }, [activeLayer, canSearch, deferredQuery, debouncedField, queries, requestKey]);
 
   return {
     canSearch,

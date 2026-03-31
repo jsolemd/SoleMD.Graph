@@ -9,7 +9,7 @@ from pydantic import Field
 
 from app import db
 from app.rag.parse_contract import ParseContractModel
-from app.rag.rag_schema_contract import PaperBlockRow, PaperSentenceRow
+from app.rag.rag_schema_contract import PaperBlockRow, PaperSectionRow, PaperSentenceRow
 from app.rag_ingest.chunk_backfill import (
     ChunkBackfillResult,
     ChunkBackfillRowGroup,
@@ -48,6 +48,20 @@ WHERE corpus_id = ANY(%s)
 ORDER BY corpus_id, block_ordinal
 """
 
+_SECTION_ROWS_SQL = """
+SELECT
+    corpus_id,
+    section_ordinal,
+    parent_section_ordinal,
+    section_role,
+    display_label,
+    numbering_token,
+    text
+FROM solemd.paper_sections
+WHERE corpus_id = ANY(%s)
+ORDER BY corpus_id, section_ordinal
+"""
+
 _SENTENCE_ROWS_SQL = """
 SELECT
     corpus_id,
@@ -64,6 +78,7 @@ ORDER BY corpus_id, block_ordinal, sentence_ordinal
 
 class CanonicalChunkRows(ParseContractModel):
     corpus_id: int
+    sections: list[PaperSectionRow] = Field(default_factory=list)
     blocks: list[PaperBlockRow] = Field(default_factory=list)
     sentences: list[PaperSentenceRow] = Field(default_factory=list)
 
@@ -137,6 +152,14 @@ class PostgresCanonicalChunkLoader:
             corpus_id: CanonicalChunkRows(corpus_id=corpus_id) for corpus_id in normalized
         }
         with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(_SECTION_ROWS_SQL, (normalized,))
+            for row in cur.fetchall():
+                section = PaperSectionRow.model_validate(row)
+                by_corpus.setdefault(
+                    int(section.corpus_id),
+                    CanonicalChunkRows(corpus_id=int(section.corpus_id)),
+                ).sections.append(section)
+
             cur.execute(_BLOCK_ROWS_SQL, (normalized,))
             for row in cur.fetchall():
                 block = PaperBlockRow.model_validate(row)
@@ -262,6 +285,7 @@ def backfill_default_chunks(
         eligible_groups.append(
             ChunkBackfillRowGroup(
                 corpus_id=corpus_id,
+                sections=rows.sections,
                 blocks=rows.blocks,
                 sentences=rows.sentences,
             )

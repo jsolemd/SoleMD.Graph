@@ -7,6 +7,6 @@ const QUANTILE_HISTOGRAM_COLUMNS = new Set([
   "paperRelationCount",
 ]);
 
-export function useQuantileHistogram(column: string): boolean {
+export function shouldUseQuantileHistogram(column: string): boolean {
   return QUANTILE_HISTOGRAM_COLUMNS.has(column);
 }

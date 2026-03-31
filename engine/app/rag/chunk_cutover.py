@@ -6,10 +6,10 @@ from enum import StrEnum
 
 from pydantic import Field, model_validator
 
-from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag.index_contract import IndexBuildPhase
 from app.rag.migration_contract import MigrationStage
 from app.rag.parse_contract import ParseContractModel
+from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag_ingest.write_repository import WriteStage
 
 
@@ -33,7 +33,7 @@ class ChunkCutoverStep(ParseContractModel):
     validation_focus: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_step(self) -> "ChunkCutoverStep":
+    def validate_step(self) -> ChunkCutoverStep:
         if not self.description:
             raise ValueError("description must not be empty")
         if (
@@ -75,7 +75,7 @@ _CHUNK_CUTOVER_STEPS: tuple[ChunkCutoverStep, ...] = (
         runtime_tables=["paper_chunks"],
         validation_focus=[
             "retrieval-default block kinds are chunked",
-            "chunk text stays derived from canonical members",
+            "chunk text stays canonically derived from sections and members",
         ],
     ),
     ChunkCutoverStep(

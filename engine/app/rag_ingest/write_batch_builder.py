@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from collections.abc import Sequence
-import json
 
-from app.rag_ingest.chunking import assemble_structural_chunks
 from app.rag.rag_schema_contract import (
     PaperBlockRow,
     PaperDocumentRow,
@@ -15,12 +14,12 @@ from app.rag.rag_schema_contract import (
     PaperSectionRow,
     PaperSentenceRow,
 )
+from app.rag.serving_contract import PaperChunkVersionRecord
 from app.rag.source_grounding import build_aligned_mention_rows_from_plan
 from app.rag.source_selection import GroundingSourcePlan
-from app.rag.serving_contract import PaperChunkVersionRecord
 from app.rag.warehouse_contract import PaperCitationMentionRow
+from app.rag_ingest.chunking import assemble_structural_chunks
 from app.rag_ingest.write_contract import RagWarehouseWriteBatch
-
 
 _ESTIMATED_ROW_OVERHEAD_BYTES = 96
 
@@ -244,12 +243,14 @@ def build_write_batch_from_grounding_plan(
 def build_chunk_write_batch_from_rows(
     *,
     chunk_version: PaperChunkVersionRecord,
+    sections: Sequence[PaperSectionRow] = (),
     blocks: Sequence[PaperBlockRow],
     sentences: Sequence[PaperSentenceRow],
     include_chunk_version_row: bool = True,
 ) -> RagWarehouseWriteBatch:
     assembly = assemble_structural_chunks(
         version=chunk_version,
+        sections=list(sections),
         blocks=list(blocks),
         sentences=list(sentences),
     )
@@ -267,6 +268,7 @@ def extend_write_batch_with_structural_chunks(
 ) -> RagWarehouseWriteBatch:
     chunk_batch = build_chunk_write_batch_from_rows(
         chunk_version=chunk_version,
+        sections=batch.sections,
         blocks=batch.blocks,
         sentences=batch.sentences,
     )
