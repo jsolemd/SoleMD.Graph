@@ -12,7 +12,15 @@ const READ_ONLY_QUERY_PREFIXES = new Set([
   'with',
 ])
 const MAX_READ_ONLY_QUERY_ROWS = 200
+const MAX_PREPARED_STATEMENTS_PER_CONNECTION = 64
+const MAX_CACHED_STATEMENT_PLACEHOLDERS = 8
 const connectionReadQueue = new WeakMap<AsyncDuckDBConnection, Promise<void>>()
+const preparedStatementCache = new WeakMap<
+  AsyncDuckDBConnection,
+  Map<string, Promise<Awaited<ReturnType<AsyncDuckDBConnection['prepare']>>>>
+>()
+
+type PreparedStatement = Awaited<ReturnType<AsyncDuckDBConnection['prepare']>>
 
 export function getAbsoluteUrl(relativeOrAbsoluteUrl: string) {
   if (/^https?:\/\//.test(relativeOrAbsoluteUrl)) {
@@ -69,6 +77,93 @@ function getQueryColumns(table: unknown, rows: Array<Record<string, unknown>>) {
 
 function normalizeReadOnlySql(sql: string) {
   return sql.trim().replace(/;+$/g, '').trim()
+}
+
+function countPlaceholders(sql: string) {
+  return (sql.match(/\?/g) ?? []).length
+}
+
+function shouldCachePreparedStatement(sql: string) {
+  const placeholderCount = countPlaceholders(sql)
+  // High-arity IN-list statements are usually one-offs keyed by placeholder
+  // count. Caching those grows statement churn instead of reducing it.
+  return placeholderCount > 0 && placeholderCount <= MAX_CACHED_STATEMENT_PLACEHOLDERS
+}
+
+async function closePreparedStatement(statementPromise: Promise<PreparedStatement>) {
+  try {
+    const statement = await statementPromise
+    await statement.close()
+  } catch {
+    // Ignore close failures for statements that never prepared successfully.
+  }
+}
+
+function getPreparedStatementMap(conn: AsyncDuckDBConnection) {
+  let cache = preparedStatementCache.get(conn)
+  if (!cache) {
+    cache = new Map<string, Promise<PreparedStatement>>()
+    preparedStatementCache.set(conn, cache)
+  }
+  return cache
+}
+
+function rememberPreparedStatement(
+  conn: AsyncDuckDBConnection,
+  sql: string,
+  statementPromise: Promise<PreparedStatement>
+) {
+  const cache = getPreparedStatementMap(conn)
+  if (!cache.has(sql) && cache.size >= MAX_PREPARED_STATEMENTS_PER_CONNECTION) {
+    const oldestSql = cache.keys().next().value
+    if (typeof oldestSql === 'string') {
+      const oldestStatement = cache.get(oldestSql)
+      cache.delete(oldestSql)
+      if (oldestStatement) {
+        void closePreparedStatement(oldestStatement)
+      }
+    }
+  }
+  cache.set(sql, statementPromise)
+}
+
+async function getPreparedStatement(conn: AsyncDuckDBConnection, sql: string) {
+  const cache = getPreparedStatementMap(conn)
+  const cached = cache.get(sql)
+  if (cached) {
+    return cached
+  }
+
+  const statementPromise = conn.prepare(sql).catch((error) => {
+    const currentCache = preparedStatementCache.get(conn)
+    if (currentCache?.get(sql) === statementPromise) {
+      currentCache.delete(sql)
+    }
+    throw error
+  })
+  rememberPreparedStatement(conn, sql, statementPromise)
+  return statementPromise
+}
+
+async function withPreparedStatement<T>(
+  conn: AsyncDuckDBConnection,
+  sql: string,
+  operation: (statement: PreparedStatement) => Promise<T>
+) {
+  const cacheStatement = shouldCachePreparedStatement(sql)
+  const statement = await (
+    cacheStatement
+      ? getPreparedStatement(conn, sql)
+      : conn.prepare(sql)
+  )
+
+  try {
+    return await operation(statement)
+  } finally {
+    if (!cacheStatement) {
+      await statement.close()
+    }
+  }
 }
 
 async function enqueueConnectionRead<T>(
@@ -154,6 +249,33 @@ export async function executeReadOnlyQuery(
   })
 }
 
+export async function executeStatement(
+  conn: AsyncDuckDBConnection,
+  sql: string,
+  params: unknown[] = []
+) {
+  if (params.length === 0) {
+    await conn.query(sql)
+    return
+  }
+
+  await withPreparedStatement(conn, sql, async (statement) => {
+    await statement.query(...params)
+  })
+}
+
+export async function closePreparedStatements(conn: AsyncDuckDBConnection) {
+  const cache = preparedStatementCache.get(conn)
+  if (!cache) {
+    return
+  }
+
+  preparedStatementCache.delete(conn)
+  await Promise.allSettled(
+    [...cache.values()].map((statementPromise) => closePreparedStatement(statementPromise))
+  )
+}
+
 export async function queryRows<T>(
   conn: AsyncDuckDBConnection,
   sql: string,
@@ -164,12 +286,10 @@ export async function queryRows<T>(
       return mapQueryRows<T>(await conn.query(sql))
     }
 
-    const statement = await conn.prepare(sql)
-
-    try {
-      return mapQueryRows<T>(await statement.query(...params))
-    } finally {
-      await statement.close()
-    }
+    return withPreparedStatement(
+      conn,
+      sql,
+      async (statement) => mapQueryRows<T>(await statement.query(...params))
+    )
   })
 }

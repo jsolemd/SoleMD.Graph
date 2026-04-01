@@ -3,6 +3,8 @@ import 'client-only'
 import * as duckdb from '@duckdb/duckdb-wasm'
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
+import { closePreparedStatements } from './queries/core'
+
 let selectedBundlePromise: Promise<duckdb.DuckDBBundle> | null = null
 
 async function getSelectedDuckDBBundle() {
@@ -49,6 +51,7 @@ export async function closeConnection(
   db: AsyncDuckDB,
   worker: Worker
 ) {
+  await closePreparedStatements(conn)
   await conn.close()
   await db.terminate()
   worker.terminate()

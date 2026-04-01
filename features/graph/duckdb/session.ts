@@ -20,7 +20,7 @@ import {
 
 import {
   buildCanvasSource,
-  queryCanvasPointCounts,
+  getCanvasPointCounts,
   registerActiveCanvasAliasViews,
 } from './canvas'
 import { maybeAttachGraphPaperRefs } from './attachment'
@@ -73,6 +73,14 @@ import {
 
 function normalizeOverlayPointIds(pointIds: string[]): string[] {
   return [...new Set(pointIds.filter((pointId) => pointId.trim().length > 0))]
+}
+
+function normalizeSelectedPointIndices(pointIndices: number[]): number[] {
+  return [...new Set(
+    pointIndices
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 0)
+  )]
 }
 
 function partitionFacetColumns(
@@ -168,6 +176,29 @@ function haveSamePointIds(left: string[], right: string[]): boolean {
   return left.every((pointId) => rightPointIdSet.has(pointId))
 }
 
+function haveSamePointIndices(left: number[], right: number[]): boolean {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  const rightPointIndexSet = new Set(right)
+  return left.every((pointIndex) => rightPointIndexSet.has(pointIndex))
+}
+
+function normalizeSelectedPointScopeSql(scopeSql: string | null) {
+  if (typeof scopeSql !== 'string') {
+    return null
+  }
+
+  const normalized = scopeSql.trim()
+  return normalized.length > 0 ? normalized : null
+}
+
+type SelectedPointState =
+  | { kind: 'empty' }
+  | { kind: 'indices'; pointIndices: number[] }
+  | { kind: 'scope'; scopeSql: string }
+
 function normalizeGraphPaperRefs(graphPaperRefs: string[]): string[] {
   return [...new Set(graphPaperRefs.filter((graphPaperRef) => graphPaperRef.trim().length > 0))]
 }
@@ -194,7 +225,7 @@ export async function createGraphBundleSession(
     })
 
     const viewState = await registerInitialSessionViews(conn, bundle, autoloadTables)
-    const { availableLayers } = viewState
+    const { availableLayers, basePointCount } = viewState
     const ensureOptionalBundleTables = createEnsureOptionalBundleTables(conn, bundle, viewState)
 
     let overlayRevision = 0
@@ -204,7 +235,7 @@ export async function createGraphBundleSession(
       overlayCount: 0,
     })
 
-    const initialPointCounts = await queryCanvasPointCounts(conn)
+    const initialPointCounts = getCanvasPointCounts(basePointCount, 0)
 
     onProgress(bundle.bundleChecksum, {
       stage: 'views',
@@ -236,6 +267,8 @@ export async function createGraphBundleSession(
     const summaryDatasetCache = createBoundedCache<string, Promise<GraphInfoSummary>>()
     const categoricalValueDatasetCache = createBoundedCache<string, Promise<string[]>>()
     const numericValueDatasetCache = createBoundedCache<string, Promise<number[]>>()
+
+    let selectedPointState: SelectedPointState = { kind: 'empty' }
 
     let canvas = buildCanvasSource({
       conn, db, pointCounts: initialPointCounts, overlayCount: 0, overlayRevision,
@@ -597,19 +630,23 @@ export async function createGraphBundleSession(
       return rows
     }
 
-    const refreshCanvas = async (incrementRevision = true) => {
-      const pointCounts = await queryCanvasPointCounts(conn)
-      const overlayRows = await queryRows<{ count: number }>(
-        conn, `SELECT count(*)::INTEGER AS count FROM overlay_points_web`
-      )
+    const refreshCanvas = async ({
+      incrementRevision = true,
+      overlayCount,
+    }: {
+      incrementRevision?: boolean
+      overlayCount: number
+    }) => {
       if (incrementRevision) overlayRevision += 1
       await registerActiveCanvasAliasViews(conn, {
         overlayRevision,
-        overlayCount: overlayRows[0]?.count ?? 0,
+        overlayCount,
       })
       canvas = buildCanvasSource({
-        conn, db, pointCounts,
-        overlayCount: overlayRows[0]?.count ?? 0, overlayRevision,
+        conn,
+        db,
+        pointCounts: getCanvasPointCounts(basePointCount, overlayCount),
+        overlayCount, overlayRevision,
       })
       emitCanvas()
       return { overlayCount: canvas.overlayCount }
@@ -630,6 +667,15 @@ export async function createGraphBundleSession(
       } finally {
         releaseMutation()
       }
+    }
+
+    const clearSelectedPointState = async () => {
+      if (selectedPointState.kind === 'empty') {
+        return
+      }
+
+      await replaceSelectedPointIndices(conn, [])
+      selectedPointState = { kind: 'empty' }
     }
 
     const queryOverlayProducerPointIds = async (producerId: OverlayProducerId) => {
@@ -663,9 +709,9 @@ export async function createGraphBundleSession(
     }
 
     const refreshOverlayCanvas = async () => {
-      await materializeOverlayPointIds(conn)
-      await replaceSelectedPointIndices(conn, [])
-      return refreshCanvas()
+      const { overlayCount } = await materializeOverlayPointIds(conn)
+      await clearSelectedPointState()
+      return refreshCanvas({ overlayCount })
     }
 
     const setOverlayProducerPointIdsInternal = async ({
@@ -749,15 +795,33 @@ export async function createGraphBundleSession(
       },
       subscribeCanvas,
       async setSelectedPointIndices(pointIndices: number[]) {
-        const normalized = [...new Set(
-          pointIndices
-            .map((value) => Number(value))
-            .filter((value) => Number.isInteger(value) && value >= 0)
-        )]
+        const normalized = normalizeSelectedPointIndices(pointIndices)
+        if (
+          (normalized.length === 0 && selectedPointState.kind === 'empty') ||
+          (selectedPointState.kind === 'indices' &&
+            haveSamePointIndices(selectedPointState.pointIndices, normalized))
+        ) {
+          return
+        }
         await replaceSelectedPointIndices(conn, normalized)
+        selectedPointState =
+          normalized.length > 0
+            ? { kind: 'indices', pointIndices: normalized }
+            : { kind: 'empty' }
       },
       async setSelectedPointScopeSql(scopeSql: string | null) {
-        await replaceSelectedPointIndicesFromScopeSql(conn, scopeSql)
+        const normalizedScopeSql = normalizeSelectedPointScopeSql(scopeSql)
+        if (
+          (!normalizedScopeSql && selectedPointState.kind === 'empty') ||
+          (selectedPointState.kind === 'scope' &&
+            selectedPointState.scopeSql === normalizedScopeSql)
+        ) {
+          return
+        }
+        await replaceSelectedPointIndicesFromScopeSql(conn, normalizedScopeSql)
+        selectedPointState = normalizedScopeSql
+          ? { kind: 'scope', scopeSql: normalizedScopeSql }
+          : { kind: 'empty' }
       },
       getOverlayPointIds() {
         return queryOverlayPointIds(conn)
@@ -796,7 +860,8 @@ export async function createGraphBundleSession(
 
           resetOverlayDependentCaches()
           await clearAllOverlayPointIds(conn)
-          return refreshCanvas()
+          await clearSelectedPointState()
+          return refreshCanvas({ overlayCount: 0 })
         })
       },
       async activateOverlay(args) {

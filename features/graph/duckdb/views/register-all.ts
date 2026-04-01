@@ -24,6 +24,7 @@ import {
 export interface SessionViewState {
   availableLayers: MapLayer[]
   attachedTableSet: Set<string>
+  basePointCount: number
   buildPointCanvasProjectionSql: (sourceTable: string, indexSql: string) => string
   buildPointQueryProjectionSql: (sourceTable: string, indexSql: string) => string
 }
@@ -96,6 +97,7 @@ export async function registerInitialSessionViews(
   return {
     availableLayers,
     attachedTableSet,
+    basePointCount,
     buildPointCanvasProjectionSql,
     buildPointQueryProjectionSql,
   }

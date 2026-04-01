@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import { queryRows } from '../queries'
+import { executeStatement, queryRows } from '../queries'
 import { buildPlaceholderList } from '../utils'
 
 export async function initializeOverlayMembershipTable(conn: AsyncDuckDBConnection) {
@@ -30,28 +30,22 @@ export async function replaceOverlayProducerPointIds(
   const { producerId, pointIds } = args
   const uniqueIds = [...new Set(pointIds.filter((pointId) => pointId.trim().length > 0))]
 
-  const deleteStatement = await conn.prepare(
-    `DELETE FROM overlay_point_ids_by_producer WHERE producer_id = ?`
+  await executeStatement(
+    conn,
+    `DELETE FROM overlay_point_ids_by_producer WHERE producer_id = ?`,
+    [producerId]
   )
-  try {
-    await deleteStatement.query(producerId)
-  } finally {
-    await deleteStatement.close()
-  }
 
   if (uniqueIds.length > 0) {
-    const statement = await conn.prepare(
+    await executeStatement(
+      conn,
       `INSERT INTO overlay_point_ids_by_producer
        SELECT ?, id
        FROM universe_points_web
        WHERE id IN (${buildPlaceholderList(uniqueIds.length)})
-         AND id NOT IN (SELECT id FROM base_points_web)`
+         AND id NOT IN (SELECT id FROM base_points_web)`,
+      [producerId, ...uniqueIds]
     )
-    try {
-      await statement.query(producerId, ...uniqueIds)
-    } finally {
-      await statement.close()
-    }
   }
 
   const rows = await queryRows<{ count: number }>(
@@ -69,14 +63,11 @@ export async function clearOverlayProducerPointIds(
   conn: AsyncDuckDBConnection,
   producerId: string
 ): Promise<{ producerCount: number }> {
-  const statement = await conn.prepare(
-    `DELETE FROM overlay_point_ids_by_producer WHERE producer_id = ?`
+  await executeStatement(
+    conn,
+    `DELETE FROM overlay_point_ids_by_producer WHERE producer_id = ?`,
+    [producerId]
   )
-  try {
-    await statement.query(producerId)
-  } finally {
-    await statement.close()
-  }
 
   return { producerCount: 0 }
 }

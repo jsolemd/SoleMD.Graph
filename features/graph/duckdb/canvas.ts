@@ -2,7 +2,6 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type { MapLayer } from '@/features/graph/types'
 
-import { queryRows } from './queries'
 import type { GraphCanvasSource } from './types'
 
 const ACTIVE_CANVAS_VIEW_SLOTS = ['a', 'b'] as const
@@ -12,6 +11,15 @@ export function getActiveCanvasViewNames(overlayRevision: number) {
   return {
     corpusPoints: `active_points_${slot}_web`,
     corpusLinks: `active_links_${slot}_web`,
+  }
+}
+
+export function getCanvasPointCounts(
+  basePointCount: number,
+  overlayCount: number
+): Record<MapLayer, number> {
+  return {
+    corpus: Math.max(0, basePointCount + overlayCount),
   }
 }
 
@@ -71,24 +79,5 @@ export function buildCanvasSource(args: {
     pointCounts,
     overlayCount,
     overlayRevision,
-  }
-}
-
-export async function queryCanvasPointCounts(
-  conn: AsyncDuckDBConnection
-): Promise<Record<MapLayer, number>> {
-  const rows = await queryRows<{
-    corpusCount: number
-  }>(
-    conn,
-    `SELECT
-       (
-         (SELECT count(*)::INTEGER FROM base_points_canvas_web) +
-         (SELECT count(*)::INTEGER FROM overlay_points_canvas_web)
-       ) AS corpusCount`
-  )
-
-  return {
-    corpus: rows[0]?.corpusCount ?? 0,
   }
 }

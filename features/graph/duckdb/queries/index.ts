@@ -1,6 +1,8 @@
 export {
   buildReadOnlyQuery,
+  closePreparedStatements,
   escapeSqlString,
+  executeStatement,
   executeReadOnlyQuery,
   getAbsoluteUrl,
   queryRows,

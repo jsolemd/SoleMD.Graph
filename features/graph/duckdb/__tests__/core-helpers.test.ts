@@ -1,4 +1,19 @@
-import { escapeSqlString, buildReadOnlyQuery } from '../queries/core'
+import {
+  buildReadOnlyQuery,
+  closePreparedStatements,
+  escapeSqlString,
+  executeStatement,
+  queryRows,
+} from '../queries/core'
+
+function createMockArrowTable<T extends Record<string, unknown>>(rows: T[]) {
+  return {
+    schema: {
+      fields: Object.keys(rows[0] ?? {}).map((name) => ({ name })),
+    },
+    toArray: () => rows.map((row) => ({ toJSON: () => row })),
+  }
+}
 
 describe('escapeSqlString', () => {
   it('escapes single quotes', () => {
@@ -71,5 +86,104 @@ describe('buildReadOnlyQuery', () => {
   it('is case-insensitive for keywords', () => {
     expect(() => buildReadOnlyQuery('select 1')).not.toThrow()
     expect(() => buildReadOnlyQuery('SELECT 1')).not.toThrow()
+  })
+})
+
+describe('prepared statement caching', () => {
+  it('reuses prepared statements for repeated parameterized reads', async () => {
+    const statement = {
+      close: jest.fn(async () => undefined),
+      query: jest.fn(async (value: number) => createMockArrowTable([{ value }])),
+    }
+    const conn = {
+      prepare: jest.fn(async () => statement),
+      query: jest.fn(),
+    }
+
+    await queryRows<{ value: number }>(conn as never, 'SELECT ? AS value', [1])
+    await queryRows<{ value: number }>(conn as never, 'SELECT ? AS value', [2])
+
+    expect(conn.prepare).toHaveBeenCalledTimes(1)
+    expect(statement.query).toHaveBeenNthCalledWith(1, 1)
+    expect(statement.query).toHaveBeenNthCalledWith(2, 2)
+    expect(statement.close).not.toHaveBeenCalled()
+
+    await closePreparedStatements(conn as never)
+
+    expect(statement.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not cache high-arity parameterized reads', async () => {
+    const createStatement = () => ({
+      close: jest.fn(async () => undefined),
+      query: jest.fn(async () => createMockArrowTable([{ value: 1 }])),
+    })
+    const firstStatement = createStatement()
+    const secondStatement = createStatement()
+    const conn = {
+      prepare: jest
+        .fn<Promise<typeof firstStatement>, [string]>()
+        .mockResolvedValueOnce(firstStatement)
+        .mockResolvedValueOnce(secondStatement),
+      query: jest.fn(),
+    }
+    const sql = 'SELECT * FROM points WHERE index IN (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+
+    await queryRows<{ value: number }>(conn as never, sql, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    await queryRows<{ value: number }>(conn as never, sql, [9, 8, 7, 6, 5, 4, 3, 2, 1])
+
+    expect(conn.prepare).toHaveBeenCalledTimes(2)
+    expect(firstStatement.close).toHaveBeenCalledTimes(1)
+    expect(secondStatement.close).toHaveBeenCalledTimes(1)
+
+    await closePreparedStatements(conn as never)
+  })
+
+  it('reuses prepared statements for repeated parameterized writes', async () => {
+    const statement = {
+      close: jest.fn(async () => undefined),
+      query: jest.fn(async () => undefined),
+    }
+    const conn = {
+      prepare: jest.fn(async () => statement),
+      query: jest.fn(),
+    }
+
+    await executeStatement(conn as never, 'DELETE FROM selected_point_indices WHERE index = ?', [1])
+    await executeStatement(conn as never, 'DELETE FROM selected_point_indices WHERE index = ?', [2])
+
+    expect(conn.prepare).toHaveBeenCalledTimes(1)
+    expect(statement.query).toHaveBeenNthCalledWith(1, 1)
+    expect(statement.query).toHaveBeenNthCalledWith(2, 2)
+
+    await closePreparedStatements(conn as never)
+
+    expect(statement.close).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not cache high-arity parameterized writes', async () => {
+    const createStatement = () => ({
+      close: jest.fn(async () => undefined),
+      query: jest.fn(async () => undefined),
+    })
+    const firstStatement = createStatement()
+    const secondStatement = createStatement()
+    const conn = {
+      prepare: jest
+        .fn<Promise<typeof firstStatement>, [string]>()
+        .mockResolvedValueOnce(firstStatement)
+        .mockResolvedValueOnce(secondStatement),
+      query: jest.fn(),
+    }
+    const sql = 'DELETE FROM selected_point_indices WHERE index IN (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+
+    await executeStatement(conn as never, sql, [1, 2, 3, 4, 5, 6, 7, 8, 9])
+    await executeStatement(conn as never, sql, [9, 8, 7, 6, 5, 4, 3, 2, 1])
+
+    expect(conn.prepare).toHaveBeenCalledTimes(2)
+    expect(firstStatement.close).toHaveBeenCalledTimes(1)
+    expect(secondStatement.close).toHaveBeenCalledTimes(1)
+
+    await closePreparedStatements(conn as never)
   })
 })

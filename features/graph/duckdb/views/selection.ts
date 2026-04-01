@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
+import { executeStatement } from '../queries'
 import { buildPlaceholderList } from '../utils'
 
 export async function initializeSelectedPointTable(conn: AsyncDuckDBConnection) {
@@ -27,18 +28,14 @@ export async function replaceSelectedPointIndices(
     return
   }
 
-  const statement = await conn.prepare(
+  await executeStatement(
+    conn,
     `INSERT INTO selected_point_indices
      SELECT index
      FROM current_points_web
-     WHERE index IN (${buildPlaceholderList(uniqueIndices.length)})`
+     WHERE index IN (${buildPlaceholderList(uniqueIndices.length)})`,
+    uniqueIndices
   )
-
-  try {
-    await statement.query(...uniqueIndices)
-  } finally {
-    await statement.close()
-  }
 }
 
 export async function replaceSelectedPointIndicesFromScopeSql(
