@@ -3,7 +3,7 @@
  */
 import { act, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { forwardRef, type ForwardedRef } from "react";
+import { forwardRef, type ForwardedRef, useImperativeHandle } from "react";
 
 jest.mock("@mantine/core", () => ({
   useComputedColorScheme: () => "dark",
@@ -22,6 +22,9 @@ const mockSyncZoomState = jest.fn();
 const mockHandleZoomStart = jest.fn();
 const mockHandleZoom = jest.fn();
 const mockHandleZoomEnd = jest.fn();
+const mockFitView = jest.fn();
+const mockPointsSelectionUpdate = jest.fn();
+const mockUnselectAllPoints = jest.fn();
 
 jest.mock("../hooks/use-zoom-labels", () => ({
   useZoomLabels: () => ({
@@ -52,8 +55,16 @@ jest.mock("@cosmograph/react", () => {
   return {
     Cosmograph: forwardRef(function MockCosmograph(
       props: Record<string, unknown>,
-      _ref: ForwardedRef<unknown>,
+      ref: ForwardedRef<unknown>,
     ) {
+      useImperativeHandle(ref, () => ({
+        fitView: mockFitView,
+        pointsSelection: {
+          clauses: [],
+          update: mockPointsSelectionUpdate,
+        },
+        unselectAllPoints: mockUnselectAllPoints,
+      }));
       mockCosmographRender(props);
       return <div data-testid="cosmograph" />;
     }),
@@ -159,6 +170,78 @@ describe("GraphRenderer", () => {
     expect(clusterLabelClassName?.("Neuroinflammation", 0)).toBe("");
     expect(clusterLabelClassName?.("", 0)).toBe("display: none;");
     expect(clusterLabelClassName?.("null", 0)).toBe("display: none;");
+  });
+
+  it("mounts one centralized native label theme bridge for point, hover, and cluster labels", () => {
+    renderRenderer();
+
+    const styleTag = document.querySelector<HTMLStyleElement>(
+      'style[data-graph-label-theme="native-adapter"]',
+    );
+
+    expect(styleTag).toBeInTheDocument();
+    expect(styleTag?.textContent).toContain(".css-label--label");
+    expect(styleTag?.textContent).toContain("var(--graph-label-bg)");
+    expect(styleTag?.textContent).toContain("background-color");
+    expect(styleTag?.textContent).toContain("--css-label-brightness: none");
+    expect(styleTag?.textContent).toContain("var(--graph-label-border)");
+    expect(styleTag?.textContent).toContain("var(--graph-label-shadow)");
+    expect(styleTag?.textContent).toContain("opacity: 1");
+    expect(styleTag?.textContent).toContain("var(--graph-label-text-shadow)");
+    expect(styleTag?.textContent).toContain("var(--graph-label-text-stroke)");
+  });
+
+  it("fits the initial viewport explicitly before signaling first paint", () => {
+    const onFirstPaint = jest.fn();
+    const rafCallbacks: FrameRequestCallback[] = [];
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+
+    globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+      rafCallbacks.push(callback);
+      return rafCallbacks.length;
+    }) as typeof globalThis.requestAnimationFrame;
+
+    try {
+      render(
+        <GraphRenderer
+          canvas={CANVAS_STUB}
+          queries={QUERIES_STUB}
+          onFirstPaint={onFirstPaint}
+        />,
+      );
+
+      expect(screen.getByTestId("cosmograph")).toBeInTheDocument();
+
+      const props = mockCosmographRender.mock.lastCall?.[0] as
+        | Record<string, unknown>
+        | undefined;
+
+      expect(props).toBeDefined();
+      expect(props?.fitViewOnInit).toBeUndefined();
+      expect(props?.fitViewDelay).toBeUndefined();
+      expect(props?.fitViewDuration).toBeUndefined();
+
+      act(() => {
+        (props?.onGraphRebuilt as ((stats: unknown) => void) | undefined)?.({
+          pointsCount: 120,
+          linksCount: 0,
+        });
+      });
+
+      expect(mockFitView).toHaveBeenCalledWith(0, 0.1);
+      expect(mockSyncZoomState).toHaveBeenCalledTimes(1);
+      expect(onFirstPaint).not.toHaveBeenCalled();
+      expect(rafCallbacks).toHaveLength(1);
+
+      act(() => {
+        const nextFrame = rafCallbacks.shift();
+        nextFrame?.(0);
+      });
+
+      expect(onFirstPaint).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    }
   });
 
   it("keeps zoomed point and hover labels on Cosmograph's native style path", () => {

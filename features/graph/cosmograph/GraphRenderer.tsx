@@ -18,7 +18,10 @@ import type { GraphCanvasSource } from "@/features/graph/duckdb";
 import { useCosmographConfig } from "./hooks/use-cosmograph-config";
 import { useZoomLabels } from "./hooks/use-zoom-labels";
 import { usePointsFiltered } from "./hooks/use-points-filtered";
-import { resolveClusterLabelClassName } from "./label-appearance";
+import {
+  NATIVE_COSMOGRAPH_LABEL_THEME_CSS,
+  resolveClusterLabelClassName,
+} from "./label-appearance";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
 import { resolveGraphContentContrastLevel } from "@/features/graph/lib/control-contrast";
 
@@ -131,6 +134,22 @@ export default function CosmographRenderer({
   // Track the logical layer so future active-table versioning or overlay
   // activation does not accidentally trigger a camera reset.
   const lastFittedLayer = useRef<typeof activeLayer | null>(null);
+  const signalFirstPaint = useCallback(() => {
+    requestAnimationFrame(() => {
+      onFirstPaint?.();
+    });
+  }, [onFirstPaint]);
+
+  const fitViewport = useCallback(
+    (layer: typeof activeLayer) => {
+      cosmographRef.current?.fitView(0, fitViewPadding);
+      hasFittedView.current = true;
+      lastFittedLayer.current = layer;
+      syncZoomState();
+      signalFirstPaint();
+    },
+    [fitViewPadding, signalFirstPaint, syncZoomState],
+  );
 
   const handleGraphRebuilt = useCallback(() => {
     const isFirstFit = !hasFittedView.current;
@@ -138,22 +157,10 @@ export default function CosmographRenderer({
 
     if (!isFirstFit && !isLayerChange) return;
 
-    hasFittedView.current = true;
-    lastFittedLayer.current = activeLayer;
-
-    // Native fitViewOnInit handles the initial fit (configured via props:
-    // fitViewDelay=0, fitViewDuration=0, fitViewPadding).  Manual fitView
-    // is only needed for layer changes, which the native won't re-trigger.
-    if (isLayerChange) {
-      cosmographRef.current?.fitView(0, fitViewPadding);
-    }
-
-    syncZoomState();
-    // Defer onFirstPaint by one frame so the WebGL canvas has rendered
-    // the fitted view before the loading overlay starts fading.
-    requestAnimationFrame(() => {
-      onFirstPaint?.();
-    });
+    // Native fitViewOnInit can reveal Cosmograph's default zoom for a frame
+    // before the fitted transform lands. Apply the fit explicitly so the
+    // loading overlay drops only after the correct camera state is in place.
+    fitViewport(activeLayer);
     clearVisibilityFocus();
     setFocusedPointIndex(null);
     setCurrentPointScopeSql(null);
@@ -161,14 +168,12 @@ export default function CosmographRenderer({
     setActiveSelectionSourceId(null);
   }, [
     activeLayer,
-    fitViewPadding,
-    onFirstPaint,
     clearVisibilityFocus,
+    fitViewport,
     setFocusedPointIndex,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
     setSelectedPointCount,
-    syncZoomState,
   ]);
 
   const handlePointClick = useCallback(
@@ -277,20 +282,12 @@ export default function CosmographRenderer({
         if (hasFittedView.current) {
           return;
         }
-        cosmographRef.current?.fitView(0, fitViewPadding);
-        hasFittedView.current = true;
-        lastFittedLayer.current = activeLayer;
-        syncZoomState();
-        // Defer onFirstPaint so the WebGL canvas renders the fitted view
-        // before the loading overlay starts fading.
-        requestAnimationFrame(() => {
-          onFirstPaint?.();
-        });
+        fitViewport(activeLayer);
       });
     };
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
-  }, [activeLayer, fitViewPadding, onFirstPaint, syncZoomState]);
+  }, [activeLayer, fitViewport]);
 
   // The CSS filter on [data-graph-canvas] canvas creates a stacking context
   // that paints the WebGL canvas above the d3-brush SVG overlay, blocking
@@ -311,6 +308,9 @@ export default function CosmographRenderer({
   // the visible background lives on the sibling div behind the canvas.
   return (
     <div ref={wrapperRef} data-graph-canvas style={{ position: "relative", width: "100%", height: "100%" }}>
+    <style data-graph-label-theme="native-adapter">
+      {NATIVE_COSMOGRAPH_LABEL_THEME_CSS}
+    </style>
     {/* Theme background — unaffected by the canvas CSS filter */}
     <div
       style={{
@@ -358,10 +358,6 @@ export default function CosmographRenderer({
       curvedLinks={config.hasLinks ? config.curvedLinks : undefined}
       linkDefaultArrows={config.hasLinks ? config.linkDefaultArrows : undefined}
       scaleLinksOnZoom={config.hasLinks ? config.scaleLinksOnZoom : undefined}
-      fitViewOnInit
-      fitViewDelay={0}
-      fitViewDuration={0}
-      fitViewPadding={fitViewPadding}
       enableSimulation={false}
       backgroundColor={config.isDark ? config.colors.bg : "transparent"}
       pointSizeRange={config.pointSizeRange}
