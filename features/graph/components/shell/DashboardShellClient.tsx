@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { GraphShell, ColorLegends, SizeLegend } from "@/features/graph/cosmograph";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
@@ -30,6 +30,7 @@ import {
 import { toFacetRowsFromBarCounts } from "@/features/graph/cosmograph/widgets/facet-rows";
 import { NATIVE_BARS_DATA_LIMIT } from "@/features/graph/cosmograph/widgets/native-bars-adapter";
 import { resolveWidgetBaselineScope } from "@/features/graph/cosmograph/widgets/widget-baseline";
+import { shouldUseQuantileHistogram } from "@/features/graph/lib/histogram-strategy";
 
 const legendStyle: React.CSSProperties = {
   borderRadius: 12,
@@ -53,7 +54,6 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const showColorLegend = useDashboardStore((s) => s.showColorLegend);
   const showSizeLegend = useDashboardStore((s) => s.showSizeLegend);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
-  const timelineColumn = useDashboardStore((s) => s.timelineColumn);
   const filterColumns = useDashboardStore((s) => s.filterColumns);
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const pointColorStrategy = useDashboardStore((s) => s.pointColorStrategy);
@@ -77,6 +77,9 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const setShowTimeline = useDashboardStore((s) => s.setShowTimeline);
   const setTableOpen = useDashboardStore((s) => s.setTableOpen);
   const [graphPaintReady, setGraphPaintReady] = useState(false);
+  const handleGraphFirstPaint = useCallback(() => {
+    setGraphPaintReady(true);
+  }, []);
 
   useEffect(() => {
     if (layout.autoShowPanels) setPanelsVisible(true);
@@ -154,17 +157,34 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         return;
       }
 
-      await Promise.all(
-        numericFilters.map(async (filter) => {
-          await queries.getInfoHistogram({
-            layer: activeLayer,
-            scope: baselineScope,
-            column: filter.column,
-            bins: 20,
-            currentPointScopeSql: null,
-          });
-        }),
-      );
+      const linearColumns = numericFilters
+        .map((filter) => filter.column)
+        .filter((column) => !shouldUseQuantileHistogram(column));
+      const quantileColumns = numericFilters
+        .map((filter) => filter.column)
+        .filter((column) => shouldUseQuantileHistogram(column));
+
+      await Promise.all([
+        linearColumns.length > 0
+          ? queries.getInfoHistogramsBatch({
+              layer: activeLayer,
+              scope: baselineScope,
+              columns: linearColumns,
+              bins: 20,
+              currentPointScopeSql: null,
+            })
+          : Promise.resolve({}),
+        quantileColumns.length > 0
+          ? queries.getInfoHistogramsBatch({
+              layer: activeLayer,
+              scope: baselineScope,
+              columns: quantileColumns,
+              bins: 20,
+              useQuantiles: true,
+              currentPointScopeSql: null,
+            })
+          : Promise.resolve({}),
+      ]);
     };
 
     const warmStartupDatasets = async () => {
@@ -220,32 +240,34 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
     graphPaintReady,
     queries,
     showTimeline,
-    timelineColumn,
     bundle.bundleChecksum,
   ]);
+
+  const isReady = !loading && canvas != null && queries != null;
+  const showLoading = !isReady || !graphPaintReady;
+  const stats: GraphStats | null = useMemo(() => {
+    if (!canvas) {
+      return null;
+    }
+
+    return {
+      points: canvas.pointCounts.corpus,
+      pointLabel: "points",
+      papers: 0,
+      clusters:
+        typeof bundle.qaSummary?.["cluster_count"] === "number"
+          ? (bundle.qaSummary["cluster_count"] as number)
+          : 0,
+      noise:
+        typeof bundle.qaSummary?.["noise_count"] === "number"
+          ? (bundle.qaSummary["noise_count"] as number)
+          : 0,
+    };
+  }, [bundle.qaSummary, canvas]);
 
   if (error) {
     return <GraphBundleErrorState error={error} />;
   }
-
-  const isReady = !loading && canvas != null && queries != null;
-  const showLoading = !isReady || !graphPaintReady;
-
-  const stats: GraphStats | null = canvas
-    ? {
-        points: canvas.pointCounts.corpus,
-        pointLabel: "points",
-        papers: 0,
-        clusters:
-          typeof bundle.qaSummary?.["cluster_count"] === "number"
-            ? (bundle.qaSummary["cluster_count"] as number)
-            : 0,
-        noise:
-          typeof bundle.qaSummary?.["noise_count"] === "number"
-            ? (bundle.qaSummary["noise_count"] as number)
-            : 0,
-      }
-    : null;
 
   return (
     <GraphShell>
@@ -267,7 +289,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
               <GraphCanvas
                 canvas={canvas}
                 queries={queries}
-                onFirstPaint={() => setGraphPaintReady(true)}
+                onFirstPaint={handleGraphFirstPaint}
               />
             </div>
 

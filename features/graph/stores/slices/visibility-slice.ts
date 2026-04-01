@@ -13,16 +13,46 @@ export interface VisibilitySlice {
   clearVisibilityFocus: () => void
 }
 
+function isSameVisibilityFocus(
+  current: VisibilityFocus | null,
+  next: VisibilityFocus | null
+) {
+  if (current === next) return true
+  if (!current || !next) return false
+  return (
+    current.layer === next.layer &&
+    current.seedIndex === next.seedIndex &&
+    current.clusterId === next.clusterId &&
+    current.includeCluster === next.includeCluster &&
+    current.xMin === next.xMin &&
+    current.xMax === next.xMax &&
+    current.yMin === next.yMin &&
+    current.yMax === next.yMax
+  )
+}
+
 export const createVisibilitySlice: StateCreator<DashboardState, [], [], VisibilitySlice> = (set) => ({
   visibilityFocus: null,
 
-  setVisibilityFocus: (focus) => set({ visibilityFocus: focus }),
+  setVisibilityFocus: (focus) =>
+    set((state) => (
+      isSameVisibilityFocus(state.visibilityFocus, focus)
+        ? state
+        : { visibilityFocus: focus }
+    )),
   applyVisibilityBudget: (layer, budget) =>
-    set({
-      visibilityFocus: {
+    set((state) => {
+      const nextFocus = {
         layer,
         ...budget,
-      },
+      }
+
+      return isSameVisibilityFocus(state.visibilityFocus, nextFocus)
+        ? state
+        : { visibilityFocus: nextFocus }
     }),
-  clearVisibilityFocus: () => set({ visibilityFocus: null }),
+  clearVisibilityFocus: () =>
+    set((state) => (
+      state.visibilityFocus === null ? state : { visibilityFocus: null }
+    )),
 })

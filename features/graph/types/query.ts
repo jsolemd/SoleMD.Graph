@@ -187,6 +187,7 @@ export interface GraphBundleQueries {
       columns: string[]
       bins?: number
       extent?: [number, number] | null
+      extentsByColumn?: Record<string, [number, number] | null>
       useQuantiles?: boolean
     }
   ) => Promise<Record<string, GraphInfoHistogramResult>>

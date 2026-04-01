@@ -1,10 +1,11 @@
 "use client";
 
+import { memo } from "react";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import { QueryDrivenInfoPanel } from "./QueryDrivenInfoPanel";
 
-export function InfoPanel({
+function InfoPanelComponent({
   queries,
   canvas,
 }: {
@@ -19,3 +20,6 @@ export function InfoPanel({
     />
   );
 }
+
+export const InfoPanel = memo(InfoPanelComponent);
+InfoPanel.displayName = "InfoPanel";

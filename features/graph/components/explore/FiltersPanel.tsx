@@ -1,19 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CosmographWidgetBoundary } from "../canvas/CosmographWidgetBoundary";
 import { FilterBarWidget } from "@/features/graph/cosmograph/widgets/FilterBarWidget";
 import { FilterHistogramWidget } from "@/features/graph/cosmograph/widgets/FilterHistogramWidget";
 import { toFacetRowsFromBarCounts } from "@/features/graph/cosmograph/widgets/facet-rows";
 import {
   getCachedCategoricalDataset,
+  getCachedHistogramDataset,
   getWidgetDatasetCacheKeyWithRevision,
   setCachedCategoricalDataset,
+  setCachedHistogramDataset,
 } from "@/features/graph/cosmograph/widgets/dataset-cache";
 import { NATIVE_BARS_DATA_LIMIT } from "@/features/graph/cosmograph/widgets/native-bars-adapter";
 import { resolveWidgetBaselineScope } from "@/features/graph/cosmograph/widgets/widget-baseline";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphBundleQueries, GraphInfoFacetRow } from "@/features/graph/types";
+import type {
+  GraphBundleQueries,
+  GraphInfoFacetRow,
+  GraphInfoHistogramResult,
+} from "@/features/graph/types";
 import { FilterPanelShell } from "./FilterPanelShell";
 import { queryWidgetThemeVars } from "./widget-theme";
 
@@ -23,6 +29,7 @@ function AdapterFilterWidget({
   bundleChecksum,
   overlayRevision,
   initialDatasetRows,
+  initialHistogram,
   datasetLoading,
 }: {
   filter: { column: string; type: string };
@@ -30,6 +37,7 @@ function AdapterFilterWidget({
   bundleChecksum: string;
   overlayRevision: number;
   initialDatasetRows?: GraphInfoFacetRow[];
+  initialHistogram?: GraphInfoHistogramResult;
   datasetLoading?: boolean;
 }) {
   return (
@@ -40,6 +48,8 @@ function AdapterFilterWidget({
           queries={queries}
           bundleChecksum={bundleChecksum}
           overlayRevision={overlayRevision}
+          initialHistogram={initialHistogram}
+          datasetLoading={datasetLoading}
         />
       ) : (
         <FilterBarWidget
@@ -55,7 +65,7 @@ function AdapterFilterWidget({
   );
 }
 
-export function FiltersPanel({
+function FiltersPanelComponent({
   queries,
   bundleChecksum,
   overlayRevision,
@@ -74,11 +84,18 @@ export function FiltersPanel({
   const [primedDatasets, setPrimedDatasets] = useState<
     Record<string, GraphInfoFacetRow[]>
   >({});
+  const [primedHistograms, setPrimedHistograms] = useState<
+    Record<string, GraphInfoHistogramResult>
+  >({});
   const [loadingColumns, setLoadingColumns] = useState<Record<string, boolean>>({});
   const requestIdRef = useRef(0);
 
   const visibleCategoricalFilters = useMemo(
     () => visibleFilters.filter((filter) => filter.type !== "numeric"),
+    [visibleFilters],
+  );
+  const visibleNumericFilters = useMemo(
+    () => visibleFilters.filter((filter) => filter.type === "numeric"),
     [visibleFilters],
   );
   const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
@@ -93,11 +110,15 @@ export function FiltersPanel({
 
   useEffect(() => {
     setPrimedDatasets({});
+    setPrimedHistograms({});
     setLoadingColumns({});
   }, [activeLayer, baselineScope, bundleChecksum, overlayRevision]);
 
   useEffect(() => {
-    if (visibleCategoricalFilters.length === 0) {
+    if (
+      visibleCategoricalFilters.length === 0 &&
+      visibleNumericFilters.length === 0
+    ) {
       setLoadingColumns({});
       return;
     }
@@ -123,35 +144,72 @@ export function FiltersPanel({
         ...cachedRowsByColumn,
       }));
     }
+    const cachedHistogramsByColumn = Object.fromEntries(
+      visibleNumericFilters.flatMap((filter) => {
+        const cacheKey = getWidgetDatasetCacheKeyWithRevision(
+          bundleChecksum,
+          activeLayer,
+          filter.column,
+          overlayRevision,
+          baselineCacheKey,
+        );
+        const cachedHistogram = getCachedHistogramDataset(cacheKey);
+        return cachedHistogram ? [[filter.column, cachedHistogram] as const] : [];
+      }),
+    );
+
+    if (Object.keys(cachedHistogramsByColumn).length > 0) {
+      setPrimedHistograms((current) => ({
+        ...current,
+        ...cachedHistogramsByColumn,
+      }));
+    }
 
     const missingColumns = visibleCategoricalFilters
       .map((filter) => filter.column)
       .filter((column) => !cachedRowsByColumn[column]);
+    const missingHistogramColumns = visibleNumericFilters
+      .map((filter) => filter.column)
+      .filter((column) => !cachedHistogramsByColumn[column]);
 
-    if (missingColumns.length === 0) {
+    if (missingColumns.length === 0 && missingHistogramColumns.length === 0) {
       setLoadingColumns({});
       return;
     }
 
     setLoadingColumns(
-      Object.fromEntries(missingColumns.map((column) => [column, true])),
+      Object.fromEntries(
+        [...missingColumns, ...missingHistogramColumns].map((column) => [column, true]),
+      ),
     );
 
-    queries
-      .getInfoBarsBatch({
-        layer: activeLayer,
-        scope: baselineScope,
-        columns: missingColumns,
-        maxItems: NATIVE_BARS_DATA_LIMIT,
-        currentPointScopeSql: null,
-      })
-      .then((results) => {
+    Promise.all([
+      missingColumns.length > 0
+        ? queries.getInfoBarsBatch({
+            layer: activeLayer,
+            scope: baselineScope,
+            columns: missingColumns,
+            maxItems: NATIVE_BARS_DATA_LIMIT,
+            currentPointScopeSql: null,
+          })
+        : Promise.resolve<Record<string, Array<{ value: string; count: number }>>>({}),
+      missingHistogramColumns.length > 0
+        ? queries.getInfoHistogramsBatch({
+            layer: activeLayer,
+            scope: baselineScope,
+            columns: missingHistogramColumns,
+            bins: 20,
+            currentPointScopeSql: null,
+          })
+        : Promise.resolve<Record<string, GraphInfoHistogramResult>>({}),
+    ])
+      .then(([categoricalResults, histogramResults]) => {
         if (nextRequestId !== requestIdRef.current) {
           return;
         }
 
         for (const column of missingColumns) {
-          const rows = toFacetRowsFromBarCounts(results[column] ?? []);
+          const rows = toFacetRowsFromBarCounts(categoricalResults[column] ?? []);
           setCachedCategoricalDataset(
             getWidgetDatasetCacheKeyWithRevision(
               bundleChecksum,
@@ -163,13 +221,35 @@ export function FiltersPanel({
             rows,
           );
         }
+        for (const column of missingHistogramColumns) {
+          const histogram = histogramResults[column] ?? { bins: [], totalCount: 0 };
+          setCachedHistogramDataset(
+            getWidgetDatasetCacheKeyWithRevision(
+              bundleChecksum,
+              activeLayer,
+              column,
+              overlayRevision,
+              baselineCacheKey,
+            ),
+            histogram,
+          );
+        }
 
         setPrimedDatasets((current) => ({
           ...current,
           ...Object.fromEntries(
-            Object.entries(results).map(([column, rows]) => [
+            Object.entries(categoricalResults).map(([column, rows]) => [
               column,
               toFacetRowsFromBarCounts(rows),
+            ]),
+          ),
+        }));
+        setPrimedHistograms((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            missingHistogramColumns.map((column) => [
+              column,
+              histogramResults[column] ?? { bins: [], totalCount: 0 },
             ]),
           ),
         }));
@@ -190,6 +270,7 @@ export function FiltersPanel({
     overlayRevision,
     queries,
     visibleCategoricalFilters,
+    visibleNumericFilters,
   ]);
 
   const handleVisibleFiltersChange = useCallback(
@@ -210,9 +291,13 @@ export function FiltersPanel({
           bundleChecksum={bundleChecksum}
           overlayRevision={overlayRevision}
           initialDatasetRows={primedDatasets[filter.column]}
+          initialHistogram={primedHistograms[filter.column]}
           datasetLoading={loadingColumns[filter.column] === true}
         />
       )}
     />
   );
 }
+
+export const FiltersPanel = memo(FiltersPanelComponent);
+FiltersPanel.displayName = "FiltersPanel";

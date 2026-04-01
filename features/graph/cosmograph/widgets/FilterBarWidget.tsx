@@ -147,12 +147,10 @@ export function FilterBarWidget({
       baselineCacheKey,
     );
     const cachedDataset = getCachedCategoricalDataset(datasetCacheKey);
-    const seededDataset =
-      initialDatasetRows && initialDatasetRows.length > 0
-        ? initialDatasetRows
-        : cachedDataset;
+    const hasInitialDataset = initialDatasetRows !== undefined;
+    const seededDataset = hasInitialDataset ? initialDatasetRows : cachedDataset;
 
-    if (seededDataset) {
+    if (seededDataset !== undefined && seededDataset !== null) {
       setNativeBarsFacetData(widget, seededDataset);
       datasetReadyRef.current = true;
     } else {
@@ -160,11 +158,11 @@ export function FilterBarWidget({
       datasetReadyRef.current = false;
     }
 
-    if (!seededDataset && datasetLoading) {
+    if (seededDataset == null && datasetLoading) {
       return;
     }
 
-    const datasetPromise = seededDataset
+    const datasetPromise = seededDataset != null
       ? Promise.resolve(seededDataset)
       : (async () => {
           for (const delay of WIDGET_DATASET_RETRY_DELAYS) {

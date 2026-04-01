@@ -36,6 +36,7 @@ class PaperRetrievalQuery:
     k: int = 6
     rerank_topn: int = 18
     use_lexical: bool = True
+    use_dense_query: bool = True
     generate_answer: bool = True
 
 
@@ -68,14 +69,28 @@ class PaperEvidenceHit:
     text_availability: str | None
     is_open_access: bool | None
     citation_count: int | None = None
+    influential_citation_count: int | None = None
     reference_count: int | None = None
+    publication_types: list[str] = field(default_factory=list)
+    fields_of_study: list[str] = field(default_factory=list)
+    has_rule_evidence: bool = False
+    has_curated_journal_family: bool = False
+    journal_family_type: str | None = None
+    entity_rule_families: int = 0
+    entity_rule_count: int = 0
+    entity_core_families: int = 0
     lexical_score: float = 0.0
     title_similarity: float = 0.0
     citation_boost: float = 0.0
     entity_score: float = 0.0
     relation_score: float = 0.0
     semantic_score: float = 0.0
+    dense_score: float = 0.0
     intent_score: float = 0.0
+    citation_intent_score: float = 0.0
+    publication_type_score: float = 0.0
+    evidence_quality_score: float = 0.0
+    title_anchor_score: float = 0.0
     fused_score: float = 0.0
     rank: int = 0
     matched_channels: list[RetrievalChannel] = field(default_factory=list)

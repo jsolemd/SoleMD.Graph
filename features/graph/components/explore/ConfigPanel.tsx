@@ -1,10 +1,11 @@
 "use client";
 
+import { memo } from "react";
 import { useDashboardStore } from "@/features/graph/stores";
 import { PANEL_BODY_CLASS, PanelShell } from "../panels/PanelShell";
 import { PointsConfig } from "./PointsConfig";
 
-export function ConfigPanel() {
+function ConfigPanelComponent() {
   const setActivePanel = useDashboardStore((s) => s.setActivePanel);
 
   return (
@@ -19,3 +20,6 @@ export function ConfigPanel() {
     </PanelShell>
   );
 }
+
+export const ConfigPanel = memo(ConfigPanelComponent);
+ConfigPanel.displayName = "ConfigPanel";

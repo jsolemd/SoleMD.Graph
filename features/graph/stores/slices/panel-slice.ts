@@ -60,7 +60,9 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   setActivePanel: (panel) => set({ activePanel: panel }),
   togglePanel: (panel) =>
     set((s) => ({ activePanel: s.activePanel === panel ? null : panel })),
-  setPanelsVisible: (visible) => set({ panelsVisible: visible }),
+  setPanelsVisible: (visible) => set((s) => (
+    s.panelsVisible === visible ? s : { panelsVisible: visible }
+  )),
   setPanelBottomY: (side, y) =>
     set((s) => s.panelBottomY[side] === y ? s : { panelBottomY: { ...s.panelBottomY, [side]: y } }),
   togglePanelsVisible: () =>
@@ -68,10 +70,16 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
       const next = !s.panelsVisible
       return { panelsVisible: next, ...(next ? {} : { activePanel: null }) }
     }),
-  setTableOpen: (open) => set({ tableOpen: open }),
+  setTableOpen: (open) => set((s) => (
+    s.tableOpen === open ? s : { tableOpen: open }
+  )),
   toggleTable: () => set((s) => ({ tableOpen: !s.tableOpen })),
-  setTableHeight: (height) => set({ tableHeight: height }),
-  setUiHidden: (hidden) => set({ uiHidden: hidden }),
+  setTableHeight: (height) => set((s) => (
+    s.tableHeight === height ? s : { tableHeight: height }
+  )),
+  setUiHidden: (hidden) => set((s) => (
+    s.uiHidden === hidden ? s : { uiHidden: hidden }
+  )),
   toggleUiHidden: () => set((s) => ({ uiHidden: !s.uiHidden })),
   setPromptMode: (promptMode) =>
     set((s) => ({
@@ -81,7 +89,11 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
           ? (s.promptMode === 'collapsed' ? s.lastExpandedPromptMode : s.promptMode)
           : promptMode,
     })),
-  setPromptShellFullHeight: (promptShellFullHeight) => set({ promptShellFullHeight }),
+  setPromptShellFullHeight: (promptShellFullHeight) => set((s) => (
+    s.promptShellFullHeight === promptShellFullHeight
+      ? s
+      : { promptShellFullHeight }
+  )),
   applyPromptModeDefault: (promptMode) =>
     set({
       promptMode,
@@ -141,5 +153,7 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
       lastExpandedPromptMode:
         s.promptMode === 'collapsed' ? s.lastExpandedPromptMode : s.promptMode,
     })),
-  setWriteContent: (content) => set({ writeContent: content }),
+  setWriteContent: (content) => set((s) => (
+    s.writeContent === content ? s : { writeContent: content }
+  )),
 })

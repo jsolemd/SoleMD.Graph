@@ -273,7 +273,7 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
     });
 
     const toolbarState = useEditorState({
-      editor,
+      editor: showToolbar ? editor : null,
       selector: ({ editor: currentEditor }) => ({
         isParagraph: currentEditor?.isActive("paragraph") ?? false,
         isHeading1: currentEditor?.isActive("heading", { level: 1 }) ?? false,

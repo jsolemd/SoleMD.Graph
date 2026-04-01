@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { memo, useCallback } from "react";
 import { ActionIcon, Stack, Tooltip } from "@mantine/core";
 import { ArrowLeft } from "lucide-react";
 import { useGraphSelection, useGraphCamera } from "@/features/graph/cosmograph";
@@ -24,7 +24,7 @@ import { DetailAccordions } from "./detail/DetailAccordions";
 import { useCopyFeedback } from "./detail/use-copy-feedback";
 import { useDetailData } from "./detail/use-detail-data";
 
-export function DetailPanel({
+function DetailPanelComponent({
   bundle,
   queries,
 }: {
@@ -148,3 +148,6 @@ export function DetailPanel({
     </PanelShell>
   );
 }
+
+export const DetailPanel = memo(DetailPanelComponent);
+DetailPanel.displayName = "DetailPanel";

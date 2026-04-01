@@ -21,11 +21,13 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
   // Active layer — determines which DuckDB table Cosmograph reads from
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const layerConfig = getLayerConfig(activeLayer);
-  const activePanel = useDashboardStore((s) => s.activePanel);
-  const filterColumns = useDashboardStore((s) => s.filterColumns);
-  const showTimeline = useDashboardStore((s) => s.showTimeline);
-  const timelineColumn = useDashboardStore((s) => s.timelineColumn);
-  const tableOpen = useDashboardStore((s) => s.tableOpen);
+  const { filterColumns, showTimeline, timelineColumn } = useDashboardStore(
+    useShallow((s) => ({
+      filterColumns: s.filterColumns,
+      showTimeline: s.showTimeline,
+      timelineColumn: s.timelineColumn,
+    })),
+  );
 
   // Point config — grouped with useShallow to avoid unnecessary re-renders
   const {
@@ -99,26 +101,12 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
   const pointIncludeColumns = useMemo(
     () =>
       getPointIncludeColumns({
-        layer: activeLayer,
-        activePanel,
         showTimeline,
         filterColumns,
         timelineColumn,
-        pointColorColumn,
-        pointSizeColumn,
-        pointLabelColumn,
-        positionXColumn,
-        positionYColumn,
       }),
     [
-      activeLayer,
-      activePanel,
       filterColumns,
-      pointColorColumn,
-      pointLabelColumn,
-      pointSizeColumn,
-      positionXColumn,
-      positionYColumn,
       showTimeline,
       timelineColumn,
     ],
@@ -182,8 +170,6 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     // Layer
     activeLayer,
     layerConfig,
-    activePanel,
-    tableOpen,
     // Point config
     pointColorColumn,
     effectiveColorColumn,
@@ -225,8 +211,6 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     colors,
     activeLayer,
     layerConfig,
-    activePanel,
-    tableOpen,
     pointColorColumn,
     effectiveColorColumn,
     effectiveColorStrategy,

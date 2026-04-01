@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import dynamic from "next/dynamic";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
@@ -18,7 +19,7 @@ const CosmographRenderer = dynamic(
   }
 );
 
-export function GraphCanvas({
+function GraphCanvasComponent({
   canvas,
   queries,
   onFirstPaint,
@@ -35,3 +36,6 @@ export function GraphCanvas({
     />
   );
 }
+
+export const GraphCanvas = memo(GraphCanvasComponent);
+GraphCanvas.displayName = "GraphCanvas";

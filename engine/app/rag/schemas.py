@@ -190,6 +190,7 @@ class RagSearchRequest(RagSchema):
     k: int = Field(default=6, ge=1, le=50)
     rerank_topn: int = Field(default=18, ge=1, le=200)
     use_lexical: bool = True
+    use_dense_query: bool = True
     generate_answer: bool = True
 
     @field_validator("query")

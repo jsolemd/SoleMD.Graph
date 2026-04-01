@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ActionIcon, Tooltip } from "@mantine/core";
@@ -74,7 +74,7 @@ function usePortalTarget(selector: string) {
 
 /* ── Component ─────────────────────────────────────────────────── */
 
-export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
+function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
   const portalTarget = usePortalTarget("[data-wordmark-toolbar]");
   const toolbarRef = useRef<SelectionToolbarHandle>(null);
   const toolActivatedRef = useRef(false);
@@ -274,3 +274,6 @@ export function CanvasControls({ queries }: { queries: GraphBundleQueries }) {
     portalTarget
   );
 }
+
+export const CanvasControls = memo(CanvasControlsComponent);
+CanvasControls.displayName = "CanvasControls";

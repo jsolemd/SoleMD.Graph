@@ -39,11 +39,15 @@ export function FilterHistogramWidget({
   queries,
   bundleChecksum,
   overlayRevision,
+  initialHistogram,
+  datasetLoading = false,
 }: {
   column: string;
   queries: GraphBundleQueries;
   bundleChecksum: string;
   overlayRevision: number;
+  initialHistogram?: GraphInfoHistogramResult;
+  datasetLoading?: boolean;
 }) {
   const {
     cosmograph,
@@ -153,19 +157,24 @@ export function FilterHistogramWidget({
       baselineCacheKey,
     );
     const cachedDataset = getCachedHistogramDataset(datasetCacheKey);
-    if (cachedDataset && hasRenderableHistogramData(cachedDataset)) {
-      const cachedExtent = getHistogramExtent(cachedDataset);
+    const seededDataset = initialHistogram ?? cachedDataset;
+    if (seededDataset && hasRenderableHistogramData(seededDataset)) {
+      const cachedExtent = getHistogramExtent(seededDataset);
       extentRef.current = cachedExtent;
       if (renderedDatasetKeyRef.current !== datasetCacheKey) {
-        setNativeHistogramData(widget, cachedDataset);
+        setNativeHistogramData(widget, seededDataset);
         renderedDatasetKeyRef.current = datasetCacheKey;
       }
     } else {
       widget.setLoadingState();
     }
 
-    const datasetPromise = cachedDataset
-      ? Promise.resolve(cachedDataset)
+    if (!seededDataset && datasetLoading) {
+      return;
+    }
+
+    const datasetPromise = seededDataset
+      ? Promise.resolve(seededDataset)
       : (async () => {
           let latestHistogram: GraphInfoHistogramResult = { bins: [], totalCount: 0 };
 
@@ -233,6 +242,8 @@ export function FilterHistogramWidget({
     baselineScope,
     bundleChecksum,
     column,
+    datasetLoading,
+    initialHistogram,
     overlayRevision,
     queries,
     widgetRevision,

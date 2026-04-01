@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     rag_semantic_neighbor_min_candidates: int = 120
     rag_semantic_neighbor_max_candidates: int = 3840
     rag_semantic_neighbor_exact_parallel_workers: int = 4
+    rag_dense_query_enabled: bool = True
+    rag_dense_query_use_gpu: bool = True
+    rag_dense_query_base_model: str = "allenai/specter2_base"
+    rag_dense_query_adapter_name: str = "allenai/specter2_adhoc_query"
+    rag_dense_query_max_length: int = 512
+    rag_model_cache_dir: str = "data/huggingface"
 
     # DuckDB (for citations pipeline and heavy in-memory queries)
     duckdb_memory_limit: str = "8GB"
@@ -203,6 +209,10 @@ class Settings(BaseSettings):
     @property
     def nlm_journals_path(self) -> Path:
         return self.data_root_path / "nlm_neuro_psych_journals.json"
+
+    @property
+    def rag_model_cache_path(self) -> Path:
+        return self._resolve_project_path(self.rag_model_cache_dir)
 
 
 settings = Settings()

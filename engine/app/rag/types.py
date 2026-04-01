@@ -16,6 +16,7 @@ class RetrievalChannel(StrEnum):
     """Retrieval channels currently exposed by the baseline service."""
 
     LEXICAL = "lexical"
+    DENSE_QUERY = "dense_query"
     ENTITY_MATCH = "entity_match"
     RELATION_MATCH = "relation_match"
     CITATION_CONTEXT = "citation_context"
@@ -63,6 +64,7 @@ DEFAULT_ANSWER_MODEL = "baseline-extractive-v1"
 
 RETRIEVAL_CHANNEL_ORDER = (
     RetrievalChannel.LEXICAL,
+    RetrievalChannel.DENSE_QUERY,
     RetrievalChannel.ENTITY_MATCH,
     RetrievalChannel.RELATION_MATCH,
     RetrievalChannel.CITATION_CONTEXT,

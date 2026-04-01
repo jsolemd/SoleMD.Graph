@@ -139,6 +139,7 @@ export interface GraphBundleSession {
     columns: string[]
     bins?: number
     extent?: [number, number] | null
+    extentsByColumn?: Record<string, [number, number] | null>
     useQuantiles?: boolean
     currentPointScopeSql: string | null
   }) => Promise<Record<string, GraphInfoHistogramResult>>

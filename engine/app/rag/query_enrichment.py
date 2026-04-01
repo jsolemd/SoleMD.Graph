@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import unicodedata
-
+from dataclasses import dataclass
 
 MAX_QUERY_PHRASE_TOKENS = 4
 MAX_QUERY_PHRASES = 48
@@ -69,6 +68,24 @@ def build_query_phrases(text: str) -> list[str]:
     return phrases
 
 
+def normalize_title_key(text: str | None) -> str:
+    """Normalize a title-like string into a stable lexical comparison key."""
+
+    normalized = unicodedata.normalize("NFKC", text or "")
+    tokens: list[str] = []
+    current: list[str] = []
+    for char in normalized.casefold():
+        if char.isalnum():
+            current.append(char)
+            continue
+        if current:
+            tokens.append("".join(current))
+            current = []
+    if current:
+        tokens.append("".join(current))
+    return " ".join(tokens)
+
+
 def derive_relation_terms(text: str) -> list[str]:
     """Extract exact canonical relation labels from the normalized query."""
 
@@ -86,7 +103,10 @@ def derive_relation_terms(text: str) -> list[str]:
             candidate = "_".join(tokens[start:end]).replace("-", "_")
             if candidate not in SUPPORTED_RELATION_TYPES or candidate in seen:
                 continue
-            if any(start < accepted_end and end > accepted_start for accepted_start, accepted_end in accepted_spans):
+            if any(
+                start < accepted_end and end > accepted_start
+                for accepted_start, accepted_end in accepted_spans
+            ):
                 continue
             seen.add(candidate)
             accepted_spans.append((start, end))

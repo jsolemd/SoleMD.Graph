@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
 import { useCosmograph } from "@/features/graph/cosmograph";
 import {
@@ -43,7 +43,7 @@ import {
 } from "./prompt/selection-scope";
 import { useRagQuery } from "./prompt/use-rag-query";
 
-export function PromptBox({
+function PromptBoxComponent({
   bundle,
   queries,
 }: {
@@ -532,3 +532,6 @@ export function PromptBox({
     </div>
   );
 }
+
+export const PromptBox = memo(PromptBoxComponent);
+PromptBox.displayName = "PromptBox";

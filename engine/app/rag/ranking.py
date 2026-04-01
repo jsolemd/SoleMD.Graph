@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 import re
+from collections.abc import Mapping
 
 from app.rag.models import (
     CitationContextHit,
@@ -11,16 +11,22 @@ from app.rag.models import (
     PaperEvidenceHit,
     RelationMatchedPaperHit,
 )
+from app.rag.query_enrichment import normalize_title_key
 from app.rag.types import EvidenceIntent, RetrievalChannel
 
 RRF_K = 60
 RRF_WEIGHTS: Mapping[RetrievalChannel, float] = {
     RetrievalChannel.LEXICAL: 1.0,
+    RetrievalChannel.DENSE_QUERY: 0.98,
     RetrievalChannel.ENTITY_MATCH: 0.95,
     RetrievalChannel.RELATION_MATCH: 0.9,
     RetrievalChannel.SEMANTIC_NEIGHBOR: 0.85,
 }
 INTENT_WEIGHT = 0.14
+TITLE_ANCHOR_WEIGHT = 0.32
+CITATION_INTENT_WEIGHT = 0.08
+PUBLICATION_TYPE_WEIGHT = 0.06
+EVIDENCE_QUALITY_WEIGHT = 0.08
 
 SUPPORT_CUES = (
     "reduced",
@@ -34,6 +40,25 @@ SUPPORT_CUES = (
     "decrease",
     "associated with lower",
 )
+
+HIGH_VALUE_PUBLICATION_TYPES = frozenset(
+    {
+        "clinicaltrial",
+        "metaanalysis",
+        "randomizedcontrolledtrial",
+        "review",
+        "study",
+        "systematicreview",
+    }
+)
+LOW_VALUE_PUBLICATION_TYPES = frozenset({"editorial", "lettersandcomments", "news"})
+BIOMEDICAL_FIELDS = frozenset({"biology", "chemistry", "medicine", "psychology"})
+HIGH_SIGNAL_CITATION_INTENTS = {
+    "background": 0.03,
+    "compareorcontrast": 0.1,
+    "method": 0.08,
+    "result": 0.1,
+}
 
 REFUTE_CUES = (
     "no significant",
@@ -60,6 +85,10 @@ def _normalize_text(text: str | None) -> str:
     if not text:
         return ""
     return re.sub(r"\s+", " ", text.strip().lower())
+
+
+def _normalize_label(text: str | None) -> str:
+    return re.sub(r"[^a-z0-9]+", "", _normalize_text(text))
 
 
 def _intent_affinity(
@@ -90,6 +119,66 @@ def _intent_affinity(
     return score, matched_cues
 
 
+def _citation_intent_affinity(
+    citation_hits: list[CitationContextHit],
+) -> tuple[float, list[str]]:
+    matched: list[str] = []
+    best_score = 0.0
+    for hit in citation_hits:
+        for intent in hit.intents:
+            normalized = _normalize_label(intent)
+            score = HIGH_SIGNAL_CITATION_INTENTS.get(normalized)
+            if score is None:
+                continue
+            matched.append(intent)
+            best_score = max(best_score, score)
+    return best_score, list(dict.fromkeys(matched))
+
+
+def _publication_type_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str]]:
+    normalized = {_normalize_label(value) for value in paper.publication_types}
+    if normalized & LOW_VALUE_PUBLICATION_TYPES:
+        return -0.08, sorted(paper.publication_types)
+
+    high_value = normalized & HIGH_VALUE_PUBLICATION_TYPES
+    if high_value:
+        return min(0.14, 0.05 + (0.03 * len(high_value))), sorted(paper.publication_types)
+
+    return 0.0, []
+
+
+def _evidence_quality_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str]]:
+    score = 0.0
+    reasons: list[str] = []
+    if paper.has_rule_evidence:
+        score += 0.08
+        reasons.append("rule_evidence")
+    if paper.has_curated_journal_family:
+        score += 0.04
+        reasons.append("curated_journal_family")
+    if paper.entity_core_families > 0:
+        score += min(0.08, 0.02 * paper.entity_core_families)
+        reasons.append("entity_core_families")
+    biomedical_fields = {
+        _normalize_label(value)
+        for value in paper.fields_of_study
+        if _normalize_label(value) in BIOMEDICAL_FIELDS
+    }
+    if biomedical_fields:
+        score += min(0.03, 0.01 * len(biomedical_fields))
+        reasons.append("biomedical_field")
+    return min(score, 0.2), reasons
+
+
+def _title_anchor_affinity(*, query_text: str | None, paper: PaperEvidenceHit) -> float:
+    query_key = normalize_title_key(query_text)
+    if not query_key:
+        return 0.0
+    if normalize_title_key(paper.title) != query_key:
+        return 0.0
+    return 1.0
+
+
 def rank_paper_hits(
     paper_hits: list[PaperEvidenceHit],
     *,
@@ -98,6 +187,7 @@ def rank_paper_hits(
     relation_hits: dict[int, list[RelationMatchedPaperHit]],
     evidence_intent: EvidenceIntent | None = None,
     channel_rankings: Mapping[RetrievalChannel, Mapping[int, int]] | None = None,
+    query_text: str | None = None,
 ) -> list[PaperEvidenceHit]:
     """Fuse baseline channel signals into a final paper rank."""
 
@@ -130,8 +220,18 @@ def rank_paper_hits(
             paper=hit,
             citation_hits=citation_hits.get(hit.corpus_id, []),
         )
+        hit.citation_intent_score, matched_citation_intents = _citation_intent_affinity(
+            citation_hits.get(hit.corpus_id, [])
+        )
+        hit.publication_type_score, matched_publication_types = _publication_type_affinity(hit)
+        hit.evidence_quality_score, evidence_quality_reasons = _evidence_quality_affinity(hit)
+        hit.title_anchor_score = _title_anchor_affinity(
+            query_text=query_text,
+            paper=hit,
+        )
 
         lexical_rank = channel_rankings.get(RetrievalChannel.LEXICAL, {}).get(hit.corpus_id)
+        dense_rank = channel_rankings.get(RetrievalChannel.DENSE_QUERY, {}).get(hit.corpus_id)
         entity_rank = channel_rankings.get(RetrievalChannel.ENTITY_MATCH, {}).get(
             hit.corpus_id
         )
@@ -145,6 +245,10 @@ def rank_paper_hits(
             _rrf_score(
                 lexical_rank,
                 weight=RRF_WEIGHTS[RetrievalChannel.LEXICAL],
+            )
+            + _rrf_score(
+                dense_rank,
+                weight=RRF_WEIGHTS[RetrievalChannel.DENSE_QUERY],
             )
             + _rrf_score(
                 entity_rank,
@@ -162,9 +266,14 @@ def rank_paper_hits(
         hit.fused_score = (
             channel_fusion_score
             + (hit.title_similarity * 0.05)
+            + (hit.title_anchor_score * TITLE_ANCHOR_WEIGHT)
             + (hit.citation_boost * 0.18)
+            + (hit.citation_intent_score * CITATION_INTENT_WEIGHT)
             + (hit.entity_score * 0.24)
             + (hit.relation_score * 0.16)
+            + (hit.dense_score * 0.16)
+            + (hit.publication_type_score * PUBLICATION_TYPE_WEIGHT)
+            + (hit.evidence_quality_score * EVIDENCE_QUALITY_WEIGHT)
             + (hit.intent_score * INTENT_WEIGHT)
         )
 
@@ -173,6 +282,9 @@ def rank_paper_hits(
         if lexical_rank is not None or hit.lexical_score > 0:
             channels.append(RetrievalChannel.LEXICAL)
             reasons.append("Matched title/abstract query terms")
+        if dense_rank is not None or hit.dense_score > 0:
+            channels.append(RetrievalChannel.DENSE_QUERY)
+            reasons.append("Matched SPECTER2 dense-query similarity")
         if entity_rank is not None or hit.entity_score > 0:
             channels.append(RetrievalChannel.ENTITY_MATCH)
             reasons.append("Matched normalized entity concept")
@@ -185,6 +297,23 @@ def rank_paper_hits(
         if hit.citation_boost > 0:
             channels.append(RetrievalChannel.CITATION_CONTEXT)
             reasons.append("Matched citation context")
+        if hit.title_anchor_score > 0:
+            reasons.append("Exact title anchor for the query")
+        if hit.citation_intent_score > 0 and matched_citation_intents:
+            reasons.append(
+                "Matched citation intent context"
+                + f": {', '.join(matched_citation_intents[:3])}"
+            )
+        if hit.publication_type_score > 0 and matched_publication_types:
+            reasons.append(
+                "High-value publication type"
+                + f": {', '.join(matched_publication_types[:2])}"
+            )
+        if hit.evidence_quality_score > 0 and evidence_quality_reasons:
+            reasons.append(
+                "Matched evidence-quality priors"
+                + f": {', '.join(evidence_quality_reasons[:3])}"
+            )
         if hit.intent_score > 0:
             if evidence_intent == EvidenceIntent.SUPPORT:
                 reasons.append(

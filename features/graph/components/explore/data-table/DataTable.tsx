@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { motion } from "framer-motion";
 import { useDashboardStore } from "@/features/graph/stores";
 import { smooth } from "@/lib/motion";
@@ -9,7 +10,7 @@ import { useTableData } from "./use-table-data";
 import { DataTableToolbar } from "./DataTableToolbar";
 import { DataTableBody } from "./DataTableBody";
 
-export function DataTable({
+function DataTableComponent({
   queries,
   overlayRevision,
 }: {
@@ -85,3 +86,6 @@ export function DataTable({
     </motion.div>
   );
 }
+
+export const DataTable = memo(DataTableComponent);
+DataTable.displayName = "DataTable";

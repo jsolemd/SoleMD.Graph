@@ -1079,6 +1079,15 @@ export async function createGraphBundleSession(
           args.extent.length === 2 &&
           Number.isFinite(args.extent[0]) &&
           Number.isFinite(args.extent[1])
+        const hasCustomExtentsByColumn = Object.values(
+          args.extentsByColumn ?? {}
+        ).some(
+          (columnExtent) =>
+            Array.isArray(columnExtent) &&
+            columnExtent.length === 2 &&
+            Number.isFinite(columnExtent[0]) &&
+            Number.isFinite(columnExtent[1])
+        )
         const useQuantiles = args.useQuantiles === true
         const hasCurrentScope =
           typeof args.currentPointScopeSql === 'string' &&
@@ -1086,6 +1095,7 @@ export async function createGraphBundleSession(
 
         if (
           !hasCustomExtent &&
+          !hasCustomExtentsByColumn &&
           (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScope))
         ) {
           return getCachedDatasetInfoHistograms({

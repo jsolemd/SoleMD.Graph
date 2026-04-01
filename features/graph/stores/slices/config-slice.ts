@@ -228,5 +228,10 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
     // simplest way to keep them in sync without a shared event bus.
     useGraphStore.getState().selectNode(null)
   },
-  setAvailableLayers: (layers) => set({ availableLayers: layers }),
+  setAvailableLayers: (layers) => set((state) => (
+    state.availableLayers.length === layers.length &&
+    state.availableLayers.every((layer, index) => layer === layers[index])
+      ? state
+      : { availableLayers: layers }
+  )),
 })

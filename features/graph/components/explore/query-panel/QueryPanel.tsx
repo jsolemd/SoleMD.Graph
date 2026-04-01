@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   Badge,
   Button,
@@ -62,7 +62,7 @@ LIMIT 10`,
   },
 ] as const;
 
-export function QueryPanel({
+function QueryPanelComponent({
   bundle,
   runReadOnlyQuery,
 }: {
@@ -220,3 +220,6 @@ export function QueryPanel({
     </PanelShell>
   );
 }
+
+export const QueryPanel = memo(QueryPanelComponent);
+QueryPanel.displayName = "QueryPanel";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import { motion } from "framer-motion";
 import { useCosmograph } from "@/features/graph/cosmograph";
 import { Badge, Popover, Slider, Text, Tooltip } from "@mantine/core";
@@ -64,7 +64,7 @@ const speedSliderStyles = {
   },
 } as const;
 
-export function TimelineBar() {
+function TimelineBarComponent() {
   const { cosmograph } = useCosmograph();
   const timelineColumn = useDashboardStore((s) => s.timelineColumn);
   const timelineSelection = useDashboardStore((s) => s.timelineSelection);
@@ -208,3 +208,6 @@ export function TimelineBar() {
     </motion.div>
   );
 }
+
+export const TimelineBar = memo(TimelineBarComponent);
+TimelineBar.displayName = "TimelineBar";

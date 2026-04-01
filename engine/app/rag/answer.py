@@ -6,6 +6,7 @@ import itertools
 from dataclasses import dataclass
 
 from app.rag.models import EvidenceBundle
+from app.rag.query_enrichment import normalize_title_key
 from app.rag.types import DEFAULT_ANSWER_MODEL, EvidenceIntent
 
 
@@ -115,14 +116,14 @@ def _select_query_anchor_bundle(
     *,
     query_text: str | None,
 ) -> EvidenceBundle | None:
-    query_key = _normalize_title_key(query_text)
+    query_key = normalize_title_key(query_text)
     if not query_key:
         return None
 
     exact_title_matches = [
         bundle
         for bundle in bundles
-        if _normalize_title_key(bundle.paper.title) == query_key
+        if normalize_title_key(bundle.paper.title) == query_key
     ]
     if not exact_title_matches:
         return None
@@ -136,20 +137,3 @@ def _select_query_anchor_bundle(
             bundle.score,
         ),
     )
-
-
-def _normalize_title_key(text: str | None) -> str:
-    if not text:
-        return ""
-    tokens: list[str] = []
-    current: list[str] = []
-    for char in text.casefold():
-        if char.isalnum():
-            current.append(char)
-            continue
-        if current:
-            tokens.append("".join(current))
-            current = []
-    if current:
-        tokens.append("".join(current))
-    return " ".join(tokens)

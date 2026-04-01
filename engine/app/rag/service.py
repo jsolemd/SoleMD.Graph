@@ -24,9 +24,21 @@ from app.rag.models import (
     RetrievalChannelHit,
     RetrievalChannelResult,
 )
-from app.rag.query_enrichment import build_query_phrases, derive_relation_terms
+from app.rag.query_embedding import RagQueryEmbedder, get_query_embedder
+from app.rag.query_enrichment import (
+    build_query_phrases,
+    derive_relation_terms,
+    normalize_query_text,
+)
 from app.rag.ranking import rank_paper_hits
 from app.rag.repository import PostgresRagRepository, RagRepository
+from app.rag.retrieval_fusion import (
+    build_channel_rankings,
+    build_entity_channel_hits,
+    build_relation_channel_hits,
+    derive_citation_seed_scores,
+    merge_candidate_papers,
+)
 from app.rag.schemas import GraphContext, RagSearchRequest, RagSearchResponse, ResponseMeta
 from app.rag.types import (
     DEFAULT_RETRIEVAL_VERSION,
@@ -118,7 +130,7 @@ def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
     return PaperRetrievalQuery(
         graph_release_id=request.graph_release_id,
         query=request.query,
-        normalized_query=request.query,
+        normalized_query=normalize_query_text(request.query),
         entity_terms=_normalize_terms(request.entity_terms),
         relation_terms=_normalize_relation_terms(request.relation_terms),
         selected_layer_key=request.selected_layer_key,
@@ -132,6 +144,7 @@ def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         k=request.k,
         rerank_topn=max(request.k, request.rerank_topn),
         use_lexical=request.use_lexical,
+        use_dense_query=request.use_dense_query,
         generate_answer=request.generate_answer,
     )
 
@@ -146,198 +159,11 @@ def _entity_seed_terms_for_recall(
     return [term for term in resolved_entity_terms if ":" in term]
 
 
-def _paper_id_for_corpus(corpus_id: int, paper_hits) -> str | None:
+def _paper_id_for_corpus(corpus_id: int, paper_hits: list[PaperEvidenceHit]) -> str | None:
     for paper in paper_hits:
         if paper.corpus_id == corpus_id:
             return paper.paper_id
     return None
-
-
-def _build_channel_rankings(
-    *,
-    lexical_hits: list[PaperEvidenceHit],
-    entity_seed_hits: list[PaperEvidenceHit],
-    relation_seed_hits: list[PaperEvidenceHit],
-    semantic_neighbors: list[GraphSignal],
-) -> dict[RetrievalChannel, dict[int, int]]:
-    rankings: dict[RetrievalChannel, dict[int, int]] = {}
-    if lexical_hits:
-        rankings[RetrievalChannel.LEXICAL] = {
-            hit.corpus_id: index
-            for index, hit in enumerate(lexical_hits, start=1)
-        }
-    if entity_seed_hits:
-        rankings[RetrievalChannel.ENTITY_MATCH] = {
-            hit.corpus_id: index
-            for index, hit in enumerate(entity_seed_hits, start=1)
-        }
-    if relation_seed_hits:
-        rankings[RetrievalChannel.RELATION_MATCH] = {
-            hit.corpus_id: index
-            for index, hit in enumerate(relation_seed_hits, start=1)
-        }
-    if semantic_neighbors:
-        rankings[RetrievalChannel.SEMANTIC_NEIGHBOR] = {
-            hit.corpus_id: index
-            for index, hit in enumerate(semantic_neighbors, start=1)
-        }
-    return rankings
-
-
-def _merge_candidate_papers(
-    *,
-    lexical_hits: list[PaperEvidenceHit],
-    entity_seed_hits: list[PaperEvidenceHit],
-    relation_seed_hits: list[PaperEvidenceHit],
-    citation_seed_hits: list[PaperEvidenceHit],
-    semantic_seed_hits: list[PaperEvidenceHit],
-    semantic_neighbors: list[GraphSignal],
-) -> list[PaperEvidenceHit]:
-    by_corpus_id: dict[int, PaperEvidenceHit] = {
-        hit.corpus_id: hit
-        for hit in lexical_hits
-    }
-
-    for hit in entity_seed_hits:
-        existing = by_corpus_id.get(hit.corpus_id)
-        if existing is None:
-            by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.entity_score = max(existing.entity_score, hit.entity_score)
-
-    for hit in relation_seed_hits:
-        existing = by_corpus_id.get(hit.corpus_id)
-        if existing is None:
-            by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.relation_score = max(existing.relation_score, hit.relation_score)
-
-    for hit in citation_seed_hits:
-        existing = by_corpus_id.get(hit.corpus_id)
-        if existing is None:
-            by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.citation_boost = max(existing.citation_boost, hit.citation_boost)
-
-    for hit in semantic_seed_hits:
-        existing = by_corpus_id.get(hit.corpus_id)
-        if existing is None:
-            by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.semantic_score = max(existing.semantic_score, hit.semantic_score)
-
-    semantic_scores = {
-        signal.corpus_id: signal.score
-        for signal in semantic_neighbors
-    }
-    for corpus_id, score in semantic_scores.items():
-        hit = by_corpus_id.get(corpus_id)
-        if hit is None:
-            continue
-        hit.semantic_score = max(hit.semantic_score, score)
-
-    return list(by_corpus_id.values())
-
-
-def _derive_citation_seed_scores(
-    *,
-    citation_hits: dict[int, list[CitationContextHit]],
-    existing_corpus_ids: set[int],
-    allowed_corpus_ids: set[int] | None = None,
-    limit: int,
-) -> dict[int, float]:
-    scores: dict[int, float] = {}
-    for hits in citation_hits.values():
-        for hit in hits:
-            neighbor_corpus_id = hit.neighbor_corpus_id
-            if neighbor_corpus_id is None or neighbor_corpus_id in existing_corpus_ids:
-                continue
-            if allowed_corpus_ids is not None and neighbor_corpus_id not in allowed_corpus_ids:
-                continue
-            if hit.score < 1.0:
-                continue
-            scores[neighbor_corpus_id] = max(scores.get(neighbor_corpus_id, 0.0), hit.score)
-
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)[:limit]
-    return dict(ranked)
-
-
-def _build_entity_channel_hits(
-    *,
-    entity_seed_hits: list[PaperEvidenceHit],
-    entity_hits: dict[int, list[EntityMatchedPaperHit]],
-    paper_hits: list[PaperEvidenceHit],
-    entity_terms: list[str],
-) -> list[RetrievalChannelHit]:
-    by_corpus_id: dict[int, RetrievalChannelHit] = {}
-
-    default_reasons = entity_terms[:3] or ["Matched normalized entity concept"]
-    for hit in entity_seed_hits:
-        by_corpus_id[hit.corpus_id] = RetrievalChannelHit(
-            corpus_id=hit.corpus_id,
-            paper_id=hit.paper_id,
-            score=hit.entity_score,
-            reasons=default_reasons,
-        )
-
-    for hits in entity_hits.values():
-        for item in hits:
-            current = by_corpus_id.get(item.corpus_id)
-            next_reasons = item.matched_terms or [item.concept_id]
-            if current is None or item.score > current.score:
-                by_corpus_id[item.corpus_id] = RetrievalChannelHit(
-                    corpus_id=item.corpus_id,
-                    paper_id=_paper_id_for_corpus(item.corpus_id, paper_hits),
-                    score=item.score,
-                    reasons=next_reasons,
-                )
-                continue
-
-            merged_reasons = list(
-                dict.fromkeys([*current.reasons, *next_reasons])
-            )
-            current.reasons = merged_reasons
-
-    return sorted(by_corpus_id.values(), key=lambda item: item.score, reverse=True)
-
-
-def _build_relation_channel_hits(
-    *,
-    relation_seed_hits: list[PaperEvidenceHit],
-    relation_hits: dict[int, list[RelationMatchedPaperHit]],
-    paper_hits: list[PaperEvidenceHit],
-    relation_terms: list[str],
-) -> list[RetrievalChannelHit]:
-    by_corpus_id: dict[int, RetrievalChannelHit] = {}
-
-    default_reasons = relation_terms[:3] or ["Matched normalized relation type"]
-    for hit in relation_seed_hits:
-        by_corpus_id[hit.corpus_id] = RetrievalChannelHit(
-            corpus_id=hit.corpus_id,
-            paper_id=hit.paper_id,
-            score=hit.relation_score,
-            reasons=default_reasons,
-        )
-
-    for hits in relation_hits.values():
-        for item in hits:
-            current = by_corpus_id.get(item.corpus_id)
-            next_reasons = [item.relation_type]
-            if current is None or item.score > current.score:
-                by_corpus_id[item.corpus_id] = RetrievalChannelHit(
-                    corpus_id=item.corpus_id,
-                    paper_id=_paper_id_for_corpus(item.corpus_id, paper_hits),
-                    score=item.score,
-                    reasons=next_reasons,
-                )
-                continue
-
-            merged_reasons = list(
-                dict.fromkeys([*current.reasons, *next_reasons])
-            )
-            current.reasons = merged_reasons
-
-    return sorted(by_corpus_id.values(), key=lambda item: item.score, reverse=True)
 
 
 def _channel_result(
@@ -354,8 +180,14 @@ def _empty_channel_results() -> list[RetrievalChannelResult]:
 class RagService:
     """Baseline evidence search over the canonical PostgreSQL substrate."""
 
-    def __init__(self, repository: RagRepository | None = None, warehouse_grounder=None):
+    def __init__(
+        self,
+        repository: RagRepository | None = None,
+        warehouse_grounder=None,
+        query_embedder: RagQueryEmbedder | None = None,
+    ):
         self._repository = repository or PostgresRagRepository()
+        self._query_embedder = query_embedder or get_query_embedder()
         if warehouse_grounder is not None:
             self._warehouse_grounder = warehouse_grounder
         elif isinstance(self._repository, PostgresRagRepository):
@@ -391,7 +223,7 @@ class RagService:
         lexical_hits = (
             self._repository.search_papers(
                 release.graph_run_id,
-                query.normalized_query,
+                query.query,
                 limit=query.rerank_topn,
                 scope_corpus_ids=scope_corpus_ids or None,
             )
@@ -418,6 +250,21 @@ class RagService:
             if query.relation_terms and not selection_only_without_matches
             else []
         )
+        dense_query_embedding = (
+            self._query_embedder.encode(query.query)
+            if query.use_dense_query and not selection_only_without_matches
+            else None
+        )
+        dense_query_hits = (
+            self._repository.search_query_embedding_papers(
+                graph_run_id=release.graph_run_id,
+                query_embedding=dense_query_embedding,
+                limit=query.rerank_topn,
+                scope_corpus_ids=scope_corpus_ids or None,
+            )
+            if dense_query_embedding
+            else []
+        )
         selected_corpus_id = self._repository.resolve_selected_corpus_id(
             graph_run_id=release.graph_run_id,
             selected_graph_paper_ref=query.selected_graph_paper_ref,
@@ -440,7 +287,12 @@ class RagService:
             if item.corpus_id
             not in {
                 hit.corpus_id
-                for hit in [*lexical_hits, *entity_seed_hits, *relation_seed_hits]
+                for hit in [
+                    *lexical_hits,
+                    *dense_query_hits,
+                    *entity_seed_hits,
+                    *relation_seed_hits,
+                ]
             }
         ]
         semantic_seed_hits = (
@@ -450,8 +302,9 @@ class RagService:
             if semantic_seed_ids
             else []
         )
-        initial_paper_hits = _merge_candidate_papers(
+        initial_paper_hits = merge_candidate_papers(
             lexical_hits=lexical_hits,
+            dense_query_hits=dense_query_hits,
             entity_seed_hits=entity_seed_hits,
             relation_seed_hits=relation_seed_hits,
             citation_seed_hits=[],
@@ -477,14 +330,14 @@ class RagService:
         initial_corpus_ids = [hit.corpus_id for hit in initial_paper_hits]
         citation_hits = self._repository.fetch_citation_contexts(
             initial_corpus_ids,
-            query=query.normalized_query,
+            query=query.query,
         )
         allowed_scope_ids = (
             set(scope_corpus_ids)
             if query.scope_mode == RetrievalScope.SELECTION_ONLY
             else None
         )
-        citation_seed_scores = _derive_citation_seed_scores(
+        citation_seed_scores = derive_citation_seed_scores(
             citation_hits=citation_hits,
             existing_corpus_ids=set(initial_corpus_ids),
             allowed_corpus_ids=allowed_scope_ids,
@@ -503,7 +356,7 @@ class RagService:
                 hit.citation_boost,
                 citation_seed_scores.get(hit.corpus_id, 0.0),
             )
-        paper_hits = _merge_candidate_papers(
+        paper_hits = merge_candidate_papers(
             lexical_hits=lexical_hits,
             entity_seed_hits=entity_seed_hits,
             relation_seed_hits=relation_seed_hits,
@@ -516,7 +369,7 @@ class RagService:
         expanded_citation_hits = (
             self._repository.fetch_citation_contexts(
                 [hit.corpus_id for hit in citation_seed_hits],
-                query=query.normalized_query,
+                query=query.query,
             )
             if citation_seed_hits
             else {}
@@ -542,8 +395,10 @@ class RagService:
             entity_hits=entity_hits,
             relation_hits=relation_hits,
             evidence_intent=query.evidence_intent,
-            channel_rankings=_build_channel_rankings(
+            query_text=query.query,
+            channel_rankings=build_channel_rankings(
                 lexical_hits=lexical_hits,
+                dense_query_hits=dense_query_hits,
                 entity_seed_hits=entity_seed_hits,
                 relation_seed_hits=relation_seed_hits,
                 semantic_neighbors=semantic_neighbors,
@@ -616,8 +471,20 @@ class RagService:
                 ],
             ),
             _channel_result(
+                RetrievalChannel.DENSE_QUERY,
+                [
+                    RetrievalChannelHit(
+                        corpus_id=paper.corpus_id,
+                        paper_id=paper.paper_id,
+                        score=paper.dense_score,
+                        reasons=["Matched SPECTER2 ad-hoc dense query"],
+                    )
+                    for paper in dense_query_hits[: query.k]
+                ],
+            ),
+            _channel_result(
                 RetrievalChannel.ENTITY_MATCH,
-                _build_entity_channel_hits(
+                build_entity_channel_hits(
                     entity_seed_hits=entity_seed_hits,
                     entity_hits=entity_hits,
                     paper_hits=paper_hits,
@@ -626,7 +493,7 @@ class RagService:
             ),
             _channel_result(
                 RetrievalChannel.RELATION_MATCH,
-                _build_relation_channel_hits(
+                build_relation_channel_hits(
                     relation_seed_hits=relation_seed_hits,
                     relation_hits=relation_hits,
                     paper_hits=paper_hits,

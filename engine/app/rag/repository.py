@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from app import db
 from app.config import settings
+from app.pgvector_utils import format_vector_literal
 from app.rag import queries
 from app.rag.models import (
     CitationContextHit,
@@ -77,6 +78,15 @@ class RagRepository(Protocol):
         self,
         graph_run_id: str,
         corpus_ids: Sequence[int],
+    ) -> list[PaperEvidenceHit]: ...
+
+    def search_query_embedding_papers(
+        self,
+        *,
+        graph_run_id: str,
+        query_embedding: Sequence[float],
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
     ) -> list[PaperEvidenceHit]: ...
 
     def fetch_known_scoped_papers_by_corpus_ids(
@@ -199,6 +209,40 @@ class PostgresRagRepository:
     def __init__(self, connect: Callable[..., object] | None = None):
         self._connect = connect or db.pooled
         self._semantic_neighbor_index_ready: bool | None = None
+
+    def _paper_hit_from_row(self, row: dict[str, Any]) -> PaperEvidenceHit:
+        return PaperEvidenceHit(
+            corpus_id=int(row["corpus_id"]),
+            paper_id=row.get("paper_id"),
+            semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
+            or row.get("paper_id"),
+            title=row.get("title"),
+            journal_name=row.get("journal_name"),
+            year=row.get("year"),
+            doi=row.get("doi"),
+            pmid=row.get("pmid"),
+            pmcid=row.get("pmcid"),
+            abstract=row.get("abstract"),
+            tldr=row.get("tldr"),
+            text_availability=row.get("text_availability"),
+            is_open_access=row.get("is_open_access"),
+            citation_count=row.get("citation_count"),
+            influential_citation_count=row.get("influential_citation_count"),
+            reference_count=row.get("reference_count"),
+            publication_types=list(row.get("publication_types") or []),
+            fields_of_study=list(row.get("fields_of_study") or []),
+            has_rule_evidence=bool(row.get("has_rule_evidence")),
+            has_curated_journal_family=bool(row.get("has_curated_journal_family")),
+            journal_family_type=row.get("journal_family_type"),
+            entity_rule_families=int(row.get("entity_rule_families") or 0),
+            entity_rule_count=int(row.get("entity_rule_count") or 0),
+            entity_core_families=int(row.get("entity_core_families") or 0),
+            lexical_score=float(row.get("lexical_score") or 0.0),
+            title_similarity=float(row.get("title_similarity") or 0.0),
+            entity_score=float(row.get("entity_candidate_score") or 0.0),
+            relation_score=float(row.get("relation_candidate_score") or 0.0),
+            dense_score=max(0.0, 1.0 - float(row.get("distance") or 0.0)),
+        )
 
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
         release_key = graph_release_id.strip()
@@ -343,31 +387,7 @@ class PostgresRagRepository:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-        hits: list[PaperEvidenceHit] = []
-        for row in rows:
-            hits.append(
-                PaperEvidenceHit(
-                    corpus_id=int(row["corpus_id"]),
-                    paper_id=row.get("paper_id"),
-                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
-                    or row.get("paper_id"),
-                    title=row.get("title"),
-                    journal_name=row.get("journal_name"),
-                    year=row.get("year"),
-                    doi=row.get("doi"),
-                    pmid=row.get("pmid"),
-                    pmcid=row.get("pmcid"),
-                    abstract=row.get("abstract"),
-                    tldr=row.get("tldr"),
-                    text_availability=row.get("text_availability"),
-                    is_open_access=row.get("is_open_access"),
-                    citation_count=row.get("citation_count"),
-                    reference_count=row.get("reference_count"),
-                    lexical_score=float(row.get("lexical_score") or 0.0),
-                    title_similarity=float(row.get("title_similarity") or 0.0),
-                )
-            )
-        return hits
+        return [self._paper_hit_from_row(row) for row in rows]
 
     def fetch_papers_by_corpus_ids(
         self,
@@ -383,29 +403,7 @@ class PostgresRagRepository:
                 cur.execute(queries.PAPER_LOOKUP_SQL, (graph_run_id, unique_ids))
                 rows = cur.fetchall()
 
-        hits: list[PaperEvidenceHit] = []
-        for row in rows:
-            hits.append(
-                PaperEvidenceHit(
-                    corpus_id=int(row["corpus_id"]),
-                    paper_id=row.get("paper_id"),
-                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
-                    or row.get("paper_id"),
-                    title=row.get("title"),
-                    journal_name=row.get("journal_name"),
-                    year=row.get("year"),
-                    doi=row.get("doi"),
-                    pmid=row.get("pmid"),
-                    pmcid=row.get("pmcid"),
-                    abstract=row.get("abstract"),
-                    tldr=row.get("tldr"),
-                    text_availability=row.get("text_availability"),
-                    is_open_access=row.get("is_open_access"),
-                    citation_count=row.get("citation_count"),
-                    reference_count=row.get("reference_count"),
-                )
-            )
-        return hits
+        return [self._paper_hit_from_row(row) for row in rows]
 
     def fetch_known_scoped_papers_by_corpus_ids(
         self,
@@ -420,29 +418,7 @@ class PostgresRagRepository:
                 cur.execute(queries.PAPER_LOOKUP_DIRECT_SQL, (unique_ids,))
                 rows = cur.fetchall()
 
-        hits: list[PaperEvidenceHit] = []
-        for row in rows:
-            hits.append(
-                PaperEvidenceHit(
-                    corpus_id=int(row["corpus_id"]),
-                    paper_id=row.get("paper_id"),
-                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
-                    or row.get("paper_id"),
-                    title=row.get("title"),
-                    journal_name=row.get("journal_name"),
-                    year=row.get("year"),
-                    doi=row.get("doi"),
-                    pmid=row.get("pmid"),
-                    pmcid=row.get("pmcid"),
-                    abstract=row.get("abstract"),
-                    tldr=row.get("tldr"),
-                    text_availability=row.get("text_availability"),
-                    is_open_access=row.get("is_open_access"),
-                    citation_count=row.get("citation_count"),
-                    reference_count=row.get("reference_count"),
-                )
-            )
-        return hits
+        return [self._paper_hit_from_row(row) for row in rows]
 
     def search_relation_papers(
         self,
@@ -479,30 +455,7 @@ class PostgresRagRepository:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-        hits: list[PaperEvidenceHit] = []
-        for row in rows:
-            hits.append(
-                PaperEvidenceHit(
-                    corpus_id=int(row["corpus_id"]),
-                    paper_id=row.get("paper_id"),
-                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
-                    or row.get("paper_id"),
-                    title=row.get("title"),
-                    journal_name=row.get("journal_name"),
-                    year=row.get("year"),
-                    doi=row.get("doi"),
-                    pmid=row.get("pmid"),
-                    pmcid=row.get("pmcid"),
-                    abstract=row.get("abstract"),
-                    tldr=row.get("tldr"),
-                    text_availability=row.get("text_availability"),
-                    is_open_access=row.get("is_open_access"),
-                    citation_count=row.get("citation_count"),
-                    reference_count=row.get("reference_count"),
-                    relation_score=float(row.get("relation_candidate_score") or 0.0),
-                )
-            )
-        return hits
+        return [self._paper_hit_from_row(row) for row in rows]
 
     def search_entity_papers(
         self,
@@ -543,30 +496,32 @@ class PostgresRagRepository:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
 
-        hits: list[PaperEvidenceHit] = []
-        for row in rows:
-            hits.append(
-                PaperEvidenceHit(
-                    corpus_id=int(row["corpus_id"]),
-                    paper_id=row.get("paper_id"),
-                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
-                    or row.get("paper_id"),
-                    title=row.get("title"),
-                    journal_name=row.get("journal_name"),
-                    year=row.get("year"),
-                    doi=row.get("doi"),
-                    pmid=row.get("pmid"),
-                    pmcid=row.get("pmcid"),
-                    abstract=row.get("abstract"),
-                    tldr=row.get("tldr"),
-                    text_availability=row.get("text_availability"),
-                    is_open_access=row.get("is_open_access"),
-                    citation_count=row.get("citation_count"),
-                    reference_count=row.get("reference_count"),
-                    entity_score=float(row.get("entity_candidate_score") or 0.0),
-                )
+        return [self._paper_hit_from_row(row) for row in rows]
+
+    def search_query_embedding_papers(
+        self,
+        *,
+        graph_run_id: str,
+        query_embedding: Sequence[float],
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]:
+        if not query_embedding:
+            return []
+
+        if scope_corpus_ids:
+            rows = self._search_query_embedding_in_selection(
+                query_embedding=query_embedding,
+                limit=limit,
+                scope_corpus_ids=scope_corpus_ids,
             )
-        return hits
+        else:
+            rows = self._search_query_embedding_in_graph(
+                graph_run_id=graph_run_id,
+                query_embedding=query_embedding,
+                limit=limit,
+            )
+        return [self._paper_hit_from_row(row) for row in rows]
 
     def fetch_citation_contexts(
         self,
@@ -941,6 +896,76 @@ class PostgresRagRepository:
                         candidate_limit,
                         graph_run_id,
                         limit,
+                    ),
+                )
+                return cur.fetchall()
+
+    def _search_query_embedding_in_selection(
+        self,
+        *,
+        query_embedding: Sequence[float],
+        limit: int,
+        scope_corpus_ids: Sequence[int],
+    ) -> list[dict[str, Any]]:
+        unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+        if not unique_scope_ids:
+            return []
+
+        vector_literal = format_vector_literal(query_embedding)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.DENSE_QUERY_SEARCH_IN_SELECTION_SQL,
+                    (
+                        vector_literal,
+                        unique_scope_ids,
+                        vector_literal,
+                        self._semantic_neighbor_limit(limit),
+                    ),
+                )
+                return cur.fetchall()
+
+    def _search_query_embedding_in_graph(
+        self,
+        *,
+        graph_run_id: str,
+        query_embedding: Sequence[float],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        normalized_limit = self._semantic_neighbor_limit(limit)
+        vector_literal = format_vector_literal(query_embedding)
+        if self._semantic_neighbor_index_is_ready():
+            candidate_limit = self._semantic_neighbor_candidate_limit(normalized_limit)
+            with self._connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
+                    ef_search = max(int(settings.rag_semantic_neighbor_hnsw_ef_search), 1)
+                    cur.execute(
+                        f"SET LOCAL hnsw.ef_search = {ef_search}"
+                    )
+                    cur.execute(
+                        queries.DENSE_QUERY_SEARCH_ANN_IN_GRAPH_SQL,
+                        (
+                            vector_literal,
+                            vector_literal,
+                            candidate_limit,
+                            graph_run_id,
+                            normalized_limit,
+                        ),
+                    )
+                    rows = cur.fetchall()
+            if len(rows) >= normalized_limit:
+                return rows
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.DENSE_QUERY_SEARCH_SQL,
+                    (
+                        vector_literal,
+                        graph_run_id,
+                        vector_literal,
+                        normalized_limit,
                     ),
                 )
                 return cur.fetchall()

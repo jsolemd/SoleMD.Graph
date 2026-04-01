@@ -1,16 +1,7 @@
-import type { MapLayer } from '@/features/graph/types'
-
 interface PointIncludeColumnArgs {
-  layer: MapLayer
-  activePanel: string | null
   showTimeline: boolean
   filterColumns: Array<{ column: string; type: 'categorical' | 'numeric' }>
   timelineColumn: string | null
-  pointColorColumn: string
-  pointSizeColumn: string
-  pointLabelColumn: string
-  positionXColumn: string
-  positionYColumn: string
 }
 
 /**

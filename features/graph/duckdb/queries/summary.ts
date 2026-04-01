@@ -485,10 +485,20 @@ export async function queryInfoHistogramsBatch(
     bins: number
     currentPointScopeSql: string | null
     extent?: [number, number] | null
+    extentsByColumn?: Record<string, [number, number] | null>
     useQuantiles?: boolean
   }
 ): Promise<Record<string, GraphInfoHistogramResult>> {
-  const { layer, scope, columns, bins, currentPointScopeSql, extent, useQuantiles = false } = args
+  const {
+    layer,
+    scope,
+    columns,
+    bins,
+    currentPointScopeSql,
+    extent,
+    extentsByColumn,
+    useQuantiles = false,
+  } = args
   const safeColumns = [...new Set(columns)].filter(
     (column) => getColumnMetaForLayer(column, layer)?.type === 'numeric'
   )
@@ -504,6 +514,24 @@ export async function queryInfoHistogramsBatch(
   const safeBins = Math.max(1, Math.min(64, bins))
   const minExtent = Array.isArray(extent) ? Number(extent[0]) : null
   const maxExtent = Array.isArray(extent) ? Number(extent[1]) : null
+  const manualBoundsRows = safeColumns.flatMap((column) => {
+    const columnExtent = extentsByColumn?.[column]
+    if (
+      !Array.isArray(columnExtent) ||
+      columnExtent.length !== 2 ||
+      !Number.isFinite(columnExtent[0]) ||
+      !Number.isFinite(columnExtent[1])
+    ) {
+      return []
+    }
+
+    return [
+      `SELECT
+         '${escapeSqlLiteral(column)}' AS column_key,
+         CAST(${Number(columnExtent[0])} AS DOUBLE) AS lower_bound,
+         CAST(${Number(columnExtent[1])} AS DOUBLE) AS upper_bound`,
+    ]
+  })
   const unions = safeColumns.map((column) => {
     const safeColumn = resolveInfoColumn(layer, column)
     return `SELECT
@@ -525,6 +553,17 @@ export async function queryInfoHistogramsBatch(
     `WITH values_by_column AS (
        ${unions.join('\nUNION ALL\n')}
      ),
+     manual_bounds AS (
+       ${
+         manualBoundsRows.length > 0
+           ? manualBoundsRows.join('\nUNION ALL\n')
+           : `SELECT
+                CAST(NULL AS VARCHAR) AS column_key,
+                CAST(NULL AS DOUBLE) AS lower_bound,
+                CAST(NULL AS DOUBLE) AS upper_bound
+              WHERE FALSE`
+       }
+     ),
      stats AS (
        SELECT
          column_key,
@@ -541,18 +580,22 @@ export async function queryInfoHistogramsBatch(
          column_key,
          CASE
            WHEN total_count = 0 THEN NULL
+           WHEN manual_bounds.lower_bound IS NOT NULL THEN manual_bounds.lower_bound
            WHEN ? IS NOT NULL THEN ?
            WHEN ${useQuantiles ? 'TRUE' : 'FALSE'} THEN COALESCE(q05_value, min_value)
            ELSE min_value
          END AS lower_bound,
          CASE
            WHEN total_count = 0 THEN NULL
+           WHEN manual_bounds.upper_bound IS NOT NULL THEN manual_bounds.upper_bound
            WHEN ? IS NOT NULL THEN ?
            WHEN ${useQuantiles ? 'TRUE' : 'FALSE'} THEN COALESCE(q95_value, max_value)
            ELSE max_value
          END AS upper_bound,
          total_count
        FROM stats
+       LEFT JOIN manual_bounds
+         ON manual_bounds.column_key = stats.column_key
      ),
      binned AS (
        SELECT

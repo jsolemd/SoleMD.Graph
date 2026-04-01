@@ -162,6 +162,20 @@ describe("computed value stability", () => {
     });
   });
 
+  it("pointIncludeColumns stays stable when activePanel changes", async () => {
+    const { result } = renderHookWithCount(useConfig);
+    await expectStableReferences(result, ["pointIncludeColumns"], () => {
+      useDashboardStore.setState({ activePanel: "filters" });
+    });
+  });
+
+  it("pointIncludeColumns stays stable when pointColorColumn changes", async () => {
+    const { result } = renderHookWithCount(useConfig);
+    await expectStableReferences(result, ["pointIncludeColumns"], () => {
+      useDashboardStore.setState({ pointColorColumn: "year" });
+    });
+  });
+
   it("pointClusterColumn is stable across unrelated state changes", async () => {
     const { result } = renderHookWithCount(useConfig);
     await expectStableReferences(result, ["pointClusterColumn"], () => {
@@ -226,14 +240,22 @@ describe("render count isolation", () => {
     expect(hook.renderCount()).toBe(1);
   });
 
-  it("changing tableOpen causes exactly 1 re-render (subscribed)", async () => {
+  it("changing tableOpen causes 0 re-renders of the hook", async () => {
     const hook = renderHookWithCount(useConfig);
     hook.resetCount();
     await act(() => {
       useDashboardStore.setState({ tableOpen: true });
     });
-    // tableOpen is a bare selector in the hook (line 26) — documents this subscription
-    expect(hook.renderCount()).toBe(1);
+    expect(hook.renderCount()).toBe(0);
+  });
+
+  it("changing activePanel causes 0 re-renders of the hook", async () => {
+    const hook = renderHookWithCount(useConfig);
+    hook.resetCount();
+    await act(() => {
+      useDashboardStore.setState({ activePanel: "filters" });
+    });
+    expect(hook.renderCount()).toBe(0);
   });
 
   it("changing selectionLocked causes 0 re-renders (unsubscribed)", async () => {

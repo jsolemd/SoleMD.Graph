@@ -193,14 +193,38 @@ export function useFocusedAvoidanceRects({
     let motionDetectionStartedAt = performance.now();
     let lastLabelMutationAt = performance.now();
     let labelVerificationStartedAt = 0;
+    let labelsContainerCache: HTMLElement | null = null;
+    let geometryContainerCache: HTMLElement | null = null;
 
-    const getScreenGeometry = (): ScreenPointGeometry | null => {
-      const labelsContainer = document.querySelector(
+    const getLabelsContainer = () => {
+      if (labelsContainerCache?.isConnected) {
+        return labelsContainerCache;
+      }
+
+      labelsContainerCache = document.querySelector(
         `.${CSS_LABELS_CONTAINER_CLASS}`,
       ) as HTMLElement | null;
-      const container =
-        labelsContainer?.parentElement ??
-        (document.querySelector("canvas") as HTMLCanvasElement | null);
+      return labelsContainerCache;
+    };
+
+    const getGeometryContainer = () => {
+      const labelsContainer = getLabelsContainer();
+      const labelsParent = labelsContainer?.parentElement;
+      if (labelsParent instanceof HTMLElement) {
+        geometryContainerCache = labelsParent;
+        return labelsParent;
+      }
+
+      if (geometryContainerCache?.isConnected) {
+        return geometryContainerCache;
+      }
+
+      geometryContainerCache = document.querySelector("canvas") as HTMLElement | null;
+      return geometryContainerCache;
+    };
+
+    const getScreenGeometry = (): ScreenPointGeometry | null => {
+      const container = getGeometryContainer();
       const pointPosition = cosmograph.getPointPositionByIndex(focusedPointIndex);
       if (!container || !pointPosition) {
         return null;
@@ -365,9 +389,7 @@ export function useFocusedAvoidanceRects({
       labelVerificationStartedAt = performance.now();
       lastLabelMutationAt = labelVerificationStartedAt;
 
-      const labelsContainer =
-        document.querySelector(`.${CSS_LABELS_CONTAINER_CLASS}`) ??
-        document.body;
+      const labelsContainer = getLabelsContainer();
       if (labelsContainer instanceof Node) {
         labelMutationObserver = new MutationObserver(() => {
           lastLabelMutationAt = performance.now();

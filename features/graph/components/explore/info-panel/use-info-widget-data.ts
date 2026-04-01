@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { NumericStatsRow } from "@/features/graph/duckdb/queries";
 import type {
   GraphBundleQueries,
@@ -68,14 +68,7 @@ export function useInfoWidgetData({
   const [widgetError, setWidgetError] = useState<string | null>(null);
   const [lastLoadedKey, setLastLoadedKey] = useState<string | null>(null);
 
-  const {
-    categoricalColumns,
-    categoricalMaxItemsByColumn,
-    categoricalMergeDepth,
-    histogramColumns,
-    quantileHistogramColumns,
-    linearHistogramColumns,
-  } = useMemo(() => {
+  const queryPlan = useMemo(() => {
     const categoricalSlots = widgetDescriptors.filter(
       (slot) => slot.kind === "bars" || slot.kind === "facet-summary",
     );
@@ -113,9 +106,19 @@ export function useInfoWidgetData({
       ),
     };
   }, [widgetDescriptors]);
+  const queryPlanRef = useRef(queryPlan);
+  queryPlanRef.current = queryPlan;
 
   useEffect(() => {
     let cancelled = false;
+    const {
+      categoricalColumns,
+      categoricalMaxItemsByColumn,
+      categoricalMergeDepth,
+      histogramColumns,
+      quantileHistogramColumns,
+      linearHistogramColumns,
+    } = queryPlanRef.current;
 
     Promise.all([
       categoricalColumns.length > 0
@@ -185,98 +188,77 @@ export function useInfoWidgetData({
           ...linearDatasetHistograms,
           ...quantileDatasetHistograms,
         };
-        const selectionHistogramEntries =
+        const histogramBins = Math.max(
+          DEFAULT_HISTOGRAM_BINS,
+          ...histogramColumns.map(
+            (column) => datasetHistograms[column]?.bins.length ?? 0,
+          ),
+        );
+        const histogramExtentsByColumn = Object.fromEntries(
+          histogramColumns.map((column) => {
+            const datasetHistogram = datasetHistograms[column] ?? {
+              bins: [],
+              totalCount: 0,
+            };
+            const extent =
+              datasetHistogram.bins.length > 0
+                ? ([
+                    datasetHistogram.bins[0].min,
+                    datasetHistogram.bins[datasetHistogram.bins.length - 1].max,
+                  ] as [number, number])
+                : null;
+
+            return [column, extent];
+          }),
+        ) as Record<string, [number, number] | null>;
+        const [
+          selectionHistogramMap,
+          filteredHistogramMap,
+          selectionNumericStats,
+          filteredNumericStats,
+        ] = await Promise.all([
           includeSelectionLayer && histogramColumns.length > 0
-            ? await Promise.all(
-                histogramColumns.map(async (column) => {
-                  const datasetHistogram = datasetHistograms[column] ?? {
-                    bins: [],
-                    totalCount: 0,
-                  };
-                  const extent =
-                    datasetHistogram.bins.length > 0
-                      ? ([
-                          datasetHistogram.bins[0].min,
-                          datasetHistogram.bins[datasetHistogram.bins.length - 1]
-                            .max,
-                        ] as [number, number])
-                      : null;
-
-                  const subsetHistogram = await queries.getInfoHistogram({
-                    layer: activeLayer,
-                    scope: "selected",
-                    column,
-                    currentPointScopeSql: null,
-                    bins: Math.max(
-                      datasetHistogram.bins.length,
-                      DEFAULT_HISTOGRAM_BINS,
-                    ),
-                    extent,
-                  });
-
-                  return [column, subsetHistogram] as const;
-                }),
-              )
-            : [];
-        const filteredHistogramEntries =
+            ? queries.getInfoHistogramsBatch({
+                layer: activeLayer,
+                scope: "selected",
+                columns: histogramColumns,
+                bins: histogramBins,
+                currentPointScopeSql: null,
+                extentsByColumn: histogramExtentsByColumn,
+              })
+            : Promise.resolve<Record<string, GraphInfoHistogramResult>>({}),
           includeFilteredLayer && histogramColumns.length > 0
-            ? await Promise.all(
-                histogramColumns.map(async (column) => {
-                  const datasetHistogram = datasetHistograms[column] ?? {
-                    bins: [],
-                    totalCount: 0,
-                  };
-                  const extent =
-                    datasetHistogram.bins.length > 0
-                      ? ([
-                          datasetHistogram.bins[0].min,
-                          datasetHistogram.bins[datasetHistogram.bins.length - 1]
-                            .max,
-                        ] as [number, number])
-                      : null;
-
-                  const filteredHistogram = await queries.getInfoHistogram({
-                    layer: activeLayer,
-                    scope: "current",
-                    column,
-                    currentPointScopeSql: filteredPointScopeSql,
-                    bins: Math.max(
-                      datasetHistogram.bins.length,
-                      DEFAULT_HISTOGRAM_BINS,
-                    ),
-                    extent,
-                  });
-
-                  return [column, filteredHistogram] as const;
-                }),
-              )
-            : [];
-
-        const selectionNumericStats =
+            ? queries.getInfoHistogramsBatch({
+                layer: activeLayer,
+                scope: "current",
+                columns: histogramColumns,
+                bins: histogramBins,
+                currentPointScopeSql: filteredPointScopeSql,
+                extentsByColumn: histogramExtentsByColumn,
+              })
+            : Promise.resolve<Record<string, GraphInfoHistogramResult>>({}),
           includeSelectionLayer && histogramColumns.length > 0
-            ? await queries.getNumericStatsBatch({
+            ? queries.getNumericStatsBatch({
                 layer: activeLayer,
                 scope: "selected",
                 columns: histogramColumns,
                 currentPointScopeSql: null,
               })
-            : {};
-        const filteredNumericStats =
+            : Promise.resolve<Record<string, NumericStatsRow>>({}),
           includeFilteredLayer && histogramColumns.length > 0
-            ? await queries.getNumericStatsBatch({
+            ? queries.getNumericStatsBatch({
                 layer: activeLayer,
                 scope: "current",
                 columns: histogramColumns,
                 currentPointScopeSql: filteredPointScopeSql,
               })
-            : {};
+            : Promise.resolve<Record<string, NumericStatsRow>>({}),
+        ]);
 
         if (cancelled) {
           return;
         }
 
-        const selectionHistogramMap = Object.fromEntries(selectionHistogramEntries);
-        const filteredHistogramMap = Object.fromEntries(filteredHistogramEntries);
         setCategoricalSummaries(
           Object.fromEntries(
             categoricalColumns.map((column) => [
@@ -350,16 +332,10 @@ export function useInfoWidgetData({
     };
   }, [
     activeLayer,
-    categoricalColumns,
-    categoricalMaxItemsByColumn,
-    categoricalMergeDepth,
     filteredPointScopeSql,
-    histogramColumns,
     includeFilteredLayer,
     includeSelectionLayer,
-    linearHistogramColumns,
     queries,
-    quantileHistogramColumns,
     requestKey,
   ]);
 

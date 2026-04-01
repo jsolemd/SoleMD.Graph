@@ -54,7 +54,11 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
           selectedPointRevision: state.selectedPointRevision + 1,
         }
   }),
-  setActiveSelectionSourceId: (sourceId) => set({ activeSelectionSourceId: sourceId }),
+  setActiveSelectionSourceId: (sourceId) => set((state) => (
+    state.activeSelectionSourceId === sourceId
+      ? state
+      : { activeSelectionSourceId: sourceId }
+  )),
   lockSelection: () => set((s) => {
     const hasCurrentSubset =
       typeof s.currentPointScopeSql === 'string' &&

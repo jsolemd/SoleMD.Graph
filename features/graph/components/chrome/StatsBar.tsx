@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import { formatNumber } from "@/lib/helpers";
 import type { GraphStats } from "@/features/graph/types";
 
-export function StatsBar({ stats }: { stats: GraphStats }) {
+function StatsBarComponent({ stats }: { stats: GraphStats }) {
   const items = useMemo(() => {
     return [
       { label: stats.pointLabel, value: stats.points },
@@ -27,3 +27,6 @@ export function StatsBar({ stats }: { stats: GraphStats }) {
     </div>
   );
 }
+
+export const StatsBar = memo(StatsBarComponent);
+StatsBar.displayName = "StatsBar";

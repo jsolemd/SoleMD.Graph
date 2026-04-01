@@ -25,9 +25,7 @@ export function getCachedCategoricalDataset(key: string): GraphInfoFacetRow[] | 
 
 export function setCachedCategoricalDataset(key: string, values: GraphInfoFacetRow[]): void {
   if (values.length === 0) {
-    if (!categoricalDatasetCache.has(key)) {
-      categoricalDatasetCache.delete(key);
-    }
+    categoricalDatasetCache.delete(key);
     return;
   }
 
@@ -40,9 +38,7 @@ export function getCachedNumericDataset(key: string): number[] | null {
 
 export function setCachedNumericDataset(key: string, values: number[]): void {
   if (values.length === 0) {
-    if (!numericDatasetCache.has(key)) {
-      numericDatasetCache.delete(key);
-    }
+    numericDatasetCache.delete(key);
     return;
   }
 

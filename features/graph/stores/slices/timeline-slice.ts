@@ -95,9 +95,24 @@ export const createTimelineSlice: StateCreator<DashboardState, [], [], TimelineS
   timelineSelection: undefined,
   timelineSpeed: 1,
 
-  setShowTimeline: (show) => set({ showTimeline: show }),
+  setShowTimeline: (show) => set((s) => (
+    s.showTimeline === show ? s : { showTimeline: show }
+  )),
   toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
   setTimelineColumn: (col) => set({ timelineColumn: col }),
-  setTimelineSelection: (selection) => set({ timelineSelection: selection }),
+  setTimelineSelection: (selection) => set((s) => {
+    const current = s.timelineSelection
+    const next = selection
+    const isSameSelection =
+      current === next ||
+      (
+        Array.isArray(current) &&
+        Array.isArray(next) &&
+        current[0] === next[0] &&
+        current[1] === next[1]
+      )
+
+    return isSameSelection ? s : { timelineSelection: selection }
+  }),
   setTimelineSpeed: (speed) => set({ timelineSpeed: speed }),
 })
