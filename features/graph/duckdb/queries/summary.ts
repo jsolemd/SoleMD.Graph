@@ -577,7 +577,7 @@ export async function queryInfoHistogramsBatch(
      ),
      bounds AS (
        SELECT
-         column_key,
+         stats.column_key,
          CASE
            WHEN total_count = 0 THEN NULL
            WHEN manual_bounds.lower_bound IS NOT NULL THEN manual_bounds.lower_bound

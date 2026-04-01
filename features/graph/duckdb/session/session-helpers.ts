@@ -17,7 +17,7 @@ export function normalizeSelectedPointIndices(pointIndices: number[]): number[] 
   )]
 }
 
-function partitionFacetColumns(
+export function partitionFacetColumns(
   layer: Parameters<typeof queryFacetSummaries>[1]['layer'],
   columns: string[]
 ) {

@@ -6,7 +6,6 @@ import type {
   GraphInfoSummary,
 } from '@/features/graph/types'
 
-import type { GraphBundleSession } from '../types'
 import { createBoundedCache } from '../utils'
 import {
   queryCategoricalValues,
@@ -29,7 +28,8 @@ import {
   mapBarsToFacetRows,
   mergeFacetSummaryRows,
   partitionFacetColumns,
-} from './info-query-helpers'
+} from './session-helpers'
+import type { SessionInfoController } from './session-types'
 
 interface SessionInfoQueriesArgs {
   conn: AsyncDuckDBConnection
@@ -37,19 +37,7 @@ interface SessionInfoQueriesArgs {
   getOverlayRevision: () => number
 }
 
-export interface SessionInfoQueries {
-  reset: () => void
-  getCategoricalValues: GraphBundleSession['getCategoricalValues']
-  getFacetSummaries: GraphBundleSession['getFacetSummaries']
-  getFacetSummary: GraphBundleSession['getFacetSummary']
-  getInfoBars: GraphBundleSession['getInfoBars']
-  getInfoBarsBatch: GraphBundleSession['getInfoBarsBatch']
-  getInfoHistogram: GraphBundleSession['getInfoHistogram']
-  getInfoHistogramsBatch: GraphBundleSession['getInfoHistogramsBatch']
-  getInfoSummary: GraphBundleSession['getInfoSummary']
-  getNumericStatsBatch: GraphBundleSession['getNumericStatsBatch']
-  getNumericValues: GraphBundleSession['getNumericValues']
-}
+export type SessionInfoQueries = SessionInfoController
 
 export function createSessionInfoQueries({
   conn,

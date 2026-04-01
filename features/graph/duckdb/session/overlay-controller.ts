@@ -1,14 +1,7 @@
-import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
-
-import type {
-  GraphCanvasListener,
-  GraphCanvasSource,
-} from '../types'
 import type {
   OverlayActivationResult,
   OverlayProducerId,
 } from '@/features/graph/types'
-import type { GraphBundleSession as GraphBundleSessionApi } from '../types'
 import {
   LEGACY_OVERLAY_PRODUCER,
   MANUAL_CLUSTER_NEIGHBORHOOD_OVERLAY_PRODUCER,
@@ -29,73 +22,19 @@ import {
   replaceSelectedPointIndices,
   replaceSelectedPointIndicesFromScopeSql,
 } from '../views'
-
-interface CreateSessionOverlayControllerArgs {
-  conn: AsyncDuckDBConnection
-  db: import('@duckdb/duckdb-wasm').AsyncDuckDB
-  basePointCount: number
-  ensureOptionalBundleTables: (tableNames: string[]) => Promise<void>
-  initialPointCounts: GraphCanvasSource['pointCounts']
-  resetOverlayDependentCaches: () => void
-}
-
-export interface SessionOverlayController {
-  activateOverlay: GraphBundleSessionApi['activateOverlay']
-  clearOverlay: GraphBundleSessionApi['clearOverlay']
-  clearOverlayProducer: GraphBundleSessionApi['clearOverlayProducer']
-  getCanvas: () => GraphCanvasSource
-  getOverlayPointIds: GraphBundleSessionApi['getOverlayPointIds']
-  reconcileOverlayPointIds: GraphBundleSessionApi['reconcileOverlayPointIds']
-  setOverlayPointIds: GraphBundleSessionApi['setOverlayPointIds']
-  setOverlayProducerPointIds: GraphBundleSessionApi['setOverlayProducerPointIds']
-  setSelectedPointIndices: GraphBundleSessionApi['setSelectedPointIndices']
-  setSelectedPointScopeSql: GraphBundleSessionApi['setSelectedPointScopeSql']
-  subscribeCanvas: (listener: GraphCanvasListener) => () => void
-}
-
-type SelectedPointState =
-  | { kind: 'empty' }
-  | { kind: 'indices'; pointIndices: number[] }
-  | { kind: 'scope'; scopeSql: string }
-
-function normalizeOverlayPointIds(pointIds: string[]): string[] {
-  return [...new Set(pointIds.filter((pointId) => pointId.trim().length > 0))]
-}
-
-function normalizeSelectedPointIndices(pointIndices: number[]): number[] {
-  return [...new Set(
-    pointIndices
-      .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value) && value >= 0)
-  )]
-}
-
-function haveSamePointIds(left: string[], right: string[]): boolean {
-  if (left.length !== right.length) {
-    return false
-  }
-
-  const rightPointIdSet = new Set(right)
-  return left.every((pointId) => rightPointIdSet.has(pointId))
-}
-
-function haveSamePointIndices(left: number[], right: number[]): boolean {
-  if (left.length !== right.length) {
-    return false
-  }
-
-  const rightPointIndexSet = new Set(right)
-  return left.every((pointIndex) => rightPointIndexSet.has(pointIndex))
-}
-
-function normalizeSelectedPointScopeSql(scopeSql: string | null) {
-  if (typeof scopeSql !== 'string') {
-    return null
-  }
-
-  const normalized = scopeSql.trim()
-  return normalized.length > 0 ? normalized : null
-}
+import type { GraphCanvasListener } from '../types'
+import {
+  haveSamePointIds,
+  haveSamePointIndices,
+  normalizeOverlayPointIds,
+  normalizeSelectedPointIndices,
+  normalizeSelectedPointScopeSql,
+  type SelectedPointState,
+} from './session-helpers'
+import type {
+  CreateSessionOverlayControllerArgs,
+  SessionOverlayController,
+} from './session-types'
 
 export function createSessionOverlayController({
   conn,

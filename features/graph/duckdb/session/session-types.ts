@@ -1,5 +1,7 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
+import type { GraphBundle } from '@/features/graph/types'
+
 import type { GraphBundleSession, GraphCanvasSource } from '../types'
 
 export type EnsureOptionalBundleTables = (tableNames: string[]) => Promise<void>
@@ -19,7 +21,23 @@ export interface SessionOverlayController
     | 'activateOverlay'
   > {
   getCanvas: () => GraphCanvasSource
-  getOverlayRevision: () => number
+}
+
+export interface SessionInfoController
+  extends Pick<
+    GraphBundleSession,
+    | 'getInfoSummary'
+    | 'getCategoricalValues'
+    | 'getNumericValues'
+    | 'getInfoBars'
+    | 'getInfoBarsBatch'
+    | 'getInfoHistogram'
+    | 'getInfoHistogramsBatch'
+    | 'getNumericStatsBatch'
+    | 'getFacetSummary'
+    | 'getFacetSummaries'
+  > {
+  reset: () => void
 }
 
 export interface SessionQueryController
@@ -43,27 +61,17 @@ export interface SessionQueryController
   resetOverlayDependentCaches: () => void
 }
 
-export interface SessionInfoController
-  extends Pick<
-    GraphBundleSession,
-    | 'getInfoSummary'
-    | 'getCategoricalValues'
-    | 'getNumericValues'
-    | 'getInfoBars'
-    | 'getInfoBarsBatch'
-    | 'getInfoHistogram'
-    | 'getInfoHistogramsBatch'
-    | 'getNumericStatsBatch'
-    | 'getFacetSummary'
-    | 'getFacetSummaries'
-  > {
-  resetOverlayDependentCaches: () => void
-}
-
 export interface CreateSessionOverlayControllerArgs {
   basePointCount: number
   conn: AsyncDuckDBConnection
   db: AsyncDuckDB
   ensureOptionalBundleTables: EnsureOptionalBundleTables
+  initialPointCounts: GraphCanvasSource['pointCounts']
   resetOverlayDependentCaches: () => void
+}
+
+export interface CreateSessionQueryControllerArgs {
+  bundle: GraphBundle
+  conn: AsyncDuckDBConnection
+  ensureOptionalBundleTables: EnsureOptionalBundleTables
 }
