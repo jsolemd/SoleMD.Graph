@@ -375,6 +375,7 @@ export default function CosmographRenderer({
       pointSamplingDistance={170}
       preservePointPositionsOnDataUpdate
       showHoveredPointLabel={labelMode.showHoveredPointLabel}
+      hoveredPointLabelClassName=""
       renderHoveredPointRing={config.renderHoveredPointRing}
       hoveredPointRingColor={config.colors.ring}
       pointLabelFontSize={11}

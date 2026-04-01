@@ -40,17 +40,20 @@ export function resolveGraphLabelMode({
   hasSelection,
 }: GraphLabelModeInput): GraphLabelMode {
   const selectionDriven = hasFocusedPoint || hasSelection;
+  // Native cluster labels come from `pointClusterBy`; single-point labels
+  // should keep using point-native titles so hover/focus/selection never
+  // fall back to sparse cluster-name values.
+  const pointLevelLabelColumn =
+    pointLabelColumn === "clusterLabel" ? "displayLabel" : pointLabelColumn;
   const clusterLabelOverview =
     pointLabelColumn === "clusterLabel" &&
     showPointLabels &&
     !zoomedIn &&
     !selectionDriven;
-  const zoomDrivenDisplayLabels =
-    zoomedIn && pointLabelColumn === "clusterLabel";
   const effectivePointLabelColumn =
-    selectionDriven || zoomDrivenDisplayLabels
+    selectionDriven
       ? "displayLabel"
-      : pointLabelColumn;
+      : pointLevelLabelColumn;
   const labelsEnabled = showPointLabels || selectionDriven;
 
   return {

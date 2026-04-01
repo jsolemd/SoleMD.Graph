@@ -147,6 +147,7 @@ describe("GraphRenderer", () => {
       | undefined;
 
     expect(props).toBeDefined();
+    expect(props?.pointLabelBy).toBe("displayLabel");
     expect(props?.pointClusterBy).toBe("clusterLabel");
     expect(props?.showClusterLabels).toBe(true);
     expect(props?.showDynamicLabels).toBe(false);
@@ -189,6 +190,7 @@ describe("GraphRenderer", () => {
     expect(styleTag?.textContent).toContain("opacity: 1");
     expect(styleTag?.textContent).toContain("var(--graph-label-text-shadow)");
     expect(styleTag?.textContent).toContain("var(--graph-label-text-stroke)");
+    expect(styleTag?.textContent).toContain(":empty");
   });
 
   it("fits the initial viewport explicitly before signaling first paint", () => {
@@ -258,7 +260,7 @@ describe("GraphRenderer", () => {
     expect(props?.showClusterLabels).toBe(false);
     expect(props?.pointLabelColor).toBeUndefined();
     expect(props?.pointLabelClassName).toBeUndefined();
-    expect(props?.hoveredPointLabelClassName).toBeUndefined();
+    expect(props?.hoveredPointLabelClassName).toBe("");
   });
 
   it("clears stale point focus and detail when a cluster label is clicked", () => {

@@ -21,6 +21,10 @@ ${CSS_LABEL_SELECTOR} {
   text-shadow: var(--graph-label-text-shadow) !important;
   -webkit-text-stroke: var(--graph-label-text-stroke);
 }
+
+${CSS_LABEL_SELECTOR}:empty {
+  display: none !important;
+}
 `.trim();
 
 export function resolveClusterLabelClassName(text: string) {

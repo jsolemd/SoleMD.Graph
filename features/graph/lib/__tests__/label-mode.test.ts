@@ -17,7 +17,7 @@ describe("label-mode", () => {
     const overview = resolveGraphLabelMode(BASE);
     const zoomed = resolveGraphLabelMode({ ...BASE, zoomedIn: true });
 
-    expect(overview.effectivePointLabelColumn).toBe("clusterLabel");
+    expect(overview.effectivePointLabelColumn).toBe("displayLabel");
     expect(overview.showClusterLabels).toBe(true);
     expect(overview.showDynamicLabels).toBe(false);
     expect(overview.showTopLabels).toBe(false);
@@ -72,6 +72,7 @@ describe("label-mode", () => {
 
     expect(overrideOff.showHoveredPointLabel).toBe(false);
     expect(overrideOn.showHoveredPointLabel).toBe(true);
+    expect(overrideOn.effectivePointLabelColumn).toBe("displayLabel");
     expect(overrideWhileZooming.showHoveredPointLabel).toBe(false);
   });
 });
