@@ -77,21 +77,18 @@ export default function CosmographRenderer({
 
   const {
     zoomedIn,
-    isActivelyZooming,
     syncZoomState,
-    handleZoomStart,
     handleZoom,
-    handleZoomEnd,
   } =
     useZoomLabels(cosmographRef);
 
   const handleViewportSettled = useCallback(() => {
-    handleZoomEnd();
+    syncZoomState();
 
     if (focusedPointIndex != null) {
       markCameraSettled();
     }
-  }, [focusedPointIndex, handleZoomEnd, markCameraSettled]);
+  }, [focusedPointIndex, markCameraSettled, syncZoomState]);
 
   const resolveAndSelectNode = useCallback(
     async (selector: { id?: string; index?: number }) => {
@@ -242,7 +239,6 @@ export default function CosmographRenderer({
     showHoveredPointLabel: config.showHoveredPointLabel,
     hoverLabelAlwaysOn: config.hoverLabelAlwaysOn,
     zoomedIn,
-    isActivelyZooming,
     hasFocusedPoint: focusedPointIndex != null,
     focusedPointId: selectedNode?.id ?? null,
     hasSelection: selectedPointCount > 0,
@@ -388,7 +384,6 @@ export default function CosmographRenderer({
       focusPointOnLabelClick={!isLocked}
       resetSelectionOnEmptyCanvasClick={!isLocked}
       disableLogging
-      onZoomStart={handleZoomStart}
       onZoom={handleZoom}
       onZoomEnd={handleViewportSettled}
       onLabelClick={handleLabelClick}

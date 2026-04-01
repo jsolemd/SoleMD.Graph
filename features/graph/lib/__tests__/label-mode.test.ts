@@ -7,7 +7,6 @@ const BASE: GraphLabelModeInput = {
   showHoveredPointLabel: true,
   hoverLabelAlwaysOn: false,
   zoomedIn: false,
-  isActivelyZooming: false,
   hasFocusedPoint: false,
   hasSelection: false,
 };
@@ -47,15 +46,10 @@ describe("label-mode", () => {
   it("gates hover labels on zoom level", () => {
     const zoomedOut = resolveGraphLabelMode(BASE);
     const zoomedIn = resolveGraphLabelMode({ ...BASE, zoomedIn: true });
-    const activelyZooming = resolveGraphLabelMode({
-      ...BASE,
-      zoomedIn: true,
-      isActivelyZooming: true,
-    });
 
     expect(zoomedOut.showHoveredPointLabel).toBe(false);
     expect(zoomedIn.showHoveredPointLabel).toBe(true);
-    expect(activelyZooming.showHoveredPointLabel).toBe(false);
+    expect(zoomedIn.showTopLabels).toBe(true);
   });
 
   it("always-on override bypasses zoom gate for hover labels", () => {
@@ -64,15 +58,9 @@ describe("label-mode", () => {
       ...BASE,
       hoverLabelAlwaysOn: true,
     });
-    const overrideWhileZooming = resolveGraphLabelMode({
-      ...BASE,
-      hoverLabelAlwaysOn: true,
-      isActivelyZooming: true,
-    });
 
     expect(overrideOff.showHoveredPointLabel).toBe(false);
     expect(overrideOn.showHoveredPointLabel).toBe(true);
     expect(overrideOn.effectivePointLabelColumn).toBe("displayLabel");
-    expect(overrideWhileZooming.showHoveredPointLabel).toBe(false);
   });
 });

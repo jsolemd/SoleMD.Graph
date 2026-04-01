@@ -16,12 +16,9 @@ jest.mock("../hooks/use-points-filtered", () => ({
 
 const mockZoomLabelsState = {
   zoomedIn: false,
-  isActivelyZooming: false,
 };
 const mockSyncZoomState = jest.fn();
-const mockHandleZoomStart = jest.fn();
 const mockHandleZoom = jest.fn();
-const mockHandleZoomEnd = jest.fn();
 const mockFitView = jest.fn();
 const mockPointsSelectionUpdate = jest.fn();
 const mockUnselectAllPoints = jest.fn();
@@ -29,11 +26,8 @@ const mockUnselectAllPoints = jest.fn();
 jest.mock("../hooks/use-zoom-labels", () => ({
   useZoomLabels: () => ({
     zoomedIn: mockZoomLabelsState.zoomedIn,
-    isActivelyZooming: mockZoomLabelsState.isActivelyZooming,
     syncZoomState: mockSyncZoomState,
-    handleZoomStart: mockHandleZoomStart,
     handleZoom: mockHandleZoom,
-    handleZoomEnd: mockHandleZoomEnd,
   }),
 }));
 
@@ -133,7 +127,6 @@ function renderRenderer() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockZoomLabelsState.zoomedIn = false;
-  mockZoomLabelsState.isActivelyZooming = false;
   useDashboardStore.setState(useDashboardStore.getInitialState());
   useGraphStore.setState(useGraphStore.getInitialState());
 });

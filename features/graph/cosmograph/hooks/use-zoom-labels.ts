@@ -10,8 +10,6 @@ export function useZoomLabels(
 ) {
   const [zoomedIn, setZoomedIn] = useState(false);
   const zoomedInRef = useRef(false);
-  const [isActivelyZooming, setIsActivelyZooming] = useState(false);
-  const isActivelyZoomingRef = useRef(false);
 
   const updateZoomState = useCallback(() => {
     const zoom = cosmographRef.current?.getZoomLevel();
@@ -26,29 +24,13 @@ export function useZoomLabels(
     }
   }, [cosmographRef]);
 
-  const handleZoomStart = useCallback(() => {
-    if (!isActivelyZoomingRef.current) {
-      isActivelyZoomingRef.current = true;
-      setIsActivelyZooming(true);
-    }
-  }, []);
-
   const handleZoom = useCallback(() => {
     updateZoomState();
   }, [updateZoomState]);
 
-  const handleZoomEnd = useCallback(() => {
-    isActivelyZoomingRef.current = false;
-    updateZoomState();
-    setIsActivelyZooming(false);
-  }, [updateZoomState]);
-
   return {
     zoomedIn,
-    isActivelyZooming,
     syncZoomState: updateZoomState,
-    handleZoomStart,
     handleZoom,
-    handleZoomEnd,
   };
 }

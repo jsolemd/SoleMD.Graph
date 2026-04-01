@@ -5,7 +5,6 @@ export interface GraphLabelModeInput {
   showHoveredPointLabel: boolean;
   hoverLabelAlwaysOn: boolean;
   zoomedIn: boolean;
-  isActivelyZooming: boolean;
   hasFocusedPoint: boolean;
   focusedPointId?: string | null;
   hasSelection: boolean;
@@ -34,7 +33,6 @@ export function resolveGraphLabelMode({
   showHoveredPointLabel,
   hoverLabelAlwaysOn,
   zoomedIn,
-  isActivelyZooming,
   hasFocusedPoint,
   focusedPointId,
   hasSelection,
@@ -68,13 +66,11 @@ export function resolveGraphLabelMode({
     showTopLabels:
       labelsEnabled &&
       !clusterLabelOverview &&
-      !isActivelyZooming &&
       !hasFocusedPoint &&
       !hasSelection,
     showHoveredPointLabel:
       showHoveredPointLabel &&
-      (hoverLabelAlwaysOn || zoomedIn) &&
-      !isActivelyZooming,
+      (hoverLabelAlwaysOn || zoomedIn),
     showFocusedPointLabel: hasFocusedPoint,
     showSelectedLabels: labelsEnabled && hasSelection,
     showUnselectedPointLabels: !hasSelection,

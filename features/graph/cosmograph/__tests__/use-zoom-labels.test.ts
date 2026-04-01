@@ -20,7 +20,6 @@ describe("useZoomLabels", () => {
     const ref = makeMockRef(0.5);
     const { result } = renderHook(() => useZoomLabels(ref));
     expect(result.current.zoomedIn).toBe(false);
-    expect(result.current.isActivelyZooming).toBe(false);
   });
 
   it("detects zoom in above threshold via syncZoomState", () => {
@@ -45,25 +44,6 @@ describe("useZoomLabels", () => {
     ref.current = { getZoomLevel: () => 0.5 } as never;
     act(() => result.current.syncZoomState());
     expect(result.current.zoomedIn).toBe(false);
-  });
-
-  it("handleZoomStart sets isActivelyZooming", () => {
-    const ref = makeMockRef(0.5);
-    const { result } = renderHook(() => useZoomLabels(ref));
-
-    act(() => result.current.handleZoomStart());
-    expect(result.current.isActivelyZooming).toBe(true);
-  });
-
-  it("handleZoomEnd clears isActivelyZooming", () => {
-    const ref = makeMockRef(0.5);
-    const { result } = renderHook(() => useZoomLabels(ref));
-
-    act(() => result.current.handleZoomStart());
-    expect(result.current.isActivelyZooming).toBe(true);
-
-    act(() => result.current.handleZoomEnd());
-    expect(result.current.isActivelyZooming).toBe(false);
   });
 
   it("handleZoom updates zoom state", () => {
