@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
+from contextlib import nullcontext
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from functools import lru_cache
 from time import perf_counter
@@ -27,10 +28,12 @@ from app.rag.models import (
 )
 from app.rag.query_embedding import RagQueryEmbedder, get_query_embedder
 from app.rag.query_enrichment import (
+    build_entity_query_phrases,
     build_query_phrases,
     derive_relation_terms,
     determine_query_retrieval_profile,
     normalize_query_text,
+    should_seed_resolved_entity_term,
 )
 from app.rag.ranking import rank_paper_hits
 from app.rag.repository import PostgresRagRepository, RagRepository
@@ -44,8 +47,11 @@ from app.rag.retrieval_fusion import (
 from app.rag.retrieval_policy import (
     chunk_search_queries,
     citation_context_candidate_ids,
+    entity_relation_candidate_ids,
+    has_selected_direct_anchor,
     should_expand_citation_frontier,
     should_fetch_semantic_neighbors,
+    should_prefetch_citation_contexts,
     should_run_dense_query,
     should_skip_runtime_entity_enrichment,
 )
@@ -116,7 +122,14 @@ def _apply_query_enrichment(
     if query.entity_terms:
         return query
 
-    query_phrases = build_query_phrases(query.normalized_query)
+    query_phrases = list(
+        dict.fromkeys(
+            [
+                *build_entity_query_phrases(query.query),
+                *build_query_phrases(query.normalized_query),
+            ]
+        )
+    )
     if not query_phrases:
         return _apply_relation_enrichment(query)
 
@@ -191,7 +204,9 @@ def _entity_seed_terms_for_recall(
 ) -> list[str]:
     if explicit_entity_terms:
         return explicit_entity_terms
-    return [term for term in resolved_entity_terms if ":" in term]
+    return [
+        term for term in resolved_entity_terms if should_seed_resolved_entity_term(term)
+    ]
 
 
 def _paper_id_for_corpus(corpus_id: int, paper_hits: list[PaperEvidenceHit]) -> str | None:
@@ -199,6 +214,48 @@ def _paper_id_for_corpus(corpus_id: int, paper_hits: list[PaperEvidenceHit]) -> 
         if paper.corpus_id == corpus_id:
             return paper.paper_id
     return None
+
+
+def _apply_selected_context_hits(
+    *,
+    repository: RagRepository,
+    paper_hits: list[PaperEvidenceHit],
+    selected_corpus_id: int | None,
+    search_plan,
+) -> list[PaperEvidenceHit]:
+    if selected_corpus_id is None or search_plan.selected_context_bonus <= 0:
+        return paper_hits
+
+    for hit in paper_hits:
+        if hit.corpus_id == selected_corpus_id:
+            hit.selected_context_score = max(
+                hit.selected_context_score,
+                search_plan.selected_context_bonus,
+            )
+            return paper_hits
+
+    if not search_plan.preserve_selected_candidate:
+        return paper_hits
+
+    selected_context_hits = repository.fetch_known_scoped_papers_by_corpus_ids(
+        [selected_corpus_id]
+    )
+    for hit in selected_context_hits:
+        hit.selected_context_score = max(
+            hit.selected_context_score,
+            search_plan.selected_context_bonus,
+        )
+    return merge_candidate_papers(
+        lexical_hits=paper_hits,
+        chunk_lexical_hits=[],
+        selected_context_hits=selected_context_hits,
+        dense_query_hits=[],
+        entity_seed_hits=[],
+        relation_seed_hits=[],
+        citation_seed_hits=[],
+        semantic_seed_hits=[],
+        semantic_neighbors=[],
+    )
 
 
 def _channel_result(
@@ -210,6 +267,13 @@ def _channel_result(
 
 def _empty_channel_results() -> list[RetrievalChannelResult]:
     return [_channel_result(channel, []) for channel in RETRIEVAL_CHANNEL_ORDER]
+
+
+def _repository_search_session(repository: RagRepository):
+    session_factory = getattr(repository, "search_session", None)
+    if callable(session_factory):
+        return session_factory()
+    return nullcontext()
 
 
 class RagService:
@@ -265,6 +329,15 @@ class RagService:
 
     def search(self, request: RagSearchRequest) -> RagSearchResponse:
         started = perf_counter()
+        with _repository_search_session(self._repository):
+            return self._search(request, started=started)
+
+    def _search(
+        self,
+        request: RagSearchRequest,
+        *,
+        started: float,
+    ) -> RagSearchResponse:
         release = self._repository.resolve_graph_release(request.graph_release_id)
         query = _build_query(request)
         search_plan = build_search_plan(query)
@@ -282,9 +355,50 @@ class RagService:
             query.scope_mode == RetrievalScope.SELECTION_ONLY and not scope_corpus_ids
         )
         lexical_query_text = _lexical_query_text(query)
+        selected_corpus_id = self._repository.resolve_selected_corpus_id(
+            graph_run_id=release.graph_run_id,
+            selected_graph_paper_ref=query.selected_graph_paper_ref,
+            selected_paper_id=query.selected_paper_id,
+            selected_node_id=query.selected_node_id,
+        )
+        selected_title_hits = (
+            self._repository.search_selected_title_papers(
+                release.graph_run_id,
+                query.query,
+                selected_corpus_id=selected_corpus_id,
+                limit=query.rerank_topn,
+                scope_corpus_ids=scope_corpus_ids or None,
+            )
+            if query.use_lexical
+            and query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+            and selected_corpus_id is not None
+            and not selection_only_without_matches
+            else []
+        )
+        exact_title_hits = list(selected_title_hits)
+        if (
+            not exact_title_hits
+            and query.use_lexical
+            and not query.use_title_similarity
+            and not selection_only_without_matches
+        ):
+            exact_title_hits = self._repository.search_exact_title_papers(
+                release.graph_run_id,
+                query.query,
+                limit=query.rerank_topn,
+                scope_corpus_ids=scope_corpus_ids or None,
+            )
+        if exact_title_hits and query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
+            query = replace(
+                query,
+                retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+            )
+            search_plan = build_search_plan(query)
 
         chunk_lexical_hits: list[PaperEvidenceHit] = []
         if (
+            not exact_title_hits
+            and
             query.use_lexical
             and not selection_only_without_matches
             and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
@@ -298,8 +412,10 @@ class RagService:
                 )
                 if chunk_lexical_hits:
                     break
-        lexical_hits: list[PaperEvidenceHit] = []
+        lexical_hits: list[PaperEvidenceHit] = list(exact_title_hits)
         should_run_paper_lexical = (
+            not exact_title_hits
+            and
             query.use_lexical
             and not selection_only_without_matches
             and (
@@ -350,6 +466,11 @@ class RagService:
             if query.relation_terms and not selection_only_without_matches
             else []
         )
+        selected_direct_anchor = has_selected_direct_anchor(
+            selected_corpus_id=selected_corpus_id,
+            retrieval_profile=query.retrieval_profile,
+            paper_hits=[*lexical_hits, *chunk_lexical_hits],
+        )
         dense_query_embedding = (
             self._query_embedder.encode(query.query)
             if not selection_only_without_matches
@@ -357,6 +478,7 @@ class RagService:
                 query=query,
                 search_plan=search_plan,
                 lexical_hits=lexical_hits,
+                selected_direct_anchor=selected_direct_anchor,
             )
             else None
         )
@@ -369,12 +491,6 @@ class RagService:
             )
             if dense_query_embedding
             else []
-        )
-        selected_corpus_id = self._repository.resolve_selected_corpus_id(
-            graph_run_id=release.graph_run_id,
-            selected_graph_paper_ref=query.selected_graph_paper_ref,
-            selected_paper_id=query.selected_paper_id,
-            selected_node_id=query.selected_node_id,
         )
         semantic_neighbors = (
             self._repository.fetch_semantic_neighbors(
@@ -389,6 +505,7 @@ class RagService:
                 search_plan=search_plan,
                 selected_corpus_id=selected_corpus_id,
                 lexical_hits=lexical_hits,
+                selected_direct_anchor=selected_direct_anchor,
             )
             else []
         )
@@ -413,11 +530,10 @@ class RagService:
             if semantic_seed_ids
             else []
         )
-        selected_context_hits: list[PaperEvidenceHit] = []
         initial_paper_hits = merge_candidate_papers(
             lexical_hits=lexical_hits,
             chunk_lexical_hits=chunk_lexical_hits,
-            selected_context_hits=selected_context_hits,
+            selected_context_hits=[],
             dense_query_hits=dense_query_hits,
             entity_seed_hits=entity_seed_hits,
             relation_seed_hits=relation_seed_hits,
@@ -425,37 +541,12 @@ class RagService:
             semantic_seed_hits=semantic_seed_hits,
             semantic_neighbors=semantic_neighbors,
         )
-        if (
-            search_plan.preserve_selected_candidate
-            and selected_corpus_id is not None
-            and selected_corpus_id not in {hit.corpus_id for hit in initial_paper_hits}
-        ):
-            selected_context_hits = self._repository.fetch_known_scoped_papers_by_corpus_ids(
-                [selected_corpus_id]
-            )
-            for hit in selected_context_hits:
-                hit.selected_context_score = max(
-                    hit.selected_context_score,
-                    search_plan.selected_context_bonus,
-                )
-            initial_paper_hits = merge_candidate_papers(
-                lexical_hits=initial_paper_hits,
-                chunk_lexical_hits=[],
-                selected_context_hits=selected_context_hits,
-                dense_query_hits=[],
-                entity_seed_hits=[],
-                relation_seed_hits=[],
-                citation_seed_hits=[],
-                semantic_seed_hits=[],
-                semantic_neighbors=[],
-            )
-        elif selected_corpus_id is not None:
-            for hit in initial_paper_hits:
-                if hit.corpus_id == selected_corpus_id:
-                    hit.selected_context_score = max(
-                        hit.selected_context_score,
-                        search_plan.selected_context_bonus,
-                    )
+        initial_paper_hits = _apply_selected_context_hits(
+            repository=self._repository,
+            paper_hits=initial_paper_hits,
+            selected_corpus_id=selected_corpus_id,
+            search_plan=search_plan,
+        )
         if not initial_paper_hits:
             return serialize_search_result(
                 RagSearchResult(
@@ -473,9 +564,16 @@ class RagService:
                 )
             )
         initial_corpus_ids = [hit.corpus_id for hit in initial_paper_hits]
-        citation_context_ids = citation_context_candidate_ids(
-            paper_hits=initial_paper_hits,
-            retrieval_profile=query.retrieval_profile,
+        citation_context_ids = (
+            citation_context_candidate_ids(
+                paper_hits=initial_paper_hits,
+                retrieval_profile=query.retrieval_profile,
+            )
+            if should_prefetch_citation_contexts(
+                query=query,
+                lexical_hits=lexical_hits,
+            )
+            else []
         )
         citation_hits = (
             self._repository.fetch_citation_contexts(
@@ -521,7 +619,7 @@ class RagService:
         paper_hits = merge_candidate_papers(
             lexical_hits=lexical_hits,
             chunk_lexical_hits=chunk_lexical_hits,
-            selected_context_hits=selected_context_hits,
+            selected_context_hits=[],
             dense_query_hits=dense_query_hits,
             entity_seed_hits=entity_seed_hits,
             relation_seed_hits=relation_seed_hits,
@@ -529,15 +627,40 @@ class RagService:
             semantic_seed_hits=semantic_seed_hits,
             semantic_neighbors=semantic_neighbors,
         )
-        if selected_corpus_id is not None:
-            for hit in paper_hits:
-                if hit.corpus_id == selected_corpus_id:
-                    hit.selected_context_score = max(
-                        hit.selected_context_score,
-                        search_plan.selected_context_bonus,
-                    )
+        paper_hits = _apply_selected_context_hits(
+            repository=self._repository,
+            paper_hits=paper_hits,
+            selected_corpus_id=selected_corpus_id,
+            search_plan=search_plan,
+        )
 
-        corpus_ids = [hit.corpus_id for hit in paper_hits]
+        channel_rankings = build_channel_rankings(
+            lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
+            dense_query_hits=dense_query_hits,
+            entity_seed_hits=entity_seed_hits,
+            relation_seed_hits=relation_seed_hits,
+            semantic_neighbors=semantic_neighbors,
+        )
+
+        preliminary_ranked_hits = rank_paper_hits(
+            paper_hits,
+            citation_hits=citation_hits,
+            entity_hits={},
+            relation_hits={},
+            evidence_intent=query.evidence_intent,
+            query_text=query.query,
+            retrieval_profile=query.retrieval_profile,
+            channel_rankings=channel_rankings,
+        )
+        enrichment_corpus_ids = entity_relation_candidate_ids(
+            ranked_papers=preliminary_ranked_hits,
+            retrieval_profile=query.retrieval_profile,
+            k=query.k,
+            rerank_topn=query.rerank_topn,
+            selected_corpus_id=selected_corpus_id,
+        )
+
         expanded_citation_hits = (
             self._repository.fetch_citation_contexts(
                 [hit.corpus_id for hit in citation_seed_hits],
@@ -553,11 +676,11 @@ class RagService:
             }
 
         entity_hits = self._repository.fetch_entity_matches(
-            corpus_ids,
+            enrichment_corpus_ids,
             entity_terms=query.entity_terms,
         )
         relation_hits = self._repository.fetch_relation_matches(
-            corpus_ids,
+            enrichment_corpus_ids,
             relation_terms=query.relation_terms,
         )
 
@@ -569,17 +692,22 @@ class RagService:
             evidence_intent=query.evidence_intent,
             query_text=query.query,
             retrieval_profile=query.retrieval_profile,
-            channel_rankings=build_channel_rankings(
-                lexical_hits=lexical_hits,
-                chunk_lexical_hits=chunk_lexical_hits,
-                dense_query_hits=dense_query_hits,
-                entity_seed_hits=entity_seed_hits,
-                relation_seed_hits=relation_seed_hits,
-                semantic_neighbors=semantic_neighbors,
-            ),
+            channel_rankings=channel_rankings,
         )
         top_hits = ranked_hits[: query.k]
         top_corpus_ids = [hit.corpus_id for hit in top_hits]
+
+        missing_citation_context_ids = [
+            corpus_id for corpus_id in top_corpus_ids if corpus_id not in citation_hits
+        ]
+        if missing_citation_context_ids:
+            citation_hits = {
+                **citation_hits,
+                **self._repository.fetch_citation_contexts(
+                    missing_citation_context_ids,
+                    query=query.query,
+                ),
+            }
 
         references = self._repository.fetch_references(top_corpus_ids)
         assets = self._repository.fetch_assets(top_corpus_ids)
@@ -819,6 +947,9 @@ def _serialize_entity_hit(hit: EntityMatchedPaperHit) -> dict[str, object]:
         "entity_type": hit.entity_type,
         "concept_id": hit.concept_id,
         "matched_terms": hit.matched_terms,
+        "mention_count": hit.mention_count,
+        "structural_span_count": hit.structural_span_count,
+        "retrieval_default_mention_count": hit.retrieval_default_mention_count,
         "score": hit.score,
     }
 

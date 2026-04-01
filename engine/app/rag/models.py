@@ -126,6 +126,9 @@ class EntityMatchedPaperHit:
     entity_type: str
     concept_id: str
     matched_terms: list[str] = field(default_factory=list)
+    mention_count: int = 0
+    structural_span_count: int = 0
+    retrieval_default_mention_count: int = 0
     score: float = 0.0
 
 

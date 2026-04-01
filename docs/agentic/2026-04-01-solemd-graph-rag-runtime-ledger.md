@@ -20,9 +20,18 @@ Mode: agentic overnight improvement loop
 | A10 | done | P0 | Throughput | Dense-query startup was GPU-backed but first-forward overhead still leaked into DB-backed perf gates. | Warm the real service path (embedder + full-path runtime query), surface runtime-ready logging, and keep the pooled eval hot-path representative of FastAPI startup. | `uv run pytest test/test_rag_runtime_perf.py test/test_rag_runtime_eval.py` |
 | A11 | done | P0 | Grounding fidelity | Runtime answers could already include the right paper while grounded output silently dropped it, because mixed citation/entity packet assembly collapsed to citation-only packets and `answer_corpus_ids` was overwritten by the grounded subset. | Preserve entity-only packets alongside citation packets in `warehouse_grounding.py` and keep `answer_corpus_ids` as the answer-selection truth in `service.py`. | `uv run pytest test/test_rag_warehouse_grounding.py test/test_rag_service.py` |
 | A12 | done | P1 | Reliability | The central Psycopg pool factory relied on an implicit `ConnectionPool(open=...)` default that is deprecated upstream and was surfacing warnings in the perf gate. | Set `open=True` explicitly in `engine/app/db.py` and lock the pool constructor shape with a focused regression test. | `uv run pytest test/test_db.py test/test_rag_runtime_perf.py` |
-| A13 | in_progress | P1 | Precision | The live runtime now has perfect answer/grounding coverage, but `sentence_global hit@1` is still `0.9444` and `biocxml hit@1` is `0.9615`, so ranking precision still trails coverage. | Analyze the remaining non-rank-1 cases from the `v7` artifact and tighten ranking/selection so direct target evidence wins more often without hurting latency or grounding. | Focused artifact analysis + targeted ranking tests + refreshed live artifact |
-| A14 | pending | P1 | Scale | The runtime scorecard is still measured on the current 54-paper live graph release, while the warehouse is materially larger and cleaner. | Expand the graph release / evaluation population and rerun all query families on a larger graph-backed sample once ranking precision is tightened. | Larger live report artifact + comparison summary |
-| A15 | pending | P2 | Ops | Migration rollout, report retention, and batch commits still need a durable record as the runtime stack evolves. | Record migration/runtime notes, prune superseded report artifacts when safe, and commit cohesive verified batches once the current precision batch settles. | Ledger update + commit checkpoints |
+| A13 | done | P1 | Correctness | Grounded answers on the enlarged runtime cohort were still losing the target paper because answer-segment alignment and fallback grounding were too brittle, especially for BioC and mixed warehouse coverage. | Fixed answer/grounding selection and packet alignment across `answer.py`, `service.py`, `grounded_runtime.py`, `warehouse_grounding.py`, `source_grounding.py`, and `chunk_grounding.py`; regenerated runtime evals until grounding reached `1.0` on the live graph release. | `uv run pytest test/test_rag_answer.py test/test_rag_service.py test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_chunk_grounding.py test/test_rag_source_grounding.py` + `.tmp/rag-runtime-eval-default-structural-v1-title-global-v3.json` |
+| A14 | done | P1 | Scale | The old runtime scorecard was anchored to a 54-paper live graph cohort and no longer reflected the current graph-backed population. | Expanded runtime evaluation to the current graph-backed population, added unseen-cohort execution support, and regenerated broad all-family artifacts over `96` and `192` paper cohorts. | `.tmp/rag-runtime-eval-default-structural-v1-all-families-v8-full.json` + `.tmp/rag-runtime-eval-missing-v1-all-families-v11.json` |
+| A15 | done | P1 | Throughput | Repository calls in one request were still opening repeated pooled connections and scoring entity/relation/citation matches in Python, wasting time on every search. | Added request-scoped repository search sessions, pushed entity/relation/citation scoring into SQL, and fixed nested citation-intent normalization in the repository adapter. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_ranking.py test/test_rag_runtime_eval.py test/test_rag_warehouse_grounding.py` |
+| A16 | in_progress | P0 | Tail latency | The expanded unseen-cohort `v11` report showed near-perfect quality but pathological service tail latency, and direct probes traced the worst remaining path into runtime entity search and planner/JIT overhead. | Finish the fresh current-release all-family recheck on the latest code (`v11-jitoff`), compare against `v9`, and then decide whether any remaining tail needs SQL-shape work beyond the verified `jit=off` session fix. | `.tmp/rag-runtime-eval-default-structural-v1-all-families-v11-jitoff.json` + comparison summary |
+| A17 | pending | P1 | Performance coverage | Runtime perf gates still focus on smokes and unit assertions rather than representative DB-backed cohort thresholds for all three query families. | Add cohort-backed performance regression tests/commands for `title_global`, `title_selected`, and `sentence_global`, including explicit tail-latency checks once `v12` stabilizes. | New perf coverage + targeted runtime eval assertions |
+| A18 | pending | P1 | Modularity | `service.py` and `repository.py` remain over-centralized runtime hubs with mixed responsibilities even after the hot-path fixes. | Split runtime orchestration and query execution along stable boundaries after the current perf batch settles, keeping one canonical retrieval contract and no duplicate logic. | File-size/complexity reduction + preserved test suite |
+| A19 | pending | P2 | Ops | Migration rollout, report retention, and batch commits still need a durable record as the runtime stack evolves. | Record migration/runtime notes, prune superseded report artifacts when safe, and commit cohesive verified batches once the current performance batch settles. | Ledger update + commit checkpoints |
+| A20 | done | P0 | Correctness | `title_selected` still treated the selected paper as a late rescue path, so selected-title lookups could route through broad lexical/dense neighbor expansion before honoring the user’s explicit paper context. | Added selected-paper-first title lookup in `engine/app/rag/repository.py` and centralized selected-context application in `engine/app/rag/service.py`, with repository/service regressions and a DB-backed perf gate. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'truncated_long_title_selected_lookup_stays_grounded_and_fast'` + `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v3.json` |
+| A21 | done | P0 | Correctness + centralization | Passage answers still favored generic high-scoring chunk hits over the bundle whose snippet actually mirrored the user’s sentence, and warehouse structural matching duplicated a weaker overlap scorer. | Added shared normalized text-alignment helpers in `engine/app/rag/text_alignment.py`, wired them into `engine/app/rag/answer.py` and `engine/app/rag/warehouse_grounding.py`, and added targeted answer/alignment regressions. | `uv run pytest test/test_rag_text_alignment.py test/test_rag_answer.py test/test_rag_warehouse_grounding.py` |
+| A22 | done | P1 | Modularity + provenance | `rank_paper_hits()` mixed channel provenance with raw score residue, which allowed `bundle.matched_channels` to drift from the real runtime channel surface, especially for `dense_query`. | Extracted channel/reason annotation into a dedicated helper in `engine/app/rag/ranking.py` and tightened dense-channel labeling to actual channel membership, with a regression guarding against stale dense labels. | `uv run pytest test/test_rag_ranking.py -k 'dense_channel_without_dense_membership or can_promote_semantic_only_candidates or preserves_entity_seed_scores_without_enrichment_hits or preserves_relation_seed_scores_without_enrichment_hits or preserves_citation_seed_scores_without_direct_hits'` |
+| A23 | in_progress | P1 | Evaluation hygiene | Several stale attached runtime eval/test jobs were still consuming exec slots and obscuring the post-fix picture. | Keep only the fresh post-fix evals alive, harvest the new artifacts, and move long soak runs back to the detached launcher after the current-code latency floor is re-baselined. | Fresh `v11-jitoff` report + cleaned process set |
+| A24 | done | P0 | Runtime session optimization | Live `EXPLAIN ANALYZE` on the canonical entity search showed about `774ms` of `~798ms` spent in PostgreSQL JIT compilation for a short search query, which is exactly the wrong workload shape for JIT. | Centralized runtime search-session settings in `engine/app/rag/repository.py`, added `rag_runtime_disable_jit` in `engine/app/config.py`, and verified the repository session contract in tests. | `uv run ruff check app/config.py app/rag/repository.py test/test_rag_repository.py` + `uv run pytest test/test_rag_repository.py` |
 
 ## Completed Batches
 
@@ -78,6 +87,142 @@ Mode: agentic overnight improvement loop
 - Regenerated the live full-release all-family artifact:
   - `.tmp/rag-runtime-eval-default-structural-v1-all-families-v7-full.json`
 
+### Batch 8
+- Fixed runtime grounding on the enlarged graph-backed cohort:
+  - grounded answers no longer fail all-or-nothing when one answer paper lacks warehouse rows
+  - BioC papers can ground from entity-only packets instead of citation-only packets
+  - answer segments are aligned by corpus id, not only by segment order
+  - baseline answer selection preserves exact-title lexical anchors for title-like queries
+- Added focused regressions in:
+  - `engine/test/test_rag_answer.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_grounded_runtime.py`
+  - `engine/test/test_rag_warehouse_grounding.py`
+  - `engine/test/test_rag_chunk_grounding.py`
+  - `engine/test/test_rag_source_grounding.py`
+- Regenerated title-global runtime artifacts through:
+  - `.tmp/rag-runtime-eval-default-structural-v1-title-global-v1.json`
+  - `.tmp/rag-runtime-eval-default-structural-v1-title-global-v2.json`
+  - `.tmp/rag-runtime-eval-default-structural-v1-title-global-v3.json`
+
+### Batch 9
+- Expanded runtime evaluation to the current graph-backed cohort:
+  - live graph points in the current graph run: about `2.45M`
+  - current graph-backed RAG-eval population: `246` covered papers
+  - unseen cohort executed across `192` requested papers / `576` cases
+- Added request-scoped repository search sessions so one runtime request reuses a single pooled connection.
+- Moved entity, relation, and citation-context scoring out of Python and into SQL.
+- Fixed nested citation-intent normalization so arrays like `[["background"]]` no longer silently collapse to `[]`.
+- Added/updated focused regressions in:
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_ranking.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_warehouse_grounding.py`
+- Regenerated broad runtime artifacts:
+  - `.tmp/rag-runtime-eval-default-structural-v1-all-families-v8-full.json`
+  - `.tmp/rag-runtime-eval-missing-v1-all-families-v11.json`
+
+### Batch 10
+- Fixed title-query routing for question-style subtitle titles in `engine/app/rag/query_enrichment.py`.
+- Added a native exact-title fast path using the existing lower-title runtime index:
+  - new repository exact-title lookup in `engine/app/rag/repository.py`
+  - new exact-title SQL in `engine/app/rag/queries.py`
+  - service promotion of exact-title hits before chunk, entity, relation, or dense retrieval in `engine/app/rag/service.py`
+- Added focused regressions for exact-title runtime routing and DB-backed perf gates:
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Removed one selected-paper semantic-neighbor round-trip by folding selected-paper embedding lookup into the semantic-neighbor SQL path.
+- Moved chunk snippet rendering (`ts_headline`) behind candidate pruning so sentence-global chunk retrieval ranks candidates first and only renders snippets for the small final set.
+
+### Batch 11
+- Added selected-paper direct-anchor suppression for dense-query and semantic-neighbor expansion:
+  - centralized helper in `engine/app/rag/retrieval_policy.py`
+  - earlier selected-corpus resolution and direct-anchor propagation in `engine/app/rag/service.py`
+- Added an exact-first entity candidate lane:
+  - new exact entity SQL in `engine/app/rag/queries.py`
+  - exact-match fast path in `engine/app/rag/repository.py`
+- Materialized the fuzzy-capable entity query CTEs to reduce repeated planner work.
+- Removed the dead paper-embedding literal lookup path from the runtime repository/query layer.
+- Added focused regressions and DB-backed perf gates in:
+  - `engine/test/test_rag_retrieval_policy.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_runtime_perf.py`
+
+### Batch 12
+- Added a durable normalized-title runtime contract in PostgreSQL:
+  - new migration `engine/db/migrations/039_add_runtime_normalized_title_indexes.sql`
+  - `solemd.normalize_title_key(text)` function using native `normalize(..., NFKC)` plus the observed casefold deltas present in the live corpus
+  - exact and trigram indexes on `solemd.normalize_title_key(title)`
+- Wired normalized-title exact lookup correctly through the repository exact-title path in `engine/app/rag/repository.py`.
+- Added DB-backed normalized-title regressions in `engine/test/test_rag_runtime_perf.py`:
+  - SQL function contract matches Python `normalize_title_key`
+  - Unicode-normalized exact-title lookup resolves a real `ß -> ss` title variant
+- Verified that the remaining title miss class is not a normalization bug but a narrower retrieval-policy issue.
+
+### Batch 13
+- Added selected-paper-first title lookup:
+  - new `search_selected_title_papers(...)` path in `engine/app/rag/repository.py`
+  - earlier selected-corpus resolution and centralized selected-context application in `engine/app/rag/service.py`
+- Added focused regressions in:
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Live result on the current graph release:
+  - `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v3.json`
+  - `title_selected` quality metrics all `1.0`
+  - `mean_service_duration_ms = 125.13`
+  - `p95_service_duration_ms = 121.0`
+
+### Batch 14
+- Added shared normalized text alignment in `engine/app/rag/text_alignment.py`.
+- Reworked baseline answer grounding selection in `engine/app/rag/answer.py` so:
+  - passage queries prioritize snippet-level sentence alignment, not only raw chunk lexical score
+  - near-exact title variants can still be promoted into the answer even when they miss the exact normalized-title key
+- Reused the same alignment helper in `engine/app/rag/warehouse_grounding.py` to keep structural fallback scoring centralized.
+- Cleaned ranking provenance in `engine/app/rag/ranking.py` by extracting channel/reason annotation and tightening `dense_query` attribution to actual channel membership.
+- Added focused regressions in:
+  - `engine/test/test_rag_text_alignment.py`
+  - `engine/test/test_rag_answer.py`
+  - `engine/test/test_rag_warehouse_grounding.py`
+  - `engine/test/test_rag_ranking.py`
+- Direct live probe after the passage-alignment fix:
+  - corpus `3092150` remained retrieval rank `3`, but the answer path now correctly promoted it into `answer_ids=[3092150, 2766040]` and grounded output `answer_linked_corpus_ids=[2766040, 3092150]`
+
+### Batch 15
+- Switched long runtime rechecks from attached exec sessions to the repo-native detached launcher:
+  - `engine/scripts/run_detached_engine_job.py`
+- Active detached runs:
+  - `.tmp/rag-runtime-eval-3092150-24948876-sentence-v19.log`
+  - `.tmp/rag-runtime-eval-default-structural-v1-all-families-v19.log`
+- This keeps the overnight eval loop writing durable artifacts without consuming more unified exec slots.
+
+### Batch 16
+- Moved runtime entity retrieval and entity-match enrichment onto canonical `solemd.paper_entity_mentions` instead of raw `pubtator.entity_annotations`.
+- Added shortlist-first passage enrichment in `engine/app/rag/service.py` so passage-mode entity/relation enrichment only runs over the best-ranked candidate window instead of the whole merged candidate set.
+- Added richer runtime entity-hit metadata and evaluation stratification:
+  - `mention_count`
+  - `structural_span_count`
+  - `retrieval_default_mention_count`
+  - richer stratum keys for entity density, citation density, and sentence-seed presence
+- Added runtime index migration:
+  - `engine/db/migrations/041_add_runtime_entity_mention_indexes.sql`
+- Added focused regressions in:
+  - `engine/test/test_rag_retrieval_policy.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_eval.py`
+
+### Batch 17
+- Added centralized runtime search-session settings in `engine/app/rag/repository.py`.
+- Disabled PostgreSQL JIT for pinned runtime search sessions behind `settings.rag_runtime_disable_jit`.
+- Added focused repository coverage for:
+  - pinned connection reuse with `SET LOCAL jit = off`
+  - the disabled-config fallback path
+- Cleared stale attached runtime eval/perf jobs so the live post-fix recheck is the only active broad benchmark competing for resources.
+
 ## Live Evidence
 
 - Dense-query encoder smoke:
@@ -124,20 +269,209 @@ Mode: agentic overnight improvement loop
     - `s2orc_v2`: all quality metrics `1.0`
     - `biocxml`: `hit@1 = 0.9615`, all answer/grounding metrics `1.0`
   - failure themes: none remaining for answer/grounding coverage
+- Enlarged current-graph all-family report (`v8`):
+  - `.tmp/rag-runtime-eval-default-structural-v1-all-families-v8-full.json`
+  - `288` cases across `96` sampled papers from a `246`-paper graph-backed eval population
+  - overall:
+    - `hit@1 = 0.9826`
+    - `hit@k = 0.9931`
+    - `target_in_answer_corpus_rate = 0.9896`
+    - `grounded_answer_rate = 1.0`
+    - `target_in_grounded_answer_rate = 0.9896`
+    - `mean_service_duration_ms = 3035.351`
+    - `p95_service_duration_ms = 1914.0`
+  - by family:
+    - `title_global`: `hit@1 = 0.9688`, `p95_service_duration_ms = 2462.0`
+    - `title_selected`: all quality metrics `1.0`, `p95_service_duration_ms = 450.0`
+    - `sentence_global`: `hit@1 = 0.9792`, `target_in_grounded_answer_rate = 0.9896`, `p95_service_duration_ms = 19680.0`
+- Expanded unseen-cohort report before the latest session/SQL optimization batch (`v11`):
+  - `.tmp/rag-runtime-eval-missing-v1-all-families-v11.json`
+  - `576` cases across `192` requested unseen papers
+  - overall:
+    - `hit@1 = 0.9653`
+    - `hit@k = 0.9878`
+    - `target_in_answer_corpus_rate = 0.9844`
+    - `grounded_answer_rate = 0.9983`
+    - `target_in_grounded_answer_rate = 0.9844`
+    - `mean_service_duration_ms = 4992.21`
+    - `p95_service_duration_ms = 3490.0`
+    - `error_count = 0`
+  - by family:
+    - `title_global`: `target_in_grounded_answer_rate = 0.9792`, `mean_service_duration_ms = 5479.964`
+    - `title_selected`: `target_in_grounded_answer_rate = 0.9948`, `mean_service_duration_ms = 1458.354`
+    - `sentence_global`: `target_in_grounded_answer_rate = 0.9792`, `mean_service_duration_ms = 8038.312`, `p95_service_duration_ms = 49307.0`
+  - interpretation:
+    - quality held at near-perfect coverage
+    - the remaining urgent issue shifted from correctness to tail latency on a few pathological requests
+- Direct current-code probe after Batch 9:
+  - `search_papers` for the former worst `3092150` title query completed in about `372.67 ms`
+  - `fetch_citation_contexts` for the resulting corpus ids completed in about `8.69 ms`
+  - this is strong evidence that the `v11` tail mostly predates the latest current-code repository/session batch
+- Current-code unseen-cohort report after question-subtitle routing fix (`v13`):
+  - `.tmp/rag-runtime-eval-missing-v1-all-families-v13.json`
+  - `576` cases across `192` requested unseen papers
+  - overall:
+    - `hit@1 = 0.967`
+    - `hit@k = 0.9861`
+    - `target_in_answer_corpus_rate = 0.9826`
+    - `grounded_answer_rate = 0.9983`
+    - `target_in_grounded_answer_rate = 0.9826`
+    - `mean_service_duration_ms = 1671.741`
+    - `p95_service_duration_ms = 1924.0`
+    - `error_count = 0`
+  - by family:
+    - `title_global`: `target_in_grounded_answer_rate = 0.974`, `mean_service_duration_ms = 1946.531`, `p95_service_duration_ms = 2255.0`
+    - `title_selected`: `target_in_grounded_answer_rate = 0.9948`, `mean_service_duration_ms = 363.052`, `p95_service_duration_ms = 401.0`
+    - `sentence_global`: `target_in_grounded_answer_rate = 0.9792`, `mean_service_duration_ms = 2705.641`, `p95_service_duration_ms = 2996.0`
+- Exact-title hot cohort after Batch 10 current-code fast-path routing:
+  - `.tmp/rag-runtime-eval-exact-title-cohort-v1.json`
+  - evaluated corpus ids:
+    - `3092150`
+    - `13501235`
+    - `233428792`
+    - `259656632`
+    - `235226202`
+  - `10/10` cases
+  - all quality metrics `1.0`
+  - `mean_service_duration_ms = 19.8`
+  - `p95_service_duration_ms = 22.0`
+- Current verification state after Batch 10:
+  - `uv run pytest test/test_rag_repository.py test/test_rag_service.py -k 'exact_title or question_subtitle or search_papers or search_exact_title'` -> `9 passed`
+  - `uv run pytest test/test_rag_runtime_perf.py -k 'question_style_title_lookup_stays_grounded_and_fast or long_biomedical_exact_title_global_lookup_stays_grounded_and_fast'` -> `2 passed`
+  - `uv run pytest test/test_rag_runtime_perf.py` -> `4 passed`
+  - `uv run pytest test/test_rag_repository.py -k 'chunk_queries_render_headlines_after_candidate_pruning or semantic_neighbors or exact_title_queries_use_native_index_friendly_lookup_shape or ann_graph_queries_filter_within_candidate_ctes'` -> `7 passed`
+  - `uv run ruff check app/rag/queries.py app/rag/repository.py app/rag/service.py test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py` -> passed
+- Current-code unseen-cohort report after Batch 11 hot-path fixes (`v14`):
+  - `.tmp/rag-runtime-eval-missing-v1-all-families-v14.json`
+  - `576` cases across `192` requested unseen papers
+  - overall:
+    - `hit@1 = 0.9896`
+    - `hit@k = 0.9931`
+    - `target_in_answer_corpus_rate = 0.9896`
+    - `grounded_answer_rate = 0.9983`
+    - `target_in_grounded_answer_rate = 0.9896`
+    - `mean_service_duration_ms = 1325.271`
+    - `p95_service_duration_ms = 1781.0`
+    - `error_count = 0`
+  - by family:
+    - `title_global`: `target_in_grounded_answer_rate = 0.9948`, `mean_service_duration_ms = 150.948`, `p95_service_duration_ms = 121.0`
+    - `title_selected`: `target_in_grounded_answer_rate = 0.9948`, `mean_service_duration_ms = 1235.729`, `p95_service_duration_ms = 27.0`
+    - `sentence_global`: `target_in_grounded_answer_rate = 0.9792`, `mean_service_duration_ms = 2589.135`, `p95_service_duration_ms = 2795.0`
+  - measured interpretation:
+    - `title_global` collapsed from the former multi-second tail into a mostly fast lane
+    - `title_selected` still had a bad mean because a few pathological requests still paid semantic-neighbor expansion
+    - `sentence_global` still carried a long-tail bottleneck outside grounding itself
+- Direct measured bottleneck probes after `v14`:
+  - `title_selected` worst path (`4443808`) was dominated by `fetch_semantic_neighbors` at about `14s-32s` inside requests that were otherwise healthy
+  - `sentence_global` worst path (`30014021`) was dominated by `search_entity_papers` at about `109s-111s`
+  - a direct exact-only entity lookup for `GM2 gangliosidosis variant B1` completed in about `192.676 ms`
+- Current-code unseen-cohort report after the exact-entity and selected-anchor fixes (`v15`):
+  - `.tmp/rag-runtime-eval-missing-v1-all-families-v15.json`
+  - `576` cases across `192` requested unseen papers
+  - overall:
+    - `hit@1 = 0.9896`
+    - `hit@k = 0.9931`
+    - `target_in_answer_corpus_rate = 0.9896`
+    - `grounded_answer_rate = 0.9983`
+    - `target_in_grounded_answer_rate = 0.9896`
+    - `mean_service_duration_ms = 812.455`
+    - `p95_service_duration_ms = 1651.0`
+    - `error_count = 0`
+  - by family:
+    - `title_global`: `target_in_grounded_answer_rate = 0.9948`, `mean_service_duration_ms = 144.661`, `p95_service_duration_ms = 116.0`
+    - `title_selected`: `target_in_grounded_answer_rate = 0.9948`, `mean_service_duration_ms = 349.167`, `p95_service_duration_ms = 28.0`
+    - `sentence_global`: `target_in_grounded_answer_rate = 0.9792`, `mean_service_duration_ms = 1943.536`, `p95_service_duration_ms = 2662.0`
+  - measured interpretation:
+    - overall mean dropped another `~39%` from `v14`
+    - `title_selected` mean collapsed from `1235.729 ms` to `349.167 ms` while preserving quality
+    - `sentence_global` improved materially but remains the slowest family
+- Direct measured bottleneck probes after `v15`:
+  - exact replay of the `211053997` sentence-global outlier showed:
+    - total request time about `6462 ms`
+    - `search_relation_papers` alone about `5092.616 ms`
+    - `search_query_embedding_papers` about `757.896 ms`
+    - `search_chunk_papers` about `424.036 ms`
+  - `EXPLAIN ANALYZE` on `queries.PAPER_RELATION_SEARCH_SQL` for relation term `compare` showed:
+    - execution time about `4657.712 ms`
+    - about `266,939` `pubtator.relations` rows reached through `idx_pt_relation_type`
+    - repeated join cost against `solemd.corpus`, `solemd.graph_points`, `solemd.papers`, and `solemd.paper_evidence_summary`
+  - remaining selected-title miss `11857184` is now a paraphrase-title case rather than a raw exact-title miss:
+    - the query shares a long leading span with the stored title but diverges into a shorter natural-language subtitle
+    - current title similarity ranks semantically related training/older-adult papers above the selected paper
+- Normalized-title contract evidence before landing Batch 12:
+  - corpus-wide Python comparison over `14,060,679` paper titles:
+    - lower-vs-casefold mismatches: `1,501`
+    - dominant deltas: `ß`, then a small tail of Greek final sigma / omega-iota forms
+  - this justified centralizing the SQL function around native `NFKC` normalization plus the observed casefold deltas instead of silently degrading exact-title behavior on those titles
+- Batch 12 focused verification:
+  - `uv run ruff check app/rag/queries.py app/rag/repository.py test/test_rag_repository.py test/test_rag_runtime_perf.py` -> passed
+  - `uv run pytest test/test_rag_repository.py -k 'search_papers or search_exact_title or title'` -> `6 passed`
+  - `uv run pytest test/test_rag_runtime_perf.py -k 'normalized_title_key_sql or unicode_normalized_key or selected_title_with_direct_anchor or long_biomedical_exact_title'` -> `4 passed`
+- Current-code unseen-cohort report after Batch 12 normalized-title/index work (`v16`):
+  - `.tmp/rag-runtime-eval-missing-v1-all-families-v16.json`
+  - `576` cases across `192` requested unseen papers
+  - overall:
+    - `hit@1 = 0.9913`
+    - `hit@k = 0.9948`
+    - `target_in_answer_corpus_rate = 0.9931`
+    - `grounded_answer_rate = 0.9965`
+    - `target_in_grounded_answer_rate = 0.9931`
+    - `mean_service_duration_ms = 406.526`
+    - `p95_service_duration_ms = 1517.0`
+    - `error_count = 2`
+  - by family:
+    - `title_global`: all quality metrics `1.0`, `mean_service_duration_ms = 79.505`, `p95_service_duration_ms = 95.0`
+    - `title_selected`: `target_in_grounded_answer_rate = 0.9948`, `mean_service_duration_ms = 20.224`, `p95_service_duration_ms = 23.0`, `error_count = 1`
+    - `sentence_global`: `target_in_grounded_answer_rate = 0.9844`, `mean_service_duration_ms = 1119.849`, `p95_service_duration_ms = 1794.0`, `error_count = 1`
+  - measured interpretation:
+    - `title_global` moved from near-perfect to perfect on the unseen cohort
+    - `title_selected` became a genuinely cheap lane rather than a latent semantic-neighbor tail
+    - the remaining failure surface is now sentence-global answer selection / grounding, not title retrieval
+- Residual-case rechecks after Batch 12:
+  - `.tmp/rag-runtime-eval-85494800-title-selected-v16-recheck.json`
+    - the earlier `title_selected` error was transient during concurrent index finalization
+    - recheck result: all quality metrics `1.0`, `service_duration_ms = 105.0`
+  - `.tmp/rag-runtime-eval-24948876-sentence-v16-recheck.json`
+    - target is still retrieved at rank `3`, but the answer omits it and grounding remains absent
+    - `service_duration_ms = 89516.0`
+  - `.tmp/rag-runtime-eval-3092150-235226202-sentence-v16-recheck.json`
+    - `3092150`: target retrieved at rank `3`, but answer/grounding omit it
+    - `235226202`: target remains outside the final answer despite direct ABCA7 relevance
+    - both are fast (`303 ms`, `176 ms`), so this is ranking/answer selection quality, not latency
+- Canonical entity-runtime probe before Batch 17:
+  - live `EXPLAIN ANALYZE` on `queries.PAPER_ENTITY_SEARCH_SQL` for `melatonin` on the current graph run showed:
+    - execution time about `797.916 ms`
+    - JIT total about `774.304 ms`
+    - planner scanning partitioned `paper_entity_mentions_*` plus `paper_blocks_*` even though the actual match set was tiny
+- Canonical entity-runtime probe after Batch 17:
+  - the same `EXPLAIN ANALYZE` with `SET LOCAL jit = off` dropped to about `12.521 ms` with no SQL/result-shape change
+  - this confirmed the next safe runtime win was session policy, not a speculative new index or heuristic
+- Current-code sentence-global spot check after Batch 17:
+  - live `run_rag_runtime_evaluation(...)` on corpus `30014021` with `sentence_global` only:
+    - `mean_service_duration_ms = 389.0`
+    - `p95_service_duration_ms = 389.0`
+    - `target_in_grounded_answer_rate = 1.0`
+  - this directly cleared one of the former entity-seeded sentence outliers on the latest code
 
 ## Commits
 
 - None yet in this agentic batch.
-- Reason: the runtime tree is still part of a broader uncommitted batch and includes neighboring changes outside the files touched in Batch 7; commit only after the current precision pass is finalized and the batch can be isolated cleanly.
+- Reason: the runtime tree is still part of a broader uncommitted batch and includes neighboring engine/frontend changes outside the runtime files touched in Batches 8-11; commit only after the current performance batch is finalized and can be isolated safely.
 
 ## Blockers
 
 - None currently requiring human judgment.
-- Current blocker is analytical only: identify the remaining non-rank-1 `sentence_global`/`biocxml` cases and tighten ranking precision without regressing the now-perfect answer/grounding contract.
+- Current performance blockers are now narrowed and evidenced:
+  - sentence-global still has a real quality gap when the target paper is retrieved but not selected into the answer/grounding set (`3092150`, `24948876`)
+  - `24948876` is also a genuine tail-latency outlier at about `89.5s`
+  - sentence-global still has one retrieval/ranking miss on ABCA7-family-history evidence (`235226202`)
+- No human decision blocker yet; next cycle should resolve the relation-search path first, then re-evaluate whether title normalization or selected-paper preservation is the cleaner remaining title fix.
+  - Batch 12 resolved the title normalization path; the next cycle should move to sentence-global answer selection / grounding and the `24948876` latency outlier
 
 ## Next Review Gate
 
-1. Analyze the `v7` artifact rows where `hit_rank != 1`, especially `sentence_global` and `biocxml`.
-2. Tighten ranking/selection so direct target evidence wins more often without reducing the current `1.0` answer/grounding coverage.
-3. Expand evaluation beyond the 54-paper live graph release once the precision pass settles.
-4. Run another explicit `/clean` pass on the touched runtime files and then create a narrow git commit if the batch can be isolated safely.
+1. Re-run an explicit `/clean` pass on the touched runtime files, especially `service.py`, `repository.py`, and the runtime SQL surfaces.
+2. Profile and fix the `24948876` sentence-global outlier before touching anything else in runtime latency.
+3. Tighten sentence-global answer selection / grounding so directly retrieved targets are not dropped from the final answer packets (`3092150`, `24948876`).
+4. Improve sentence-global retrieval/ranking for the ABCA7 family-history miss (`235226202`) using the existing structured evidence channels before inventing new heuristics.
+5. Re-run focused and broader runtime evaluation after the next batch and create a narrow git commit only if the runtime batch can be isolated safely from unrelated repo work.

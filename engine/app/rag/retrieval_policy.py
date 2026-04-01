@@ -5,12 +5,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.rag.models import PaperEvidenceHit, PaperRetrievalQuery
-from app.rag.query_enrichment import build_query_phrases, is_title_like_query, normalize_title_key
+from app.rag.query_enrichment import build_query_phrases
 from app.rag.search_plan import RetrievalSearchPlan
+from app.rag.title_anchor import has_strong_title_anchor
 from app.rag.types import QueryRetrievalProfile
 
 MAX_CHUNK_FALLBACK_PHRASES = 8
 MIN_CHUNK_FALLBACK_WORDS = 3
+MIN_PASSAGE_ENRICHMENT_CANDIDATES = 12
+PASSAGE_ENRICHMENT_K_MULTIPLIER = 2
 
 
 def chunk_search_queries(query: PaperRetrievalQuery) -> list[str]:
@@ -34,22 +37,19 @@ def chunk_search_queries(query: PaperRetrievalQuery) -> list[str]:
     return candidates
 
 
-def has_exact_lexical_title_anchor(
+def has_strong_lexical_title_anchor(
     *,
     query_text: str,
     lexical_hits: Sequence[PaperEvidenceHit],
 ) -> bool:
-    """Return True when lexical retrieval already surfaced the exact title target."""
+    """Return True when lexical retrieval already surfaced a strong title anchor."""
 
-    if not lexical_hits or not is_title_like_query(
-        query_text,
-        allow_terminal_punctuation=True,
-    ):
+    if not lexical_hits:
         return False
-    query_key = normalize_title_key(query_text)
-    if not query_key:
-        return False
-    return normalize_title_key(lexical_hits[0].title) == query_key
+    return has_strong_title_anchor(
+        query_text=query_text,
+        title_text=lexical_hits[0].title,
+    )
 
 
 def should_skip_runtime_entity_enrichment(
@@ -59,7 +59,7 @@ def should_skip_runtime_entity_enrichment(
 ) -> bool:
     """Skip expensive enrichment when an exact title anchor already resolved the query."""
 
-    return not query.entity_terms and has_exact_lexical_title_anchor(
+    return not query.entity_terms and has_strong_lexical_title_anchor(
         query_text=query.query,
         lexical_hits=lexical_hits,
     )
@@ -70,14 +70,17 @@ def should_run_dense_query(
     query: PaperRetrievalQuery,
     search_plan: RetrievalSearchPlan,
     lexical_hits: Sequence[PaperEvidenceHit],
+    selected_direct_anchor: bool = False,
 ) -> bool:
     """Allow dense query search only when it adds real recall beyond lexical anchors."""
 
     if not query.use_dense_query:
         return False
+    if selected_direct_anchor and search_plan.prefer_precise_grounding:
+        return False
     return not (
         search_plan.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
-        and has_exact_lexical_title_anchor(
+        and has_strong_lexical_title_anchor(
             query_text=query.query,
             lexical_hits=lexical_hits,
         )
@@ -90,17 +93,40 @@ def should_fetch_semantic_neighbors(
     search_plan: RetrievalSearchPlan,
     selected_corpus_id: int | None,
     lexical_hits: Sequence[PaperEvidenceHit],
+    selected_direct_anchor: bool = False,
 ) -> bool:
     """Allow selected-paper semantic neighbors only when they provide useful expansion."""
 
     if selected_corpus_id is None:
         return False
+    if selected_direct_anchor and search_plan.prefer_precise_grounding:
+        return False
     if search_plan.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
-        return not has_exact_lexical_title_anchor(
+        return not has_strong_lexical_title_anchor(
             query_text=query.query,
             lexical_hits=lexical_hits,
         )
     return True
+
+
+def has_selected_direct_anchor(
+    *,
+    selected_corpus_id: int | None,
+    retrieval_profile: QueryRetrievalProfile,
+    paper_hits: Sequence[PaperEvidenceHit],
+) -> bool:
+    """Return True when the selected paper already has direct support from the query."""
+
+    if selected_corpus_id is None:
+        return False
+    return any(
+        hit.corpus_id == selected_corpus_id
+        and has_direct_retrieval_support(
+            paper=hit,
+            retrieval_profile=retrieval_profile,
+        )
+        for hit in paper_hits
+    )
 
 
 def should_expand_citation_frontier(
@@ -111,9 +137,25 @@ def should_expand_citation_frontier(
 ) -> bool:
     """Keep citation-frontier expansion behind exact-title and profile guards."""
 
-    return search_plan.expand_citation_frontier and not has_exact_lexical_title_anchor(
+    return search_plan.expand_citation_frontier and not has_strong_lexical_title_anchor(
         query_text=query_text,
         lexical_hits=lexical_hits,
+    )
+
+
+def should_prefetch_citation_contexts(
+    *,
+    query: PaperRetrievalQuery,
+    lexical_hits: Sequence[PaperEvidenceHit],
+) -> bool:
+    """Skip pre-ranking citation fetch when a strong title anchor already resolved recall."""
+
+    return not (
+        query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+        and has_strong_lexical_title_anchor(
+            query_text=query.query,
+            lexical_hits=lexical_hits,
+        )
     )
 
 
@@ -162,3 +204,51 @@ def citation_context_candidate_ids(
             retrieval_profile=retrieval_profile,
         )
     ]
+
+
+def entity_relation_candidate_ids(
+    *,
+    ranked_papers: Sequence[PaperEvidenceHit],
+    retrieval_profile: QueryRetrievalProfile,
+    k: int,
+    rerank_topn: int,
+    selected_corpus_id: int | None = None,
+) -> list[int]:
+    """Bound expensive entity/relation enrichment to the best-ranked candidates."""
+
+    ordered_ids = [hit.corpus_id for hit in ranked_papers]
+    if retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return ordered_ids
+
+    shortlist_limit = min(
+        len(ordered_ids),
+        min(
+            rerank_topn,
+            max(MIN_PASSAGE_ENRICHMENT_CANDIDATES, k * PASSAGE_ENRICHMENT_K_MULTIPLIER),
+        ),
+    )
+    direct_ids = [
+        hit.corpus_id
+        for hit in ranked_papers
+        if has_direct_retrieval_support(
+            paper=hit,
+            retrieval_profile=retrieval_profile,
+        )
+    ]
+
+    prioritized: list[int] = []
+    if selected_corpus_id is not None and selected_corpus_id in ordered_ids:
+        prioritized.append(selected_corpus_id)
+    prioritized.extend(direct_ids)
+    prioritized.extend(ordered_ids)
+
+    deduped: list[int] = []
+    seen: set[int] = set()
+    for corpus_id in prioritized:
+        if corpus_id in seen:
+            continue
+        seen.add(corpus_id)
+        deduped.append(corpus_id)
+        if len(deduped) >= shortlist_limit:
+            break
+    return deduped

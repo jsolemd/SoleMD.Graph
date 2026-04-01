@@ -1,16 +1,29 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 from app.rag_ingest.runtime_eval import (
     RuntimeEvalCaseResult,
-    RuntimeEvalPaperRecord,
-    RuntimeEvalQueryFamily,
     _aggregate_case_results,
     _build_runtime_eval_request,
     build_runtime_eval_query_cases,
     evaluate_runtime_query_cases,
-    runtime_eval_stratum_key,
-    select_stratified_sample,
     summarize_runtime_results,
+)
+from app.rag_ingest.runtime_eval_models import (
+    RuntimeEvalCohortCandidate,
+    RuntimeEvalPaperRecord,
+    RuntimeEvalQueryFamily,
+)
+from app.rag_ingest.runtime_eval_population import (
+    fetch_runtime_eval_population,
+    population_summary,
+    runtime_eval_cohort_stratum_key,
+    runtime_eval_stratum_key,
+    select_runtime_eval_cohort_sample,
+    select_stratified_sample,
 )
 
 
@@ -22,7 +35,7 @@ def _paper(
     chunk_count: int,
     table_block_count: int,
     sentence: str | None = None,
-):
+) -> RuntimeEvalPaperRecord:
     return RuntimeEvalPaperRecord(
         corpus_id=corpus_id,
         title=title,
@@ -39,6 +52,33 @@ def _paper(
     )
 
 
+def _candidate(
+    corpus_id: int,
+    *,
+    citation_bucket: str,
+    bioc_profile: str,
+    text_profile: str,
+) -> RuntimeEvalCohortCandidate:
+    return RuntimeEvalCohortCandidate(
+        corpus_id=corpus_id,
+        title=f"Paper {corpus_id}",
+        paper_id=f"S2-{corpus_id}",
+        citation_count=24,
+        reference_count=10,
+        text_availability="fulltext" if text_profile == "fulltext" else "abstract",
+        pmid=corpus_id,
+        pmc_id=f"PMC{corpus_id}" if bioc_profile == "pmc_present" else None,
+        doi=None,
+        missing_document=True,
+        citation_bucket=citation_bucket,
+        bioc_profile=bioc_profile,
+        text_profile=text_profile,
+        stratum_key=f"{bioc_profile}|{text_profile}|{citation_bucket}",
+        stratum_population_count=2,
+        candidate_population_size=4,
+    )
+
+
 def test_runtime_eval_stratum_key_uses_structural_profiles():
     paper = _paper(
         1,
@@ -48,7 +88,10 @@ def test_runtime_eval_stratum_key_uses_structural_profiles():
         table_block_count=4,
     )
 
-    assert runtime_eval_stratum_key(paper) == "s2orc_v2|table_heavy|long"
+    assert (
+        runtime_eval_stratum_key(paper)
+        == "s2orc_v2|table_heavy|long|entity_present|citation_sparse|sentence_unseeded"
+    )
 
 
 def test_select_stratified_sample_round_robins_across_strata():
@@ -63,6 +106,96 @@ def test_select_stratified_sample_round_robins_across_strata():
 
     assert len(sample) == 2
     assert {paper.primary_source_system for paper in sample} == {"s2orc_v2", "biocxml"}
+
+
+def test_runtime_eval_cohort_stratum_key_uses_candidate_stratum():
+    candidate = _candidate(
+        11,
+        citation_bucket="citations_20_99",
+        bioc_profile="pmc_present",
+        text_profile="fulltext",
+    )
+
+    assert (
+        runtime_eval_cohort_stratum_key(candidate)
+        == "pmc_present|fulltext|citations_20_99"
+    )
+
+
+def test_select_runtime_eval_cohort_sample_round_robins_across_candidate_strata():
+    candidates = [
+        _candidate(
+            1,
+            citation_bucket="citations_20_99",
+            bioc_profile="pmc_present",
+            text_profile="fulltext",
+        ),
+        _candidate(
+            2,
+            citation_bucket="citations_20_99",
+            bioc_profile="pmc_present",
+            text_profile="fulltext",
+        ),
+        _candidate(
+            3,
+            citation_bucket="citations_5_19",
+            bioc_profile="pmid_only",
+            text_profile="abstract",
+        ),
+        _candidate(
+            4,
+            citation_bucket="citations_5_19",
+            bioc_profile="pmid_only",
+            text_profile="abstract",
+        ),
+    ]
+
+    sample = select_runtime_eval_cohort_sample(candidates, sample_size=2, seed=13)
+
+    assert len(sample) == 2
+    assert {candidate.stratum_key for candidate in sample} == {
+        "pmc_present|fulltext|citations_20_99",
+        "pmid_only|abstract|citations_5_19",
+    }
+
+
+def test_fetch_runtime_eval_population_pushes_corpus_filter_into_sql():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.fetchall.return_value = [
+        {
+            "corpus_id": 111,
+            "title": "Filtered paper",
+            "primary_source_system": "s2orc_v2",
+            "section_count": 1,
+            "table_block_count": 0,
+            "narrative_block_count": 1,
+            "chunk_count": 1,
+            "avg_chunk_tokens": 42.0,
+            "entity_mention_count": 0,
+            "citation_mention_count": 0,
+            "representative_section_role": "abstract",
+            "representative_sentence": "Filtered paper sentence for evaluation.",
+        }
+    ]
+
+    rows = fetch_runtime_eval_population(
+        graph_run_id="graph-run-id",
+        chunk_version_key="default-structural-v1",
+        corpus_ids=[111, 222, 111],
+        connect=lambda: conn,
+    )
+
+    assert [row.corpus_id for row in rows] == [111]
+    execute_args = cur.execute.call_args.args
+    assert execute_args[1][0] == "graph-run-id"
+    assert execute_args[1][1] == [111, 222]
+    assert execute_args[1][2] == [111, 222]
+    assert execute_args[1][3] == "default-structural-v1"
 
 
 def test_build_runtime_eval_query_cases_skips_missing_sentence_seed():
@@ -92,6 +225,79 @@ def test_build_runtime_eval_query_cases_skips_missing_sentence_seed():
     assert (2, RuntimeEvalQueryFamily.TITLE_GLOBAL) in by_family
     assert (2, RuntimeEvalQueryFamily.TITLE_SELECTED) in by_family
     assert (2, RuntimeEvalQueryFamily.SENTENCE_GLOBAL) not in by_family
+
+
+@dataclass
+class _FakeBundlePaper:
+    corpus_id: int
+    title: str
+
+
+@dataclass
+class _FakeBundle:
+    paper: _FakeBundlePaper
+    rank: int
+    score: float
+    matched_channels: list[str]
+
+
+@dataclass
+class _FakeRetrievalChannel:
+    channel: str
+    hits: list[int]
+
+
+class _FakeService:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def search(self, request):
+        self.requests.append(request)
+        return SimpleNamespace(
+            evidence_bundles=[
+                _FakeBundle(
+                    paper=_FakeBundlePaper(corpus_id=1, title="Evidence title"),
+                    rank=1,
+                    score=1.0,
+                    matched_channels=["lexical"],
+                )
+            ],
+            answer="Answer text",
+            answer_corpus_ids=[1],
+            grounded_answer=None,
+            retrieval_channels=[_FakeRetrievalChannel(channel="lexical", hits=[1])],
+            meta=SimpleNamespace(duration_ms=25.0),
+        )
+
+
+def test_evaluate_runtime_query_cases_warms_service_before_measuring():
+    service = _FakeService()
+    cases = build_runtime_eval_query_cases(
+        [
+            _paper(
+                1,
+                source="s2orc_v2",
+                title="Evidence title",
+                chunk_count=8,
+                table_block_count=0,
+                sentence=(
+                    "This is a representative discussion sentence that is long enough "
+                    "to use."
+                ),
+            )
+        ]
+    )
+
+    results = evaluate_runtime_query_cases(
+        graph_release_id="current",
+        chunk_version_key="default-structural-v1",
+        cases=cases[:1],
+        service=service,
+    )
+
+    assert len(results) == 1
+    assert len(service.requests) == 2
+    assert service.requests[0].query == service.requests[1].query
 
 
 def test_summarize_runtime_results_counts_failures_and_rates():
@@ -256,3 +462,54 @@ def test_evaluate_runtime_query_cases_records_service_and_overhead_durations():
     assert result.duration_ms >= 0.0
     assert result.service_duration_ms == 120.0
     assert result.overhead_duration_ms >= 0.0
+
+
+def test_population_summary_tracks_sentence_seed_presence():
+    population = [
+        _paper(
+            1,
+            source="s2orc_v2",
+            title="A",
+            chunk_count=8,
+            table_block_count=0,
+            sentence="Representative evaluation sentence for paper A.",
+        ),
+        _paper(
+            2,
+            source="biocxml",
+            title="B",
+            chunk_count=8,
+            table_block_count=1,
+            sentence=None,
+        ),
+    ]
+
+    summary = population_summary(population=population, sample=population)
+
+    assert summary.population_papers == 2
+    assert summary.sampled_papers == 2
+    assert summary.sentence_seed_papers == 1
+    assert summary.sampled_by_source_system == {"biocxml": 1, "s2orc_v2": 1}
+
+
+def test_population_summary_tracks_missing_requested_ids():
+    sample = [
+        _paper(
+            1,
+            source="s2orc_v2",
+            title="A",
+            chunk_count=8,
+            table_block_count=0,
+            sentence="Representative evaluation sentence for paper A.",
+        )
+    ]
+
+    summary = population_summary(
+        population=sample,
+        sample=sample,
+        requested_ids=[1, 2],
+        missing_requested_ids=[2],
+    )
+
+    assert summary.requested_papers == 2
+    assert summary.missing_requested_corpus_ids == [2]

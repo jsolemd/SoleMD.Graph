@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Protocol
 
 from app import db
@@ -21,12 +23,31 @@ from app.rag.models import (
     PaperReferenceRecord,
     RelationMatchedPaperHit,
 )
+from app.rag.query_enrichment import (
+    normalize_entity_query_text,
+    normalize_query_text,
+    normalize_title_key,
+)
+from app.rag.title_anchor import compute_title_anchor_score
 from app.rag.types import CitationDirection, GraphSignalKind, RetrievalChannel
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 
-ENTITY_FUZZY_SIMILARITY_THRESHOLD = 0.3
-ENTITY_TOP_CONCEPTS_PER_TERM = 3
+ENTITY_FUZZY_SIMILARITY_THRESHOLD = queries.ENTITY_FUZZY_SIMILARITY_THRESHOLD
+ENTITY_TOP_CONCEPTS_PER_TERM = queries.ENTITY_TOP_CONCEPTS_PER_TERM
 SEMANTIC_NEIGHBOR_MIN_LIMIT = 1
+
+
+class _PinnedConnectionContext:
+    """No-op context wrapper for a connection already owned by the caller."""
+
+    def __init__(self, conn: Any):
+        self._conn = conn
+
+    def __enter__(self) -> Any:
+        return self._conn
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
 
 
 class RagRepository(Protocol):
@@ -65,6 +86,25 @@ class RagRepository(Protocol):
         limit: int,
         scope_corpus_ids: Sequence[int] | None = None,
         use_title_similarity: bool = True,
+    ) -> list[PaperEvidenceHit]: ...
+
+    def search_exact_title_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]: ...
+
+    def search_selected_title_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        selected_corpus_id: int,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
     ) -> list[PaperEvidenceHit]: ...
 
     def search_chunk_papers(
@@ -162,12 +202,6 @@ class RagRepository(Protocol):
     ) -> list[GraphSignal]: ...
 
 
-def _split_mentions(raw_mentions: str | None) -> list[str]:
-    if not raw_mentions:
-        return []
-    return [part.strip() for part in raw_mentions.split("|") if part.strip()]
-
-
 def _normalize_json_strings(raw_values: Any) -> list[str]:
     if raw_values is None:
         return []
@@ -190,29 +224,14 @@ def _normalize_json_strings(raw_values: Any) -> list[str]:
             if stripped:
                 normalized.append(stripped)
             continue
+        if isinstance(value, list):
+            normalized.extend(_normalize_json_strings(value))
+            continue
         if isinstance(value, dict):
             text = value.get("text")
             if isinstance(text, str) and text.strip():
                 normalized.append(text.strip())
     return normalized
-
-
-def _score_text_match(haystacks: Sequence[str], needles: Sequence[str]) -> tuple[float, list[str]]:
-    if not needles:
-        return 0.0, []
-
-    lowered_haystacks = [haystack.lower() for haystack in haystacks if haystack]
-    matched_terms: list[str] = []
-    best_score = 0.0
-    for needle in needles:
-        lowered = needle.lower()
-        if not lowered:
-            continue
-        if any(lowered in haystack for haystack in lowered_haystacks):
-            matched_terms.append(needle)
-            best_score = max(best_score, min(1.0, max(0.25, len(lowered) / 24)))
-    return best_score, matched_terms
-
 
 class PostgresRagRepository:
     """Read-only PostgreSQL repository for the baseline evidence service."""
@@ -223,11 +242,42 @@ class PostgresRagRepository:
         *,
         chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
     ):
-        self._connect = connect or db.pooled
+        self._connect_factory = connect or db.pooled
         self._chunk_version_key = chunk_version_key
+        self._graph_release_cache: dict[str, GraphRelease] = {}
         self._semantic_neighbor_index_ready: bool | None = None
         self._graph_scope_paper_counts: dict[str, int] = {}
         self._embedded_paper_count: int | None = None
+        self._bound_connection: ContextVar[Any | None] = ContextVar(
+            f"rag_repository_connection_{id(self)}",
+            default=None,
+        )
+
+    def _connect(self):
+        active_connection = self._bound_connection.get()
+        if active_connection is not None:
+            return _PinnedConnectionContext(active_connection)
+        return self._connect_factory()
+
+    def _configure_search_session(self, cur: Any) -> None:
+        if settings.rag_runtime_disable_jit:
+            cur.execute("SET LOCAL jit = off")
+
+    @contextmanager
+    def search_session(self) -> Iterator[None]:
+        active_connection = self._bound_connection.get()
+        if active_connection is not None:
+            yield
+            return
+
+        with self._connect_factory() as conn:
+            with conn.cursor() as cur:
+                self._configure_search_session(cur)
+            token = self._bound_connection.set(conn)
+            try:
+                yield
+            finally:
+                self._bound_connection.reset(token)
 
     def _paper_hit_from_row(self, row: dict[str, Any]) -> PaperEvidenceHit:
         return PaperEvidenceHit(
@@ -268,6 +318,9 @@ class PostgresRagRepository:
 
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
         release_key = graph_release_id.strip()
+        cached = self._graph_release_cache.get(release_key)
+        if cached is not None:
+            return cached
         params = (release_key, release_key, release_key)
 
         with self._connect() as conn:
@@ -278,13 +331,15 @@ class PostgresRagRepository:
         if not row:
             raise LookupError(f"Unknown graph release: {graph_release_id}")
 
-        return GraphRelease(
+        release = GraphRelease(
             graph_release_id=row.get("bundle_checksum") or row["graph_run_id"],
             graph_run_id=row["graph_run_id"],
             bundle_checksum=row.get("bundle_checksum"),
             graph_name=row["graph_name"],
             is_current=bool(row.get("is_current")),
         )
+        self._graph_release_cache[release_key] = release
+        return release
 
     def resolve_query_entity_terms(
         self,
@@ -391,6 +446,12 @@ class PostgresRagRepository:
         scope_corpus_ids: Sequence[int] | None = None,
         use_title_similarity: bool = True,
     ) -> list[PaperEvidenceHit]:
+        normalized_title_query = normalize_title_key(query)
+        use_exact_graph_search = (
+            self._should_use_exact_graph_search(graph_run_id)
+            if not scope_corpus_ids
+            else False
+        )
         if scope_corpus_ids:
             unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
             sql = queries.PAPER_SEARCH_IN_SELECTION_SQL
@@ -398,10 +459,66 @@ class PostgresRagRepository:
                 query,
                 query,
                 query,
+                normalized_title_query,
                 use_title_similarity,
                 unique_scope_ids,
                 limit,
                 unique_scope_ids,
+                limit,
+            )
+        elif use_title_similarity and use_exact_graph_search:
+            sql = queries.PAPER_TITLE_LOOKUP_IN_GRAPH_SQL
+            params = (
+                query,
+                normalized_title_query,
+                graph_run_id,
+                limit,
+                limit,
+                limit,
+            )
+        elif not use_title_similarity and use_exact_graph_search:
+            sql = queries.PAPER_SEARCH_IN_GRAPH_SQL
+            params = (
+                query,
+                query,
+                query,
+                normalized_title_query,
+                use_title_similarity,
+                graph_run_id,
+                limit,
+                limit,
+            )
+        elif use_title_similarity:
+            exact_title_hits = self._search_title_lookup_candidate_papers(
+                graph_run_id=graph_run_id,
+                query=query,
+                normalized_title_query=normalized_title_query,
+                limit=limit,
+                prefix=False,
+            )
+            if exact_title_hits:
+                return exact_title_hits
+            candidate_limit = max(limit * 40, 200)
+            prefix_title_hits = self._search_title_lookup_candidate_papers(
+                graph_run_id=graph_run_id,
+                query=query,
+                normalized_title_query=normalized_title_query,
+                limit=candidate_limit,
+                prefix=True,
+            )
+            if prefix_title_hits:
+                return prefix_title_hits[:limit]
+            sql = queries.PAPER_TITLE_LOOKUP_SQL
+            params = (
+                query,
+                normalized_title_query,
+                limit,
+                limit,
+                candidate_limit,
+                candidate_limit,
+                candidate_limit,
+                candidate_limit,
+                graph_run_id,
                 limit,
             )
         else:
@@ -411,11 +528,13 @@ class PostgresRagRepository:
                 query,
                 query,
                 query,
+                normalized_title_query,
                 use_title_similarity,
+                graph_run_id,
                 limit,
                 candidate_limit,
                 candidate_limit,
-                graph_run_id,
+                candidate_limit,
                 limit,
             )
         with self._connect() as conn:
@@ -424,6 +543,181 @@ class PostgresRagRepository:
                 rows = cur.fetchall()
 
         return [self._paper_hit_from_row(row) for row in rows]
+
+    def _search_title_lookup_candidate_papers(
+        self,
+        *,
+        graph_run_id: str,
+        query: str,
+        normalized_title_query: str,
+        limit: int,
+        prefix: bool,
+    ) -> list[PaperEvidenceHit]:
+        candidate_corpus_ids = self._title_lookup_candidate_corpus_ids(
+            query=query,
+            normalized_title_query=normalized_title_query,
+            limit=limit,
+            prefix=prefix,
+        )
+        if not candidate_corpus_ids:
+            return []
+
+        scoped_hits = self.fetch_papers_by_corpus_ids(graph_run_id, candidate_corpus_ids)
+        if not scoped_hits:
+            return []
+
+        hits_by_corpus_id = {hit.corpus_id: hit for hit in scoped_hits}
+        ordered_hits = [
+            hits_by_corpus_id[corpus_id]
+            for corpus_id in candidate_corpus_ids
+            if corpus_id in hits_by_corpus_id
+        ]
+        if not ordered_hits:
+            return []
+
+        for hit in ordered_hits:
+            if prefix:
+                hit.lexical_score = max(hit.lexical_score, 1.7)
+                hit.title_similarity = max(
+                    hit.title_similarity,
+                    compute_title_anchor_score(
+                        query_text=query,
+                        title_text=hit.title,
+                    ),
+                )
+            else:
+                hit.lexical_score = max(hit.lexical_score, 2.0)
+                hit.title_similarity = 1.0
+        return ordered_hits
+
+    def _title_lookup_candidate_corpus_ids(
+        self,
+        *,
+        query: str,
+        normalized_title_query: str,
+        limit: int,
+        prefix: bool,
+    ) -> list[int]:
+        sql_specs = (
+            (
+                queries.PAPER_TITLE_TEXT_PREFIX_CANDIDATE_SQL,
+                (query.lower(), query.lower(), limit),
+            ),
+            (
+                queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL,
+                (normalized_title_query, normalized_title_query, limit),
+            ),
+        ) if prefix else (
+            (
+                queries.PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL,
+                (query.lower(), query.lower(), limit),
+            ),
+            (
+                queries.PAPER_TITLE_NORMALIZED_EXACT_CANDIDATE_SQL,
+                (normalized_title_query, normalized_title_query, limit),
+            ),
+        )
+
+        candidate_scores: dict[int, tuple[int, int]] = {}
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                for sql, params in sql_specs:
+                    cur.execute(sql, params)
+                    for row in cur.fetchall():
+                        corpus_id = int(row["corpus_id"])
+                        citation_count = int(row.get("citation_count") or 0)
+                        best = candidate_scores.get(corpus_id)
+                        score = (citation_count, corpus_id)
+                        if best is None or score > best:
+                            candidate_scores[corpus_id] = score
+
+        return [
+            corpus_id
+            for corpus_id, _score in sorted(
+                candidate_scores.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ][:limit]
+
+    def search_exact_title_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]:
+        normalized_query = query.strip()
+        if not normalized_query:
+            return []
+        normalized_title_query = normalize_title_key(normalized_query)
+
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            sql = queries.PAPER_EXACT_TITLE_SEARCH_IN_SELECTION_SQL
+            params = (
+                unique_scope_ids,
+                normalized_query,
+                normalized_title_query,
+                normalized_title_query,
+                limit,
+            )
+        else:
+            sql = queries.PAPER_EXACT_TITLE_SEARCH_SQL
+            params = (
+                graph_run_id,
+                normalized_query,
+                normalized_title_query,
+                normalized_title_query,
+                limit,
+            )
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        return [self._paper_hit_from_row(row) for row in rows]
+
+    def search_selected_title_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        selected_corpus_id: int,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]:
+        if limit <= 0:
+            return []
+
+        if scope_corpus_ids is not None:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            if selected_corpus_id not in set(unique_scope_ids):
+                return []
+            selected_hits = self.fetch_known_scoped_papers_by_corpus_ids([selected_corpus_id])
+        else:
+            selected_hits = self.fetch_papers_by_corpus_ids(graph_run_id, [selected_corpus_id])
+        if not selected_hits:
+            return []
+
+        selected_hit = selected_hits[0]
+        title_anchor_score = compute_title_anchor_score(
+            query_text=query,
+            title_text=selected_hit.title,
+        )
+        if title_anchor_score <= 0:
+            return []
+
+        selected_hit.lexical_score = max(
+            selected_hit.lexical_score,
+            2.0 if title_anchor_score >= 1.0 else 1.85,
+        )
+        selected_hit.title_similarity = max(
+            selected_hit.title_similarity,
+            title_anchor_score,
+        )
+        return [selected_hit]
 
     def search_chunk_papers(
         self,
@@ -436,6 +730,7 @@ class PostgresRagRepository:
         normalized_query = query.strip()
         if not normalized_query:
             return []
+        normalized_exact_query = normalize_entity_query_text(normalized_query)
 
         if scope_corpus_ids:
             unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
@@ -444,6 +739,7 @@ class PostgresRagRepository:
                 normalized_query,
                 normalized_query,
                 normalized_query,
+                normalized_exact_query,
                 self._chunk_version_key,
                 unique_scope_ids,
                 limit,
@@ -455,6 +751,7 @@ class PostgresRagRepository:
                 normalized_query,
                 normalized_query,
                 normalized_query,
+                normalized_exact_query,
                 graph_run_id,
                 self._chunk_version_key,
                 candidate_limit,
@@ -482,17 +779,6 @@ class PostgresRagRepository:
                 rows = cur.fetchall()
 
         return [self._paper_hit_from_row(row) for row in rows]
-
-    def fetch_paper_embedding_literal(self, corpus_id: int) -> str | None:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(queries.PAPER_EMBEDDING_LOOKUP_SQL, (corpus_id,))
-                row = cur.fetchone()
-
-        if not row:
-            return None
-        embedding_literal = row.get("embedding_literal")
-        return str(embedding_literal) if embedding_literal else None
 
     def fetch_known_scoped_papers_by_corpus_ids(
         self,
@@ -530,12 +816,14 @@ class PostgresRagRepository:
                 normalized_terms,
                 unique_scope_ids,
                 limit,
+                limit,
             )
         else:
             sql = queries.PAPER_RELATION_SEARCH_SQL
             params = (
                 graph_run_id,
                 normalized_terms,
+                limit,
                 limit,
             )
 
@@ -560,6 +848,30 @@ class PostgresRagRepository:
         if not normalized_terms:
             return []
 
+        exact_terms = self.resolve_query_entity_terms(
+            query_phrases=normalized_terms,
+            limit=len(normalized_terms),
+        )
+        if exact_terms:
+            exact_term_keys = {
+                normalize_entity_query_text(term)
+                for term in exact_terms
+                if term and term.strip()
+            }
+            normalized_term_keys = {
+                normalize_entity_query_text(term)
+                for term in normalized_terms
+            }
+            if exact_term_keys and exact_term_keys == normalized_term_keys:
+                exact_hits = self._search_exact_entity_papers(
+                    graph_run_id=graph_run_id,
+                    entity_terms=exact_terms,
+                    limit=limit,
+                    scope_corpus_ids=scope_corpus_ids,
+                )
+                if exact_hits:
+                    return exact_hits
+
         if scope_corpus_ids:
             unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
             sql = queries.PAPER_ENTITY_SEARCH_IN_SELECTION_SQL
@@ -575,6 +887,45 @@ class PostgresRagRepository:
             params = (
                 normalized_terms,
                 ENTITY_FUZZY_SIMILARITY_THRESHOLD,
+                ENTITY_TOP_CONCEPTS_PER_TERM,
+                graph_run_id,
+                limit,
+            )
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, params)
+                rows = cur.fetchall()
+
+        return [self._paper_hit_from_row(row) for row in rows]
+
+    def _search_exact_entity_papers(
+        self,
+        *,
+        graph_run_id: str,
+        entity_terms: Sequence[str],
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> list[PaperEvidenceHit]:
+        exact_terms = list(
+            dict.fromkeys(term.strip() for term in entity_terms if term and term.strip())
+        )
+        if not exact_terms:
+            return []
+
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            sql = queries.PAPER_ENTITY_EXACT_SEARCH_IN_SELECTION_SQL
+            params = (
+                exact_terms,
+                ENTITY_TOP_CONCEPTS_PER_TERM,
+                unique_scope_ids,
+                limit,
+            )
+        else:
+            sql = queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+            params = (
+                exact_terms,
                 ENTITY_TOP_CONCEPTS_PER_TERM,
                 graph_run_id,
                 limit,
@@ -623,59 +974,46 @@ class PostgresRagRepository:
             return {}
 
         grouped: dict[int, list[CitationContextHit]] = defaultdict(list)
-        query_terms = [part for part in query.lower().split() if len(part) >= 4]
-        candidate_ids = set(corpus_ids)
+        query_terms = [part for part in normalize_query_text(query).split() if len(part) >= 4]
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.CITATION_CONTEXT_SQL, (list(corpus_ids), list(corpus_ids)))
+                cur.execute(
+                    queries.CITATION_CONTEXT_SQL,
+                    (
+                        query_terms,
+                        list(corpus_ids),
+                        list(corpus_ids),
+                        list(corpus_ids),
+                        list(corpus_ids),
+                        limit_per_paper,
+                    ),
+                )
                 rows = cur.fetchall()
 
         for row in rows:
-            citing_corpus_id = int(row["citing_corpus_id"])
-            cited_corpus_id = int(row["cited_corpus_id"])
+            direction = (
+                CitationDirection.OUTGOING
+                if row.get("direction") == "outgoing"
+                else CitationDirection.INCOMING
+            )
             citation_id = row.get("citation_id")
-            contexts = _normalize_json_strings(row.get("contexts"))
-            intents = _normalize_json_strings(row.get("intents"))
-            for context_text in contexts:
-                score = 0.1
-                lowered_context = context_text.lower()
-                if query_terms:
-                    score = sum(1.0 for term in query_terms if term in lowered_context)
-                if row.get("is_influential"):
-                    score += 0.25
-
-                if citing_corpus_id in candidate_ids:
-                    grouped[citing_corpus_id].append(
-                        CitationContextHit(
-                            corpus_id=citing_corpus_id,
-                            citation_id=int(citation_id) if citation_id is not None else None,
-                            direction=CitationDirection.OUTGOING,
-                            neighbor_corpus_id=cited_corpus_id,
-                            neighbor_paper_id=row.get("cited_paper_id"),
-                            context_text=context_text,
-                            intents=intents,
-                            score=score,
-                        )
-                    )
-                if cited_corpus_id in candidate_ids:
-                    grouped[cited_corpus_id].append(
-                        CitationContextHit(
-                            corpus_id=cited_corpus_id,
-                            citation_id=int(citation_id) if citation_id is not None else None,
-                            direction=CitationDirection.INCOMING,
-                            neighbor_corpus_id=citing_corpus_id,
-                            neighbor_paper_id=row.get("citing_paper_id"),
-                            context_text=context_text,
-                            intents=intents,
-                            score=score,
-                        )
-                    )
-
-        for corpus_id, hits in list(grouped.items()):
-            grouped[corpus_id] = sorted(hits, key=lambda item: item.score, reverse=True)[
-                :limit_per_paper
-            ]
+            grouped[int(row["corpus_id"])].append(
+                CitationContextHit(
+                    corpus_id=int(row["corpus_id"]),
+                    citation_id=int(citation_id) if citation_id is not None else None,
+                    direction=direction,
+                    neighbor_corpus_id=(
+                        int(row["neighbor_corpus_id"])
+                        if row.get("neighbor_corpus_id") is not None
+                        else None
+                    ),
+                    neighbor_paper_id=row.get("neighbor_paper_id"),
+                    context_text=row.get("context_text") or "",
+                    intents=_normalize_json_strings(row.get("intents")),
+                    score=float(row.get("score") or 0.0),
+                )
+            )
         return dict(grouped)
 
     def fetch_entity_matches(
@@ -688,34 +1026,40 @@ class PostgresRagRepository:
         if not corpus_ids or not entity_terms:
             return {}
 
+        normalized_terms = list(
+            dict.fromkeys(term.strip() for term in entity_terms if term and term.strip())
+        )
+        if not normalized_terms:
+            return {}
+
         grouped: dict[int, list[EntityMatchedPaperHit]] = defaultdict(list)
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.ENTITY_MATCH_SQL, (list(corpus_ids),))
+                cur.execute(
+                    queries.ENTITY_MATCH_SQL,
+                    (
+                        normalized_terms,
+                        list(corpus_ids),
+                        limit_per_paper,
+                    ),
+                )
                 rows = cur.fetchall()
 
         for row in rows:
-            mentions = _split_mentions(row.get("mentions"))
-            score, matched_terms = _score_text_match(
-                [row.get("concept_id") or "", *mentions],
-                entity_terms,
-            )
-            if not matched_terms:
-                continue
             grouped[int(row["corpus_id"])].append(
                 EntityMatchedPaperHit(
                     corpus_id=int(row["corpus_id"]),
                     entity_type=row.get("entity_type") or "unknown",
                     concept_id=row.get("concept_id") or "",
-                    matched_terms=matched_terms,
-                    score=score,
+                    matched_terms=list(row.get("matched_terms") or []),
+                    mention_count=int(row.get("mention_count") or 0),
+                    structural_span_count=int(row.get("structural_span_count") or 0),
+                    retrieval_default_mention_count=int(
+                        row.get("retrieval_default_mention_count") or 0
+                    ),
+                    score=float(row.get("score") or 0.0),
                 )
             )
-
-        for corpus_id, hits in list(grouped.items()):
-            grouped[corpus_id] = sorted(hits, key=lambda item: item.score, reverse=True)[
-                :limit_per_paper
-            ]
         return dict(grouped)
 
     def fetch_relation_matches(
@@ -728,23 +1072,26 @@ class PostgresRagRepository:
         if not corpus_ids or not relation_terms:
             return {}
 
+        normalized_terms = list(
+            dict.fromkeys(term.strip() for term in relation_terms if term and term.strip())
+        )
+        if not normalized_terms:
+            return {}
+
         grouped: dict[int, list[RelationMatchedPaperHit]] = defaultdict(list)
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.RELATION_MATCH_SQL, (list(corpus_ids),))
+                cur.execute(
+                    queries.RELATION_MATCH_SQL,
+                    (
+                        normalized_terms,
+                        list(corpus_ids),
+                        limit_per_paper,
+                    ),
+                )
                 rows = cur.fetchall()
 
         for row in rows:
-            haystacks = [
-                str(row.get("relation_type") or ""),
-                str(row.get("subject_type") or ""),
-                str(row.get("subject_id") or ""),
-                str(row.get("object_type") or ""),
-                str(row.get("object_id") or ""),
-            ]
-            score, matched_terms = _score_text_match(haystacks, relation_terms)
-            if not matched_terms:
-                continue
             grouped[int(row["corpus_id"])].append(
                 RelationMatchedPaperHit(
                     corpus_id=int(row["corpus_id"]),
@@ -753,14 +1100,9 @@ class PostgresRagRepository:
                     subject_id=str(row.get("subject_id") or ""),
                     object_type=str(row.get("object_type") or ""),
                     object_id=str(row.get("object_id") or ""),
-                    score=score,
+                    score=float(row.get("score") or 0.0),
                 )
             )
-
-        for corpus_id, hits in list(grouped.items()):
-            grouped[corpus_id] = sorted(hits, key=lambda item: item.score, reverse=True)[
-                :limit_per_paper
-            ]
         return dict(grouped)
 
     def fetch_references(
@@ -842,13 +1184,8 @@ class PostgresRagRepository:
         if selected_corpus_id <= 0:
             return []
 
-        vector_literal = self.fetch_paper_embedding_literal(selected_corpus_id)
-        if not vector_literal:
-            return []
-
         if scope_corpus_ids:
             rows = self._fetch_semantic_neighbors_in_selection(
-                vector_literal=vector_literal,
                 selected_corpus_id=selected_corpus_id,
                 limit=limit,
                 scope_corpus_ids=scope_corpus_ids,
@@ -856,7 +1193,6 @@ class PostgresRagRepository:
         else:
             rows = self._fetch_semantic_neighbors_in_graph(
                 graph_run_id=graph_run_id,
-                vector_literal=vector_literal,
                 selected_corpus_id=selected_corpus_id,
                 limit=limit,
             )
@@ -957,7 +1293,6 @@ class PostgresRagRepository:
     def _fetch_semantic_neighbors_in_selection(
         self,
         *,
-        vector_literal: str,
         selected_corpus_id: int,
         limit: int,
         scope_corpus_ids: Sequence[int],
@@ -971,11 +1306,9 @@ class PostgresRagRepository:
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_IN_SELECTION_SQL,
                     (
-                        vector_literal,
-                        unique_scope_ids,
+                        selected_corpus_id,
                         unique_scope_ids,
                         selected_corpus_id,
-                        vector_literal,
                         self._semantic_neighbor_limit(limit),
                     ),
                 )
@@ -985,7 +1318,6 @@ class PostgresRagRepository:
         self,
         *,
         graph_run_id: str,
-        vector_literal: str,
         selected_corpus_id: int,
         limit: int,
     ) -> list[dict[str, Any]]:
@@ -993,7 +1325,6 @@ class PostgresRagRepository:
         if self._should_use_exact_graph_search(graph_run_id):
             return self._fetch_semantic_neighbors_exact(
                 graph_run_id=graph_run_id,
-                vector_literal=vector_literal,
                 selected_corpus_id=selected_corpus_id,
                 limit=normalized_limit,
             )
@@ -1006,7 +1337,6 @@ class PostgresRagRepository:
             )
             rows = fetch_ann(
                 graph_run_id=graph_run_id,
-                vector_literal=vector_literal,
                 selected_corpus_id=selected_corpus_id,
                 limit=normalized_limit,
                 candidate_limit=candidate_limit,
@@ -1024,7 +1354,6 @@ class PostgresRagRepository:
                 candidate_limit = next_limit
                 rows = fetch_ann(
                     graph_run_id=graph_run_id,
-                    vector_literal=vector_literal,
                     selected_corpus_id=selected_corpus_id,
                     limit=normalized_limit,
                     candidate_limit=candidate_limit,
@@ -1034,7 +1363,6 @@ class PostgresRagRepository:
 
         return self._fetch_semantic_neighbors_exact(
             graph_run_id=graph_run_id,
-            vector_literal=vector_literal,
             selected_corpus_id=selected_corpus_id,
             limit=normalized_limit,
         )
@@ -1043,7 +1371,6 @@ class PostgresRagRepository:
         self,
         *,
         graph_run_id: str,
-        vector_literal: str,
         selected_corpus_id: int,
         limit: int,
         candidate_limit: int,
@@ -1054,10 +1381,9 @@ class PostgresRagRepository:
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
                     (
-                        graph_run_id,
-                        vector_literal,
                         selected_corpus_id,
-                        vector_literal,
+                        graph_run_id,
+                        selected_corpus_id,
                         candidate_limit,
                         limit,
                     ),
@@ -1068,7 +1394,6 @@ class PostgresRagRepository:
         self,
         *,
         graph_run_id: str,
-        vector_literal: str,
         selected_corpus_id: int,
         limit: int,
         candidate_limit: int,
@@ -1079,9 +1404,8 @@ class PostgresRagRepository:
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL,
                     (
-                        vector_literal,
                         selected_corpus_id,
-                        vector_literal,
+                        selected_corpus_id,
                         candidate_limit,
                         graph_run_id,
                         limit,
@@ -1230,7 +1554,6 @@ class PostgresRagRepository:
         self,
         *,
         graph_run_id: str,
-        vector_literal: str,
         selected_corpus_id: int,
         limit: int,
     ) -> list[dict[str, Any]]:
@@ -1241,10 +1564,9 @@ class PostgresRagRepository:
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_SQL,
                     (
-                        vector_literal,
+                        selected_corpus_id,
                         graph_run_id,
                         selected_corpus_id,
-                        vector_literal,
                         limit,
                     ),
                 )

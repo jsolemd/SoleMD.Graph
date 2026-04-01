@@ -20,8 +20,8 @@ from app.rag.types import (
     EvidenceIntent,
     GraphSignalKind,
     NodeLayer,
-    RetrievalScope,
     RetrievalChannel,
+    RetrievalScope,
 )
 
 
@@ -92,6 +92,9 @@ class EntityMatchedPaperHit(RagSchema):
     entity_type: str
     concept_id: str
     matched_terms: list[str] = Field(default_factory=list)
+    mention_count: int = 0
+    structural_span_count: int = 0
+    retrieval_default_mention_count: int = 0
     score: float
 
 
