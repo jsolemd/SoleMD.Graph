@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import {
   ActionIcon,
   Group,
@@ -101,14 +102,17 @@ function AssetCard({
         {isImage && (
           <button
             type="button"
-            className="mt-3 block w-full rounded-lg"
+            className="relative mt-3 block h-[240px] w-full overflow-hidden rounded-lg"
             style={{ background: "transparent", border: "none", padding: 0, cursor: "zoom-in" }}
             onClick={() => setPreviewOpened(true)}
           >
-            <img
-              src={url ?? undefined}
+            <Image
+              src={url!}
               alt={resolvedAsset.caption ?? `${resolvedAsset.asset_type} asset`}
-              className="max-h-[240px] w-full rounded-lg object-contain"
+              fill
+              unoptimized
+              sizes="(max-width: 768px) 100vw, 380px"
+              className="rounded-lg object-contain"
               onError={refresh}
             />
           </button>
@@ -131,12 +135,17 @@ function AssetCard({
                 </a>
               )}
             </Group>
-            <img
-              src={url ?? undefined}
+            <div className="relative h-[72vh] w-full overflow-hidden rounded-lg">
+              <Image
+              src={url!}
               alt={resolvedAsset.caption ?? `${resolvedAsset.asset_type} asset`}
-              className="max-h-[72vh] w-full rounded-lg object-contain"
-              onError={refresh}
-            />
+                fill
+                unoptimized
+                sizes="100vw"
+                className="rounded-lg object-contain"
+                onError={refresh}
+              />
+            </div>
             {resolvedAsset.caption && <Text style={panelTextStyle}>{resolvedAsset.caption}</Text>}
           </Stack>
         </Modal>
