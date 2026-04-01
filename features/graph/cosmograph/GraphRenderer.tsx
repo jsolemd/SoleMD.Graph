@@ -120,6 +120,17 @@ export default function CosmographRenderer({
     [focusedPointIndex, resolveAndSelectNode, selectedNode, setFocusedPointIndex]
   );
 
+  const handleClusterLabelClick = useCallback(() => {
+    // Cluster-label clicks promote a multi-point selection. Clear any stale
+    // single-point detail state and let onPointsFiltered persist the selection.
+    if (focusedPointIndex != null) {
+      setFocusedPointIndex(null);
+    }
+    if (selectedNode != null) {
+      selectNode(null);
+    }
+  }, [focusedPointIndex, selectNode, selectedNode, setFocusedPointIndex]);
+
   // Track the logical layer so future active-table versioning or overlay
   // activation does not accidentally trigger a camera reset.
   const lastFittedLayer = useRef<typeof activeLayer | null>(null);
@@ -331,6 +342,7 @@ export default function CosmographRenderer({
       focusedPointIndex={focusedPointIndex ?? undefined}
       pointLabelBy={labelMode.effectivePointLabelColumn}
       pointLabelWeightBy={pointLabelWeightBy}
+      pointClusterBy={config.pointClusterColumn}
       showLabelsFor={labelMode.showLabelsFor}
       pointIncludeColumns={
         config.pointIncludeColumns.length > 0 ? config.pointIncludeColumns : undefined
@@ -377,6 +389,7 @@ export default function CosmographRenderer({
       pointLabelClassName={LABEL_STYLE}
       clusterLabelClassName={LABEL_STYLE}
       hoveredPointLabelClassName={LABEL_STYLE}
+      selectClusterOnLabelClick={!isLocked}
       selectPointOnClick={isLocked ? false : config.hasLinks ? true : "single"}
       selectPointOnLabelClick={isLocked ? false : config.hasLinks ? true : "single"}
       focusPointOnClick={!isLocked}
@@ -387,6 +400,7 @@ export default function CosmographRenderer({
       onZoom={handleZoom}
       onZoomEnd={handleViewportSettled}
       onLabelClick={handleLabelClick}
+      onClusterLabelClick={handleClusterLabelClick}
       onGraphRebuilt={handleGraphRebuilt}
       onPointsFiltered={handlePointsFiltered}
       onPointClick={handlePointClick}

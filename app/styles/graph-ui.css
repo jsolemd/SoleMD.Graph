@@ -1,0 +1,206 @@
+/* Config panel — thin visible scrollbar (global rules hide scrollbars).
+   scrollbar-gutter: stable reserves space so appearing/disappearing scrollbar
+   doesn't cause reflow oscillation (which triggers ResizeObserver loops). */
+.config-scroll { scrollbar-gutter: stable; }
+.config-scroll::-webkit-scrollbar { width: 4px; }
+.config-scroll::-webkit-scrollbar-track { background: transparent; }
+.config-scroll::-webkit-scrollbar-thumb { background: var(--graph-panel-border); border-radius: 2px; }
+
+/* DataTable pagination — minimal, mode-colored active page */
+.table-pagination [data-active] {
+  background-color: transparent !important;
+  border-color: transparent !important;
+  color: var(--mode-accent) !important;
+  font-weight: 700;
+}
+
+/* DataTable scope toggle — dim inactive, strong active on accent indicator */
+.table-scope-toggle .mantine-SegmentedControl-label {
+  color: var(--graph-panel-text-dim);
+}
+
+.table-scope-toggle .mantine-SegmentedControl-label[data-active] {
+  --sc-label-color: white !important;
+  color: white !important;
+  font-weight: 600;
+}
+
+/* Graph prompt — typewriter placeholder in mode accent color */
+.graph-prompt-input::placeholder {
+  color: var(--mode-accent, var(--graph-prompt-placeholder));
+  opacity: 0.55;
+  transition: color 0.3s ease;
+}
+
+/* Graph icon buttons — unified mode-aware hover/active.
+   Handles hover and pressed backgrounds for Mantine ActionIcons and
+   Cosmograph selection-tool wrappers. Icon color for Mantine buttons
+   is set via the `styles` prop (inline style beats Mantine's
+   --ai-color system); the color rule here covers non-Mantine elements
+   like Cosmograph wrappers. !important on backgrounds ensures our
+   hover/active overrides beat any Mantine variant styling. */
+.graph-icon-btn {
+  color: var(--graph-control-icon-color, var(--graph-panel-text-dim));
+  cursor: pointer;
+  background-color: var(--graph-control-idle-bg, transparent) !important;
+  box-shadow: inset 0 0 0 1px var(--graph-control-idle-border, transparent);
+  transition:
+    color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.graph-icon-btn:hover {
+  background-color: var(--graph-control-hover-bg, var(--mode-accent-subtle)) !important;
+}
+
+.graph-icon-btn[aria-pressed="true"] {
+  background-color: var(--graph-control-pressed-bg, var(--mode-accent-subtle)) !important;
+}
+
+.graph-icon-btn:active {
+  background-color: var(--graph-control-active-bg, var(--mode-accent-hover)) !important;
+}
+
+[data-graph-control-contrast="0"] {
+  --graph-control-icon-color: var(--graph-panel-text-dim);
+  --graph-control-idle-bg: transparent;
+  --graph-control-idle-border: transparent;
+  --graph-control-hover-bg: var(--mode-accent-subtle);
+  --graph-control-pressed-bg: var(--mode-accent-subtle);
+  --graph-control-active-bg: var(--mode-accent-hover);
+}
+
+[data-graph-control-contrast="1"] {
+  --graph-control-icon-color: var(--graph-panel-text);
+  --graph-control-idle-bg: color-mix(in srgb, var(--graph-panel-bg) 24%, transparent);
+  --graph-control-idle-border: color-mix(in srgb, var(--graph-panel-border) 55%, transparent);
+  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent-subtle) 72%, var(--graph-control-idle-bg));
+  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent-hover) 50%, var(--graph-control-idle-bg));
+  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent-hover) 72%, var(--graph-control-idle-bg));
+}
+
+[data-graph-control-contrast="2"] {
+  --graph-control-icon-color: var(--graph-panel-text);
+  --graph-control-idle-bg: color-mix(in srgb, var(--graph-panel-bg) 46%, transparent);
+  --graph-control-idle-border: color-mix(in srgb, var(--graph-panel-border) 82%, transparent);
+  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent-subtle) 78%, var(--graph-control-idle-bg));
+  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent-hover) 58%, var(--graph-control-idle-bg));
+  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent-hover) 82%, var(--graph-control-idle-bg));
+}
+
+/* Lucide icons inside graph buttons — centralized size + stroke from vars.
+   Lucide renders <svg class="lucide ..."> with width/height/stroke-width
+   attributes; CSS properties override those at any specificity.
+   Attribute selector survives Tailwind v4 / Lightning CSS tree-shaking. */
+.graph-icon-btn svg[class*="lucide"] {
+  width: var(--icon-size) !important;
+  height: var(--icon-size) !important;
+  stroke-width: var(--icon-stroke-width) !important;
+}
+
+/* Cosmograph buttons inside wrappers — kill their own hover filter so
+   only the wrapper's background hover takes effect. */
+.graph-icon-btn [class*="style_module_button"] {
+  filter: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Rect selection — scale stroke to match lucide (96×96 viewBox = 4× lucide's 24×24) */
+.graph-icon-btn [class*="style_module_button"] svg .st0 {
+  stroke-width: calc(var(--icon-stroke-width) * 4px) !important;
+}
+
+/* Polygon selection — remove built-in scale(1.15) that makes it oversized */
+.graph-icon-btn [class*="style_module_button"] svg[viewBox="0 0 24 24"] {
+  transform: none !important;
+}
+
+/* Detail panel accordion — mode-accent on hover for label + chevron */
+.detail-accordion .mantine-Accordion-control:hover .mantine-Accordion-label,
+.detail-accordion .mantine-Accordion-control:hover .mantine-Accordion-chevron {
+  color: var(--mode-accent) !important;
+}
+
+.detail-accordion .mantine-Accordion-control {
+  background: transparent !important;
+}
+
+.detail-accordion .mantine-Accordion-item {
+  border: none !important;
+}
+
+/* ── Graph canvas filter ──
+   Boosts saturation + darkens point colors in light mode.
+   Canvas uses transparent WebGL background so the filter only
+   hits colored WebGL content — labels and background are unaffected.
+   Values live in --graph-canvas-filter (set per theme above).
+   NOT in @layer — Cosmograph's module-scoped styles would override.
+   IMPORTANT: CSS filter creates a new stacking context on the canvas,
+   which paints it above the d3-brush SVG overlay used for rect/poly
+   selection. The GraphRenderer component compensates by setting
+   z-index:2 on the brush SVG via a useEffect. */
+[data-graph-canvas] canvas {
+  filter: var(--graph-canvas-filter);
+  transition: filter 80ms ease-out;
+}
+
+/* ── Light-mode Cosmograph Bars override ──
+   The upstream Bars widget hardcodes row dimming plus a 20% highlighted
+   overlay. That comparison styling works on dark defaults, but it washes
+   out filter bars on light panels. Scope the override to our filter widget
+   wrapper so histograms and other Cosmograph UI keep their defaults. */
+html:not(.dark) .graph-filter-bars-widget .scroll-container {
+  isolation: isolate;
+}
+
+html:not(.dark) .graph-filter-bars-widget .highlighted-bars-container {
+  pointer-events: none;
+  z-index: 1;
+}
+
+html:not(.dark) .graph-filter-bars-widget .info {
+  inset: 0;
+  align-items: center;
+  z-index: 2;
+}
+
+html:not(.dark) .graph-filter-bars-widget .row {
+  opacity: 1;
+  position: relative;
+}
+
+html:not(.dark) .graph-filter-bars-widget .row.selected,
+html:not(.dark) .graph-filter-bars-widget .row.unselected,
+html:not(.dark) .graph-filter-bars-widget .row:hover {
+  filter: none;
+}
+
+html:not(.dark) .graph-filter-bars-widget .bar-highlighted {
+  opacity: 0.5;
+}
+
+html:not(.dark) .graph-filter-bars-widget .selected > .info > .label {
+  font-weight: 500;
+  filter: none;
+}
+
+html:not(.dark) .graph-filter-bars-widget .unselected > .info > .label {
+  font-weight: 400;
+  opacity: 0.72;
+}
+
+html:not(.dark) .graph-filter-bars-widget .unselected > .info > .count {
+  opacity: 0.68;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PILL ACTIVATION — one-shot pulse when pill transitions to active.
+   Plays once on mount, then stops (not infinite).
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes pill-activate {
+  0% { opacity: 0.6; }
+  100% { opacity: 1; }
+}

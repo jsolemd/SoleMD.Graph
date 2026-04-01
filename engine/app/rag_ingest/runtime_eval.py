@@ -7,7 +7,9 @@ from collections import Counter
 from collections.abc import Callable, Sequence
 from enum import StrEnum
 from functools import partial
+from math import ceil
 from random import Random
+from time import perf_counter
 
 from pydantic import Field
 
@@ -211,6 +213,7 @@ class RuntimeEvalCaseResult(ParseContractModel):
     answer_segment_count: int = 0
     retrieval_channel_hit_counts: dict[str, int] = Field(default_factory=dict)
     top_hits: list[RuntimeEvalTopHit] = Field(default_factory=list)
+    duration_ms: float = 0.0
     error: str | None = None
 
 
@@ -224,6 +227,8 @@ class RuntimeEvalAggregate(ParseContractModel):
     target_in_grounded_answer_rate: float = 0.0
     mean_bundle_count: float = 0.0
     mean_cited_span_count: float = 0.0
+    mean_duration_ms: float = 0.0
+    p95_duration_ms: float = 0.0
     error_count: int = 0
     retrieval_channel_presence_rates: dict[str, float] = Field(default_factory=dict)
 
@@ -455,6 +460,7 @@ def evaluate_runtime_query_cases(
                 flush=True,
             )
         try:
+            started = perf_counter()
             response = service.search(
                 RagSearchRequest(
                     graph_release_id=graph_release_id,
@@ -466,6 +472,7 @@ def evaluate_runtime_query_cases(
                     generate_answer=True,
                 )
             )
+            duration_ms = (perf_counter() - started) * 1000
         except Exception as exc:  # pragma: no cover - exercised in integration runs
             results.append(
                 RuntimeEvalCaseResult(
@@ -476,6 +483,7 @@ def evaluate_runtime_query_cases(
                     query=case.query,
                     stratum_key=case.stratum_key,
                     representative_section_role=case.representative_section_role,
+                    duration_ms=0.0,
                     error=str(exc),
                 )
             )
@@ -520,6 +528,7 @@ def evaluate_runtime_query_cases(
                     channel.channel: len(channel.hits)
                     for channel in response.retrieval_channels
                 },
+                duration_ms=duration_ms,
                 top_hits=[
                     RuntimeEvalTopHit(
                         corpus_id=bundle.paper.corpus_id,
@@ -566,6 +575,7 @@ def _aggregate_case_results(results: Sequence[RuntimeEvalCaseResult]) -> Runtime
     grounded = 0
     grounded_target = 0
     errors = 0
+    durations: list[float] = []
     for result in results:
         if result.error:
             errors += 1
@@ -583,9 +593,12 @@ def _aggregate_case_results(results: Sequence[RuntimeEvalCaseResult]) -> Runtime
             grounded_target += 1
         bundle_count_total += result.evidence_bundle_count
         cited_span_total += result.cited_span_count
+        durations.append(result.duration_ms)
         for channel_name, hit_count in result.retrieval_channel_hit_counts.items():
             if hit_count > 0:
                 channel_presence[channel_name] += 1
+    sorted_durations = sorted(durations)
+    p95_index = max(ceil(len(sorted_durations) * 0.95) - 1, 0)
     return RuntimeEvalAggregate(
         cases=cases,
         hit_at_1_rate=_round_rate(hit_at_1 / cases),
@@ -596,6 +609,8 @@ def _aggregate_case_results(results: Sequence[RuntimeEvalCaseResult]) -> Runtime
         target_in_grounded_answer_rate=_round_rate(grounded_target / cases),
         mean_bundle_count=round(bundle_count_total / cases, 3),
         mean_cited_span_count=round(cited_span_total / cases, 3),
+        mean_duration_ms=round(sum(durations) / cases, 3),
+        p95_duration_ms=round(sorted_durations[p95_index], 3),
         error_count=errors,
         retrieval_channel_presence_rates={
             channel_name: _round_rate(count / cases)

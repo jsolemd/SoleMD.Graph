@@ -1,0 +1,47 @@
+/* ═══════════════════════════════════════════════════════════════════
+   BASE LAYER
+   ═══════════════════════════════════════════════════════════════════ */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    /* scroll-behavior: smooth is fine for this SPA-style graph app.
+       For page-navigation-heavy apps, Next.js 16 recommends CSS-only
+       scroll-behavior with View Transitions instead. */
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--foreground);
+    background-color: var(--background);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-sans);
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--foreground);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   GLOBAL SCROLLBAR — invisible by default, still scrollable.
+   Cosmograph widgets override with their own class-scoped rules
+   (.style_module_scrollbar__*) at higher specificity, so expanded
+   legends / "show more" lists get a visible thin bar automatically.
+   NOTE: Do NOT add scrollbar-width: none — it would override
+   Cosmograph's widget scrollbars in Chrome 121+.
+   ═══════════════════════════════════════════════════════════════════ */
+*::-webkit-scrollbar { width: 0; height: 0; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: transparent; }

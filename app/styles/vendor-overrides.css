@@ -1,0 +1,28 @@
+/* Replace Cosmograph's built-in SVG mark with a repo-owned attribution line. */
+[class*="style_module_attribution__"] {
+  display: none !important;
+}
+
+/* Mantine dropdowns — use graph panel tokens instead of Mantine defaults.
+   Override the popover background and option hover to match the panel surface. */
+.mantine-Popover-dropdown {
+  background-color: var(--graph-panel-input-bg) !important;
+  border-color: var(--graph-panel-border) !important;
+}
+
+.mantine-Select-option:hover,
+.mantine-Select-option[data-combobox-active],
+.mantine-Select-option[data-combobox-selected] {
+  background-color: var(--mode-accent-subtle) !important;
+}
+
+.mantine-Tooltip-tooltip {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+/* CosmographSearch accessor — fade instead of lateral slide on focus */
+[class*="style_module_accessorButton"] {
+  transition: opacity 0.15s ease-out !important;
+}

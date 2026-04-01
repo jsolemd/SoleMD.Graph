@@ -113,6 +113,7 @@ def test_summarize_runtime_results_counts_failures_and_rates():
             inline_citation_count=2,
             answer_segment_count=1,
             retrieval_channel_hit_counts={"lexical": 5, "semantic_neighbor": 0},
+            duration_ms=45.0,
         ),
         RuntimeEvalCaseResult(
             corpus_id=2,
@@ -134,6 +135,7 @@ def test_summarize_runtime_results_counts_failures_and_rates():
             inline_citation_count=0,
             answer_segment_count=0,
             retrieval_channel_hit_counts={"lexical": 2, "semantic_neighbor": 1},
+            duration_ms=155.0,
         ),
     ]
 
@@ -144,6 +146,8 @@ def test_summarize_runtime_results_counts_failures_and_rates():
     assert summary.overall.hit_at_k_rate == 0.5
     assert summary.overall.grounded_answer_rate == 0.5
     assert summary.overall.target_in_answer_corpus_rate == 0.5
+    assert summary.overall.mean_duration_ms == 100.0
+    assert summary.overall.p95_duration_ms == 155.0
     assert summary.failure_theme_counts["sentence_global:target_miss"] == 1
     assert summary.failure_theme_counts["sentence_global:answer_missing_target"] == 1
     assert summary.failure_theme_counts["sentence_global:ungrounded_answer"] == 1

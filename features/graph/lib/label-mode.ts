@@ -40,6 +40,11 @@ export function resolveGraphLabelMode({
   hasSelection,
 }: GraphLabelModeInput): GraphLabelMode {
   const selectionDriven = hasFocusedPoint || hasSelection;
+  const clusterLabelOverview =
+    pointLabelColumn === "clusterLabel" &&
+    showPointLabels &&
+    !zoomedIn &&
+    !selectionDriven;
   const zoomDrivenDisplayLabels =
     zoomedIn && pointLabelColumn === "clusterLabel";
   const effectivePointLabelColumn =
@@ -53,11 +58,13 @@ export function resolveGraphLabelMode({
     showLabels: labelsEnabled,
     showDynamicLabels:
       labelsEnabled &&
+      !clusterLabelOverview &&
       showDynamicLabels &&
       !hasFocusedPoint &&
       !hasSelection,
     showTopLabels:
       labelsEnabled &&
+      !clusterLabelOverview &&
       !isActivelyZooming &&
       !hasFocusedPoint &&
       !hasSelection,
@@ -68,7 +75,7 @@ export function resolveGraphLabelMode({
     showFocusedPointLabel: hasFocusedPoint,
     showSelectedLabels: labelsEnabled && hasSelection,
     showUnselectedPointLabels: !hasSelection,
-    showClusterLabels: false,
+    showClusterLabels: clusterLabelOverview,
     selectedPointLabelsLimit: hasFocusedPoint
       ? 1
       : DEFAULT_SELECTED_POINT_LABELS_LIMIT,

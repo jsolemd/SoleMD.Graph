@@ -1,0 +1,281 @@
+/* ═══════════════════════════════════════════════════════════════════
+   REGISTERED PROPERTIES — Graph control contrast system
+   @property tells Lightning CSS these vars are real and mutable at
+   runtime, preventing it from resolving var() fallbacks statically
+   and stripping the [data-graph-control-contrast] override rules.
+   ═══════════════════════════════════════════════════════════════════ */
+@property --graph-control-icon-color {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-idle-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-idle-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-hover-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-pressed-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --graph-control-active-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — Tailwind v4 utility generation
+   ═══════════════════════════════════════════════════════════════════ */
+@theme {
+  --color-background: #fafafa;
+  --color-gray: #777c7e;
+  --color-soft-blue: #a8c5e9;
+  --color-muted-indigo: #747caa;
+  --color-golden-yellow: #e5c799;
+  --color-fresh-green: #aedc93;
+  --color-warm-coral: #ffada4;
+  --color-soft-pink: #eda8c4;
+  --color-soft-lavender: #d8bee9;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "Fira Code", Consolas, "Liberation Mono",
+    Menlo, Courier, monospace;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SEMANTIC TOKENS — Single source of truth (light mode)
+   All downstream tokens reference these via var().
+   ═══════════════════════════════════════════════════════════════════ */
+:root {
+  /* WebGL mirror: lib/graph/brand-colors.ts — keep in sync */
+  /* ── Foundations ── */
+  --background: #fafafa;
+  --foreground: #1a1b1e;
+  --surface: #ffffff;
+  --surface-alt: #f5f6f8;
+  --text-primary: #1a1b1e;
+  --text-secondary: #5c5f66;
+  --text-tertiary: #9ca3af;
+  --border-default: #eaedf0;
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --brand-accent: #747caa;
+  --brand-accent-alt: #a8c5e9;
+  --interactive-hover: rgba(116, 124, 170, 0.06);
+  --interactive-active: rgba(116, 124, 170, 0.10);
+
+  /* ── Graph canvas (unique values only — rest reference foundations) ── */
+  --graph-canvas-filter: saturate(1.8) brightness(0.85);
+  --graph-bg: #f8f9fa;
+  --graph-panel-bg: var(--graph-bg);
+  --graph-panel-border: var(--border-subtle);
+  --graph-panel-text: var(--text-primary);
+  --graph-panel-text-muted: var(--text-secondary);
+  --graph-panel-text-dim: color-mix(in srgb, var(--text-secondary) 60%, var(--text-tertiary));
+  --graph-panel-input-bg: var(--surface-alt);
+  --graph-panel-hover: var(--interactive-hover);
+  --graph-panel-active: var(--interactive-active);
+  --graph-panel-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+
+  /* ── Graph overlays (PromptBox, Wordmark, StatsBar) ── */
+  --graph-prompt-bg: var(--graph-panel-bg);
+  --graph-prompt-border: var(--border-default);
+  --graph-prompt-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 8px 32px rgba(0, 0, 0, 0.08);
+  --graph-prompt-text: var(--text-primary);
+  --graph-prompt-placeholder: rgba(0, 0, 0, 0.28);
+  --graph-prompt-inactive: rgba(0, 0, 0, 0.32);
+  --graph-prompt-divider: rgba(116, 124, 170, 0.25);
+  --graph-wordmark-text: rgba(0, 0, 0, 0.55);
+  --graph-wordmark-accent: var(--brand-accent);
+  --graph-stats-text: rgba(0, 0, 0, 0.32);
+  --graph-label-bg: rgba(255, 255, 255, 0.97);
+  --graph-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.10);
+  --graph-cluster-label-bg: rgba(255, 255, 255, 0.97);
+  --graph-cluster-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.10);
+  --graph-greyout-opacity: 0.25;
+
+  /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
+  --filter-bar-base: color-mix(in srgb, var(--mode-accent) 30%, white);
+  --filter-bar-active: var(--mode-accent);
+  --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 82%, black);
+
+  /* ── Active mode accent (set by ModeColorSync, default = ask) ── */
+  --mode-accent: var(--color-soft-blue);
+  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, white);
+  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, white);
+  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 50%, white);
+
+  /* ── Toolbar icons (single source of truth for lucide + Cosmograph) ── */
+  --icon-size: 16px;
+  --icon-stroke-width: 1.5;
+  --graph-control-icon-color: var(--graph-panel-text-dim);
+  --graph-control-idle-bg: transparent;
+  --graph-control-idle-border: transparent;
+  --graph-control-hover-bg: var(--mode-accent-subtle);
+  --graph-control-pressed-bg: var(--mode-accent-subtle);
+  --graph-control-active-bg: var(--mode-accent-hover);
+
+  /* ── Error states ── */
+  --error-bg: rgba(255, 107, 107, 0.08);
+  --error-border: rgba(255, 107, 107, 0.24);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   COSMOGRAPH THEME — html:root beats Cosmograph's runtime :root
+   injection (specificity 0,1,1 > 0,1,0).
+
+   Cosmograph hardcodes dark defaults in :root for 7 base vars.
+   All widget-specific vars (search, legend, button, etc.) derive
+   from these bases via var(). Override ONLY the 7 bases here —
+   the rest cascade automatically.
+
+   Widget-specific overrides below are ONLY for values that diverge
+   from what the base vars would produce (e.g., custom bar colors,
+   smaller font sizes, different backgrounds for specific widgets).
+   ═══════════════════════════════════════════════════════════════════ */
+html:root {
+  /* ── 7 Cosmograph base vars (everything else derives from these) ── */
+  --cosmograph-ui-background: var(--surface);
+  --cosmograph-ui-text: var(--text-primary);
+  --cosmograph-ui-element-color: var(--border-default);
+  --cosmograph-ui-highlighted-element-color: var(--brand-accent);
+  --cosmograph-ui-selection-control-color: var(--mode-accent);
+  --cosmograph-ui-font-family: var(--font-sans);
+  --cosmograph-ui-font-size: 11px;
+  --cosmograph-ui-tick-font-size: 10px;
+
+  /* ── Widget-specific divergences only ── */
+  /* Timeline: custom bar colors from brand palette */
+  --cosmograph-timeline-bar-color: var(--brand-accent-alt);
+  --cosmograph-timeline-font-size: 10px;
+
+  /* Search: opaque backgrounds instead of transparent/dark defaults */
+  --cosmograph-search-background: var(--surface-alt);
+  --cosmograph-search-list-background: var(--surface);
+  --cosmograph-search-list-match-background: var(--interactive-active);
+  --cosmograph-search-accessors-background: var(--surface-alt);
+  --cosmograph-search-select-all-background: var(--surface-alt);
+  --cosmograph-search-select-all-hover-background: var(--interactive-hover);
+  --cosmograph-search-font-size: 12px;
+
+  /* Legend: custom sizes + muted others color */
+  --cosmograph-color-legend-type-font-size: 11px;
+  --cosmograph-color-legend-type-font-color: var(--text-secondary);
+  --cosmograph-color-legend-type-hover-color: var(--mode-accent);
+  --cosmograph-color-legend-type-others-color: var(--text-tertiary);
+  --cosmograph-color-legend-range-font-color: var(--text-secondary);
+
+  /* Buttons: surface bg instead of element-color default */
+  --cosmograph-button-background: var(--surface);
+  --cosmograph-button-border-radius: 8px;
+
+  /* Histogram: custom bar color + axis color */
+  --cosmograph-histogram-bar-color: var(--mode-accent);
+  --cosmograph-histogram-axis-color: rgba(0, 0, 0, 0.15);
+
+  /* Size legend: mode-colored circles + semantic text */
+  --cosmograph-size-legend-form-color: var(--mode-accent);
+  --cosmograph-size-legend-font-color: var(--text-secondary);
+  --cosmograph-size-legend-hover-color: var(--mode-accent);
+
+  /* Popup: pre-defined for upcoming CosmographPopup widget */
+  --cosmograph-popup-background: var(--graph-panel-bg);
+  --cosmograph-popup-border-radius: 12px;
+  --cosmograph-popup-shadow: var(--graph-panel-shadow);
+
+  --cosmograph-scrollbar-background: rgba(0, 0, 0, 0.08);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DARK MODE — Only override foundations + tokens that diverge.
+   Downstream tokens using var() update automatically.
+   ═══════════════════════════════════════════════════════════════════ */
+.dark {
+  /* ── Brand overrides ── */
+  --color-background: #18181b;
+  --color-gray: #a1a1aa;
+  --color-soft-blue: #a8c5e9;
+  --color-muted-indigo: #8b8fbf;
+  --color-golden-yellow: #e5c799;
+  --color-fresh-green: #aedc93;
+  --color-warm-coral: #ffada4;
+  --color-soft-pink: #b88299;
+  --color-soft-lavender: #a899b3;
+
+  /* ── Foundations (everything downstream updates via var()) ── */
+  --background: #18181b;
+  --foreground: #ededf0;
+  --surface: #1c1d21;
+  --surface-alt: #232427;
+  --text-primary: #ededf0;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+  --border-default: #2a2c31;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --brand-accent: #a8c5e9;
+  --brand-accent-alt: #89a3bf;
+  --interactive-hover: rgba(168, 197, 233, 0.08);
+  --interactive-active: rgba(168, 197, 233, 0.12);
+
+  /* ── Graph canvas (only values that diverge from foundations) ── */
+  --graph-canvas-filter: none;
+  --graph-bg: #111113;
+  --graph-panel-input-bg: #19191d;
+  --graph-panel-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 20px rgba(0, 0, 0, 0.45);
+
+  /* ── Graph overlays (matte floating cards) ── */
+  --graph-prompt-bg: var(--graph-panel-bg);
+  --graph-prompt-border: transparent;
+  --graph-prompt-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 4px 24px rgba(0, 0, 0, 0.5);
+  --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
+  --graph-prompt-inactive: rgba(255, 255, 255, 0.35);
+  --graph-prompt-text: #f5f5f7;
+  --graph-prompt-divider: rgba(168, 197, 233, 0.2);
+  --graph-wordmark-text: rgba(255, 255, 255, 0.6);
+  --graph-stats-text: rgba(255, 255, 255, 0.32);
+  --graph-label-bg: rgba(17, 17, 19, 0.88);
+  --graph-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.4);
+  --graph-cluster-label-bg: rgba(17, 17, 19, 0.88);
+  --graph-cluster-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.4);
+  --graph-greyout-opacity: 0.15;
+
+  /* ── Filter/timeline bars — boost active brightness on dark surfaces ── */
+  --filter-bar-base: color-mix(in srgb, var(--mode-accent) 20%, transparent);
+  --filter-bar-active: color-mix(in oklch, var(--mode-accent) 70%, white);
+  --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 55%, black);
+
+  /* ── Mode accent — higher opacity needed against dark surfaces ── */
+  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, transparent);
+  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, transparent);
+  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 45%, transparent);
+
+  /* ── Error states ── */
+  --error-bg: rgba(255, 107, 107, 0.10);
+  --error-border: rgba(255, 107, 107, 0.20);
+}
+
+/* Cosmograph dark — only widget-specific divergences from base vars */
+html.dark {
+  --cosmograph-timeline-axis-color: rgba(255, 255, 255, 0.12);
+  --cosmograph-histogram-axis-color: rgba(255, 255, 255, 0.12);
+  --cosmograph-histogram-bar-color: var(--mode-accent);
+  --cosmograph-scrollbar-background: rgba(255, 255, 255, 0.10);
+}

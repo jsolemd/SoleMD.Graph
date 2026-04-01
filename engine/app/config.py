@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # RAG ingest NLP
     rag_stanza_use_gpu: bool = True
 
+    # Runtime RAG retrieval
+    rag_semantic_neighbor_ann_enabled: bool = True
+    rag_semantic_neighbor_hnsw_ef_search: int = 100
+    rag_semantic_neighbor_candidate_multiplier: int = 20
+    rag_semantic_neighbor_min_candidates: int = 120
+    rag_semantic_neighbor_max_candidates: int = 3840
+
     # DuckDB (for citations pipeline and heavy in-memory queries)
     duckdb_memory_limit: str = "8GB"
 
@@ -149,7 +156,11 @@ class Settings(BaseSettings):
             )
         return self.semantic_scholar_releases_root_path / resolved
 
-    def semantic_scholar_dataset_path(self, dataset_name: str, release_id: str | None = None) -> Path:
+    def semantic_scholar_dataset_path(
+        self,
+        dataset_name: str,
+        release_id: str | None = None,
+    ) -> Path:
         return self.semantic_scholar_release_path(release_id) / dataset_name
 
     @property

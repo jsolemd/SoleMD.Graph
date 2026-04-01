@@ -8,6 +8,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Protocol
 
 from app import db
+from app.config import settings
 from app.rag import queries
 from app.rag.models import (
     CitationContextHit,
@@ -23,6 +24,7 @@ from app.rag.types import CitationDirection, GraphSignalKind, RetrievalChannel
 
 ENTITY_FUZZY_SIMILARITY_THRESHOLD = 0.3
 ENTITY_TOP_CONCEPTS_PER_TERM = 3
+SEMANTIC_NEIGHBOR_MIN_LIMIT = 1
 
 
 class RagRepository(Protocol):
@@ -191,6 +193,7 @@ class PostgresRagRepository:
 
     def __init__(self, connect: Callable[..., object] | None = None):
         self._connect = connect or db.pooled
+        self._semantic_neighbor_index_ready: bool | None = None
 
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
         release_key = graph_release_id.strip()
@@ -372,7 +375,7 @@ class PostgresRagRepository:
         unique_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.PAPER_LOOKUP_SQL, (graph_run_id, unique_ids))
+                cur.execute(queries.PAPER_LOOKUP_SQL, (unique_ids,))
                 rows = cur.fetchall()
 
         hits: list[PaperEvidenceHit] = []
@@ -754,22 +757,17 @@ class PostgresRagRepository:
             return []
 
         if scope_corpus_ids:
-            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
-            sql = queries.SEMANTIC_NEIGHBOR_IN_SELECTION_SQL
-            params = (
-                selected_corpus_id,
-                unique_scope_ids,
-                unique_scope_ids,
-                limit,
+            rows = self._fetch_semantic_neighbors_in_selection(
+                selected_corpus_id=selected_corpus_id,
+                limit=limit,
+                scope_corpus_ids=scope_corpus_ids,
             )
         else:
-            sql = queries.SEMANTIC_NEIGHBOR_SQL
-            params = (graph_run_id, selected_corpus_id, limit)
-
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
+            rows = self._fetch_semantic_neighbors_in_graph(
+                graph_run_id=graph_run_id,
+                selected_corpus_id=selected_corpus_id,
+                limit=limit,
+            )
 
         signals: list[GraphSignal] = []
         for index, row in enumerate(rows, start=1):
@@ -786,3 +784,142 @@ class PostgresRagRepository:
                 )
             )
         return signals
+
+    def _semantic_neighbor_limit(self, limit: int) -> int:
+        return max(int(limit), SEMANTIC_NEIGHBOR_MIN_LIMIT)
+
+    def _semantic_neighbor_candidate_limit(self, limit: int) -> int:
+        normalized_limit = self._semantic_neighbor_limit(limit)
+        candidate_limit = max(
+            normalized_limit * settings.rag_semantic_neighbor_candidate_multiplier,
+            settings.rag_semantic_neighbor_min_candidates,
+        )
+        return min(candidate_limit, settings.rag_semantic_neighbor_max_candidates)
+
+    def _semantic_neighbor_index_is_ready(self) -> bool:
+        if not settings.rag_semantic_neighbor_ann_enabled:
+            return False
+        if self._semantic_neighbor_index_ready is not None:
+            return self._semantic_neighbor_index_ready
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL)
+                row = cur.fetchone()
+
+        self._semantic_neighbor_index_ready = bool(row and row.get("index_ready"))
+        return self._semantic_neighbor_index_ready
+
+    def _fetch_semantic_neighbors_in_selection(
+        self,
+        *,
+        selected_corpus_id: int,
+        limit: int,
+        scope_corpus_ids: Sequence[int],
+    ) -> list[dict[str, Any]]:
+        unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+        if not unique_scope_ids:
+            return []
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.SEMANTIC_NEIGHBOR_IN_SELECTION_SQL,
+                    (
+                        selected_corpus_id,
+                        unique_scope_ids,
+                        unique_scope_ids,
+                        selected_corpus_id,
+                        self._semantic_neighbor_limit(limit),
+                    ),
+                )
+                return cur.fetchall()
+
+    def _fetch_semantic_neighbors_in_graph(
+        self,
+        *,
+        graph_run_id: str,
+        selected_corpus_id: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        normalized_limit = self._semantic_neighbor_limit(limit)
+        if self._semantic_neighbor_index_is_ready():
+            candidate_limit = self._semantic_neighbor_candidate_limit(normalized_limit)
+            rows = self._fetch_semantic_neighbors_ann_candidates(
+                graph_run_id=graph_run_id,
+                selected_corpus_id=selected_corpus_id,
+                limit=normalized_limit,
+                candidate_limit=candidate_limit,
+            )
+            while (
+                len(rows) < normalized_limit
+                and candidate_limit < settings.rag_semantic_neighbor_max_candidates
+            ):
+                next_limit = min(
+                    candidate_limit * 2,
+                    settings.rag_semantic_neighbor_max_candidates,
+                )
+                if next_limit == candidate_limit:
+                    break
+                candidate_limit = next_limit
+                rows = self._fetch_semantic_neighbors_ann_candidates(
+                    graph_run_id=graph_run_id,
+                    selected_corpus_id=selected_corpus_id,
+                    limit=normalized_limit,
+                    candidate_limit=candidate_limit,
+                )
+            if len(rows) >= normalized_limit:
+                return rows
+
+        return self._fetch_semantic_neighbors_exact(
+            graph_run_id=graph_run_id,
+            selected_corpus_id=selected_corpus_id,
+            limit=normalized_limit,
+        )
+
+    def _fetch_semantic_neighbors_ann_candidates(
+        self,
+        *,
+        graph_run_id: str,
+        selected_corpus_id: int,
+        limit: int,
+        candidate_limit: int,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
+                cur.execute(
+                    "SET LOCAL hnsw.ef_search = %s",
+                    (settings.rag_semantic_neighbor_hnsw_ef_search,),
+                )
+                cur.execute(
+                    queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
+                    (
+                        selected_corpus_id,
+                        selected_corpus_id,
+                        candidate_limit,
+                        graph_run_id,
+                        limit,
+                    ),
+                )
+                return cur.fetchall()
+
+    def _fetch_semantic_neighbors_exact(
+        self,
+        *,
+        graph_run_id: str,
+        selected_corpus_id: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.SEMANTIC_NEIGHBOR_SQL,
+                    (
+                        selected_corpus_id,
+                        graph_run_id,
+                        selected_corpus_id,
+                        limit,
+                    ),
+                )
+                return cur.fetchall()

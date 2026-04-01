@@ -149,6 +149,24 @@ describe("computed value stability", () => {
       useDashboardStore.setState({ promptMode: "collapsed" });
     });
   });
+
+  it("pointClusterColumn is stable across unrelated state changes", async () => {
+    const { result } = renderHookWithCount(useConfig);
+    await expectStableReferences(result, ["pointClusterColumn"], () => {
+      useDashboardStore.setState({ tableOpen: true });
+    });
+  });
+
+  it("pointClusterColumn changes when pointLabelColumn changes", async () => {
+    const { result } = renderHookWithCount(useConfig);
+    expect(result.current.pointClusterColumn).toBe("clusterLabel");
+
+    await act(() => {
+      useDashboardStore.setState({ pointLabelColumn: "paperTitle" });
+    });
+
+    expect(result.current.pointClusterColumn).toBeUndefined();
+  });
 });
 
 /* ── Render count isolation ── */

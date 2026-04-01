@@ -18,8 +18,12 @@ describe("label-mode", () => {
     const zoomed = resolveGraphLabelMode({ ...BASE, zoomedIn: true });
 
     expect(overview.effectivePointLabelColumn).toBe("clusterLabel");
-    expect(overview.showDynamicLabels).toBe(true);
+    expect(overview.showClusterLabels).toBe(true);
+    expect(overview.showDynamicLabels).toBe(false);
+    expect(overview.showTopLabels).toBe(false);
     expect(zoomed.effectivePointLabelColumn).toBe("displayLabel");
+    expect(zoomed.showClusterLabels).toBe(false);
+    expect(zoomed.showDynamicLabels).toBe(true);
   });
 
   it("promotes focused and selected points to native selected-label behavior", () => {

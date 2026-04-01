@@ -122,6 +122,14 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     ],
   );
 
+  // Keep the native cluster grouping key stable while selection/zoom toggles
+  // cluster-label visibility on and off. Recomputing grouping on every click
+  // would force extra Cosmograph work for no behavioral gain.
+  const pointClusterColumn = useMemo(
+    () => (pointLabelColumn === "clusterLabel" ? "clusterLabel" : undefined),
+    [pointLabelColumn],
+  );
+
   // Identity passthrough — theme-independent so toggling dark/light never
   // invalidates the function reference and forces Cosmograph to re-read
   // millions of points. Light-mode color boost is handled by a CSS filter
@@ -184,6 +192,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     pointSizeStrategy,
     scalePointsOnZoom,
     pointLabelColumn,
+    pointClusterColumn,
     showPointLabels,
     showDynamicLabels,
     showHoveredPointLabel,
@@ -225,6 +234,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     pointSizeStrategy,
     scalePointsOnZoom,
     pointLabelColumn,
+    pointClusterColumn,
     showPointLabels,
     showDynamicLabels,
     showHoveredPointLabel,

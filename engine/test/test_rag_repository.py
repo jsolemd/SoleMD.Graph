@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, call
+
 from app.rag import queries
 from app.rag.repository import (
     ENTITY_FUZZY_SIMILARITY_THRESHOLD,
@@ -256,7 +258,7 @@ def test_fetch_papers_by_corpus_ids_maps_rows(mock_conn):
     assert hits[0].paper_id == "paper-202"
     assert hits[0].journal_name == "Lancet"
     cur = conn.cursor.return_value.__enter__.return_value
-    cur.execute.assert_called_once_with(queries.PAPER_LOOKUP_SQL, ("run-1", [202]))
+    cur.execute.assert_called_once_with(queries.PAPER_LOOKUP_SQL, ([202],))
 
 
 def test_resolve_scope_corpus_ids_maps_graph_refs(mock_conn):
@@ -272,7 +274,13 @@ def test_resolve_scope_corpus_ids_maps_graph_refs(mock_conn):
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.SCOPE_CORPUS_LOOKUP_SQL,
-        ("run-1", ["paper-11", "paper:22"], ["paper-11", "paper:22"], ["paper-11", "paper:22"], ["paper-11", "paper:22"]),
+        (
+            "run-1",
+            ["paper-11", "paper:22"],
+            ["paper-11", "paper:22"],
+            ["paper-11", "paper:22"],
+            ["paper-11", "paper:22"],
+        ),
     )
 
 
@@ -326,3 +334,78 @@ def test_paper_queries_source_doi_from_corpus_table():
     assert "p.doi" not in queries.PAPER_SEARCH_SQL
     assert "p.doi" not in queries.PAPER_SEARCH_IN_SELECTION_SQL
     assert "p.doi" not in queries.PAPER_LOOKUP_SQL
+
+
+def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.fetchone.return_value = {"index_ready": True}
+    cur.fetchall.return_value = [
+        {
+            "corpus_id": 202,
+            "paper_id": "paper-202",
+            "distance": 0.2,
+        }
+    ]
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    hits = repo.fetch_semantic_neighbors(
+        graph_run_id="run-1",
+        selected_corpus_id=101,
+        limit=1,
+    )
+
+    assert [hit.corpus_id for hit in hits] == [202]
+    assert hits[0].score == 0.8
+    cur.execute.assert_has_calls(
+        [
+            call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
+            call("SET LOCAL hnsw.iterative_scan = strict_order"),
+            call("SET LOCAL hnsw.ef_search = %s", (100,)),
+            call(
+                queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
+                (101, 101, 120, "run-1", 1),
+            ),
+        ]
+    )
+
+
+def test_fetch_semantic_neighbors_falls_back_to_exact_when_index_missing():
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.fetchone.return_value = {"index_ready": False}
+    cur.fetchall.return_value = [
+        {
+            "corpus_id": 303,
+            "paper_id": "paper-303",
+            "distance": 0.35,
+        }
+    ]
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    hits = repo.fetch_semantic_neighbors(
+        graph_run_id="run-1",
+        selected_corpus_id=101,
+        limit=2,
+    )
+
+    assert [hit.corpus_id for hit in hits] == [303]
+    cur.execute.assert_has_calls(
+        [
+            call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
+            call(
+                queries.SEMANTIC_NEIGHBOR_SQL,
+                (101, "run-1", 101, 2),
+            ),
+        ]
+    )
