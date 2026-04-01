@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Sequence
 
 from app import db
@@ -146,6 +145,37 @@ def _build_entity_from_row(row: dict) -> PaperEntityMentionRow:
     )
 
 
+def _group_entity_packet_entries(
+    entity_rows: Sequence[dict],
+) -> dict[tuple[int, int, int | None], dict[str, object]]:
+    grouped_entities: dict[
+        tuple[int, int, int | None],
+        dict[str, object],
+    ] = {}
+    for row in entity_rows:
+        entity = _build_entity_from_row(row)
+        packet_key = (
+            entity.corpus_id,
+            entity.canonical_block_ordinal,
+            entity.canonical_sentence_ordinal,
+        )
+        entry = grouped_entities.get(packet_key)
+        if entry is None:
+            block, sentence = _build_block_and_sentence_from_row(
+                row,
+                block_ordinal_key="canonical_block_ordinal",
+                sentence_ordinal_key="canonical_sentence_ordinal",
+            )
+            entry = {
+                "block": block,
+                "sentence": sentence,
+                "entities": [],
+            }
+            grouped_entities[packet_key] = entry
+        entry["entities"].append(entity)
+    return grouped_entities
+
+
 def _sort_packets_by_corpus_order(
     packets,
     *,
@@ -188,20 +218,10 @@ def build_grounded_answer_from_warehouse_rows(
     if not citation_rows and not entity_rows:
         return None
 
-    entity_by_packet: dict[
-        tuple[int, int, int | None],
-        list[PaperEntityMentionRow],
-    ] = defaultdict(list)
-    for row in entity_rows:
-        entity = _build_entity_from_row(row)
-        packet_key = (
-            entity.corpus_id,
-            entity.canonical_block_ordinal,
-            entity.canonical_sentence_ordinal,
-        )
-        entity_by_packet[packet_key].append(entity)
+    grouped_entities = _group_entity_packet_entries(entity_rows)
 
     packets = []
+    packet_keys_with_packets: set[tuple[int, int, int | None]] = set()
     for row in citation_rows:
         citation = PaperCitationMentionRow.model_validate(
             {
@@ -219,43 +239,20 @@ def build_grounded_answer_from_warehouse_rows(
             citation.canonical_block_ordinal,
             citation.canonical_sentence_ordinal,
         )
+        packet_keys_with_packets.add(packet_key)
         packets.append(
             build_cited_span_packet(
                 block=block,
                 sentence=sentence,
                 citation_rows=[citation],
-                entity_rows=entity_by_packet.get(packet_key, []),
+                entity_rows=grouped_entities.get(packet_key, {}).get("entities", []),
             )
         )
 
-    if not packets and entity_rows:
-        grouped_entities: dict[
-            tuple[int, int, int | None],
-            dict[str, object],
-        ] = {}
-        for row in entity_rows:
-            entity = _build_entity_from_row(row)
-            packet_key = (
-                entity.corpus_id,
-                entity.canonical_block_ordinal,
-                entity.canonical_sentence_ordinal,
-            )
-            entry = grouped_entities.get(packet_key)
-            if entry is None:
-                block, sentence = _build_block_and_sentence_from_row(
-                    row,
-                    block_ordinal_key="canonical_block_ordinal",
-                    sentence_ordinal_key="canonical_sentence_ordinal",
-                )
-                entry = {
-                    "block": block,
-                    "sentence": sentence,
-                    "entities": [],
-                }
-                grouped_entities[packet_key] = entry
-            entry["entities"].append(entity)
-
+    if grouped_entities:
         for packet_key, entry in grouped_entities.items():
+            if packet_key in packet_keys_with_packets:
+                continue
             packets.append(
                 build_cited_span_packet(
                     block=entry["block"],

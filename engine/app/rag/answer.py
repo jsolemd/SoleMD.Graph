@@ -7,7 +7,12 @@ from dataclasses import dataclass
 
 from app.rag.models import EvidenceBundle
 from app.rag.query_enrichment import normalize_title_key
-from app.rag.types import DEFAULT_ANSWER_MODEL, EvidenceIntent
+from app.rag.types import (
+    DEFAULT_ANSWER_MODEL,
+    EvidenceIntent,
+    QueryRetrievalProfile,
+    RetrievalChannel,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +38,8 @@ def generate_baseline_answer(
     evidence_intent: EvidenceIntent | None = None,
     max_items: int = 2,
     query_text: str | None = None,
+    query_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
+    selected_corpus_id: int | None = None,
 ) -> tuple[str | None, str | None]:
     """Generate a lightweight extractive answer from the top evidence bundles."""
 
@@ -41,6 +48,8 @@ def generate_baseline_answer(
         evidence_intent=evidence_intent,
         max_items=max_items,
         query_text=query_text,
+        query_profile=query_profile,
+        selected_corpus_id=selected_corpus_id,
     )
     return payload.text, payload.model
 
@@ -51,6 +60,8 @@ def build_baseline_answer_payload(
     evidence_intent: EvidenceIntent | None = None,
     max_items: int = 2,
     query_text: str | None = None,
+    query_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
+    selected_corpus_id: int | None = None,
 ) -> BaselineAnswerPayload:
     """Return the baseline answer text plus per-bundle grounding segments."""
 
@@ -58,6 +69,8 @@ def build_baseline_answer_payload(
         bundles,
         max_items=max_items,
         query_text=query_text,
+        query_profile=query_profile,
+        selected_corpus_id=selected_corpus_id,
     )
     if not grounding_bundles:
         return BaselineAnswerPayload(text=None, model=None)
@@ -86,6 +99,8 @@ def select_answer_grounding_bundles(
     *,
     max_items: int = 2,
     query_text: str | None = None,
+    query_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
+    selected_corpus_id: int | None = None,
 ) -> list[EvidenceBundle]:
     """Return the paper-level evidence bundles used to ground the baseline answer."""
 
@@ -94,21 +109,68 @@ def select_answer_grounding_bundles(
     if len(bundles) <= max_items:
         return bundles[:max_items]
 
-    selected: list[EvidenceBundle] = [bundles[0]]
-    remaining = list(bundles[1:])
+    selected: list[EvidenceBundle] = []
+    remaining = list(bundles)
+
+    if query_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+        _append_selected_bundle(selected, remaining, _select_chunk_anchor_bundle(remaining))
+    elif (
+        query_profile == QueryRetrievalProfile.TITLE_LOOKUP
+        and selected_corpus_id is not None
+    ):
+        _append_selected_bundle(
+            selected,
+            remaining,
+            _select_bundle_by_corpus_id(remaining, selected_corpus_id),
+        )
+    else:
+        _append_selected_bundle(selected, remaining, bundles[0])
+
+    if (
+        selected_corpus_id is not None
+        and query_profile != QueryRetrievalProfile.TITLE_LOOKUP
+    ):
+        _append_selected_bundle(
+            selected,
+            remaining,
+            _select_bundle_by_corpus_id(remaining, selected_corpus_id),
+        )
 
     query_anchor = _select_query_anchor_bundle(
         remaining,
         query_text=query_text,
     )
-    if query_anchor is not None:
-        selected.append(query_anchor)
-        remaining = [
-            bundle for bundle in remaining if bundle.paper.corpus_id != query_anchor.paper.corpus_id
-        ]
+    _append_selected_bundle(selected, remaining, query_anchor)
+
+    if query_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+        _append_selected_bundle(selected, remaining, _select_chunk_anchor_bundle(remaining))
 
     selected.extend(itertools.islice(remaining, max_items - len(selected)))
     return selected[:max_items]
+
+
+def _select_chunk_anchor_bundle(bundles: list[EvidenceBundle]) -> EvidenceBundle | None:
+    chunk_supported = [
+        bundle
+        for bundle in bundles
+        if (
+            bundle.snippet_channel == RetrievalChannel.CHUNK_LEXICAL
+            or RetrievalChannel.CHUNK_LEXICAL in bundle.matched_channels
+            or bundle.paper.chunk_lexical_score > 0
+        )
+    ]
+    if not chunk_supported:
+        return None
+
+    return max(
+        chunk_supported,
+        key=lambda bundle: (
+            bundle.paper.chunk_lexical_score,
+            bundle.paper.lexical_score,
+            -bundle.rank,
+            bundle.score,
+        ),
+    )
 
 
 def _select_query_anchor_bundle(
@@ -137,3 +199,28 @@ def _select_query_anchor_bundle(
             bundle.score,
         ),
     )
+
+
+def _select_bundle_by_corpus_id(
+    bundles: list[EvidenceBundle],
+    corpus_id: int,
+) -> EvidenceBundle | None:
+    for bundle in bundles:
+        if bundle.paper.corpus_id == corpus_id:
+            return bundle
+    return None
+
+
+def _append_selected_bundle(
+    selected: list[EvidenceBundle],
+    remaining: list[EvidenceBundle],
+    bundle: EvidenceBundle | None,
+) -> None:
+    if bundle is None:
+        return
+    if any(item.paper.corpus_id == bundle.paper.corpus_id for item in selected):
+        return
+    selected.append(bundle)
+    remaining[:] = [
+        item for item in remaining if item.paper.corpus_id != bundle.paper.corpus_id
+    ]

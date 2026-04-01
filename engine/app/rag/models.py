@@ -11,8 +11,9 @@ from app.rag.types import (
     EvidenceIntent,
     GraphSignalKind,
     NodeLayer,
-    RetrievalScope,
+    QueryRetrievalProfile,
     RetrievalChannel,
+    RetrievalScope,
 )
 
 
@@ -32,10 +33,12 @@ class PaperRetrievalQuery:
     selection_graph_paper_refs: list[str] = field(default_factory=list)
     selected_cluster_id: int | None = None
     scope_mode: RetrievalScope = RetrievalScope.GLOBAL
+    retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL
     evidence_intent: EvidenceIntent | None = None
     k: int = 6
     rerank_topn: int = 18
     use_lexical: bool = True
+    use_title_similarity: bool = True
     use_dense_query: bool = True
     generate_answer: bool = True
 
@@ -80,6 +83,7 @@ class PaperEvidenceHit:
     entity_rule_count: int = 0
     entity_core_families: int = 0
     lexical_score: float = 0.0
+    chunk_lexical_score: float = 0.0
     title_similarity: float = 0.0
     citation_boost: float = 0.0
     entity_score: float = 0.0
@@ -91,8 +95,11 @@ class PaperEvidenceHit:
     publication_type_score: float = 0.0
     evidence_quality_score: float = 0.0
     title_anchor_score: float = 0.0
+    selected_context_score: float = 0.0
     fused_score: float = 0.0
     rank: int = 0
+    chunk_ordinal: int | None = None
+    chunk_snippet: str | None = None
     matched_channels: list[RetrievalChannel] = field(default_factory=list)
     match_reasons: list[str] = field(default_factory=list)
 
@@ -205,6 +212,7 @@ class EvidenceBundle:
     score: float
     rank: int
     snippet: str | None = None
+    snippet_channel: RetrievalChannel | None = None
     matched_channels: list[RetrievalChannel] = field(default_factory=list)
     match_reasons: list[str] = field(default_factory=list)
     rank_features: dict[str, float] = field(default_factory=dict)

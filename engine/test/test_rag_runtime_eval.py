@@ -4,7 +4,10 @@ from app.rag_ingest.runtime_eval import (
     RuntimeEvalCaseResult,
     RuntimeEvalPaperRecord,
     RuntimeEvalQueryFamily,
+    _aggregate_case_results,
+    _build_runtime_eval_request,
     build_runtime_eval_query_cases,
+    evaluate_runtime_query_cases,
     runtime_eval_stratum_key,
     select_stratified_sample,
     summarize_runtime_results,
@@ -114,6 +117,8 @@ def test_summarize_runtime_results_counts_failures_and_rates():
             answer_segment_count=1,
             retrieval_channel_hit_counts={"lexical": 5, "semantic_neighbor": 0},
             duration_ms=45.0,
+            service_duration_ms=40.0,
+            overhead_duration_ms=5.0,
         ),
         RuntimeEvalCaseResult(
             corpus_id=2,
@@ -136,6 +141,8 @@ def test_summarize_runtime_results_counts_failures_and_rates():
             answer_segment_count=0,
             retrieval_channel_hit_counts={"lexical": 2, "semantic_neighbor": 1},
             duration_ms=155.0,
+            service_duration_ms=145.0,
+            overhead_duration_ms=10.0,
         ),
     ]
 
@@ -148,7 +155,104 @@ def test_summarize_runtime_results_counts_failures_and_rates():
     assert summary.overall.target_in_answer_corpus_rate == 0.5
     assert summary.overall.mean_duration_ms == 100.0
     assert summary.overall.p95_duration_ms == 155.0
+    assert summary.overall.mean_service_duration_ms == 92.5
+    assert summary.overall.p95_service_duration_ms == 145.0
+    assert summary.overall.mean_overhead_duration_ms == 7.5
     assert summary.failure_theme_counts["sentence_global:target_miss"] == 1
     assert summary.failure_theme_counts["sentence_global:answer_missing_target"] == 1
     assert summary.failure_theme_counts["sentence_global:ungrounded_answer"] == 1
     assert len(summary.failure_examples) == 1
+
+
+def test_build_runtime_eval_request_propagates_retrieval_toggles():
+    case = build_runtime_eval_query_cases(
+        [
+            _paper(
+                11,
+                source="s2orc_v2",
+                title="Melatonin and delirium",
+                chunk_count=8,
+                table_block_count=0,
+            )
+        ],
+        query_families=[RuntimeEvalQueryFamily.TITLE_SELECTED],
+    )[0]
+
+    request = _build_runtime_eval_request(
+        graph_release_id="current",
+        case=case,
+        k=5,
+        rerank_topn=10,
+        use_lexical=False,
+        use_dense_query=True,
+    )
+
+    assert request.graph_release_id == "current"
+    assert request.query == "Melatonin and delirium"
+    assert request.selected_layer_key == "paper"
+    assert request.selected_node_id == "paper:11"
+    assert request.use_lexical is False
+    assert request.use_dense_query is True
+
+
+def test_aggregate_case_results_preserves_error_durations():
+    aggregate = _aggregate_case_results(
+        [
+            RuntimeEvalCaseResult(
+                corpus_id=1,
+                title="Paper one",
+                primary_source_system="s2orc_v2",
+                query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+                query="Paper one",
+                stratum_key="s2orc_v2|table_absent|medium",
+                duration_ms=321.0,
+                error="boom",
+            )
+        ]
+    )
+
+    assert aggregate.error_count == 1
+    assert aggregate.mean_duration_ms == 321.0
+    assert aggregate.p95_duration_ms == 321.0
+
+
+def test_evaluate_runtime_query_cases_records_service_and_overhead_durations():
+    case = build_runtime_eval_query_cases(
+        [
+            _paper(
+                11,
+                source="s2orc_v2",
+                title="Melatonin and delirium",
+                chunk_count=8,
+                table_block_count=0,
+            )
+        ],
+        query_families=[RuntimeEvalQueryFamily.TITLE_GLOBAL],
+    )[0]
+
+    class FakeResponse:
+        class Meta:
+            duration_ms = 120.0
+
+        meta = Meta()
+        answer = "answer"
+        answer_corpus_ids = [11]
+        grounded_answer = None
+        retrieval_channels = []
+        evidence_bundles = []
+
+    class FakeService:
+        def search(self, request):
+            assert request.query == "Melatonin and delirium"
+            return FakeResponse()
+
+    [result] = evaluate_runtime_query_cases(
+        graph_release_id="release-1",
+        chunk_version_key="default-structural-v1",
+        cases=[case],
+        service=FakeService(),
+    )
+
+    assert result.duration_ms >= 0.0
+    assert result.service_duration_ms == 120.0
+    assert result.overhead_duration_ms >= 0.0

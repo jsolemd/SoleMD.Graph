@@ -214,6 +214,8 @@ class RuntimeEvalCaseResult(ParseContractModel):
     retrieval_channel_hit_counts: dict[str, int] = Field(default_factory=dict)
     top_hits: list[RuntimeEvalTopHit] = Field(default_factory=list)
     duration_ms: float = 0.0
+    service_duration_ms: float = 0.0
+    overhead_duration_ms: float = 0.0
     error: str | None = None
 
 
@@ -229,6 +231,9 @@ class RuntimeEvalAggregate(ParseContractModel):
     mean_cited_span_count: float = 0.0
     mean_duration_ms: float = 0.0
     p95_duration_ms: float = 0.0
+    mean_service_duration_ms: float = 0.0
+    p95_service_duration_ms: float = 0.0
+    mean_overhead_duration_ms: float = 0.0
     error_count: int = 0
     retrieval_channel_presence_rates: dict[str, float] = Field(default_factory=dict)
 
@@ -258,10 +263,14 @@ class RagRuntimeEvaluationReport(ParseContractModel):
     bundle_checksum: str | None = None
     graph_name: str
     chunk_version_key: str
+    use_lexical: bool = True
+    use_dense_query: bool = True
     query_families: list[RuntimeEvalQueryFamily] = Field(default_factory=list)
     population: RuntimeEvalPopulationSummary
     warehouse_quality: WarehouseQualitySummary
     grounding_runtime_status: GroundedAnswerRuntimeStatus
+    warmup_duration_ms: float = 0.0
+    query_embedder_status: dict[str, object] = Field(default_factory=dict)
     summary: RuntimeEvalSummary
     cases: list[RuntimeEvalCaseResult] = Field(default_factory=list)
 
@@ -313,7 +322,7 @@ def fetch_runtime_eval_population(
     chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
     connect: Callable[..., object] | None = None,
 ) -> list[RuntimeEvalPaperRecord]:
-    connect_fn = connect or db.connect
+    connect_fn = connect or db.pooled
     with connect_fn() as conn, conn.cursor() as cur:
         cur.execute(_EVAL_POPULATION_SQL, (graph_run_id, chunk_version_key))
         return [
@@ -427,14 +436,39 @@ def _build_runtime_service(
     chunk_version_key: str,
     connect: Callable[..., object] | None = None,
 ) -> RagService:
-    connect_fn = connect or db.connect
-    repository = PostgresRagRepository(connect=connect_fn)
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn,
+        chunk_version_key=chunk_version_key,
+    )
     warehouse_grounder = partial(
         build_grounded_answer_from_runtime,
         connect=connect_fn,
         chunk_version_key=chunk_version_key,
     )
     return RagService(repository=repository, warehouse_grounder=warehouse_grounder)
+
+
+def _build_runtime_eval_request(
+    *,
+    graph_release_id: str,
+    case: RuntimeEvalQueryCase,
+    k: int,
+    rerank_topn: int,
+    use_lexical: bool,
+    use_dense_query: bool,
+) -> RagSearchRequest:
+    return RagSearchRequest(
+        graph_release_id=graph_release_id,
+        query=case.query,
+        selected_layer_key=case.selected_layer_key,
+        selected_node_id=case.selected_node_id,
+        k=k,
+        rerank_topn=max(k, rerank_topn),
+        generate_answer=True,
+        use_lexical=use_lexical,
+        use_dense_query=use_dense_query,
+    )
 
 
 def evaluate_runtime_query_cases(
@@ -444,9 +478,12 @@ def evaluate_runtime_query_cases(
     cases: Sequence[RuntimeEvalQueryCase],
     k: int = 5,
     rerank_topn: int = 10,
+    use_lexical: bool = True,
+    use_dense_query: bool = True,
     connect: Callable[..., object] | None = None,
+    service: RagService | None = None,
 ) -> list[RuntimeEvalCaseResult]:
-    service = _build_runtime_service(
+    service = service or _build_runtime_service(
         chunk_version_key=chunk_version_key,
         connect=connect,
     )
@@ -462,18 +499,19 @@ def evaluate_runtime_query_cases(
         try:
             started = perf_counter()
             response = service.search(
-                RagSearchRequest(
+                _build_runtime_eval_request(
                     graph_release_id=graph_release_id,
-                    query=case.query,
-                    selected_layer_key=case.selected_layer_key,
-                    selected_node_id=case.selected_node_id,
+                    case=case,
                     k=k,
-                    rerank_topn=max(k, rerank_topn),
-                    generate_answer=True,
+                    rerank_topn=rerank_topn,
+                    use_lexical=use_lexical,
+                    use_dense_query=use_dense_query,
                 )
             )
             duration_ms = (perf_counter() - started) * 1000
+            service_duration_ms = float(response.meta.duration_ms)
         except Exception as exc:  # pragma: no cover - exercised in integration runs
+            duration_ms = (perf_counter() - started) * 1000
             results.append(
                 RuntimeEvalCaseResult(
                     corpus_id=case.corpus_id,
@@ -483,7 +521,7 @@ def evaluate_runtime_query_cases(
                     query=case.query,
                     stratum_key=case.stratum_key,
                     representative_section_role=case.representative_section_role,
-                    duration_ms=0.0,
+                    duration_ms=duration_ms,
                     error=str(exc),
                 )
             )
@@ -529,6 +567,8 @@ def evaluate_runtime_query_cases(
                     for channel in response.retrieval_channels
                 },
                 duration_ms=duration_ms,
+                service_duration_ms=service_duration_ms,
+                overhead_duration_ms=max(duration_ms - service_duration_ms, 0.0),
                 top_hits=[
                     RuntimeEvalTopHit(
                         corpus_id=bundle.paper.corpus_id,
@@ -576,6 +616,8 @@ def _aggregate_case_results(results: Sequence[RuntimeEvalCaseResult]) -> Runtime
     grounded_target = 0
     errors = 0
     durations: list[float] = []
+    service_durations: list[float] = []
+    overhead_durations: list[float] = []
     for result in results:
         if result.error:
             errors += 1
@@ -594,10 +636,13 @@ def _aggregate_case_results(results: Sequence[RuntimeEvalCaseResult]) -> Runtime
         bundle_count_total += result.evidence_bundle_count
         cited_span_total += result.cited_span_count
         durations.append(result.duration_ms)
+        service_durations.append(result.service_duration_ms)
+        overhead_durations.append(result.overhead_duration_ms)
         for channel_name, hit_count in result.retrieval_channel_hit_counts.items():
             if hit_count > 0:
                 channel_presence[channel_name] += 1
     sorted_durations = sorted(durations)
+    sorted_service_durations = sorted(service_durations)
     p95_index = max(ceil(len(sorted_durations) * 0.95) - 1, 0)
     return RuntimeEvalAggregate(
         cases=cases,
@@ -611,6 +656,9 @@ def _aggregate_case_results(results: Sequence[RuntimeEvalCaseResult]) -> Runtime
         mean_cited_span_count=round(cited_span_total / cases, 3),
         mean_duration_ms=round(sum(durations) / cases, 3),
         p95_duration_ms=round(sorted_durations[p95_index], 3),
+        mean_service_duration_ms=round(sum(service_durations) / cases, 3),
+        p95_service_duration_ms=round(sorted_service_durations[p95_index], 3),
+        mean_overhead_duration_ms=round(sum(overhead_durations) / cases, 3),
         error_count=errors,
         retrieval_channel_presence_rates={
             channel_name: _round_rate(count / cases)
@@ -707,12 +755,17 @@ def run_rag_runtime_evaluation(
     seed: int = 7,
     k: int = 5,
     rerank_topn: int = 10,
+    use_lexical: bool = True,
+    use_dense_query: bool = True,
     corpus_ids: Sequence[int] | None = None,
     query_families: Sequence[RuntimeEvalQueryFamily] | None = None,
     connect: Callable[..., object] | None = None,
 ) -> RagRuntimeEvaluationReport:
-    connect_fn = connect or db.connect
-    repository = PostgresRagRepository(connect=connect_fn)
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn,
+        chunk_version_key=chunk_version_key,
+    )
     release = repository.resolve_graph_release(graph_release_id)
     population = fetch_runtime_eval_population(
         graph_run_id=release.graph_run_id,
@@ -739,6 +792,11 @@ def run_rag_runtime_evaluation(
         chunk_version_key=chunk_version_key,
         connect=connect_fn,
     )
+    service = _build_runtime_service(
+        chunk_version_key=chunk_version_key,
+        connect=connect_fn,
+    )
+    warmup_duration_ms = service.warm()
     cases = build_runtime_eval_query_cases(
         sample,
         query_families=query_families,
@@ -749,7 +807,10 @@ def run_rag_runtime_evaluation(
         cases=cases,
         k=k,
         rerank_topn=rerank_topn,
+        use_lexical=use_lexical,
+        use_dense_query=use_dense_query,
         connect=connect_fn,
+        service=service,
     )
     return RagRuntimeEvaluationReport(
         graph_release_id=release.graph_release_id,
@@ -757,6 +818,8 @@ def run_rag_runtime_evaluation(
         bundle_checksum=release.bundle_checksum,
         graph_name=release.graph_name,
         chunk_version_key=chunk_version_key,
+        use_lexical=use_lexical,
+        use_dense_query=use_dense_query,
         query_families=list(
             query_families
             or (
@@ -768,6 +831,8 @@ def run_rag_runtime_evaluation(
         population=_population_summary(population=population, sample=sample),
         warehouse_quality=summarize_warehouse_quality(warehouse_quality),
         grounding_runtime_status=runtime_status,
+        warmup_duration_ms=warmup_duration_ms,
+        query_embedder_status=service.query_embedder_status(),
         summary=summarize_runtime_results(results),
         cases=results,
     )

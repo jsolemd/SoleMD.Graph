@@ -37,7 +37,10 @@ class Settings(BaseSettings):
     rag_semantic_neighbor_candidate_multiplier: int = 20
     rag_semantic_neighbor_min_candidates: int = 120
     rag_semantic_neighbor_max_candidates: int = 3840
+    rag_semantic_neighbor_hnsw_max_scan_tuples: int = 20000
     rag_semantic_neighbor_exact_parallel_workers: int = 4
+    rag_runtime_exact_graph_search_max_papers: int = 5000
+    rag_runtime_broad_scope_ann_min_ratio: float = 0.95
     rag_dense_query_enabled: bool = True
     rag_dense_query_use_gpu: bool = True
     rag_dense_query_base_model: str = "allenai/specter2_base"

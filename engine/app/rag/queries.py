@@ -22,6 +22,20 @@ LIMIT 1
 """
 
 
+GRAPH_RELEASE_PAPER_COUNT_SQL = """
+SELECT COUNT(*)::INT AS paper_count
+FROM solemd.graph_points
+WHERE graph_run_id = %s
+"""
+
+
+EMBEDDED_PAPER_COUNT_SQL = """
+SELECT COUNT(*)::INT AS embedded_paper_count
+FROM solemd.papers
+WHERE embedding IS NOT NULL
+"""
+
+
 QUERY_ENTITY_TERM_MATCH_SQL = """
 WITH query_terms AS (
     SELECT DISTINCT
@@ -119,85 +133,154 @@ setweight(to_tsvector('english', COALESCE(p.abstract, '')), 'B')
 """
 
 
+PAPER_TITLE_TEXT_SQL = """
+lower(COALESCE(p.title, ''))
+"""
+
+
+PAPER_TITLE_SIMILARITY_SQL = f"""
+GREATEST(
+    COALESCE(
+        word_similarity(query_input.lowered_query, {PAPER_TITLE_TEXT_SQL}),
+        0
+    ),
+    COALESCE(similarity({PAPER_TITLE_TEXT_SQL}, query_input.lowered_query), 0)
+)
+"""
+
+
+CHUNK_SEARCH_VECTOR_SQL = """
+to_tsvector('english', COALESCE(c.text, ''))
+"""
+
+
+CHUNK_HEADLINE_OPTIONS = (
+    "MaxWords=40, MinWords=12, ShortWord=2, MaxFragments=2, FragmentDelimiter=..."
+)
+
+
 PAPER_SEARCH_SQL = f"""
-WITH scoped_corpus AS (
-    SELECT DISTINCT corpus_id
-    FROM solemd.graph_points
-    WHERE graph_run_id = %s
-),
-query_input AS (
+WITH query_input AS (
     SELECT
         websearch_to_tsquery('english', %s) AS ts_query,
         phraseto_tsquery('english', %s) AS title_phrase_query,
-        lower(%s) AS lowered_query
+        lower(%s) AS lowered_query,
+        %s::boolean AS allow_title_similarity
 ),
-candidate_papers AS (
+exact_title_matches AS MATERIALIZED (
     SELECT
-        {PAPER_SELECT_COLUMNS},
+        p.corpus_id,
+        2.0 AS lexical_score,
+        1.0 AS title_similarity,
+        COALESCE(p.citation_count, 0) AS citation_count
+    FROM solemd.papers p
+    CROSS JOIN query_input
+    WHERE {PAPER_TITLE_TEXT_SQL} = query_input.lowered_query
+    ORDER BY
+        citation_count DESC,
+        p.corpus_id DESC
+    LIMIT %s
+),
+fts_matches AS MATERIALIZED (
+    SELECT
+        p.corpus_id,
         COALESCE(ts_rank_cd(search_terms.search_vector, query_input.ts_query), 0)
             + (
                 COALESCE(
-                    ts_rank_cd(search_terms.title_vector, query_input.title_phrase_query),
+                    ts_rank_cd(search_terms.search_vector, query_input.title_phrase_query),
                     0
                 ) * 0.35
             ) AS lexical_score,
-        COALESCE(
-            similarity(lower(COALESCE(p.title, '')), query_input.lowered_query),
-            0
-        ) AS title_similarity
+        CASE
+            WHEN query_input.allow_title_similarity THEN {PAPER_TITLE_SIMILARITY_SQL}
+            ELSE 0.0
+        END AS title_similarity,
+        COALESCE(p.citation_count, 0) AS citation_count
     FROM solemd.papers p
-    JOIN scoped_corpus scoped
-      ON scoped.corpus_id = p.corpus_id
-    {PAPER_CORE_JOINS}
     CROSS JOIN query_input
     CROSS JOIN LATERAL (
         SELECT
-            {PAPER_SEARCH_VECTOR_SQL} AS search_vector,
-            setweight(to_tsvector('english', COALESCE(p.title, '')), 'A') AS title_vector
+            {PAPER_SEARCH_VECTOR_SQL} AS search_vector
     ) AS search_terms
     WHERE
-        search_terms.search_vector @@ query_input.ts_query
-        OR search_terms.title_vector @@ query_input.title_phrase_query
-        OR lower(COALESCE(p.title, '')) LIKE ('%%' || query_input.lowered_query || '%%')
+        NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND (
+            search_terms.search_vector @@ query_input.ts_query
+            OR search_terms.search_vector @@ query_input.title_phrase_query
+        )
     ORDER BY
         lexical_score DESC,
         citation_count DESC,
         p.corpus_id DESC
     LIMIT %s
+),
+title_matches AS MATERIALIZED (
+    SELECT
+        p.corpus_id,
+        0.0 AS lexical_score,
+        {PAPER_TITLE_SIMILARITY_SQL} AS title_similarity,
+        COALESCE(p.citation_count, 0) AS citation_count
+    FROM solemd.papers p
+    CROSS JOIN query_input
+    WHERE
+        NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND query_input.allow_title_similarity
+        AND (
+            {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
+            OR {PAPER_TITLE_TEXT_SQL} %% query_input.lowered_query
+        )
+    ORDER BY
+        title_similarity DESC,
+        citation_count DESC,
+        p.corpus_id DESC
+    LIMIT %s
+),
+search_matches AS MATERIALIZED (
+    SELECT
+        candidate_matches.corpus_id,
+        MAX(candidate_matches.lexical_score) AS lexical_score,
+        MAX(candidate_matches.title_similarity) AS title_similarity,
+        MAX(candidate_matches.citation_count) AS citation_count
+    FROM (
+        SELECT * FROM exact_title_matches
+        UNION ALL
+        SELECT * FROM fts_matches
+        UNION ALL
+        SELECT * FROM title_matches
+    ) AS candidate_matches
+    GROUP BY candidate_matches.corpus_id
+),
+matched_papers AS MATERIALIZED (
+    SELECT
+        sm.corpus_id,
+        sm.lexical_score,
+        sm.title_similarity,
+        sm.citation_count
+    FROM search_matches sm
+    JOIN solemd.graph_points gp
+      ON gp.graph_run_id = %s
+     AND gp.corpus_id = sm.corpus_id
+    ORDER BY
+        sm.lexical_score DESC,
+        sm.citation_count DESC,
+        sm.corpus_id DESC
+    LIMIT %s
 )
 SELECT
-    cp.corpus_id,
-    cp.paper_id,
-    cp.semantic_scholar_paper_id,
-    cp.title,
-    cp.abstract,
-    cp.tldr,
-    cp.journal_name,
-    cp.year,
-    c.doi,
-    c.pmid,
-    c.pmc_id AS pmcid,
-    cp.text_availability,
-    cp.is_open_access,
-    cp.citation_count,
-    cp.influential_citation_count,
-    cp.reference_count,
-    cp.publication_types,
-    cp.fields_of_study,
-    cp.has_rule_evidence,
-    cp.has_curated_journal_family,
-    cp.journal_family_type,
-    cp.entity_rule_families,
-    cp.entity_rule_count,
-    cp.entity_core_families,
-    cp.lexical_score,
-    cp.title_similarity
-FROM candidate_papers cp
+    {PAPER_SELECT_COLUMNS},
+    mp.lexical_score,
+    mp.title_similarity
+FROM matched_papers mp
+JOIN solemd.papers p
+  ON p.corpus_id = mp.corpus_id
+JOIN solemd.corpus c
+  ON c.corpus_id = p.corpus_id
+LEFT JOIN solemd.paper_evidence_summary pes
+  ON pes.corpus_id = p.corpus_id
 ORDER BY
-    (lexical_score + (title_similarity * 0.15)) DESC,
-    citation_count DESC,
-    corpus_id DESC
-LIMIT %s
+    (mp.lexical_score + (mp.title_similarity * 0.15)) DESC,
+    mp.citation_count DESC,
+    mp.corpus_id DESC
 """
 
 
@@ -206,78 +289,288 @@ WITH query_input AS (
     SELECT
         websearch_to_tsquery('english', %s) AS ts_query,
         phraseto_tsquery('english', %s) AS title_phrase_query,
-        lower(%s) AS lowered_query
+        lower(%s) AS lowered_query,
+        %s::boolean AS allow_title_similarity
 ),
-ranked_papers AS (
+exact_title_matches AS MATERIALIZED (
     SELECT
-        {PAPER_SELECT_COLUMNS},
+        p.corpus_id,
+        2.0 AS lexical_score,
+        1.0 AS title_similarity,
+        COALESCE(p.citation_count, 0) AS citation_count
+    FROM solemd.papers p
+    CROSS JOIN query_input
+    WHERE
+        p.corpus_id = ANY(%s)
+        AND {PAPER_TITLE_TEXT_SQL} = query_input.lowered_query
+    ORDER BY
+        citation_count DESC,
+        p.corpus_id DESC
+    LIMIT %s
+),
+matched_papers AS MATERIALIZED (
+    SELECT
+        p.corpus_id,
         COALESCE(
             ts_rank_cd(search_terms.search_vector, query_input.ts_query),
             0
         ) + (
             COALESCE(
-                ts_rank_cd(search_terms.title_vector, query_input.title_phrase_query),
+                ts_rank_cd(search_terms.search_vector, query_input.title_phrase_query),
                 0
             ) * 0.35
         ) AS lexical_score,
-        COALESCE(
-            similarity(lower(COALESCE(p.title, '')), query_input.lowered_query),
-            0
-        ) AS title_similarity
+        CASE
+            WHEN query_input.allow_title_similarity THEN {PAPER_TITLE_SIMILARITY_SQL}
+            ELSE 0.0
+        END AS title_similarity,
+        COALESCE(p.citation_count, 0) AS citation_count
     FROM solemd.papers p
-    {PAPER_CORE_JOINS}
     CROSS JOIN query_input
     CROSS JOIN LATERAL (
         SELECT
-            {PAPER_SEARCH_VECTOR_SQL} AS search_vector,
-            setweight(to_tsvector('english', COALESCE(p.title, '')), 'A') AS title_vector
+            {PAPER_SEARCH_VECTOR_SQL} AS search_vector
     ) AS search_terms
     WHERE
         p.corpus_id = ANY(%s)
+        AND NOT EXISTS (SELECT 1 FROM exact_title_matches)
         AND (
             search_terms.search_vector @@ query_input.ts_query
-            OR search_terms.title_vector @@ query_input.title_phrase_query
-            OR lower(COALESCE(p.title, '')) LIKE ('%%' || query_input.lowered_query || '%%')
-            OR similarity(lower(COALESCE(p.title, '')), query_input.lowered_query) > %s
+            OR search_terms.search_vector @@ query_input.title_phrase_query
+            OR (
+                query_input.allow_title_similarity
+                AND (
+                    {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
+                    OR {PAPER_TITLE_TEXT_SQL} %% query_input.lowered_query
+                )
+            )
         )
+    UNION ALL
+    SELECT * FROM exact_title_matches
 )
 SELECT
-    corpus_id,
-    paper_id,
-    semantic_scholar_paper_id,
-    title,
-    abstract,
-    tldr,
-    journal_name,
-    year,
-    doi,
-    pmid,
-    pmcid,
-    text_availability,
-    is_open_access,
-    citation_count,
-    influential_citation_count,
-    reference_count,
-    publication_types,
-    fields_of_study,
-    has_rule_evidence,
-    has_curated_journal_family,
-    journal_family_type,
-    entity_rule_families,
-    entity_rule_count,
-    entity_core_families,
-    lexical_score,
-    title_similarity
-FROM ranked_papers
+    {PAPER_SELECT_COLUMNS},
+    mp.lexical_score,
+    mp.title_similarity
+FROM matched_papers mp
+JOIN solemd.papers p
+  ON p.corpus_id = mp.corpus_id
+JOIN solemd.corpus c
+  ON c.corpus_id = p.corpus_id
+LEFT JOIN solemd.paper_evidence_summary pes
+  ON pes.corpus_id = p.corpus_id
 ORDER BY
-    (lexical_score + (title_similarity * 0.15)) DESC,
-    citation_count DESC,
-    corpus_id DESC
+    (mp.lexical_score + (mp.title_similarity * 0.15)) DESC,
+    mp.citation_count DESC,
+    mp.corpus_id DESC
 LIMIT %s
 """
 
 
-PAPER_ENTITY_SEARCH_SQL = """
+CHUNK_SEARCH_SQL = f"""
+WITH query_input AS (
+    SELECT
+        websearch_to_tsquery('english', %s) AS ts_query,
+        phraseto_tsquery('english', %s) AS phrase_query,
+        websearch_to_tsquery('english', %s) AS normalized_ts_query
+),
+matched_chunks AS MATERIALIZED (
+    SELECT
+        c.corpus_id,
+        c.chunk_ordinal,
+        c.text AS chunk_text,
+        chunk_eval.chunk_snippet,
+        chunk_eval.chunk_lexical_score,
+        COALESCE(p.citation_count, 0) AS citation_count,
+        ROW_NUMBER() OVER (
+            PARTITION BY c.corpus_id
+            ORDER BY
+                chunk_eval.chunk_lexical_score DESC,
+                c.token_count_estimate DESC,
+                c.chunk_ordinal ASC
+        ) AS corpus_chunk_rank
+    FROM solemd.paper_chunks c
+    JOIN solemd.graph_points gp
+      ON gp.graph_run_id = %s
+     AND gp.corpus_id = c.corpus_id
+    JOIN solemd.papers p
+      ON p.corpus_id = c.corpus_id
+    CROSS JOIN query_input
+    CROSS JOIN LATERAL (
+        SELECT
+            replace(
+                replace(
+                    ts_headline(
+                        'english',
+                        c.text,
+                        query_input.normalized_ts_query,
+                        '{CHUNK_HEADLINE_OPTIONS}'
+                    ),
+                    '<b>',
+                    ''
+                ),
+                '</b>',
+                ''
+            ) AS chunk_snippet,
+            GREATEST(
+                COALESCE(
+                    ts_rank_cd({CHUNK_SEARCH_VECTOR_SQL}, query_input.ts_query),
+                    0
+                ),
+                COALESCE(
+                    ts_rank_cd({CHUNK_SEARCH_VECTOR_SQL}, query_input.phrase_query),
+                    0
+                ) * 1.1,
+                COALESCE(
+                    ts_rank_cd(
+                        {CHUNK_SEARCH_VECTOR_SQL},
+                        query_input.normalized_ts_query
+                    ),
+                    0
+                )
+            ) AS chunk_lexical_score
+    ) AS chunk_eval
+    WHERE
+        c.chunk_version_key = %s
+        AND c.is_retrieval_default IS TRUE
+        AND (
+            {CHUNK_SEARCH_VECTOR_SQL} @@ query_input.ts_query
+            OR {CHUNK_SEARCH_VECTOR_SQL} @@ query_input.phrase_query
+            OR {CHUNK_SEARCH_VECTOR_SQL} @@ query_input.normalized_ts_query
+        )
+),
+matched_papers AS MATERIALIZED (
+    SELECT
+        mc.corpus_id,
+        mc.chunk_ordinal,
+        mc.chunk_text,
+        mc.chunk_snippet,
+        mc.chunk_lexical_score,
+        mc.citation_count
+    FROM matched_chunks mc
+    WHERE mc.corpus_chunk_rank = 1
+    ORDER BY
+        mc.chunk_lexical_score DESC,
+        mc.citation_count DESC,
+        mc.corpus_id DESC
+    LIMIT %s
+)
+SELECT
+    {PAPER_SELECT_COLUMNS},
+    0.0 AS lexical_score,
+    0.0 AS title_similarity,
+    mp.chunk_ordinal,
+    mp.chunk_snippet,
+    mp.chunk_lexical_score
+FROM matched_papers mp
+JOIN solemd.papers p
+  ON p.corpus_id = mp.corpus_id
+JOIN solemd.corpus c
+  ON c.corpus_id = p.corpus_id
+LEFT JOIN solemd.paper_evidence_summary pes
+  ON pes.corpus_id = p.corpus_id
+ORDER BY
+    mp.chunk_lexical_score DESC,
+    mp.citation_count DESC,
+    mp.corpus_id DESC
+LIMIT %s
+"""
+
+
+CHUNK_SEARCH_IN_SELECTION_SQL = f"""
+WITH query_input AS (
+    SELECT
+        websearch_to_tsquery('english', %s) AS ts_query,
+        phraseto_tsquery('english', %s) AS phrase_query,
+        websearch_to_tsquery('english', %s) AS normalized_ts_query
+),
+matched_chunks AS MATERIALIZED (
+    SELECT
+        c.corpus_id,
+        c.chunk_ordinal,
+        c.text AS chunk_text,
+        chunk_eval.chunk_snippet,
+        chunk_eval.chunk_lexical_score,
+        COALESCE(p.citation_count, 0) AS citation_count,
+        ROW_NUMBER() OVER (
+            PARTITION BY c.corpus_id
+            ORDER BY
+                chunk_eval.chunk_lexical_score DESC,
+                c.token_count_estimate DESC,
+                c.chunk_ordinal ASC
+        ) AS corpus_chunk_rank
+    FROM solemd.paper_chunks c
+    JOIN solemd.papers p
+      ON p.corpus_id = c.corpus_id
+    CROSS JOIN query_input
+    CROSS JOIN LATERAL (
+        SELECT
+            replace(
+                replace(
+                    ts_headline(
+                        'english',
+                        c.text,
+                        query_input.normalized_ts_query,
+                        '{CHUNK_HEADLINE_OPTIONS}'
+                    ),
+                    '<b>',
+                    ''
+                ),
+                '</b>',
+                ''
+            ) AS chunk_snippet,
+            GREATEST(
+                COALESCE(
+                    ts_rank_cd({CHUNK_SEARCH_VECTOR_SQL}, query_input.ts_query),
+                    0
+                ),
+                COALESCE(
+                    ts_rank_cd({CHUNK_SEARCH_VECTOR_SQL}, query_input.phrase_query),
+                    0
+                ) * 1.1,
+                COALESCE(
+                    ts_rank_cd(
+                        {CHUNK_SEARCH_VECTOR_SQL},
+                        query_input.normalized_ts_query
+                    ),
+                    0
+                )
+            ) AS chunk_lexical_score
+    ) AS chunk_eval
+    WHERE
+        c.chunk_version_key = %s
+        AND c.is_retrieval_default IS TRUE
+        AND c.corpus_id = ANY(%s)
+        AND (
+            {CHUNK_SEARCH_VECTOR_SQL} @@ query_input.ts_query
+            OR {CHUNK_SEARCH_VECTOR_SQL} @@ query_input.phrase_query
+            OR {CHUNK_SEARCH_VECTOR_SQL} @@ query_input.normalized_ts_query
+        )
+)
+SELECT
+    {PAPER_SELECT_COLUMNS},
+    0.0 AS lexical_score,
+    0.0 AS title_similarity,
+    mc.chunk_ordinal,
+    mc.chunk_snippet,
+    mc.chunk_lexical_score
+FROM matched_chunks mc
+JOIN solemd.papers p
+  ON p.corpus_id = mc.corpus_id
+JOIN solemd.corpus c
+  ON c.corpus_id = p.corpus_id
+LEFT JOIN solemd.paper_evidence_summary pes
+  ON pes.corpus_id = p.corpus_id
+WHERE mc.corpus_chunk_rank = 1
+ORDER BY
+    mc.chunk_lexical_score DESC,
+    mc.citation_count DESC,
+    mc.corpus_id DESC
+LIMIT %s
+"""
+
+
+PAPER_ENTITY_SEARCH_SQL = f"""
 WITH query_terms AS (
     SELECT DISTINCT
         trim(term) AS raw_term,
@@ -375,44 +668,15 @@ matched_corpus_scores AS (
 ),
 ranked_papers AS (
     SELECT
-        p.corpus_id,
-        p.paper_id,
-        p.paper_id AS semantic_scholar_paper_id,
-        p.title,
-        p.abstract,
-        p.tldr,
-        COALESCE(p.journal_name, p.venue) AS journal_name,
-        p.year,
-        c.doi,
-        c.pmid,
-        c.pmc_id AS pmcid,
-        p.text_availability,
-        p.is_open_access,
-        COALESCE(p.citation_count, 0) AS citation_count,
-        COALESCE(p.reference_count, 0) AS reference_count,
+        {PAPER_SELECT_COLUMNS},
         mcs.entity_candidate_score
     FROM matched_corpus_scores mcs
     JOIN solemd.papers p
       ON p.corpus_id = mcs.corpus_id
-    JOIN solemd.corpus c
-      ON c.corpus_id = p.corpus_id
+    {PAPER_CORE_JOINS}
 )
 SELECT
-    corpus_id,
-    paper_id,
-    semantic_scholar_paper_id,
-    title,
-    abstract,
-    tldr,
-    journal_name,
-    year,
-    doi,
-    pmid,
-    pmcid,
-    text_availability,
-    is_open_access,
-    citation_count,
-    reference_count,
+    {PAPER_SELECT_COLUMNS},
     entity_candidate_score
 FROM ranked_papers
 ORDER BY
@@ -423,7 +687,7 @@ LIMIT %s
 """
 
 
-PAPER_ENTITY_SEARCH_IN_SELECTION_SQL = """
+PAPER_ENTITY_SEARCH_IN_SELECTION_SQL = f"""
 WITH query_terms AS (
     SELECT DISTINCT
         trim(term) AS raw_term,
@@ -519,44 +783,15 @@ matched_corpus_scores AS (
 ),
 ranked_papers AS (
     SELECT
-        p.corpus_id,
-        p.paper_id,
-        p.paper_id AS semantic_scholar_paper_id,
-        p.title,
-        p.abstract,
-        p.tldr,
-        COALESCE(p.journal_name, p.venue) AS journal_name,
-        p.year,
-        c.doi,
-        c.pmid,
-        c.pmc_id AS pmcid,
-        p.text_availability,
-        p.is_open_access,
-        COALESCE(p.citation_count, 0) AS citation_count,
-        COALESCE(p.reference_count, 0) AS reference_count,
+        {PAPER_SELECT_COLUMNS},
         mcs.entity_candidate_score
     FROM matched_corpus_scores mcs
     JOIN solemd.papers p
       ON p.corpus_id = mcs.corpus_id
-    JOIN solemd.corpus c
-      ON c.corpus_id = p.corpus_id
+    {PAPER_CORE_JOINS}
 )
 SELECT
-    corpus_id,
-    paper_id,
-    semantic_scholar_paper_id,
-    title,
-    abstract,
-    tldr,
-    journal_name,
-    year,
-    doi,
-    pmid,
-    pmcid,
-    text_availability,
-    is_open_access,
-    citation_count,
-    reference_count,
+    {PAPER_SELECT_COLUMNS},
     entity_candidate_score
 FROM ranked_papers
 ORDER BY
@@ -567,7 +802,7 @@ LIMIT %s
 """
 
 
-PAPER_RELATION_SEARCH_SQL = """
+PAPER_RELATION_SEARCH_SQL = f"""
 WITH scoped_corpus AS (
     SELECT DISTINCT corpus_id
     FROM solemd.graph_points
@@ -595,44 +830,15 @@ matched_corpus_scores AS (
 ),
 ranked_papers AS (
     SELECT
-        p.corpus_id,
-        p.paper_id,
-        p.paper_id AS semantic_scholar_paper_id,
-        p.title,
-        p.abstract,
-        p.tldr,
-        COALESCE(p.journal_name, p.venue) AS journal_name,
-        p.year,
-        c.doi,
-        c.pmid,
-        c.pmc_id AS pmcid,
-        p.text_availability,
-        p.is_open_access,
-        COALESCE(p.citation_count, 0) AS citation_count,
-        COALESCE(p.reference_count, 0) AS reference_count,
+        {PAPER_SELECT_COLUMNS},
         mcs.relation_candidate_score
     FROM matched_corpus_scores mcs
     JOIN solemd.papers p
       ON p.corpus_id = mcs.corpus_id
-    JOIN solemd.corpus c
-      ON c.corpus_id = p.corpus_id
+    {PAPER_CORE_JOINS}
 )
 SELECT
-    corpus_id,
-    paper_id,
-    semantic_scholar_paper_id,
-    title,
-    abstract,
-    tldr,
-    journal_name,
-    year,
-    doi,
-    pmid,
-    pmcid,
-    text_availability,
-    is_open_access,
-    citation_count,
-    reference_count,
+    {PAPER_SELECT_COLUMNS},
     relation_candidate_score
 FROM ranked_papers
 ORDER BY
@@ -643,7 +849,7 @@ LIMIT %s
 """
 
 
-PAPER_RELATION_SEARCH_IN_SELECTION_SQL = """
+PAPER_RELATION_SEARCH_IN_SELECTION_SQL = f"""
 WITH query_terms AS (
     SELECT DISTINCT
         trim(term) AS raw_term,
@@ -665,44 +871,15 @@ matched_corpus_scores AS (
 ),
 ranked_papers AS (
     SELECT
-        p.corpus_id,
-        p.paper_id,
-        p.paper_id AS semantic_scholar_paper_id,
-        p.title,
-        p.abstract,
-        p.tldr,
-        COALESCE(p.journal_name, p.venue) AS journal_name,
-        p.year,
-        c.doi,
-        c.pmid,
-        c.pmc_id AS pmcid,
-        p.text_availability,
-        p.is_open_access,
-        COALESCE(p.citation_count, 0) AS citation_count,
-        COALESCE(p.reference_count, 0) AS reference_count,
+        {PAPER_SELECT_COLUMNS},
         mcs.relation_candidate_score
     FROM matched_corpus_scores mcs
     JOIN solemd.papers p
       ON p.corpus_id = mcs.corpus_id
-    JOIN solemd.corpus c
-      ON c.corpus_id = p.corpus_id
+    {PAPER_CORE_JOINS}
 )
 SELECT
-    corpus_id,
-    paper_id,
-    semantic_scholar_paper_id,
-    title,
-    abstract,
-    tldr,
-    journal_name,
-    year,
-    doi,
-    pmid,
-    pmcid,
-    text_availability,
-    is_open_access,
-    citation_count,
-    reference_count,
+    {PAPER_SELECT_COLUMNS},
     relation_candidate_score
 FROM ranked_papers
 ORDER BY
@@ -736,6 +913,15 @@ ORDER BY p.corpus_id
 """
 
 
+PAPER_EMBEDDING_LOOKUP_SQL = """
+SELECT embedding::text AS embedding_literal
+FROM solemd.papers
+WHERE corpus_id = %s
+  AND embedding IS NOT NULL
+LIMIT 1
+"""
+
+
 DENSE_QUERY_SEARCH_SQL = f"""
 SELECT
     {PAPER_SELECT_COLUMNS},
@@ -766,13 +952,50 @@ LIMIT %s
 
 
 DENSE_QUERY_SEARCH_ANN_IN_GRAPH_SQL = f"""
-WITH ann_candidates AS MATERIALIZED (
+WITH query_vector AS (
+    SELECT %s::vector AS embedding
+),
+graph_scope AS MATERIALIZED (
+    SELECT gp.corpus_id
+    FROM solemd.graph_points gp
+    WHERE gp.graph_run_id = %s
+),
+ann_candidates AS MATERIALIZED (
     SELECT
         p.corpus_id,
-        (p.embedding <=> %s::vector) AS distance
-    FROM solemd.papers p
+        (p.embedding <=> qv.embedding) AS distance
+    FROM graph_scope gs
+    JOIN solemd.papers p
+      ON p.corpus_id = gs.corpus_id
+    CROSS JOIN query_vector qv
     WHERE p.embedding IS NOT NULL
-    ORDER BY p.embedding <=> %s::vector ASC
+    ORDER BY p.embedding <=> qv.embedding ASC
+    LIMIT %s
+)
+SELECT
+    {PAPER_SELECT_COLUMNS},
+    ann.distance
+FROM ann_candidates ann
+JOIN solemd.papers p
+  ON p.corpus_id = ann.corpus_id
+{PAPER_CORE_JOINS}
+ORDER BY ann.distance ASC
+LIMIT %s
+"""
+
+
+DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL = f"""
+WITH query_vector AS (
+    SELECT %s::vector AS embedding
+),
+ann_candidates AS MATERIALIZED (
+    SELECT
+        p.corpus_id,
+        (p.embedding <=> qv.embedding) AS distance
+    FROM solemd.papers p
+    CROSS JOIN query_vector qv
+    WHERE p.embedding IS NOT NULL
+    ORDER BY p.embedding <=> qv.embedding ASC
     LIMIT %s
 )
 SELECT
@@ -912,56 +1135,33 @@ ORDER BY corpus_id, asset_id
 
 
 SEMANTIC_NEIGHBOR_SQL = """
-WITH
-seed AS (
-    SELECT p.embedding
-    FROM solemd.papers p
-    WHERE p.corpus_id = %s
-      AND p.embedding IS NOT NULL
-    LIMIT 1
-)
 SELECT
     p.corpus_id,
     p.paper_id,
-    (seed.embedding <=> p.embedding) AS distance
+    (%s::vector <=> p.embedding) AS distance
 FROM solemd.graph_points gp
 JOIN solemd.papers p
   ON p.corpus_id = gp.corpus_id
-CROSS JOIN seed
 WHERE
     gp.graph_run_id = %s
-    AND
-    seed.embedding IS NOT NULL
     AND p.embedding IS NOT NULL
     AND p.corpus_id <> %s
-ORDER BY seed.embedding <=> p.embedding ASC
+ORDER BY %s::vector <=> p.embedding ASC
 LIMIT %s
 """
 
 
 SEMANTIC_NEIGHBOR_IN_SELECTION_SQL = """
-WITH
-seed AS (
-    SELECT p.embedding
-    FROM solemd.papers p
-    WHERE p.corpus_id = %s
-      AND p.corpus_id = ANY(%s)
-      AND p.embedding IS NOT NULL
-    LIMIT 1
-)
 SELECT
     p.corpus_id,
     p.paper_id,
-    (seed.embedding <=> p.embedding) AS distance
+    (%s::vector <=> p.embedding) AS distance
 FROM solemd.papers p
-CROSS JOIN seed
 WHERE
     p.corpus_id = ANY(%s)
-    AND
-    seed.embedding IS NOT NULL
     AND p.embedding IS NOT NULL
     AND p.corpus_id <> %s
-ORDER BY seed.embedding <=> p.embedding ASC
+ORDER BY %s::vector <=> p.embedding ASC
 LIMIT %s
 """
 
@@ -972,31 +1172,47 @@ SELECT to_regclass('solemd.idx_papers_embedding_hnsw') IS NOT NULL AS index_read
 
 
 SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL = """
-WITH ann_candidates AS MATERIALIZED (
+WITH graph_scope AS MATERIALIZED (
+    SELECT gp.corpus_id
+    FROM solemd.graph_points gp
+    WHERE gp.graph_run_id = %s
+),
+ann_candidates AS MATERIALIZED (
     SELECT
         p.corpus_id,
         p.paper_id,
-        (
-            p.embedding <=> (
-                SELECT embedding
-                FROM solemd.papers
-                WHERE corpus_id = %s
-                  AND embedding IS NOT NULL
-                LIMIT 1
-            )
-        ) AS distance
-    FROM solemd.papers p
+        (p.embedding <=> %s::vector) AS distance
+    FROM graph_scope gs
+    JOIN solemd.papers p
+      ON p.corpus_id = gs.corpus_id
     WHERE
         p.embedding IS NOT NULL
         AND p.corpus_id <> %s
     ORDER BY
-        p.embedding <=> (
-            SELECT embedding
-            FROM solemd.papers
-            WHERE corpus_id = %s
-              AND embedding IS NOT NULL
-            LIMIT 1
-        ) ASC
+        p.embedding <=> %s::vector ASC
+    LIMIT %s
+)
+SELECT
+    ann.corpus_id,
+    ann.paper_id,
+    ann.distance
+FROM ann_candidates ann
+ORDER BY ann.distance ASC
+LIMIT %s
+"""
+
+
+SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL = """
+WITH ann_candidates AS MATERIALIZED (
+    SELECT
+        p.corpus_id,
+        p.paper_id,
+        (p.embedding <=> %s::vector) AS distance
+    FROM solemd.papers p
+    WHERE
+        p.embedding IS NOT NULL
+        AND p.corpus_id <> %s
+    ORDER BY p.embedding <=> %s::vector ASC
     LIMIT %s
 )
 SELECT

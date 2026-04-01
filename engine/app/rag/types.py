@@ -16,6 +16,7 @@ class RetrievalChannel(StrEnum):
     """Retrieval channels currently exposed by the baseline service."""
 
     LEXICAL = "lexical"
+    CHUNK_LEXICAL = "chunk_lexical"
     DENSE_QUERY = "dense_query"
     ENTITY_MATCH = "entity_match"
     RELATION_MATCH = "relation_match"
@@ -57,6 +58,14 @@ class RetrievalScope(StrEnum):
     SELECTION_ONLY = "selection_only"
 
 
+class QueryRetrievalProfile(StrEnum):
+    """Query-shape profiles used to tune runtime retrieval and ranking."""
+
+    TITLE_LOOKUP = "title_lookup"
+    PASSAGE_LOOKUP = "passage_lookup"
+    GENERAL = "general"
+
+
 DEFAULT_RETRIEVAL_VERSION = "baseline-postgres-v1"
 DEFAULT_GRAPH_NAME = "living_graph"
 DEFAULT_GRAPH_CACHE_CONTROL = "no-store"
@@ -64,6 +73,7 @@ DEFAULT_ANSWER_MODEL = "baseline-extractive-v1"
 
 RETRIEVAL_CHANNEL_ORDER = (
     RetrievalChannel.LEXICAL,
+    RetrievalChannel.CHUNK_LEXICAL,
     RetrievalChannel.DENSE_QUERY,
     RetrievalChannel.ENTITY_MATCH,
     RetrievalChannel.RELATION_MATCH,

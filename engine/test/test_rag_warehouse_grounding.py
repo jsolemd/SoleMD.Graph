@@ -68,6 +68,15 @@ def test_build_grounded_answer_from_warehouse_builds_packets_and_answer_links():
                 "source_identifier": "MESH:D008550",
                 "concept_namespace": "mesh",
                 "concept_id": "D008550",
+                "block_section_ordinal": 1,
+                "block_section_role": "results",
+                "block_kind": "narrative_paragraph",
+                "block_text": "Melatonin reduced delirium incidence [1].",
+                "block_is_retrieval_default": True,
+                "block_linked_asset_ref": None,
+                "sentence_section_ordinal": 1,
+                "sentence_segmentation_source": "s2orc_annotation",
+                "sentence_text": "Melatonin reduced delirium incidence [1].",
             }
         ],
     ]
@@ -158,3 +167,129 @@ def test_build_grounded_answer_from_warehouse_falls_back_to_entity_only_packets(
     assert grounded.segments[0].citation_anchor_ids == []
     assert grounded.segments[1].citation_anchor_ids == ["anchor:1"]
     assert grounded.cited_spans[0].entity_mentions[0].concept_id == "D008550"
+
+
+def test_build_grounded_answer_from_warehouse_preserves_entity_only_packets_with_citation_packets():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.fetchall.side_effect = [
+        [
+            {
+                "corpus_id": 111,
+                "source_system": "s2orc_v2",
+                "source_revision": "2026-03-10",
+                "source_document_key": "111",
+                "source_plane": "body",
+                "parser_version": "parser-v1",
+                "raw_attrs_json": {},
+                "span_origin": "primary_text",
+                "alignment_status": "exact",
+                "alignment_confidence": 1.0,
+                "source_start_offset": 20,
+                "source_end_offset": 23,
+                "text": "[1]",
+                "canonical_section_ordinal": 1,
+                "canonical_block_ordinal": 0,
+                "canonical_sentence_ordinal": 0,
+                "source_citation_key": "b1",
+                "source_reference_key": "b1",
+                "matched_paper_id": "S2:paper-1",
+                "matched_corpus_id": 999,
+                "block_section_ordinal": 1,
+                "block_section_role": "results",
+                "block_kind": "narrative_paragraph",
+                "block_text": "Primary grounded sentence [1].",
+                "block_is_retrieval_default": True,
+                "block_linked_asset_ref": None,
+                "sentence_section_ordinal": 1,
+                "sentence_segmentation_source": "s2orc_annotation",
+                "sentence_text": "Primary grounded sentence [1].",
+            }
+        ],
+        [
+            {
+                "corpus_id": 111,
+                "source_system": "biocxml",
+                "source_revision": "2026-03-21",
+                "source_document_key": "111",
+                "source_plane": "passage",
+                "parser_version": "parser-v1",
+                "raw_attrs_json": {},
+                "span_origin": "annotation_overlay",
+                "alignment_status": "exact",
+                "alignment_confidence": 1.0,
+                "source_start_offset": 0,
+                "source_end_offset": 7,
+                "text": "Primary",
+                "canonical_section_ordinal": 1,
+                "canonical_block_ordinal": 0,
+                "canonical_sentence_ordinal": 0,
+                "entity_type": "chemical",
+                "source_identifier": "MESH:D000001",
+                "concept_namespace": "mesh",
+                "concept_id": "D000001",
+                "block_section_ordinal": 1,
+                "block_section_role": "results",
+                "block_kind": "narrative_paragraph",
+                "block_text": "Primary grounded sentence [1].",
+                "block_is_retrieval_default": True,
+                "block_linked_asset_ref": None,
+                "sentence_section_ordinal": 1,
+                "sentence_segmentation_source": "stanza_biomedical",
+                "sentence_text": "Primary grounded sentence [1].",
+            },
+            {
+                "corpus_id": 222,
+                "source_system": "biocxml",
+                "source_revision": "2026-03-21",
+                "source_document_key": "222",
+                "source_plane": "passage",
+                "parser_version": "parser-v1",
+                "raw_attrs_json": {},
+                "span_origin": "annotation_overlay",
+                "alignment_status": "exact",
+                "alignment_confidence": 1.0,
+                "source_start_offset": 0,
+                "source_end_offset": 10,
+                "text": "Secondary",
+                "canonical_section_ordinal": 1,
+                "canonical_block_ordinal": 0,
+                "canonical_sentence_ordinal": 0,
+                "entity_type": "disease",
+                "source_identifier": "MESH:D000002",
+                "concept_namespace": "mesh",
+                "concept_id": "D000002",
+                "block_section_ordinal": 1,
+                "block_section_role": "results",
+                "block_kind": "narrative_paragraph",
+                "block_text": "Secondary grounded sentence.",
+                "block_is_retrieval_default": True,
+                "block_linked_asset_ref": None,
+                "sentence_section_ordinal": 1,
+                "sentence_segmentation_source": "stanza_biomedical",
+                "sentence_text": "Secondary grounded sentence.",
+            },
+        ],
+    ]
+
+    grounded = build_grounded_answer_from_warehouse(
+        corpus_ids=[111, 222],
+        segment_texts=[
+            "Potentially relevant evidence:",
+            "Primary grounded sentence [1].",
+            "Secondary grounded sentence.",
+        ],
+        segment_corpus_ids=[None, 111, 222],
+        connect=lambda: conn,
+    )
+
+    assert grounded is not None
+    assert grounded.answer_linked_corpus_ids == [111, 222]
+    assert grounded.segments[1].citation_anchor_ids == ["anchor:1"]
+    assert grounded.segments[2].citation_anchor_ids == ["anchor:2"]
+    assert [packet.corpus_id for packet in grounded.cited_spans] == [111, 222]
+    assert grounded.cited_spans[1].entity_mentions[0].concept_id == "D000002"

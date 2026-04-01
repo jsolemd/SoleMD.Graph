@@ -5,8 +5,13 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass
 
+from app.rag.types import QueryRetrievalProfile
+
 MAX_QUERY_PHRASE_TOKENS = 4
 MAX_QUERY_PHRASES = 48
+MAX_TITLE_LIKE_QUERY_CHARS = 220
+MAX_TITLE_LIKE_QUERY_WORDS = 24
+MIN_CHUNK_LEXICAL_QUERY_WORDS = 4
 
 # Canonical PubTator relation labels currently exercised in the live dataset.
 SUPPORTED_RELATION_TYPES = frozenset(
@@ -84,6 +89,64 @@ def normalize_title_key(text: str | None) -> str:
     if current:
         tokens.append("".join(current))
     return " ".join(tokens)
+
+
+def _has_inline_sentence_boundary(text: str) -> bool:
+    lowered = text.casefold()
+    return any(boundary in lowered for boundary in (". ", "? ", "! "))
+
+
+def is_title_like_query(
+    text: str | None,
+    *,
+    allow_terminal_punctuation: bool = False,
+) -> bool:
+    """Return True when a query is title-shaped enough for title-similarity scoring."""
+
+    normalized = unicodedata.normalize("NFKC", text or "").strip()
+    if not normalized:
+        return False
+    if len(normalized) > MAX_TITLE_LIKE_QUERY_CHARS:
+        return False
+
+    token_count = len(normalize_query_text(normalized).split())
+    if token_count == 0 or token_count > MAX_TITLE_LIKE_QUERY_WORDS:
+        return False
+
+    if _has_inline_sentence_boundary(normalized):
+        return False
+
+    if normalized.endswith((".", "?", "!")) and not allow_terminal_punctuation:
+        return False
+    return True
+
+
+def determine_query_retrieval_profile(
+    text: str | None,
+    *,
+    allow_terminal_title_punctuation: bool = False,
+) -> QueryRetrievalProfile:
+    """Classify the query shape for runtime retrieval planning."""
+
+    if is_title_like_query(
+        text,
+        allow_terminal_punctuation=allow_terminal_title_punctuation,
+    ):
+        return QueryRetrievalProfile.TITLE_LOOKUP
+
+    normalized = normalize_query_text(text or "")
+    if normalized and len(normalized.split()) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
+        return QueryRetrievalProfile.PASSAGE_LOOKUP
+    return QueryRetrievalProfile.GENERAL
+
+
+def should_use_chunk_lexical_query(text: str | None) -> bool:
+    """Route longer free-text queries through chunk lexical search."""
+
+    return (
+        determine_query_retrieval_profile(text)
+        == QueryRetrievalProfile.PASSAGE_LOOKUP
+    )
 
 
 def derive_relation_terms(text: str) -> list[str]:

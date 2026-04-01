@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -28,6 +29,7 @@ from app.rag.query_embedding import RagQueryEmbedder, get_query_embedder
 from app.rag.query_enrichment import (
     build_query_phrases,
     derive_relation_terms,
+    determine_query_retrieval_profile,
     normalize_query_text,
 )
 from app.rag.ranking import rank_paper_hits
@@ -39,13 +41,29 @@ from app.rag.retrieval_fusion import (
     derive_citation_seed_scores,
     merge_candidate_papers,
 )
+from app.rag.retrieval_policy import (
+    chunk_search_queries,
+    citation_context_candidate_ids,
+    should_expand_citation_frontier,
+    should_fetch_semantic_neighbors,
+    should_run_dense_query,
+    should_skip_runtime_entity_enrichment,
+)
 from app.rag.schemas import GraphContext, RagSearchRequest, RagSearchResponse, ResponseMeta
+from app.rag.search_plan import build_search_plan
 from app.rag.types import (
     DEFAULT_RETRIEVAL_VERSION,
     RETRIEVAL_CHANNEL_ORDER,
+    QueryRetrievalProfile,
     RetrievalChannel,
     RetrievalScope,
 )
+
+_DENSE_QUERY_WARM_TEXT = "melatonin postoperative delirium"
+_FULL_PATH_WARM_TEXT = (
+    "Melatonin reduced postoperative delirium incidence in surgical patients."
+)
+logger = logging.getLogger(__name__)
 
 
 def _normalize_terms(values: list[str]) -> list[str]:
@@ -95,21 +113,30 @@ def _apply_query_enrichment(
     repository: RagRepository,
     query: PaperRetrievalQuery,
 ) -> PaperRetrievalQuery:
-    if query.entity_terms and query.relation_terms:
+    if query.entity_terms:
         return query
 
     query_phrases = build_query_phrases(query.normalized_query)
     if not query_phrases:
-        return query
+        return _apply_relation_enrichment(query)
 
-    if not query.entity_terms:
-        query.entity_terms = repository.resolve_query_entity_terms(
-            query_phrases=query_phrases,
-            limit=5,
-        )
+    query.entity_terms = repository.resolve_query_entity_terms(
+        query_phrases=query_phrases,
+        limit=5,
+    )
+    return _apply_relation_enrichment(query)
+
+
+def _apply_relation_enrichment(query: PaperRetrievalQuery) -> PaperRetrievalQuery:
     if not query.relation_terms:
         query.relation_terms = derive_relation_terms(query.normalized_query)
     return query
+
+
+def _lexical_query_text(query: PaperRetrievalQuery) -> str:
+    if query.use_title_similarity:
+        return query.query
+    return query.normalized_query or query.query
 
 
 def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
@@ -127,6 +154,12 @@ def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
     ):
         selection_graph_paper_refs = [selected_graph_paper_ref]
 
+    retrieval_profile = determine_query_retrieval_profile(
+        request.query,
+        allow_terminal_title_punctuation=bool(selected_graph_paper_ref)
+        or request.selected_layer_key == "paper",
+    )
+
     return PaperRetrievalQuery(
         graph_release_id=request.graph_release_id,
         query=request.query,
@@ -140,10 +173,12 @@ def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         selection_graph_paper_refs=selection_graph_paper_refs,
         selected_cluster_id=request.selected_cluster_id,
         scope_mode=request.scope_mode,
+        retrieval_profile=retrieval_profile,
         evidence_intent=request.evidence_intent,
         k=request.k,
         rerank_topn=max(request.k, request.rerank_topn),
         use_lexical=request.use_lexical,
+        use_title_similarity=retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP,
         use_dense_query=request.use_dense_query,
         generate_answer=request.generate_answer,
     )
@@ -195,19 +230,46 @@ class RagService:
         else:
             self._warehouse_grounder = None
 
+    def warm(self) -> float:
+        """Warm expensive runtime adapters before serving timed requests."""
+
+        started = perf_counter()
+        initialize = getattr(self._query_embedder, "initialize", None)
+        if callable(initialize):
+            initialize()
+        warm_encode = getattr(self._query_embedder, "encode", None)
+        if callable(warm_encode):
+            warm_encode(_DENSE_QUERY_WARM_TEXT)
+        if isinstance(self._repository, PostgresRagRepository):
+            try:
+                self.search(
+                    RagSearchRequest(
+                        graph_release_id="current",
+                        query=_FULL_PATH_WARM_TEXT,
+                        k=3,
+                        rerank_topn=6,
+                        generate_answer=True,
+                        use_lexical=True,
+                        use_dense_query=True,
+                    )
+                )
+            except Exception:  # pragma: no cover - startup/runtime integration path
+                logger.exception("rag_runtime_full_path_warm_failed")
+        return (perf_counter() - started) * 1000
+
+    def query_embedder_status(self) -> dict[str, object]:
+        status = getattr(self._query_embedder, "runtime_status", None)
+        if callable(status):
+            return status()
+        return {"enabled": False, "ready": False, "backend": "unknown"}
+
     def search(self, request: RagSearchRequest) -> RagSearchResponse:
         started = perf_counter()
         release = self._repository.resolve_graph_release(request.graph_release_id)
         query = _build_query(request)
+        search_plan = build_search_plan(query)
         explicit_entity_terms = list(query.entity_terms)
-        query = _apply_query_enrichment(
-            repository=self._repository,
-            query=query,
-        )
-        entity_seed_terms = _entity_seed_terms_for_recall(
-            explicit_entity_terms=explicit_entity_terms,
-            resolved_entity_terms=query.entity_terms,
-        )
+        query = _apply_relation_enrichment(query)
         scope_corpus_ids = (
             self._repository.resolve_scope_corpus_ids(
                 graph_run_id=release.graph_run_id,
@@ -219,16 +281,54 @@ class RagService:
         selection_only_without_matches = (
             query.scope_mode == RetrievalScope.SELECTION_ONLY and not scope_corpus_ids
         )
+        lexical_query_text = _lexical_query_text(query)
 
-        lexical_hits = (
-            self._repository.search_papers(
+        chunk_lexical_hits: list[PaperEvidenceHit] = []
+        if (
+            query.use_lexical
+            and not selection_only_without_matches
+            and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+        ):
+            for chunk_query in chunk_search_queries(query):
+                chunk_lexical_hits = self._repository.search_chunk_papers(
+                    release.graph_run_id,
+                    chunk_query,
+                    limit=query.rerank_topn,
+                    scope_corpus_ids=scope_corpus_ids or None,
+                )
+                if chunk_lexical_hits:
+                    break
+        lexical_hits: list[PaperEvidenceHit] = []
+        should_run_paper_lexical = (
+            query.use_lexical
+            and not selection_only_without_matches
+            and (
+                search_plan.use_paper_lexical
+                or (
+                    search_plan.fallback_to_paper_lexical_on_empty_chunk
+                    and not chunk_lexical_hits
+                )
+            )
+        )
+        if should_run_paper_lexical:
+            lexical_hits = self._repository.search_papers(
                 release.graph_run_id,
-                query.query,
+                lexical_query_text,
                 limit=query.rerank_topn,
                 scope_corpus_ids=scope_corpus_ids or None,
+                use_title_similarity=query.use_title_similarity,
             )
-            if query.use_lexical and not selection_only_without_matches
-            else []
+        if not should_skip_runtime_entity_enrichment(
+            query=query,
+            lexical_hits=lexical_hits,
+        ):
+            query = _apply_query_enrichment(
+                repository=self._repository,
+                query=query,
+            )
+        entity_seed_terms = _entity_seed_terms_for_recall(
+            explicit_entity_terms=explicit_entity_terms,
+            resolved_entity_terms=query.entity_terms,
         )
         entity_seed_hits = (
             self._repository.search_entity_papers(
@@ -252,7 +352,12 @@ class RagService:
         )
         dense_query_embedding = (
             self._query_embedder.encode(query.query)
-            if query.use_dense_query and not selection_only_without_matches
+            if not selection_only_without_matches
+            and should_run_dense_query(
+                query=query,
+                search_plan=search_plan,
+                lexical_hits=lexical_hits,
+            )
             else None
         )
         dense_query_hits = (
@@ -278,7 +383,13 @@ class RagService:
                 limit=query.rerank_topn,
                 scope_corpus_ids=scope_corpus_ids or None,
             )
-            if selected_corpus_id is not None and not selection_only_without_matches
+            if not selection_only_without_matches
+            and should_fetch_semantic_neighbors(
+                query=query,
+                search_plan=search_plan,
+                selected_corpus_id=selected_corpus_id,
+                lexical_hits=lexical_hits,
+            )
             else []
         )
         semantic_seed_ids = [
@@ -302,8 +413,11 @@ class RagService:
             if semantic_seed_ids
             else []
         )
+        selected_context_hits: list[PaperEvidenceHit] = []
         initial_paper_hits = merge_candidate_papers(
             lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
+            selected_context_hits=selected_context_hits,
             dense_query_hits=dense_query_hits,
             entity_seed_hits=entity_seed_hits,
             relation_seed_hits=relation_seed_hits,
@@ -311,6 +425,37 @@ class RagService:
             semantic_seed_hits=semantic_seed_hits,
             semantic_neighbors=semantic_neighbors,
         )
+        if (
+            search_plan.preserve_selected_candidate
+            and selected_corpus_id is not None
+            and selected_corpus_id not in {hit.corpus_id for hit in initial_paper_hits}
+        ):
+            selected_context_hits = self._repository.fetch_known_scoped_papers_by_corpus_ids(
+                [selected_corpus_id]
+            )
+            for hit in selected_context_hits:
+                hit.selected_context_score = max(
+                    hit.selected_context_score,
+                    search_plan.selected_context_bonus,
+                )
+            initial_paper_hits = merge_candidate_papers(
+                lexical_hits=initial_paper_hits,
+                chunk_lexical_hits=[],
+                selected_context_hits=selected_context_hits,
+                dense_query_hits=[],
+                entity_seed_hits=[],
+                relation_seed_hits=[],
+                citation_seed_hits=[],
+                semantic_seed_hits=[],
+                semantic_neighbors=[],
+            )
+        elif selected_corpus_id is not None:
+            for hit in initial_paper_hits:
+                if hit.corpus_id == selected_corpus_id:
+                    hit.selected_context_score = max(
+                        hit.selected_context_score,
+                        search_plan.selected_context_bonus,
+                    )
         if not initial_paper_hits:
             return serialize_search_result(
                 RagSearchResult(
@@ -328,20 +473,37 @@ class RagService:
                 )
             )
         initial_corpus_ids = [hit.corpus_id for hit in initial_paper_hits]
-        citation_hits = self._repository.fetch_citation_contexts(
-            initial_corpus_ids,
-            query=query.query,
+        citation_context_ids = citation_context_candidate_ids(
+            paper_hits=initial_paper_hits,
+            retrieval_profile=query.retrieval_profile,
+        )
+        citation_hits = (
+            self._repository.fetch_citation_contexts(
+                citation_context_ids,
+                query=query.query,
+            )
+            if citation_context_ids
+            else {}
         )
         allowed_scope_ids = (
             set(scope_corpus_ids)
             if query.scope_mode == RetrievalScope.SELECTION_ONLY
             else None
         )
-        citation_seed_scores = derive_citation_seed_scores(
-            citation_hits=citation_hits,
-            existing_corpus_ids=set(initial_corpus_ids),
-            allowed_corpus_ids=allowed_scope_ids,
-            limit=query.rerank_topn,
+        expand_citation_frontier = should_expand_citation_frontier(
+            query_text=query.query,
+            lexical_hits=lexical_hits,
+            search_plan=search_plan,
+        )
+        citation_seed_scores = (
+            derive_citation_seed_scores(
+                citation_hits=citation_hits,
+                existing_corpus_ids=set(initial_corpus_ids),
+                allowed_corpus_ids=allowed_scope_ids,
+                limit=query.rerank_topn,
+            )
+            if expand_citation_frontier
+            else {}
         )
         citation_seed_hits = (
             self._repository.fetch_papers_by_corpus_ids(
@@ -358,12 +520,22 @@ class RagService:
             )
         paper_hits = merge_candidate_papers(
             lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
+            selected_context_hits=selected_context_hits,
+            dense_query_hits=dense_query_hits,
             entity_seed_hits=entity_seed_hits,
             relation_seed_hits=relation_seed_hits,
             citation_seed_hits=citation_seed_hits,
             semantic_seed_hits=semantic_seed_hits,
             semantic_neighbors=semantic_neighbors,
         )
+        if selected_corpus_id is not None:
+            for hit in paper_hits:
+                if hit.corpus_id == selected_corpus_id:
+                    hit.selected_context_score = max(
+                        hit.selected_context_score,
+                        search_plan.selected_context_bonus,
+                    )
 
         corpus_ids = [hit.corpus_id for hit in paper_hits]
         expanded_citation_hits = (
@@ -396,8 +568,10 @@ class RagService:
             relation_hits=relation_hits,
             evidence_intent=query.evidence_intent,
             query_text=query.query,
+            retrieval_profile=query.retrieval_profile,
             channel_rankings=build_channel_rankings(
                 lexical_hits=lexical_hits,
+                chunk_lexical_hits=chunk_lexical_hits,
                 dense_query_hits=dense_query_hits,
                 entity_seed_hits=entity_seed_hits,
                 relation_seed_hits=relation_seed_hits,
@@ -428,6 +602,8 @@ class RagService:
                 bundles,
                 evidence_intent=query.evidence_intent,
                 query_text=query.normalized_query,
+                query_profile=query.retrieval_profile,
+                selected_corpus_id=selected_corpus_id,
             )
             if query.generate_answer
             else None
@@ -454,8 +630,6 @@ class RagService:
                     else None
                 ),
             )
-            if grounded_answer and grounded_answer.answer_linked_corpus_ids:
-                answer_corpus_ids = grounded_answer.answer_linked_corpus_ids
 
         channels = [
             _channel_result(
@@ -468,6 +642,18 @@ class RagService:
                         reasons=["Matched title/abstract query terms"],
                     )
                     for paper in lexical_hits[: query.k]
+                ],
+            ),
+            _channel_result(
+                RetrievalChannel.CHUNK_LEXICAL,
+                [
+                    RetrievalChannelHit(
+                        corpus_id=paper.corpus_id,
+                        paper_id=paper.paper_id,
+                        score=paper.chunk_lexical_score,
+                        reasons=[paper.chunk_snippet or "Matched retrieval-default chunk text"],
+                    )
+                    for paper in chunk_lexical_hits[: query.k]
                 ],
             ),
             _channel_result(

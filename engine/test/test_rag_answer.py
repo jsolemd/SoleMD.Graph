@@ -5,6 +5,7 @@ from app.rag.answer import (
     select_answer_grounding_bundles,
 )
 from app.rag.models import EvidenceBundle, PaperEvidenceHit
+from app.rag.types import QueryRetrievalProfile, RetrievalChannel
 
 
 def _bundle(
@@ -16,6 +17,8 @@ def _bundle(
     snippet: str,
     lexical_score: float = 0.0,
     title_similarity: float = 0.0,
+    chunk_lexical_score: float = 0.0,
+    snippet_channel: RetrievalChannel | None = None,
 ) -> EvidenceBundle:
     return EvidenceBundle(
         paper=PaperEvidenceHit(
@@ -33,6 +36,7 @@ def _bundle(
             text_availability="abstract",
             is_open_access=False,
             lexical_score=lexical_score,
+            chunk_lexical_score=chunk_lexical_score,
             title_similarity=title_similarity,
             fused_score=score,
             rank=rank,
@@ -40,6 +44,7 @@ def _bundle(
         score=score,
         rank=rank,
         snippet=snippet,
+        snippet_channel=snippet_channel,
     )
 
 
@@ -118,3 +123,74 @@ def test_build_baseline_answer_payload_keeps_exact_title_anchor_bundle_in_answer
     assert payload.segment_corpus_ids == (None, 253024255, 5496257)
     assert payload.grounding_corpus_ids == (253024255, 5496257)
     assert query_title in payload.text
+
+
+def test_select_answer_grounding_bundles_prefers_chunk_supported_bundle_for_passage_queries():
+    bundles = [
+        _bundle(
+            corpus_id=101,
+            title="Topical review paper",
+            score=0.91,
+            rank=1,
+            snippet="Topical review snippet.",
+        ),
+        _bundle(
+            corpus_id=202,
+            title="Exact sentence match paper",
+            score=0.82,
+            rank=2,
+            snippet="Directly matched passage.",
+            chunk_lexical_score=0.97,
+            snippet_channel=RetrievalChannel.CHUNK_LEXICAL,
+        ),
+        _bundle(
+            corpus_id=303,
+            title="Third paper",
+            score=0.76,
+            rank=3,
+            snippet="Third snippet.",
+        ),
+    ]
+
+    selected = select_answer_grounding_bundles(
+        bundles,
+        max_items=2,
+        query_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in selected] == [202, 101]
+
+
+def test_select_answer_grounding_bundles_keeps_selected_paper_in_title_lookup_answers():
+    bundles = [
+        _bundle(
+            corpus_id=101,
+            title="High-ranked related review",
+            score=0.91,
+            rank=1,
+            snippet="Related review snippet.",
+        ),
+        _bundle(
+            corpus_id=202,
+            title="Selected paper title",
+            score=0.72,
+            rank=3,
+            snippet="Selected paper snippet.",
+        ),
+        _bundle(
+            corpus_id=303,
+            title="Third paper",
+            score=0.7,
+            rank=2,
+            snippet="Third snippet.",
+        ),
+    ]
+
+    selected = select_answer_grounding_bundles(
+        bundles,
+        max_items=2,
+        query_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        selected_corpus_id=202,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in selected] == [202, 101]

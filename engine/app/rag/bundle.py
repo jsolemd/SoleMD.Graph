@@ -25,18 +25,20 @@ from app.rag.types import (
 def build_preview_text(
     paper: PaperEvidenceHit,
     citation_hits: list[CitationContextHit],
-) -> str | None:
+) -> tuple[str | None, RetrievalChannel | None]:
     """Build a short preview string for the current baseline UI."""
 
+    if paper.chunk_snippet:
+        return paper.chunk_snippet, RetrievalChannel.CHUNK_LEXICAL
     if citation_hits:
-        return citation_hits[0].context_text
+        return citation_hits[0].context_text, RetrievalChannel.CITATION_CONTEXT
     if paper.tldr:
-        return paper.tldr.strip()[:320]
+        return paper.tldr.strip()[:320], None
     if paper.abstract:
-        return paper.abstract.strip()[:320]
+        return paper.abstract.strip()[:320], None
     if paper.title:
-        return paper.title
-    return None
+        return paper.title, None
+    return None, None
 
 
 def build_bundle_graph_signals(
@@ -131,16 +133,19 @@ def assemble_evidence_bundles(
         paper_citation_hits = citation_hits.get(paper.corpus_id, [])
         paper_entity_hits = entity_hits.get(paper.corpus_id, [])
         paper_relation_hits = relation_hits.get(paper.corpus_id, [])
+        snippet, snippet_channel = build_preview_text(paper, paper_citation_hits)
         bundles.append(
             EvidenceBundle(
                 paper=paper,
                 score=paper.fused_score,
                 rank=paper.rank,
-                snippet=build_preview_text(paper, paper_citation_hits),
+                snippet=snippet,
+                snippet_channel=snippet_channel,
                 matched_channels=paper.matched_channels,
                 match_reasons=paper.match_reasons,
                 rank_features={
                     "lexical": paper.lexical_score,
+                    "chunk_lexical": paper.chunk_lexical_score,
                     "dense_query": paper.dense_score,
                     "title_similarity": paper.title_similarity,
                     "title_anchor": paper.title_anchor_score,
@@ -152,6 +157,7 @@ def assemble_evidence_bundles(
                     "publication_type": paper.publication_type_score,
                     "evidence_quality": paper.evidence_quality_score,
                     "intent_affinity": paper.intent_score,
+                    "selected_context": paper.selected_context_score,
                 },
                 citation_contexts=paper_citation_hits,
                 entity_hits=paper_entity_hits,

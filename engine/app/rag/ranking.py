@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from app.rag.models import (
     CitationContextHit,
@@ -12,15 +13,33 @@ from app.rag.models import (
     RelationMatchedPaperHit,
 )
 from app.rag.query_enrichment import normalize_title_key
-from app.rag.types import EvidenceIntent, RetrievalChannel
+from app.rag.retrieval_policy import has_direct_retrieval_support
+from app.rag.types import EvidenceIntent, QueryRetrievalProfile, RetrievalChannel
 
 RRF_K = 60
-RRF_WEIGHTS: Mapping[RetrievalChannel, float] = {
+GENERAL_RRF_WEIGHTS: Mapping[RetrievalChannel, float] = {
     RetrievalChannel.LEXICAL: 1.0,
+    RetrievalChannel.CHUNK_LEXICAL: 1.04,
     RetrievalChannel.DENSE_QUERY: 0.98,
     RetrievalChannel.ENTITY_MATCH: 0.95,
     RetrievalChannel.RELATION_MATCH: 0.9,
     RetrievalChannel.SEMANTIC_NEIGHBOR: 0.85,
+}
+TITLE_RRF_WEIGHTS: Mapping[RetrievalChannel, float] = {
+    RetrievalChannel.LEXICAL: 1.12,
+    RetrievalChannel.CHUNK_LEXICAL: 0.92,
+    RetrievalChannel.DENSE_QUERY: 0.88,
+    RetrievalChannel.ENTITY_MATCH: 0.9,
+    RetrievalChannel.RELATION_MATCH: 0.86,
+    RetrievalChannel.SEMANTIC_NEIGHBOR: 0.72,
+}
+PASSAGE_RRF_WEIGHTS: Mapping[RetrievalChannel, float] = {
+    RetrievalChannel.LEXICAL: 0.94,
+    RetrievalChannel.CHUNK_LEXICAL: 1.18,
+    RetrievalChannel.DENSE_QUERY: 0.82,
+    RetrievalChannel.ENTITY_MATCH: 0.9,
+    RetrievalChannel.RELATION_MATCH: 0.88,
+    RetrievalChannel.SEMANTIC_NEIGHBOR: 0.68,
 }
 INTENT_WEIGHT = 0.14
 TITLE_ANCHOR_WEIGHT = 0.32
@@ -72,6 +91,73 @@ REFUTE_CUES = (
     "worse",
     "not effective",
     "lack of benefit",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class RankingScoreProfile:
+    channel_rrf_weights: Mapping[RetrievalChannel, float]
+    title_similarity_weight: float
+    chunk_lexical_weight: float
+    title_anchor_weight: float
+    citation_weight: float
+    citation_intent_weight: float
+    entity_weight: float
+    relation_weight: float
+    dense_weight: float
+    publication_type_weight: float
+    evidence_quality_weight: float
+    intent_weight: float
+    selected_context_weight: float = 0.0
+    direct_match_bonus_weight: float = 0.0
+    indirect_only_penalty_weight: float = 0.0
+
+
+GENERAL_RANKING_PROFILE = RankingScoreProfile(
+    channel_rrf_weights=GENERAL_RRF_WEIGHTS,
+    title_similarity_weight=0.05,
+    chunk_lexical_weight=0.18,
+    title_anchor_weight=TITLE_ANCHOR_WEIGHT,
+    citation_weight=0.18,
+    citation_intent_weight=CITATION_INTENT_WEIGHT,
+    entity_weight=0.24,
+    relation_weight=0.16,
+    dense_weight=0.16,
+    publication_type_weight=PUBLICATION_TYPE_WEIGHT,
+    evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
+    intent_weight=INTENT_WEIGHT,
+)
+TITLE_RANKING_PROFILE = RankingScoreProfile(
+    channel_rrf_weights=TITLE_RRF_WEIGHTS,
+    title_similarity_weight=0.09,
+    chunk_lexical_weight=0.12,
+    title_anchor_weight=0.46,
+    citation_weight=0.1,
+    citation_intent_weight=0.05,
+    entity_weight=0.18,
+    relation_weight=0.12,
+    dense_weight=0.1,
+    publication_type_weight=PUBLICATION_TYPE_WEIGHT,
+    evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
+    intent_weight=INTENT_WEIGHT,
+    selected_context_weight=0.24,
+)
+PASSAGE_RANKING_PROFILE = RankingScoreProfile(
+    channel_rrf_weights=PASSAGE_RRF_WEIGHTS,
+    title_similarity_weight=0.02,
+    chunk_lexical_weight=0.34,
+    title_anchor_weight=0.08,
+    citation_weight=0.06,
+    citation_intent_weight=0.04,
+    entity_weight=0.2,
+    relation_weight=0.14,
+    dense_weight=0.08,
+    publication_type_weight=PUBLICATION_TYPE_WEIGHT,
+    evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
+    intent_weight=INTENT_WEIGHT,
+    selected_context_weight=0.1,
+    direct_match_bonus_weight=0.18,
+    indirect_only_penalty_weight=0.14,
 )
 
 
@@ -179,6 +265,34 @@ def _title_anchor_affinity(*, query_text: str | None, paper: PaperEvidenceHit) -
     return 1.0
 
 
+def _ranking_profile(
+    retrieval_profile: QueryRetrievalProfile,
+) -> RankingScoreProfile:
+    if retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
+        return TITLE_RANKING_PROFILE
+    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return PASSAGE_RANKING_PROFILE
+    return GENERAL_RANKING_PROFILE
+
+
+def _direct_match_adjustment(
+    *,
+    paper: PaperEvidenceHit,
+    retrieval_profile: QueryRetrievalProfile,
+    score_profile: RankingScoreProfile,
+) -> float:
+    if retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return 0.0
+
+    direct_match_score = max(paper.chunk_lexical_score, paper.lexical_score)
+    if direct_match_score > 0:
+        return direct_match_score * score_profile.direct_match_bonus_weight
+
+    if paper.dense_score > 0 or paper.citation_boost > 0:
+        return -score_profile.indirect_only_penalty_weight
+    return 0.0
+
+
 def rank_paper_hits(
     paper_hits: list[PaperEvidenceHit],
     *,
@@ -188,12 +302,18 @@ def rank_paper_hits(
     evidence_intent: EvidenceIntent | None = None,
     channel_rankings: Mapping[RetrievalChannel, Mapping[int, int]] | None = None,
     query_text: str | None = None,
+    retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
 ) -> list[PaperEvidenceHit]:
     """Fuse baseline channel signals into a final paper rank."""
 
     channel_rankings = channel_rankings or {}
+    score_profile = _ranking_profile(retrieval_profile)
     ranked: list[PaperEvidenceHit] = []
     for hit in paper_hits:
+        direct_support = has_direct_retrieval_support(
+            paper=hit,
+            retrieval_profile=retrieval_profile,
+        )
         hit.citation_boost = max(
             hit.citation_boost,
             max(
@@ -231,6 +351,9 @@ def rank_paper_hits(
         )
 
         lexical_rank = channel_rankings.get(RetrievalChannel.LEXICAL, {}).get(hit.corpus_id)
+        chunk_lexical_rank = channel_rankings.get(
+            RetrievalChannel.CHUNK_LEXICAL, {}
+        ).get(hit.corpus_id)
         dense_rank = channel_rankings.get(RetrievalChannel.DENSE_QUERY, {}).get(hit.corpus_id)
         entity_rank = channel_rankings.get(RetrievalChannel.ENTITY_MATCH, {}).get(
             hit.corpus_id
@@ -244,37 +367,59 @@ def rank_paper_hits(
         channel_fusion_score = (
             _rrf_score(
                 lexical_rank,
-                weight=RRF_WEIGHTS[RetrievalChannel.LEXICAL],
+                weight=score_profile.channel_rrf_weights[RetrievalChannel.LEXICAL],
+            )
+            + _rrf_score(
+                chunk_lexical_rank,
+                weight=score_profile.channel_rrf_weights[
+                    RetrievalChannel.CHUNK_LEXICAL
+                ],
             )
             + _rrf_score(
                 dense_rank,
-                weight=RRF_WEIGHTS[RetrievalChannel.DENSE_QUERY],
+                weight=score_profile.channel_rrf_weights[RetrievalChannel.DENSE_QUERY],
             )
             + _rrf_score(
                 entity_rank,
-                weight=RRF_WEIGHTS[RetrievalChannel.ENTITY_MATCH],
+                weight=score_profile.channel_rrf_weights[RetrievalChannel.ENTITY_MATCH],
             )
             + _rrf_score(
                 relation_rank,
-                weight=RRF_WEIGHTS[RetrievalChannel.RELATION_MATCH],
+                weight=score_profile.channel_rrf_weights[
+                    RetrievalChannel.RELATION_MATCH
+                ],
             )
             + _rrf_score(
                 semantic_rank,
-                weight=RRF_WEIGHTS[RetrievalChannel.SEMANTIC_NEIGHBOR],
+                weight=score_profile.channel_rrf_weights[
+                    RetrievalChannel.SEMANTIC_NEIGHBOR
+                ],
             )
         )
+        citation_score = hit.citation_boost
+        dense_score = hit.dense_score
+        if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP and not direct_support:
+            citation_score = 0.0
+            dense_score *= 0.1
         hit.fused_score = (
             channel_fusion_score
-            + (hit.title_similarity * 0.05)
-            + (hit.title_anchor_score * TITLE_ANCHOR_WEIGHT)
-            + (hit.citation_boost * 0.18)
-            + (hit.citation_intent_score * CITATION_INTENT_WEIGHT)
-            + (hit.entity_score * 0.24)
-            + (hit.relation_score * 0.16)
-            + (hit.dense_score * 0.16)
-            + (hit.publication_type_score * PUBLICATION_TYPE_WEIGHT)
-            + (hit.evidence_quality_score * EVIDENCE_QUALITY_WEIGHT)
-            + (hit.intent_score * INTENT_WEIGHT)
+            + (hit.title_similarity * score_profile.title_similarity_weight)
+            + (hit.chunk_lexical_score * score_profile.chunk_lexical_weight)
+            + (hit.title_anchor_score * score_profile.title_anchor_weight)
+            + (hit.selected_context_score * score_profile.selected_context_weight)
+            + (citation_score * score_profile.citation_weight)
+            + (hit.citation_intent_score * score_profile.citation_intent_weight)
+            + (hit.entity_score * score_profile.entity_weight)
+            + (hit.relation_score * score_profile.relation_weight)
+            + (dense_score * score_profile.dense_weight)
+            + (hit.publication_type_score * score_profile.publication_type_weight)
+            + (hit.evidence_quality_score * score_profile.evidence_quality_weight)
+            + (hit.intent_score * score_profile.intent_weight)
+            + _direct_match_adjustment(
+                paper=hit,
+                retrieval_profile=retrieval_profile,
+                score_profile=score_profile,
+            )
         )
 
         channels: list[RetrievalChannel] = []
@@ -282,6 +427,9 @@ def rank_paper_hits(
         if lexical_rank is not None or hit.lexical_score > 0:
             channels.append(RetrievalChannel.LEXICAL)
             reasons.append("Matched title/abstract query terms")
+        if chunk_lexical_rank is not None or hit.chunk_lexical_score > 0:
+            channels.append(RetrievalChannel.CHUNK_LEXICAL)
+            reasons.append("Matched retrieval-default chunk text")
         if dense_rank is not None or hit.dense_score > 0:
             channels.append(RetrievalChannel.DENSE_QUERY)
             reasons.append("Matched SPECTER2 dense-query similarity")
@@ -299,6 +447,8 @@ def rank_paper_hits(
             reasons.append("Matched citation context")
         if hit.title_anchor_score > 0:
             reasons.append("Exact title anchor for the query")
+        if hit.selected_context_score > 0:
+            reasons.append("Preserved explicitly selected paper context")
         if hit.citation_intent_score > 0 and matched_citation_intents:
             reasons.append(
                 "Matched citation intent context"
@@ -330,16 +480,47 @@ def rank_paper_hits(
         hit.match_reasons = reasons or ["Matched baseline paper retrieval"]
         ranked.append(hit)
 
-    ranked.sort(
-        key=lambda item: (
-            item.fused_score,
-            item.semantic_score,
-            item.lexical_score,
-            item.citation_count or 0,
-            item.corpus_id,
-        ),
-        reverse=True,
-    )
+    ranked.sort(key=lambda item: _rank_sort_key(item, retrieval_profile), reverse=True)
     for index, hit in enumerate(ranked, start=1):
         hit.rank = index
     return ranked
+
+
+def _rank_sort_key(
+    item: PaperEvidenceHit,
+    retrieval_profile: QueryRetrievalProfile,
+) -> tuple[float, float, float, float, float, int, int]:
+    if retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
+        return (
+            item.title_anchor_score,
+            item.selected_context_score,
+            item.fused_score,
+            item.lexical_score,
+            item.title_similarity,
+            item.citation_count or 0,
+            item.corpus_id,
+        )
+    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return (
+            1.0
+            if has_direct_retrieval_support(
+                paper=item,
+                retrieval_profile=retrieval_profile,
+            )
+            else 0.0,
+            item.fused_score,
+            item.chunk_lexical_score,
+            item.lexical_score,
+            item.selected_context_score,
+            item.citation_count or 0,
+            item.corpus_id,
+        )
+    return (
+        item.fused_score,
+        item.chunk_lexical_score,
+        item.semantic_score,
+        item.lexical_score,
+        item.selected_context_score,
+        item.citation_count or 0,
+        item.corpus_id,
+    )

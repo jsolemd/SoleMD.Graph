@@ -18,6 +18,7 @@ from app.rag.types import RetrievalChannel
 def build_channel_rankings(
     *,
     lexical_hits: list[PaperEvidenceHit],
+    chunk_lexical_hits: list[PaperEvidenceHit],
     entity_seed_hits: list[PaperEvidenceHit],
     relation_seed_hits: list[PaperEvidenceHit],
     semantic_neighbors: list[GraphSignal],
@@ -27,6 +28,10 @@ def build_channel_rankings(
     if lexical_hits:
         rankings[RetrievalChannel.LEXICAL] = {
             hit.corpus_id: index for index, hit in enumerate(lexical_hits, start=1)
+        }
+    if chunk_lexical_hits:
+        rankings[RetrievalChannel.CHUNK_LEXICAL] = {
+            hit.corpus_id: index for index, hit in enumerate(chunk_lexical_hits, start=1)
         }
     if entity_seed_hits:
         rankings[RetrievalChannel.ENTITY_MATCH] = {
@@ -50,6 +55,8 @@ def build_channel_rankings(
 def merge_candidate_papers(
     *,
     lexical_hits: list[PaperEvidenceHit],
+    chunk_lexical_hits: list[PaperEvidenceHit],
+    selected_context_hits: list[PaperEvidenceHit],
     entity_seed_hits: list[PaperEvidenceHit],
     relation_seed_hits: list[PaperEvidenceHit],
     citation_seed_hits: list[PaperEvidenceHit],
@@ -58,6 +65,32 @@ def merge_candidate_papers(
     dense_query_hits: list[PaperEvidenceHit] | None = None,
 ) -> list[PaperEvidenceHit]:
     by_corpus_id: dict[int, PaperEvidenceHit] = {hit.corpus_id: hit for hit in lexical_hits}
+
+    for hit in chunk_lexical_hits:
+        existing = by_corpus_id.get(hit.corpus_id)
+        if existing is None:
+            by_corpus_id[hit.corpus_id] = hit
+            continue
+        existing.chunk_lexical_score = max(
+            existing.chunk_lexical_score,
+            hit.chunk_lexical_score,
+        )
+        if hit.chunk_snippet and (
+            not existing.chunk_snippet
+            or hit.chunk_lexical_score >= existing.chunk_lexical_score
+        ):
+            existing.chunk_snippet = hit.chunk_snippet
+            existing.chunk_ordinal = hit.chunk_ordinal
+
+    for hit in selected_context_hits:
+        existing = by_corpus_id.get(hit.corpus_id)
+        if existing is None:
+            by_corpus_id[hit.corpus_id] = hit
+            continue
+        existing.selected_context_score = max(
+            existing.selected_context_score,
+            hit.selected_context_score,
+        )
 
     for hit in dense_query_hits or []:
         existing = by_corpus_id.get(hit.corpus_id)

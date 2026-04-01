@@ -27,6 +27,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--rerank-topn", type=int, default=10)
     parser.add_argument(
+        "--no-lexical",
+        action="store_true",
+        help="Disable lexical retrieval during the eval run.",
+    )
+    parser.add_argument(
+        "--no-dense-query",
+        action="store_true",
+        help="Disable dense-query retrieval during the eval run.",
+    )
+    parser.add_argument(
         "--query-family",
         dest="query_families",
         action="append",
@@ -59,9 +69,11 @@ def main(argv: list[str] | None = None) -> int:
             seed=args.seed,
             k=args.k,
             rerank_topn=args.rerank_topn,
+            use_lexical=not args.no_lexical,
+            use_dense_query=not args.no_dense_query,
             corpus_ids=args.corpus_ids,
             query_families=query_families,
-            connect=db.connect,
+            connect=db.pooled,
         )
         if args.report_path is not None:
             args.report_path.parent.mkdir(parents=True, exist_ok=True)

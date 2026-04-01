@@ -12,6 +12,7 @@ from app.rag.models import (
     PaperReferenceRecord,
     RelationMatchedPaperHit,
 )
+from app.rag.query_embedding import NoopQueryEmbedder, RagQueryEmbedder
 from app.rag.schemas import RagSearchRequest
 from app.rag.service import RagService
 from app.rag.serving_contract import CitedSpanPacket
@@ -65,11 +66,13 @@ class FakeRepository:
         *,
         limit: int,
         scope_corpus_ids=None,
+        use_title_similarity=True,
     ) -> list[PaperEvidenceHit]:
         assert graph_run_id == "run-1"
         assert query == "melatonin delirium"
         assert limit == 6
         assert scope_corpus_ids in (None, [11, 22])
+        assert use_title_similarity is True
         return [
             PaperEvidenceHit(
                 corpus_id=11,
@@ -110,6 +113,19 @@ class FakeRepository:
                 title_similarity=0.1,
             ),
         ]
+
+    def search_chunk_papers(
+        self,
+        graph_run_id: str,
+        query: str,
+        *,
+        limit: int,
+        scope_corpus_ids=None,
+    ) -> list[PaperEvidenceHit]:
+        assert graph_run_id == "run-1"
+        assert limit == 6
+        assert scope_corpus_ids in (None, [11, 22])
+        return []
 
     def search_entity_papers(
         self,
@@ -271,8 +287,798 @@ class FakeRepository:
         ]
 
 
+class FakeDenseQueryEmbedder:
+    def encode(self, text: str) -> list[float] | None:
+        assert text == "melatonin delirium"
+        return [0.1, 0.2, 0.3]
+
+
+class FakeWarmableQueryEmbedder:
+    def __init__(self):
+        self.initialized = 0
+
+    def initialize(self) -> bool:
+        self.initialized += 1
+        return True
+
+    def encode(self, text: str) -> list[float] | None:
+        return None
+
+    def runtime_status(self) -> dict[str, object]:
+        return {
+            "enabled": True,
+            "ready": self.initialized > 0,
+            "backend": "fake",
+        }
+
+
+def _service(
+    repository: object,
+    *,
+    query_embedder: RagQueryEmbedder | None = None,
+) -> RagService:
+    return RagService(
+        repository=repository,
+        query_embedder=query_embedder or NoopQueryEmbedder(),
+    )
+
+
+def test_rag_service_warm_and_status_delegate_to_query_embedder():
+    embedder = FakeWarmableQueryEmbedder()
+    service = _service(FakeRepository(), query_embedder=embedder)
+
+    duration_ms = service.warm()
+
+    assert duration_ms >= 0.0
+    assert embedder.initialized == 1
+    assert service.query_embedder_status() == {
+        "enabled": True,
+        "ready": True,
+        "backend": "fake",
+    }
+
+
+def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
+    class ExactTitleRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+            raise AssertionError("entity resolution should be skipped for exact title anchors")
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=11,
+                    paper_id="paper-11",
+                    semantic_scholar_paper_id="paper-11",
+                    title=(
+                        "Invasive pulmonary aspergillosis in patients with "
+                        "decompensated cirrhosis case series"
+                    ),
+                    journal_name="JAMA",
+                    year=2024,
+                    doi="10.1/example",
+                    pmid=111,
+                    pmcid=None,
+                    abstract="Case series abstract.",
+                    tldr="Case series abstract.",
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=10,
+                    reference_count=22,
+                    lexical_score=2.0,
+                    title_similarity=1.0,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [11]
+            return {}
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            raise AssertionError("exact title anchors should not expand the citation frontier")
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("exact title anchors should not run dense retrieval")
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert entity_terms == []
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    class FailingDenseQueryEmbedder:
+        def encode(self, text: str) -> list[float] | None:
+            raise AssertionError("exact title anchors should not encode dense queries")
+
+    service = _service(
+        ExactTitleRepository(),
+        query_embedder=FailingDenseQueryEmbedder(),
+    )
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=(
+                "Invasive pulmonary aspergillosis in patients with "
+                "decompensated cirrhosis: case series"
+            ),
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [11]
+
+
+def test_rag_service_disables_title_similarity_for_sentence_queries():
+    class SentenceQueryRepository(FakeRepository):
+        def __init__(self):
+            self.chunk_queries: list[str] = []
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query == "this is a representative discussion sentence"
+            assert limit == 6
+            assert scope_corpus_ids is None
+            assert use_title_similarity is False
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert limit == 6
+            assert scope_corpus_ids is None
+            self.chunk_queries.append(query)
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+    repository = SentenceQueryRepository()
+    service = _service(repository)
+    request = RagSearchRequest(
+        graph_release_id="release-1",
+        query="This is a representative discussion sentence.",
+        evidence_intent="support",
+        k=3,
+        rerank_topn=6,
+        generate_answer=False,
+    )
+
+    response = service.search(request)
+
+    assert response.evidence_bundles == []
+    assert repository.chunk_queries[0] == "this is a representative discussion sentence"
+
+
+def test_rag_service_does_not_expand_citation_frontier_for_passage_queries():
+    class PassageRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError(
+                "passage lookups should not hit paper lexical when chunk hits exist"
+            )
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=11,
+                    paper_id="paper-11",
+                    semantic_scholar_paper_id="paper-11",
+                    title="Exact matched study",
+                    journal_name="JAMA",
+                    year=2024,
+                    doi=None,
+                    pmid=111,
+                    pmcid=None,
+                    abstract="Exact matched study.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=4,
+                    reference_count=9,
+                    chunk_lexical_score=0.98,
+                    chunk_snippet="Directly matched passage.",
+                )
+            ]
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=77,
+                    paper_id="paper-77",
+                    semantic_scholar_paper_id="paper-77",
+                    title="Indirect dense neighbor",
+                    journal_name="BMJ",
+                    year=2023,
+                    doi=None,
+                    pmid=777,
+                    pmcid=None,
+                    abstract="Indirect dense-only match.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=False,
+                    citation_count=8,
+                    reference_count=12,
+                    dense_score=0.96,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [11]
+            return {
+                11: [
+                    CitationContextHit(
+                        corpus_id=11,
+                        citation_id=9001,
+                        direction=CitationDirection.INCOMING,
+                        neighbor_corpus_id=77,
+                        neighbor_paper_id="paper-77",
+                        context_text="Matched citation context.",
+                        intents=["Background"],
+                        score=1.6,
+                    )
+                ]
+            }
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            raise AssertionError("passage lookups should not expand the citation frontier")
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    class PassageDenseQueryEmbedder:
+        def encode(self, text: str) -> list[float] | None:
+            assert (
+                text
+                == "This representative discussion sentence should use chunk lexical retrieval."
+            )
+            return [0.1, 0.2, 0.3]
+
+    service = _service(PassageRepository(), query_embedder=PassageDenseQueryEmbedder())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="This representative discussion sentence should use chunk lexical retrieval.",
+            k=2,
+            rerank_topn=4,
+            generate_answer=True,
+        )
+    )
+
+    assert response.evidence_bundles[0].paper.corpus_id == 11
+    assert response.answer_corpus_ids[0] == 11
+
+
+def test_rag_service_uses_phrase_fallback_when_full_sentence_chunk_search_misses():
+    class PassageFallbackRepository(FakeRepository):
+        def __init__(self):
+            self.chunk_queries: list[str] = []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError(
+                "passage fallback should stay on chunk lexical when a phrase match exists"
+            )
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            self.chunk_queries.append(query)
+            if (
+                query
+                == "this representative discussion sentence should use chunk lexical retrieval"
+            ):
+                return []
+            if query == "this representative discussion sentence":
+                return [
+                    PaperEvidenceHit(
+                        corpus_id=202,
+                        paper_id="paper-202",
+                        semantic_scholar_paper_id="paper-202",
+                        title="Fallback phrase match",
+                        journal_name="Study Journal",
+                        year=2024,
+                        doi=None,
+                        pmid=None,
+                        pmcid=None,
+                        abstract="Recovered from phrase fallback.",
+                        tldr=None,
+                        text_availability="fulltext",
+                        is_open_access=True,
+                        chunk_lexical_score=0.91,
+                        chunk_snippet="Recovered chunk snippet.",
+                    )
+                ]
+            raise AssertionError(f"unexpected chunk query {query}")
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [202]
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = PassageFallbackRepository()
+    service = _service(repository, query_embedder=NoopQueryEmbedder())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="This representative discussion sentence should use chunk lexical retrieval.",
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        )
+    )
+
+    assert repository.chunk_queries[:2] == [
+        "this representative discussion sentence should use chunk lexical retrieval",
+        "this representative discussion sentence",
+    ]
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [202]
+
+
+def test_rag_service_preserves_selected_paper_for_title_lookup_queries():
+    class SelectedTitleRepository(FakeRepository):
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            assert use_title_similarity is True
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            if corpus_ids == [33]:
+                return [
+                    PaperEvidenceHit(
+                        corpus_id=33,
+                        paper_id="paper-33",
+                        semantic_scholar_paper_id="paper-33",
+                        title="Related dense paper",
+                        journal_name="BMJ",
+                        year=2024,
+                        doi=None,
+                        pmid=333,
+                        pmcid=None,
+                        abstract="Related dense paper.",
+                        tldr=None,
+                        text_availability="abstract",
+                        is_open_access=False,
+                        citation_count=9,
+                        reference_count=20,
+                        dense_score=0.98,
+                    )
+                ]
+            if corpus_ids == [11]:
+                return [
+                    PaperEvidenceHit(
+                        corpus_id=11,
+                        paper_id="paper-11",
+                        semantic_scholar_paper_id="paper-11",
+                        title="Selected paper title",
+                        journal_name="JAMA",
+                        year=2024,
+                        doi=None,
+                        pmid=111,
+                        pmcid=None,
+                        abstract="Selected paper abstract.",
+                        tldr=None,
+                        text_availability="fulltext",
+                        is_open_access=True,
+                        citation_count=3,
+                        reference_count=8,
+                    )
+                ]
+            raise AssertionError(f"unexpected corpus_ids {corpus_ids}")
+
+        def fetch_semantic_neighbors(
+            self,
+            *,
+            graph_run_id: str,
+            selected_corpus_id: int,
+            limit: int = 6,
+            scope_corpus_ids=None,
+        ):
+            return [
+                GraphSignal(
+                    corpus_id=33,
+                    paper_id="paper-33",
+                    signal_kind=GraphSignalKind.SEMANTIC_NEIGHBOR,
+                    channel=RetrievalChannel.SEMANTIC_NEIGHBOR,
+                    score=0.93,
+                    rank=1,
+                    reason="Embedding proximity to the selected paper",
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert set(corpus_ids) == {11, 33}
+            return {
+                33: [
+                    CitationContextHit(
+                        corpus_id=33,
+                        citation_id=9002,
+                        direction=CitationDirection.INCOMING,
+                        neighbor_corpus_id=44,
+                        neighbor_paper_id="paper-44",
+                        context_text="Related citation context.",
+                        intents=["Background"],
+                        score=1.5,
+                    )
+                ]
+            }
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            raise AssertionError("selected title lookups should not expand citation frontier")
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    service = _service(SelectedTitleRepository())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="Selected paper title.",
+            selected_layer_key="paper",
+            selected_node_id="seed-paper",
+            k=2,
+            rerank_topn=4,
+            generate_answer=True,
+        )
+    )
+
+    assert response.evidence_bundles[0].paper.corpus_id == 11
+    assert response.answer_corpus_ids == [11, 33]
+
+
+def test_rag_service_allows_terminal_punctuation_for_selected_title_queries():
+    class SelectedTitleRepository(FakeRepository):
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query == (
+                "Trauma deepens trauma: the consequences of recurrent combat stress reaction."
+            )
+            assert use_title_similarity is True
+            return [
+                PaperEvidenceHit(
+                    corpus_id=20333404,
+                    paper_id="paper-20333404",
+                    semantic_scholar_paper_id="paper-20333404",
+                    title=(
+                        "Trauma deepens trauma: the consequences of recurrent combat stress "
+                        "reaction."
+                    ),
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=None,
+                    pmcid=None,
+                    abstract="Selected-paper title match.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    lexical_score=1.5,
+                    title_similarity=1.0,
+                )
+            ]
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("title lookup should not route through chunk lexical search")
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return 20333404
+
+        def fetch_semantic_neighbors(
+            self,
+            *,
+            graph_run_id: str,
+            selected_corpus_id: int,
+            limit: int = 6,
+            scope_corpus_ids=None,
+        ):
+            raise AssertionError(
+                "selected exact-title lookups should not expand semantic neighbors"
+            )
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [20333404]
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    service = _service(SelectedTitleRepository())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="Trauma deepens trauma: the consequences of recurrent combat stress reaction.",
+            selected_layer_key="paper",
+            selected_node_id="paper:20333404",
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [20333404]
+
+
+def test_rag_service_skips_citation_frontier_expansion_for_passage_queries():
+    class PassagePrecisionRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError(
+                "passage queries should not hit paper lexical when chunk hits exist"
+            )
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=202,
+                    paper_id="paper-202",
+                    semantic_scholar_paper_id="paper-202",
+                    title="Exact matched study",
+                    journal_name="Study Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=None,
+                    pmcid=None,
+                    abstract="Exact matched sentence abstract.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    chunk_lexical_score=0.97,
+                    chunk_snippet="Directly matched passage.",
+                    chunk_ordinal=3,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [202]
+            return {}
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            raise AssertionError("passage queries should not expand the citation frontier")
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    service = _service(PassagePrecisionRepository())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=(
+                "This is a representative discussion sentence with a concluding period."
+            ),
+            k=2,
+            rerank_topn=4,
+            generate_answer=True,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [202]
+    assert response.answer_corpus_ids[0] == 202
+
+
 def test_rag_service_returns_bundles_graph_signals_and_answer():
-    service = RagService(repository=FakeRepository())
+    service = _service(FakeRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin delirium",
@@ -308,12 +1114,23 @@ def test_rag_service_returns_bundles_graph_signals_and_answer():
     assert any(bundle.paper.corpus_id == 33 for bundle in response.evidence_bundles)
     assert any(signal.signal_kind == "semantic_neighbor" for signal in response.graph_signals)
     assert any(signal.signal_kind == "answer_support" for signal in response.graph_signals)
-    assert response.retrieval_channels[1].channel == "entity_match"
-    assert response.retrieval_channels[0].channel == "lexical"
+    assert [channel.channel for channel in response.retrieval_channels] == [
+        "lexical",
+        "chunk_lexical",
+        "dense_query",
+        "entity_match",
+        "relation_match",
+        "citation_context",
+        "semantic_neighbor",
+    ]
+    dense_channel = next(
+        channel for channel in response.retrieval_channels if channel.channel == "dense_query"
+    )
+    assert dense_channel.hits == []
 
 
 def test_rag_service_marks_refute_intent_in_answer_and_graph_signals():
-    service = RagService(repository=FakeRepository())
+    service = _service(FakeRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin delirium",
@@ -350,6 +1167,7 @@ def test_rag_service_can_scope_to_selected_graph_papers_only():
             *,
             limit: int,
             scope_corpus_ids=None,
+            use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             assert scope_corpus_ids == [11, 22]
             return super().search_papers(
@@ -357,6 +1175,7 @@ def test_rag_service_can_scope_to_selected_graph_papers_only():
                 query,
                 limit=limit,
                 scope_corpus_ids=scope_corpus_ids,
+                use_title_similarity=use_title_similarity,
             )
 
         def fetch_semantic_neighbors(
@@ -398,7 +1217,7 @@ def test_rag_service_can_scope_to_selected_graph_papers_only():
                 ]
             }
 
-    service = RagService(repository=SelectionScopeRepository())
+    service = _service(SelectionScopeRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin delirium",
@@ -471,7 +1290,7 @@ def test_rag_service_skips_semantic_candidate_expansion_without_selected_paper()
                 ]
             }
 
-    service = RagService(repository=NoSelectionRepository())
+    service = _service(NoSelectionRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin delirium",
@@ -511,11 +1330,13 @@ def test_rag_service_returns_early_when_no_candidates_are_found():
             *,
             limit: int,
             scope_corpus_ids=None,
+            use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             assert graph_run_id == "run-1"
             assert query == "melatonin delirium"
             assert limit == 6
             assert scope_corpus_ids is None
+            assert use_title_similarity is True
             return []
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
@@ -533,7 +1354,7 @@ def test_rag_service_returns_early_when_no_candidates_are_found():
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
             raise AssertionError("asset lookup should not run without candidates")
 
-    service = RagService(repository=EmptyCandidateRepository())
+    service = _service(EmptyCandidateRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin delirium",
@@ -554,6 +1375,8 @@ def test_rag_service_returns_early_when_no_candidates_are_found():
     assert response.graph_signals == []
     assert [channel.channel for channel in response.retrieval_channels] == [
         "lexical",
+        "chunk_lexical",
+        "dense_query",
         "entity_match",
         "relation_match",
         "citation_context",
@@ -581,6 +1404,7 @@ def test_rag_service_can_seed_candidates_from_entity_normalization():
             *,
             limit: int,
             scope_corpus_ids=None,
+            use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             return []
 
@@ -652,7 +1476,7 @@ def test_rag_service_can_seed_candidates_from_entity_normalization():
             assert corpus_ids == [44]
             return {}
 
-    service = RagService(repository=EntitySeedRepository())
+    service = _service(EntitySeedRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin delirium",
@@ -696,6 +1520,7 @@ def test_rag_service_can_seed_candidates_from_relation_normalization():
             *,
             limit: int,
             scope_corpus_ids=None,
+            use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             return []
 
@@ -776,7 +1601,7 @@ def test_rag_service_can_seed_candidates_from_relation_normalization():
             assert corpus_ids == [55]
             return {}
 
-    service = RagService(repository=RelationSeedRepository())
+    service = _service(RelationSeedRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin positive correlation",
@@ -820,6 +1645,7 @@ def test_rag_service_can_expand_candidates_from_citation_neighbors():
             *,
             limit: int,
             scope_corpus_ids=None,
+            use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             return [
                 PaperEvidenceHit(
@@ -951,7 +1777,7 @@ def test_rag_service_can_expand_candidates_from_citation_neighbors():
             assert corpus_ids == [11, 22]
             return {}
 
-    service = RagService(repository=CitationSeedRepository())
+    service = _service(CitationSeedRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin delirium",
@@ -1005,11 +1831,13 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
             *,
             limit: int,
             scope_corpus_ids=None,
+            use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             assert graph_run_id == "run-1"
             assert query == "melatonin positive correlate delirium"
             assert limit == 6
             assert scope_corpus_ids is None
+            assert use_title_similarity is True
             return [
                 PaperEvidenceHit(
                     corpus_id=11,
@@ -1051,6 +1879,20 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
                 ),
             ]
 
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query == "melatonin positive correlate delirium"
+            assert limit == 6
+            assert scope_corpus_ids is None
+            return []
+
         def search_entity_papers(
             self,
             graph_run_id: str,
@@ -1074,7 +1916,9 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
             assert limit == 6
             return []
 
-        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+        def fetch_citation_contexts(
+            self, corpus_ids, *, query: str, limit_per_paper: int = 3
+        ):
             assert corpus_ids == [11, 22]
             assert query == "melatonin positive correlate delirium"
             return {}
@@ -1089,7 +1933,7 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
             assert relation_terms == ["positive_correlate"]
             return {}
 
-    service = RagService(repository=QueryEnrichmentRepository())
+    service = _service(QueryEnrichmentRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="melatonin positive correlate delirium",
@@ -1136,6 +1980,7 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
             *,
             limit: int,
             scope_corpus_ids=None,
+            use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             return []
 
@@ -1159,7 +2004,7 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
             assert entity_terms == ["MESH:D008550"]
             return {}
 
-    service = RagService(repository=QueryEnrichmentRepository())
+    service = _service(QueryEnrichmentRepository())
     request = RagSearchRequest(
         graph_release_id="release-1",
         query="MESH:D008550 delirium",
@@ -1211,6 +2056,7 @@ def test_rag_service_can_attach_warehouse_grounded_answer_when_available():
     service = RagService(
         repository=FakeRepository(),
         warehouse_grounder=fake_grounder,
+        query_embedder=NoopQueryEmbedder(),
     )
     request = RagSearchRequest(
         graph_release_id="release-1",
@@ -1230,3 +2076,183 @@ def test_rag_service_can_attach_warehouse_grounded_answer_when_available():
     assert response.grounded_answer is not None
     assert response.answer_corpus_ids == [11]
     assert response.grounded_answer.answer_linked_corpus_ids == [11]
+
+
+def test_rag_service_preserves_answer_corpus_ids_when_grounding_links_subset():
+    def fake_grounder(*, corpus_ids, segment_texts, segment_corpus_ids=None):
+        assert corpus_ids == [11, 22]
+        assert segment_corpus_ids == [None, 11, 22]
+        return build_grounded_answer_from_packets(
+            segment_texts=segment_texts,
+            segment_corpus_ids=segment_corpus_ids,
+            packets=[
+                CitedSpanPacket(
+                    packet_id="span:11:b0:s0",
+                    corpus_id=11,
+                    canonical_section_ordinal=1,
+                    canonical_block_ordinal=0,
+                    canonical_sentence_ordinal=0,
+                    section_role="results",
+                    block_kind="narrative_paragraph",
+                    span_origin="primary_text",
+                    alignment_status="exact",
+                    alignment_confidence=1.0,
+                    text="Melatonin reduced delirium incidence.",
+                    quote_text="Melatonin reduced delirium incidence.",
+                )
+            ],
+        )
+
+    service = RagService(
+        repository=FakeRepository(),
+        warehouse_grounder=fake_grounder,
+        query_embedder=NoopQueryEmbedder(),
+    )
+    request = RagSearchRequest(
+        graph_release_id="release-1",
+        query="melatonin delirium",
+        entity_terms=["melatonin"],
+        relation_terms=["treat"],
+        evidence_intent="support",
+        k=2,
+        rerank_topn=6,
+        generate_answer=True,
+        selected_layer_key="paper",
+        selected_node_id="seed-paper",
+    )
+
+    response = service.search(request)
+
+    assert response.answer_corpus_ids == [11, 22]
+    assert response.grounded_answer is not None
+    assert response.grounded_answer.answer_linked_corpus_ids == [11]
+
+
+def test_rag_service_preserves_dense_query_candidates_in_final_bundle_pool():
+    class DenseOnlyRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_relation_papers(
+            self,
+            graph_run_id: str,
+            *,
+            relation_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query_embedding == [0.1, 0.2, 0.3]
+            assert limit == 6
+            assert scope_corpus_ids is None
+            return [
+                PaperEvidenceHit(
+                    corpus_id=77,
+                    paper_id="paper-77",
+                    semantic_scholar_paper_id="paper-77",
+                    title="Dense-query melatonin paper",
+                    journal_name="Nature Medicine",
+                    year=2024,
+                    doi=None,
+                    pmid=777,
+                    pmcid=None,
+                    abstract="Dense query candidate paper.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=False,
+                    citation_count=8,
+                    reference_count=12,
+                    dense_score=0.94,
+                )
+            ]
+
+        def fetch_semantic_neighbors(
+            self,
+            *,
+            graph_run_id: str,
+            selected_corpus_id: int,
+            limit: int = 6,
+            scope_corpus_ids=None,
+        ):
+            raise AssertionError("semantic neighbors should not run without a selected paper")
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            raise AssertionError("semantic seed lookup should not run without semantic neighbors")
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [77]
+            assert query == "melatonin delirium"
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [77]
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [77]
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [77]
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [77]
+            return {}
+
+    service = _service(DenseOnlyRepository(), query_embedder=FakeDenseQueryEmbedder())
+    request = RagSearchRequest(
+        graph_release_id="release-1",
+        query="melatonin delirium",
+        evidence_intent="support",
+        k=3,
+        rerank_topn=6,
+        generate_answer=False,
+    )
+
+    response = service.search(request)
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [77]
+    assert response.evidence_bundles[0].rank_features["dense_query"] == 0.94
+    dense_channel = next(
+        channel for channel in response.retrieval_channels if channel.channel == "dense_query"
+    )
+    assert [hit.corpus_id for hit in dense_channel.hits] == [77]
