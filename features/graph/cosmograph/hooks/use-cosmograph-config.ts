@@ -123,8 +123,9 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
   );
 
   // Keep the native cluster grouping key stable while selection/zoom toggles
-  // cluster-label visibility on and off. Recomputing grouping on every click
-  // would force extra Cosmograph work for no behavioral gain.
+  // cluster-label visibility on and off. The canonical clusterLabel column is
+  // already normalized at the DuckDB projection boundary, so the graph, search,
+  // filters, and legend all share the same native-ready label source.
   const pointClusterColumn = useMemo(
     () => (pointLabelColumn === "clusterLabel" ? "clusterLabel" : undefined),
     [pointLabelColumn],

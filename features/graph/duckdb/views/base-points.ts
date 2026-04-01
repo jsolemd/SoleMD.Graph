@@ -30,6 +30,16 @@ export const LOCAL_POINT_RUNTIME_COLUMNS = [
   'paper_relation_count',
 ] as const
 
+const RESOLVED_CLUSTER_LABEL_SQL = `
+      CASE
+        WHEN COALESCE(cluster_id, 0) > 0
+          THEN COALESCE(
+            NULLIF(cluster_label, ''),
+            'Cluster ' || CAST(COALESCE(cluster_id, 0) AS VARCHAR)
+          )
+        ELSE NULL
+      END`
+
 function assertCanonicalPointColumns(bundle: GraphBundle, tableName: 'base_points' | 'universe_points') {
   const table = requireBundleTable(bundle, tableName)
   const columns = new Set((table.columns ?? []).map((column) => column.toLowerCase()))
@@ -60,7 +70,7 @@ export function createPointCanvasProjectionSql(bundle: GraphBundle) {
       x,
       y,
       COALESCE(cluster_id, 0) AS clusterId,
-      cluster_label AS clusterLabel,
+      ${RESOLVED_CLUSTER_LABEL_SQL} AS clusterLabel,
       paper_id AS paperId,
       COALESCE(display_label, title, citekey, id) AS displayLabel,
       title AS paperTitle,
@@ -91,7 +101,7 @@ export function createPointQueryProjectionSql(bundle: GraphBundle) {
       x,
       y,
       COALESCE(cluster_id, 0) AS clusterId,
-      cluster_label AS clusterLabel,
+      ${RESOLVED_CLUSTER_LABEL_SQL} AS clusterLabel,
       paper_id AS paperId,
       COALESCE(display_label, title, citekey, id) AS displayLabel,
       title AS paperTitle,

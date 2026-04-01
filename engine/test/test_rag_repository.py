@@ -366,7 +366,7 @@ def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
         [
             call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
             call("SET LOCAL hnsw.iterative_scan = strict_order"),
-            call("SET LOCAL hnsw.ef_search = %s", (100,)),
+            call("SET LOCAL hnsw.ef_search = 100"),
             call(
                 queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
                 (101, 101, 120, "run-1", 1),
@@ -403,6 +403,7 @@ def test_fetch_semantic_neighbors_falls_back_to_exact_when_index_missing():
     cur.execute.assert_has_calls(
         [
             call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
+            call("SET LOCAL max_parallel_workers_per_gather = 4"),
             call(
                 queries.SEMANTIC_NEIGHBOR_SQL,
                 (101, "run-1", 101, 2),

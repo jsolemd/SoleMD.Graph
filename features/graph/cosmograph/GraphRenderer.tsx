@@ -21,9 +21,21 @@ import { usePointsFiltered } from "./hooks/use-points-filtered";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
 import { resolveGraphContentContrastLevel } from "@/features/graph/lib/control-contrast";
 
-// Shared label style — point, cluster, and hover labels all use the same treatment
+// Shared label chrome for point/hover labels. Cluster labels need an explicit
+// text color because Cosmograph defaults them to white, which disappears on
+// our light-mode label background.
 const LABEL_STYLE =
   "background: var(--graph-label-bg); border-radius: 4px; box-shadow: var(--graph-label-shadow); font-weight: 400 !important; text-shadow: 0 0 0.1px currentColor;";
+const CLUSTER_LABEL_STYLE =
+  `${LABEL_STYLE} color: var(--graph-panel-text);`;
+const HIDDEN_LABEL_STYLE = "display: none;";
+
+function resolveClusterLabelClassName(text: string) {
+  const normalized = text.trim().toLowerCase();
+  return !normalized || normalized === "null" || normalized === "undefined"
+    ? HIDDEN_LABEL_STYLE
+    : CLUSTER_LABEL_STYLE;
+}
 
 export default function CosmographRenderer({
   canvas,
@@ -387,7 +399,8 @@ export default function CosmographRenderer({
       pointLabelFontSize={11}
       pointLabelColor={config.colors.label}
       pointLabelClassName={LABEL_STYLE}
-      clusterLabelClassName={LABEL_STYLE}
+      usePointColorStrategyForClusterLabels={config.pointClusterColumn != null}
+      clusterLabelClassName={resolveClusterLabelClassName}
       hoveredPointLabelClassName={LABEL_STYLE}
       selectClusterOnLabelClick={!isLocked}
       selectPointOnClick={isLocked ? false : config.hasLinks ? true : "single"}

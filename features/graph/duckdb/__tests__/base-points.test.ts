@@ -88,9 +88,27 @@ describe('base point projections', () => {
     expect(canvasSql).not.toContain('relationCategories')
     expect(canvasSql).not.toContain('textAvailability')
     expect(canvasSql).not.toContain('baseRank')
+    expect(canvasSql).not.toContain('AS resolvedClusterLabel')
     expect(querySql).toContain('semanticGroups')
     expect(querySql).toContain('relationCategories')
     expect(querySql).toContain('textAvailability')
     expect(querySql).toContain('baseRank')
+    expect(querySql).not.toContain('AS resolvedClusterLabel')
+  })
+
+  it('projects a canonical clusterLabel with fallback text for labeled clusters only', () => {
+    const bundle = createBundle()
+
+    const canvasSql = createPointCanvasProjectionSql(bundle)('base_points', 'point_index')
+    const querySql = createPointQueryProjectionSql(bundle)('base_points', 'point_index')
+
+    expect(canvasSql).toContain('CASE')
+    expect(canvasSql).toContain("WHEN COALESCE(cluster_id, 0) > 0")
+    expect(canvasSql).toContain("NULLIF(cluster_label, '')")
+    expect(canvasSql).toContain("AS clusterLabel")
+    expect(querySql).toContain('CASE')
+    expect(querySql).toContain("WHEN COALESCE(cluster_id, 0) > 0")
+    expect(querySql).toContain("NULLIF(cluster_label, '')")
+    expect(querySql).toContain("AS clusterLabel")
   })
 })

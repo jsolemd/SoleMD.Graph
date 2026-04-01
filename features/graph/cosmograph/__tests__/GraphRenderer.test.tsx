@@ -118,7 +118,27 @@ describe("GraphRenderer", () => {
     expect(props?.showClusterLabels).toBe(true);
     expect(props?.showDynamicLabels).toBe(false);
     expect(props?.selectClusterOnLabelClick).toBe(true);
+    expect(props?.usePointColorStrategyForClusterLabels).toBe(true);
+    expect(typeof props?.clusterLabelClassName).toBe("function");
     expect(typeof props?.onClusterLabelClick).toBe("function");
+  });
+
+  it("hides non-semantic native cluster labels while keeping named clusters styled", () => {
+    renderRenderer();
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    const clusterLabelClassName = props?.clusterLabelClassName as
+      | ((text: string, clusterIndex: number) => string)
+      | undefined;
+
+    expect(clusterLabelClassName).toBeDefined();
+    expect(clusterLabelClassName?.("Neuroinflammation", 0)).toContain(
+      "color: var(--graph-panel-text);",
+    );
+    expect(clusterLabelClassName?.("", 0)).toBe("display: none;");
+    expect(clusterLabelClassName?.("null", 0)).toBe("display: none;");
   });
 
   it("clears stale point focus and detail when a cluster label is clicked", () => {

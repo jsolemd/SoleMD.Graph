@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     rag_semantic_neighbor_candidate_multiplier: int = 20
     rag_semantic_neighbor_min_candidates: int = 120
     rag_semantic_neighbor_max_candidates: int = 3840
+    rag_semantic_neighbor_exact_parallel_workers: int = 4
 
     # DuckDB (for citations pipeline and heavy in-memory queries)
     duckdb_memory_limit: str = "8GB"

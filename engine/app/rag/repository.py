@@ -885,13 +885,11 @@ class PostgresRagRepository:
         limit: int,
         candidate_limit: int,
     ) -> list[dict[str, Any]]:
+        ef_search = max(int(settings.rag_semantic_neighbor_hnsw_ef_search), 1)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
-                cur.execute(
-                    "SET LOCAL hnsw.ef_search = %s",
-                    (settings.rag_semantic_neighbor_hnsw_ef_search,),
-                )
+                cur.execute(f"SET LOCAL hnsw.ef_search = {ef_search}")
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
                     (
@@ -911,8 +909,10 @@ class PostgresRagRepository:
         selected_corpus_id: int,
         limit: int,
     ) -> list[dict[str, Any]]:
+        parallel_workers = max(int(settings.rag_semantic_neighbor_exact_parallel_workers), 0)
         with self._connect() as conn:
             with conn.cursor() as cur:
+                cur.execute(f"SET LOCAL max_parallel_workers_per_gather = {parallel_workers}")
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_SQL,
                     (
