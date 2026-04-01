@@ -681,6 +681,55 @@ html.dark {
   transition: filter 80ms ease-out;
 }
 
+/* ── Light-mode Cosmograph Bars override ──
+   The upstream Bars widget hardcodes row dimming plus a 20% highlighted
+   overlay. That comparison styling works on dark defaults, but it washes
+   out filter bars on light panels. Scope the override to our filter widget
+   wrapper so histograms and other Cosmograph UI keep their defaults. */
+html:not(.dark) .graph-filter-bars-widget .scroll-container {
+  isolation: isolate;
+}
+
+html:not(.dark) .graph-filter-bars-widget .highlighted-bars-container {
+  pointer-events: none;
+  z-index: 1;
+}
+
+html:not(.dark) .graph-filter-bars-widget .info {
+  inset: 0;
+  align-items: center;
+  z-index: 2;
+}
+
+html:not(.dark) .graph-filter-bars-widget .row {
+  opacity: 1;
+  position: relative;
+}
+
+html:not(.dark) .graph-filter-bars-widget .row.selected,
+html:not(.dark) .graph-filter-bars-widget .row.unselected,
+html:not(.dark) .graph-filter-bars-widget .row:hover {
+  filter: none;
+}
+
+html:not(.dark) .graph-filter-bars-widget .bar-highlighted {
+  opacity: 0.88;
+}
+
+html:not(.dark) .graph-filter-bars-widget .selected > .info > .label {
+  font-weight: 500;
+  filter: none;
+}
+
+html:not(.dark) .graph-filter-bars-widget .unselected > .info > .label {
+  font-weight: 400;
+  opacity: 0.72;
+}
+
+html:not(.dark) .graph-filter-bars-widget .unselected > .info > .count {
+  opacity: 0.68;
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    GLOBAL SCROLLBAR — invisible by default, still scrollable.
    Cosmograph widgets override with their own class-scoped rules

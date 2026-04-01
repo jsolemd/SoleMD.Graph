@@ -1,19 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import {
-  ActionIcon,
-  Loader,
-  Text,
-  Tooltip,
-  useMantineColorScheme,
-  useComputedColorScheme,
-} from "@mantine/core";
-import { useMounted } from "@mantine/hooks";
+import { Loader, Text } from "@mantine/core";
 import { motion } from "framer-motion";
-import { BrainCircuit, Sun, Moon } from "lucide-react";
-import { settle } from "@/lib/motion";
+import { BrainCircuit } from "lucide-react";
 import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
+import ThemeToggle from "@/features/graph/components/chrome/ThemeToggle";
 
 function getUserFriendlyMessage(
   stage: GraphBundleLoadProgress["stage"] | undefined,
@@ -49,14 +40,6 @@ export function GraphBundleLoadingOverlay({
   progress: GraphBundleLoadProgress | null;
   canvasReady: boolean;
 }) {
-  const { toggleColorScheme } = useMantineColorScheme();
-  const computedColorScheme = useComputedColorScheme("light");
-  const mounted = useMounted();
-  const [spinCount, setSpinCount] = useState(0);
-
-  const isDark = mounted ? computedColorScheme === "dark" : false;
-  const themeLabel = isDark ? "Switch to light mode" : "Switch to dark mode";
-
   const rawPercent = progress?.percent ?? 0;
   const percent = canvasReady
     ? Math.max(rawPercent, 95)
@@ -74,7 +57,7 @@ export function GraphBundleLoadingOverlay({
       <div className="absolute left-3 top-3 flex items-center gap-2">
         <div
           className="flex h-8 w-8 items-center justify-center rounded-full"
-          style={{ backgroundColor: "var(--graph-wordmark-accent)" }}
+          style={{ backgroundColor: "var(--mode-accent)" }}
         >
           <BrainCircuit size={16} color="white" />
         </div>
@@ -83,33 +66,16 @@ export function GraphBundleLoadingOverlay({
           style={{ color: "var(--graph-wordmark-text)" }}
         >
           Sole
-          <span style={{ color: "var(--graph-wordmark-accent)" }}>MD</span>
+          <span style={{ color: "var(--mode-accent)" }}>MD</span>
         </span>
       </div>
 
       {/* Theme toggle — top-right corner */}
-      <div className="absolute right-3 top-3">
-        <Tooltip label={themeLabel} position="bottom" withArrow>
-          <ActionIcon
-            onClick={() => {
-              setSpinCount((c) => c + 1);
-              toggleColorScheme();
-            }}
-            variant="transparent"
-            size="lg"
-            radius="xl"
-            className="graph-icon-btn"
-            aria-label={themeLabel}
-          >
-            <motion.div
-              className="flex items-center justify-center"
-              animate={{ rotate: spinCount * 360 }}
-              transition={settle}
-            >
-              {isDark ? <Sun size={18} /> : <Moon size={18} />}
-            </motion.div>
-          </ActionIcon>
-        </Tooltip>
+      <div
+        className="absolute right-3 top-3"
+        data-graph-control-contrast="1"
+      >
+        <ThemeToggle />
       </div>
 
       {/* Branding + graph name */}
@@ -149,7 +115,7 @@ export function GraphBundleLoadingOverlay({
             style={{
               width: `${percent}%`,
               height: "100%",
-              backgroundColor: "var(--brand-accent)",
+              backgroundColor: "var(--mode-accent)",
               transition: "width 300ms ease",
             }}
           />

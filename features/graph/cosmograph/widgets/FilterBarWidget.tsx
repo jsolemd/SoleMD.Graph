@@ -351,7 +351,7 @@ export function FilterBarWidget({
   return (
     <div
       ref={containerRef}
-      className="w-full"
+      className="graph-filter-bars-widget w-full"
       style={{ minHeight: FILTER_BAR_HEIGHT }}
     />
   );
