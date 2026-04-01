@@ -57,7 +57,9 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   promptShellFullHeight: false,
   writeContent: '',
 
-  setActivePanel: (panel) => set({ activePanel: panel }),
+  setActivePanel: (panel) => set((s) => (
+    s.activePanel === panel ? s : { activePanel: panel }
+  )),
   togglePanel: (panel) =>
     set((s) => ({ activePanel: s.activePanel === panel ? null : panel })),
   setPanelsVisible: (visible) => set((s) => (

@@ -34,7 +34,9 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
   activeSelectionSourceId: null,
   selectionLocked: false,
 
-  setConnectedSelect: (on) => set({ connectedSelect: on }),
+  setConnectedSelect: (on) => set((s) => (
+    s.connectedSelect === on ? s : { connectedSelect: on }
+  )),
   toggleConnectedSelect: () => set((s) => ({ connectedSelect: !s.connectedSelect })),
   setCurrentPointScopeSql: (sql) => set((state) => {
     const next = sql?.trim() ? sql : null
@@ -68,7 +70,9 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
       return s
     }
 
-    return { selectionLocked: true }
+    return s.selectionLocked ? s : { selectionLocked: true }
   }),
-  unlockSelection: () => set({ selectionLocked: false }),
+  unlockSelection: () => set((s) => (
+    s.selectionLocked ? { selectionLocked: false } : s
+  )),
 })

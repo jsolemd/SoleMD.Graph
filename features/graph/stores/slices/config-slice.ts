@@ -36,6 +36,13 @@ function getDefaultFiltersForLayer(layer: MapLayer) {
   return CORPUS_FILTER_COLUMNS
 }
 
+function hasSameRange(
+  current: [number, number],
+  next: [number, number],
+) {
+  return current[0] === next[0] && current[1] === next[1]
+}
+
 export interface ConfigSlice {
   // Layer
   activeLayer: MapLayer
@@ -138,56 +145,107 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   hoverLabelAlwaysOn: false,
   renderHoveredPointRing: true,
 
-  setPointColorColumn: (col) => set({ pointColorColumn: col }),
-  setPointColorStrategy: (strategy) => set({ pointColorStrategy: strategy }),
-  setPointSizeColumn: (col) => set({ pointSizeColumn: col }),
-  setPointSizeRange: (range) => set({ pointSizeRange: range }),
-  setPointLabelColumn: (col) => set({ pointLabelColumn: col }),
-  setShowPointLabels: (show) => set({ showPointLabels: show }),
-  setShowDynamicLabels: (show) => set({ showDynamicLabels: show }),
-  setPositionXColumn: (col) => set({ positionXColumn: col }),
-  setPositionYColumn: (col) => set({ positionYColumn: col }),
+  setPointColorColumn: (col) => set((s) => (
+    s.pointColorColumn === col ? s : { pointColorColumn: col }
+  )),
+  setPointColorStrategy: (strategy) => set((s) => (
+    s.pointColorStrategy === strategy ? s : { pointColorStrategy: strategy }
+  )),
+  setPointSizeColumn: (col) => set((s) => (
+    s.pointSizeColumn === col ? s : { pointSizeColumn: col }
+  )),
+  setPointSizeRange: (range) => set((s) => (
+    hasSameRange(s.pointSizeRange, range) ? s : { pointSizeRange: range }
+  )),
+  setPointLabelColumn: (col) => set((s) => (
+    s.pointLabelColumn === col ? s : { pointLabelColumn: col }
+  )),
+  setShowPointLabels: (show) => set((s) => (
+    s.showPointLabels === show ? s : { showPointLabels: show }
+  )),
+  setShowDynamicLabels: (show) => set((s) => (
+    s.showDynamicLabels === show ? s : { showDynamicLabels: show }
+  )),
+  setPositionXColumn: (col) => set((s) => (
+    s.positionXColumn === col ? s : { positionXColumn: col }
+  )),
+  setPositionYColumn: (col) => set((s) => (
+    s.positionYColumn === col ? s : { positionYColumn: col }
+  )),
   addInfoWidget: (slot) =>
-    set((s) => ({
-      infoWidgets: s.infoWidgets.some((w) => w.column === slot.column)
-        ? s.infoWidgets
-        : [...s.infoWidgets, slot],
-    })),
+    set((s) => (
+      s.infoWidgets.some((w) => w.column === slot.column)
+        ? s
+        : { infoWidgets: [...s.infoWidgets, slot] }
+    )),
   removeInfoWidget: (column) =>
-    set((s) => ({
-      infoWidgets: s.infoWidgets.filter((w) => w.column !== column),
-    })),
+    set((s) => {
+      const nextInfoWidgets = s.infoWidgets.filter((w) => w.column !== column)
+      return nextInfoWidgets.length === s.infoWidgets.length
+        ? s
+        : { infoWidgets: nextInfoWidgets }
+    }),
   addFilter: (column) =>
-    set((s) => ({
-      filterColumns: s.filterColumns.some((f) => f.column === column)
-        ? s.filterColumns
-        : [
-            ...s.filterColumns,
-            {
-              column,
-              type: getColumnMeta(column)?.type === 'numeric'
-                ? ('numeric' as const)
-                : ('categorical' as const),
-            },
-          ],
-    })),
+    set((s) => (
+      s.filterColumns.some((f) => f.column === column)
+        ? s
+        : {
+            filterColumns: [
+              ...s.filterColumns,
+              {
+                column,
+                type: getColumnMeta(column)?.type === 'numeric'
+                  ? ('numeric' as const)
+                  : ('categorical' as const),
+              },
+            ],
+          }
+    )),
   removeFilter: (column) =>
-    set((s) => ({
-      filterColumns: s.filterColumns.filter((f) => f.column !== column),
-    })),
-  setTablePage: (page) => set({ tablePage: page }),
-  setTablePageSize: (size) => set({ tablePageSize: size }),
-  setTableView: (view) => set({ tableView: view }),
-  setColorScheme: (scheme) => set({ colorScheme: scheme }),
-  setShowColorLegend: (show) => set({ showColorLegend: show }),
-  setPointSizeStrategy: (strategy) => set({ pointSizeStrategy: strategy }),
-  setScalePointsOnZoom: (scale) => set({ scalePointsOnZoom: scale }),
-  setShowSizeLegend: (show) => set({ showSizeLegend: show }),
-  setShowHoveredPointLabel: (show) => set({ showHoveredPointLabel: show }),
-  setHoverLabelAlwaysOn: (on) => set({ hoverLabelAlwaysOn: on }),
-  setRenderHoveredPointRing: (show) => set({ renderHoveredPointRing: show }),
+    set((s) => {
+      const nextFilterColumns = s.filterColumns.filter((f) => f.column !== column)
+      return nextFilterColumns.length === s.filterColumns.length
+        ? s
+        : { filterColumns: nextFilterColumns }
+    }),
+  setTablePage: (page) => set((s) => (
+    s.tablePage === page ? s : { tablePage: page }
+  )),
+  setTablePageSize: (size) => set((s) => (
+    s.tablePageSize === size ? s : { tablePageSize: size }
+  )),
+  setTableView: (view) => set((s) => (
+    s.tableView === view ? s : { tableView: view }
+  )),
+  setColorScheme: (scheme) => set((s) => (
+    s.colorScheme === scheme ? s : { colorScheme: scheme }
+  )),
+  setShowColorLegend: (show) => set((s) => (
+    s.showColorLegend === show ? s : { showColorLegend: show }
+  )),
+  setPointSizeStrategy: (strategy) => set((s) => (
+    s.pointSizeStrategy === strategy ? s : { pointSizeStrategy: strategy }
+  )),
+  setScalePointsOnZoom: (scale) => set((s) => (
+    s.scalePointsOnZoom === scale ? s : { scalePointsOnZoom: scale }
+  )),
+  setShowSizeLegend: (show) => set((s) => (
+    s.showSizeLegend === show ? s : { showSizeLegend: show }
+  )),
+  setShowHoveredPointLabel: (show) => set((s) => (
+    s.showHoveredPointLabel === show ? s : { showHoveredPointLabel: show }
+  )),
+  setHoverLabelAlwaysOn: (on) => set((s) => (
+    s.hoverLabelAlwaysOn === on ? s : { hoverLabelAlwaysOn: on }
+  )),
+  setRenderHoveredPointRing: (show) => set((s) => (
+    s.renderHoveredPointRing === show ? s : { renderHoveredPointRing: show }
+  )),
   setActiveLayer: (layer) => {
-    set(() => {
+    set((s) => {
+      if (s.activeLayer === layer) {
+        return s
+      }
       const config = getLayerConfig(layer)
       return {
         activeLayer: layer,

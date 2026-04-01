@@ -148,6 +148,19 @@ describe('panel-slice', () => {
     })
   })
 
+  describe('setActivePanel', () => {
+    it('does not emit when setting the active panel to the same value', () => {
+      resetStore({ activePanel: 'config' })
+      const listener = jest.fn()
+      const unsubscribe = useDashboardStore.subscribe(listener)
+
+      useDashboardStore.getState().setActivePanel('config')
+
+      expect(listener).not.toHaveBeenCalled()
+      unsubscribe()
+    })
+  })
+
   describe('toggleUiHidden', () => {
     it('toggles UI visibility', () => {
       resetStore({ uiHidden: false })

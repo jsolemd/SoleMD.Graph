@@ -23,6 +23,13 @@ export interface LinksSlice {
   setScaleLinksOnZoom: (scale: boolean) => void
 }
 
+function hasSameRange(
+  current: [number, number],
+  next: [number, number],
+) {
+  return current[0] === next[0] && current[1] === next[1]
+}
+
 export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> = (set) => ({
   renderLinks: false,
   linkOpacity: 1.0,
@@ -34,13 +41,35 @@ export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> 
   linkDefaultArrows: false,
   scaleLinksOnZoom: false,
 
-  setRenderLinks: (show) => set({ renderLinks: show }),
-  setLinkOpacity: (opacity) => set({ linkOpacity: opacity }),
-  setLinkGreyoutOpacity: (opacity) => set({ linkGreyoutOpacity: opacity }),
-  setLinkVisibilityDistanceRange: (range) => set({ linkVisibilityDistanceRange: range }),
-  setLinkVisibilityMinTransparency: (transparency) => set({ linkVisibilityMinTransparency: transparency }),
-  setLinkDefaultWidth: (width) => set({ linkDefaultWidth: width }),
-  setCurvedLinks: (curved) => set({ curvedLinks: curved }),
-  setLinkDefaultArrows: (arrows) => set({ linkDefaultArrows: arrows }),
-  setScaleLinksOnZoom: (scale) => set({ scaleLinksOnZoom: scale }),
+  setRenderLinks: (show) => set((s) => (
+    s.renderLinks === show ? s : { renderLinks: show }
+  )),
+  setLinkOpacity: (opacity) => set((s) => (
+    s.linkOpacity === opacity ? s : { linkOpacity: opacity }
+  )),
+  setLinkGreyoutOpacity: (opacity) => set((s) => (
+    s.linkGreyoutOpacity === opacity ? s : { linkGreyoutOpacity: opacity }
+  )),
+  setLinkVisibilityDistanceRange: (range) => set((s) => (
+    hasSameRange(s.linkVisibilityDistanceRange, range)
+      ? s
+      : { linkVisibilityDistanceRange: range }
+  )),
+  setLinkVisibilityMinTransparency: (transparency) => set((s) => (
+    s.linkVisibilityMinTransparency === transparency
+      ? s
+      : { linkVisibilityMinTransparency: transparency }
+  )),
+  setLinkDefaultWidth: (width) => set((s) => (
+    s.linkDefaultWidth === width ? s : { linkDefaultWidth: width }
+  )),
+  setCurvedLinks: (curved) => set((s) => (
+    s.curvedLinks === curved ? s : { curvedLinks: curved }
+  )),
+  setLinkDefaultArrows: (arrows) => set((s) => (
+    s.linkDefaultArrows === arrows ? s : { linkDefaultArrows: arrows }
+  )),
+  setScaleLinksOnZoom: (scale) => set((s) => (
+    s.scaleLinksOnZoom === scale ? s : { scaleLinksOnZoom: scale }
+  )),
 })

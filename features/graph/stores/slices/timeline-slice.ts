@@ -76,6 +76,21 @@ export function formatSpeedLabelShort(step: number): string {
   return sliderStepToMultiplier(step).toFixed(2)
 }
 
+function hasSameTimelineSelection(
+  current?: [number, number],
+  next?: [number, number],
+) {
+  return (
+    current === next ||
+    (
+      Array.isArray(current) &&
+      Array.isArray(next) &&
+      current[0] === next[0] &&
+      current[1] === next[1]
+    )
+  )
+}
+
 export interface TimelineSlice {
   showTimeline: boolean
   timelineColumn: NumericColumnKey
@@ -99,20 +114,15 @@ export const createTimelineSlice: StateCreator<DashboardState, [], [], TimelineS
     s.showTimeline === show ? s : { showTimeline: show }
   )),
   toggleTimeline: () => set((s) => ({ showTimeline: !s.showTimeline })),
-  setTimelineColumn: (col) => set({ timelineColumn: col }),
+  setTimelineColumn: (col) => set((s) => (
+    s.timelineColumn === col ? s : { timelineColumn: col }
+  )),
   setTimelineSelection: (selection) => set((s) => {
-    const current = s.timelineSelection
-    const next = selection
-    const isSameSelection =
-      current === next ||
-      (
-        Array.isArray(current) &&
-        Array.isArray(next) &&
-        current[0] === next[0] &&
-        current[1] === next[1]
-      )
-
-    return isSameSelection ? s : { timelineSelection: selection }
+    return hasSameTimelineSelection(s.timelineSelection, selection)
+      ? s
+      : { timelineSelection: selection }
   }),
-  setTimelineSpeed: (speed) => set({ timelineSpeed: speed }),
+  setTimelineSpeed: (speed) => set((s) => (
+    s.timelineSpeed === speed ? s : { timelineSpeed: speed }
+  )),
 })

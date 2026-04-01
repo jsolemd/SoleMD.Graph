@@ -58,5 +58,7 @@ export const useGraphStore = create<GraphUIStore>((set) => ({
   setZoomedIn: (zoomedIn) => set((state) => (
     state.zoomedIn === zoomedIn ? state : { zoomedIn }
   )),
-  setMode: (mode) => set({ mode }),
+  setMode: (mode) => set((state) => (
+    state.mode === mode ? state : { mode }
+  )),
 }))

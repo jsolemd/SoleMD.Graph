@@ -20,6 +20,16 @@ describe('selection-slice', () => {
       useDashboardStore.getState().toggleConnectedSelect()
       expect(useDashboardStore.getState().connectedSelect).toBe(false)
     })
+
+    it('does not emit when connected select is already at the requested value', () => {
+      const listener = jest.fn()
+      const unsubscribe = useDashboardStore.subscribe(listener)
+
+      useDashboardStore.getState().setConnectedSelect(false)
+
+      expect(listener).not.toHaveBeenCalled()
+      unsubscribe()
+    })
   })
 
   describe('setCurrentPointScopeSql', () => {
@@ -98,6 +108,16 @@ describe('selection-slice', () => {
       resetStore({ selectionLocked: true })
       useDashboardStore.getState().unlockSelection()
       expect(useDashboardStore.getState().selectionLocked).toBe(false)
+    })
+
+    it('does not emit when unlocking an already-unlocked selection', () => {
+      const listener = jest.fn()
+      const unsubscribe = useDashboardStore.subscribe(listener)
+
+      useDashboardStore.getState().unlockSelection()
+
+      expect(listener).not.toHaveBeenCalled()
+      unsubscribe()
     })
   })
 })
