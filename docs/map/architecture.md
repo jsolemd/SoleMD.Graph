@@ -693,7 +693,7 @@ what each service does and why it was chosen.
 | 1 | **Next.js 16** | Frontend framework — SSR, Server Components, Server Actions, streaming | `next-js.md` |
 | 2 | **Mantine 8** | Component library — data tables, overlays, theming, forms | `mantine.md` |
 | 3 | **Cosmograph** | Graph visualization — WebGL rendering, DuckDB integration, crossfilters | `cosmograph.md` |
-| 4 | **DuckDB-WASM** | Client-side analytics — SQL over Parquet in the browser | `duckdb-wasm.md` |
+| 4 | **DuckDB-WASM** | Client-side analytics — SQL over Parquet in the browser | `duckdb.md` |
 | 5 | **Vercel AI SDK 6** | LLM streaming — Server Actions, `useChat`, structured output, multi-provider | `vercel-ai-sdk.md` |
 | 6 | **PostgreSQL** (self-hosted) | Database — domain-filtered graph data, pgvector, full-text search | `postgresql.md` |
 | 7 | **Drizzle ORM** | Type-safe SQL from Next.js Server Components | `drizzle.md` |
@@ -1061,7 +1061,7 @@ RAG retrieval and LLM synthesis are being built on top of the graph.
 | RAG search (vector + full-text hybrid) | Active development | `pgvector.md` |
 | Vercel AI SDK streaming with Gemini Flash | Streaming chat functional | `vercel-ai-sdk.md` + `gemini.md` |
 | `@` citation autocomplete | Active development | `vercel-ai-sdk.md` |
-| Entity highlighting as you type (DuckDB-WASM client-side) | Active development | `duckdb-wasm.md` |
+| Entity highlighting as you type (DuckDB-WASM client-side) | Active development | `duckdb.md` |
 
 See [`rag.md`](rag.md) for current evidence/RAG contract state.
 

@@ -21,11 +21,12 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
   // Active layer — determines which DuckDB table Cosmograph reads from
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const layerConfig = getLayerConfig(activeLayer);
-  const { filterColumns, showTimeline, timelineColumn } = useDashboardStore(
+  const { filterColumns, showTimeline, timelineColumn, filtersPanelOpen } = useDashboardStore(
     useShallow((s) => ({
       filterColumns: s.filterColumns,
       showTimeline: s.showTimeline,
       timelineColumn: s.timelineColumn,
+      filtersPanelOpen: s.activePanel === "filters",
     })),
   );
 
@@ -102,11 +103,12 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     () =>
       getPointIncludeColumns({
         showTimeline,
-        filterColumns,
+        filterColumns: filtersPanelOpen ? filterColumns : [],
         timelineColumn,
       }),
     [
       filterColumns,
+      filtersPanelOpen,
       showTimeline,
       timelineColumn,
     ],

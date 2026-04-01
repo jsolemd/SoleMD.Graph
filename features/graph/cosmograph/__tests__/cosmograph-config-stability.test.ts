@@ -162,10 +162,15 @@ describe("computed value stability", () => {
     });
   });
 
-  it("pointIncludeColumns stays stable when activePanel changes", async () => {
+  it("pointIncludeColumns is empty on default first paint", () => {
+    const { result } = renderHookWithCount(useConfig);
+    expect(result.current.pointIncludeColumns).toEqual([]);
+  });
+
+  it("pointIncludeColumns stays stable when an unrelated panel opens", async () => {
     const { result } = renderHookWithCount(useConfig);
     await expectStableReferences(result, ["pointIncludeColumns"], () => {
-      useDashboardStore.setState({ activePanel: "filters" });
+      useDashboardStore.setState({ activePanel: "query" });
     });
   });
 
@@ -174,6 +179,18 @@ describe("computed value stability", () => {
     await expectStableReferences(result, ["pointIncludeColumns"], () => {
       useDashboardStore.setState({ pointColorColumn: "year" });
     });
+  });
+
+  it("pointIncludeColumns expands when the filters panel opens", async () => {
+    const { result } = renderHookWithCount(useConfig);
+    const before = result.current.pointIncludeColumns;
+
+    await act(() => {
+      useDashboardStore.setState({ activePanel: "filters" });
+    });
+
+    expect(before).toEqual([]);
+    expect(result.current.pointIncludeColumns.length).toBeGreaterThan(0);
   });
 
   it("pointClusterColumn is stable across unrelated state changes", async () => {
@@ -249,13 +266,22 @@ describe("render count isolation", () => {
     expect(hook.renderCount()).toBe(0);
   });
 
-  it("changing activePanel causes 0 re-renders of the hook", async () => {
+  it("changing an unrelated panel causes 0 re-renders of the hook", async () => {
+    const hook = renderHookWithCount(useConfig);
+    hook.resetCount();
+    await act(() => {
+      useDashboardStore.setState({ activePanel: "query" });
+    });
+    expect(hook.renderCount()).toBe(0);
+  });
+
+  it("opening the filters panel causes exactly 1 re-render", async () => {
     const hook = renderHookWithCount(useConfig);
     hook.resetCount();
     await act(() => {
       useDashboardStore.setState({ activePanel: "filters" });
     });
-    expect(hook.renderCount()).toBe(0);
+    expect(hook.renderCount()).toBe(1);
   });
 
   it("changing selectionLocked causes 0 re-renders (unsubscribed)", async () => {
