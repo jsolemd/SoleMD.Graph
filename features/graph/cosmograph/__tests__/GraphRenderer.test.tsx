@@ -14,6 +14,26 @@ jest.mock("../hooks/use-points-filtered", () => ({
   usePointsFiltered: () => mockPointsFilteredHandler,
 }));
 
+const mockZoomLabelsState = {
+  zoomedIn: false,
+  isActivelyZooming: false,
+};
+const mockSyncZoomState = jest.fn();
+const mockHandleZoomStart = jest.fn();
+const mockHandleZoom = jest.fn();
+const mockHandleZoomEnd = jest.fn();
+
+jest.mock("../hooks/use-zoom-labels", () => ({
+  useZoomLabels: () => ({
+    zoomedIn: mockZoomLabelsState.zoomedIn,
+    isActivelyZooming: mockZoomLabelsState.isActivelyZooming,
+    syncZoomState: mockSyncZoomState,
+    handleZoomStart: mockHandleZoomStart,
+    handleZoom: mockHandleZoom,
+    handleZoomEnd: mockHandleZoomEnd,
+  }),
+}));
+
 jest.mock("@uwdata/mosaic-sql", () => ({
   and: jest.fn(),
   column: jest.fn(),
@@ -101,6 +121,8 @@ function renderRenderer() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockZoomLabelsState.zoomedIn = false;
+  mockZoomLabelsState.isActivelyZooming = false;
   useDashboardStore.setState(useDashboardStore.getInitialState());
   useGraphStore.setState(useGraphStore.getInitialState());
 });
@@ -123,7 +145,7 @@ describe("GraphRenderer", () => {
     expect(typeof props?.onClusterLabelClick).toBe("function");
   });
 
-  it("hides non-semantic native cluster labels while keeping named clusters styled", () => {
+  it("hides non-semantic native cluster labels while leaving semantic labels on the native style path", () => {
     renderRenderer();
 
     const props = mockCosmographRender.mock.lastCall?.[0] as
@@ -134,11 +156,26 @@ describe("GraphRenderer", () => {
       | undefined;
 
     expect(clusterLabelClassName).toBeDefined();
-    expect(clusterLabelClassName?.("Neuroinflammation", 0)).toContain(
-      "color: var(--graph-panel-text);",
-    );
+    expect(clusterLabelClassName?.("Neuroinflammation", 0)).toBe("");
     expect(clusterLabelClassName?.("", 0)).toBe("display: none;");
     expect(clusterLabelClassName?.("null", 0)).toBe("display: none;");
+  });
+
+  it("keeps zoomed point and hover labels on Cosmograph's native style path", () => {
+    mockZoomLabelsState.zoomedIn = true;
+
+    renderRenderer();
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(props).toBeDefined();
+    expect(props?.pointLabelBy).toBe("displayLabel");
+    expect(props?.showClusterLabels).toBe(false);
+    expect(props?.pointLabelColor).toBeUndefined();
+    expect(props?.pointLabelClassName).toBeUndefined();
+    expect(props?.hoveredPointLabelClassName).toBeUndefined();
   });
 
   it("clears stale point focus and detail when a cluster label is clicked", () => {

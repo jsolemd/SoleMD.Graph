@@ -1,7 +1,7 @@
 /** WebGL needs actual hex values, not CSS vars. Keep in sync with globals.css. */
 export const BRAND = {
-  light: { bg: "#f8f9fa", ring: "#747caa", label: "#1a1b1e", greyout: 0.25 },
-  dark:  { bg: "#111113", ring: "#a8c5e9", label: "#e4e4e9", greyout: 0.12 },
+  light: { bg: "#f8f9fa", ring: "#747caa", greyout: 0.25 },
+  dark:  { bg: "#111113", ring: "#a8c5e9", greyout: 0.12 },
 } as const;
 
 /**

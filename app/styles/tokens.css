@@ -103,10 +103,6 @@
   --graph-wordmark-text: rgba(0, 0, 0, 0.55);
   --graph-wordmark-accent: var(--brand-accent);
   --graph-stats-text: rgba(0, 0, 0, 0.32);
-  --graph-label-bg: rgba(255, 255, 255, 0.97);
-  --graph-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.10);
-  --graph-cluster-label-bg: rgba(255, 255, 255, 0.97);
-  --graph-cluster-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.10);
   --graph-greyout-opacity: 0.25;
 
   /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
@@ -251,10 +247,6 @@ html:root {
   --graph-prompt-divider: rgba(168, 197, 233, 0.2);
   --graph-wordmark-text: rgba(255, 255, 255, 0.6);
   --graph-stats-text: rgba(255, 255, 255, 0.32);
-  --graph-label-bg: rgba(17, 17, 19, 0.88);
-  --graph-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.4);
-  --graph-cluster-label-bg: rgba(17, 17, 19, 0.88);
-  --graph-cluster-label-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.4);
   --graph-greyout-opacity: 0.15;
 
   /* ── Filter/timeline bars — boost active brightness on dark surfaces ── */
