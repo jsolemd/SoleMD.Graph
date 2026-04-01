@@ -20,5 +20,5 @@ Target: `features/graph/duckdb`
   - `51388ee` `Optimize DuckDB session query churn`
   - `68a7f96` `Reduce duckdb canvas alias churn`
   - `7770ad9` `Optimize DuckDB session query churn` (ledger entry only)
-  - pending batch for the final session-controller split, cache hardening, and histogram binder fix
+  - `b790055` `Finalize DuckDB session split and binder fix`
 - Re-scan result: the remaining DuckDB session seams are now stable. `session/index.ts` is down to orchestration, overlay writes and info reads are isolated, and the next worthwhile pass would be query-shape optimization rather than more structural splitting.
