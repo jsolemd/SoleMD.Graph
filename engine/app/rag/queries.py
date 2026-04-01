@@ -683,6 +683,34 @@ SELECT
     COALESCE(p.citation_count, 0) AS citation_count,
     COALESCE(p.reference_count, 0) AS reference_count
 FROM solemd.papers p
+JOIN solemd.graph_points gp
+  ON gp.graph_run_id = %s
+ AND gp.corpus_id = p.corpus_id
+JOIN solemd.corpus c
+  ON c.corpus_id = p.corpus_id
+WHERE p.corpus_id = ANY(%s)
+ORDER BY p.corpus_id
+"""
+
+
+PAPER_LOOKUP_DIRECT_SQL = """
+SELECT
+    p.corpus_id,
+    p.paper_id,
+    p.paper_id AS semantic_scholar_paper_id,
+    p.title,
+    p.abstract,
+    p.tldr,
+    COALESCE(p.journal_name, p.venue) AS journal_name,
+    p.year,
+    c.doi,
+    c.pmid,
+    c.pmc_id AS pmcid,
+    p.text_availability,
+    p.is_open_access,
+    COALESCE(p.citation_count, 0) AS citation_count,
+    COALESCE(p.reference_count, 0) AS reference_count
+FROM solemd.papers p
 JOIN solemd.corpus c
   ON c.corpus_id = p.corpus_id
 WHERE p.corpus_id = ANY(%s)
@@ -872,25 +900,31 @@ SELECT to_regclass('solemd.idx_papers_embedding_hnsw') IS NOT NULL AS index_read
 
 
 SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL = """
-WITH seed AS (
-    SELECT p.embedding
-    FROM solemd.papers p
-    WHERE p.corpus_id = %s
-      AND p.embedding IS NOT NULL
-    LIMIT 1
-),
-ann_candidates AS MATERIALIZED (
+WITH ann_candidates AS MATERIALIZED (
     SELECT
         p.corpus_id,
         p.paper_id,
-        (p.embedding <=> seed.embedding) AS distance
+        (
+            p.embedding <=> (
+                SELECT embedding
+                FROM solemd.papers
+                WHERE corpus_id = %s
+                  AND embedding IS NOT NULL
+                LIMIT 1
+            )
+        ) AS distance
     FROM solemd.papers p
-    CROSS JOIN seed
     WHERE
-        seed.embedding IS NOT NULL
-        AND p.embedding IS NOT NULL
+        p.embedding IS NOT NULL
         AND p.corpus_id <> %s
-    ORDER BY p.embedding <=> seed.embedding ASC
+    ORDER BY
+        p.embedding <=> (
+            SELECT embedding
+            FROM solemd.papers
+            WHERE corpus_id = %s
+              AND embedding IS NOT NULL
+            LIMIT 1
+        ) ASC
     LIMIT %s
 )
 SELECT

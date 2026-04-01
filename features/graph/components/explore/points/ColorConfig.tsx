@@ -6,8 +6,7 @@ import type { ComboboxItem } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
 import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
-import { COLOR_SCHEME_OPTIONS, getPaletteColors } from "@/features/graph/lib/colors";
-import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
+import { COLOR_SCHEME_OPTIONS, getGraphPaletteColors } from "@/features/graph/lib/colors";
 import type { ColorSchemeName, DataColumnKey, MapLayer, PointColorStrategy } from "@/features/graph/types";
 import { sectionLabelStyle, panelSelectStyles, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
@@ -19,10 +18,13 @@ const COLOR_STRATEGY_OPTIONS = [
 ];
 
 function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
-  const theme = useGraphColorTheme();
-  const colors = getPaletteColors(schemeName, theme);
+  const colors = getGraphPaletteColors(schemeName);
   return (
-    <div role="img" aria-label={`${schemeName} color palette`} className="mt-1 flex h-2 overflow-hidden rounded">
+    <div
+      role="img"
+      aria-label={`${schemeName} color palette`}
+      className="graph-render-color-preview mt-1 flex h-2 overflow-hidden rounded"
+    >
       {colors.slice(0, 10).map((color) => (
         <div key={color} aria-hidden="true" className="flex-1" style={{ backgroundColor: color }} />
       ))}
@@ -32,7 +34,7 @@ function PalettePreview({ schemeName }: { schemeName: ColorSchemeName }) {
 
 function ColorSwatchBar({ colors }: { colors: readonly string[] }) {
   return (
-    <div className="flex h-1.5 w-full overflow-hidden rounded-sm">
+    <div className="graph-render-color-preview flex h-1.5 w-full overflow-hidden rounded-sm">
       {colors.slice(0, 10).map((color) => (
         <div key={color} className="flex-1" style={{ backgroundColor: color }} />
       ))}
@@ -41,8 +43,7 @@ function ColorSwatchBar({ colors }: { colors: readonly string[] }) {
 }
 
 function SchemeOptionContent({ option }: { option: ComboboxItem }) {
-  const theme = useGraphColorTheme();
-  const colors = getPaletteColors(option.value as ColorSchemeName, theme);
+  const colors = getGraphPaletteColors(option.value as ColorSchemeName);
   return (
     <div className="flex w-full flex-col gap-0.5 py-0.5">
       <span className="text-xs">{option.label}</span>

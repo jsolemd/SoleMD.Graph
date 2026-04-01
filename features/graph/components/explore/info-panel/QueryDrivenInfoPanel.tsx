@@ -3,8 +3,7 @@
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Stack, Text } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
-import { getClusterColor } from "@/features/graph/lib/colors";
-import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
+import { getGraphClusterColor } from "@/features/graph/lib/colors";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
 import { PANEL_BODY_CLASS, PanelDivider, PanelInlineLoader, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
@@ -57,8 +56,6 @@ export function QueryDrivenInfoPanel({
   const [debouncedSelectedPointRevision] = useDebouncedValue(selectedPointRevision, 120);
   const selectionLocked = useDashboardStore((state) => state.selectionLocked);
   const infoWidgets = useDashboardStore((state) => state.infoWidgets);
-  const colorTheme = useGraphColorTheme();
-
   const hasSelection = debouncedSelectedPointCount > 0;
   const hasCurrentSubset =
     typeof deferredCurrentPointScopeSql === "string" &&
@@ -262,11 +259,11 @@ export function QueryDrivenInfoPanel({
           ...(filteredInfo?.topClusters ?? []),
         ].map((cluster) => [
           cluster.clusterId,
-          getClusterColor(cluster.clusterId, colorTheme),
+          getGraphClusterColor(cluster.clusterId),
         ]),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clusterIdKey is a stable string proxy for the topClusters arrays; re-computing only when cluster IDs actually change
-    [colorTheme, clusterIdKey],
+    [clusterIdKey],
   );
   const datasetClustersArr = datasetInfo?.topClusters;
   const selectedClustersArr = selectedInfo?.topClusters;

@@ -4,7 +4,10 @@ import { useMemo } from "react";
 import { useComputedColorScheme } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
-import { getPaletteColors, resolvePaletteSelection } from "@/features/graph/lib/colors";
+import {
+  getGraphPaletteColors,
+  resolveGraphPaletteSelection,
+} from "@/features/graph/lib/colors";
 import { getPointIncludeColumns } from "@/features/graph/lib/cosmograph-columns";
 import { getLayerConfig } from "@/features/graph/lib/layers";
 import { BRAND, CANVAS } from "@/features/graph/lib/brand-colors";
@@ -76,11 +79,10 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
     colorStrategy: effectiveColorStrategy,
   } = useMemo(
     () =>
-      resolvePaletteSelection(
+      resolveGraphPaletteSelection(
         pointColorColumn,
         pointColorStrategy,
         colorSchemeName,
-        'dark',
       ),
     [pointColorColumn, pointColorStrategy, colorSchemeName],
   );
@@ -89,7 +91,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
   // reference on layer/column switches — without this, Cosmograph skips re-coloring
   // when the palette values haven't changed but the data table has.
   const palette = useMemo(
-    () => getPaletteColors(colorSchemeName, 'dark'),
+    () => getGraphPaletteColors(colorSchemeName),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [colorSchemeName, activeLayer, pointColorColumn],
   );

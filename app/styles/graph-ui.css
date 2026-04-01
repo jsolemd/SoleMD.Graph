@@ -147,6 +147,11 @@
   transition: filter 80ms ease-out;
 }
 
+.graph-render-color-preview {
+  filter: var(--graph-canvas-filter);
+  transition: filter 80ms ease-out;
+}
+
 /* ── Light-mode Cosmograph Bars override ──
    The upstream Bars widget hardcodes row dimming plus a 20% highlighted
    overlay. That comparison styling works on dark defaults, but it washes

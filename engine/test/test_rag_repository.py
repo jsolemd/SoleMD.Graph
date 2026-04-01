@@ -258,7 +258,38 @@ def test_fetch_papers_by_corpus_ids_maps_rows(mock_conn):
     assert hits[0].paper_id == "paper-202"
     assert hits[0].journal_name == "Lancet"
     cur = conn.cursor.return_value.__enter__.return_value
-    cur.execute.assert_called_once_with(queries.PAPER_LOOKUP_SQL, ([202],))
+    cur.execute.assert_called_once_with(queries.PAPER_LOOKUP_SQL, ("run-1", [202]))
+
+
+def test_fetch_known_scoped_papers_by_corpus_ids_maps_rows(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 202,
+                "paper_id": "paper-202",
+                "title": "Selected paper semantic neighbor",
+                "abstract": "Abstract text",
+                "tldr": None,
+                "journal_name": "Lancet",
+                "year": 2025,
+                "doi": None,
+                "pmid": 22222,
+                "pmcid": None,
+                "text_availability": "abstract",
+                "is_open_access": False,
+                "citation_count": 4,
+                "reference_count": 9,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    hits = repo.fetch_known_scoped_papers_by_corpus_ids([202, 202])
+
+    assert len(hits) == 1
+    assert hits[0].corpus_id == 202
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(queries.PAPER_LOOKUP_DIRECT_SQL, ([202],))
 
 
 def test_resolve_scope_corpus_ids_maps_graph_refs(mock_conn):
@@ -369,7 +400,7 @@ def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
             call("SET LOCAL hnsw.ef_search = 100"),
             call(
                 queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
-                (101, 101, 120, "run-1", 1),
+                (101, 101, 101, 120, "run-1", 1),
             ),
         ]
     )

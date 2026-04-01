@@ -444,8 +444,7 @@ class RagService:
             }
         ]
         semantic_seed_hits = (
-            self._repository.fetch_papers_by_corpus_ids(
-                release.graph_run_id,
+            self._repository.fetch_known_scoped_papers_by_corpus_ids(
                 semantic_seed_ids,
             )
             if semantic_seed_ids

@@ -6,6 +6,15 @@ import type {
 } from '@/features/graph/types'
 
 /**
+ * Canonical graph render theme.
+ *
+ * The Cosmograph canvas always receives the native "dark" palette so theme
+ * toggles never invalidate pointColorBy / pointColorPalette and trigger a
+ * large DuckDB re-read. Light mode is a post-process CSS filter.
+ */
+export const GRAPH_RENDER_COLOR_THEME = 'dark' as const satisfies ColorTheme
+
+/**
  * Native Cosmograph palette catalog.
  *
  * Source of truth:
@@ -267,6 +276,10 @@ export function getPaletteColors(
   return theme === 'light' ? raw.map(boostForLight) : [...raw]
 }
 
+export function getGraphPaletteColors(schemeName: ColorSchemeName): string[] {
+  return getPaletteColors(schemeName, GRAPH_RENDER_COLOR_THEME)
+}
+
 export function resolvePaletteSelection(
   colorColumn: string,
   colorStrategy: PointColorStrategy,
@@ -291,6 +304,23 @@ export function resolvePaletteSelection(
     colorColumn,
     colorStrategy,
   }
+}
+
+export function resolveGraphPaletteSelection(
+  colorColumn: string,
+  colorStrategy: PointColorStrategy,
+  colorScheme: ColorSchemeName,
+): { colorColumn: string; colorStrategy: PointColorStrategy } {
+  return resolvePaletteSelection(
+    colorColumn,
+    colorStrategy,
+    colorScheme,
+    GRAPH_RENDER_COLOR_THEME,
+  )
+}
+
+export function getGraphClusterColor(clusterId: number): string {
+  return getClusterColor(clusterId, GRAPH_RENDER_COLOR_THEME)
 }
 
 export function getClusterColor(

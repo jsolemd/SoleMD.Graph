@@ -83,6 +83,18 @@ describe("palette reference stability", () => {
     // — changing pointColorColumn should invalidate it
     expect(result.current.palette).not.toBe(before);
   });
+
+  it("keeps the palette reference stable across app theme toggles", async () => {
+    const hook = renderHookWithCount(useConfig);
+    const before = hook.result.current.palette;
+
+    await act(() => {
+      mockColorScheme = "light";
+      hook.rerender();
+    });
+
+    expect(hook.result.current.palette).toBe(before);
+  });
 });
 
 /* ── Function reference stability ── */
@@ -166,6 +178,18 @@ describe("computed value stability", () => {
     });
 
     expect(result.current.pointClusterColumn).toBeUndefined();
+  });
+
+  it("keeps the effective color column stable across app theme toggles", async () => {
+    const hook = renderHookWithCount(useConfig);
+    const before = hook.result.current.effectiveColorColumn;
+
+    await act(() => {
+      mockColorScheme = "light";
+      hook.rerender();
+    });
+
+    expect(hook.result.current.effectiveColorColumn).toBe(before);
   });
 });
 

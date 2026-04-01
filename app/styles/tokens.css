@@ -103,6 +103,11 @@
   --graph-wordmark-text: rgba(0, 0, 0, 0.55);
   --graph-wordmark-accent: var(--brand-accent);
   --graph-stats-text: rgba(0, 0, 0, 0.32);
+  --graph-label-bg: var(--graph-panel-bg);
+  --graph-label-border: rgba(17, 17, 19, 0.03);
+  --graph-label-shadow: 0 2px 10px rgba(17, 17, 19, 0.04);
+  --graph-label-text-shadow: 0 0 0.25px rgba(17, 17, 19, 0.14);
+  --graph-label-text-stroke: 0.15px rgba(17, 17, 19, 0.1);
   --graph-greyout-opacity: 0.25;
 
   /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
@@ -234,19 +239,25 @@ html:root {
   /* ── Graph canvas (only values that diverge from foundations) ── */
   --graph-canvas-filter: none;
   --graph-bg: #111113;
+  --graph-panel-border: rgba(255, 255, 255, 0.04);
   --graph-panel-input-bg: #19191d;
-  --graph-panel-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 4px 20px rgba(0, 0, 0, 0.45);
+  --graph-panel-shadow: 0 6px 22px rgba(0, 0, 0, 0.42);
 
   /* ── Graph overlays (matte floating cards) ── */
   --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: transparent;
-  --graph-prompt-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 4px 24px rgba(0, 0, 0, 0.5);
+  --graph-prompt-shadow: 0 8px 26px rgba(0, 0, 0, 0.46);
   --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
   --graph-prompt-inactive: rgba(255, 255, 255, 0.52);
   --graph-prompt-text: #ffffff;
   --graph-prompt-divider: rgba(168, 197, 233, 0.2);
   --graph-wordmark-text: rgba(255, 255, 255, 0.6);
   --graph-stats-text: rgba(255, 255, 255, 0.32);
+  --graph-label-bg: var(--graph-panel-bg);
+  --graph-label-border: transparent;
+  --graph-label-shadow: none;
+  --graph-label-text-shadow: none;
+  --graph-label-text-stroke: 0 transparent;
   --graph-greyout-opacity: 0.15;
 
   /* ── Filter/timeline bars — boost active brightness on dark surfaces ── */

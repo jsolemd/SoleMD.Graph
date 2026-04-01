@@ -560,6 +560,75 @@ Runtime grounding remediation and verified live result:
     - grounded answer links corpus id `5496257`
     - no failure themes remain in `title_global` over the full live graph release
 
+## Runtime Performance Pass
+
+- runtime clean-up changes:
+  - moved repo temp inspection/cleanup logic out of `engine/app` and into:
+    - `engine/scripts/tmp_cleanup.py`
+    - `engine/scripts/cleanup_repo_tmp.py`
+    - `engine/test/test_tmp_cleanup.py`
+  - temp cleanup remains centralized and repo-local instead of being embedded in app code
+- runtime retrieval performance fixes:
+  - `engine/app/rag/repository.py`
+    - semantic-neighbor retrieval now prefers a pgvector HNSW ANN path when the runtime index exists
+    - ANN retrieval uses bounded oversampling plus graph-release filtering instead of brute-force full-release cosine sort
+    - exact fallback now enables Postgres parallel gather workers
+    - graph-scoped paper lookup remains strict for citation-seeded candidates
+    - known-scoped paper lookup is split into a direct fast path for semantic-neighbor candidates so we do not rescan graph scope redundantly
+  - `engine/app/rag/queries.py`
+    - `SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL` was reshaped to the pgvector-native form that actually uses `idx_papers_embedding_hnsw`
+    - `PAPER_LOOKUP_SQL` now uses a targeted `graph_points` join on requested ids instead of materializing the full release scope
+    - `PAPER_LOOKUP_DIRECT_SQL` was added for already graph-scoped ids
+  - `engine/app/config.py`
+    - centralized semantic-neighbor ANN and exact-fallback runtime settings
+  - `engine/app/rag_ingest/runtime_eval.py`
+    - runtime eval cases now persist per-query duration
+    - aggregate summaries now expose `mean_duration_ms` and `p95_duration_ms`
+- live runtime index DDL:
+  - new migration:
+    - `engine/db/migrations/035_add_papers_embedding_hnsw.sql`
+  - live database action completed:
+    - built `solemd.idx_papers_embedding_hnsw` concurrently on `solemd.papers(embedding vector_cosine_ops) WHERE embedding IS NOT NULL`
+    - final live index status:
+      - `indisvalid = true`
+      - `indisready = true`
+      - size about `9880 MB`
+  - operational note:
+    - the first concurrent build path was too slow
+    - rebuilding with `maintenance_work_mem = 4GB` and `max_parallel_maintenance_workers = 7` was materially better and should be the operational standard for this index
+- new/expanded tests:
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_tmp_cleanup.py`
+- verified live runtime results after the performance pass:
+  - warmed single-case `title_selected` S2 probe:
+    - `~285 ms` total
+  - instrumented warmed single-case breakdown:
+    - total `~300 ms`
+    - `fetch_semantic_neighbors ~55 ms`
+    - `fetch_papers_by_corpus_ids ~16 ms` across two calls
+  - full `title_selected` report artifact:
+    - `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v2.json`
+    - `mean_duration_ms = 385.139`
+    - `p95_duration_ms = 511.83`
+    - `error_count = 0`
+  - full `title_global` report artifact:
+    - `.tmp/rag-runtime-eval-default-structural-v1-title-global-v5.json`
+    - `hit_at_1_rate = 0.9074`
+    - `grounded_answer_rate = 1.0`
+    - `target_in_grounded_answer_rate = 1.0`
+    - `mean_duration_ms = 310.073`
+    - `p95_duration_ms = 411.643`
+    - `error_count = 0`
+- baseline comparison for the selected-paper hot path:
+  - before this pass:
+    - a single `title_selected` S2 request timed out at `>25 s`
+    - method-level profiling showed `fetch_semantic_neighbors ~14.7 s`
+  - after this pass:
+    - the same warmed request completes in `~285 ms`
+    - method-level profiling shows `fetch_semantic_neighbors ~55 ms`
+
 ## Cutover Note
 
 The live warehouse currently mixes canonical parser versions:

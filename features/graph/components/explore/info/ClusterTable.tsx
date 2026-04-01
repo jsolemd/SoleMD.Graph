@@ -82,7 +82,7 @@ export function ClusterTable({
               <Group justify="space-between" mb={2} gap={8}>
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span
-                    className="inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                    className="graph-render-color-preview inline-block h-2 w-2 flex-shrink-0 rounded-full"
                     style={{
                       backgroundColor:
                         clusterColors[cluster.clusterId] ??
@@ -121,7 +121,7 @@ export function ClusterTable({
                 }}
               >
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full"
+                  className="graph-render-color-preview absolute inset-y-0 left-0 rounded-full"
                   style={{
                     width: `${totalPct}%`,
                     backgroundColor: clusterColor,
@@ -130,7 +130,7 @@ export function ClusterTable({
                 />
                 {comparisonState.hasSelection ? (
                   <div
-                    className="absolute inset-y-0 left-0 rounded-full"
+                    className="graph-render-color-preview absolute inset-y-0 left-0 rounded-full"
                     style={{
                       width: `${selectionPct}%`,
                       backgroundColor: clusterColor,
@@ -140,7 +140,7 @@ export function ClusterTable({
                 ) : null}
                 {comparisonState.hasFiltered ? (
                   <div
-                    className="absolute inset-y-0 left-0 rounded-full"
+                    className="graph-render-color-preview absolute inset-y-0 left-0 rounded-full"
                     style={{
                       width: `${filteredPct}%`,
                       backgroundColor: clusterColor,

@@ -162,6 +162,9 @@ class FakeRepository:
             )
         ]
 
+    def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+        return self.fetch_papers_by_corpus_ids("run-1", corpus_ids)
+
     def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
         assert corpus_ids == [11, 22, 33]
         assert query == "melatonin delirium"

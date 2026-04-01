@@ -79,6 +79,11 @@ class RagRepository(Protocol):
         corpus_ids: Sequence[int],
     ) -> list[PaperEvidenceHit]: ...
 
+    def fetch_known_scoped_papers_by_corpus_ids(
+        self,
+        corpus_ids: Sequence[int],
+    ) -> list[PaperEvidenceHit]: ...
+
     def search_relation_papers(
         self,
         graph_run_id: str,
@@ -375,7 +380,44 @@ class PostgresRagRepository:
         unique_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.PAPER_LOOKUP_SQL, (unique_ids,))
+                cur.execute(queries.PAPER_LOOKUP_SQL, (graph_run_id, unique_ids))
+                rows = cur.fetchall()
+
+        hits: list[PaperEvidenceHit] = []
+        for row in rows:
+            hits.append(
+                PaperEvidenceHit(
+                    corpus_id=int(row["corpus_id"]),
+                    paper_id=row.get("paper_id"),
+                    semantic_scholar_paper_id=row.get("semantic_scholar_paper_id")
+                    or row.get("paper_id"),
+                    title=row.get("title"),
+                    journal_name=row.get("journal_name"),
+                    year=row.get("year"),
+                    doi=row.get("doi"),
+                    pmid=row.get("pmid"),
+                    pmcid=row.get("pmcid"),
+                    abstract=row.get("abstract"),
+                    tldr=row.get("tldr"),
+                    text_availability=row.get("text_availability"),
+                    is_open_access=row.get("is_open_access"),
+                    citation_count=row.get("citation_count"),
+                    reference_count=row.get("reference_count"),
+                )
+            )
+        return hits
+
+    def fetch_known_scoped_papers_by_corpus_ids(
+        self,
+        corpus_ids: Sequence[int],
+    ) -> list[PaperEvidenceHit]:
+        if not corpus_ids:
+            return []
+
+        unique_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(queries.PAPER_LOOKUP_DIRECT_SQL, (unique_ids,))
                 rows = cur.fetchall()
 
         hits: list[PaperEvidenceHit] = []
@@ -893,6 +935,7 @@ class PostgresRagRepository:
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
                     (
+                        selected_corpus_id,
                         selected_corpus_id,
                         selected_corpus_id,
                         candidate_limit,
