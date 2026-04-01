@@ -1,22 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useCosmograph } from "@cosmograph/react";
-import type { Cosmograph } from "@cosmograph/cosmograph";
-import { getInternalApi } from "@cosmograph/cosmograph/cosmograph/internal";
 import { FilteringClient } from "@cosmograph/cosmograph/cosmograph/crossfilter/filtering-client";
 import { Histogram } from "@cosmograph/ui";
 import { Text } from "@mantine/core";
 import {
-  buildVisibilityScopeSqlExcludingSource,
+  buildNumericRangeFilterClause,
   clearSelectionClause,
-  createSelectionSource,
-  getSelectionSourceId,
   getSelectionValueForSource,
-  matchesSelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
-import { getLayerTableName } from "@/features/graph/duckdb/sql-helpers";
-import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoHistogramResult } from "@/features/graph/types";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
@@ -25,30 +17,18 @@ import {
   setNativeHistogramData,
   setNativeHistogramHighlight,
 } from "./native-histogram-adapter";
-import { resolveWidgetBaselineScope } from "./widget-baseline";
+import {
+  WIDGET_DATASET_RETRY_DELAYS,
+  getCachedHistogramDataset,
+  getWidgetDatasetCacheKeyWithRevision,
+  setCachedHistogramDataset,
+} from "./dataset-cache";
+import { initCrossfilterClient } from "./init-crossfilter-client";
+import { useWidgetSelectors } from "./use-widget-selectors";
+import { normalizeRange, rangesEqual } from "./widget-range-utils";
 
 const YEAR_LIKE_COLUMNS = new Set(["year", "pageNumber"]);
 const FILTER_HISTOGRAM_HEIGHT = 72;
-const HISTOGRAM_DATASET_RETRY_DELAYS_MS = [0, 150, 450];
-
-function normalizeRange(
-  value: [number, number],
-  extent: [number, number],
-  step: number,
-): [number, number] {
-  const min = Math.max(extent[0], Math.min(value[0], value[1]));
-  const max = Math.min(extent[1], Math.max(value[0], value[1]));
-
-  if (step >= 1) {
-    return [Math.round(min), Math.round(max)];
-  }
-
-  return [Number(min.toFixed(3)), Number(max.toFixed(3))];
-}
-
-function rangesEqual(left: [number, number], right: [number, number]) {
-  return Math.abs(left[0] - right[0]) < 1e-6 && Math.abs(left[1] - right[1]) < 1e-6;
-}
 
 function hasRenderableHistogramData(result: GraphInfoHistogramResult): boolean {
   return result.totalCount > 1 && getHistogramExtent(result) !== null;
@@ -65,12 +45,19 @@ export function FilterHistogramWidget({
   bundleChecksum: string;
   overlayRevision: number;
 }) {
-  const { cosmograph } = useCosmograph();
-  const activeLayer = useDashboardStore((state) => state.activeLayer);
-  const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
-  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
-  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
-  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
+  const {
+    cosmograph,
+    activeLayer,
+    currentScopeRevision,
+    sourceId,
+    source,
+    tableName,
+    baselineScope,
+    baselineCacheKey,
+    scopeSql,
+    isSubset,
+  } = useWidgetSelectors("filter", column);
+
   const [error, setError] = useState<string | null>(null);
   const [widgetRevision, setWidgetRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -80,28 +67,7 @@ export function FilterHistogramWidget({
   const scopedRequestIdRef = useRef(0);
   const extentRef = useRef<[number, number] | null>(null);
   const renderedDatasetKeyRef = useRef<string | null>(null);
-  const sourceId = `filter:${column}`;
-  const source = useMemo(() => createSelectionSource(sourceId), [sourceId]);
-  const tableName = useMemo(() => getLayerTableName(activeLayer), [activeLayer]);
-  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
-    () =>
-      resolveWidgetBaselineScope({
-        selectionLocked,
-        selectedPointCount,
-        selectedPointRevision,
-      }),
-    [selectedPointCount, selectedPointRevision, selectionLocked],
-  );
-  const scopeSql = useMemo(
-    () =>
-      buildVisibilityScopeSqlExcludingSource(
-        cosmograph?.pointsSelection,
-        sourceId,
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
-    [cosmograph, currentScopeRevision, sourceId],
-  );
-  const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;
+
   const selectedRange = useMemo(
     () =>
       getSelectionValueForSource<[number, number]>(
@@ -144,45 +110,21 @@ export function FilterHistogramWidget({
           return;
         }
 
-        client.applyRangeFilter(normalized);
+        cosmograph.pointsSelection.update(
+          buildNumericRangeFilterClause(client, column, normalized),
+        );
       },
     });
 
-    const internalApi = getInternalApi(cosmograph as unknown as Cosmograph);
     let client: FilteringClient | null = null;
-
-    const initializeClient = async () => {
-      await internalApi.dbReady();
-      if (!internalApi.dbCoordinator) {
-        return;
-      }
-
-      client = FilteringClient.getOrCreateClient({
-        coordinator: internalApi.dbCoordinator,
-        getTableName: () => tableName,
-        getSelection: () => internalApi.crossfilter.pointsSelection,
-        getAccessor: () => column,
-        includeFields: () => [internalApi.config.pointIndexBy].filter(Boolean) as string[],
-        onFiltered: (result) => {
-          if (
-            client &&
-            matchesSelectionSourceId(
-              getSelectionSourceId(
-                internalApi.crossfilter.pointsSelection.active?.source,
-              ),
-              sourceId,
-            )
-          ) {
-            internalApi.crossfilter.onPointsFiltered(result);
-          }
-        },
-        id: sourceId,
-      });
-      client.setActive(true);
-      clientRef.current = client;
-    };
-
-    void initializeClient();
+    void initCrossfilterClient(cosmograph, { sourceId, column, tableName }).then(
+      (result) => {
+        if (result) {
+          client = result;
+          clientRef.current = result;
+        }
+      },
+    );
 
     widgetRef.current = widget;
     setWidgetRevision((current) => current + 1);
@@ -203,32 +145,50 @@ export function FilterHistogramWidget({
     }
 
     const requestId = ++datasetRequestIdRef.current;
-    const datasetKey = `${bundleChecksum}:${activeLayer}:${column}:${overlayRevision}:${baselineCacheKey}:histogram`;
-    widget.setLoadingState();
-
-    const datasetPromise = (async () => {
-      let latestHistogram: GraphInfoHistogramResult = { bins: [], totalCount: 0 };
-
-      for (const delay of HISTOGRAM_DATASET_RETRY_DELAYS_MS) {
-        if (delay > 0) {
-          await new Promise((resolve) => globalThis.setTimeout(resolve, delay));
-        }
-
-        latestHistogram = await queries.getInfoHistogram({
-          layer: activeLayer,
-          scope: baselineScope,
-          column,
-          bins: 20,
-          currentPointScopeSql: null,
-        });
-
-        if (hasRenderableHistogramData(latestHistogram)) {
-          return latestHistogram;
-        }
+    const datasetCacheKey = getWidgetDatasetCacheKeyWithRevision(
+      bundleChecksum,
+      activeLayer,
+      column,
+      overlayRevision,
+      baselineCacheKey,
+    );
+    const cachedDataset = getCachedHistogramDataset(datasetCacheKey);
+    if (cachedDataset && hasRenderableHistogramData(cachedDataset)) {
+      const cachedExtent = getHistogramExtent(cachedDataset);
+      extentRef.current = cachedExtent;
+      if (renderedDatasetKeyRef.current !== datasetCacheKey) {
+        setNativeHistogramData(widget, cachedDataset);
+        renderedDatasetKeyRef.current = datasetCacheKey;
       }
+    } else {
+      widget.setLoadingState();
+    }
 
-      return latestHistogram;
-    })();
+    const datasetPromise = cachedDataset
+      ? Promise.resolve(cachedDataset)
+      : (async () => {
+          let latestHistogram: GraphInfoHistogramResult = { bins: [], totalCount: 0 };
+
+          for (const delay of WIDGET_DATASET_RETRY_DELAYS) {
+            if (delay > 0) {
+              await new Promise((resolve) => globalThis.setTimeout(resolve, delay));
+            }
+
+            latestHistogram = await queries.getInfoHistogram({
+              layer: activeLayer,
+              scope: baselineScope,
+              column,
+              bins: 20,
+              currentPointScopeSql: null,
+            });
+
+            if (hasRenderableHistogramData(latestHistogram)) {
+              return latestHistogram;
+            }
+          }
+
+          return latestHistogram;
+        })();
 
     datasetPromise
       .then((datasetHistogram: GraphInfoHistogramResult) => {
@@ -238,6 +198,9 @@ export function FilterHistogramWidget({
 
         const extent = getHistogramExtent(datasetHistogram);
         extentRef.current = extent;
+        if (hasRenderableHistogramData(datasetHistogram)) {
+          setCachedHistogramDataset(datasetCacheKey, datasetHistogram);
+        }
         if (!widgetRef.current) {
           return;
         }
@@ -245,7 +208,7 @@ export function FilterHistogramWidget({
         setError(null);
         setNativeHistogramData(widget, datasetHistogram);
         renderedDatasetKeyRef.current = hasRenderableHistogramData(datasetHistogram)
-          ? datasetKey
+          ? datasetCacheKey
           : null;
         widget.setSelection(
           selectedRange && extent

@@ -57,8 +57,24 @@ ORDER BY rm.corpus_id, rm.packet_rank, rm.source_start_offset
 
 WAREHOUSE_ENTITY_PACKET_SQL = """
 SELECT
-    e.*
+    e.*,
+    b.section_ordinal AS block_section_ordinal,
+    b.section_role AS block_section_role,
+    b.block_kind AS block_kind,
+    b.text AS block_text,
+    b.is_retrieval_default AS block_is_retrieval_default,
+    b.linked_asset_ref AS block_linked_asset_ref,
+    s.section_ordinal AS sentence_section_ordinal,
+    s.segmentation_source AS sentence_segmentation_source,
+    s.text AS sentence_text
 FROM solemd.paper_entity_mentions e
+JOIN solemd.paper_blocks b
+  ON b.corpus_id = e.corpus_id
+ AND b.block_ordinal = e.canonical_block_ordinal
+LEFT JOIN solemd.paper_sentences s
+  ON s.corpus_id = e.corpus_id
+ AND s.block_ordinal = e.canonical_block_ordinal
+ AND s.sentence_ordinal = e.canonical_sentence_ordinal
 WHERE
     e.corpus_id = ANY(%s)
     AND e.canonical_block_ordinal IS NOT NULL
@@ -89,20 +105,95 @@ def fetch_warehouse_grounding_rows(
     return citation_rows, entity_rows
 
 
+def _build_block_and_sentence_from_row(
+    row: dict,
+    *,
+    block_ordinal_key: str,
+    sentence_ordinal_key: str,
+) -> tuple[PaperBlockRow, PaperSentenceRow | None]:
+    block = PaperBlockRow(
+        corpus_id=int(row["corpus_id"]),
+        block_ordinal=int(row[block_ordinal_key]),
+        section_ordinal=int(row["block_section_ordinal"]),
+        section_role=row["block_section_role"],
+        block_kind=row["block_kind"],
+        text=row["block_text"],
+        is_retrieval_default=bool(row.get("block_is_retrieval_default", True)),
+        linked_asset_ref=row.get("block_linked_asset_ref"),
+    )
+    sentence = None
+    if row.get(sentence_ordinal_key) is not None and row.get("sentence_text"):
+        sentence = PaperSentenceRow(
+            corpus_id=int(row["corpus_id"]),
+            block_ordinal=int(row[block_ordinal_key]),
+            sentence_ordinal=int(row[sentence_ordinal_key]),
+            section_ordinal=int(
+                row.get("sentence_section_ordinal") or row["block_section_ordinal"]
+            ),
+            segmentation_source=row.get("sentence_segmentation_source")
+            or "deterministic_fallback",
+            text=row["sentence_text"],
+        )
+    return block, sentence
+
+
+def _build_entity_from_row(row: dict) -> PaperEntityMentionRow:
+    return PaperEntityMentionRow.model_validate(
+        {
+            key: row[key]
+            for key in PaperEntityMentionRow.model_fields
+        }
+    )
+
+
+def _sort_packets_by_corpus_order(
+    packets,
+    *,
+    corpus_order: Sequence[int] | None,
+):
+    if not packets:
+        return []
+    if not corpus_order:
+        return sorted(
+            packets,
+            key=lambda packet: (
+                packet.corpus_id,
+                packet.canonical_section_ordinal,
+                packet.canonical_block_ordinal,
+                packet.canonical_sentence_ordinal or -1,
+            ),
+        )
+    rank_by_corpus = {int(corpus_id): index for index, corpus_id in enumerate(corpus_order)}
+    return sorted(
+        packets,
+        key=lambda packet: (
+            rank_by_corpus.get(packet.corpus_id, len(rank_by_corpus)),
+            packet.canonical_section_ordinal,
+            packet.canonical_block_ordinal,
+            packet.canonical_sentence_ordinal or -1,
+        ),
+    )
+
+
 def build_grounded_answer_from_warehouse_rows(
     *,
     citation_rows: Sequence[dict],
     entity_rows: Sequence[dict],
     segment_texts: Sequence[str],
+    segment_corpus_ids: Sequence[int | None] | None = None,
+    corpus_order: Sequence[int] | None = None,
 ) -> GroundedAnswerRecord | None:
     """Build a grounded answer from already-fetched warehouse rows."""
 
-    if not citation_rows:
+    if not citation_rows and not entity_rows:
         return None
 
-    entity_by_packet: dict[tuple[int, int, int | None], list[PaperEntityMentionRow]] = defaultdict(list)
+    entity_by_packet: dict[
+        tuple[int, int, int | None],
+        list[PaperEntityMentionRow],
+    ] = defaultdict(list)
     for row in entity_rows:
-        entity = PaperEntityMentionRow.model_validate(row)
+        entity = _build_entity_from_row(row)
         packet_key = (
             entity.corpus_id,
             entity.canonical_block_ordinal,
@@ -118,26 +209,11 @@ def build_grounded_answer_from_warehouse_rows(
                 for key in PaperCitationMentionRow.model_fields
             }
         )
-        block = PaperBlockRow(
-            corpus_id=int(row["corpus_id"]),
-            block_ordinal=int(row["canonical_block_ordinal"]),
-            section_ordinal=int(row["block_section_ordinal"]),
-            section_role=row["block_section_role"],
-            block_kind=row["block_kind"],
-            text=row["block_text"],
-            is_retrieval_default=bool(row.get("block_is_retrieval_default", True)),
-            linked_asset_ref=row.get("block_linked_asset_ref"),
+        block, sentence = _build_block_and_sentence_from_row(
+            row,
+            block_ordinal_key="canonical_block_ordinal",
+            sentence_ordinal_key="canonical_sentence_ordinal",
         )
-        sentence = None
-        if row.get("canonical_sentence_ordinal") is not None and row.get("sentence_text"):
-            sentence = PaperSentenceRow(
-                corpus_id=int(row["corpus_id"]),
-                block_ordinal=int(row["canonical_block_ordinal"]),
-                sentence_ordinal=int(row["canonical_sentence_ordinal"]),
-                section_ordinal=int(row.get("sentence_section_ordinal") or row["block_section_ordinal"]),
-                segmentation_source=row.get("sentence_segmentation_source") or "deterministic_fallback",
-                text=row["sentence_text"],
-            )
         packet_key = (
             citation.corpus_id,
             citation.canonical_block_ordinal,
@@ -152,12 +228,53 @@ def build_grounded_answer_from_warehouse_rows(
             )
         )
 
+    if not packets and entity_rows:
+        grouped_entities: dict[
+            tuple[int, int, int | None],
+            dict[str, object],
+        ] = {}
+        for row in entity_rows:
+            entity = _build_entity_from_row(row)
+            packet_key = (
+                entity.corpus_id,
+                entity.canonical_block_ordinal,
+                entity.canonical_sentence_ordinal,
+            )
+            entry = grouped_entities.get(packet_key)
+            if entry is None:
+                block, sentence = _build_block_and_sentence_from_row(
+                    row,
+                    block_ordinal_key="canonical_block_ordinal",
+                    sentence_ordinal_key="canonical_sentence_ordinal",
+                )
+                entry = {
+                    "block": block,
+                    "sentence": sentence,
+                    "entities": [],
+                }
+                grouped_entities[packet_key] = entry
+            entry["entities"].append(entity)
+
+        for packet_key, entry in grouped_entities.items():
+            packets.append(
+                build_cited_span_packet(
+                    block=entry["block"],
+                    sentence=entry["sentence"],
+                    citation_rows=[],
+                    entity_rows=entry["entities"],
+                )
+            )
+
     if not packets:
         return None
 
     return build_grounded_answer_from_packets(
         segment_texts=segment_texts,
-        packets=packets,
+        segment_corpus_ids=segment_corpus_ids,
+        packets=_sort_packets_by_corpus_order(
+            packets,
+            corpus_order=corpus_order,
+        ),
     )
 
 
@@ -165,6 +282,7 @@ def build_grounded_answer_from_warehouse(
     *,
     corpus_ids: Sequence[int],
     segment_texts: Sequence[str],
+    segment_corpus_ids: Sequence[int | None] | None = None,
     limit_per_paper: int = 1,
     connect=None,
 ) -> GroundedAnswerRecord | None:
@@ -186,4 +304,6 @@ def build_grounded_answer_from_warehouse(
         citation_rows=citation_rows,
         entity_rows=entity_rows,
         segment_texts=segment_texts,
+        segment_corpus_ids=segment_corpus_ids,
+        corpus_order=normalized_corpus_ids,
     )

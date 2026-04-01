@@ -86,15 +86,14 @@ export async function queryNumericValues(
     currentPointScopeSql,
   });
   const safeColumn = resolveInfoColumn(layer, column);
-  const rows = await queryRows<{ value: number | null }>(
+  const rows = await queryRows<{ value: number }>(
     conn,
     `SELECT CAST(${safeColumn} AS DOUBLE) AS value
      FROM ${tableName}
      WHERE ${scopedPredicate}
-       AND ${safeColumn} IS NOT NULL`,
+       AND ${safeColumn} IS NOT NULL
+       AND isfinite(CAST(${safeColumn} AS DOUBLE))`,
   );
 
-  return rows
-    .map((row) => row.value)
-    .filter((value): value is number => Number.isFinite(value));
+  return rows.map((row) => row.value);
 }

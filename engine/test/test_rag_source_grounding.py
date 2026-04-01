@@ -140,6 +140,29 @@ def test_build_grounded_answer_from_packets_derives_segments_anchors_and_answer_
     assert grounded_answer.answer_linked_corpus_ids == [12345]
 
 
+def test_build_grounded_answer_from_packets_respects_segment_corpus_alignment():
+    packets = build_cited_span_packets_from_sources(
+        primary_source=_build_s2orc_source(),
+        annotation_sources=[_build_bioc_overlay()],
+        source_citation_keys=["b1"],
+    )
+
+    grounded_answer = build_grounded_answer_from_packets(
+        segment_texts=[
+            "Potentially relevant evidence:",
+            "Example trial: Melatonin reduced delirium incidence [1].",
+            "Uncovered neighbor paper: no canonical grounding rows available.",
+        ],
+        segment_corpus_ids=[None, 12345, 99999],
+        packets=packets,
+    )
+
+    assert grounded_answer.segments[0].citation_anchor_ids == []
+    assert grounded_answer.segments[1].citation_anchor_ids == ["anchor:1"]
+    assert grounded_answer.segments[2].citation_anchor_ids == []
+    assert grounded_answer.answer_linked_corpus_ids == [12345]
+
+
 def test_build_cited_span_packets_from_sources_does_not_emit_entity_only_packets():
     packets = build_cited_span_packets_from_sources(
         primary_source=_build_bioc_overlay(),

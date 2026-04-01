@@ -8,14 +8,13 @@ from functools import lru_cache
 from time import perf_counter
 from uuid import uuid4
 
-from app.rag.answer import generate_baseline_answer, select_answer_grounding_bundles
+from app.rag.answer import build_baseline_answer_payload
 from app.rag.bundle import assemble_evidence_bundles, merge_graph_signals
 from app.rag.grounded_runtime import build_grounded_answer_from_runtime
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
     EvidenceBundle,
-    GraphRelease,
     GraphSignal,
     PaperEvidenceHit,
     PaperReferenceRecord,
@@ -570,24 +569,36 @@ class RagService:
             evidence_intent=query.evidence_intent,
             semantic_neighbors=semantic_neighbors,
         )
-        answer_grounding_bundles = select_answer_grounding_bundles(bundles)
-        answer_corpus_ids = [
-            bundle.paper.corpus_id
-            for bundle in answer_grounding_bundles
-        ]
-        answer, answer_model = (
-            generate_baseline_answer(
+        answer_payload = (
+            build_baseline_answer_payload(
                 bundles,
                 evidence_intent=query.evidence_intent,
+                query_text=query.normalized_query,
             )
             if query.generate_answer
-            else (None, None)
+            else None
+        )
+        answer = answer_payload.text if answer_payload else None
+        answer_model = answer_payload.model if answer_payload else None
+        answer_corpus_ids = (
+            list(answer_payload.grounding_corpus_ids)
+            if answer_payload is not None
+            else []
         )
         grounded_answer = None
         if self._warehouse_grounder and answer and answer_corpus_ids:
             grounded_answer = self._warehouse_grounder(
                 corpus_ids=answer_corpus_ids,
-                segment_texts=[answer],
+                segment_texts=(
+                    list(answer_payload.segment_texts)
+                    if answer_payload and answer_payload.segment_texts
+                    else [answer]
+                ),
+                segment_corpus_ids=(
+                    list(answer_payload.segment_corpus_ids)
+                    if answer_payload and answer_payload.segment_corpus_ids
+                    else None
+                ),
             )
             if grounded_answer and grounded_answer.answer_linked_corpus_ids:
                 answer_corpus_ids = grounded_answer.answer_linked_corpus_ids

@@ -1,8 +1,18 @@
 "use client";
 
-import { ActionIcon, Badge, Group, Paper, ScrollArea, Stack, Text } from "@mantine/core";
+import { ActionIcon, Badge, Group, ScrollArea, Stack, Text } from "@mantine/core";
 import { X } from "lucide-react";
 import type { GraphPointRecord, GraphRagQueryResponsePayload } from "@/features/graph/types";
+import {
+  badgeAccentStyles,
+  iconBtnStyles,
+  PanelDivider,
+  panelAccentCardClassName,
+  panelAccentCardStyle,
+  panelTextDimStyle,
+  panelTextStyle,
+  sectionLabelStyle,
+} from "@/features/graph/components/panels/PanelShell";
 import type {
   RagGraphAvailabilitySummary,
   RagResponseSession,
@@ -65,13 +75,11 @@ export function RagResponsePanel({
   const evidenceOnlyCount = ragGraphAvailability?.evidenceOnlyGraphPaperRefs.length ?? 0;
 
   return (
-    <Paper
-      radius="24px"
-      p="md"
-      withBorder
+    <div
+      className="rounded-3xl p-4"
       style={{
         backgroundColor: "var(--graph-prompt-bg)",
-        borderColor: "var(--graph-prompt-border)",
+        border: "1px solid var(--graph-prompt-border)",
         boxShadow: "var(--graph-prompt-shadow)",
       }}
     >
@@ -79,78 +87,78 @@ export function RagResponsePanel({
         <Group align="flex-start" justify="space-between" wrap="nowrap">
           <Stack gap={4} style={{ minWidth: 0 }}>
             <Group gap="xs">
-              <Text fw={700} size="sm" style={{ color: "var(--graph-prompt-text)" }}>
+              <Text fw={700} style={panelTextStyle}>
                 {title}
               </Text>
               {intentLabel && (
                 <Badge
                   variant="light"
-                  radius="sm"
-                  style={{
-                    backgroundColor: "var(--mode-accent-subtle)",
-                    border: "1px solid var(--mode-accent-border)",
-                    color: "var(--graph-prompt-text)",
-                  }}
+                  size="xs"
+                  styles={badgeAccentStyles}
                 >
                   {intentLabel}
                 </Badge>
               )}
             </Group>
             {ragSession?.queryPreview && (
-              <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
+              <Text style={panelTextDimStyle}>
                 {ragSession.queryPreview}
               </Text>
             )}
             {selectedNode && (
-              <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
+              <Text style={panelTextDimStyle}>
                 Focused {selectedScopeLabel}: {selectedNode.displayLabel || selectedNode.citekey || selectedNode.paperTitle || selectedNode.id}
               </Text>
             )}
             {selectionScopeCount > 0 && (
-              <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
+              <Text style={panelTextDimStyle}>
                 Retrieval limited to {selectionScopeCount} paper{selectionScopeCount === 1 ? "" : "s"} in the current graph selection
               </Text>
             )}
             {answerGroundingCount > 0 && (
-              <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
+              <Text style={panelTextDimStyle}>
                 {answerGroundingCount} answer-linked stud{answerGroundingCount === 1 ? "y is" : "ies are"} selected on the graph
               </Text>
             )}
             {activeResolvedCount > 0 && (
-              <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
+              <Text style={panelTextDimStyle}>
                 {activeResolvedCount} evidence stud{activeResolvedCount === 1 ? "y was" : "ies were"} already active on the graph
               </Text>
             )}
             {overlayPromotedCount > 0 && (
-              <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
+              <Text style={panelTextDimStyle}>
                 {overlayPromotedCount} evidence stud{overlayPromotedCount === 1 ? "y was" : "ies were"} promoted from the universe into the active canvas
               </Text>
             )}
             {evidenceOnlyCount > 0 && (
-              <Text size="xs" style={{ color: "var(--graph-prompt-placeholder)" }}>
+              <Text style={panelTextDimStyle}>
                 {evidenceOnlyCount} evidence stud{evidenceOnlyCount === 1 ? "y is" : "ies are"} not graph-resolvable in the current attached universe
               </Text>
             )}
           </Stack>
           <ActionIcon
-            variant="subtle"
-            color="gray"
+            variant="transparent"
+            size={24}
             radius="xl"
+            className="graph-icon-btn"
+            styles={iconBtnStyles}
             onClick={onDismiss}
-            aria-label="Dismiss evidence response"
+            aria-label="Dismiss response"
           >
-            <X size={14} />
+            <X size={12} />
           </ActionIcon>
         </Group>
 
+        <PanelDivider />
+
         {isSubmitting && (
-          <Text size="sm" style={{ color: "var(--graph-prompt-placeholder)" }}>
+          <Text style={panelTextDimStyle}>
             Querying graph evidence…
           </Text>
         )}
 
         {ragError && (
-          <Text size="sm" style={{ color: "var(--graph-prompt-placeholder)" }}>
+          <Text style={panelTextDimStyle}>
             {ragError}
           </Text>
         )}
@@ -163,11 +171,7 @@ export function RagResponsePanel({
                   {groundedAnswer.segments.map((segment) => (
                     <Text
                       key={`segment-${segment.segment_ordinal}`}
-                      size="sm"
-                      style={{
-                        color: "var(--graph-prompt-text)",
-                        whiteSpace: "pre-wrap",
-                      }}
+                      style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}
                     >
                       {segment.text}
                       {segment.citation_anchor_ids.map((anchorId) => {
@@ -181,9 +185,8 @@ export function RagResponsePanel({
                             key={anchor.anchor_id}
                             component="span"
                             ml={6}
-                            size="xs"
                             fw={700}
-                            style={{ color: "var(--mode-accent)" }}
+                            style={{ ...panelTextStyle, color: "var(--mode-accent)" }}
                           >
                             {anchor.label}
                           </Text>
@@ -193,7 +196,7 @@ export function RagResponsePanel({
                   ))}
                 </Stack>
               ) : answerText ? (
-                <Text size="sm" style={{ color: "var(--graph-prompt-text)", whiteSpace: "pre-wrap" }}>
+                <Text style={{ ...panelTextStyle, whiteSpace: "pre-wrap" }}>
                   {answerText}
                 </Text>
               ) : null}
@@ -202,95 +205,91 @@ export function RagResponsePanel({
                 !answerText &&
                 !groundedAnswer?.segments.length &&
                 ragResponse.results.length === 0 && (
-                <Text size="sm" style={{ color: "var(--graph-prompt-placeholder)" }}>
+                <Text style={panelTextDimStyle}>
                   No matching evidence was found for this query.
                 </Text>
                 )}
 
               {groundedAnswer?.cited_spans.length ? (
-                <Stack gap="xs">
-                  <Text size="xs" fw={700} style={{ color: "var(--graph-prompt-text)" }}>
-                    Grounded evidence
-                  </Text>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {groundedAnswer.cited_spans.slice(0, 4).map((packet) => {
-                      const packetLabels = groundedAnswer.inline_citations
-                        .filter((anchor) => anchor.cited_span_ids.includes(packet.packet_id))
-                        .map((anchor) => anchor.label);
+                <>
+                  <PanelDivider />
+                  <Stack gap="xs">
+                    <Text fw={600} style={sectionLabelStyle}>
+                      Grounded evidence
+                    </Text>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {groundedAnswer.cited_spans.slice(0, 4).map((packet) => {
+                        const packetLabels = groundedAnswer.inline_citations
+                          .filter((anchor) => anchor.cited_span_ids.includes(packet.packet_id))
+                          .map((anchor) => anchor.label);
 
-                      return (
-                        <div
-                          key={packet.packet_id}
-                          className="rounded-xl px-3 py-2"
-                          style={{
-                            backgroundColor: "var(--mode-accent-subtle)",
-                            border: "1px solid var(--mode-accent-border)",
-                          }}
-                        >
-                          <Text size="xs" fw={600} style={{ color: "var(--graph-prompt-text)" }}>
-                            {[
-                              packetLabels.join(" "),
-                              formatEvidenceLabel(packet.section_role),
-                              formatEvidenceLabel(packet.block_kind),
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </Text>
-                          <Text mt={4} size="sm" style={{ color: "var(--graph-prompt-text)" }}>
-                            {packet.quote_text || packet.text}
-                          </Text>
-                          {packet.entity_mentions.length > 0 && (
-                            <Group mt={8} gap={6}>
-                              {packet.entity_mentions.slice(0, 4).map((entity) => (
-                                <Badge
-                                  key={`${packet.packet_id}:${entity.text}:${entity.concept_id ?? "raw"}`}
-                                  variant="light"
-                                  radius="sm"
-                                  style={{
-                                    backgroundColor: "var(--graph-prompt-bg)",
-                                    border: "1px solid var(--mode-accent-border)",
-                                    color: "var(--graph-prompt-text)",
-                                  }}
-                                >
-                                  {entity.text}
-                                </Badge>
-                              ))}
-                            </Group>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </Stack>
+                        return (
+                          <div
+                            key={packet.packet_id}
+                            className={panelAccentCardClassName}
+                            style={panelAccentCardStyle}
+                          >
+                            <Text fw={600} style={panelTextStyle}>
+                              {[
+                                packetLabels.join(" "),
+                                formatEvidenceLabel(packet.section_role),
+                                formatEvidenceLabel(packet.block_kind),
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </Text>
+                            <Text mt={4} style={panelTextStyle}>
+                              {packet.quote_text || packet.text}
+                            </Text>
+                            {packet.entity_mentions.length > 0 && (
+                              <Group mt={8} gap={6}>
+                                {packet.entity_mentions.slice(0, 4).map((entity) => (
+                                  <Badge
+                                    key={`${packet.packet_id}:${entity.text}:${entity.concept_id ?? "raw"}`}
+                                    variant="light"
+                                    size="xs"
+                                    styles={badgeAccentStyles}
+                                  >
+                                    {entity.text}
+                                  </Badge>
+                                ))}
+                              </Group>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Stack>
+                </>
               ) : null}
 
               {ragResponse?.results.length ? (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {ragResponse.results.slice(0, 4).map((result, index) => (
-                    <div
-                      key={result.result_id || `${result.paper_id || "paper"}-${index}`}
-                      className="rounded-xl px-3 py-2"
-                      style={{
-                        backgroundColor: "var(--mode-accent-subtle)",
-                        border: "1px solid var(--mode-accent-border)",
-                      }}
-                    >
-                      <Text size="xs" fw={600} style={{ color: "var(--graph-prompt-text)" }}>
-                        {[result.citekey || result.paper_title || result.paper_id, result.section, result.page != null ? `p. ${result.page}` : null]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </Text>
-                      <Text mt={4} size="sm" style={{ color: "var(--graph-prompt-text)" }}>
-                        {result.text}
-                      </Text>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <PanelDivider />
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {ragResponse.results.slice(0, 4).map((result, index) => (
+                      <div
+                        key={result.result_id || `${result.paper_id || "paper"}-${index}`}
+                        className={panelAccentCardClassName}
+                        style={panelAccentCardStyle}
+                      >
+                        <Text fw={600} style={panelTextStyle}>
+                          {[result.citekey || result.paper_title || result.paper_id, result.section, result.page != null ? `p. ${result.page}` : null]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </Text>
+                        <Text mt={4} style={panelTextStyle}>
+                          {result.text}
+                        </Text>
+                      </div>
+                    ))}
+                  </div>
+                </>
               ) : null}
             </Stack>
           </ScrollArea.Autosize>
         )}
       </Stack>
-    </Paper>
+    </div>
   );
 }

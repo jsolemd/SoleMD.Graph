@@ -12,15 +12,15 @@ from app.rag.models import (
     PaperReferenceRecord,
     RelationMatchedPaperHit,
 )
-from app.rag.serving_contract import CitedSpanPacket
 from app.rag.schemas import RagSearchRequest
 from app.rag.service import RagService
+from app.rag.serving_contract import CitedSpanPacket
 from app.rag.source_grounding import build_grounded_answer_from_packets
 from app.rag.types import (
     CitationDirection,
     GraphSignalKind,
-    RetrievalScope,
     RetrievalChannel,
+    RetrievalScope,
 )
 
 
@@ -443,7 +443,9 @@ def test_rag_service_skips_semantic_candidate_expansion_without_selected_paper()
             limit: int = 6,
             scope_corpus_ids=None,
         ):
-            raise AssertionError("semantic neighbors should not be fetched without a selected paper")
+            raise AssertionError(
+                "semantic neighbors should not be fetched without a selected paper"
+            )
 
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
             raise AssertionError("semantic seed lookup should not run without semantic neighbors")
@@ -901,7 +903,10 @@ def test_rag_service_can_expand_candidates_from_citation_neighbors():
                             direction=CitationDirection.OUTGOING,
                             neighbor_corpus_id=22,
                             neighbor_paper_id="paper-22",
-                            context_text="Melatonin lowered delirium incidence in postoperative patients.",
+                            context_text=(
+                                "Melatonin lowered delirium incidence "
+                                "in postoperative patients."
+                            ),
                             intents=["Background"],
                             score=1.25,
                         )
@@ -916,7 +921,10 @@ def test_rag_service_can_expand_candidates_from_citation_neighbors():
                             direction=CitationDirection.INCOMING,
                             neighbor_corpus_id=11,
                             neighbor_paper_id="paper-11",
-                            context_text="Melatonin lowered delirium incidence in postoperative patients.",
+                            context_text=(
+                                "Melatonin lowered delirium incidence "
+                                "in postoperative patients."
+                            ),
                             intents=["Background"],
                             score=1.25,
                         )
@@ -1165,10 +1173,19 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
 
 
 def test_rag_service_can_attach_warehouse_grounded_answer_when_available():
-    def fake_grounder(*, corpus_ids, segment_texts):
+    def fake_grounder(*, corpus_ids, segment_texts, segment_corpus_ids=None):
         assert corpus_ids == [11]
+        assert segment_texts == [
+            "Potentially supporting evidence:",
+            (
+                "Melatonin for delirium prevention (2024): Melatonin was associated "
+                "with lower delirium incidence."
+            ),
+        ]
+        assert segment_corpus_ids == [None, 11]
         grounded = build_grounded_answer_from_packets(
             segment_texts=segment_texts,
+            segment_corpus_ids=segment_corpus_ids,
             packets=[
                 CitedSpanPacket(
                     packet_id="span:11:b0:s0",

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Loader,
   Select,
   Stack,
   Text,
@@ -13,6 +12,7 @@ import { getLayerConfig } from "@/features/graph/lib/layers";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import {
+  PanelInlineLoader,
   panelCardStyle,
   panelSelectStyles,
   panelTextDimStyle,
@@ -102,12 +102,7 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
         />
 
         {canSearch && loading ? (
-          <div className="flex items-center gap-2">
-            <Loader size="xs" color="var(--brand-accent)" />
-            <Text style={panelTextDimStyle}>
-              Searching DuckDB…
-            </Text>
-          </div>
+          <PanelInlineLoader label="Searching DuckDB…" />
         ) : canSearch && error ? (
           <Text style={panelTextDimStyle}>
             {error}

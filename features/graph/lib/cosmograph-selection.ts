@@ -11,14 +11,15 @@ import {
   sql,
 } from '@uwdata/mosaic-sql'
 import { getColumnMeta } from '@/features/graph/lib/columns'
+import { buildSelectedViewPredicate } from '@/features/graph/duckdb/sql-helpers'
 import type { VisibilityFocus } from '@/features/graph/stores/slices/visibility-slice'
 
 const VISIBILITY_SOURCE_PREFIXES = ["filter:", "timeline:", "budget:"] as const
 const BUDGET_SCOPE_SOURCE_PREFIXES = ["filter:", "timeline:"] as const
 
 export const BUDGET_FOCUS_SOURCE_ID = 'budget:focus-cluster'
-export const SELECTED_POINT_INDICES_SCOPE_SQL =
-  'index IN (SELECT index FROM selected_point_indices)'
+/** Predicate for the selected_point_indices temp table — single source of truth in sql-helpers. */
+export const SELECTED_POINT_INDICES_SCOPE_SQL = buildSelectedViewPredicate()
 
 export function isVisibilitySelectionSourceId(
   sourceId: string | null | undefined,

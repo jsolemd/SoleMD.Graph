@@ -127,7 +127,10 @@ def test_build_default_chunk_version_uses_canonical_policy_defaults():
         "table_header_omit_on_overflow",
         "peer_merge_by_context",
         "section_heading_context",
+        "section_context_carryforward_for_noncontextual_labels",
         "section_context_excludes_repeated_nonstructural_labels",
+        "narrative_block_structure_classifier",
+        "metadata_residue_suppression",
         "semchunk_overflow_refinement",
     ]
     assert version.sentence_source_policy == [

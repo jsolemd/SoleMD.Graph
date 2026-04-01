@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
@@ -15,9 +16,13 @@ from app.rag_ingest.chunk_quality import (
     LOW_VALUE_NARRATIVE_TEXTS,
     LOW_VALUE_SINGLE_TOKEN_TEXTS,
     MIN_USEFUL_NARRATIVE_TOKENS,
+    is_weak_short_narrative_chunk_text,
 )
 from app.rag_ingest.orchestrator import _load_corpus_ids_file, _unique_ints
-from app.rag_ingest.section_context import looks_like_structural_heading
+from app.rag_ingest.section_context import (
+    looks_like_structural_heading,
+    repeated_nonstructural_section_label_counts,
+)
 
 _WAREHOUSE_QUALITY_SQL = """
 WITH requested AS (
@@ -207,6 +212,39 @@ LEFT JOIN repeated_section_label_counts USING (corpus_id)
 ORDER BY requested.corpus_id
 """
 
+_SECTION_LABEL_ROWS_SQL = """
+SELECT
+    corpus_id,
+    section_ordinal,
+    parent_section_ordinal,
+    section_role,
+    display_label
+FROM solemd.paper_sections
+WHERE corpus_id = ANY(%s)
+ORDER BY corpus_id, section_ordinal
+"""
+
+_SHORT_NARRATIVE_CHUNK_ROWS_SQL = """
+SELECT
+    corpus_id,
+    text
+FROM solemd.paper_chunks
+WHERE corpus_id = ANY(%s)
+  AND (%s::TEXT IS NULL OR chunk_version_key = %s)
+  AND primary_block_kind = 'narrative_paragraph'
+  AND token_count_estimate < %s
+ORDER BY corpus_id, chunk_ordinal
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class _SectionQualityRow:
+    corpus_id: int
+    section_ordinal: int
+    parent_section_ordinal: int | None
+    section_role: str
+    display_label: str | None
+
 
 class RagWarehouseQualityPaperReport(ParseContractModel):
     corpus_id: int
@@ -288,7 +326,65 @@ class PostgresWarehouseQualityLoader:
                     normalized_ids,
                 ),
             )
-            return [dict(row) for row in cur.fetchall()]
+            rows = [dict(row) for row in cur.fetchall()]
+            repeated_label_counts = self._load_repeated_section_label_counts(
+                cur,
+                corpus_ids=normalized_ids,
+            )
+            weak_short_narrative_counts = self._load_weak_short_narrative_chunk_counts(
+                cur,
+                corpus_ids=normalized_ids,
+                chunk_version_key=chunk_version_key,
+            )
+            for row in rows:
+                corpus_id = int(row["corpus_id"])
+                row["max_repeated_nonstructural_section_label_count"] = (
+                    repeated_label_counts.get(corpus_id, 0)
+                )
+                row["tiny_narrative_chunk_count"] = weak_short_narrative_counts.get(corpus_id, 0)
+            return rows
+
+    def _load_repeated_section_label_counts(
+        self,
+        cur,
+        *,
+        corpus_ids: list[int],
+    ) -> dict[int, int]:
+        cur.execute(_SECTION_LABEL_ROWS_SQL, (corpus_ids,))
+        sections_by_corpus_id: dict[int, list[_SectionQualityRow]] = {}
+        for row in cur.fetchall():
+            section = _SectionQualityRow(**dict(row))
+            sections_by_corpus_id.setdefault(section.corpus_id, []).append(section)
+
+        counts_by_corpus_id: dict[int, int] = {}
+        for corpus_id, sections in sections_by_corpus_id.items():
+            repeated_counts = repeated_nonstructural_section_label_counts(sections)
+            counts_by_corpus_id[corpus_id] = max(repeated_counts.values(), default=0)
+        return counts_by_corpus_id
+
+    def _load_weak_short_narrative_chunk_counts(
+        self,
+        cur,
+        *,
+        corpus_ids: list[int],
+        chunk_version_key: str | None,
+    ) -> dict[int, int]:
+        cur.execute(
+            _SHORT_NARRATIVE_CHUNK_ROWS_SQL,
+            (
+                corpus_ids,
+                chunk_version_key,
+                chunk_version_key,
+                MIN_USEFUL_NARRATIVE_TOKENS,
+            ),
+        )
+        counts_by_corpus_id: dict[int, int] = {}
+        for row in cur.fetchall():
+            corpus_id = int(row["corpus_id"])
+            if not is_weak_short_narrative_chunk_text(row["text"]):
+                continue
+            counts_by_corpus_id[corpus_id] = counts_by_corpus_id.get(corpus_id, 0) + 1
+        return counts_by_corpus_id
 
 
 def _derive_flags(row: dict[str, object]) -> list[str]:

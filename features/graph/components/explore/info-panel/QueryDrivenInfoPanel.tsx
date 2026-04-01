@@ -1,13 +1,13 @@
 "use client";
 
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Loader, Stack, Text } from "@mantine/core";
+import { Stack, Text } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { getClusterColor } from "@/features/graph/lib/colors";
 import { useGraphColorTheme } from "@/features/graph/hooks/use-graph-color-theme";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
-import { PANEL_BODY_CLASS, PanelDivider, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
+import { PANEL_BODY_CLASS, PanelDivider, PanelInlineLoader, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
 import {
   AddInsightButton,
   ClusterTable,
@@ -39,9 +39,6 @@ export function QueryDrivenInfoPanel({
   const currentPointScopeSql = useDashboardStore(
     (state) => state.currentPointScopeSql,
   );
-  const currentScopeRevision = useDashboardStore(
-    (state) => state.currentScopeRevision,
-  );
   const [debouncedCurrentPointScopeSql] = useDebouncedValue(
     currentPointScopeSql,
     120,
@@ -53,11 +50,16 @@ export function QueryDrivenInfoPanel({
   const selectedPointRevision = useDashboardStore(
     (state) => state.selectedPointRevision,
   );
+  // Debounce selection signals so they settle together with the scope SQL
+  // debounce (120ms), preventing staggered query bursts where immediate
+  // revision bumps fire one batch and the debounced SQL fires another.
+  const [debouncedSelectedPointCount] = useDebouncedValue(selectedPointCount, 120);
+  const [debouncedSelectedPointRevision] = useDebouncedValue(selectedPointRevision, 120);
   const selectionLocked = useDashboardStore((state) => state.selectionLocked);
   const infoWidgets = useDashboardStore((state) => state.infoWidgets);
   const colorTheme = useGraphColorTheme();
 
-  const hasSelection = selectedPointCount > 0;
+  const hasSelection = debouncedSelectedPointCount > 0;
   const hasCurrentSubset =
     typeof deferredCurrentPointScopeSql === "string" &&
     deferredCurrentPointScopeSql.trim().length > 0;
@@ -86,21 +88,19 @@ export function QueryDrivenInfoPanel({
         hasSelection,
         hasCurrentSubset,
         filteredPointScopeSql: deferredCurrentPointScopeSql,
-        currentScopeRevision,
-        selectedPointCount,
-        selectedPointRevision,
+        selectedPointCount: debouncedSelectedPointCount,
+        selectedPointRevision: debouncedSelectedPointRevision,
         selectionLocked,
         overlayRevision,
       }),
     [
       activeLayer,
-      currentScopeRevision,
+      debouncedSelectedPointCount,
+      debouncedSelectedPointRevision,
       deferredCurrentPointScopeSql,
       hasCurrentSubset,
       hasSelection,
       overlayRevision,
-      selectedPointCount,
-      selectedPointRevision,
       selectionLocked,
     ],
   );
@@ -344,9 +344,7 @@ export function QueryDrivenInfoPanel({
       side="left"
       width={320}
       headerActions={
-        showHeaderLoader ? (
-          <Loader size={12} color="var(--graph-panel-text-dim)" />
-        ) : null
+        showHeaderLoader ? <PanelInlineLoader /> : null
       }
       onClose={() => setActivePanel(null)}
     >

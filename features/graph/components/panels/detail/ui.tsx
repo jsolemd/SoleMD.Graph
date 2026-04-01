@@ -1,8 +1,9 @@
 "use client";
 
-import { Group, Loader, Text } from "@mantine/core";
+import { Text } from "@mantine/core";
 import { ExternalLink } from "lucide-react";
 import {
+  PanelInlineLoader,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
@@ -67,12 +68,7 @@ export function RemoteStatus({
   label: string;
 }) {
   if (loading) {
-    return (
-      <Group gap="xs">
-        <Loader size="xs" color="var(--mode-accent)" />
-        <Text style={panelTextDimStyle}>{label}</Text>
-      </Group>
-    );
+    return <PanelInlineLoader label={label} />;
   }
 
   if (error) {

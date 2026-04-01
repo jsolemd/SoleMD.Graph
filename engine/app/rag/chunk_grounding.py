@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app import db
-from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse_rows
+from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 
 CHUNK_CITATION_PACKET_SQL = """
 WITH matched_mentions AS (
@@ -24,7 +24,10 @@ WITH matched_mentions AS (
      AND cm.corpus_id = m.corpus_id
      AND cm.canonical_block_ordinal = m.canonical_block_ordinal
      AND (
-        (m.canonical_sentence_ordinal IS NOT NULL AND cm.canonical_sentence_ordinal = m.canonical_sentence_ordinal)
+        (
+            m.canonical_sentence_ordinal IS NOT NULL
+            AND cm.canonical_sentence_ordinal = m.canonical_sentence_ordinal
+        )
         OR (m.canonical_sentence_ordinal IS NULL AND cm.canonical_sentence_ordinal IS NULL)
      )
     JOIN solemd.paper_chunks c
@@ -86,20 +89,39 @@ SELECT DISTINCT ON (
     e.source_start_offset,
     e.source_end_offset
 )
-    e.*
+    e.*,
+    b.section_ordinal AS block_section_ordinal,
+    b.section_role AS block_section_role,
+    b.block_kind AS block_kind,
+    b.text AS block_text,
+    b.is_retrieval_default AS block_is_retrieval_default,
+    b.linked_asset_ref AS block_linked_asset_ref,
+    s.section_ordinal AS sentence_section_ordinal,
+    s.segmentation_source AS sentence_segmentation_source,
+    s.text AS sentence_text
 FROM solemd.paper_entity_mentions e
 JOIN solemd.paper_chunk_members cm
   ON cm.chunk_version_key = %s
  AND cm.corpus_id = e.corpus_id
  AND cm.canonical_block_ordinal = e.canonical_block_ordinal
  AND (
-    (e.canonical_sentence_ordinal IS NOT NULL AND cm.canonical_sentence_ordinal = e.canonical_sentence_ordinal)
+    (
+        e.canonical_sentence_ordinal IS NOT NULL
+        AND cm.canonical_sentence_ordinal = e.canonical_sentence_ordinal
+    )
     OR (e.canonical_sentence_ordinal IS NULL AND cm.canonical_sentence_ordinal IS NULL)
  )
 JOIN solemd.paper_chunks c
   ON c.chunk_version_key = cm.chunk_version_key
  AND c.corpus_id = cm.corpus_id
  AND c.chunk_ordinal = cm.chunk_ordinal
+JOIN solemd.paper_blocks b
+  ON b.corpus_id = e.corpus_id
+ AND b.block_ordinal = e.canonical_block_ordinal
+LEFT JOIN solemd.paper_sentences s
+  ON s.corpus_id = e.corpus_id
+ AND s.block_ordinal = e.canonical_block_ordinal
+ AND s.sentence_ordinal = e.canonical_sentence_ordinal
 WHERE
     e.corpus_id = ANY(%s)
     AND e.canonical_block_ordinal IS NOT NULL
@@ -139,6 +161,7 @@ def build_grounded_answer_from_chunks(
     *,
     corpus_ids: Sequence[int],
     segment_texts: Sequence[str],
+    segment_corpus_ids: Sequence[int | None] | None = None,
     chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
     limit_per_paper: int = 1,
     connect=None,
@@ -160,4 +183,6 @@ def build_grounded_answer_from_chunks(
         citation_rows=citation_rows,
         entity_rows=entity_rows,
         segment_texts=segment_texts,
+        segment_corpus_ids=segment_corpus_ids,
+        corpus_order=normalized_corpus_ids,
     )

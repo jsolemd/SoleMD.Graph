@@ -26,7 +26,6 @@ import type { GraphBundle, GraphStats } from "@/features/graph/types";
 import {
   getWidgetDatasetCacheKeyWithRevision,
   setCachedCategoricalDataset,
-  setCachedNumericDataset,
 } from "@/features/graph/cosmograph/widgets/dataset-cache";
 import { toFacetRowsFromBarCounts } from "@/features/graph/cosmograph/widgets/facet-rows";
 import { NATIVE_BARS_DATA_LIMIT } from "@/features/graph/cosmograph/widgets/native-bars-adapter";
@@ -168,35 +167,9 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
       );
     };
 
-    const warmTimeline = async () => {
-      if (cancelled || !showTimeline) {
-        return;
-      }
-
-      const values = await queries.getNumericValues({
-        layer: activeLayer,
-        scope: baselineScope,
-        column: timelineColumn,
-        currentPointScopeSql: null,
-      });
-      if (!cancelled) {
-        setCachedNumericDataset(
-          getWidgetDatasetCacheKeyWithRevision(
-            bundle.bundleChecksum,
-            activeLayer,
-            timelineColumn,
-            canvas.overlayRevision,
-            baselineCacheKey,
-          ),
-          values,
-        );
-      }
-    };
-
     const warmStartupDatasets = async () => {
       await warmCategoricalFilters(startupCategoricalFilters);
       await warmNumericFilters(startupNumericFilters);
-      await warmTimeline();
 
       if (cancelled || deferredCategoricalFilters.length === 0) {
         return;
@@ -361,11 +334,7 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
 
             <AnimatePresence>
               {!uiHidden && showTimeline && (
-                <TimelineBar
-                  queries={queries}
-                  bundleChecksum={bundle.bundleChecksum}
-                  overlayRevision={canvas.overlayRevision}
-                />
+                <TimelineBar />
               )}
             </AnimatePresence>
             <AnimatePresence>

@@ -11,15 +11,8 @@ import {
 } from "lucide-react";
 import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
 import { MODE_ORDER, getModeConfig } from "@/features/graph/lib/modes";
-import { bouncy, settle, dblHoverHint } from "@/lib/motion";
+import { bouncy } from "@/lib/motion";
 import type { GraphMode } from "@/features/graph/types";
-
-/** Inactive mode icon hover — wiggle to hint "click me". */
-const INACTIVE_ICON_HOVER = {
-  rotate: [0, -12, 12, -8, 8, 0],
-  scale: 1.1,
-  transition: { rotate: { duration: 0.5, ease: "easeInOut" as const }, scale: bouncy },
-};
 
 /** Icon mapping — keeps presentation separate from mode data. */
 const MODE_ICONS: Record<GraphMode, typeof MessageCircle> = {
@@ -81,31 +74,25 @@ export function ModeToggleBar({
             <Tooltip label={config.label} position="top" withArrow>
               <motion.button
                 onClick={() => handleClick(key)}
-                className="relative flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium transition-colors duration-200 border h-7"
+                className="relative flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium h-7"
                 style={{
                   backgroundColor: isActive
                     ? "var(--mode-accent-subtle)"
                     : "transparent",
                   borderColor: "transparent",
-                  color: isActive
-                    ? "var(--mode-accent)"
-                    : "var(--graph-prompt-inactive)",
+                  color: "var(--graph-prompt-inactive)",
+                  border: "none",
+                  cursor: "pointer",
                 }}
-                whileHover={isActive ? dblHoverHint : undefined}
+                whileHover={{ scale: 1.08 }}
+                whileTap={{ scale: 0.92 }}
+                transition={bouncy}
                 aria-pressed={isActive}
                 aria-label={`${config.label} mode`}
               >
-                <motion.div
-                  className="flex items-center justify-center w-4 h-4 flex-shrink-0"
-                  animate={{
-                    rotate: isActive ? 360 : 0,
-                    scale: isActive ? 1.1 : 1,
-                  }}
-                  whileHover={isActive ? undefined : INACTIVE_ICON_HOVER}
-                  transition={settle}
-                >
+                <div className="flex items-center justify-center w-4 h-4 flex-shrink-0">
                   <Icon size={14} />
-                </motion.div>
+                </div>
                 {!compact && (
                   <AnimatePresence mode="wait">
                     {isActive && (

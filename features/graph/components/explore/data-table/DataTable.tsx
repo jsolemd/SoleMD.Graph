@@ -47,12 +47,13 @@ export function DataTable({
         boxShadow: "var(--graph-panel-shadow)",
       }}
     >
+      {/* Resize handle — thin and subtle */}
       <div
-        className="flex h-2.5 cursor-row-resize items-center justify-center transition-colors hover:bg-[var(--interactive-hover)]"
+        className="flex h-1.5 cursor-row-resize items-center justify-center transition-colors hover:bg-[var(--interactive-hover)]"
         onMouseDown={handleDragStart}
       >
         <div
-          className="h-0.5 w-8 rounded-full"
+          className="h-px w-6 rounded-full"
           style={{ backgroundColor: "var(--graph-panel-text-dim)" }}
         />
       </div>
@@ -77,7 +78,6 @@ export function DataTable({
           pageRows={state.pageRows}
           startIdx={state.startIdx}
           pageLoading={state.pageLoading}
-          pageRefreshing={state.pageRefreshing}
           pageError={state.pageError}
           resolvedTableView={state.resolvedTableView}
         />

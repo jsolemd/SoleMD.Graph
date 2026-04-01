@@ -348,3 +348,103 @@ The `GroundedAnswerRecord` (segments + inline_citations + cited_spans) is a soli
 **The architecture is ahead of competitors. The content depth is behind. The highest-leverage investments are: (1) fix the 4 bugs, (2) title+abstract FTS + query embedding, (3) LLM answer synthesis with quote-then-synthesize, (4) warehouse population.**
 
 **No competitor combines biomedical entity extraction with graph visualization with domain-curated evidence rules. That combination — once answer quality catches up — is a genuine differentiation moat.**
+
+
+Another agent said this: 
+The audit in docs/plans/rag-eval.md is directionally right: the architecture is stronger
+  than the current retrieval and answer path. After tracing the code with code-search,
+  checking the migrations/tests, and doing external research, these are the claims I would
+  keep.
+
+  Findings
+
+  - Critical: citation_boost is numerically incompatible with the RRF scale. Raw query-term
+    counts are assigned in engine/app/rag/repository.py:551 and injected directly into fusion
+    in engine/app/rag/ranking.py:162. With RRF_K=60, the whole 4-channel RRF contribution
+    tops out around 0.06, while a 5-term citation context contributes 0.90 after weighting.
+    This is a real ranking bug.
+  - Critical: citation-to-reference linkage is broken at the contract boundary.
+    PaperCitationMentionRecord has only source_citation_key in engine/app/rag/
+    parse_contract.py:157, but citation_row_from_parse() copies that value into
+    source_reference_key in engine/app/rag/warehouse_contract.py:125. S2 parsing emits
+    distinct reference keys and citation keys in engine/app/rag/source_parsers.py:565 and
+    engine/app/rag/source_parsers.py:594, so this can mis-wire inline citations to
+    bibliography entries.
+  - High: free-text semantic retrieval is effectively absent, and the existing vector path is
+    unindexed. RagService.search() only queries semantic neighbors when a paper is already
+    selected in engine/app/rag/service.py:422, and the SQL does <=> nearest-neighbor ordering
+    in engine/app/rag/queries.py:821. I found no HNSW or IVFFlat DDL anywhere under engine/
+    db/migrations; the current migrations only add btree/gin indexes such as engine/db/
+    migrations/006_add_s2_embedding_tracking.sql:34, engine/db/
+    migrations/031_rag_derived_serving.sql:75, and engine/db/
+    migrations/034_rag_post_load_lexical_indexes.sql:17.
+  - High: global lexical retrieval is weaker than scoped retrieval. Global search vectorizes
+    title only in engine/app/rag/queries.py:115, while selection-mode search uses weighted
+    title plus abstract in engine/app/rag/queries.py:193. That makes the common unscoped path
+    materially underpowered.
+  - High: chunk/passage infrastructure exists, but the serving path is still paper-centric.
+    Chunk tables and runtime gates are real in engine/db/
+    migrations/031_rag_derived_serving.sql:20, engine/app/rag/write_repository.py:141, and
+    engine/app/rag/grounded_runtime.py:144, but retrieval and bundling still operate on
+    papers in engine/app/rag/service.py:392 and engine/app/rag/bundle.py:118, and answer
+    synthesis is just top-bundle string assembly in engine/app/rag/answer.py:17. The accurate
+    critique is not “no passage system”; it is “passage infrastructure is not yet on the
+    primary retrieval/ranking path.”
+  - High: cross-source overlay alignment is intentionally strict and therefore brittle.
+    align_span_to_canonical_ordinals() only succeeds when spans line up in the same offset
+    space in engine/app/rag/alignment.py:48, and overlay grounding calls it directly in
+    engine/app/rag/source_grounding.py:61. The audit’s exact “30-60%” failure rate is
+    unproven here, but the failure mode is real.
+  - Medium: DB-facing SQL is still tested mostly against mocks. The repository and write
+    tests assert SQL against mocked cursors in engine/test/test_rag_repository.py:13, engine/
+    test/test_rag_write_repository.py:3, and engine/test/test_rag_grounded_runtime.py:11.
+    That leaves real adapter/schema/query-plan failures largely uncovered.
+  - Medium: the UI “stream” is not incremental. The server emits a single full text-delta in
+    app/api/evidence/chat/stream.ts:108. The current behavior is a product choice, not an AI
+    SDK limitation.
+  - Medium: the fuzzy entity/relation path is probably noisy, but this still needs
+    measurement. The threshold is 0.3 in engine/app/rag/repository.py:24, fuzzy matching
+    allows substring or trigram hits in engine/app/rag/queries.py:269, and relation matching
+    is lexical over type/id strings in engine/app/rag/repository.py:648. I would treat this
+    as a tuning risk rather than a proven bug.
+
+  Audit Appraisal
+
+  - The other LLM is right that the system’s bones are good. The contract layer, dual-source
+    grounding split, resumable orchestration, and staged write/cutover design are real
+    strengths.
+  - “No bulk ingestion orchestrator” is incorrect. run_rag_refresh() in engine/app/rag/
+    orchestrator.py:1072 is the bulk ingest orchestrator; the real problem is that it has
+    grown into a very large control function.
+  - “grounded_answer always null” is too strong. Warehouse and chunk grounders both exist in
+    engine/app/rag/warehouse_grounding.py:164 and engine/app/rag/grounded_runtime.py:144.
+    Whether chunk-backed grounding is active is a deployment-state question, not a code-level
+    absence.
+  - The exact alignment-failure percentage and the exact entity false-positive rate are
+    evaluation claims. The code supports the direction of the criticism, not the quoted
+    percentages.
+
+  Improvement Order
+
+  1. Fix the hard defects first: normalize or cap citation-context scoring before fusion, and
+     add an explicit citation-to-reference field through parse -> warehouse -> grounding.
+  2. Fix retrieval before adding more answer generation: add free-text query embeddings, keep
+     selected-paper neighbors as a contextual channel instead of the only semantic channel,
+     widen global lexical search to title plus abstract, and move chunk retrieval/reranking
+     into engine/app/rag/service.py:367.
+  3. Add the missing operational safety net: real Postgres/pgvector integration tests for
+     queries.py and write_repository.py, plus a vector ANN migration.
+  4. Add answer synthesis only after retrieval is competitive. Right now engine/app/rag/
+     answer.py:17 mostly exposes retrieval weaknesses more clearly.
+  5. Replace strict offset-only overlay alignment with text-aware alignment and wire
+     warehouse_quality.py into the pipeline so alignment failures become measurable.
+
+  Targeted tests passed locally: 24 tests across ranking/service/grounding/warehouse-contract
+  and 23 tests across repository/write-repository, but they are mock-heavy. I could not
+  validate the live DB state because the local supabase-db container was not running on
+  localhost:5433.
+
+  External references used after doc-search came up short for these libraries: pgvector ANN
+  indexing docs https://github.com/pgvector/pgvector, AI SDK streaming docs
+  https://ai-sdk.dev/docs/reference/ai-sdk-ui/create-ui-message-stream-response, MedCPT
+  https://arxiv.org/abs/2307.00589, and ScholarQA https://arxiv.org/abs/2505.07917.

@@ -22,25 +22,25 @@ export function PromptIconBtn({
   size = "sm",
   active,
   disabled,
-  "aria-pressed": ariaPressed,
 }: PromptIconBtnProps) {
   const md = size === "md";
   return (
     <Tooltip label={label} position="top" withArrow>
       <motion.button
-        whileHover={{ scale: md ? 1.08 : 1.12 }}
-        whileTap={{ scale: md ? 0.92 : 0.9 }}
+        whileHover={{ scale: 1.08 }}
+        whileTap={{ scale: 0.92 }}
         transition={bouncy}
         onClick={onClick}
         disabled={disabled}
         className={`flex items-center justify-center rounded-full flex-shrink-0 ${md ? "h-9 w-9" : "h-7 w-7"}`}
         style={{
           backgroundColor: active ? "var(--mode-accent-subtle)" : "transparent",
-          color: active ? "var(--mode-accent)" : "var(--graph-prompt-inactive)",
+          color: "var(--graph-prompt-inactive)",
           border: "none",
+          cursor: disabled ? "default" : "pointer",
         }}
         aria-label={label}
-        aria-pressed={ariaPressed}
+        aria-pressed={active || undefined}
       >
         <Icon size={md ? 18 : 15} />
       </motion.button>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,6 +21,10 @@ from app.rag.parse_contract import (
     ParseSourceSystem,
     SectionRole,
     SourcePlane,
+)
+from app.rag_ingest.section_context import (
+    looks_like_noisy_repeated_section_label,
+    normalize_heading_label,
 )
 from app.rag_ingest.sentence_segmentation import (
     SentenceSegmenter,
@@ -84,6 +89,61 @@ def _span_text(text: str, start: int, end: int) -> str:
     return text[start:end]
 
 
+_SECTION_LABEL_WHITESPACE_RE = re.compile(r"\s+")
+_TRUNCATED_SECTION_HEADER_ENDINGS = frozenset(
+    {
+        "and",
+        "for",
+        "from",
+        "in",
+        "of",
+        "or",
+        "the",
+        "to",
+        "with",
+    }
+)
+
+
+def _clean_source_section_label(value: str | None) -> str:
+    stripped = (value or "").strip()
+    if not stripped:
+        return ""
+    cleaned = stripped
+    while cleaned and not cleaned[0].isalnum():
+        cleaned = cleaned[1:].lstrip()
+    cleaned = _SECTION_LABEL_WHITESPACE_RE.sub(" ", cleaned).strip()
+    return cleaned or stripped
+
+
+def _looks_like_truncated_section_header(value: str | None) -> bool:
+    cleaned = _clean_source_section_label(value)
+    if not cleaned:
+        return False
+    if cleaned.rstrip().endswith(("-", "(")):
+        return True
+    normalized = normalize_heading_label(cleaned)
+    tokens = normalized.split()
+    if len(tokens) < 2:
+        return False
+    return tokens[-1] in _TRUNCATED_SECTION_HEADER_ENDINGS
+
+
+def _should_skip_source_section_header(
+    value: str | None,
+    *,
+    section_role: SectionRole,
+) -> bool:
+    cleaned = _clean_source_section_label(value)
+    if not cleaned:
+        return True
+    if section_role == SectionRole.FRONT_MATTER:
+        return False
+    return looks_like_noisy_repeated_section_label(cleaned) or _looks_like_truncated_section_header(
+        cleaned
+    )
+
+
 def _coerce_optional_string(value: Any) -> str | None:
     if value is None:
         return None
@@ -95,7 +155,7 @@ def _coerce_optional_string(value: Any) -> str | None:
 
 def _normalize_header_label(value: str | None) -> list[str]:
     if not value:
-        return ""
+        return []
     lowered = value.lower()
     return "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in lowered).split()
 
@@ -125,6 +185,7 @@ def _normalize_section_role(
 
     tokens = _normalize_header_label(header_text)
     token_text = " ".join(tokens)
+    collapsed_token_text = token_text.replace(" ", "")
     if "abstract" in tokens:
         return SectionRole.ABSTRACT
     if "background" in tokens:
@@ -139,12 +200,12 @@ def _normalize_section_role(
         return SectionRole.DISCUSSION
     if "conclusion" in token_text or "conclusions" in token_text:
         return SectionRole.CONCLUSION
-    if "supplement" in token_text:
+    if "supplement" in token_text or "supplementary material" in token_text:
         return SectionRole.SUPPLEMENT
     if "reference" in token_text or "references" in token_text:
         return SectionRole.REFERENCE
     if (
-        "acknowledg" in token_text
+        "acknowledg" in collapsed_token_text
         or "acknowledgement" in token_text
         or "acknowledgment" in token_text
         or "author contribution" in token_text
@@ -164,6 +225,15 @@ def _normalize_section_role(
         or "abbreviations" in token_text
         or "keyword" in token_text
         or "keywords" in token_text
+        or "financial support" in token_text
+        or "financial support and sponsorship" in token_text
+        or "disclosure" in token_text
+        or "biography" in token_text
+        or "lead author biography" in token_text
+        or "author biography" in token_text
+        or "orcid" in token_text
+        or "consent for publication" in token_text
+        or "data availability statement" in token_text
     ):
         return SectionRole.FRONT_MATTER
     return SectionRole.OTHER
@@ -418,6 +488,9 @@ def parse_s2orc_row(
     bibliography_text = bibliography.get("text") or ""
     body_annotations = body.get("annotations") or {}
     bibliography_annotations = bibliography.get("annotations") or {}
+    title_text = (row.get("title") or "").strip() or None
+    if title_text and _looks_like_structural_heading(title_text):
+        title_text = None
 
     document = PaperDocumentRecord(
         corpus_id=corpus_id,
@@ -427,7 +500,7 @@ def parse_s2orc_row(
         source_plane=SourcePlane.BODY,
         parser_version=parser_version,
         raw_attrs_json={"openaccessinfo": row.get("openaccessinfo")},
-        title=row.get("title"),
+        title=title_text,
         source_availability="full_text",
     )
 
@@ -472,9 +545,12 @@ def parse_s2orc_row(
                 )
             )
     current_context_role = SectionRole.OTHER
-    for ordinal, item in enumerate(section_headers, start=1):
+    for item in section_headers:
         attrs = item.get("attributes") or {}
-        header_text = _span_text(body_text, item["start"], item["end"]).strip()
+        raw_header_text = _span_text(body_text, item["start"], item["end"]).strip()
+        header_text = _clean_source_section_label(raw_header_text)
+        if not header_text:
+            continue
         numbering_token = attrs.get("n")
         parent_section_ordinal = _derive_parent_section_ordinal(
             numbering_token, numbering_map
@@ -504,6 +580,12 @@ def parse_s2orc_row(
             and _is_contextual_section_role(current_context_role)
         ):
             section_role = current_context_role
+        if _should_skip_source_section_header(
+            header_text,
+            section_role=section_role,
+        ):
+            continue
+        ordinal = max((section.section_ordinal for section in sections), default=0) + 1
         section = PaperSectionRecord(
             corpus_id=corpus_id,
             source_system=ParseSourceSystem.S2ORC_V2,

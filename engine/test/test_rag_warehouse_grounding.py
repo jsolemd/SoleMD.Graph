@@ -100,3 +100,61 @@ def test_build_grounded_answer_from_warehouse_returns_none_without_citation_pack
     )
 
     assert grounded is None
+
+
+def test_build_grounded_answer_from_warehouse_falls_back_to_entity_only_packets():
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.fetchall.side_effect = [
+        [],
+        [
+            {
+                "corpus_id": 12345,
+                "source_system": "biocxml",
+                "source_revision": "2026-03-21",
+                "source_document_key": "12345",
+                "source_plane": "passage",
+                "parser_version": "parser-v1",
+                "raw_attrs_json": {},
+                "span_origin": "annotation_overlay",
+                "alignment_status": "exact",
+                "alignment_confidence": 1.0,
+                "source_start_offset": 8,
+                "source_end_offset": 18,
+                "text": "Melatonin",
+                "canonical_section_ordinal": 1,
+                "canonical_block_ordinal": 0,
+                "canonical_sentence_ordinal": 0,
+                "entity_type": "chemical",
+                "source_identifier": "MESH:D008550",
+                "concept_namespace": "mesh",
+                "concept_id": "D008550",
+                "block_section_ordinal": 1,
+                "block_section_role": "results",
+                "block_kind": "narrative_paragraph",
+                "block_text": "Melatonin reduced delirium incidence.",
+                "block_is_retrieval_default": True,
+                "block_linked_asset_ref": None,
+                "sentence_section_ordinal": 1,
+                "sentence_segmentation_source": "stanza_biomedical",
+                "sentence_text": "Melatonin reduced delirium incidence.",
+            }
+        ],
+    ]
+
+    grounded = build_grounded_answer_from_warehouse(
+        corpus_ids=[12345],
+        segment_texts=["Potentially relevant evidence:", "Melatonin reduced delirium incidence."],
+        segment_corpus_ids=[None, 12345],
+        connect=lambda: conn,
+    )
+
+    assert grounded is not None
+    assert grounded.answer_linked_corpus_ids == [12345]
+    assert grounded.segments[0].citation_anchor_ids == []
+    assert grounded.segments[1].citation_anchor_ids == ["anchor:1"]
+    assert grounded.cited_spans[0].entity_mentions[0].concept_id == "D008550"

@@ -76,7 +76,7 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     resolvedTableView === "selection" && queryTableView === "selected"
       ? selectedPointRevision
       : 0;
-  const [debouncedSelectedRevision] = useDebouncedValue(scopedSelectedPointRevision, 80);
+  const [debouncedSelectedRevision] = useDebouncedValue(scopedSelectedPointRevision, 120);
   const totalPages = Math.max(1, Math.ceil(totalRows / tablePageSize));
   const safePage = clamp(tablePage, 1, totalPages);
   const [debouncedSafePage] = useDebouncedValue(safePage, 80);

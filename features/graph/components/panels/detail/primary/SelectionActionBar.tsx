@@ -2,6 +2,7 @@
 
 import { Button, Group } from "@mantine/core";
 import { Copy, FileText, MessageSquareText, Orbit } from "lucide-react";
+import { PANEL_ACCENT } from "@/features/graph/components/panels/PanelShell";
 
 export function SelectionActionBar({
   onCopyNote,
@@ -23,6 +24,7 @@ export function SelectionActionBar({
       <Button
         size="compact-sm"
         variant="light"
+        color={PANEL_ACCENT}
         leftSection={<Copy size={14} />}
         onClick={onCopyNote}
       >
@@ -31,6 +33,7 @@ export function SelectionActionBar({
       <Button
         size="compact-sm"
         variant="light"
+        color={PANEL_ACCENT}
         leftSection={<MessageSquareText size={14} />}
         onClick={onAsk}
       >
@@ -40,6 +43,7 @@ export function SelectionActionBar({
         <Button
           size="compact-sm"
           variant="light"
+          color={PANEL_ACCENT}
           leftSection={<Orbit size={14} />}
           onClick={onOpenGraphPaper}
         >
@@ -50,6 +54,7 @@ export function SelectionActionBar({
         <Button
           size="compact-sm"
           variant="light"
+          color={PANEL_ACCENT}
           component="a"
           href={pdfUrl}
           target="_blank"

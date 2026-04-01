@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+import tarfile
+from io import BytesIO
 
 from app.rag_ingest.orchestrator import (
+    LocalBioCArchiveReader,
     RagRefreshReport,
     RagTargetCorpusRow,
     _load_corpus_ids_file,
@@ -111,6 +113,26 @@ def _bioc_title_only_xml(document_id: str, *, title: str = "Title only") -> str:
       </document>
     </collection>
     """
+
+
+def test_local_bioc_archive_reader_skips_malformed_members(tmp_path, caplog):
+    archive_path = tmp_path / "BioCXML.test.tar.gz"
+    valid_xml = _bioc_xml("12345").encode("utf-8")
+    invalid_xml = b"<collection><document><id>bad</id><passage>"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        valid_info = tarfile.TarInfo("valid.xml")
+        valid_info.size = len(valid_xml)
+        archive.addfile(valid_info, BytesIO(valid_xml))
+        invalid_info = tarfile.TarInfo("invalid.xml")
+        invalid_info.size = len(invalid_xml)
+        archive.addfile(invalid_info, BytesIO(invalid_xml))
+
+    reader = LocalBioCArchiveReader()
+    with caplog.at_level("WARNING"):
+        records = list(reader.iter_documents(archive_path))
+
+    assert records == [("12345", "valid.xml", _bioc_xml("12345"))]
+    assert "Skipping malformed BioC XML member invalid.xml" in caplog.text
 
 
 class FakeUnitStore:
@@ -700,6 +722,119 @@ def test_run_rag_refresh_explicit_target_uses_locator_and_merges_bioc_overlay(tm
     assert writer.calls == [[["s2orc_v2", "biocxml"]]]
     assert report.s2_stage.ingested_corpus_ids == [12345]
     assert report.bioc_fallback_stage.ingested_corpus_ids == [12345]
+
+
+def test_run_rag_refresh_prefers_corpus_metadata_title_for_explicit_overlay(tmp_path):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=12345,
+                    pmid=12345,
+                    paper_title="Canonical Corpus Title",
+                )
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return [tmp_path / "s2orc_v2-001.jsonl.gz"]
+
+        def iter_rows(self, shard_path):
+            yield _s2_row(12345, title="Results")
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return [tmp_path / "BioCXML.9.tar.gz"]
+
+        def iter_documents(self, archive_path):
+            yield "12345", _bioc_xml("12345")
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append(
+                [
+                    {
+                        "titles": [source.document.title for source in group],
+                        "metadata_titles": [
+                            source.document.raw_attrs_json.get("corpus_metadata_title")
+                            for source in group
+                        ],
+                    }
+                    for group in source_groups
+                ]
+            )
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[
+                            source.document.source_system for source in group[1:]
+                        ],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 5,
+                written_rows=len(source_groups) * 5,
+                deferred_stage_names=[],
+            )
+
+    locator_repository = FakeSourceLocatorRepository()
+    locator_repository.upsert_entries(
+        [
+            {
+                "corpus_id": 12345,
+                "source_system": "s2orc_v2",
+                "source_revision": "2026-03-10",
+                "source_kind": "s2_shard",
+                "unit_name": "s2orc_v2-001.jsonl.gz",
+                "unit_ordinal": 1,
+                "source_document_key": "12345",
+            },
+            {
+                "corpus_id": 12345,
+                "source_system": "biocxml",
+                "source_revision": "2026-03-21",
+                "source_kind": "bioc_archive",
+                "unit_name": "BioCXML.9.tar.gz",
+                "unit_ordinal": 1,
+                "source_document_key": "12345",
+            },
+        ]
+    )
+
+    writer = FakeWriter()
+    run_rag_refresh(
+        parser_version="parser-v4",
+        run_id="metadata-title-overlay",
+        corpus_ids=[12345],
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=locator_repository,
+    )
+
+    assert writer.calls == [
+        [
+            {
+                "titles": ["Canonical Corpus Title", "Canonical Corpus Title"],
+                "metadata_titles": ["Canonical Corpus Title", "Canonical Corpus Title"],
+            }
+        ]
+    ]
 
 
 def test_run_rag_refresh_can_refresh_source_locators_inline_for_explicit_targets(tmp_path):
@@ -1305,6 +1440,87 @@ def test_run_rag_refresh_without_explicit_ids_uses_source_driven_s2_selection(tm
     assert report.s2_stage.ingested_papers == 1
     assert report.s2_stage.skipped_existing_papers == 1
     assert report.s2_stage.completed_units == ["s2orc_v2-000.jsonl.gz"]
+
+
+def test_run_rag_refresh_source_driven_prefers_corpus_metadata_title(tmp_path):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert limit is None
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=corpus_id,
+                    pmid=corpus_id,
+                    paper_title="Canonical Corpus Title",
+                )
+                for corpus_id in corpus_ids
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return [tmp_path / "s2orc_v2-000.jsonl.gz"]
+
+        def iter_rows(self, shard_path):
+            yield _s2_row(12345, title="Methods")
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return []
+
+        def iter_documents(self, archive_path):
+            yield from ()
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append(
+                [
+                    {
+                        "title": group[0].document.title,
+                        "metadata_title": group[0].document.raw_attrs_json.get(
+                            "corpus_metadata_title"
+                        ),
+                    }
+                    for group in source_groups
+                ]
+            )
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 3,
+                written_rows=len(source_groups) * 3,
+                deferred_stage_names=[],
+            )
+
+    writer = FakeWriter()
+    report = run_rag_refresh(
+        parser_version="parser-v4",
+        run_id="source-driven-metadata-title",
+        limit=1,
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=FakeSourceLocatorRepository(),
+    )
+
+    assert report.target_corpus_ids == [12345]
+    assert writer.calls == [[{"title": "Canonical Corpus Title", "metadata_title": "Canonical Corpus Title"}]]
 
 
 def test_run_rag_refresh_source_driven_backfill_uses_selected_target_ids(tmp_path):

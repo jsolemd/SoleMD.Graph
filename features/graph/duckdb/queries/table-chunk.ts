@@ -30,19 +30,10 @@ export async function queryCorpusTablePage(
     currentPointScopeSql,
   })
   const scopePredicate = view === 'selected' ? buildSelectedViewPredicate() : currentPredicate
-  const totalRowsResult = await queryRows<{ totalRows: number }>(
-    conn,
-    `SELECT count(*)::INTEGER AS totalRows
-     FROM current_points_web
-     WHERE ${scopePredicate}`
-  )
 
-  const totalRows = totalRowsResult[0]?.totalRows ?? 0
-  if (totalRows === 0) {
-    return { totalRows: 0, page, pageSize, rows: [] }
-  }
-
-  const rows = await queryRows<GraphPointSelectionRow>(
+  // Single query: count(*) OVER() piggybacks the total onto each row,
+  // eliminating a separate COUNT round-trip that was doubling DuckDB work.
+  const rows = await queryRows<GraphPointSelectionRow & { _totalRows: number }>(
     conn,
     `SELECT
        index,
@@ -72,13 +63,16 @@ export async function queryCorpusTablePage(
        CASE
          WHEN COALESCE(nodeRole, 'primary') = 'overlay' THEN true
          ELSE false
-       END AS isOverlayActive
+       END AS isOverlayActive,
+       count(*) OVER ()::INTEGER AS _totalRows
      FROM current_points_web
      WHERE ${scopePredicate}
      ORDER BY index
      LIMIT ? OFFSET ?`,
     [safePageSize, offset]
   )
+
+  const totalRows = rows[0]?._totalRows ?? 0
 
   return {
     totalRows,

@@ -110,13 +110,15 @@ export const panelReveal = {
   },
 } as const;
 
-/** Edge reveal — slides from an anchored edge (bottom bar, timeline). */
+/** Edge reveal — slides from an anchored edge (bottom bar, timeline).
+ *  Uses snappy spring + fast opacity tween (matching panelReveal)
+ *  to prevent ghosting over the WebGL canvas. */
 export function edgeReveal(travel: number) {
   return {
     initial: { opacity: 0, y: travel },
     animate: { opacity: 1, y: 0 },
     exit: { opacity: 0, y: travel },
-    transition: smooth,
+    transition: { y: snappy, opacity: { duration: 0.1, ease: "easeOut" as const } },
   } as const;
 }
 

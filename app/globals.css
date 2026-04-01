@@ -118,15 +118,15 @@
   --graph-greyout-opacity: 0.25;
 
   /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
-  --filter-bar-base: color-mix(in srgb, var(--mode-accent) 18%, transparent);
+  --filter-bar-base: color-mix(in srgb, var(--mode-accent) 30%, white);
   --filter-bar-active: var(--mode-accent);
   --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 82%, black);
 
   /* ── Active mode accent (set by ModeColorSync, default = ask) ── */
   --mode-accent: var(--color-soft-blue);
-  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 10%, transparent);
-  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 30%, transparent);
-  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 30%, transparent);
+  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, white);
+  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, white);
+  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 50%, white);
 
   /* ── Toolbar icons (single source of truth for lucide + Cosmograph) ── */
   --icon-size: 16px;
@@ -713,7 +713,7 @@ html:not(.dark) .graph-filter-bars-widget .row:hover {
 }
 
 html:not(.dark) .graph-filter-bars-widget .bar-highlighted {
-  opacity: 0.88;
+  opacity: 0.5;
 }
 
 html:not(.dark) .graph-filter-bars-widget .selected > .info > .label {
@@ -741,3 +741,12 @@ html:not(.dark) .graph-filter-bars-widget .unselected > .info > .count {
 *::-webkit-scrollbar { width: 0; height: 0; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb { background: transparent; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PILL ACTIVATION — one-shot pulse when pill transitions to active.
+   Plays once on mount, then stops (not infinite).
+   ═══════════════════════════════════════════════════════════════════ */
+@keyframes pill-activate {
+  0%   { opacity: 0.6; }
+  100% { opacity: 1; }
+}

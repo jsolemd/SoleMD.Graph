@@ -5,23 +5,32 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
+import logging
 import tarfile
 from pathlib import Path
 from typing import Protocol
+from xml.etree import ElementTree as ET
 
 from pydantic import Field
 
 from app import db
 from app.config import settings
+from app.rag.corpus_resolution import normalize_bioc_document_id
+from app.rag.parse_contract import ParseContractModel, ParseSourceSystem
+from app.rag.source_selection import (
+    build_grounding_source_plan,
+    parsed_source_has_warehouse_value,
+)
 from app.rag_ingest.chunk_backfill_runtime import run_chunk_backfill
 from app.rag_ingest.chunk_seed import RagChunkSeeder
-from app.rag.corpus_resolution import normalize_bioc_document_id
 from app.rag_ingest.orchestrator_checkpoint import (
     RagRefreshCheckpointState,
-    checkpoint_paths as rag_refresh_checkpoint_paths,
     load_checkpoint_state,
     reset_checkpoint_state,
     save_checkpoint_state,
+)
+from app.rag_ingest.orchestrator_checkpoint import (
+    checkpoint_paths as rag_refresh_checkpoint_paths,
 )
 from app.rag_ingest.orchestrator_units import (
     PostgresRagRefreshUnitStore,
@@ -30,21 +39,16 @@ from app.rag_ingest.orchestrator_units import (
     RagRefreshUnitStore,
     RagRefreshWorker,
 )
-from app.rag.parse_contract import ParseContractModel, ParseSourceSystem
-from app.rag_ingest.source_parsers import (
-    ParsedPaperSource,
-    extract_biocxml_document_id,
-    parse_biocxml_document,
-    parse_s2orc_row,
-)
 from app.rag_ingest.source_locator import (
     RagSourceLocatorEntry,
     RagSourceLocatorLookup,
     SidecarRagSourceLocatorRepository,
 )
-from app.rag.source_selection import (
-    build_grounding_source_plan,
-    parsed_source_has_warehouse_value,
+from app.rag_ingest.source_parsers import (
+    ParsedPaperSource,
+    extract_biocxml_document_id,
+    parse_biocxml_document,
+    parse_s2orc_row,
 )
 from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestResult, RagWarehouseWriter
 from app.rag_ingest.write_batch_builder import (
@@ -52,9 +56,9 @@ from app.rag_ingest.write_batch_builder import (
     estimate_write_batch_rows_from_grounding_plan,
 )
 
-
 DEFAULT_STAGE_ROW_BUDGET = 25_000
 DEFAULT_UNIT_PROGRESS_INTERVAL_ROWS = 1_000
+logger = logging.getLogger(__name__)
 
 
 class RagTargetCorpusRow(ParseContractModel):
@@ -62,6 +66,7 @@ class RagTargetCorpusRow(ParseContractModel):
     pmid: int | None = None
     pmc_id: str | None = None
     doi: str | None = None
+    paper_title: str | None = None
 
 
 class RagSourceStageReport(ParseContractModel):
@@ -184,12 +189,42 @@ class WarehouseQualityCallable(Protocol):
 
 
 _TARGET_CORPUS_SQL = """
-SELECT corpus_id, pmid, pmc_id, doi
-FROM solemd.corpus
+SELECT c.corpus_id, c.pmid, c.pmc_id, c.doi, p.title AS paper_title
+FROM solemd.corpus c
+LEFT JOIN solemd.papers p ON p.corpus_id = c.corpus_id
 {where_clause}
-ORDER BY corpus_id
+ORDER BY c.corpus_id
 {limit_clause}
 """
+
+
+def _target_row_by_corpus_id(
+    target_rows: list[RagTargetCorpusRow],
+) -> dict[int, RagTargetCorpusRow]:
+    return {
+        int(target_row.corpus_id): target_row
+        for target_row in target_rows
+    }
+
+
+def _apply_target_metadata_to_parsed_source(
+    *,
+    parsed: ParsedPaperSource,
+    target_row: RagTargetCorpusRow | None,
+) -> ParsedPaperSource:
+    if target_row is None:
+        return parsed
+    metadata_title = (target_row.paper_title or "").strip()
+    if not metadata_title:
+        return parsed
+    current_title = (parsed.document.title or "").strip()
+    if current_title == metadata_title:
+        return parsed
+    if current_title:
+        parsed.document.raw_attrs_json.setdefault("source_selected_title", current_title)
+    parsed.document.raw_attrs_json["corpus_metadata_title"] = metadata_title
+    parsed.document.title = metadata_title
+    return parsed
 
 
 class PostgresTargetCorpusLoader:
@@ -205,7 +240,7 @@ class PostgresTargetCorpusLoader:
         where_clause = ""
         params: list[object] = []
         if corpus_ids:
-            where_clause = "WHERE corpus_id = ANY(%s)"
+            where_clause = "WHERE c.corpus_id = ANY(%s)"
             params.append(corpus_ids)
         limit_clause = ""
         if limit is not None and limit > 0:
@@ -268,7 +303,16 @@ class LocalBioCArchiveReader:
                 if extracted is None:
                     continue
                 xml_text = extracted.read().decode("utf-8", errors="replace")
-                yield extract_biocxml_document_id(xml_text), member.name, xml_text
+                try:
+                    document_id = extract_biocxml_document_id(xml_text)
+                except ET.ParseError:
+                    logger.warning(
+                        "Skipping malformed BioC XML member %s from %s",
+                        member.name,
+                        archive_path.name,
+                    )
+                    continue
+                yield document_id, member.name, xml_text
 
 
 def _unpack_bioc_document_record(record) -> tuple[str, str | None, str]:
@@ -577,10 +621,9 @@ def _flush_discovered_s2_rows(
     if not rows:
         return [], pending_row_estimate, pending_byte_estimate
     candidate_ids = [int(row["corpusid"]) for row in rows]
-    allowed_ids = {
-        row.corpus_id
-        for row in target_loader.load(corpus_ids=candidate_ids, limit=None)
-    }
+    loaded_target_rows = target_loader.load(corpus_ids=candidate_ids, limit=None)
+    target_row_by_corpus_id = _target_row_by_corpus_id(loaded_target_rows)
+    allowed_ids = set(target_row_by_corpus_id)
     if not allowed_ids:
         rows.clear()
         return [], pending_row_estimate, pending_byte_estimate
@@ -622,6 +665,10 @@ def _flush_discovered_s2_rows(
             row,
             source_revision=source_revision,
             parser_version=parser_version,
+        )
+        parsed = _apply_target_metadata_to_parsed_source(
+            parsed=parsed,
+            target_row=target_row_by_corpus_id.get(corpus_id),
         )
         stage_report.discovered_papers += 1
         pending_row_estimate, pending_byte_estimate = _append_source_group_with_budget(
@@ -697,6 +744,7 @@ def _run_explicit_targeted_refresh(
     active_source_locator_repository: SourceLocatorRepository,
 ) -> None:
     target_corpus_id_set = set(target_corpus_ids)
+    target_row_by_corpus_id = _target_row_by_corpus_id(target_rows)
     pending_primary_ids = set(target_corpus_ids)
     if not refresh_existing:
         pending_primary_ids -= existing_ids
@@ -811,6 +859,10 @@ def _run_explicit_targeted_refresh(
                         row,
                         source_revision=settings.s2_release_id,
                         parser_version=parser_version,
+                    )
+                    parsed = _apply_target_metadata_to_parsed_source(
+                        parsed=parsed,
+                        target_row=target_row_by_corpus_id.get(corpus_id),
                     )
                     source_groups_by_corpus.setdefault(corpus_id, []).append(parsed)
                     s2_ingested_ids.add(corpus_id)
@@ -979,6 +1031,10 @@ def _run_explicit_targeted_refresh(
                         source_revision=settings.pubtator_release_id,
                         parser_version=parser_version,
                         corpus_id=corpus_id,
+                    )
+                    parsed = _apply_target_metadata_to_parsed_source(
+                        parsed=parsed,
+                        target_row=target_row_by_corpus_id.get(corpus_id),
                     )
                     report.bioc_fallback_stage.discovered_papers += 1
                     if not parsed_source_has_warehouse_value(parsed):

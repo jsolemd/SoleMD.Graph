@@ -175,6 +175,141 @@ def test_parse_s2orc_row_coerces_numeric_reference_and_match_identifiers_to_stri
     assert parsed.citations[0].matched_paper_id == "1149154"
 
 
+def test_parse_s2orc_row_does_not_promote_structural_heading_to_document_title():
+    body_text = "Introduction\nPatients improved after treatment."
+    row = {
+        "corpusid": 12345,
+        "title": "Introduction",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [{"start": 0, "end": len("Introduction"), "attributes": {"n": "1."}}]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": len("Introduction\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": len("Introduction\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
+
+    assert parsed.document.title is None
+
+
+def test_parse_s2orc_row_normalizes_financial_support_header_to_front_matter():
+    body_text = "Financial support and sponsorship\nNil."
+    row = {
+        "corpusid": 12345,
+        "title": "Example trial",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {
+                            "start": 0,
+                            "end": len("Financial support and sponsorship"),
+                            "attributes": {"n": "1."},
+                        }
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": len("Financial support and sponsorship\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": len("Financial support and sponsorship\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
+
+    assert parsed.sections[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].is_retrieval_default is False
+
+
+def test_parse_s2orc_row_normalizes_acknowledgements_with_ocr_spacing_to_front_matter():
+    body_text = "ACKNOWLEDG EMENTS\nNone."
+    row = {
+        "corpusid": 12345,
+        "title": "Example trial",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {
+                            "start": 0,
+                            "end": len("ACKNOWLEDG EMENTS"),
+                            "attributes": {"n": "1."},
+                        }
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": len("ACKNOWLEDG EMENTS\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": len("ACKNOWLEDG EMENTS\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
+
+    assert parsed.sections[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].section_role == SectionRole.FRONT_MATTER
+
+
 def test_parse_s2orc_row_adds_implicit_preamble_section_for_preheader_paragraphs():
     body_text = "Keywords: severe dengue.\nIntroduction\nPatients improved after treatment."
     row = {
@@ -498,6 +633,285 @@ def test_parse_s2orc_row_marks_author_contributions_as_front_matter_and_not_retr
     assert parsed.sections[0].section_role == SectionRole.FRONT_MATTER
     assert parsed.blocks[0].section_role == SectionRole.FRONT_MATTER
     assert parsed.blocks[0].is_retrieval_default is False
+
+
+def test_parse_s2orc_row_marks_lead_author_biography_as_front_matter():
+    body_text = "Lead author biography\nDr. Example directs the thrombosis program."
+    row = {
+        "corpusid": 12345,
+        "title": "Example trial",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {
+                            "start": 0,
+                            "end": len("Lead author biography"),
+                            "attributes": {"n": "1."},
+                        }
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": len("Lead author biography\n"),
+                            "end": len(body_text),
+                            "attributes": {},
+                        }
+                    ]
+                ),
+                "sentence": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v3")
+
+    assert parsed.sections[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].section_role == SectionRole.FRONT_MATTER
+    assert parsed.blocks[0].is_retrieval_default is False
+
+
+def test_parse_s2orc_row_skips_publisher_scaffold_section_headers():
+    body_text = (
+        "Results\n"
+        "Primary potency improved.\n"
+        "Journal of Medicinal Chemistry\n"
+        "Selectivity also improved.\n"
+        "Conclusions\n"
+        "Overall efficacy increased."
+    )
+    row = {
+        "corpusid": 12345,
+        "title": "Example trial",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {"start": 0, "end": len("Results"), "attributes": {"n": "1."}},
+                        {
+                            "start": body_text.index("Journal of Medicinal Chemistry"),
+                            "end": body_text.index("Journal of Medicinal Chemistry")
+                            + len("Journal of Medicinal Chemistry"),
+                            "attributes": {"n": "1.1."},
+                        },
+                        {
+                            "start": body_text.index("Conclusions"),
+                            "end": body_text.index("Conclusions") + len("Conclusions"),
+                            "attributes": {"n": "2."},
+                        },
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Primary potency improved."),
+                            "end": body_text.index("Primary potency improved.")
+                            + len("Primary potency improved."),
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index("Selectivity also improved."),
+                            "end": body_text.index("Selectivity also improved.")
+                            + len("Selectivity also improved."),
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index("Overall efficacy increased."),
+                            "end": body_text.index("Overall efficacy increased.")
+                            + len("Overall efficacy increased."),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+                "sentence": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v4")
+
+    assert [section.display_label for section in parsed.sections] == ["Results", "Conclusions"]
+    assert [block.section_role for block in parsed.blocks] == [
+        SectionRole.RESULTS,
+        SectionRole.RESULTS,
+        SectionRole.CONCLUSION,
+    ]
+
+
+def test_parse_s2orc_row_strips_dotted_outline_section_header_scaffolding():
+    body_text = (
+        "Results\n"
+        "Primary potency improved.\n"
+        ". . Protein structure prediction\n"
+        "Fold stability increased."
+    )
+    row = {
+        "corpusid": 12345,
+        "title": "Example trial",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {"start": 0, "end": len("Results"), "attributes": {"n": "1."}},
+                        {
+                            "start": body_text.index(". . Protein structure prediction"),
+                            "end": body_text.index(". . Protein structure prediction")
+                            + len(". . Protein structure prediction"),
+                            "attributes": {"n": "1.1."},
+                        },
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": body_text.index("Primary potency improved."),
+                            "end": body_text.index("Primary potency improved.")
+                            + len("Primary potency improved."),
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index("Fold stability increased."),
+                            "end": body_text.index("Fold stability increased.")
+                            + len("Fold stability increased."),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+                "sentence": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v4")
+
+    assert [section.display_label for section in parsed.sections] == [
+        "Results",
+        "Protein structure prediction",
+    ]
+
+
+def test_parse_s2orc_row_skips_truncated_inline_section_headers():
+    truncated_participants = "Two hundred and ninety-two cognitively normal participants from the"
+    cohort_expansion = "Alzheimer's Disease cohort provided longitudinal data."
+    body_text = (
+        "Participants\n"
+        "PREVENT-AD cohort\n"
+        f"{truncated_participants}\n"
+        "Pre-symptomatic Evaluation of Experimental or Novel Treatments for\n"
+        f"{cohort_expansion}"
+    )
+    row = {
+        "corpusid": 219538626,
+        "title": "Example cohort study",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [
+                        {"start": 0, "end": len("Participants"), "attributes": {"n": "1."}},
+                        {
+                            "start": body_text.index("PREVENT-AD cohort"),
+                            "end": body_text.index("PREVENT-AD cohort")
+                            + len("PREVENT-AD cohort"),
+                            "attributes": {"n": "1.1."},
+                        },
+                        {
+                            "start": body_text.index(
+                                "Pre-symptomatic Evaluation of Experimental or Novel Treatments for"
+                            ),
+                            "end": body_text.index(
+                                "Pre-symptomatic Evaluation of Experimental or Novel Treatments for"
+                            )
+                            + len(
+                                "Pre-symptomatic Evaluation of Experimental or Novel Treatments for"
+                            ),
+                            "attributes": {"n": "1.2."},
+                        },
+                    ]
+                ),
+                "paragraph": json.dumps(
+                    [
+                        {
+                            "start": body_text.index(truncated_participants),
+                            "end": body_text.index(truncated_participants)
+                            + len(truncated_participants),
+                            "attributes": {},
+                        },
+                        {
+                            "start": body_text.index(cohort_expansion),
+                            "end": body_text.index(cohort_expansion) + len(cohort_expansion),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+                "sentence": json.dumps([]),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v4")
+
+    assert [section.display_label for section in parsed.sections] == [
+        "Participants",
+        "PREVENT-AD cohort",
+    ]
+    assert parsed.blocks[0].section_ordinal == parsed.blocks[1].section_ordinal
+
+
+def test_parse_s2orc_row_repairs_numeric_decimal_sentence_splits():
+    body_text = "Results\nParticipants on average engaged in 477. 64"
+    paragraph_start = len("Results\n")
+    sentence_a = "Participants on average engaged in 477."
+    row = {
+        "corpusid": 257188828,
+        "title": "Example activity study",
+        "openaccessinfo": {"license": "CC-BY"},
+        "body": {
+            "text": body_text,
+            "annotations": {
+                "section_header": json.dumps(
+                    [{"start": 0, "end": len("Results"), "attributes": {"n": "1."}}]
+                ),
+                "paragraph": json.dumps(
+                    [{"start": paragraph_start, "end": len(body_text), "attributes": {}}]
+                ),
+                "sentence": json.dumps(
+                    [
+                        {
+                            "start": paragraph_start,
+                            "end": paragraph_start + len(sentence_a),
+                            "attributes": {},
+                        },
+                        {
+                            "start": paragraph_start + len(sentence_a) + 1,
+                            "end": len(body_text),
+                            "attributes": {},
+                        },
+                    ]
+                ),
+            },
+        },
+        "bibliography": {"text": "", "annotations": {}},
+    }
+
+    parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v4")
+
+    assert [sentence.text for sentence in parsed.sentences] == [
+        "Participants on average engaged in 477. 64"
+    ]
+    assert parsed.sentences[0].segmentation_source == SentenceSegmentationSource.S2ORC_ANNOTATION
 
 
 def test_parse_s2orc_row_uses_syntok_fallback_for_et_al_citation_sequences():

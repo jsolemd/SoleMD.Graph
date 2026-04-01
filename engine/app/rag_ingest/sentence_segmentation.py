@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
@@ -22,6 +23,8 @@ _PROSE_FALLBACK_BLOCK_KINDS = frozenset(
         PaperBlockKind.TABLE_FOOTNOTE,
     }
 )
+_DECIMAL_SPLIT_PREVIOUS_RE = re.compile(r"\b\d+\.$")
+_NUMERIC_CONTINUATION_RE = re.compile(r"^\d+(?:[.,:/%]\d+)*\b")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +83,50 @@ def _build_segmented_span(
     )
 
 
+def _should_merge_adjacent_spans(
+    previous: SegmentedSentenceSpan,
+    current: SegmentedSentenceSpan,
+) -> bool:
+    if previous.segmentation_source != current.segmentation_source:
+        return False
+    previous_text = previous.text.rstrip()
+    current_text = current.text.lstrip()
+    if not previous_text or not current_text:
+        return False
+    return bool(
+        _DECIMAL_SPLIT_PREVIOUS_RE.search(previous_text)
+        and _NUMERIC_CONTINUATION_RE.match(current_text)
+    )
+
+
+def _repair_segmented_spans(
+    *,
+    text: str,
+    absolute_start: int,
+    spans: Sequence[SegmentedSentenceSpan],
+) -> list[SegmentedSentenceSpan]:
+    if len(spans) < 2:
+        return list(spans)
+    repaired: list[SegmentedSentenceSpan] = [spans[0]]
+    for span in spans[1:]:
+        previous = repaired[-1]
+        if not _should_merge_adjacent_spans(previous, span):
+            repaired.append(span)
+            continue
+        merged = _build_segmented_span(
+            text=text,
+            absolute_start=absolute_start,
+            relative_start=previous.source_start_offset - absolute_start,
+            relative_end=span.source_end_offset - absolute_start,
+            segmentation_source=previous.segmentation_source,
+        )
+        if merged is None:
+            repaired.append(span)
+            continue
+        repaired[-1] = merged
+    return repaired
+
+
 class SourceAnnotationSentenceSegmenter:
     """Normalize source-provided sentence spans onto one block."""
 
@@ -127,7 +174,11 @@ class SourceAnnotationSentenceSegmenter:
                 continue
             seen.add(key)
             spans.append(span)
-        return spans
+        return _repair_segmented_spans(
+            text=text,
+            absolute_start=absolute_start,
+            spans=spans,
+        )
 
 
 class DeterministicSentenceSegmenter:
@@ -169,7 +220,11 @@ class DeterministicSentenceSegmenter:
         )
         if tail_span is not None:
             spans.append(tail_span)
-        return spans
+        return _repair_segmented_spans(
+            text=text,
+            absolute_start=absolute_start,
+            spans=spans,
+        )
 
 
 class SyntokSentenceSegmenter:
@@ -210,7 +265,11 @@ class SyntokSentenceSegmenter:
                 )
                 if span is not None:
                     spans.append(span)
-        return spans
+        return _repair_segmented_spans(
+            text=text,
+            absolute_start=absolute_start,
+            spans=spans,
+        )
 
 
 class StanzaSentenceSegmenter:
@@ -258,7 +317,11 @@ class StanzaSentenceSegmenter:
             )
             if span is not None:
                 spans.append(span)
-        return spans
+        return _repair_segmented_spans(
+            text=text,
+            absolute_start=absolute_start,
+            spans=spans,
+        )
 
 
 class RoutingSentenceSegmenter:

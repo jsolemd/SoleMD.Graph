@@ -1,14 +1,14 @@
 /**
  * @jest-environment jsdom
  *
- * Tests the exact 5-selector pattern shared by FilterHistogramWidget,
- * FilterBarWidget, and TimelineWidget. All three use 5 bare
- * `useDashboardStore` calls for:
+ * Tests the 5 Zustand selectors that `useWidgetSelectors` (and thus all
+ * crossfilter widgets) subscribe to:
  *   activeLayer, currentScopeRevision, selectionLocked,
  *   selectedPointCount, selectedPointRevision
  *
- * These tests confirm each selector is isolated from unrelated state
- * and DOES fire when its value changes.
+ * The real hook lives in `widgets/use-widget-selectors.ts` and wraps
+ * these with cosmograph refs + derived memos. This test validates the
+ * store-level isolation (no spurious re-renders on unrelated state).
  */
 import { renderHook, act } from "@testing-library/react";
 import { useDashboardStore } from "@/features/graph/stores";

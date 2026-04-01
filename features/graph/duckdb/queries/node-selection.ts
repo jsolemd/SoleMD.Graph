@@ -2,6 +2,7 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type { GraphPointRecord } from '@/features/graph/types'
 
+import { buildSelectedViewPredicate } from '../sql-helpers'
 import { queryRows } from './core'
 
 export interface GraphPointSelectionRow {
@@ -126,7 +127,7 @@ export async function querySelectionScopeGraphPaperRefs(
       : null;
   const whereClause =
     (normalizedScopeSql != null ? `(${normalizedScopeSql})` : null) ??
-    "index IN (SELECT index FROM selected_point_indices)";
+    buildSelectedViewPredicate();
   const rows = await queryRows<{ graphPaperRef: string }>(
     conn,
     `SELECT DISTINCT COALESCE(paperId, id) AS graphPaperRef

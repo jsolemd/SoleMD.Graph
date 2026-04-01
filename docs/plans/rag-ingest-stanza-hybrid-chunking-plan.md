@@ -284,6 +284,282 @@ Docling-style narrative-context preview validation:
     - `Studies design` + randomized-controlled-trial sentence
     - `Consent for publication` + publication-consent sentence
 
+Live default structural cleanup follow-up:
+
+- rewrote the live default chunk key across the full warehouse under:
+  - `default-structural-v1-structural-cleanup-v3`
+  - `default-structural-v1-structural-cleanup-v4`
+- v3 fixed the mixed-run oversize regression:
+  - prose blocks that sit beside structured/admin residue now keep sentence lineage
+  - context prefixes no longer push those chunks over the hard max
+- v4 tightened residual structural cleanup:
+  - heading scaffolds such as `. Introduction` / `. Methods` are suppressed
+  - orphan table headers such as `Variable | Mean ± SD n/%` are suppressed
+  - publisher/reporting-summary residue such as `At BMC, research is always in progress.` and `nature portfolio | reporting summary` is suppressed
+  - competing-interest notices under canonical headings are suppressed as metadata
+- persisted live-default warehouse totals after `v4`:
+  - `paper_chunks = 8398`
+  - `paper_chunk_members = 43723`
+- persisted QA after `v4`:
+  - `flagged papers = 48`
+  - `tiny_narrative_chunks = 20` papers
+  - `repeated_nonstructural_section_labels = 18` papers
+  - `suspicious_structural_title = 20` papers
+  - `oversize_chunks = 0`
+  - `oversize_table_chunks = 0`
+- persisted row-level cleanup after `v4`:
+  - `tiny narrative chunk rows = 25`
+  - `one-token chunks = 0`
+  - `Removed.` rows = 0`
+- known bad persisted rows now absent from the live default key:
+  - `216559605`: `Variable | Mean ± SD n/%`
+  - `261749596`: `Conclusions | At BMC, research is always in progress.`
+  - `256275682`: `Declaration of competing interest | The authors declare that they have no competing interests.`
+  - `280634650`: `nature portfolio | reporting summary`
+  - `255968752`: `. Introduction | . Methods`
+- remaining residuals are now concentrated in:
+  - genuine but weak short retrieval units
+  - source-truth section-title problems that need parser refresh/rewrite, not chunk-only backfill
+  - repeated non-structural section labels that QA should continue surfacing
+
+Canonical title reconciliation:
+
+- parser refresh/orchestration now loads `solemd.papers.title` alongside target corpus rows
+- explicit-target and source-driven parse paths both apply that metadata title onto the parsed warehouse document before write
+- parser-selected titles are preserved only as source metadata when they survive structural-title rejection; warehouse document title now follows canonical corpus metadata
+- existing warehouse rows were reconciled with a dedicated maintenance utility:
+  - module: `engine/app/rag_ingest/document_title_sync.py`
+  - script: `engine/db/scripts/sync_rag_document_titles.py`
+- live backfill result on the post-cleanup warehouse:
+  - mismatched `paper_documents.title` vs `solemd.papers.title` rows before sync: `56`
+  - mismatches after sync: `0`
+  - updated corpus ids included both minor punctuation/casing drift and true parser-title failures such as:
+    - `249973141`: `2.1. Subjects` -> canonical paper title
+    - `259270484`: `Institutional Review Board Statement` -> canonical paper title
+    - `280644239`: `Generative AI statement` -> canonical paper title
+- global QA after title reconciliation:
+  - flagged papers: `35`
+  - `repeated_nonstructural_section_labels = 18`
+  - `tiny_narrative_chunks = 20`
+  - `suspicious_structural_title = 0`
+- on the former title-mismatch cohort, residual flags are now only:
+  - `repeated_nonstructural_section_labels`
+  - isolated `tiny_narrative_chunks`
+
+Residual structural cleanup pass (`default-structural-v1`, targeted persisted rewrite):
+
+- shared section-label QA is now narrower and more truthful:
+  - repeated labels only flag explicit noisy/admin/publisher patterns
+  - repeated front-matter-only admin labels no longer trip QA
+  - numeric/dotted pseudo-outline labels inherit the prior contextual heading instead of fragmenting context
+- narrative structural routing is tighter:
+  - reporting-summary/admin prompts under headings such as `Clinical trial registration`, `Data deposition`, `Files in database submission`, and `Software` route to metadata
+  - abbreviation-glossary content under `Abbreviations` routes to metadata instead of retrieval chunks
+  - more short numeric/code/table-like residue routes out of prose
+- chunk assembly now performs two extra conservative repairs:
+  - weak short sentence atoms are coalesced before chunk grouping
+  - weak alias sections can merge into the prior contextual chunk when the section label is an obvious alias or cohort fragment
+- targeted persisted QA progression on the residual cohort:
+  - after structural cleanup `v3`: `11` flagged papers
+  - after the first residual pass `v4`: `9` flagged papers
+  - after the second residual/QA pass `v7`: `7` flagged papers
+- concrete persisted improvements on the residual cohort:
+  - `2273155` cleared after plot-axis residue stopped surfacing as a tiny narrative chunk
+  - `250138791` cleared after numeric subsection labels (`2.` / `3.`) inherited the prior diagnostic heading and merged back into the diagnostic chunk stream
+  - `276181932` cleared after abbreviation-glossary residue stopped persisting as a retrieval chunk
+  - `280634650` no longer carries `tiny_narrative_chunks`; the remaining QA signal is repeated reporting-summary section labels only
+- remaining residual papers after `v7`:
+  - tiny narrative chunks:
+    - `268369`
+    - `219538626`
+    - `238232041`
+    - `257188828`
+  - repeated non-structural section labels:
+    - `52845261`
+    - `237387332`
+    - `255968752`
+- remaining residual themes are now narrow:
+  - true source/parser continuation fractures (`from the`, `(see Appendix`, broken decimal/measurement OCR)
+  - repeated publisher/biography/pseudo-outline section labels that need parser-side normalization rather than chunk-only backfill
+
+Parser-normalization and sentence-repair pass (`parser-v4`, targeted S2 refresh):
+
+- `source_parsers.py` now normalizes or suppresses bad S2 section headers before they persist:
+  - repeated publisher scaffold labels such as `Journal of Medicinal Chemistry` are skipped instead of becoming warehouse sections
+  - dotted pseudo-outline headers such as `. . Protein structure prediction` are cleaned to contextual headings without the source scaffold
+  - truncated inline headers ending in connector tails like `... for` are skipped so downstream blocks stay attached to the real contextual section
+  - `Lead author biography` and related biography headings now normalize to `front_matter`
+- `sentence_segmentation.py` now repairs one important source-annotation failure mode:
+  - decimal-like numeric splits such as `477.` / `64` are merged back into a single canonical sentence span while preserving sentence-source provenance
+- `narrative_structure.py` and `chunking.py` now treat the remaining low-fidelity residues more truthfully:
+  - short appendix/figure/table cross-reference fragments route to metadata instead of retrieval chunks
+  - hard-truncated hyphen/open-paren fragments route to placeholders instead of live chunks
+  - table-like narrative residues can persist as table chunks when they are structurally meaningful
+- `orchestrator.py` now skips malformed BioC archive members with a warning instead of aborting a whole refresh run
+
+Live targeted refresh/backfill result (`residual-structural-cleanup-v8-s2`, `default-structural-v1`):
+
+- refreshed corpus ids:
+  - `268369`
+  - `52845261`
+  - `219538626`
+  - `237387332`
+  - `238232041`
+  - `255968752`
+  - `257188828`
+- targeted refresh source path:
+  - `s2_primary` only (`skip_bioc_fallback=true`) because all remaining holdouts were `primary_source_system = s2orc_v2`
+- targeted persisted outcome:
+  - `7/7` papers cleared
+  - `flagged_corpus_ids = []`
+- concrete fixes confirmed in persisted rows:
+  - `52845261`: repeated `Journal of Medicinal Chemistry` sections are gone
+  - `237387332`: repeated `Lead author biography` sections are now `front_matter` and no longer trip QA
+  - `255968752`: dotted outline section labels persist as cleaned contextual headings, not noisy scaffold labels
+  - `219538626`: weak cohort/inline header fragmentation no longer produces tiny narrative chunks
+  - `238232041`: short appendix cross-reference residue no longer persists as a retrieval chunk
+  - `257188828`: the numeric decimal split is repaired; the remaining short quantitative result sentence is now treated as valid QA-positive content rather than weak residue
+
+Whole-warehouse QA after the targeted `parser-v4` refresh and QA helper update:
+
+- `paper_documents = 355`
+- flagged papers under `default-structural-v1 = 0`
+- flag counter: `{}`
+
+Runtime evaluation harness and live graph scorecard:
+
+- new reusable evaluation module:
+  - `engine/app/rag_ingest/runtime_eval.py`
+- new CLI wrapper:
+  - `engine/scripts/evaluate_rag_runtime.py`
+- new coverage:
+  - `engine/test/test_rag_runtime_eval.py`
+- evaluation design:
+  - sample from canonical warehouse rows joined to the live graph release
+  - derive query cases from structural signals only
+    - `title_global`
+    - `title_selected`
+    - `sentence_global`
+  - score retrieval and grounding separately so the report can distinguish ranking quality from grounded-answer availability
+- live graph population at evaluation time:
+  - current graph release: `a9216e173007158807e9e8c063af987b1467f18831a0279f87ed87a0ad671799`
+  - current graph run id: `f9ed7a59-0c4d-4810-a04d-3d35ff4e6c70`
+  - live graph corpus points available: `54`
+  - source split in the live graph:
+    - `s2orc_v2 = 28`
+    - `biocxml = 26`
+- completed persisted runtime report:
+  - artifact: `.tmp/rag-runtime-eval-default-structural-v1-title-global-v1.json`
+  - query family: `title_global`
+  - evaluated papers: `54/54` live graph papers
+  - warehouse quality on the evaluated set: `0` flagged papers
+  - chunk grounding runtime status:
+    - `enabled = true`
+    - `missing_tables = []`
+    - `missing_corpus_ids = []`
+- title-global runtime scorecard on the full live graph:
+  - `hit@1 = 0.9074`
+  - `hit@5 = 1.0`
+  - `answer_present_rate = 1.0`
+  - `target_in_answer_corpus_rate = 0.9815`
+  - `grounded_answer_rate = 0.2037`
+  - `target_in_grounded_answer_rate = 0.2037`
+  - `mean_bundle_count = 2.056`
+  - `mean_cited_span_count = 0.204`
+- source-specific runtime result:
+  - `s2orc_v2`
+    - `hit@1 = 0.8929`
+    - `grounded_answer_rate = 0.3929`
+  - `biocxml`
+    - `hit@1 = 0.9231`
+    - `grounded_answer_rate = 0.0`
+- failure themes in the persisted runtime report:
+  - `title_global:ungrounded_answer = 43`
+  - `title_global:answer_missing_target = 1`
+- interpretation:
+  - retrieval/ranking is strong on title-seeded queries over the live graph
+  - the main remaining system weakness is grounded-answer coverage, not chunk quality or self-retrieval recall
+  - the strongest residual asymmetry is source-specific:
+    - `s2orc_v2` can ground some title-seeded answers
+    - `biocxml` does not currently ground title-seeded answers at all on the live graph sample
+- operational note:
+  - the `title_selected` and `sentence_global` evaluation families are implemented in the harness but are materially slower on the current runtime stack and are better treated as separate soak runs or targeted diagnostics rather than a default quick scorecard
+
+Runtime grounding remediation and verified live result:
+
+- grounded-answer coverage failures were traced to the runtime adapter layer rather than ingest quality:
+  - current graph `biocxml` papers carried warehouse entities but no warehouse citations
+  - current graph `s2orc_v2` papers could still fail grounding when `answer_corpus_ids` mixed one covered warehouse paper with one graph-only paper
+  - baseline answer selection was also too thin for title-like queries because it always emitted the top fused bundles rather than preserving an exact-title lexical anchor
+- concrete runtime diagnosis on the live graph release:
+  - `biocxml` live graph papers:
+    - `docs = 26`
+    - `docs_with_citations = 0`
+    - `docs_with_entities = 26`
+  - `s2orc_v2` live graph papers:
+    - `docs = 28`
+    - `docs_with_citations = 28`
+    - `docs_with_entities = 0`
+  - real partial-coverage failure inspected live:
+    - query answer bundle ids: `[138129, 1216853]`
+    - `138129` had canonical warehouse rows
+    - `1216853` had no warehouse document/chunk/member rows
+    - old runtime status returned `enabled = false` for the whole answer because one corpus id was missing
+- runtime grounding changes:
+  - `engine/app/rag/warehouse_grounding.py`
+    - entity rows now join canonical block/sentence context
+    - grounded answers can be built from entity-only packets when no citation rows exist
+    - packet ordering now respects the requested corpus order
+  - `engine/app/rag/chunk_grounding.py`
+    - chunk grounding now forwards entity-only packet context and segment-to-corpus alignment
+  - `engine/app/rag/grounded_runtime.py`
+    - runtime status now records `covered_corpus_ids`
+    - grounded-answer assembly now uses the covered subset instead of failing all-or-nothing on mixed covered/uncovered answers
+  - `engine/app/rag/source_grounding.py`
+    - segment anchors can now be assigned by `segment_corpus_ids` rather than only segment index
+  - `engine/app/rag/answer.py`
+    - baseline answer payload is now centralized
+    - exact-title lexical anchor bundles are preserved for title-like queries even when citation-neighbor bundles outrank them in fused score
+  - `engine/app/rag/service.py`
+    - runtime grounding now consumes the centralized answer payload and passes segment/corpus alignment into the warehouse grounder
+- new test coverage for the runtime grounding path:
+  - `engine/test/test_rag_answer.py`
+  - `engine/test/test_rag_grounded_runtime.py`
+  - `engine/test/test_rag_warehouse_grounding.py`
+  - `engine/test/test_rag_chunk_grounding.py`
+  - `engine/test/test_rag_source_grounding.py`
+  - `engine/test/test_rag_service.py`
+- verified live-runtime progression on the same full current graph release:
+  - pre-fix report artifact:
+    - `.tmp/rag-runtime-eval-default-structural-v1-title-global-v1.json`
+  - grounding/runtime structural fix report:
+    - `.tmp/rag-runtime-eval-default-structural-v1-title-global-v2.json`
+  - answer-anchor follow-up report:
+    - `.tmp/rag-runtime-eval-default-structural-v1-title-global-v3.json`
+- title-global live scorecard progression:
+  - `hit@1`: `0.9074 -> 0.9074 -> 0.9074`
+  - `hit@5`: `1.0 -> 1.0 -> 1.0`
+  - `target_in_answer_corpus_rate`: `0.9815 -> 0.9815 -> 1.0`
+  - `grounded_answer_rate`: `0.2037 -> 0.9815 -> 1.0`
+  - `target_in_grounded_answer_rate`: `0.2037 -> 0.9815 -> 1.0`
+  - `mean_cited_span_count`: `0.204 -> 8.148 -> 8.167`
+- source-specific live grounding progression:
+  - `s2orc_v2`
+    - `grounded_answer_rate = 0.3929 -> 0.9643 -> 1.0`
+  - `biocxml`
+    - `grounded_answer_rate = 0.0 -> 1.0 -> 1.0`
+- residual runtime miss fixed by the answer-anchor pass:
+  - corpus id `5496257`
+  - title: `Motor Performance Is not Enhanced by Daytime Naps in Older Adults`
+  - old behavior:
+    - target paper was retrieved at rank `3`
+    - answer bundles emitted only higher-ranked citation-neighbor review papers
+    - runtime grounding had no covered answer paper to attach
+  - new behavior:
+    - answer selection preserves the exact-title paper as the answer anchor
+    - grounded answer links corpus id `5496257`
+    - no failure themes remain in `title_global` over the full live graph release
+
 ## Cutover Note
 
 The live warehouse currently mixes canonical parser versions:

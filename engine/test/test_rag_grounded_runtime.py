@@ -82,6 +82,7 @@ def test_grounded_runtime_builds_answer_when_chunk_runtime_is_ready():
             },
             {
                 "has_chunk_version": True,
+                "covered_corpus_ids": [12345],
                 "missing_corpus_ids": [],
             },
         ],
@@ -156,3 +157,78 @@ def test_grounded_runtime_builds_answer_when_chunk_runtime_is_ready():
     assert grounded.answer_linked_corpus_ids == [12345]
     assert grounded.segments[0].citation_anchor_ids == ["anchor:1"]
     assert grounded.cited_spans[0].entity_mentions[0].concept_id == "D008550"
+
+
+def test_grounded_runtime_uses_covered_subset_when_some_answer_papers_are_missing():
+    conn, cur = _mock_connection(
+        fetchone_side_effect=[
+            {
+                "has_chunk_versions": True,
+                "has_chunks": True,
+                "has_chunk_members": True,
+                "has_citation_mentions": True,
+                "has_entity_mentions": True,
+            },
+            {
+                "has_chunk_version": True,
+                "covered_corpus_ids": [12345],
+                "missing_corpus_ids": [99999],
+            },
+        ],
+        fetchall_side_effect=[
+            [
+                {
+                    "corpus_id": 12345,
+                    "source_system": "s2orc_v2",
+                    "source_revision": "2026-03-10",
+                    "source_document_key": "12345",
+                    "source_plane": "body",
+                    "parser_version": "parser-v1",
+                    "raw_attrs_json": {},
+                    "span_origin": "primary_text",
+                    "alignment_status": "exact",
+                    "alignment_confidence": 1.0,
+                    "source_start_offset": 45,
+                    "source_end_offset": 48,
+                    "text": "[1]",
+                    "canonical_section_ordinal": 1,
+                    "canonical_block_ordinal": 0,
+                    "canonical_sentence_ordinal": 0,
+                    "source_citation_key": "b1",
+                    "source_reference_key": "b1",
+                    "matched_paper_id": "S2:paper-1",
+                    "matched_corpus_id": 999,
+                    "chunk_ordinal": 0,
+                    "block_section_ordinal": 1,
+                    "block_section_role": "results",
+                    "block_kind": "narrative_paragraph",
+                    "block_text": "Melatonin reduced delirium incidence [1].",
+                    "block_is_retrieval_default": True,
+                    "block_linked_asset_ref": None,
+                    "sentence_section_ordinal": 1,
+                    "sentence_segmentation_source": "s2orc_annotation",
+                    "sentence_text": "Melatonin reduced delirium incidence [1].",
+                }
+            ],
+            [],
+        ],
+    )
+
+    grounded = build_grounded_answer_from_runtime(
+        corpus_ids=[12345, 99999],
+        segment_texts=[
+            "Potentially relevant evidence:",
+            "Covered warehouse paper.",
+            "Uncovered graph-only paper.",
+        ],
+        segment_corpus_ids=[None, 12345, 99999],
+        connect=lambda: conn,
+    )
+
+    assert grounded is not None
+    assert grounded.answer_linked_corpus_ids == [12345]
+    assert grounded.segments[0].citation_anchor_ids == []
+    assert grounded.segments[1].citation_anchor_ids == ["anchor:1"]
+    assert grounded.segments[2].citation_anchor_ids == []
+    fetch_call = cur.execute.call_args_list[2]
+    assert fetch_call.args[1][1] == [12345]

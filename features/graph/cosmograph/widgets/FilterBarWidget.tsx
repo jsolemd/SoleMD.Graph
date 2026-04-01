@@ -1,28 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useCosmograph } from "@cosmograph/react";
-import type { Cosmograph } from "@cosmograph/cosmograph";
-import { getInternalApi } from "@cosmograph/cosmograph/cosmograph/internal";
 import { FilteringClient } from "@cosmograph/cosmograph/cosmograph/crossfilter/filtering-client";
 import { Bars, type BarData } from "@cosmograph/ui";
 import { Text } from "@mantine/core";
 import {
   buildCategoricalFilterClause,
-  buildVisibilityScopeSqlExcludingSource,
   clearSelectionClause,
-  createSelectionSource,
-  getSelectionSourceId,
   getSelectionValueForSource,
-  matchesSelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
-import { getLayerTableName } from "@/features/graph/duckdb/sql-helpers";
-import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoFacetRow } from "@/features/graph/types";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
 import { toFacetRowsFromBarCounts } from "./facet-rows";
 import {
+  WIDGET_DATASET_RETRY_DELAYS,
   getCachedCategoricalDataset,
   getWidgetDatasetCacheKeyWithRevision,
   setCachedCategoricalDataset,
@@ -32,7 +24,8 @@ import {
   setNativeBarsFacetData,
   setNativeBarsFacetHighlight,
 } from "./native-bars-adapter";
-import { resolveWidgetBaselineScope } from "./widget-baseline";
+import { initCrossfilterClient } from "./init-crossfilter-client";
+import { useWidgetSelectors } from "./use-widget-selectors";
 
 const FILTER_BAR_HEIGHT = 120;
 
@@ -51,12 +44,19 @@ export function FilterBarWidget({
   initialDatasetRows?: GraphInfoFacetRow[];
   datasetLoading?: boolean;
 }) {
-  const { cosmograph } = useCosmograph();
-  const activeLayer = useDashboardStore((state) => state.activeLayer);
-  const currentScopeRevision = useDashboardStore((state) => state.currentScopeRevision);
-  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
-  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
-  const selectedPointRevision = useDashboardStore((state) => state.selectedPointRevision);
+  const {
+    cosmograph,
+    activeLayer,
+    currentScopeRevision,
+    sourceId,
+    source,
+    tableName,
+    baselineScope,
+    baselineCacheKey,
+    scopeSql,
+    isSubset,
+  } = useWidgetSelectors("filter", column);
+
   const [error, setError] = useState<string | null>(null);
   const [widgetRevision, setWidgetRevision] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -66,34 +66,13 @@ export function FilterBarWidget({
   const scopedRequestIdRef = useRef(0);
   const datasetReadyRef = useRef(false);
   const selectedValueRef = useRef<string | null>(null);
-  const sourceId = `filter:${column}`;
-  const source = useMemo(() => createSelectionSource(sourceId), [sourceId]);
-  const tableName = useMemo(() => getLayerTableName(activeLayer), [activeLayer]);
-  const { scope: baselineScope, cacheKey: baselineCacheKey } = useMemo(
-    () =>
-      resolveWidgetBaselineScope({
-        selectionLocked,
-        selectedPointCount,
-        selectedPointRevision,
-      }),
-    [selectedPointCount, selectedPointRevision, selectionLocked],
-  );
-  const scopeSql = useMemo(
-    () =>
-      buildVisibilityScopeSqlExcludingSource(
-        cosmograph?.pointsSelection,
-        sourceId,
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
-    [cosmograph, currentScopeRevision, sourceId],
-  );
+
   const selectedValue = useMemo(
     () =>
       getSelectionValueForSource<string>(cosmograph?.pointsSelection, sourceId),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- currentScopeRevision forces re-evaluation when crossfilter state changes
     [cosmograph, currentScopeRevision, sourceId],
   );
-  const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;
 
   selectedValueRef.current = selectedValue;
 
@@ -129,41 +108,15 @@ export function FilterBarWidget({
     });
     widget.setLoadingState();
 
-    const internalApi = getInternalApi(cosmograph as unknown as Cosmograph);
     let client: FilteringClient | null = null;
-
-    const initializeClient = async () => {
-      await internalApi.dbReady();
-      if (!internalApi.dbCoordinator) {
-        return;
-      }
-
-      client = FilteringClient.getOrCreateClient({
-        coordinator: internalApi.dbCoordinator,
-        getTableName: () => tableName,
-        getSelection: () => internalApi.crossfilter.pointsSelection,
-        getAccessor: () => column,
-        includeFields: () => [internalApi.config.pointIndexBy].filter(Boolean) as string[],
-        onFiltered: (result) => {
-          if (
-            client &&
-            matchesSelectionSourceId(
-              getSelectionSourceId(
-                internalApi.crossfilter.pointsSelection.active?.source,
-              ),
-              sourceId,
-            )
-          ) {
-            internalApi.crossfilter.onPointsFiltered(result);
-          }
-        },
-        id: sourceId,
-      });
-      client.setActive(true);
-      clientRef.current = client;
-    };
-
-    void initializeClient();
+    void initCrossfilterClient(cosmograph, { sourceId, column, tableName }).then(
+      (result) => {
+        if (result) {
+          client = result;
+          clientRef.current = result;
+        }
+      },
+    );
 
     widgetRef.current = widget;
     datasetReadyRef.current = false;
@@ -214,9 +167,7 @@ export function FilterBarWidget({
     const datasetPromise = seededDataset
       ? Promise.resolve(seededDataset)
       : (async () => {
-          const delays = [0, 150, 450];
-
-          for (const delay of delays) {
+          for (const delay of WIDGET_DATASET_RETRY_DELAYS) {
             if (delay > 0) {
               await new Promise((resolve) => globalThis.setTimeout(resolve, delay));
             }

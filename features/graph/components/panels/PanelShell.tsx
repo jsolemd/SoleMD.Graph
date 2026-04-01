@@ -1,7 +1,7 @@
 "use client";
 
 import { type ComponentProps, type ReactNode, useEffect, useRef } from "react";
-import { Text, ActionIcon, Tooltip, Switch } from "@mantine/core";
+import { Loader, Text, ActionIcon, Tooltip, Switch } from "@mantine/core";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { panelReveal } from "@/lib/motion";
@@ -141,6 +141,20 @@ export function PanelDivider() {
       className="mx-auto w-[calc(100%-8px)]"
       style={{ height: 1, backgroundColor: "var(--graph-panel-border)", opacity: 0.5 }}
     />
+  );
+}
+
+/**
+ * Shared inline loading indicator — 12px spinner with optional dim label.
+ * Use in panel headers, toolbars, and section footers. Single source of
+ * truth so loading style can be updated once for the whole app.
+ */
+export function PanelInlineLoader({ label }: { label?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Loader size={10} color="var(--graph-panel-text-dim)" />
+      {label && <Text component="span" style={panelTextDimStyle}>{label}</Text>}
+    </span>
   );
 }
 

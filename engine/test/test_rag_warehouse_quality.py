@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.rag_ingest.chunk_quality import is_weak_short_narrative_chunk_text
 from app.rag_ingest.warehouse_quality import inspect_rag_warehouse_quality
 
 
@@ -126,3 +127,22 @@ def test_inspect_rag_warehouse_quality_flags_structural_anomalies():
         "low_value_narrative_chunks",
         "repeated_nonstructural_section_labels",
     ]
+
+
+def test_is_weak_short_narrative_chunk_text_distinguishes_complete_sentence_from_truncation():
+    assert not is_weak_short_narrative_chunk_text(
+        "Study design\nSingle-center cross-sectional study."
+    )
+    assert not is_weak_short_narrative_chunk_text(
+        "Results\nPhysical Activity Patterns\nParticipants on average engaged in 477. 64"
+    )
+    assert not is_weak_short_narrative_chunk_text(
+        'Intraoperative considerations\n"Before anything else, preparation is the key to '
+        'success."-Alexander Graham Bell'
+    )
+    assert is_weak_short_narrative_chunk_text(
+        "PREVENT-AD cohort\nTwo hundred and ninety-two cognitively normal participants from the"
+    )
+    assert is_weak_short_narrative_chunk_text(
+        "Diagnosis\nAortic valve area (AVA):\nDiameter of the LVOT"
+    )

@@ -8,10 +8,10 @@ from pydantic import Field
 
 from app import db
 from app.rag.chunk_grounding import fetch_chunk_grounding_rows
-from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag.parse_contract import ParseContractModel
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse_rows
+from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 
 _RUNTIME_TABLES_SQL = """
 SELECT
@@ -50,6 +50,11 @@ SELECT
     ) AS has_chunk_version,
     COALESCE(ARRAY(
         SELECT corpus_id
+        FROM covered
+        ORDER BY corpus_id
+    ), ARRAY[]::BIGINT[]) AS covered_corpus_ids,
+    COALESCE(ARRAY(
+        SELECT corpus_id
         FROM requested
         EXCEPT
         SELECT corpus_id
@@ -64,6 +69,7 @@ class GroundedAnswerRuntimeStatus(ParseContractModel):
     chunk_version_key: str
     missing_tables: list[str] = Field(default_factory=list)
     has_chunk_version: bool = False
+    covered_corpus_ids: list[int] = Field(default_factory=list)
     missing_corpus_ids: list[int] = Field(default_factory=list)
 
 
@@ -130,6 +136,9 @@ def _get_runtime_status_with_cursor(
     )
     backfill_row = cursor.fetchone() or {}
     has_chunk_version = bool(backfill_row.get("has_chunk_version"))
+    covered_corpus_ids = [
+        int(corpus_id) for corpus_id in backfill_row.get("covered_corpus_ids") or []
+    ]
     missing_corpus_ids = [
         int(corpus_id) for corpus_id in backfill_row.get("missing_corpus_ids") or []
     ]
@@ -137,6 +146,7 @@ def _get_runtime_status_with_cursor(
         enabled=has_chunk_version and not missing_corpus_ids,
         chunk_version_key=chunk_version_key,
         has_chunk_version=has_chunk_version,
+        covered_corpus_ids=covered_corpus_ids,
         missing_corpus_ids=missing_corpus_ids,
     )
 
@@ -145,6 +155,7 @@ def build_grounded_answer_from_runtime(
     *,
     corpus_ids: Sequence[int],
     segment_texts: Sequence[str],
+    segment_corpus_ids: Sequence[int | None] | None = None,
     limit_per_paper: int = 1,
     chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
     connect=None,
@@ -160,10 +171,12 @@ def build_grounded_answer_from_runtime(
             corpus_ids=normalized_corpus_ids,
             chunk_version_key=chunk_version_key,
         )
-        if not runtime_status.enabled:
+        if runtime_status.missing_tables or not runtime_status.has_chunk_version:
+            return None
+        if not runtime_status.covered_corpus_ids:
             return None
         citation_rows, entity_rows = fetch_chunk_grounding_rows(
-            corpus_ids=normalized_corpus_ids,
+            corpus_ids=runtime_status.covered_corpus_ids,
             cursor=cur,
             chunk_version_key=chunk_version_key,
             limit_per_paper=limit_per_paper,
@@ -173,4 +186,6 @@ def build_grounded_answer_from_runtime(
         citation_rows=citation_rows,
         entity_rows=entity_rows,
         segment_texts=segment_texts,
+        segment_corpus_ids=segment_corpus_ids,
+        corpus_order=runtime_status.covered_corpus_ids,
     )

@@ -13,7 +13,6 @@ from app.rag.grounding_packets import (
 )
 from app.rag.serving_contract import AnswerSegment, CitedSpanPacket, GroundedAnswerRecord
 from app.rag.source_selection import GroundingSourcePlan
-from app.rag_ingest.source_parsers import ParsedPaperSource
 from app.rag.warehouse_contract import (
     AlignmentStatus,
     PaperCitationMentionRow,
@@ -22,6 +21,7 @@ from app.rag.warehouse_contract import (
     citation_row_from_parse,
     entity_row_from_parse,
 )
+from app.rag_ingest.source_parsers import ParsedPaperSource
 
 
 def _align_primary_citations(
@@ -264,6 +264,7 @@ def build_grounded_answer_from_packets(
     *,
     segment_texts: Sequence[str],
     packets: Sequence[CitedSpanPacket],
+    segment_corpus_ids: Sequence[int | None] | None = None,
 ) -> GroundedAnswerRecord:
     cited_spans = list(packets)
     inline_citations = build_inline_citation_anchors(cited_spans)
@@ -279,8 +280,15 @@ def build_grounded_answer_from_packets(
         )
 
     segments: list[AnswerSegment] = []
-    if len(segment_texts) <= 1:
-        text = segment_texts[0] if segment_texts else cited_spans[0].quote_text or cited_spans[0].text
+    if segment_corpus_ids is not None and len(segment_corpus_ids) != len(segment_texts):
+        raise ValueError("segment_corpus_ids must match segment_texts length")
+
+    if len(segment_texts) <= 1 and segment_corpus_ids is None:
+        text = (
+            segment_texts[0]
+            if segment_texts
+            else cited_spans[0].quote_text or cited_spans[0].text
+        )
         segments.append(
             AnswerSegment(
                 segment_ordinal=0,
@@ -289,11 +297,20 @@ def build_grounded_answer_from_packets(
             )
         )
     else:
+        anchor_ids_by_corpus_id: dict[int, list[str]] = {}
+        if segment_corpus_ids is not None:
+            for anchor in inline_citations:
+                for corpus_id in anchor.cited_corpus_ids:
+                    anchor_ids_by_corpus_id.setdefault(corpus_id, []).append(anchor.anchor_id)
         for index, text in enumerate(segment_texts):
             if not text:
                 continue
             anchor_ids: list[str] = []
-            if index < len(inline_citations):
+            if segment_corpus_ids is not None:
+                corpus_id = segment_corpus_ids[index]
+                if corpus_id is not None:
+                    anchor_ids = anchor_ids_by_corpus_id.get(corpus_id, [])
+            elif index < len(inline_citations):
                 anchor_ids = [inline_citations[index].anchor_id]
             segments.append(
                 AnswerSegment(

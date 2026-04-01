@@ -28,7 +28,10 @@ DEFAULT_LEXICAL_NORMALIZATION_FLAGS: tuple[str, ...] = (
     "table_header_omit_on_overflow",
     "peer_merge_by_context",
     "section_heading_context",
+    "section_context_carryforward_for_noncontextual_labels",
     "section_context_excludes_repeated_nonstructural_labels",
+    "narrative_block_structure_classifier",
+    "metadata_residue_suppression",
     "semchunk_overflow_refinement",
 )
 
