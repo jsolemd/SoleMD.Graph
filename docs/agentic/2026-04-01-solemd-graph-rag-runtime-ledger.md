@@ -32,6 +32,10 @@ Mode: agentic overnight improvement loop
 | A22 | done | P1 | Modularity + provenance | `rank_paper_hits()` mixed channel provenance with raw score residue, which allowed `bundle.matched_channels` to drift from the real runtime channel surface, especially for `dense_query`. | Extracted channel/reason annotation into a dedicated helper in `engine/app/rag/ranking.py` and tightened dense-channel labeling to actual channel membership, with a regression guarding against stale dense labels. | `uv run pytest test/test_rag_ranking.py -k 'dense_channel_without_dense_membership or can_promote_semantic_only_candidates or preserves_entity_seed_scores_without_enrichment_hits or preserves_relation_seed_scores_without_enrichment_hits or preserves_citation_seed_scores_without_direct_hits'` |
 | A23 | in_progress | P1 | Evaluation hygiene | Several stale attached runtime eval/test jobs were still consuming exec slots and obscuring the post-fix picture. | Keep only the fresh post-fix evals alive, harvest the new artifacts, and move long soak runs back to the detached launcher after the current-code latency floor is re-baselined. | Fresh `v11-jitoff` report + cleaned process set |
 | A24 | done | P0 | Runtime session optimization | Live `EXPLAIN ANALYZE` on the canonical entity search showed about `774ms` of `~798ms` spent in PostgreSQL JIT compilation for a short search query, which is exactly the wrong workload shape for JIT. | Centralized runtime search-session settings in `engine/app/rag/repository.py`, added `rag_runtime_disable_jit` in `engine/app/config.py`, and verified the repository session contract in tests. | `uv run ruff check app/config.py app/rag/repository.py test/test_rag_repository.py` + `uv run pytest test/test_rag_repository.py` |
+| A25 | pending | P1 | Observability | If the fresh `v11-jitoff` cohort still shows any nontrivial tail, the runtime path needs stage-level timing visibility instead of another blind optimization round. | Add internal stage-timing instrumentation for the runtime search path and surface it in eval/debug artifacts without weakening the public response contract. | New timing artifact + targeted runtime tests |
+| A26 | pending | P2 | Dense retrieval contract | The runtime query path uses `allenai/specter2_adhoc_query`, while stored paper vectors still originate from Semantic Scholar `embedding.specter_v2`; official SPECTER2 guidance suggests query/document adapters should share the intended retrieval space. | Audit the paper-embedding/query-embedding contract against SPECTER2 primary sources and decide whether a paper re-embedding or alternate scientific/biomedical dense lane is warranted. | Contract note + comparison experiment |
+| A27 | pending | P2 | Biomedical reranking | Biomedical IR literature suggests MedCPT-class rerankers can improve question/article retrieval, especially on sentence-style biomedical questions, but at a GPU/runtime cost. | After the current latency floor settles, evaluate a small optional biomedical reranker lane on the sentence-global cohort and compare quality/latency against the current SPECTER2 + structured-signal stack. | Controlled benchmark artifact + decision note |
+| A28 | done | P2 | Centralization | The runtime entity search SQL duplicated the same query-term, concept-ranking, and scoring logic across four large query constants, which made future entity-path changes risky and noisy. | Centralized the entity-search SQL into shared CTE fragments/builders in `engine/app/rag/queries.py` and reverified repository/service behavior. | `uv run ruff check app/rag/queries.py test/test_rag_repository.py test/test_rag_service.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py` |
 
 ## Completed Batches
 
@@ -222,6 +226,20 @@ Mode: agentic overnight improvement loop
   - pinned connection reuse with `SET LOCAL jit = off`
   - the disabled-config fallback path
 - Cleared stale attached runtime eval/perf jobs so the live post-fix recheck is the only active broad benchmark competing for resources.
+
+### Batch 18
+- Centralized the runtime entity-search SQL surface in `engine/app/rag/queries.py`:
+  - shared query-term / exact-match / fuzzy-match / concept-ranking fragments
+  - shared matched-corpus scoring expression
+  - one builder for exact-vs-fuzzy and graph-scope-vs-selection variants
+- This removed the four-way duplication across:
+  - `PAPER_ENTITY_EXACT_SEARCH_SQL`
+  - `PAPER_ENTITY_EXACT_SEARCH_IN_SELECTION_SQL`
+  - `PAPER_ENTITY_SEARCH_SQL`
+  - `PAPER_ENTITY_SEARCH_IN_SELECTION_SQL`
+- Reverified the runtime adapter layer with:
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_service.py`
 
 ## Live Evidence
 
