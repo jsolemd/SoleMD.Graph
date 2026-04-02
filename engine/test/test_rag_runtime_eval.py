@@ -518,6 +518,71 @@ def test_summarize_runtime_results_flags_intent_target_not_top():
         "conflict_polarity",
         "refute",
     ]
+    assert summary.by_evidence_intent["refute"].cases == 1
+    assert summary.by_evidence_intent["refute"].hit_at_1_rate == 0.0
+    assert summary.by_benchmark_label["conflict_polarity"].cases == 1
+    assert summary.by_benchmark_label["refute"].target_in_grounded_answer_rate == 0.0
+
+
+def test_summarize_runtime_results_groups_support_and_refute_labels():
+    summary = summarize_runtime_results(
+        [
+            RuntimeEvalCaseResult(
+                corpus_id=11,
+                title="Support paper",
+                primary_source_system="s2orc_v2",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                query="Does treatment X improve outcome Y?",
+                stratum_key=(
+                    "benchmark:polarity_conflict_v1|intent:support|theme:treatment|"
+                    "source:s2orc_v2"
+                ),
+                evidence_intent=EvidenceIntent.SUPPORT,
+                benchmark_labels=["polarity_conflict", "support", "treatment"],
+                hit_rank=1,
+                answer_present=True,
+                answer_corpus_ids=[11],
+                target_in_answer_corpus=True,
+                grounded_answer_present=True,
+                grounded_answer_linked_corpus_ids=[11],
+                target_in_grounded_answer=True,
+                service_duration_ms=42.0,
+                duration_ms=44.0,
+                overhead_duration_ms=2.0,
+            ),
+            RuntimeEvalCaseResult(
+                corpus_id=22,
+                title="Refute paper",
+                primary_source_system="s2orc_v2",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                query="Does intervention Z reduce symptom A?",
+                stratum_key=(
+                    "benchmark:polarity_conflict_v1|intent:refute|theme:null_finding|"
+                    "source:s2orc_v2"
+                ),
+                evidence_intent=EvidenceIntent.REFUTE,
+                benchmark_labels=["polarity_conflict", "refute", "null_finding"],
+                hit_rank=1,
+                answer_present=True,
+                answer_corpus_ids=[22],
+                target_in_answer_corpus=True,
+                grounded_answer_present=True,
+                grounded_answer_linked_corpus_ids=[22],
+                target_in_grounded_answer=True,
+                service_duration_ms=55.0,
+                duration_ms=58.0,
+                overhead_duration_ms=3.0,
+            ),
+        ]
+    )
+
+    assert summary.by_evidence_intent["support"].cases == 1
+    assert summary.by_evidence_intent["support"].target_in_grounded_answer_rate == 1.0
+    assert summary.by_evidence_intent["refute"].cases == 1
+    assert summary.by_benchmark_label["polarity_conflict"].cases == 2
+    assert summary.by_benchmark_label["support"].cases == 1
+    assert summary.by_benchmark_label["refute"].cases == 1
+    assert summary.by_benchmark_label["null_finding"].cases == 1
 
 
 def test_aggregate_case_results_preserves_error_durations():

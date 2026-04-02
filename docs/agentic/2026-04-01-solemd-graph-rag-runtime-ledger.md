@@ -42,13 +42,13 @@ Mode: agentic overnight improvement loop
 | A32 | done | P1 | Title-search and sentence-ranking tail | The remaining runtime miss set had narrowed to `3/96` `sentence_global` cases, and `24948876` was still a title-like sentence case where citation-only neighbors could outrank the direct lexical paper. | Rejected the naive global-KNN rewrite, added planner-visible title-search instrumentation, then fixed the real contract bugs: missing ANN distances were inflating `dense_score` to `1.0`, and `TITLE_LOOKUP` did not sort direct title support ahead of citation-only neighbors. | `uv run pytest test/test_rag_repository.py test/test_rag_ranking.py` + `.tmp/rag-runtime-eval-sentence-miss-set-v19-titlefix.json` |
 | A33 | done | P1 | Dense-runtime contract hygiene | Live warmup and eval emitted `There are adapters available but none are activated for the forward pass.` even though runtime status already reported `active_adapters=Stack[[QRY]]` on the loaded SPECTER2 query encoder. | Reworked `query_embedding.py` so adapter activation is explicit, runtime status falls back to `adapters_config.active_setup`, and the known false-positive `adapters.model_mixin` warning is suppressed only around the real load+activate path. | `uv run pytest test/test_rag_query_embedding.py` + quiet embedder smoke + `.tmp/rag-runtime-eval-sentence-miss-set-v20-embedderquiet.json` |
 | A34 | done | P2 | Contract docs drift | `database.md` reflects `graph_base_points`, while some older design docs still describe base membership and base size using stale `graph_points` fields or fixed corpus counts. | Re-reviewed the current docs and contract test after the broad runtime cleanup; the canonical graph-base/runtime docs are already aligned around `graph_base_points`, policy-driven base sizing, and the live retrieval surface. Future doc work is now tied to any new live reranker lane rather than stale base-contract drift. | `cd engine && uv run pytest test/test_docs_runtime_contract.py -q` |
-| A35 | pending | P2 | Clinician-facing ranking priors | Runtime ranking is now fast and grounded, but it is still largely corpus-neutral; treatment/prognosis/diagnosis questions can benefit from lightweight priors over publication type, species, and evidence strength. | Evaluate a small query-intent classifier and ranking priors using existing publication-type, citation, and PubTator-derived species signals without regressing general retrieval quality. | Frozen-cohort comparison artifact + decision note |
-| A36 | pending | P2 | Conflict and polarity evaluation | Current evals prove recall, grounding, and latency, but they do not yet stress negation, null findings, mixed evidence, or nonhuman-to-human leakage. | Build a compact contradiction/polarity benchmark for biomedical questions and wire it into runtime evaluation so fast wrong-positive answers are caught explicitly. | Benchmark artifact + runtime eval extension |
+| A35 | done | P2 | Clinician-facing ranking priors | Runtime ranking is now fast and grounded, but it is still largely corpus-neutral; treatment/prognosis/diagnosis questions can benefit from lightweight priors over publication type, species, and evidence strength. | Completed via the clinician-prior benchmark pass in `A40`; the controlled cohort showed no broad win, so the priors remain available but default-off until a future benchmark justifies enabling them. | `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-control.json` + `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-priors-on.json` |
+| A36 | done | P2 | Conflict and polarity evaluation | Current evals prove recall, grounding, and latency, but they did not yet stress negation, null findings, mixed evidence, or nonhuman-to-human leakage. | Closed by the polarity/conflict benchmark integration and baseline recorded in `A41`, so the remaining work is iterative benchmark expansion rather than missing infrastructure. | `engine/.tmp/rag-runtime-eval-polarity-conflict-v1-baseline.json` |
 | A37 | done | P1 | Live biomedical reranker | The dense contract audit showed the current stored S2 paper vectors are not misaligned, but it also showed that a bounded MedCPT reranker can materially improve sentence-style biomedical retrieval quality on the offline dense benchmark. | Added an optional GPU-backed MedCPT rerank stage on the merged top-N runtime candidates for sentence-like global queries, benchmarked it on the full current live cohort, and kept the existing S2 retrieval lane as the default because the broad live cohort already sits at `1.0` quality and the live reranker adds latency without lifting that scorecard. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-control.json` + `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused service/ranking/perf tests |
 | A38 | done | P2 | Reranker observability | A live reranker experiment will only be safe if its candidate-window size, GPU stage cost, and promotion effect are visible in the same runtime artifacts as the existing retrieval stages. | Extended runtime traces so reranker stage duration, candidate-window size, promotion count, window ids, and device/ready status are recorded alongside the rest of the runtime profile. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused telemetry regression |
 | A39 | done | P1 | Hard-cohort evaluation | The current live cohort is now saturated at `1.0` quality across the main runtime metrics, which means new ranking ideas can look promising offline without moving the live scorecard at all. | Built the frozen `sentence_hard_v1` benchmark from dense-audit sentence failures, removed duplicate prep/test surfaces, wired benchmark execution through the canonical runtime-eval path, and validated the current runtime against that cohort. | `engine/data/runtime_eval_benchmarks/sentence_hard_v1.json` + `engine/.tmp/rag-runtime-eval-sentence-hard-v1.json` + `uv run pytest test/test_rag_runtime_benchmarks.py test/test_rag_runtime_eval.py -q` |
 | A40 | done | P1 | Clinician-facing ranking priors | `sentence_hard_v1` cleared at `1.0`, so the next runtime quality gains were more likely to come from objective-aware ranking than from generic sentence recall alone. The clinician-prior lane is now benchmarked on a frozen clinician cohort. | Keep clinician priors available behind the feature flag but default-off until a future benchmark shows a real quality win. | `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-control.json` + `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-priors-on.json` + targeted tests |
-| A41 | pending | P1 | Conflict and polarity evaluation | Current evals prove retrieval, grounding, and latency, but they still under-measure null findings, contradictory trials, mixed evidence, and nonhuman-to-human leakage. | Build a compact polarity/conflict benchmark and wire it into runtime evaluation so fast wrong-positive answers are caught before they ship. | Benchmark artifact + runtime eval extension |
+| A41 | done | P1 | Conflict and polarity evaluation | Current evals prove retrieval, grounding, and latency, but they still under-measured null findings, contradictory trials, mixed evidence, and nonhuman-to-human leakage. | Wired polarity/conflict benchmark runs into richer runtime summaries with `by_evidence_intent` and `by_benchmark_label`, then ran the tracked `polarity_conflict_v1` cohort as the first clinician-safety baseline. | `uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_benchmarks.py -k 'flags_intent_target_not_top or groups_support_and_refute_labels or load_runtime_eval_benchmark_cases_preserves_explicit_queries or checked_in_runtime_benchmarks_validate_and_load' -q` + `engine/.tmp/rag-runtime-eval-polarity-conflict-v1-baseline.json` |
 | A42 | done | P2 | Frozen benchmark drift | Frozen benchmark inputs now exist as checked-in runtime contracts, so schema drift or silent artifact skew would make later ranking comparisons noisy. | Generalized benchmark metadata around `benchmark_source`, aligned the checked-in JSON artifacts, and added loader coverage that validates every checked-in benchmark file. | `uv run pytest test/test_rag_runtime_benchmarks.py -q` |
 | A43 | done | P1 | Tail observability | The dense-query tail had already moved, but the slow-case planner view still could not profile citation-context fetch stages, so the next pass on `sentence_global` would have been partly blind. | Extracted a reusable citation-context SQL spec in `engine/app/rag/repository.py`, taught `engine/app/rag/runtime_profile.py` to profile initial/expanded/missing-top-hit citation fetches, and added focused runtime-eval coverage. | `uv run pytest test/test_rag_runtime_eval.py -q` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v15-citation-profile.json` |
 | A44 | done | P1 | Citation-context tail | After `v15`, the only repeated citation SQL fingerprint left in the live slow cases is `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded/initial title-like case. | Deferred `solemd.papers` joins until after per-paper citation-context ranking, replaced per-row correlated term counting with one grouped join, and revalidated on a fresh live-cohort rerun after discarding one noisy run-state artifact. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'fetch_citation_contexts_scores_and_limits_hits_in_sql or citation_context_tail_stays_bounded' -q` + `engine/.tmp/rag-runtime-probe-3130320-v2-citation-reshape.json` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v17-rerun.json` |
@@ -1830,3 +1830,52 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the right fix was another native candidate preprobe, not a return to fuzzy/trigram title probing.
   - the runtime retrieval path is now materially flatter; the next agentic passes should shift from hot-path latency cleanup back to the queued quality and benchmark work in `A35`, `A36`, `A41`, and the longer-term modularity cleanup in `A18`.
+
+## Batch 45: Surface Polarity Benchmark Slices In Runtime Eval
+
+- Scope:
+  - `engine/app/rag_ingest/runtime_eval_models.py`
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_runtime_benchmarks.py`
+- Problem after the latency cleanup:
+  - the tracked runtime benchmark files already included a clinician-facing polarity/conflict cohort, but runtime summaries only aggregated by query family, source system, and stratum.
+  - that meant a polarity benchmark could run, but it could not answer the high-value questions the user actually cares about:
+    - are `refute` cases weaker than `support` cases?
+    - are `null_finding` or `nonhuman_leakage_risk` labels weaker than the rest of the cohort?
+    - are the remaining benchmark risks quality problems or only latency differences?
+- Durable implementation landed:
+  - extended `RuntimeEvalSummary` with:
+    - `by_evidence_intent`
+    - `by_benchmark_label`
+  - updated `summarize_runtime_results(...)` so benchmark runs are automatically aggregated by:
+    - `support` / `refute`
+    - every benchmark label attached to the case (for example `null_finding`, `nonhuman_leakage_risk`, `diagnosis`)
+  - added focused test coverage to lock:
+    - `refute` failure grouping
+    - mixed `support` / `refute` label aggregation
+    - benchmark loader compatibility for checked-in runtime benchmark files
+  - ran the tracked `polarity_conflict_v1` benchmark through the canonical runtime-eval CLI to establish the first label-sliced baseline.
+- Verification:
+  - `cd engine && uv run ruff check app/rag_ingest/runtime_eval_models.py app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py test/test_rag_runtime_benchmarks.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_benchmarks.py -k 'flags_intent_target_not_top or groups_support_and_refute_labels or load_runtime_eval_benchmark_cases_preserves_explicit_queries or checked_in_runtime_benchmarks_validate_and_load' -q` -> `4 passed, 20 deselected`
+  - benchmark artifact:
+    - `engine/.tmp/rag-runtime-eval-polarity-conflict-v1-baseline.json`
+- Measured result:
+  - the current tracked polarity/conflict cohort is clean on quality:
+    - `hit_at_1_rate = 1.0`
+    - `target_in_grounded_answer_rate = 1.0`
+    - `failure_theme_counts = {}`
+  - the new slices are now visible directly in the report:
+    - `by_evidence_intent.support`
+    - `by_evidence_intent.refute`
+    - `by_benchmark_label.null_finding`
+    - `by_benchmark_label.nonhuman_leakage_risk`
+  - there is no current quality failure split between support and refute, but there is still useful latency separation by label:
+    - `support mean_service_duration_ms = 308.73`
+    - `refute mean_service_duration_ms = 350.11`
+    - `human_signal max_service_duration_ms = 434.41`
+    - `nonhuman_leakage_risk max_service_duration_ms = 422.77`
+- Interpretation:
+  - the polarity benchmark is now part of the real runtime-eval contract instead of a passive JSON artifact.
+  - the remaining clinician-safety work is no longer missing infrastructure; it is benchmark expansion and, if failures eventually appear, targeted ranking/species-prior improvements grounded in these slices.
