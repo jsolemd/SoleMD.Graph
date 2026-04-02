@@ -3620,3 +3620,184 @@ def test_rag_service_preserves_dense_query_candidates_in_final_bundle_pool():
         channel for channel in response.retrieval_channels if channel.channel == "dense_query"
     )
     assert [hit.corpus_id for hit in dense_channel.hits] == [77]
+
+
+def test_rag_service_skips_entity_resolution_for_passage_noise_without_resolution_anchors():
+    class PassageNoiseRepository:
+        _disable_session_jit = True
+
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            assert graph_release_id == "release-1"
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+            raise AssertionError("entity term resolution should be skipped")
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            assert graph_run_id == "run-1"
+            return None
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            assert graph_run_id == "run-1"
+            assert graph_paper_refs == []
+            return []
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert limit == 6
+            return []
+
+        def search_exact_title_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_selected_title_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            selected_corpus_id: int,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            return [
+                PaperEvidenceHit(
+                    corpus_id=77,
+                    paper_id="paper-77",
+                    semantic_scholar_paper_id="paper-77",
+                    title="Needle pressure study",
+                    journal_name="Neurology",
+                    year=2024,
+                    doi=None,
+                    pmid=777,
+                    pmcid=None,
+                    abstract="Passage candidate.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=False,
+                    citation_count=4,
+                    reference_count=8,
+                    chunk_lexical_score=0.91,
+                )
+            ]
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("entity recall should not run")
+
+        def search_relation_papers(
+            self,
+            graph_run_id: str,
+            *,
+            relation_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_semantic_neighbors(
+            self,
+            *,
+            graph_run_id: str,
+            selected_corpus_id: int,
+            limit: int = 6,
+            scope_corpus_ids=None,
+        ):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [77]
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert entity_terms == []
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert relation_terms == []
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [77]
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [77]
+            return {}
+
+    service = _service(PassageNoiseRepository(), query_embedder=NoopQueryEmbedder())
+    request = RagSearchRequest(
+        graph_release_id="release-1",
+        query=(
+            "Mean injection pressure was greater in subepineurium compared with muscle, "
+            "geometric ratio 2.29 (1.30 to 4.10), p<0.001; and greater on epineurium "
+            "compared with muscle, geometric ratio 1.73 (1.03"
+        ),
+        k=3,
+        rerank_topn=6,
+        generate_answer=False,
+    )
+
+    response = service.search(request)
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [77]

@@ -28,12 +28,12 @@ from app.rag.models import (
 )
 from app.rag.query_embedding import RagQueryEmbedder, get_query_embedder
 from app.rag.query_enrichment import (
-    build_entity_query_phrases,
-    build_query_phrases,
+    build_runtime_entity_resolution_phrases,
     derive_relation_terms,
     determine_query_retrieval_profile,
     normalize_query_text,
     should_seed_resolved_entity_term,
+    should_use_exact_title_precheck,
 )
 from app.rag.ranking import rank_paper_hits
 from app.rag.repository import PostgresRagRepository, RagRepository
@@ -123,13 +123,10 @@ def _apply_query_enrichment(
     if query.entity_terms:
         return query
 
-    query_phrases = list(
-        dict.fromkeys(
-            [
-                *build_entity_query_phrases(query.query),
-                *build_query_phrases(query.normalized_query),
-            ]
-        )
+    query_phrases = build_runtime_entity_resolution_phrases(
+        query.query,
+        retrieval_profile=query.retrieval_profile,
+        normalized_query=query.normalized_query,
     )
     if not query_phrases:
         return _apply_relation_enrichment(query)
@@ -404,7 +401,7 @@ class RagService:
             not exact_title_hits
             and query.use_lexical
             and search_plan.allow_exact_title_matches
-            and not query.use_title_similarity
+            and should_use_exact_title_precheck(query.query)
             and not selection_only_without_matches
         ):
             exact_title_hits = trace.call(

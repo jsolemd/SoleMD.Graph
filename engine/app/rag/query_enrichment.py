@@ -10,6 +10,9 @@ from app.rag.types import QueryRetrievalProfile
 
 MAX_QUERY_PHRASE_TOKENS = 4
 MAX_QUERY_PHRASES = 48
+MAX_ENTITY_RESOLUTION_PHRASES = 12
+MIN_EXACT_TITLE_PRECHECK_CHARS = 96
+MIN_EXACT_TITLE_PRECHECK_WORDS = 12
 MAX_TITLE_LIKE_QUERY_CHARS = 220
 MAX_TITLE_LIKE_QUERY_WORDS = 24
 MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS = 40
@@ -42,6 +45,23 @@ PROSE_CLAUSE_TOKENS = frozenset(
         "have",
     }
 )
+SENTENCE_OPENING_PREFIXES = frozenset(
+    {
+        ("this",),
+        ("these",),
+        ("those",),
+        ("we",),
+        ("our",),
+        ("here",),
+        ("in", "this"),
+        ("this", "is"),
+        ("this", "study"),
+        ("we", "show"),
+        ("we", "investigated"),
+        ("our", "results"),
+    }
+)
+STATISTICAL_ANCHOR_PREFIXES = frozenset({"p", "n", "r"})
 
 # Canonical PubTator relation labels currently exercised in the live dataset.
 SUPPORTED_RELATION_TYPES = frozenset(
@@ -130,6 +150,114 @@ def build_entity_query_phrases(text: str) -> list[str]:
     """Build bounded entity-oriented phrases without stripping biomedical symbols."""
 
     return _build_query_phrases_from_tokens(normalize_entity_query_text(text).split())
+
+
+def _entity_surface_anchor_tokens(text: str) -> list[str]:
+    anchors: list[str] = []
+    seen: set[str] = set()
+    for token in _surface_tokens(text):
+        normalized = normalize_entity_query_text(token)
+        if not normalized or normalized in seen:
+            continue
+        if _is_short_upper_acronym(token):
+            seen.add(normalized)
+            anchors.append(normalized)
+            continue
+        if _has_specific_entity_surface_token(token, normalized):
+            seen.add(normalized)
+            anchors.append(normalized)
+    return anchors
+
+
+def _phrase_contains_anchor(phrase: str, anchor: str) -> bool:
+    phrase_tokens = phrase.split()
+    anchor_tokens = anchor.split()
+    if not phrase_tokens or not anchor_tokens:
+        return False
+    if len(anchor_tokens) == 1:
+        return anchor_tokens[0] in phrase_tokens
+    return any(
+        phrase_tokens[index : index + len(anchor_tokens)] == anchor_tokens
+        for index in range(0, len(phrase_tokens) - len(anchor_tokens) + 1)
+    )
+
+
+def build_query_entity_resolution_phrases(text: str) -> list[str]:
+    """Build a compact, anchor-aware phrase set for runtime entity resolution.
+
+    Runtime entity enrichment is intentionally high-precision. Keep only phrase
+    windows that actually contain a raw surface anchor such as an acronym,
+    concept-id-like token, or biomedical symbol token.
+    """
+
+    anchors = _entity_surface_anchor_tokens(text)
+    if not anchors:
+        return []
+
+    filtered: list[str] = []
+    seen: set[str] = set()
+    for phrase in build_entity_query_phrases(text):
+        if phrase in seen:
+            continue
+        if any(_phrase_contains_anchor(phrase, anchor) for anchor in anchors):
+            seen.add(phrase)
+            filtered.append(phrase)
+        if len(filtered) >= MAX_ENTITY_RESOLUTION_PHRASES:
+            break
+    return filtered
+
+
+def build_runtime_entity_resolution_phrases(
+    text: str,
+    *,
+    retrieval_profile: QueryRetrievalProfile,
+    normalized_query: str | None = None,
+) -> list[str]:
+    """Build query phrases for runtime entity resolution without widening passage noise.
+
+    Title/general lookups keep the broader phrase inventory so generic biomedical
+    queries can still resolve missing entity terms. Passage lookups stay on the
+    compact anchor-aware lane to avoid spending time on statistical prose.
+    """
+
+    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return build_query_entity_resolution_phrases(text)
+
+    return list(
+        dict.fromkeys(
+            [
+                *build_entity_query_phrases(text),
+                *build_query_phrases(normalized_query or text),
+            ]
+        )
+    )
+
+
+def _is_statistical_surface_token(raw_token: str, normalized_token: str) -> bool:
+    raw = raw_token.strip().casefold()
+    normalized_parts = normalized_token.split()
+    if not raw or not normalized_parts:
+        return False
+    if len(normalized_parts) > 1 and normalized_parts[0] in STATISTICAL_ANCHOR_PREFIXES:
+        if all(part.isdigit() for part in normalized_parts[1:]):
+            return True
+    return bool(re.fullmatch(r"[<>~=]?\d+(?:\.\d+)?%?", raw))
+
+
+def _has_specific_entity_surface_token(raw_token: str, normalized_token: str) -> bool:
+    stripped = raw_token.strip()
+    if not stripped or _is_statistical_surface_token(raw_token, normalized_token):
+        return False
+
+    alpha_count = sum(char.isalpha() for char in stripped)
+    digit_count = sum(char.isdigit() for char in stripped)
+    has_connector = any(char in {":", "/", "+", "-"} for char in stripped)
+
+    if has_connector and alpha_count >= 2:
+        return True
+    if alpha_count >= 2 and digit_count >= 1:
+        return True
+    return False
 
 
 def _has_specific_entity_token(token: str) -> bool:
@@ -292,6 +420,13 @@ def _has_leading_section_label(text: str) -> bool:
     )
 
 
+def _has_obvious_sentence_opening(text: str) -> bool:
+    tokens = normalize_query_text(text).split()
+    if not tokens:
+        return False
+    return any(tuple(tokens[: len(prefix)]) == prefix for prefix in SENTENCE_OPENING_PREFIXES)
+
+
 def is_title_like_query(
     text: str | None,
     *,
@@ -358,6 +493,42 @@ def determine_query_retrieval_profile(
     if normalized and len(normalized.split()) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
         return QueryRetrievalProfile.PASSAGE_LOOKUP
     return QueryRetrievalProfile.GENERAL
+
+
+def should_use_exact_title_precheck(text: str | None) -> bool:
+    """Return True when a long passage-shaped query deserves exact-title rescue.
+
+    This is intentionally narrower than the title classifier. The precheck exists
+    to recover long full-paper titles that fall into the passage lane because of
+    terminal punctuation, not to run on ordinary sentence queries.
+    """
+
+    normalized = unicodedata.normalize("NFKC", text or "").strip()
+    if not normalized or is_title_like_query(normalized):
+        return False
+
+    token_count = _token_count(normalized)
+    if token_count == 0 or token_count > MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS:
+        return False
+    if _has_inline_sentence_boundary(normalized):
+        return False
+    if _has_leading_section_label(normalized):
+        return False
+    if _has_obvious_sentence_opening(normalized):
+        return False
+
+    if is_title_like_query(normalized, allow_terminal_punctuation=True):
+        return True
+
+    if not normalized.endswith((".", "?", "!")):
+        return False
+    if len(normalized) < MIN_EXACT_TITLE_PRECHECK_CHARS:
+        return False
+    if token_count < MIN_EXACT_TITLE_PRECHECK_WORDS:
+        return False
+    if _has_prose_clause_signal(normalized, token_count=token_count):
+        return False
+    return True
 
 
 def should_use_chunk_lexical_query(text: str | None) -> bool:

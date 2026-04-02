@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.rag.query_enrichment import (
     build_entity_query_phrases,
+    build_query_entity_resolution_phrases,
     build_query_phrases,
     derive_relation_terms,
     determine_query_retrieval_profile,
@@ -11,6 +12,7 @@ from app.rag.query_enrichment import (
     is_title_like_query,
     should_seed_resolved_entity_term,
     should_use_chunk_lexical_query,
+    should_use_exact_title_precheck,
 )
 from app.rag.types import QueryRetrievalProfile
 
@@ -32,6 +34,47 @@ def test_build_entity_query_phrases_preserves_biomedical_symbol_tokens():
     assert "decreased perk1/2 levels during" in phrases
     assert "perk1/2 levels during inhibitory" in phrases
     assert "perk1 2 levels during inhibitory" not in phrases
+
+
+def test_build_query_entity_resolution_phrases_keeps_anchor_windows_for_acronyms():
+    phrases = build_query_entity_resolution_phrases(
+        "Neuropeptide Y (NPY) signaling after IL-6 stimulation in the cerebellum"
+    )
+
+    assert phrases
+    assert any("npy" in phrase.split() for phrase in phrases)
+    assert any("il-6" in phrase.split() for phrase in phrases)
+    assert len(phrases) <= 12
+
+
+def test_build_query_entity_resolution_phrases_skips_non_entity_prose_noise():
+    text = (
+        "Mean injection pressure was greater in subepineurium compared with muscle, "
+        "geometric ratio 2.29 (1.30 to 4.10), p<0.001; and greater on epineurium "
+        "compared with muscle, geometric ratio 1.73 (1.03"
+    )
+
+    assert build_query_entity_resolution_phrases(text) == []
+
+
+def test_should_use_exact_title_precheck_accepts_long_terminal_title_candidates():
+    title = (
+        "A theory-informed qualitative exploration of social and environmental "
+        "determinants of physical activity and dietary choices in adolescents with "
+        "intellectual disabilities in their final year of school."
+    )
+
+    assert should_use_exact_title_precheck(title)
+
+
+def test_should_use_exact_title_precheck_accepts_short_terminal_title_candidates():
+    assert should_use_exact_title_precheck("Group comparisons: imaging the aging brain.")
+
+
+def test_should_use_exact_title_precheck_rejects_ordinary_sentence_queries():
+    assert not should_use_exact_title_precheck(
+        "This is a representative discussion sentence with a concluding period."
+    )
 
 
 def test_should_seed_resolved_entity_term_requires_specificity_for_auto_recall():

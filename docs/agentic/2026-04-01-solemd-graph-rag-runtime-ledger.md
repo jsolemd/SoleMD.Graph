@@ -874,3 +874,62 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the canonical docs now match the live base-membership and runtime-retrieval contracts closely enough to stop leaking stale assumptions into future passes
   - this closes a real source of architectural drift before the next broad eval and ranking work
+
+## Batch 26: Passage-Only Entity Resolution And Exact-Title Rescue
+
+- Scope:
+  - `engine/app/rag/query_enrichment.py`
+  - `engine/app/rag/retrieval_policy.py`
+  - `engine/app/rag/service.py`
+  - `engine/test/test_rag_query_enrichment.py`
+  - `engine/test/test_rag_service.py`
+- Problem evidenced after the first broad current-release eval:
+  - `sentence_global` still spent too much time in runtime entity enrichment on passage-like statistical prose even when it produced no entity seeds
+  - the first anchor-aware trim pass fixed that tail, but it over-corrected:
+    - generic relation-bearing short queries lost the broad entity-enrichment path
+    - title-like queries with terminal punctuation fell back into `PASSAGE_LOOKUP`, which regressed `title_global`
+- Durable implementation landed:
+  - centralized runtime entity-resolution phrase selection in `engine/app/rag/query_enrichment.py`
+  - kept broad phrase resolution for compact title/general lookups
+  - added a high-precision passage-only phrase builder that:
+    - keeps acronym and biomedical-symbol anchors
+    - rejects statistical tokens such as `p<0.001`
+    - caps passage resolution phrases at a small bounded set
+  - narrowed runtime entity-enrichment skipping so relation-bearing short queries can still resolve missing entity terms
+  - replaced the over-broad passage exact-title precheck with a shape-aware rescue helper:
+    - rescues real titles that fall into the passage lane because of terminal punctuation
+    - rejects obvious sentence openings such as `This is ...`
+  - added focused regressions for:
+    - passage-noise phrase suppression
+    - short and long terminal-title rescue
+    - passage-noise service behavior
+- Verification:
+  - `cd engine && uv run ruff check app/rag/query_enrichment.py app/rag/service.py app/rag/retrieval_policy.py test/test_rag_query_enrichment.py test/test_rag_service.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_query_enrichment.py test/test_rag_service.py -q` -> `53 passed`
+  - `cd engine && uv run pytest test/test_rag_query_enrichment.py test/test_rag_service.py test/test_rag_runtime_eval.py test/test_rag_repository.py -q` -> `115 passed`
+  - broad current-release eval artifacts:
+    - baseline: `.tmp/rag-runtime-eval-current-all-families-v21-postdocs.json`
+    - rejected intermediate: `.tmp/rag-runtime-eval-current-all-families-v22-entitytrim.json`
+    - accepted result: `.tmp/rag-runtime-eval-current-all-families-v23-title-rescue.json`
+- Outcome versus `v21` baseline:
+  - overall:
+    - `hit@1`: `1.0 -> 1.0`
+    - mean latency: `62.193 ms -> 46.345 ms`
+    - `p95`: `177.915 ms -> 114.821 ms`
+    - `p99`: `328.195 ms -> 226.021 ms`
+    - max: `556.505 ms -> 286.540 ms`
+  - `sentence_global`:
+    - `hit@1`: `1.0 -> 1.0`
+    - mean latency: `142.205 ms -> 93.253 ms`
+    - `p50`: `142.155 ms -> 82.766 ms`
+    - `p95`: `209.671 ms -> 140.481 ms`
+    - `p99`: `556.505 ms -> 286.540 ms`
+  - `title_global`:
+    - `hit@1`: `1.0 -> 1.0`
+    - mean latency: `24.250 ms -> 25.544 ms`
+    - `p95`: `31.466 ms -> 42.684 ms`
+    - note: this small title-lane regression was accepted because it stayed perfect on quality while the overall and sentence-global tail improved materially
+- Interpretation:
+  - the runtime now spends far less time resolving useless passage-noise entities, while still preserving the intended enrichment path for compact biomedical knowledge queries
+  - exact-title rescue is again a narrow contract instead of a blind passage precheck
+  - this batch materially improves the lane that mattered most (`sentence_global`) without opening a correctness regression elsewhere

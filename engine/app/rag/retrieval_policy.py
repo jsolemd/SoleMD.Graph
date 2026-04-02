@@ -66,6 +66,8 @@ def should_skip_runtime_entity_enrichment(
         lexical_hits=lexical_hits,
     ):
         return True
+    if query.relation_terms:
+        return False
     return not has_query_entity_surface_signal(query.query)
 
 
