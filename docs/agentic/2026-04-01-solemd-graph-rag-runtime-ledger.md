@@ -2018,3 +2018,40 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - runtime artifact hygiene is now proactive instead of waiting a day for age-based cleanup.
   - the repo keeps the newest useful generations per result family while preserving live detached-job handles and the most recent reports.
+
+## Batch 49: Split `ranking.py` Into Orchestration And Shared Scoring Modules
+
+- Scope:
+  - `engine/app/rag/ranking.py`
+  - `engine/app/rag/ranking_support.py`
+  - `docs/map/rag.md`
+- Problem:
+  - `engine/app/rag/ranking.py` had grown to `666` lines, above the `/clean`
+    modularity limit.
+  - it mixed two distinct responsibilities in one file:
+    - ranking orchestration and stable sort policy
+    - reusable scoring profiles, channel weights, cue tables, and affinity helpers
+  - that kept one of the last runtime files above the line-count budget and made
+    ranking changes pay unnecessary blast radius.
+- Durable implementation landed:
+  - extracted shared ranking constants, profile definitions, and scoring helpers
+    into `engine/app/rag/ranking_support.py`
+  - reduced `engine/app/rag/ranking.py` to the canonical public runtime ranking
+    surface:
+    - `rank_paper_hits()`
+    - `_rank_sort_key()`
+  - preserved `score_clinical_prior()` as the single clinical-prior authority in
+    `app/rag/clinical_priors.py` instead of duplicating that logic during the
+    extraction.
+  - kept one canonical runtime ranking implementation; this was an internal split,
+    not an old/new compatibility fork.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/ranking.py app/rag/ranking_support.py app/rag/search_finalize.py test/test_rag_ranking.py test/test_rag_service.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_ranking.py test/test_rag_service.py test/test_rag_runtime_perf.py -q` -> `84 passed`
+- Clean impact:
+  - both ranking modules now sit below the `600`-line modularity limit:
+    - `ranking.py`: `256`
+    - `ranking_support.py`: `441`
+  - orchestration and tie-breaking now live in one focused file, while shared
+    coefficients, cue tables, and affinity helpers live in one focused file.
+  - the runtime ranking path still has exactly one public entrypoint for callers.

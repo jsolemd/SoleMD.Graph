@@ -61,7 +61,8 @@ changing the outer graph integration boundary.
 |  response_serialization.py API response serialization                 |
 |  repository.py       Repository adapter surface + session wiring      |
 |  repository_*.py     Focused repository mixins by retrieval concern   |
-|  ranking.py          RRF fusion + intent affinity scoring             |
+|  ranking.py          Ranking orchestration + stable sort policy       |
+|  ranking_support.py  Shared ranking profiles, weights, cue tables     |
 |  bundle.py           Evidence bundle + graph signal assembly          |
 |  answer.py           Extractive answer synthesis                      |
 |  query_enrichment.py Server-side entity/relation term resolution      |
@@ -196,8 +197,8 @@ uses query-shape-specific ranking profiles (`general`, `title_lookup`,
 
 ### Fusion And Ranking
 
-The live scorer lives in `engine/app/rag/ranking.py` and differs by query
-profile:
+The live scorer lives across `engine/app/rag/ranking.py` and
+`engine/app/rag/ranking_support.py` and differs by query profile:
 
 - all profiles use RRF over `lexical`, `chunk_lexical`, `dense_query`,
   `entity_match`, `relation_match`, and `semantic_neighbor`
@@ -209,8 +210,9 @@ profile:
 Shared additive features include title similarity, title anchors, citation
 boost, citation intent, entity score, relation score, dense score, publication
 type priors, evidence-quality priors, and explicit support/refute intent cues.
-The exact coefficients are intentionally centralized in `ranking.py` so the docs
-do not become a second, stale source of truth.
+The exact coefficients are intentionally centralized in
+`ranking_support.py` so the docs do not become a second, stale source of
+truth.
 
 ### Evidence Intent
 
@@ -238,7 +240,8 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 | `repository_evidence_lookup.py` | Citation/entity/species/reference lookup mixin |
 | `repository_vector_search.py` | Dense-query and semantic-neighbor retrieval mixin |
 | `queries.py` | All SQL templates (paper search, entity/relation recall, citations, etc.) |
-| `ranking.py` | RRF fusion, channel weights, intent affinity scoring |
+| `ranking.py` | Ranking orchestration, fused-score assembly, stable sort policy |
+| `ranking_support.py` | Shared ranking profiles, channel weights, and affinity helpers |
 | `bundle.py` | `assemble_evidence_bundles()` + `merge_graph_signals()` |
 | `answer.py` | `generate_baseline_answer()` extractive answer from top bundles |
 | `query_enrichment.py` | `build_query_phrases()`, `derive_relation_terms()` server-side |
