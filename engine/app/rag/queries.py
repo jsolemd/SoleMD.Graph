@@ -1809,17 +1809,12 @@ scoped_citations AS (
     SELECT
         c.citing_corpus_id,
         c.cited_corpus_id,
-        citing.paper_id AS citing_paper_id,
-        cited.paper_id AS cited_paper_id,
         c.citation_id,
         c.intents,
         c.is_influential,
-        context_items.context_text
+        context_items.context_text,
+        lower(context_items.context_text) AS lowered_context_text
     FROM solemd.citations c
-    JOIN solemd.papers citing
-      ON citing.corpus_id = c.citing_corpus_id
-    JOIN solemd.papers cited
-      ON cited.corpus_id = c.cited_corpus_id
     CROSS JOIN LATERAL (
         SELECT
             CASE
@@ -1839,31 +1834,43 @@ scoped_citations AS (
         )
         AND context_items.context_text <> ''
 ),
+matched_term_counts AS (
+    SELECT
+        sc.citing_corpus_id,
+        sc.cited_corpus_id,
+        sc.citation_id,
+        sc.intents,
+        sc.is_influential,
+        sc.context_text,
+        COALESCE(COUNT(qt.lowered_term), 0)::float AS matched_term_count
+    FROM scoped_citations sc
+    LEFT JOIN query_terms qt
+      ON POSITION(qt.lowered_term IN sc.lowered_context_text) > 0
+    GROUP BY
+        sc.citing_corpus_id,
+        sc.cited_corpus_id,
+        sc.citation_id,
+        sc.intents,
+        sc.is_influential,
+        sc.context_text
+),
 scored_contexts AS (
     SELECT
-        sc.*,
+        mtc.*,
         GREATEST(
             0.1,
-            COALESCE(
-                (
-                    SELECT COUNT(*)
-                    FROM query_terms qt
-                    WHERE POSITION(qt.lowered_term IN lower(sc.context_text)) > 0
-                )::float,
-                0.0
-            )
+            mtc.matched_term_count
         ) + CASE
-            WHEN sc.is_influential THEN 0.25
+            WHEN mtc.is_influential THEN 0.25
             ELSE 0.0
         END AS score
-    FROM scoped_citations sc
+    FROM matched_term_counts mtc
 ),
 candidate_contexts AS (
     SELECT
         sc.citing_corpus_id AS corpus_id,
         'outgoing'::text AS direction,
         sc.cited_corpus_id AS neighbor_corpus_id,
-        sc.cited_paper_id AS neighbor_paper_id,
         sc.citation_id,
         sc.context_text,
         sc.intents,
@@ -1875,7 +1882,6 @@ candidate_contexts AS (
         sc.cited_corpus_id AS corpus_id,
         'incoming'::text AS direction,
         sc.citing_corpus_id AS neighbor_corpus_id,
-        sc.citing_paper_id AS neighbor_paper_id,
         sc.citation_id,
         sc.context_text,
         sc.intents,
@@ -1894,19 +1900,25 @@ ranked_contexts AS (
                 cc.neighbor_corpus_id DESC NULLS LAST
         ) AS corpus_rank
     FROM candidate_contexts cc
+),
+limited_contexts AS (
+    SELECT *
+    FROM ranked_contexts
+    WHERE corpus_rank <= %s
 )
 SELECT
-    corpus_id,
-    direction,
-    neighbor_corpus_id,
-    neighbor_paper_id,
-    citation_id,
-    context_text,
-    intents,
-    score
-FROM ranked_contexts
-WHERE corpus_rank <= %s
-ORDER BY corpus_id, corpus_rank
+    lc.corpus_id,
+    lc.direction,
+    lc.neighbor_corpus_id,
+    neighbor.paper_id AS neighbor_paper_id,
+    lc.citation_id,
+    lc.context_text,
+    lc.intents,
+    lc.score
+FROM limited_contexts lc
+LEFT JOIN solemd.papers neighbor
+  ON neighbor.corpus_id = lc.neighbor_corpus_id
+ORDER BY lc.corpus_id, lc.corpus_rank
 """
 
 

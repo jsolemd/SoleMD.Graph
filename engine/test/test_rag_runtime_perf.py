@@ -254,6 +254,25 @@ def test_runtime_entity_dense_grounded_answer_fetch_stays_bounded():
 
 @pytest.mark.integration
 @pytest.mark.slow
+def test_runtime_citation_context_tail_stays_bounded():
+    report = _runtime_perf_report_for(
+        (3130320,),
+        (RuntimeEvalQueryFamily.SENTENCE_GLOBAL,),
+    )
+
+    assert report.summary.overall.error_count == 0
+
+    case = _case(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
+    sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
+
+    assert sentence_global.target_in_grounded_answer_rate == 1.0
+    assert sentence_global.p95_service_duration_ms <= 150.0
+    assert case.stage_durations_ms.get("fetch_citation_contexts_initial", 0.0) <= 20.0
+    assert case.stage_durations_ms.get("fetch_citation_contexts_missing_top_hits", 0.0) <= 60.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
 def test_runtime_clinical_treatment_query_applies_bounded_species_prior():
     _require_runtime_db()
     previous_enabled = settings.rag_live_clinical_priors_enabled

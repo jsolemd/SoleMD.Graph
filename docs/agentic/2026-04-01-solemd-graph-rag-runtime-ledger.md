@@ -51,9 +51,10 @@ Mode: agentic overnight improvement loop
 | A41 | pending | P1 | Conflict and polarity evaluation | Current evals prove retrieval, grounding, and latency, but they still under-measure null findings, contradictory trials, mixed evidence, and nonhuman-to-human leakage. | Build a compact polarity/conflict benchmark and wire it into runtime evaluation so fast wrong-positive answers are caught before they ship. | Benchmark artifact + runtime eval extension |
 | A42 | done | P2 | Frozen benchmark drift | Frozen benchmark inputs now exist as checked-in runtime contracts, so schema drift or silent artifact skew would make later ranking comparisons noisy. | Generalized benchmark metadata around `benchmark_source`, aligned the checked-in JSON artifacts, and added loader coverage that validates every checked-in benchmark file. | `uv run pytest test/test_rag_runtime_benchmarks.py -q` |
 | A43 | done | P1 | Tail observability | The dense-query tail had already moved, but the slow-case planner view still could not profile citation-context fetch stages, so the next pass on `sentence_global` would have been partly blind. | Extracted a reusable citation-context SQL spec in `engine/app/rag/repository.py`, taught `engine/app/rag/runtime_profile.py` to profile initial/expanded/missing-top-hit citation fetches, and added focused runtime-eval coverage. | `uv run pytest test/test_rag_runtime_eval.py -q` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v15-citation-profile.json` |
-| A44 | pending | P1 | Citation-context tail | After `v15`, the only repeated citation SQL fingerprint left in the live slow cases is `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded/initial title-like case. | Inspect and optimize the citation-context query shape or fetch policy so slow top-hit citation backfills stop showing up in the live p99. | Live cohort rerun + plan profile diff |
+| A44 | done | P1 | Citation-context tail | After `v15`, the only repeated citation SQL fingerprint left in the live slow cases is `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded/initial title-like case. | Deferred `solemd.papers` joins until after per-paper citation-context ranking, replaced per-row correlated term counting with one grouped join, and revalidated on a fresh live-cohort rerun after discarding one noisy run-state artifact. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'fetch_citation_contexts_scores_and_limits_hits_in_sql or citation_context_tail_stays_bounded' -q` + `engine/.tmp/rag-runtime-probe-3130320-v2-citation-reshape.json` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v17-rerun.json` |
 | A45 | done | P1 | Title-like paper-search outlier | Live `v15` isolated one remaining title-lookup outlier (`24948876`) where `paper_search_global` still costs about `179.8ms` despite rank-1 retrieval success. Naive fuzzy preprobe attempts made that route catastrophically worse (`31.9s`, then `59.2s`) before the final contract fix. | Split the global paper-search SQL into an explicit `paper_search_global_fts_only` lane for `use_title_similarity=false`, remove the failed fuzzy preprobe path entirely, and lock the new route in unit + DB-backed perf coverage. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'title_like_paper_fallback_stays_fast or test_rag_repository' -q` + `engine/.tmp/rag-runtime-probe-24948876-v5.json` |
 | A46 | done | P1 | Grounded-answer build hotspot | Live `v15` isolated one remaining slow case (`277023583`) where `build_grounded_answer` dominated at about `188.1ms` after retrieval had already completed. The root cause was unbounded entity-packet overfetch before packet grouping plus opaque inner timing. | Split grounded-answer entity fetch into citation-packet entities plus bounded fallback packet groups, thread the shared runtime trace collector through the real grounders, and lock the new packet/timing contract with unit + DB-backed perf coverage. | `uv run pytest test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'entity_dense_grounded_answer_fetch_stays_bounded or grounded_runtime or rag_service or warehouse_grounding' -q` + `engine/.tmp/rag-runtime-probe-277023583-v2-grounded-trace.json` |
+| A47 | pending | P1 | Residual title-lookup search tail | The fresh `v17` current-release rerun is healthy overall (`mean 40.26ms`, `p95 83.31ms`), but one `sentence_global` case (`24948876`) still routes into `title_lookup` and spends `180.7ms` in `search_papers` on the `paper_search_global_fts_only` lane. | Profile the remaining `title_lookup` paper-search hot case, decide whether it is a stable contract issue or acceptable long-tail cost, and only add another SQL/path split if it materially improves the live p99 without reopening the failed fuzzy branch. | Targeted probe + plan/profile diff + runtime perf gate if a durable fix lands |
 
 ## Completed Batches
 
@@ -1743,3 +1744,44 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the grounded-answer hotspot was a real data-path issue, not a planner mystery.
   - after bounding packet-group fetch and exposing the inner stages, the next clean P1 is the shared citation-context SQL shape in `A44`, which the subagent isolated to fingerprint `467e2b7dd38f`.
+
+## Batch 43: Defer Citation-Paper Joins Until After Context Ranking
+
+- Scope:
+  - `engine/app/rag/queries.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem evidenced after Batch 42:
+  - `A44` remained the only repeated slow SQL surface in the live p99: citation-context fingerprint `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded title-like case.
+  - subagent profiling showed the query was paying three avoidable costs too early:
+    - eager `solemd.papers` joins before the per-paper `ROW_NUMBER() <= limit_per_paper` pruning
+    - `jsonb_array_elements(...)` row explosion before ranking
+    - correlated query-term counting against each exploded context row
+- Durable implementation landed:
+  - removed the eager `solemd.papers` joins from `scoped_citations` and carried `neighbor_corpus_id` through ranking instead.
+  - replaced the correlated per-row query-term subquery with one grouped `LEFT JOIN query_terms` pass in `matched_term_counts`.
+  - inserted `limited_contexts` so the runtime only joins `solemd.papers` after per-paper ranking and limit pruning are complete.
+  - added a DB-backed perf regression for the previously slow sentence-global citation-tail case (`3130320`).
+- Verification:
+  - `cd engine && uv run ruff check app/rag/queries.py test/test_rag_runtime_perf.py test/test_rag_repository.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'fetch_citation_contexts_scores_and_limits_hits_in_sql or citation_context_tail_stays_bounded' -q` -> `2 passed, 75 deselected`
+  - direct live probe artifact:
+    - `engine/.tmp/rag-runtime-probe-3130320-v2-citation-reshape.json`
+  - full current-release cohort reruns:
+    - noisy artifact retained for evidence: `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v16-citation-reshape.json`
+    - clean validating rerun: `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v17-rerun.json`
+- Measured result:
+  - targeted probe on the known citation-tail case improved while preserving quality:
+    - `service_duration_ms = 107.47`
+    - `fetch_citation_contexts_initial = 10.33ms`
+    - `fetch_citation_contexts_missing_top_hits = 43.11ms`
+    - `target_in_grounded_answer = true`
+  - the noisy `v16` rerun showed phantom `search_query_embedding_papers ~350ms` spikes across `54` cases, but that behavior disappeared on the clean `v17` rerun:
+    - `v16`: `mean 158.67ms`, `p95 507.43ms`, `54` cases over `250ms`
+    - `v17`: `mean 40.26ms`, `p95 83.31ms`, `0` cases over `250ms`
+  - on the validating `v17` rerun, citation-context fetches remained present but no longer dominated the cohort p99:
+    - max `fetch_citation_contexts_missing_top_hits = 46.82ms`
+    - max `fetch_citation_contexts_initial = 12.30ms`
+- Interpretation:
+  - the citation SQL shape was a real waste point and the deferred-join rewrite removed it as the dominant live tail.
+  - the discarded `v16` report was run-state noise, not a durable dense-query regression.
+  - the next clean runtime pass is now the residual `title_lookup` paper-search tail on `24948876`, plus the longer-horizon benchmark/quality items still queued in `A35`, `A36`, and `A41`.
