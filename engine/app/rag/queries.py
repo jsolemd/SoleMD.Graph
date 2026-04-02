@@ -30,9 +30,19 @@ WHERE graph_run_id = %s
 
 
 EMBEDDED_PAPER_COUNT_SQL = """
-SELECT COUNT(*)::INT AS embedded_paper_count
+SELECT COUNT(*)::INT AS paper_count
 FROM solemd.papers
 WHERE embedding IS NOT NULL
+"""
+
+
+PAPER_EMBEDDING_LITERAL_SQL = """
+SELECT embedding::text AS embedding_literal
+FROM solemd.papers
+WHERE
+    corpus_id = %s
+    AND embedding IS NOT NULL
+LIMIT 1
 """
 
 
@@ -161,6 +171,23 @@ setweight(to_tsvector('english', COALESCE(p.abstract, '')), 'B')
 """
 
 
+GRAPH_INPUT_CTE_SQL = """
+graph_input AS (
+    SELECT %s::uuid AS graph_run_id
+)
+"""
+
+
+PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL = """
+EXISTS (
+    SELECT 1
+    FROM solemd.graph_points gp
+    WHERE gp.graph_run_id = graph_input.graph_run_id
+      AND gp.corpus_id = p.corpus_id
+)
+"""
+
+
 PAPER_TITLE_TEXT_SQL = """
 lower(COALESCE(p.title, ''))
 """
@@ -225,25 +252,28 @@ WITH query_input AS (
         %s::text AS normalized_title_query,
         %s::boolean AS allow_title_similarity
 ),
-graph_scope AS MATERIALIZED (
-    SELECT gp.corpus_id
-    FROM solemd.graph_points gp
-    WHERE gp.graph_run_id = %s
-),
+{GRAPH_INPUT_CTE_SQL},
 exact_title_matches AS MATERIALIZED (
     SELECT
         p.corpus_id,
         2.0 AS lexical_score,
         1.0 AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
+    FROM solemd.papers p
     CROSS JOIN query_input
-    WHERE {PAPER_TITLE_TEXT_SQL} = query_input.lowered_query
-        OR (
-            query_input.normalized_title_query <> ''
-            AND {PAPER_NORMALIZED_TITLE_KEY_SQL} = query_input.normalized_title_query
+    CROSS JOIN graph_input
+    WHERE {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND (
+            (
+                query_input.lowered_query <> ''
+                AND {PAPER_TITLE_TEXT_SQL} >= query_input.lowered_query
+                AND {PAPER_TITLE_TEXT_SQL} <= query_input.lowered_query
+            )
+            OR (
+                query_input.normalized_title_query <> ''
+                AND {PAPER_NORMALIZED_TITLE_KEY_SQL} >= query_input.normalized_title_query
+                AND {PAPER_NORMALIZED_TITLE_KEY_SQL} <= query_input.normalized_title_query
+            )
         )
     ORDER BY
         citation_count DESC,
@@ -253,10 +283,10 @@ exact_title_matches AS MATERIALIZED (
 fts_matches AS MATERIALIZED (
     SELECT
         p.corpus_id,
-        COALESCE(ts_rank_cd(search_terms.search_vector, query_input.ts_query), 0)
+        COALESCE(ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.ts_query), 0)
             + (
                 COALESCE(
-                    ts_rank_cd(search_terms.search_vector, query_input.title_phrase_query),
+                    ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.title_phrase_query),
                     0
                 ) * 0.35
             ) AS lexical_score,
@@ -272,22 +302,24 @@ fts_matches AS MATERIALIZED (
             ELSE 0.0
         END AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
+    FROM solemd.papers p
     CROSS JOIN query_input
-    CROSS JOIN LATERAL (
-        SELECT
-            {PAPER_SEARCH_VECTOR_SQL} AS search_vector
-    ) AS search_terms
+    CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
         AND (
-            search_terms.search_vector @@ query_input.ts_query
-            OR search_terms.search_vector @@ query_input.title_phrase_query
+            {PAPER_SEARCH_VECTOR_SQL} @@ query_input.ts_query
+            OR {PAPER_SEARCH_VECTOR_SQL} @@ query_input.title_phrase_query
         )
     ORDER BY
-        lexical_score DESC,
+        COALESCE(ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.ts_query), 0)
+            + (
+                COALESCE(
+                    ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.title_phrase_query),
+                    0
+                ) * 0.35
+            ) DESC,
         citation_count DESC,
         p.corpus_id DESC
     LIMIT %s
@@ -305,12 +337,12 @@ title_matches AS MATERIALIZED (
             END
         ) AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
+    FROM solemd.papers p
     CROSS JOIN query_input
+    CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
         AND query_input.allow_title_similarity
         AND (
             {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
@@ -337,12 +369,12 @@ normalized_title_matches AS MATERIALIZED (
         0.0 AS lexical_score,
         {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL} AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
+    FROM solemd.papers p
     CROSS JOIN query_input
+    CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
         AND query_input.allow_title_similarity
         AND query_input.normalized_title_query <> ''
         AND query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
@@ -435,11 +467,11 @@ matched_papers AS MATERIALIZED (
     SELECT
         p.corpus_id,
         COALESCE(
-            ts_rank_cd(search_terms.search_vector, query_input.ts_query),
+            ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.ts_query),
             0
         ) + (
             COALESCE(
-                ts_rank_cd(search_terms.search_vector, query_input.title_phrase_query),
+                ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.title_phrase_query),
                 0
             ) * 0.35
         ) AS lexical_score,
@@ -515,11 +547,7 @@ WITH query_input AS (
         %s::text AS normalized_title_query,
         %s::boolean AS allow_title_similarity
 ),
-graph_scope AS MATERIALIZED (
-    SELECT gp.corpus_id
-    FROM solemd.graph_points gp
-    WHERE gp.graph_run_id = %s
-),
+{GRAPH_INPUT_CTE_SQL},
 exact_title_matches AS MATERIALIZED (
     SELECT
         p.corpus_id,
@@ -527,14 +555,21 @@ exact_title_matches AS MATERIALIZED (
         1.0 AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
     FROM solemd.papers p
-    JOIN graph_scope gs
-      ON gs.corpus_id = p.corpus_id
     CROSS JOIN query_input
+    CROSS JOIN graph_input
     WHERE
-        {PAPER_TITLE_TEXT_SQL} = query_input.lowered_query
-        OR (
-            query_input.normalized_title_query <> ''
-            AND {PAPER_NORMALIZED_TITLE_KEY_SQL} = query_input.normalized_title_query
+        {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND (
+            (
+                query_input.lowered_query <> ''
+                AND {PAPER_TITLE_TEXT_SQL} >= query_input.lowered_query
+                AND {PAPER_TITLE_TEXT_SQL} <= query_input.lowered_query
+            )
+            OR (
+                query_input.normalized_title_query <> ''
+                AND {PAPER_NORMALIZED_TITLE_KEY_SQL} >= query_input.normalized_title_query
+                AND {PAPER_NORMALIZED_TITLE_KEY_SQL} <= query_input.normalized_title_query
+            )
         )
     ORDER BY
         citation_count DESC,
@@ -566,18 +601,14 @@ matched_papers AS MATERIALIZED (
         END AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
     FROM solemd.papers p
-    JOIN graph_scope gs
-      ON gs.corpus_id = p.corpus_id
     CROSS JOIN query_input
-    CROSS JOIN LATERAL (
-        SELECT
-            {PAPER_SEARCH_VECTOR_SQL} AS search_vector
-    ) AS search_terms
+    CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
         AND (
-            search_terms.search_vector @@ query_input.ts_query
-            OR search_terms.search_vector @@ query_input.title_phrase_query
+            {PAPER_SEARCH_VECTOR_SQL} @@ query_input.ts_query
+            OR {PAPER_SEARCH_VECTOR_SQL} @@ query_input.title_phrase_query
             OR (
                 query_input.allow_title_similarity
                 AND (
@@ -617,51 +648,6 @@ LIMIT %s
 """
 
 
-PAPER_EXACT_TITLE_SEARCH_SQL = f"""
-SELECT
-    {PAPER_SELECT_COLUMNS},
-    2.0 AS lexical_score,
-    1.0 AS title_similarity
-FROM solemd.papers p
-JOIN solemd.graph_points gp
-  ON gp.graph_run_id = %s
- AND gp.corpus_id = p.corpus_id
-{PAPER_CORE_JOINS}
-WHERE lower(coalesce(p.title, '')) = lower(%s)
-    OR (
-        %s <> ''
-        AND {PAPER_NORMALIZED_TITLE_KEY_SQL} = %s
-    )
-ORDER BY
-    COALESCE(p.citation_count, 0) DESC,
-    p.corpus_id DESC
-LIMIT %s
-"""
-
-
-PAPER_EXACT_TITLE_SEARCH_IN_SELECTION_SQL = f"""
-SELECT
-    {PAPER_SELECT_COLUMNS},
-    2.0 AS lexical_score,
-    1.0 AS title_similarity
-FROM solemd.papers p
-{PAPER_CORE_JOINS}
-WHERE
-    p.corpus_id = ANY(%s)
-    AND (
-        lower(coalesce(p.title, '')) = lower(%s)
-        OR (
-            %s <> ''
-            AND {PAPER_NORMALIZED_TITLE_KEY_SQL} = %s
-        )
-    )
-ORDER BY
-    COALESCE(p.citation_count, 0) DESC,
-    p.corpus_id DESC
-LIMIT %s
-"""
-
-
 PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL = """
 SELECT
     p.corpus_id,
@@ -669,7 +655,8 @@ SELECT
 FROM solemd.papers p
 WHERE
     %s <> ''
-    AND lower(coalesce(p.title, '')) = %s
+    AND lower(coalesce(p.title, '')) >= %s
+    AND lower(coalesce(p.title, '')) <= %s
 ORDER BY
     citation_count DESC,
     p.corpus_id DESC
@@ -684,7 +671,8 @@ SELECT
 FROM solemd.papers p
 WHERE
     %s <> ''
-    AND {PAPER_NORMALIZED_TITLE_KEY_SQL} = %s
+    AND {PAPER_NORMALIZED_TITLE_KEY_SQL} >= %s
+    AND {PAPER_NORMALIZED_TITLE_KEY_SQL} <= %s
 ORDER BY
     citation_count DESC,
     p.corpus_id DESC
@@ -699,7 +687,8 @@ SELECT
 FROM solemd.papers p
 WHERE
     %s <> ''
-    AND lower(coalesce(p.title, '')) LIKE (%s || '%%')
+    AND lower(coalesce(p.title, '')) >= %s
+    AND lower(coalesce(p.title, '')) < %s
 ORDER BY
     citation_count DESC,
     p.corpus_id DESC
@@ -714,7 +703,8 @@ SELECT
 FROM solemd.papers p
 WHERE
     %s <> ''
-    AND {PAPER_NORMALIZED_TITLE_KEY_SQL} LIKE (%s || '%%')
+    AND {PAPER_NORMALIZED_TITLE_KEY_SQL} >= %s
+    AND {PAPER_NORMALIZED_TITLE_KEY_SQL} < %s
 ORDER BY
     citation_count DESC,
     p.corpus_id DESC
@@ -728,26 +718,29 @@ WITH query_input AS (
         lower(%s) AS lowered_query,
         %s::text AS normalized_title_query
 ),
-graph_scope AS MATERIALIZED (
-    SELECT gp.corpus_id
-    FROM solemd.graph_points gp
-    WHERE gp.graph_run_id = %s
-),
+{GRAPH_INPUT_CTE_SQL},
 exact_title_matches AS MATERIALIZED (
     SELECT
         p.corpus_id,
         2.0 AS lexical_score,
         1.0 AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
+    FROM solemd.papers p
     CROSS JOIN query_input
+    CROSS JOIN graph_input
     WHERE
-        {PAPER_TITLE_TEXT_SQL} = query_input.lowered_query
-        OR (
-            query_input.normalized_title_query <> ''
-            AND {PAPER_NORMALIZED_TITLE_KEY_SQL} = query_input.normalized_title_query
+        {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND (
+            (
+                query_input.lowered_query <> ''
+                AND {PAPER_TITLE_TEXT_SQL} >= query_input.lowered_query
+                AND {PAPER_TITLE_TEXT_SQL} <= query_input.lowered_query
+            )
+            OR (
+                query_input.normalized_title_query <> ''
+                AND {PAPER_NORMALIZED_TITLE_KEY_SQL} >= query_input.normalized_title_query
+                AND {PAPER_NORMALIZED_TITLE_KEY_SQL} <= query_input.normalized_title_query
+            )
         )
     ORDER BY
         citation_count DESC,
@@ -767,12 +760,12 @@ prefix_title_matches AS MATERIALIZED (
             END
         ) AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
+    FROM solemd.papers p
     CROSS JOIN query_input
+    CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
         AND query_input.lowered_query <> ''
         AND (
             {PAPER_TITLE_TEXT_SQL} LIKE (query_input.lowered_query || '%%')
@@ -802,13 +795,13 @@ title_matches AS MATERIALIZED (
             END
         ) AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
+    FROM solemd.papers p
     CROSS JOIN query_input
+    CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
         AND NOT EXISTS (SELECT 1 FROM prefix_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
         AND query_input.lowered_query <> ''
         AND (
             {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
@@ -879,7 +872,8 @@ title_exact_candidates AS MATERIALIZED (
     CROSS JOIN query_input
     WHERE
         query_input.lowered_query <> ''
-        AND lower(coalesce(p.title, '')) = query_input.lowered_query
+        AND lower(coalesce(p.title, '')) >= query_input.lowered_query
+        AND lower(coalesce(p.title, '')) <= query_input.lowered_query
     ORDER BY
         citation_count DESC,
         p.corpus_id DESC
@@ -893,7 +887,8 @@ normalized_title_exact_candidates AS MATERIALIZED (
     CROSS JOIN query_input
     WHERE
         query_input.normalized_title_query <> ''
-        AND {PAPER_NORMALIZED_TITLE_KEY_SQL} = query_input.normalized_title_query
+        AND {PAPER_NORMALIZED_TITLE_KEY_SQL} >= query_input.normalized_title_query
+        AND {PAPER_NORMALIZED_TITLE_KEY_SQL} <= query_input.normalized_title_query
     ORDER BY
         citation_count DESC,
         p.corpus_id DESC
@@ -1528,7 +1523,7 @@ def _paper_entity_search_sql(*, exact_only: bool, scoped_to_selection: bool) -> 
             scoped_to_selection=scoped_to_selection,
         )
     )
-    return "WITH " + ",\n".join(ctes) + "\n" + ENTITY_RANKED_PAPERS_SELECT_SQL
+    return "WITH " + ",\n".join(ctes) + ",\n" + ENTITY_RANKED_PAPERS_SELECT_SQL
 
 
 PAPER_ENTITY_EXACT_SEARCH_SQL = _paper_entity_search_sql(
@@ -1711,51 +1706,14 @@ LIMIT %s
 """
 
 
-DENSE_QUERY_SEARCH_ANN_IN_GRAPH_SQL = f"""
-WITH query_vector AS (
-    SELECT %s::vector AS embedding
-),
-graph_scope AS MATERIALIZED (
-    SELECT gp.corpus_id
-    FROM solemd.graph_points gp
-    WHERE gp.graph_run_id = %s
-),
-ann_candidates AS MATERIALIZED (
-    SELECT
-        p.corpus_id,
-        (p.embedding <=> qv.embedding) AS distance
-    FROM graph_scope gs
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
-    CROSS JOIN query_vector qv
-    WHERE p.embedding IS NOT NULL
-    ORDER BY p.embedding <=> qv.embedding ASC
-    LIMIT %s
-)
-SELECT
-    {PAPER_SELECT_COLUMNS},
-    ann.distance
-FROM ann_candidates ann
-JOIN solemd.papers p
-  ON p.corpus_id = ann.corpus_id
-{PAPER_CORE_JOINS}
-ORDER BY ann.distance ASC
-LIMIT %s
-"""
-
-
 DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL = f"""
-WITH query_vector AS (
-    SELECT %s::vector AS embedding
-),
-ann_candidates AS MATERIALIZED (
+WITH ann_candidates AS MATERIALIZED (
     SELECT
         p.corpus_id,
-        (p.embedding <=> qv.embedding) AS distance
+        (p.embedding <=> %s::vector) AS distance
     FROM solemd.papers p
-    CROSS JOIN query_vector qv
     WHERE p.embedding IS NOT NULL
-    ORDER BY p.embedding <=> qv.embedding ASC
+    ORDER BY p.embedding <=> %s::vector ASC
     LIMIT %s
 )
 SELECT
@@ -2150,117 +2108,48 @@ ORDER BY corpus_id, asset_id
 
 
 SEMANTIC_NEIGHBOR_SQL = """
-WITH selected_embedding AS MATERIALIZED (
-    SELECT p.embedding
-    FROM solemd.papers p
-    WHERE
-        p.corpus_id = %s
-        AND p.embedding IS NOT NULL
-)
 SELECT
     p.corpus_id,
     p.paper_id,
-    (selected.embedding <=> p.embedding) AS distance
-FROM selected_embedding selected
+    (p.embedding <=> %s::vector) AS distance
+FROM solemd.papers p
 JOIN solemd.graph_points gp
-  ON TRUE
-JOIN solemd.papers p
-  ON p.corpus_id = gp.corpus_id
+  ON gp.graph_run_id = %s
+ AND gp.corpus_id = p.corpus_id
 WHERE
-    gp.graph_run_id = %s
-    AND p.embedding IS NOT NULL
+    p.embedding IS NOT NULL
     AND p.corpus_id <> %s
-ORDER BY selected.embedding <=> p.embedding ASC
+ORDER BY p.embedding <=> %s::vector ASC
 LIMIT %s
 """
 
 
 SEMANTIC_NEIGHBOR_IN_SELECTION_SQL = """
-WITH selected_embedding AS MATERIALIZED (
-    SELECT p.embedding
-    FROM solemd.papers p
-    WHERE
-        p.corpus_id = %s
-        AND p.embedding IS NOT NULL
-)
 SELECT
     p.corpus_id,
     p.paper_id,
-    (selected.embedding <=> p.embedding) AS distance
-FROM selected_embedding selected
-CROSS JOIN solemd.papers p
+    (p.embedding <=> %s::vector) AS distance
+FROM solemd.papers p
 WHERE
     p.corpus_id = ANY(%s)
     AND p.embedding IS NOT NULL
     AND p.corpus_id <> %s
-ORDER BY selected.embedding <=> p.embedding ASC
-LIMIT %s
-"""
-
-
-SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL = """
-SELECT to_regclass('solemd.idx_papers_embedding_hnsw') IS NOT NULL AS index_ready
-"""
-
-
-SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL = """
-WITH selected_embedding AS MATERIALIZED (
-    SELECT p.embedding
-    FROM solemd.papers p
-    WHERE
-        p.corpus_id = %s
-        AND p.embedding IS NOT NULL
-),
-graph_scope AS MATERIALIZED (
-    SELECT gp.corpus_id
-    FROM solemd.graph_points gp
-    WHERE gp.graph_run_id = %s
-),
-ann_candidates AS MATERIALIZED (
-    SELECT
-        p.corpus_id,
-        p.paper_id,
-        (p.embedding <=> selected.embedding) AS distance
-    FROM graph_scope gs
-    CROSS JOIN selected_embedding selected
-    JOIN solemd.papers p
-      ON p.corpus_id = gs.corpus_id
-    WHERE
-        p.embedding IS NOT NULL
-        AND p.corpus_id <> %s
-    ORDER BY
-        p.embedding <=> selected.embedding ASC
-    LIMIT %s
-)
-SELECT
-    ann.corpus_id,
-    ann.paper_id,
-    ann.distance
-FROM ann_candidates ann
-ORDER BY ann.distance ASC
+ORDER BY p.embedding <=> %s::vector ASC
 LIMIT %s
 """
 
 
 SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL = """
-WITH selected_embedding AS MATERIALIZED (
-    SELECT p.embedding
-    FROM solemd.papers p
-    WHERE
-        p.corpus_id = %s
-        AND p.embedding IS NOT NULL
-),
-ann_candidates AS MATERIALIZED (
+WITH ann_candidates AS MATERIALIZED (
     SELECT
         p.corpus_id,
         p.paper_id,
-        (p.embedding <=> selected.embedding) AS distance
+        (p.embedding <=> %s::vector) AS distance
     FROM solemd.papers p
-    CROSS JOIN selected_embedding selected
     WHERE
         p.embedding IS NOT NULL
         AND p.corpus_id <> %s
-    ORDER BY p.embedding <=> selected.embedding ASC
+    ORDER BY p.embedding <=> %s::vector ASC
     LIMIT %s
 )
 SELECT
@@ -2273,4 +2162,9 @@ JOIN solemd.graph_points gp
  AND gp.corpus_id = ann.corpus_id
 ORDER BY ann.distance ASC
 LIMIT %s
+"""
+
+
+SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL = """
+SELECT to_regclass('solemd.idx_papers_embedding_hnsw') IS NOT NULL AS index_ready
 """

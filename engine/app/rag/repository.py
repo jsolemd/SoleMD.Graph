@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -28,7 +29,7 @@ from app.rag.query_enrichment import (
     normalize_query_text,
     normalize_title_key,
 )
-from app.rag.title_anchor import compute_title_anchor_score
+from app.rag.title_anchor import compute_title_anchor_score, prefix_range_upper_bound
 from app.rag.types import CitationDirection, GraphSignalKind, RetrievalChannel
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 
@@ -244,9 +245,11 @@ class PostgresRagRepository:
     ):
         self._connect_factory = connect or db.pooled
         self._chunk_version_key = chunk_version_key
+        self._disable_session_jit = settings.rag_runtime_disable_jit
         self._graph_release_cache: dict[str, GraphRelease] = {}
         self._semantic_neighbor_index_ready: bool | None = None
         self._graph_scope_paper_counts: dict[str, int] = {}
+        self._graph_scope_coverages: dict[str, float] = {}
         self._embedded_paper_count: int | None = None
         self._bound_connection: ContextVar[Any | None] = ContextVar(
             f"rag_repository_connection_{id(self)}",
@@ -260,7 +263,7 @@ class PostgresRagRepository:
         return self._connect_factory()
 
     def _configure_search_session(self, cur: Any) -> None:
-        if settings.rag_runtime_disable_jit:
+        if self._disable_session_jit:
             cur.execute("SET LOCAL jit = off")
 
     @contextmanager
@@ -508,17 +511,19 @@ class PostgresRagRepository:
             )
             if prefix_title_hits:
                 return prefix_title_hits[:limit]
-            sql = queries.PAPER_TITLE_LOOKUP_SQL
+            candidate_limit = max(limit * 20, 120)
+            sql = queries.PAPER_SEARCH_SQL
             params = (
                 query,
+                query,
+                query,
                 normalized_title_query,
-                limit,
-                limit,
-                candidate_limit,
-                candidate_limit,
-                candidate_limit,
-                candidate_limit,
+                False,
                 graph_run_id,
+                limit,
+                candidate_limit,
+                candidate_limit,
+                candidate_limit,
                 limit,
             )
         else:
@@ -598,23 +603,36 @@ class PostgresRagRepository:
         limit: int,
         prefix: bool,
     ) -> list[int]:
+        title_query = query.lower()
+        normalized_prefix_upper = prefix_range_upper_bound(normalized_title_query)
+        title_prefix_upper = prefix_range_upper_bound(title_query)
         sql_specs = (
             (
                 queries.PAPER_TITLE_TEXT_PREFIX_CANDIDATE_SQL,
-                (query.lower(), query.lower(), limit),
+                (title_query, title_query, title_prefix_upper, limit),
             ),
             (
                 queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL,
-                (normalized_title_query, normalized_title_query, limit),
+                (
+                    normalized_title_query,
+                    normalized_title_query,
+                    normalized_prefix_upper,
+                    limit,
+                ),
             ),
         ) if prefix else (
             (
                 queries.PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL,
-                (query.lower(), query.lower(), limit),
+                (title_query, title_query, title_query, limit),
             ),
             (
                 queries.PAPER_TITLE_NORMALIZED_EXACT_CANDIDATE_SQL,
-                (normalized_title_query, normalized_title_query, limit),
+                (
+                    normalized_title_query,
+                    normalized_title_query,
+                    normalized_title_query,
+                    limit,
+                ),
             ),
         )
 
@@ -655,29 +673,40 @@ class PostgresRagRepository:
 
         if scope_corpus_ids:
             unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
-            sql = queries.PAPER_EXACT_TITLE_SEARCH_IN_SELECTION_SQL
-            params = (
-                unique_scope_ids,
-                normalized_query,
-                normalized_title_query,
-                normalized_title_query,
-                limit,
-            )
+            scope_set = set(unique_scope_ids)
+            candidate_corpus_ids = [
+                corpus_id
+                for corpus_id in self._title_lookup_candidate_corpus_ids(
+                    query=normalized_query,
+                    normalized_title_query=normalized_title_query,
+                    limit=limit,
+                    prefix=False,
+                )
+                if corpus_id in scope_set
+            ][:limit]
+            if not candidate_corpus_ids:
+                return []
+            scoped_hits = self.fetch_known_scoped_papers_by_corpus_ids(candidate_corpus_ids)
+            hits_by_corpus_id = {hit.corpus_id: hit for hit in scoped_hits}
+            ordered_hits = [
+                hits_by_corpus_id[corpus_id]
+                for corpus_id in candidate_corpus_ids
+                if corpus_id in hits_by_corpus_id
+            ]
         else:
-            sql = queries.PAPER_EXACT_TITLE_SEARCH_SQL
-            params = (
-                graph_run_id,
-                normalized_query,
-                normalized_title_query,
-                normalized_title_query,
-                limit,
+            ordered_hits = self._search_title_lookup_candidate_papers(
+                graph_run_id=graph_run_id,
+                query=normalized_query,
+                normalized_title_query=normalized_title_query,
+                limit=limit,
+                prefix=False,
             )
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
 
-        return [self._paper_hit_from_row(row) for row in rows]
+        for hit in ordered_hits:
+            hit.lexical_score = max(hit.lexical_score, 2.0)
+            hit.title_similarity = max(hit.title_similarity, 1.0)
+
+        return ordered_hits[:limit]
 
     def search_selected_title_papers(
         self,
@@ -1216,14 +1245,6 @@ class PostgresRagRepository:
     def _semantic_neighbor_limit(self, limit: int) -> int:
         return max(int(limit), SEMANTIC_NEIGHBOR_MIN_LIMIT)
 
-    def _semantic_neighbor_candidate_limit(self, limit: int) -> int:
-        normalized_limit = self._semantic_neighbor_limit(limit)
-        candidate_limit = max(
-            normalized_limit * settings.rag_semantic_neighbor_candidate_multiplier,
-            settings.rag_semantic_neighbor_min_candidates,
-        )
-        return min(candidate_limit, settings.rag_semantic_neighbor_max_candidates)
-
     def _graph_run_paper_count(self, graph_run_id: str) -> int:
         cached = self._graph_scope_paper_counts.get(graph_run_id)
         if cached is not None:
@@ -1247,23 +1268,42 @@ class PostgresRagRepository:
                 cur.execute(queries.EMBEDDED_PAPER_COUNT_SQL)
                 row = cur.fetchone()
 
-        self._embedded_paper_count = int((row or {}).get("embedded_paper_count") or 0)
+        self._embedded_paper_count = int((row or {}).get("paper_count") or 0)
         return self._embedded_paper_count
+
+    def _graph_scope_coverage(self, graph_run_id: str) -> float:
+        cached = self._graph_scope_coverages.get(graph_run_id)
+        if cached is not None:
+            return cached
+
+        embedded_paper_count = self._embedded_paper_count_value()
+        if embedded_paper_count <= 0:
+            coverage = 1.0
+        else:
+            coverage = min(
+                1.0,
+                self._graph_run_paper_count(graph_run_id) / embedded_paper_count,
+            )
+        self._graph_scope_coverages[graph_run_id] = coverage
+        return coverage
+
+    def _ann_candidate_limit(self, *, graph_run_id: str, limit: int) -> int:
+        normalized_limit = self._semantic_neighbor_limit(limit)
+        min_candidates = max(int(settings.rag_semantic_neighbor_min_candidates), 1)
+        max_candidates = max(int(settings.rag_semantic_neighbor_max_candidates), min_candidates)
+        multiplier = max(int(settings.rag_semantic_neighbor_candidate_multiplier), 1)
+        coverage = max(self._graph_scope_coverage(graph_run_id), 1e-9)
+        target_candidates = max(
+            normalized_limit * multiplier,
+            math.ceil(normalized_limit / coverage),
+        )
+        return min(max_candidates, max(min_candidates, target_candidates))
 
     def _should_use_exact_graph_search(self, graph_run_id: str) -> bool:
         return (
             self._graph_run_paper_count(graph_run_id)
             <= settings.rag_runtime_exact_graph_search_max_papers
         )
-
-    def _should_use_broad_scope_ann(self, graph_run_id: str) -> bool:
-        embedded_paper_count = self._embedded_paper_count_value()
-        if embedded_paper_count <= 0:
-            return False
-        graph_paper_count = self._graph_run_paper_count(graph_run_id)
-        return (
-            graph_paper_count / embedded_paper_count
-        ) >= settings.rag_runtime_broad_scope_ann_min_ratio
 
     def _configure_hnsw_session(self, cur: Any) -> None:
         cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
@@ -1275,6 +1315,12 @@ class PostgresRagRepository:
             "SET LOCAL hnsw.max_scan_tuples = "
             f"{max(int(settings.rag_semantic_neighbor_hnsw_max_scan_tuples), 1)}"
         )
+
+    def _configure_exact_vector_session(self, cur: Any) -> None:
+        parallel_workers = max(int(settings.rag_semantic_neighbor_exact_parallel_workers), 0)
+        cur.execute(f"SET LOCAL max_parallel_workers_per_gather = {parallel_workers}")
+        cur.execute("SET LOCAL enable_indexscan = off")
+        cur.execute("SET LOCAL enable_indexonlyscan = off")
 
     def _semantic_neighbor_index_is_ready(self) -> bool:
         if not settings.rag_semantic_neighbor_ann_enabled:
@@ -1300,15 +1346,19 @@ class PostgresRagRepository:
         unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
         if not unique_scope_ids:
             return []
+        vector_literal = self._selected_embedding_literal(selected_corpus_id)
+        if not vector_literal:
+            return []
 
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_IN_SELECTION_SQL,
                     (
-                        selected_corpus_id,
+                        vector_literal,
                         unique_scope_ids,
                         selected_corpus_id,
+                        vector_literal,
                         self._semantic_neighbor_limit(limit),
                     ),
                 )
@@ -1322,90 +1372,62 @@ class PostgresRagRepository:
         limit: int,
     ) -> list[dict[str, Any]]:
         normalized_limit = self._semantic_neighbor_limit(limit)
+        vector_literal = self._selected_embedding_literal(selected_corpus_id)
+        if not vector_literal:
+            return []
         if self._should_use_exact_graph_search(graph_run_id):
             return self._fetch_semantic_neighbors_exact(
                 graph_run_id=graph_run_id,
                 selected_corpus_id=selected_corpus_id,
+                vector_literal=vector_literal,
                 limit=normalized_limit,
             )
         if self._semantic_neighbor_index_is_ready():
-            candidate_limit = self._semantic_neighbor_candidate_limit(normalized_limit)
-            fetch_ann = (
-                self._fetch_semantic_neighbors_ann_broad_scope
-                if self._should_use_broad_scope_ann(graph_run_id)
-                else self._fetch_semantic_neighbors_ann_candidates
-            )
-            rows = fetch_ann(
+            rows = self._fetch_semantic_neighbors_ann_broad_scope(
                 graph_run_id=graph_run_id,
                 selected_corpus_id=selected_corpus_id,
+                vector_literal=vector_literal,
                 limit=normalized_limit,
-                candidate_limit=candidate_limit,
             )
-            while (
-                len(rows) < normalized_limit
-                and candidate_limit < settings.rag_semantic_neighbor_max_candidates
-            ):
-                next_limit = min(
-                    candidate_limit * 2,
-                    settings.rag_semantic_neighbor_max_candidates,
-                )
-                if next_limit == candidate_limit:
-                    break
-                candidate_limit = next_limit
-                rows = fetch_ann(
-                    graph_run_id=graph_run_id,
-                    selected_corpus_id=selected_corpus_id,
-                    limit=normalized_limit,
-                    candidate_limit=candidate_limit,
-                )
-            if len(rows) >= normalized_limit:
+            if rows:
                 return rows
 
         return self._fetch_semantic_neighbors_exact(
             graph_run_id=graph_run_id,
             selected_corpus_id=selected_corpus_id,
+            vector_literal=vector_literal,
             limit=normalized_limit,
         )
 
-    def _fetch_semantic_neighbors_ann_candidates(
-        self,
-        *,
-        graph_run_id: str,
-        selected_corpus_id: int,
-        limit: int,
-        candidate_limit: int,
-    ) -> list[dict[str, Any]]:
+    def _selected_embedding_literal(self, corpus_id: int) -> str | None:
         with self._connect() as conn:
             with conn.cursor() as cur:
-                self._configure_hnsw_session(cur)
-                cur.execute(
-                    queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
-                    (
-                        selected_corpus_id,
-                        graph_run_id,
-                        selected_corpus_id,
-                        candidate_limit,
-                        limit,
-                    ),
-                )
-                return cur.fetchall()
+                cur.execute(queries.PAPER_EMBEDDING_LITERAL_SQL, (corpus_id,))
+                row = cur.fetchone()
+        embedding_literal = (row or {}).get("embedding_literal")
+        return str(embedding_literal) if embedding_literal else None
 
     def _fetch_semantic_neighbors_ann_broad_scope(
         self,
         *,
         graph_run_id: str,
         selected_corpus_id: int,
+        vector_literal: str,
         limit: int,
-        candidate_limit: int,
     ) -> list[dict[str, Any]]:
+        candidate_limit = self._ann_candidate_limit(
+            graph_run_id=graph_run_id,
+            limit=limit,
+        )
         with self._connect() as conn:
             with conn.cursor() as cur:
                 self._configure_hnsw_session(cur)
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL,
                     (
+                        vector_literal,
                         selected_corpus_id,
-                        selected_corpus_id,
+                        vector_literal,
                         candidate_limit,
                         graph_run_id,
                         limit,
@@ -1448,60 +1470,43 @@ class PostgresRagRepository:
         normalized_limit = self._semantic_neighbor_limit(limit)
         vector_literal = format_vector_literal(query_embedding)
         if self._should_use_exact_graph_search(graph_run_id):
-            with self._connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        queries.DENSE_QUERY_SEARCH_SQL,
-                        (
-                            vector_literal,
-                            graph_run_id,
-                            vector_literal,
-                            normalized_limit,
-                        ),
-                    )
-                    return cur.fetchall()
-        if self._semantic_neighbor_index_is_ready():
-            candidate_limit = self._semantic_neighbor_candidate_limit(normalized_limit)
-            search_ann = (
-                self._search_query_embedding_ann_broad_scope
-                if self._should_use_broad_scope_ann(graph_run_id)
-                else self._search_query_embedding_ann_candidates
-            )
-            rows = search_ann(
+            return self._search_query_embedding_exact(
                 graph_run_id=graph_run_id,
                 vector_literal=vector_literal,
                 limit=normalized_limit,
-                candidate_limit=candidate_limit,
             )
-            while (
-                len(rows) < normalized_limit
-                and candidate_limit < settings.rag_semantic_neighbor_max_candidates
-            ):
-                next_limit = min(
-                    candidate_limit * 2,
-                    settings.rag_semantic_neighbor_max_candidates,
-                )
-                if next_limit == candidate_limit:
-                    break
-                candidate_limit = next_limit
-                rows = search_ann(
-                    graph_run_id=graph_run_id,
-                    vector_literal=vector_literal,
-                    limit=normalized_limit,
-                    candidate_limit=candidate_limit,
-                )
-            if len(rows) >= normalized_limit:
+        if self._semantic_neighbor_index_is_ready():
+            rows = self._search_query_embedding_ann_broad_scope(
+                graph_run_id=graph_run_id,
+                vector_literal=vector_literal,
+                limit=normalized_limit,
+            )
+            if rows:
                 return rows
 
+        return self._search_query_embedding_exact(
+            graph_run_id=graph_run_id,
+            vector_literal=vector_literal,
+            limit=normalized_limit,
+        )
+
+    def _search_query_embedding_exact(
+        self,
+        *,
+        graph_run_id: str,
+        vector_literal: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
         with self._connect() as conn:
             with conn.cursor() as cur:
+                self._configure_exact_vector_session(cur)
                 cur.execute(
                     queries.DENSE_QUERY_SEARCH_SQL,
                     (
                         vector_literal,
                         graph_run_id,
                         vector_literal,
-                        normalized_limit,
+                        limit,
                     ),
                 )
                 return cur.fetchall()
@@ -1512,8 +1517,11 @@ class PostgresRagRepository:
         graph_run_id: str,
         vector_literal: str,
         limit: int,
-        candidate_limit: int,
     ) -> list[dict[str, Any]]:
+        candidate_limit = self._ann_candidate_limit(
+            graph_run_id=graph_run_id,
+            limit=limit,
+        )
         with self._connect() as conn:
             with conn.cursor() as cur:
                 self._configure_hnsw_session(cur)
@@ -1521,30 +1529,9 @@ class PostgresRagRepository:
                     queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
                     (
                         vector_literal,
-                        candidate_limit,
-                        graph_run_id,
-                        limit,
-                    ),
-                )
-                return cur.fetchall()
-
-    def _search_query_embedding_ann_candidates(
-        self,
-        *,
-        graph_run_id: str,
-        vector_literal: str,
-        limit: int,
-        candidate_limit: int,
-    ) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                self._configure_hnsw_session(cur)
-                cur.execute(
-                    queries.DENSE_QUERY_SEARCH_ANN_IN_GRAPH_SQL,
-                    (
                         vector_literal,
-                        graph_run_id,
                         candidate_limit,
+                        graph_run_id,
                         limit,
                     ),
                 )
@@ -1555,18 +1542,19 @@ class PostgresRagRepository:
         *,
         graph_run_id: str,
         selected_corpus_id: int,
+        vector_literal: str,
         limit: int,
     ) -> list[dict[str, Any]]:
-        parallel_workers = max(int(settings.rag_semantic_neighbor_exact_parallel_workers), 0)
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(f"SET LOCAL max_parallel_workers_per_gather = {parallel_workers}")
+                self._configure_exact_vector_session(cur)
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_SQL,
                     (
-                        selected_corpus_id,
+                        vector_literal,
                         graph_run_id,
                         selected_corpus_id,
+                        vector_literal,
                         limit,
                     ),
                 )

@@ -493,3 +493,69 @@ Mode: agentic overnight improvement loop
 3. Tighten sentence-global answer selection / grounding so directly retrieved targets are not dropped from the final answer packets (`3092150`, `24948876`).
 4. Improve sentence-global retrieval/ranking for the ABCA7 family-history miss (`235226202`) using the existing structured evidence channels before inventing new heuristics.
 5. Re-run focused and broader runtime evaluation after the next batch and create a narrow git commit only if the runtime batch can be isolated safely from unrelated repo work.
+
+## Batch 18: Canonical Broad-Scope ANN Fix And Perf Gate Recheck
+
+- Scope:
+  - `engine/app/config.py`
+  - `engine/app/rag/queries.py`
+  - `engine/app/rag/repository.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem evidenced during the active runtime batch:
+  - the selected-paper semantic-neighbor tail regressed during a partial ANN rewrite
+  - the broad-scope HNSW SQL constants and graph-coverage candidate-budget helpers had drifted out of the runtime code path
+  - repository tests showed the semantic ANN helper still calling graph-scoped exact SQL while the perf plan evidence showed the clean fast path should be broad-scope ANN over `solemd.papers` with graph post-filtering
+- Durable implementation landed:
+  - restored canonical runtime settings for ANN candidate budgeting:
+    - `rag_semantic_neighbor_candidate_multiplier = 20`
+    - `rag_semantic_neighbor_min_candidates = 120`
+    - `rag_semantic_neighbor_max_candidates = 3840`
+  - restored the missing SQL surfaces:
+    - `EMBEDDED_PAPER_COUNT_SQL`
+    - `DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL`
+    - `SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL`
+  - finished the repository end state:
+    - added cached embedded-paper count and graph-coverage helpers
+    - centralized ANN candidate budgeting in `_ann_candidate_limit(...)`
+    - moved both semantic-neighbor and dense-query ANN paths onto the broad-scope HNSW queries
+    - preserved exact graph-scoped fallback for truly small graph scopes
+  - updated repository/perf regression tests to assert the new canonical ANN behavior instead of the removed graph-scoped ANN path
+- Verification:
+  - `uv run ruff check app/config.py app/rag/queries.py app/rag/repository.py test/test_rag_repository.py test/test_rag_runtime_perf.py` -> passed
+  - `uv run pytest test/test_rag_repository.py -q` -> `46 passed`
+  - `uv run pytest test/test_rag_runtime_perf.py -q` -> `18 passed`
+- Live runtime evidence after the fix:
+  - one-paper outlier recheck:
+    - `.tmp/rag-runtime-eval-22309903-title-selected-v12.json`
+    - `22309903` `title_selected` service duration dropped to `165.707 ms`
+    - grounding stayed intact: `target_in_grounded_answer_rate = 1.0`
+  - sampled current-release perf report:
+    - `.tmp/rag-runtime-eval-sample12-seed7-v12.json`
+    - `36` cases across `12` sampled papers
+    - overall:
+      - `mean_service_duration_ms = 70.594`
+      - `p95_service_duration_ms = 178.574`
+      - `error_count = 0`
+    - by family:
+      - `title_global`: `p95_service_duration_ms = 128.103`, all quality metrics `1.0`
+      - `title_selected`: `p95_service_duration_ms = 32.005`, all quality metrics `1.0`
+      - `sentence_global`: `p95_service_duration_ms = 346.122`, all quality metrics `1.0`
+- Interpretation:
+  - the stale failing perf run was from the half-applied rewrite, not the current code
+  - once the ANN path was made canonical again, the sampled perf suite dropped back under the thresholds with no quality regression
+  - the former `22309903` selected-paper tail is no longer the active runtime bottleneck
+
+## Updated Next Queue
+
+1. Add explicit runtime tail observability:
+   - persist per-stage timings, candidate counts, and session flags for the slowest sampled cases in a compact artifact
+   - use that to prove whether any real p99 tail remains after Batch 18
+2. Audit dense retrieval objective alignment:
+   - compare `specter2_adhoc_query` against stored paper-vector space on a frozen unseen cohort
+   - verify whether sentence-global misses are now due to ranking/answer selection rather than query-document embedding mismatch
+3. Improve sentence-global quality on the residual misses:
+   - target cases like `3092150`, `24948876`, and `235226202`
+   - prefer structured-evidence-aware reranking or answer selection improvements before inventing new retrieval lanes
+4. Reconcile runtime/base-contract documentation drift once the runtime surface is stable:
+   - especially graph base membership and target-size docs if they no longer match the live schema/policy

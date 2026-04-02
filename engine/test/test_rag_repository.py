@@ -13,6 +13,7 @@ from app.rag.repository import (
     ENTITY_TOP_CONCEPTS_PER_TERM,
     PostgresRagRepository,
 )
+from app.rag.title_anchor import prefix_range_upper_bound
 
 
 def _paper_hit(corpus_id: int) -> PaperEvidenceHit:
@@ -100,17 +101,18 @@ def test_search_papers_maps_rows(mock_conn):
         ),
     ]
     cur.execute.assert_called_once_with(
-        queries.PAPER_TITLE_LOOKUP_SQL,
+        queries.PAPER_SEARCH_SQL,
         (
             "melatonin delirium",
+            "melatonin delirium",
+            "melatonin delirium",
             normalize_title_key("melatonin delirium"),
-            5,
-            5,
-            200,
-            200,
-            200,
-            200,
+            False,
             "run-1",
+            5,
+            120,
+            120,
+            120,
             5,
         ),
     )
@@ -186,38 +188,11 @@ def test_search_exact_title_papers_maps_rows(mock_conn):
         "Abnormalities of mitochondrial dynamics and bioenergetics in neuronal "
         "cells from CDKL5 deficiency disorder."
     )
-    conn = mock_conn(
-        rows=[
-            {
-                "corpus_id": 233428792,
-                "paper_id": "paper-233428792",
-                "title": title,
-                "abstract": "Abstract text",
-                "tldr": None,
-                "journal_name": "JAMA",
-                "year": 2024,
-                "doi": "10.1/example",
-                "pmid": 12345,
-                "pmcid": "PMC123",
-                "text_availability": "fulltext",
-                "is_open_access": True,
-                "citation_count": 7,
-                "influential_citation_count": 3,
-                "reference_count": 11,
-                "publication_types": ["ClinicalTrial"],
-                "fields_of_study": ["Medicine"],
-                "has_rule_evidence": True,
-                "has_curated_journal_family": True,
-                "journal_family_type": "clinical",
-                "entity_rule_families": 2,
-                "entity_rule_count": 5,
-                "entity_core_families": 1,
-                "lexical_score": 2.0,
-                "title_similarity": 1.0,
-            }
-        ]
-    )
+    conn = mock_conn(rows=[])
     repo = PostgresRagRepository(connect=lambda: conn)
+    exact_hit = _paper_hit(233428792)
+    repo._title_lookup_candidate_corpus_ids = MagicMock(return_value=[233428792])
+    repo.fetch_papers_by_corpus_ids = MagicMock(return_value=[exact_hit])
 
     hits = repo.search_exact_title_papers(
         "run-1",
@@ -228,17 +203,14 @@ def test_search_exact_title_papers_maps_rows(mock_conn):
     assert len(hits) == 1
     assert hits[0].paper_id == "paper-233428792"
     assert hits[0].lexical_score == 2.0
-    cur = conn.cursor.return_value.__enter__.return_value
-    cur.execute.assert_called_once_with(
-        queries.PAPER_EXACT_TITLE_SEARCH_SQL,
-        (
-            "run-1",
-            title,
-            normalize_title_key(title),
-            normalize_title_key(title),
-            5,
-        ),
+    assert hits[0].title_similarity == 1.0
+    repo._title_lookup_candidate_corpus_ids.assert_called_once_with(
+        query=title,
+        normalized_title_query=normalize_title_key(title),
+        limit=5,
+        prefix=False,
     )
+    repo.fetch_papers_by_corpus_ids.assert_called_once_with("run-1", [233428792])
 
 
 def test_search_selected_title_papers_returns_selected_anchor_hit(mock_conn):
@@ -358,8 +330,8 @@ def test_search_session_reuses_one_connection_across_repository_calls(mock_conn)
 def test_search_session_skips_jit_override_when_disabled(mock_conn, monkeypatch):
     conn = mock_conn(rows=[])
     connect = MagicMock(return_value=conn)
-    repo = PostgresRagRepository(connect=connect)
     monkeypatch.setattr("app.rag.repository.settings.rag_runtime_disable_jit", False)
+    repo = PostgresRagRepository(connect=connect)
 
     with repo.search_session():
         repo.fetch_known_scoped_papers_by_corpus_ids([101])
@@ -444,25 +416,90 @@ def test_search_exact_title_papers_can_scope_to_selected_corpus_ids(mock_conn):
     )
     conn = mock_conn(rows=[])
     repo = PostgresRagRepository(connect=lambda: conn)
-
+    repo._title_lookup_candidate_corpus_ids = MagicMock(return_value=[202, 999, 101])
+    repo.fetch_known_scoped_papers_by_corpus_ids = MagicMock(return_value=[])
     repo.search_exact_title_papers(
         "run-1",
         title,
         limit=5,
         scope_corpus_ids=[101, 202, 101],
     )
+    repo._title_lookup_candidate_corpus_ids.assert_called_once_with(
+        query=title,
+        normalized_title_query=normalize_title_key(title),
+        limit=5,
+        prefix=False,
+    )
+    repo.fetch_known_scoped_papers_by_corpus_ids.assert_called_once_with([202, 101])
+
+
+def test_title_lookup_exact_candidates_use_btree_range_params(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    repo._title_lookup_candidate_corpus_ids(
+        query="Lung function decline in COPD",
+        normalized_title_query=normalize_title_key("Lung function decline in COPD"),
+        limit=5,
+        prefix=False,
+    )
 
     cur = conn.cursor.return_value.__enter__.return_value
-    cur.execute.assert_called_once_with(
-        queries.PAPER_EXACT_TITLE_SEARCH_IN_SELECTION_SQL,
-        (
-            [101, 202],
-            title,
-            normalize_title_key(title),
-            normalize_title_key(title),
-            5,
+    assert cur.execute.call_args_list == [
+        call(
+            queries.PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL,
+            (
+                "lung function decline in copd",
+                "lung function decline in copd",
+                "lung function decline in copd",
+                5,
+            ),
         ),
+        call(
+            queries.PAPER_TITLE_NORMALIZED_EXACT_CANDIDATE_SQL,
+            (
+                normalize_title_key("Lung function decline in COPD"),
+                normalize_title_key("Lung function decline in COPD"),
+                normalize_title_key("Lung function decline in COPD"),
+                5,
+            ),
+        ),
+    ]
+
+
+def test_title_lookup_prefix_candidates_use_btree_prefix_range_params(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    normalized = normalize_title_key("Lung function decline in COPD")
+
+    repo._title_lookup_candidate_corpus_ids(
+        query="Lung function decline in COPD",
+        normalized_title_query=normalized,
+        limit=5,
+        prefix=True,
     )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    assert cur.execute.call_args_list == [
+        call(
+            queries.PAPER_TITLE_TEXT_PREFIX_CANDIDATE_SQL,
+            (
+                "lung function decline in copd",
+                "lung function decline in copd",
+                prefix_range_upper_bound("lung function decline in copd"),
+                5,
+            ),
+        ),
+        call(
+            queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL,
+            (
+                normalized,
+                normalized,
+                prefix_range_upper_bound(normalized),
+                5,
+            ),
+        ),
+    ]
 
 
 def test_search_papers_can_disable_title_similarity_for_sentence_queries(mock_conn):
@@ -1016,6 +1053,10 @@ def test_fetch_entity_matches_normalizes_mentions(mock_conn):
 def test_runtime_entity_queries_use_canonical_entity_mentions():
     assert "JOIN solemd.paper_entity_mentions pem" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     assert "JOIN solemd.paper_entity_mentions pem" in queries.PAPER_ENTITY_SEARCH_SQL
+    assert "ranked_papers AS (" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "\n,\n" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "ranked_papers AS (" in queries.PAPER_ENTITY_SEARCH_SQL
+    assert "\n,\n" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "FROM solemd.paper_entity_mentions pem" in queries.ENTITY_MATCH_SQL
     assert "pubtator.entity_annotations" not in queries.ENTITY_MATCH_SQL
 
@@ -1112,11 +1153,35 @@ def test_paper_search_queries_search_before_joining_runtime_metadata():
 
 
 def test_exact_title_queries_use_native_index_friendly_lookup_shape():
-    assert "lower(coalesce(p.title, '')) = lower(%s)" in queries.PAPER_EXACT_TITLE_SEARCH_SQL
-    assert "JOIN solemd.graph_points gp" in queries.PAPER_EXACT_TITLE_SEARCH_SQL
-    assert "p.corpus_id = ANY(%s)" in queries.PAPER_EXACT_TITLE_SEARCH_IN_SELECTION_SQL
-    assert "JOIN solemd.corpus c" in queries.PAPER_EXACT_TITLE_SEARCH_SQL
-    assert "JOIN solemd.corpus c" in queries.PAPER_EXACT_TITLE_SEARCH_IN_SELECTION_SQL
+    assert "lower(coalesce(p.title, '')) >= %s" in queries.PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL
+    assert "lower(coalesce(p.title, '')) <= %s" in queries.PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL
+    assert (
+        f"{queries.PAPER_NORMALIZED_TITLE_KEY_SQL} >= %s"
+        in queries.PAPER_TITLE_NORMALIZED_EXACT_CANDIDATE_SQL
+    )
+    assert (
+        f"{queries.PAPER_NORMALIZED_TITLE_KEY_SQL} <= %s"
+        in queries.PAPER_TITLE_NORMALIZED_EXACT_CANDIDATE_SQL
+    )
+    assert "lower(coalesce(p.title, '')) >= %s" in queries.PAPER_TITLE_TEXT_PREFIX_CANDIDATE_SQL
+    assert "lower(coalesce(p.title, '')) < %s" in queries.PAPER_TITLE_TEXT_PREFIX_CANDIDATE_SQL
+    assert (
+        f"{queries.PAPER_NORMALIZED_TITLE_KEY_SQL} >= %s"
+        in queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL
+    )
+    assert (
+        f"{queries.PAPER_NORMALIZED_TITLE_KEY_SQL} < %s"
+        in queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL
+    )
+    assert (
+        "AND lower(coalesce(p.title, '')) >= query_input.lowered_query"
+        in queries.PAPER_TITLE_LOOKUP_SQL
+    )
+    assert (
+        f"AND {queries.PAPER_NORMALIZED_TITLE_KEY_SQL} >= "
+        "query_input.normalized_title_query"
+        in queries.PAPER_TITLE_LOOKUP_SQL
+    )
 
 
 def test_chunk_queries_render_headlines_after_candidate_pruning():
@@ -1129,17 +1194,20 @@ def test_chunk_queries_render_headlines_after_candidate_pruning():
     assert "FROM matched_chunks mc" in queries.CHUNK_SEARCH_IN_SELECTION_SQL
 
 
-def test_ann_graph_queries_filter_within_candidate_ctes():
-    assert "graph_scope AS MATERIALIZED" in queries.DENSE_QUERY_SEARCH_ANN_IN_GRAPH_SQL
-    assert "FROM graph_scope gs" in queries.DENSE_QUERY_SEARCH_ANN_IN_GRAPH_SQL
-    assert "graph_scope AS MATERIALIZED" in queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL
-    assert "FROM graph_scope gs" in queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL
+def test_vector_graph_queries_use_direct_distance_ordering():
+    assert "ORDER BY p.embedding <=> %s::vector ASC" in queries.DENSE_QUERY_SEARCH_SQL
+    assert "ORDER BY p.embedding <=> %s::vector ASC" in queries.SEMANTIC_NEIGHBOR_SQL
+    assert "WITH query_vector AS" not in queries.DENSE_QUERY_SEARCH_SQL
+    assert "WITH selected_embedding AS" not in queries.SEMANTIC_NEIGHBOR_SQL
 
 
 def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
     conn = MagicMock()
     cur = MagicMock()
-    cur.fetchone.return_value = {"index_ready": True}
+    cur.fetchone.side_effect = [
+        {"embedding_literal": "[0.1,0.2,0.3]"},
+        {"index_ready": True},
+    ]
     cur.fetchall.return_value = [
         {
             "corpus_id": 202,
@@ -1154,7 +1222,7 @@ def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
 
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=False)
-    repo._should_use_broad_scope_ann = MagicMock(return_value=False)
+    repo._graph_scope_coverages["run-1"] = 1.0
 
     hits = repo.fetch_semantic_neighbors(
         graph_run_id="run-1",
@@ -1167,13 +1235,14 @@ def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_has_calls(
         [
+            call(queries.PAPER_EMBEDDING_LITERAL_SQL, (101,)),
             call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
             call("SET LOCAL hnsw.iterative_scan = strict_order"),
             call("SET LOCAL hnsw.ef_search = 100"),
             call("SET LOCAL hnsw.max_scan_tuples = 20000"),
             call(
-                queries.SEMANTIC_NEIGHBOR_ANN_IN_GRAPH_SQL,
-                (101, "run-1", 101, 120, 1),
+                queries.SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL,
+                ("[0.1,0.2,0.3]", 101, "[0.1,0.2,0.3]", 120, "run-1", 1),
             ),
         ]
     )
@@ -1182,7 +1251,10 @@ def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
 def test_fetch_semantic_neighbors_falls_back_to_exact_when_index_missing():
     conn = MagicMock()
     cur = MagicMock()
-    cur.fetchone.return_value = {"index_ready": False}
+    cur.fetchone.side_effect = [
+        {"embedding_literal": "[0.1,0.2,0.3]"},
+        {"index_ready": False},
+    ]
     cur.fetchall.return_value = [
         {
             "corpus_id": 303,
@@ -1208,11 +1280,14 @@ def test_fetch_semantic_neighbors_falls_back_to_exact_when_index_missing():
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_has_calls(
         [
+            call(queries.PAPER_EMBEDDING_LITERAL_SQL, (101,)),
             call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
             call("SET LOCAL max_parallel_workers_per_gather = 4"),
+            call("SET LOCAL enable_indexscan = off"),
+            call("SET LOCAL enable_indexonlyscan = off"),
             call(
                 queries.SEMANTIC_NEIGHBOR_SQL,
-                (101, "run-1", 101, 2),
+                ("[0.1,0.2,0.3]", "run-1", 101, "[0.1,0.2,0.3]", 2),
             ),
         ]
     )
@@ -1248,7 +1323,7 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
 
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=False)
-    repo._should_use_broad_scope_ann = MagicMock(return_value=False)
+    repo._graph_scope_coverages["run-1"] = 1.0
     query_embedding = [0.1, 0.2, 0.3]
     vector_literal = format_vector_literal(query_embedding)
 
@@ -1268,8 +1343,8 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
             call("SET LOCAL hnsw.ef_search = 100"),
             call("SET LOCAL hnsw.max_scan_tuples = 20000"),
             call(
-                queries.DENSE_QUERY_SEARCH_ANN_IN_GRAPH_SQL,
-                (vector_literal, "run-1", 120, 1),
+                queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
+                (vector_literal, vector_literal, 120, "run-1", 1),
             ),
         ]
     )
@@ -1278,6 +1353,7 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
 def test_fetch_semantic_neighbors_uses_exact_query_for_small_graph_scope():
     conn = MagicMock()
     cur = MagicMock()
+    cur.fetchone.return_value = {"embedding_literal": "[0.1,0.2,0.3]"}
     cur.fetchall.return_value = [
         {
             "corpus_id": 303,
@@ -1303,10 +1379,13 @@ def test_fetch_semantic_neighbors_uses_exact_query_for_small_graph_scope():
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_has_calls(
         [
+            call(queries.PAPER_EMBEDDING_LITERAL_SQL, (101,)),
             call("SET LOCAL max_parallel_workers_per_gather = 4"),
+            call("SET LOCAL enable_indexscan = off"),
+            call("SET LOCAL enable_indexonlyscan = off"),
             call(
                 queries.SEMANTIC_NEIGHBOR_SQL,
-                (101, "run-1", 101, 2),
+                ("[0.1,0.2,0.3]", "run-1", 101, "[0.1,0.2,0.3]", 2),
             ),
         ]
     )
@@ -1353,102 +1432,14 @@ def test_search_query_embedding_papers_uses_exact_query_for_small_graph_scope():
     assert [hit.corpus_id for hit in hits] == [404]
     assert hits[0].dense_score == 0.91
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
-    cur.execute.assert_called_once_with(
-        queries.DENSE_QUERY_SEARCH_SQL,
-        (vector_literal, "run-1", vector_literal, 1),
-    )
-
-
-def test_fetch_semantic_neighbors_uses_broad_scope_ann_for_near_full_graphs():
-    conn = MagicMock()
-    cur = MagicMock()
-    cur.fetchall.return_value = [
-        {
-            "corpus_id": 202,
-            "paper_id": "paper-202",
-            "distance": 0.2,
-        }
-    ]
-    conn.__enter__.return_value = conn
-    conn.__exit__.return_value = False
-    conn.cursor.return_value.__enter__.return_value = cur
-    conn.cursor.return_value.__exit__.return_value = False
-
-    repo = PostgresRagRepository(connect=lambda: conn)
-    repo._should_use_exact_graph_search = MagicMock(return_value=False)
-    repo._should_use_broad_scope_ann = MagicMock(return_value=True)
-    repo._semantic_neighbor_index_ready = True
-
-    hits = repo.fetch_semantic_neighbors(
-        graph_run_id="run-1",
-        selected_corpus_id=101,
-        limit=1,
-    )
-
-    assert [hit.corpus_id for hit in hits] == [202]
     cur.execute.assert_has_calls(
         [
-            call("SET LOCAL hnsw.iterative_scan = strict_order"),
-            call("SET LOCAL hnsw.ef_search = 100"),
-            call("SET LOCAL hnsw.max_scan_tuples = 20000"),
+            call("SET LOCAL max_parallel_workers_per_gather = 4"),
+            call("SET LOCAL enable_indexscan = off"),
+            call("SET LOCAL enable_indexonlyscan = off"),
             call(
-                queries.SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL,
-                (101, 101, 120, "run-1", 1),
-            ),
-        ]
-    )
-
-
-def test_search_query_embedding_papers_uses_broad_scope_ann_for_near_full_graphs():
-    conn = MagicMock()
-    cur = MagicMock()
-    cur.fetchall.return_value = [
-        {
-            "corpus_id": 404,
-            "paper_id": "paper-404",
-            "title": "Dense query paper",
-            "abstract": "Abstract text",
-            "tldr": None,
-            "journal_name": "Nature",
-            "year": 2025,
-            "doi": None,
-            "pmid": 404,
-            "pmcid": None,
-            "text_availability": "abstract",
-            "is_open_access": False,
-            "citation_count": 4,
-            "reference_count": 9,
-            "distance": 0.09,
-        }
-    ]
-    conn.__enter__.return_value = conn
-    conn.__exit__.return_value = False
-    conn.cursor.return_value.__enter__.return_value = cur
-    conn.cursor.return_value.__exit__.return_value = False
-
-    repo = PostgresRagRepository(connect=lambda: conn)
-    repo._should_use_exact_graph_search = MagicMock(return_value=False)
-    repo._should_use_broad_scope_ann = MagicMock(return_value=True)
-    repo._semantic_neighbor_index_ready = True
-    query_embedding = [0.1, 0.2, 0.3]
-    vector_literal = format_vector_literal(query_embedding)
-
-    hits = repo.search_query_embedding_papers(
-        graph_run_id="run-1",
-        query_embedding=query_embedding,
-        limit=1,
-    )
-
-    assert [hit.corpus_id for hit in hits] == [404]
-    assert hits[0].dense_score == 0.91
-    cur.execute.assert_has_calls(
-        [
-            call("SET LOCAL hnsw.iterative_scan = strict_order"),
-            call("SET LOCAL hnsw.ef_search = 100"),
-            call("SET LOCAL hnsw.max_scan_tuples = 20000"),
-            call(
-                queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
-                (vector_literal, 120, "run-1", 1),
+                queries.DENSE_QUERY_SEARCH_SQL,
+                (vector_literal, "run-1", vector_literal, 1),
             ),
         ]
     )
