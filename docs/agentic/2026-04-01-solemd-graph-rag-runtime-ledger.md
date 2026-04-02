@@ -52,7 +52,7 @@ Mode: agentic overnight improvement loop
 | A42 | done | P2 | Frozen benchmark drift | Frozen benchmark inputs now exist as checked-in runtime contracts, so schema drift or silent artifact skew would make later ranking comparisons noisy. | Generalized benchmark metadata around `benchmark_source`, aligned the checked-in JSON artifacts, and added loader coverage that validates every checked-in benchmark file. | `uv run pytest test/test_rag_runtime_benchmarks.py -q` |
 | A43 | done | P1 | Tail observability | The dense-query tail had already moved, but the slow-case planner view still could not profile citation-context fetch stages, so the next pass on `sentence_global` would have been partly blind. | Extracted a reusable citation-context SQL spec in `engine/app/rag/repository.py`, taught `engine/app/rag/runtime_profile.py` to profile initial/expanded/missing-top-hit citation fetches, and added focused runtime-eval coverage. | `uv run pytest test/test_rag_runtime_eval.py -q` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v15-citation-profile.json` |
 | A44 | pending | P1 | Citation-context tail | After `v15`, the only repeated citation SQL fingerprint left in the live slow cases is `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded/initial title-like case. | Inspect and optimize the citation-context query shape or fetch policy so slow top-hit citation backfills stop showing up in the live p99. | Live cohort rerun + plan profile diff |
-| A45 | pending | P1 | Title-like paper-search outlier | Live `v15` isolated one remaining title-lookup outlier (`24948876`) where `paper_search_global` still costs about `179.8ms` despite rank-1 retrieval success. | Tighten the title-like global paper-search contract so long sentence/title overlaps can stay in the cheap candidate lane instead of paying for the broad global paper-search path. | Targeted probe + live cohort rerun |
+| A45 | done | P1 | Title-like paper-search outlier | Live `v15` isolated one remaining title-lookup outlier (`24948876`) where `paper_search_global` still costs about `179.8ms` despite rank-1 retrieval success. Naive fuzzy preprobe attempts made that route catastrophically worse (`31.9s`, then `59.2s`) before the final contract fix. | Split the global paper-search SQL into an explicit `paper_search_global_fts_only` lane for `use_title_similarity=false`, remove the failed fuzzy preprobe path entirely, and lock the new route in unit + DB-backed perf coverage. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'title_like_paper_fallback_stays_fast or test_rag_repository' -q` + `engine/.tmp/rag-runtime-probe-24948876-v5.json` |
 | A46 | pending | P1 | Grounded-answer build hotspot | Live `v15` isolated one remaining slow case (`277023583`) where `build_grounded_answer` dominates at about `188.1ms` after retrieval has already completed. | Instrument and optimize the grounded-answer runtime path so chunk/structural packet assembly no longer dominates the current p99. | Targeted probe + live cohort rerun |
 
 ## Completed Batches
@@ -1644,3 +1644,50 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the next tail pass no longer needs speculation.
   - citation fetch, title-like global paper search, and grounded-answer assembly are now separable optimization targets with live evidence attached to each one.
+
+## Batch 41: Split Global Paper Search Into An FTS-Only Title-Lookup Lane
+
+- Scope:
+  - `engine/app/rag/queries.py`
+  - `engine/app/rag/repository.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem evidenced after Batch 40:
+  - live `v15` isolated a remaining title-like `sentence_global` outlier on `24948876` where `search_papers` still cost about `179.8ms`.
+  - two attempted fuzzy title-rescue passes proved the wrong design:
+    - a graph-scoped fuzzy SQL rewrite drove the case to about `31.9s`
+    - a candidate-id fuzzy preprobe made it even worse at about `59.2s`
+  - direct query timing showed the fuzzy candidate SQL itself was the problem:
+    - text fuzzy probe: about `14.3s`
+    - normalized fuzzy probe: about `13.7s`
+    - graph hydration for the same ids: about `8ms`
+  - the durable issue was not “missing fuzzy logic.” It was that `use_title_similarity=false` still shared the broad global paper-search SQL shape, so PostgreSQL carried expensive title-similarity branches into a route that should have been pure FTS + exact-title.
+- Durable implementation landed:
+  - removed the failed fuzzy-title preprobe path entirely from `engine/app/rag/repository.py`.
+  - refactored `engine/app/rag/queries.py` so global paper search is built from one helper with two explicit contracts:
+    - `PAPER_SEARCH_SQL`
+    - `PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY`
+  - routed `use_title_similarity=false` global title-lookups through:
+    - `paper_search_global_fts_only`
+  - kept exact-title and prefix-title candidate probes intact, but stopped paying for trigram/title-similarity CTEs when the route explicitly disables title similarity.
+  - updated repository and runtime perf tests to lock the new route signature and SQL parameter contract.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/queries.py app/rag/repository.py test/test_rag_repository.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'title_like_paper_fallback_stays_fast or test_rag_repository' -q` -> `52 passed, 23 deselected`
+  - direct live probe artifact:
+    - `engine/.tmp/rag-runtime-probe-24948876-v5.json`
+- Measured result:
+  - the same live outlier moved from pathological title-search tails to a normal runtime path:
+    - failed fuzzy attempt 1: about `31.88s`
+    - failed fuzzy attempt 2: about `59.21s`
+    - final `fts-only` route: `241.9ms` service, `184.1ms` `search_papers`
+  - grounding and retrieval quality stayed intact on the target case:
+    - `hit_rank = 1`
+    - `target_in_grounded_answer = true`
+  - the live route signature is now explicit and cheap:
+    - `retrieval_profile=title_lookup|paper_search_route=paper_search_global_fts_only|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope`
+- Interpretation:
+  - the correct optimization was a separate SQL contract, not another fuzzy heuristic.
+  - the next high-value runtime pass is now cleaner:
+    - `A44` citation-context fetch tail
+    - `A46` grounded-answer assembly overfetch

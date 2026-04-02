@@ -297,11 +297,13 @@ def test_runtime_sentence_query_with_title_like_paper_fallback_stays_fast():
     assert sentence_global.p95_service_duration_ms <= 750.0
     assert (
         case.route_signature
-        == "retrieval_profile=title_lookup|paper_search_route=paper_search_global|"
+        == "retrieval_profile=title_lookup|"
+        "paper_search_route=paper_search_global_fts_only|"
         "paper_search_use_title_similarity=False|"
         "paper_search_use_title_candidate_lookup=True|"
         "dense_query_route=dense_query_ann_broad_scope"
     )
+    assert case.stage_durations_ms.get("search_papers", 0.0) <= 250.0
 
 
 @pytest.mark.integration

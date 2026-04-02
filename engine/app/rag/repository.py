@@ -594,6 +594,22 @@ class PostgresRagRepository:
                     limit,
                 ),
             )
+        if not use_title_similarity:
+            candidate_limit = self._title_similarity_candidate_limit(limit)
+            return _SqlSpec(
+                route_name="paper_search_global_fts_only",
+                sql=queries.PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY,
+                params=(
+                    query,
+                    query,
+                    query,
+                    normalized_title_query,
+                    graph_run_id,
+                    limit,
+                    candidate_limit,
+                    limit,
+                ),
+            )
         candidate_limit = self._title_similarity_candidate_limit(limit)
         return _SqlSpec(
             route_name="paper_search_global",
@@ -603,7 +619,6 @@ class PostgresRagRepository:
                 query,
                 query,
                 normalized_title_query,
-                use_title_similarity,
                 graph_run_id,
                 limit,
                 candidate_limit,

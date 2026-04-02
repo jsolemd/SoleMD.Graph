@@ -107,7 +107,6 @@ def test_search_papers_maps_rows(mock_conn):
             "melatonin delirium",
             "melatonin delirium",
             normalize_title_key("melatonin delirium"),
-            True,
             "run-1",
             5,
             120,
@@ -205,6 +204,73 @@ def test_search_papers_can_keep_title_candidate_lookup_while_disabling_similarit
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_not_called()
     repo._search_title_lookup_candidate_papers.assert_called_once()
+
+
+def test_search_papers_falls_back_to_global_fts_only_when_title_similarity_is_disabled(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._search_title_lookup_candidate_papers = MagicMock(side_effect=[[], []])
+
+    repo.search_papers(
+        "run-1",
+        (
+            "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+            "maturation and brain development in the rat"
+        ),
+        limit=5,
+        use_title_similarity=False,
+        use_title_candidate_lookup=True,
+    )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    assert repo._search_title_lookup_candidate_papers.call_args_list == [
+        call(
+            graph_run_id="run-1",
+            query=(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            normalized_title_query=normalize_title_key(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            limit=5,
+            prefix=False,
+        ),
+        call(
+            graph_run_id="run-1",
+            query=(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            normalized_title_query=normalize_title_key(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            limit=200,
+            prefix=True,
+        ),
+    ]
+    cur.execute.assert_called_once_with(
+        queries.PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY,
+        (
+            "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+            "maturation and brain development in the rat",
+            "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+            "maturation and brain development in the rat",
+            "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+            "maturation and brain development in the rat",
+            normalize_title_key(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            "run-1",
+            5,
+            120,
+            5,
+        ),
+    )
 
 
 def test_search_exact_title_papers_maps_rows(mock_conn):
@@ -541,21 +607,37 @@ def test_search_papers_can_disable_title_similarity_for_sentence_queries(mock_co
     cur = conn.cursor.return_value.__enter__.return_value
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_called_once_with(
-        queries.PAPER_SEARCH_SQL,
+        queries.PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY,
         (
             "This is a representative discussion sentence.",
             "This is a representative discussion sentence.",
             "This is a representative discussion sentence.",
             normalize_title_key("This is a representative discussion sentence."),
-            False,
             "run-1",
             5,
-            120,
-            120,
             120,
             5,
         ),
     )
+
+
+def test_describe_paper_search_route_surfaces_global_fts_only_path(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+
+    route = repo.describe_paper_search_route(
+        graph_run_id="run-1",
+        query=(
+            "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+            "maturation and brain development in the rat"
+        ),
+        limit=5,
+        use_title_similarity=False,
+        use_title_candidate_lookup=True,
+    )
+
+    assert route == "paper_search_global_fts_only"
 
 
 def test_search_papers_uses_exact_query_for_small_graph_scope(mock_conn):

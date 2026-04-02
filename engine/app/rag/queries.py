@@ -260,14 +260,108 @@ ENTITY_FUZZY_SIMILARITY_THRESHOLD = 0.3
 ENTITY_TOP_CONCEPTS_PER_TERM = 3
 
 
-PAPER_SEARCH_SQL = f"""
+def _paper_search_sql(*, include_title_similarity: bool) -> str:
+    fts_title_similarity_sql = (
+        f"""
+        GREATEST(
+            {PAPER_TITLE_SIMILARITY_SQL},
+            CASE
+                WHEN query_input.normalized_title_query <> ''
+                THEN {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL}
+                ELSE 0.0
+            END
+        )
+        """
+        if include_title_similarity
+        else "0.0"
+    )
+    title_similarity_ctes = (
+        f""",
+title_matches AS MATERIALIZED (
+    SELECT
+        p.corpus_id,
+        0.0 AS lexical_score,
+        GREATEST(
+            {PAPER_TITLE_SIMILARITY_SQL},
+            CASE
+                WHEN query_input.normalized_title_query <> ''
+                THEN {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL}
+                ELSE 0.0
+            END
+        ) AS title_similarity,
+        COALESCE(p.citation_count, 0) AS citation_count
+    FROM solemd.papers p
+    CROSS JOIN query_input
+    CROSS JOIN graph_input
+    WHERE
+        NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND (
+            {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
+            OR {PAPER_TITLE_TEXT_SQL} %% query_input.lowered_query
+            OR (
+                query_input.normalized_title_query <> ''
+                AND (
+                    query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
+                    OR {PAPER_NORMALIZED_TITLE_KEY_SQL} LIKE (
+                        '%%' || query_input.normalized_title_query || '%%'
+                    )
+                )
+            )
+        )
+    ORDER BY
+        title_similarity DESC,
+        citation_count DESC,
+        p.corpus_id DESC
+    LIMIT %s
+),
+normalized_title_matches AS MATERIALIZED (
+    SELECT
+        p.corpus_id,
+        0.0 AS lexical_score,
+        {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL} AS title_similarity,
+        COALESCE(p.citation_count, 0) AS citation_count
+    FROM solemd.papers p
+    CROSS JOIN query_input
+    CROSS JOIN graph_input
+    WHERE
+        NOT EXISTS (SELECT 1 FROM exact_title_matches)
+        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND query_input.normalized_title_query <> ''
+        AND query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
+    ORDER BY
+        query_input.normalized_title_query <<<-> {PAPER_NORMALIZED_TITLE_KEY_SQL},
+        citation_count DESC,
+        p.corpus_id DESC
+    LIMIT %s
+)"""
+        if include_title_similarity
+        else ""
+    )
+    candidate_match_sources = """
+        SELECT * FROM exact_title_matches
+        UNION ALL
+        SELECT * FROM fts_matches
+"""
+    if include_title_similarity:
+        candidate_match_sources += """
+        UNION ALL
+        SELECT * FROM title_matches
+        UNION ALL
+        SELECT * FROM normalized_title_matches
+"""
+    final_order_sql = (
+        "(mp.lexical_score + (mp.title_similarity * 0.15)) DESC"
+        if include_title_similarity
+        else "mp.lexical_score DESC"
+    )
+    return f"""
 WITH query_input AS (
     SELECT
         websearch_to_tsquery('english', %s) AS ts_query,
         phraseto_tsquery('english', %s) AS title_phrase_query,
         lower(%s) AS lowered_query,
-        %s::text AS normalized_title_query,
-        %s::boolean AS allow_title_similarity
+        %s::text AS normalized_title_query
 ),
 {GRAPH_INPUT_CTE_SQL},
 exact_title_matches AS MATERIALIZED (
@@ -307,17 +401,7 @@ fts_matches AS MATERIALIZED (
                     0
                 ) * 0.35
             ) AS lexical_score,
-        CASE
-            WHEN query_input.allow_title_similarity THEN GREATEST(
-                {PAPER_TITLE_SIMILARITY_SQL},
-                CASE
-                    WHEN query_input.normalized_title_query <> ''
-                    THEN {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL}
-                    ELSE 0.0
-                END
-            )
-            ELSE 0.0
-        END AS title_similarity,
+        {fts_title_similarity_sql} AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
     FROM solemd.papers p
     CROSS JOIN query_input
@@ -340,67 +424,7 @@ fts_matches AS MATERIALIZED (
         citation_count DESC,
         p.corpus_id DESC
     LIMIT %s
-),
-title_matches AS MATERIALIZED (
-    SELECT
-        p.corpus_id,
-        0.0 AS lexical_score,
-        GREATEST(
-            {PAPER_TITLE_SIMILARITY_SQL},
-            CASE
-                WHEN query_input.normalized_title_query <> ''
-                THEN {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL}
-                ELSE 0.0
-            END
-        ) AS title_similarity,
-        COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
-    CROSS JOIN query_input
-    CROSS JOIN graph_input
-    WHERE
-        NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
-        AND query_input.allow_title_similarity
-        AND (
-            {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
-            OR {PAPER_TITLE_TEXT_SQL} %% query_input.lowered_query
-            OR (
-                query_input.normalized_title_query <> ''
-                AND (
-                    query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
-                    OR {PAPER_NORMALIZED_TITLE_KEY_SQL} LIKE (
-                        '%%' || query_input.normalized_title_query || '%%'
-                    )
-                )
-            )
-        )
-    ORDER BY
-        title_similarity DESC,
-        citation_count DESC,
-        p.corpus_id DESC
-    LIMIT %s
-),
-normalized_title_matches AS MATERIALIZED (
-    SELECT
-        p.corpus_id,
-        0.0 AS lexical_score,
-        {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL} AS title_similarity,
-        COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
-    CROSS JOIN query_input
-    CROSS JOIN graph_input
-    WHERE
-        NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
-        AND query_input.allow_title_similarity
-        AND query_input.normalized_title_query <> ''
-        AND query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
-    ORDER BY
-        query_input.normalized_title_query <<<-> {PAPER_NORMALIZED_TITLE_KEY_SQL},
-        citation_count DESC,
-        p.corpus_id DESC
-    LIMIT %s
-),
+){title_similarity_ctes},
 search_matches AS MATERIALIZED (
     SELECT
         candidate_matches.corpus_id,
@@ -408,13 +432,7 @@ search_matches AS MATERIALIZED (
         MAX(candidate_matches.title_similarity) AS title_similarity,
         MAX(candidate_matches.citation_count) AS citation_count
     FROM (
-        SELECT * FROM exact_title_matches
-        UNION ALL
-        SELECT * FROM fts_matches
-        UNION ALL
-        SELECT * FROM title_matches
-        UNION ALL
-        SELECT * FROM normalized_title_matches
+{candidate_match_sources}
     ) AS candidate_matches
     GROUP BY candidate_matches.corpus_id
 ),
@@ -443,10 +461,14 @@ JOIN solemd.corpus c
 LEFT JOIN solemd.paper_evidence_summary pes
   ON pes.corpus_id = p.corpus_id
 ORDER BY
-    (mp.lexical_score + (mp.title_similarity * 0.15)) DESC,
+    {final_order_sql},
     mp.citation_count DESC,
     mp.corpus_id DESC
 """
+
+
+PAPER_SEARCH_SQL = _paper_search_sql(include_title_similarity=True)
+PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY = _paper_search_sql(include_title_similarity=False)
 
 
 PAPER_SEARCH_IN_SELECTION_SQL = f"""
