@@ -10,6 +10,7 @@ from app.rag.retrieval_policy import (
     has_selected_direct_anchor,
     has_strong_lexical_title_anchor,
     should_fetch_semantic_neighbors,
+    should_run_biomedical_reranker,
     should_run_dense_query,
     should_skip_runtime_entity_enrichment,
 )
@@ -221,6 +222,52 @@ def test_should_fetch_semantic_neighbors_skips_selected_direct_anchor():
         selected_corpus_id=11,
         lexical_hits=[],
         selected_direct_anchor=True,
+    )
+
+
+def test_should_run_biomedical_reranker_only_for_global_passage_queries():
+    query = _query(
+        "Melatonin reduced postoperative delirium incidence in surgical patients.",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert should_run_biomedical_reranker(
+        query=query,
+        selected_corpus_id=None,
+        ranked_papers=[
+            _paper_hit(11, chunk_lexical_score=0.9),
+            _paper_hit(22, chunk_lexical_score=0.8),
+            _paper_hit(33, chunk_lexical_score=0.7),
+        ],
+        enabled=True,
+    )
+
+
+def test_should_run_biomedical_reranker_skips_selected_or_nonpassage_queries():
+    title_query = _query(
+        "Selected paper title",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_run_biomedical_reranker(
+        query=title_query,
+        selected_corpus_id=None,
+        ranked_papers=[_paper_hit(11, lexical_score=1.0) for _ in range(3)],
+        enabled=True,
+    )
+    assert not should_run_biomedical_reranker(
+        query=_query(
+            "Melatonin reduced postoperative delirium incidence in surgical patients.",
+            retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+            selected_node_id="paper:11",
+        ),
+        selected_corpus_id=11,
+        ranked_papers=[
+            _paper_hit(11, chunk_lexical_score=0.9),
+            _paper_hit(22, chunk_lexical_score=0.8),
+            _paper_hit(33, chunk_lexical_score=0.7),
+        ],
+        enabled=True,
     )
 
 

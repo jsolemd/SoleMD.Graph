@@ -44,8 +44,9 @@ Mode: agentic overnight improvement loop
 | A34 | done | P2 | Contract docs drift | `database.md` reflects `graph_base_points`, while some older design docs still describe base membership and base size using stale `graph_points` fields or fixed corpus counts. | Re-reviewed the current docs and contract test after the broad runtime cleanup; the canonical graph-base/runtime docs are already aligned around `graph_base_points`, policy-driven base sizing, and the live retrieval surface. Future doc work is now tied to any new live reranker lane rather than stale base-contract drift. | `cd engine && uv run pytest test/test_docs_runtime_contract.py -q` |
 | A35 | pending | P2 | Clinician-facing ranking priors | Runtime ranking is now fast and grounded, but it is still largely corpus-neutral; treatment/prognosis/diagnosis questions can benefit from lightweight priors over publication type, species, and evidence strength. | Evaluate a small query-intent classifier and ranking priors using existing publication-type, citation, and PubTator-derived species signals without regressing general retrieval quality. | Frozen-cohort comparison artifact + decision note |
 | A36 | pending | P2 | Conflict and polarity evaluation | Current evals prove recall, grounding, and latency, but they do not yet stress negation, null findings, mixed evidence, or nonhuman-to-human leakage. | Build a compact contradiction/polarity benchmark for biomedical questions and wire it into runtime evaluation so fast wrong-positive answers are caught explicitly. | Benchmark artifact + runtime eval extension |
-| A37 | pending | P1 | Live biomedical reranker | The dense contract audit showed the current stored S2 paper vectors are not misaligned, but it also showed that a bounded MedCPT reranker can materially improve sentence-style biomedical retrieval quality. | Add an optional GPU-backed MedCPT rerank stage on the merged top-N runtime candidates for sentence-like global queries, benchmark quality/latency on the current cohort, and keep the existing S2 retrieval lane as the base contract. | Runtime perf/eval artifact + focused service/ranking tests |
-| A38 | pending | P2 | Reranker observability | A live reranker experiment will only be safe if its candidate-window size, GPU stage cost, and promotion effect are visible in the same runtime artifacts as the existing retrieval stages. | Extend runtime traces and eval artifacts so any live reranker stage records candidate counts, stage duration, and rerank-driven promotions before broader rollout. | Updated runtime artifact + focused telemetry regression |
+| A37 | done | P1 | Live biomedical reranker | The dense contract audit showed the current stored S2 paper vectors are not misaligned, but it also showed that a bounded MedCPT reranker can materially improve sentence-style biomedical retrieval quality on the offline dense benchmark. | Added an optional GPU-backed MedCPT rerank stage on the merged top-N runtime candidates for sentence-like global queries, benchmarked it on the full current live cohort, and kept the existing S2 retrieval lane as the default because the live cohort already sits at `1.0` quality without the added latency. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-control.json` + `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused service/ranking tests |
+| A38 | done | P2 | Reranker observability | A live reranker experiment will only be safe if its candidate-window size, GPU stage cost, and promotion effect are visible in the same runtime artifacts as the existing retrieval stages. | Extended runtime traces so reranker stage duration, candidate-window size, promotion count, window ids, and device/ready status are recorded alongside the rest of the runtime profile. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused telemetry regression |
+| A39 | pending | P1 | Hard-cohort evaluation | The current live cohort is now saturated at `1.0` quality across the main runtime metrics, which means new ranking ideas can look promising offline without moving the live scorecard at all. | Build a deliberately harder frozen sentence-style benchmark from the dense-audit miss space, polarity/conflict cases, and clinician-style question shapes before reconsidering heavier reranking or ranking priors. | Hard-cohort artifact + decision note |
 
 ## Completed Batches
 
@@ -1095,3 +1096,70 @@ Mode: agentic overnight improvement loop
   - `A26` is closed: the current stored S2 paper-embedding lane is not the limiting contract issue
   - `A27` is closed as a benchmark decision: a bounded MedCPT reranker is the highest-value next live runtime experiment for sentence-style biomedical queries
   - the next runtime batch should keep S2 retrieval as the base contract and layer an optional MedCPT rerank stage on a small merged candidate set
+
+## Batch 29: Optional Live Biomedical Reranker And Runtime Decision
+
+- Scope:
+  - `engine/app/config.py`
+  - `engine/app/rag/biomedical_text.py`
+  - `engine/app/rag/biomedical_reranking.py`
+  - `engine/app/rag/bundle.py`
+  - `engine/app/rag/dense_audit.py`
+  - `engine/app/rag/models.py`
+  - `engine/app/rag/ranking.py`
+  - `engine/app/rag/retrieval_policy.py`
+  - `engine/app/rag/service.py`
+  - `engine/test/test_rag_biomedical_reranking.py`
+  - `engine/test/test_rag_retrieval_policy.py`
+  - `engine/test/test_rag_service.py`
+- Problem evidenced after Batch 28:
+  - the offline dense audit proved that `MedCPT + CrossEnc` is the strongest biomedical sentence-ranking lane, but it did not answer the live runtime question:
+    - does a bounded reranker still improve the already-clean live runtime cohort?
+    - if it does, is the latency cost acceptable enough to become the new default?
+  - a durable answer required a real runtime integration with trace visibility, not another offline-only benchmark.
+- Durable implementation landed:
+  - added shared title/abstract shaping in `engine/app/rag/biomedical_text.py` and reused it from the dense audit
+  - added `engine/app/rag/biomedical_reranking.py`:
+    - `NoopBiomedicalReranker`
+    - cached runtime MedCPT reranker getter
+    - bounded rerank application over the post-fusion top-N paper window
+  - added optional live runtime settings:
+    - `rag_live_biomedical_reranker_enabled`
+    - `rag_live_biomedical_reranker_topn`
+  - kept the reranker behind a narrow policy gate:
+    - global scope only
+    - `PASSAGE_LOOKUP` only
+    - no explicit selected paper context
+    - bounded candidate window only
+  - integrated reranker scores into paper ranking as a passage-only feature and exposed them in bundle rank features
+  - extended runtime trace visibility with:
+    - `biomedical_rerank` stage duration
+    - rerank candidate count
+    - promotion count
+    - reranked window corpus ids
+    - reranker device/ready state
+- Verification:
+  - `cd engine && uv run ruff check app/config.py app/rag/biomedical_text.py app/rag/biomedical_reranking.py app/rag/models.py app/rag/bundle.py app/rag/retrieval_policy.py app/rag/ranking.py app/rag/dense_audit.py app/rag/service.py test/test_rag_biomedical_reranking.py test/test_rag_retrieval_policy.py test/test_rag_service.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_biomedical_reranking.py test/test_rag_retrieval_policy.py test/test_rag_service.py -q` -> `55 passed`
+  - `cd engine && uv run pytest test/test_rag_runtime_perf.py test/test_rag_runtime_eval.py -q` -> `39 passed`
+  - full current-cohort runtime artifacts on the same `96`-paper sample:
+    - control: `engine/.tmp/rag-runtime-eval-current-all-families-v30-control.json`
+    - live reranker: `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json`
+- Results:
+  - quality on the current live cohort stayed saturated in both runs:
+    - overall `hit@1 = 1.0`
+    - overall `grounded_answer_rate = 1.0`
+    - `sentence_global hit@1 = 1.0`
+  - latency delta on the same cohort:
+    - overall mean service: `37.935 ms -> 49.781 ms`
+    - overall `p95`: `91.261 ms -> 140.175 ms`
+    - `sentence_global` mean service: `76.098 ms -> 109.815 ms`
+    - `sentence_global` `p95`: `125.002 ms -> 182.255 ms`
+  - live trace now shows the reranker cost directly on sentence cases:
+    - example `biomedical_rerank = 14.652 ms`
+    - `biomedical_rerank_candidates = 10`
+    - `biomedical_rerank_promotions = 2`
+- Interpretation:
+  - the live reranker implementation is correct, bounded, GPU-backed, and observable
+  - on the current live runtime cohort it does not buy measurable quality over the already-optimized baseline, while it does add a real latency tax
+  - the default should therefore remain the current S2-based runtime stack with the biomedical reranker available as an opt-in experiment for future harder cohorts, not as the live default today

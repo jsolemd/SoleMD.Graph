@@ -110,6 +110,7 @@ class RankingScoreProfile:
     publication_type_weight: float
     evidence_quality_weight: float
     intent_weight: float
+    biomedical_rerank_weight: float = 0.0
     passage_alignment_weight: float = 0.0
     selected_context_weight: float = 0.0
     direct_match_bonus_weight: float = 0.0
@@ -158,6 +159,7 @@ PASSAGE_RANKING_PROFILE = RankingScoreProfile(
     publication_type_weight=PUBLICATION_TYPE_WEIGHT,
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
     intent_weight=INTENT_WEIGHT,
+    biomedical_rerank_weight=0.24,
     passage_alignment_weight=0.22,
     selected_context_weight=0.1,
     direct_match_bonus_weight=0.18,
@@ -383,6 +385,11 @@ def _channel_annotation(
         and passage_alignment_score >= PASSAGE_ALIGNMENT_REASON_THRESHOLD
     ):
         reasons.append("Direct paper text closely matches the query")
+    if (
+        retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+        and hit.biomedical_rerank_score >= 0.5
+    ):
+        reasons.append("Promoted by biomedical article-level reranking")
     if hit.selected_context_score > 0:
         reasons.append("Preserved explicitly selected paper context")
     if hit.citation_intent_score > 0 and matched_citation_intents:
@@ -544,6 +551,7 @@ def rank_paper_hits(
             + (hit.publication_type_score * score_profile.publication_type_weight)
             + (hit.evidence_quality_score * score_profile.evidence_quality_weight)
             + (hit.intent_score * score_profile.intent_weight)
+            + (hit.biomedical_rerank_score * score_profile.biomedical_rerank_weight)
             + (hit.passage_alignment_score * score_profile.passage_alignment_weight)
             + _direct_match_adjustment(
                 paper=hit,
@@ -607,6 +615,7 @@ def _rank_sort_key(
                 retrieval_profile=retrieval_profile,
             )
             else 0.0,
+            item.biomedical_rerank_score,
             item.passage_alignment_score,
             item.fused_score,
             item.chunk_lexical_score,

@@ -8,12 +8,13 @@ from app.rag.models import PaperEvidenceHit, PaperRetrievalQuery
 from app.rag.query_enrichment import build_query_phrases, has_query_entity_surface_signal
 from app.rag.search_plan import RetrievalSearchPlan
 from app.rag.title_anchor import has_strong_title_anchor
-from app.rag.types import QueryRetrievalProfile
+from app.rag.types import QueryRetrievalProfile, RetrievalScope
 
 MAX_CHUNK_FALLBACK_PHRASES = 8
 MIN_CHUNK_FALLBACK_WORDS = 3
 MIN_PASSAGE_ENRICHMENT_CANDIDATES = 12
 PASSAGE_ENRICHMENT_K_MULTIPLIER = 2
+MIN_BIOMEDICAL_RERANK_CANDIDATES = 3
 
 
 def chunk_search_queries(query: PaperRetrievalQuery) -> list[str]:
@@ -163,6 +164,26 @@ def should_prefetch_citation_contexts(
             lexical_hits=lexical_hits,
         )
     )
+
+
+def should_run_biomedical_reranker(
+    *,
+    query: PaperRetrievalQuery,
+    selected_corpus_id: int | None,
+    ranked_papers: Sequence[PaperEvidenceHit],
+    enabled: bool,
+) -> bool:
+    """Run the live biomedical reranker only on sentence-style global candidate sets."""
+
+    if not enabled:
+        return False
+    if selected_corpus_id is not None:
+        return False
+    if query.scope_mode != RetrievalScope.GLOBAL:
+        return False
+    if query.retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return False
+    return len(ranked_papers) >= MIN_BIOMEDICAL_RERANK_CANDIDATES
 
 
 def has_direct_retrieval_support(

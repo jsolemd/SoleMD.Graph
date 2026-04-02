@@ -11,7 +11,13 @@ from inspect import Parameter, signature
 from time import perf_counter
 from uuid import uuid4
 
+from app.config import settings
 from app.rag.answer import build_baseline_answer_payload
+from app.rag.biomedical_reranking import (
+    RagBiomedicalReranker,
+    apply_biomedical_rerank,
+    get_runtime_biomedical_reranker,
+)
 from app.rag.bundle import assemble_evidence_bundles, merge_graph_signals
 from app.rag.grounded_runtime import build_grounded_answer_from_runtime
 from app.rag.models import (
@@ -54,6 +60,7 @@ from app.rag.retrieval_policy import (
     should_expand_citation_frontier,
     should_fetch_semantic_neighbors,
     should_prefetch_citation_contexts,
+    should_run_biomedical_reranker,
     should_run_dense_query,
     should_skip_runtime_entity_enrichment,
 )
@@ -298,9 +305,13 @@ class RagService:
         repository: RagRepository | None = None,
         warehouse_grounder=None,
         query_embedder: RagQueryEmbedder | None = None,
+        biomedical_reranker: RagBiomedicalReranker | None = None,
     ):
         self._repository = repository or PostgresRagRepository()
         self._query_embedder = query_embedder or get_query_embedder()
+        self._biomedical_reranker = (
+            biomedical_reranker or get_runtime_biomedical_reranker()
+        )
         if warehouse_grounder is not None:
             self._warehouse_grounder = warehouse_grounder
         elif isinstance(self._repository, PostgresRagRepository):
@@ -318,6 +329,12 @@ class RagService:
         warm_encode = getattr(self._query_embedder, "encode", None)
         if callable(warm_encode):
             warm_encode(_DENSE_QUERY_WARM_TEXT)
+        rerank_initialize = getattr(self._biomedical_reranker, "initialize", None)
+        if callable(rerank_initialize):
+            rerank_initialize()
+        warm_rerank = getattr(self._biomedical_reranker, "score_pairs", None)
+        if callable(warm_rerank):
+            warm_rerank([[_DENSE_QUERY_WARM_TEXT, _FULL_PATH_WARM_TEXT]], batch_size=1)
         if isinstance(self._repository, PostgresRagRepository):
             try:
                 self.search(
@@ -337,6 +354,12 @@ class RagService:
 
     def query_embedder_status(self) -> dict[str, object]:
         status = getattr(self._query_embedder, "runtime_status", None)
+        if callable(status):
+            return status()
+        return {"enabled": False, "ready": False, "backend": "unknown"}
+
+    def biomedical_reranker_status(self) -> dict[str, object]:
+        status = getattr(self._biomedical_reranker, "runtime_status", None)
         if callable(status):
             return status()
         return {"enabled": False, "ready": False, "backend": "unknown"}
@@ -712,13 +735,25 @@ class RagService:
         )
         if trace.enabled:
             embedder_status = self.query_embedder_status()
+            biomedical_reranker_status = self.biomedical_reranker_status()
             trace.record_flags(
                 {
                     "query_embedder_enabled": embedder_status.get("enabled", False),
                     "query_embedder_ready": embedder_status.get("ready", False),
                     "query_embedder_backend": embedder_status.get("backend", "unknown"),
+                    "biomedical_reranker_enabled": biomedical_reranker_status.get(
+                        "enabled", False
+                    ),
+                    "biomedical_reranker_ready": biomedical_reranker_status.get(
+                        "ready", False
+                    ),
+                    "biomedical_reranker_backend": biomedical_reranker_status.get(
+                        "backend", "unknown"
+                    ),
                 }
             )
+        else:
+            biomedical_reranker_status = self.biomedical_reranker_status()
         if not initial_paper_hits:
             return RagSearchResult(
                 request_id=str(uuid4()),
@@ -842,6 +877,68 @@ class RagService:
             retrieval_profile=query.retrieval_profile,
             channel_rankings=channel_rankings,
         )
+        biomedical_rerank_window = min(
+            query.rerank_topn,
+            settings.rag_live_biomedical_reranker_topn,
+        )
+        biomedical_rerank_requested = should_run_biomedical_reranker(
+            query=query,
+            selected_corpus_id=selected_corpus_id,
+            ranked_papers=preliminary_ranked_hits,
+            enabled=bool(biomedical_reranker_status.get("enabled", False)),
+        )
+        trace.record_flags(
+            {
+                "biomedical_rerank_requested": biomedical_rerank_requested,
+                "biomedical_rerank_topn": biomedical_rerank_window,
+            }
+        )
+        if biomedical_rerank_requested:
+            biomedical_rerank_outcome = trace.call(
+                "biomedical_rerank",
+                apply_biomedical_rerank,
+                preliminary_ranked_hits,
+                query_text=query.query,
+                reranker=self._biomedical_reranker,
+                topn=biomedical_rerank_window,
+            )
+            trace.record_counts(
+                {
+                    "biomedical_rerank_candidates": biomedical_rerank_outcome.candidate_count,
+                    "biomedical_rerank_promotions": biomedical_rerank_outcome.promoted_count,
+                }
+            )
+            trace.record_flags(
+                {
+                    "biomedical_rerank_applied": biomedical_rerank_outcome.applied,
+                    "biomedical_rerank_window_corpus_ids": (
+                        biomedical_rerank_outcome.reranked_window_corpus_ids
+                    ),
+                }
+            )
+            trace.record_flags(
+                {
+                    "biomedical_reranker_ready": self.biomedical_reranker_status().get(
+                        "ready", False
+                    ),
+                    "biomedical_reranker_device": self.biomedical_reranker_status().get(
+                        "device"
+                    ),
+                }
+            )
+            if biomedical_rerank_outcome.applied:
+                preliminary_ranked_hits = trace.call(
+                    "rank_preliminary_hits_biomedical",
+                    rank_paper_hits,
+                    preliminary_ranked_hits,
+                    citation_hits=citation_hits,
+                    entity_hits={},
+                    relation_hits={},
+                    evidence_intent=query.evidence_intent,
+                    query_text=query.query,
+                    retrieval_profile=query.retrieval_profile,
+                    channel_rankings=channel_rankings,
+                )
         enrichment_corpus_ids = entity_relation_candidate_ids(
             ranked_papers=preliminary_ranked_hits,
             retrieval_profile=query.retrieval_profile,

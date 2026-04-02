@@ -98,6 +98,7 @@ class PaperEvidenceHit:
     title_anchor_score: float = 0.0
     passage_alignment_score: float = 0.0
     selected_context_score: float = 0.0
+    biomedical_rerank_score: float = 0.0
     fused_score: float = 0.0
     rank: int = 0
     chunk_ordinal: int | None = None

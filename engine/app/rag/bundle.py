@@ -147,6 +147,7 @@ def assemble_evidence_bundles(
                     "lexical": paper.lexical_score,
                     "chunk_lexical": paper.chunk_lexical_score,
                     "dense_query": paper.dense_score,
+                    "biomedical_rerank": paper.biomedical_rerank_score,
                     "title_similarity": paper.title_similarity,
                     "title_anchor": paper.title_anchor_score,
                     "citation_context": paper.citation_boost,

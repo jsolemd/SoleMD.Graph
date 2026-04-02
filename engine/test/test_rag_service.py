@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
+from app.rag.biomedical_reranking import NoopBiomedicalReranker
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
@@ -22,6 +23,7 @@ from app.rag.source_grounding import build_grounded_answer_from_packets
 from app.rag.types import (
     CitationDirection,
     GraphSignalKind,
+    QueryRetrievalProfile,
     RetrievalChannel,
     RetrievalScope,
 )
@@ -469,7 +471,9 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
             return []
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
-            assert corpus_ids in ([11], [11, 20, 21])
+            assert corpus_ids
+            assert corpus_ids[0] == 11
+            assert len(corpus_ids) <= 3
             return {}
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
@@ -491,6 +495,7 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
         repository=repository,
         warehouse_grounder=None,
         query_embedder=NoopQueryEmbedder(),
+        biomedical_reranker=NoopBiomedicalReranker(),
     )
 
     response = service.search(
@@ -538,15 +543,183 @@ class FakeWarmableQueryEmbedder:
         }
 
 
+class FakeBiomedicalReranker:
+    def __init__(self, scores: list[float] | None = None):
+        self._scores = scores or []
+        self.initialized = 0
+        self.pairs: list[list[str]] = []
+
+    def initialize(self) -> bool:
+        self.initialized += 1
+        return True
+
+    def score_pairs(
+        self,
+        pairs: list[list[str]],
+        *,
+        batch_size: int | None = None,
+    ) -> list[float]:
+        self.pairs = list(pairs)
+        if self._scores:
+            return list(self._scores)
+        return [0.0 for _ in pairs]
+
+    def runtime_status(self) -> dict[str, object]:
+        return {
+            "enabled": True,
+            "ready": self.initialized > 0,
+            "backend": "fake-biomedical-reranker",
+        }
+
+
 def _service(
     repository: object,
     *,
     query_embedder: RagQueryEmbedder | None = None,
+    biomedical_reranker=None,
 ) -> RagService:
     return RagService(
         repository=repository,
         query_embedder=query_embedder or NoopQueryEmbedder(),
+        biomedical_reranker=biomedical_reranker or NoopBiomedicalReranker(),
     )
+
+
+def test_rag_service_applies_biomedical_reranker_to_global_passage_candidates():
+    class BiomedicalPassageRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(self, *args, **kwargs):
+            return []
+
+        def search_chunk_papers(self, *args, **kwargs):
+            return [
+                PaperEvidenceHit(
+                    corpus_id=11,
+                    paper_id="paper-11",
+                    semantic_scholar_paper_id="paper-11",
+                    title="Postoperative delirium prevention",
+                    journal_name="JAMA",
+                    year=2024,
+                    doi=None,
+                    pmid=11,
+                    pmcid=None,
+                    abstract="Melatonin reduced delirium incidence after surgery.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=10,
+                    reference_count=20,
+                    chunk_lexical_score=0.94,
+                ),
+                PaperEvidenceHit(
+                    corpus_id=22,
+                    paper_id="paper-22",
+                    semantic_scholar_paper_id="paper-22",
+                    title="Melatonin for postoperative delirium",
+                    journal_name="NEJM",
+                    year=2024,
+                    doi=None,
+                    pmid=22,
+                    pmcid=None,
+                    abstract="Randomized trial found a reduction in delirium.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=8,
+                    reference_count=18,
+                    chunk_lexical_score=0.92,
+                ),
+                PaperEvidenceHit(
+                    corpus_id=33,
+                    paper_id="paper-33",
+                    semantic_scholar_paper_id="paper-33",
+                    title="Sleep disruption after surgery",
+                    journal_name="BMJ",
+                    year=2023,
+                    doi=None,
+                    pmid=33,
+                    pmcid=None,
+                    abstract="Observational delirium risk factors were reviewed.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    citation_count=6,
+                    reference_count=12,
+                    chunk_lexical_score=0.9,
+                ),
+            ]
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(
+            self, corpus_ids, *, query: str, limit_per_paper: int = 3
+        ):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(
+            self, corpus_ids, *, relation_terms, limit_per_paper: int = 5
+        ):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    reranker = FakeBiomedicalReranker([0.2, 1.4, -0.3])
+    service = _service(
+        BiomedicalPassageRepository(),
+        biomedical_reranker=reranker,
+    )
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="Melatonin reduced postoperative delirium incidence in surgical patients.",
+            k=2,
+            rerank_topn=3,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert result.query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+    assert [bundle.paper.corpus_id for bundle in result.bundles[:2]] == [22, 11]
+    assert len(reranker.pairs) == 3
+    assert result.debug_trace["candidate_counts"]["biomedical_rerank_candidates"] == 3
+    assert result.debug_trace["candidate_counts"]["biomedical_rerank_promotions"] == 1
+    assert result.debug_trace["session_flags"]["biomedical_rerank_applied"] is True
+    assert "biomedical_rerank" in result.debug_trace["stage_durations_ms"]
 
 
 def test_rag_service_warm_and_status_delegate_to_query_embedder():
@@ -3651,6 +3824,7 @@ def test_rag_service_can_attach_warehouse_grounded_answer_when_available():
         repository=FakeRepository(),
         warehouse_grounder=fake_grounder,
         query_embedder=NoopQueryEmbedder(),
+        biomedical_reranker=NoopBiomedicalReranker(),
     )
     request = RagSearchRequest(
         graph_release_id="release-1",
@@ -3701,6 +3875,7 @@ def test_rag_service_preserves_answer_corpus_ids_when_grounding_links_subset():
         repository=FakeRepository(),
         warehouse_grounder=fake_grounder,
         query_embedder=NoopQueryEmbedder(),
+        biomedical_reranker=NoopBiomedicalReranker(),
     )
     request = RagSearchRequest(
         graph_release_id="release-1",

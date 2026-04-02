@@ -14,6 +14,12 @@ from app.rag.biomedical_models import (
     get_medcpt_reranker,
     get_specter2_proximity_paper_encoder,
 )
+from app.rag.biomedical_text import (
+    article_parts as build_article_parts,
+)
+from app.rag.biomedical_text import (
+    article_text as build_article_text,
+)
 from app.rag.parse_contract import ParseContractModel
 from app.rag.query_embedding import get_query_embedder
 from app.rag.repository import PostgresRagRepository
@@ -129,14 +135,11 @@ def parse_vector_literal(text: str | None) -> list[float] | None:
 
 
 def article_parts(paper: DenseAuditPaper) -> list[str]:
-    return [paper.title, paper.abstract]
+    return build_article_parts(title=paper.title, abstract=paper.abstract)
 
 
 def article_text(paper: DenseAuditPaper) -> str:
-    abstract = " ".join(paper.abstract.split()).strip()
-    if not abstract:
-        return paper.title
-    return f"{paper.title}. {abstract}"
+    return build_article_text(title=paper.title, abstract=paper.abstract)
 
 
 def aggregate_rank_metrics(ranks: list[int], *, k: int) -> DenseAuditAggregate:
