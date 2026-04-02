@@ -40,7 +40,7 @@ Mode: agentic overnight improvement loop
 | A30 | done | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Completed the query-routing pass so long passage queries no longer auto-seed incidental relation labels like `compare`; relation-lane latency dropped out of the hot-stage summary. | `.tmp/rag-runtime-probe-273920567-sentence-global-v16.json` + query/service/runtime-perf regressions |
 | A31 | done | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` became the most common hot stage (`mean ~68–69ms`, `p95 ~89–94ms`) while only `2/96` sentence-global cases produced any entity-hit papers. | Added the high-precision entity-surface gate and confirmed on the refreshed current cohort that the title families dropped to about `20ms` mean and `sentence_global` dropped to about `148ms` mean without any quality loss. | `.tmp/rag-runtime-eval-current-all-families-v16-routing-relation.json` + unit/service regressions |
 | A32 | done | P1 | Title-search and sentence-ranking tail | The remaining runtime miss set had narrowed to `3/96` `sentence_global` cases, and `24948876` was still a title-like sentence case where citation-only neighbors could outrank the direct lexical paper. | Rejected the naive global-KNN rewrite, added planner-visible title-search instrumentation, then fixed the real contract bugs: missing ANN distances were inflating `dense_score` to `1.0`, and `TITLE_LOOKUP` did not sort direct title support ahead of citation-only neighbors. | `uv run pytest test/test_rag_repository.py test/test_rag_ranking.py` + `.tmp/rag-runtime-eval-sentence-miss-set-v19-titlefix.json` |
-| A33 | pending | P1 | Dense-runtime contract hygiene | Live warmup and eval still emit `There are adapters available but none are activated for the forward pass.` even though runtime status reports `active_adapters=Stack[[QRY]]` on the loaded SPECTER2 query encoder. | Inspect the real `adapters==1.2.0` load path, remove any activation drift or misleading mutation in `query_embedding.py`, and add a regression around active adapter setup so the dense lane is both correct and quiet. | `uv run pytest test/test_rag_query_embedding.py` + embedder smoke |
+| A33 | done | P1 | Dense-runtime contract hygiene | Live warmup and eval emitted `There are adapters available but none are activated for the forward pass.` even though runtime status already reported `active_adapters=Stack[[QRY]]` on the loaded SPECTER2 query encoder. | Reworked `query_embedding.py` so adapter activation is explicit, runtime status falls back to `adapters_config.active_setup`, and the known false-positive `adapters.model_mixin` warning is suppressed only around the real load+activate path. | `uv run pytest test/test_rag_query_embedding.py` + quiet embedder smoke + `.tmp/rag-runtime-eval-sentence-miss-set-v20-embedderquiet.json` |
 | A34 | pending | P2 | Contract docs drift | `database.md` reflects `graph_base_points`, while some older design docs still describe base membership and base size using stale `graph_points` fields or fixed corpus counts. | Make one graph-base contract doc canonical, update the stale runtime/base docs, and add a small verification check where possible so perf/runtime assumptions do not drift from the schema. | Doc diff + any small contract check |
 
 ## Completed Batches
@@ -800,3 +800,38 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the residual sentence-global miss set is now clean at `hit@1 = 1.0`
   - the fix came from correcting the runtime contract, not from speculative SQL rewrites or arbitrary weight churn
+
+## Batch 24: Dense Embedder Activation Hygiene
+
+- Scope:
+  - `engine/app/rag/query_embedding.py`
+  - `engine/test/test_rag_query_embedding.py`
+- Problem evidenced after Batch 23:
+  - the runtime search path was functionally using the SPECTER2 query encoder, but every warmup/eval still emitted `There are adapters available but none are activated for the forward pass.`
+  - live inspection of the real `adapters==1.2.0` runtime showed that:
+    - the adapter was actually active after initialization
+    - the warning was a false-positive emitted during `set_active_adapters(...)`
+  - the old embedder path also mixed redundant activation styles by using `set_active=True`, then `set_active_adapters(...)`, then direct `active_adapters` mutation
+- Durable implementation landed:
+  - removed the direct `active_adapters` mutation from `engine/app/rag/query_embedding.py`
+  - made the activation flow explicit and single-path:
+    - `load_adapter(..., set_active=False)`
+    - `set_active_adapters(adapter_ref)`
+  - added a fallback runtime-status view over `adapters_config.active_setup`
+  - suppressed the one known false-positive warning only during the real load+activate block
+  - added focused regressions for:
+    - runtime-status fallback to active setup
+    - explicit activation behavior
+    - suppression of the known load-time warning in a package-shaped test harness
+- Verification:
+  - `cd engine && uv run pytest test/test_rag_query_embedding.py -q` -> `5 passed`
+  - `cd engine && uv run ruff check app/rag/query_embedding.py test/test_rag_query_embedding.py` -> passed
+  - embedder smoke:
+    - `initialize() -> True`
+    - `runtime_status()['active_adapters'] -> Stack[[QRY]]`
+    - no warning emitted in the real runtime path
+  - targeted runtime recheck:
+    - `.tmp/rag-runtime-eval-sentence-miss-set-v20-embedderquiet.json`
+- Interpretation:
+  - the dense runtime path is now quiet and explicit instead of relying on redundant adapter mutations
+  - the post-fix runtime still holds `sentence_global hit@1 = 1.0` on the residual miss cohort

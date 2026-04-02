@@ -3,13 +3,49 @@
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from functools import lru_cache
+from importlib import import_module
 from threading import Lock
-from typing import Protocol
+from typing import Any, Protocol
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+_ADAPTER_MODEL_MIXIN_MODULE = "adapters.model_mixin"
+_KNOWN_ADAPTER_LOAD_WARNING = (
+    "There are adapters available but none are activated for the forward pass."
+)
+@contextmanager
+def _suppress_known_adapter_load_warning():
+    try:
+        model_mixin = import_module(_ADAPTER_MODEL_MIXIN_MODULE)
+    except ModuleNotFoundError:
+        yield
+        return
+    original_warning = model_mixin.logger.warning
+
+    def _warning(message: str, *args: object, **kwargs: object) -> None:
+        if message == _KNOWN_ADAPTER_LOAD_WARNING:
+            return
+        original_warning(message, *args, **kwargs)
+
+    model_mixin.logger.warning = _warning
+    try:
+        yield
+    finally:
+        model_mixin.logger.warning = original_warning
+
+
+def _active_adapter_state(model: Any) -> str | None:
+    active_adapters = getattr(model, "active_adapters", None)
+    if active_adapters:
+        return str(active_adapters)
+    adapters_config = getattr(model, "adapters_config", None)
+    active_setup = getattr(adapters_config, "active_setup", None)
+    if active_setup:
+        return str(active_setup)
+    return None
 
 
 class RagQueryEmbedder(Protocol):
@@ -61,7 +97,6 @@ class Specter2AdhocQueryEmbedder:
         self._use_gpu = use_gpu
         self._lock = Lock()
         self._runtime: tuple[object, object, object] | None = None
-        self._adapter_setup: object | None = None
         self._runtime_error: str | None = None
 
     def initialize(self) -> bool:
@@ -83,7 +118,6 @@ class Specter2AdhocQueryEmbedder:
 
         tokenizer, model, device = self._runtime_components()
 
-        adapter_setup = self._adapter_setup
         import torch
         import torch.nn.functional as F
 
@@ -95,15 +129,8 @@ class Specter2AdhocQueryEmbedder:
             return_tensors="pt",
         )
         encoded = {key: value.to(device) for key, value in encoded.items()}
-        if adapter_setup is not None:
-            from adapters import AdapterSetup
-
-            with AdapterSetup(adapter_setup):
-                with torch.inference_mode():
-                    outputs = model(**encoded)
-        else:
-            with torch.inference_mode():
-                outputs = model(**encoded)
+        with torch.inference_mode():
+            outputs = model(**encoded)
         pooled = outputs.last_hidden_state[:, 0, :]
         normalized = F.normalize(pooled, p=2, dim=1)
         return normalized[0].detach().cpu().tolist()
@@ -128,16 +155,21 @@ class Specter2AdhocQueryEmbedder:
                 self._base_model_name,
                 cache_dir=self._cache_dir,
             )
-            adapter_ref = model.load_adapter(
-                self._adapter_name,
-                source="hf",
-                set_active=True,
-                cache_dir=self._cache_dir,
-            )
-            if hasattr(model, "set_active_adapters"):
+            with _suppress_known_adapter_load_warning():
+                adapter_ref = model.load_adapter(
+                    self._adapter_name,
+                    source="hf",
+                    set_active=False,
+                    cache_dir=self._cache_dir,
+                )
+                if not hasattr(model, "set_active_adapters"):
+                    raise RuntimeError("Loaded adapter model does not support activation")
                 model.set_active_adapters(adapter_ref)
-            if hasattr(model, "active_adapters"):
-                model.active_adapters = adapter_ref
+            active_adapters = _active_adapter_state(model)
+            if not active_adapters:
+                raise RuntimeError(
+                    f"Failed to activate dense query adapter '{self._adapter_name}'"
+                )
             device = torch.device(
                 "cuda" if self._use_gpu and torch.cuda.is_available() else "cpu"
             )
@@ -149,10 +181,9 @@ class Specter2AdhocQueryEmbedder:
                     "base_model": self._base_model_name,
                     "adapter_name": self._adapter_name,
                     "device": str(device),
-                    "active_adapters": str(getattr(model, "active_adapters", None)),
+                    "active_adapters": active_adapters,
                 },
             )
-            self._adapter_setup = adapter_ref
             self._runtime_error = None
             self._runtime = (tokenizer, model, device)
             return self._runtime
@@ -163,7 +194,7 @@ class Specter2AdhocQueryEmbedder:
         if self._runtime is not None:
             _, model, runtime_device = self._runtime
             device = str(runtime_device)
-            active_adapters = str(getattr(model, "active_adapters", None))
+            active_adapters = _active_adapter_state(model)
         return {
             "enabled": True,
             "ready": self._runtime is not None,
