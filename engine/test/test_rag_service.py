@@ -28,6 +28,8 @@ from app.rag.types import (
 
 
 class FakeRepository:
+    _disable_session_jit = True
+
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
         assert graph_release_id == "release-1"
         return GraphRelease(
@@ -559,6 +561,35 @@ def test_rag_service_uses_repository_search_session_when_available():
     assert repository.session_entries == 1
 
 
+def test_rag_service_search_result_can_include_debug_trace():
+    service = _service(FakeRepository())
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="melatonin delirium",
+            entity_terms=["melatonin"],
+            relation_terms=["treat"],
+            selected_layer_key="paper",
+            selected_node_id="seed-paper",
+            selected_graph_paper_ref="seed-paper",
+            k=3,
+            rerank_topn=6,
+            generate_answer=False,
+            use_lexical=True,
+            use_dense_query=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert result.debug_trace["stage_durations_ms"]["resolve_graph_release"] >= 0.0
+    assert result.debug_trace["candidate_counts"]["lexical_hits"] == 2
+    assert result.debug_trace["candidate_counts"]["top_hits"] == 2
+    assert result.debug_trace["session_flags"]["selected_corpus_id_present"] is True
+    assert result.debug_trace["session_flags"]["use_dense_query"] is False
+    assert result.debug_trace["session_flags"]["session_jit_disabled"] is True
+
+
 def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
     class ExactTitleRepository(FakeRepository):
         def resolve_selected_corpus_id(
@@ -1012,6 +1043,16 @@ def test_rag_service_disables_title_similarity_for_sentence_queries():
             selected_node_id: str | None,
         ) -> int | None:
             return None
+
+        def search_exact_title_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("passage queries should not hit exact-title paper search")
 
     repository = SentenceQueryRepository()
     service = _service(repository)
@@ -1781,7 +1822,7 @@ def test_rag_service_skips_dense_and_semantic_neighbors_on_selected_direct_chunk
 def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
     query = (
         "Abnormalities of mitochondrial dynamics and bioenergetics in neuronal "
-        "cells from CDKL5 deficiency disorder."
+        "cells from CDKL5 deficiency disorder"
     )
 
     class ExactTitlePromotionRepository(FakeRepository):
@@ -1803,34 +1844,7 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            assert graph_run_id == "run-1"
-            assert query == (
-                "Abnormalities of mitochondrial dynamics and bioenergetics in "
-                "neuronal cells from CDKL5 deficiency disorder."
-            )
-            assert limit == 4
-            assert scope_corpus_ids is None
-            return [
-                PaperEvidenceHit(
-                    corpus_id=233428792,
-                    paper_id="paper-233428792",
-                    semantic_scholar_paper_id="paper-233428792",
-                    title=query,
-                    journal_name="Example Journal",
-                    year=2024,
-                    doi=None,
-                    pmid=None,
-                    pmcid=None,
-                    abstract="Exact title lookup abstract.",
-                    tldr=None,
-                    text_availability="fulltext",
-                    is_open_access=True,
-                    citation_count=12,
-                    reference_count=20,
-                    lexical_score=2.0,
-                    title_similarity=1.0,
-                )
-            ]
+            raise AssertionError("title-shaped queries should stay on paper lexical lookup")
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
             raise AssertionError("exact title promotion should skip runtime entity resolution")
@@ -1854,7 +1868,35 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             scope_corpus_ids=None,
             use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("exact title promotion should skip paper lexical fallback")
+            assert graph_run_id == "run-1"
+            assert query == (
+                "Abnormalities of mitochondrial dynamics and bioenergetics in "
+                "neuronal cells from CDKL5 deficiency disorder"
+            )
+            assert limit == 4
+            assert scope_corpus_ids is None
+            assert use_title_similarity is True
+            return [
+                PaperEvidenceHit(
+                    corpus_id=233428792,
+                    paper_id="paper-233428792",
+                    semantic_scholar_paper_id="paper-233428792",
+                    title=query,
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=None,
+                    pmcid=None,
+                    abstract="Exact title lookup abstract.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=12,
+                    reference_count=20,
+                    lexical_score=2.0,
+                    title_similarity=1.0,
+                )
+            ]
 
         def search_entity_papers(
             self,
@@ -1922,6 +1964,152 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
     assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [233428792]
     assert response.retrieval_channels[0].channel == RetrievalChannel.LEXICAL
     assert [hit.corpus_id for hit in response.retrieval_channels[0].hits] == [233428792]
+
+
+def test_rag_service_uses_exact_title_precheck_for_long_passage_shaped_titles():
+    query = (
+        "A theory-informed qualitative exploration of social and environmental "
+        "determinants of physical activity and dietary choices in adolescents with "
+        "intellectual disabilities in their final year of school."
+    )
+
+    class LongTitleExactPromotionRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_exact_title_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query == (
+                "A theory-informed qualitative exploration of social and environmental "
+                "determinants of physical activity and dietary choices in adolescents "
+                "with intellectual disabilities in their final year of school."
+            )
+            assert limit == 4
+            assert scope_corpus_ids is None
+            return [
+                PaperEvidenceHit(
+                    corpus_id=22309903,
+                    paper_id="paper-22309903",
+                    semantic_scholar_paper_id="paper-22309903",
+                    title=query,
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=None,
+                    pmcid=None,
+                    abstract="Exact title lookup abstract.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    lexical_score=2.0,
+                    title_similarity=1.0,
+                )
+            ]
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+            raise AssertionError("exact title precheck should skip runtime entity resolution")
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("exact title precheck should skip chunk lexical retrieval")
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("exact title precheck should avoid broad paper lexical lookup")
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("exact title precheck should skip entity recall")
+
+        def search_relation_papers(
+            self,
+            graph_run_id: str,
+            *,
+            relation_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("exact title precheck should skip relation recall")
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("exact title precheck should skip dense retrieval")
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [22309903]
+            return {}
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            raise AssertionError("exact title anchors should not expand the citation frontier")
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert entity_terms == []
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert relation_terms == []
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    service = _service(LongTitleExactPromotionRepository())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=query,
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [22309903]
+    assert response.retrieval_channels[0].channel == RetrievalChannel.LEXICAL
+    assert [hit.corpus_id for hit in response.retrieval_channels[0].hits] == [22309903]
 
 
 def test_rag_service_skips_citation_frontier_expansion_for_passage_queries():

@@ -548,6 +548,25 @@ def test_runtime_dense_query_title_global_tail_stays_bounded():
 
 @pytest.mark.integration
 @pytest.mark.slow
+def test_runtime_long_title_global_query_uses_exact_title_precheck():
+    report = _runtime_perf_report_for(
+        (22309903,),
+        (RuntimeEvalQueryFamily.TITLE_GLOBAL,),
+    )
+
+    assert report.summary.overall.error_count == 0
+
+    case = report.cases[0]
+    title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
+
+    assert title_global.target_in_grounded_answer_rate == 1.0
+    assert title_global.p95_service_duration_ms <= 300.0
+    assert case.candidate_counts.get("exact_title_hits", 0) == 1
+    assert case.stage_durations_ms.get("search_query_embedding_papers", 0.0) <= 1.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
 def test_runtime_dense_query_sentence_global_tail_stays_bounded():
     report = _runtime_perf_report_for(
         (138129,),

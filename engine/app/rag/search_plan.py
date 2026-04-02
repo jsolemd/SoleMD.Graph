@@ -13,6 +13,7 @@ class RetrievalSearchPlan:
     """Execution plan derived from the normalized runtime query."""
 
     retrieval_profile: QueryRetrievalProfile
+    allow_exact_title_matches: bool
     use_paper_lexical: bool
     use_chunk_lexical: bool
     fallback_to_paper_lexical_on_empty_chunk: bool
@@ -36,6 +37,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
     if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
         return RetrievalSearchPlan(
             retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+            allow_exact_title_matches=True,
             use_paper_lexical=True,
             use_chunk_lexical=False,
             fallback_to_paper_lexical_on_empty_chunk=False,
@@ -48,6 +50,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
     if query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP or use_chunk_lexical:
         return RetrievalSearchPlan(
             retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+            allow_exact_title_matches=query.use_lexical,
             use_paper_lexical=False,
             use_chunk_lexical=True,
             fallback_to_paper_lexical_on_empty_chunk=True,
@@ -59,6 +62,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
 
     return RetrievalSearchPlan(
         retrieval_profile=QueryRetrievalProfile.GENERAL,
+        allow_exact_title_matches=True,
         use_paper_lexical=True,
         use_chunk_lexical=False,
         fallback_to_paper_lexical_on_empty_chunk=False,

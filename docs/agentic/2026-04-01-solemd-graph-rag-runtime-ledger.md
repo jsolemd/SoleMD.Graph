@@ -36,7 +36,7 @@ Mode: agentic overnight improvement loop
 | A26 | pending | P2 | Dense retrieval contract | The runtime query path uses `allenai/specter2_adhoc_query`, while stored paper vectors still originate from Semantic Scholar `embedding.specter_v2`; official SPECTER2 guidance suggests query/document adapters should share the intended retrieval space. | Audit the paper-embedding/query-embedding contract against SPECTER2 primary sources and decide whether a paper re-embedding or alternate scientific/biomedical dense lane is warranted. | Contract note + comparison experiment |
 | A27 | pending | P2 | Biomedical reranking | Biomedical IR literature suggests MedCPT-class rerankers can improve question/article retrieval, especially on sentence-style biomedical questions, but at a GPU/runtime cost. | After the current latency floor settles, evaluate a small optional biomedical reranker lane on the sentence-global cohort and compare quality/latency against the current SPECTER2 + structured-signal stack. | Controlled benchmark artifact + decision note |
 | A28 | done | P2 | Centralization | The runtime entity search SQL duplicated the same query-term, concept-ranking, and scoring logic across four large query constants, which made future entity-path changes risky and noisy. | Centralized the entity-search SQL into shared CTE fragments/builders in `engine/app/rag/queries.py` and reverified repository/service behavior. | `uv run ruff check app/rag/queries.py test/test_rag_repository.py test/test_rag_service.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py` |
-| A29 | pending | P0 | Routing correctness | The fresh `v14` cohort still has a `title_global` outlier (`22309903`) routed through `retrieval_profile=passage_lookup`, which drags dense-query search back to `~498ms` on an otherwise title-shaped query. | Re-audit title-vs-passage routing for long full-title queries, fix the classifier/normalization path, and lock the expected title-lookup profile in runtime tests. | Targeted probe for `22309903` + service/routing regressions |
+| A29 | done | P0 | Routing correctness | The fresh `v14` cohort still had a `title_global` outlier (`22309903`) routed through `retrieval_profile=passage_lookup`, which dragged dense-query search back to `~498ms` on an otherwise title-shaped query. | Kept the classifier conservative but re-enabled the exact-title precheck for passage-mode lexical queries, so long title-shaped queries can promote themselves into `title_lookup` without falling into chunk/dense retrieval first. | `.tmp/rag-runtime-probe-22309903-title-global-v15.json` + service/search-plan/runtime-perf regressions |
 | A30 | pending | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Inspect the rare relation-search plans/candidate shapes, then bound or reshape the relation lane without reducing answer quality. | Targeted probes for `273920567` / `81621267` + repository/service tests |
 | A31 | pending | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` is now the most common hot stage with `mean ~69ms`, `p95 ~94ms`, and `max ~264ms`. | Profile the entity-enrichment path end-to-end and reduce repeated work or unnecessary scope expansion while preserving biomedical grounding fidelity. | New stage comparison artifact + targeted runtime tests |
 
@@ -279,6 +279,20 @@ Mode: agentic overnight improvement loop
 - Targeted former outliers now land at:
   - `2230194 title_global`: `service_duration_ms = 173.264`, `search_query_embedding_papers = 15.904`
   - `138129 sentence_global`: `service_duration_ms = 158.692`, `search_query_embedding_papers = 15.990`
+
+### Batch 21
+- Re-enabled exact-title prechecks for lexical passage-mode plans in `engine/app/rag/search_plan.py`.
+- Kept the title classifier conservative; the fix now comes from a cheap indexed exact-title pass instead of broadening heuristic title detection.
+- Added regressions in:
+  - `engine/test/test_rag_search_plan.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Targeted live result for the former title-routing outlier:
+  - report: `.tmp/rag-runtime-probe-22309903-title-global-v15.json`
+  - `retrieval_profile` now rebuilds to `title_lookup`
+  - `search_exact_title_papers = 1.900 ms`
+  - `search_query_embedding_papers = 0.0 ms`
+  - `service_duration_ms = 18.699`
 
 ## Live Evidence
 

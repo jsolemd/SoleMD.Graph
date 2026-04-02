@@ -30,6 +30,7 @@ def test_build_search_plan_preserves_selected_title_queries():
     )
 
     assert plan.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+    assert plan.allow_exact_title_matches is True
     assert plan.use_paper_lexical is True
     assert plan.expand_citation_frontier is False
     assert plan.preserve_selected_candidate is True
@@ -45,6 +46,7 @@ def test_build_search_plan_prefers_precision_for_passage_queries():
     )
 
     assert plan.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+    assert plan.allow_exact_title_matches is True
     assert plan.use_paper_lexical is False
     assert plan.use_chunk_lexical is True
     assert plan.fallback_to_paper_lexical_on_empty_chunk is True
@@ -61,6 +63,7 @@ def test_build_search_plan_leaves_general_queries_exploratory():
     )
 
     assert plan.retrieval_profile == QueryRetrievalProfile.GENERAL
+    assert plan.allow_exact_title_matches is True
     assert plan.use_paper_lexical is True
     assert plan.use_chunk_lexical is False
     assert plan.expand_citation_frontier is True
