@@ -107,6 +107,9 @@ engine/.mypy_cache/
 
 # Bulk data downloads (PubTator3, Semantic Scholar)
 data/
+!engine/data/
+!engine/data/runtime_eval_benchmarks/
+!engine/data/runtime_eval_benchmarks/*.json
 
 # Docker volumes
 docker/pgdata/

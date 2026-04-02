@@ -59,6 +59,23 @@ class RuntimeEvalQueryCase(ParseContractModel):
     selected_node_id: str | None = None
 
 
+class RuntimeEvalBenchmarkCase(ParseContractModel):
+    corpus_id: int
+    title: str
+    primary_source_system: str
+    query_family: RuntimeEvalQueryFamily
+    query: str
+    stratum_key: str
+    representative_section_role: str | None = None
+    benchmark_key: str
+    benchmark_labels: list[str] = Field(default_factory=list)
+    failure_count: int = 0
+    min_target_rank: int = 0
+    max_target_rank: int = 0
+    mean_target_rank: float = 0.0
+    source_lane_keys: list[str] = Field(default_factory=list)
+
+
 class RuntimeEvalTopHit(ParseContractModel):
     corpus_id: int
     title: str | None = None
@@ -213,6 +230,24 @@ class RagRuntimeEvaluationReport(ParseContractModel):
     query_embedder_status: dict[str, object] = Field(default_factory=dict)
     summary: RuntimeEvalSummary
     cases: list[RuntimeEvalCaseResult] = Field(default_factory=list)
+
+
+class RagRuntimeEvalBenchmarkReport(ParseContractModel):
+    benchmark_key: str
+    graph_release_id: str
+    graph_run_id: str
+    bundle_checksum: str | None = None
+    graph_name: str
+    chunk_version_key: str
+    source_dense_audit_report_path: str
+    max_cases: int
+    min_failure_count: int
+    min_max_rank: int
+    high_recurrence_count: int
+    deep_miss_rank: int
+    selected_count: int = 0
+    selected_by_label: dict[str, int] = Field(default_factory=dict)
+    cases: list[RuntimeEvalBenchmarkCase] = Field(default_factory=list)
 
 
 class RuntimeEvalCohortCandidate(ParseContractModel):

@@ -10,8 +10,10 @@ from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag_ingest.corpus_ids import resolve_corpus_ids
 from app.rag_ingest.runtime_eval import (
     RuntimeEvalQueryFamily,
+    run_rag_runtime_case_evaluation,
     run_rag_runtime_evaluation,
 )
+from app.rag_ingest.runtime_eval_benchmarks import load_runtime_eval_benchmark_cases
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -52,35 +54,56 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
     )
     parser.add_argument("--corpus-ids-file", dest="corpus_ids_file", type=Path, default=None)
+    parser.add_argument(
+        "--benchmark-path",
+        type=Path,
+        default=None,
+        help="Optional frozen benchmark JSON to evaluate explicit query cases.",
+    )
     parser.add_argument("--report-path", type=Path, default=None)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = resolve_corpus_ids(
-        corpus_ids=args.corpus_ids,
-        corpus_ids_file=args.corpus_ids_file,
-    )
-    query_families = (
-        [RuntimeEvalQueryFamily(value) for value in args.query_families]
-        if args.query_families
-        else None
-    )
     try:
-        report = run_rag_runtime_evaluation(
-            graph_release_id=args.graph_release_id,
-            chunk_version_key=args.chunk_version_key,
-            sample_size=args.sample_size,
-            seed=args.seed,
-            k=args.k,
-            rerank_topn=args.rerank_topn,
-            use_lexical=not args.no_lexical,
-            use_dense_query=not args.no_dense_query,
-            corpus_ids=corpus_ids or None,
-            query_families=query_families,
-            connect=db.pooled,
-        )
+        if args.benchmark_path is not None:
+            _benchmark_report, benchmark_cases = load_runtime_eval_benchmark_cases(
+                args.benchmark_path
+            )
+            report = run_rag_runtime_case_evaluation(
+                graph_release_id=args.graph_release_id,
+                chunk_version_key=args.chunk_version_key,
+                cases=benchmark_cases,
+                k=args.k,
+                rerank_topn=args.rerank_topn,
+                use_lexical=not args.no_lexical,
+                use_dense_query=not args.no_dense_query,
+                connect=db.pooled,
+            )
+        else:
+            corpus_ids = resolve_corpus_ids(
+                corpus_ids=args.corpus_ids,
+                corpus_ids_file=args.corpus_ids_file,
+            )
+            query_families = (
+                [RuntimeEvalQueryFamily(value) for value in args.query_families]
+                if args.query_families
+                else None
+            )
+            report = run_rag_runtime_evaluation(
+                graph_release_id=args.graph_release_id,
+                chunk_version_key=args.chunk_version_key,
+                sample_size=args.sample_size,
+                seed=args.seed,
+                k=args.k,
+                rerank_topn=args.rerank_topn,
+                use_lexical=not args.no_lexical,
+                use_dense_query=not args.no_dense_query,
+                corpus_ids=corpus_ids or None,
+                query_families=query_families,
+                connect=db.pooled,
+            )
         if args.report_path is not None:
             args.report_path.parent.mkdir(parents=True, exist_ok=True)
             args.report_path.write_text(report.model_dump_json(indent=2))

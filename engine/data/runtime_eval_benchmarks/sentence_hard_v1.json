@@ -1,0 +1,403 @@
+{
+  "benchmark_key": "sentence_hard_v1",
+  "graph_release_id": "a9216e173007158807e9e8c063af987b1467f18831a0279f87ed87a0ad671799",
+  "graph_run_id": "f9ed7a59-0c4d-4810-a04d-3d35ff4e6c70",
+  "bundle_checksum": "a9216e173007158807e9e8c063af987b1467f18831a0279f87ed87a0ad671799",
+  "graph_name": "cosmograph",
+  "chunk_version_key": "default-structural-v1",
+  "source_dense_audit_report_path": "/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/dense-contract-audit-current-v1.json",
+  "max_cases": 24,
+  "min_failure_count": 2,
+  "min_max_rank": 4,
+  "high_recurrence_count": 4,
+  "deep_miss_rank": 20,
+  "selected_count": 14,
+  "selected_by_label": {
+    "deep_miss": 4,
+    "dense_audit_failure": 14,
+    "failure_count_2": 6,
+    "failure_count_3": 4,
+    "failure_count_4": 1,
+    "failure_count_5": 3,
+    "material_miss": 4,
+    "rank_10_19": 4,
+    "rank_20_49": 1,
+    "rank_2_4": 3,
+    "rank_50_plus": 3,
+    "rank_5_9": 3,
+    "recurrent": 4,
+    "sentence_global": 14,
+    "topk_miss": 6
+  },
+  "cases": [
+    {
+      "corpus_id": 3160510,
+      "title": "Group comparisons: imaging the aging brain.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "Although many methodological contributions have been made in recent years, the suggestions for overcoming common issues are too often overlooked.",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_50_plus|source:s2orc_v2",
+      "representative_section_role": "abstract",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_50_plus",
+        "failure_count_5",
+        "recurrent",
+        "deep_miss"
+      ],
+      "failure_count": 5,
+      "min_target_rank": 7,
+      "max_target_rank": 62,
+      "mean_target_rank": 45.4,
+      "source_lane_keys": [
+        "medcpt_dual_encoder",
+        "specter2_local_proximity",
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api",
+        "specter2_stored_api+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 9007030,
+      "title": "Invasive pulmonary aspergillosis in patients with decompensated cirrhosis: case series",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "Of note, previous lung disease and lung structural damage due to pneumonia or acute respiratory distress syndrome were present in the three cases, and could have intrinsically promoted",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_20_49|source:s2orc_v2",
+      "representative_section_role": "conclusion",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_20_49",
+        "failure_count_5",
+        "recurrent",
+        "deep_miss"
+      ],
+      "failure_count": 5,
+      "min_target_rank": 2,
+      "max_target_rank": 25,
+      "mean_target_rank": 19.2,
+      "source_lane_keys": [
+        "medcpt_dual_encoder",
+        "specter2_local_proximity",
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api",
+        "specter2_stored_api+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 138129,
+      "title": "Different Permeability of Potassium Salts across the Blood-Brain Barrier Follows the Hofmeister Series",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "PF 6 -inhibition of ouabain-sensitive Na,K ATPase located on endothelial cells interfere with the efflux of K + from the brain to the lumen and may promote its",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_2_4|source:s2orc_v2",
+      "representative_section_role": "discussion",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_2_4",
+        "failure_count_5",
+        "recurrent",
+        "topk_miss"
+      ],
+      "failure_count": 5,
+      "min_target_rank": 2,
+      "max_target_rank": 3,
+      "mean_target_rank": 2.6,
+      "source_lane_keys": [
+        "medcpt_dual_encoder+medcpt_cross_encoder",
+        "specter2_local_proximity",
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api",
+        "specter2_stored_api+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 73429603,
+      "title": "Chitosan tubes enriched with fresh skeletal muscle fibers for delayed repair of peripheral nerve defects",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "On the contrary, the neurotrophic factors brain-derived neurotrophic factor, glial cell-derived neurotrophic factor and the p75 receptor are up-regulated (Michalski et al., 2008;Ronchi et al., 2017).",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_50_plus|source:s2orc_v2",
+      "representative_section_role": "discussion",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_50_plus",
+        "failure_count_4",
+        "recurrent",
+        "deep_miss"
+      ],
+      "failure_count": 4,
+      "min_target_rank": 4,
+      "max_target_rank": 202,
+      "mean_target_rank": 100.75,
+      "source_lane_keys": [
+        "medcpt_dual_encoder",
+        "medcpt_dual_encoder+medcpt_cross_encoder",
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 2105847,
+      "title": "Serum sodium based modification of the MELD does not improve prediction of outcome in acute liver failure",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "In a prospective single center study (11/2006–12/2010), we recruited 108 consecutive ALF patients (64% females / 36% males), who met the criteria defined by the “Acute Liver Failure",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_10_19|source:s2orc_v2",
+      "representative_section_role": "abstract",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_10_19",
+        "failure_count_3",
+        "material_miss"
+      ],
+      "failure_count": 3,
+      "min_target_rank": 4,
+      "max_target_rank": 11,
+      "mean_target_rank": 8.667,
+      "source_lane_keys": [
+        "specter2_local_proximity",
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api"
+      ]
+    },
+    {
+      "corpus_id": 2766040,
+      "title": "Mechanical ventilation with lower tidal volumes does not influence the prescription of opioids or sedatives",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "Nevertheless, the difference between V T before the intervention and that after the intervention is small, which be why we did not observe a difference between the two",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_10_19|source:s2orc_v2",
+      "representative_section_role": "discussion",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_10_19",
+        "failure_count_3",
+        "material_miss"
+      ],
+      "failure_count": 3,
+      "min_target_rank": 7,
+      "max_target_rank": 10,
+      "mean_target_rank": 8.0,
+      "source_lane_keys": [
+        "medcpt_dual_encoder",
+        "specter2_local_proximity",
+        "specter2_stored_api"
+      ]
+    },
+    {
+      "corpus_id": 5496257,
+      "title": "Motor Performance Is not Enhanced by Daytime Naps in Older Adults",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "Perhaps including the amygdala in the consolidation network, for example by implementing more arousing tasks, can lead to desired procedural offline learning during naps when a positive emotional",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_5_9|source:s2orc_v2",
+      "representative_section_role": "discussion",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_5_9",
+        "failure_count_3",
+        "topk_miss"
+      ],
+      "failure_count": 3,
+      "min_target_rank": 2,
+      "max_target_rank": 5,
+      "mean_target_rank": 3.333,
+      "source_lane_keys": [
+        "medcpt_dual_encoder",
+        "specter2_local_proximity",
+        "specter2_stored_api"
+      ]
+    },
+    {
+      "corpus_id": 85494800,
+      "title": "A Meta-Analysis of the Performance of a Blood-Based Exposure Response Gene Signature Across Clinical Studies on the Tobacco Heating System 2.2 (THS 2.2)",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "The dynamic ranges observed from the training (E-MTAB-5279) (quitting time of at least 2 years) and validation cohorts (E-MTAB-5278) indicate that the half-life of the SERS biomarker is",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_2_4|source:s2orc_v2",
+      "representative_section_role": "discussion",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_2_4",
+        "failure_count_3",
+        "topk_miss"
+      ],
+      "failure_count": 3,
+      "min_target_rank": 3,
+      "max_target_rank": 4,
+      "mean_target_rank": 3.333,
+      "source_lane_keys": [
+        "medcpt_dual_encoder+medcpt_cross_encoder",
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 213192049,
+      "title": "Ramosetron versus Palonosetron in Combination with Aprepitant and Dexamethasone for the Control of Highly-Emetogenic Chemotherapy-Induced Nausea and Vomiting",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "Overall CP and TC rates for RAD and PAD were 56.2% and 58.5% (RD, −2.3%; 95% CI, −13.9 to 9.4) and 47.5% vs. 43.7% (RD, 3.8%; 95% CI,",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_50_plus|source:s2orc_v2",
+      "representative_section_role": "abstract",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_50_plus",
+        "failure_count_2",
+        "deep_miss"
+      ],
+      "failure_count": 2,
+      "min_target_rank": 35,
+      "max_target_rank": 50,
+      "mean_target_rank": 42.5,
+      "source_lane_keys": [
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 218690725,
+      "title": "Increased contrast enhancement of the parent vessel of unruptured intracranial aneurysms in 7T MR imaging",
+      "primary_source_system": "biocxml",
+      "query_family": "sentence_global",
+      "query": "Intra-class correlation analysis demonstrated good reliability between measurements obtained using semi-automated and manual segmentation (ICC coefficient=0.790, 95% CI 0.58 to 0.90).",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_10_19|source:biocxml",
+      "representative_section_role": "other",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_10_19",
+        "failure_count_2",
+        "material_miss"
+      ],
+      "failure_count": 2,
+      "min_target_rank": 18,
+      "max_target_rank": 18,
+      "mean_target_rank": 18.0,
+      "source_lane_keys": [
+        "specter2_local_proximity+medcpt_cross_encoder",
+        "specter2_stored_api+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 8728731,
+      "title": "Conducted electrical weapon use by law enforcement: an evaluation of safety and injury.",
+      "primary_source_system": "biocxml",
+      "query_family": "sentence_global",
+      "query": "Data were collected from use-of-force forms and medical records and included conditions surrounding the use of force, medical histories, and data from emergency department evaluations and hospital admissions.",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_10_19|source:biocxml",
+      "representative_section_role": "other",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_10_19",
+        "failure_count_2",
+        "material_miss"
+      ],
+      "failure_count": 2,
+      "min_target_rank": 11,
+      "max_target_rank": 11,
+      "mean_target_rank": 11.0,
+      "source_lane_keys": [
+        "medcpt_dual_encoder",
+        "medcpt_dual_encoder+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 30115472,
+      "title": "I can read it in your eyes: what eye movements tell us about visuo-attentional processes in developmental dyslexia.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "(4) Develop specific tools for diagnosis and early identification, in order to identify precise cognitive dysfunctions and premorbid impairments for providing ad-hoc remediation by using the eyemovement recording",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_5_9|source:s2orc_v2",
+      "representative_section_role": "discussion",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_5_9",
+        "failure_count_2",
+        "topk_miss"
+      ],
+      "failure_count": 2,
+      "min_target_rank": 2,
+      "max_target_rank": 7,
+      "mean_target_rank": 4.5,
+      "source_lane_keys": [
+        "medcpt_dual_encoder",
+        "specter2_local_proximity+medcpt_cross_encoder"
+      ]
+    },
+    {
+      "corpus_id": 14963648,
+      "title": "Optic coherence tomography findings in relapsing-remitting multiple sclerosis patients of the northwest of Iran",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "sentence_global",
+      "query": "These findings were compared between the two groups and their relationship with the duration and severity of MS [based on Expanded Disability Status Scale (EDSS)] and history of",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_5_9|source:s2orc_v2",
+      "representative_section_role": "abstract",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_5_9",
+        "failure_count_2",
+        "topk_miss"
+      ],
+      "failure_count": 2,
+      "min_target_rank": 2,
+      "max_target_rank": 5,
+      "mean_target_rank": 3.5,
+      "source_lane_keys": [
+        "specter2_local_proximity",
+        "specter2_stored_api"
+      ]
+    },
+    {
+      "corpus_id": 13660490,
+      "title": "Genetic Ablation of EWS RNA Binding Protein 1 (EWSR1) Leads to Neuroanatomical Changes and Motor Dysfunction in Mice",
+      "primary_source_system": "biocxml",
+      "query_family": "sentence_global",
+      "query": "Lastly, we performed immunohistochemistry to examine the expression of TH, DARPP-32, and phosphorylated (p)-DARPP-32 (Thr75) in the striatum and substantia nigra, which are associated with dopaminergic signaling.",
+      "stratum_key": "benchmark:sentence_hard_v1|difficulty:rank_2_4|source:biocxml",
+      "representative_section_role": "abstract",
+      "benchmark_key": "sentence_hard_v1",
+      "benchmark_labels": [
+        "dense_audit_failure",
+        "sentence_global",
+        "rank_2_4",
+        "failure_count_2",
+        "topk_miss"
+      ],
+      "failure_count": 2,
+      "min_target_rank": 2,
+      "max_target_rank": 4,
+      "mean_target_rank": 3.0,
+      "source_lane_keys": [
+        "specter2_local_proximity",
+        "specter2_stored_api"
+      ]
+    }
+  ]
+}
