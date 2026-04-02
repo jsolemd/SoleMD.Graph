@@ -1504,3 +1504,93 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the remaining polarity/cohort work no longer needs guesswork about retrieval recall; the frozen benchmark is now clean.
   - the next high-value pass is stage-level observability on larger live cohorts, so the remaining work can focus on rare tails and larger-release behavior rather than the already-cleared frozen benchmark.
+
+## Batch 38: Add Route/Tail Observability To Runtime Evaluation
+
+- Scope:
+  - `engine/app/rag/runtime_profile.py`
+  - `engine/app/rag_ingest/runtime_eval_models.py`
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - `engine/test/test_rag_runtime_eval.py`
+- Problem evidenced after Batch 37:
+  - the frozen benchmark was clean, but larger-cohort runtime work still risked blind tuning because the evaluator only exposed:
+    - aggregate latency percentiles
+    - per-stage numeric summaries
+    - raw slow-case payloads
+  - that left two practical gaps:
+    - no compact route concentration view across the slow cohort
+    - no stage-hotspot rollup that says which stage is actually dominating slow cases
+  - planner metadata also lacked a SQL-shape fingerprint, so it was harder to tell whether repeated slow cases were paying for the same query shape or for multiple distinct planner contracts.
+- Durable implementation landed:
+  - added `sql_fingerprint` to planner-attached slow-case SQL profiles.
+  - added `slow_route_counts` so the runtime report now shows whether the tail is concentrated in one route or spread across several.
+  - added `slow_stage_hotspots` to aggregate the dominant/top slow stages across the slowest 1 percent of cases.
+  - kept the slow-case payload compact while making the summary materially more diagnostic, not just more verbose.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/runtime_profile.py app/rag_ingest/runtime_eval_models.py app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_runtime_eval.py -q` -> `18 passed`
+  - live runtime eval:
+    - `cd engine && uv run python scripts/evaluate_rag_runtime.py --sample-size 54 --report-path .tmp/rag-runtime-eval-default-structural-v1-all-families-v12-observe.json > /dev/null`
+- Measured result:
+  - current-release cohort size under eval: `162` cases (`54` papers across all three query families)
+  - quality stayed perfect:
+    - `hit@1 = 1.0`
+    - `target_in_grounded_answer_rate = 1.0`
+  - the new observability surface localized the tail immediately:
+    - all slow routes were `sentence_global` passage lookups using `dense_query_ann_broad_scope`
+    - `search_query_embedding_papers` dominated the slow-stage hotspot view
+    - repeated slow cases shared the same dense-query SQL fingerprint
+- Interpretation:
+  - this batch converted the next performance pass from “optimize generally” into a specific action: split dense-query ANN sizing away from semantic-neighbor ANN sizing and retest.
+
+## Batch 39: Split Dense-Query ANN Pool Sizing From Semantic-Neighbor Sizing
+
+- Scope:
+  - `engine/app/config.py`
+  - `engine/app/rag/repository.py`
+  - `engine/test/test_rag_repository.py`
+  - `docs/agentic/2026-04-01-solemd-graph-rag-runtime-ledger.md`
+- Problem evidenced after Batch 38:
+  - the new slow-route view showed that the remaining large-cohort tail was no longer general runtime overhead; it was concentrated in the ANN dense-query route.
+  - all three slow cases were using:
+    - `dense_query_candidate_limit = 80`
+    - `dense_query_ann_broad_scope`
+  - but those same cases only needed `10` dense hits, meaning dense query was still paying for the wider semantic-neighbor ANN candidate heuristic even though the two retrieval jobs have different recall/latency tradeoffs.
+- Durable implementation landed:
+  - introduced dense-query-specific candidate pool settings:
+    - `rag_dense_query_candidate_multiplier`
+    - `rag_dense_query_min_candidates`
+    - `rag_dense_query_max_candidates`
+  - refactored repository ANN sizing into a shared helper with separate:
+    - semantic-neighbor candidate sizing
+    - dense-query candidate sizing
+  - kept semantic-neighbor defaults unchanged while moving dense-query ANN defaults to the smaller pool that had already cleared the live cohort experiment.
+- Verification:
+  - `cd engine && uv run ruff check app/config.py app/rag/repository.py test/test_rag_repository.py app/rag/runtime_profile.py app/rag_ingest/runtime_eval_models.py app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_runtime_eval.py -q` -> `67 passed`
+  - control live runtime eval before the config split:
+    - `.tmp/rag-runtime-eval-default-structural-v1-all-families-v12-observe.json`
+  - proving experiment with tighter ANN pool:
+    - `.tmp/rag-runtime-eval-default-structural-v1-all-families-v13-ann4.json`
+  - post-implementation live runtime eval with the new defaults:
+    - `.tmp/rag-runtime-eval-default-structural-v1-all-families-v14-dense-default.json`
+- Measured result:
+  - quality remained perfect on the current-release `162`-case cohort:
+    - `hit@1 = 1.0`
+    - `target_in_grounded_answer_rate = 1.0`
+  - overall service latency:
+    - before split: `mean_service_duration_ms = 58.079`, `p95 = 146.97`
+    - after split: `mean_service_duration_ms = 34.738`, `p95 = 82.287`
+  - `sentence_global` service latency:
+    - before split: `mean_service_duration_ms = 135.357`, `p95 = 412.319`
+    - after split: `mean_service_duration_ms = 67.406`, `p95 = 97.291`
+  - dense-query ANN pool for the residual slow cases dropped from `80` to `40`.
+  - the dominant hotspot changed after the split:
+    - dense-query ANN was no longer the main slow-stage cluster
+    - the tail shifted to `fetch_citation_contexts_missing_top_hits` and one title-like `search_papers` outlier
+- Interpretation:
+  - this is the right kind of optimization: quality held flat while the real runtime bottleneck moved to a new, smaller surface.
+  - the next pass should target citation-context fetch and lexical paper-search outliers with the same loop:
+    - diagnose via the new slow-case view
+    - patch narrowly
+    - rerun the live cohort to confirm the bottleneck actually moved again

@@ -1389,7 +1389,7 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
             call("SET LOCAL hnsw.max_scan_tuples = 20000"),
             call(
                 queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
-                (vector_literal, vector_literal, 40, "run-1", 1),
+                (vector_literal, vector_literal, 20, "run-1", 1),
             ),
         ]
     )

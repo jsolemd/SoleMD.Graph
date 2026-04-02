@@ -1152,7 +1152,7 @@ class PostgresRagRepository:
         if self._semantic_neighbor_index_is_ready():
             return {
                 "route": "dense_query_ann_broad_scope",
-                "candidate_limit": self._ann_candidate_limit(
+                "candidate_limit": self._dense_query_candidate_limit(
                     graph_run_id=graph_run_id,
                     limit=limit,
                 ),
@@ -1491,17 +1491,43 @@ class PostgresRagRepository:
         self._graph_scope_coverages[graph_run_id] = coverage
         return coverage
 
-    def _ann_candidate_limit(self, *, graph_run_id: str, limit: int) -> int:
+    def _candidate_limit(
+        self,
+        *,
+        graph_run_id: str,
+        limit: int,
+        multiplier: int,
+        min_candidates: int,
+        max_candidates: int,
+    ) -> int:
         normalized_limit = self._semantic_neighbor_limit(limit)
-        min_candidates = max(int(settings.rag_semantic_neighbor_min_candidates), 1)
-        max_candidates = max(int(settings.rag_semantic_neighbor_max_candidates), min_candidates)
-        multiplier = max(int(settings.rag_semantic_neighbor_candidate_multiplier), 1)
+        min_candidates = max(int(min_candidates), 1)
+        max_candidates = max(int(max_candidates), min_candidates)
+        multiplier = max(int(multiplier), 1)
         coverage = max(self._graph_scope_coverage(graph_run_id), 1e-9)
         target_candidates = max(
             normalized_limit * multiplier,
             math.ceil(normalized_limit / coverage),
         )
         return min(max_candidates, max(min_candidates, target_candidates))
+
+    def _semantic_neighbor_candidate_limit(self, *, graph_run_id: str, limit: int) -> int:
+        return self._candidate_limit(
+            graph_run_id=graph_run_id,
+            limit=limit,
+            multiplier=settings.rag_semantic_neighbor_candidate_multiplier,
+            min_candidates=settings.rag_semantic_neighbor_min_candidates,
+            max_candidates=settings.rag_semantic_neighbor_max_candidates,
+        )
+
+    def _dense_query_candidate_limit(self, *, graph_run_id: str, limit: int) -> int:
+        return self._candidate_limit(
+            graph_run_id=graph_run_id,
+            limit=limit,
+            multiplier=settings.rag_dense_query_candidate_multiplier,
+            min_candidates=settings.rag_dense_query_min_candidates,
+            max_candidates=settings.rag_dense_query_max_candidates,
+        )
 
     def _should_use_exact_graph_search(self, graph_run_id: str) -> bool:
         return (
@@ -1619,7 +1645,7 @@ class PostgresRagRepository:
         vector_literal: str,
         limit: int,
     ) -> list[dict[str, Any]]:
-        candidate_limit = self._ann_candidate_limit(
+        candidate_limit = self._semantic_neighbor_candidate_limit(
             graph_run_id=graph_run_id,
             limit=limit,
         )

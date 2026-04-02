@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from app.pgvector_utils import format_vector_literal
 from app.rag.query_embedding import RagQueryEmbedder
 from app.rag.query_enrichment import normalize_entity_query_text, normalize_title_key
@@ -14,6 +16,11 @@ from app.rag_ingest.runtime_eval_models import (
 )
 
 _MAX_PROFILED_STAGES = 3
+
+
+def _sql_fingerprint(sql: str) -> str:
+    normalized = " ".join(sql.split())
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
 
 
 def _explain_sql_spec(
@@ -31,6 +38,7 @@ def _explain_sql_spec(
         stage=stage,
         route=sql_spec.route_name,
         plan_hash=plan_hash(plan),
+        sql_fingerprint=_sql_fingerprint(sql_spec.sql),
         node_types=plan_node_names(plan),
         index_names=plan_index_names(plan),
     )

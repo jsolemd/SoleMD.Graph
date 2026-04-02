@@ -437,6 +437,16 @@ def test_summarize_runtime_results_counts_failures_and_rates():
         "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|"
         "dense_query_route=dense_query_ann_broad_scope"
     )
+    assert summary.latency.slow_route_counts == {
+        expected_route: 1,
+        (
+            "retrieval_profile=title_lookup|paper_search_route=paper_search_global|"
+            "paper_search_use_title_similarity=True|"
+            "paper_search_use_title_candidate_lookup=True"
+        ): 1,
+    }
+    assert summary.latency.slow_stage_hotspots[0].stage == "fetch_semantic_neighbors"
+    assert summary.latency.slow_stage_hotspots[0].dominant_cases == 2
     assert summary.latency.slow_cases[0].route_signature == expected_route
     assert summary.latency.slow_cases[0].session_flags["session_jit_disabled"] is True
 
@@ -684,6 +694,13 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
         summary.latency.slow_cases[0].route_signature
         == "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global"
     )
+    assert summary.latency.slow_route_counts == {
+        "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global": 1,
+        "retrieval_profile=title_lookup|paper_search_route=paper_search_global": 1,
+    }
+    assert summary.latency.slow_stage_hotspots[0].stage == "fetch_semantic_neighbors"
+    assert summary.latency.slow_stage_hotspots[0].cases == 2
+    assert summary.latency.slow_stage_hotspots[0].dominant_cases == 2
     assert summary.latency.slow_cases[0].candidate_counts == {
         "semantic_neighbor_hits": 17,
         "top_hits": 5,
@@ -787,6 +804,7 @@ def test_attach_slow_case_plan_profiles_adds_planner_metadata():
 
     assert updated.latency.slow_cases[0].plan_profiles[0].stage == "search_papers"
     assert updated.latency.slow_cases[0].plan_profiles[0].route == "paper_search_global"
+    assert updated.latency.slow_cases[0].plan_profiles[0].sql_fingerprint
     assert updated.latency.slow_cases[0].plan_profiles[0].node_types == ["Bitmap Heap Scan"]
     assert updated.latency.slow_cases[0].plan_profiles[0].index_names == [
         "idx_papers_title_abstract_fts"
@@ -886,6 +904,7 @@ def test_attach_slow_case_plan_profiles_can_profile_dense_query_stage():
 
     assert updated.latency.slow_cases[0].plan_profiles[0].stage == "search_query_embedding_papers"
     assert updated.latency.slow_cases[0].plan_profiles[0].route == "dense_query_ann_broad_scope"
+    assert updated.latency.slow_cases[0].plan_profiles[0].sql_fingerprint
     assert updated.latency.slow_cases[0].plan_profiles[0].node_types == ["Index Scan"]
     assert updated.latency.slow_cases[0].plan_profiles[0].index_names == [
         "idx_papers_embedding_hnsw"

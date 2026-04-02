@@ -170,6 +170,7 @@ class RuntimeEvalSqlPlanProfile(ParseContractModel):
     stage: str
     route: str
     plan_hash: str
+    sql_fingerprint: str
     node_types: list[str] = Field(default_factory=list)
     index_names: list[str] = Field(default_factory=list)
 
@@ -210,10 +211,21 @@ class RuntimeEvalFailureExample(ParseContractModel):
     top_hits: list[RuntimeEvalTopHit] = Field(default_factory=list)
 
 
+class RuntimeEvalStageHotspot(ParseContractModel):
+    stage: str
+    cases: int = 0
+    dominant_cases: int = 0
+    total_duration_ms: float = 0.0
+    mean_duration_ms: float = 0.0
+    max_duration_ms: float = 0.0
+
+
 class RuntimeEvalLatencySummary(ParseContractModel):
     stage_profiles_ms: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     candidate_profiles: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     route_profiles_ms: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
+    slow_route_counts: dict[str, int] = Field(default_factory=dict)
+    slow_stage_hotspots: list[RuntimeEvalStageHotspot] = Field(default_factory=list)
     slow_cases: list[RuntimeEvalSlowCase] = Field(default_factory=list)
 
 

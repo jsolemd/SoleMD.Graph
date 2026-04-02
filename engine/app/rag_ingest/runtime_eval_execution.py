@@ -24,6 +24,7 @@ from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalQueryCase,
     RuntimeEvalSlowCase,
     RuntimeEvalSlowStage,
+    RuntimeEvalStageHotspot,
     RuntimeEvalSummary,
     RuntimeEvalTopHit,
 )
@@ -405,22 +406,27 @@ def _summarize_latency(
         reverse=True,
     )[:slow_case_limit]
 
-    return RuntimeEvalLatencySummary(
-        stage_profiles_ms={
-            stage_name: _numeric_profile(values)
-            for stage_name, values in sorted(
-                stage_values.items(),
-                key=lambda item: (-max(item[1]), item[0]),
-            )
-        },
-        candidate_profiles={
-            candidate_name: _numeric_profile(values)
-            for candidate_name, values in sorted(
-                candidate_values.items(),
-                key=lambda item: (-max(item[1]), item[0]),
-            )
-        },
-        slow_cases=[
+    slow_route_counts: Counter[str] = Counter()
+    slow_stage_durations: dict[str, list[float]] = {}
+    slow_stage_dominance: Counter[str] = Counter()
+    slow_case_payloads: list[RuntimeEvalSlowCase] = []
+    for result in sorted_slow_cases:
+        top_stages = [
+            RuntimeEvalSlowStage(stage=stage_name, duration_ms=duration_ms)
+            for stage_name, duration_ms in sorted(
+                result.stage_durations_ms.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )[:5]
+        ]
+        route_signature = _case_route_signature(result)
+        if route_signature:
+            slow_route_counts[route_signature] += 1
+        if top_stages:
+            slow_stage_dominance[top_stages[0].stage] += 1
+        for stage in top_stages:
+            slow_stage_durations.setdefault(stage.stage, []).append(stage.duration_ms)
+        slow_case_payloads.append(
             RuntimeEvalSlowCase(
                 corpus_id=result.corpus_id,
                 title=result.title,
@@ -436,14 +442,7 @@ def _summarize_latency(
                 hit_rank=result.hit_rank,
                 grounded_answer_present=result.grounded_answer_present,
                 target_in_grounded_answer=result.target_in_grounded_answer,
-                top_stages=[
-                    RuntimeEvalSlowStage(stage=stage_name, duration_ms=duration_ms)
-                    for stage_name, duration_ms in sorted(
-                        result.stage_durations_ms.items(),
-                        key=lambda item: item[1],
-                        reverse=True,
-                    )[:5]
-                ],
+                top_stages=top_stages,
                 candidate_counts=dict(
                     sorted(
                         result.candidate_counts.items(),
@@ -451,11 +450,26 @@ def _summarize_latency(
                     )
                 ),
                 session_flags=dict(sorted(result.session_flags.items())),
-                route_signature=_case_route_signature(result),
+                route_signature=route_signature,
                 top_hits=result.top_hits,
             )
-            for result in sorted_slow_cases
-        ],
+        )
+
+    return RuntimeEvalLatencySummary(
+        stage_profiles_ms={
+            stage_name: _numeric_profile(values)
+            for stage_name, values in sorted(
+                stage_values.items(),
+                key=lambda item: (-max(item[1]), item[0]),
+            )
+        },
+        candidate_profiles={
+            candidate_name: _numeric_profile(values)
+            for candidate_name, values in sorted(
+                candidate_values.items(),
+                key=lambda item: (-max(item[1]), item[0]),
+            )
+        },
         route_profiles_ms={
             route_name: _numeric_profile(values)
             for route_name, values in sorted(
@@ -463,6 +477,22 @@ def _summarize_latency(
                 key=lambda item: (-max(item[1]), item[0]),
             )
         },
+        slow_route_counts=dict(slow_route_counts.most_common()),
+        slow_stage_hotspots=[
+            RuntimeEvalStageHotspot(
+                stage=stage_name,
+                cases=len(values),
+                dominant_cases=slow_stage_dominance.get(stage_name, 0),
+                total_duration_ms=round(sum(values), 3),
+                mean_duration_ms=round(sum(values) / len(values), 3),
+                max_duration_ms=round(max(values), 3),
+            )
+            for stage_name, values in sorted(
+                slow_stage_durations.items(),
+                key=lambda item: (-sum(item[1]), -max(item[1]), item[0]),
+            )
+        ],
+        slow_cases=slow_case_payloads,
     )
 
 
