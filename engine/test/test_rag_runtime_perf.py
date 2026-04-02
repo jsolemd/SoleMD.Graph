@@ -6,12 +6,17 @@ from functools import lru_cache
 import pytest
 
 from app import db
+from app.config import settings
 from app.rag import queries
+from app.rag.biomedical_reranking import get_runtime_biomedical_reranker
 from app.rag.query_enrichment import normalize_title_key
 from app.rag.query_plan import plan_index_names, plan_node_names
 from app.rag.repository import PostgresRagRepository
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
-from app.rag_ingest.runtime_eval import RuntimeEvalQueryFamily, run_rag_runtime_evaluation
+from app.rag_ingest.runtime_eval import (
+    RuntimeEvalQueryFamily,
+    run_rag_runtime_evaluation,
+)
 
 
 def _require_runtime_db() -> None:
@@ -609,3 +614,45 @@ def test_runtime_sentence_global_skips_incidental_relation_lane():
     assert sentence_global.p95_service_duration_ms <= 300.0
     assert case.candidate_counts.get("relation_seed_hits", 0) == 0
     assert case.stage_durations_ms.get("search_relation_papers", 0.0) <= 1.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_sentence_global_live_biomedical_reranker_stays_bounded_and_grounded():
+    _require_runtime_db()
+
+    previous_enabled = settings.rag_live_biomedical_reranker_enabled
+    _runtime_perf_report_for.cache_clear()
+    get_runtime_biomedical_reranker.cache_clear()
+    settings.rag_live_biomedical_reranker_enabled = True
+    try:
+        report = _runtime_perf_report_for(
+            (138129,),
+            (RuntimeEvalQueryFamily.SENTENCE_GLOBAL,),
+        )
+    finally:
+        settings.rag_live_biomedical_reranker_enabled = previous_enabled
+        _runtime_perf_report_for.cache_clear()
+        get_runtime_biomedical_reranker.cache_clear()
+        db.close_pool()
+
+    assert report.summary.overall.error_count == 0
+
+    case = _case(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
+    sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
+
+    assert sentence_global.target_in_grounded_answer_rate == 1.0
+    assert sentence_global.p95_service_duration_ms <= 300.0
+    assert (
+        case.route_signature
+        == "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|"
+        "dense_query_route=dense_query_ann_broad_scope"
+    )
+    assert case.candidate_counts.get("biomedical_rerank_candidates", 0) == 8
+    assert case.candidate_counts.get("biomedical_rerank_promotions", 0) >= 1
+    assert case.session_flags.get("biomedical_reranker_enabled") is True
+    assert case.session_flags.get("biomedical_rerank_requested") is True
+    assert case.session_flags.get("biomedical_rerank_applied") is True
+    assert case.session_flags.get("biomedical_reranker_backend") == "medcpt_cross_encoder"
+    assert case.stage_durations_ms.get("biomedical_rerank", 0.0) <= 50.0
+    assert case.stage_durations_ms.get("rank_preliminary_hits_biomedical", 0.0) <= 10.0

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from app.rag.biomedical_reranking import apply_biomedical_rerank
+from app.config import settings
+from app.rag.biomedical_reranking import (
+    apply_biomedical_rerank,
+    get_runtime_biomedical_reranker,
+)
 from app.rag.models import PaperEvidenceHit
 
 
@@ -85,3 +89,20 @@ def test_apply_biomedical_rerank_assigns_normalized_scores_and_promotions():
     assert hits[1].biomedical_rerank_score == 1.0
     assert hits[0].biomedical_rerank_score == 0.5
     assert hits[2].biomedical_rerank_score == 0.0
+
+
+def test_get_runtime_biomedical_reranker_defaults_to_noop_when_disabled(monkeypatch):
+    monkeypatch.setattr(settings, "rag_live_biomedical_reranker_enabled", False)
+    get_runtime_biomedical_reranker.cache_clear()
+    try:
+        reranker = get_runtime_biomedical_reranker()
+    finally:
+        get_runtime_biomedical_reranker.cache_clear()
+
+    assert reranker.runtime_status() == {
+        "enabled": False,
+        "ready": True,
+        "backend": "noop",
+        "device": None,
+        "error": None,
+    }

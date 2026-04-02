@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     rag_medcpt_cross_encoder_model_name: str = "ncbi/MedCPT-Cross-Encoder"
     rag_biomedical_encoder_batch_size: int = 16
     rag_biomedical_reranker_batch_size: int = 16
-    rag_live_biomedical_reranker_enabled: bool = True
+    rag_live_biomedical_reranker_enabled: bool = False
     rag_live_biomedical_reranker_topn: int = 8
     rag_model_cache_dir: str = "data/huggingface"
 
