@@ -53,7 +53,7 @@ Mode: agentic overnight improvement loop
 | A43 | done | P1 | Tail observability | The dense-query tail had already moved, but the slow-case planner view still could not profile citation-context fetch stages, so the next pass on `sentence_global` would have been partly blind. | Extracted a reusable citation-context SQL spec in `engine/app/rag/repository.py`, taught `engine/app/rag/runtime_profile.py` to profile initial/expanded/missing-top-hit citation fetches, and added focused runtime-eval coverage. | `uv run pytest test/test_rag_runtime_eval.py -q` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v15-citation-profile.json` |
 | A44 | pending | P1 | Citation-context tail | After `v15`, the only repeated citation SQL fingerprint left in the live slow cases is `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded/initial title-like case. | Inspect and optimize the citation-context query shape or fetch policy so slow top-hit citation backfills stop showing up in the live p99. | Live cohort rerun + plan profile diff |
 | A45 | done | P1 | Title-like paper-search outlier | Live `v15` isolated one remaining title-lookup outlier (`24948876`) where `paper_search_global` still costs about `179.8ms` despite rank-1 retrieval success. Naive fuzzy preprobe attempts made that route catastrophically worse (`31.9s`, then `59.2s`) before the final contract fix. | Split the global paper-search SQL into an explicit `paper_search_global_fts_only` lane for `use_title_similarity=false`, remove the failed fuzzy preprobe path entirely, and lock the new route in unit + DB-backed perf coverage. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'title_like_paper_fallback_stays_fast or test_rag_repository' -q` + `engine/.tmp/rag-runtime-probe-24948876-v5.json` |
-| A46 | pending | P1 | Grounded-answer build hotspot | Live `v15` isolated one remaining slow case (`277023583`) where `build_grounded_answer` dominates at about `188.1ms` after retrieval has already completed. | Instrument and optimize the grounded-answer runtime path so chunk/structural packet assembly no longer dominates the current p99. | Targeted probe + live cohort rerun |
+| A46 | done | P1 | Grounded-answer build hotspot | Live `v15` isolated one remaining slow case (`277023583`) where `build_grounded_answer` dominated at about `188.1ms` after retrieval had already completed. The root cause was unbounded entity-packet overfetch before packet grouping plus opaque inner timing. | Split grounded-answer entity fetch into citation-packet entities plus bounded fallback packet groups, thread the shared runtime trace collector through the real grounders, and lock the new packet/timing contract with unit + DB-backed perf coverage. | `uv run pytest test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'entity_dense_grounded_answer_fetch_stays_bounded or grounded_runtime or rag_service or warehouse_grounding' -q` + `engine/.tmp/rag-runtime-probe-277023583-v2-grounded-trace.json` |
 
 ## Completed Batches
 
@@ -1691,3 +1691,55 @@ Mode: agentic overnight improvement loop
   - the next high-value runtime pass is now cleaner:
     - `A44` citation-context fetch tail
     - `A46` grounded-answer assembly overfetch
+
+## Batch 42: Bound Grounded-Answer Entity Fetch And Trace Inner Stages
+
+- Scope:
+  - `engine/app/rag/grounding_keys.py`
+  - `engine/app/rag/chunk_grounding.py`
+  - `engine/app/rag/warehouse_grounding.py`
+  - `engine/app/rag/grounded_runtime.py`
+  - `engine/app/rag/service.py`
+  - `engine/test/test_rag_grounded_runtime.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem evidenced after Batch 41:
+  - live `v15` still had one slow grounded-answer outlier on `277023583` where `build_grounded_answer` dominated at about `188.1ms` after retrieval was already done.
+  - the warehouse/runtime builder was grouping all fetched entity rows before it decided what packet groups to keep, but the chunk-backed entity query still fetched effectively unbounded packet groups for covered papers.
+  - the outer `build_grounded_answer` trace could show that grounding was slow, but not whether the cost came from runtime status, entity fetch, entity grouping, structural fallback, or final packet assembly.
+- Durable implementation landed:
+  - added `engine/app/rag/grounding_keys.py` as the shared packet-key contract used by both the chunk-backed and warehouse-backed grounders.
+  - reshaped chunk-backed entity fetch so it now returns:
+    - all entity rows for the already-selected citation packet keys
+    - plus only a bounded fallback set of entity-only packet groups per paper
+  - mirrored the same bounded packet-group behavior in the warehouse entity path so runtime and warehouse grounders stay aligned instead of drifting.
+  - threaded the existing shared `RuntimeTraceCollector` through the real grounders using the already-present `_callable_supports_kwarg(...)` guard in `service.py`, so fake grounders in tests stay compatible.
+  - added inner grounded-answer trace stages and counts for:
+    - runtime status
+    - chunk-packet fetch
+    - structural fetch
+    - entity grouping
+    - citation/entity-only/structural packet assembly
+    - final packet sorting and grounded-answer assembly
+  - added a DB-backed regression gate for the previously slow entity-dense BioC sentence case.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/grounding_keys.py app/rag/chunk_grounding.py app/rag/warehouse_grounding.py app/rag/grounded_runtime.py app/rag/service.py test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_service.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'entity_dense_grounded_answer_fetch_stays_bounded or grounded_runtime or rag_service or warehouse_grounding' -q` -> `50 passed, 24 deselected`
+  - direct live probe artifact:
+    - `engine/.tmp/rag-runtime-probe-277023583-v2-grounded-trace.json`
+- Measured result:
+  - the previously slow grounded-answer outlier now completes as a normal runtime case:
+    - `service_duration_ms = 96.208`
+    - `build_grounded_answer = 36.044ms`
+    - `grounded_answer_fetch_chunk_packets = 30.056ms`
+  - the inner trace shows the overfetch is now bounded instead of exploding:
+    - `grounded_answer_entity_rows = 3`
+    - `grounded_answer_grouped_entity_packets = 1`
+    - `grounded_answer_packet_count = 1`
+  - the remaining grounded-answer stages are no longer meaningful tails:
+    - `grounded_answer_group_entities = 0.123ms`
+    - `grounded_answer_build_entity_only_packets = 0.046ms`
+    - `grounded_answer_build_from_packets = 0.040ms`
+- Interpretation:
+  - the grounded-answer hotspot was a real data-path issue, not a planner mystery.
+  - after bounding packet-group fetch and exposing the inner stages, the next clean P1 is the shared citation-context SQL shape in `A44`, which the subagent isolated to fingerprint `467e2b7dd38f`.

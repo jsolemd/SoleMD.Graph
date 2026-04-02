@@ -74,6 +74,7 @@ from app.rag.search_plan import build_search_plan
 from app.rag.types import (
     DEFAULT_RETRIEVAL_VERSION,
     RETRIEVAL_CHANNEL_ORDER,
+    ClinicalQueryIntent,
     QueryRetrievalProfile,
     RetrievalChannel,
     RetrievalScope,
@@ -1009,6 +1010,11 @@ class RagService:
         trace.record_count("entity_hit_papers", len(entity_hits))
         trace.record_count("relation_hit_papers", len(relation_hits))
         trace.record_count("species_profile_papers", len(species_profiles))
+        ranking_clinical_intent = (
+            query.clinical_intent
+            if clinical_prior_requested
+            else ClinicalQueryIntent.GENERAL
+        )
 
         ranked_hits = trace.call(
             "rank_final_hits",
@@ -1021,7 +1027,7 @@ class RagService:
             evidence_intent=query.evidence_intent,
             query_text=query.query,
             retrieval_profile=query.retrieval_profile,
-            clinical_intent=query.clinical_intent,
+            clinical_intent=ranking_clinical_intent,
             channel_rankings=channel_rankings,
         )
         top_hits = ranked_hits[: query.k]
@@ -1096,20 +1102,25 @@ class RagService:
         trace.record_count("answer_corpus_ids", len(answer_corpus_ids))
         grounded_answer = None
         if self._warehouse_grounder and answer and answer_corpus_ids:
-            grounded_answer = trace.call(
-                "build_grounded_answer",
-                self._warehouse_grounder,
-                corpus_ids=answer_corpus_ids,
-                segment_texts=(
+            grounded_answer_kwargs = {
+                "corpus_ids": answer_corpus_ids,
+                "segment_texts": (
                     list(answer_payload.segment_texts)
                     if answer_payload and answer_payload.segment_texts
                     else [answer]
                 ),
-                segment_corpus_ids=(
+                "segment_corpus_ids": (
                     list(answer_payload.segment_corpus_ids)
                     if answer_payload and answer_payload.segment_corpus_ids
                     else None
                 ),
+            }
+            if _callable_supports_kwarg(self._warehouse_grounder, "trace"):
+                grounded_answer_kwargs["trace"] = trace
+            grounded_answer = trace.call(
+                "build_grounded_answer",
+                self._warehouse_grounder,
+                **grounded_answer_kwargs,
             )
 
         channels = [

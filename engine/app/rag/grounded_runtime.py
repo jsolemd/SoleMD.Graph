@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import nullcontext
 
 from pydantic import Field
 
 from app import db
-from app.rag.chunk_grounding import fetch_chunk_grounding_rows
+from app.rag.chunk_grounding import fetch_chunk_grounding_rows, fetch_chunk_structural_rows
 from app.rag.parse_contract import ParseContractModel
+from app.rag.runtime_trace import RuntimeTraceCollector
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse_rows
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
@@ -75,6 +77,12 @@ class GroundedAnswerRuntimeStatus(ParseContractModel):
 
 def _normalize_corpus_ids(corpus_ids: Sequence[int]) -> list[int]:
     return list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
+
+
+def _trace_stage(trace: RuntimeTraceCollector | None, name: str):
+    if trace is None:
+        return nullcontext()
+    return trace.stage(name)
 
 
 def get_grounded_answer_runtime_status(
@@ -159,6 +167,7 @@ def build_grounded_answer_from_runtime(
     limit_per_paper: int = 1,
     chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
     connect=None,
+    trace: RuntimeTraceCollector | None = None,
 ) -> GroundedAnswerRecord | None:
     normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
     if not normalized_corpus_ids:
@@ -166,21 +175,46 @@ def build_grounded_answer_from_runtime(
 
     connect_fn = connect or db.pooled
     with connect_fn() as conn, conn.cursor() as cur:
-        runtime_status = _get_runtime_status_with_cursor(
-            cursor=cur,
-            corpus_ids=normalized_corpus_ids,
-            chunk_version_key=chunk_version_key,
-        )
+        with _trace_stage(trace, "grounded_answer_runtime_status"):
+            runtime_status = _get_runtime_status_with_cursor(
+                cursor=cur,
+                corpus_ids=normalized_corpus_ids,
+                chunk_version_key=chunk_version_key,
+            )
         if runtime_status.missing_tables or not runtime_status.has_chunk_version:
             return None
         if not runtime_status.covered_corpus_ids:
             return None
-        citation_rows, entity_rows = fetch_chunk_grounding_rows(
-            corpus_ids=runtime_status.covered_corpus_ids,
-            cursor=cur,
-            chunk_version_key=chunk_version_key,
-            limit_per_paper=limit_per_paper,
-        )
+        if trace is not None:
+            trace.record_counts(
+                {
+                    "grounded_answer_requested_corpus_ids": len(normalized_corpus_ids),
+                    "grounded_answer_covered_corpus_ids": len(runtime_status.covered_corpus_ids),
+                    "grounded_answer_missing_corpus_ids": len(runtime_status.missing_corpus_ids),
+                }
+            )
+        with _trace_stage(trace, "grounded_answer_fetch_chunk_packets"):
+            citation_rows, entity_rows = fetch_chunk_grounding_rows(
+                corpus_ids=runtime_status.covered_corpus_ids,
+                cursor=cur,
+                chunk_version_key=chunk_version_key,
+                limit_per_paper=limit_per_paper,
+            )
+        packet_corpus_ids = {
+            int(row["corpus_id"])
+            for row in [*citation_rows, *entity_rows]
+            if row.get("corpus_id") is not None
+        }
+        with _trace_stage(trace, "grounded_answer_fetch_chunk_structural"):
+            structural_rows = fetch_chunk_structural_rows(
+                corpus_ids=[
+                    corpus_id
+                    for corpus_id in runtime_status.covered_corpus_ids
+                    if corpus_id not in packet_corpus_ids
+                ],
+                cursor=cur,
+                chunk_version_key=chunk_version_key,
+            )
 
     return build_grounded_answer_from_warehouse_rows(
         citation_rows=citation_rows,
@@ -188,4 +222,6 @@ def build_grounded_answer_from_runtime(
         segment_texts=segment_texts,
         segment_corpus_ids=segment_corpus_ids,
         corpus_order=runtime_status.covered_corpus_ids,
+        structural_rows=structural_rows,
+        trace=trace,
     )

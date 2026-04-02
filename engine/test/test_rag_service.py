@@ -651,6 +651,11 @@ def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypa
     repository.fetch_species_profiles.assert_not_called()
     assert result.debug_trace["session_flags"]["clinical_query_intent"] == "treatment"
     assert result.debug_trace["session_flags"]["clinical_prior_requested"] is False
+    assert result.bundles[0].paper.clinical_prior_score == 0.0
+    assert not any(
+        reason.startswith("Matched clinician-facing prior")
+        for reason in result.bundles[0].match_reasons
+    )
 
 
 class FakeDenseQueryEmbedder:
@@ -3979,6 +3984,58 @@ def test_rag_service_can_attach_warehouse_grounded_answer_when_available():
     assert response.grounded_answer is not None
     assert response.answer_corpus_ids == [11]
     assert response.grounded_answer.answer_linked_corpus_ids == [11]
+
+
+def test_rag_service_passes_runtime_trace_into_grounder_when_supported():
+    def fake_grounder(*, corpus_ids, segment_texts, segment_corpus_ids=None, trace=None):
+        assert corpus_ids == [11]
+        assert segment_corpus_ids == [None, 11]
+        assert trace is not None
+        trace.record_flag("grounder_trace_received", True)
+        return build_grounded_answer_from_packets(
+            segment_texts=segment_texts,
+            segment_corpus_ids=segment_corpus_ids,
+            packets=[
+                CitedSpanPacket(
+                    packet_id="span:11:b0:s0",
+                    corpus_id=11,
+                    canonical_section_ordinal=1,
+                    canonical_block_ordinal=0,
+                    canonical_sentence_ordinal=0,
+                    section_role="results",
+                    block_kind="narrative_paragraph",
+                    span_origin="primary_text",
+                    alignment_status="exact",
+                    alignment_confidence=1.0,
+                    text="Melatonin reduced delirium incidence.",
+                    quote_text="Melatonin reduced delirium incidence.",
+                )
+            ],
+        )
+
+    service = RagService(
+        repository=FakeRepository(),
+        warehouse_grounder=fake_grounder,
+        query_embedder=NoopQueryEmbedder(),
+        biomedical_reranker=NoopBiomedicalReranker(),
+    )
+    request = RagSearchRequest(
+        graph_release_id="release-1",
+        query="melatonin delirium",
+        entity_terms=["melatonin"],
+        relation_terms=["treat"],
+        evidence_intent="support",
+        k=1,
+        rerank_topn=6,
+        generate_answer=True,
+        selected_layer_key="paper",
+        selected_node_id="seed-paper",
+    )
+
+    response = service.search_result(request, include_debug_trace=True)
+
+    assert response.grounded_answer is not None
+    assert response.debug_trace["session_flags"]["grounder_trace_received"] is True
 
 
 def test_rag_service_preserves_answer_corpus_ids_when_grounding_links_subset():
