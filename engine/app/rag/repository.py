@@ -990,7 +990,11 @@ class PostgresRagRepository:
                 query_embedding=query_embedding,
                 limit=limit,
             )
-        return [self._paper_hit_from_row(row) for row in rows]
+        return self._hydrate_ranked_dense_hits(
+            ranked_rows=rows,
+            graph_run_id=graph_run_id,
+            use_direct_lookup=bool(scope_corpus_ids),
+        )
 
     def fetch_citation_contexts(
         self,
@@ -1459,6 +1463,33 @@ class PostgresRagRepository:
                     ),
                 )
                 return cur.fetchall()
+
+    def _hydrate_ranked_dense_hits(
+        self,
+        *,
+        ranked_rows: Sequence[dict[str, Any]],
+        graph_run_id: str,
+        use_direct_lookup: bool,
+    ) -> list[PaperEvidenceHit]:
+        if not ranked_rows:
+            return []
+
+        ranked_ids = list(dict.fromkeys(int(row["corpus_id"]) for row in ranked_rows))
+        if use_direct_lookup:
+            hydrated_hits = self.fetch_known_scoped_papers_by_corpus_ids(ranked_ids)
+        else:
+            hydrated_hits = self.fetch_papers_by_corpus_ids(graph_run_id, ranked_ids)
+
+        hits_by_corpus_id = {hit.corpus_id: hit for hit in hydrated_hits}
+        ordered_hits: list[PaperEvidenceHit] = []
+        for row in ranked_rows:
+            corpus_id = int(row["corpus_id"])
+            hit = hits_by_corpus_id.get(corpus_id)
+            if hit is None:
+                continue
+            hit.dense_score = max(0.0, 1.0 - float(row.get("distance") or 0.0))
+            ordered_hits.append(hit)
+        return ordered_hits
 
     def _search_query_embedding_in_graph(
         self,

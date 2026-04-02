@@ -1677,27 +1677,25 @@ ORDER BY p.corpus_id
 """
 
 
-DENSE_QUERY_SEARCH_SQL = f"""
+DENSE_QUERY_SEARCH_SQL = """
 SELECT
-    {PAPER_SELECT_COLUMNS},
+    p.corpus_id,
     (p.embedding <=> %s::vector) AS distance
 FROM solemd.papers p
 JOIN solemd.graph_points gp
   ON gp.graph_run_id = %s
  AND gp.corpus_id = p.corpus_id
-{PAPER_CORE_JOINS}
 WHERE p.embedding IS NOT NULL
 ORDER BY p.embedding <=> %s::vector ASC
 LIMIT %s
 """
 
 
-DENSE_QUERY_SEARCH_IN_SELECTION_SQL = f"""
+DENSE_QUERY_SEARCH_IN_SELECTION_SQL = """
 SELECT
-    {PAPER_SELECT_COLUMNS},
+    p.corpus_id,
     (p.embedding <=> %s::vector) AS distance
 FROM solemd.papers p
-{PAPER_CORE_JOINS}
 WHERE
     p.corpus_id = ANY(%s)
     AND p.embedding IS NOT NULL
@@ -1706,7 +1704,7 @@ LIMIT %s
 """
 
 
-DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL = f"""
+DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL = """
 WITH ann_candidates AS MATERIALIZED (
     SELECT
         p.corpus_id,
@@ -1717,15 +1715,12 @@ WITH ann_candidates AS MATERIALIZED (
     LIMIT %s
 )
 SELECT
-    {PAPER_SELECT_COLUMNS},
+    ann.corpus_id,
     ann.distance
 FROM ann_candidates ann
 JOIN solemd.graph_points gp
   ON gp.graph_run_id = %s
  AND gp.corpus_id = ann.corpus_id
-JOIN solemd.papers p
-  ON p.corpus_id = ann.corpus_id
-{PAPER_CORE_JOINS}
 ORDER BY ann.distance ASC
 LIMIT %s
 """

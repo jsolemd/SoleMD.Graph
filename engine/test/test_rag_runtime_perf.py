@@ -438,11 +438,12 @@ def test_runtime_dense_query_ann_uses_hnsw_index():
             repo._configure_search_session(cur)
             repo._configure_hnsw_session(cur)
             cur.execute(
-                "EXPLAIN (FORMAT JSON) " + queries.DENSE_QUERY_SEARCH_SQL,
+                "EXPLAIN (FORMAT JSON) " + queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
                 (
                     vector_literal,
-                    release.graph_run_id,
                     vector_literal,
+                    120,
+                    release.graph_run_id,
                     10,
                 ),
             )
@@ -525,3 +526,39 @@ def test_runtime_truncated_long_title_global_lookup_stays_grounded_and_fast():
 
     assert title_global.target_in_grounded_answer_rate == 1.0
     assert title_global.p95_service_duration_ms <= 3000.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_dense_query_title_global_tail_stays_bounded():
+    report = _runtime_perf_report_for(
+        (2230194,),
+        (RuntimeEvalQueryFamily.TITLE_GLOBAL,),
+    )
+
+    assert report.summary.overall.error_count == 0
+
+    case = report.cases[0]
+    title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
+
+    assert title_global.target_in_grounded_answer_rate == 1.0
+    assert title_global.p95_service_duration_ms <= 750.0
+    assert case.stage_durations_ms.get("search_query_embedding_papers", 0.0) <= 250.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_dense_query_sentence_global_tail_stays_bounded():
+    report = _runtime_perf_report_for(
+        (138129,),
+        (RuntimeEvalQueryFamily.SENTENCE_GLOBAL,),
+    )
+
+    assert report.summary.overall.error_count == 0
+
+    case = report.cases[0]
+    sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
+
+    assert sentence_global.target_in_grounded_answer_rate == 1.0
+    assert sentence_global.p95_service_duration_ms <= 750.0
+    assert case.stage_durations_ms.get("search_query_embedding_papers", 0.0) <= 250.0

@@ -1300,19 +1300,6 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
     cur.fetchall.return_value = [
         {
             "corpus_id": 404,
-            "paper_id": "paper-404",
-            "title": "Dense query paper",
-            "abstract": "Abstract text",
-            "tldr": None,
-            "journal_name": "Nature",
-            "year": 2025,
-            "doi": None,
-            "pmid": 404,
-            "pmcid": None,
-            "text_availability": "abstract",
-            "is_open_access": False,
-            "citation_count": 4,
-            "reference_count": 9,
             "distance": 0.09,
         }
     ]
@@ -1324,6 +1311,7 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=False)
     repo._graph_scope_coverages["run-1"] = 1.0
+    repo.fetch_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(404)])
     query_embedding = [0.1, 0.2, 0.3]
     vector_literal = format_vector_literal(query_embedding)
 
@@ -1335,6 +1323,7 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
 
     assert [hit.corpus_id for hit in hits] == [404]
     assert hits[0].dense_score == 0.91
+    repo.fetch_papers_by_corpus_ids.assert_called_once_with("run-1", [404])
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_has_calls(
         [
@@ -1397,19 +1386,6 @@ def test_search_query_embedding_papers_uses_exact_query_for_small_graph_scope():
     cur.fetchall.return_value = [
         {
             "corpus_id": 404,
-            "paper_id": "paper-404",
-            "title": "Dense query paper",
-            "abstract": "Abstract text",
-            "tldr": None,
-            "journal_name": "Nature",
-            "year": 2025,
-            "doi": None,
-            "pmid": 404,
-            "pmcid": None,
-            "text_availability": "abstract",
-            "is_open_access": False,
-            "citation_count": 4,
-            "reference_count": 9,
             "distance": 0.09,
         }
     ]
@@ -1420,6 +1396,7 @@ def test_search_query_embedding_papers_uses_exact_query_for_small_graph_scope():
 
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=True)
+    repo.fetch_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(404)])
     query_embedding = [0.1, 0.2, 0.3]
     vector_literal = format_vector_literal(query_embedding)
 
@@ -1431,6 +1408,7 @@ def test_search_query_embedding_papers_uses_exact_query_for_small_graph_scope():
 
     assert [hit.corpus_id for hit in hits] == [404]
     assert hits[0].dense_score == 0.91
+    repo.fetch_papers_by_corpus_ids.assert_called_once_with("run-1", [404])
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_has_calls(
         [
@@ -1446,20 +1424,46 @@ def test_search_query_embedding_papers_uses_exact_query_for_small_graph_scope():
 
 
 def test_search_query_embedding_papers_can_scope_to_selected_corpus_ids(mock_conn):
-    conn = mock_conn(rows=[])
+    conn = mock_conn(rows=[{"corpus_id": 202, "distance": 0.11}])
     repo = PostgresRagRepository(connect=lambda: conn)
+    repo.fetch_known_scoped_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(202)])
     query_embedding = [0.1, 0.2, 0.3]
     vector_literal = format_vector_literal(query_embedding)
 
-    repo.search_query_embedding_papers(
+    hits = repo.search_query_embedding_papers(
         graph_run_id="run-1",
         query_embedding=query_embedding,
         limit=5,
         scope_corpus_ids=[101, 202, 101],
     )
 
+    assert [hit.corpus_id for hit in hits] == [202]
+    assert hits[0].dense_score == 0.89
+    repo.fetch_known_scoped_papers_by_corpus_ids.assert_called_once_with([202])
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.DENSE_QUERY_SEARCH_IN_SELECTION_SQL,
         (vector_literal, [101, 202], vector_literal, 5),
     )
+
+
+def test_search_query_embedding_papers_preserves_rank_order_after_hydration(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {"corpus_id": 404, "distance": 0.15},
+            {"corpus_id": 303, "distance": 0.22},
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=True)
+    repo.fetch_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(303), _paper_hit(404)])
+
+    hits = repo.search_query_embedding_papers(
+        graph_run_id="run-1",
+        query_embedding=[0.1, 0.2, 0.3],
+        limit=2,
+    )
+
+    assert [hit.corpus_id for hit in hits] == [404, 303]
+    assert [hit.dense_score for hit in hits] == [0.85, 0.78]
+    repo.fetch_papers_by_corpus_ids.assert_called_once_with("run-1", [404, 303])

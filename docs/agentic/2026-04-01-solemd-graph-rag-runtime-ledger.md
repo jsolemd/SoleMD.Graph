@@ -23,19 +23,22 @@ Mode: agentic overnight improvement loop
 | A13 | done | P1 | Correctness | Grounded answers on the enlarged runtime cohort were still losing the target paper because answer-segment alignment and fallback grounding were too brittle, especially for BioC and mixed warehouse coverage. | Fixed answer/grounding selection and packet alignment across `answer.py`, `service.py`, `grounded_runtime.py`, `warehouse_grounding.py`, `source_grounding.py`, and `chunk_grounding.py`; regenerated runtime evals until grounding reached `1.0` on the live graph release. | `uv run pytest test/test_rag_answer.py test/test_rag_service.py test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_chunk_grounding.py test/test_rag_source_grounding.py` + `.tmp/rag-runtime-eval-default-structural-v1-title-global-v3.json` |
 | A14 | done | P1 | Scale | The old runtime scorecard was anchored to a 54-paper live graph cohort and no longer reflected the current graph-backed population. | Expanded runtime evaluation to the current graph-backed population, added unseen-cohort execution support, and regenerated broad all-family artifacts over `96` and `192` paper cohorts. | `.tmp/rag-runtime-eval-default-structural-v1-all-families-v8-full.json` + `.tmp/rag-runtime-eval-missing-v1-all-families-v11.json` |
 | A15 | done | P1 | Throughput | Repository calls in one request were still opening repeated pooled connections and scoring entity/relation/citation matches in Python, wasting time on every search. | Added request-scoped repository search sessions, pushed entity/relation/citation scoring into SQL, and fixed nested citation-intent normalization in the repository adapter. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_ranking.py test/test_rag_runtime_eval.py test/test_rag_warehouse_grounding.py` |
-| A16 | in_progress | P0 | Tail latency | The expanded unseen-cohort `v11` report showed near-perfect quality but pathological service tail latency, and direct probes traced the worst remaining path into runtime entity search and planner/JIT overhead. | Finish the fresh current-release all-family recheck on the latest code (`v11-jitoff`), compare against `v9`, and then decide whether any remaining tail needs SQL-shape work beyond the verified `jit=off` session fix. | `.tmp/rag-runtime-eval-default-structural-v1-all-families-v11-jitoff.json` + comparison summary |
+| A16 | done | P0 | Tail latency | The expanded unseen-cohort `v11` report showed near-perfect quality but pathological service tail latency, and direct probes traced the worst remaining path into runtime entity search and planner/JIT overhead. | Completed the fresh current-release all-family recheck on the latest code, then removed the dense-query SQL hydration waste that remained after the verified `jit=off` session fix. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + targeted outlier probes |
 | A17 | pending | P1 | Performance coverage | Runtime perf gates still focus on smokes and unit assertions rather than representative DB-backed cohort thresholds for all three query families. | Add cohort-backed performance regression tests/commands for `title_global`, `title_selected`, and `sentence_global`, including explicit tail-latency checks once `v12` stabilizes. | New perf coverage + targeted runtime eval assertions |
 | A18 | pending | P1 | Modularity | `service.py` and `repository.py` remain over-centralized runtime hubs with mixed responsibilities even after the hot-path fixes. | Split runtime orchestration and query execution along stable boundaries after the current perf batch settles, keeping one canonical retrieval contract and no duplicate logic. | File-size/complexity reduction + preserved test suite |
 | A19 | pending | P2 | Ops | Migration rollout, report retention, and batch commits still need a durable record as the runtime stack evolves. | Record migration/runtime notes, prune superseded report artifacts when safe, and commit cohesive verified batches once the current performance batch settles. | Ledger update + commit checkpoints |
 | A20 | done | P0 | Correctness | `title_selected` still treated the selected paper as a late rescue path, so selected-title lookups could route through broad lexical/dense neighbor expansion before honoring the user’s explicit paper context. | Added selected-paper-first title lookup in `engine/app/rag/repository.py` and centralized selected-context application in `engine/app/rag/service.py`, with repository/service regressions and a DB-backed perf gate. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'truncated_long_title_selected_lookup_stays_grounded_and_fast'` + `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v3.json` |
 | A21 | done | P0 | Correctness + centralization | Passage answers still favored generic high-scoring chunk hits over the bundle whose snippet actually mirrored the user’s sentence, and warehouse structural matching duplicated a weaker overlap scorer. | Added shared normalized text-alignment helpers in `engine/app/rag/text_alignment.py`, wired them into `engine/app/rag/answer.py` and `engine/app/rag/warehouse_grounding.py`, and added targeted answer/alignment regressions. | `uv run pytest test/test_rag_text_alignment.py test/test_rag_answer.py test/test_rag_warehouse_grounding.py` |
 | A22 | done | P1 | Modularity + provenance | `rank_paper_hits()` mixed channel provenance with raw score residue, which allowed `bundle.matched_channels` to drift from the real runtime channel surface, especially for `dense_query`. | Extracted channel/reason annotation into a dedicated helper in `engine/app/rag/ranking.py` and tightened dense-channel labeling to actual channel membership, with a regression guarding against stale dense labels. | `uv run pytest test/test_rag_ranking.py -k 'dense_channel_without_dense_membership or can_promote_semantic_only_candidates or preserves_entity_seed_scores_without_enrichment_hits or preserves_relation_seed_scores_without_enrichment_hits or preserves_citation_seed_scores_without_direct_hits'` |
-| A23 | in_progress | P1 | Evaluation hygiene | Several stale attached runtime eval/test jobs were still consuming exec slots and obscuring the post-fix picture. | Keep only the fresh post-fix evals alive, harvest the new artifacts, and move long soak runs back to the detached launcher after the current-code latency floor is re-baselined. | Fresh `v11-jitoff` report + cleaned process set |
+| A23 | done | P1 | Evaluation hygiene | Several stale attached runtime eval/test jobs were still consuming exec slots and obscuring the post-fix picture. | Harvested the post-fix artifacts, moved the broad rechecks back to detached/one-shot runs, and kept the live picture anchored to the fresh current-release cohort. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + cleaned process set |
 | A24 | done | P0 | Runtime session optimization | Live `EXPLAIN ANALYZE` on the canonical entity search showed about `774ms` of `~798ms` spent in PostgreSQL JIT compilation for a short search query, which is exactly the wrong workload shape for JIT. | Centralized runtime search-session settings in `engine/app/rag/repository.py`, added `rag_runtime_disable_jit` in `engine/app/config.py`, and verified the repository session contract in tests. | `uv run ruff check app/config.py app/rag/repository.py test/test_rag_repository.py` + `uv run pytest test/test_rag_repository.py` |
-| A25 | pending | P1 | Observability | If the fresh `v11-jitoff` cohort still shows any nontrivial tail, the runtime path needs stage-level timing visibility instead of another blind optimization round. | Add internal stage-timing instrumentation for the runtime search path and surface it in eval/debug artifacts without weakening the public response contract. | New timing artifact + targeted runtime tests |
+| A25 | done | P1 | Observability | If the fresh `v11-jitoff` cohort still shows any nontrivial tail, the runtime path needs stage-level timing visibility instead of another blind optimization round. | Added internal stage/candidate timing summaries to runtime eval artifacts and used them to isolate the dense-query and relation-search tails on the current cohort. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + targeted runtime tests |
 | A26 | pending | P2 | Dense retrieval contract | The runtime query path uses `allenai/specter2_adhoc_query`, while stored paper vectors still originate from Semantic Scholar `embedding.specter_v2`; official SPECTER2 guidance suggests query/document adapters should share the intended retrieval space. | Audit the paper-embedding/query-embedding contract against SPECTER2 primary sources and decide whether a paper re-embedding or alternate scientific/biomedical dense lane is warranted. | Contract note + comparison experiment |
 | A27 | pending | P2 | Biomedical reranking | Biomedical IR literature suggests MedCPT-class rerankers can improve question/article retrieval, especially on sentence-style biomedical questions, but at a GPU/runtime cost. | After the current latency floor settles, evaluate a small optional biomedical reranker lane on the sentence-global cohort and compare quality/latency against the current SPECTER2 + structured-signal stack. | Controlled benchmark artifact + decision note |
 | A28 | done | P2 | Centralization | The runtime entity search SQL duplicated the same query-term, concept-ranking, and scoring logic across four large query constants, which made future entity-path changes risky and noisy. | Centralized the entity-search SQL into shared CTE fragments/builders in `engine/app/rag/queries.py` and reverified repository/service behavior. | `uv run ruff check app/rag/queries.py test/test_rag_repository.py test/test_rag_service.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py` |
+| A29 | pending | P0 | Routing correctness | The fresh `v14` cohort still has a `title_global` outlier (`22309903`) routed through `retrieval_profile=passage_lookup`, which drags dense-query search back to `~498ms` on an otherwise title-shaped query. | Re-audit title-vs-passage routing for long full-title queries, fix the classifier/normalization path, and lock the expected title-lookup profile in runtime tests. | Targeted probe for `22309903` + service/routing regressions |
+| A30 | pending | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Inspect the rare relation-search plans/candidate shapes, then bound or reshape the relation lane without reducing answer quality. | Targeted probes for `273920567` / `81621267` + repository/service tests |
+| A31 | pending | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` is now the most common hot stage with `mean ~69ms`, `p95 ~94ms`, and `max ~264ms`. | Profile the entity-enrichment path end-to-end and reduce repeated work or unnecessary scope expansion while preserving biomedical grounding fidelity. | New stage comparison artifact + targeted runtime tests |
 
 ## Completed Batches
 
@@ -241,6 +244,42 @@ Mode: agentic overnight improvement loop
   - `engine/test/test_rag_repository.py`
   - `engine/test/test_rag_service.py`
 
+### Batch 19
+- Modularized runtime-eval support into tracked, reusable modules:
+  - `engine/app/rag/runtime_trace.py`
+  - `engine/app/rag/text_alignment.py`
+  - `engine/app/rag/title_anchor.py`
+  - `engine/app/rag_ingest/runtime_eval_models.py`
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - supporting corpus-id and detached-job helpers under `engine/app/rag_ingest/` and `engine/scripts/`
+- Added compact latency observability to runtime eval summaries:
+  - per-stage numeric profiles
+  - candidate-count profiles
+  - slow-case extraction for the slowest 1% of requests
+- Reverified with focused runtime/repository tests and committed as:
+  - `a7a7774` — `Modularize runtime eval and add latency summaries`
+
+### Batch 20
+- Removed redundant dense-query row hydration from the hot SQL path:
+  - dense-query SQL now returns ranked `corpus_id + distance` only
+  - repository hydrates the small ranked corpus-id set through the canonical paper lookup helpers
+  - `dense_score` and rank order are preserved after hydration
+- Realigned the DB-backed ANN perf gate to the actual broad-scope HNSW query surface.
+- Added focused regressions for:
+  - exact-path dense retrieval hydration
+  - selected-scope dense retrieval hydration
+  - order preservation after post-query hydration
+  - dense-query tail bounds on former outlier probes
+- Live effect on the current `96`-paper / `288`-case cohort:
+  - overall service `p95` dropped to `195.233 ms`
+  - overall service `p99` dropped to `559.895 ms`
+  - dense-query stage `p95` dropped to `99.264 ms`
+  - dense-query stage `p99` dropped to `143.558 ms`
+  - no runtime errors and all grounding/target-in-grounded metrics stayed at `1.0`
+- Targeted former outliers now land at:
+  - `2230194 title_global`: `service_duration_ms = 173.264`, `search_query_embedding_papers = 15.904`
+  - `138129 sentence_global`: `service_duration_ms = 158.692`, `search_query_embedding_papers = 15.990`
+
 ## Live Evidence
 
 - Dense-query encoder smoke:
@@ -258,6 +297,15 @@ Mode: agentic overnight improvement loop
 - Post-index/runtime-smoke evidence:
   - exact-title lookup hot path dropped from about `21.2s` repository time to about `334ms`
   - end-to-end selected-paper title query dropped from about `24.96s` to about `4.24s`
+- Post-dense-hydration current-cohort evidence:
+  - report: `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json`
+  - current cohort: `96` papers / `288` cases / `0` flagged warehouse papers
+  - overall service latency: `p50 23.43ms`, `p95 195.233ms`, `p99 559.895ms`, `max 672.487ms`
+  - dense-query stage: `mean 42.696ms`, `p95 99.264ms`, `p99 143.558ms`, `max 498.358ms`
+  - query-entity-enrichment stage is now the most common hot stage: `mean 69.469ms`, `p95 94.184ms`
+  - residual explicit outliers:
+    - `22309903` `title_global`: routed through `passage_lookup`, dense stage `498.358ms`
+    - `273920567` / `81621267` `sentence_global`: relation stage `448.032ms` / `388.851ms`
   - 5-paper warmed smoke reports:
     - `.tmp/rag-runtime-eval-title-selected-dense-smoke-post037-v1.json`
     - `.tmp/rag-runtime-eval-title-global-dense-smoke-post037-v1.json`
