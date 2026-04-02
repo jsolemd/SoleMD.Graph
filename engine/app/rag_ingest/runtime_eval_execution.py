@@ -61,6 +61,7 @@ def build_runtime_eval_request(
         query=case.query,
         selected_layer_key=case.selected_layer_key,
         selected_node_id=case.selected_node_id,
+        evidence_intent=case.evidence_intent,
         k=k,
         rerank_topn=max(k, rerank_topn),
         generate_answer=True,
@@ -208,6 +209,8 @@ def evaluate_runtime_query_cases(
                     query_family=case.query_family,
                     query=case.query,
                     stratum_key=case.stratum_key,
+                    evidence_intent=case.evidence_intent,
+                    benchmark_labels=case.benchmark_labels,
                     representative_section_role=case.representative_section_role,
                     duration_ms=duration_ms,
                     error=str(exc),
@@ -234,6 +237,8 @@ def evaluate_runtime_query_cases(
                 query_family=case.query_family,
                 query=case.query,
                 stratum_key=case.stratum_key,
+                evidence_intent=case.evidence_intent,
+                benchmark_labels=case.benchmark_labels,
                 representative_section_role=case.representative_section_role,
                 evidence_bundle_count=len(response.evidence_bundles),
                 top_corpus_ids=top_corpus_ids,
@@ -267,6 +272,8 @@ def evaluate_runtime_query_cases(
                         rank=bundle.rank,
                         score=bundle.score,
                         matched_channels=[str(channel) for channel in bundle.matched_channels],
+                        match_reasons=list(bundle.match_reasons),
+                        rank_features=dict(bundle.rank_features),
                     )
                     for bundle in response.evidence_bundles[:3]
                 ],
@@ -358,6 +365,8 @@ def _failure_reasons(result: RuntimeEvalCaseResult) -> list[str]:
         return reasons
     if result.hit_rank is None:
         reasons.append("target_miss")
+    elif result.evidence_intent is not None and result.hit_rank != 1:
+        reasons.append("intent_target_not_top")
     if result.answer_present and not result.target_in_answer_corpus:
         reasons.append("answer_missing_target")
     if not result.grounded_answer_present:
@@ -419,6 +428,8 @@ def _summarize_latency(
                 query_family=result.query_family,
                 query=result.query,
                 stratum_key=result.stratum_key,
+                evidence_intent=result.evidence_intent,
+                benchmark_labels=result.benchmark_labels,
                 service_duration_ms=result.service_duration_ms,
                 duration_ms=result.duration_ms,
                 overhead_duration_ms=result.overhead_duration_ms,
@@ -504,14 +515,17 @@ def summarize_runtime_results(
     overall = aggregate_case_results(results)
     by_query_family: dict[str, RuntimeEvalAggregate] = {}
     by_source_system: dict[str, RuntimeEvalAggregate] = {}
+    by_stratum_key: dict[str, RuntimeEvalAggregate] = {}
     failure_theme_counts: Counter[str] = Counter()
     failure_examples: list[RuntimeEvalFailureExample] = []
 
     family_groups: dict[str, list[RuntimeEvalCaseResult]] = {}
     source_groups: dict[str, list[RuntimeEvalCaseResult]] = {}
+    stratum_groups: dict[str, list[RuntimeEvalCaseResult]] = {}
     for result in results:
         family_groups.setdefault(str(result.query_family), []).append(result)
         source_groups.setdefault(result.primary_source_system, []).append(result)
+        stratum_groups.setdefault(result.stratum_key, []).append(result)
         reasons = _failure_reasons(result)
         for reason in reasons:
             failure_theme_counts[f"{result.query_family}:{reason}"] += 1
@@ -524,6 +538,8 @@ def summarize_runtime_results(
                     query_family=result.query_family,
                     query=result.query,
                     stratum_key=result.stratum_key,
+                    evidence_intent=result.evidence_intent,
+                    benchmark_labels=result.benchmark_labels,
                     failure_reasons=reasons,
                     top_hits=result.top_hits,
                 )
@@ -533,11 +549,14 @@ def summarize_runtime_results(
         by_query_family[key] = aggregate_case_results(grouped)
     for key, grouped in source_groups.items():
         by_source_system[key] = aggregate_case_results(grouped)
+    for key, grouped in sorted(stratum_groups.items()):
+        by_stratum_key[key] = aggregate_case_results(grouped)
 
     return RuntimeEvalSummary(
         overall=overall,
         by_query_family=by_query_family,
         by_source_system=by_source_system,
+        by_stratum_key=by_stratum_key,
         failure_theme_counts=dict(failure_theme_counts.most_common()),
         failure_examples=failure_examples,
         latency=_summarize_latency(results),

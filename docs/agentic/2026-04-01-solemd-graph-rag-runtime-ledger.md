@@ -1355,3 +1355,59 @@ Mode: agentic overnight improvement loop
   - the clinician prior lane does not yet justify a live-default rollout on the frozen clinician benchmark
   - warm control and priors-on are nearly identical on latency, so the prior itself is cheap, but it currently adds no measurable quality lift
   - the correct contract is to keep `rag_live_clinical_priors_enabled = False` by default and move the next quality work to conflict/polarity benchmarking and residual clinician-miss analysis
+
+## Batch 35: Freeze The Polarity/Conflict Benchmark And Promote Intent-Aware Runtime Eval Slices
+
+- Scope:
+  - `engine/app/rag_ingest/runtime_eval_models.py`
+  - `engine/app/rag_ingest/runtime_eval_benchmarks.py`
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - `engine/data/runtime_eval_benchmarks/polarity_conflict_v1.json`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_runtime_benchmarks.py`
+  - `docs/agentic/2026-04-01-solemd-graph-rag-runtime-ledger.md`
+- Problem evidenced after Batch 34:
+  - the runtime benchmark surface still treated support/refute cases like generic retrieval rows, so frozen benchmark inputs could not carry explicit evidence intent or benchmark-label metadata through execution and summary reporting.
+  - that made it harder to distinguish a plain recall miss from the more important contract failure where a support/refute target survives into grounding but does not reach rank 1.
+  - there was also no checked-in frozen benchmark covering polarity-sensitive null findings, mechanism refutations, and clinician-shaped support questions on the current graph release.
+- Durable implementation landed:
+  - extended the runtime eval contract so checked-in benchmark cases and per-case results now preserve:
+    - `evidence_intent`
+    - `benchmark_labels`
+    - richer top-hit metadata (`match_reasons`, `rank_features`)
+  - promoted stratum-level reporting into the runtime summary via `by_stratum_key`, so a single frozen benchmark can be read by intent/theme/source slice without ad hoc notebook work.
+  - updated failure classification so explicit support/refute benchmark cases now surface `intent_target_not_top` when the target is retrieved but loses rank 1.
+  - added the checked-in `polarity_conflict_v1` runtime benchmark:
+    - `10` `sentence_global` cases
+    - `5` support cases
+    - `5` refute cases
+    - mixed across `treatment`, `diagnosis`, `prognosis`, and `mechanism`
+    - `9` `s2orc_v2` cases and `1` `biocxml` case
+    - includes null-finding and nonhuman-leakage-risk slices instead of only generic hard misses
+  - cleaned the runtime eval test fixture surface so the fake bundle metadata remains centralized and unambiguous.
+- Verification:
+  - `cd engine && uv run ruff check app/rag_ingest/runtime_eval_models.py app/rag_ingest/runtime_eval_benchmarks.py app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py test/test_rag_runtime_benchmarks.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_benchmarks.py -q` -> `22 passed`
+  - live runtime eval:
+    - `cd engine && uv run python scripts/evaluate_rag_runtime.py --benchmark-path data/runtime_eval_benchmarks/polarity_conflict_v1.json --report-path .tmp/rag-runtime-eval-polarity-conflict-v1.json > /dev/null`
+- Measured result:
+  - overall:
+    - `cases = 10`
+    - `hit@1 = 0.8`
+    - `hit@5 = 0.9`
+    - `grounded_answer_rate = 1.0`
+    - `target_in_grounded_answer_rate = 0.9`
+    - `mean_service_duration_ms = 200.816`
+    - `p95_service_duration_ms = 471.46`
+  - strongest slice:
+    - `benchmark:polarity_conflict_v1|intent:refute|theme:null_finding|source:s2orc_v2`
+    - `4/4` cases correct at rank 1 with grounded answers preserved
+  - residual misses:
+    - `26923322` support treatment query: complete target miss with irrelevant positive clinical studies outranking the MONARCH trial
+    - `16719622` refute mechanism query: target survives into grounded answer but lands at rank 2 (`intent_target_not_top`)
+- Interpretation:
+  - the runtime is already robust on null findings and keeps grounding intact across the whole polarity benchmark.
+  - the remaining work is now sharply localized:
+    - a bounded passage-query title-candidate rescue for comparator-style clinician questions like `26923322`
+    - a separate rerank/objective pass for mechanism/nonhuman conflict cases like `16719622`
+  - this batch makes those next passes measurable under a frozen, checked-in benchmark instead of broad live-graph anecdotes.

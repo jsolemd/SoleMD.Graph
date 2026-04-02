@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from app.rag.grounded_runtime import GroundedAnswerRuntimeStatus
+from app.rag.types import EvidenceIntent
 from app.rag_ingest import runtime_eval
 from app.rag_ingest.runtime_eval_benchmarks import (
     build_dense_audit_sentence_hard_benchmark,
@@ -179,6 +180,7 @@ def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: 
                 query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
                 query="Frozen benchmark query",
                 stratum_key="benchmark:sentence_hard_v1|difficulty:rank_20_49|source:s2orc_v2",
+                evidence_intent=EvidenceIntent.REFUTE,
                 representative_section_role="discussion",
                 benchmark_key="sentence_hard_v1",
                 benchmark_labels=["dense_audit_failure", "deep_miss"],
@@ -204,6 +206,8 @@ def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: 
         query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
         query="Frozen benchmark query",
         stratum_key="benchmark:sentence_hard_v1|difficulty:rank_20_49|source:s2orc_v2",
+        evidence_intent=EvidenceIntent.REFUTE,
+        benchmark_labels=["dense_audit_failure", "deep_miss"],
         representative_section_role="discussion",
     )
 

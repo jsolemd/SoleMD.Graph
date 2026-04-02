@@ -241,6 +241,8 @@ def load_runtime_eval_benchmark_cases(
             query_family=case.query_family,
             query=case.query,
             stratum_key=case.stratum_key,
+            evidence_intent=case.evidence_intent,
+            benchmark_labels=case.benchmark_labels,
             representative_section_role=case.representative_section_role,
         )
         for case in benchmark_report.cases

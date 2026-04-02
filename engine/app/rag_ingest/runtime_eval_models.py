@@ -8,6 +8,7 @@ from pydantic import Field
 
 from app.rag.grounded_runtime import GroundedAnswerRuntimeStatus
 from app.rag.parse_contract import ParseContractModel
+from app.rag.types import EvidenceIntent
 
 
 class RuntimeEvalQueryFamily(StrEnum):
@@ -54,6 +55,8 @@ class RuntimeEvalQueryCase(ParseContractModel):
     query_family: RuntimeEvalQueryFamily
     query: str
     stratum_key: str
+    evidence_intent: EvidenceIntent | None = None
+    benchmark_labels: list[str] = Field(default_factory=list)
     representative_section_role: str | None = None
     selected_layer_key: str | None = None
     selected_node_id: str | None = None
@@ -66,6 +69,7 @@ class RuntimeEvalBenchmarkCase(ParseContractModel):
     query_family: RuntimeEvalQueryFamily
     query: str
     stratum_key: str
+    evidence_intent: EvidenceIntent | None = None
     representative_section_role: str | None = None
     benchmark_key: str
     benchmark_labels: list[str] = Field(default_factory=list)
@@ -82,6 +86,8 @@ class RuntimeEvalTopHit(ParseContractModel):
     rank: int
     score: float | None = None
     matched_channels: list[str] = Field(default_factory=list)
+    match_reasons: list[str] = Field(default_factory=list)
+    rank_features: dict[str, float] = Field(default_factory=dict)
 
 
 class RuntimeEvalCaseResult(ParseContractModel):
@@ -91,6 +97,8 @@ class RuntimeEvalCaseResult(ParseContractModel):
     query_family: RuntimeEvalQueryFamily
     query: str
     stratum_key: str
+    evidence_intent: EvidenceIntent | None = None
+    benchmark_labels: list[str] = Field(default_factory=list)
     representative_section_role: str | None = None
     evidence_bundle_count: int = 0
     top_corpus_ids: list[int] = Field(default_factory=list)
@@ -173,6 +181,8 @@ class RuntimeEvalSlowCase(ParseContractModel):
     query_family: RuntimeEvalQueryFamily
     query: str
     stratum_key: str
+    evidence_intent: EvidenceIntent | None = None
+    benchmark_labels: list[str] = Field(default_factory=list)
     service_duration_ms: float = 0.0
     duration_ms: float = 0.0
     overhead_duration_ms: float = 0.0
@@ -194,6 +204,8 @@ class RuntimeEvalFailureExample(ParseContractModel):
     query_family: RuntimeEvalQueryFamily
     query: str
     stratum_key: str
+    evidence_intent: EvidenceIntent | None = None
+    benchmark_labels: list[str] = Field(default_factory=list)
     failure_reasons: list[str] = Field(default_factory=list)
     top_hits: list[RuntimeEvalTopHit] = Field(default_factory=list)
 
@@ -209,6 +221,7 @@ class RuntimeEvalSummary(ParseContractModel):
     overall: RuntimeEvalAggregate
     by_query_family: dict[str, RuntimeEvalAggregate] = Field(default_factory=dict)
     by_source_system: dict[str, RuntimeEvalAggregate] = Field(default_factory=dict)
+    by_stratum_key: dict[str, RuntimeEvalAggregate] = Field(default_factory=dict)
     failure_theme_counts: dict[str, int] = Field(default_factory=dict)
     failure_examples: list[RuntimeEvalFailureExample] = Field(default_factory=list)
     latency: RuntimeEvalLatencySummary = Field(default_factory=RuntimeEvalLatencySummary)

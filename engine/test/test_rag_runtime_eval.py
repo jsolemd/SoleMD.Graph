@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from app.rag.types import EvidenceIntent
 from app.rag_ingest.runtime_eval import (
     RuntimeEvalCaseResult,
     _aggregate_case_results,
@@ -241,6 +242,8 @@ class _FakeBundle:
     rank: int
     score: float
     matched_channels: list[str]
+    match_reasons: list[str] = field(default_factory=list)
+    rank_features: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -262,6 +265,8 @@ class _FakeService:
                     rank=1,
                     score=1.0,
                     matched_channels=["lexical"],
+                    match_reasons=["Matched title/abstract query terms"],
+                    rank_features={"lexical": 1.0},
                 )
             ],
             answer="Answer text",
@@ -290,6 +295,16 @@ def test_evaluate_runtime_query_cases_warms_service_before_measuring():
         ]
     )
 
+    cases = [
+        case.model_copy(
+            update={
+                "evidence_intent": EvidenceIntent.SUPPORT,
+                "benchmark_labels": ["frozen_benchmark", "support"],
+            }
+        )
+        for case in cases
+    ]
+
     results = evaluate_runtime_query_cases(
         graph_release_id="current",
         chunk_version_key="default-structural-v1",
@@ -300,6 +315,10 @@ def test_evaluate_runtime_query_cases_warms_service_before_measuring():
     assert len(results) == 1
     assert len(service.requests) == 2
     assert service.requests[0].query == service.requests[1].query
+    assert service.requests[1].evidence_intent == EvidenceIntent.SUPPORT
+    assert results[0].benchmark_labels == ["frozen_benchmark", "support"]
+    assert results[0].top_hits[0].match_reasons == ["Matched title/abstract query terms"]
+    assert results[0].top_hits[0].rank_features == {"lexical": 1.0}
 
 
 def test_summarize_runtime_results_counts_failures_and_rates():
@@ -400,6 +419,8 @@ def test_summarize_runtime_results_counts_failures_and_rates():
     assert summary.failure_theme_counts["sentence_global:target_miss"] == 1
     assert summary.failure_theme_counts["sentence_global:answer_missing_target"] == 1
     assert summary.failure_theme_counts["sentence_global:ungrounded_answer"] == 1
+    assert summary.by_stratum_key["s2orc_v2|table_absent|medium"].cases == 1
+    assert summary.by_stratum_key["biocxml|table_absent|short"].cases == 1
     assert len(summary.failure_examples) == 1
     assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].cases == 2
     assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].max == 110.0
@@ -421,18 +442,17 @@ def test_summarize_runtime_results_counts_failures_and_rates():
 
 
 def test_build_runtime_eval_request_propagates_retrieval_toggles():
-    case = build_runtime_eval_query_cases(
-        [
-            _paper(
-                11,
-                source="s2orc_v2",
-                title="Melatonin and delirium",
-                chunk_count=8,
-                table_block_count=0,
-            )
-        ],
-        query_families=[RuntimeEvalQueryFamily.TITLE_SELECTED],
-    )[0]
+    case = RuntimeEvalQueryCase(
+        corpus_id=11,
+        title="Melatonin and delirium",
+        primary_source_system="s2orc_v2",
+        query_family=RuntimeEvalQueryFamily.TITLE_SELECTED,
+        query="Melatonin and delirium",
+        stratum_key="benchmark:polarity_conflict_v1|intent:support|theme:treatment|source:s2orc_v2",
+        evidence_intent=EvidenceIntent.SUPPORT,
+        selected_layer_key="paper",
+        selected_node_id="paper:11",
+    )
 
     request = _build_runtime_eval_request(
         graph_release_id="current",
@@ -449,6 +469,45 @@ def test_build_runtime_eval_request_propagates_retrieval_toggles():
     assert request.selected_node_id == "paper:11"
     assert request.use_lexical is False
     assert request.use_dense_query is True
+    assert request.evidence_intent == EvidenceIntent.SUPPORT
+
+
+def test_summarize_runtime_results_flags_intent_target_not_top():
+    summary = summarize_runtime_results(
+        [
+            RuntimeEvalCaseResult(
+                corpus_id=7,
+                title="Null trial",
+                primary_source_system="s2orc_v2",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                query="Does treatment X improve outcome Y?",
+                stratum_key=(
+                    "benchmark:conflict_polarity_v1|intent:refute|theme:treatment|"
+                    "source:s2orc_v2"
+                ),
+                evidence_intent=EvidenceIntent.REFUTE,
+                benchmark_labels=["conflict_polarity", "refute"],
+                top_corpus_ids=[99, 7],
+                hit_rank=2,
+                answer_present=True,
+                answer_corpus_ids=[99],
+                target_in_answer_corpus=False,
+                grounded_answer_present=True,
+                grounded_answer_linked_corpus_ids=[99],
+                target_in_grounded_answer=False,
+                service_duration_ms=80.0,
+                duration_ms=85.0,
+                overhead_duration_ms=5.0,
+            )
+        ]
+    )
+
+    assert summary.failure_theme_counts["sentence_global:intent_target_not_top"] == 1
+    assert summary.failure_examples[0].evidence_intent == EvidenceIntent.REFUTE
+    assert summary.failure_examples[0].benchmark_labels == [
+        "conflict_polarity",
+        "refute",
+    ]
 
 
 def test_aggregate_case_results_preserves_error_durations():
