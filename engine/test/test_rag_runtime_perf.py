@@ -332,7 +332,7 @@ def test_runtime_sentence_query_with_title_like_paper_fallback_stays_fast():
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
-    assert sentence_global.p95_service_duration_ms <= 750.0
+    assert sentence_global.p95_service_duration_ms <= 150.0
     assert (
         case.route_signature
         == "retrieval_profile=title_lookup|"
@@ -341,7 +341,7 @@ def test_runtime_sentence_query_with_title_like_paper_fallback_stays_fast():
         "paper_search_use_title_candidate_lookup=True|"
         "dense_query_route=dense_query_ann_broad_scope"
     )
-    assert case.stage_durations_ms.get("search_papers", 0.0) <= 250.0
+    assert case.stage_durations_ms.get("search_papers", 0.0) <= 75.0
 
 
 @pytest.mark.integration
@@ -594,6 +594,33 @@ def test_runtime_title_prefix_lookup_uses_title_trgm_index():
 
     assert "Bitmap Index Scan" in nodes or "Index Scan" in nodes, json.dumps(plan)
     assert "idx_papers_title_gist_trgm" in indexes, json.dumps(plan)
+    assert "Seq Scan" not in nodes, json.dumps(plan)
+
+
+@pytest.mark.integration
+def test_runtime_title_phrase_candidate_lookup_uses_title_fts_index():
+    _require_runtime_db()
+
+    query = (
+        "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+        "maturation and brain development in the rat"
+    )
+
+    try:
+        with db.pooled() as conn, conn.cursor() as cur:
+            cur.execute(
+                "EXPLAIN (FORMAT JSON) " + queries.PAPER_TITLE_FTS_CANDIDATE_SQL,
+                (query, query, 20),
+            )
+            plan = cur.fetchone()["QUERY PLAN"][0]["Plan"]
+    finally:
+        db.close_pool()
+
+    nodes = plan_node_names(plan)
+    indexes = plan_index_names(plan)
+
+    assert "Bitmap Index Scan" in nodes or "Index Scan" in nodes, json.dumps(plan)
+    assert "idx_papers_title_fts" in indexes, json.dumps(plan)
     assert "Seq Scan" not in nodes, json.dumps(plan)
 
 

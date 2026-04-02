@@ -751,6 +751,21 @@ LIMIT %s
 """
 
 
+PAPER_TITLE_FTS_CANDIDATE_SQL = """
+SELECT
+    p.corpus_id,
+    COALESCE(p.citation_count, 0) AS citation_count
+FROM solemd.papers p
+WHERE
+    %s <> ''
+    AND to_tsvector('english', coalesce(p.title, '')) @@ phraseto_tsquery('english', %s)
+ORDER BY
+    citation_count DESC,
+    p.corpus_id DESC
+LIMIT %s
+"""
+
+
 PAPER_TITLE_LOOKUP_IN_GRAPH_SQL = f"""
 WITH query_input AS (
     SELECT

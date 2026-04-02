@@ -514,6 +514,17 @@ class PostgresRagRepository:
             )
             if prefix_title_hits:
                 return prefix_title_hits[:limit]
+            if not use_title_similarity:
+                phrase_title_hits = self._search_title_lookup_candidate_papers(
+                    graph_run_id=graph_run_id,
+                    query=query,
+                    normalized_title_query=normalized_title_query,
+                    limit=self._title_similarity_candidate_limit(limit),
+                    prefix=False,
+                    fts_phrase=True,
+                )
+                if phrase_title_hits:
+                    return phrase_title_hits[:limit]
         sql_spec = self._paper_search_sql_spec(
             graph_run_id=graph_run_id,
             query=query,
@@ -664,12 +675,14 @@ class PostgresRagRepository:
         normalized_title_query: str,
         limit: int,
         prefix: bool,
+        fts_phrase: bool = False,
     ) -> list[PaperEvidenceHit]:
         candidate_corpus_ids = self._title_lookup_candidate_corpus_ids(
             query=query,
             normalized_title_query=normalized_title_query,
             limit=limit,
             prefix=prefix,
+            fts_phrase=fts_phrase,
         )
         if not candidate_corpus_ids:
             return []
@@ -697,6 +710,8 @@ class PostgresRagRepository:
                         title_text=hit.title,
                     ),
                 )
+            elif fts_phrase:
+                hit.lexical_score = max(hit.lexical_score, 1.8)
             else:
                 hit.lexical_score = max(hit.lexical_score, 2.0)
                 hit.title_similarity = 1.0
@@ -709,39 +724,50 @@ class PostgresRagRepository:
         normalized_title_query: str,
         limit: int,
         prefix: bool,
+        fts_phrase: bool = False,
     ) -> list[int]:
         title_query = query.lower()
         normalized_prefix_upper = prefix_range_upper_bound(normalized_title_query)
         title_prefix_upper = prefix_range_upper_bound(title_query)
-        sql_specs = (
-            (
-                queries.PAPER_TITLE_TEXT_PREFIX_CANDIDATE_SQL,
-                (title_query, title_query, title_prefix_upper, limit),
-            ),
-            (
-                queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL,
+        if fts_phrase:
+            sql_specs = (
                 (
-                    normalized_title_query,
-                    normalized_title_query,
-                    normalized_prefix_upper,
-                    limit,
+                    queries.PAPER_TITLE_FTS_CANDIDATE_SQL,
+                    (query, query, limit),
                 ),
-            ),
-        ) if prefix else (
-            (
-                queries.PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL,
-                (title_query, title_query, title_query, limit),
-            ),
-            (
-                queries.PAPER_TITLE_NORMALIZED_EXACT_CANDIDATE_SQL,
+            )
+        elif prefix:
+            sql_specs = (
                 (
-                    normalized_title_query,
-                    normalized_title_query,
-                    normalized_title_query,
-                    limit,
+                    queries.PAPER_TITLE_TEXT_PREFIX_CANDIDATE_SQL,
+                    (title_query, title_query, title_prefix_upper, limit),
                 ),
-            ),
-        )
+                (
+                    queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL,
+                    (
+                        normalized_title_query,
+                        normalized_title_query,
+                        normalized_prefix_upper,
+                        limit,
+                    ),
+                ),
+            )
+        else:
+            sql_specs = (
+                (
+                    queries.PAPER_TITLE_TEXT_EXACT_CANDIDATE_SQL,
+                    (title_query, title_query, title_query, limit),
+                ),
+                (
+                    queries.PAPER_TITLE_NORMALIZED_EXACT_CANDIDATE_SQL,
+                    (
+                        normalized_title_query,
+                        normalized_title_query,
+                        normalized_title_query,
+                        limit,
+                    ),
+                ),
+            )
 
         candidate_scores: dict[int, tuple[int, int]] = {}
         with self._connect() as conn:

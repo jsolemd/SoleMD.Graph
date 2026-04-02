@@ -54,7 +54,7 @@ Mode: agentic overnight improvement loop
 | A44 | done | P1 | Citation-context tail | After `v15`, the only repeated citation SQL fingerprint left in the live slow cases is `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded/initial title-like case. | Deferred `solemd.papers` joins until after per-paper citation-context ranking, replaced per-row correlated term counting with one grouped join, and revalidated on a fresh live-cohort rerun after discarding one noisy run-state artifact. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'fetch_citation_contexts_scores_and_limits_hits_in_sql or citation_context_tail_stays_bounded' -q` + `engine/.tmp/rag-runtime-probe-3130320-v2-citation-reshape.json` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v17-rerun.json` |
 | A45 | done | P1 | Title-like paper-search outlier | Live `v15` isolated one remaining title-lookup outlier (`24948876`) where `paper_search_global` still costs about `179.8ms` despite rank-1 retrieval success. Naive fuzzy preprobe attempts made that route catastrophically worse (`31.9s`, then `59.2s`) before the final contract fix. | Split the global paper-search SQL into an explicit `paper_search_global_fts_only` lane for `use_title_similarity=false`, remove the failed fuzzy preprobe path entirely, and lock the new route in unit + DB-backed perf coverage. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'title_like_paper_fallback_stays_fast or test_rag_repository' -q` + `engine/.tmp/rag-runtime-probe-24948876-v5.json` |
 | A46 | done | P1 | Grounded-answer build hotspot | Live `v15` isolated one remaining slow case (`277023583`) where `build_grounded_answer` dominated at about `188.1ms` after retrieval had already completed. The root cause was unbounded entity-packet overfetch before packet grouping plus opaque inner timing. | Split grounded-answer entity fetch into citation-packet entities plus bounded fallback packet groups, thread the shared runtime trace collector through the real grounders, and lock the new packet/timing contract with unit + DB-backed perf coverage. | `uv run pytest test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'entity_dense_grounded_answer_fetch_stays_bounded or grounded_runtime or rag_service or warehouse_grounding' -q` + `engine/.tmp/rag-runtime-probe-277023583-v2-grounded-trace.json` |
-| A47 | pending | P1 | Residual title-lookup search tail | The fresh `v17` current-release rerun is healthy overall (`mean 40.26ms`, `p95 83.31ms`), but one `sentence_global` case (`24948876`) still routes into `title_lookup` and spends `180.7ms` in `search_papers` on the `paper_search_global_fts_only` lane. | Profile the remaining `title_lookup` paper-search hot case, decide whether it is a stable contract issue or acceptable long-tail cost, and only add another SQL/path split if it materially improves the live p99 without reopening the failed fuzzy branch. | Targeted probe + plan/profile diff + runtime perf gate if a durable fix lands |
+| A47 | done | P1 | Residual title-lookup search tail | The fresh `v17` current-release rerun was healthy overall (`mean 40.26ms`, `p95 83.31ms`), but one `sentence_global` case (`24948876`) still routed into `title_lookup` and spent `180.7ms` in `search_papers` on the `paper_search_global_fts_only` lane. | Added an indexed title-only phrase-FTS candidate probe ahead of the broad global FTS path, tightened the hot-case runtime perf gate, and revalidated on the full current-release cohort. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'phrase_title_candidates_before_global_fts_only or falls_back_to_global_fts_only_when_title_similarity_is_disabled or exact_title_queries_use_native_index_friendly_lookup_shape or title_phrase_candidate_lookup_uses_title_fts_index or runtime_sentence_query_with_title_like_paper_fallback_stays_fast' -q` + `engine/.tmp/rag-runtime-probe-24948876-v6-title-phrase.json` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v18-title-phrase.json` |
 
 ## Completed Batches
 
@@ -1785,3 +1785,48 @@ Mode: agentic overnight improvement loop
   - the citation SQL shape was a real waste point and the deferred-join rewrite removed it as the dominant live tail.
   - the discarded `v16` report was run-state noise, not a durable dense-query regression.
   - the next clean runtime pass is now the residual `title_lookup` paper-search tail on `24948876`, plus the longer-horizon benchmark/quality items still queued in `A35`, `A36`, and `A41`.
+
+## Batch 44: Add Indexed Title-Phrase Candidate Rescue Before Broad FTS
+
+- Scope:
+  - `engine/app/rag/queries.py`
+  - `engine/app/rag/repository.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem evidenced after Batch 43:
+  - the fresh validating cohort (`v17`) proved the citation tail was no longer the dominant live issue, but one `sentence_global` case (`24948876`) still spent `180.7ms` in `search_papers`.
+  - that case was title-shaped, routed into `title_lookup`, and missed both existing title-candidate probes because the query differed from the paper title by a stemmable inflection only (`growths` vs `growth`).
+  - after those candidate probes missed, runtime fell back to the broader global `paper_search_global_fts_only` SQL, which was correct but too expensive for such a near-title match.
+- Durable implementation landed:
+  - added `PAPER_TITLE_FTS_CANDIDATE_SQL` in `engine/app/rag/queries.py`, using the existing native PostgreSQL title-only FTS index (`idx_papers_title_fts`) with `phraseto_tsquery('english', ...)`.
+  - extended the repository title-candidate preprobe order in `engine/app/rag/repository.py`:
+    - exact title candidate
+    - prefix title candidate
+    - new title-phrase FTS candidate
+    - only then the broader global paper-search SQL
+  - kept the new phrase candidate path limited to `use_title_similarity=false` title-lookup routes, so normal broader lexical retrieval does not pay for an extra probe.
+  - tightened the DB-backed runtime perf gate for the hot sentence-global title-like case.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/queries.py app/rag/repository.py test/test_rag_repository.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'phrase_title_candidates_before_global_fts_only or falls_back_to_global_fts_only_when_title_similarity_is_disabled or exact_title_queries_use_native_index_friendly_lookup_shape or title_phrase_candidate_lookup_uses_title_fts_index or runtime_sentence_query_with_title_like_paper_fallback_stays_fast' -q` -> `5 passed, 74 deselected`
+  - direct live probe artifact:
+    - `engine/.tmp/rag-runtime-probe-24948876-v6-title-phrase.json`
+  - full current-release cohort rerun:
+    - `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v18-title-phrase.json`
+- Measured result:
+  - the previously hottest remaining title-like sentence case dropped from:
+    - `service_duration_ms = 236.55`
+    - `search_papers = 180.67ms`
+  - to:
+    - `service_duration_ms = 97.78`
+    - `search_papers = 33.80ms`
+  - the title-only phrase candidate is genuinely index-backed:
+    - live plan uses `idx_papers_title_fts`
+  - the full current-release cohort improved at the tail without losing quality:
+    - `v17`: `p99 106.68ms`, `max 236.55ms`
+    - `v18`: `p99 96.83ms`, `max 102.96ms`
+    - `hit_at_1_rate = 1.0`
+    - `target_in_grounded_answer_rate = 1.0`
+- Interpretation:
+  - the right fix was another native candidate preprobe, not a return to fuzzy/trigram title probing.
+  - the runtime retrieval path is now materially flatter; the next agentic passes should shift from hot-path latency cleanup back to the queued quality and benchmark work in `A35`, `A36`, `A41`, and the longer-term modularity cleanup in `A18`.

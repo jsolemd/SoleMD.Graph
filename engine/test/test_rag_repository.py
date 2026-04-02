@@ -210,7 +210,7 @@ def test_search_papers_falls_back_to_global_fts_only_when_title_similarity_is_di
     conn = mock_conn(rows=[])
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=False)
-    repo._search_title_lookup_candidate_papers = MagicMock(side_effect=[[], []])
+    repo._search_title_lookup_candidate_papers = MagicMock(side_effect=[[], [], []])
 
     repo.search_papers(
         "run-1",
@@ -251,6 +251,20 @@ def test_search_papers_falls_back_to_global_fts_only_when_title_similarity_is_di
             limit=200,
             prefix=True,
         ),
+        call(
+            graph_run_id="run-1",
+            query=(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            normalized_title_query=normalize_title_key(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            limit=120,
+            prefix=False,
+            fts_phrase=True,
+        ),
     ]
     cur.execute.assert_called_once_with(
         queries.PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY,
@@ -271,6 +285,73 @@ def test_search_papers_falls_back_to_global_fts_only_when_title_similarity_is_di
             5,
         ),
     )
+
+
+def test_search_papers_returns_phrase_title_candidates_before_global_fts_only(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    phrase_hit = _paper_hit(24948876)
+    repo._search_title_lookup_candidate_papers = MagicMock(
+        side_effect=[[], [], [phrase_hit]]
+    )
+
+    hits = repo.search_papers(
+        "run-1",
+        (
+            "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+            "maturation and brain development in the rat"
+        ),
+        limit=5,
+        use_title_similarity=False,
+        use_title_candidate_lookup=True,
+    )
+
+    assert hits == [phrase_hit]
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_not_called()
+    assert repo._search_title_lookup_candidate_papers.call_args_list == [
+        call(
+            graph_run_id="run-1",
+            query=(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            normalized_title_query=normalize_title_key(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            limit=5,
+            prefix=False,
+        ),
+        call(
+            graph_run_id="run-1",
+            query=(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            normalized_title_query=normalize_title_key(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            limit=200,
+            prefix=True,
+        ),
+        call(
+            graph_run_id="run-1",
+            query=(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            normalized_title_query=normalize_title_key(
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            ),
+            limit=120,
+            prefix=False,
+            fts_phrase=True,
+        ),
+    ]
 
 
 def test_search_exact_title_papers_maps_rows(mock_conn):
@@ -1310,6 +1391,11 @@ def test_exact_title_queries_use_native_index_friendly_lookup_shape():
     assert (
         f"{queries.PAPER_NORMALIZED_TITLE_KEY_SQL} < %s"
         in queries.PAPER_TITLE_NORMALIZED_PREFIX_CANDIDATE_SQL
+    )
+    assert "phraseto_tsquery('english', %s)" in queries.PAPER_TITLE_FTS_CANDIDATE_SQL
+    assert (
+        "to_tsvector('english', coalesce(p.title, '')) @@"
+        in queries.PAPER_TITLE_FTS_CANDIDATE_SQL
     )
     assert (
         "AND lower(coalesce(p.title, '')) >= query_input.lowered_query"
