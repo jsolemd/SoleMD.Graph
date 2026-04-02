@@ -559,3 +559,59 @@ Mode: agentic overnight improvement loop
    - prefer structured-evidence-aware reranking or answer selection improvements before inventing new retrieval lanes
 4. Reconcile runtime/base-contract documentation drift once the runtime surface is stable:
    - especially graph base membership and target-size docs if they no longer match the live schema/policy
+
+## Batch 19: Runtime Eval Observability And Self-Containment
+
+- Scope:
+  - `engine/app/rag/runtime_trace.py`
+  - `engine/app/rag/text_alignment.py`
+  - `engine/app/rag/title_anchor.py`
+  - `engine/app/rag_ingest/corpus_ids.py`
+  - `engine/app/rag_ingest/target_corpus.py`
+  - `engine/app/rag_ingest/runtime_eval.py`
+  - `engine/app/rag_ingest/runtime_eval_models.py`
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - `engine/scripts/run_detached_engine_job.py`
+  - `engine/scripts/prepare_rag_runtime_eval_cohort.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_text_alignment.py`
+  - `engine/test/test_rag_corpus_ids.py`
+  - `engine/test/test_run_detached_engine_job.py`
+- Problem evidenced after Batch 18:
+  - the runtime branch was not cleanly self-contained because several compact support modules were still untracked even though the active runtime code already imported them
+  - runtime eval case results already captured per-stage timings, candidate counts, and session flags through `RuntimeTraceCollector`, but the summary layer discarded that detail and forced manual case-by-case inspection
+- Durable implementation landed:
+  - kept the canonical tracing seam in `RuntimeTraceCollector` and extended the eval-report surface instead of inventing a parallel profiler
+  - added compact latency/reporting models:
+    - `RuntimeEvalNumericProfile`
+    - `RuntimeEvalSlowStage`
+    - `RuntimeEvalSlowCase`
+    - `RuntimeEvalLatencySummary`
+  - `summarize_runtime_results(...)` now emits:
+    - stage-level latency profiles
+    - candidate-count profiles
+    - compact slow-case summaries for the slowest evaluation cases
+  - staged the shared runtime/eval support modules that the current runtime path already depends on:
+    - title-anchor helpers
+    - text-alignment helpers
+    - corpus-id IO helpers
+    - target-corpus loader
+    - detached engine-job launcher
+    - cohort-preparation CLI
+- Verification:
+  - `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_text_alignment.py test/test_rag_corpus_ids.py test/test_run_detached_engine_job.py -q` -> `23 passed`
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_answer.py test/test_rag_warehouse_grounding.py -q` -> `88 passed`
+  - `cd engine && uv run ruff check app/rag/runtime_trace.py app/rag/text_alignment.py app/rag/title_anchor.py app/rag_ingest/corpus_ids.py app/rag_ingest/target_corpus.py app/rag_ingest/runtime_eval.py app/rag_ingest/runtime_eval_models.py app/rag_ingest/runtime_eval_execution.py scripts/run_detached_engine_job.py scripts/prepare_rag_runtime_eval_cohort.py test/test_rag_runtime_eval.py test/test_rag_text_alignment.py test/test_rag_corpus_ids.py test/test_run_detached_engine_job.py` -> passed
+  - `cd engine && uv run ruff check app/rag/answer.py app/rag/repository.py app/rag/service.py app/rag/warehouse_grounding.py test/test_rag_repository.py test/test_rag_service.py test/test_rag_answer.py test/test_rag_warehouse_grounding.py` -> passed
+- Interpretation:
+  - the runtime branch is cleaner because the shared helpers it already relies on are now part of the tracked surface
+  - the next tail-analysis pass can use canonical report fields instead of ad hoc log spelunking
+
+## Refined Next Queue
+
+1. Run a fresh eval artifact with the new latency summaries and use it to isolate any true sentence-global tail or fan-out hotspot.
+2. Audit dense retrieval objective alignment for the biomedical query/document setup:
+   - SPECTER2 adhoc query vs stored document-space vectors
+   - current dense lane vs lexical-heavy path on a frozen cohort
+3. Improve sentence-global ranking/answer selection on residual misses using the new observability and the retrieval audit.
+4. Reconcile runtime/base-contract documentation drift only after the runtime retrieval contract stops moving.

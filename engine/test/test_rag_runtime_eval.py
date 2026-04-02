@@ -322,6 +322,12 @@ def test_summarize_runtime_results_counts_failures_and_rates():
             inline_citation_count=2,
             answer_segment_count=1,
             retrieval_channel_hit_counts={"lexical": 5, "semantic_neighbor": 0},
+            stage_durations_ms={
+                "resolve_graph_release": 3.0,
+                "fetch_semantic_neighbors": 18.0,
+            },
+            candidate_counts={"semantic_neighbor_hits": 2, "top_hits": 2},
+            session_flags={"session_jit_disabled": True},
             duration_ms=45.0,
             service_duration_ms=40.0,
             overhead_duration_ms=5.0,
@@ -346,6 +352,13 @@ def test_summarize_runtime_results_counts_failures_and_rates():
             inline_citation_count=0,
             answer_segment_count=0,
             retrieval_channel_hit_counts={"lexical": 2, "semantic_neighbor": 1},
+            stage_durations_ms={
+                "resolve_graph_release": 4.0,
+                "fetch_semantic_neighbors": 110.0,
+                "ground_answer": 22.0,
+            },
+            candidate_counts={"semantic_neighbor_hits": 7, "top_hits": 2},
+            session_flags={"session_jit_disabled": True},
             duration_ms=155.0,
             service_duration_ms=145.0,
             overhead_duration_ms=10.0,
@@ -360,14 +373,27 @@ def test_summarize_runtime_results_counts_failures_and_rates():
     assert summary.overall.grounded_answer_rate == 0.5
     assert summary.overall.target_in_answer_corpus_rate == 0.5
     assert summary.overall.mean_duration_ms == 100.0
+    assert summary.overall.p50_duration_ms == 45.0
     assert summary.overall.p95_duration_ms == 155.0
+    assert summary.overall.p99_duration_ms == 155.0
+    assert summary.overall.max_duration_ms == 155.0
     assert summary.overall.mean_service_duration_ms == 92.5
+    assert summary.overall.p50_service_duration_ms == 40.0
     assert summary.overall.p95_service_duration_ms == 145.0
+    assert summary.overall.p99_service_duration_ms == 145.0
+    assert summary.overall.max_service_duration_ms == 145.0
     assert summary.overall.mean_overhead_duration_ms == 7.5
+    assert summary.overall.over_1000ms_count == 0
     assert summary.failure_theme_counts["sentence_global:target_miss"] == 1
     assert summary.failure_theme_counts["sentence_global:answer_missing_target"] == 1
     assert summary.failure_theme_counts["sentence_global:ungrounded_answer"] == 1
     assert len(summary.failure_examples) == 1
+    assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].cases == 2
+    assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].max == 110.0
+    assert summary.latency.candidate_profiles["semantic_neighbor_hits"].p95 == 7.0
+    assert summary.latency.slow_cases[0].corpus_id == 2
+    assert summary.latency.slow_cases[0].top_stages[0].stage == "fetch_semantic_neighbors"
+    assert summary.latency.slow_cases[0].session_flags["session_jit_disabled"] is True
 
 
 def test_build_runtime_eval_request_propagates_retrieval_toggles():
@@ -419,7 +445,10 @@ def test_aggregate_case_results_preserves_error_durations():
 
     assert aggregate.error_count == 1
     assert aggregate.mean_duration_ms == 321.0
+    assert aggregate.p50_duration_ms == 321.0
     assert aggregate.p95_duration_ms == 321.0
+    assert aggregate.p99_duration_ms == 321.0
+    assert aggregate.max_duration_ms == 321.0
 
 
 def test_evaluate_runtime_query_cases_records_service_and_overhead_durations():
@@ -462,6 +491,101 @@ def test_evaluate_runtime_query_cases_records_service_and_overhead_durations():
     assert result.duration_ms >= 0.0
     assert result.service_duration_ms == 120.0
     assert result.overhead_duration_ms >= 0.0
+
+
+def test_aggregate_case_results_counts_slow_service_thresholds():
+    aggregate = _aggregate_case_results(
+        [
+            RuntimeEvalCaseResult(
+                corpus_id=1,
+                title="Paper one",
+                primary_source_system="s2orc_v2",
+                query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+                query="Paper one",
+                stratum_key="s2orc_v2|table_absent|medium",
+                duration_ms=1200.0,
+                service_duration_ms=1200.0,
+            ),
+            RuntimeEvalCaseResult(
+                corpus_id=2,
+                title="Paper two",
+                primary_source_system="biocxml",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                query="Paper two",
+                stratum_key="biocxml|table_absent|short",
+                duration_ms=6000.0,
+                service_duration_ms=6000.0,
+            ),
+            RuntimeEvalCaseResult(
+                corpus_id=3,
+                title="Paper three",
+                primary_source_system="biocxml",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                query="Paper three",
+                stratum_key="biocxml|table_absent|short",
+                duration_ms=31000.0,
+                service_duration_ms=31000.0,
+            ),
+        ]
+    )
+
+    assert aggregate.over_1000ms_count == 3
+    assert aggregate.over_5000ms_count == 2
+    assert aggregate.over_30000ms_count == 1
+
+
+def test_summarize_runtime_results_collects_compact_latency_profiles():
+    results = [
+        RuntimeEvalCaseResult(
+            corpus_id=11,
+            title="Fast paper",
+            primary_source_system="s2orc_v2",
+            query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            query="Fast paper",
+            stratum_key="s2orc_v2|table_absent|medium",
+            stage_durations_ms={
+                "resolve_graph_release": 2.0,
+                "fetch_semantic_neighbors": 11.0,
+            },
+            candidate_counts={"semantic_neighbor_hits": 4, "top_hits": 3},
+            session_flags={"session_jit_disabled": True, "dense_scope": "graph"},
+            service_duration_ms=40.0,
+            duration_ms=43.0,
+            overhead_duration_ms=3.0,
+        ),
+        RuntimeEvalCaseResult(
+            corpus_id=22,
+            title="Slow paper",
+            primary_source_system="biocxml",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="Slow paper sentence",
+            stratum_key="biocxml|table_absent|short",
+            stage_durations_ms={
+                "resolve_graph_release": 3.0,
+                "fetch_semantic_neighbors": 125.0,
+                "ground_answer": 48.0,
+            },
+            candidate_counts={"semantic_neighbor_hits": 17, "top_hits": 5},
+            session_flags={"session_jit_disabled": True, "dense_scope": "graph"},
+            service_duration_ms=190.0,
+            duration_ms=205.0,
+            overhead_duration_ms=15.0,
+        ),
+    ]
+
+    summary = summarize_runtime_results(results)
+
+    assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].cases == 2
+    assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].mean == 68.0
+    assert summary.latency.stage_profiles_ms["ground_answer"].cases == 1
+    assert summary.latency.candidate_profiles["semantic_neighbor_hits"].max == 17.0
+    assert len(summary.latency.slow_cases) == 2
+    assert summary.latency.slow_cases[0].corpus_id == 22
+    assert summary.latency.slow_cases[0].candidate_counts == {
+        "semantic_neighbor_hits": 17,
+        "top_hits": 5,
+    }
+    assert summary.latency.slow_cases[0].top_stages[0].stage == "fetch_semantic_neighbors"
 
 
 def test_population_summary_tracks_sentence_seed_presence():
