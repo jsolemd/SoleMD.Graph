@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.rag.models import PaperEvidenceHit, PaperRetrievalQuery
-from app.rag.query_enrichment import build_query_phrases
+from app.rag.query_enrichment import build_query_phrases, has_query_entity_surface_signal
 from app.rag.search_plan import RetrievalSearchPlan
 from app.rag.title_anchor import has_strong_title_anchor
 from app.rag.types import QueryRetrievalProfile
@@ -59,10 +59,14 @@ def should_skip_runtime_entity_enrichment(
 ) -> bool:
     """Skip expensive enrichment when an exact title anchor already resolved the query."""
 
-    return not query.entity_terms and has_strong_lexical_title_anchor(
+    if query.entity_terms:
+        return True
+    if has_strong_lexical_title_anchor(
         query_text=query.query,
         lexical_hits=lexical_hits,
-    )
+    ):
+        return True
+    return not has_query_entity_surface_signal(query.query)
 
 
 def should_run_dense_query(

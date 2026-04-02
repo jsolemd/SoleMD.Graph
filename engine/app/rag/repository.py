@@ -470,14 +470,16 @@ class PostgresRagRepository:
                 limit,
             )
         elif use_title_similarity and use_exact_graph_search:
+            prefix_limit = self._title_prefix_candidate_limit(limit)
+            similarity_limit = self._title_similarity_candidate_limit(limit)
             sql = queries.PAPER_TITLE_LOOKUP_IN_GRAPH_SQL
             params = (
                 query,
                 normalized_title_query,
                 graph_run_id,
                 limit,
-                limit,
-                limit,
+                prefix_limit,
+                similarity_limit,
             )
         elif not use_title_similarity and use_exact_graph_search:
             sql = queries.PAPER_SEARCH_IN_GRAPH_SQL
@@ -501,7 +503,7 @@ class PostgresRagRepository:
             )
             if exact_title_hits:
                 return exact_title_hits
-            candidate_limit = max(limit * 40, 200)
+            candidate_limit = self._title_prefix_candidate_limit(limit)
             prefix_title_hits = self._search_title_lookup_candidate_papers(
                 graph_run_id=graph_run_id,
                 query=query,
@@ -511,7 +513,7 @@ class PostgresRagRepository:
             )
             if prefix_title_hits:
                 return prefix_title_hits[:limit]
-            candidate_limit = max(limit * 20, 120)
+            candidate_limit = self._title_similarity_candidate_limit(limit)
             sql = queries.PAPER_SEARCH_SQL
             params = (
                 query,
@@ -527,7 +529,7 @@ class PostgresRagRepository:
                 limit,
             )
         else:
-            candidate_limit = max(limit * 20, 120)
+            candidate_limit = self._title_similarity_candidate_limit(limit)
             sql = queries.PAPER_SEARCH_SQL
             params = (
                 query,
@@ -548,6 +550,12 @@ class PostgresRagRepository:
                 rows = cur.fetchall()
 
         return [self._paper_hit_from_row(row) for row in rows]
+
+    def _title_prefix_candidate_limit(self, limit: int) -> int:
+        return max(limit * 40, 200)
+
+    def _title_similarity_candidate_limit(self, limit: int) -> int:
+        return max(limit * 20, 120)
 
     def _search_title_lookup_candidate_papers(
         self,

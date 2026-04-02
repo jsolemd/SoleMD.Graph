@@ -3163,6 +3163,93 @@ def test_rag_service_skips_auto_relation_seeding_for_long_passage_queries():
     assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [273920567]
 
 
+def test_rag_service_skips_runtime_entity_enrichment_without_entity_surface_signal():
+    query = (
+        "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+        "maturation and brain development in the rat"
+    )
+
+    class GenericTitleLikeRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+            raise AssertionError("generic title-like queries should skip runtime entity enrichment")
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=24948876,
+                    paper_id="paper-24948876",
+                    semantic_scholar_paper_id="paper-24948876",
+                    title=(
+                        "EFFECTS OF PRENATAL ETHANOL EXPOSURE ON PHYSICAL GROWTH, "
+                        "SENSORY REFLEX MATURATION AND BRAIN DEVELOPMENT IN THE RAT"
+                    ),
+                    journal_name="Example Journal",
+                    year=1985,
+                    doi=None,
+                    pmid=None,
+                    pmcid=None,
+                    abstract="Prenatal ethanol exposure alters physical growth in the rat.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    lexical_score=0.72,
+                    title_similarity=0.61,
+                )
+            ]
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert entity_terms == []
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert relation_terms == []
+            return {}
+
+    service = _service(GenericTitleLikeRepository())
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=query,
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [24948876]
+
+
 def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
     class QueryEnrichmentRepository(FakeRepository):
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:

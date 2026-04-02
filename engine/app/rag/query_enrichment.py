@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
@@ -16,6 +17,8 @@ MAX_TITLE_SUBTITLE_WORDS = 10
 MAX_AUTO_RELATION_QUERY_WORDS = 12
 MIN_CHUNK_LEXICAL_QUERY_WORDS = 4
 MIN_EXTENDED_TITLE_LIKE_QUERY_CHARS = 120
+MAX_ENTITY_ACRONYM_TOKEN_CHARS = 8
+MIN_ENTITY_PROPER_NOUN_CHARS = 4
 DEFAULT_QUERY_SYMBOLS = frozenset({":", "-", "_"})
 ENTITY_QUERY_SYMBOLS = frozenset({":", "-", "_", "/", "+"})
 PROSE_CLAUSE_TOKENS = frozenset(
@@ -148,6 +151,53 @@ def should_seed_resolved_entity_term(term: str) -> bool:
     if not stripped:
         return False
     return any(_has_specific_entity_token(token) for token in stripped.split())
+
+
+def _surface_tokens(text: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", text or "")
+    return [
+        token.strip("()[]{}.,;:!?\"'")
+        for token in normalized.split()
+        if token.strip("()[]{}.,;:!?\"'")
+    ]
+
+
+def _is_short_upper_acronym(token: str) -> bool:
+    stripped = token.strip()
+    return (
+        2 <= len(stripped) <= MAX_ENTITY_ACRONYM_TOKEN_CHARS
+        and stripped.isupper()
+        and any(char.isalpha() for char in stripped)
+        and all(char.isalnum() or char in "/+-" for char in stripped)
+    )
+
+
+def _has_mid_sentence_proper_noun(tokens: list[str]) -> bool:
+    for token in tokens[1:]:
+        if len(token) < MIN_ENTITY_PROPER_NOUN_CHARS:
+            continue
+        if token[0].isupper() and token[1:].islower():
+            return True
+    return False
+
+
+def has_query_entity_surface_signal(text: str) -> bool:
+    """Return True when the query text carries a high-precision entity-like surface signal."""
+
+    normalized = unicodedata.normalize("NFKC", text or "")
+    if not normalized:
+        return False
+    if re.search(r"\(([A-Z][A-Z0-9/+:-]{1,7})\)", normalized):
+        return True
+
+    tokens = _surface_tokens(normalized)
+    for token in tokens:
+        normalized_token = normalize_entity_query_text(token)
+        if normalized_token and _has_specific_entity_token(normalized_token):
+            return True
+        if _is_short_upper_acronym(token):
+            return True
+    return _has_mid_sentence_proper_noun(tokens)
 
 
 def normalize_title_key(text: str | None) -> str:

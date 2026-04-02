@@ -7,6 +7,7 @@ from app.rag.query_enrichment import (
     build_query_phrases,
     derive_relation_terms,
     determine_query_retrieval_profile,
+    has_query_entity_surface_signal,
     is_title_like_query,
     should_seed_resolved_entity_term,
     should_use_chunk_lexical_query,
@@ -41,6 +42,17 @@ def test_should_seed_resolved_entity_term_requires_specificity_for_auto_recall()
     assert not should_seed_resolved_entity_term("A 4")
     assert not should_seed_resolved_entity_term("melatonin")
     assert not should_seed_resolved_entity_term("delirium")
+
+
+def test_has_query_entity_surface_signal_detects_high_precision_entity_shapes():
+    assert has_query_entity_surface_signal("Neuropeptide Y (NPY) signaling in the cerebellum")
+    assert has_query_entity_surface_signal("IL-6 expression after surgery")
+    assert has_query_entity_surface_signal(
+        "The utility of the Rorschach test in distinguishing patients with head injury"
+    )
+    assert not has_query_entity_surface_signal(
+        "This study aims to compare the prevalence of mental health symptoms"
+    )
 
 
 def test_derive_relation_terms_normalizes_spaces_and_hyphens():

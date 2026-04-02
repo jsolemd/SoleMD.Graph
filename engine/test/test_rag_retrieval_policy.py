@@ -11,6 +11,7 @@ from app.rag.retrieval_policy import (
     has_strong_lexical_title_anchor,
     should_fetch_semantic_neighbors,
     should_run_dense_query,
+    should_skip_runtime_entity_enrichment,
 )
 from app.rag.search_plan import build_search_plan
 from app.rag.types import QueryRetrievalProfile, RetrievalScope
@@ -159,6 +160,33 @@ def test_should_run_dense_query_skips_selected_direct_anchor_when_precision_is_p
         search_plan=search_plan,
         lexical_hits=[],
         selected_direct_anchor=True,
+    )
+
+
+def test_should_skip_runtime_entity_enrichment_skips_generic_passage_without_entity_signal():
+    query = _query(
+        (
+            "This study aims to compare the prevalence of mental health symptoms "
+            "between left-behind and non-left-behind children."
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert should_skip_runtime_entity_enrichment(
+        query=query,
+        lexical_hits=[],
+    )
+
+
+def test_should_skip_runtime_entity_enrichment_keeps_entity_like_queries_enabled():
+    query = _query(
+        "Neuropeptide Y (NPY) signaling in the cerebellum of Myotis lucifugus",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert not should_skip_runtime_entity_enrichment(
+        query=query,
+        lexical_hits=[],
     )
 
 

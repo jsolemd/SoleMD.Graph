@@ -584,8 +584,8 @@ def test_search_papers_uses_graph_scoped_title_lookup_for_small_graph_scope(mock
             normalize_title_key("melatonin delirium"),
             "run-1",
             5,
-            5,
-            5,
+            200,
+            120,
         ),
     )
 

@@ -37,8 +37,9 @@ Mode: agentic overnight improvement loop
 | A27 | pending | P2 | Biomedical reranking | Biomedical IR literature suggests MedCPT-class rerankers can improve question/article retrieval, especially on sentence-style biomedical questions, but at a GPU/runtime cost. | After the current latency floor settles, evaluate a small optional biomedical reranker lane on the sentence-global cohort and compare quality/latency against the current SPECTER2 + structured-signal stack. | Controlled benchmark artifact + decision note |
 | A28 | done | P2 | Centralization | The runtime entity search SQL duplicated the same query-term, concept-ranking, and scoring logic across four large query constants, which made future entity-path changes risky and noisy. | Centralized the entity-search SQL into shared CTE fragments/builders in `engine/app/rag/queries.py` and reverified repository/service behavior. | `uv run ruff check app/rag/queries.py test/test_rag_repository.py test/test_rag_service.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py` |
 | A29 | done | P0 | Routing correctness | The fresh `v14` cohort still had a `title_global` outlier (`22309903`) routed through `retrieval_profile=passage_lookup`, which dragged dense-query search back to `~498ms` on an otherwise title-shaped query. | Kept the classifier conservative but re-enabled the exact-title precheck for passage-mode lexical queries, so long title-shaped queries can promote themselves into `title_lookup` without falling into chunk/dense retrieval first. | `.tmp/rag-runtime-probe-22309903-title-global-v15.json` + service/search-plan/runtime-perf regressions |
-| A30 | pending | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Inspect the rare relation-search plans/candidate shapes, then bound or reshape the relation lane without reducing answer quality. | Targeted probes for `273920567` / `81621267` + repository/service tests |
-| A31 | pending | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` is now the most common hot stage with `mean ~69ms`, `p95 ~94ms`, and `max ~264ms`. | Profile the entity-enrichment path end-to-end and reduce repeated work or unnecessary scope expansion while preserving biomedical grounding fidelity. | New stage comparison artifact + targeted runtime tests |
+| A30 | done | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Completed the query-routing pass so long passage queries no longer auto-seed incidental relation labels like `compare`; relation-lane latency dropped out of the hot-stage summary. | `.tmp/rag-runtime-probe-273920567-sentence-global-v16.json` + query/service/runtime-perf regressions |
+| A31 | in_progress | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` became the most common hot stage (`mean ~68–69ms`, `p95 ~89–94ms`) while only `2/96` sentence-global cases produced any entity-hit papers. | Keep the new high-precision entity-surface gate, then rerun the current cohort when the interactive runtime harness is stable enough to prove the updated latency floor. | Stage-distribution note from `.tmp/rag-runtime-eval-current-all-families-v16-routing-relation.json` + unit/service regressions |
+| A32 | pending | P1 | Title-search tail | The remaining worst sentence-global title-like miss (`24948876`) still spends ~`194ms` in `search_papers`, but the first attempt to swap that lane onto the global KNN title query stalled for more than `60s` in a live repository smoke. | Design a safer title-search optimization from live plan evidence instead of the naive global-KNN fallback; prefer bounded candidate-path changes or planner-visible instrumentation first. | Repository smoke + targeted outlier probe after a safe title-search rewrite |
 
 ## Completed Batches
 
@@ -671,9 +672,74 @@ Mode: agentic overnight improvement loop
 
 ## Refined Next Queue
 
-1. Run a fresh eval artifact with the new latency summaries and use it to isolate any true sentence-global tail or fan-out hotspot.
-2. Audit dense retrieval objective alignment for the biomedical query/document setup:
+1. Regenerate the current-cohort runtime artifact once the interactive runtime harness clears:
+   - confirm the entity-surface gate lowers the shared `query_entity_enrichment` floor without changing quality
+   - keep the current artifact lineage anchored to the `v16` cohort and the new unit/service regressions
+2. Instrument the remaining title-search tail before rewriting it:
+   - capture planner-visible behavior for `24948876`
+   - compare the existing graph-scoped title-similarity path against any bounded candidate alternatives
+   - do not revive the rejected global-KNN swap without live evidence
+3. Audit dense retrieval objective alignment for the biomedical query/document setup:
    - SPECTER2 adhoc query vs stored document-space vectors
    - current dense lane vs lexical-heavy path on a frozen cohort
-3. Improve sentence-global ranking/answer selection on residual misses using the new observability and the retrieval audit.
-4. Reconcile runtime/base-contract documentation drift only after the runtime retrieval contract stops moving.
+4. Improve sentence-global ranking/answer selection on residual misses using the refreshed observability and the retrieval audit.
+5. Reconcile runtime/base-contract documentation drift only after the runtime retrieval contract stops moving.
+
+## Batch 20: Query Routing Heuristics
+
+- Commit: `d0988e2` (`Harden query routing heuristics`)
+- Scope:
+  - `engine/app/rag/query_enrichment.py`
+  - `engine/test/test_rag_query_enrichment.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem evidenced during the routing pass:
+  - long structured scientific titles and question-subtitle paper titles still leaked into passage handling
+  - long passage queries could auto-seed incidental relation labels like `compare`, reopening a relation-search tail even when relation retrieval added no value
+- Durable implementation landed:
+  - expanded title-shape classification for:
+    - question-subtitle paper titles
+    - longer structured scientific titles
+    - rejection of citation-style fragments and abstract-header prose
+  - preserved biomedical entity phrase building without stripping symbol-heavy tokens
+  - kept auto-resolved entity seed promotion behind specificity checks
+  - bounded automatic relation-term derivation so long passage queries no longer seed incidental relation recall
+- Verification:
+  - focused query-enrichment, service, and runtime-perf regressions passed before commit
+- Interpretation:
+  - the runtime routing contract is now more faithful to actual paper-title and sentence surfaces
+  - relation-tail cleanup moved out of ad hoc case handling and into the canonical routing layer
+
+## Batch 21: High-Precision Entity Enrichment Gate
+
+- Scope:
+  - `engine/app/rag/query_enrichment.py`
+  - `engine/app/rag/retrieval_policy.py`
+  - `engine/app/rag/repository.py`
+  - `engine/app/rag/queries.py`
+  - `engine/test/test_rag_query_enrichment.py`
+  - `engine/test/test_rag_retrieval_policy.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_service.py`
+- Problem evidenced after the `v16` cohort:
+  - `query_entity_enrichment` was the dominant shared hot stage even though only `2/96` sentence-global cases produced any entity-hit papers
+  - generic title-like or sentence-like biomedical queries without explicit entity surface were still paying the enrichment cost
+  - a first clean attempt to swap the residual title-search tail onto the global KNN title query failed the live smell test and was rejected
+- Durable implementation landed:
+  - added a high-precision query-surface detector for runtime entity enrichment:
+    - biomedical symbol tokens
+    - short uppercase acronym forms
+    - parenthetical acronym surfaces
+    - mid-sentence proper nouns
+  - centralized the enrichment gate in `retrieval_policy.py` so the runtime now skips entity enrichment when:
+    - explicit entity terms are already present, or
+    - the query has no real entity-like surface signal, or
+    - a strong title anchor already resolved the lookup
+  - preserved the existing title-search SQL path after rejecting the naive global-KNN fallback
+- Verification:
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_retrieval_policy.py test/test_rag_query_enrichment.py -q` -> `76 passed`
+  - `cd engine && uv run pytest test/test_rag_query_enrichment.py test/test_rag_retrieval_policy.py test/test_rag_repository.py test/test_rag_service.py -q -k "entity_surface_signal or runtime_entity_enrichment or search_papers_uses_graph_scoped_title_lookup_for_small_graph_scope or search_papers_returns_exact_title_candidates_before_broad_title_lookup or search_papers_returns_prefix_title_candidates_before_broad_title_lookup or search_papers_can_disable_title_similarity_for_sentence_queries or search_papers_uses_exact_query_for_small_graph_scope or skips_auto_relation_seeding_for_long_passage_queries or skips_runtime_entity_enrichment_without_entity_surface_signal"` -> `10 passed`
+  - `cd engine && uv run ruff check app/rag/query_enrichment.py app/rag/retrieval_policy.py app/rag/repository.py app/rag/queries.py test/test_rag_query_enrichment.py test/test_rag_retrieval_policy.py test/test_rag_repository.py test/test_rag_service.py` -> passed
+- Interpretation:
+  - the entity-enrichment floor is now addressed structurally instead of by case-specific suppression
+  - the remaining title-search tail is still open, but the failed KNN rewrite is now an explicit rejected path rather than hidden drift
