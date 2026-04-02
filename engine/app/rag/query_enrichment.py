@@ -11,7 +11,34 @@ MAX_QUERY_PHRASE_TOKENS = 4
 MAX_QUERY_PHRASES = 48
 MAX_TITLE_LIKE_QUERY_CHARS = 220
 MAX_TITLE_LIKE_QUERY_WORDS = 24
+MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS = 40
+MAX_TITLE_SUBTITLE_WORDS = 10
+MAX_AUTO_RELATION_QUERY_WORDS = 12
 MIN_CHUNK_LEXICAL_QUERY_WORDS = 4
+MIN_EXTENDED_TITLE_LIKE_QUERY_CHARS = 120
+DEFAULT_QUERY_SYMBOLS = frozenset({":", "-", "_"})
+ENTITY_QUERY_SYMBOLS = frozenset({":", "-", "_", "/", "+"})
+PROSE_CLAUSE_TOKENS = frozenset(
+    {
+        "aimed",
+        "before",
+        "during",
+        "after",
+        "because",
+        "emerged",
+        "measured",
+        "proposed",
+        "that",
+        "which",
+        "were",
+        "was",
+        "is",
+        "are",
+        "had",
+        "has",
+        "have",
+    }
+)
 
 # Canonical PubTator relation labels currently exercised in the live dataset.
 SUPPORTED_RELATION_TYPES = frozenset(
@@ -38,23 +65,40 @@ class QueryEnrichmentTerms:
     relation_terms: list[str]
 
 
-def normalize_query_text(text: str) -> str:
-    """Normalize free-text queries into a conservative token surface."""
-
+def _normalize_query_text_with_symbols(
+    text: str,
+    *,
+    allowed_symbols: frozenset[str],
+) -> str:
     normalized = unicodedata.normalize("NFKC", text or "")
     chars: list[str] = []
     for char in normalized:
-        if char.isalnum() or char in {":", "-", "_"}:
+        if char.isalnum() or char in allowed_symbols:
             chars.append(char.lower())
             continue
         chars.append(" ")
     return " ".join("".join(chars).split())
 
 
-def build_query_phrases(text: str) -> list[str]:
-    """Build bounded contiguous query phrases without frontend heuristics."""
+def normalize_query_text(text: str) -> str:
+    """Normalize free-text queries into a conservative token surface."""
 
-    tokens = normalize_query_text(text).split()
+    return _normalize_query_text_with_symbols(
+        text,
+        allowed_symbols=DEFAULT_QUERY_SYMBOLS,
+    )
+
+
+def normalize_entity_query_text(text: str) -> str:
+    """Normalize entity-oriented phrases while preserving biomedical symbol tokens."""
+
+    return _normalize_query_text_with_symbols(
+        text,
+        allowed_symbols=ENTITY_QUERY_SYMBOLS,
+    )
+
+
+def _build_query_phrases_from_tokens(tokens: list[str]) -> list[str]:
     if not tokens:
         return []
 
@@ -73,8 +117,45 @@ def build_query_phrases(text: str) -> list[str]:
     return phrases
 
 
+def build_query_phrases(text: str) -> list[str]:
+    """Build bounded contiguous query phrases without frontend heuristics."""
+
+    return _build_query_phrases_from_tokens(normalize_query_text(text).split())
+
+
+def build_entity_query_phrases(text: str) -> list[str]:
+    """Build bounded entity-oriented phrases without stripping biomedical symbols."""
+
+    return _build_query_phrases_from_tokens(normalize_entity_query_text(text).split())
+
+
+def _has_specific_entity_token(token: str) -> bool:
+    stripped = token.strip()
+    if not stripped:
+        return False
+    if ":" in stripped:
+        return True
+    has_alpha = any(char.isalpha() for char in stripped)
+    has_digit = any(char.isdigit() for char in stripped)
+    has_symbol = any(char in ENTITY_QUERY_SYMBOLS - DEFAULT_QUERY_SYMBOLS for char in stripped)
+    return (has_alpha and has_digit) or has_symbol
+
+
+def should_seed_resolved_entity_term(term: str) -> bool:
+    """Return True when an auto-resolved entity term is specific enough for recall seeding."""
+
+    stripped = term.strip()
+    if not stripped:
+        return False
+    return any(_has_specific_entity_token(token) for token in stripped.split())
+
+
 def normalize_title_key(text: str | None) -> str:
-    """Normalize a title-like string into a stable lexical comparison key."""
+    """Normalize a title-like string into a stable lexical comparison key.
+
+    Keep this aligned with the PostgreSQL helper `solemd.normalize_title_key`
+    used by the runtime retrieval indexes and exact-title search path.
+    """
 
     normalized = unicodedata.normalize("NFKC", text or "")
     tokens: list[str] = []
@@ -96,6 +177,71 @@ def _has_inline_sentence_boundary(text: str) -> bool:
     return any(boundary in lowered for boundary in (". ", "? ", "! "))
 
 
+def _token_count(text: str) -> int:
+    return len(normalize_query_text(text).split())
+
+
+def _split_question_subtitle_segments(text: str) -> list[str] | None:
+    stripped = text.strip().rstrip(".?! ")
+    if "? " not in stripped:
+        return None
+    segments = [segment.strip() for segment in stripped.split("? ") if segment.strip()]
+    if len(segments) != 2:
+        return None
+    return segments
+
+
+def _is_title_with_question_subtitle(text: str) -> bool:
+    segments = _split_question_subtitle_segments(text)
+    if not segments:
+        return False
+    lead, subtitle = segments
+    if _has_inline_sentence_boundary(lead) or _has_inline_sentence_boundary(subtitle):
+        return False
+    lead_tokens = _token_count(lead)
+    subtitle_tokens = _token_count(subtitle)
+    return (
+        lead_tokens >= 4
+        and subtitle_tokens > 0
+        and subtitle_tokens <= MAX_TITLE_SUBTITLE_WORDS
+        and (lead_tokens + subtitle_tokens) <= MAX_TITLE_LIKE_QUERY_WORDS
+    )
+
+
+def _is_extended_structured_title(text: str, *, token_count: int) -> bool:
+    if len(text) < MIN_EXTENDED_TITLE_LIKE_QUERY_CHARS:
+        return False
+    if token_count <= MAX_TITLE_LIKE_QUERY_WORDS:
+        return False
+    if token_count > MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS:
+        return False
+    if _has_inline_sentence_boundary(text):
+        return False
+    return any(marker in text for marker in (":", " - ", " – ", "; "))
+
+
+def _has_prose_clause_signal(text: str, *, token_count: int) -> bool:
+    if token_count <= MAX_TITLE_LIKE_QUERY_WORDS:
+        return False
+    tokens = normalize_query_text(text).split()
+    return any(token in PROSE_CLAUSE_TOKENS for token in tokens)
+
+
+def _has_leading_section_label(text: str) -> bool:
+    prefix, separator, suffix = text.partition(":")
+    if not separator or not suffix.strip():
+        return False
+    prefix_tokens = prefix.split()
+    if not 1 <= len(prefix_tokens) <= 6:
+        return False
+    normalized_prefix = normalize_query_text(prefix)
+    if not normalized_prefix:
+        return False
+    return prefix == prefix.upper() and all(
+        token.isalpha() for token in normalized_prefix.split()
+    )
+
+
 def is_title_like_query(
     text: str | None,
     *,
@@ -108,15 +254,39 @@ def is_title_like_query(
         return False
     if len(normalized) > MAX_TITLE_LIKE_QUERY_CHARS:
         return False
-
-    token_count = len(normalize_query_text(normalized).split())
-    if token_count == 0 or token_count > MAX_TITLE_LIKE_QUERY_WORDS:
+    if _has_leading_section_label(normalized):
         return False
 
-    if _has_inline_sentence_boundary(normalized):
+    token_count = _token_count(normalized)
+    if token_count == 0 or token_count > MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS:
         return False
 
-    if normalized.endswith((".", "?", "!")) and not allow_terminal_punctuation:
+    allows_question_subtitle = _is_title_with_question_subtitle(normalized)
+    allows_extended_structured_title = _is_extended_structured_title(
+        normalized,
+        token_count=token_count,
+    )
+
+    if _has_inline_sentence_boundary(normalized) and not allows_question_subtitle:
+        return False
+
+    if (
+        token_count > MAX_TITLE_LIKE_QUERY_WORDS
+        and not allows_question_subtitle
+        and not allows_extended_structured_title
+    ):
+        return False
+    if (
+        _has_prose_clause_signal(normalized, token_count=token_count)
+        and not allows_question_subtitle
+    ):
+        return False
+
+    if (
+        normalized.endswith((".", "?", "!"))
+        and not allow_terminal_punctuation
+        and not allows_question_subtitle
+    ):
         return False
     return True
 
@@ -154,6 +324,8 @@ def derive_relation_terms(text: str) -> list[str]:
 
     tokens = normalize_query_text(text).split()
     if not tokens:
+        return []
+    if len(tokens) > MAX_AUTO_RELATION_QUERY_WORDS:
         return []
 
     relation_terms: list[str] = []

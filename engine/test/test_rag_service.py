@@ -3078,6 +3078,91 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
     assert len(response.evidence_bundles) == 2
 
 
+def test_rag_service_skips_auto_relation_seeding_for_long_passage_queries():
+    query = (
+        "This study aims to compare the prevalence of mental health symptoms between "
+        "LBC and non-left-behind children and to explore the predictive effect of "
+        "bullying victimization on adolescent mental health."
+    )
+
+    class LongPassageRelationRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=273920567,
+                    paper_id="paper-273920567",
+                    semantic_scholar_paper_id="paper-273920567",
+                    title="Association between bullying victimization and mental health problems",
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=None,
+                    pmcid=None,
+                    abstract="Mental health symptoms among left-behind children.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    chunk_lexical_score=0.9,
+                    chunk_ordinal=0,
+                    chunk_snippet="compare the prevalence of mental health symptoms",
+                )
+            ]
+
+        def search_relation_papers(
+            self,
+            graph_run_id: str,
+            *,
+            relation_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("long passage queries should not auto-seed relation recall")
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert relation_terms == []
+            return {}
+
+    service = _service(LongPassageRelationRepository())
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=query,
+            relation_terms=[],
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [273920567]
+
+
 def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
     class QueryEnrichmentRepository(FakeRepository):
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
