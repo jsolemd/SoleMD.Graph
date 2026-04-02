@@ -38,8 +38,8 @@ Mode: agentic overnight improvement loop
 | A28 | done | P2 | Centralization | The runtime entity search SQL duplicated the same query-term, concept-ranking, and scoring logic across four large query constants, which made future entity-path changes risky and noisy. | Centralized the entity-search SQL into shared CTE fragments/builders in `engine/app/rag/queries.py` and reverified repository/service behavior. | `uv run ruff check app/rag/queries.py test/test_rag_repository.py test/test_rag_service.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py` |
 | A29 | done | P0 | Routing correctness | The fresh `v14` cohort still had a `title_global` outlier (`22309903`) routed through `retrieval_profile=passage_lookup`, which dragged dense-query search back to `~498ms` on an otherwise title-shaped query. | Kept the classifier conservative but re-enabled the exact-title precheck for passage-mode lexical queries, so long title-shaped queries can promote themselves into `title_lookup` without falling into chunk/dense retrieval first. | `.tmp/rag-runtime-probe-22309903-title-global-v15.json` + service/search-plan/runtime-perf regressions |
 | A30 | done | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Completed the query-routing pass so long passage queries no longer auto-seed incidental relation labels like `compare`; relation-lane latency dropped out of the hot-stage summary. | `.tmp/rag-runtime-probe-273920567-sentence-global-v16.json` + query/service/runtime-perf regressions |
-| A31 | in_progress | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` became the most common hot stage (`mean ~68–69ms`, `p95 ~89–94ms`) while only `2/96` sentence-global cases produced any entity-hit papers. | Keep the new high-precision entity-surface gate, then rerun the current cohort when the interactive runtime harness is stable enough to prove the updated latency floor. | Stage-distribution note from `.tmp/rag-runtime-eval-current-all-families-v16-routing-relation.json` + unit/service regressions |
-| A32 | pending | P1 | Title-search tail | The remaining worst sentence-global title-like miss (`24948876`) still spends ~`194ms` in `search_papers`, but the first attempt to swap that lane onto the global KNN title query stalled for more than `60s` in a live repository smoke. | Design a safer title-search optimization from live plan evidence instead of the naive global-KNN fallback; prefer bounded candidate-path changes or planner-visible instrumentation first. | Repository smoke + targeted outlier probe after a safe title-search rewrite |
+| A31 | done | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` became the most common hot stage (`mean ~68–69ms`, `p95 ~89–94ms`) while only `2/96` sentence-global cases produced any entity-hit papers. | Added the high-precision entity-surface gate and confirmed on the refreshed current cohort that the title families dropped to about `20ms` mean and `sentence_global` dropped to about `148ms` mean without any quality loss. | `.tmp/rag-runtime-eval-current-all-families-v16-routing-relation.json` + unit/service regressions |
+| A32 | in_progress | P1 | Title-search and sentence-ranking tail | The remaining runtime miss set is now only `3/96` `sentence_global` cases. One of them (`24948876`) is still a title-like sentence case that spends about `196ms` in `search_papers`, but the first attempt to swap that lane onto the global KNN title query stalled for more than `60s` in a live repository smoke. | Keep the naive global-KNN fallback rejected, land planner-visible title-search instrumentation, and then improve direct passage/title alignment before considering a heavier reranker lane. | Repository smoke + targeted outlier probes + profiler artifact |
 
 ## Completed Batches
 
@@ -743,3 +743,32 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the entity-enrichment floor is now addressed structurally instead of by case-specific suppression
   - the remaining title-search tail is still open, but the failed KNN rewrite is now an explicit rejected path rather than hidden drift
+
+## Batch 22: Runtime Title-Plan Observability
+
+- Scope:
+  - `engine/app/rag/models.py`
+  - `engine/app/rag/service.py`
+  - `engine/app/rag/query_plan.py`
+  - `engine/scripts/profile_rag_title_search.py`
+  - `engine/scripts/evaluate_rag_runtime.py`
+  - `engine/test/test_rag_query_plan.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem evidenced after Batch 21:
+  - the remaining title-like sentence miss (`24948876`) was still tempting a blind SQL rewrite, but the first direct global-KNN attempt had already shown that this is exactly where guesswork can regress the hot path
+  - the runtime eval layer already had internal stage timing support, but there was no reusable planner-visible profiler for the residual title-search branch
+- Durable implementation landed:
+  - added `RagService.search_result(...)` as the canonical internal seam for debug-trace-aware runtime evaluation without changing the API response contract
+  - stored internal runtime trace payloads on `RagSearchResult.debug_trace` for eval-only consumers
+  - added reusable PostgreSQL JSON-plan helpers in `engine/app/rag/query_plan.py`
+  - added `engine/scripts/profile_rag_title_search.py` to capture:
+    - active title-search strategy
+    - live `search_papers(...)` duration
+    - planner or `ANALYZE` plans for exact, normalized, prefix, and final title-search SQL branches
+  - extended the eval CLI so frozen cohorts can be supplied through a file as well as inline corpus ids
+- Verification:
+  - `cd engine && uv run pytest test/test_rag_service.py test/test_rag_query_plan.py test/test_rag_runtime_perf.py -q -k "search_result_can_include_debug_trace or plan_hash_is_stable_for_key_order or plan_helpers_walk_nested_nodes_and_indexes or title_knn_queries_use_gist_indexes or dense_query_ann_uses_hnsw_index or semantic_neighbor_ann_uses_hnsw_index or title_prefix_lookup_uses_title_trgm_index"` -> `7 passed`
+  - `cd engine && uv run ruff check app/rag/models.py app/rag/service.py app/rag/query_plan.py scripts/profile_rag_title_search.py scripts/evaluate_rag_runtime.py test/test_rag_query_plan.py test/test_rag_runtime_perf.py` -> passed
+- Interpretation:
+  - the runtime branch now has a clean, centralized observability path for planner-visible title-search debugging
+  - the next ranking/title pass can optimize from actual plan evidence and the `3/96` sentence-global miss set instead of another speculative SQL rewrite

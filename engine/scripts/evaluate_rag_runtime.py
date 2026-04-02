@@ -7,6 +7,7 @@ from pathlib import Path
 
 from app import db
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
+from app.rag_ingest.corpus_ids import resolve_corpus_ids
 from app.rag_ingest.runtime_eval import (
     RuntimeEvalQueryFamily,
     run_rag_runtime_evaluation,
@@ -50,12 +51,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
     )
+    parser.add_argument("--corpus-ids-file", dest="corpus_ids_file", type=Path, default=None)
     parser.add_argument("--report-path", type=Path, default=None)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
+    )
     query_families = (
         [RuntimeEvalQueryFamily(value) for value in args.query_families]
         if args.query_families
@@ -71,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
             rerank_topn=args.rerank_topn,
             use_lexical=not args.no_lexical,
             use_dense_query=not args.no_dense_query,
-            corpus_ids=args.corpus_ids,
+            corpus_ids=corpus_ids or None,
             query_families=query_families,
             connect=db.pooled,
         )

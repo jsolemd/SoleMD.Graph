@@ -8,6 +8,7 @@ import pytest
 from app import db
 from app.rag import queries
 from app.rag.query_enrichment import normalize_title_key
+from app.rag.query_plan import plan_index_names, plan_node_names
 from app.rag.repository import PostgresRagRepository
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag_ingest.runtime_eval import RuntimeEvalQueryFamily, run_rag_runtime_evaluation
@@ -309,23 +310,6 @@ def test_runtime_exact_title_lookup_matches_unicode_normalized_key():
     assert hits[0].corpus_id == scope_corpus_id
 
 
-def _plan_node_names(plan: dict) -> list[str]:
-    names = [str(plan.get("Node Type", ""))]
-    for child in plan.get("Plans", []) or []:
-        names.extend(_plan_node_names(child))
-    return names
-
-
-def _plan_index_names(plan: dict) -> list[str]:
-    names: list[str] = []
-    index_name = plan.get("Index Name")
-    if index_name:
-        names.append(str(index_name))
-    for child in plan.get("Plans", []) or []:
-        names.extend(_plan_index_names(child))
-    return names
-
-
 def _paper_embedding_literal(corpus_id: int) -> str:
     with db.pooled() as conn, conn.cursor() as cur:
         cur.execute(queries.PAPER_EMBEDDING_LITERAL_SQL, (corpus_id,))
@@ -374,10 +358,10 @@ def test_runtime_title_knn_queries_use_gist_indexes():
     finally:
         db.close_pool()
 
-    title_nodes = _plan_node_names(title_plan)
-    title_indexes = _plan_index_names(title_plan)
-    normalized_nodes = _plan_node_names(normalized_plan)
-    normalized_indexes = _plan_index_names(normalized_plan)
+    title_nodes = plan_node_names(title_plan)
+    title_indexes = plan_index_names(title_plan)
+    normalized_nodes = plan_node_names(normalized_plan)
+    normalized_indexes = plan_index_names(normalized_plan)
 
     assert "Index Scan" in title_nodes, json.dumps(title_plan)
     assert "idx_papers_title_gist_trgm" in title_indexes, json.dumps(title_plan)
@@ -417,8 +401,8 @@ def test_runtime_semantic_neighbor_ann_uses_hnsw_index():
     finally:
         db.close_pool()
 
-    nodes = _plan_node_names(plan)
-    indexes = _plan_index_names(plan)
+    nodes = plan_node_names(plan)
+    indexes = plan_index_names(plan)
 
     assert "Index Scan" in nodes, json.dumps(plan)
     assert "idx_papers_embedding_hnsw" in indexes, json.dumps(plan)
@@ -451,8 +435,8 @@ def test_runtime_dense_query_ann_uses_hnsw_index():
     finally:
         db.close_pool()
 
-    nodes = _plan_node_names(plan)
-    indexes = _plan_index_names(plan)
+    nodes = plan_node_names(plan)
+    indexes = plan_index_names(plan)
 
     assert "Index Scan" in nodes, json.dumps(plan)
     assert "idx_papers_embedding_hnsw" in indexes, json.dumps(plan)
@@ -486,8 +470,8 @@ def test_runtime_title_prefix_lookup_uses_title_trgm_index():
     finally:
         db.close_pool()
 
-    nodes = _plan_node_names(plan)
-    indexes = _plan_index_names(plan)
+    nodes = plan_node_names(plan)
+    indexes = plan_index_names(plan)
 
     assert "Bitmap Index Scan" in nodes or "Index Scan" in nodes, json.dumps(plan)
     assert "idx_papers_title_gist_trgm" in indexes, json.dumps(plan)

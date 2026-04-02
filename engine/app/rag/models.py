@@ -243,3 +243,4 @@ class RagSearchResult:
     answer: str | None = None
     answer_model: str | None = None
     grounded_answer: GroundedAnswerRecord | None = None
+    debug_trace: dict[str, object] = field(default_factory=dict)

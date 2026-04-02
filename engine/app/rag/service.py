@@ -55,6 +55,7 @@ from app.rag.retrieval_policy import (
     should_run_dense_query,
     should_skip_runtime_entity_enrichment,
 )
+from app.rag.runtime_trace import RuntimeTraceCollector
 from app.rag.schemas import GraphContext, RagSearchRequest, RagSearchResponse, ResponseMeta
 from app.rag.search_plan import build_search_plan
 from app.rag.types import (
@@ -327,42 +328,63 @@ class RagService:
             return status()
         return {"enabled": False, "ready": False, "backend": "unknown"}
 
-    def search(self, request: RagSearchRequest) -> RagSearchResponse:
+    def search_result(
+        self,
+        request: RagSearchRequest,
+        *,
+        include_debug_trace: bool = False,
+    ) -> RagSearchResult:
         started = perf_counter()
+        trace = RuntimeTraceCollector(enabled=include_debug_trace)
         with _repository_search_session(self._repository):
-            return self._search(request, started=started)
+            return self._search(request, started=started, trace=trace)
+
+    def search(self, request: RagSearchRequest) -> RagSearchResponse:
+        return serialize_search_result(self.search_result(request))
 
     def _search(
         self,
         request: RagSearchRequest,
         *,
         started: float,
-    ) -> RagSearchResponse:
-        release = self._repository.resolve_graph_release(request.graph_release_id)
-        query = _build_query(request)
-        search_plan = build_search_plan(query)
+        trace: RuntimeTraceCollector,
+    ) -> RagSearchResult:
+        release = trace.call(
+            "resolve_graph_release",
+            self._repository.resolve_graph_release,
+            request.graph_release_id,
+        )
+        query = trace.call("build_query", _build_query, request)
+        search_plan = trace.call("build_search_plan", build_search_plan, query)
         explicit_entity_terms = list(query.entity_terms)
-        query = _apply_relation_enrichment(query)
+        query = trace.call("relation_enrichment", _apply_relation_enrichment, query)
         scope_corpus_ids = (
-            self._repository.resolve_scope_corpus_ids(
+            trace.call(
+                "resolve_scope_corpus_ids",
+                self._repository.resolve_scope_corpus_ids,
                 graph_run_id=release.graph_run_id,
                 graph_paper_refs=query.selection_graph_paper_refs,
             )
             if query.scope_mode == RetrievalScope.SELECTION_ONLY
             else []
         )
+        trace.record_count("scope_corpus_ids", len(scope_corpus_ids))
         selection_only_without_matches = (
             query.scope_mode == RetrievalScope.SELECTION_ONLY and not scope_corpus_ids
         )
         lexical_query_text = _lexical_query_text(query)
-        selected_corpus_id = self._repository.resolve_selected_corpus_id(
+        selected_corpus_id = trace.call(
+            "resolve_selected_corpus_id",
+            self._repository.resolve_selected_corpus_id,
             graph_run_id=release.graph_run_id,
             selected_graph_paper_ref=query.selected_graph_paper_ref,
             selected_paper_id=query.selected_paper_id,
             selected_node_id=query.selected_node_id,
         )
         selected_title_hits = (
-            self._repository.search_selected_title_papers(
+            trace.call(
+                "search_selected_title_papers",
+                self._repository.search_selected_title_papers,
                 release.graph_run_id,
                 query.query,
                 selected_corpus_id=selected_corpus_id,
@@ -370,30 +392,36 @@ class RagService:
                 scope_corpus_ids=scope_corpus_ids or None,
             )
             if query.use_lexical
+            and search_plan.allow_exact_title_matches
             and query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
             and selected_corpus_id is not None
             and not selection_only_without_matches
             else []
         )
+        trace.record_count("selected_title_hits", len(selected_title_hits))
         exact_title_hits = list(selected_title_hits)
         if (
             not exact_title_hits
             and query.use_lexical
+            and search_plan.allow_exact_title_matches
             and not query.use_title_similarity
             and not selection_only_without_matches
         ):
-            exact_title_hits = self._repository.search_exact_title_papers(
+            exact_title_hits = trace.call(
+                "search_exact_title_papers",
+                self._repository.search_exact_title_papers,
                 release.graph_run_id,
                 query.query,
                 limit=query.rerank_topn,
                 scope_corpus_ids=scope_corpus_ids or None,
             )
+        trace.record_count("exact_title_hits", len(exact_title_hits))
         if exact_title_hits and query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
             query = replace(
                 query,
                 retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
             )
-            search_plan = build_search_plan(query)
+            search_plan = trace.call("rebuild_search_plan", build_search_plan, query)
 
         chunk_lexical_hits: list[PaperEvidenceHit] = []
         if (
@@ -404,7 +432,9 @@ class RagService:
             and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
         ):
             for chunk_query in chunk_search_queries(query):
-                chunk_lexical_hits = self._repository.search_chunk_papers(
+                chunk_lexical_hits = trace.call(
+                    "search_chunk_papers",
+                    self._repository.search_chunk_papers,
                     release.graph_run_id,
                     chunk_query,
                     limit=query.rerank_topn,
@@ -412,6 +442,7 @@ class RagService:
                 )
                 if chunk_lexical_hits:
                     break
+        trace.record_count("chunk_lexical_hits", len(chunk_lexical_hits))
         lexical_hits: list[PaperEvidenceHit] = list(exact_title_hits)
         should_run_paper_lexical = (
             not exact_title_hits
@@ -427,18 +458,23 @@ class RagService:
             )
         )
         if should_run_paper_lexical:
-            lexical_hits = self._repository.search_papers(
+            lexical_hits = trace.call(
+                "search_papers",
+                self._repository.search_papers,
                 release.graph_run_id,
                 lexical_query_text,
                 limit=query.rerank_topn,
                 scope_corpus_ids=scope_corpus_ids or None,
                 use_title_similarity=query.use_title_similarity,
             )
+        trace.record_count("lexical_hits", len(lexical_hits))
         if not should_skip_runtime_entity_enrichment(
             query=query,
             lexical_hits=lexical_hits,
         ):
-            query = _apply_query_enrichment(
+            query = trace.call(
+                "query_entity_enrichment",
+                _apply_query_enrichment,
                 repository=self._repository,
                 query=query,
             )
@@ -446,8 +482,11 @@ class RagService:
             explicit_entity_terms=explicit_entity_terms,
             resolved_entity_terms=query.entity_terms,
         )
+        trace.record_count("entity_seed_terms", len(entity_seed_terms))
         entity_seed_hits = (
-            self._repository.search_entity_papers(
+            trace.call(
+                "search_entity_papers",
+                self._repository.search_entity_papers,
                 release.graph_run_id,
                 entity_terms=entity_seed_terms,
                 limit=query.rerank_topn,
@@ -456,8 +495,11 @@ class RagService:
             if entity_seed_terms and not selection_only_without_matches
             else []
         )
+        trace.record_count("entity_seed_hits", len(entity_seed_hits))
         relation_seed_hits = (
-            self._repository.search_relation_papers(
+            trace.call(
+                "search_relation_papers",
+                self._repository.search_relation_papers,
                 release.graph_run_id,
                 relation_terms=query.relation_terms,
                 limit=query.rerank_topn,
@@ -466,13 +508,14 @@ class RagService:
             if query.relation_terms and not selection_only_without_matches
             else []
         )
+        trace.record_count("relation_seed_hits", len(relation_seed_hits))
         selected_direct_anchor = has_selected_direct_anchor(
             selected_corpus_id=selected_corpus_id,
             retrieval_profile=query.retrieval_profile,
             paper_hits=[*lexical_hits, *chunk_lexical_hits],
         )
         dense_query_embedding = (
-            self._query_embedder.encode(query.query)
+            trace.call("encode_dense_query", self._query_embedder.encode, query.query)
             if not selection_only_without_matches
             and should_run_dense_query(
                 query=query,
@@ -483,7 +526,9 @@ class RagService:
             else None
         )
         dense_query_hits = (
-            self._repository.search_query_embedding_papers(
+            trace.call(
+                "search_query_embedding_papers",
+                self._repository.search_query_embedding_papers,
                 graph_run_id=release.graph_run_id,
                 query_embedding=dense_query_embedding,
                 limit=query.rerank_topn,
@@ -492,8 +537,11 @@ class RagService:
             if dense_query_embedding
             else []
         )
+        trace.record_count("dense_query_hits", len(dense_query_hits))
         semantic_neighbors = (
-            self._repository.fetch_semantic_neighbors(
+            trace.call(
+                "fetch_semantic_neighbors",
+                self._repository.fetch_semantic_neighbors,
                 graph_run_id=release.graph_run_id,
                 selected_corpus_id=selected_corpus_id,
                 limit=query.rerank_topn,
@@ -530,7 +578,11 @@ class RagService:
             if semantic_seed_ids
             else []
         )
-        initial_paper_hits = merge_candidate_papers(
+        trace.record_count("semantic_neighbors", len(semantic_neighbors))
+        trace.record_count("semantic_seed_hits", len(semantic_seed_hits))
+        initial_paper_hits = trace.call(
+            "merge_initial_candidates",
+            merge_candidate_papers,
             lexical_hits=lexical_hits,
             chunk_lexical_hits=chunk_lexical_hits,
             selected_context_hits=[],
@@ -541,27 +593,55 @@ class RagService:
             semantic_seed_hits=semantic_seed_hits,
             semantic_neighbors=semantic_neighbors,
         )
-        initial_paper_hits = _apply_selected_context_hits(
+        initial_paper_hits = trace.call(
+            "apply_selected_context_initial",
+            _apply_selected_context_hits,
             repository=self._repository,
             paper_hits=initial_paper_hits,
             selected_corpus_id=selected_corpus_id,
             search_plan=search_plan,
         )
+        trace.record_count("initial_paper_hits", len(initial_paper_hits))
+        trace.record_flags(
+            {
+                "graph_run_id": release.graph_run_id,
+                "retrieval_profile": str(query.retrieval_profile),
+                "scope_mode": str(query.scope_mode),
+                "selected_corpus_id_present": selected_corpus_id is not None,
+                "selection_only_without_matches": selection_only_without_matches,
+                "selected_direct_anchor": selected_direct_anchor,
+                "use_lexical": query.use_lexical,
+                "use_dense_query": query.use_dense_query,
+                "session_jit_disabled": getattr(
+                    self._repository,
+                    "_disable_session_jit",
+                    False,
+                ),
+            }
+        )
+        if trace.enabled:
+            embedder_status = self.query_embedder_status()
+            trace.record_flags(
+                {
+                    "query_embedder_enabled": embedder_status.get("enabled", False),
+                    "query_embedder_ready": embedder_status.get("ready", False),
+                    "query_embedder_backend": embedder_status.get("backend", "unknown"),
+                }
+            )
         if not initial_paper_hits:
-            return serialize_search_result(
-                RagSearchResult(
-                    request_id=str(uuid4()),
-                    generated_at=datetime.now(UTC),
-                    duration_ms=(perf_counter() - started) * 1000,
-                    retrieval_version=DEFAULT_RETRIEVAL_VERSION,
-                    query=query,
-                    graph_release=release,
-                    bundles=[],
-                    graph_signals=[],
-                    channels=_empty_channel_results(),
-                    answer=None,
-                    answer_model=None,
-                )
+            return RagSearchResult(
+                request_id=str(uuid4()),
+                generated_at=datetime.now(UTC),
+                duration_ms=(perf_counter() - started) * 1000,
+                retrieval_version=DEFAULT_RETRIEVAL_VERSION,
+                query=query,
+                graph_release=release,
+                bundles=[],
+                graph_signals=[],
+                channels=_empty_channel_results(),
+                answer=None,
+                answer_model=None,
+                debug_trace=trace.as_debug_trace(),
             )
         initial_corpus_ids = [hit.corpus_id for hit in initial_paper_hits]
         citation_context_ids = (
@@ -575,14 +655,18 @@ class RagService:
             )
             else []
         )
+        trace.record_count("citation_context_ids", len(citation_context_ids))
         citation_hits = (
-            self._repository.fetch_citation_contexts(
+            trace.call(
+                "fetch_citation_contexts_initial",
+                self._repository.fetch_citation_contexts,
                 citation_context_ids,
                 query=query.query,
             )
             if citation_context_ids
             else {}
         )
+        trace.record_count("citation_hit_papers", len(citation_hits))
         allowed_scope_ids = (
             set(scope_corpus_ids)
             if query.scope_mode == RetrievalScope.SELECTION_ONLY
@@ -594,7 +678,9 @@ class RagService:
             search_plan=search_plan,
         )
         citation_seed_scores = (
-            derive_citation_seed_scores(
+            trace.call(
+                "derive_citation_seed_scores",
+                derive_citation_seed_scores,
                 citation_hits=citation_hits,
                 existing_corpus_ids=set(initial_corpus_ids),
                 allowed_corpus_ids=allowed_scope_ids,
@@ -604,19 +690,24 @@ class RagService:
             else {}
         )
         citation_seed_hits = (
-            self._repository.fetch_papers_by_corpus_ids(
+            trace.call(
+                "fetch_citation_seed_papers",
+                self._repository.fetch_papers_by_corpus_ids,
                 release.graph_run_id,
                 list(citation_seed_scores),
             )
             if citation_seed_scores
             else []
         )
+        trace.record_count("citation_seed_hits", len(citation_seed_hits))
         for hit in citation_seed_hits:
             hit.citation_boost = max(
                 hit.citation_boost,
                 citation_seed_scores.get(hit.corpus_id, 0.0),
             )
-        paper_hits = merge_candidate_papers(
+        paper_hits = trace.call(
+            "merge_final_candidates",
+            merge_candidate_papers,
             lexical_hits=lexical_hits,
             chunk_lexical_hits=chunk_lexical_hits,
             selected_context_hits=[],
@@ -627,14 +718,19 @@ class RagService:
             semantic_seed_hits=semantic_seed_hits,
             semantic_neighbors=semantic_neighbors,
         )
-        paper_hits = _apply_selected_context_hits(
+        paper_hits = trace.call(
+            "apply_selected_context_final",
+            _apply_selected_context_hits,
             repository=self._repository,
             paper_hits=paper_hits,
             selected_corpus_id=selected_corpus_id,
             search_plan=search_plan,
         )
+        trace.record_count("paper_hits", len(paper_hits))
 
-        channel_rankings = build_channel_rankings(
+        channel_rankings = trace.call(
+            "build_channel_rankings",
+            build_channel_rankings,
             lexical_hits=lexical_hits,
             chunk_lexical_hits=chunk_lexical_hits,
             dense_query_hits=dense_query_hits,
@@ -643,7 +739,9 @@ class RagService:
             semantic_neighbors=semantic_neighbors,
         )
 
-        preliminary_ranked_hits = rank_paper_hits(
+        preliminary_ranked_hits = trace.call(
+            "rank_preliminary_hits",
+            rank_paper_hits,
             paper_hits,
             citation_hits=citation_hits,
             entity_hits={},
@@ -660,9 +758,13 @@ class RagService:
             rerank_topn=query.rerank_topn,
             selected_corpus_id=selected_corpus_id,
         )
+        trace.record_count("preliminary_ranked_hits", len(preliminary_ranked_hits))
+        trace.record_count("enrichment_corpus_ids", len(enrichment_corpus_ids))
 
         expanded_citation_hits = (
-            self._repository.fetch_citation_contexts(
+            trace.call(
+                "fetch_citation_contexts_expanded",
+                self._repository.fetch_citation_contexts,
                 [hit.corpus_id for hit in citation_seed_hits],
                 query=query.query,
             )
@@ -675,16 +777,24 @@ class RagService:
                 **expanded_citation_hits,
             }
 
-        entity_hits = self._repository.fetch_entity_matches(
+        entity_hits = trace.call(
+            "fetch_entity_matches",
+            self._repository.fetch_entity_matches,
             enrichment_corpus_ids,
             entity_terms=query.entity_terms,
         )
-        relation_hits = self._repository.fetch_relation_matches(
+        relation_hits = trace.call(
+            "fetch_relation_matches",
+            self._repository.fetch_relation_matches,
             enrichment_corpus_ids,
             relation_terms=query.relation_terms,
         )
+        trace.record_count("entity_hit_papers", len(entity_hits))
+        trace.record_count("relation_hit_papers", len(relation_hits))
 
-        ranked_hits = rank_paper_hits(
+        ranked_hits = trace.call(
+            "rank_final_hits",
+            rank_paper_hits,
             paper_hits,
             citation_hits=citation_hits,
             entity_hits=entity_hits,
@@ -696,6 +806,8 @@ class RagService:
         )
         top_hits = ranked_hits[: query.k]
         top_corpus_ids = [hit.corpus_id for hit in top_hits]
+        trace.record_count("ranked_hits", len(ranked_hits))
+        trace.record_count("top_hits", len(top_hits))
 
         missing_citation_context_ids = [
             corpus_id for corpus_id in top_corpus_ids if corpus_id not in citation_hits
@@ -703,16 +815,28 @@ class RagService:
         if missing_citation_context_ids:
             citation_hits = {
                 **citation_hits,
-                **self._repository.fetch_citation_contexts(
+                **trace.call(
+                    "fetch_citation_contexts_missing_top_hits",
+                    self._repository.fetch_citation_contexts,
                     missing_citation_context_ids,
                     query=query.query,
                 ),
             }
 
-        references = self._repository.fetch_references(top_corpus_ids)
-        assets = self._repository.fetch_assets(top_corpus_ids)
+        references = trace.call(
+            "fetch_references",
+            self._repository.fetch_references,
+            top_corpus_ids,
+        )
+        assets = trace.call(
+            "fetch_assets",
+            self._repository.fetch_assets,
+            top_corpus_ids,
+        )
 
-        bundles = assemble_evidence_bundles(
+        bundles = trace.call(
+            "assemble_evidence_bundles",
+            assemble_evidence_bundles,
             top_hits,
             citation_hits=citation_hits,
             entity_hits=entity_hits,
@@ -720,13 +844,19 @@ class RagService:
             references=references,
             assets=assets,
         )
-        graph_signals = merge_graph_signals(
+        graph_signals = trace.call(
+            "merge_graph_signals",
+            merge_graph_signals,
             bundles,
             evidence_intent=query.evidence_intent,
             semantic_neighbors=semantic_neighbors,
         )
+        trace.record_count("bundle_count", len(bundles))
+        trace.record_count("graph_signal_count", len(graph_signals))
         answer_payload = (
-            build_baseline_answer_payload(
+            trace.call(
+                "build_answer_payload",
+                build_baseline_answer_payload,
                 bundles,
                 evidence_intent=query.evidence_intent,
                 query_text=query.normalized_query,
@@ -743,9 +873,12 @@ class RagService:
             if answer_payload is not None
             else []
         )
+        trace.record_count("answer_corpus_ids", len(answer_corpus_ids))
         grounded_answer = None
         if self._warehouse_grounder and answer and answer_corpus_ids:
-            grounded_answer = self._warehouse_grounder(
+            grounded_answer = trace.call(
+                "build_grounded_answer",
+                self._warehouse_grounder,
                 corpus_ids=answer_corpus_ids,
                 segment_texts=(
                     list(answer_payload.segment_texts)
@@ -855,8 +988,9 @@ class RagService:
             answer=answer,
             answer_model=answer_model,
             grounded_answer=grounded_answer,
+            debug_trace=trace.as_debug_trace(),
         )
-        return serialize_search_result(result)
+        return result
 
 
 def serialize_search_result(result: RagSearchResult) -> RagSearchResponse:
