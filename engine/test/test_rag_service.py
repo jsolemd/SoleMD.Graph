@@ -30,6 +30,22 @@ from app.rag.types import (
 class FakeRepository:
     _disable_session_jit = True
 
+    def _assert_search_args(
+        self,
+        *,
+        graph_run_id: str,
+        query: str,
+        limit: int,
+        scope_corpus_ids,
+    ) -> None:
+        assert graph_run_id == "run-1"
+        assert isinstance(query, str)
+        assert query.strip()
+        assert limit > 0
+        if scope_corpus_ids is not None:
+            assert list(scope_corpus_ids)
+            assert all(isinstance(corpus_id, int) for corpus_id in scope_corpus_ids)
+
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
         assert graph_release_id == "release-1"
         return GraphRelease(
@@ -63,6 +79,24 @@ class FakeRepository:
         assert graph_paper_refs == []
         return []
 
+    def describe_paper_search_route(
+        self,
+        *,
+        graph_run_id: str,
+        query: str,
+        limit: int,
+        scope_corpus_ids=None,
+        use_title_similarity: bool = True,
+    ) -> str:
+        self._assert_search_args(
+            graph_run_id=graph_run_id,
+            query=query,
+            limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        assert isinstance(use_title_similarity, bool)
+        return "paper_search_global"
+
     def search_papers(
         self,
         graph_run_id: str,
@@ -72,11 +106,13 @@ class FakeRepository:
         scope_corpus_ids=None,
         use_title_similarity=True,
     ) -> list[PaperEvidenceHit]:
-        assert graph_run_id == "run-1"
-        assert query == "melatonin delirium"
-        assert limit == 6
-        assert scope_corpus_ids in (None, [11, 22])
-        assert use_title_similarity is True
+        self._assert_search_args(
+            graph_run_id=graph_run_id,
+            query=query,
+            limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        assert isinstance(use_title_similarity, bool)
         return [
             PaperEvidenceHit(
                 corpus_id=11,
@@ -588,6 +624,9 @@ def test_rag_service_search_result_can_include_debug_trace():
     assert result.debug_trace["session_flags"]["selected_corpus_id_present"] is True
     assert result.debug_trace["session_flags"]["use_dense_query"] is False
     assert result.debug_trace["session_flags"]["session_jit_disabled"] is True
+    assert result.debug_trace["session_flags"]["paper_search_route"] == "paper_search_global"
+    assert result.debug_trace["session_flags"]["paper_search_query_text"] == "melatonin delirium"
+    assert result.debug_trace["session_flags"]["paper_search_use_title_candidate_lookup"] is True
 
 
 def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
@@ -1071,6 +1110,79 @@ def test_rag_service_disables_title_similarity_for_sentence_queries():
     assert repository.chunk_queries[0] == "this is a representative discussion sentence"
 
 
+def test_rag_service_keeps_title_candidate_lookup_for_long_title_queries():
+    query = (
+        "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+        "maturation and brain development in the rat"
+    )
+
+    class LongTitleRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def describe_paper_search_route(
+            self,
+            *,
+            graph_run_id: str,
+            query: str,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity: bool = True,
+            use_title_candidate_lookup: bool | None = None,
+        ) -> str:
+            assert graph_run_id == "run-1"
+            assert query == (
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            )
+            assert limit == 6
+            assert scope_corpus_ids is None
+            assert use_title_similarity is False
+            assert use_title_candidate_lookup is True
+            return "paper_search_global"
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+            use_title_candidate_lookup: bool | None = None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query == (
+                "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+                "maturation and brain development in the rat"
+            )
+            assert limit == 6
+            assert scope_corpus_ids is None
+            assert use_title_similarity is False
+            assert use_title_candidate_lookup is True
+            return []
+
+    service = _service(LongTitleRepository(), query_embedder=NoopQueryEmbedder())
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=query,
+            k=3,
+            rerank_topn=6,
+            generate_answer=False,
+        )
+    )
+
+    assert response.evidence_bundles == []
+
+
 def test_rag_service_does_not_expand_citation_frontier_for_passage_queries():
     class PassageRepository(FakeRepository):
         def resolve_selected_corpus_id(
@@ -1335,6 +1447,19 @@ def test_rag_service_preserves_selected_paper_for_title_lookup_queries():
         ) -> list[PaperEvidenceHit]:
             return []
 
+        def describe_chunk_search_route(
+            self,
+            *,
+            graph_run_id: str,
+            query: str,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> str:
+            assert graph_run_id == "run-1"
+            assert limit == 6
+            assert scope_corpus_ids in (None, [11, 22])
+            return "chunk_search_global"
+
         def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
             if corpus_ids == [33]:
                 return [
@@ -1587,7 +1712,7 @@ def test_rag_service_treats_question_subtitle_titles_as_title_lookups():
                 "What physical performance measures predict incident cognitive decline "
                 "among intact older adults? A 4.4year follow up study."
             )
-            assert use_title_similarity is True
+            assert use_title_similarity is False
             return [
                 PaperEvidenceHit(
                     corpus_id=3092150,
@@ -1875,7 +2000,7 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             )
             assert limit == 4
             assert scope_corpus_ids is None
-            assert use_title_similarity is True
+            assert use_title_similarity is False
             return [
                 PaperEvidenceHit(
                     corpus_id=233428792,

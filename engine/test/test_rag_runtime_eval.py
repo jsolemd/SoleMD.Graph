@@ -12,9 +12,11 @@ from app.rag_ingest.runtime_eval import (
     evaluate_runtime_query_cases,
     summarize_runtime_results,
 )
+from app.rag_ingest.runtime_eval_execution import attach_slow_case_plan_profiles
 from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalCohortCandidate,
     RuntimeEvalPaperRecord,
+    RuntimeEvalQueryCase,
     RuntimeEvalQueryFamily,
 )
 from app.rag_ingest.runtime_eval_population import (
@@ -327,7 +329,13 @@ def test_summarize_runtime_results_counts_failures_and_rates():
                 "fetch_semantic_neighbors": 18.0,
             },
             candidate_counts={"semantic_neighbor_hits": 2, "top_hits": 2},
-            session_flags={"session_jit_disabled": True},
+            session_flags={
+                "retrieval_profile": "title_lookup",
+                "paper_search_route": "paper_search_global",
+                "paper_search_use_title_similarity": True,
+                "paper_search_use_title_candidate_lookup": True,
+                "session_jit_disabled": True,
+            },
             duration_ms=45.0,
             service_duration_ms=40.0,
             overhead_duration_ms=5.0,
@@ -358,7 +366,12 @@ def test_summarize_runtime_results_counts_failures_and_rates():
                 "ground_answer": 22.0,
             },
             candidate_counts={"semantic_neighbor_hits": 7, "top_hits": 2},
-            session_flags={"session_jit_disabled": True},
+            session_flags={
+                "retrieval_profile": "passage_lookup",
+                "chunk_search_route": "chunk_search_global",
+                "dense_query_route": "dense_query_ann_broad_scope",
+                "session_jit_disabled": True,
+            },
             duration_ms=155.0,
             service_duration_ms=145.0,
             overhead_duration_ms=10.0,
@@ -391,8 +404,19 @@ def test_summarize_runtime_results_counts_failures_and_rates():
     assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].cases == 2
     assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].max == 110.0
     assert summary.latency.candidate_profiles["semantic_neighbor_hits"].p95 == 7.0
+    assert (
+        summary.latency.route_profiles_ms[
+            "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope"
+        ].max
+        == 145.0
+    )
     assert summary.latency.slow_cases[0].corpus_id == 2
     assert summary.latency.slow_cases[0].top_stages[0].stage == "fetch_semantic_neighbors"
+    expected_route = (
+        "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|"
+        "dense_query_route=dense_query_ann_broad_scope"
+    )
+    assert summary.latency.slow_cases[0].route_signature == expected_route
     assert summary.latency.slow_cases[0].session_flags["session_jit_disabled"] is True
 
 
@@ -548,7 +572,12 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
                 "fetch_semantic_neighbors": 11.0,
             },
             candidate_counts={"semantic_neighbor_hits": 4, "top_hits": 3},
-            session_flags={"session_jit_disabled": True, "dense_scope": "graph"},
+            session_flags={
+                "session_jit_disabled": True,
+                "dense_scope": "graph",
+                "retrieval_profile": "title_lookup",
+                "paper_search_route": "paper_search_global",
+            },
             service_duration_ms=40.0,
             duration_ms=43.0,
             overhead_duration_ms=3.0,
@@ -566,7 +595,12 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
                 "ground_answer": 48.0,
             },
             candidate_counts={"semantic_neighbor_hits": 17, "top_hits": 5},
-            session_flags={"session_jit_disabled": True, "dense_scope": "graph"},
+            session_flags={
+                "session_jit_disabled": True,
+                "dense_scope": "graph",
+                "retrieval_profile": "passage_lookup",
+                "chunk_search_route": "chunk_search_global",
+            },
             service_duration_ms=190.0,
             duration_ms=205.0,
             overhead_duration_ms=15.0,
@@ -579,13 +613,224 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
     assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].mean == 68.0
     assert summary.latency.stage_profiles_ms["ground_answer"].cases == 1
     assert summary.latency.candidate_profiles["semantic_neighbor_hits"].max == 17.0
+    assert (
+        summary.latency.route_profiles_ms[
+            "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global"
+        ].max
+        == 190.0
+    )
     assert len(summary.latency.slow_cases) == 2
     assert summary.latency.slow_cases[0].corpus_id == 22
+    assert (
+        summary.latency.slow_cases[0].route_signature
+        == "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global"
+    )
     assert summary.latency.slow_cases[0].candidate_counts == {
         "semantic_neighbor_hits": 17,
         "top_hits": 5,
     }
     assert summary.latency.slow_cases[0].top_stages[0].stage == "fetch_semantic_neighbors"
+
+
+def test_attach_slow_case_plan_profiles_adds_planner_metadata():
+    results = [
+        RuntimeEvalCaseResult(
+            corpus_id=22,
+            title="Slow title-like paper",
+            primary_source_system="s2orc_v2",
+            query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            query="Slow title-like paper",
+            stratum_key="s2orc_v2|table_absent|medium",
+            stage_durations_ms={"search_papers": 180.0, "build_grounded_answer": 20.0},
+            session_flags={
+                "retrieval_profile": "title_lookup",
+                "paper_search_route": "paper_search_global",
+                "paper_search_query_text": "Slow title-like paper",
+                "paper_search_use_title_similarity": True,
+            },
+            service_duration_ms=190.0,
+            duration_ms=205.0,
+            overhead_duration_ms=15.0,
+        )
+    ]
+    summary = summarize_runtime_results(results)
+    cases = [
+        RuntimeEvalQueryCase(
+            corpus_id=22,
+            title="Slow title-like paper",
+            primary_source_system="s2orc_v2",
+            query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            query="Slow title-like paper",
+            stratum_key="s2orc_v2|table_absent|medium",
+        )
+    ]
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.fetchone.return_value = {
+        "QUERY PLAN": [
+            {
+                "Plan": {
+                    "Node Type": "Bitmap Heap Scan",
+                    "Index Name": "idx_papers_title_abstract_fts",
+                    "Plans": [],
+                }
+            }
+        ]
+    }
+
+    class FakeRepository:
+        def _connect(self):
+            return conn
+
+        def _configure_search_session(self, cur):
+            return None
+
+        def _should_use_exact_graph_search(self, graph_run_id: str) -> bool:
+            assert graph_run_id == "run-1"
+            return False
+
+        def _paper_search_sql_spec(
+            self,
+            *,
+            graph_run_id: str,
+            query: str,
+            normalized_title_query: str,
+            limit: int,
+            scope_corpus_ids,
+            use_title_similarity: bool,
+            use_exact_graph_search: bool,
+        ):
+            assert graph_run_id == "run-1"
+            assert query == "Slow title-like paper"
+            assert normalized_title_query == "slow title like paper"
+            assert limit == 10
+            assert scope_corpus_ids is None
+            assert use_title_similarity is True
+            assert use_exact_graph_search is False
+            return SimpleNamespace(
+                route_name="paper_search_global",
+                sql="SELECT 1",
+                params=("Slow title-like paper",),
+            )
+
+    updated = attach_slow_case_plan_profiles(
+        summary=summary,
+        cases=cases,
+        results=results,
+        repository=FakeRepository(),
+        graph_run_id="run-1",
+        rerank_topn=10,
+    )
+
+    assert updated.latency.slow_cases[0].plan_profiles[0].stage == "search_papers"
+    assert updated.latency.slow_cases[0].plan_profiles[0].route == "paper_search_global"
+    assert updated.latency.slow_cases[0].plan_profiles[0].node_types == ["Bitmap Heap Scan"]
+    assert updated.latency.slow_cases[0].plan_profiles[0].index_names == [
+        "idx_papers_title_abstract_fts"
+    ]
+
+
+def test_attach_slow_case_plan_profiles_can_profile_dense_query_stage():
+    results = [
+        RuntimeEvalCaseResult(
+            corpus_id=33,
+            title="Dense case",
+            primary_source_system="s2orc_v2",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="dense sentence query",
+            stratum_key="s2orc_v2|table_absent|medium",
+            stage_durations_ms={
+                "search_query_embedding_papers": 220.0,
+                "build_grounded_answer": 20.0,
+            },
+            session_flags={
+                "retrieval_profile": "passage_lookup",
+                "dense_query_route": "dense_query_ann_broad_scope",
+            },
+            service_duration_ms=245.0,
+            duration_ms=250.0,
+            overhead_duration_ms=5.0,
+        )
+    ]
+    summary = summarize_runtime_results(results)
+    cases = [
+        RuntimeEvalQueryCase(
+            corpus_id=33,
+            title="Dense case",
+            primary_source_system="s2orc_v2",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="dense sentence query",
+            stratum_key="s2orc_v2|table_absent|medium",
+        )
+    ]
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.fetchone.return_value = {
+        "QUERY PLAN": [
+            {
+                "Plan": {
+                    "Node Type": "Index Scan",
+                    "Index Name": "idx_papers_embedding_hnsw",
+                    "Plans": [],
+                }
+            }
+        ]
+    }
+
+    class FakeRepository:
+        def _connect(self):
+            return conn
+
+        def _configure_search_session(self, cur):
+            return None
+
+        def _dense_query_sql_spec(
+            self,
+            *,
+            graph_run_id: str,
+            vector_literal: str,
+            limit: int,
+            scope_corpus_ids,
+        ):
+            assert graph_run_id == "run-1"
+            assert vector_literal == "[0.1,0.2,0.3]"
+            assert limit == 10
+            assert scope_corpus_ids is None
+            return SimpleNamespace(
+                route_name="dense_query_ann_broad_scope",
+                sql="SELECT 1",
+                params=("[0.1,0.2,0.3]",),
+            )
+
+    class FakeQueryEmbedder:
+        def encode(self, text: str) -> list[float]:
+            assert text == "dense sentence query"
+            return [0.1, 0.2, 0.3]
+
+    updated = attach_slow_case_plan_profiles(
+        summary=summary,
+        cases=cases,
+        results=results,
+        repository=FakeRepository(),
+        graph_run_id="run-1",
+        rerank_topn=10,
+        query_embedder=FakeQueryEmbedder(),
+    )
+
+    assert updated.latency.slow_cases[0].plan_profiles[0].stage == "search_query_embedding_papers"
+    assert updated.latency.slow_cases[0].plan_profiles[0].route == "dense_query_ann_broad_scope"
+    assert updated.latency.slow_cases[0].plan_profiles[0].node_types == ["Index Scan"]
+    assert updated.latency.slow_cases[0].plan_profiles[0].index_names == [
+        "idx_papers_embedding_hnsw"
+    ]
 
 
 def test_population_summary_tracks_sentence_seed_presence():

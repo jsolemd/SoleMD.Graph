@@ -38,6 +38,7 @@ class PaperRetrievalQuery:
     k: int = 6
     rerank_topn: int = 18
     use_lexical: bool = True
+    use_title_candidate_lookup: bool = False
     use_title_similarity: bool = True
     use_dense_query: bool = True
     generate_answer: bool = True
@@ -95,6 +96,7 @@ class PaperEvidenceHit:
     publication_type_score: float = 0.0
     evidence_quality_score: float = 0.0
     title_anchor_score: float = 0.0
+    passage_alignment_score: float = 0.0
     selected_context_score: float = 0.0
     fused_score: float = 0.0
     rank: int = 0

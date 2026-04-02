@@ -107,7 +107,7 @@ def test_search_papers_maps_rows(mock_conn):
             "melatonin delirium",
             "melatonin delirium",
             normalize_title_key("melatonin delirium"),
-            False,
+            True,
             "run-1",
             5,
             120,
@@ -181,6 +181,30 @@ def test_search_papers_returns_prefix_title_candidates_before_broad_title_lookup
             prefix=True,
         ),
     ]
+
+
+def test_search_papers_can_keep_title_candidate_lookup_while_disabling_similarity(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    exact_hit = _paper_hit(303)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[exact_hit])
+
+    hits = repo.search_papers(
+        "run-1",
+        (
+            "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+            "maturation and brain development in the rat"
+        ),
+        limit=5,
+        use_title_similarity=False,
+        use_title_candidate_lookup=True,
+    )
+
+    assert hits == [exact_hit]
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_not_called()
+    repo._search_title_lookup_candidate_papers.assert_called_once()
 
 
 def test_search_exact_title_papers_maps_rows(mock_conn):
@@ -1239,11 +1263,11 @@ def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
             call(queries.PAPER_EMBEDDING_LITERAL_SQL, (101,)),
             call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
             call("SET LOCAL hnsw.iterative_scan = strict_order"),
-            call("SET LOCAL hnsw.ef_search = 100"),
+            call("SET LOCAL hnsw.ef_search = 60"),
             call("SET LOCAL hnsw.max_scan_tuples = 20000"),
             call(
                 queries.SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL,
-                ("[0.1,0.2,0.3]", 101, "[0.1,0.2,0.3]", 120, "run-1", 1),
+                ("[0.1,0.2,0.3]", 101, "[0.1,0.2,0.3]", 40, "run-1", 1),
             ),
         ]
     )
@@ -1330,11 +1354,11 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
         [
             call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
             call("SET LOCAL hnsw.iterative_scan = strict_order"),
-            call("SET LOCAL hnsw.ef_search = 100"),
+            call("SET LOCAL hnsw.ef_search = 60"),
             call("SET LOCAL hnsw.max_scan_tuples = 20000"),
             call(
                 queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
-                (vector_literal, vector_literal, 120, "run-1", 1),
+                (vector_literal, vector_literal, 40, "run-1", 1),
             ),
         ]
     )

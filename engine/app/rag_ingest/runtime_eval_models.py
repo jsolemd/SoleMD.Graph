@@ -92,6 +92,7 @@ class RuntimeEvalCaseResult(ParseContractModel):
     stage_durations_ms: dict[str, float] = Field(default_factory=dict)
     candidate_counts: dict[str, int] = Field(default_factory=dict)
     session_flags: dict[str, object] = Field(default_factory=dict)
+    route_signature: str | None = None
     duration_ms: float = 0.0
     service_duration_ms: float = 0.0
     overhead_duration_ms: float = 0.0
@@ -140,6 +141,14 @@ class RuntimeEvalSlowStage(ParseContractModel):
     duration_ms: float
 
 
+class RuntimeEvalSqlPlanProfile(ParseContractModel):
+    stage: str
+    route: str
+    plan_hash: str
+    node_types: list[str] = Field(default_factory=list)
+    index_names: list[str] = Field(default_factory=list)
+
+
 class RuntimeEvalSlowCase(ParseContractModel):
     corpus_id: int
     title: str
@@ -156,6 +165,8 @@ class RuntimeEvalSlowCase(ParseContractModel):
     top_stages: list[RuntimeEvalSlowStage] = Field(default_factory=list)
     candidate_counts: dict[str, int] = Field(default_factory=dict)
     session_flags: dict[str, object] = Field(default_factory=dict)
+    route_signature: str | None = None
+    plan_profiles: list[RuntimeEvalSqlPlanProfile] = Field(default_factory=list)
     top_hits: list[RuntimeEvalTopHit] = Field(default_factory=list)
 
 
@@ -173,6 +184,7 @@ class RuntimeEvalFailureExample(ParseContractModel):
 class RuntimeEvalLatencySummary(ParseContractModel):
     stage_profiles_ms: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     candidate_profiles: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
+    route_profiles_ms: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     slow_cases: list[RuntimeEvalSlowCase] = Field(default_factory=list)
 
 

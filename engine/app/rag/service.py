@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from functools import lru_cache
+from inspect import Parameter, signature
 from time import perf_counter
 from uuid import uuid4
 
@@ -34,6 +35,7 @@ from app.rag.query_enrichment import (
     normalize_query_text,
     should_seed_resolved_entity_term,
     should_use_exact_title_precheck,
+    should_use_title_similarity,
 )
 from app.rag.ranking import rank_paper_hits
 from app.rag.repository import PostgresRagRepository, RagRepository
@@ -145,9 +147,19 @@ def _apply_relation_enrichment(query: PaperRetrievalQuery) -> PaperRetrievalQuer
 
 
 def _lexical_query_text(query: PaperRetrievalQuery) -> str:
-    if query.use_title_similarity:
+    if query.use_title_similarity or query.use_title_candidate_lookup:
         return query.query
     return query.normalized_query or query.query
+
+
+def _callable_supports_kwarg(func: object, kwarg: str) -> bool:
+    try:
+        params = signature(func).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(param.kind == Parameter.VAR_KEYWORD for param in params) or any(
+        param.name == kwarg for param in params
+    )
 
 
 def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
@@ -189,7 +201,11 @@ def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         k=request.k,
         rerank_topn=max(request.k, request.rerank_topn),
         use_lexical=request.use_lexical,
-        use_title_similarity=retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP,
+        use_title_candidate_lookup=retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP,
+        use_title_similarity=should_use_title_similarity(
+            request.query,
+            retrieval_profile=retrieval_profile,
+        ),
         use_dense_query=request.use_dense_query,
         generate_answer=request.generate_answer,
     )
@@ -325,6 +341,10 @@ class RagService:
             return status()
         return {"enabled": False, "ready": False, "backend": "unknown"}
 
+    @property
+    def query_embedder(self) -> RagQueryEmbedder:
+        return self._query_embedder
+
     def search_result(
         self,
         request: RagSearchRequest,
@@ -396,6 +416,8 @@ class RagService:
             else []
         )
         trace.record_count("selected_title_hits", len(selected_title_hits))
+        if selected_title_hits:
+            trace.record_flag("title_anchor_route", "selected_title")
         exact_title_hits = list(selected_title_hits)
         if (
             not exact_title_hits
@@ -412,6 +434,8 @@ class RagService:
                 limit=query.rerank_topn,
                 scope_corpus_ids=scope_corpus_ids or None,
             )
+            if exact_title_hits:
+                trace.record_flag("title_anchor_route", "exact_title")
         trace.record_count("exact_title_hits", len(exact_title_hits))
         if exact_title_hits and query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
             query = replace(
@@ -428,7 +452,19 @@ class RagService:
             and not selection_only_without_matches
             and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
         ):
+            describe_chunk_route = getattr(self._repository, "describe_chunk_search_route", None)
             for chunk_query in chunk_search_queries(query):
+                trace.record_flag("chunk_search_query_text", chunk_query)
+                if callable(describe_chunk_route):
+                    trace.record_flag(
+                        "chunk_search_route",
+                        describe_chunk_route(
+                            graph_run_id=release.graph_run_id,
+                            query=chunk_query,
+                            limit=query.rerank_topn,
+                            scope_corpus_ids=scope_corpus_ids or None,
+                        ),
+                    )
                 chunk_lexical_hits = trace.call(
                     "search_chunk_papers",
                     self._repository.search_chunk_papers,
@@ -455,14 +491,58 @@ class RagService:
             )
         )
         if should_run_paper_lexical:
+            trace.record_flags(
+                {
+                    "paper_search_query_text": lexical_query_text,
+                    "paper_search_use_title_similarity": query.use_title_similarity,
+                    "paper_search_use_title_candidate_lookup": (
+                        query.use_title_candidate_lookup
+                    ),
+                }
+            )
+            describe_paper_route = getattr(self._repository, "describe_paper_search_route", None)
+            paper_search_kwargs = {
+                "limit": query.rerank_topn,
+                "scope_corpus_ids": scope_corpus_ids or None,
+                "use_title_similarity": query.use_title_similarity,
+            }
+            if (
+                query.use_title_candidate_lookup != query.use_title_similarity
+                and _callable_supports_kwarg(
+                    self._repository.search_papers,
+                    "use_title_candidate_lookup",
+                )
+            ):
+                paper_search_kwargs["use_title_candidate_lookup"] = (
+                    query.use_title_candidate_lookup
+                )
+            if callable(describe_paper_route):
+                describe_paper_kwargs = dict(paper_search_kwargs)
+                if (
+                    "use_title_candidate_lookup" not in describe_paper_kwargs
+                    and query.use_title_candidate_lookup != query.use_title_similarity
+                    and _callable_supports_kwarg(
+                        describe_paper_route,
+                        "use_title_candidate_lookup",
+                    )
+                ):
+                    describe_paper_kwargs["use_title_candidate_lookup"] = (
+                        query.use_title_candidate_lookup
+                    )
+                trace.record_flag(
+                    "paper_search_route",
+                    describe_paper_route(
+                        graph_run_id=release.graph_run_id,
+                        query=lexical_query_text,
+                        **describe_paper_kwargs,
+                    ),
+                )
             lexical_hits = trace.call(
                 "search_papers",
                 self._repository.search_papers,
                 release.graph_run_id,
                 lexical_query_text,
-                limit=query.rerank_topn,
-                scope_corpus_ids=scope_corpus_ids or None,
-                use_title_similarity=query.use_title_similarity,
+                **paper_search_kwargs,
             )
         trace.record_count("lexical_hits", len(lexical_hits))
         if not should_skip_runtime_entity_enrichment(
@@ -534,6 +614,21 @@ class RagService:
             if dense_query_embedding
             else []
         )
+        if dense_query_embedding:
+            describe_dense_route = getattr(self._repository, "describe_dense_query_route", None)
+            if callable(describe_dense_route):
+                dense_route = describe_dense_route(
+                    graph_run_id=release.graph_run_id,
+                    limit=query.rerank_topn,
+                    scope_corpus_ids=scope_corpus_ids or None,
+                )
+                trace.record_flags(
+                    {
+                        "dense_query_route": dense_route["route"],
+                        "dense_query_candidate_limit": dense_route["candidate_limit"],
+                        "dense_query_search_mode": dense_route["search_mode"],
+                    }
+                )
         trace.record_count("dense_query_hits", len(dense_query_hits))
         semantic_neighbors = (
             trace.call(

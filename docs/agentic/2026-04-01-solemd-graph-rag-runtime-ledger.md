@@ -42,6 +42,8 @@ Mode: agentic overnight improvement loop
 | A32 | done | P1 | Title-search and sentence-ranking tail | The remaining runtime miss set had narrowed to `3/96` `sentence_global` cases, and `24948876` was still a title-like sentence case where citation-only neighbors could outrank the direct lexical paper. | Rejected the naive global-KNN rewrite, added planner-visible title-search instrumentation, then fixed the real contract bugs: missing ANN distances were inflating `dense_score` to `1.0`, and `TITLE_LOOKUP` did not sort direct title support ahead of citation-only neighbors. | `uv run pytest test/test_rag_repository.py test/test_rag_ranking.py` + `.tmp/rag-runtime-eval-sentence-miss-set-v19-titlefix.json` |
 | A33 | done | P1 | Dense-runtime contract hygiene | Live warmup and eval emitted `There are adapters available but none are activated for the forward pass.` even though runtime status already reported `active_adapters=Stack[[QRY]]` on the loaded SPECTER2 query encoder. | Reworked `query_embedding.py` so adapter activation is explicit, runtime status falls back to `adapters_config.active_setup`, and the known false-positive `adapters.model_mixin` warning is suppressed only around the real load+activate path. | `uv run pytest test/test_rag_query_embedding.py` + quiet embedder smoke + `.tmp/rag-runtime-eval-sentence-miss-set-v20-embedderquiet.json` |
 | A34 | pending | P2 | Contract docs drift | `database.md` reflects `graph_base_points`, while some older design docs still describe base membership and base size using stale `graph_points` fields or fixed corpus counts. | Make one graph-base contract doc canonical, update the stale runtime/base docs, and add a small verification check where possible so perf/runtime assumptions do not drift from the schema. | Doc diff + any small contract check |
+| A35 | pending | P2 | Clinician-facing ranking priors | Runtime ranking is now fast and grounded, but it is still largely corpus-neutral; treatment/prognosis/diagnosis questions can benefit from lightweight priors over publication type, species, and evidence strength. | Evaluate a small query-intent classifier and ranking priors using existing publication-type, citation, and PubTator-derived species signals without regressing general retrieval quality. | Frozen-cohort comparison artifact + decision note |
+| A36 | pending | P2 | Conflict and polarity evaluation | Current evals prove recall, grounding, and latency, but they do not yet stress negation, null findings, mixed evidence, or nonhuman-to-human leakage. | Build a compact contradiction/polarity benchmark for biomedical questions and wire it into runtime evaluation so fast wrong-positive answers are caught explicitly. | Benchmark artifact + runtime eval extension |
 
 ## Completed Batches
 
@@ -297,6 +299,34 @@ Mode: agentic overnight improvement loop
   - `search_query_embedding_papers = 0.0 ms`
   - `service_duration_ms = 18.699`
 
+### Batch 22
+- Split title candidate lookup from broad title similarity in the runtime retrieval contract:
+  - `engine/app/rag/models.py`
+  - `engine/app/rag/query_enrichment.py`
+  - `engine/app/rag/service.py`
+  - `engine/app/rag/repository.py`
+- Long title-shaped biomedical queries can now keep the exact/prefix candidate-rescue lane while disabling the expensive broad title-similarity path that caused the `24948876` outlier.
+- Centralized dense query routing and SQL/session selection in the repository:
+  - added one canonical dense-route builder in `engine/app/rag/repository.py`
+  - kept exact-vs-ANN session tuning behind the repository adapter
+  - surfaced dense-route metadata into runtime traces
+- Promoted the tuned pgvector runtime defaults into config:
+  - candidate multiplier `8`
+  - minimum candidates `40`
+  - `hnsw.ef_search = 60`
+- Closed the runtime-observability gap in eval reports:
+  - `RuntimeEvalCaseResult` now persists `route_signature`
+  - case-level route signatures are present in serialized runtime reports, not only the aggregate route-profile summary
+- Added focused regressions in:
+  - `engine/test/test_rag_query_enrichment.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_service.py`
+- End-to-end verification:
+  - `uv run pytest test/test_rag_query_enrichment.py test/test_rag_repository.py test/test_rag_runtime_eval.py test/test_rag_service.py -q` -> `121 passed`
+  - `uv run pytest test/test_rag_runtime_eval.py -q` -> `17 passed`
+  - `uv run ruff check app/config.py app/rag/models.py app/rag/query_enrichment.py app/rag/repository.py app/rag/service.py app/rag/runtime_profile.py app/rag_ingest/runtime_eval.py app/rag_ingest/runtime_eval_execution.py app/rag_ingest/runtime_eval_models.py test/test_rag_query_enrichment.py test/test_rag_repository.py test/test_rag_runtime_eval.py test/test_rag_service.py` -> passed
+
 ## Live Evidence
 
 - Dense-query encoder smoke:
@@ -518,6 +548,33 @@ Mode: agentic overnight improvement loop
     - target is still retrieved at rank `3`, but the answer omits it and grounding remains absent
     - `service_duration_ms = 89516.0`
   - `.tmp/rag-runtime-eval-3092150-235226202-sentence-v16-recheck.json`
+- Current-code current-release all-family report after Batch 22 routing+tuning cleanup (`v28`):
+  - `.tmp/rag-runtime-eval-current-all-families-v28-tuned.json`
+  - `288` cases across `96` sampled graph-backed papers
+  - overall:
+    - all quality metrics `1.0`
+    - `mean_service_duration_ms = 42.752`
+    - `p50_service_duration_ms = 22.454`
+    - `p95_service_duration_ms = 98.328`
+    - `p99_service_duration_ms = 249.75`
+    - `max_service_duration_ms = 329.786`
+    - `over_1000ms_count = 0`
+    - `error_count = 0`
+  - by family:
+    - `title_global`: `mean_service_duration_ms = 26.089`, `p95_service_duration_ms = 30.681`
+    - `title_selected`: `mean_service_duration_ms = 21.115`, `p95_service_duration_ms = 27.985`
+    - `sentence_global`: `mean_service_duration_ms = 81.051`, `p95_service_duration_ms = 113.578`, `max_service_duration_ms = 329.786`
+  - measured interpretation:
+    - the pathological long-title/title-like outlier class is gone
+    - sentence-global now has a small, bounded tail instead of multi-second planner failures
+    - the stack is ready to shift from hot-path surgery to stronger perf gates, objective experiments, and clinician-facing ranking priors
+- Case-level observability smoke after Batch 22:
+  - `.tmp/rag-runtime-eval-case-route-signature-smoke-v1.json`
+  - confirms serialized `cases[*].route_signature` is populated
+  - the former long-title case `24948876` now records:
+    - `paper_search_use_title_similarity = false`
+    - `paper_search_use_title_candidate_lookup = true`
+    - `route_signature = retrieval_profile=title_lookup|paper_search_route=paper_search_global|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope`
     - `3092150`: target retrieved at rank `3`, but answer/grounding omit it
     - `235226202`: target remains outside the final answer despite direct ABCA7 relevance
     - both are fast (`303 ms`, `176 ms`), so this is ranking/answer selection quality, not latency

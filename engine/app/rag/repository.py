@@ -8,6 +8,7 @@ from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app import db
@@ -63,6 +64,16 @@ class _PinnedConnectionContext:
         return False
 
 
+@dataclass(frozen=True, slots=True)
+class _SqlSpec:
+    """Internal SQL execution spec shared by runtime execution and profiling."""
+
+    route_name: str
+    sql: str
+    params: tuple[Any, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 class RagRepository(Protocol):
     """Read-only repository contract used by the service."""
 
@@ -99,6 +110,7 @@ class RagRepository(Protocol):
         limit: int,
         scope_corpus_ids: Sequence[int] | None = None,
         use_title_similarity: bool = True,
+        use_title_candidate_lookup: bool | None = None,
     ) -> list[PaperEvidenceHit]: ...
 
     def search_exact_title_papers(
@@ -460,52 +472,22 @@ class PostgresRagRepository:
         limit: int,
         scope_corpus_ids: Sequence[int] | None = None,
         use_title_similarity: bool = True,
+        use_title_candidate_lookup: bool | None = None,
     ) -> list[PaperEvidenceHit]:
         normalized_title_query = normalize_title_key(query)
+        if use_title_candidate_lookup is None:
+            use_title_candidate_lookup = use_title_similarity
         use_exact_graph_search = (
             self._should_use_exact_graph_search(graph_run_id)
             if not scope_corpus_ids
             else False
         )
-        if scope_corpus_ids:
-            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
-            sql = queries.PAPER_SEARCH_IN_SELECTION_SQL
-            params = (
-                query,
-                query,
-                query,
-                normalized_title_query,
-                use_title_similarity,
-                unique_scope_ids,
-                limit,
-                unique_scope_ids,
-                limit,
-            )
-        elif use_title_similarity and use_exact_graph_search:
-            prefix_limit = self._title_prefix_candidate_limit(limit)
-            similarity_limit = self._title_similarity_candidate_limit(limit)
-            sql = queries.PAPER_TITLE_LOOKUP_IN_GRAPH_SQL
-            params = (
-                query,
-                normalized_title_query,
-                graph_run_id,
-                limit,
-                prefix_limit,
-                similarity_limit,
-            )
-        elif not use_title_similarity and use_exact_graph_search:
-            sql = queries.PAPER_SEARCH_IN_GRAPH_SQL
-            params = (
-                query,
-                query,
-                query,
-                normalized_title_query,
-                use_title_similarity,
-                graph_run_id,
-                limit,
-                limit,
-            )
-        elif use_title_similarity:
+        should_probe_global_title_candidates = (
+            use_title_candidate_lookup
+            and not scope_corpus_ids
+            and (not use_exact_graph_search or not use_title_similarity)
+        )
+        if should_probe_global_title_candidates:
             exact_title_hits = self._search_title_lookup_candidate_papers(
                 graph_run_id=graph_run_id,
                 query=query,
@@ -525,25 +507,91 @@ class PostgresRagRepository:
             )
             if prefix_title_hits:
                 return prefix_title_hits[:limit]
-            candidate_limit = self._title_similarity_candidate_limit(limit)
-            sql = queries.PAPER_SEARCH_SQL
-            params = (
-                query,
-                query,
-                query,
-                normalized_title_query,
-                False,
-                graph_run_id,
-                limit,
-                candidate_limit,
-                candidate_limit,
-                candidate_limit,
-                limit,
+        sql_spec = self._paper_search_sql_spec(
+            graph_run_id=graph_run_id,
+            query=query,
+            normalized_title_query=normalized_title_query,
+            limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
+            use_title_similarity=use_title_similarity,
+            use_exact_graph_search=use_exact_graph_search,
+        )
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_spec.sql, sql_spec.params)
+                rows = cur.fetchall()
+
+        return [self._paper_hit_from_row(row) for row in rows]
+
+    def _title_prefix_candidate_limit(self, limit: int) -> int:
+        return max(limit * 40, 200)
+
+    def _title_similarity_candidate_limit(self, limit: int) -> int:
+        return max(limit * 20, 120)
+
+    def _paper_search_sql_spec(
+        self,
+        *,
+        graph_run_id: str,
+        query: str,
+        normalized_title_query: str,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None,
+        use_title_similarity: bool,
+        use_exact_graph_search: bool,
+    ) -> _SqlSpec:
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            return _SqlSpec(
+                route_name="paper_search_in_selection",
+                sql=queries.PAPER_SEARCH_IN_SELECTION_SQL,
+                params=(
+                    query,
+                    query,
+                    query,
+                    normalized_title_query,
+                    use_title_similarity,
+                    unique_scope_ids,
+                    limit,
+                    unique_scope_ids,
+                    limit,
+                ),
             )
-        else:
-            candidate_limit = self._title_similarity_candidate_limit(limit)
-            sql = queries.PAPER_SEARCH_SQL
-            params = (
+        if use_title_similarity and use_exact_graph_search:
+            prefix_limit = self._title_prefix_candidate_limit(limit)
+            similarity_limit = self._title_similarity_candidate_limit(limit)
+            return _SqlSpec(
+                route_name="paper_title_lookup_in_graph",
+                sql=queries.PAPER_TITLE_LOOKUP_IN_GRAPH_SQL,
+                params=(
+                    query,
+                    normalized_title_query,
+                    graph_run_id,
+                    limit,
+                    prefix_limit,
+                    similarity_limit,
+                ),
+            )
+        if not use_title_similarity and use_exact_graph_search:
+            return _SqlSpec(
+                route_name="paper_search_in_graph",
+                sql=queries.PAPER_SEARCH_IN_GRAPH_SQL,
+                params=(
+                    query,
+                    query,
+                    query,
+                    normalized_title_query,
+                    use_title_similarity,
+                    graph_run_id,
+                    limit,
+                    limit,
+                ),
+            )
+        candidate_limit = self._title_similarity_candidate_limit(limit)
+        return _SqlSpec(
+            route_name="paper_search_global",
+            sql=queries.PAPER_SEARCH_SQL,
+            params=(
                 query,
                 query,
                 query,
@@ -555,19 +603,36 @@ class PostgresRagRepository:
                 candidate_limit,
                 candidate_limit,
                 limit,
-            )
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
+            ),
+        )
 
-        return [self._paper_hit_from_row(row) for row in rows]
-
-    def _title_prefix_candidate_limit(self, limit: int) -> int:
-        return max(limit * 40, 200)
-
-    def _title_similarity_candidate_limit(self, limit: int) -> int:
-        return max(limit * 20, 120)
+    def describe_paper_search_route(
+        self,
+        *,
+        graph_run_id: str,
+        query: str,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+        use_title_similarity: bool = True,
+        use_title_candidate_lookup: bool | None = None,
+    ) -> str:
+        normalized_title_query = normalize_title_key(query)
+        if use_title_candidate_lookup is None:
+            use_title_candidate_lookup = use_title_similarity
+        use_exact_graph_search = (
+            self._should_use_exact_graph_search(graph_run_id)
+            if not scope_corpus_ids
+            else False
+        )
+        return self._paper_search_sql_spec(
+            graph_run_id=graph_run_id,
+            query=query,
+            normalized_title_query=normalized_title_query,
+            limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
+            use_title_similarity=use_title_similarity,
+            use_exact_graph_search=use_exact_graph_search,
+        ).route_name
 
     def _search_title_lookup_candidate_papers(
         self,
@@ -780,23 +845,49 @@ class PostgresRagRepository:
         if not normalized_query:
             return []
         normalized_exact_query = normalize_entity_query_text(normalized_query)
+        sql_spec = self._chunk_search_sql_spec(
+            graph_run_id=graph_run_id,
+            normalized_query=normalized_query,
+            normalized_exact_query=normalized_exact_query,
+            limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql_spec.sql, sql_spec.params)
+                rows = cur.fetchall()
 
+        return [self._paper_hit_from_row(row) for row in rows]
+
+    def _chunk_search_sql_spec(
+        self,
+        *,
+        graph_run_id: str,
+        normalized_query: str,
+        normalized_exact_query: str,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None,
+    ) -> _SqlSpec:
         if scope_corpus_ids:
             unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
-            sql = queries.CHUNK_SEARCH_IN_SELECTION_SQL
-            params = (
-                normalized_query,
-                normalized_query,
-                normalized_query,
-                normalized_exact_query,
-                self._chunk_version_key,
-                unique_scope_ids,
-                limit,
+            return _SqlSpec(
+                route_name="chunk_search_in_selection",
+                sql=queries.CHUNK_SEARCH_IN_SELECTION_SQL,
+                params=(
+                    normalized_query,
+                    normalized_query,
+                    normalized_query,
+                    normalized_exact_query,
+                    self._chunk_version_key,
+                    unique_scope_ids,
+                    limit,
+                ),
             )
-        else:
-            candidate_limit = max(limit * 24, 120)
-            sql = queries.CHUNK_SEARCH_SQL
-            params = (
+        candidate_limit = max(limit * 24, 120)
+        return _SqlSpec(
+            route_name="chunk_search_global",
+            sql=queries.CHUNK_SEARCH_SQL,
+            params=(
                 normalized_query,
                 normalized_query,
                 normalized_query,
@@ -805,13 +896,26 @@ class PostgresRagRepository:
                 self._chunk_version_key,
                 candidate_limit,
                 limit,
-            )
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
-                rows = cur.fetchall()
+            ),
+        )
 
-        return [self._paper_hit_from_row(row) for row in rows]
+    def describe_chunk_search_route(
+        self,
+        *,
+        graph_run_id: str,
+        query: str,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> str:
+        normalized_query = query.strip()
+        normalized_exact_query = normalize_entity_query_text(normalized_query)
+        return self._chunk_search_sql_spec(
+            graph_run_id=graph_run_id,
+            normalized_query=normalized_query,
+            normalized_exact_query=normalized_exact_query,
+            limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
+        ).route_name
 
     def fetch_papers_by_corpus_ids(
         self,
@@ -998,23 +1102,60 @@ class PostgresRagRepository:
         if not query_embedding:
             return []
 
-        if scope_corpus_ids:
-            rows = self._search_query_embedding_in_selection(
-                query_embedding=query_embedding,
-                limit=limit,
-                scope_corpus_ids=scope_corpus_ids,
-            )
-        else:
-            rows = self._search_query_embedding_in_graph(
-                graph_run_id=graph_run_id,
-                query_embedding=query_embedding,
-                limit=limit,
-            )
+        sql_spec = self._dense_query_sql_spec(
+            graph_run_id=graph_run_id,
+            vector_literal=format_vector_literal(query_embedding),
+            limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                if sql_spec.metadata.get("search_mode") == "ann":
+                    self._configure_hnsw_session(cur)
+                elif sql_spec.metadata.get("search_mode") == "exact":
+                    self._configure_exact_vector_session(cur)
+                cur.execute(sql_spec.sql, sql_spec.params)
+                rows = cur.fetchall()
         return self._hydrate_ranked_dense_hits(
             ranked_rows=rows,
             graph_run_id=graph_run_id,
             use_direct_lookup=bool(scope_corpus_ids),
         )
+
+    def describe_dense_query_route(
+        self,
+        *,
+        graph_run_id: str,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> dict[str, Any]:
+        normalized_limit = self._semantic_neighbor_limit(limit)
+        if scope_corpus_ids:
+            return {
+                "route": "dense_query_in_selection",
+                "candidate_limit": normalized_limit,
+                "search_mode": "selection",
+            }
+        if self._should_use_exact_graph_search(graph_run_id):
+            return {
+                "route": "dense_query_exact_graph",
+                "candidate_limit": normalized_limit,
+                "search_mode": "exact",
+            }
+        if self._semantic_neighbor_index_is_ready():
+            return {
+                "route": "dense_query_ann_broad_scope",
+                "candidate_limit": self._ann_candidate_limit(
+                    graph_run_id=graph_run_id,
+                    limit=limit,
+                ),
+                "search_mode": "ann",
+            }
+        return {
+            "route": "dense_query_exact_graph_fallback",
+            "candidate_limit": normalized_limit,
+            "search_mode": "exact",
+        }
 
     def fetch_citation_contexts(
         self,
@@ -1459,31 +1600,6 @@ class PostgresRagRepository:
                 )
                 return cur.fetchall()
 
-    def _search_query_embedding_in_selection(
-        self,
-        *,
-        query_embedding: Sequence[float],
-        limit: int,
-        scope_corpus_ids: Sequence[int],
-    ) -> list[dict[str, Any]]:
-        unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
-        if not unique_scope_ids:
-            return []
-
-        vector_literal = format_vector_literal(query_embedding)
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    queries.DENSE_QUERY_SEARCH_IN_SELECTION_SQL,
-                    (
-                        vector_literal,
-                        unique_scope_ids,
-                        vector_literal,
-                        self._semantic_neighbor_limit(limit),
-                    ),
-                )
-                return cur.fetchall()
-
     def _hydrate_ranked_dense_hits(
         self,
         *,
@@ -1511,82 +1627,57 @@ class PostgresRagRepository:
             ordered_hits.append(hit)
         return ordered_hits
 
-    def _search_query_embedding_in_graph(
-        self,
-        *,
-        graph_run_id: str,
-        query_embedding: Sequence[float],
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        normalized_limit = self._semantic_neighbor_limit(limit)
-        vector_literal = format_vector_literal(query_embedding)
-        if self._should_use_exact_graph_search(graph_run_id):
-            return self._search_query_embedding_exact(
-                graph_run_id=graph_run_id,
-                vector_literal=vector_literal,
-                limit=normalized_limit,
-            )
-        if self._semantic_neighbor_index_is_ready():
-            rows = self._search_query_embedding_ann_broad_scope(
-                graph_run_id=graph_run_id,
-                vector_literal=vector_literal,
-                limit=normalized_limit,
-            )
-            if rows:
-                return rows
-
-        return self._search_query_embedding_exact(
-            graph_run_id=graph_run_id,
-            vector_literal=vector_literal,
-            limit=normalized_limit,
-        )
-
-    def _search_query_embedding_exact(
+    def _dense_query_sql_spec(
         self,
         *,
         graph_run_id: str,
         vector_literal: str,
         limit: int,
-    ) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                self._configure_exact_vector_session(cur)
-                cur.execute(
-                    queries.DENSE_QUERY_SEARCH_SQL,
-                    (
-                        vector_literal,
-                        graph_run_id,
-                        vector_literal,
-                        limit,
-                    ),
-                )
-                return cur.fetchall()
-
-    def _search_query_embedding_ann_broad_scope(
-        self,
-        *,
-        graph_run_id: str,
-        vector_literal: str,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        candidate_limit = self._ann_candidate_limit(
+        scope_corpus_ids: Sequence[int] | None = None,
+    ) -> _SqlSpec:
+        route = self.describe_dense_query_route(
             graph_run_id=graph_run_id,
             limit=limit,
+            scope_corpus_ids=scope_corpus_ids,
         )
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                self._configure_hnsw_session(cur)
-                cur.execute(
-                    queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
-                    (
-                        vector_literal,
-                        vector_literal,
-                        candidate_limit,
-                        graph_run_id,
-                        limit,
-                    ),
-                )
-                return cur.fetchall()
+        candidate_limit = int(route["candidate_limit"])
+        if scope_corpus_ids:
+            unique_scope_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in scope_corpus_ids))
+            return _SqlSpec(
+                route_name=str(route["route"]),
+                sql=queries.DENSE_QUERY_SEARCH_IN_SELECTION_SQL,
+                params=(
+                    vector_literal,
+                    unique_scope_ids,
+                    vector_literal,
+                    candidate_limit,
+                ),
+                metadata=route,
+            )
+        if route["search_mode"] == "ann":
+            return _SqlSpec(
+                route_name=str(route["route"]),
+                sql=queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
+                params=(
+                    vector_literal,
+                    vector_literal,
+                    candidate_limit,
+                    graph_run_id,
+                    limit,
+                ),
+                metadata=route,
+            )
+        return _SqlSpec(
+            route_name=str(route["route"]),
+            sql=queries.DENSE_QUERY_SEARCH_SQL,
+            params=(
+                vector_literal,
+                graph_run_id,
+                vector_literal,
+                candidate_limit,
+            ),
+            metadata=route,
+        )
 
     def _fetch_semantic_neighbors_exact(
         self,

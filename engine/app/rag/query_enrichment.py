@@ -531,6 +531,32 @@ def should_use_exact_title_precheck(text: str | None) -> bool:
     return True
 
 
+def should_use_title_similarity(
+    text: str | None,
+    *,
+    retrieval_profile: QueryRetrievalProfile,
+) -> bool:
+    """Return True when broad title similarity is worth the runtime cost.
+
+    Title-shaped queries still keep exact/prefix candidate rescue even when this
+    returns False. This gate only controls the broader trigram-style title
+    similarity lane that becomes pathological on very long exact titles.
+    """
+
+    if retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
+        return False
+
+    normalized = unicodedata.normalize("NFKC", text or "").strip()
+    if not normalized:
+        return False
+
+    token_count = _token_count(normalized)
+    return not (
+        len(normalized) >= MIN_EXACT_TITLE_PRECHECK_CHARS
+        and token_count >= MIN_EXACT_TITLE_PRECHECK_WORDS
+    )
+
+
 def should_use_chunk_lexical_query(text: str | None) -> bool:
     """Route longer free-text queries through chunk lexical search."""
 

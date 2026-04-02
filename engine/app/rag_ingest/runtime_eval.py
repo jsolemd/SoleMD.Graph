@@ -13,14 +13,15 @@ from app.rag_ingest.runtime_eval_execution import (
     aggregate_case_results as _aggregate_case_results,
 )
 from app.rag_ingest.runtime_eval_execution import (
+    attach_slow_case_plan_profiles,
+    evaluate_runtime_query_cases,
+    summarize_runtime_results,
+)
+from app.rag_ingest.runtime_eval_execution import (
     build_runtime_eval_request as _build_runtime_eval_request,
 )
 from app.rag_ingest.runtime_eval_execution import (
     build_runtime_service as _build_runtime_service,
-)
-from app.rag_ingest.runtime_eval_execution import (
-    evaluate_runtime_query_cases,
-    summarize_runtime_results,
 )
 from app.rag_ingest.runtime_eval_models import (
     RagRuntimeEvalCohortReport,
@@ -37,6 +38,7 @@ from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalQueryFamily,
     RuntimeEvalSlowCase,
     RuntimeEvalSlowStage,
+    RuntimeEvalSqlPlanProfile,
     RuntimeEvalSummary,
     RuntimeEvalTopHit,
     WarehouseQualitySummary,
@@ -151,6 +153,17 @@ def run_rag_runtime_evaluation(
         connect=connect_fn,
         service=service,
     )
+    summary = summarize_runtime_results(results)
+    if isinstance(repository, PostgresRagRepository):
+        summary = attach_slow_case_plan_profiles(
+            summary=summary,
+            cases=cases,
+            results=results,
+            repository=repository,
+            graph_run_id=release.graph_run_id,
+            rerank_topn=rerank_topn,
+            query_embedder=service.query_embedder,
+        )
     return RagRuntimeEvaluationReport(
         graph_release_id=release.graph_release_id,
         graph_run_id=release.graph_run_id,
@@ -177,7 +190,7 @@ def run_rag_runtime_evaluation(
         grounding_runtime_status=runtime_status,
         warmup_duration_ms=warmup_duration_ms,
         query_embedder_status=service.query_embedder_status(),
-        summary=summarize_runtime_results(results),
+        summary=summary,
         cases=results,
     )
 
@@ -197,6 +210,7 @@ __all__ = [
     "RuntimeEvalQueryFamily",
     "RuntimeEvalSlowCase",
     "RuntimeEvalSlowStage",
+    "RuntimeEvalSqlPlanProfile",
     "RuntimeEvalSummary",
     "RuntimeEvalTopHit",
     "WarehouseQualitySummary",

@@ -12,6 +12,7 @@ from time import perf_counter
 from app import db
 from app.rag.grounded_runtime import build_grounded_answer_from_runtime
 from app.rag.repository import PostgresRagRepository
+from app.rag.runtime_profile import profile_runtime_case_sql_plans
 from app.rag.schemas import RagSearchRequest
 from app.rag.service import RagService, serialize_search_result
 from app.rag_ingest.runtime_eval_models import (
@@ -111,6 +112,32 @@ def _numeric_profile(values: Sequence[float]) -> RuntimeEvalNumericProfile:
     )
 
 
+def _route_signature(session_flags: dict[str, object]) -> str | None:
+    if not session_flags:
+        return None
+    ordered_keys = (
+        "retrieval_profile",
+        "title_anchor_route",
+        "paper_search_route",
+        "paper_search_use_title_similarity",
+        "paper_search_use_title_candidate_lookup",
+        "chunk_search_route",
+        "dense_query_route",
+    )
+    parts = [
+        f"{key}={session_flags[key]}"
+        for key in ordered_keys
+        if key in session_flags and session_flags.get(key) not in (None, "")
+    ]
+    return "|".join(parts) if parts else None
+
+
+def _case_route_signature(result: RuntimeEvalCaseResult) -> str | None:
+    if result.route_signature:
+        return result.route_signature
+    return _route_signature(result.session_flags)
+
+
 def evaluate_runtime_query_cases(
     *,
     graph_release_id: str,
@@ -189,6 +216,8 @@ def evaluate_runtime_query_cases(
             continue
 
         debug_trace = internal_result.debug_trace if internal_result is not None else {}
+        session_flags = debug_trace.get("session_flags", {})
+        route_signature = _route_signature(session_flags)
         top_corpus_ids = [bundle.paper.corpus_id for bundle in response.evidence_bundles]
         hit_rank = None
         for rank, corpus_id in enumerate(top_corpus_ids, start=1):
@@ -226,7 +255,8 @@ def evaluate_runtime_query_cases(
                 },
                 stage_durations_ms=debug_trace.get("stage_durations_ms", {}),
                 candidate_counts=debug_trace.get("candidate_counts", {}),
-                session_flags=debug_trace.get("session_flags", {}),
+                session_flags=session_flags,
+                route_signature=route_signature,
                 duration_ms=duration_ms,
                 service_duration_ms=service_duration_ms,
                 overhead_duration_ms=max(duration_ms - service_duration_ms, 0.0),
@@ -345,11 +375,15 @@ def _summarize_latency(
 
     stage_values: dict[str, list[float]] = {}
     candidate_values: dict[str, list[float]] = {}
+    route_values: dict[str, list[float]] = {}
     for result in results:
         for stage_name, duration_ms in result.stage_durations_ms.items():
             stage_values.setdefault(stage_name, []).append(float(duration_ms))
         for candidate_name, count in result.candidate_counts.items():
             candidate_values.setdefault(candidate_name, []).append(float(count))
+        route_signature = _case_route_signature(result)
+        if route_signature:
+            route_values.setdefault(route_signature, []).append(float(result.service_duration_ms))
 
     slow_case_limit = min(10, max(3, ceil(len(results) * 0.01)))
     sorted_slow_cases = sorted(
@@ -406,11 +440,60 @@ def _summarize_latency(
                     )
                 ),
                 session_flags=dict(sorted(result.session_flags.items())),
+                route_signature=_case_route_signature(result),
                 top_hits=result.top_hits,
             )
             for result in sorted_slow_cases
         ],
+        route_profiles_ms={
+            route_name: _numeric_profile(values)
+            for route_name, values in sorted(
+                route_values.items(),
+                key=lambda item: (-max(item[1]), item[0]),
+            )
+        },
     )
+
+
+def attach_slow_case_plan_profiles(
+    *,
+    summary: RuntimeEvalSummary,
+    cases: Sequence[RuntimeEvalQueryCase],
+    results: Sequence[RuntimeEvalCaseResult],
+    repository: PostgresRagRepository,
+    graph_run_id: str,
+    rerank_topn: int,
+    query_embedder=None,
+) -> RuntimeEvalSummary:
+    """Attach planner-only SQL profiles to the slowest runtime cases."""
+
+    if not summary.latency.slow_cases:
+        return summary
+
+    case_lookup = {
+        (case.corpus_id, str(case.query_family), case.query): case
+        for case in cases
+    }
+    result_lookup = {
+        (result.corpus_id, str(result.query_family), result.query): result
+        for result in results
+    }
+
+    for slow_case in summary.latency.slow_cases:
+        key = (slow_case.corpus_id, str(slow_case.query_family), slow_case.query)
+        query_case = case_lookup.get(key)
+        case_result = result_lookup.get(key)
+        if query_case is None or case_result is None:
+            continue
+        slow_case.plan_profiles = profile_runtime_case_sql_plans(
+            repository,
+            graph_run_id=graph_run_id,
+            case=query_case,
+            result=case_result,
+            rerank_topn=rerank_topn,
+            query_embedder=query_embedder,
+        )
+    return summary
 
 
 def summarize_runtime_results(

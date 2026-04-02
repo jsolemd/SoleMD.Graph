@@ -13,6 +13,7 @@ from app.rag.query_enrichment import (
     should_seed_resolved_entity_term,
     should_use_chunk_lexical_query,
     should_use_exact_title_precheck,
+    should_use_title_similarity,
 )
 from app.rag.types import QueryRetrievalProfile
 
@@ -74,6 +75,35 @@ def test_should_use_exact_title_precheck_accepts_short_terminal_title_candidates
 def test_should_use_exact_title_precheck_rejects_ordinary_sentence_queries():
     assert not should_use_exact_title_precheck(
         "This is a representative discussion sentence with a concluding period."
+    )
+
+
+def test_should_use_title_similarity_disables_broad_lane_for_long_exact_titles():
+    title = (
+        "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+        "maturation and brain development in the rat"
+    )
+
+    assert is_title_like_query(title)
+    assert (
+        should_use_title_similarity(
+            title,
+            retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        )
+        is False
+    )
+
+
+def test_should_use_title_similarity_keeps_shorter_title_lookup_queries():
+    title = "Motor Performance Is not Enhanced by Daytime Naps in Older Adults"
+
+    assert is_title_like_query(title)
+    assert (
+        should_use_title_similarity(
+            title,
+            retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        )
+        is True
     )
 
 
