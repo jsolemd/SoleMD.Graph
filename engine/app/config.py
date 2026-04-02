@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     rag_dense_query_base_model: str = "allenai/specter2_base"
     rag_dense_query_adapter_name: str = "allenai/specter2_adhoc_query"
     rag_dense_query_max_length: int = 512
+    rag_specter2_proximity_adapter_name: str = "allenai/specter2"
+    rag_medcpt_query_model_name: str = "ncbi/MedCPT-Query-Encoder"
+    rag_medcpt_article_model_name: str = "ncbi/MedCPT-Article-Encoder"
+    rag_medcpt_cross_encoder_model_name: str = "ncbi/MedCPT-Cross-Encoder"
+    rag_biomedical_encoder_batch_size: int = 16
+    rag_biomedical_reranker_batch_size: int = 16
     rag_model_cache_dir: str = "data/huggingface"
 
     # DuckDB (for citations pipeline and heavy in-memory queries)

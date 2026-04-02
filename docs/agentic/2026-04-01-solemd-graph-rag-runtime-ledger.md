@@ -33,17 +33,19 @@ Mode: agentic overnight improvement loop
 | A23 | done | P1 | Evaluation hygiene | Several stale attached runtime eval/test jobs were still consuming exec slots and obscuring the post-fix picture. | Harvested the post-fix artifacts, moved the broad rechecks back to detached/one-shot runs, and kept the live picture anchored to the fresh current-release cohort. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + cleaned process set |
 | A24 | done | P0 | Runtime session optimization | Live `EXPLAIN ANALYZE` on the canonical entity search showed about `774ms` of `~798ms` spent in PostgreSQL JIT compilation for a short search query, which is exactly the wrong workload shape for JIT. | Centralized runtime search-session settings in `engine/app/rag/repository.py`, added `rag_runtime_disable_jit` in `engine/app/config.py`, and verified the repository session contract in tests. | `uv run ruff check app/config.py app/rag/repository.py test/test_rag_repository.py` + `uv run pytest test/test_rag_repository.py` |
 | A25 | done | P1 | Observability | If the fresh `v11-jitoff` cohort still shows any nontrivial tail, the runtime path needs stage-level timing visibility instead of another blind optimization round. | Added internal stage/candidate timing summaries to runtime eval artifacts and used them to isolate the dense-query and relation-search tails on the current cohort. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + targeted runtime tests |
-| A26 | pending | P2 | Dense retrieval contract | The runtime query path uses `allenai/specter2_adhoc_query`, while stored paper vectors still originate from Semantic Scholar `embedding.specter_v2`; official SPECTER2 guidance suggests query/document adapters should share the intended retrieval space. | Audit the paper-embedding/query-embedding contract against SPECTER2 primary sources and decide whether a paper re-embedding or alternate scientific/biomedical dense lane is warranted. | Contract note + comparison experiment |
-| A27 | pending | P2 | Biomedical reranking | Biomedical IR literature suggests MedCPT-class rerankers can improve question/article retrieval, especially on sentence-style biomedical questions, but at a GPU/runtime cost. | After the current latency floor settles, evaluate a small optional biomedical reranker lane on the sentence-global cohort and compare quality/latency against the current SPECTER2 + structured-signal stack. | Controlled benchmark artifact + decision note |
+| A26 | done | P1 | Dense retrieval contract | The runtime query path uses `allenai/specter2_adhoc_query`, while stored paper vectors still originate from Semantic Scholar `embedding.specter_v2`; official SPECTER2 guidance suggests query/document adapters should share the intended retrieval space. | Added a GPU-backed dense contract audit over the live runtime-eval cohort, compared stored S2 vectors with locally re-encoded SPECTER2 proximity vectors, and recorded that the current stored-paper lane is already well aligned with the live query encoder. | `uv run pytest test/test_rag_dense_audit.py test/test_rag_query_embedding.py -q` + `.tmp/dense-contract-audit-current-v1.json` |
+| A27 | done | P1 | Biomedical reranking | Biomedical IR literature suggests MedCPT-class rerankers can improve question/article retrieval, especially on sentence-style biomedical questions, but at a GPU/runtime cost. | Added a controlled MedCPT dual-encoder and cross-encoder canary over the full current runtime-eval cohort and recorded that the strongest dense-only sentence-global lane is `medcpt_dual_encoder+medcpt_cross_encoder`, which now becomes the candidate live runtime experiment rather than a speculative idea. | `uv run pytest test/test_rag_dense_audit.py test/test_rag_query_embedding.py -q` + `.tmp/dense-contract-audit-current-v1.json` |
 | A28 | done | P2 | Centralization | The runtime entity search SQL duplicated the same query-term, concept-ranking, and scoring logic across four large query constants, which made future entity-path changes risky and noisy. | Centralized the entity-search SQL into shared CTE fragments/builders in `engine/app/rag/queries.py` and reverified repository/service behavior. | `uv run ruff check app/rag/queries.py test/test_rag_repository.py test/test_rag_service.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py` |
 | A29 | done | P0 | Routing correctness | The fresh `v14` cohort still had a `title_global` outlier (`22309903`) routed through `retrieval_profile=passage_lookup`, which dragged dense-query search back to `~498ms` on an otherwise title-shaped query. | Kept the classifier conservative but re-enabled the exact-title precheck for passage-mode lexical queries, so long title-shaped queries can promote themselves into `title_lookup` without falling into chunk/dense retrieval first. | `.tmp/rag-runtime-probe-22309903-title-global-v15.json` + service/search-plan/runtime-perf regressions |
 | A30 | done | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Completed the query-routing pass so long passage queries no longer auto-seed incidental relation labels like `compare`; relation-lane latency dropped out of the hot-stage summary. | `.tmp/rag-runtime-probe-273920567-sentence-global-v16.json` + query/service/runtime-perf regressions |
 | A31 | done | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` became the most common hot stage (`mean ~68–69ms`, `p95 ~89–94ms`) while only `2/96` sentence-global cases produced any entity-hit papers. | Added the high-precision entity-surface gate and confirmed on the refreshed current cohort that the title families dropped to about `20ms` mean and `sentence_global` dropped to about `148ms` mean without any quality loss. | `.tmp/rag-runtime-eval-current-all-families-v16-routing-relation.json` + unit/service regressions |
 | A32 | done | P1 | Title-search and sentence-ranking tail | The remaining runtime miss set had narrowed to `3/96` `sentence_global` cases, and `24948876` was still a title-like sentence case where citation-only neighbors could outrank the direct lexical paper. | Rejected the naive global-KNN rewrite, added planner-visible title-search instrumentation, then fixed the real contract bugs: missing ANN distances were inflating `dense_score` to `1.0`, and `TITLE_LOOKUP` did not sort direct title support ahead of citation-only neighbors. | `uv run pytest test/test_rag_repository.py test/test_rag_ranking.py` + `.tmp/rag-runtime-eval-sentence-miss-set-v19-titlefix.json` |
 | A33 | done | P1 | Dense-runtime contract hygiene | Live warmup and eval emitted `There are adapters available but none are activated for the forward pass.` even though runtime status already reported `active_adapters=Stack[[QRY]]` on the loaded SPECTER2 query encoder. | Reworked `query_embedding.py` so adapter activation is explicit, runtime status falls back to `adapters_config.active_setup`, and the known false-positive `adapters.model_mixin` warning is suppressed only around the real load+activate path. | `uv run pytest test/test_rag_query_embedding.py` + quiet embedder smoke + `.tmp/rag-runtime-eval-sentence-miss-set-v20-embedderquiet.json` |
-| A34 | pending | P2 | Contract docs drift | `database.md` reflects `graph_base_points`, while some older design docs still describe base membership and base size using stale `graph_points` fields or fixed corpus counts. | Make one graph-base contract doc canonical, update the stale runtime/base docs, and add a small verification check where possible so perf/runtime assumptions do not drift from the schema. | Doc diff + any small contract check |
+| A34 | done | P2 | Contract docs drift | `database.md` reflects `graph_base_points`, while some older design docs still describe base membership and base size using stale `graph_points` fields or fixed corpus counts. | Re-reviewed the current docs and contract test after the broad runtime cleanup; the canonical graph-base/runtime docs are already aligned around `graph_base_points`, policy-driven base sizing, and the live retrieval surface. Future doc work is now tied to any new live reranker lane rather than stale base-contract drift. | `cd engine && uv run pytest test/test_docs_runtime_contract.py -q` |
 | A35 | pending | P2 | Clinician-facing ranking priors | Runtime ranking is now fast and grounded, but it is still largely corpus-neutral; treatment/prognosis/diagnosis questions can benefit from lightweight priors over publication type, species, and evidence strength. | Evaluate a small query-intent classifier and ranking priors using existing publication-type, citation, and PubTator-derived species signals without regressing general retrieval quality. | Frozen-cohort comparison artifact + decision note |
 | A36 | pending | P2 | Conflict and polarity evaluation | Current evals prove recall, grounding, and latency, but they do not yet stress negation, null findings, mixed evidence, or nonhuman-to-human leakage. | Build a compact contradiction/polarity benchmark for biomedical questions and wire it into runtime evaluation so fast wrong-positive answers are caught explicitly. | Benchmark artifact + runtime eval extension |
+| A37 | pending | P1 | Live biomedical reranker | The dense contract audit showed the current stored S2 paper vectors are not misaligned, but it also showed that a bounded MedCPT reranker can materially improve sentence-style biomedical retrieval quality. | Add an optional GPU-backed MedCPT rerank stage on the merged top-N runtime candidates for sentence-like global queries, benchmark quality/latency on the current cohort, and keep the existing S2 retrieval lane as the base contract. | Runtime perf/eval artifact + focused service/ranking tests |
+| A38 | pending | P2 | Reranker observability | A live reranker experiment will only be safe if its candidate-window size, GPU stage cost, and promotion effect are visible in the same runtime artifacts as the existing retrieval stages. | Extend runtime traces and eval artifacts so any live reranker stage records candidate counts, stage duration, and rerank-driven promotions before broader rollout. | Updated runtime artifact + focused telemetry regression |
 
 ## Completed Batches
 
@@ -1037,3 +1039,59 @@ Mode: agentic overnight improvement loop
   - runtime perf coverage is now aligned with the actual current-release operating floor instead of a legacy smoke baseline
   - selected-paper context has become a stronger contract surface: an explicit selected paper can now rescue its own exact/prefix title match even when the classifier keeps the raw query in passage mode
   - this batch closes `A17` cleanly and reduces the chance that future query-shape tuning silently reopens the selected-title tail
+
+## Batch 28: Dense Contract Audit And Biomedical Reranker Canary
+
+- Scope:
+  - `engine/app/config.py`
+  - `engine/app/rag/biomedical_models.py`
+  - `engine/app/rag/query_embedding.py`
+  - `engine/app/rag/dense_audit.py`
+  - `engine/scripts/evaluate_dense_contract_audit.py`
+  - `engine/test/test_rag_dense_audit.py`
+- Problem evidenced after the runtime perf floor stabilized:
+  - the next dense-runtime question was no longer speed but contract truth:
+    - was the live `allenai/specter2_adhoc_query` encoder mismatched with stored Semantic Scholar `embedding.specter_v2` paper vectors?
+    - would a biomedical lane such as MedCPT move the remaining sentence-style objective more than another round of SQL/query-shape tuning?
+  - answering that cleanly required a controlled cohort audit, not another speculative runtime rewrite.
+- Durable implementation landed:
+  - added centralized biomedical experiment settings in `engine/app/config.py`
+  - extracted reusable GPU-aware biomedical encoder/reranker loaders into `engine/app/rag/biomedical_models.py`
+    - SPECTER2 proximity paper encoder
+    - MedCPT query encoder
+    - MedCPT article encoder
+    - MedCPT cross-encoder reranker
+  - cleaned `engine/app/rag/query_embedding.py` so adapter-warning suppression and active-adapter inspection are centralized instead of duplicated
+  - added `engine/app/rag/dense_audit.py` and `engine/scripts/evaluate_dense_contract_audit.py` to run a controlled dense-space audit over the runtime-eval cohort
+  - compared three dense lanes on identical cases:
+    - `specter2_stored_api`
+    - `specter2_local_proximity`
+    - `medcpt_dual_encoder`
+  - reranked each lane with `medcpt_cross_encoder`
+  - kept the work explicitly experimental and offline: no live runtime contract changed in this batch
+- Verification:
+  - `cd engine && uv run ruff check app/config.py app/rag/biomedical_models.py app/rag/query_embedding.py app/rag/dense_audit.py scripts/evaluate_dense_contract_audit.py test/test_rag_dense_audit.py test/test_rag_query_embedding.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_dense_audit.py test/test_rag_query_embedding.py -q` -> `8 passed`
+  - live GPU-backed audit artifact:
+    - `cd engine && uv run python scripts/evaluate_dense_contract_audit.py --graph-release-id current --sample-size 0 --seed 7 --top-k 5 --rerank-topn 10 --report-path .tmp/dense-contract-audit-current-v1.json`
+    - `.tmp/dense-contract-audit-current-v1.json`
+- Results:
+  - cohort:
+    - `sampled_papers = 246`
+    - `query_case_count = 492`
+  - SPECTER2 contract alignment:
+    - `mean_self_cosine = 0.9933`
+    - `top1_agreement_rate = 0.9776`
+    - `mean_top10_overlap_rate = 0.8819`
+    - interpretation: the stored Semantic Scholar S2 paper vectors are already closely aligned with the live SPECTER2 query space, so a paper re-embedding pass is not justified by the current evidence
+  - dense-only sentence-global quality:
+    - `specter2_stored_api`: `hit@1 = 0.8902`, `hit@5 = 0.9715`
+    - `specter2_local_proximity`: `hit@1 = 0.8699`, `hit@5 = 0.9512`
+    - `medcpt_dual_encoder`: `hit@1 = 0.9228`, `hit@5 = 0.9797`
+  - reranked sentence-global quality:
+    - `specter2_stored_api+medcpt_cross_encoder`: `hit@1 = 0.9715`, `hit@5 = 0.9797`
+    - `medcpt_dual_encoder+medcpt_cross_encoder`: `hit@1 = 0.9837`, `hit@5 = 0.9959`
+- Interpretation:
+  - `A26` is closed: the current stored S2 paper-embedding lane is not the limiting contract issue
+  - `A27` is closed as a benchmark decision: a bounded MedCPT reranker is the highest-value next live runtime experiment for sentence-style biomedical queries
+  - the next runtime batch should keep S2 retrieval as the base contract and layer an optional MedCPT rerank stage on a small merged candidate set

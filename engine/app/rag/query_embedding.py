@@ -3,49 +3,14 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
 from functools import lru_cache
-from importlib import import_module
 from threading import Lock
-from typing import Any, Protocol
+from typing import Protocol
 
 from app.config import settings
+from app.rag.biomedical_models import active_adapter_state, suppress_known_adapter_load_warning
 
 logger = logging.getLogger(__name__)
-_ADAPTER_MODEL_MIXIN_MODULE = "adapters.model_mixin"
-_KNOWN_ADAPTER_LOAD_WARNING = (
-    "There are adapters available but none are activated for the forward pass."
-)
-@contextmanager
-def _suppress_known_adapter_load_warning():
-    try:
-        model_mixin = import_module(_ADAPTER_MODEL_MIXIN_MODULE)
-    except ModuleNotFoundError:
-        yield
-        return
-    original_warning = model_mixin.logger.warning
-
-    def _warning(message: str, *args: object, **kwargs: object) -> None:
-        if message == _KNOWN_ADAPTER_LOAD_WARNING:
-            return
-        original_warning(message, *args, **kwargs)
-
-    model_mixin.logger.warning = _warning
-    try:
-        yield
-    finally:
-        model_mixin.logger.warning = original_warning
-
-
-def _active_adapter_state(model: Any) -> str | None:
-    active_adapters = getattr(model, "active_adapters", None)
-    if active_adapters:
-        return str(active_adapters)
-    adapters_config = getattr(model, "adapters_config", None)
-    active_setup = getattr(adapters_config, "active_setup", None)
-    if active_setup:
-        return str(active_setup)
-    return None
 
 
 class RagQueryEmbedder(Protocol):
@@ -155,7 +120,7 @@ class Specter2AdhocQueryEmbedder:
                 self._base_model_name,
                 cache_dir=self._cache_dir,
             )
-            with _suppress_known_adapter_load_warning():
+            with suppress_known_adapter_load_warning():
                 adapter_ref = model.load_adapter(
                     self._adapter_name,
                     source="hf",
@@ -165,7 +130,7 @@ class Specter2AdhocQueryEmbedder:
                 if not hasattr(model, "set_active_adapters"):
                     raise RuntimeError("Loaded adapter model does not support activation")
                 model.set_active_adapters(adapter_ref)
-            active_adapters = _active_adapter_state(model)
+            active_adapters = active_adapter_state(model)
             if not active_adapters:
                 raise RuntimeError(
                     f"Failed to activate dense query adapter '{self._adapter_name}'"
@@ -194,7 +159,7 @@ class Specter2AdhocQueryEmbedder:
         if self._runtime is not None:
             _, model, runtime_device = self._runtime
             device = str(runtime_device)
-            active_adapters = _active_adapter_state(model)
+            active_adapters = active_adapter_state(model)
         return {
             "enabled": True,
             "ready": self._runtime is not None,
