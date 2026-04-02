@@ -1026,6 +1026,86 @@ def test_rank_paper_hits_promotes_near_exact_title_sentence_in_passage_lookup():
     assert "Direct paper text closely matches the query" in ranked[0].match_reasons
 
 
+def test_rank_paper_hits_treats_strong_passage_alignment_as_direct_support():
+    query_text = (
+        "Does GDNF reduce drug-induced rotational behavior after medial forebrain "
+        "bundle transection by increasing striatal dopamine?"
+    )
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=11,
+            paper_id="paper-11",
+            semantic_scholar_paper_id="paper-11",
+            title="Indirect basal forebrain background study",
+            journal_name=None,
+            year=1999,
+            doi=None,
+            pmid=11,
+            pmcid=None,
+            abstract="Background citation context without direct answer text.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=30,
+            reference_count=50,
+            chunk_lexical_score=0.002,
+        ),
+        PaperEvidenceHit(
+            corpus_id=22,
+            paper_id="paper-22",
+            semantic_scholar_paper_id="paper-22",
+            title=(
+                "GDNF reduces drug-induced rotational behavior after medial forebrain "
+                "bundle transection by a mechanism not involving striatal dopamine"
+            ),
+            journal_name=None,
+            year=2005,
+            doi=None,
+            pmid=22,
+            pmcid=None,
+            abstract=(
+                "GDNF reduced drug-induced rotational behavior after medial forebrain "
+                "bundle transection by a mechanism not involving striatal dopamine."
+            ),
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=6,
+            reference_count=12,
+            dense_score=0.83,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={
+            11: [
+                CitationContextHit(
+                    corpus_id=11,
+                    citation_id=91,
+                    neighbor_corpus_id=44,
+                    direction=CitationDirection.INCOMING,
+                    context_text="Indirect topical context.",
+                    score=3.0,
+                )
+            ]
+        },
+        entity_hits={},
+        relation_hits={},
+        query_text=query_text,
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        evidence_intent=EvidenceIntent.REFUTE,
+        channel_rankings={
+            RetrievalChannel.CHUNK_LEXICAL: {11: 1},
+            RetrievalChannel.DENSE_QUERY: {22: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [22, 11]
+    assert ranked[0].passage_alignment_score >= 0.55
+    assert "Direct paper text closely matches the query" in ranked[0].match_reasons
+
+
 def test_rank_paper_hits_applies_clinician_prior_for_treatment_queries():
     papers = [
         PaperEvidenceHit(

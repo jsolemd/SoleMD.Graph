@@ -1411,3 +1411,96 @@ Mode: agentic overnight improvement loop
     - a bounded passage-query title-candidate rescue for comparator-style clinician questions like `26923322`
     - a separate rerank/objective pass for mechanism/nonhuman conflict cases like `16719622`
   - this batch makes those next passes measurable under a frozen, checked-in benchmark instead of broad live-graph anecdotes.
+
+## Batch 36: Benchmark The Dense Contract And Fix Biomedical Pair Encoding
+
+- Scope:
+  - `engine/app/rag/dense_audit.py`
+  - `engine/scripts/evaluate_dense_contract_audit.py`
+  - `engine/test/test_rag_dense_audit.py`
+  - `engine/app/rag/biomedical_models.py`
+  - `engine/test/test_rag_biomedical_models.py`
+- Problem evidenced after Batch 35:
+  - the polarity benchmark isolated the remaining failures to `sentence_global`, but it was still unclear whether the true bottleneck lived in:
+    - query/document embedding-space mismatch
+    - MedCPT dual-encoder recall
+    - the reranker lane
+    - or downstream runtime fusion
+  - the dense contract audit script could only sample live papers generically, so it could not evaluate the exact frozen benchmark cases that were now driving the runtime work.
+  - the first MedCPT/cross-encoder audit attempt also exposed a real adapter bug: Hugging Face fast tokenizers rejected our raw `list[list[str]]` article pairs for biomedical reranking batches.
+- Durable implementation landed:
+  - extended the dense audit contract so it can run directly against checked-in runtime benchmark cases instead of only ad hoc sampled papers.
+  - promoted grouped benchmark summaries into the dense audit output via `by_stratum_key`, keeping dense-space diagnostics aligned with the same frozen benchmark slices used by runtime eval.
+  - added benchmark metadata to dense audit reports so artifacts now preserve:
+    - `benchmark_key`
+    - `benchmark_source`
+  - fixed the biomedical encoder adapter by normalizing sequence batch items into tokenizer-safe `(title, abstract)` tuples before tokenization.
+  - added regression tests for:
+    - grouped-rank aggregation in dense audit
+    - biomedical pair-batch normalization for cross-encoder inputs
+- Verification:
+  - `cd engine && uv run ruff check app/rag/biomedical_models.py test/test_rag_biomedical_models.py app/rag/dense_audit.py scripts/evaluate_dense_contract_audit.py test/test_rag_dense_audit.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_biomedical_models.py test/test_rag_dense_audit.py -q` -> `7 passed`
+  - live dense audit:
+    - `cd engine && uv run python scripts/evaluate_dense_contract_audit.py --benchmark-path data/runtime_eval_benchmarks/polarity_conflict_v1.json --report-path .tmp/dense-contract-audit-polarity-conflict-v1.json > /dev/null`
+- Measured result:
+  - frozen benchmark query count: `10`
+  - stored-vs-local SPECTER2 alignment:
+    - `mean_self_cosine = 0.9923`
+    - `min_self_cosine = 0.9631`
+    - `top1_agreement_rate = 1.0`
+    - `mean_top10_overlap_rate = 1.0`
+  - lane quality on the frozen polarity cohort:
+    - `specter2_stored_api hit@1 = 1.0`
+    - `specter2_local_proximity hit@1 = 1.0`
+    - `medcpt_dual_encoder hit@1 = 1.0`
+    - MedCPT cross-encoder reranked variants also `hit@1 = 1.0`
+- Interpretation:
+  - the dense retrieval and reranker spaces are not the limiting step on the frozen polarity cohort.
+  - the remaining misses on live runtime are downstream fusion/ranking/query-planning issues, not embedding-space failure.
+  - fixing the tokenizer adapter was necessary hardening regardless, because otherwise the biomedical reranker path could fail the moment we promote it out of noop mode.
+
+## Batch 37: Make Passage Alignment Count As Direct Support And Clear The Frozen Polarity Benchmark
+
+- Scope:
+  - `engine/app/rag/retrieval_policy.py`
+  - `engine/app/rag/ranking.py`
+  - `engine/test/test_rag_retrieval_policy.py`
+  - `engine/test/test_rag_ranking.py`
+  - `docs/agentic/2026-04-01-solemd-graph-rag-runtime-ledger.md`
+- Problem evidenced after Batch 36:
+  - `26923322` was recovered by specificity-first chunk fallback ordering, but `16719622` still lost rank 1 even though:
+    - the target paper had the stronger dense score
+    - the grounded answer was correct
+    - the target abstract directly matched the query and triggered the direct-text reason
+  - root cause: the runtime treated passage queries as having direct support only when `chunk_lexical_score > 0` or `lexical_score > 0`.
+  - that meant a paper with strong direct passage alignment still sorted as “indirect,” while a citation-context paper with a tiny chunk match sorted as “direct.”
+- Durable implementation landed:
+  - centralized the minimum direct-alignment threshold as `MIN_DIRECT_PASSAGE_ALIGNMENT` in `retrieval_policy.py`.
+  - updated passage direct-support detection so strong passage alignment now counts as direct evidence for passage lookups.
+  - wired `ranking.py` to reuse the same centralized threshold instead of carrying an independent literal.
+  - added focused regressions for:
+    - direct-support detection from passage alignment
+    - passage ranking where a citation-context paper must not outrank the directly answer-bearing dense/aligned target
+- Verification:
+  - `cd engine && uv run ruff check app/rag/retrieval_policy.py app/rag/ranking.py test/test_rag_retrieval_policy.py test/test_rag_ranking.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_retrieval_policy.py test/test_rag_ranking.py -q` -> `37 passed`
+  - live runtime eval:
+    - `cd engine && uv run python scripts/evaluate_rag_runtime.py --benchmark-path data/runtime_eval_benchmarks/polarity_conflict_v1.json --report-path .tmp/rag-runtime-eval-polarity-conflict-v3.json > /dev/null`
+- Measured result:
+  - frozen polarity benchmark:
+    - `hit@1 = 1.0`
+    - `hit@5 = 1.0`
+    - `grounded_answer_rate = 1.0`
+    - `target_in_grounded_answer_rate = 1.0`
+    - `mean_service_duration_ms = 71.202`
+    - `p95_service_duration_ms = 87.998`
+  - compared with the original frozen benchmark run:
+    - `hit@1: 0.8 -> 1.0`
+    - `mean_service_duration_ms: 200.816 -> 71.202`
+  - both previously localized residual misses are now cleared:
+    - `26923322`
+    - `16719622`
+- Interpretation:
+  - the remaining polarity/cohort work no longer needs guesswork about retrieval recall; the frozen benchmark is now clean.
+  - the next high-value pass is stage-level observability on larger live cohorts, so the remaining work can focus on rare tails and larger-release behavior rather than the already-cleared frozen benchmark.

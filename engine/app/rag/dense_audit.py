@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
+
+from pydantic import Field
 
 from app import db
 from app.rag.biomedical_models import (
@@ -78,8 +81,9 @@ class DenseAuditLaneReport(ParseContractModel):
     paper_encoder_backend: str
     score_kind: _ScoreKind
     overall: DenseAuditAggregate
-    by_query_family: dict[str, DenseAuditAggregate]
-    failure_examples: list[DenseAuditFailureExample]
+    by_query_family: dict[str, DenseAuditAggregate] = Field(default_factory=dict)
+    by_stratum_key: dict[str, DenseAuditAggregate] = Field(default_factory=dict)
+    failure_examples: list[DenseAuditFailureExample] = Field(default_factory=list)
 
 
 class DenseAuditAlignmentReport(ParseContractModel):
@@ -95,6 +99,8 @@ class DenseAuditReport(ParseContractModel):
     graph_release_id: str
     graph_run_id: str
     chunk_version_key: str
+    benchmark_key: str | None = None
+    benchmark_source: str | None = None
     sample_size: int
     sampled_papers: int
     dense_candidate_papers: int
@@ -161,6 +167,20 @@ def aggregate_rank_metrics(ranks: list[int], *, k: int) -> DenseAuditAggregate:
     )
 
 
+def _aggregate_grouped_ranks(
+    grouped_ranks: Sequence[tuple[str, int]],
+    *,
+    top_k: int,
+) -> dict[str, DenseAuditAggregate]:
+    ranks_by_key: dict[str, list[int]] = {}
+    for key, rank in grouped_ranks:
+        ranks_by_key.setdefault(key, []).append(rank)
+    return {
+        key: aggregate_rank_metrics(ranks, k=top_k)
+        for key, ranks in sorted(ranks_by_key.items())
+    }
+
+
 def _fetch_dense_audit_papers(
     *,
     corpus_ids: list[int],
@@ -219,8 +239,9 @@ def _evaluate_lane(
     import torch
 
     results_by_key: dict[tuple[int, str, str], _LaneCaseResult] = {}
-    ranks_by_family: dict[str, list[int]] = {}
     all_ranks: list[int] = []
+    family_ranks: list[tuple[str, int]] = []
+    stratum_ranks: list[tuple[str, int]] = []
     failures: list[DenseAuditFailureExample] = []
 
     for case in cases:
@@ -240,7 +261,8 @@ def _evaluate_lane(
             ranked_corpus_ids=ranked_corpus_ids,
         )
         all_ranks.append(target_rank)
-        ranks_by_family.setdefault(str(case.query_family), []).append(target_rank)
+        family_ranks.append((str(case.query_family), target_rank))
+        stratum_ranks.append((case.stratum_key, target_rank))
         if target_rank > 1 and len(failures) < 12:
             failures.append(
                 DenseAuditFailureExample(
@@ -259,10 +281,8 @@ def _evaluate_lane(
             paper_encoder_backend=lane_spec.paper_backend,
             score_kind=lane_spec.score_kind,
             overall=aggregate_rank_metrics(all_ranks, k=top_k),
-            by_query_family={
-                family: aggregate_rank_metrics(ranks, k=top_k)
-                for family, ranks in sorted(ranks_by_family.items())
-            },
+            by_query_family=_aggregate_grouped_ranks(family_ranks, top_k=top_k),
+            by_stratum_key=_aggregate_grouped_ranks(stratum_ranks, top_k=top_k),
             failure_examples=failures,
         ),
         results_by_key,
@@ -280,7 +300,8 @@ def _rerank_lane(
 ) -> DenseAuditLaneReport:
     reranker = get_medcpt_reranker()
     all_ranks: list[int] = []
-    ranks_by_family: dict[str, list[int]] = {}
+    family_ranks: list[tuple[str, int]] = []
+    stratum_ranks: list[tuple[str, int]] = []
     failures: list[DenseAuditFailureExample] = []
 
     for case in cases:
@@ -307,7 +328,8 @@ def _rerank_lane(
         ]
         target_rank = reranked_corpus_ids.index(case.corpus_id) + 1
         all_ranks.append(target_rank)
-        ranks_by_family.setdefault(str(case.query_family), []).append(target_rank)
+        family_ranks.append((str(case.query_family), target_rank))
+        stratum_ranks.append((case.stratum_key, target_rank))
         if target_rank > 1 and len(failures) < 12:
             failures.append(
                 DenseAuditFailureExample(
@@ -325,10 +347,8 @@ def _rerank_lane(
         paper_encoder_backend=f"{base_report.paper_encoder_backend}+medcpt_cross_encoder",
         score_kind=base_report.score_kind,
         overall=aggregate_rank_metrics(all_ranks, k=top_k),
-        by_query_family={
-            family: aggregate_rank_metrics(ranks, k=top_k)
-            for family, ranks in sorted(ranks_by_family.items())
-        },
+        by_query_family=_aggregate_grouped_ranks(family_ranks, top_k=top_k),
+        by_stratum_key=_aggregate_grouped_ranks(stratum_ranks, top_k=top_k),
         failure_examples=failures,
     )
 
@@ -342,6 +362,9 @@ def run_dense_contract_audit(
     top_k: int = 5,
     rerank_topn: int = 10,
     query_families: list[RuntimeEvalQueryFamily] | None = None,
+    cases: Sequence[RuntimeEvalQueryCase] | None = None,
+    benchmark_key: str | None = None,
+    benchmark_source: str | None = None,
     connect=None,
 ) -> DenseAuditReport:
     import torch
@@ -352,18 +375,45 @@ def run_dense_contract_audit(
         chunk_version_key=chunk_version_key,
     )
     release = repository.resolve_graph_release(graph_release_id)
-    population = fetch_runtime_eval_population(
-        graph_run_id=release.graph_run_id,
-        chunk_version_key=chunk_version_key,
-        connect=connect_fn,
-    )
-    initial_sample = (
-        select_stratified_sample(population, sample_size=sample_size, seed=seed)
-        if sample_size > 0
-        else population
-    )
+    if cases is not None:
+        case_list = [
+            case
+            for case in cases
+            if not query_families or case.query_family in query_families
+        ]
+        requested_ids = list(dict.fromkeys(case.corpus_id for case in case_list))
+        population = fetch_runtime_eval_population(
+            graph_run_id=release.graph_run_id,
+            chunk_version_key=chunk_version_key,
+            corpus_ids=requested_ids,
+            connect=connect_fn,
+        )
+        papers_by_id = {paper.corpus_id: paper for paper in population}
+        sample = [
+            papers_by_id[corpus_id]
+            for corpus_id in requested_ids
+            if corpus_id in papers_by_id
+        ]
+        active_families = list(dict.fromkeys(case.query_family for case in case_list))
+    else:
+        population = fetch_runtime_eval_population(
+            graph_run_id=release.graph_run_id,
+            chunk_version_key=chunk_version_key,
+            connect=connect_fn,
+        )
+        sample = (
+            select_stratified_sample(population, sample_size=sample_size, seed=seed)
+            if sample_size > 0
+            else population
+        )
+        active_families = query_families or [
+            RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+        ]
+        case_list = build_runtime_eval_query_cases(sample, query_families=active_families)
+
     audit_papers = _fetch_dense_audit_papers(
-        corpus_ids=[paper.corpus_id for paper in initial_sample],
+        corpus_ids=[paper.corpus_id for paper in sample],
         connect=connect_fn,
     )
     papers_by_id = {paper.corpus_id: paper for paper in audit_papers}
@@ -374,20 +424,17 @@ def run_dense_contract_audit(
     )
     sample = [
         paper
-        for paper in initial_sample
+        for paper in sample
         if paper.corpus_id in papers_by_id
         and paper.corpus_id not in missing_embedding_ids
     ]
     dense_papers = [papers_by_id[paper.corpus_id] for paper in sample]
     paper_ids = [paper.corpus_id for paper in dense_papers]
     paper_lookup = {paper.corpus_id: paper for paper in dense_papers}
-    active_families = query_families or [
-        RuntimeEvalQueryFamily.TITLE_GLOBAL,
-        RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
-    ]
-    cases = build_runtime_eval_query_cases(sample, query_families=active_families)
+    retained_ids = {paper.corpus_id for paper in sample}
+    case_list = [case for case in case_list if case.corpus_id in retained_ids]
 
-    query_texts = list(dict.fromkeys(case.query for case in cases))
+    query_texts = list(dict.fromkeys(case.query for case in case_list))
     query_embedder = get_query_embedder()
     query_vectors = {
         query: query_embedder.encode(query) or []
@@ -450,7 +497,7 @@ def run_dense_contract_audit(
     lane_results: dict[str, dict[tuple[int, str, str], _LaneCaseResult]] = {}
     for lane_spec in lane_specs:
         report, results = _evaluate_lane(
-            cases=cases,
+            cases=case_list,
             paper_ids=paper_ids,
             lane_spec=lane_spec,
             top_k=top_k,
@@ -490,7 +537,7 @@ def run_dense_contract_audit(
         _rerank_lane(
             base_report=report,
             base_results=lane_results[report.lane_key],
-            cases=cases,
+            cases=case_list,
             papers_by_id=paper_lookup,
             rerank_topn=rerank_topn,
             top_k=top_k,
@@ -502,10 +549,12 @@ def run_dense_contract_audit(
         graph_release_id=release.graph_release_id,
         graph_run_id=release.graph_run_id,
         chunk_version_key=chunk_version_key,
-        sample_size=sample_size,
+        benchmark_key=benchmark_key,
+        benchmark_source=benchmark_source,
+        sample_size=(len(sample) if cases is not None else sample_size),
         sampled_papers=len(sample),
         dense_candidate_papers=len(dense_papers),
-        query_case_count=len(cases),
+        query_case_count=len(case_list),
         query_families=active_families,
         dropped_missing_embedding_corpus_ids=missing_embedding_ids,
         query_embedder_status=query_embedder.runtime_status(),

@@ -15,6 +15,65 @@ MIN_CHUNK_FALLBACK_WORDS = 3
 MIN_PASSAGE_ENRICHMENT_CANDIDATES = 12
 PASSAGE_ENRICHMENT_K_MULTIPLIER = 2
 MIN_BIOMEDICAL_RERANK_CANDIDATES = 3
+MIN_DIRECT_PASSAGE_ALIGNMENT = 0.55
+CHUNK_FALLBACK_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "in",
+        "is",
+        "of",
+        "on",
+        "or",
+        "than",
+        "the",
+        "to",
+        "vs",
+        "with",
+    }
+)
+CHUNK_FALLBACK_BONUS_TOKENS = frozenset(
+    {
+        "compared",
+        "differentiate",
+        "distinguish",
+        "effective",
+        "improve",
+        "improved",
+        "monotherapy",
+        "predict",
+        "predicts",
+        "safe",
+        "safety",
+        "versus",
+    }
+)
+
+
+def _chunk_fallback_sort_key(phrase: str, original_index: int) -> tuple[int, int, int]:
+    tokens = phrase.split()
+    informative_tokens = [
+        token for token in tokens if token not in CHUNK_FALLBACK_STOPWORDS
+    ]
+    bonus_score = sum(token in CHUNK_FALLBACK_BONUS_TOKENS for token in tokens)
+    long_token_score = sum(len(token) >= 8 for token in informative_tokens)
+    specificity_score = (
+        (len(informative_tokens) * 4)
+        + (long_token_score * 2)
+        + (bonus_score * 3)
+        - (2 if tokens and tokens[0] in CHUNK_FALLBACK_STOPWORDS else 0)
+    )
+    return (-specificity_score, -len(tokens), original_index)
 
 
 def chunk_search_queries(query: PaperRetrievalQuery) -> list[str]:
@@ -28,10 +87,17 @@ def chunk_search_queries(query: PaperRetrievalQuery) -> list[str]:
 
     candidates = [primary_query]
     seen = {primary_query}
-    for phrase in build_query_phrases(primary_query):
+    fallback_phrases: list[tuple[int, str]] = []
+    for index, phrase in enumerate(build_query_phrases(primary_query)):
         if len(phrase.split()) < MIN_CHUNK_FALLBACK_WORDS or phrase in seen:
             continue
         seen.add(phrase)
+        fallback_phrases.append((index, phrase))
+    for original_index, phrase in sorted(
+        fallback_phrases,
+        key=lambda item: _chunk_fallback_sort_key(item[1], item[0]),
+    ):
+        _ = original_index
         candidates.append(phrase)
         if len(candidates) >= MAX_CHUNK_FALLBACK_PHRASES + 1:
             break
@@ -194,7 +260,11 @@ def has_direct_retrieval_support(
     """Return True when a paper has direct query support for the current profile."""
 
     if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
-        return paper.chunk_lexical_score > 0 or paper.lexical_score > 0
+        return (
+            paper.chunk_lexical_score > 0
+            or paper.lexical_score > 0
+            or paper.passage_alignment_score >= MIN_DIRECT_PASSAGE_ALIGNMENT
+        )
     if retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
         return (
             paper.lexical_score > 0

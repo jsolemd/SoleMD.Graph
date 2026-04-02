@@ -62,6 +62,20 @@ class BiomedicalEncoder(Protocol):
     def runtime_status(self) -> dict[str, object]: ...
 
 
+def _normalize_tokenizer_batch_item(item: str | Sequence[str]) -> str | tuple[str, str]:
+    """Normalize one tokenizer batch item to the HF-supported single/pair contract."""
+
+    if isinstance(item, str):
+        return item
+
+    parts = [str(part).strip() for part in item if str(part).strip()]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    return (parts[0], " ".join(parts[1:]))
+
+
 class _BaseBatchEncoder:
     """Shared lazy loading and batched inference for HF encoders."""
 
@@ -118,7 +132,7 @@ class _BaseBatchEncoder:
         for start in range(0, len(items), batch_size):
             batch = items[start : start + batch_size]
             encoded = tokenizer(
-                batch,
+                [_normalize_tokenizer_batch_item(item) for item in batch],
                 truncation=True,
                 padding=True,
                 return_tensors="pt",

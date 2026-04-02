@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.rag.dense_audit import (
     DenseAuditPaper,
+    _aggregate_grouped_ranks,
     aggregate_rank_metrics,
     article_parts,
     article_text,
@@ -44,3 +45,19 @@ def test_aggregate_rank_metrics_computes_hit_rates_and_mrr():
     assert metrics.mean_reciprocal_rank == 0.5667
     assert metrics.mean_target_rank == 2.667
 
+
+def test_aggregate_grouped_ranks_builds_per_slice_metrics():
+    grouped = _aggregate_grouped_ranks(
+        [
+            ("intent:support", 1),
+            ("intent:support", 2),
+            ("intent:refute", 5),
+        ],
+        top_k=5,
+    )
+
+    assert grouped["intent:support"].cases == 2
+    assert grouped["intent:support"].hit_at_1_rate == 0.5
+    assert grouped["intent:support"].hit_at_5_rate == 1.0
+    assert grouped["intent:refute"].cases == 1
+    assert grouped["intent:refute"].mean_target_rank == 5.0

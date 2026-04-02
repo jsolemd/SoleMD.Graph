@@ -14,7 +14,10 @@ from app.rag.models import (
     PaperSpeciesProfile,
     RelationMatchedPaperHit,
 )
-from app.rag.retrieval_policy import has_direct_retrieval_support
+from app.rag.retrieval_policy import (
+    MIN_DIRECT_PASSAGE_ALIGNMENT,
+    has_direct_retrieval_support,
+)
 from app.rag.text_alignment import score_text_alignment
 from app.rag.title_anchor import compute_title_anchor_score
 from app.rag.types import (
@@ -55,7 +58,7 @@ CITATION_INTENT_WEIGHT = 0.08
 PUBLICATION_TYPE_WEIGHT = 0.06
 EVIDENCE_QUALITY_WEIGHT = 0.08
 CLINICAL_PRIOR_WEIGHT = 0.1
-PASSAGE_ALIGNMENT_REASON_THRESHOLD = 0.55
+PASSAGE_ALIGNMENT_REASON_THRESHOLD = MIN_DIRECT_PASSAGE_ALIGNMENT
 
 SUPPORT_CUES = (
     "reduced",

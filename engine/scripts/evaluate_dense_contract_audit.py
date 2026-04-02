@@ -8,6 +8,7 @@ from pathlib import Path
 from app import db
 from app.rag.dense_audit import run_dense_contract_audit
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
+from app.rag_ingest.runtime_eval_benchmarks import load_runtime_eval_benchmark_cases
 from app.rag_ingest.runtime_eval_models import RuntimeEvalQueryFamily
 
 
@@ -36,6 +37,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=[family.value for family in RuntimeEvalQueryFamily],
         default=None,
     )
+    parser.add_argument(
+        "--benchmark-path",
+        type=Path,
+        default=None,
+        help="Optional frozen runtime benchmark JSON to audit instead of a sampled cohort.",
+    )
     parser.add_argument("--report-path", type=Path, default=None)
     return parser.parse_args(argv)
 
@@ -48,14 +55,30 @@ def main(argv: list[str] | None = None) -> int:
         else None
     )
     try:
+        benchmark_key = None
+        benchmark_source = None
+        benchmark_cases = None
+        graph_release_id = args.graph_release_id
+        chunk_version_key = args.chunk_version_key
+        if args.benchmark_path is not None:
+            benchmark_report, benchmark_cases = load_runtime_eval_benchmark_cases(
+                args.benchmark_path
+            )
+            benchmark_key = benchmark_report.benchmark_key
+            benchmark_source = benchmark_report.benchmark_source
+            graph_release_id = benchmark_report.graph_release_id
+            chunk_version_key = benchmark_report.chunk_version_key
         report = run_dense_contract_audit(
-            graph_release_id=args.graph_release_id,
-            chunk_version_key=args.chunk_version_key,
+            graph_release_id=graph_release_id,
+            chunk_version_key=chunk_version_key,
             sample_size=args.sample_size,
             seed=args.seed,
             top_k=args.top_k,
             rerank_topn=args.rerank_topn,
             query_families=query_families,
+            cases=benchmark_cases,
+            benchmark_key=benchmark_key,
+            benchmark_source=benchmark_source,
             connect=db.pooled,
         )
         if args.report_path is not None:
@@ -69,4 +92,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

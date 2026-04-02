@@ -24,6 +24,7 @@ def _paper_hit(
     title: str = "Example title",
     lexical_score: float = 0.0,
     chunk_lexical_score: float = 0.0,
+    passage_alignment_score: float = 0.0,
     selected_context_score: float = 0.0,
 ) -> PaperEvidenceHit:
     return PaperEvidenceHit(
@@ -42,6 +43,7 @@ def _paper_hit(
         is_open_access=True,
         lexical_score=lexical_score,
         chunk_lexical_score=chunk_lexical_score,
+        passage_alignment_score=passage_alignment_score,
         selected_context_score=selected_context_score,
     )
 
@@ -320,6 +322,13 @@ def test_has_direct_retrieval_support_uses_selected_context_for_title_queries():
     )
 
 
+def test_has_direct_retrieval_support_uses_passage_alignment_for_passage_queries():
+    assert has_direct_retrieval_support(
+        paper=_paper_hit(11, passage_alignment_score=0.7),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+
 def test_has_selected_direct_anchor_matches_selected_hit_with_direct_support():
     assert has_selected_direct_anchor(
         selected_corpus_id=11,
@@ -345,3 +354,26 @@ def test_chunk_search_queries_adds_bounded_phrase_fallbacks_for_passages():
     )
     assert len(candidates) > 1
     assert all(len(candidate.split()) >= 3 for candidate in candidates[1:])
+
+
+def test_chunk_search_queries_prioritizes_specific_clinical_comparator_phrases():
+    query = _query(
+        (
+            "In adults with active rheumatoid arthritis, is sarilumab monotherapy "
+            "more effective and safe than adalimumab monotherapy?"
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    candidates = chunk_search_queries(query)
+
+    assert candidates[0] == (
+        "in adults with active rheumatoid arthritis is sarilumab monotherapy more "
+        "effective and safe than adalimumab monotherapy"
+    )
+    assert "sarilumab monotherapy more effective" in candidates
+    assert any(
+        "rheumatoid arthritis" in candidate or "sarilumab monotherapy" in candidate
+        for candidate in candidates[1:4]
+    )
+    assert "in adults with active" not in candidates[1:]
