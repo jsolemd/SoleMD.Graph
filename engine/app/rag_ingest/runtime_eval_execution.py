@@ -30,6 +30,13 @@ from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalTopHit,
 )
 
+_TOP_LEVEL_RUNTIME_PHASES = frozenset(
+    {
+        "retrieve_search_state",
+        "finalize_search_result",
+    }
+)
+
 
 def build_runtime_service(
     *,
@@ -261,6 +268,7 @@ def evaluate_runtime_query_cases(
                     for channel in response.retrieval_channels
                 },
                 stage_durations_ms=debug_trace.get("stage_durations_ms", {}),
+                stage_call_counts=debug_trace.get("stage_call_counts", {}),
                 candidate_counts=debug_trace.get("candidate_counts", {}),
                 session_flags=session_flags,
                 route_signature=route_signature,
@@ -349,6 +357,8 @@ def aggregate_case_results(results: Sequence[RuntimeEvalCaseResult]) -> RuntimeE
         p99_service_duration_ms=_runtime_percentile_ms(service_durations, 0.99),
         max_service_duration_ms=round(max(service_durations), 3),
         mean_overhead_duration_ms=round(sum(overhead_durations) / cases, 3),
+        over_250ms_count=sum(1 for value in service_durations if value > 250.0),
+        over_500ms_count=sum(1 for value in service_durations if value > 500.0),
         over_1000ms_count=sum(1 for value in service_durations if value > 1000.0),
         over_5000ms_count=sum(1 for value in service_durations if value > 5000.0),
         over_30000ms_count=sum(1 for value in service_durations if value > 30000.0),
@@ -384,12 +394,21 @@ def _summarize_latency(
     if not results:
         return RuntimeEvalLatencySummary()
 
+    phase_values: dict[str, list[float]] = {}
     stage_values: dict[str, list[float]] = {}
+    stage_call_values: dict[str, list[float]] = {}
     candidate_values: dict[str, list[float]] = {}
     route_values: dict[str, list[float]] = {}
     for result in results:
         for stage_name, duration_ms in result.stage_durations_ms.items():
+            if stage_name in _TOP_LEVEL_RUNTIME_PHASES:
+                phase_values.setdefault(stage_name, []).append(float(duration_ms))
+                continue
             stage_values.setdefault(stage_name, []).append(float(duration_ms))
+        for stage_name, call_count in result.stage_call_counts.items():
+            if stage_name in _TOP_LEVEL_RUNTIME_PHASES:
+                continue
+            stage_call_values.setdefault(stage_name, []).append(float(call_count))
         for candidate_name, count in result.candidate_counts.items():
             candidate_values.setdefault(candidate_name, []).append(float(count))
         route_signature = _case_route_signature(result)
@@ -413,9 +432,17 @@ def _summarize_latency(
     slow_case_payloads: list[RuntimeEvalSlowCase] = []
     for result in sorted_slow_cases:
         top_stages = [
-            RuntimeEvalSlowStage(stage=stage_name, duration_ms=duration_ms)
+            RuntimeEvalSlowStage(
+                stage=stage_name,
+                duration_ms=duration_ms,
+                call_count=result.stage_call_counts.get(stage_name, 1),
+            )
             for stage_name, duration_ms in sorted(
-                result.stage_durations_ms.items(),
+                (
+                    (stage_name, duration_ms)
+                    for stage_name, duration_ms in result.stage_durations_ms.items()
+                    if stage_name not in _TOP_LEVEL_RUNTIME_PHASES
+                ),
                 key=lambda item: item[1],
                 reverse=True,
             )[:5]
@@ -457,10 +484,24 @@ def _summarize_latency(
         )
 
     return RuntimeEvalLatencySummary(
+        phase_profiles_ms={
+            stage_name: _numeric_profile(values)
+            for stage_name, values in sorted(
+                phase_values.items(),
+                key=lambda item: (-max(item[1]), item[0]),
+            )
+        },
         stage_profiles_ms={
             stage_name: _numeric_profile(values)
             for stage_name, values in sorted(
                 stage_values.items(),
+                key=lambda item: (-max(item[1]), item[0]),
+            )
+        },
+        stage_call_profiles={
+            stage_name: _numeric_profile(values)
+            for stage_name, values in sorted(
+                stage_call_values.items(),
                 key=lambda item: (-max(item[1]), item[0]),
             )
         },

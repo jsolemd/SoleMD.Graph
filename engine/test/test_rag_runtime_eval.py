@@ -415,6 +415,8 @@ def test_summarize_runtime_results_counts_failures_and_rates():
     assert summary.overall.p99_service_duration_ms == 145.0
     assert summary.overall.max_service_duration_ms == 145.0
     assert summary.overall.mean_overhead_duration_ms == 7.5
+    assert summary.overall.over_250ms_count == 0
+    assert summary.overall.over_500ms_count == 0
     assert summary.overall.over_1000ms_count == 0
     assert summary.failure_theme_counts["sentence_global:target_miss"] == 1
     assert summary.failure_theme_counts["sentence_global:answer_missing_target"] == 1
@@ -688,6 +690,8 @@ def test_aggregate_case_results_counts_slow_service_thresholds():
     )
 
     assert aggregate.over_1000ms_count == 3
+    assert aggregate.over_250ms_count == 3
+    assert aggregate.over_500ms_count == 3
     assert aggregate.over_5000ms_count == 2
     assert aggregate.over_30000ms_count == 1
 
@@ -704,6 +708,12 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
             stage_durations_ms={
                 "resolve_graph_release": 2.0,
                 "fetch_semantic_neighbors": 11.0,
+                "retrieve_search_state": 18.0,
+            },
+            stage_call_counts={
+                "resolve_graph_release": 1,
+                "fetch_semantic_neighbors": 1,
+                "retrieve_search_state": 1,
             },
             candidate_counts={"semantic_neighbor_hits": 4, "top_hits": 3},
             session_flags={
@@ -727,6 +737,15 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
                 "resolve_graph_release": 3.0,
                 "fetch_semantic_neighbors": 125.0,
                 "ground_answer": 48.0,
+                "retrieve_search_state": 160.0,
+                "finalize_search_result": 30.0,
+            },
+            stage_call_counts={
+                "resolve_graph_release": 1,
+                "fetch_semantic_neighbors": 2,
+                "ground_answer": 1,
+                "retrieve_search_state": 1,
+                "finalize_search_result": 1,
             },
             candidate_counts={"semantic_neighbor_hits": 17, "top_hits": 5},
             session_flags={
@@ -743,8 +762,13 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
 
     summary = summarize_runtime_results(results)
 
+    assert summary.overall.over_250ms_count == 0
+    assert summary.overall.over_500ms_count == 0
     assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].cases == 2
     assert summary.latency.stage_profiles_ms["fetch_semantic_neighbors"].mean == 68.0
+    assert summary.latency.phase_profiles_ms["retrieve_search_state"].max == 160.0
+    assert summary.latency.stage_call_profiles["fetch_semantic_neighbors"].mean == 1.5
+    assert summary.latency.stage_call_profiles["fetch_semantic_neighbors"].max == 2.0
     assert summary.latency.stage_profiles_ms["ground_answer"].cases == 1
     assert summary.latency.candidate_profiles["semantic_neighbor_hits"].max == 17.0
     assert (
@@ -771,6 +795,7 @@ def test_summarize_runtime_results_collects_compact_latency_profiles():
         "top_hits": 5,
     }
     assert summary.latency.slow_cases[0].top_stages[0].stage == "fetch_semantic_neighbors"
+    assert summary.latency.slow_cases[0].top_stages[0].call_count == 2
 
 
 def test_attach_slow_case_plan_profiles_adds_planner_metadata():

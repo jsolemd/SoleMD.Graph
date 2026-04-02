@@ -1328,6 +1328,22 @@ When the graphable corpus exceeds the locally attached browser universe,
 the existing DuckDB remote-attachment path (`ensureGraphPaperRefsAvailable`)
 fetches narrow Arrow IPC rows on demand without widening the canvas payload.
 
+### Runtime evaluation observability
+
+Runtime evaluation artifacts now preserve both phase-level and leaf-stage
+latency detail:
+
+- `phase_profiles_ms` captures the top-level runtime phases
+  (`retrieve_search_state`, `finalize_search_result`)
+- `stage_profiles_ms` keeps leaf-stage timings without letting those wrapper
+  phases drown out the real hotspots
+- `stage_call_profiles` exposes repeated-stage loops, which matters for
+  passage-style routes that may attempt multiple chunk-search queries
+- `candidate_profiles`, `route_profiles_ms`, and `slow_cases` keep the
+  candidate fan-out, route signature, session flags, and SQL plan metadata
+  needed to explain residual tails instead of tuning from aggregate percentiles
+  alone
+
 ### Runtime artifact hygiene
 
 Runtime evals and probes intentionally write durable artifacts into repo-local

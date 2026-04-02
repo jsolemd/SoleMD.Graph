@@ -115,6 +115,7 @@ class RuntimeEvalCaseResult(ParseContractModel):
     retrieval_channel_hit_counts: dict[str, int] = Field(default_factory=dict)
     top_hits: list[RuntimeEvalTopHit] = Field(default_factory=list)
     stage_durations_ms: dict[str, float] = Field(default_factory=dict)
+    stage_call_counts: dict[str, int] = Field(default_factory=dict)
     candidate_counts: dict[str, int] = Field(default_factory=dict)
     session_flags: dict[str, object] = Field(default_factory=dict)
     route_signature: str | None = None
@@ -145,6 +146,8 @@ class RuntimeEvalAggregate(ParseContractModel):
     p99_service_duration_ms: float = 0.0
     max_service_duration_ms: float = 0.0
     mean_overhead_duration_ms: float = 0.0
+    over_250ms_count: int = 0
+    over_500ms_count: int = 0
     over_1000ms_count: int = 0
     over_5000ms_count: int = 0
     over_30000ms_count: int = 0
@@ -164,6 +167,7 @@ class RuntimeEvalNumericProfile(ParseContractModel):
 class RuntimeEvalSlowStage(ParseContractModel):
     stage: str
     duration_ms: float
+    call_count: int = 1
 
 
 class RuntimeEvalSqlPlanProfile(ParseContractModel):
@@ -221,7 +225,9 @@ class RuntimeEvalStageHotspot(ParseContractModel):
 
 
 class RuntimeEvalLatencySummary(ParseContractModel):
+    phase_profiles_ms: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     stage_profiles_ms: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
+    stage_call_profiles: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     candidate_profiles: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     route_profiles_ms: dict[str, RuntimeEvalNumericProfile] = Field(default_factory=dict)
     slow_route_counts: dict[str, int] = Field(default_factory=dict)

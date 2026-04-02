@@ -21,13 +21,17 @@ def execute_search(
     started: float,
     trace: RuntimeTraceCollector,
 ):
-    retrieval = retrieve_search_state(
+    retrieval = trace.call(
+        "retrieve_search_state",
+        retrieve_search_state,
         request=request,
         repository=repository,
         query_embedder=query_embedder,
         trace=trace,
     )
-    return finalize_search_result(
+    result = trace.call(
+        "finalize_search_result",
+        finalize_search_result,
         retrieval=retrieval,
         repository=repository,
         biomedical_reranker=biomedical_reranker,
@@ -35,3 +39,6 @@ def execute_search(
         trace=trace,
         started=started,
     )
+    if trace.enabled:
+        result.debug_trace = trace.as_debug_trace()
+    return result

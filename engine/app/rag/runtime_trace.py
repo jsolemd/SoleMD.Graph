@@ -16,6 +16,7 @@ class RuntimeTraceCollector:
     def __init__(self, *, enabled: bool = False):
         self._enabled = enabled
         self._stage_durations_ms: dict[str, float] = {}
+        self._stage_call_counts: dict[str, int] = {}
         self._candidate_counts: dict[str, int] = {}
         self._session_flags: dict[str, object] = {}
 
@@ -32,7 +33,12 @@ class RuntimeTraceCollector:
         try:
             yield
         finally:
-            self._stage_durations_ms[name] = round((perf_counter() - started) * 1000, 3)
+            elapsed_ms = (perf_counter() - started) * 1000
+            self._stage_durations_ms[name] = round(
+                self._stage_durations_ms.get(name, 0.0) + elapsed_ms,
+                3,
+            )
+            self._stage_call_counts[name] = self._stage_call_counts.get(name, 0) + 1
 
     def call(self, stage_name: str, func: Callable[..., T], /, *args, **kwargs) -> T:
         with self.stage(stage_name):
@@ -64,6 +70,7 @@ class RuntimeTraceCollector:
             return {}
         return {
             "stage_durations_ms": dict(self._stage_durations_ms),
+            "stage_call_counts": dict(self._stage_call_counts),
             "candidate_counts": dict(self._candidate_counts),
             "session_flags": dict(self._session_flags),
         }

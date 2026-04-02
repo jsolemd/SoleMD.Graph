@@ -2055,3 +2055,61 @@ Mode: agentic overnight improvement loop
   - orchestration and tie-breaking now live in one focused file, while shared
     coefficients, cue tables, and affinity helpers live in one focused file.
   - the runtime ranking path still has exactly one public entrypoint for callers.
+
+## Batch 50: Deepen Runtime Tail Observability Without Diluting Leaf Hotspots
+
+- Scope:
+  - `engine/app/rag/runtime_trace.py`
+  - `engine/app/rag/search_execution.py`
+  - `engine/app/rag/search_retrieval.py`
+  - `engine/app/rag_ingest/runtime_eval_models.py`
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_runtime_trace.py`
+  - `engine/test/test_rag_search_execution.py`
+  - `docs/map/rag.md`
+- Problem:
+  - the runtime eval layer already emitted per-stage timings, candidate counts,
+    session flags, and slow-case SQL plan profiles, but two real observability
+    gaps remained:
+    - repeated stages overwrote their own timings instead of accumulating them
+    - the new top-level retrieve/finalize phase wrappers could be recorded
+      inconsistently unless the final result refreshed `debug_trace` after the
+      outer wrapper completed
+  - we also still lacked subsecond threshold counts in the aggregate summary,
+    which made current-tail work harder because most remaining runtime issues
+    now live well under `1s`.
+- Durable implementation landed:
+  - `RuntimeTraceCollector` now accumulates repeated stage durations and records
+    `stage_call_counts`
+  - `execute_search()` now records top-level `retrieve_search_state` and
+    `finalize_search_result` phases and refreshes `result.debug_trace` after the
+    outer finalize wrapper completes, so emitted traces contain the full phase
+    picture
+  - runtime eval summaries now split top-level phase timing from leaf-stage
+    timing:
+    - `phase_profiles_ms`
+    - `stage_profiles_ms`
+    - `stage_call_profiles`
+  - slow-case payloads now preserve stage call counts on each top stage
+  - aggregate summaries now include `over_250ms_count` and `over_500ms_count`
+    alongside the existing `1s` / `5s` / `30s` thresholds
+  - retrieval tracing now records chunk-search attempt counts and query lists so
+    repeated passage-search loops are observable instead of inferred.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/runtime_trace.py app/rag/search_execution.py app/rag/search_retrieval.py app/rag_ingest/runtime_eval_models.py app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py test/test_rag_runtime_trace.py test/test_rag_search_execution.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_service.py test/test_rag_runtime_eval.py test/test_rag_runtime_trace.py test/test_rag_search_execution.py -q` -> `61 passed`
+  - live sample artifact:
+    - `.tmp/rag-runtime-eval-current-observability-v2-sample6.json`
+    - `18` cases over all three query families
+    - overall `p95_service_duration_ms = 107.918`
+    - `phase_profiles_ms` now includes both:
+      - `retrieve_search_state`
+      - `finalize_search_result`
+- Clean impact:
+  - the runtime tail workflow now has one canonical observability contract
+    instead of ad hoc manual inspection.
+  - top-level phase timing is visible without polluting the leaf-stage hotspot
+    view.
+  - repeated-stage loops are measurable, which closes a real blind spot for
+    passage-style search behavior.

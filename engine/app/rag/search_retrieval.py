@@ -219,6 +219,9 @@ def retrieve_search_state(
         search_plan = trace.call("rebuild_search_plan", build_search_plan, query)
 
     chunk_lexical_hits: list[PaperEvidenceHit] = []
+    chunk_queries = chunk_search_queries(query)
+    chunk_attempts_executed = 0
+    trace.record_count("chunk_search_attempt_candidates", len(chunk_queries))
     if (
         not exact_title_hits
         and query.use_lexical
@@ -226,7 +229,9 @@ def retrieve_search_state(
         and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
     ):
         describe_chunk_route = getattr(repository, "describe_chunk_search_route", None)
-        for chunk_query in chunk_search_queries(query):
+        trace.record_flag("chunk_search_queries", chunk_queries)
+        for chunk_query in chunk_queries:
+            chunk_attempts_executed += 1
             trace.record_flag("chunk_search_query_text", chunk_query)
             if callable(describe_chunk_route):
                 trace.record_flag(
@@ -248,6 +253,10 @@ def retrieve_search_state(
             )
             if chunk_lexical_hits:
                 break
+    trace.record_count(
+        "chunk_search_attempts_executed",
+        chunk_attempts_executed,
+    )
     trace.record_count("chunk_lexical_hits", len(chunk_lexical_hits))
 
     lexical_hits: list[PaperEvidenceHit] = list(exact_title_hits)
