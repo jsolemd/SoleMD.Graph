@@ -24,7 +24,7 @@ Mode: agentic overnight improvement loop
 | A14 | done | P1 | Scale | The old runtime scorecard was anchored to a 54-paper live graph cohort and no longer reflected the current graph-backed population. | Expanded runtime evaluation to the current graph-backed population, added unseen-cohort execution support, and regenerated broad all-family artifacts over `96` and `192` paper cohorts. | `.tmp/rag-runtime-eval-default-structural-v1-all-families-v8-full.json` + `.tmp/rag-runtime-eval-missing-v1-all-families-v11.json` |
 | A15 | done | P1 | Throughput | Repository calls in one request were still opening repeated pooled connections and scoring entity/relation/citation matches in Python, wasting time on every search. | Added request-scoped repository search sessions, pushed entity/relation/citation scoring into SQL, and fixed nested citation-intent normalization in the repository adapter. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_ranking.py test/test_rag_runtime_eval.py test/test_rag_warehouse_grounding.py` |
 | A16 | done | P0 | Tail latency | The expanded unseen-cohort `v11` report showed near-perfect quality but pathological service tail latency, and direct probes traced the worst remaining path into runtime entity search and planner/JIT overhead. | Completed the fresh current-release all-family recheck on the latest code, then removed the dense-query SQL hydration waste that remained after the verified `jit=off` session fix. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + targeted outlier probes |
-| A17 | pending | P1 | Performance coverage | Runtime perf gates still focus on smokes and unit assertions rather than representative DB-backed cohort thresholds for all three query families. | Add cohort-backed performance regression tests/commands for `title_global`, `title_selected`, and `sentence_global`, including explicit tail-latency checks once `v12` stabilizes. | New perf coverage + targeted runtime eval assertions |
+| A17 | done | P1 | Performance coverage | Runtime perf gates still focused on smokes and unit assertions rather than representative DB-backed cohort thresholds for all three query families. | Tightened `engine/test/test_rag_runtime_perf.py` around a `24`-paper current-release cohort, added route-signature assertions, explicit tail-latency caps, and a selected-title regression that exposed and then fixed an overlong-title routing gap in `engine/app/rag/service.py`. | `uv run pytest test/test_rag_runtime_perf.py -q` + targeted service/query tests |
 | A18 | pending | P1 | Modularity | `service.py` and `repository.py` remain over-centralized runtime hubs with mixed responsibilities even after the hot-path fixes. | Split runtime orchestration and query execution along stable boundaries after the current perf batch settles, keeping one canonical retrieval contract and no duplicate logic. | File-size/complexity reduction + preserved test suite |
 | A19 | pending | P2 | Ops | Migration rollout, report retention, and batch commits still need a durable record as the runtime stack evolves. | Record migration/runtime notes, prune superseded report artifacts when safe, and commit cohesive verified batches once the current performance batch settles. | Ledger update + commit checkpoints |
 | A20 | done | P0 | Correctness | `title_selected` still treated the selected paper as a late rescue path, so selected-title lookups could route through broad lexical/dense neighbor expansion before honoring the user’s explicit paper context. | Added selected-paper-first title lookup in `engine/app/rag/repository.py` and centralized selected-context application in `engine/app/rag/service.py`, with repository/service regressions and a DB-backed perf gate. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'truncated_long_title_selected_lookup_stays_grounded_and_fast'` + `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v3.json` |
@@ -990,3 +990,50 @@ Mode: agentic overnight improvement loop
   - the runtime now spends far less time resolving useless passage-noise entities, while still preserving the intended enrichment path for compact biomedical knowledge queries
   - exact-title rescue is again a narrow contract instead of a blind passage precheck
   - this batch materially improves the lane that mattered most (`sentence_global`) without opening a correctness regression elsewhere
+
+## Batch 27: DB-Backed Perf Gates And Selected-Title Promotion Hardening
+
+- Scope:
+  - `engine/app/rag/service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+  - `engine/test/test_rag_service.py`
+- Problem evidenced after the routing/observability cleanup:
+  - the runtime was healthy on the fresh `v28` current-release cohort, but the perf suite still reflected looser smoke-style thresholds instead of the now-stable DB-backed latency floor
+  - tightening the selected-title perf gate exposed a real contract gap:
+    - an explicitly selected paper with an overlong real title (`4443808`) could remain in `PASSAGE_LOOKUP`
+    - the service only tried `search_selected_title_papers(...)` when the classifier had already promoted the query into `TITLE_LOOKUP`
+    - this let a cheap exact selected-title proof step depend on a brittle query-shape heuristic
+- Durable implementation landed:
+  - strengthened `engine/test/test_rag_runtime_perf.py` to use a representative `24`-paper current-release cohort
+  - added explicit cohort-backed caps for:
+    - overall `p95`, `p99`, and `over_1000ms_count`
+    - `title_global`, `title_selected`, and `sentence_global` family-specific latency ceilings
+    - case-level `route_signature` presence so the perf gate also guards runtime routing visibility
+  - tightened the targeted outlier/perf probes so former problem shapes now have bounded assertions instead of permissive multi-second ceilings
+  - removed the unnecessary `query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP` gate before `search_selected_title_papers(...)` in `engine/app/rag/service.py`
+    - the selected-title exact/prefix probe now runs whenever lexical retrieval, exact-title matching, and an explicit selected corpus are all present
+    - if the probe succeeds, the existing service path promotes the request into `TITLE_LOOKUP` and rebuilds the search plan from proof, not from heuristic guesswork
+  - added a focused service regression proving that an overlong selected-paper title can promote itself into the selected-title route without falling through chunk retrieval or runtime entity resolution
+- Verification:
+  - `cd engine && uv run ruff check app/rag/service.py test/test_rag_service.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_query_enrichment.py test/test_rag_service.py -q` -> `57 passed`
+  - `cd engine && uv run pytest test/test_rag_runtime_perf.py -q -k 'selected_title_with_direct_anchor_stays_fast or question_style_title_lookup_stays_grounded_and_fast or title_query_families_remain_grounded_and_fast or sentence_query_family_keeps_precision_and_latency_floor or sentence_query_with_title_like_paper_fallback_stays_fast'` -> `5 passed`
+  - `cd engine && uv run pytest test/test_rag_runtime_perf.py -q` -> `22 passed`
+- Fresh cohort artifact:
+  - `cd engine && uv run python scripts/evaluate_rag_runtime.py --graph-release-id current --sample-size 24 --seed 7 --k 5 --rerank-topn 10 --report-path .tmp/rag-runtime-eval-current-all-families-v29-perf-gates.json`
+  - `.tmp/rag-runtime-eval-current-all-families-v29-perf-gates.json`
+  - overall:
+    - all quality metrics `1.0`
+    - `mean_service_duration_ms = 37.407`
+    - `p95_service_duration_ms = 84.823`
+    - `p99_service_duration_ms = 239.334`
+    - `max_service_duration_ms = 239.334`
+    - `over_1000ms_count = 0`
+  - by family:
+    - `title_global`: `mean_service_duration_ms = 18.539`, `p95_service_duration_ms = 27.032`
+    - `title_selected`: `mean_service_duration_ms = 18.072`, `p95_service_duration_ms = 32.464`
+    - `sentence_global`: `mean_service_duration_ms = 75.609`, `p95_service_duration_ms = 103.620`, `p99_service_duration_ms = 239.334`
+- Interpretation:
+  - runtime perf coverage is now aligned with the actual current-release operating floor instead of a legacy smoke baseline
+  - selected-paper context has become a stronger contract surface: an explicit selected paper can now rescue its own exact/prefix title match even when the classifier keeps the raw query in passage mode
+  - this batch closes `A17` cleanly and reduces the chance that future query-shape tuning silently reopens the selected-title tail

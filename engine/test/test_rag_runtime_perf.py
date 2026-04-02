@@ -31,7 +31,7 @@ def _runtime_perf_report():
         return run_rag_runtime_evaluation(
             graph_release_id="current",
             chunk_version_key=DEFAULT_CHUNK_VERSION_KEY,
-            sample_size=12,
+            sample_size=24,
             seed=7,
             k=5,
             rerank_topn=10,
@@ -76,22 +76,32 @@ def _family(report, family: RuntimeEvalQueryFamily):
     return report.summary.by_query_family[family.value]
 
 
+def _case(report, family: RuntimeEvalQueryFamily):
+    return next(result for result in report.cases if result.query_family == family)
+
+
 @pytest.mark.integration
 @pytest.mark.slow
 def test_runtime_title_query_families_remain_grounded_and_fast():
     report = _runtime_perf_report()
 
-    assert report.summary.overall.error_count == 0
+    overall = report.summary.overall
+
+    assert overall.error_count == 0
+    assert overall.over_1000ms_count == 0
+    assert overall.p95_service_duration_ms <= 250.0
+    assert overall.p99_service_duration_ms <= 500.0
     assert report.warehouse_quality.flagged_papers == 0
+    assert all(case.route_signature for case in report.cases)
 
     title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
     title_selected = _family(report, RuntimeEvalQueryFamily.TITLE_SELECTED)
 
-    assert title_global.target_in_grounded_answer_rate >= 0.9
-    assert title_global.p95_service_duration_ms <= 900.0
+    assert title_global.target_in_grounded_answer_rate >= 0.95
+    assert title_global.p95_service_duration_ms <= 150.0
 
     assert title_selected.target_in_grounded_answer_rate >= 0.95
-    assert title_selected.p95_service_duration_ms <= 800.0
+    assert title_selected.p95_service_duration_ms <= 120.0
 
 
 @pytest.mark.integration
@@ -101,9 +111,11 @@ def test_runtime_sentence_query_family_keeps_precision_and_latency_floor():
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.error_count == 0
-    assert sentence_global.hit_at_k_rate >= 0.65
-    assert sentence_global.target_in_grounded_answer_rate >= 0.65
-    assert sentence_global.p95_service_duration_ms <= 1500.0
+    assert sentence_global.hit_at_k_rate >= 0.9
+    assert sentence_global.target_in_grounded_answer_rate >= 0.95
+    assert sentence_global.over_1000ms_count == 0
+    assert sentence_global.p95_service_duration_ms <= 400.0
+    assert sentence_global.p99_service_duration_ms <= 750.0
 
 
 @pytest.mark.integration
@@ -123,10 +135,10 @@ def test_runtime_question_style_title_lookup_stays_grounded_and_fast():
     title_selected = _family(report, RuntimeEvalQueryFamily.TITLE_SELECTED)
 
     assert title_global.target_in_grounded_answer_rate == 1.0
-    assert title_global.p95_service_duration_ms <= 3000.0
+    assert title_global.p95_service_duration_ms <= 500.0
 
     assert title_selected.target_in_grounded_answer_rate == 1.0
-    assert title_selected.p95_service_duration_ms <= 3000.0
+    assert title_selected.p95_service_duration_ms <= 500.0
 
 
 @pytest.mark.integration
@@ -142,7 +154,7 @@ def test_runtime_long_biomedical_exact_title_global_lookup_stays_grounded_and_fa
     title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
 
     assert title_global.target_in_grounded_answer_rate == 1.0
-    assert title_global.p95_service_duration_ms <= 3000.0
+    assert title_global.p95_service_duration_ms <= 500.0
 
 
 @pytest.mark.integration
@@ -155,10 +167,15 @@ def test_runtime_selected_title_with_direct_anchor_stays_fast():
 
     assert report.summary.overall.error_count == 0
 
+    case = _case(report, RuntimeEvalQueryFamily.TITLE_SELECTED)
     title_selected = _family(report, RuntimeEvalQueryFamily.TITLE_SELECTED)
 
     assert title_selected.target_in_grounded_answer_rate == 1.0
-    assert title_selected.p95_service_duration_ms <= 5000.0
+    assert title_selected.p95_service_duration_ms <= 750.0
+    assert (
+        case.route_signature
+        == "retrieval_profile=title_lookup|title_anchor_route=selected_title"
+    )
 
 
 @pytest.mark.integration
@@ -190,7 +207,7 @@ def test_runtime_sentence_query_with_exact_entity_seed_stays_fast():
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
-    assert sentence_global.p95_service_duration_ms <= 5000.0
+    assert sentence_global.p95_service_duration_ms <= 1000.0
 
 
 @pytest.mark.integration
@@ -206,7 +223,7 @@ def test_runtime_sentence_query_with_exact_relation_seed_stays_fast():
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
-    assert sentence_global.p95_service_duration_ms <= 5000.0
+    assert sentence_global.p95_service_duration_ms <= 1000.0
 
 
 @pytest.mark.integration
@@ -219,10 +236,18 @@ def test_runtime_sentence_query_with_title_like_paper_fallback_stays_fast():
 
     assert report.summary.overall.error_count == 0
 
+    case = _case(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
-    assert sentence_global.p95_service_duration_ms <= 5000.0
+    assert sentence_global.p95_service_duration_ms <= 750.0
+    assert (
+        case.route_signature
+        == "retrieval_profile=title_lookup|paper_search_route=paper_search_global|"
+        "paper_search_use_title_similarity=False|"
+        "paper_search_use_title_candidate_lookup=True|"
+        "dense_query_route=dense_query_ann_broad_scope"
+    )
 
 
 @pytest.mark.integration
@@ -238,7 +263,7 @@ def test_runtime_sentence_query_with_sentence_anchor_bundle_keeps_target_grounde
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
-    assert sentence_global.p95_service_duration_ms <= 5000.0
+    assert sentence_global.p95_service_duration_ms <= 1000.0
 
 
 @pytest.mark.integration
@@ -488,12 +513,12 @@ def test_runtime_selected_passage_lookup_semantic_neighbor_tail_stays_bounded():
 
     assert report.summary.overall.error_count == 0
 
+    case = _case(report, RuntimeEvalQueryFamily.TITLE_SELECTED)
     title_selected = _family(report, RuntimeEvalQueryFamily.TITLE_SELECTED)
-    case = report.cases[0]
 
     assert title_selected.target_in_grounded_answer_rate == 1.0
-    assert title_selected.p95_service_duration_ms <= 3000.0
-    assert case.stage_durations_ms.get("fetch_semantic_neighbors", 0.0) <= 1000.0
+    assert title_selected.p95_service_duration_ms <= 500.0
+    assert case.stage_durations_ms.get("fetch_semantic_neighbors", 0.0) <= 100.0
 
 
 @pytest.mark.integration
@@ -509,7 +534,7 @@ def test_runtime_truncated_long_title_global_lookup_stays_grounded_and_fast():
     title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
 
     assert title_global.target_in_grounded_answer_rate == 1.0
-    assert title_global.p95_service_duration_ms <= 3000.0
+    assert title_global.p95_service_duration_ms <= 750.0
 
 
 @pytest.mark.integration
@@ -522,7 +547,7 @@ def test_runtime_dense_query_title_global_tail_stays_bounded():
 
     assert report.summary.overall.error_count == 0
 
-    case = report.cases[0]
+    case = _case(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
     title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
 
     assert title_global.target_in_grounded_answer_rate == 1.0
@@ -540,7 +565,7 @@ def test_runtime_long_title_global_query_uses_exact_title_precheck():
 
     assert report.summary.overall.error_count == 0
 
-    case = report.cases[0]
+    case = _case(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
     title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
 
     assert title_global.target_in_grounded_answer_rate == 1.0
@@ -559,7 +584,7 @@ def test_runtime_dense_query_sentence_global_tail_stays_bounded():
 
     assert report.summary.overall.error_count == 0
 
-    case = report.cases[0]
+    case = _case(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
@@ -577,7 +602,7 @@ def test_runtime_sentence_global_skips_incidental_relation_lane():
 
     assert report.summary.overall.error_count == 0
 
-    case = report.cases[0]
+    case = _case(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0

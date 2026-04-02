@@ -1038,6 +1038,111 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
     )
 
 
+def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles():
+    query = (
+        "A Cuprous Oxide Thin Film Non-Enzymatic Glucose Sensor Using Differential "
+        "Pulse Voltammetry and Other Voltammetry Methods and a Comparison to "
+        "Different Thin Film Electrodes on the Detection of Glucose in an "
+        "Alkaline Solution"
+    )
+
+    class OverlongSelectedTitleRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            assert graph_run_id == "run-1"
+            assert selected_graph_paper_ref == "paper:4443808"
+            assert selected_paper_id is None
+            assert selected_node_id == "paper:4443808"
+            return 4443808
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+            raise AssertionError("selected title anchors should skip runtime entity resolution")
+
+        def search_selected_title_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            selected_corpus_id: int,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query.startswith("A Cuprous Oxide Thin Film")
+            assert selected_corpus_id == 4443808
+            assert limit == 4
+            assert scope_corpus_ids is None
+            return [
+                PaperEvidenceHit(
+                    corpus_id=4443808,
+                    paper_id="paper-4443808",
+                    semantic_scholar_paper_id="paper-4443808",
+                    title=query,
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=4443808,
+                    pmcid=None,
+                    abstract="Selected-paper title match.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    lexical_score=1.8,
+                    title_similarity=1.0,
+                )
+            ]
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("selected title anchors should skip passage chunk retrieval")
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [4443808]
+            assert query.startswith("A Cuprous Oxide Thin Film")
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [4443808]
+            assert entity_terms == []
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [4443808]
+            assert relation_terms == []
+            return {}
+
+    service = _service(OverlongSelectedTitleRepository())
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=query,
+            selected_layer_key="paper",
+            selected_node_id="paper:4443808",
+            k=2,
+            rerank_topn=4,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in result.bundles][:1] == [4443808]
+    assert result.debug_trace["session_flags"]["title_anchor_route"] == "selected_title"
+    assert result.debug_trace["session_flags"]["retrieval_profile"] == "title_lookup"
+
+
 def test_rag_service_disables_title_similarity_for_sentence_queries():
     class SentenceQueryRepository(FakeRepository):
         def __init__(self):

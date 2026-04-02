@@ -410,7 +410,6 @@ class RagService:
             )
             if query.use_lexical
             and search_plan.allow_exact_title_matches
-            and query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
             and selected_corpus_id is not None
             and not selection_only_without_matches
             else []
