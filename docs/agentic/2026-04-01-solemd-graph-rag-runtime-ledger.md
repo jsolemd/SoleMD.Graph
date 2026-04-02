@@ -58,8 +58,9 @@ Mode: agentic overnight improvement loop
 | A48 | done | P1 | Current-code runtime revalidation | The older `v11-jitoff` artifact still showed catastrophic tail numbers, but fresh single-case repros on the same corpus ids were fast, so the remaining risk was stale evidence rather than a live hot path. | Regenerated the current `24`-paper / `72`-case all-family cohort on the latest code, confirmed `1.0` quality across `title_global`, `title_selected`, and `sentence_global`, and re-ran the DB-backed runtime perf suite to replace the stale tail picture with a fresh verified baseline. | `.tmp/rag-runtime-eval-current-sample24-v1.json` + `uv run pytest test/test_rag_runtime_perf.py -q` |
 | A49 | done | P1 | Fixed benchmark perf coverage | Sampled current-release cohorts catch live regressions, but they do not lock the known difficult sentence and clinician-style evaluation sets that drive ranking decisions between major runtime passes. | Added DB-backed runtime perf regression gates for the checked-in `sentence_hard_v1` and `clinical_actionable_v1` benchmarks in `engine/test/test_rag_runtime_perf.py`, using the canonical benchmark loader and current-code thresholds instead of ad hoc one-off artifact inspection. | `uv run ruff check test/test_rag_runtime_perf.py` + `uv run pytest test/test_rag_runtime_perf.py -q` |
 | A50 | done | P0 | Weak-passage retrieval + answer-selection fidelity | `sentence_hard_v1` still had a retrieval miss class where weak chunk anchors trapped passage queries away from the correct paper, and `clinical_actionable_v1` still had `229929738` as `hit_rank=1` while `answer_corpus_ids` dropped it during baseline answer selection. | Added bounded weak-passage paper fallback in `engine/app/rag/retrieval_policy.py` and `engine/app/rag/search_retrieval.py`, kept that fallback passage-only so title/general queries still use native title similarity/candidate lookup, and updated `engine/app/rag/answer.py` to preserve the highest-ranked directly supported passage bundle after chunk-anchor selection. | `uv run pytest test/test_rag_answer.py test/test_rag_service.py test/test_rag_runtime_perf.py -q` + `.tmp/rag-runtime-eval-sentence-hard-v1-answerfix-v3.json` + `.tmp/rag-runtime-eval-clinical-actionable-v1-answerfix-v3.json` |
-| A51 | pending | P1 | Route observability | Runtime eval artifacts now distinguish the new weak-passage fallback through session flags, but `route_signature` still does not include `paper_search_sparse_passage_fallback`, which can blur aggregated route families once more passage-recovery variants exist. | Add the sparse-fallback flag to route signatures/slow-route summaries and extend the perf/eval assertions so fallback-heavy cohorts are easy to isolate in one artifact. | `uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` + fresh current-release all-family artifact |
-| A52 | pending | P1 | Fresh broad-cohort revalidation | The frozen `sentence_hard_v1` and `clinical_actionable_v1` cohorts are clean on the live code, but the sampled current-release all-family artifact still predates the answer-selection fix and clinician-intent reranker contract alignment. | Regenerate the current all-family runtime artifact on the latest code, confirm quality/latency remain clean across `title_global`, `title_selected`, and `sentence_global`, then compare route-family counts against the pre-fix artifact. | fresh `.tmp/rag-runtime-eval-current-all-families-*.json` + `uv run pytest test/test_rag_runtime_perf.py -q` |
+| A51 | done | P1 | Route observability | Runtime eval artifacts now distinguish the new weak-passage fallback through session flags, but `route_signature` still did not include `paper_search_sparse_passage_fallback`, which blurred fallback-heavy passage recovery into broader paper-search route families. | Added `paper_search_sparse_passage_fallback` to the ordered route-signature surface as a true-only marker so ordinary paper-search route names stay stable while active sparse fallback runs become first-class route families; locked the contract with unit coverage and a live clinical benchmark assertion on corpus `229929738`. | `cd engine && uv run ruff check app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py` + `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` (`52 passed`) |
+| A52 | done | P1 | Fresh broad-cohort revalidation | The frozen `sentence_hard_v1` and `clinical_actionable_v1` cohorts were clean on the live code, but the sampled current-release all-family artifact still predated the answer-selection fix and clinician-intent reranker contract alignment. | Regenerated the current `96`-paper / `288`-case all-family artifact on the latest code, preserved the first noisy `v29` outlier run, then reran the exact same cohort as `v30` to clear the churn signal and confirm the current runtime floor remained fully grounded and latency-clean. | `.tmp/rag-runtime-eval-current-all-families-v29-routeobs.json` + `.tmp/rag-runtime-eval-current-all-families-v30-recheck.json` + `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` |
+| A53 | pending | P2 | Modularization | `engine/app/rag_ingest/runtime_eval_execution.py` is now `649` lines with multiple responsibilities (execution, aggregation, latency summarization, slow-case packaging, and plan-profile attachment), which violates the clean modularization limit and makes future runtime-eval work harder to isolate. | Split runtime eval execution vs summary/reporting helpers into smaller modules under `engine/app/rag_ingest/`, preserve the canonical route-signature contract, and keep the file-size ceiling below the clean threshold without changing report semantics. | `cd engine && uv run pytest test/test_rag_runtime_eval.py -q` + focused import/lint pass |
 
 ## Completed Batches
 
@@ -2210,3 +2211,69 @@ Mode: agentic overnight improvement loop
     fixed hard/clinical benchmark cohorts.
   - this keeps future ranking experiments honest without manual artifact
     comparison after every pass.
+
+## Batch 53: Make Sparse Passage Fallback A First-Class Route And Revalidate The Live Cohort
+
+- Scope:
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_runtime_perf.py`
+  - `.tmp/rag-runtime-eval-current-all-families-v29-routeobs.json`
+  - `.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`
+- Problem:
+  - the weak-passage sparse paper fallback was present in `session_flags`, but
+    runtime route signatures still collapsed those cases into the broader paper
+    search family, which made aggregated route summaries less trustworthy once
+    passage recovery began to matter.
+  - the current all-family artifact also needed a fresh post-fix revalidation on
+    the exact same `96`-paper cohort used by the tuned baseline.
+- Durable implementation landed:
+  - centralized the route-signature key order in
+    `engine/app/rag_ingest/runtime_eval_execution.py`.
+  - added `paper_search_sparse_passage_fallback` as a true-only route marker so:
+    - active sparse fallback routes are explicit
+    - ordinary paper-search route names remain stable
+    - historical route-family comparisons do not get polluted by redundant
+      `False` markers
+  - added focused contract coverage in `engine/test/test_rag_runtime_eval.py`
+    for the new true-only route-signature behavior.
+  - added a DB-backed perf assertion in `engine/test/test_rag_runtime_perf.py`
+    over `clinical_actionable_v1` corpus `229929738`, which is a real sparse
+    passage fallback case on the live runtime.
+  - regenerated the current all-family cohort twice on the latest code:
+    - `v29-routeobs` surfaced a transient slow passage-route outlier cluster
+    - `v30-recheck` reran the exact same cohort and cleared that churn signal
+- Verified route contract:
+  - sparse fallback benchmark case route:
+    - `retrieval_profile=passage_lookup|paper_search_route=paper_search_global_fts_only|paper_search_sparse_passage_fallback=True|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=False|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope`
+- Fresh current-cohort revalidation:
+  - `v29-routeobs`:
+    - quality remained `1.0`, but latency spiked transiently
+    - overall `p95_service_duration_ms = 359.647`
+    - `sentence_global p95_service_duration_ms = 435.026`
+    - dominant outlier stage: `search_query_embedding_papers`
+  - `v30-recheck` on the exact same `96` papers / `288` cases:
+    - overall:
+      - `hit@1 = 1.0`
+      - `hit@k = 1.0`
+      - `grounded_answer_rate = 1.0`
+      - `target_in_grounded_answer_rate = 1.0`
+      - `p95_service_duration_ms = 83.229`
+      - `p99_service_duration_ms = 99.443`
+      - `max_service_duration_ms = 181.802`
+    - `title_global`:
+      - `p95_service_duration_ms = 43.748`
+    - `title_selected`:
+      - `p95_service_duration_ms = 30.04`
+    - `sentence_global`:
+      - `p95_service_duration_ms = 96.69`
+      - `p99_service_duration_ms = 111.659`
+- Interpretation:
+  - the sampled current cohort is still clean on both quality and stable latency.
+  - `v29` was a churn event, not a persistent regression; the immediate recheck
+    on the same cohort returned to a clean runtime floor.
+  - route-family observability is now durable enough to isolate future sparse
+    fallback cases when they appear in broader sampled cohorts.
+- Verification:
+  - `cd engine && uv run ruff check app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` -> `52 passed`

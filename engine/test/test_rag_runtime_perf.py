@@ -892,3 +892,27 @@ def test_runtime_clinical_actionable_live_biomedical_reranker_stays_bounded_and_
     assert case.candidate_counts.get("biomedical_rerank_promotions", 0) >= 1
     assert case.stage_durations_ms.get("biomedical_rerank", 0.0) <= 75.0
     assert case.stage_durations_ms.get("rank_preliminary_hits_biomedical", 0.0) <= 10.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_clinical_actionable_sparse_passage_fallback_route_is_explicit():
+    report = _runtime_benchmark_case_report("clinical_actionable_v1", 229929738)
+
+    overall = report.summary.overall
+    case = report.cases[0]
+
+    assert overall.error_count == 0
+    assert overall.target_in_grounded_answer_rate == 1.0
+    assert overall.p95_service_duration_ms <= 300.0
+    assert case.session_flags.get("paper_search_sparse_passage_fallback") is True
+    assert (
+        case.route_signature
+        == "retrieval_profile=passage_lookup|"
+        "paper_search_route=paper_search_global_fts_only|"
+        "paper_search_sparse_passage_fallback=True|"
+        "paper_search_use_title_similarity=False|"
+        "paper_search_use_title_candidate_lookup=False|"
+        "chunk_search_route=chunk_search_global|"
+        "dense_query_route=dense_query_ann_broad_scope"
+    )

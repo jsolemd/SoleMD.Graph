@@ -37,6 +37,23 @@ _TOP_LEVEL_RUNTIME_PHASES = frozenset(
     }
 )
 
+_ROUTE_SIGNATURE_KEYS = (
+    "retrieval_profile",
+    "title_anchor_route",
+    "paper_search_route",
+    "paper_search_sparse_passage_fallback",
+    "paper_search_use_title_similarity",
+    "paper_search_use_title_candidate_lookup",
+    "chunk_search_route",
+    "dense_query_route",
+)
+
+_ROUTE_SIGNATURE_TRUE_ONLY_FLAGS = frozenset(
+    {
+        "paper_search_sparse_passage_fallback",
+    }
+)
+
 
 def build_runtime_service(
     *,
@@ -125,19 +142,15 @@ def _numeric_profile(values: Sequence[float]) -> RuntimeEvalNumericProfile:
 def _route_signature(session_flags: dict[str, object]) -> str | None:
     if not session_flags:
         return None
-    ordered_keys = (
-        "retrieval_profile",
-        "title_anchor_route",
-        "paper_search_route",
-        "paper_search_use_title_similarity",
-        "paper_search_use_title_candidate_lookup",
-        "chunk_search_route",
-        "dense_query_route",
-    )
     parts = [
         f"{key}={session_flags[key]}"
-        for key in ordered_keys
-        if key in session_flags and session_flags.get(key) not in (None, "")
+        for key in _ROUTE_SIGNATURE_KEYS
+        if key in session_flags
+        and session_flags.get(key) not in (None, "")
+        and (
+            key not in _ROUTE_SIGNATURE_TRUE_ONLY_FLAGS
+            or session_flags.get(key) is True
+        )
     ]
     return "|".join(parts) if parts else None
 

@@ -13,7 +13,10 @@ from app.rag_ingest.runtime_eval import (
     evaluate_runtime_query_cases,
     summarize_runtime_results,
 )
-from app.rag_ingest.runtime_eval_execution import attach_slow_case_plan_profiles
+from app.rag_ingest.runtime_eval_execution import (
+    _route_signature,
+    attach_slow_case_plan_profiles,
+)
 from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalCohortCandidate,
     RuntimeEvalPaperRecord,
@@ -122,6 +125,48 @@ def test_runtime_eval_cohort_stratum_key_uses_candidate_stratum():
     assert (
         runtime_eval_cohort_stratum_key(candidate)
         == "pmc_present|fulltext|citations_20_99"
+    )
+
+
+def test_route_signature_emits_sparse_passage_fallback_only_when_active():
+    active_signature = _route_signature(
+        {
+            "retrieval_profile": "title_lookup",
+            "paper_search_route": "paper_search_global_fts_only",
+            "paper_search_sparse_passage_fallback": True,
+            "paper_search_use_title_similarity": False,
+            "paper_search_use_title_candidate_lookup": True,
+            "dense_query_route": "dense_query_ann_broad_scope",
+        }
+    )
+
+    inactive_signature = _route_signature(
+        {
+            "retrieval_profile": "title_lookup",
+            "paper_search_route": "paper_search_global_fts_only",
+            "paper_search_sparse_passage_fallback": False,
+            "paper_search_use_title_similarity": False,
+            "paper_search_use_title_candidate_lookup": True,
+            "dense_query_route": "dense_query_ann_broad_scope",
+        }
+    )
+
+    assert (
+        active_signature
+        == "retrieval_profile=title_lookup|"
+        "paper_search_route=paper_search_global_fts_only|"
+        "paper_search_sparse_passage_fallback=True|"
+        "paper_search_use_title_similarity=False|"
+        "paper_search_use_title_candidate_lookup=True|"
+        "dense_query_route=dense_query_ann_broad_scope"
+    )
+    assert (
+        inactive_signature
+        == "retrieval_profile=title_lookup|"
+        "paper_search_route=paper_search_global_fts_only|"
+        "paper_search_use_title_similarity=False|"
+        "paper_search_use_title_candidate_lookup=True|"
+        "dense_query_route=dense_query_ann_broad_scope"
     )
 
 
