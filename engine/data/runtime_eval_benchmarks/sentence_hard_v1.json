@@ -5,7 +5,7 @@
   "bundle_checksum": "a9216e173007158807e9e8c063af987b1467f18831a0279f87ed87a0ad671799",
   "graph_name": "cosmograph",
   "chunk_version_key": "default-structural-v1",
-  "source_dense_audit_report_path": "/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/dense-contract-audit-current-v1.json",
+  "benchmark_source": "/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/dense-contract-audit-current-v1.json",
   "max_cases": 24,
   "min_failure_count": 2,
   "min_max_rank": 4,

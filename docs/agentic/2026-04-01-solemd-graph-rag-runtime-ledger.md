@@ -47,9 +47,9 @@ Mode: agentic overnight improvement loop
 | A37 | done | P1 | Live biomedical reranker | The dense contract audit showed the current stored S2 paper vectors are not misaligned, but it also showed that a bounded MedCPT reranker can materially improve sentence-style biomedical retrieval quality on the offline dense benchmark. | Added an optional GPU-backed MedCPT rerank stage on the merged top-N runtime candidates for sentence-like global queries, benchmarked it on the full current live cohort, and kept the existing S2 retrieval lane as the default because the broad live cohort already sits at `1.0` quality and the live reranker adds latency without lifting that scorecard. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-control.json` + `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused service/ranking/perf tests |
 | A38 | done | P2 | Reranker observability | A live reranker experiment will only be safe if its candidate-window size, GPU stage cost, and promotion effect are visible in the same runtime artifacts as the existing retrieval stages. | Extended runtime traces so reranker stage duration, candidate-window size, promotion count, window ids, and device/ready status are recorded alongside the rest of the runtime profile. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused telemetry regression |
 | A39 | done | P1 | Hard-cohort evaluation | The current live cohort is now saturated at `1.0` quality across the main runtime metrics, which means new ranking ideas can look promising offline without moving the live scorecard at all. | Built the frozen `sentence_hard_v1` benchmark from dense-audit sentence failures, removed duplicate prep/test surfaces, wired benchmark execution through the canonical runtime-eval path, and validated the current runtime against that cohort. | `engine/data/runtime_eval_benchmarks/sentence_hard_v1.json` + `engine/.tmp/rag-runtime-eval-sentence-hard-v1.json` + `uv run pytest test/test_rag_runtime_benchmarks.py test/test_rag_runtime_eval.py -q` |
-| A40 | in_progress | P1 | Clinician-facing ranking priors | `sentence_hard_v1` is now cleared at `1.0`, so the next runtime quality gains are more likely to come from objective-aware ranking than from generic sentence recall alone, especially for treatment, diagnosis, and prognosis questions. A bounded first pass is now landed for query intent plus publication-type and species/human-study shortlist priors. | Build the clinician-shaped comparison cohort on top of the new prior lane, measure it against the frozen runtime benchmarks, and decide whether any of the clinician priors should become part of the live default scoring contract. | Benchmark comparison artifact + targeted ranking/service tests |
+| A40 | done | P1 | Clinician-facing ranking priors | `sentence_hard_v1` cleared at `1.0`, so the next runtime quality gains were more likely to come from objective-aware ranking than from generic sentence recall alone. The clinician-prior lane is now benchmarked on a frozen clinician cohort. | Keep clinician priors available behind the feature flag but default-off until a future benchmark shows a real quality win. | `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-control.json` + `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-priors-on.json` + targeted tests |
 | A41 | pending | P1 | Conflict and polarity evaluation | Current evals prove retrieval, grounding, and latency, but they still under-measure null findings, contradictory trials, mixed evidence, and nonhuman-to-human leakage. | Build a compact polarity/conflict benchmark and wire it into runtime evaluation so fast wrong-positive answers are caught before they ship. | Benchmark artifact + runtime eval extension |
-| A42 | pending | P2 | Frozen benchmark drift | Frozen benchmark inputs now exist as checked-in runtime contracts, so schema drift or silent artifact skew would make later ranking comparisons noisy. | Keep the checked-in `engine/data/runtime_eval_benchmarks/` artifacts aligned with the benchmark builder schema and add focused loader coverage whenever benchmark metadata changes. | Checked-in artifact diff + loader test coverage |
+| A42 | done | P2 | Frozen benchmark drift | Frozen benchmark inputs now exist as checked-in runtime contracts, so schema drift or silent artifact skew would make later ranking comparisons noisy. | Generalized benchmark metadata around `benchmark_source`, aligned the checked-in JSON artifacts, and added loader coverage that validates every checked-in benchmark file. | `uv run pytest test/test_rag_runtime_benchmarks.py -q` |
 
 ## Completed Batches
 
@@ -1303,3 +1303,55 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - clinician priors are now available as a measured runtime experiment, not an unbenchmarked default behavior change
   - the next A40 step can compare the exact same runtime stack with the flag off and on over a clinician-shaped frozen benchmark
+
+## Batch 34: Freeze The Clinician Benchmark And Close The First Prior Decision
+
+- Scope:
+  - `engine/app/rag_ingest/runtime_eval_models.py`
+  - `engine/app/rag_ingest/runtime_eval_benchmarks.py`
+  - `engine/data/runtime_eval_benchmarks/sentence_hard_v1.json`
+  - `engine/data/runtime_eval_benchmarks/clinical_actionable_v1.json`
+  - `engine/test/test_rag_runtime_benchmarks.py`
+  - `docs/agentic/2026-04-01-solemd-graph-rag-runtime-ledger.md`
+- Problem evidenced after Batch 33:
+  - the benchmark contract still used the dense-audit-specific field name `source_dense_audit_report_path`, even though benchmark inputs were now a shared checked-in runtime surface rather than only dense-audit outputs.
+  - the clinician-prior experiment needed a frozen benchmark asset and a measured off-vs-on comparison before any live-default decision could be made.
+- Durable implementation landed:
+  - generalized the checked-in benchmark metadata contract from `source_dense_audit_report_path` to `benchmark_source` in:
+    - `engine/app/rag_ingest/runtime_eval_models.py`
+    - `engine/app/rag_ingest/runtime_eval_benchmarks.py`
+    - `engine/data/runtime_eval_benchmarks/sentence_hard_v1.json`
+  - added a canonical checked-in clinician benchmark:
+    - `engine/data/runtime_eval_benchmarks/clinical_actionable_v1.json`
+    - `15` clinician-shaped `sentence_global` cases
+    - balanced across `treatment`, `diagnosis`, and `prognosis`
+    - mixed across `s2orc_v2` and `biocxml`
+  - extended the benchmark test surface so every checked-in runtime benchmark file is validated and loadable through the canonical loader:
+    - `engine/test/test_rag_runtime_benchmarks.py`
+  - ran the clinician benchmark comparison on the same runtime stack with clinician priors disabled and enabled:
+    - control: `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-control.json`
+    - priors on: `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-priors-on.json`
+    - warm control rerun: `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-control-warm.json`
+- Verification:
+  - `cd engine && uv run pytest test/test_rag_runtime_benchmarks.py -q` -> `4 passed`
+  - `cd engine && uv run ruff check app/rag_ingest/runtime_eval_models.py app/rag_ingest/runtime_eval_benchmarks.py test/test_rag_runtime_benchmarks.py` -> passed
+- Measured result:
+  - control (cold-ish first run):
+    - `hit@1 = 0.8667`
+    - `target_in_grounded_answer_rate = 0.8667`
+    - `mean_service_duration_ms = 318.986`
+  - priors on:
+    - `hit@1 = 0.8667`
+    - `target_in_grounded_answer_rate = 0.8667`
+    - `mean_service_duration_ms = 65.279`
+  - warm control:
+    - `hit@1 = 0.8667`
+    - `target_in_grounded_answer_rate = 0.8667`
+    - `mean_service_duration_ms = 63.442`
+  - residual misses were unchanged in all runs:
+    - `26923322`
+    - `229929738`
+- Interpretation:
+  - the clinician prior lane does not yet justify a live-default rollout on the frozen clinician benchmark
+  - warm control and priors-on are nearly identical on latency, so the prior itself is cheap, but it currently adds no measurable quality lift
+  - the correct contract is to keep `rag_live_clinical_priors_enabled = False` by default and move the next quality work to conflict/polarity benchmarking and residual clinician-miss analysis

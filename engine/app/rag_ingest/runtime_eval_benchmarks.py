@@ -215,7 +215,7 @@ def build_dense_audit_sentence_hard_benchmark(
         bundle_checksum=release.bundle_checksum,
         graph_name=release.graph_name,
         chunk_version_key=chunk_version_key,
-        source_dense_audit_report_path=str(dense_audit_report_path),
+        benchmark_source=str(dense_audit_report_path),
         max_cases=max_cases,
         min_failure_count=min_failure_count,
         min_max_rank=min_max_rank,

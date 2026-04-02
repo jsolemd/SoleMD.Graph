@@ -163,7 +163,7 @@ def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: 
         bundle_checksum="checksum",
         graph_name="Current Graph",
         chunk_version_key="default-structural-v1",
-        source_dense_audit_report_path="/tmp/dense-audit.json",
+        benchmark_source="/tmp/dense-audit.json",
         max_cases=24,
         min_failure_count=2,
         min_max_rank=4,
@@ -206,6 +206,22 @@ def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: 
         stratum_key="benchmark:sentence_hard_v1|difficulty:rank_20_49|source:s2orc_v2",
         representative_section_role="discussion",
     )
+
+
+def test_checked_in_runtime_benchmarks_validate_and_load():
+    benchmark_dir = Path(__file__).resolve().parents[1] / "data" / "runtime_eval_benchmarks"
+    benchmark_paths = sorted(benchmark_dir.glob("*.json"))
+
+    assert benchmark_paths
+
+    for benchmark_path in benchmark_paths:
+        report = RagRuntimeEvalBenchmarkReport.model_validate_json(
+            benchmark_path.read_text()
+        )
+        loaded_report, cases = load_runtime_eval_benchmark_cases(benchmark_path)
+
+        assert loaded_report.benchmark_key == report.benchmark_key
+        assert len(cases) == len(report.cases)
 
 
 def test_run_rag_runtime_case_evaluation_uses_explicit_cases(monkeypatch):

@@ -239,7 +239,7 @@ class RagRuntimeEvalBenchmarkReport(ParseContractModel):
     bundle_checksum: str | None = None
     graph_name: str
     chunk_version_key: str
-    source_dense_audit_report_path: str
+    benchmark_source: str
     max_cases: int
     min_failure_count: int
     min_max_rank: int
