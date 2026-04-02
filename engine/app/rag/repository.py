@@ -15,6 +15,7 @@ from app import db
 from app.config import settings
 from app.pgvector_utils import format_vector_literal
 from app.rag import queries
+from app.rag.clinical_priors import COMMON_MODEL_SPECIES_IDS, HUMAN_SPECIES_ID
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
@@ -23,6 +24,7 @@ from app.rag.models import (
     PaperAssetRecord,
     PaperEvidenceHit,
     PaperReferenceRecord,
+    PaperSpeciesProfile,
     RelationMatchedPaperHit,
 )
 from app.rag.query_enrichment import (
@@ -202,6 +204,11 @@ class RagRepository(Protocol):
         relation_terms: Sequence[str],
         limit_per_paper: int = 5,
     ) -> dict[int, list[RelationMatchedPaperHit]]: ...
+
+    def fetch_species_profiles(
+        self,
+        corpus_ids: Sequence[int],
+    ) -> dict[int, PaperSpeciesProfile]: ...
 
     def fetch_references(
         self,
@@ -1255,6 +1262,38 @@ class PostgresRagRepository:
                 )
             )
         return dict(grouped)
+
+    def fetch_species_profiles(
+        self,
+        corpus_ids: Sequence[int],
+    ) -> dict[int, PaperSpeciesProfile]:
+        unique_corpus_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
+        if not unique_corpus_ids:
+            return {}
+
+        grouped: dict[int, PaperSpeciesProfile] = {}
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.SPECIES_PROFILE_SQL,
+                    (
+                        HUMAN_SPECIES_ID,
+                        HUMAN_SPECIES_ID,
+                        list(COMMON_MODEL_SPECIES_IDS),
+                        unique_corpus_ids,
+                    ),
+                )
+                rows = cur.fetchall()
+
+        for row in rows:
+            corpus_id = int(row["corpus_id"])
+            grouped[corpus_id] = PaperSpeciesProfile(
+                corpus_id=corpus_id,
+                human_mentions=int(row.get("human_mentions") or 0),
+                nonhuman_mentions=int(row.get("nonhuman_mentions") or 0),
+                common_model_mentions=int(row.get("common_model_mentions") or 0),
+            )
+        return grouped
 
     def fetch_relation_matches(
         self,

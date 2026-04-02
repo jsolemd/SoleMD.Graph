@@ -47,7 +47,7 @@ Mode: agentic overnight improvement loop
 | A37 | done | P1 | Live biomedical reranker | The dense contract audit showed the current stored S2 paper vectors are not misaligned, but it also showed that a bounded MedCPT reranker can materially improve sentence-style biomedical retrieval quality on the offline dense benchmark. | Added an optional GPU-backed MedCPT rerank stage on the merged top-N runtime candidates for sentence-like global queries, benchmarked it on the full current live cohort, and kept the existing S2 retrieval lane as the default because the broad live cohort already sits at `1.0` quality and the live reranker adds latency without lifting that scorecard. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-control.json` + `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused service/ranking/perf tests |
 | A38 | done | P2 | Reranker observability | A live reranker experiment will only be safe if its candidate-window size, GPU stage cost, and promotion effect are visible in the same runtime artifacts as the existing retrieval stages. | Extended runtime traces so reranker stage duration, candidate-window size, promotion count, window ids, and device/ready status are recorded alongside the rest of the runtime profile. | `engine/.tmp/rag-runtime-eval-current-all-families-v30-live-biorerank.json` + focused telemetry regression |
 | A39 | done | P1 | Hard-cohort evaluation | The current live cohort is now saturated at `1.0` quality across the main runtime metrics, which means new ranking ideas can look promising offline without moving the live scorecard at all. | Built the frozen `sentence_hard_v1` benchmark from dense-audit sentence failures, removed duplicate prep/test surfaces, wired benchmark execution through the canonical runtime-eval path, and validated the current runtime against that cohort. | `engine/data/runtime_eval_benchmarks/sentence_hard_v1.json` + `engine/.tmp/rag-runtime-eval-sentence-hard-v1.json` + `uv run pytest test/test_rag_runtime_benchmarks.py test/test_rag_runtime_eval.py -q` |
-| A40 | pending | P1 | Clinician-facing ranking priors | `sentence_hard_v1` is now cleared at `1.0`, so the next runtime quality gains are more likely to come from objective-aware ranking than from generic sentence recall alone, especially for treatment, diagnosis, and prognosis questions. | Add bounded query-type priors using publication type, evidence quality, venue, and PubTator species/human-study signals, then compare against clinician-shaped and sentence-hard frozen cohorts before changing the live default. | Benchmark comparison artifact + targeted ranking/service tests |
+| A40 | in_progress | P1 | Clinician-facing ranking priors | `sentence_hard_v1` is now cleared at `1.0`, so the next runtime quality gains are more likely to come from objective-aware ranking than from generic sentence recall alone, especially for treatment, diagnosis, and prognosis questions. A bounded first pass is now landed for query intent plus publication-type and species/human-study shortlist priors. | Build the clinician-shaped comparison cohort on top of the new prior lane, measure it against the frozen runtime benchmarks, and decide whether any of the clinician priors should become part of the live default scoring contract. | Benchmark comparison artifact + targeted ranking/service tests |
 | A41 | pending | P1 | Conflict and polarity evaluation | Current evals prove retrieval, grounding, and latency, but they still under-measure null findings, contradictory trials, mixed evidence, and nonhuman-to-human leakage. | Build a compact polarity/conflict benchmark and wire it into runtime evaluation so fast wrong-positive answers are caught before they ship. | Benchmark artifact + runtime eval extension |
 | A42 | pending | P2 | Frozen benchmark drift | Frozen benchmark inputs now exist as checked-in runtime contracts, so schema drift or silent artifact skew would make later ranking comparisons noisy. | Keep the checked-in `engine/data/runtime_eval_benchmarks/` artifacts aligned with the benchmark builder schema and add focused loader coverage whenever benchmark metadata changes. | Checked-in artifact diff + loader test coverage |
 
@@ -1224,3 +1224,53 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the hard benchmark is now a real checked-in regression asset instead of a loose `.tmp` script output
   - the current runtime clears the sentence-hard cohort cleanly, so the next quality work should move to clinician-shaped ranking priors and conflict/polarity evaluation rather than more generic sentence retrieval tuning
+
+## Batch 32: Add Bounded Clinician-Facing Shortlist Priors
+
+- Scope:
+  - `engine/app/rag/types.py`
+  - `engine/app/rag/models.py`
+  - `engine/app/rag/clinical_priors.py`
+  - `engine/app/rag/queries.py`
+  - `engine/app/rag/repository.py`
+  - `engine/app/rag/service.py`
+  - `engine/app/rag/ranking.py`
+  - `engine/test/test_rag_clinical_priors.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_ranking.py`
+  - `engine/test/test_rag_runtime_perf.py`
+  - `engine/test/test_rag_service.py`
+- Problem evidenced after Batch 31:
+  - the frozen hard benchmark is now clean, so the next likely runtime gains are objective-aware rather than recall-only.
+  - treatment, diagnosis, and prognosis questions should be allowed to prefer stronger clinical-study signals and human-study evidence without rewriting the retrieval core or broadening the runtime surface.
+  - the runtime path already exposes publication types and PubTator-derived species mentions, but there was no bounded ranking prior that could use them.
+- Durable implementation landed:
+  - added a dedicated `ClinicalQueryIntent` contract in `engine/app/rag/types.py` and persisted it on `PaperRetrievalQuery`.
+  - added `PaperSpeciesProfile` and `clinical_prior_score` to the runtime model layer in `engine/app/rag/models.py`.
+  - introduced `engine/app/rag/clinical_priors.py` as the isolated clinician-prior module instead of inflating `ranking.py` or `query_enrichment.py`:
+    - conservative intent detection for `treatment`, `diagnosis`, `prognosis`, and `mechanism`
+    - bounded shortlist prior scoring
+    - publication-type boosts
+    - human-study and model-organism penalties/boosts from canonical species ids
+  - added canonical species-profile aggregation SQL over `solemd.paper_entity_mentions` in `engine/app/rag/queries.py`.
+  - added `fetch_species_profiles(...)` to the runtime repository adapter in `engine/app/rag/repository.py`.
+  - threaded clinician intent through the runtime service and final ranking path in:
+    - `engine/app/rag/service.py`
+    - `engine/app/rag/ranking.py`
+  - kept the new shortlist enrichment adapter-safe:
+    - `fetch_species_profiles` is optional at the service boundary, so older repository doubles and future adapters do not break if they have not implemented the new method yet
+  - added focused regressions for:
+    - query-intent inference
+    - species-profile repository mapping
+    - clinician-prior ranking behavior
+    - DB-backed runtime behavior and bounded stage cost
+- Verification:
+  - `cd engine && uv run ruff check app/rag/types.py app/rag/models.py app/rag/clinical_priors.py app/rag/queries.py app/rag/repository.py app/rag/service.py app/rag/ranking.py test/test_rag_clinical_priors.py test/test_rag_repository.py test/test_rag_ranking.py test/test_rag_runtime_perf.py test/test_rag_service.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_clinical_priors.py test/test_rag_repository.py test/test_rag_ranking.py -q` -> `71 passed`
+  - `cd engine && uv run pytest test/test_rag_service.py -q` -> `37 passed`
+  - `cd engine && uv run pytest test/test_rag_runtime_perf.py -k clinical_treatment_query_applies_bounded_species_prior -q` -> `1 passed, 23 deselected`
+  - `cd engine && uv run pytest test/test_rag_clinical_priors.py test/test_rag_repository.py test/test_rag_ranking.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'clinical_treatment_query_applies_bounded_species_prior or test_infer_clinical_query_intent or test_fetch_species_profiles_maps_rows or test_rank_paper_hits_applies_clinician_prior_for_treatment_queries' -q` -> `8 passed, 124 deselected`
+- Interpretation:
+  - the runtime now has a bounded clinician-facing ranking lane that uses existing warehouse signals instead of a new retrieval subsystem
+  - the scoring path remains modular and centralized: intent detection lives in its own module, species lookup lives in the repository adapter, and final ranking remains the only place where the prior affects paper ordering
+  - the next step is not more plumbing; it is a clinician-shaped benchmark comparison to decide whether these priors should change the live default behavior

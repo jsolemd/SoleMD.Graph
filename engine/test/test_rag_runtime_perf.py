@@ -14,7 +14,9 @@ from app.rag.query_plan import plan_index_names, plan_node_names
 from app.rag.repository import PostgresRagRepository
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag_ingest.runtime_eval import (
+    RuntimeEvalQueryCase,
     RuntimeEvalQueryFamily,
+    run_rag_runtime_case_evaluation,
     run_rag_runtime_evaluation,
 )
 
@@ -229,6 +231,50 @@ def test_runtime_sentence_query_with_exact_relation_seed_stays_fast():
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
     assert sentence_global.p95_service_duration_ms <= 1000.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_clinical_treatment_query_applies_bounded_species_prior():
+    _require_runtime_db()
+    try:
+        report = run_rag_runtime_case_evaluation(
+            graph_release_id="current",
+            chunk_version_key=DEFAULT_CHUNK_VERSION_KEY,
+            cases=[
+                RuntimeEvalQueryCase(
+                    corpus_id=213192049,
+                    title=(
+                        "Ramosetron versus Palonosetron in Combination with "
+                        "Aprepitant and Dexamethasone for the Control of "
+                        "Highly-Emetogenic Chemotherapy-Induced Nausea and Vomiting"
+                    ),
+                    primary_source_system="s2orc_v2",
+                    query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                    query=(
+                        "Is ramosetron as effective as palonosetron for preventing "
+                        "highly emetogenic chemotherapy induced nausea and vomiting?"
+                    ),
+                    stratum_key="benchmark:clinical_treatment_v1|source:s2orc_v2",
+                    representative_section_role="abstract",
+                )
+            ],
+            k=5,
+            rerank_topn=10,
+            use_lexical=True,
+            use_dense_query=True,
+            connect=db.pooled,
+        )
+    finally:
+        db.close_pool()
+
+    assert report.summary.overall.error_count == 0
+    case = report.cases[0]
+
+    assert case.target_in_grounded_answer is True
+    assert case.session_flags["clinical_query_intent"] == "treatment"
+    assert case.session_flags["clinical_prior_requested"] is True
+    assert case.stage_durations_ms.get("fetch_species_profiles", 0.0) <= 25.0
 
 
 @pytest.mark.integration

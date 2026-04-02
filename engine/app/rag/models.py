@@ -8,6 +8,7 @@ from datetime import datetime
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.types import (
     CitationDirection,
+    ClinicalQueryIntent,
     EvidenceIntent,
     GraphSignalKind,
     NodeLayer,
@@ -34,6 +35,7 @@ class PaperRetrievalQuery:
     selected_cluster_id: int | None = None
     scope_mode: RetrievalScope = RetrievalScope.GLOBAL
     retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL
+    clinical_intent: ClinicalQueryIntent = ClinicalQueryIntent.GENERAL
     evidence_intent: EvidenceIntent | None = None
     k: int = 6
     rerank_topn: int = 18
@@ -95,6 +97,7 @@ class PaperEvidenceHit:
     citation_intent_score: float = 0.0
     publication_type_score: float = 0.0
     evidence_quality_score: float = 0.0
+    clinical_prior_score: float = 0.0
     title_anchor_score: float = 0.0
     passage_alignment_score: float = 0.0
     selected_context_score: float = 0.0
@@ -133,6 +136,16 @@ class EntityMatchedPaperHit:
     structural_span_count: int = 0
     retrieval_default_mention_count: int = 0
     score: float = 0.0
+
+
+@dataclass(slots=True)
+class PaperSpeciesProfile:
+    """Species-population summary for shortlist-time clinical priors."""
+
+    corpus_id: int
+    human_mentions: int = 0
+    nonhuman_mentions: int = 0
+    common_model_mentions: int = 0
 
 
 @dataclass(slots=True)

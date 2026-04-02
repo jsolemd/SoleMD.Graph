@@ -1086,6 +1086,37 @@ def test_runtime_entity_queries_use_canonical_entity_mentions():
     assert "pubtator.entity_annotations" not in queries.ENTITY_MATCH_SQL
 
 
+def test_fetch_species_profiles_maps_rows(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 202,
+                "human_mentions": 4,
+                "nonhuman_mentions": 0,
+                "common_model_mentions": 0,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    profiles = repo.fetch_species_profiles([202, 202])
+
+    assert list(profiles) == [202]
+    assert profiles[202].human_mentions == 4
+    assert profiles[202].nonhuman_mentions == 0
+    assert profiles[202].common_model_mentions == 0
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.SPECIES_PROFILE_SQL,
+        (
+            "9606",
+            "9606",
+            ["10090", "10116", "9615", "9031", "7955", "7227", "6239"],
+            [202],
+        ),
+    )
+
+
 def test_fetch_citation_contexts_scores_and_limits_hits_in_sql(mock_conn):
     conn = mock_conn(
         rows=[

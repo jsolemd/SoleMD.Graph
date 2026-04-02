@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from app.rag.models import CitationContextHit, EntityMatchedPaperHit, PaperEvidenceHit
+from app.rag.models import (
+    CitationContextHit,
+    EntityMatchedPaperHit,
+    PaperEvidenceHit,
+    PaperSpeciesProfile,
+)
 from app.rag.ranking import rank_paper_hits
 from app.rag.types import (
     CitationDirection,
+    ClinicalQueryIntent,
     EvidenceIntent,
     QueryRetrievalProfile,
     RetrievalChannel,
@@ -1018,3 +1024,73 @@ def test_rank_paper_hits_promotes_near_exact_title_sentence_in_passage_lookup():
     assert [paper.corpus_id for paper in ranked] == [22, 11]
     assert ranked[0].passage_alignment_score >= 0.65
     assert "Direct paper text closely matches the query" in ranked[0].match_reasons
+
+
+def test_rank_paper_hits_applies_clinician_prior_for_treatment_queries():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Randomized clinical trial in human patients",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=1,
+            pmcid=None,
+            abstract="Human randomized trial of perioperative delirium prevention.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            publication_types=["RandomizedControlledTrial", "ClinicalTrial"],
+            citation_count=10,
+            reference_count=12,
+            dense_score=0.42,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Mouse model of perioperative delirium",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=2,
+            pmcid=None,
+            abstract="Mechanistic mouse model study.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            publication_types=["Study"],
+            citation_count=10,
+            reference_count=12,
+            dense_score=0.48,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        species_profiles={
+            1: PaperSpeciesProfile(corpus_id=1, human_mentions=5),
+            2: PaperSpeciesProfile(
+                corpus_id=2,
+                nonhuman_mentions=12,
+                common_model_mentions=12,
+            ),
+        },
+        query_text="Does melatonin reduce postoperative delirium in surgical patients?",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        clinical_intent=ClinicalQueryIntent.TREATMENT,
+        channel_rankings={RetrievalChannel.DENSE_QUERY: {2: 1, 1: 2}},
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+    assert ranked[0].clinical_prior_score > 0
+    assert ranked[1].clinical_prior_score < 0
+    assert any(
+        reason.startswith("Matched clinician-facing prior")
+        for reason in ranked[0].match_reasons
+    )

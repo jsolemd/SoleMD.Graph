@@ -6,16 +6,23 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from app.rag.clinical_priors import score_clinical_prior
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
     PaperEvidenceHit,
+    PaperSpeciesProfile,
     RelationMatchedPaperHit,
 )
 from app.rag.retrieval_policy import has_direct_retrieval_support
 from app.rag.text_alignment import score_text_alignment
 from app.rag.title_anchor import compute_title_anchor_score
-from app.rag.types import EvidenceIntent, QueryRetrievalProfile, RetrievalChannel
+from app.rag.types import (
+    ClinicalQueryIntent,
+    EvidenceIntent,
+    QueryRetrievalProfile,
+    RetrievalChannel,
+)
 
 RRF_K = 60
 GENERAL_RRF_WEIGHTS: Mapping[RetrievalChannel, float] = {
@@ -47,6 +54,7 @@ TITLE_ANCHOR_WEIGHT = 0.32
 CITATION_INTENT_WEIGHT = 0.08
 PUBLICATION_TYPE_WEIGHT = 0.06
 EVIDENCE_QUALITY_WEIGHT = 0.08
+CLINICAL_PRIOR_WEIGHT = 0.1
 PASSAGE_ALIGNMENT_REASON_THRESHOLD = 0.55
 
 SUPPORT_CUES = (
@@ -109,6 +117,7 @@ class RankingScoreProfile:
     dense_weight: float
     publication_type_weight: float
     evidence_quality_weight: float
+    clinical_prior_weight: float
     intent_weight: float
     biomedical_rerank_weight: float = 0.0
     passage_alignment_weight: float = 0.0
@@ -129,6 +138,7 @@ GENERAL_RANKING_PROFILE = RankingScoreProfile(
     dense_weight=0.16,
     publication_type_weight=PUBLICATION_TYPE_WEIGHT,
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
+    clinical_prior_weight=CLINICAL_PRIOR_WEIGHT,
     intent_weight=INTENT_WEIGHT,
 )
 TITLE_RANKING_PROFILE = RankingScoreProfile(
@@ -143,6 +153,7 @@ TITLE_RANKING_PROFILE = RankingScoreProfile(
     dense_weight=0.1,
     publication_type_weight=PUBLICATION_TYPE_WEIGHT,
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
+    clinical_prior_weight=CLINICAL_PRIOR_WEIGHT,
     intent_weight=INTENT_WEIGHT,
     selected_context_weight=0.24,
 )
@@ -158,6 +169,7 @@ PASSAGE_RANKING_PROFILE = RankingScoreProfile(
     dense_weight=0.08,
     publication_type_weight=PUBLICATION_TYPE_WEIGHT,
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
+    clinical_prior_weight=CLINICAL_PRIOR_WEIGHT,
     intent_weight=INTENT_WEIGHT,
     biomedical_rerank_weight=0.24,
     passage_alignment_weight=0.22,
@@ -350,6 +362,7 @@ def _channel_annotation(
     matched_citation_intents: list[str],
     matched_publication_types: list[str],
     evidence_quality_reasons: list[str],
+    clinical_prior_reasons: list[str],
     matched_intent_cues: list[str],
     evidence_intent: EvidenceIntent | None,
 ) -> tuple[list[RetrievalChannel], list[str]]:
@@ -407,6 +420,11 @@ def _channel_annotation(
             "Matched evidence-quality priors"
             + f": {', '.join(evidence_quality_reasons[:3])}"
         )
+    if hit.clinical_prior_score != 0 and clinical_prior_reasons:
+        reasons.append(
+            "Matched clinician-facing prior"
+            + f": {', '.join(clinical_prior_reasons[:3])}"
+        )
     if hit.intent_score > 0:
         if evidence_intent == EvidenceIntent.SUPPORT:
             reasons.append(
@@ -427,14 +445,17 @@ def rank_paper_hits(
     citation_hits: dict[int, list[CitationContextHit]],
     entity_hits: dict[int, list[EntityMatchedPaperHit]],
     relation_hits: dict[int, list[RelationMatchedPaperHit]],
+    species_profiles: Mapping[int, PaperSpeciesProfile] | None = None,
     evidence_intent: EvidenceIntent | None = None,
     channel_rankings: Mapping[RetrievalChannel, Mapping[int, int]] | None = None,
     query_text: str | None = None,
     retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
+    clinical_intent: ClinicalQueryIntent = ClinicalQueryIntent.GENERAL,
 ) -> list[PaperEvidenceHit]:
     """Fuse baseline channel signals into a final paper rank."""
 
     channel_rankings = channel_rankings or {}
+    species_profiles = species_profiles or {}
     score_profile = _ranking_profile(retrieval_profile)
     ranked: list[PaperEvidenceHit] = []
     for hit in paper_hits:
@@ -476,6 +497,11 @@ def rank_paper_hits(
         )
         hit.publication_type_score, matched_publication_types = _publication_type_affinity(hit)
         hit.evidence_quality_score, evidence_quality_reasons = _evidence_quality_affinity(hit)
+        hit.clinical_prior_score, clinical_prior_reasons = score_clinical_prior(
+            query_intent=clinical_intent,
+            paper=hit,
+            species_profile=species_profiles.get(hit.corpus_id),
+        )
         hit.title_anchor_score = compute_title_anchor_score(
             query_text=query_text,
             title_text=hit.title,
@@ -550,6 +576,7 @@ def rank_paper_hits(
             + (dense_score * score_profile.dense_weight)
             + (hit.publication_type_score * score_profile.publication_type_weight)
             + (hit.evidence_quality_score * score_profile.evidence_quality_weight)
+            + (hit.clinical_prior_score * score_profile.clinical_prior_weight)
             + (hit.intent_score * score_profile.intent_weight)
             + (hit.biomedical_rerank_score * score_profile.biomedical_rerank_weight)
             + (hit.passage_alignment_score * score_profile.passage_alignment_weight)
@@ -576,6 +603,7 @@ def rank_paper_hits(
             matched_citation_intents=matched_citation_intents,
             matched_publication_types=matched_publication_types,
             evidence_quality_reasons=evidence_quality_reasons,
+            clinical_prior_reasons=clinical_prior_reasons,
             matched_intent_cues=matched_intent_cues,
             evidence_intent=evidence_intent,
         )

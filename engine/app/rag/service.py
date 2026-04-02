@@ -19,6 +19,10 @@ from app.rag.biomedical_reranking import (
     get_runtime_biomedical_reranker,
 )
 from app.rag.bundle import assemble_evidence_bundles, merge_graph_signals
+from app.rag.clinical_priors import (
+    infer_clinical_query_intent,
+    should_apply_clinical_priors,
+)
 from app.rag.grounded_runtime import build_grounded_answer_from_runtime
 from app.rag.models import (
     CitationContextHit,
@@ -204,6 +208,7 @@ def _build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         selected_cluster_id=request.selected_cluster_id,
         scope_mode=request.scope_mode,
         retrieval_profile=retrieval_profile,
+        clinical_intent=infer_clinical_query_intent(request.query),
         evidence_intent=request.evidence_intent,
         k=request.k,
         rerank_topn=max(request.k, request.rerank_topn),
@@ -948,6 +953,14 @@ class RagService:
         )
         trace.record_count("preliminary_ranked_hits", len(preliminary_ranked_hits))
         trace.record_count("enrichment_corpus_ids", len(enrichment_corpus_ids))
+        trace.record_flags(
+            {
+                "clinical_query_intent": query.clinical_intent,
+                "clinical_prior_requested": should_apply_clinical_priors(
+                    query.clinical_intent
+                ),
+            }
+        )
 
         expanded_citation_hits = (
             trace.call(
@@ -977,8 +990,24 @@ class RagService:
             enrichment_corpus_ids,
             relation_terms=query.relation_terms,
         )
+        fetch_species_profiles = getattr(
+            self._repository,
+            "fetch_species_profiles",
+            None,
+        )
+        species_profiles = (
+            trace.call(
+                "fetch_species_profiles",
+                fetch_species_profiles,
+                enrichment_corpus_ids,
+            )
+            if should_apply_clinical_priors(query.clinical_intent)
+            and callable(fetch_species_profiles)
+            else {}
+        )
         trace.record_count("entity_hit_papers", len(entity_hits))
         trace.record_count("relation_hit_papers", len(relation_hits))
+        trace.record_count("species_profile_papers", len(species_profiles))
 
         ranked_hits = trace.call(
             "rank_final_hits",
@@ -987,9 +1016,11 @@ class RagService:
             citation_hits=citation_hits,
             entity_hits=entity_hits,
             relation_hits=relation_hits,
+            species_profiles=species_profiles,
             evidence_intent=query.evidence_intent,
             query_text=query.query,
             retrieval_profile=query.retrieval_profile,
+            clinical_intent=query.clinical_intent,
             channel_rankings=channel_rankings,
         )
         top_hits = ranked_hits[: query.k]

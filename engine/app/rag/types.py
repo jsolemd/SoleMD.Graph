@@ -66,6 +66,16 @@ class QueryRetrievalProfile(StrEnum):
     GENERAL = "general"
 
 
+class ClinicalQueryIntent(StrEnum):
+    """Clinician-facing intent classes used for bounded ranking priors."""
+
+    GENERAL = "general"
+    TREATMENT = "treatment"
+    DIAGNOSIS = "diagnosis"
+    PROGNOSIS = "prognosis"
+    MECHANISM = "mechanism"
+
+
 DEFAULT_RETRIEVAL_VERSION = "baseline-postgres-v1"
 DEFAULT_GRAPH_NAME = "living_graph"
 DEFAULT_GRAPH_CACHE_CONTROL = "no-store"

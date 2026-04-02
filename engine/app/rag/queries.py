@@ -157,6 +157,23 @@ RANKED_PAPER_SELECT_COLUMNS = """
 """
 
 
+SPECIES_PROFILE_SQL = """
+SELECT
+    pem.corpus_id,
+    COUNT(*) FILTER (WHERE pem.concept_id = %s) AS human_mentions,
+    COUNT(*) FILTER (
+        WHERE pem.concept_id IS NOT NULL
+          AND pem.concept_id <> %s
+    ) AS nonhuman_mentions,
+    COUNT(*) FILTER (WHERE pem.concept_id = ANY(%s::text[])) AS common_model_mentions
+FROM solemd.paper_entity_mentions pem
+WHERE
+    lower(pem.entity_type) = 'species'
+    AND pem.corpus_id = ANY(%s)
+GROUP BY pem.corpus_id
+"""
+
+
 PAPER_CORE_JOINS = """
 JOIN solemd.corpus c
   ON c.corpus_id = p.corpus_id
