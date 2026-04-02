@@ -175,32 +175,37 @@ serialize_search_result()          Pydantic response
 
 ## Retrieval Channels
 
-All channels are release-scoped through `solemd.graph_points`.
+All channels are release-scoped through `solemd.graph_points`. The live runtime
+uses query-shape-specific ranking profiles (`general`, `title_lookup`,
+`passage_lookup`) rather than one fixed global formula.
 
-| Channel | Enum | RRF Weight | Source | Description |
-|---------|------|-----------|--------|-------------|
-| Lexical | `lexical` | 1.00 | `solemd.papers` FTS | Title-first `websearch_to_tsquery` + `pg_trgm` similarity |
-| Entity match | `entity_match` | 0.95 | `solemd.entities` + `pubtator.entity_annotations` | Exact concept-id or canonical-name match, fuzzy fallback |
-| Relation match | `relation_match` | 0.90 | `pubtator.relations` | Exact normalized `relation_type` match |
-| Semantic neighbor | `semantic_neighbor` | 0.85 | `solemd.papers.embedding` | pgvector cosine distance from selected paper |
-| Citation context | `citation_context` | boost only | `solemd.citations` | Bounded expansion from already-recalled candidate set |
+| Channel | Enum | When it runs | Source | Description |
+|---------|------|--------------|--------|-------------|
+| Lexical | `lexical` | all profiles | `solemd.papers` FTS | Title-first `websearch_to_tsquery` + `pg_trgm` similarity |
+| Chunk lexical | `chunk_lexical` | passage lookup | `solemd.paper_chunks` FTS | Chunk-level lexical recall for sentence and passage-style queries |
+| Dense query | `dense_query` | general / passage, and title lookup when lexical title anchors are weak | `solemd.papers.embedding` + pgvector HNSW | Dense paper recall using `allenai/specter2_adhoc_query` in the SPECTER2 paper space |
+| Entity match | `entity_match` | enrichment and ranking | `solemd.paper_entity_mentions` | Exact concept-id or canonical-name match, fuzzy fallback |
+| Relation match | `relation_match` | enrichment and ranking | `pubtator.relations` | Exact normalized `relation_type` match |
+| Semantic neighbor | `semantic_neighbor` | selected-paper expansion | `solemd.papers.embedding` | Dense neighbor expansion around the selected paper |
+| Citation context | `citation_context` | boost only | `solemd.citations` | Bounded expansion from already-recalled candidate set; additive boost, not an RRF lane |
 
-### Fusion Formula
+### Fusion And Ranking
 
-```
-fused_score =
-    RRF(lexical_rank, w=1.00)
-  + RRF(entity_rank,  w=0.95)
-  + RRF(relation_rank, w=0.90)
-  + RRF(semantic_rank, w=0.85)
-  + title_similarity  * 0.05
-  + citation_boost    * 0.18
-  + entity_score      * 0.24
-  + relation_score    * 0.16
-  + intent_score      * 0.14
+The live scorer lives in `engine/app/rag/ranking.py` and differs by query
+profile:
 
-RRF(rank, w) = w / (60 + rank)    where rank is 1-based channel position
-```
+- all profiles use RRF over `lexical`, `chunk_lexical`, `dense_query`,
+  `entity_match`, `relation_match`, and `semantic_neighbor`
+- `citation_context` is additive boost-only
+- `title_lookup` prioritizes direct title support, title anchors, and selected-paper context
+- `passage_lookup` prioritizes chunk lexical support, passage alignment, and suppresses indirect-only candidates
+- `general` keeps the broadest balance across lexical, dense, entity, relation, and evidence-quality signals
+
+Shared additive features include title similarity, title anchors, citation
+boost, citation intent, entity score, relation score, dense score, publication
+type priors, evidence-quality priors, and explicit support/refute intent cues.
+The exact coefficients are intentionally centralized in `ranking.py` so the docs
+do not become a second, stale source of truth.
 
 ### Evidence Intent
 
@@ -1282,18 +1287,23 @@ wired through the full stack.
 
 ### Dense vector retrieval
 
-Qdrant (or equivalent) for ANN search over paper and chunk embeddings. The
-canonical warehouse stores lexical fallback and provenance; dense retrieval
-stays external to PostgreSQL.
+The current live runtime keeps dense paper retrieval inside PostgreSQL:
 
-Current recommendation:
-- paper-level recall: `SPECTER2`
-- chunk/span retrieval: `MedCPT`
-- chunk reranking: `MedCPT-Cross-Encoder`
+- paper-level dense recall uses pgvector HNSW over `solemd.papers.embedding`
+- query encoding uses `allenai/specter2_base` with the
+  `allenai/specter2_adhoc_query` adapter
+- the encoder is GPU-backed when CUDA is available
+- runtime search sessions disable PostgreSQL JIT because it materially reduced
+  tail latency on the canonical entity and dense search paths
 
-The `embedding_model` field on `paper_chunk_versions` is currently metadata
-only. It records the intended embedding family for a chunk version, but the
-live paper-level baseline does not embed or retrieve chunk vectors yet.
+Chunk vectors are not live in the current runtime. `chunk_lexical` is the live
+passage lane today, and the `embedding_model` field on `paper_chunk_versions`
+remains metadata only.
+
+Future dense chunk/span retrieval and optional external reranking remain
+planned and experimental work. If they land, they should be documented
+explicitly as an additional retrieval plane rather than implied as the current
+baseline.
 
 ### Demand-attach graph materialization
 

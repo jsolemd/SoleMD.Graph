@@ -78,7 +78,7 @@ Source: `GET https://api.semanticscholar.org/datasets/v1/release/latest`
 
 ### Enrichment Strategy: Bulk vs Batch API
 
-For enriching our ~14M candidate / ~1.98M base corpus, two paths:
+For enriching the candidate corpus and the policy-sized graph base, two paths:
 
 | Data | Bulk download | Batch API | Our choice |
 |------|--------------|-----------|-----------|
@@ -1297,7 +1297,9 @@ communities**, while clustering by text similarity reveals topic overlap. For a
 graph where users want to see "where a paper fits in the field," citation-aware
 embeddings are strictly better.
 
-Self-embedding with MedCPT is still used -- but for RAG retrieval, where text
+Text-trained self-embedding remains useful for future chunk retrieval or other
+text-first retrieval tasks. The current live paper runtime uses SPECTER2 paper
+embeddings plus the SPECTER2 ad-hoc query adapter for dense query retrieval.
 similarity is the right metric. The two embedding spaces serve different
 purposes and should not be confused.
 

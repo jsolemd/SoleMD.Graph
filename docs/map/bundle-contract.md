@@ -9,7 +9,9 @@ It is based on four runtime layers:
 - `evidence`
 
 The contract is canonical and non-compatibility-based. Base admission is encoded
-in the exported data itself through `is_in_base` and `base_rank`.
+in the exported point data through denormalized `is_in_base` and `base_rank`
+fields. The database source of truth for that admission state is
+`solemd.graph_base_points`, not `solemd.graph_points` columns.
 
 ---
 

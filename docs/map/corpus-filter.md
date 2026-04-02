@@ -99,8 +99,10 @@ The rule sources are:
 
 The evidence pipeline (`paper_evidence.py`) pre-computes per-paper evidence
 into `solemd.paper_evidence_summary`, then base admission
-(`base_policy.py`) materializes the final `is_in_base` and `base_rank`
-decisions onto `solemd.graph_points`.
+(`base_policy.py`) materializes the final admission decision into
+`solemd.graph_base_points` (`base_reason`, `base_rank`). Exported bundle flags
+such as `is_in_base` are derived from that table rather than stored on
+`solemd.graph_points`.
 
 Broad medical entities (e.g. hypertension, diabetes, nausea) are not entity
 rules. Papers mentioning only those conditions stay in the universe layer,
@@ -205,7 +207,8 @@ When new papers arrive:
 1. Refresh the vocab PMID set from PubTator3.
 2. Re-run the S2 paper scan.
 3. Upsert corpus membership and metadata.
-4. Recompute `is_in_base` and `base_rank`.
+4. Recompute base admission in `graph_base_points` and refresh exported
+   `is_in_base` / `base_rank` fields.
 5. Rebuild the graph run.
 6. Re-export `base_points` and `universe_points`.
 

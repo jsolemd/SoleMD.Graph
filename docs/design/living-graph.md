@@ -275,8 +275,8 @@ and would flood base with non-domain papers.
 - `entity_rule` and `relation_rule` define rule evidence
 - `journal_rule` and `base_journal_family` define curated journal metadata
 - `paper_evidence_summary` is the durable per-paper stage that base admission reuses
-- `graph_points.is_in_base` records the final admission decision
-- `graph_points.base_rank` orders base points for export and QA
+- `solemd.graph_base_points` records the final base-admission decision plus `base_reason` and `base_rank`
+- exported point artifacts can denormalize `is_in_base` / `base_rank` from `graph_base_points` for browser filtering and QA
 - `solemd.vocab_terms` is the PostgreSQL-backed curated vocabulary with UMLS CUIs and MeSH crosswalks
 
 ---
@@ -285,15 +285,16 @@ and would flood base with non-domain papers.
 
 Base is the domain core — psychiatry, neurology, neuropsychiatry, and
 neuroscience. It includes papers from all organ systems that demonstrate
-domain relevance through entity annotation overlap.
+domain relevance through entity annotation overlap. It is policy-sized, not
+fixed-count.
 
-- **~1.6M papers** with domain entity evidence (rule tier)
-- **~50K papers** from flagship journals without entity overlap (flagship tier)
-- **~3K papers** from vocab-anchor matches (vocab tier)
+- `solemd.base_policy.target_base_count` defines the scaffold size for each refresh
+- the active policy may change without changing the runtime contract, so code and docs should read the policy instead of hardcoding a size
+- the mix of rule-backed, flagship, and vocab-backed papers varies by refresh and evidence state
 
 The useful mental model is:
 
-- `base_points` is the domain-relevant curated scaffold (~1.6M)
+- `base_points` is the policy-sized curated scaffold exported from `graph_base_points`
 - `universe_points` is everything else in the mapped corpus (scaling toward 200M+ from S2)
 - `overlay_points` is the user-driven expansion surface
 

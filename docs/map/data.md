@@ -338,7 +338,8 @@ leaving richer interaction state in DuckDB query views or the backend API.
   │    family diversity² × min(rules,20) + core family bonus │
   │    + relation hits + flagship journal + citation impact   │
   │    + annotation density + recency                        │
-  │    Top target_base_count (~500K) enter base; rest=universe│
+  │    Top target_base_count from base_policy enter base;   │
+  │    rest=universe                                        │
   │                                                          │
   │  Stage 6: EXPORT                                         │
   │    base_points.parquet + base_clusters.parquet            │
@@ -395,7 +396,7 @@ every UX interaction maps to a specific data path:
 │  USER TYPES @ TO CITE A PAPER                                       │
 │  "Building on @dopamine receptor sig..."                            │
 │                                                                     │
-│  1. Current sentence embedded with MedCPT query encoder             │
+│  1. Current sentence embedded with SPECTER2 ad-hoc query encoder    │
 │  2. pgvector search on papers.embedding (SPECTER2)                  │
 │     → top-10 semantically similar papers                            │
 │  3. Autocomplete dropdown shows matches                             │

@@ -125,7 +125,8 @@ state, but the current runtime boundary is now:
 - Universe premapped artifact:
   - `universe_points.parquet`
 - `universe_links.parquet` is not part of the default publish path
-- base admission is decided upstream and exported as `is_in_base` / `base_rank`
+- base admission is decided upstream in `graph_base_points` and exported as
+  denormalized `is_in_base` / `base_rank` fields where bundle consumers need them
 - upstream base admission is now staged as:
   raw evidence -> `paper_evidence_summary` -> `graph_base_features` -> export
 - the graph build itself now stages:

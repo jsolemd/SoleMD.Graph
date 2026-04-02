@@ -330,7 +330,8 @@ than older multi-tier first-paint policy.
 - `solemd.relation_rule`: relation-driven overlap rules
 - `solemd.paper_evidence_summary`: durable per-paper evidence summary for restartable base admission
 - `solemd.graph_runs`: published run metadata and bundle manifest
-- `solemd.graph_points`: run-scoped coordinates with `is_in_base` and `base_rank`
+- `solemd.graph_points`: run-scoped coordinates, point indices, and cluster assignments
+- `solemd.graph_base_points`: durable base-admission table carrying `base_reason` and `base_rank`
 - `solemd.graph_clusters`: run-scoped cluster summaries
 - `solemd.graph_base_features`: audit features used to explain base admission
 - `pubtator.entity_annotations` / `pubtator.relations`: domain-filtered biomedical evidence substrate
@@ -373,7 +374,7 @@ Geo note:
 
 | Decision | **FastAPI + Dramatiq + Redis** |
 |----------|--------------------------------|
-| Why | FastAPI for the operations API + inline MedCPT reranking. Dramatiq workers for hours-long batch jobs (PubTator load, embedding, graph build) with crash recovery. |
+| Why | FastAPI for the operations API plus retrieval, ranking, grounding, and evaluation endpoints. Dramatiq workers for hours-long batch jobs (PubTator load, embedding, graph build) with crash recovery. |
 | Why Dramatiq over Celery | Ack-after-completion by default — if a 1.6B row load crashes at row 800M, the task retries instead of being silently dropped. |
 | Upgrade path | **Prefect 3** — web UI for pipeline monitoring, scheduled monthly refreshes, asset-aware caching. Compelling when log-diving becomes painful. |
 | Eliminated | Temporal (4 processes, 1-month learning curve for solo dev), Ray (overkill for single machine), Go/Rust/Node.js (no numpy/scipy/sklearn/transformers ecosystem), Supabase Edge Functions (2-second CPU limit) |
@@ -389,7 +390,7 @@ Geo note:
 | Primary RAG synthesis | Gemini 2.5 Flash | $0.30 / $2.50 | Best cost/quality, 1M context, 79.9% on medical board exams |
 | Complex multi-paper | Claude Sonnet 4.6 or GPT-4.1 | $3.00 / $15.00 | Weighing conflicting evidence across papers |
 | Cheap entity extraction | GPT-4.1 Nano | $0.10 / $0.40 | Strict JSON Schema, 1M context |
-| Retrieval reranking | Cohere Rerank 3.5 | $2 / 1K searches | Purpose-built, cheaper than LLM reranking |
+| External retrieval reranking (evaluated, not live) | Cohere Rerank 3.5 | $2 / 1K searches | Candidate if later sentence-global quality justifies an external reranker |
 | Fast preview (optional) | Groq + Llama 3.3 70B | ~$0.60 | Sub-500ms TTFT for instant draft answers |
 
 Estimated cost: **~$30-50/month at 10K queries**.
@@ -400,10 +401,11 @@ Estimated cost: **~$30-50/month at 10K queries**.
 |----------|----------------------------------------------|
 | Why | Clustering and retrieval are fundamentally different tasks. Citation-aware embeddings for graph layout, search-trained embeddings for RAG. |
 
-| Purpose | Model | Dims | Source | Cost |
-|---------|-------|------|--------|------|
-| Graph clustering | SPECTER2 | 768 | Semantic Scholar (pre-computed) | Free |
-| RAG retrieval | MedCPT | 768 | Self-hosted (ncbi/MedCPT-*-Encoder) | GPU compute (~$2-5 one-time) |
+| Purpose | Model | Dims | Source | Status |
+|---------|-------|------|--------|--------|
+| Graph clustering | SPECTER2 paper embeddings | 768 | Semantic Scholar (pre-computed) | Live |
+| Live paper dense retrieval | `allenai/specter2_base` + `allenai/specter2_adhoc_query` | 768 | Self-hosted query encoder against S2 paper embeddings | Live |
+| Future chunk retrieval / reranking | MedCPT / MedCPT-Cross-Encoder | 768 | Self-hosted | Planned / experimental |
 | Entity linking | SapBERT | 768 | Self-hosted | GPU compute |
 | Fallback/notes | Qwen3-Embedding-8B | 1024 | Ollama (local) | Free |
 
@@ -523,7 +525,8 @@ Implementation notes:
                     │  FastAPI:                      │
                     │   Operations API (trigger      │
                     │   builds, check status)        │
-                    │   MedCPT reranking (inline)    │
+                    │   Retrieval / ranking /        │
+                    │   grounding runtime            │
                     │                               │
                     │  Dramatiq Workers:             │
                     │   PubTator3 stream + filter    │
@@ -608,7 +611,7 @@ File Delivery:
 5b. BASE ADMISSION (see corpus-filter.md)
    paper_evidence_summary (entity/relation/journal evidence per paper)
    ──→ continuous domain-density scoring (base_policy.py)
-   ──→ top target_base_count papers → graph_base_points (is_in_base + base_rank)
+   ──→ top target_base_count papers → graph_base_points (base_reason + base_rank)
    ──→ remainder stays in universe layer
 
 6. BUNDLE
@@ -1049,7 +1052,7 @@ Repo setup, data acquisition, and the first visible graph are done.
 | Schema | `solemd` + `pubtator` schemas with 30 migrations |
 | Layout | GPU UMAP + Leiden on SPECTER2 embeddings → 2D coordinates + clusters |
 | Bundle | `base_points.parquet` + `universe_points.parquet` exported, Cosmograph rendering live |
-| Base admission | Continuous domain-density scoring via `base_policy.py` → `is_in_base` + `base_rank` |
+| Base admission | Continuous domain-density scoring via `base_policy.py` → `graph_base_points(base_reason, base_rank)` |
 
 ### In Progress — Evidence + RAG
 
@@ -1057,7 +1060,8 @@ RAG retrieval and LLM synthesis are being built on top of the graph.
 
 | Area | Status | Deep-Dive Doc |
 |------|--------|---------------|
-| MedCPT embedding of domain abstracts → pgvector HNSW | Infrastructure ready | `medcpt.md` + `pgvector.md` |
+| Dense paper retrieval over `solemd.papers.embedding` (pgvector HNSW + SPECTER2 query adapter) | Live baseline | `rag.md` |
+| Dense chunk retrieval / external reranking | Planned / experimental | `rag.md` |
 | RAG search (vector + full-text hybrid) | Active development | `pgvector.md` |
 | Vercel AI SDK streaming with Gemini Flash | Streaming chat functional | `vercel-ai-sdk.md` + `gemini.md` |
 | `@` citation autocomplete | Active development | `vercel-ai-sdk.md` |

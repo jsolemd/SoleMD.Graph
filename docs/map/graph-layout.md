@@ -47,7 +47,7 @@ with distinct research-community clusters. Full rebuild: ~15 minutes on GPU.
     │
     ▼
   Base admission ───────────────────────────── continuous domain_score
-    │  top target_base_count (~500K) → base     family diversity² + bonuses
+    │  top target_base_count (from base_policy) → base  family diversity² + bonuses
     │  rest → universe                          see base_policy.py
     │
     ▼
@@ -311,9 +311,10 @@ Every mapped paper receives a `domain_score`:
     + recency_bonus (30/20/10/5/0 by decade)
 ```
 
-The top `target_base_count` papers (currently ~500K, from `solemd.base_policy`)
-enter base; the rest stay in universe. The score is computed in SQL against
-`paper_evidence_summary` during the publish stage.
+The top `target_base_count` papers enter base; the rest stay in universe. The
+active target comes from `solemd.base_policy` and should be read from the
+database rather than hardcoded in docs or code. The score is computed in SQL
+against `paper_evidence_summary` during the publish stage.
 
 ---
 

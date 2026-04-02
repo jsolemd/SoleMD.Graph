@@ -835,3 +835,42 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the dense runtime path is now quiet and explicit instead of relying on redundant adapter mutations
   - the post-fix runtime still holds `sentence_global hit@1 = 1.0` on the residual miss cohort
+
+## Batch 25: Docs Contract Drift Cleanup
+
+- Scope:
+  - `docs/design/living-graph.md`
+  - `docs/map/architecture.md`
+  - `docs/map/bundle-contract.md`
+  - `docs/map/corpus-filter.md`
+  - `docs/map/data.md`
+  - `docs/map/graph-layout.md`
+  - `docs/map/map.md`
+  - `docs/map/rag.md`
+  - `docs/map/semantic-scholar.md`
+  - `engine/test/test_docs_runtime_contract.py`
+- Problem evidenced after Batch 24:
+  - the runtime and graph contracts had drifted across the map docs:
+    - some docs still described `graph_points.is_in_base` / `graph_points.base_rank` as the database source of truth
+    - several files still hardcoded stale base sizes (`~500K`, `~1.6M`, `~1.98M`) instead of using the policy-driven contract
+    - `docs/map/rag.md` still described an older retrieval shape that omitted live `chunk_lexical` and `dense_query` lanes and implied external dense chunk retrieval as the current baseline
+  - live verification showed the actual current contract is:
+    - base admission source of truth: `solemd.graph_base_points`
+    - active policy target: `solemd.base_policy.target_base_count = 1,000,000`
+    - current graph run: `2,452,643` mapped papers / `1,000,000` base papers
+- Durable implementation landed:
+  - rewrote the critical graph/base docs so `graph_base_points` is the unambiguous base-admission contract
+  - replaced stale fixed-size language with policy-driven wording
+  - updated the RAG map to describe the live runtime:
+    - `chunk_lexical`
+    - `dense_query`
+    - `allenai/specter2_adhoc_query`
+    - chunk vectors still not live
+  - clarified that future dense chunk retrieval / external reranking remain planned, not current baseline behavior
+  - added `engine/test/test_docs_runtime_contract.py` as a regression guard for the most important contract-drift cases
+- Verification:
+  - `cd engine && uv run pytest test/test_docs_runtime_contract.py -q` -> `3 passed`
+  - `cd engine && uv run ruff check test/test_docs_runtime_contract.py` -> passed
+- Interpretation:
+  - the canonical docs now match the live base-membership and runtime-retrieval contracts closely enough to stop leaking stale assumptions into future passes
+  - this closes a real source of architectural drift before the next broad eval and ranking work
