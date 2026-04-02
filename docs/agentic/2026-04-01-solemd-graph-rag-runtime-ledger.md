@@ -60,7 +60,7 @@ Mode: agentic overnight improvement loop
 | A50 | done | P0 | Weak-passage retrieval + answer-selection fidelity | `sentence_hard_v1` still had a retrieval miss class where weak chunk anchors trapped passage queries away from the correct paper, and `clinical_actionable_v1` still had `229929738` as `hit_rank=1` while `answer_corpus_ids` dropped it during baseline answer selection. | Added bounded weak-passage paper fallback in `engine/app/rag/retrieval_policy.py` and `engine/app/rag/search_retrieval.py`, kept that fallback passage-only so title/general queries still use native title similarity/candidate lookup, and updated `engine/app/rag/answer.py` to preserve the highest-ranked directly supported passage bundle after chunk-anchor selection. | `uv run pytest test/test_rag_answer.py test/test_rag_service.py test/test_rag_runtime_perf.py -q` + `.tmp/rag-runtime-eval-sentence-hard-v1-answerfix-v3.json` + `.tmp/rag-runtime-eval-clinical-actionable-v1-answerfix-v3.json` |
 | A51 | done | P1 | Route observability | Runtime eval artifacts now distinguish the new weak-passage fallback through session flags, but `route_signature` still did not include `paper_search_sparse_passage_fallback`, which blurred fallback-heavy passage recovery into broader paper-search route families. | Added `paper_search_sparse_passage_fallback` to the ordered route-signature surface as a true-only marker so ordinary paper-search route names stay stable while active sparse fallback runs become first-class route families; locked the contract with unit coverage and a live clinical benchmark assertion on corpus `229929738`. | `cd engine && uv run ruff check app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py` + `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` (`52 passed`) |
 | A52 | done | P1 | Fresh broad-cohort revalidation | The frozen `sentence_hard_v1` and `clinical_actionable_v1` cohorts were clean on the live code, but the sampled current-release all-family artifact still predated the answer-selection fix and clinician-intent reranker contract alignment. | Regenerated the current `96`-paper / `288`-case all-family artifact on the latest code, preserved the first noisy `v29` outlier run, then reran the exact same cohort as `v30` to clear the churn signal and confirm the current runtime floor remained fully grounded and latency-clean. | `.tmp/rag-runtime-eval-current-all-families-v29-routeobs.json` + `.tmp/rag-runtime-eval-current-all-families-v30-recheck.json` + `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` |
-| A53 | pending | P2 | Modularization | `engine/app/rag_ingest/runtime_eval_execution.py` is now `649` lines with multiple responsibilities (execution, aggregation, latency summarization, slow-case packaging, and plan-profile attachment), which violates the clean modularization limit and makes future runtime-eval work harder to isolate. | Split runtime eval execution vs summary/reporting helpers into smaller modules under `engine/app/rag_ingest/`, preserve the canonical route-signature contract, and keep the file-size ceiling below the clean threshold without changing report semantics. | `cd engine && uv run pytest test/test_rag_runtime_eval.py -q` + focused import/lint pass |
+| A53 | done | P2 | Modularization | `engine/app/rag_ingest/runtime_eval_execution.py` had reached `649` lines with multiple responsibilities (execution, aggregation, latency summarization, slow-case packaging, and plan-profile attachment), violating the clean modularization limit and making runtime-eval changes harder to isolate. | Extracted the route-signature, aggregation, failure-theme, and latency-summary helpers into `engine/app/rag_ingest/runtime_eval_summary.py`, kept the public runtime-eval surface stable through explicit re-exports, and reduced `runtime_eval_execution.py` to `274` lines without changing report semantics. | `wc -l engine/app/rag_ingest/runtime_eval_execution.py engine/app/rag_ingest/runtime_eval_summary.py` + `cd engine && uv run ruff check app/rag_ingest/runtime_eval_execution.py app/rag_ingest/runtime_eval_summary.py app/rag_ingest/runtime_eval.py test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py` + `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` (`52 passed`) |
 
 ## Completed Batches
 
@@ -2277,3 +2277,44 @@ Mode: agentic overnight improvement loop
 - Verification:
   - `cd engine && uv run ruff check app/rag_ingest/runtime_eval_execution.py test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py` -> passed
   - `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` -> `52 passed`
+
+## Batch 54: Split Runtime Eval Execution From Runtime Eval Summaries
+
+- Scope:
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+  - `engine/app/rag_ingest/runtime_eval_summary.py`
+  - `engine/app/rag_ingest/runtime_eval.py`
+  - `engine/test/test_rag_runtime_eval.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem:
+  - after the observability pass, `runtime_eval_execution.py` had grown to
+    `649` lines and mixed two distinct responsibilities:
+    - execution/warmup/case serialization
+    - aggregation/latency/failure summarization
+  - that violated the clean modularization limit and made route-contract work
+    harder to isolate from report-shape work.
+- Durable implementation landed:
+  - extracted route-signature helpers, aggregate metrics, failure-theme
+    accounting, and latency summarization into the new
+    `engine/app/rag_ingest/runtime_eval_summary.py`.
+  - kept `runtime_eval_execution.py` focused on:
+    - service construction
+    - request building
+    - live case execution
+    - slow-case SQL plan profile attachment
+  - preserved the existing import surface by explicitly re-exporting
+    `_route_signature`, `aggregate_case_results`, and
+    `summarize_runtime_results` through `runtime_eval_execution.py`, so the
+    runtime-eval facade and tests did not need a compatibility shim.
+- Size reduction:
+  - `runtime_eval_execution.py`: `649 -> 274` lines
+  - `runtime_eval_summary.py`: `409` lines
+- Verification:
+  - `wc -l engine/app/rag_ingest/runtime_eval_execution.py engine/app/rag_ingest/runtime_eval_summary.py`
+  - `cd engine && uv run ruff check app/rag_ingest/runtime_eval_execution.py app/rag_ingest/runtime_eval_summary.py app/rag_ingest/runtime_eval.py test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` -> `52 passed`
+- Clean impact:
+  - runtime eval now has a stable module seam between execution and report
+    summarization.
+  - the route-signature contract has one canonical owner instead of being mixed
+    into the execution hot path.
