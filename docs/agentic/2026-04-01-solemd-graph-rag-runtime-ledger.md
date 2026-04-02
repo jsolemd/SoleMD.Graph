@@ -25,7 +25,7 @@ Mode: agentic overnight improvement loop
 | A15 | done | P1 | Throughput | Repository calls in one request were still opening repeated pooled connections and scoring entity/relation/citation matches in Python, wasting time on every search. | Added request-scoped repository search sessions, pushed entity/relation/citation scoring into SQL, and fixed nested citation-intent normalization in the repository adapter. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_ranking.py test/test_rag_runtime_eval.py test/test_rag_warehouse_grounding.py` |
 | A16 | done | P0 | Tail latency | The expanded unseen-cohort `v11` report showed near-perfect quality but pathological service tail latency, and direct probes traced the worst remaining path into runtime entity search and planner/JIT overhead. | Completed the fresh current-release all-family recheck on the latest code, then removed the dense-query SQL hydration waste that remained after the verified `jit=off` session fix. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + targeted outlier probes |
 | A17 | done | P1 | Performance coverage | Runtime perf gates still focused on smokes and unit assertions rather than representative DB-backed cohort thresholds for all three query families. | Tightened `engine/test/test_rag_runtime_perf.py` around a `24`-paper current-release cohort, added route-signature assertions, explicit tail-latency caps, and a selected-title regression that exposed and then fixed an overlong-title routing gap in `engine/app/rag/service.py`. | `uv run pytest test/test_rag_runtime_perf.py -q` + targeted service/query tests |
-| A18 | pending | P1 | Modularity | `repository.py` remains an over-centralized runtime hub with mixed responsibilities, while `service.py` was reduced to orchestration in Batch 46. | Finish the split by extracting repository-local row normalization, title-candidate lookup, and vector-route execution along stable boundaries, keeping one canonical retrieval contract and no duplicate logic. | File-size/complexity reduction + preserved test suite |
+| A18 | done | P1 | Modularity | `repository.py` remained an over-centralized runtime hub with mixed responsibilities even after `service.py` was reduced to orchestration in Batch 46. | Split the repository along stable runtime adapter boundaries (`paper search`, `seed search`, `evidence lookup`, `vector search`, shared support) while keeping `PostgresRagRepository` as the single canonical contract surface. | `uv run ruff check app/rag/repository.py app/rag/repository_support.py app/rag/repository_paper_search.py app/rag/repository_seed_search.py app/rag/repository_evidence_lookup.py app/rag/repository_vector_search.py app/rag/runtime_profile.py test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -q` |
 | A19 | pending | P2 | Ops | Migration rollout, report retention, and batch commits still need a durable record as the runtime stack evolves. | Record migration/runtime notes, prune superseded report artifacts when safe, and commit cohesive verified batches once the current performance batch settles. | Ledger update + commit checkpoints |
 | A20 | done | P0 | Correctness | `title_selected` still treated the selected paper as a late rescue path, so selected-title lookups could route through broad lexical/dense neighbor expansion before honoring the user’s explicit paper context. | Added selected-paper-first title lookup in `engine/app/rag/repository.py` and centralized selected-context application in `engine/app/rag/service.py`, with repository/service regressions and a DB-backed perf gate. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'truncated_long_title_selected_lookup_stays_grounded_and_fast'` + `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v3.json` |
 | A21 | done | P0 | Correctness + centralization | Passage answers still favored generic high-scoring chunk hits over the bundle whose snippet actually mirrored the user’s sentence, and warehouse structural matching duplicated a weaker overlap scorer. | Added shared normalized text-alignment helpers in `engine/app/rag/text_alignment.py`, wired them into `engine/app/rag/answer.py` and `engine/app/rag/warehouse_grounding.py`, and added targeted answer/alignment regressions. | `uv run pytest test/test_rag_text_alignment.py test/test_rag_answer.py test/test_rag_warehouse_grounding.py` |
@@ -1923,3 +1923,50 @@ Mode: agentic overnight improvement loop
     - `response_serialization.py`: `164`
   - the canonical search implementation still exists exactly once; this was a true extraction, not a compatibility wrapper.
   - the remaining `A18` work is now explicitly narrowed to the still-oversized `repository.py` hub.
+
+## Batch 47: Split `repository.py` Into Focused Runtime Adapter Modules
+
+- Scope:
+  - `engine/app/rag/repository.py`
+  - `engine/app/rag/repository_support.py`
+  - `engine/app/rag/repository_paper_search.py`
+  - `engine/app/rag/repository_seed_search.py`
+  - `engine/app/rag/repository_evidence_lookup.py`
+  - `engine/app/rag/repository_vector_search.py`
+- Problem:
+  - after the `service.py` split, `engine/app/rag/repository.py` was still the remaining oversized runtime hub at `1826` lines.
+  - it mixed five responsibilities behind one file:
+    - adapter/session wiring
+    - paper and chunk lexical retrieval
+    - entity/relation seed retrieval
+    - citation/entity/species/reference lookup
+    - dense-query and semantic-neighbor retrieval
+  - that violated the `/clean` modularity limit and made future retrieval changes pay unnecessary blast radius through a single file.
+- Durable implementation landed:
+  - extracted stable repository support and retrieval seams into focused modules:
+    - `repository_support.py`
+    - `repository_paper_search.py`
+    - `repository_seed_search.py`
+    - `repository_evidence_lookup.py`
+    - `repository_vector_search.py`
+  - reduced `repository.py` to the adapter core:
+    - `RagRepository` protocol
+    - `PostgresRagRepository` connection/session wiring
+    - graph release + scope resolution
+    - shared row mapping
+  - kept `PostgresRagRepository` as the single canonical runtime adapter surface, with the small test/profile-facing constants and `_SqlSpec` re-exported there instead of duplicating logic or creating a compatibility fork.
+  - tightened `search_exact_title_papers()` back to a direct candidate-lookup path so the exact-title contract stays minimal after extraction.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/repository.py app/rag/repository_support.py app/rag/repository_paper_search.py app/rag/repository_seed_search.py app/rag/repository_evidence_lookup.py app/rag/repository_vector_search.py app/rag/runtime_profile.py test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -q` -> `118 passed`
+- Clean impact:
+  - every repository-split file now sits below the `600`-line modularity limit:
+    - `repository.py`: `380`
+    - `repository_support.py`: `85`
+    - `repository_paper_search.py`: `531`
+    - `repository_seed_search.py`: `166`
+    - `repository_evidence_lookup.py`: `277`
+    - `repository_vector_search.py`: `445`
+  - the repository adapter still has one canonical implementation surface.
+  - runtime SQL specs, constants, and session helpers are centralized rather than duplicated across split files.
+  - this closes the last active modularity hotspot in the core runtime adapter layer; the remaining active queue moves to ops hygiene and artifact retention in `A19`.

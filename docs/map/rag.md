@@ -59,7 +59,8 @@ changing the outer graph integration boundary.
 |  search_retrieval.py Initial retrieval and candidate collection       |
 |  search_finalize.py  Enrichment, ranking, grounding, final assembly   |
 |  response_serialization.py API response serialization                 |
-|  repository.py       PostgreSQL read repository                       |
+|  repository.py       Repository adapter surface + session wiring      |
+|  repository_*.py     Focused repository mixins by retrieval concern   |
 |  ranking.py          RRF fusion + intent affinity scoring             |
 |  bundle.py           Evidence bundle + graph signal assembly          |
 |  answer.py           Extractive answer synthesis                      |
@@ -230,7 +231,12 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 | `search_retrieval.py` | Initial retrieval, route selection, and merged candidate collection |
 | `search_finalize.py` | Citation expansion, enrichment, ranking, grounding, final result assembly |
 | `response_serialization.py` | `serialize_search_result()` API response serialization |
-| `repository.py` | `RagRepository` protocol + `PostgresRagRepository` implementation |
+| `repository.py` | `RagRepository` protocol + `PostgresRagRepository` adapter surface |
+| `repository_support.py` | Shared repository support types, constants, and helpers |
+| `repository_paper_search.py` | Paper/title/chunk lexical retrieval mixin |
+| `repository_seed_search.py` | Entity and relation seed-retrieval mixin |
+| `repository_evidence_lookup.py` | Citation/entity/species/reference lookup mixin |
+| `repository_vector_search.py` | Dense-query and semantic-neighbor retrieval mixin |
 | `queries.py` | All SQL templates (paper search, entity/relation recall, citations, etc.) |
 | `ranking.py` | RRF fusion, channel weights, intent affinity scoring |
 | `bundle.py` | `assemble_evidence_bundles()` + `merge_graph_signals()` |
