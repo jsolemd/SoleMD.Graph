@@ -57,6 +57,9 @@ Mode: agentic overnight improvement loop
 | A47 | done | P1 | Residual title-lookup search tail | The fresh `v17` current-release rerun was healthy overall (`mean 40.26ms`, `p95 83.31ms`), but one `sentence_global` case (`24948876`) still routed into `title_lookup` and spent `180.7ms` in `search_papers` on the `paper_search_global_fts_only` lane. | Added an indexed title-only phrase-FTS candidate probe ahead of the broad global FTS path, tightened the hot-case runtime perf gate, and revalidated on the full current-release cohort. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'phrase_title_candidates_before_global_fts_only or falls_back_to_global_fts_only_when_title_similarity_is_disabled or exact_title_queries_use_native_index_friendly_lookup_shape or title_phrase_candidate_lookup_uses_title_fts_index or runtime_sentence_query_with_title_like_paper_fallback_stays_fast' -q` + `engine/.tmp/rag-runtime-probe-24948876-v6-title-phrase.json` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v18-title-phrase.json` |
 | A48 | done | P1 | Current-code runtime revalidation | The older `v11-jitoff` artifact still showed catastrophic tail numbers, but fresh single-case repros on the same corpus ids were fast, so the remaining risk was stale evidence rather than a live hot path. | Regenerated the current `24`-paper / `72`-case all-family cohort on the latest code, confirmed `1.0` quality across `title_global`, `title_selected`, and `sentence_global`, and re-ran the DB-backed runtime perf suite to replace the stale tail picture with a fresh verified baseline. | `.tmp/rag-runtime-eval-current-sample24-v1.json` + `uv run pytest test/test_rag_runtime_perf.py -q` |
 | A49 | done | P1 | Fixed benchmark perf coverage | Sampled current-release cohorts catch live regressions, but they do not lock the known difficult sentence and clinician-style evaluation sets that drive ranking decisions between major runtime passes. | Added DB-backed runtime perf regression gates for the checked-in `sentence_hard_v1` and `clinical_actionable_v1` benchmarks in `engine/test/test_rag_runtime_perf.py`, using the canonical benchmark loader and current-code thresholds instead of ad hoc one-off artifact inspection. | `uv run ruff check test/test_rag_runtime_perf.py` + `uv run pytest test/test_rag_runtime_perf.py -q` |
+| A50 | done | P0 | Weak-passage retrieval + answer-selection fidelity | `sentence_hard_v1` still had a retrieval miss class where weak chunk anchors trapped passage queries away from the correct paper, and `clinical_actionable_v1` still had `229929738` as `hit_rank=1` while `answer_corpus_ids` dropped it during baseline answer selection. | Added bounded weak-passage paper fallback in `engine/app/rag/retrieval_policy.py` and `engine/app/rag/search_retrieval.py`, kept that fallback passage-only so title/general queries still use native title similarity/candidate lookup, and updated `engine/app/rag/answer.py` to preserve the highest-ranked directly supported passage bundle after chunk-anchor selection. | `uv run pytest test/test_rag_answer.py test/test_rag_service.py test/test_rag_runtime_perf.py -q` + `.tmp/rag-runtime-eval-sentence-hard-v1-answerfix-v3.json` + `.tmp/rag-runtime-eval-clinical-actionable-v1-answerfix-v3.json` |
+| A51 | pending | P1 | Route observability | Runtime eval artifacts now distinguish the new weak-passage fallback through session flags, but `route_signature` still does not include `paper_search_sparse_passage_fallback`, which can blur aggregated route families once more passage-recovery variants exist. | Add the sparse-fallback flag to route signatures/slow-route summaries and extend the perf/eval assertions so fallback-heavy cohorts are easy to isolate in one artifact. | `uv run pytest test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py -q` + fresh current-release all-family artifact |
+| A52 | pending | P1 | Fresh broad-cohort revalidation | The frozen `sentence_hard_v1` and `clinical_actionable_v1` cohorts are clean on the live code, but the sampled current-release all-family artifact still predates the answer-selection fix and clinician-intent reranker contract alignment. | Regenerate the current all-family runtime artifact on the latest code, confirm quality/latency remain clean across `title_global`, `title_selected`, and `sentence_global`, then compare route-family counts against the pre-fix artifact. | fresh `.tmp/rag-runtime-eval-current-all-families-*.json` + `uv run pytest test/test_rag_runtime_perf.py -q` |
 
 ## Completed Batches
 
@@ -258,6 +261,23 @@ Mode: agentic overnight improvement loop
   - `PAPER_ENTITY_EXACT_SEARCH_IN_SELECTION_SQL`
   - `PAPER_ENTITY_SEARCH_SQL`
   - `PAPER_ENTITY_SEARCH_IN_SELECTION_SQL`
+
+### Batch 19
+- Closed the remaining weak-passage retrieval and answer-selection miss classes:
+  - `engine/app/rag/retrieval_policy.py` now detects weak chunk-only passage anchors and only opens the cheap paper-level FTS fallback for passage queries with clinician/statistical surfaces.
+  - `engine/app/rag/search_retrieval.py` now keeps the sparse fallback passage-only, preserving native title/general paper-search behavior.
+  - `engine/app/rag/answer.py` now keeps the highest-ranked directly supported passage bundle in baseline answer grounding after chunk-anchor selection, so a `hit_rank=1` paper cannot be dropped just because its support is lexical/citation-backed instead of chunk-backed.
+- Added/updated focused regressions in:
+  - `engine/test/test_rag_answer.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+- Fresh benchmark artifacts on the live code:
+  - `.tmp/rag-runtime-eval-sentence-hard-v1-answerfix-v3.json`
+  - `.tmp/rag-runtime-eval-clinical-actionable-v1-answerfix-v3.json`
+- Result:
+  - `sentence_hard_v1`: `14/14` with `hit@1=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=115.81`
+  - `clinical_actionable_v1`: `15/15` with `target_in_answer_corpus_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=247.825`
+  - the former clinical miss `229929738` now stays in both `answer_corpus_ids` and `grounded_answer_linked_corpus_ids`
 - Reverified the runtime adapter layer with:
   - `engine/test/test_rag_repository.py`
   - `engine/test/test_rag_service.py`

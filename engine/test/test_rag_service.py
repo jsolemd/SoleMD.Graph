@@ -1471,7 +1471,7 @@ def test_rag_service_disables_title_similarity_for_sentence_queries():
             use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
             assert graph_run_id == "run-1"
-            assert query == "this is a representative discussion sentence"
+            assert query == "This is a representative discussion sentence."
             assert limit == 6
             assert scope_corpus_ids is None
             assert use_title_similarity is False

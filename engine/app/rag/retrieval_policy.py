@@ -5,10 +5,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.rag.models import PaperEvidenceHit, PaperRetrievalQuery
-from app.rag.query_enrichment import build_query_phrases, has_query_entity_surface_signal
+from app.rag.query_enrichment import (
+    build_query_phrases,
+    has_query_entity_surface_signal,
+    has_statistical_surface_signal,
+)
 from app.rag.search_plan import RetrievalSearchPlan
 from app.rag.title_anchor import has_strong_title_anchor
-from app.rag.types import QueryRetrievalProfile, RetrievalScope
+from app.rag.types import ClinicalQueryIntent, QueryRetrievalProfile, RetrievalScope
 
 MAX_CHUNK_FALLBACK_PHRASES = 8
 MIN_CHUNK_FALLBACK_WORDS = 3
@@ -16,6 +20,8 @@ MIN_PASSAGE_ENRICHMENT_CANDIDATES = 12
 PASSAGE_ENRICHMENT_K_MULTIPLIER = 2
 MIN_BIOMEDICAL_RERANK_CANDIDATES = 3
 MIN_DIRECT_PASSAGE_ALIGNMENT = 0.55
+MAX_WEAK_PASSAGE_CHUNK_HITS = 2
+MAX_WEAK_PASSAGE_TOP_CHUNK_SCORE = 0.0014
 CHUNK_FALLBACK_STOPWORDS = frozenset(
     {
         "a",
@@ -79,14 +85,21 @@ def _chunk_fallback_sort_key(phrase: str, original_index: int) -> tuple[int, int
 def chunk_search_queries(query: PaperRetrievalQuery) -> list[str]:
     """Build bounded passage-search fallbacks when the full sentence misses."""
 
-    primary_query = query.normalized_query or query.query.strip()
-    if not primary_query:
+    raw_query = query.query.strip()
+    primary_query = query.normalized_query or raw_query
+    if not primary_query and not raw_query:
         return []
     if query.retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
         return [primary_query]
 
-    candidates = [primary_query]
-    seen = {primary_query}
+    candidates: list[str] = []
+    seen: set[str] = set()
+    if raw_query and has_statistical_surface_signal(raw_query):
+        candidates.append(raw_query)
+        seen.add(raw_query)
+    if primary_query and primary_query not in seen:
+        candidates.append(primary_query)
+        seen.add(primary_query)
     fallback_phrases: list[tuple[int, str]] = []
     for index, phrase in enumerate(build_query_phrases(primary_query)):
         if len(phrase.split()) < MIN_CHUNK_FALLBACK_WORDS or phrase in seen:
@@ -182,6 +195,57 @@ def should_fetch_semantic_neighbors(
     return True
 
 
+def has_weak_passage_anchor(
+    *,
+    lexical_hits: Sequence[PaperEvidenceHit],
+    chunk_lexical_hits: Sequence[PaperEvidenceHit],
+) -> bool:
+    """Return True when chunk retrieval found only a weak direct passage anchor."""
+
+    if lexical_hits or not chunk_lexical_hits:
+        return False
+    if len(chunk_lexical_hits) > MAX_WEAK_PASSAGE_CHUNK_HITS:
+        return False
+    strongest_chunk_score = max(
+        hit.chunk_lexical_score for hit in chunk_lexical_hits
+    )
+    return strongest_chunk_score < MAX_WEAK_PASSAGE_TOP_CHUNK_SCORE
+
+
+def should_run_paper_lexical_fallback(
+    *,
+    query: PaperRetrievalQuery,
+    search_plan: RetrievalSearchPlan,
+    lexical_hits: Sequence[PaperEvidenceHit],
+    chunk_lexical_hits: Sequence[PaperEvidenceHit],
+) -> bool:
+    """Return True when passage queries should fall through to cheap paper-level FTS.
+
+    The default passage path should stay chunk-first. Only open the paper FTS lane
+    when chunk retrieval is empty or so weak that it is likely to trap the query in
+    citation/dense noise. Keep the weak-anchor fallback limited to clinician-facing
+    or numeric/statistical passage surfaces to avoid broad latency expansion.
+    """
+
+    if not query.use_lexical:
+        return False
+    if search_plan.retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return search_plan.use_paper_lexical
+    if not search_plan.fallback_to_paper_lexical_on_empty_chunk:
+        return False
+    if not chunk_lexical_hits:
+        return True
+    if not has_weak_passage_anchor(
+        lexical_hits=lexical_hits,
+        chunk_lexical_hits=chunk_lexical_hits,
+    ):
+        return False
+    return (
+        query.clinical_intent != ClinicalQueryIntent.GENERAL
+        or has_statistical_surface_signal(query.query)
+    )
+
+
 def has_selected_direct_anchor(
     *,
     selected_corpus_id: int | None,
@@ -239,7 +303,7 @@ def should_run_biomedical_reranker(
     ranked_papers: Sequence[PaperEvidenceHit],
     enabled: bool,
 ) -> bool:
-    """Run the live biomedical reranker only on sentence-style global candidate sets."""
+    """Run the live biomedical reranker only on clinician-intent passage queries."""
 
     if not enabled:
         return False
@@ -248,6 +312,8 @@ def should_run_biomedical_reranker(
     if query.scope_mode != RetrievalScope.GLOBAL:
         return False
     if query.retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return False
+    if query.clinical_intent == ClinicalQueryIntent.GENERAL:
         return False
     return len(ranked_papers) >= MIN_BIOMEDICAL_RERANK_CANDIDATES
 

@@ -19,6 +19,7 @@ from app.rag.retrieval_policy import (
     has_selected_direct_anchor,
     should_fetch_semantic_neighbors,
     should_run_dense_query,
+    should_run_paper_lexical_fallback,
     should_skip_runtime_entity_enrichment,
 )
 from app.rag.runtime_trace import RuntimeTraceCollector
@@ -78,6 +79,16 @@ def _lexical_query_text(query: PaperRetrievalQuery) -> str:
     if query.use_title_similarity or query.use_title_candidate_lookup:
         return query.query
     return query.normalized_query or query.query
+
+
+def _paper_lexical_query_text(
+    query: PaperRetrievalQuery,
+    *,
+    passage_fallback: bool,
+) -> str:
+    if passage_fallback and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+        return query.query
+    return _lexical_query_text(query)
 
 
 def _entity_seed_terms_for_recall(
@@ -164,7 +175,6 @@ def retrieve_search_state(
     selection_only_without_matches = (
         query.scope_mode == RetrievalScope.SELECTION_ONLY and not scope_corpus_ids
     )
-    lexical_query_text = _lexical_query_text(query)
     selected_corpus_id = trace.call(
         "resolve_selected_corpus_id",
         repository.resolve_selected_corpus_id,
@@ -260,25 +270,45 @@ def retrieve_search_state(
     trace.record_count("chunk_lexical_hits", len(chunk_lexical_hits))
 
     lexical_hits: list[PaperEvidenceHit] = list(exact_title_hits)
+    sparse_passage_paper_fallback = (
+        search_plan.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+        and should_run_paper_lexical_fallback(
+            query=query,
+            search_plan=search_plan,
+            lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
+        )
+    )
     should_run_paper_lexical = (
         not exact_title_hits
         and query.use_lexical
         and not selection_only_without_matches
-        and (
-            search_plan.use_paper_lexical
-            or (
-                search_plan.fallback_to_paper_lexical_on_empty_chunk
-                and not chunk_lexical_hits
-            )
-        )
+        and (search_plan.use_paper_lexical or sparse_passage_paper_fallback)
     )
     if should_run_paper_lexical:
+        paper_search_query_text = _paper_lexical_query_text(
+            query,
+            passage_fallback=sparse_passage_paper_fallback,
+        )
+        paper_search_use_title_similarity = (
+            False if sparse_passage_paper_fallback else query.use_title_similarity
+        )
+        paper_search_use_title_candidate_lookup = (
+            False
+            if sparse_passage_paper_fallback
+            else query.use_title_candidate_lookup
+        )
         trace.record_flags(
             {
-                "paper_search_query_text": lexical_query_text,
-                "paper_search_use_title_similarity": query.use_title_similarity,
+                "paper_search_query_text": paper_search_query_text,
+                "paper_search_sparse_passage_fallback": (
+                    sparse_passage_paper_fallback
+                ),
+                "paper_search_use_title_similarity": (
+                    paper_search_use_title_similarity
+                ),
                 "paper_search_use_title_candidate_lookup": (
-                    query.use_title_candidate_lookup
+                    paper_search_use_title_candidate_lookup
                 ),
             }
         )
@@ -286,36 +316,37 @@ def retrieve_search_state(
         paper_search_kwargs = {
             "limit": query.rerank_topn,
             "scope_corpus_ids": scope_corpus_ids or None,
-            "use_title_similarity": query.use_title_similarity,
+            "use_title_similarity": paper_search_use_title_similarity,
         }
         if (
-            query.use_title_candidate_lookup != query.use_title_similarity
+            paper_search_use_title_candidate_lookup != paper_search_use_title_similarity
             and callable_supports_kwarg(
                 repository.search_papers,
                 "use_title_candidate_lookup",
             )
         ):
             paper_search_kwargs["use_title_candidate_lookup"] = (
-                query.use_title_candidate_lookup
+                paper_search_use_title_candidate_lookup
             )
         if callable(describe_paper_route):
             describe_paper_kwargs = dict(paper_search_kwargs)
             if (
                 "use_title_candidate_lookup" not in describe_paper_kwargs
-                and query.use_title_candidate_lookup != query.use_title_similarity
+                and paper_search_use_title_candidate_lookup
+                != paper_search_use_title_similarity
                 and callable_supports_kwarg(
                     describe_paper_route,
                     "use_title_candidate_lookup",
                 )
             ):
                 describe_paper_kwargs["use_title_candidate_lookup"] = (
-                    query.use_title_candidate_lookup
+                    paper_search_use_title_candidate_lookup
                 )
             trace.record_flag(
                 "paper_search_route",
                 describe_paper_route(
                     graph_run_id=release.graph_run_id,
-                    query=lexical_query_text,
+                    query=paper_search_query_text,
                     **describe_paper_kwargs,
                 ),
             )
@@ -323,7 +354,7 @@ def retrieve_search_state(
             "search_papers",
             repository.search_papers,
             release.graph_run_id,
-            lexical_query_text,
+            paper_search_query_text,
             **paper_search_kwargs,
         )
     trace.record_count("lexical_hits", len(lexical_hits))

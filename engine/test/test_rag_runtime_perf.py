@@ -108,6 +108,37 @@ def _runtime_benchmark_report(benchmark_key: str):
         db.close_pool()
 
 
+@lru_cache(maxsize=16)
+def _runtime_benchmark_case_report(benchmark_key: str, corpus_id: int):
+    _require_runtime_db()
+    benchmark_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "runtime_eval_benchmarks"
+        / f"{benchmark_key}.json"
+    )
+    try:
+        _benchmark_report, benchmark_cases = load_runtime_eval_benchmark_cases(
+            benchmark_path
+        )
+        selected_cases = [
+            case for case in benchmark_cases if case.corpus_id == corpus_id
+        ]
+        assert selected_cases, f"missing benchmark case for corpus_id={corpus_id}"
+        return run_rag_runtime_case_evaluation(
+            graph_release_id="current",
+            chunk_version_key=DEFAULT_CHUNK_VERSION_KEY,
+            cases=selected_cases,
+            k=5,
+            rerank_topn=10,
+            use_lexical=True,
+            use_dense_query=True,
+            connect=db.pooled,
+        )
+    finally:
+        db.close_pool()
+
+
 def _family(report, family: RuntimeEvalQueryFamily):
     return report.summary.by_query_family[family.value]
 
@@ -791,7 +822,7 @@ def test_runtime_sentence_global_skips_incidental_relation_lane():
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_runtime_sentence_global_live_biomedical_reranker_stays_bounded_and_grounded():
+def test_runtime_sentence_global_general_query_skips_biomedical_reranker():
     _require_runtime_db()
 
     previous_enabled = settings.rag_live_biomedical_reranker_enabled
@@ -821,11 +852,43 @@ def test_runtime_sentence_global_live_biomedical_reranker_stays_bounded_and_grou
         == "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|"
         "dense_query_route=dense_query_ann_broad_scope"
     )
-    assert case.candidate_counts.get("biomedical_rerank_candidates", 0) == 8
-    assert case.candidate_counts.get("biomedical_rerank_promotions", 0) >= 1
+    assert case.session_flags.get("biomedical_reranker_enabled") is True
+    assert case.session_flags.get("biomedical_rerank_requested") is False
+    assert case.session_flags.get("biomedical_reranker_backend") == "medcpt_cross_encoder"
+    assert case.candidate_counts.get("biomedical_rerank_candidates", 0) == 0
+    assert case.candidate_counts.get("biomedical_rerank_promotions", 0) == 0
+    assert case.stage_durations_ms.get("biomedical_rerank", 0.0) == 0.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_clinical_actionable_live_biomedical_reranker_stays_bounded_and_grounded():
+    _require_runtime_db()
+
+    previous_enabled = settings.rag_live_biomedical_reranker_enabled
+    _runtime_benchmark_case_report.cache_clear()
+    get_runtime_biomedical_reranker.cache_clear()
+    settings.rag_live_biomedical_reranker_enabled = True
+    try:
+        report = _runtime_benchmark_case_report("clinical_actionable_v1", 277023583)
+    finally:
+        settings.rag_live_biomedical_reranker_enabled = previous_enabled
+        _runtime_benchmark_case_report.cache_clear()
+        get_runtime_biomedical_reranker.cache_clear()
+        db.close_pool()
+
+    overall = report.summary.overall
+    case = report.cases[0]
+
+    assert overall.error_count == 0
+    assert overall.target_in_grounded_answer_rate == 1.0
+    assert overall.p95_service_duration_ms <= 200.0
     assert case.session_flags.get("biomedical_reranker_enabled") is True
     assert case.session_flags.get("biomedical_rerank_requested") is True
     assert case.session_flags.get("biomedical_rerank_applied") is True
     assert case.session_flags.get("biomedical_reranker_backend") == "medcpt_cross_encoder"
-    assert case.stage_durations_ms.get("biomedical_rerank", 0.0) <= 50.0
+    assert case.session_flags.get("biomedical_reranker_device") == "cuda"
+    assert case.candidate_counts.get("biomedical_rerank_candidates", 0) == 8
+    assert case.candidate_counts.get("biomedical_rerank_promotions", 0) >= 1
+    assert case.stage_durations_ms.get("biomedical_rerank", 0.0) <= 75.0
     assert case.stage_durations_ms.get("rank_preliminary_hits_biomedical", 0.0) <= 10.0
