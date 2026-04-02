@@ -109,6 +109,27 @@ def profile_runtime_case_sql_plans(
                 limit=rerank_topn,
                 scope_corpus_ids=None,
             )
+        elif stage_name in {
+            "fetch_citation_contexts_initial",
+            "fetch_citation_contexts_expanded",
+            "fetch_citation_contexts_missing_top_hits",
+        }:
+            if stage_name == "fetch_citation_contexts_initial":
+                initial_limit = int(result.candidate_counts.get("citation_context_ids", 0) or 0)
+                corpus_ids = result.top_corpus_ids[: max(initial_limit, 0)]
+            elif stage_name == "fetch_citation_contexts_expanded":
+                corpus_ids = result.answer_corpus_ids[:rerank_topn]
+            else:
+                corpus_ids = result.top_corpus_ids[:rerank_topn]
+            if not corpus_ids:
+                corpus_ids = result.top_corpus_ids[:rerank_topn]
+            if not corpus_ids:
+                continue
+            sql_spec = repository._citation_context_sql_spec(
+                corpus_ids=corpus_ids,
+                query=case.query,
+                limit_per_paper=3,
+            )
         if sql_spec is None:
             continue
         profiles.append(

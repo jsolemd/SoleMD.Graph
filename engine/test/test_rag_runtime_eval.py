@@ -911,6 +911,97 @@ def test_attach_slow_case_plan_profiles_can_profile_dense_query_stage():
     ]
 
 
+def test_attach_slow_case_plan_profiles_can_profile_citation_context_stage():
+    results = [
+        RuntimeEvalCaseResult(
+            corpus_id=44,
+            title="Citation-heavy case",
+            primary_source_system="s2orc_v2",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="citation-heavy query",
+            stratum_key="s2orc_v2|table_absent|medium",
+            top_corpus_ids=[44, 55],
+            stage_durations_ms={
+                "fetch_citation_contexts_missing_top_hits": 180.0,
+                "build_grounded_answer": 20.0,
+            },
+            service_duration_ms=205.0,
+            duration_ms=210.0,
+            overhead_duration_ms=5.0,
+        )
+    ]
+    summary = summarize_runtime_results(results)
+    cases = [
+        RuntimeEvalQueryCase(
+            corpus_id=44,
+            title="Citation-heavy case",
+            primary_source_system="s2orc_v2",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="citation-heavy query",
+            stratum_key="s2orc_v2|table_absent|medium",
+        )
+    ]
+    conn = MagicMock()
+    cur = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.fetchone.return_value = {
+        "QUERY PLAN": [
+            {
+                "Plan": {
+                    "Node Type": "Nested Loop",
+                    "Index Name": "idx_citations_cited_corpus_id",
+                    "Plans": [],
+                }
+            }
+        ]
+    }
+
+    class FakeRepository:
+        def _connect(self):
+            return conn
+
+        def _configure_search_session(self, cur):
+            return None
+
+        def _citation_context_sql_spec(
+            self,
+            *,
+            corpus_ids,
+            query: str,
+            limit_per_paper: int,
+        ):
+            assert corpus_ids == [44, 55]
+            assert query == "citation-heavy query"
+            assert limit_per_paper == 3
+            return SimpleNamespace(
+                route_name="citation_context_lookup",
+                sql="SELECT 1",
+                params=(["citation", "heavy", "query"], [44, 55], [44, 55], [44, 55], [44, 55], 3),
+            )
+
+    updated = attach_slow_case_plan_profiles(
+        summary=summary,
+        cases=cases,
+        results=results,
+        repository=FakeRepository(),
+        graph_run_id="run-1",
+        rerank_topn=10,
+    )
+
+    assert (
+        updated.latency.slow_cases[0].plan_profiles[0].stage
+        == "fetch_citation_contexts_missing_top_hits"
+    )
+    assert updated.latency.slow_cases[0].plan_profiles[0].route == "citation_context_lookup"
+    assert updated.latency.slow_cases[0].plan_profiles[0].sql_fingerprint
+    assert updated.latency.slow_cases[0].plan_profiles[0].index_names == [
+        "idx_citations_cited_corpus_id"
+    ]
+
+
 def test_population_summary_tracks_sentence_seed_presence():
     population = [
         _paper(

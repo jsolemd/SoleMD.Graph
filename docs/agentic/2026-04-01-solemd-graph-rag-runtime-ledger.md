@@ -50,6 +50,10 @@ Mode: agentic overnight improvement loop
 | A40 | done | P1 | Clinician-facing ranking priors | `sentence_hard_v1` cleared at `1.0`, so the next runtime quality gains were more likely to come from objective-aware ranking than from generic sentence recall alone. The clinician-prior lane is now benchmarked on a frozen clinician cohort. | Keep clinician priors available behind the feature flag but default-off until a future benchmark shows a real quality win. | `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-control.json` + `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-priors-on.json` + targeted tests |
 | A41 | pending | P1 | Conflict and polarity evaluation | Current evals prove retrieval, grounding, and latency, but they still under-measure null findings, contradictory trials, mixed evidence, and nonhuman-to-human leakage. | Build a compact polarity/conflict benchmark and wire it into runtime evaluation so fast wrong-positive answers are caught before they ship. | Benchmark artifact + runtime eval extension |
 | A42 | done | P2 | Frozen benchmark drift | Frozen benchmark inputs now exist as checked-in runtime contracts, so schema drift or silent artifact skew would make later ranking comparisons noisy. | Generalized benchmark metadata around `benchmark_source`, aligned the checked-in JSON artifacts, and added loader coverage that validates every checked-in benchmark file. | `uv run pytest test/test_rag_runtime_benchmarks.py -q` |
+| A43 | done | P1 | Tail observability | The dense-query tail had already moved, but the slow-case planner view still could not profile citation-context fetch stages, so the next pass on `sentence_global` would have been partly blind. | Extracted a reusable citation-context SQL spec in `engine/app/rag/repository.py`, taught `engine/app/rag/runtime_profile.py` to profile initial/expanded/missing-top-hit citation fetches, and added focused runtime-eval coverage. | `uv run pytest test/test_rag_runtime_eval.py -q` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v15-citation-profile.json` |
+| A44 | pending | P1 | Citation-context tail | After `v15`, the only repeated citation SQL fingerprint left in the live slow cases is `467e2b7dd38f`, concentrated in `fetch_citation_contexts_missing_top_hits` and one expanded/initial title-like case. | Inspect and optimize the citation-context query shape or fetch policy so slow top-hit citation backfills stop showing up in the live p99. | Live cohort rerun + plan profile diff |
+| A45 | pending | P1 | Title-like paper-search outlier | Live `v15` isolated one remaining title-lookup outlier (`24948876`) where `paper_search_global` still costs about `179.8ms` despite rank-1 retrieval success. | Tighten the title-like global paper-search contract so long sentence/title overlaps can stay in the cheap candidate lane instead of paying for the broad global paper-search path. | Targeted probe + live cohort rerun |
+| A46 | pending | P1 | Grounded-answer build hotspot | Live `v15` isolated one remaining slow case (`277023583`) where `build_grounded_answer` dominates at about `188.1ms` after retrieval has already completed. | Instrument and optimize the grounded-answer runtime path so chunk/structural packet assembly no longer dominates the current p99. | Targeted probe + live cohort rerun |
 
 ## Completed Batches
 
@@ -1594,3 +1598,49 @@ Mode: agentic overnight improvement loop
     - diagnose via the new slow-case view
     - patch narrowly
     - rerun the live cohort to confirm the bottleneck actually moved again
+
+## Batch 40: Profile Citation-Context Stages In Slow-Case Planner Reports
+
+- Scope:
+  - `engine/app/rag/repository.py`
+  - `engine/app/rag/runtime_profile.py`
+  - `engine/test/test_rag_runtime_eval.py`
+- Problem evidenced after Batch 39:
+  - the dense-query ANN tail was no longer dominant, but the live slow-case payloads still treated citation-context fetch as a black box.
+  - that meant the remaining `sentence_global` p99 could show:
+    - `fetch_citation_contexts_initial`
+    - `fetch_citation_contexts_expanded`
+    - `fetch_citation_contexts_missing_top_hits`
+    without any planner-attached SQL fingerprint for those stages.
+  - the next citation optimization would have required guesswork about whether the repeated slow cases were paying for the same query shape or for different fetch phases.
+- Durable implementation landed:
+  - extracted `_citation_context_sql_spec(...)` in `engine/app/rag/repository.py` so runtime execution and runtime profiling now share one canonical citation SQL contract.
+  - extended `profile_runtime_case_sql_plans(...)` in `engine/app/rag/runtime_profile.py` to profile:
+    - `fetch_citation_contexts_initial`
+    - `fetch_citation_contexts_expanded`
+    - `fetch_citation_contexts_missing_top_hits`
+  - added focused runtime-eval coverage so citation-plan profiling stays locked to the canonical repository SQL shape.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/repository.py app/rag/runtime_profile.py test/test_rag_runtime_eval.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_runtime_eval.py -q` -> `19 passed`
+  - live runtime eval:
+    - `cd engine && uv run python scripts/evaluate_rag_runtime.py --sample-size 54 --report-path .tmp/rag-runtime-eval-default-structural-v1-all-families-v15-citation-profile.json > /dev/null`
+- Measured result:
+  - current-release cohort: `162` cases across `54` papers, still with:
+    - `hit@1 = 1.0`
+    - `target_in_grounded_answer_rate = 1.0`
+  - aggregate live latency:
+    - `mean_service_duration_ms = 35.225`
+    - `p95_service_duration_ms = 80.979`
+    - `p99_service_duration_ms = 232.491`
+    - `max_service_duration_ms = 246.076`
+  - the remaining tail is now explicitly localized:
+    - `277023583`: `build_grounded_answer` dominates at about `188.114ms`
+    - `24948876`: `search_papers` dominates at about `179.774ms`
+    - repeated citation stages share SQL fingerprint `467e2b7dd38f`
+      - `fetch_citation_contexts_missing_top_hits`
+      - `fetch_citation_contexts_initial`
+      - `fetch_citation_contexts_expanded`
+- Interpretation:
+  - the next tail pass no longer needs speculation.
+  - citation fetch, title-like global paper search, and grounded-answer assembly are now separable optimization targets with live evidence attached to each one.

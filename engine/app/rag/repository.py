@@ -1175,21 +1175,15 @@ class PostgresRagRepository:
             return {}
 
         grouped: dict[int, list[CitationContextHit]] = defaultdict(list)
-        query_terms = [part for part in normalize_query_text(query).split() if len(part) >= 4]
+        sql_spec = self._citation_context_sql_spec(
+            corpus_ids=corpus_ids,
+            query=query,
+            limit_per_paper=limit_per_paper,
+        )
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    queries.CITATION_CONTEXT_SQL,
-                    (
-                        query_terms,
-                        list(corpus_ids),
-                        list(corpus_ids),
-                        list(corpus_ids),
-                        list(corpus_ids),
-                        limit_per_paper,
-                    ),
-                )
+                cur.execute(sql_spec.sql, sql_spec.params)
                 rows = cur.fetchall()
 
         for row in rows:
@@ -1216,6 +1210,29 @@ class PostgresRagRepository:
                 )
             )
         return dict(grouped)
+
+    def _citation_context_sql_spec(
+        self,
+        *,
+        corpus_ids: Sequence[int],
+        query: str,
+        limit_per_paper: int,
+    ) -> _SqlSpec:
+        normalized_corpus_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
+        query_terms = [part for part in normalize_query_text(query).split() if len(part) >= 4]
+        return _SqlSpec(
+            route_name="citation_context_lookup",
+            sql=queries.CITATION_CONTEXT_SQL,
+            params=(
+                query_terms,
+                normalized_corpus_ids,
+                normalized_corpus_ids,
+                normalized_corpus_ids,
+                normalized_corpus_ids,
+                limit_per_paper,
+            ),
+            metadata={"limit_per_paper": limit_per_paper},
+        )
 
     def fetch_entity_matches(
         self,
