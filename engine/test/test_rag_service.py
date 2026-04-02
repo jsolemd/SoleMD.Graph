@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from unittest.mock import MagicMock
 
+from app.config import settings
 from app.rag.biomedical_reranking import NoopBiomedicalReranker
 from app.rag.models import (
     CitationContextHit,
@@ -516,6 +518,139 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
     assert repository.entity_match_corpus_ids == repository.relation_match_corpus_ids
     assert len(repository.entity_match_corpus_ids) == 12
     assert repository.entity_match_corpus_ids[0] == 11
+
+
+def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypatch):
+    class ClinicalPriorRepository:
+        def __init__(self) -> None:
+            self.fetch_species_profiles = MagicMock(return_value={})
+
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+            return []
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(self, *args, **kwargs):
+            return []
+
+        def search_chunk_papers(self, *args, **kwargs):
+            return [
+                PaperEvidenceHit(
+                    corpus_id=11,
+                    paper_id="paper-11",
+                    semantic_scholar_paper_id="paper-11",
+                    title="Direct passage hit",
+                    journal_name="JAMA",
+                    year=2024,
+                    doi=None,
+                    pmid=11,
+                    pmcid=None,
+                    abstract="Direct chunk support.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=20,
+                    reference_count=10,
+                    chunk_lexical_score=0.95,
+                )
+            ]
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(
+            self,
+            corpus_ids,
+            *,
+            query: str,
+            limit_per_paper: int = 3,
+        ):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(
+            self,
+            corpus_ids,
+            *,
+            relation_terms,
+            limit_per_paper: int = 5,
+        ):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = ClinicalPriorRepository()
+    service = RagService(
+        repository=repository,
+        warehouse_grounder=None,
+        query_embedder=NoopQueryEmbedder(),
+        biomedical_reranker=NoopBiomedicalReranker(),
+    )
+
+    monkeypatch.setattr(settings, "rag_live_clinical_priors_enabled", False)
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="current",
+            query="Does melatonin reduce postoperative delirium in surgical patients?",
+            k=3,
+            rerank_topn=10,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    repository.fetch_species_profiles.assert_not_called()
+    assert result.debug_trace["session_flags"]["clinical_query_intent"] == "treatment"
+    assert result.debug_trace["session_flags"]["clinical_prior_requested"] is False
 
 
 class FakeDenseQueryEmbedder:

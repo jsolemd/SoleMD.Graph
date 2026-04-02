@@ -237,6 +237,8 @@ def test_runtime_sentence_query_with_exact_relation_seed_stays_fast():
 @pytest.mark.slow
 def test_runtime_clinical_treatment_query_applies_bounded_species_prior():
     _require_runtime_db()
+    previous_enabled = settings.rag_live_clinical_priors_enabled
+    settings.rag_live_clinical_priors_enabled = True
     try:
         report = run_rag_runtime_case_evaluation(
             graph_release_id="current",
@@ -266,6 +268,7 @@ def test_runtime_clinical_treatment_query_applies_bounded_species_prior():
             connect=db.pooled,
         )
     finally:
+        settings.rag_live_clinical_priors_enabled = previous_enabled
         db.close_pool()
 
     assert report.summary.overall.error_count == 0

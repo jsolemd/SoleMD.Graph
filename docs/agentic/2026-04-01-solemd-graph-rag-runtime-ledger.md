@@ -1274,3 +1274,32 @@ Mode: agentic overnight improvement loop
   - the runtime now has a bounded clinician-facing ranking lane that uses existing warehouse signals instead of a new retrieval subsystem
   - the scoring path remains modular and centralized: intent detection lives in its own module, species lookup lives in the repository adapter, and final ranking remains the only place where the prior affects paper ordering
   - the next step is not more plumbing; it is a clinician-shaped benchmark comparison to decide whether these priors should change the live default behavior
+
+## Batch 33: Keep Clinician Priors Default-Off Until Benchmarked
+
+- Scope:
+  - `engine/app/config.py`
+  - `engine/app/rag/service.py`
+  - `engine/test/test_rag_service.py`
+  - `engine/test/test_rag_runtime_perf.py`
+  - `docs/agentic/2026-04-01-solemd-graph-rag-runtime-ledger.md`
+- Problem evidenced after Batch 32:
+  - the bounded clinician priors were implemented correctly, but they were immediately active for treatment/diagnosis/prognosis queries.
+  - that violated the intended A40 contract: benchmark the priors first, then decide whether they become part of the live default.
+- Durable implementation landed:
+  - added `rag_live_clinical_priors_enabled` to `engine/app/config.py`, defaulting to `False`.
+  - updated `engine/app/rag/service.py` so clinician-prior enrichment is requested only when:
+    - the feature flag is enabled, and
+    - the inferred query intent is treatment/diagnosis/prognosis.
+  - kept trace visibility intact by still recording:
+    - `clinical_query_intent`
+    - `clinical_prior_requested`
+  - added focused coverage for both sides of the gate:
+    - service-level regression proving the disabled path does not call `fetch_species_profiles`
+    - DB-backed runtime perf regression explicitly enabling the flag for a treatment query and asserting the bounded species-profile stage
+- Verification:
+  - `cd engine && uv run ruff check app/config.py app/rag/service.py test/test_rag_service.py test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_service.py test/test_rag_runtime_perf.py -k 'clinical_prior or clinical_treatment_query_applies_bounded_species_prior' -q` -> `2 passed, 60 deselected`
+- Interpretation:
+  - clinician priors are now available as a measured runtime experiment, not an unbenchmarked default behavior change
+  - the next A40 step can compare the exact same runtime stack with the flag off and on over a clinician-shaped frozen benchmark

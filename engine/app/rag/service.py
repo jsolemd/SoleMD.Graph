@@ -953,12 +953,14 @@ class RagService:
         )
         trace.record_count("preliminary_ranked_hits", len(preliminary_ranked_hits))
         trace.record_count("enrichment_corpus_ids", len(enrichment_corpus_ids))
+        clinical_prior_requested = (
+            settings.rag_live_clinical_priors_enabled
+            and should_apply_clinical_priors(query.clinical_intent)
+        )
         trace.record_flags(
             {
                 "clinical_query_intent": query.clinical_intent,
-                "clinical_prior_requested": should_apply_clinical_priors(
-                    query.clinical_intent
-                ),
+                "clinical_prior_requested": clinical_prior_requested,
             }
         )
 
@@ -1001,8 +1003,7 @@ class RagService:
                 fetch_species_profiles,
                 enrichment_corpus_ids,
             )
-            if should_apply_clinical_priors(query.clinical_intent)
-            and callable(fetch_species_profiles)
+            if clinical_prior_requested and callable(fetch_species_profiles)
             else {}
         )
         trace.record_count("entity_hit_papers", len(entity_hits))

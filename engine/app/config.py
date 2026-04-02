@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     rag_biomedical_reranker_batch_size: int = 16
     rag_live_biomedical_reranker_enabled: bool = False
     rag_live_biomedical_reranker_topn: int = 8
+    rag_live_clinical_priors_enabled: bool = False
     rag_model_cache_dir: str = "data/huggingface"
 
     # DuckDB (for citations pipeline and heavy in-memory queries)
