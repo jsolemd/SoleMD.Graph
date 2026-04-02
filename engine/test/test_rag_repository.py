@@ -936,6 +936,7 @@ def test_fetch_papers_by_corpus_ids_maps_rows(mock_conn):
     assert hits[0].corpus_id == 202
     assert hits[0].paper_id == "paper-202"
     assert hits[0].journal_name == "Lancet"
+    assert hits[0].dense_score == 0.0
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(queries.PAPER_LOOKUP_SQL, ("run-1", [202]))
 

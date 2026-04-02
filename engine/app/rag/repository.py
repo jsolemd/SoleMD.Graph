@@ -38,6 +38,18 @@ ENTITY_TOP_CONCEPTS_PER_TERM = queries.ENTITY_TOP_CONCEPTS_PER_TERM
 SEMANTIC_NEIGHBOR_MIN_LIMIT = 1
 
 
+def _dense_score_from_distance(distance: Any | None) -> float:
+    """Map ANN distance values to a normalized dense score.
+
+    Rows that were not returned by a dense query do not carry a distance and must not
+    inherit a perfect dense score.
+    """
+
+    if distance is None:
+        return 0.0
+    return max(0.0, 1.0 - float(distance))
+
+
 class _PinnedConnectionContext:
     """No-op context wrapper for a connection already owned by the caller."""
 
@@ -314,7 +326,7 @@ class PostgresRagRepository:
             title_similarity=float(row.get("title_similarity") or 0.0),
             entity_score=float(row.get("entity_candidate_score") or 0.0),
             relation_score=float(row.get("relation_candidate_score") or 0.0),
-            dense_score=max(0.0, 1.0 - float(row.get("distance") or 0.0)),
+            dense_score=_dense_score_from_distance(row.get("distance")),
             chunk_ordinal=row.get("chunk_ordinal"),
             chunk_snippet=row.get("chunk_snippet"),
         )
@@ -1495,7 +1507,7 @@ class PostgresRagRepository:
             hit = hits_by_corpus_id.get(corpus_id)
             if hit is None:
                 continue
-            hit.dense_score = max(0.0, 1.0 - float(row.get("distance") or 0.0))
+            hit.dense_score = _dense_score_from_distance(row.get("distance"))
             ordered_hits.append(hit)
         return ordered_hits
 

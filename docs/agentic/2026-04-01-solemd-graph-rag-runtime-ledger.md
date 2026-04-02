@@ -39,7 +39,9 @@ Mode: agentic overnight improvement loop
 | A29 | done | P0 | Routing correctness | The fresh `v14` cohort still had a `title_global` outlier (`22309903`) routed through `retrieval_profile=passage_lookup`, which dragged dense-query search back to `~498ms` on an otherwise title-shaped query. | Kept the classifier conservative but re-enabled the exact-title precheck for passage-mode lexical queries, so long title-shaped queries can promote themselves into `title_lookup` without falling into chunk/dense retrieval first. | `.tmp/rag-runtime-probe-22309903-title-global-v15.json` + service/search-plan/runtime-perf regressions |
 | A30 | done | P1 | Relation-search tail | The `v14` cohort isolated two `sentence_global` outliers where `search_relation_papers` spikes to `~389–448ms`, dominating otherwise healthy requests. | Completed the query-routing pass so long passage queries no longer auto-seed incidental relation labels like `compare`; relation-lane latency dropped out of the hot-stage summary. | `.tmp/rag-runtime-probe-273920567-sentence-global-v16.json` + query/service/runtime-perf regressions |
 | A31 | done | P1 | Entity-enrichment floor | After dense-query optimization, `query_entity_enrichment` became the most common hot stage (`mean ~68–69ms`, `p95 ~89–94ms`) while only `2/96` sentence-global cases produced any entity-hit papers. | Added the high-precision entity-surface gate and confirmed on the refreshed current cohort that the title families dropped to about `20ms` mean and `sentence_global` dropped to about `148ms` mean without any quality loss. | `.tmp/rag-runtime-eval-current-all-families-v16-routing-relation.json` + unit/service regressions |
-| A32 | in_progress | P1 | Title-search and sentence-ranking tail | The remaining runtime miss set is now only `3/96` `sentence_global` cases. One of them (`24948876`) is still a title-like sentence case that spends about `196ms` in `search_papers`, but the first attempt to swap that lane onto the global KNN title query stalled for more than `60s` in a live repository smoke. | Keep the naive global-KNN fallback rejected, land planner-visible title-search instrumentation, and then improve direct passage/title alignment before considering a heavier reranker lane. | Repository smoke + targeted outlier probes + profiler artifact |
+| A32 | done | P1 | Title-search and sentence-ranking tail | The remaining runtime miss set had narrowed to `3/96` `sentence_global` cases, and `24948876` was still a title-like sentence case where citation-only neighbors could outrank the direct lexical paper. | Rejected the naive global-KNN rewrite, added planner-visible title-search instrumentation, then fixed the real contract bugs: missing ANN distances were inflating `dense_score` to `1.0`, and `TITLE_LOOKUP` did not sort direct title support ahead of citation-only neighbors. | `uv run pytest test/test_rag_repository.py test/test_rag_ranking.py` + `.tmp/rag-runtime-eval-sentence-miss-set-v19-titlefix.json` |
+| A33 | pending | P1 | Dense-runtime contract hygiene | Live warmup and eval still emit `There are adapters available but none are activated for the forward pass.` even though runtime status reports `active_adapters=Stack[[QRY]]` on the loaded SPECTER2 query encoder. | Inspect the real `adapters==1.2.0` load path, remove any activation drift or misleading mutation in `query_embedding.py`, and add a regression around active adapter setup so the dense lane is both correct and quiet. | `uv run pytest test/test_rag_query_embedding.py` + embedder smoke |
+| A34 | pending | P2 | Contract docs drift | `database.md` reflects `graph_base_points`, while some older design docs still describe base membership and base size using stale `graph_points` fields or fixed corpus counts. | Make one graph-base contract doc canonical, update the stale runtime/base docs, and add a small verification check where possible so perf/runtime assumptions do not drift from the schema. | Doc diff + any small contract check |
 
 ## Completed Batches
 
@@ -772,3 +774,29 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the runtime branch now has a clean, centralized observability path for planner-visible title-search debugging
   - the next ranking/title pass can optimize from actual plan evidence and the `3/96` sentence-global miss set instead of another speculative SQL rewrite
+
+## Batch 23: Title-Lookup Ranking Contract Repair
+
+- Scope:
+  - `engine/app/rag/repository.py`
+  - `engine/app/rag/ranking.py`
+  - `engine/test/test_rag_repository.py`
+  - `engine/test/test_rag_ranking.py`
+- Problem evidenced after Batch 22:
+  - the targeted sentence-global miss set still had one residual failure, `24948876`
+  - live profiling showed the target paper was already in the lexical and dense candidate set, but citation-only neighbors could still outrank it
+  - direct runtime inspection also exposed a repository-mapper bug: rows with no ANN `distance` were inheriting `dense_score = 1.0`, which polluted title-like ranking with false dense evidence
+- Durable implementation landed:
+  - centralized `distance -> dense_score` mapping in `engine/app/rag/repository.py`
+  - fixed the mapper so missing ANN distances now map to `0.0` instead of a perfect dense score
+  - tightened `TITLE_LOOKUP` sorting in `engine/app/rag/ranking.py` so papers with direct title support sort ahead of citation-only or dense-only neighbors
+  - added focused regressions for:
+    - paper lookup rows without distances
+    - title-lookups where a direct lexical hit must beat citation-only topical neighbors
+- Verification:
+  - `cd engine && uv run pytest test/test_rag_repository.py test/test_rag_ranking.py -q` -> `63 passed`
+  - `cd engine && uv run ruff check app/rag/repository.py app/rag/ranking.py test/test_rag_repository.py test/test_rag_ranking.py` -> passed
+  - `cd engine && uv run python scripts/evaluate_rag_runtime.py --graph-release-id current --query-family sentence_global --corpus-id 3092150 --corpus-id 24948876 --corpus-id 207261606 --report-path ../.tmp/rag-runtime-eval-sentence-miss-set-v19-titlefix.json`
+- Interpretation:
+  - the residual sentence-global miss set is now clean at `hit@1 = 1.0`
+  - the fix came from correcting the runtime contract, not from speculative SQL rewrites or arbitrary weight churn

@@ -317,6 +317,40 @@ def test_rank_paper_hits_can_promote_semantic_only_candidates():
     assert "Semantically close to the selected paper" in ranked[1].match_reasons
 
 
+def test_rank_paper_hits_does_not_label_dense_channel_without_dense_membership():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=10,
+            paper_id="paper-10",
+            semantic_scholar_paper_id="paper-10",
+            title="Lexical candidate with stale dense score",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=10,
+            pmcid=None,
+            abstract=None,
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            lexical_score=0.8,
+            dense_score=0.7,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        channel_rankings={RetrievalChannel.LEXICAL: {10: 1}},
+    )
+
+    assert ranked[0].corpus_id == 10
+    assert RetrievalChannel.LEXICAL in ranked[0].matched_channels
+    assert RetrievalChannel.DENSE_QUERY not in ranked[0].matched_channels
+
+
 def test_rank_paper_hits_uses_support_intent_affinity():
     papers = [
         PaperEvidenceHit(
@@ -549,6 +583,140 @@ def test_rank_paper_hits_uses_selected_context_for_title_queries():
     assert "Preserved explicitly selected paper context" in ranked[0].match_reasons
 
 
+def test_rank_paper_hits_prefers_strong_title_prefix_anchor_in_title_lookup():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=11857184,
+            paper_id="paper-11857184",
+            semantic_scholar_paper_id="paper-11857184",
+            title=(
+                "Designing clinical trials for assessing the effects of cognitive "
+                "training and physical activity interventions on cognitive outcomes: "
+                "The Seniors Health and Activity Research Program Pilot "
+                "(SHARP-P) Study, a randomized controlled trial"
+            ),
+            journal_name=None,
+            year=2015,
+            doi=None,
+            pmid=11857184,
+            pmcid=None,
+            abstract=None,
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=119,
+            reference_count=48,
+            lexical_score=1.7,
+            title_similarity=1.0,
+        ),
+        PaperEvidenceHit(
+            corpus_id=22,
+            paper_id="paper-22",
+            semantic_scholar_paper_id="paper-22",
+            title="Related cognitive training review",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=22,
+            pmcid=None,
+            abstract=None,
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=400,
+            reference_count=120,
+            dense_score=0.98,
+            citation_boost=1.6,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text=(
+            "Designing clinical trials for assessing the effects of cognitive "
+            "training and physical activity interventions on cognitive outcomes: "
+            "The Seniors Health and Activity Research Program Pilot "
+            "(SHARP-P) Study, a randomized"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.LEXICAL: {11857184: 1},
+            RetrievalChannel.DENSE_QUERY: {22: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [11857184, 22]
+    assert "Strong title-prefix anchor for the query" in ranked[0].match_reasons
+
+
+def test_rank_paper_hits_prefers_direct_title_support_over_citation_only_neighbors():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=24948876,
+            paper_id="paper-24948876",
+            semantic_scholar_paper_id="paper-24948876",
+            title=(
+                "EFFECTS OF PRENATAL ETHANOL EXPOSURE ON PHYSICAL GROWTH, "
+                "SENSORY REFLEX MATURATION AND BRAIN DEVELOPMENT IN THE RAT"
+            ),
+            journal_name=None,
+            year=1992,
+            doi=None,
+            pmid=24948876,
+            pmcid=None,
+            abstract=None,
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=12,
+            reference_count=18,
+            lexical_score=1.52,
+            dense_score=0.74,
+            citation_boost=3.8,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2200426,
+            paper_id="paper-2200426",
+            semantic_scholar_paper_id="paper-2200426",
+            title="Related fetal alcohol spectrum disorders paper",
+            journal_name=None,
+            year=2010,
+            doi=None,
+            pmid=2200426,
+            pmcid=None,
+            abstract=None,
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=44,
+            reference_count=60,
+            citation_boost=5.25,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text=(
+            "Effects of prenatal ethanol exposure on physical growths, sensory "
+            "reflex maturation and brain development in the rat"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.LEXICAL: {24948876: 1},
+            RetrievalChannel.DENSE_QUERY: {24948876: 2},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [24948876, 2200426]
+    assert RetrievalChannel.LEXICAL in ranked[0].matched_channels
+
+
 def test_rank_paper_hits_penalizes_indirect_only_passage_candidates():
     papers = [
         PaperEvidenceHit(
@@ -692,3 +860,161 @@ def test_rank_paper_hits_prefers_higher_fused_score_between_direct_passage_match
 
     assert ranked[0].corpus_id == 22
     assert ranked[0].fused_score > ranked[1].fused_score
+
+
+def test_rank_paper_hits_prefers_direct_passage_alignment_over_generic_chunk_match():
+    query_text = (
+        "In this study we investigated whether reduced physical performance and "
+        "low handgrip lower limbs strength could predict a higher incidence of "
+        "cognitive decline during follow up"
+    )
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=11,
+            paper_id="paper-11",
+            semantic_scholar_paper_id="paper-11",
+            title="Generic vascular paper",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=11,
+            pmcid=None,
+            abstract="Collateral vessel formation may improve outcomes in moyamoya disease.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=18,
+            reference_count=42,
+            chunk_lexical_score=0.98,
+            citation_boost=1.4,
+        ),
+        PaperEvidenceHit(
+            corpus_id=22,
+            paper_id="paper-22",
+            semantic_scholar_paper_id="paper-22",
+            title="Target cognitive decline cohort",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=22,
+            pmcid=None,
+            abstract=(
+                "Reduced physical performance and low handgrip lower limbs strength "
+                "predicted a higher incidence of cognitive decline during follow up."
+            ),
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=6,
+            reference_count=12,
+            chunk_lexical_score=0.9,
+            dense_score=0.8,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={
+            11: [
+                CitationContextHit(
+                    corpus_id=11,
+                    citation_id=901,
+                    neighbor_corpus_id=44,
+                    direction=CitationDirection.INCOMING,
+                    context_text="Indirect topical context.",
+                    score=1.4,
+                )
+            ]
+        },
+        entity_hits={},
+        relation_hits={},
+        query_text=query_text,
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.CHUNK_LEXICAL: {11: 1, 22: 2},
+            RetrievalChannel.DENSE_QUERY: {22: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [22, 11]
+    assert ranked[0].passage_alignment_score > ranked[1].passage_alignment_score
+    assert "Direct paper text closely matches the query" in ranked[0].match_reasons
+
+
+def test_rank_paper_hits_promotes_near_exact_title_sentence_in_passage_lookup():
+    query_text = (
+        "Effects of prenatal ethanol exposure on physical growths, sensory reflex "
+        "maturation and brain development in the rat"
+    )
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=11,
+            paper_id="paper-11",
+            semantic_scholar_paper_id="paper-11",
+            title="Related fetal alcohol exercise paper",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=11,
+            pmcid=None,
+            abstract="Exercise improved outcomes in a rodent fetal alcohol model.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=40,
+            reference_count=90,
+            citation_boost=1.8,
+            dense_score=0.94,
+        ),
+        PaperEvidenceHit(
+            corpus_id=22,
+            paper_id="paper-22",
+            semantic_scholar_paper_id="paper-22",
+            title=(
+                "EFFECTS OF PRENATAL ETHANOL EXPOSURE ON PHYSICAL GROWTH, "
+                "SENSORY REFLEX MATURATION AND BRAIN DEVELOPMENT IN THE RAT"
+            ),
+            journal_name=None,
+            year=1999,
+            doi=None,
+            pmid=22,
+            pmcid=None,
+            abstract="Prenatal ethanol exposure altered physical growth and reflex maturation.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=12,
+            reference_count=20,
+            lexical_score=0.44,
+            title_similarity=0.92,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={
+            11: [
+                CitationContextHit(
+                    corpus_id=11,
+                    citation_id=777,
+                    neighbor_corpus_id=55,
+                    direction=CitationDirection.INCOMING,
+                    context_text="Indirect prenatal alcohol context.",
+                    score=1.8,
+                )
+            ]
+        },
+        entity_hits={},
+        relation_hits={},
+        query_text=query_text,
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.CITATION_CONTEXT: {},
+            RetrievalChannel.DENSE_QUERY: {11: 1},
+            RetrievalChannel.LEXICAL: {22: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [22, 11]
+    assert ranked[0].passage_alignment_score >= 0.65
+    assert "Direct paper text closely matches the query" in ranked[0].match_reasons
