@@ -25,7 +25,7 @@ Mode: agentic overnight improvement loop
 | A15 | done | P1 | Throughput | Repository calls in one request were still opening repeated pooled connections and scoring entity/relation/citation matches in Python, wasting time on every search. | Added request-scoped repository search sessions, pushed entity/relation/citation scoring into SQL, and fixed nested citation-intent normalization in the repository adapter. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_ranking.py test/test_rag_runtime_eval.py test/test_rag_warehouse_grounding.py` |
 | A16 | done | P0 | Tail latency | The expanded unseen-cohort `v11` report showed near-perfect quality but pathological service tail latency, and direct probes traced the worst remaining path into runtime entity search and planner/JIT overhead. | Completed the fresh current-release all-family recheck on the latest code, then removed the dense-query SQL hydration waste that remained after the verified `jit=off` session fix. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + targeted outlier probes |
 | A17 | done | P1 | Performance coverage | Runtime perf gates still focused on smokes and unit assertions rather than representative DB-backed cohort thresholds for all three query families. | Tightened `engine/test/test_rag_runtime_perf.py` around a `24`-paper current-release cohort, added route-signature assertions, explicit tail-latency caps, and a selected-title regression that exposed and then fixed an overlong-title routing gap in `engine/app/rag/service.py`. | `uv run pytest test/test_rag_runtime_perf.py -q` + targeted service/query tests |
-| A18 | pending | P1 | Modularity | `service.py` and `repository.py` remain over-centralized runtime hubs with mixed responsibilities even after the hot-path fixes. | Split runtime orchestration and query execution along stable boundaries after the current perf batch settles, keeping one canonical retrieval contract and no duplicate logic. | File-size/complexity reduction + preserved test suite |
+| A18 | pending | P1 | Modularity | `repository.py` remains an over-centralized runtime hub with mixed responsibilities, while `service.py` was reduced to orchestration in Batch 46. | Finish the split by extracting repository-local row normalization, title-candidate lookup, and vector-route execution along stable boundaries, keeping one canonical retrieval contract and no duplicate logic. | File-size/complexity reduction + preserved test suite |
 | A19 | pending | P2 | Ops | Migration rollout, report retention, and batch commits still need a durable record as the runtime stack evolves. | Record migration/runtime notes, prune superseded report artifacts when safe, and commit cohesive verified batches once the current performance batch settles. | Ledger update + commit checkpoints |
 | A20 | done | P0 | Correctness | `title_selected` still treated the selected paper as a late rescue path, so selected-title lookups could route through broad lexical/dense neighbor expansion before honoring the user’s explicit paper context. | Added selected-paper-first title lookup in `engine/app/rag/repository.py` and centralized selected-context application in `engine/app/rag/service.py`, with repository/service regressions and a DB-backed perf gate. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'truncated_long_title_selected_lookup_stays_grounded_and_fast'` + `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v3.json` |
 | A21 | done | P0 | Correctness + centralization | Passage answers still favored generic high-scoring chunk hits over the bundle whose snippet actually mirrored the user’s sentence, and warehouse structural matching duplicated a weaker overlap scorer. | Added shared normalized text-alignment helpers in `engine/app/rag/text_alignment.py`, wired them into `engine/app/rag/answer.py` and `engine/app/rag/warehouse_grounding.py`, and added targeted answer/alignment regressions. | `uv run pytest test/test_rag_text_alignment.py test/test_rag_answer.py test/test_rag_warehouse_grounding.py` |
@@ -1879,3 +1879,47 @@ Mode: agentic overnight improvement loop
 - Interpretation:
   - the polarity benchmark is now part of the real runtime-eval contract instead of a passive JSON artifact.
   - the remaining clinician-safety work is no longer missing infrastructure; it is benchmark expansion and, if failures eventually appear, targeted ranking/species-prior improvements grounded in these slices.
+
+## Batch 46: Split Search Execution And Response Serialization Out Of `service.py`
+
+- Scope:
+  - `engine/app/rag/service.py`
+  - `engine/app/rag/search_support.py`
+  - `engine/app/rag/search_retrieval.py`
+  - `engine/app/rag/search_finalize.py`
+  - `engine/app/rag/search_execution.py`
+  - `engine/app/rag/response_serialization.py`
+  - `engine/app/rag_ingest/runtime_eval_execution.py`
+- Problem:
+  - `engine/app/rag/service.py` had grown to `1376` lines and mixed three separate responsibilities:
+    - dependency wiring and warmup
+    - runtime search execution
+    - API response serialization
+  - that violated the `/clean` hard modularity limit and made every runtime change pay unnecessary blast radius through the same hub file.
+- Durable implementation landed:
+  - split the runtime search pipeline into:
+    - `engine/app/rag/search_support.py`
+    - `engine/app/rag/search_retrieval.py`
+    - `engine/app/rag/search_finalize.py`
+    - `engine/app/rag/search_execution.py`
+  - moved API response serialization into `engine/app/rag/response_serialization.py`
+  - reduced `engine/app/rag/service.py` to the orchestration surface:
+    - dependency construction
+    - warmup
+    - runtime status accessors
+    - delegation into the extracted execution and serialization modules
+  - repointed runtime eval execution to import `serialize_search_result` from the dedicated serialization module instead of the service hub.
+- Verification:
+  - `cd engine && uv run ruff check app/rag/service.py app/rag/search_support.py app/rag/search_retrieval.py app/rag/search_finalize.py app/rag/search_execution.py app/rag/response_serialization.py app/rag_ingest/runtime_eval_execution.py test/test_rag_service.py test/test_rag_runtime_eval.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_service.py test/test_rag_runtime_eval.py test/test_rag_runtime_perf.py test/test_rag_runtime_benchmarks.py -q` -> `90 passed`
+- Clean impact:
+  - `service.py` is no longer the mixed-responsibility runtime choke point.
+  - every new runtime module in the split now sits below the `600`-line modularity limit:
+    - `service.py`: `127`
+    - `search_support.py`: `126`
+    - `search_retrieval.py`: `497`
+    - `search_finalize.py`: `530`
+    - `search_execution.py`: `37`
+    - `response_serialization.py`: `164`
+  - the canonical search implementation still exists exactly once; this was a true extraction, not a compatibility wrapper.
+  - the remaining `A18` work is now explicitly narrowed to the still-oversized `repository.py` hub.

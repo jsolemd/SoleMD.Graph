@@ -54,7 +54,11 @@ changing the outer graph integration boundary.
 +------------------------------+----------------------------------------+
 |  FASTAPI ENGINE   engine/app/rag/                                     |
 |                                                                       |
-|  service.py          Orchestrates the full retrieval pipeline         |
+|  service.py          Dependency wiring + top-level orchestration      |
+|  search_support.py   Query normalization + request/session helpers    |
+|  search_retrieval.py Initial retrieval and candidate collection       |
+|  search_finalize.py  Enrichment, ranking, grounding, final assembly   |
+|  response_serialization.py API response serialization                 |
 |  repository.py       PostgreSQL read repository                       |
 |  ranking.py          RRF fusion + intent affinity scoring             |
 |  bundle.py           Evidence bundle + graph signal assembly          |
@@ -221,7 +225,11 @@ Refute cues: `no significant`, `not associated`, `failed to`, `null`, `inconsist
 
 | Module | Purpose |
 |--------|---------|
-| `service.py` | Top-level `RagService.search()` orchestration |
+| `service.py` | Top-level `RagService.search()` orchestration and dependency wiring |
+| `search_support.py` | Query normalization, request construction, repository session helpers |
+| `search_retrieval.py` | Initial retrieval, route selection, and merged candidate collection |
+| `search_finalize.py` | Citation expansion, enrichment, ranking, grounding, final result assembly |
+| `response_serialization.py` | `serialize_search_result()` API response serialization |
 | `repository.py` | `RagRepository` protocol + `PostgresRagRepository` implementation |
 | `queries.py` | All SQL templates (paper search, entity/relation recall, citations, etc.) |
 | `ranking.py` | RRF fusion, channel weights, intent affinity scoring |

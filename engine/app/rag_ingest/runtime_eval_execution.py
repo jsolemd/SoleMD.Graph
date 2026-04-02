@@ -12,9 +12,10 @@ from time import perf_counter
 from app import db
 from app.rag.grounded_runtime import build_grounded_answer_from_runtime
 from app.rag.repository import PostgresRagRepository
+from app.rag.response_serialization import serialize_search_result
 from app.rag.runtime_profile import profile_runtime_case_sql_plans
 from app.rag.schemas import RagSearchRequest
-from app.rag.service import RagService, serialize_search_result
+from app.rag.service import RagService
 from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalAggregate,
     RuntimeEvalCaseResult,
