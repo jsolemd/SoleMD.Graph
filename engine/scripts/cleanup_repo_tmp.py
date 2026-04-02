@@ -17,6 +17,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--delete", action="store_true")
     parser.add_argument("--include-pycache", action="store_true")
     parser.add_argument("--include-graph-tmp", action="store_true")
+    parser.add_argument("--keep-latest-versions", type=int, default=0)
     parser.add_argument("--largest-limit", type=int, default=20)
     parser.add_argument("--report-path", type=Path, default=None)
     return parser.parse_args(argv)
@@ -29,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
         delete=args.delete,
         include_pycache=args.include_pycache,
         include_graph_tmp=args.include_graph_tmp,
+        keep_latest_versions=args.keep_latest_versions,
         largest_limit=args.largest_limit,
     )
     payload = json.dumps(report.to_dict(), indent=2)

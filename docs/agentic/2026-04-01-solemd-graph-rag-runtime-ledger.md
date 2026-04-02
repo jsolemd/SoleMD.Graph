@@ -26,7 +26,7 @@ Mode: agentic overnight improvement loop
 | A16 | done | P0 | Tail latency | The expanded unseen-cohort `v11` report showed near-perfect quality but pathological service tail latency, and direct probes traced the worst remaining path into runtime entity search and planner/JIT overhead. | Completed the fresh current-release all-family recheck on the latest code, then removed the dense-query SQL hydration waste that remained after the verified `jit=off` session fix. | `.tmp/rag-runtime-eval-current-all-families-v14-densehydrate.json` + targeted outlier probes |
 | A17 | done | P1 | Performance coverage | Runtime perf gates still focused on smokes and unit assertions rather than representative DB-backed cohort thresholds for all three query families. | Tightened `engine/test/test_rag_runtime_perf.py` around a `24`-paper current-release cohort, added route-signature assertions, explicit tail-latency caps, and a selected-title regression that exposed and then fixed an overlong-title routing gap in `engine/app/rag/service.py`. | `uv run pytest test/test_rag_runtime_perf.py -q` + targeted service/query tests |
 | A18 | done | P1 | Modularity | `repository.py` remained an over-centralized runtime hub with mixed responsibilities even after `service.py` was reduced to orchestration in Batch 46. | Split the repository along stable runtime adapter boundaries (`paper search`, `seed search`, `evidence lookup`, `vector search`, shared support) while keeping `PostgresRagRepository` as the single canonical contract surface. | `uv run ruff check app/rag/repository.py app/rag/repository_support.py app/rag/repository_paper_search.py app/rag/repository_seed_search.py app/rag/repository_evidence_lookup.py app/rag/repository_vector_search.py app/rag/runtime_profile.py test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py` + `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -q` |
-| A19 | pending | P2 | Ops | Migration rollout, report retention, and batch commits still need a durable record as the runtime stack evolves. | Record migration/runtime notes, prune superseded report artifacts when safe, and commit cohesive verified batches once the current performance batch settles. | Ledger update + commit checkpoints |
+| A19 | done | P2 | Ops | Migration rollout notes, report retention, and cohesive batch commits needed a durable operational record as the runtime stack evolved. | Added version-aware temp artifact retention to the repo cleanup path, documented the runtime cleanup command, verified post-delete stability, and kept the runtime cleanup/refactor work split into narrow verified commits. | `uv run ruff check scripts/tmp_cleanup.py scripts/cleanup_repo_tmp.py test/test_tmp_cleanup.py` + `uv run pytest test/test_tmp_cleanup.py -q` + post-delete `inspect_temp_artifacts(min_age_hours=24, keep_latest_versions=2)` |
 | A20 | done | P0 | Correctness | `title_selected` still treated the selected paper as a late rescue path, so selected-title lookups could route through broad lexical/dense neighbor expansion before honoring the user’s explicit paper context. | Added selected-paper-first title lookup in `engine/app/rag/repository.py` and centralized selected-context application in `engine/app/rag/service.py`, with repository/service regressions and a DB-backed perf gate. | `uv run pytest test/test_rag_repository.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'truncated_long_title_selected_lookup_stays_grounded_and_fast'` + `.tmp/rag-runtime-eval-default-structural-v1-title-selected-v3.json` |
 | A21 | done | P0 | Correctness + centralization | Passage answers still favored generic high-scoring chunk hits over the bundle whose snippet actually mirrored the user’s sentence, and warehouse structural matching duplicated a weaker overlap scorer. | Added shared normalized text-alignment helpers in `engine/app/rag/text_alignment.py`, wired them into `engine/app/rag/answer.py` and `engine/app/rag/warehouse_grounding.py`, and added targeted answer/alignment regressions. | `uv run pytest test/test_rag_text_alignment.py test/test_rag_answer.py test/test_rag_warehouse_grounding.py` |
 | A22 | done | P1 | Modularity + provenance | `rank_paper_hits()` mixed channel provenance with raw score residue, which allowed `bundle.matched_channels` to drift from the real runtime channel surface, especially for `dense_query`. | Extracted channel/reason annotation into a dedicated helper in `engine/app/rag/ranking.py` and tightened dense-channel labeling to actual channel membership, with a regression guarding against stale dense labels. | `uv run pytest test/test_rag_ranking.py -k 'dense_channel_without_dense_membership or can_promote_semantic_only_candidates or preserves_entity_seed_scores_without_enrichment_hits or preserves_relation_seed_scores_without_enrichment_hits or preserves_citation_seed_scores_without_direct_hits'` |
@@ -1970,3 +1970,51 @@ Mode: agentic overnight improvement loop
   - the repository adapter still has one canonical implementation surface.
   - runtime SQL specs, constants, and session helpers are centralized rather than duplicated across split files.
   - this closes the last active modularity hotspot in the core runtime adapter layer; the remaining active queue moves to ops hygiene and artifact retention in `A19`.
+
+## Batch 48: Add Version-Aware Runtime Artifact Retention
+
+- Scope:
+  - `engine/scripts/tmp_cleanup.py`
+  - `engine/scripts/cleanup_repo_tmp.py`
+  - `engine/test/test_tmp_cleanup.py`
+  - `docs/map/rag.md`
+- Problem:
+  - the generic temp cleanup path only understood artifact age.
+  - runtime work now generates many same-series versioned artifacts in a single day (`...-v13.json`, `...-v14.json`, `...-v15.json`), so the repo-local temp roots could grow quickly even when everything was still “fresh”.
+  - blindly deleting by age alone was too slow, while deleting all logs/pids or newest result files would be unsafe.
+- Durable implementation landed:
+  - extended `inspect_temp_artifacts(...)` with `keep_latest_versions` so it can detect versioned temp files and prune superseded generations per series.
+  - kept the retention scope conservative:
+    - applies only to file types that are safe to collapse (`.json`, `.txt`, `.stdout`)
+    - leaves `.log` and `.pid` files on the age-based path so active detached jobs keep their handles
+  - added new report fields:
+    - `keep_latest_versions`
+    - `stale_entries`
+    - `superseded_entries`
+    - `stale_bytes`
+    - `superseded_bytes`
+  - surfaced the retention control in `cleanup_repo_tmp.py` via `--keep-latest-versions`
+  - documented the runtime cleanup command in `docs/map/rag.md`
+- Verification:
+  - `cd engine && uv run ruff check scripts/tmp_cleanup.py scripts/cleanup_repo_tmp.py test/test_tmp_cleanup.py` -> passed
+  - `cd engine && uv run pytest test/test_tmp_cleanup.py -q` -> `3 passed`
+  - dry run artifact:
+    - `.tmp/repo-temp-cleanup-report-v3-retention-dryrun.json`
+  - delete run artifact:
+    - `.tmp/repo-temp-cleanup-report-v4-retention-postdelete.json`
+  - post-delete verification:
+    - `inspect_temp_artifacts(min_age_hours=24, keep_latest_versions=2)` -> `matched_count = 0`
+- Measured result:
+  - before delete:
+    - repo-local temp footprint: about `56M`
+    - safe cleanup set: `12,175,430` bytes
+      - `stale_bytes = 7,041,490`
+      - `superseded_bytes = 8,857,578`
+      - overlap handled in `matched_bytes`
+  - after delete:
+    - `.tmp = 29M`
+    - `engine/.tmp = 14M`
+    - combined footprint fell to about `43.97M`
+- Interpretation:
+  - runtime artifact hygiene is now proactive instead of waiting a day for age-based cleanup.
+  - the repo keeps the newest useful generations per result family while preserving live detached-job handles and the most recent reports.

@@ -1324,3 +1324,19 @@ baseline.
 When the graphable corpus exceeds the locally attached browser universe,
 the existing DuckDB remote-attachment path (`ensureGraphPaperRefsAvailable`)
 fetches narrow Arrow IPC rows on demand without widening the canvas payload.
+
+### Runtime artifact hygiene
+
+Runtime evals and probes intentionally write durable artifacts into repo-local
+temp roots (`.tmp`, `engine/.tmp`) so broad overnight runs do not disappear
+with an attached shell. The standard cleanup path is:
+
+```bash
+cd engine
+uv run python scripts/cleanup_repo_tmp.py --min-age-hours 24 --keep-latest-versions 2
+```
+
+Use `--delete` to prune the matched set after reviewing the dry-run report.
+The version-retention pass collapses superseded `...-vN.json` / `.txt` /
+`.stdout` artifacts per series while leaving `.log` and `.pid` files on the
+age-based path, so active detached jobs keep their handles.

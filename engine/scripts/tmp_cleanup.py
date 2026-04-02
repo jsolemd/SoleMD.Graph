@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import re
 import shutil
+from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,11 +36,16 @@ class TempCleanupReport:
     delete: bool
     include_pycache: bool
     include_graph_tmp: bool
+    keep_latest_versions: int
     roots: list[TempCleanupRootSummary] = field(default_factory=list)
     largest_entries: list[TempArtifactEntry] = field(default_factory=list)
+    stale_entries: list[TempArtifactEntry] = field(default_factory=list)
+    superseded_entries: list[TempArtifactEntry] = field(default_factory=list)
     matched_entries: list[TempArtifactEntry] = field(default_factory=list)
     removed_entries: list[TempArtifactEntry] = field(default_factory=list)
     total_root_bytes: int = 0
+    stale_bytes: int = 0
+    superseded_bytes: int = 0
     matched_bytes: int = 0
     removed_bytes: int = 0
 
@@ -51,6 +59,7 @@ def inspect_temp_artifacts(
     delete: bool = False,
     include_pycache: bool = False,
     include_graph_tmp: bool = False,
+    keep_latest_versions: int = 0,
     project_root: Path | None = None,
     graph_tmp_root: Path | None = None,
     now: datetime | None = None,
@@ -70,12 +79,18 @@ def inspect_temp_artifacts(
         roots.append(resolved_graph_tmp_root)
 
     root_summaries: list[TempCleanupRootSummary] = []
+    candidate_paths: list[Path] = []
     candidate_entries: list[TempArtifactEntry] = []
+    stale_entries: list[TempArtifactEntry] = []
+    superseded_entries: list[TempArtifactEntry] = []
     matched_entries: list[TempArtifactEntry] = []
     removed_entries: list[TempArtifactEntry] = []
     total_root_bytes = 0
+    stale_bytes = 0
+    superseded_bytes = 0
     matched_bytes = 0
     removed_bytes = 0
+    seen_candidate_paths: set[Path] = set()
 
     for root in roots:
         root_path = root.resolve(strict=False)
@@ -102,32 +117,61 @@ def inspect_temp_artifacts(
             )
         )
         for candidate in root_candidates:
-            artifact = _artifact_entry(candidate, now=current_time)
-            candidate_entries.append(artifact)
-            if artifact.age_hours < min_age_hours:
+            resolved_candidate = candidate.resolve(strict=False)
+            if resolved_candidate in seen_candidate_paths:
                 continue
-            matched_entries.append(artifact)
-            matched_bytes += artifact.size_bytes
-            if delete:
-                _delete_path(candidate)
-                removed_entries.append(artifact)
-                removed_bytes += artifact.size_bytes
+            seen_candidate_paths.add(resolved_candidate)
+            candidate_paths.append(resolved_candidate)
 
     if include_pycache:
         pycache_entries = list(_iter_pycaches(resolved_project_root))
         for path in pycache_entries:
-            artifact = _artifact_entry(path, now=current_time)
-            candidate_entries.append(artifact)
-            if artifact.age_hours < min_age_hours:
+            resolved_path = path.resolve(strict=False)
+            if resolved_path in seen_candidate_paths:
                 continue
-            matched_entries.append(artifact)
-            matched_bytes += artifact.size_bytes
-            if delete:
-                _delete_path(path)
-                removed_entries.append(artifact)
-                removed_bytes += artifact.size_bytes
+            seen_candidate_paths.add(resolved_path)
+            candidate_paths.append(resolved_path)
+
+    artifact_by_path: dict[str, tuple[Path, TempArtifactEntry]] = {}
+    for candidate_path in candidate_paths:
+        artifact = _artifact_entry(candidate_path, now=current_time)
+        artifact_by_path[artifact.path] = (candidate_path, artifact)
+        candidate_entries.append(artifact)
+
+    stale_paths: set[str] = set()
+    for artifact in candidate_entries:
+        if artifact.age_hours < min_age_hours:
+            continue
+        stale_entries.append(artifact)
+        stale_paths.add(artifact.path)
+        stale_bytes += artifact.size_bytes
+
+    superseded_paths = {
+        str(path.resolve(strict=False))
+        for path in _find_superseded_versioned_paths(
+            candidate_paths,
+            keep_latest_versions=keep_latest_versions,
+        )
+    }
+    for artifact in candidate_entries:
+        if artifact.path not in superseded_paths:
+            continue
+        superseded_entries.append(artifact)
+        superseded_bytes += artifact.size_bytes
+
+    matched_paths = stale_paths | superseded_paths
+    for matched_path in matched_paths:
+        _path, artifact = artifact_by_path[matched_path]
+        matched_entries.append(artifact)
+        matched_bytes += artifact.size_bytes
+        if delete:
+            _delete_path(_path)
+            removed_entries.append(artifact)
+            removed_bytes += artifact.size_bytes
 
     candidate_entries.sort(key=lambda item: item.size_bytes, reverse=True)
+    stale_entries.sort(key=lambda item: item.size_bytes, reverse=True)
+    superseded_entries.sort(key=lambda item: item.size_bytes, reverse=True)
     matched_entries.sort(key=lambda item: item.size_bytes, reverse=True)
     removed_entries.sort(key=lambda item: item.size_bytes, reverse=True)
 
@@ -137,14 +181,68 @@ def inspect_temp_artifacts(
         delete=delete,
         include_pycache=include_pycache,
         include_graph_tmp=include_graph_tmp,
+        keep_latest_versions=keep_latest_versions,
         roots=root_summaries,
         largest_entries=candidate_entries[:largest_limit],
+        stale_entries=stale_entries,
+        superseded_entries=superseded_entries,
         matched_entries=matched_entries,
         removed_entries=removed_entries,
         total_root_bytes=total_root_bytes,
+        stale_bytes=stale_bytes,
+        superseded_bytes=superseded_bytes,
         matched_bytes=matched_bytes,
         removed_bytes=removed_bytes,
     )
+
+
+_VERSION_SERIES_RE = re.compile(
+    r"^(?P<prefix>.+)-v(?P<version>\d+)(?P<suffix>(?:[-.].*)?)$"
+)
+_RETENTION_EXTENSIONS = {".json", ".txt", ".stdout"}
+
+
+def _find_superseded_versioned_paths(
+    candidate_paths: Sequence[Path],
+    *,
+    keep_latest_versions: int,
+) -> list[Path]:
+    if keep_latest_versions <= 0:
+        return []
+
+    grouped_paths: dict[tuple[str, str], list[tuple[int, float, Path]]] = defaultdict(list)
+    for path in candidate_paths:
+        if not path.is_file():
+            continue
+        parsed = _version_retention_key(path)
+        if parsed is None:
+            continue
+        series_key, version = parsed
+        grouped_paths[(str(path.parent), series_key)].append(
+            (version, path.stat().st_mtime, path)
+        )
+
+    superseded_paths: list[Path] = []
+    for entries in grouped_paths.values():
+        if len(entries) <= keep_latest_versions:
+            continue
+        ranked_entries = sorted(
+            entries,
+            key=lambda item: (item[0], item[1], item[2].name),
+            reverse=True,
+        )
+        superseded_paths.extend(path for *_rest, path in ranked_entries[keep_latest_versions:])
+    return superseded_paths
+
+
+def _version_retention_key(path: Path) -> tuple[str, int] | None:
+    if path.suffix not in _RETENTION_EXTENSIONS:
+        return None
+    match = _VERSION_SERIES_RE.match(path.name)
+    if match is None:
+        return None
+    series_key = f"{match.group('prefix')}-v#{match.group('suffix')}"
+    return series_key, int(match.group("version"))
 
 
 def _iter_root_candidates(root: Path):
