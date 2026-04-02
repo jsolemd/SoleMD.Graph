@@ -55,6 +55,8 @@ Mode: agentic overnight improvement loop
 | A45 | done | P1 | Title-like paper-search outlier | Live `v15` isolated one remaining title-lookup outlier (`24948876`) where `paper_search_global` still costs about `179.8ms` despite rank-1 retrieval success. Naive fuzzy preprobe attempts made that route catastrophically worse (`31.9s`, then `59.2s`) before the final contract fix. | Split the global paper-search SQL into an explicit `paper_search_global_fts_only` lane for `use_title_similarity=false`, remove the failed fuzzy preprobe path entirely, and lock the new route in unit + DB-backed perf coverage. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'title_like_paper_fallback_stays_fast or test_rag_repository' -q` + `engine/.tmp/rag-runtime-probe-24948876-v5.json` |
 | A46 | done | P1 | Grounded-answer build hotspot | Live `v15` isolated one remaining slow case (`277023583`) where `build_grounded_answer` dominated at about `188.1ms` after retrieval had already completed. The root cause was unbounded entity-packet overfetch before packet grouping plus opaque inner timing. | Split grounded-answer entity fetch into citation-packet entities plus bounded fallback packet groups, thread the shared runtime trace collector through the real grounders, and lock the new packet/timing contract with unit + DB-backed perf coverage. | `uv run pytest test/test_rag_grounded_runtime.py test/test_rag_warehouse_grounding.py test/test_rag_service.py test/test_rag_runtime_perf.py -k 'entity_dense_grounded_answer_fetch_stays_bounded or grounded_runtime or rag_service or warehouse_grounding' -q` + `engine/.tmp/rag-runtime-probe-277023583-v2-grounded-trace.json` |
 | A47 | done | P1 | Residual title-lookup search tail | The fresh `v17` current-release rerun was healthy overall (`mean 40.26ms`, `p95 83.31ms`), but one `sentence_global` case (`24948876`) still routed into `title_lookup` and spent `180.7ms` in `search_papers` on the `paper_search_global_fts_only` lane. | Added an indexed title-only phrase-FTS candidate probe ahead of the broad global FTS path, tightened the hot-case runtime perf gate, and revalidated on the full current-release cohort. | `uv run pytest test/test_rag_repository.py test/test_rag_runtime_perf.py -k 'phrase_title_candidates_before_global_fts_only or falls_back_to_global_fts_only_when_title_similarity_is_disabled or exact_title_queries_use_native_index_friendly_lookup_shape or title_phrase_candidate_lookup_uses_title_fts_index or runtime_sentence_query_with_title_like_paper_fallback_stays_fast' -q` + `engine/.tmp/rag-runtime-probe-24948876-v6-title-phrase.json` + `engine/.tmp/rag-runtime-eval-default-structural-v1-all-families-v18-title-phrase.json` |
+| A48 | done | P1 | Current-code runtime revalidation | The older `v11-jitoff` artifact still showed catastrophic tail numbers, but fresh single-case repros on the same corpus ids were fast, so the remaining risk was stale evidence rather than a live hot path. | Regenerated the current `24`-paper / `72`-case all-family cohort on the latest code, confirmed `1.0` quality across `title_global`, `title_selected`, and `sentence_global`, and re-ran the DB-backed runtime perf suite to replace the stale tail picture with a fresh verified baseline. | `.tmp/rag-runtime-eval-current-sample24-v1.json` + `uv run pytest test/test_rag_runtime_perf.py -q` |
+| A49 | done | P1 | Fixed benchmark perf coverage | Sampled current-release cohorts catch live regressions, but they do not lock the known difficult sentence and clinician-style evaluation sets that drive ranking decisions between major runtime passes. | Added DB-backed runtime perf regression gates for the checked-in `sentence_hard_v1` and `clinical_actionable_v1` benchmarks in `engine/test/test_rag_runtime_perf.py`, using the canonical benchmark loader and current-code thresholds instead of ad hoc one-off artifact inspection. | `uv run ruff check test/test_rag_runtime_perf.py` + `uv run pytest test/test_rag_runtime_perf.py -q` |
 
 ## Completed Batches
 
@@ -2113,3 +2115,78 @@ Mode: agentic overnight improvement loop
     view.
   - repeated-stage loops are measurable, which closes a real blind spot for
     passage-style search behavior.
+
+## Batch 51: Revalidate The Live Perf Floor On The Current Code, Not Stale Artifacts
+
+- Scope:
+  - `engine/.tmp/rag-runtime-eval-current-sample24-v1.json`
+  - `engine/.tmp/rag-runtime-eval-corpus-8142218-sentence-v1.json`
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem:
+  - the older `v11-jitoff` runtime artifact still showed catastrophic
+    `sentence_global` tails, but fresh repros on the same corpus ids were fast.
+  - the next pass could not safely rely on stale artifact timings when the live
+    codepath was already behaving differently.
+- Durable implementation landed:
+  - reran the exact `24`-paper / `72`-case current-release cohort used by the
+    DB-backed perf suite on the latest code.
+  - confirmed the current runtime floor is now clean:
+    - overall: `mean_service_duration_ms = 40.104`, `p95 = 86.73`, `p99 = 103.499`
+    - `title_global`: `p95 = 33.81`, all quality metrics `1.0`
+    - `title_selected`: `p95 = 30.757`, all quality metrics `1.0`
+    - `sentence_global`: `p95 = 94.303`, all quality metrics `1.0`
+  - reprobed one of the previously reported worst sentence cases (`8142218`)
+    on the current code and confirmed it now completes in `71.349 ms` service
+    time with a full stage trace and correct grounding.
+  - reran the DB-backed runtime perf suite so the formal gate reflects the
+    fresh runtime floor rather than the stale `v11` artifact.
+- Verification:
+  - `cd engine && uv run pytest test/test_rag_runtime_perf.py -q` -> `27 passed`
+- Interpretation:
+  - the old tail evidence is superseded by the fresh current-code cohort.
+  - the next runtime passes should spend effort on fixed hard cohorts and
+    targeted quality gaps, not on already-cleared phantom latency regressions.
+
+## Batch 52: Add Fixed Benchmark Perf Gates For The Hard And Clinical Cohorts
+
+- Scope:
+  - `engine/test/test_rag_runtime_perf.py`
+- Problem:
+  - sampled current-release cohorts are necessary but not sufficient:
+    they can miss regressions on the frozen difficult benchmark surfaces that
+    guide ranking and retrieval decisions between broader runtime passes.
+- Durable implementation landed:
+  - added cached benchmark-eval helpers that load checked-in benchmark cases
+    through the canonical runtime-eval benchmark loader.
+  - added two DB-backed regression gates:
+    - `sentence_hard_v1`
+    - `clinical_actionable_v1`
+  - locked current-code expectations around:
+    - `error_count`
+    - `hit_at_k_rate`
+    - `grounded_answer_rate`
+    - `target_in_grounded_answer_rate`
+    - bounded `p95_service_duration_ms`
+    - zero `over_1000ms_count`
+- Fresh benchmark baselines on the current code:
+  - `sentence_hard_v1`:
+    - `14` cases
+    - `hit@1 = 0.9286`
+    - `target_in_grounded_answer_rate = 0.9286`
+    - `grounded_answer_rate = 1.0`
+    - `p95_service_duration_ms = 557.181`
+  - `clinical_actionable_v1`:
+    - `15` cases
+    - `hit@1 = 0.8667`
+    - `hit@k = 0.9333`
+    - `target_in_grounded_answer_rate = 0.9333`
+    - `grounded_answer_rate = 1.0`
+    - `p95_service_duration_ms = 414.073`
+- Verification:
+  - `cd engine && uv run ruff check test/test_rag_runtime_perf.py` -> passed
+  - `cd engine && uv run pytest test/test_rag_runtime_perf.py -q` -> `29 passed`
+- Clean impact:
+  - the runtime perf suite now protects both the live sampled cohort and the
+    fixed hard/clinical benchmark cohorts.
+  - this keeps future ranking experiments honest without manual artifact
+    comparison after every pass.

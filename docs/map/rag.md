@@ -1344,6 +1344,38 @@ latency detail:
   needed to explain residual tails instead of tuning from aggregate percentiles
   alone
 
+### Runtime benchmark floor
+
+The current runtime perf floor is now locked by both sampled live cohorts and
+fixed checked-in benchmark cohorts:
+
+- sampled current-release cohort:
+  - artifact: `engine/.tmp/rag-runtime-eval-current-sample24-v1.json`
+  - `24` papers / `72` cases across `title_global`, `title_selected`, and
+    `sentence_global`
+  - all quality metrics are `1.0`
+  - overall `mean_service_duration_ms = 40.104`
+  - overall `p95_service_duration_ms = 86.73`
+- frozen hard cohort:
+  - artifact: `engine/.tmp/rag-runtime-eval-sentence-hard-v1-current-v1.json`
+  - `sentence_hard_v1`
+  - `hit@1 = 0.9286`
+  - `target_in_grounded_answer_rate = 0.9286`
+  - `grounded_answer_rate = 1.0`
+  - `p95_service_duration_ms = 557.181`
+- frozen clinician-style cohort:
+  - artifact: `engine/.tmp/rag-runtime-eval-clinical-actionable-v1-current-v1.json`
+  - `clinical_actionable_v1`
+  - `hit@k = 0.9333`
+  - `target_in_grounded_answer_rate = 0.9333`
+  - `grounded_answer_rate = 1.0`
+  - `p95_service_duration_ms = 414.073`
+
+These cohorts are now part of the DB-backed runtime perf suite in
+`engine/test/test_rag_runtime_perf.py`, so future ranking or retrieval
+experiments have to clear both the live sampled floor and the fixed difficult
+benchmarks.
+
 ### Runtime artifact hygiene
 
 Runtime evals and probes intentionally write durable artifacts into repo-local

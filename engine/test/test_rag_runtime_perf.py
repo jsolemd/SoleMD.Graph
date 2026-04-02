@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
+from pathlib import Path
 
 import pytest
 
@@ -19,6 +20,7 @@ from app.rag_ingest.runtime_eval import (
     run_rag_runtime_case_evaluation,
     run_rag_runtime_evaluation,
 )
+from app.rag_ingest.runtime_eval_benchmarks import load_runtime_eval_benchmark_cases
 
 
 def _require_runtime_db() -> None:
@@ -79,6 +81,33 @@ def _runtime_perf_report_for(
         db.close_pool()
 
 
+@lru_cache(maxsize=4)
+def _runtime_benchmark_report(benchmark_key: str):
+    _require_runtime_db()
+    benchmark_path = (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "runtime_eval_benchmarks"
+        / f"{benchmark_key}.json"
+    )
+    try:
+        _benchmark_report, benchmark_cases = load_runtime_eval_benchmark_cases(
+            benchmark_path
+        )
+        return run_rag_runtime_case_evaluation(
+            graph_release_id="current",
+            chunk_version_key=DEFAULT_CHUNK_VERSION_KEY,
+            cases=benchmark_cases,
+            k=5,
+            rerank_topn=10,
+            use_lexical=True,
+            use_dense_query=True,
+            connect=db.pooled,
+        )
+    finally:
+        db.close_pool()
+
+
 def _family(report, family: RuntimeEvalQueryFamily):
     return report.summary.by_query_family[family.value]
 
@@ -123,6 +152,34 @@ def test_runtime_sentence_query_family_keeps_precision_and_latency_floor():
     assert sentence_global.over_1000ms_count == 0
     assert sentence_global.p95_service_duration_ms <= 400.0
     assert sentence_global.p99_service_duration_ms <= 750.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_sentence_hard_benchmark_remains_grounded_and_bounded():
+    report = _runtime_benchmark_report("sentence_hard_v1")
+    overall = report.summary.overall
+
+    assert overall.error_count == 0
+    assert overall.hit_at_k_rate >= 0.9
+    assert overall.grounded_answer_rate == 1.0
+    assert overall.target_in_grounded_answer_rate >= 0.9
+    assert overall.over_1000ms_count == 0
+    assert overall.p95_service_duration_ms <= 700.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_clinical_actionable_benchmark_remains_grounded_and_bounded():
+    report = _runtime_benchmark_report("clinical_actionable_v1")
+    overall = report.summary.overall
+
+    assert overall.error_count == 0
+    assert overall.hit_at_k_rate >= 0.9
+    assert overall.grounded_answer_rate == 1.0
+    assert overall.target_in_grounded_answer_rate >= 0.9
+    assert overall.over_1000ms_count == 0
+    assert overall.p95_service_duration_ms <= 500.0
 
 
 @pytest.mark.integration
