@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from app.rag_ingest.orchestrator import RagTargetCorpusRow
 from app.rag_ingest.source_locator_refresh import refresh_rag_source_locator
+from app.rag_ingest.target_corpus import RagTargetCorpusRow
 
 
 class _FakeTargetLoader:
@@ -18,7 +18,11 @@ class _FakeRepository:
 
     def upsert_entries(self, entries):
         for entry in entries:
-            payload = entry.model_dump(mode="python") if hasattr(entry, "model_dump") else dict(entry)
+            payload = (
+                entry.model_dump(mode="python")
+                if hasattr(entry, "model_dump")
+                else dict(entry)
+            )
             self.entries[
                 (
                     int(payload["corpus_id"]),
@@ -82,7 +86,10 @@ def test_refresh_rag_source_locator_reuses_existing_sidecar_coverage(monkeypatch
         yield from ()
 
     monkeypatch.setattr("app.rag_ingest.source_locator_refresh._iter_s2_rows", _iter_s2_rows)
-    monkeypatch.setattr("app.rag_ingest.source_locator_refresh._iter_bioc_documents", _iter_bioc_documents)
+    monkeypatch.setattr(
+        "app.rag_ingest.source_locator_refresh._iter_bioc_documents",
+        _iter_bioc_documents,
+    )
 
     report = refresh_rag_source_locator(
         run_id="locator-refresh-existing-coverage",

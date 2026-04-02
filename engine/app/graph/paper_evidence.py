@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from app import db
 
-
 BUILD_WORK_MEM = "512MB"
 BUILD_MAX_PARALLEL_WORKERS_PER_GATHER = 6
 BUILD_EFFECTIVE_IO_CONCURRENCY = 200
@@ -35,7 +34,10 @@ def mapped_paper_predicate_sql(
         {corpus_alias}.layout_status = 'mapped'
         AND ({paper_alias}.year >= 1945 OR {paper_alias}.year IS NULL)
         AND NOT (
-            ({paper_alias}.publication_types IS NULL OR CARDINALITY({paper_alias}.publication_types) = 0)
+            (
+                {paper_alias}.publication_types IS NULL
+                OR CARDINALITY({paper_alias}.publication_types) = 0
+            )
             AND COALESCE({paper_alias}.citation_count, 0) < 50
         )
         AND NOT (
@@ -75,27 +77,66 @@ def _load_paper_evidence_counts(cur) -> dict[str, int]:
 
 
 def refresh_paper_evidence_summary() -> dict[str, int]:
-    """Single-pass rebuild: CTE chain → staging table → TRUNCATE + INSERT."""
+    """Refresh paper evidence tables in one transaction from a shared source stage."""
     mapped_predicate = mapped_paper_predicate_sql("c", "p")
 
     with db.pooled() as conn, conn.cursor() as cur:
         apply_build_session_settings(cur)
 
-        # Single CTE chain computing ALL evidence fields in one pass
         cur.execute(
             f"""
+            CREATE TEMP TABLE stg_paper_evidence_source ON COMMIT DROP AS
+            SELECT
+                c.corpus_id,
+                c.admission_reason,
+                c.pmid,
+                COALESCE(p.citation_count, 0)::INTEGER AS citation_count,
+                COALESCE(solemd.clean_venue(p.venue), '') AS venue_normalized
+            FROM solemd.corpus c
+            JOIN solemd.papers p ON p.corpus_id = c.corpus_id
+            WHERE {mapped_predicate}
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TEMP TABLE stg_paper_relation_base ON COMMIT DROP AS
+            SELECT
+                src.corpus_id,
+                src.citation_count,
+                r.relation_type,
+                r.subject_type,
+                r.subject_id,
+                r.object_type,
+                r.object_id
+            FROM stg_paper_evidence_source src
+            LEFT JOIN pubtator.relations r
+              ON r.pmid = src.pmid
+            WHERE src.pmid IS NOT NULL
+            """
+        )
+
+        cur.execute(
+            """
+            CREATE TEMP TABLE stg_paper_relation_evidence ON COMMIT DROP AS
+            SELECT
+                rel.corpus_id,
+                lower(rel.relation_type) AS relation_type,
+                COUNT(*)::INTEGER AS relation_count,
+                now() AS created_at,
+                now() AS updated_at
+            FROM stg_paper_relation_base rel
+            WHERE COALESCE(rel.relation_type, '') <> ''
+            GROUP BY
+                rel.corpus_id,
+                lower(rel.relation_type)
+            """
+        )
+
+        cur.execute(
+            """
             CREATE TEMP TABLE stg_paper_evidence ON COMMIT DROP AS
-            WITH source AS (
-                SELECT
-                    c.corpus_id,
-                    c.admission_reason,
-                    c.pmid,
-                    COALESCE(p.citation_count, 0)::INTEGER AS citation_count,
-                    COALESCE(solemd.clean_venue(p.venue), '') AS venue_normalized
-                FROM solemd.corpus c
-                JOIN solemd.papers p ON p.corpus_id = c.corpus_id
-                WHERE {mapped_predicate}
-            ),
+            WITH
             entity_agg AS (
                 SELECT
                     src.corpus_id,
@@ -120,7 +161,7 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                                 'neuropsych_symptom'
                             )), 0)::INTEGER
                         AS entity_core_families
-                FROM source src
+                FROM stg_paper_evidence_source src
                 LEFT JOIN pubtator.entity_annotations ea ON ea.pmid = src.pmid
                 LEFT JOIN solemd.entity_rule er
                     ON er.entity_type = ea.entity_type
@@ -129,10 +170,16 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                 WHERE src.pmid IS NOT NULL
                 GROUP BY src.corpus_id
             ),
-            relation_agg AS (
+            relation_count_agg AS (
                 SELECT
-                    src.corpus_id,
-                    COUNT(r.*)::INTEGER AS paper_relation_count,
+                    rel.corpus_id,
+                    COALESCE(SUM(rel.relation_count), 0)::INTEGER AS paper_relation_count
+                FROM stg_paper_relation_evidence rel
+                GROUP BY rel.corpus_id
+            ),
+            relation_rule_agg AS (
+                SELECT
+                    rel.corpus_id,
                     COALESCE(BOOL_OR(
                         rr.subject_type IS NOT NULL
                         AND (
@@ -140,21 +187,19 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                             OR EXISTS (
                                 SELECT 1 FROM solemd.entity_rule med
                                 WHERE med.family_key = 'psychiatric_medication'
-                                  AND med.concept_id = r.subject_id
+                                  AND med.concept_id = rel.subject_id
                             )
                         )
                     ), false) AS has_relation_rule_hit
-                FROM source src
-                LEFT JOIN pubtator.relations r ON r.pmid = src.pmid
+                FROM stg_paper_relation_base rel
                 LEFT JOIN solemd.relation_rule rr
-                    ON rr.subject_type = r.subject_type
-                   AND rr.relation_type = r.relation_type
-                   AND rr.object_type = r.object_type
-                   AND rr.object_id = r.object_id
+                    ON rr.subject_type = rel.subject_type
+                   AND rr.relation_type = rel.relation_type
+                   AND rr.object_type = rel.object_type
+                   AND rr.object_id = rel.object_id
                    AND rr.target_scope = 'base'
-                   AND src.citation_count >= COALESCE(rr.min_citation_count, 0)
-                WHERE src.pmid IS NOT NULL
-                GROUP BY src.corpus_id
+                   AND rel.citation_count >= COALESCE(rr.min_citation_count, 0)
+                GROUP BY rel.corpus_id
             ),
             journal_match AS (
                 SELECT
@@ -163,7 +208,7 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                     jf.family_key AS journal_family_key,
                     jf.family_label AS journal_family_label,
                     jf.family_type AS journal_family_type
-                FROM source src
+                FROM stg_paper_evidence_source src
                 JOIN solemd.journal_rule jr
                     ON jr.venue_normalized = src.venue_normalized
                    AND jr.include_in_corpus = true
@@ -177,12 +222,17 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                 src.pmid,
                 src.citation_count,
                 src.venue_normalized,
-                (src.admission_reason IN ('journal_and_vocab', 'vocab_entity_match')) AS has_vocab_match,
+                (
+                    src.admission_reason IN ('journal_and_vocab', 'vocab_entity_match')
+                ) AS has_vocab_match,
                 COALESCE(ea.paper_entity_count, 0) AS paper_entity_count,
                 COALESCE(ea.has_entity_rule_hit, false) AS has_entity_rule_hit,
-                COALESCE(ra.paper_relation_count, 0) AS paper_relation_count,
-                COALESCE(ra.has_relation_rule_hit, false) AS has_relation_rule_hit,
-                (COALESCE(ea.has_entity_rule_hit, false) OR COALESCE(ra.has_relation_rule_hit, false)) AS has_rule_evidence,
+                COALESCE(rca.paper_relation_count, 0) AS paper_relation_count,
+                COALESCE(rra.has_relation_rule_hit, false) AS has_relation_rule_hit,
+                (
+                    COALESCE(ea.has_entity_rule_hit, false)
+                    OR COALESCE(rra.has_relation_rule_hit, false)
+                ) AS has_rule_evidence,
                 COALESCE(jm.has_curated_journal_family, false) AS has_curated_journal_family,
                 jm.journal_family_key,
                 jm.journal_family_label,
@@ -192,23 +242,27 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                 COALESCE(ea.entity_rule_families, 0) AS entity_rule_families,
                 COALESCE(ea.entity_rule_count, 0) AS entity_rule_count,
                 COALESCE(ea.entity_core_families, 0) AS entity_core_families
-            FROM source src
+            FROM stg_paper_evidence_source src
             LEFT JOIN entity_agg ea ON ea.corpus_id = src.corpus_id
-            LEFT JOIN relation_agg ra ON ra.corpus_id = src.corpus_id
+            LEFT JOIN relation_count_agg rca ON rca.corpus_id = src.corpus_id
+            LEFT JOIN relation_rule_agg rra ON rra.corpus_id = src.corpus_id
             LEFT JOIN journal_match jm ON jm.corpus_id = src.corpus_id
             """
         )
 
-        # TRUNCATE + INSERT in same transaction → minimal WAL
-        cur.execute("TRUNCATE solemd.paper_evidence_summary")
+        cur.execute("TRUNCATE solemd.paper_relation_evidence, solemd.paper_evidence_summary")
         cur.execute(
             "INSERT INTO solemd.paper_evidence_summary SELECT * FROM stg_paper_evidence"
+        )
+        cur.execute(
+            "INSERT INTO solemd.paper_relation_evidence SELECT * FROM stg_paper_relation_evidence"
         )
         counts = _load_paper_evidence_counts(cur)
         conn.commit()
 
     with db.connect_autocommit() as conn, conn.cursor() as cur:
         cur.execute("ANALYZE solemd.paper_evidence_summary")
+        cur.execute("ANALYZE solemd.paper_relation_evidence")
 
     return counts
 

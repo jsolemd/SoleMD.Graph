@@ -9,13 +9,15 @@ from app.rag.retrieval_policy import (
     has_direct_retrieval_support,
     has_selected_direct_anchor,
     has_strong_lexical_title_anchor,
+    has_weak_passage_anchor,
     should_fetch_semantic_neighbors,
     should_run_biomedical_reranker,
     should_run_dense_query,
+    should_run_paper_lexical_fallback,
     should_skip_runtime_entity_enrichment,
 )
 from app.rag.search_plan import build_search_plan
-from app.rag.types import QueryRetrievalProfile, RetrievalScope
+from app.rag.types import ClinicalQueryIntent, QueryRetrievalProfile, RetrievalScope
 
 
 def _paper_hit(
@@ -53,6 +55,7 @@ def _query(
     *,
     retrieval_profile: QueryRetrievalProfile,
     selected_node_id: str | None = None,
+    clinical_intent: ClinicalQueryIntent = ClinicalQueryIntent.GENERAL,
 ) -> PaperRetrievalQuery:
     return PaperRetrievalQuery(
         graph_release_id="current",
@@ -60,6 +63,7 @@ def _query(
         normalized_query=normalize_query_text(text),
         selected_node_id=selected_node_id,
         retrieval_profile=retrieval_profile,
+        clinical_intent=clinical_intent,
         scope_mode=RetrievalScope.GLOBAL,
     )
 
@@ -166,6 +170,22 @@ def test_should_run_dense_query_skips_selected_direct_anchor_when_precision_is_p
     )
 
 
+def test_chunk_search_queries_preserve_raw_statistical_passage_before_normalized_fallbacks():
+    raw_query = (
+        "Overall CP and TC rates for RAD and PAD were 56.2% and 58.5% "
+        "(RD, −2.3%; 95% CI, −13.9 to 9.4)"
+    )
+    query = _query(
+        raw_query,
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    queries = chunk_search_queries(query)
+
+    assert queries[0] == raw_query
+    assert queries[1] == normalize_query_text(raw_query)
+
+
 def test_should_skip_runtime_entity_enrichment_skips_generic_passage_without_entity_signal():
     query = _query(
         (
@@ -227,10 +247,90 @@ def test_should_fetch_semantic_neighbors_skips_selected_direct_anchor():
     )
 
 
-def test_should_run_biomedical_reranker_only_for_global_passage_queries():
+def test_has_weak_passage_anchor_detects_low_score_sparse_chunk_hits():
+    assert has_weak_passage_anchor(
+        lexical_hits=[],
+        chunk_lexical_hits=[
+            _paper_hit(11, chunk_lexical_score=0.0008),
+            _paper_hit(22, chunk_lexical_score=0.0013),
+        ],
+    )
+
+
+def test_has_weak_passage_anchor_skips_lexical_or_stronger_chunk_support():
+    assert not has_weak_passage_anchor(
+        lexical_hits=[_paper_hit(11, lexical_score=0.2)],
+        chunk_lexical_hits=[_paper_hit(22, chunk_lexical_score=0.0008)],
+    )
+    assert not has_weak_passage_anchor(
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(11, chunk_lexical_score=0.002)],
+    )
+
+
+def test_should_run_paper_lexical_fallback_opens_for_weak_clinical_passage_anchor():
+    query = _query(
+        (
+            "Which baseline factors predict functional impairment over 2 years "
+            "in first-episode psychosis?"
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        clinical_intent=ClinicalQueryIntent.PROGNOSIS,
+    )
+    search_plan = build_search_plan(query)
+
+    assert should_run_paper_lexical_fallback(
+        query=query,
+        search_plan=search_plan,
+        lexical_hits=[],
+        chunk_lexical_hits=[
+            _paper_hit(11, chunk_lexical_score=0.0012),
+            _paper_hit(22, chunk_lexical_score=0.0013),
+        ],
+    )
+
+
+def test_should_run_paper_lexical_fallback_opens_for_weak_statistical_passage_anchor():
+    query = _query(
+        (
+            "Overall CP and TC rates for RAD and PAD were 56.2% and 58.5% "
+            "(RD, -2.3%; 95% CI, -13.9 to 9.4)"
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+    search_plan = build_search_plan(query)
+
+    assert should_run_paper_lexical_fallback(
+        query=query,
+        search_plan=search_plan,
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(11, chunk_lexical_score=0.0008)],
+    )
+
+
+def test_should_run_paper_lexical_fallback_stays_chunk_only_for_nonclinical_weak_anchor():
+    query = _query(
+        (
+            "Can p62/SQSTM1 help distinguish sporadic inclusion-body myositis "
+            "from polymyositis and dermatomyositis?"
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+    search_plan = build_search_plan(query)
+
+    assert not should_run_paper_lexical_fallback(
+        query=query,
+        search_plan=search_plan,
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(11, chunk_lexical_score=0.0006)],
+    )
+
+
+def test_should_run_biomedical_reranker_only_for_global_clinical_passage_queries():
     query = _query(
         "Melatonin reduced postoperative delirium incidence in surgical patients.",
         retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        clinical_intent=ClinicalQueryIntent.TREATMENT,
     )
 
     assert should_run_biomedical_reranker(
@@ -255,6 +355,20 @@ def test_should_run_biomedical_reranker_skips_selected_or_nonpassage_queries():
         query=title_query,
         selected_corpus_id=None,
         ranked_papers=[_paper_hit(11, lexical_score=1.0) for _ in range(3)],
+        enabled=True,
+    )
+    assert not should_run_biomedical_reranker(
+        query=_query(
+            "Melatonin reduced postoperative delirium incidence in surgical patients.",
+            retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+            clinical_intent=ClinicalQueryIntent.GENERAL,
+        ),
+        selected_corpus_id=None,
+        ranked_papers=[
+            _paper_hit(11, chunk_lexical_score=0.9),
+            _paper_hit(22, chunk_lexical_score=0.8),
+            _paper_hit(33, chunk_lexical_score=0.7),
+        ],
         enabled=True,
     )
     assert not should_run_biomedical_reranker(

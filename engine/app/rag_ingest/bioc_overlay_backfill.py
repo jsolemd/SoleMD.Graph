@@ -9,20 +9,23 @@ from typing import Protocol
 from pydantic import Field
 
 from app import db
+from app.rag.parse_contract import ParseContractModel
 from app.rag_ingest.bioc_target_discovery import (
     RagBioCTargetCandidate,
     build_bioc_locator_entries,
     discover_bioc_archive_targets,
 )
+from app.rag_ingest.corpus_ids import (
+    resolve_corpus_ids,
+)
+from app.rag_ingest.corpus_ids import (
+    unique_corpus_ids as _unique_ints,
+)
 from app.rag_ingest.orchestrator import (
-    _load_corpus_ids_file,
-    _unique_ints,
     run_rag_refresh,
 )
-from app.rag.parse_contract import ParseContractModel
 from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository
 from app.rag_ingest.source_locator_refresh import refresh_rag_source_locator
-
 
 _BIOC_OVERLAY_CANDIDATE_SQL = """
 SELECT d.corpus_id
@@ -218,7 +221,8 @@ def run_bioc_overlay_backfill(
         discovery_report=discovery_dump,
     )
 
-    for batch_index, batch_ids in enumerate(_chunked(candidate_corpus_ids, candidate_batch_size), start=1):
+    batch_groups = _chunked(candidate_corpus_ids, candidate_batch_size)
+    for batch_index, batch_ids in enumerate(batch_groups, start=1):
         seeded_candidates = [
             discovery_candidate_map[corpus_id]
             for corpus_id in batch_ids
@@ -229,7 +233,9 @@ def run_bioc_overlay_backfill(
             written_entries = active_locator_repository.upsert_entries(
                 build_bioc_locator_entries(candidates=seeded_candidates)
             )
-            located_corpus_ids = _unique_ints([candidate.corpus_id for candidate in seeded_candidates])
+            located_corpus_ids = _unique_ints(
+                [candidate.corpus_id for candidate in seeded_candidates]
+            )
             locator_dump = {
                 "seeded_from_discovery": True,
                 "bioc_stage": {
@@ -284,8 +290,12 @@ def run_bioc_overlay_backfill(
                 warehouse_refresh=warehouse_dump,
             )
         )
-        report.located_corpus_ids = _unique_ints(report.located_corpus_ids + located_corpus_ids)
-        report.refreshed_corpus_ids = _unique_ints(report.refreshed_corpus_ids + refreshed_corpus_ids)
+        report.located_corpus_ids = _unique_ints(
+            report.located_corpus_ids + located_corpus_ids
+        )
+        report.refreshed_corpus_ids = _unique_ints(
+            report.refreshed_corpus_ids + refreshed_corpus_ids
+        )
 
     return report
 
@@ -315,9 +325,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = _unique_ints(
-        (args.corpus_ids or [])
-        + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = run_bioc_overlay_backfill(

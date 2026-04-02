@@ -472,6 +472,96 @@ def _append_segmented_sentences(
         )
 
 
+def parse_s2_paper_abstract(
+    *,
+    corpus_id: int,
+    title_text: str | None,
+    abstract_text: str,
+    source_revision: str,
+    parser_version: str,
+    sentence_segmenter: SentenceSegmenter | None = None,
+    paper_id: str | None = None,
+    text_availability: str | None = None,
+) -> ParsedPaperSource:
+    """Build a canonical abstract-only S2 source when fulltext is not yet hydrated."""
+
+    normalized_abstract = abstract_text.strip()
+    if not normalized_abstract:
+        raise ValueError("S2 paper abstract text must be non-empty")
+    normalized_title = (title_text or "").strip() or None
+    if normalized_title and _looks_like_structural_heading(normalized_title):
+        normalized_title = None
+    source_document_key = str(corpus_id)
+    raw_attrs = {"ingest_lane": "s2_papers_abstract"}
+    if paper_id:
+        raw_attrs["paper_id"] = paper_id
+    if text_availability:
+        raw_attrs["paper_text_availability"] = text_availability
+
+    document = PaperDocumentRecord(
+        corpus_id=corpus_id,
+        source_system=ParseSourceSystem.S2ORC_V2,
+        source_revision=source_revision,
+        source_document_key=source_document_key,
+        source_plane=SourcePlane.FRONT_MATTER,
+        parser_version=parser_version,
+        raw_attrs_json=raw_attrs,
+        title=normalized_title,
+        source_availability="abstract",
+    )
+    sections = [
+        PaperSectionRecord(
+            corpus_id=corpus_id,
+            source_system=ParseSourceSystem.S2ORC_V2,
+            source_revision=source_revision,
+            source_document_key=source_document_key,
+            source_plane=SourcePlane.BODY,
+            parser_version=parser_version,
+            raw_attrs_json={"ingest_lane": "s2_papers_abstract"},
+            source_start_offset=0,
+            source_end_offset=len(normalized_abstract),
+            text=normalized_abstract,
+            section_ordinal=1,
+            section_role=SectionRole.ABSTRACT,
+            display_label="Abstract",
+        )
+    ]
+    block = PaperBlockRecord(
+        corpus_id=corpus_id,
+        source_system=ParseSourceSystem.S2ORC_V2,
+        source_revision=source_revision,
+        source_document_key=source_document_key,
+        source_plane=SourcePlane.BODY,
+        parser_version=parser_version,
+        raw_attrs_json={"ingest_lane": "s2_papers_abstract"},
+        source_start_offset=0,
+        source_end_offset=len(normalized_abstract),
+        text=normalized_abstract,
+        block_ordinal=0,
+        section_ordinal=1,
+        block_kind=PaperBlockKind.NARRATIVE_PARAGRAPH,
+        section_role=SectionRole.ABSTRACT,
+        is_retrieval_default=_is_retrieval_default_section(SectionRole.ABSTRACT),
+    )
+    sentences: list[PaperSentenceRecord] = []
+    active_sentence_segmenter = sentence_segmenter or build_default_sentence_segmenter()
+    _append_segmented_sentences(
+        sentences=sentences,
+        block=block,
+        sentence_segmenter=active_sentence_segmenter,
+        source_system=ParseSourceSystem.S2ORC_V2,
+        source_revision=source_revision,
+        source_document_key=source_document_key,
+        parser_version=parser_version,
+    )
+    return ParsedPaperSource(
+        document=document,
+        sections=sections,
+        blocks=[block],
+        sentences=sentences,
+    )
+
+
 def parse_s2orc_row(
     row: dict[str, Any],
     *,

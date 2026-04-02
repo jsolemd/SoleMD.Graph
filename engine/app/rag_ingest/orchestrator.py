@@ -23,6 +23,13 @@ from app.rag.source_selection import (
 )
 from app.rag_ingest.chunk_backfill_runtime import run_chunk_backfill
 from app.rag_ingest.chunk_seed import RagChunkSeeder
+from app.rag_ingest.corpus_ids import (
+    load_corpus_ids_file,
+    resolve_corpus_ids,
+)
+from app.rag_ingest.corpus_ids import (
+    unique_corpus_ids as _unique_ints,
+)
 from app.rag_ingest.orchestrator_checkpoint import (
     RagRefreshCheckpointState,
     load_checkpoint_state,
@@ -48,7 +55,13 @@ from app.rag_ingest.source_parsers import (
     ParsedPaperSource,
     extract_biocxml_document_id,
     parse_biocxml_document,
+    parse_s2_paper_abstract,
     parse_s2orc_row,
+)
+from app.rag_ingest.target_corpus import (
+    PostgresTargetCorpusLoader,
+    RagTargetCorpusRow,
+    has_paper_abstract,
 )
 from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestResult, RagWarehouseWriter
 from app.rag_ingest.write_batch_builder import (
@@ -59,14 +72,6 @@ from app.rag_ingest.write_batch_builder import (
 DEFAULT_STAGE_ROW_BUDGET = 25_000
 DEFAULT_UNIT_PROGRESS_INTERVAL_ROWS = 1_000
 logger = logging.getLogger(__name__)
-
-
-class RagTargetCorpusRow(ParseContractModel):
-    corpus_id: int
-    pmid: int | None = None
-    pmc_id: str | None = None
-    doi: str | None = None
-    paper_title: str | None = None
 
 
 class RagSourceStageReport(ParseContractModel):
@@ -92,6 +97,7 @@ class RagRefreshReport(ParseContractModel):
     parser_version: str
     refresh_existing: bool = False
     source_driven: bool = False
+    metadata_abstract_only: bool = False
     worker_count: int = 1
     worker_index: int = 0
     requested_limit: int | None = None
@@ -188,16 +194,6 @@ class WarehouseQualityCallable(Protocol):
     ) -> object: ...
 
 
-_TARGET_CORPUS_SQL = """
-SELECT c.corpus_id, c.pmid, c.pmc_id, c.doi, p.title AS paper_title
-FROM solemd.corpus c
-LEFT JOIN solemd.papers p ON p.corpus_id = c.corpus_id
-{where_clause}
-ORDER BY c.corpus_id
-{limit_clause}
-"""
-
-
 def _target_row_by_corpus_id(
     target_rows: list[RagTargetCorpusRow],
 ) -> dict[int, RagTargetCorpusRow]:
@@ -225,34 +221,6 @@ def _apply_target_metadata_to_parsed_source(
     parsed.document.raw_attrs_json["corpus_metadata_title"] = metadata_title
     parsed.document.title = metadata_title
     return parsed
-
-
-class PostgresTargetCorpusLoader:
-    def __init__(self, connect=None):
-        self._connect = connect or db.pooled
-
-    def load(
-        self,
-        *,
-        corpus_ids: list[int] | None,
-        limit: int | None,
-    ) -> list[RagTargetCorpusRow]:
-        where_clause = ""
-        params: list[object] = []
-        if corpus_ids:
-            where_clause = "WHERE c.corpus_id = ANY(%s)"
-            params.append(corpus_ids)
-        limit_clause = ""
-        if limit is not None and limit > 0:
-            limit_clause = "LIMIT %s"
-            params.append(limit)
-        sql = _TARGET_CORPUS_SQL.format(
-            where_clause=where_clause,
-            limit_clause=limit_clause,
-        )
-        with self._connect() as conn, conn.cursor() as cur:
-            cur.execute(sql, tuple(params))
-            return [RagTargetCorpusRow.model_validate(row) for row in cur.fetchall()]
 
 
 class PostgresExistingDocumentLoader:
@@ -320,15 +288,17 @@ def _unpack_bioc_document_record(record) -> tuple[str, str | None, str]:
         raise TypeError("BioC archive reader records must be tuples")
     if len(record) == 3:
         document_id, member_name, xml_text = record
-        return str(document_id), str(member_name) if member_name is not None else None, str(xml_text)
+        normalized_member_name = (
+            str(member_name) if member_name is not None else None
+        )
+        return str(document_id), normalized_member_name, str(xml_text)
     if len(record) == 2:
         document_id, xml_text = record
         return str(document_id), None, str(xml_text)
-    raise ValueError("BioC archive reader records must be (document_id, xml_text) or (document_id, member_name, xml_text)")
-
-
-def _unique_ints(values: list[int] | None) -> list[int]:
-    return [] if not values else list(dict.fromkeys(int(value) for value in values))
+    raise ValueError(
+        "BioC archive reader records must be (document_id, xml_text) "
+        "or (document_id, member_name, xml_text)"
+    )
 
 
 def _source_revision_keys() -> list[str]:
@@ -339,13 +309,7 @@ def _source_revision_keys() -> list[str]:
 
 
 def _load_corpus_ids_file(path: Path) -> list[int]:
-    values: list[int] = []
-    for line in path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        values.append(int(stripped))
-    return _unique_ints(values)
+    return load_corpus_ids_file(path)
 
 
 def _write_report(path: Path, *, report: RagRefreshReport) -> None:
@@ -366,6 +330,223 @@ def _build_bioc_resolution_map(rows: list[RagTargetCorpusRow]) -> dict[tuple[str
             if value:
                 mapping[(kind.value, value)] = int(row.corpus_id)
     return mapping
+
+
+def _pending_primary_ids(
+    *,
+    target_corpus_ids: list[int],
+    existing_ids: set[int],
+    refresh_existing: bool,
+) -> set[int]:
+    pending_ids = set(target_corpus_ids)
+    if not refresh_existing:
+        pending_ids -= existing_ids
+    return pending_ids
+
+
+def _metadata_abstract_candidate_ids(
+    *,
+    target_rows: list[RagTargetCorpusRow],
+    pending_primary_ids: set[int],
+    skip_s2_primary: bool,
+) -> set[int]:
+    if skip_s2_primary:
+        return set()
+    return {
+        int(row.corpus_id)
+        for row in target_rows
+        if int(row.corpus_id) in pending_primary_ids and has_paper_abstract(row)
+    }
+
+
+def _append_skipped_low_value_corpus_id(
+    *,
+    stage_report: RagSourceStageReport,
+    corpus_id: int,
+) -> None:
+    stage_report.skipped_low_value_papers += 1
+    stage_report.skipped_low_value_corpus_ids = sorted(
+        set(stage_report.skipped_low_value_corpus_ids).union({corpus_id})
+    )
+
+
+def _bootstrap_s2_metadata_abstract_sources(
+    *,
+    target_rows: list[RagTargetCorpusRow],
+    pending_primary_ids: set[int],
+    source_groups_by_corpus: dict[int, list[ParsedPaperSource]],
+    s2_ingested_ids: set[int],
+    parser_version: str,
+    report: RagRefreshReport,
+) -> set[int]:
+    bootstrapped_ids: set[int] = set()
+    for target_row in target_rows:
+        corpus_id = int(target_row.corpus_id)
+        if corpus_id not in pending_primary_ids or not has_paper_abstract(target_row):
+            continue
+        parsed = parse_s2_paper_abstract(
+            corpus_id=corpus_id,
+            title_text=target_row.paper_title,
+            abstract_text=target_row.paper_abstract or "",
+            source_revision=settings.s2_release_id,
+            parser_version=parser_version,
+            paper_id=target_row.paper_id,
+            text_availability=target_row.text_availability,
+        )
+        parsed = _apply_target_metadata_to_parsed_source(
+            parsed=parsed,
+            target_row=target_row,
+        )
+        if not parsed_source_has_warehouse_value(parsed):
+            _append_skipped_low_value_corpus_id(
+                stage_report=report.s2_stage,
+                corpus_id=corpus_id,
+            )
+            continue
+        source_groups_by_corpus.setdefault(corpus_id, []).append(parsed)
+        s2_ingested_ids.add(corpus_id)
+        bootstrapped_ids.add(corpus_id)
+        report.s2_stage.discovered_papers += 1
+    if bootstrapped_ids:
+        report.s2_stage.ingested_corpus_ids = sorted(s2_ingested_ids)
+    pending_primary_ids -= bootstrapped_ids
+    return bootstrapped_ids
+
+
+def _preload_explicit_metadata_abstracts(
+    *,
+    parser_version: str,
+    run_id: str,
+    target_rows: list[RagTargetCorpusRow],
+    target_corpus_ids: list[int],
+    pending_primary_ids: set[int],
+    refresh_existing: bool,
+    metadata_abstract_only: bool,
+    checkpoint_paths,
+    worker: RagRefreshWorker,
+    report: RagRefreshReport,
+    active_writer: RagWarehouseWriter,
+) -> set[int]:
+    already_ingested_ids = set(report.s2_stage.ingested_corpus_ids)
+    bootstrap_pending_ids = pending_primary_ids - already_ingested_ids
+    if not bootstrap_pending_ids:
+        return set()
+
+    source_groups_by_corpus: dict[int, list[ParsedPaperSource]] = {}
+    s2_ingested_ids = set(report.s2_stage.ingested_corpus_ids)
+    bootstrapped_ids = _bootstrap_s2_metadata_abstract_sources(
+        target_rows=target_rows,
+        pending_primary_ids=bootstrap_pending_ids,
+        source_groups_by_corpus=source_groups_by_corpus,
+        s2_ingested_ids=s2_ingested_ids,
+        parser_version=parser_version,
+        report=report,
+    )
+    if not bootstrapped_ids:
+        return set()
+
+    _flush_targeted_group_batches(
+        source_groups=[
+            source_groups_by_corpus[corpus_id]
+            for corpus_id in target_corpus_ids
+            if corpus_id in bootstrapped_ids
+        ],
+        batch_size=max(1, len(bootstrapped_ids)),
+        writer=active_writer,
+        stage_report=report.s2_stage,
+        replace_existing=refresh_existing,
+    )
+    _save_refresh_checkpoint(
+        checkpoint_paths=checkpoint_paths,
+        run_id=run_id,
+        parser_version=parser_version,
+        refresh_existing=refresh_existing,
+        source_driven=False,
+        metadata_abstract_only=metadata_abstract_only,
+        explicit_corpus_ids=target_corpus_ids,
+        limit=None,
+        batch_size=max(1, len(bootstrapped_ids)),
+        stage_row_budget=report.stage_row_budget,
+        stage_byte_budget=report.stage_byte_budget,
+        worker=worker,
+        report=report,
+    )
+    return bootstrapped_ids
+
+
+def _model_dump_python(value: object) -> object:
+    model_dump = getattr(value, "model_dump", None)
+    return model_dump(mode="python") if callable(model_dump) else value
+
+
+def _run_explicit_source_locator_refresh(
+    *,
+    run_id: str,
+    target_rows: list[RagTargetCorpusRow],
+    pending_primary_ids: set[int],
+    bootstrapped_metadata_ids: set[int],
+    metadata_abstract_only: bool,
+    max_s2_shards: int | None,
+    skip_s2_primary: bool,
+    max_bioc_archives: int | None,
+    skip_bioc_fallback: bool,
+    reset_source_locators: bool,
+    reset_run: bool,
+    checkpoint_root: Path | None,
+    active_source_locator_refresher: SourceLocatorRefreshCallable,
+    repository: SourceLocatorRepository,
+) -> dict[str, object] | None:
+    target_row_by_corpus_id = _target_row_by_corpus_id(target_rows)
+    source_locator_refresh: dict[str, object] = {}
+    s2_locator_ids = sorted(
+        corpus_id
+        for corpus_id in pending_primary_ids
+        if corpus_id not in bootstrapped_metadata_ids
+    )
+    bioc_locator_ids = sorted(
+        corpus_id
+        for corpus_id in (
+            (pending_primary_ids - bootstrapped_metadata_ids)
+            if metadata_abstract_only
+            else (pending_primary_ids | bootstrapped_metadata_ids)
+        )
+        if target_row_by_corpus_id[corpus_id].pmid is not None
+        or target_row_by_corpus_id[corpus_id].pmc_id
+        or target_row_by_corpus_id[corpus_id].doi
+    )
+    if s2_locator_ids and not skip_s2_primary:
+        source_locator_refresh["s2"] = _model_dump_python(
+            active_source_locator_refresher(
+                run_id=f"{run_id}-source-locator-s2",
+                corpus_ids=s2_locator_ids,
+                limit=None,
+                max_s2_shards=max_s2_shards,
+                max_bioc_archives=max_bioc_archives,
+                skip_s2=False,
+                skip_bioc=True,
+                reset=reset_source_locators,
+                reset_run=reset_run,
+                checkpoint_root=checkpoint_root,
+                repository=repository,
+            )
+        )
+    if bioc_locator_ids and not skip_bioc_fallback:
+        source_locator_refresh["bioc"] = _model_dump_python(
+            active_source_locator_refresher(
+                run_id=f"{run_id}-source-locator-bioc",
+                corpus_ids=bioc_locator_ids,
+                limit=None,
+                max_s2_shards=max_s2_shards,
+                max_bioc_archives=max_bioc_archives,
+                skip_s2=True,
+                skip_bioc=False,
+                reset=reset_source_locators,
+                reset_run=reset_run,
+                checkpoint_root=checkpoint_root,
+                repository=repository,
+            )
+        )
+    return source_locator_refresh or None
 
 
 def _restrict_unit_paths_with_locator(
@@ -410,9 +591,16 @@ def _route_targeted_source_groups(
 
 
 def _quality_corpus_ids_for_report(report: RagRefreshReport) -> list[int]:
+    chunk_backfill_corpus_ids = []
+    if isinstance(report.chunk_backfill, dict):
+        chunk_backfill_corpus_ids = [
+            int(corpus_id)
+            for corpus_id in report.chunk_backfill.get("corpus_ids") or []
+        ]
     return _unique_ints(
         list(report.s2_stage.ingested_corpus_ids)
         + list(report.bioc_fallback_stage.ingested_corpus_ids)
+        + chunk_backfill_corpus_ids
     )
 
 
@@ -511,6 +699,7 @@ def _validate_checkpoint_state(
     parser_version: str,
     refresh_existing: bool,
     source_driven: bool,
+    metadata_abstract_only: bool,
     explicit_corpus_ids: list[int],
     limit: int | None,
     batch_size: int,
@@ -521,9 +710,15 @@ def _validate_checkpoint_state(
     if state.parser_version != parser_version:
         raise ValueError("checkpoint run parser_version does not match requested parser_version")
     if state.refresh_existing != refresh_existing:
-        raise ValueError("checkpoint run refresh_existing does not match requested refresh_existing")
+        raise ValueError(
+            "checkpoint run refresh_existing does not match requested refresh_existing"
+        )
     if state.source_driven != source_driven:
         raise ValueError("checkpoint run source_driven mode does not match requested mode")
+    if state.metadata_abstract_only != metadata_abstract_only:
+        raise ValueError(
+            "checkpoint run metadata_abstract_only does not match requested mode"
+        )
     if list(state.explicit_corpus_ids) != explicit_corpus_ids:
         raise ValueError("checkpoint run explicit corpus ids do not match requested corpus ids")
     if state.limit != limit:
@@ -531,9 +726,13 @@ def _validate_checkpoint_state(
     if state.batch_size != batch_size:
         raise ValueError("checkpoint run batch_size does not match requested batch_size")
     if state.stage_row_budget != stage_row_budget:
-        raise ValueError("checkpoint run stage_row_budget does not match requested stage_row_budget")
+        raise ValueError(
+            "checkpoint run stage_row_budget does not match requested stage_row_budget"
+        )
     if state.stage_byte_budget != stage_byte_budget:
-        raise ValueError("checkpoint run stage_byte_budget does not match requested stage_byte_budget")
+        raise ValueError(
+            "checkpoint run stage_byte_budget does not match requested stage_byte_budget"
+        )
     if state.worker_count != worker.worker_count or state.worker_index != worker.worker_index:
         raise ValueError("checkpoint run worker assignment does not match requested worker")
 
@@ -545,6 +744,7 @@ def _save_refresh_checkpoint(
     parser_version: str,
     refresh_existing: bool,
     source_driven: bool,
+    metadata_abstract_only: bool,
     explicit_corpus_ids: list[int],
     limit: int | None,
     batch_size: int,
@@ -560,6 +760,7 @@ def _save_refresh_checkpoint(
             parser_version=parser_version,
             refresh_existing=refresh_existing,
             source_driven=source_driven,
+            metadata_abstract_only=metadata_abstract_only,
             explicit_corpus_ids=explicit_corpus_ids,
             limit=limit,
             batch_size=batch_size,
@@ -730,6 +931,7 @@ def _run_explicit_targeted_refresh(
     existing_ids: set[int],
     batch_size: int,
     refresh_existing: bool,
+    metadata_abstract_only: bool,
     max_s2_shards: int | None,
     skip_s2_primary: bool,
     max_bioc_archives: int | None,
@@ -742,19 +944,33 @@ def _run_explicit_targeted_refresh(
     active_writer: RagWarehouseWriter,
     active_unit_store: RagRefreshUnitStore,
     active_source_locator_repository: SourceLocatorRepository,
+    prebootstrapped_metadata_ids: set[int] | None = None,
 ) -> None:
-    target_corpus_id_set = set(target_corpus_ids)
     target_row_by_corpus_id = _target_row_by_corpus_id(target_rows)
-    pending_primary_ids = set(target_corpus_ids)
-    if not refresh_existing:
-        pending_primary_ids -= existing_ids
+    pending_primary_ids = _pending_primary_ids(
+        target_corpus_ids=target_corpus_ids,
+        existing_ids=existing_ids,
+        refresh_existing=refresh_existing,
+    )
+    prebootstrapped_ids = set(prebootstrapped_metadata_ids or ())
+    s2_pending_primary_ids = pending_primary_ids - prebootstrapped_ids
 
     source_groups_by_corpus: dict[int, list[ParsedPaperSource]] = {}
-    s2_ingested_ids: set[int] = set()
+    s2_ingested_ids: set[int] = set(prebootstrapped_ids)
     bioc_overlay_ids: set[int] = set()
 
+    if not skip_s2_primary:
+        _bootstrap_s2_metadata_abstract_sources(
+            target_rows=target_rows,
+            pending_primary_ids=s2_pending_primary_ids,
+            source_groups_by_corpus=source_groups_by_corpus,
+            s2_ingested_ids=s2_ingested_ids,
+            parser_version=parser_version,
+            report=report,
+        )
+
     s2_locator_lookup = active_source_locator_repository.fetch_entries(
-        corpus_ids=target_corpus_ids,
+        corpus_ids=sorted(s2_pending_primary_ids),
         source_system=ParseSourceSystem.S2ORC_V2,
         source_revision=settings.s2_release_id,
     )
@@ -762,20 +978,22 @@ def _run_explicit_targeted_refresh(
         unit_name: {entry.corpus_id for entry in entries}
         for unit_name, entries in s2_locator_lookup.by_unit_name.items()
     }
-    s2_unit_paths = (
-        _restrict_unit_paths_with_locator(
-            active_s2_reader.shard_paths(max_shards=max_s2_shards),
-            locator_lookup=s2_locator_lookup,
+    s2_unit_paths: list[Path] = []
+    if s2_pending_primary_ids:
+        s2_unit_paths = (
+            _restrict_unit_paths_with_locator(
+                active_s2_reader.shard_paths(max_shards=max_s2_shards),
+                locator_lookup=s2_locator_lookup,
+            )
+            if not s2_locator_lookup.missing_corpus_ids(sorted(s2_pending_primary_ids))
+            else active_s2_reader.shard_paths(max_shards=max_s2_shards)
         )
-        if not s2_locator_lookup.missing_corpus_ids(target_corpus_ids)
-        else active_s2_reader.shard_paths(max_shards=max_s2_shards)
-    )
-    active_unit_store.ensure_units(
-        run_id=run_id,
-        source_kind=RagRefreshSourceKind.S2_SHARD,
-        unit_paths=s2_unit_paths,
-        worker=worker,
-    )
+        active_unit_store.ensure_units(
+            run_id=run_id,
+            source_kind=RagRefreshSourceKind.S2_SHARD,
+            unit_paths=s2_unit_paths,
+            worker=worker,
+        )
     completed_s2 = set(
         active_unit_store.list_completed_units(
             run_id=run_id,
@@ -795,7 +1013,7 @@ def _run_explicit_targeted_refresh(
                 break
             target_ids_for_unit = s2_target_ids_by_unit.get(
                 claimed_s2.unit_name,
-                target_corpus_id_set,
+                s2_pending_primary_ids,
             )
             found_target_ids: set[int] = set()
             locator_entries: list[RagSourceLocatorEntry] = []
@@ -810,7 +1028,10 @@ def _run_explicit_targeted_refresh(
                 last_processed_s2_ordinal = saved_s2_ordinal
                 last_seen_corpus_id: int | None = None
                 progress_interval_rows = max(batch_size, DEFAULT_UNIT_PROGRESS_INTERVAL_ROWS)
-                for row_index, row in enumerate(active_s2_reader.iter_rows(claimed_s2.path), start=1):
+                for row_index, row in enumerate(
+                    active_s2_reader.iter_rows(claimed_s2.path),
+                    start=1,
+                ):
                     if row_index <= saved_s2_ordinal:
                         continue
                     last_processed_s2_ordinal = row_index
@@ -841,7 +1062,7 @@ def _run_explicit_targeted_refresh(
                         )
                     )
                     found_target_ids.add(corpus_id)
-                    if corpus_id not in pending_primary_ids:
+                    if corpus_id not in s2_pending_primary_ids:
                         if len(found_target_ids) == len(target_ids_for_unit):
                             saved_s2_ordinal = _save_unit_progress_if_advanced(
                                 unit_store=active_unit_store,
@@ -925,6 +1146,7 @@ def _run_explicit_targeted_refresh(
                 parser_version=parser_version,
                 refresh_existing=refresh_existing,
                 source_driven=False,
+                metadata_abstract_only=metadata_abstract_only,
                 explicit_corpus_ids=target_corpus_ids,
                 limit=None,
                 batch_size=batch_size,
@@ -935,6 +1157,8 @@ def _run_explicit_targeted_refresh(
             )
 
     pending_bioc_ids = (pending_primary_ids - s2_ingested_ids) | s2_ingested_ids
+    if metadata_abstract_only and prebootstrapped_ids:
+        pending_bioc_ids -= prebootstrapped_ids
     if not skip_bioc_fallback and pending_bioc_ids:
         bioc_target_rows = [row for row in target_rows if row.corpus_id in pending_bioc_ids]
         bioc_map = _build_bioc_resolution_map(bioc_target_rows)
@@ -1117,6 +1341,7 @@ def _run_explicit_targeted_refresh(
                 parser_version=parser_version,
                 refresh_existing=refresh_existing,
                 source_driven=False,
+                metadata_abstract_only=metadata_abstract_only,
                 explicit_corpus_ids=target_corpus_ids,
                 limit=None,
                 batch_size=batch_size,
@@ -1151,7 +1376,7 @@ def _run_explicit_targeted_refresh(
             batch_size=batch_size,
             writer=active_writer,
             stage_report=report.bioc_fallback_stage,
-            replace_existing=refresh_existing,
+            replace_existing=refresh_existing or bool(prebootstrapped_ids),
         )
 
 
@@ -1165,6 +1390,7 @@ def run_rag_refresh(
     stage_row_budget: int | None = DEFAULT_STAGE_ROW_BUDGET,
     stage_byte_budget: int | None = None,
     refresh_existing: bool = False,
+    metadata_abstract_only: bool = False,
     max_s2_shards: int | None = None,
     skip_s2_primary: bool = False,
     max_bioc_archives: int | None = None,
@@ -1206,7 +1432,10 @@ def run_rag_refresh(
     normalized_explicit_ids = _unique_ints(corpus_ids)
     source_driven = not normalized_explicit_ids
     if worker.worker_count > 1 and (seed_chunk_version or backfill_chunks):
-        raise ValueError("parallel refresh workers must not seed chunk versions or backfill chunks inline")
+        raise ValueError(
+            "parallel refresh workers must not seed chunk versions "
+            "or backfill chunks inline"
+        )
     checkpoint_paths = rag_refresh_checkpoint_paths(
         run_id,
         root=checkpoint_root,
@@ -1224,6 +1453,7 @@ def run_rag_refresh(
             parser_version=parser_version,
             refresh_existing=refresh_existing,
             source_driven=source_driven,
+            metadata_abstract_only=metadata_abstract_only,
             explicit_corpus_ids=normalized_explicit_ids,
             limit=limit,
             batch_size=batch_size,
@@ -1275,6 +1505,7 @@ def run_rag_refresh(
             parser_version=parser_version,
             refresh_existing=refresh_existing,
             source_driven=source_driven,
+            metadata_abstract_only=metadata_abstract_only,
             worker_count=worker.worker_count,
             worker_index=worker.worker_index,
             requested_limit=limit,
@@ -1292,6 +1523,7 @@ def run_rag_refresh(
     report.checkpoint_dir = str(checkpoint_paths.root)
     report.resumed_from_checkpoint = resumed_from_checkpoint
     report.source_driven = source_driven
+    report.metadata_abstract_only = metadata_abstract_only
     report.worker_count = worker.worker_count
     report.worker_index = worker.worker_index
     report.requested_limit = limit
@@ -1299,35 +1531,60 @@ def run_rag_refresh(
     report.stage_byte_budget = normalized_stage_byte_budget
     if source_driven:
         current_run_state = active_unit_store.get_source_driven_run_state(run_id=run_id)
-        report.selected_target_count = current_run_state.selected_target_count if current_run_state else 0
+        report.selected_target_count = (
+            current_run_state.selected_target_count if current_run_state else 0
+        )
         report.target_corpus_ids = active_unit_store.list_source_driven_targets(run_id=run_id)
     if not source_driven:
         report.s2_stage.skipped_existing_papers = len(existing_ids)
 
     if not source_driven:
+        explicit_pending_primary_ids = _pending_primary_ids(
+            target_corpus_ids=target_corpus_ids,
+            existing_ids=existing_ids,
+            refresh_existing=refresh_existing,
+        )
+        metadata_abstract_ids = _metadata_abstract_candidate_ids(
+            target_rows=target_rows,
+            pending_primary_ids=explicit_pending_primary_ids,
+            skip_s2_primary=skip_s2_primary,
+        )
+        _preload_explicit_metadata_abstracts(
+            parser_version=parser_version,
+            run_id=run_id,
+            target_rows=target_rows,
+            target_corpus_ids=target_corpus_ids,
+            pending_primary_ids=explicit_pending_primary_ids,
+            refresh_existing=refresh_existing,
+            metadata_abstract_only=metadata_abstract_only,
+            checkpoint_paths=checkpoint_paths,
+            worker=worker,
+            report=report,
+            active_writer=active_writer,
+        )
+        bootstrapped_metadata_ids = set(report.s2_stage.ingested_corpus_ids).intersection(
+            metadata_abstract_ids
+        )
         if refresh_source_locators:
             if active_source_locator_refresher is None:
                 from app.rag_ingest.source_locator_refresh import refresh_rag_source_locator
 
                 active_source_locator_refresher = refresh_rag_source_locator
-            source_locator_result = active_source_locator_refresher(
-                run_id=f"{run_id}-source-locator",
-                corpus_ids=target_corpus_ids or None,
-                limit=None,
+            report.source_locator_refresh = _run_explicit_source_locator_refresh(
+                run_id=run_id,
+                target_rows=target_rows,
+                pending_primary_ids=explicit_pending_primary_ids,
+                bootstrapped_metadata_ids=bootstrapped_metadata_ids,
+                metadata_abstract_only=metadata_abstract_only,
                 max_s2_shards=max_s2_shards,
+                skip_s2_primary=skip_s2_primary,
                 max_bioc_archives=max_bioc_archives,
-                skip_s2=skip_s2_primary,
-                skip_bioc=skip_bioc_fallback,
-                reset=reset_source_locators,
+                skip_bioc_fallback=skip_bioc_fallback,
+                reset_source_locators=reset_source_locators,
                 reset_run=reset_run,
                 checkpoint_root=checkpoint_root,
+                active_source_locator_refresher=active_source_locator_refresher,
                 repository=active_source_locator_repository,
-            )
-            model_dump = getattr(source_locator_result, "model_dump", None)
-            report.source_locator_refresh = (
-                model_dump(mode="python")
-                if callable(model_dump)
-                else source_locator_result
             )
         _run_explicit_targeted_refresh(
             parser_version=parser_version,
@@ -1337,6 +1594,7 @@ def run_rag_refresh(
             existing_ids=existing_ids,
             batch_size=batch_size,
             refresh_existing=refresh_existing,
+            metadata_abstract_only=metadata_abstract_only,
             max_s2_shards=max_s2_shards,
             skip_s2_primary=skip_s2_primary,
             max_bioc_archives=max_bioc_archives,
@@ -1349,6 +1607,7 @@ def run_rag_refresh(
             active_writer=active_writer,
             active_unit_store=active_unit_store,
             active_source_locator_repository=active_source_locator_repository,
+            prebootstrapped_metadata_ids=bootstrapped_metadata_ids,
         )
         if seed_chunk_version:
             report.chunk_seed = RagChunkSeeder().seed_default(
@@ -1391,6 +1650,7 @@ def run_rag_refresh(
             parser_version=parser_version,
             refresh_existing=refresh_existing,
             source_driven=False,
+            metadata_abstract_only=metadata_abstract_only,
             explicit_corpus_ids=normalized_explicit_ids,
             limit=limit,
             batch_size=batch_size,
@@ -1476,12 +1736,19 @@ def run_rag_refresh(
                             discovered_s2_rows.append(row)
                             pending_source_ids.add(corpus_id)
                         if discovered_s2_rows and (
-                            len(discovered_s2_rows) >= batch_size or (
-                            limit is not None
-                            and len(selected_source_ids) + len(pending_source_ids) >= limit
+                            len(discovered_s2_rows) >= batch_size
+                            or (
+                                limit is not None
+                                and len(selected_source_ids)
+                                + len(pending_source_ids)
+                                >= limit
                             )
                         ):
-                            accepted_ids, s2_pending_row_estimate, s2_pending_byte_estimate = _flush_discovered_s2_rows(
+                            (
+                                accepted_ids,
+                                s2_pending_row_estimate,
+                                s2_pending_byte_estimate,
+                            ) = _flush_discovered_s2_rows(
                                 rows=discovered_s2_rows,
                                 parser_version=parser_version,
                                 source_revision=settings.s2_release_id,
@@ -1498,18 +1765,32 @@ def run_rag_refresh(
                                 ingested_ids=s2_ingested_ids,
                                 run_id=run_id if source_driven else None,
                                 worker=worker if source_driven else None,
-                                source_kind=RagRefreshSourceKind.S2_SHARD if source_driven else None,
+                                source_kind=(
+                                    RagRefreshSourceKind.S2_SHARD
+                                    if source_driven
+                                    else None
+                                ),
                                 unit_name=claimed_s2.unit_name if source_driven else None,
                                 unit_store=active_unit_store if source_driven else None,
                             )
                             selected_source_ids.update(accepted_ids)
                             pending_source_ids.clear()
                             if source_driven:
-                                current_run_state = active_unit_store.get_source_driven_run_state(run_id=run_id)
-                                report.selected_target_count = (
-                                    current_run_state.selected_target_count if current_run_state else 0
+                                current_run_state = (
+                                    active_unit_store.get_source_driven_run_state(
+                                        run_id=run_id
+                                    )
                                 )
-                                report.target_corpus_ids = active_unit_store.list_source_driven_targets(run_id=run_id)
+                                report.selected_target_count = (
+                                    current_run_state.selected_target_count
+                                    if current_run_state
+                                    else 0
+                                )
+                                report.target_corpus_ids = (
+                                    active_unit_store.list_source_driven_targets(
+                                        run_id=run_id
+                                    )
+                                )
                             else:
                                 report.target_corpus_ids = sorted(selected_source_ids)
                             saved_s2_ordinal = _save_unit_progress_if_advanced(
@@ -1532,7 +1813,10 @@ def run_rag_refresh(
                                 parser_version=parser_version,
                             )
                             report.s2_stage.discovered_papers += 1
-                            s2_pending_row_estimate, s2_pending_byte_estimate = _append_source_group_with_budget(
+                            (
+                                s2_pending_row_estimate,
+                                s2_pending_byte_estimate,
+                            ) = _append_source_group_with_budget(
                                 source_group=[parsed],
                                 source_groups=s2_source_groups,
                                 pending_row_estimate=s2_pending_row_estimate,
@@ -1577,7 +1861,11 @@ def run_rag_refresh(
                             last_corpus_id=last_seen_corpus_id,
                         )
                 if source_driven:
-                    accepted_ids, s2_pending_row_estimate, s2_pending_byte_estimate = _flush_discovered_s2_rows(
+                    (
+                        accepted_ids,
+                        s2_pending_row_estimate,
+                        s2_pending_byte_estimate,
+                    ) = _flush_discovered_s2_rows(
                         rows=discovered_s2_rows,
                         parser_version=parser_version,
                         source_revision=settings.s2_release_id,
@@ -1601,8 +1889,14 @@ def run_rag_refresh(
                     selected_source_ids.update(accepted_ids)
                     pending_source_ids.clear()
                     current_run_state = active_unit_store.get_source_driven_run_state(run_id=run_id)
-                    report.selected_target_count = current_run_state.selected_target_count if current_run_state else 0
-                    report.target_corpus_ids = active_unit_store.list_source_driven_targets(run_id=run_id)
+                    report.selected_target_count = (
+                        current_run_state.selected_target_count
+                        if current_run_state
+                        else 0
+                    )
+                    report.target_corpus_ids = (
+                        active_unit_store.list_source_driven_targets(run_id=run_id)
+                    )
                 _flush_source_groups(
                     writer=active_writer,
                     source_groups=s2_source_groups,
@@ -1645,6 +1939,7 @@ def run_rag_refresh(
                 parser_version=parser_version,
                 refresh_existing=refresh_existing,
                 source_driven=source_driven,
+                metadata_abstract_only=metadata_abstract_only,
                 explicit_corpus_ids=normalized_explicit_ids,
                 limit=limit,
                 batch_size=batch_size,
@@ -1653,7 +1948,11 @@ def run_rag_refresh(
                 worker=worker,
                 report=report,
             )
-            current_run_state = active_unit_store.get_source_driven_run_state(run_id=run_id) if source_driven else None
+            current_run_state = (
+                active_unit_store.get_source_driven_run_state(run_id=run_id)
+                if source_driven
+                else None
+            )
             if source_driven and current_run_state is not None and current_run_state.limit_reached:
                 break
 
@@ -1715,7 +2014,11 @@ def run_rag_refresh(
                     last_processed_bioc_ordinal = document_index
                     kind, normalized_value = normalize_bioc_document_id(document_id)
                     corpus_id = bioc_map.get((kind.value, normalized_value))
-                    if corpus_id is None or corpus_id not in pending_bioc_ids or corpus_id in ingested_bioc_ids:
+                    if (
+                        corpus_id is None
+                        or corpus_id not in pending_bioc_ids
+                        or corpus_id in ingested_bioc_ids
+                    ):
                         if document_index % progress_interval_docs == 0:
                             saved_bioc_ordinal = _save_unit_progress_if_advanced(
                                 unit_store=active_unit_store,
@@ -1755,7 +2058,10 @@ def run_rag_refresh(
                                 last_corpus_id=last_seen_bioc_corpus_id,
                             )
                         continue
-                    bioc_pending_row_estimate, bioc_pending_byte_estimate = _append_source_group_with_budget(
+                    (
+                        bioc_pending_row_estimate,
+                        bioc_pending_byte_estimate,
+                    ) = _append_source_group_with_budget(
                         source_group=[parsed],
                         source_groups=bioc_source_groups,
                         pending_row_estimate=bioc_pending_row_estimate,
@@ -1841,6 +2147,7 @@ def run_rag_refresh(
                 parser_version=parser_version,
                 refresh_existing=refresh_existing,
                 source_driven=source_driven,
+                metadata_abstract_only=metadata_abstract_only,
                 explicit_corpus_ids=normalized_explicit_ids,
                 limit=limit,
                 batch_size=batch_size,
@@ -1896,6 +2203,7 @@ def run_rag_refresh(
         parser_version=parser_version,
         refresh_existing=refresh_existing,
         source_driven=source_driven,
+        metadata_abstract_only=metadata_abstract_only,
         explicit_corpus_ids=normalized_explicit_ids,
         limit=limit,
         batch_size=batch_size,
@@ -1936,7 +2244,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "S2 refresh and stops after this many supported non-existing papers."
         ),
     )
-    parser.add_argument("--batch-size", type=int, default=100, help="Parsed-paper batch size per staged write.")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=100,
+        help="Parsed-paper batch size per staged write.",
+    )
     parser.add_argument(
         "--stage-row-budget",
         type=int,
@@ -1959,6 +2272,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--parser-version", required=True)
     parser.add_argument("--embedding-model", default=None)
     parser.add_argument("--refresh-existing", action="store_true")
+    parser.add_argument(
+        "--metadata-abstract-only",
+        action="store_true",
+        help=(
+            "For explicit targeted refreshes, treat metadata abstracts as the terminal "
+            "ingest source for papers that have them instead of continuing to S2/BioC fulltext "
+            "discovery in the same run."
+        ),
+    )
     parser.add_argument("--reset-run", action="store_true")
     parser.add_argument("--worker-count", type=int, default=1)
     parser.add_argument("--worker-index", type=int, default=0)
@@ -2000,9 +2322,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = _unique_ints(
-        (args.corpus_ids or [])
-        + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = run_rag_refresh(
@@ -2014,6 +2336,7 @@ def main(argv: list[str] | None = None) -> int:
             stage_row_budget=args.stage_row_budget,
             stage_byte_budget=args.stage_byte_budget,
             refresh_existing=args.refresh_existing,
+            metadata_abstract_only=args.metadata_abstract_only,
             max_s2_shards=args.max_s2_shards,
             skip_s2_primary=args.skip_s2_primary,
             max_bioc_archives=args.max_bioc_archives,

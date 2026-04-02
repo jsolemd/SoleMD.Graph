@@ -9,15 +9,16 @@ from typing import Protocol
 from pydantic import Field
 
 from app import db
+from app.config import settings
+from app.rag.corpus_resolution import PostgresBioCCorpusResolver
+from app.rag.parse_contract import ParseContractModel
 from app.rag_ingest.bioc_archive_manifest import (
     RagBioCArchiveManifestEntry,
     SidecarBioCArchiveManifestRepository,
 )
-from app.config import settings
 from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_document_ids
-from app.rag.corpus_resolution import PostgresBioCCorpusResolver
+from app.rag_ingest.corpus_ids import resolve_corpus_ids, write_corpus_ids_file
 from app.rag_ingest.orchestrator_units import RagRefreshSourceKind
-from app.rag.parse_contract import ParseContractModel
 from app.rag_ingest.source_locator import RagSourceLocatorEntry
 
 
@@ -223,7 +224,10 @@ def discover_bioc_archive_targets(
                 existing_s2_source=int(corpus_id) in existing_s2,
                 existing_bioc_source=int(corpus_id) in existing_bioc,
             )
-            if allowed_corpus_id_set is not None and candidate.corpus_id not in allowed_corpus_id_set:
+            if (
+                allowed_corpus_id_set is not None
+                and candidate.corpus_id not in allowed_corpus_id_set
+            ):
                 continue
             if require_existing_documents and not candidate.existing_document:
                 continue
@@ -352,27 +356,19 @@ def main(argv: list[str] | None = None) -> int:
             skip_existing_bioc=not args.include_existing_bioc,
             require_existing_documents=args.existing_documents_only,
             require_existing_s2_source=args.existing_s2_only,
-            allowed_corpus_ids=[
-                *([] if args.corpus_ids is None else [int(corpus_id) for corpus_id in args.corpus_ids]),
-                *(
-                    []
-                    if args.corpus_ids_file is None
-                    else [
-                        int(line.strip())
-                        for line in args.corpus_ids_file.read_text().splitlines()
-                        if line.strip() and not line.strip().startswith("#")
-                    ]
-                ),
-            ]
+            allowed_corpus_ids=resolve_corpus_ids(
+                corpus_ids=args.corpus_ids,
+                corpus_ids_file=args.corpus_ids_file,
+            )
             or None,
         )
         if args.report_path is not None:
             args.report_path.parent.mkdir(parents=True, exist_ok=True)
             args.report_path.write_text(report.model_dump_json(indent=2))
         if args.corpus_ids_path is not None:
-            args.corpus_ids_path.parent.mkdir(parents=True, exist_ok=True)
-            args.corpus_ids_path.write_text(
-                "".join(f"{corpus_id}\n" for corpus_id in report.selected_corpus_ids)
+            write_corpus_ids_file(
+                args.corpus_ids_path,
+                corpus_ids=report.selected_corpus_ids,
             )
         print(report.model_dump_json(indent=2))
     finally:

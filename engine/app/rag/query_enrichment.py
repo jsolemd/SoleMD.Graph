@@ -328,6 +328,35 @@ def has_query_entity_surface_signal(text: str) -> bool:
     return _has_mid_sentence_proper_noun(tokens)
 
 
+def has_statistical_surface_signal(text: str) -> bool:
+    """Return True when the query surface looks like a numeric/statistical excerpt.
+
+    Keep this deliberately narrow for runtime fallback policy. Passage queries with
+    multiple numeric/statistical tokens or mixed acronym-plus-stat surfaces tend to
+    be weak chunk anchors but can still resolve via cheap paper-level FTS.
+    """
+
+    normalized = unicodedata.normalize("NFKC", text or "")
+    if not normalized:
+        return False
+
+    statistical_tokens = 0
+    acronym_tokens = 0
+    for token in _surface_tokens(normalized):
+        normalized_token = normalize_entity_query_text(token)
+        if not normalized_token:
+            continue
+        if _is_statistical_surface_token(token, normalized_token):
+            statistical_tokens += 1
+            continue
+        if _is_short_upper_acronym(token):
+            acronym_tokens += 1
+
+    return statistical_tokens >= 2 or (
+        statistical_tokens >= 1 and acronym_tokens >= 1
+    )
+
+
 def normalize_title_key(text: str | None) -> str:
     """Normalize a title-like string into a stable lexical comparison key.
 

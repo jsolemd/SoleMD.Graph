@@ -143,3 +143,4 @@ temp-ai-for-mds/
 # Windows artifacts
 nul
 docs/design/mantine-llms.txt
+engine/data/huggingface/

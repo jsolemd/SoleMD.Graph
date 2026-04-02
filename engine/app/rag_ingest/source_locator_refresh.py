@@ -11,11 +11,17 @@ from pydantic import Field
 
 from app import db
 from app.config import settings
-from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_document_ids
 from app.rag.corpus_resolution import PostgresBioCCorpusResolver, normalize_bioc_document_id
-from app.rag_ingest.orchestrator import PostgresTargetCorpusLoader
-from app.rag_ingest.orchestrator_units import RagRefreshSourceKind
 from app.rag.parse_contract import ParseContractModel, ParseSourceSystem
+from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_document_ids
+from app.rag_ingest.corpus_ids import (
+    load_corpus_ids_file,
+    resolve_corpus_ids,
+)
+from app.rag_ingest.corpus_ids import (
+    unique_corpus_ids as _unique_ints,
+)
+from app.rag_ingest.orchestrator_units import RagRefreshSourceKind
 from app.rag_ingest.source_locator import (
     RagSourceLocatorEntry,
     SidecarRagSourceLocatorRepository,
@@ -24,11 +30,15 @@ from app.rag_ingest.source_locator import (
 from app.rag_ingest.source_locator_checkpoint import (
     RagSourceLocatorCheckpointState,
     RagSourceLocatorProgress,
-    checkpoint_paths as source_locator_checkpoint_paths,
     load_checkpoint_state,
     reset_checkpoint_state,
     save_checkpoint_state,
 )
+from app.rag_ingest.source_locator_checkpoint import (
+    checkpoint_paths as source_locator_checkpoint_paths,
+)
+from app.rag_ingest.target_corpus import PostgresTargetCorpusLoader
+
 DEFAULT_PROGRESS_INTERVAL = 1_000
 DEFAULT_RUN_ID = "rag-source-locator-refresh"
 
@@ -51,18 +61,8 @@ class RagSourceLocatorRefreshReport(ParseContractModel):
     bioc_stage: RagSourceLocatorRefreshStageReport
 
 
-def _unique_ints(values: list[int] | None) -> list[int]:
-    return [] if not values else list(dict.fromkeys(int(value) for value in values))
-
-
 def _load_corpus_ids_file(path: Path) -> list[int]:
-    values: list[int] = []
-    for line in path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        values.append(int(stripped))
-    return _unique_ints(values)
+    return load_corpus_ids_file(path)
 
 
 def _write_report(path: Path, *, report: RagSourceLocatorRefreshReport) -> None:
@@ -217,7 +217,9 @@ def refresh_rag_source_locator(
             source_system=ParseSourceSystem.S2ORC_V2,
             source_revision=settings.s2_release_id,
         )
-        found_ids = set(report.s2_stage.located_corpus_ids).union(existing_s2_lookup.covered_corpus_ids)
+        found_ids = set(report.s2_stage.located_corpus_ids).union(
+            existing_s2_lookup.covered_corpus_ids
+        )
         report.s2_stage.located_corpus_ids = sorted(found_ids)
         missing_s2_ids = requested_set - found_ids
         if not missing_s2_ids:
@@ -233,7 +235,9 @@ def refresh_rag_source_locator(
                 s2_progress=s2_progress,
                 bioc_progress=bioc_progress,
             )
-        shard_paths = sorted(settings.semantic_scholar_s2orc_v2_dir_path.glob("s2orc_v2-*.jsonl.gz"))
+        shard_paths = sorted(
+            settings.semantic_scholar_s2orc_v2_dir_path.glob("s2orc_v2-*.jsonl.gz")
+        )
         if max_s2_shards is not None:
             shard_paths = shard_paths[:max_s2_shards]
         for shard_path in shard_paths:
@@ -312,7 +316,9 @@ def refresh_rag_source_locator(
             source_system=ParseSourceSystem.BIOCXML,
             source_revision=settings.pubtator_release_id,
         )
-        found_ids = set(report.bioc_stage.located_corpus_ids).union(existing_bioc_lookup.covered_corpus_ids)
+        found_ids = set(report.bioc_stage.located_corpus_ids).union(
+            existing_bioc_lookup.covered_corpus_ids
+        )
         report.bioc_stage.located_corpus_ids = sorted(found_ids)
         missing_bioc_ids = requested_set - found_ids
         if requested_set:
@@ -411,7 +417,9 @@ def refresh_rag_source_locator(
                     found_ids=found_ids,
                 )
                 missing_bioc_ids = requested_set - found_ids
-            bioc_progress.completed_units = sorted({*bioc_progress.completed_units, archive_path.name})
+            bioc_progress.completed_units = sorted(
+                {*bioc_progress.completed_units, archive_path.name}
+            )
             report.bioc_stage.completed_units = list(bioc_progress.completed_units)
             report.bioc_stage.located_corpus_ids = sorted(found_ids)
             _save_checkpoint(
@@ -503,9 +511,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = _unique_ints(
-        (args.corpus_ids or [])
-        + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = refresh_rag_source_locator(

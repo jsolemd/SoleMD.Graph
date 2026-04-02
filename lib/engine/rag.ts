@@ -156,6 +156,7 @@ export interface EngineGraphSignal {
     | 'answer_refute'
   channel:
     | 'lexical'
+    | 'chunk_lexical'
     | 'entity_match'
     | 'relation_match'
     | 'citation_context'
@@ -172,7 +173,12 @@ export interface EngineEvidenceBundle {
   rank: number
   snippet: string | null
   matched_channels: Array<
-    'lexical' | 'entity_match' | 'relation_match' | 'citation_context' | 'semantic_neighbor'
+    | 'lexical'
+    | 'chunk_lexical'
+    | 'entity_match'
+    | 'relation_match'
+    | 'citation_context'
+    | 'semantic_neighbor'
   >
   match_reasons: string[]
   rank_features: Record<string, number>
@@ -191,7 +197,13 @@ export interface EngineRetrievalChannelHit {
 }
 
 export interface EngineRetrievalChannelResult {
-  channel: 'lexical' | 'entity_match' | 'relation_match' | 'citation_context' | 'semantic_neighbor'
+  channel:
+    | 'lexical'
+    | 'chunk_lexical'
+    | 'entity_match'
+    | 'relation_match'
+    | 'citation_context'
+    | 'semantic_neighbor'
   hits: EngineRetrievalChannelHit[]
 }
 

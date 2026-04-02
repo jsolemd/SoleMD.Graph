@@ -8,6 +8,8 @@
 > - `data.md` — data flow from PubTator3 and Semantic Scholar into PostgreSQL
 > - `architecture.md` — full system stack overview
 > - `graph-layout.md` — build pipeline, layout, bundle export
+> - `rag-architecture.md` — full ingest/runtime/grounding deep-dive
+> - `rag-architecture-code.md` — code-oriented companion with key function snippets
 
 ---
 

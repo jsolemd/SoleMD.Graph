@@ -93,22 +93,52 @@ def test_build_grounded_answer_from_warehouse_builds_packets_and_answer_links():
     assert grounded.cited_spans[0].entity_mentions[0].concept_id == "D008550"
 
 
-def test_build_grounded_answer_from_warehouse_returns_none_without_citation_packets():
+def test_build_grounded_answer_from_warehouse_falls_back_to_structural_chunk_members():
     conn = MagicMock()
     cur = MagicMock()
     conn.__enter__.return_value = conn
     conn.__exit__.return_value = False
     conn.cursor.return_value.__enter__.return_value = cur
     conn.cursor.return_value.__exit__.return_value = False
-    cur.fetchall.side_effect = [[], []]
+    cur.fetchall.side_effect = [
+        [],
+        [],
+        [
+            {
+                "corpus_id": 12345,
+                "chunk_ordinal": 0,
+                "member_ordinal": 0,
+                "canonical_block_ordinal": 0,
+                "canonical_sentence_ordinal": 0,
+                "chunk_text": "Melatonin reduced delirium incidence.",
+                "block_section_ordinal": 1,
+                "block_section_role": "results",
+                "block_kind": "narrative_paragraph",
+                "block_text": "Melatonin reduced delirium incidence.",
+                "block_is_retrieval_default": True,
+                "block_linked_asset_ref": None,
+                "sentence_section_ordinal": 1,
+                "sentence_segmentation_source": "stanza_biomedical",
+                "sentence_text": "Melatonin reduced delirium incidence.",
+            }
+        ],
+    ]
 
     grounded = build_grounded_answer_from_warehouse(
         corpus_ids=[12345],
-        segment_texts=["No grounded answer"],
+        segment_texts=[
+            "Potentially relevant evidence:",
+            "Study title: Melatonin reduced delirium incidence.",
+        ],
+        segment_corpus_ids=[None, 12345],
         connect=lambda: conn,
     )
 
-    assert grounded is None
+    assert grounded is not None
+    assert grounded.answer_linked_corpus_ids == [12345]
+    assert grounded.segments[0].citation_anchor_ids == []
+    assert grounded.segments[1].citation_anchor_ids == ["anchor:1"]
+    assert grounded.cited_spans[0].quote_text == "Melatonin reduced delirium incidence."
 
 
 def test_build_grounded_answer_from_warehouse_falls_back_to_entity_only_packets():

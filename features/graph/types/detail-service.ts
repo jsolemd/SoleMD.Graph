@@ -404,6 +404,7 @@ export interface GraphRagGraphSignal {
     | 'answer_refute'
   channel:
     | 'lexical'
+    | 'chunk_lexical'
     | 'entity_match'
     | 'relation_match'
     | 'citation_context'
@@ -424,6 +425,7 @@ export interface GraphRagRetrievalChannelHit {
 export interface GraphRagRetrievalChannelResult {
   channel:
     | 'lexical'
+    | 'chunk_lexical'
     | 'entity_match'
     | 'relation_match'
     | 'citation_context'

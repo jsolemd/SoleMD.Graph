@@ -10,34 +10,38 @@ from pydantic import Field
 
 from app import db
 from app.config import settings
+from app.rag.parse_contract import ParseContractModel
+from app.rag.source_selection import parsed_source_has_warehouse_value
+from app.rag_ingest.bioc_archive_manifest import (
+    RagBioCArchiveManifestSkip,
+    SidecarBioCArchiveManifestRepository,
+)
 from app.rag_ingest.bioc_member_fetch import (
     RagBioCArchiveMemberRequest,
     fetch_bioc_archive_members,
 )
 from app.rag_ingest.bioc_target_discovery import (
-    RagBioCTargetDiscoveryReport,
     RagBioCTargetCandidate,
+    RagBioCTargetDiscoveryReport,
     build_bioc_locator_entries,
     discover_bioc_archive_targets,
 )
-from app.rag_ingest.bioc_archive_manifest import (
-    RagBioCArchiveManifestSkip,
-    SidecarBioCArchiveManifestRepository,
-)
 from app.rag_ingest.chunk_backfill_runtime import run_chunk_backfill
 from app.rag_ingest.chunk_seed import RagChunkSeeder
+from app.rag_ingest.corpus_ids import (
+    resolve_corpus_ids,
+)
+from app.rag_ingest.corpus_ids import (
+    unique_corpus_ids as _unique_ints,
+)
 from app.rag_ingest.orchestrator import (
     PostgresExistingDocumentLoader,
-    _load_corpus_ids_file,
-    _unique_ints,
     run_rag_refresh,
 )
-from app.rag.parse_contract import ParseContractModel
 from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository
 from app.rag_ingest.source_parsers import parse_biocxml_document
-from app.rag.source_selection import parsed_source_has_warehouse_value
-from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestResult, RagWarehouseWriter
 from app.rag_ingest.warehouse_quality import inspect_rag_warehouse_quality
+from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestResult, RagWarehouseWriter
 
 
 class RagBioCArchiveIngestReport(ParseContractModel):
@@ -180,7 +184,9 @@ def _run_direct_bioc_archive_ingest(
         else set()
     )
     candidates = [
-        candidate for candidate in candidates if candidate.document_id not in skipped_manifest_document_ids
+        candidate
+        for candidate in candidates
+        if candidate.document_id not in skipped_manifest_document_ids
     ]
     existing_ids = active_existing_loader.load_existing(corpus_ids=selected_corpus_ids)
     candidates_to_fetch = [
@@ -453,7 +459,10 @@ def run_bioc_archive_ingest(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Discover bounded BioC archive targets, seed locators, and ingest them in one run."
+        description=(
+            "Discover bounded BioC archive targets, seed locators, "
+            "and ingest them in one run."
+        )
     )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--parser-version", required=True)
@@ -482,9 +491,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = _unique_ints(
-        (args.corpus_ids or [])
-        + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = run_bioc_archive_ingest(

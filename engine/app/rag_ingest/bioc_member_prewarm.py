@@ -10,6 +10,7 @@ from pydantic import Field
 
 from app import db
 from app.config import settings
+from app.rag.parse_contract import ParseContractModel
 from app.rag_ingest.bioc_archive_ingest import (
     ArchiveMemberFetcher,
     ArchiveTargetDiscoverer,
@@ -21,12 +22,15 @@ from app.rag_ingest.bioc_target_discovery import (
     RagBioCTargetDiscoveryReport,
     discover_bioc_archive_targets,
 )
+from app.rag_ingest.corpus_ids import (
+    resolve_corpus_ids,
+)
+from app.rag_ingest.corpus_ids import (
+    unique_corpus_ids as _unique_ints,
+)
 from app.rag_ingest.orchestrator import (
     PostgresExistingDocumentLoader,
-    _load_corpus_ids_file,
-    _unique_ints,
 )
-from app.rag.parse_contract import ParseContractModel
 
 
 class ManifestRepository(Protocol):
@@ -151,7 +155,10 @@ def run_bioc_archive_member_prewarm(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prewarm the BioC archive-member cache for a bounded discovery report or archive window."
+        description=(
+            "Prewarm the BioC archive-member cache for a bounded "
+            "discovery report or archive window."
+        )
     )
     parser.add_argument("--archive-name", required=True)
     parser.add_argument("--discovery-report-path", type=Path, default=None)
@@ -166,9 +173,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = _unique_ints(
-        (args.corpus_ids or [])
-        + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = run_bioc_archive_member_prewarm(

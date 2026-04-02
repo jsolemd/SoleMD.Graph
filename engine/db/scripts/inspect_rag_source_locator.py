@@ -10,8 +10,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app.config import settings
-from app.rag_ingest.orchestrator import _load_corpus_ids_file, _unique_ints
 from app.rag.parse_contract import ParseSourceSystem
+from app.rag_ingest.corpus_ids import (
+    resolve_corpus_ids,
+)
 from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository, locator_sidecar_path
 
 
@@ -26,9 +28,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = _unique_ints(
-        (args.corpus_ids or [])
-        + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     if not corpus_ids:
         raise SystemExit("at least one --corpus-id or --corpus-ids-file is required")

@@ -13,7 +13,12 @@ from app.rag.serving_contract import (
     InlineCitationAnchor,
     derive_answer_linked_corpus_ids,
 )
-from app.rag.warehouse_contract import PaperCitationMentionRow, PaperEntityMentionRow
+from app.rag.warehouse_contract import (
+    AlignmentStatus,
+    PaperCitationMentionRow,
+    PaperEntityMentionRow,
+    SpanOrigin,
+)
 
 
 def build_packet_id(
@@ -80,6 +85,39 @@ def build_cited_span_packet(
         source_citation_keys=list(OrderedDict.fromkeys(source_citation_keys)),
         source_reference_keys=list(OrderedDict.fromkeys(source_reference_keys)),
         entity_mentions=entity_mentions,
+    )
+
+
+def build_structural_span_packet(
+    *,
+    block: PaperBlockRecord,
+    sentence: PaperSentenceRecord | None,
+    packet_suffix: str | None = None,
+) -> CitedSpanPacket:
+    packet_id = build_packet_id(
+        corpus_id=block.corpus_id,
+        block_ordinal=block.block_ordinal,
+        sentence_ordinal=None if sentence is None else sentence.sentence_ordinal,
+    )
+    if packet_suffix:
+        packet_id = f"{packet_id}:{packet_suffix}"
+    text = block.text if sentence is None else sentence.text
+    return CitedSpanPacket(
+        packet_id=packet_id,
+        corpus_id=block.corpus_id,
+        canonical_section_ordinal=block.section_ordinal,
+        canonical_block_ordinal=block.block_ordinal,
+        canonical_sentence_ordinal=None if sentence is None else sentence.sentence_ordinal,
+        section_role=block.section_role,
+        block_kind=block.block_kind,
+        span_origin=SpanOrigin.PRIMARY_TEXT,
+        alignment_status=AlignmentStatus.EXACT,
+        alignment_confidence=1.0,
+        text=text,
+        quote_text=text,
+        source_citation_keys=[],
+        source_reference_keys=[],
+        entity_mentions=[],
     )
 
 

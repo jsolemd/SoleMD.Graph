@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import json
 from pathlib import Path
 
 from app.config import settings
 from app.rag.parse_contract import ParseContractModel
-
 
 CHECKPOINT_VERSION = 1
 
@@ -25,6 +23,7 @@ class RagRefreshCheckpointState(ParseContractModel):
     parser_version: str
     refresh_existing: bool = False
     source_driven: bool = False
+    metadata_abstract_only: bool = False
     explicit_corpus_ids: list[int] = []
     limit: int | None = None
     batch_size: int = 100

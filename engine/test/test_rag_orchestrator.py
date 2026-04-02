@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 import tarfile
 from io import BytesIO
+from unittest.mock import ANY
 
+from app.rag_ingest.corpus_ids import load_corpus_ids_file
 from app.rag_ingest.orchestrator import (
     LocalBioCArchiveReader,
     RagRefreshReport,
-    RagTargetCorpusRow,
-    _load_corpus_ids_file,
     _parse_args,
     run_rag_refresh,
 )
@@ -17,6 +17,7 @@ from app.rag_ingest.orchestrator_units import (
     RagRefreshUnitStatus,
 )
 from app.rag_ingest.source_locator import RagSourceLocatorLookup
+from app.rag_ingest.target_corpus import RagTargetCorpusRow
 from app.rag_ingest.warehouse_writer import (
     RagWarehouseBulkIngestPaperResult,
     RagWarehouseBulkIngestResult,
@@ -162,7 +163,9 @@ class FakeUnitStore:
             },
         )
         if payload["worker_count"] != worker.worker_count:
-            raise ValueError("source-driven refresh run worker_count does not match existing run state")
+            raise ValueError(
+                "source-driven refresh run worker_count does not match existing run state"
+            )
         if payload["requested_limit"] != requested_limit:
             raise ValueError("source-driven refresh run limit does not match existing run state")
         return self.get_source_driven_run_state(run_id=run_id)
@@ -189,14 +192,25 @@ class FakeUnitStore:
 
         return _State(state)
 
-    def reserve_source_driven_targets(self, *, run_id: str, worker, source_kind, unit_name: str, candidate_ids: list[int]):
+    def reserve_source_driven_targets(
+        self,
+        *,
+        run_id: str,
+        worker,
+        source_kind,
+        unit_name: str,
+        candidate_ids: list[int],
+    ):
         state = self._runs[run_id]
         selected = self._selected_targets.setdefault(run_id, [])
         reserved: list[int] = []
         for corpus_id in candidate_ids:
             if corpus_id in selected:
                 continue
-            if state["requested_limit"] is not None and state["selected_target_count"] >= state["requested_limit"]:
+            if (
+                state["requested_limit"] is not None
+                and state["selected_target_count"] >= state["requested_limit"]
+            ):
                 break
             selected.append(corpus_id)
             reserved.append(corpus_id)
@@ -257,10 +271,22 @@ class FakeUnitStore:
         return RagRefreshUnitClaim.model_validate(claim_payload)
 
     def mark_completed(self, *, run_id: str, source_kind, unit_name: str, worker) -> None:
-        self._units[(run_id, source_kind.value, unit_name)]["status"] = RagRefreshUnitStatus.COMPLETED.value
+        self._units[(run_id, source_kind.value, unit_name)]["status"] = (
+            RagRefreshUnitStatus.COMPLETED.value
+        )
 
-    def mark_failed(self, *, run_id: str, source_kind, unit_name: str, worker, error_message: str) -> None:
-        self._units[(run_id, source_kind.value, unit_name)]["status"] = RagRefreshUnitStatus.FAILED.value
+    def mark_failed(
+        self,
+        *,
+        run_id: str,
+        source_kind,
+        unit_name: str,
+        worker,
+        error_message: str,
+    ) -> None:
+        self._units[(run_id, source_kind.value, unit_name)]["status"] = (
+            RagRefreshUnitStatus.FAILED.value
+        )
         self._units[(run_id, source_kind.value, unit_name)]["error_message"] = error_message
 
     def get_unit_progress_ordinal(self, *, run_id: str, source_kind, unit_name: str) -> int:
@@ -979,12 +1005,24 @@ def test_run_rag_refresh_can_refresh_source_locators_inline_for_explicit_targets
 
     assert refresher.calls == [
         {
-            "run_id": "explicit-inline-locator-refresh-source-locator",
+            "run_id": "explicit-inline-locator-refresh-source-locator-s2",
             "corpus_ids": [12345],
             "limit": None,
             "max_s2_shards": 3,
             "max_bioc_archives": 4,
             "skip_s2": False,
+            "skip_bioc": True,
+            "reset": True,
+            "reset_run": False,
+            "checkpoint_root": tmp_path,
+        },
+        {
+            "run_id": "explicit-inline-locator-refresh-source-locator-bioc",
+            "corpus_ids": [12345],
+            "limit": None,
+            "max_s2_shards": 3,
+            "max_bioc_archives": 4,
+            "skip_s2": True,
             "skip_bioc": False,
             "reset": True,
             "reset_run": False,
@@ -993,9 +1031,16 @@ def test_run_rag_refresh_can_refresh_source_locators_inline_for_explicit_targets
     ]
     assert writer.calls == [[["s2orc_v2", "biocxml"]]]
     assert report.source_locator_refresh == {
-        "requested_corpus_ids": [12345],
-        "s2_stage": {"located_corpus_ids": [12345]},
-        "bioc_stage": {"located_corpus_ids": [12345]},
+        "s2": {
+            "requested_corpus_ids": [12345],
+            "s2_stage": {"located_corpus_ids": [12345]},
+            "bioc_stage": {"located_corpus_ids": [12345]},
+        },
+        "bioc": {
+            "requested_corpus_ids": [12345],
+            "s2_stage": {"located_corpus_ids": [12345]},
+            "bioc_stage": {"located_corpus_ids": [12345]},
+        },
     }
 
 
@@ -1144,7 +1189,10 @@ def test_run_rag_refresh_rejects_stage_row_budget_mismatch_on_resume(tmp_path):
             source_locator_repository=FakeSourceLocatorRepository(),
         )
     except ValueError as exc:
-        assert str(exc) == "checkpoint run stage_row_budget does not match requested stage_row_budget"
+        assert (
+            str(exc)
+            == "checkpoint run stage_row_budget does not match requested stage_row_budget"
+        )
     else:
         raise AssertionError("expected checkpoint validation to reject stage_row_budget mismatch")
 
@@ -1218,7 +1266,10 @@ def test_run_rag_refresh_rejects_stage_byte_budget_mismatch_on_resume(tmp_path):
             source_locator_repository=FakeSourceLocatorRepository(),
         )
     except ValueError as exc:
-        assert str(exc) == "checkpoint run stage_byte_budget does not match requested stage_byte_budget"
+        assert (
+            str(exc)
+            == "checkpoint run stage_byte_budget does not match requested stage_byte_budget"
+        )
     else:
         raise AssertionError("expected checkpoint validation to reject stage_byte_budget mismatch")
 
@@ -1247,7 +1298,7 @@ def test_parse_args_accepts_checkpoint_root_and_corpus_ids_file(tmp_path):
     assert args.checkpoint_root == tmp_path / "checkpoints"
     assert args.report_path == tmp_path / "report.json"
     assert args.skip_s2_primary is True
-    assert _load_corpus_ids_file(args.corpus_ids_file) == [12345, 67890]
+    assert load_corpus_ids_file(args.corpus_ids_file) == [12345, 67890]
 
 
 def test_parse_args_uses_canonical_operator_flags(tmp_path):
@@ -1266,6 +1317,7 @@ def test_parse_args_uses_canonical_operator_flags(tmp_path):
             str(ids_file),
             "--skip-s2-primary",
             "--skip-bioc-fallback",
+            "--metadata-abstract-only",
             "--seed-chunk-version",
             "--backfill-chunks",
             "--stage-row-budget",
@@ -1287,6 +1339,7 @@ def test_parse_args_uses_canonical_operator_flags(tmp_path):
     assert args.corpus_ids_file == ids_file
     assert args.skip_s2_primary is True
     assert args.skip_bioc_fallback is True
+    assert args.metadata_abstract_only is True
     assert args.seed_chunk_version is True
     assert args.backfill_chunks is True
     assert args.stage_row_budget == 1234
@@ -1520,13 +1573,478 @@ def test_run_rag_refresh_source_driven_prefers_corpus_metadata_title(tmp_path):
     )
 
     assert report.target_corpus_ids == [12345]
-    assert writer.calls == [[{"title": "Canonical Corpus Title", "metadata_title": "Canonical Corpus Title"}]]
+    assert writer.calls == [
+        [{"title": "Canonical Corpus Title", "metadata_title": "Canonical Corpus Title"}]
+    ]
+
+
+def test_run_rag_refresh_explicit_bootstraps_metadata_abstract_without_s2_scan(tmp_path):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=12345,
+                    pmid=12345,
+                    paper_title="Canonical Corpus Title",
+                    paper_abstract=(
+                        "Melatonin reduced delirium incidence in the randomized cohort. "
+                        "No serious adverse events were observed."
+                    ),
+                    paper_id="S2:paper-12345",
+                    text_availability="fulltext",
+                )
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return [tmp_path / "s2orc_v2-000.jsonl.gz"]
+
+        def iter_rows(self, shard_path):
+            raise AssertionError("metadata abstract bootstrap should avoid S2 shard scans")
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return []
+
+        def iter_documents(self, archive_path):
+            yield from ()
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append(
+                [
+                    {
+                        "corpus_id": group[0].document.corpus_id,
+                        "title": group[0].document.title,
+                        "availability": group[0].document.source_availability,
+                        "ingest_lane": group[0].document.raw_attrs_json.get("ingest_lane"),
+                    }
+                    for group in source_groups
+                ]
+            )
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 3,
+                written_rows=len(source_groups) * 3,
+                deferred_stage_names=[],
+            )
+
+    class FakeSourceLocatorRefresher:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, **kwargs):
+            self.calls.append(kwargs)
+            raise AssertionError("metadata abstract bootstrap should avoid locator refresh calls")
+
+    writer = FakeWriter()
+    refresher = FakeSourceLocatorRefresher()
+
+    report = run_rag_refresh(
+        parser_version="parser-v4",
+        run_id="explicit-metadata-abstract",
+        corpus_ids=[12345],
+        batch_size=8,
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=FakeSourceLocatorRepository(),
+        source_locator_refresher=refresher,
+        refresh_source_locators=True,
+        skip_bioc_fallback=True,
+    )
+
+    assert refresher.calls == []
+    assert report.source_locator_refresh is None
+    assert report.s2_stage.discovered_papers == 1
+    assert report.s2_stage.ingested_corpus_ids == [12345]
+    assert writer.calls == [
+        [
+            {
+                "corpus_id": 12345,
+                "title": "Canonical Corpus Title",
+                "availability": "abstract",
+                "ingest_lane": "s2_papers_abstract",
+            }
+        ]
+    ]
+
+
+def test_run_rag_refresh_metadata_abstract_only_skips_locator_refresh_and_bioc_overlay(
+    tmp_path,
+):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=12345,
+                    pmid=12345,
+                    pmc_id="PMC12345",
+                    paper_title="Canonical Corpus Title",
+                    paper_abstract=(
+                        "Melatonin reduced delirium incidence in the randomized cohort. "
+                        "No serious adverse events were observed."
+                    ),
+                    paper_id="S2:paper-12345",
+                    text_availability="fulltext",
+                )
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return [tmp_path / "s2orc_v2-000.jsonl.gz"]
+
+        def iter_rows(self, shard_path):
+            raise AssertionError("metadata_abstract_only should avoid S2 shard scans")
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return [tmp_path / "BioCXML.0.tar.gz"]
+
+        def iter_documents(self, archive_path):
+            raise AssertionError("metadata_abstract_only should avoid BioC archive scans")
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append(
+                [
+                    {
+                        "corpus_id": group[0].document.corpus_id,
+                        "availability": group[0].document.source_availability,
+                        "ingest_lane": group[0].document.raw_attrs_json.get("ingest_lane"),
+                    }
+                    for group in source_groups
+                ]
+            )
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 3,
+                written_rows=len(source_groups) * 3,
+                deferred_stage_names=[],
+            )
+
+    class FakeSourceLocatorRefresher:
+        def __call__(self, **kwargs):
+            raise AssertionError("metadata_abstract_only should avoid locator refresh calls")
+
+    writer = FakeWriter()
+
+    report = run_rag_refresh(
+        parser_version="parser-v4",
+        run_id="explicit-metadata-abstract-only",
+        corpus_ids=[12345],
+        batch_size=8,
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=FakeSourceLocatorRepository(),
+        source_locator_refresher=FakeSourceLocatorRefresher(),
+        refresh_source_locators=True,
+        metadata_abstract_only=True,
+        skip_bioc_fallback=False,
+    )
+
+    assert report.metadata_abstract_only is True
+    assert report.source_locator_refresh is None
+    assert report.s2_stage.ingested_corpus_ids == [12345]
+    assert report.bioc_fallback_stage.ingested_corpus_ids == []
+    assert writer.calls == [
+        [
+            {
+                "corpus_id": 12345,
+                "availability": "abstract",
+                "ingest_lane": "s2_papers_abstract",
+            }
+        ]
+    ]
+
+
+def test_run_rag_refresh_explicit_preloads_metadata_abstracts_before_locator_refresh(
+    tmp_path,
+):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=12345,
+                    pmid=12345,
+                    paper_title="Canonical Corpus Title",
+                    paper_abstract=(
+                        "Melatonin reduced delirium incidence in the randomized cohort. "
+                        "No serious adverse events were observed."
+                    ),
+                    paper_id="S2:paper-12345",
+                    text_availability="fulltext",
+                )
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            raise AssertionError("preloaded metadata abstracts should avoid S2 shard discovery")
+
+        def iter_rows(self, shard_path):
+            raise AssertionError("preloaded metadata abstracts should avoid S2 shard scans")
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return []
+
+        def iter_documents(self, archive_path):
+            yield from ()
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append(
+                {
+                    "replace_existing": replace_existing,
+                    "groups": [
+                        {
+                            "corpus_id": group[0].document.corpus_id,
+                            "availability": group[0].document.source_availability,
+                            "ingest_lane": group[0].document.raw_attrs_json.get("ingest_lane"),
+                        }
+                        for group in source_groups
+                    ],
+                }
+            )
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 3,
+                written_rows=len(source_groups) * 3,
+                deferred_stage_names=[],
+            )
+
+    class FakeSourceLocatorRefresher:
+        def __init__(self, writer):
+            self.writer = writer
+            self.calls = []
+
+        def __call__(self, **kwargs):
+            assert self.writer.calls, "metadata abstracts should be written before locator refresh"
+            self.calls.append(kwargs)
+            return {
+                "run_id": kwargs["run_id"],
+                "corpus_ids": list(kwargs["corpus_ids"]),
+                "skip_s2": kwargs["skip_s2"],
+                "skip_bioc": kwargs["skip_bioc"],
+            }
+
+    writer = FakeWriter()
+    refresher = FakeSourceLocatorRefresher(writer)
+
+    report = run_rag_refresh(
+        parser_version="parser-v4",
+        run_id="explicit-metadata-abstract-preload",
+        corpus_ids=[12345],
+        batch_size=8,
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=FakeSourceLocatorRepository(),
+        source_locator_refresher=refresher,
+        refresh_source_locators=True,
+        skip_bioc_fallback=False,
+    )
+
+    assert writer.calls == [
+        {
+            "replace_existing": False,
+            "groups": [
+                {
+                    "corpus_id": 12345,
+                    "availability": "abstract",
+                    "ingest_lane": "s2_papers_abstract",
+                }
+            ],
+        }
+    ]
+    assert refresher.calls == [
+        {
+            "checkpoint_root": tmp_path,
+            "corpus_ids": [12345],
+            "limit": None,
+            "max_bioc_archives": None,
+            "max_s2_shards": None,
+            "repository": ANY,
+            "reset": False,
+            "reset_run": False,
+            "run_id": "explicit-metadata-abstract-preload-source-locator-bioc",
+            "skip_bioc": False,
+            "skip_s2": True,
+        }
+    ]
+    assert report.source_locator_refresh == {
+        "bioc": {
+            "run_id": "explicit-metadata-abstract-preload-source-locator-bioc",
+            "corpus_ids": [12345],
+            "skip_s2": True,
+            "skip_bioc": False,
+        }
+    }
+
+
+def test_run_rag_refresh_metadata_abstract_only_skips_locator_refresh_for_bootstrapped_ids(
+    tmp_path,
+):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=12345,
+                    pmid=12345,
+                    paper_title="Canonical Corpus Title",
+                    paper_abstract=(
+                        "Melatonin reduced delirium incidence in the randomized cohort. "
+                        "No serious adverse events were observed."
+                    ),
+                    paper_id="S2:paper-12345",
+                    text_availability="abstract",
+                )
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            raise AssertionError("metadata-abstract-only should avoid S2 discovery")
+
+        def iter_rows(self, shard_path):
+            raise AssertionError("metadata-abstract-only should avoid S2 scans")
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            raise AssertionError("metadata-abstract-only should avoid BioC discovery")
+
+        def iter_documents(self, archive_path):
+            raise AssertionError("metadata-abstract-only should avoid BioC scans")
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append([group[0].document.corpus_id for group in source_groups])
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 3,
+                written_rows=len(source_groups) * 3,
+                deferred_stage_names=[],
+            )
+
+    class FakeSourceLocatorRefresher:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, **kwargs):
+            self.calls.append(kwargs)
+            raise AssertionError(
+                "metadata-abstract-only should not call source locator refresh"
+            )
+
+    writer = FakeWriter()
+    refresher = FakeSourceLocatorRefresher()
+
+    report = run_rag_refresh(
+        parser_version="parser-v5",
+        run_id="metadata-abstract-only",
+        corpus_ids=[12345],
+        batch_size=8,
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=FakeSourceLocatorRepository(),
+        source_locator_refresher=refresher,
+        refresh_source_locators=True,
+        metadata_abstract_only=True,
+    )
+
+    assert writer.calls == [[12345]]
+    assert refresher.calls == []
+    assert report.source_locator_refresh is None
 
 
 def test_run_rag_refresh_source_driven_backfill_uses_selected_target_ids(tmp_path):
     class FakeTargetLoader:
         def load(self, *, corpus_ids, limit):
-            return [RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id) for corpus_id in corpus_ids]
+            return [
+                RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id)
+                for corpus_id in corpus_ids
+            ]
 
     class FakeExistingLoader:
         def load_existing(self, *, corpus_ids):
@@ -1600,10 +2118,81 @@ def test_run_rag_refresh_source_driven_backfill_uses_selected_target_ids(tmp_pat
     assert report.chunk_backfill == {"corpus_ids": [111, 222], "executed": True}
 
 
+def test_run_rag_refresh_quality_uses_chunk_backfill_ids_when_no_new_sources_written(
+    tmp_path,
+):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            return [
+                RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id)
+                for corpus_id in corpus_ids
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return {111, 222}
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return []
+
+        def iter_rows(self, shard_path):
+            yield from ()
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return []
+
+        def iter_documents(self, archive_path):
+            yield from ()
+
+    class FakeWriter:
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            raise AssertionError("no new source groups should be written")
+
+    def fake_chunk_backfill(**kwargs):
+        class _Report:
+            def model_dump(self, mode="python"):
+                return {"corpus_ids": list(kwargs["corpus_ids"]), "executed": True}
+
+        return _Report()
+
+    captured_quality: dict[str, object] = {}
+
+    def fake_quality_inspector(*, corpus_ids):
+        captured_quality["corpus_ids"] = list(corpus_ids)
+        return {"inspected": list(corpus_ids)}
+
+    report = run_rag_refresh(
+        parser_version="parser-v5",
+        run_id="existing-only-backfill-quality",
+        corpus_ids=[111, 222],
+        batch_size=8,
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=FakeWriter(),
+        unit_store=FakeUnitStore(),
+        source_locator_repository=FakeSourceLocatorRepository(),
+        backfill_chunks=True,
+        inspect_quality=True,
+        chunk_backfill_runner=fake_chunk_backfill,
+        quality_inspector=fake_quality_inspector,
+    )
+
+    assert captured_quality["corpus_ids"] == [111, 222]
+    assert report.quality_report == {"inspected": [111, 222]}
+
+
 def test_run_rag_refresh_parallel_workers_partition_source_units(tmp_path):
     class FakeTargetLoader:
         def load(self, *, corpus_ids, limit):
-            return [RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id) for corpus_id in corpus_ids]
+            return [
+                RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id)
+                for corpus_id in corpus_ids
+            ]
 
     class FakeExistingLoader:
         def load_existing(self, *, corpus_ids):
@@ -1697,7 +2286,10 @@ def test_run_rag_refresh_parallel_workers_partition_source_units(tmp_path):
 def test_run_rag_refresh_parallel_source_driven_limit_uses_global_budget(tmp_path):
     class FakeTargetLoader:
         def load(self, *, corpus_ids, limit):
-            return [RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id) for corpus_id in corpus_ids]
+            return [
+                RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id)
+                for corpus_id in corpus_ids
+            ]
 
     class FakeExistingLoader:
         def load_existing(self, *, corpus_ids):
@@ -1792,7 +2384,10 @@ def test_run_rag_refresh_parallel_source_driven_limit_uses_global_budget(tmp_pat
 def test_run_rag_refresh_stage_row_budget_flushes_before_batch_size_limit(tmp_path):
     class FakeTargetLoader:
         def load(self, *, corpus_ids, limit):
-            return [RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id) for corpus_id in corpus_ids]
+            return [
+                RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id)
+                for corpus_id in corpus_ids
+            ]
 
     class FakeExistingLoader:
         def load_existing(self, *, corpus_ids):
@@ -1859,7 +2454,10 @@ def test_run_rag_refresh_stage_row_budget_flushes_before_batch_size_limit(tmp_pa
 def test_run_rag_refresh_resumes_within_s2_shard_from_unit_progress(tmp_path):
     class FakeTargetLoader:
         def load(self, *, corpus_ids, limit):
-            return [RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id) for corpus_id in corpus_ids]
+            return [
+                RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id)
+                for corpus_id in corpus_ids
+            ]
 
     class FakeExistingLoader:
         def load_existing(self, *, corpus_ids):
@@ -1955,7 +2553,10 @@ def test_run_rag_refresh_resumes_within_s2_shard_from_unit_progress(tmp_path):
 def test_run_rag_refresh_stage_byte_budget_flushes_before_batch_size_limit(tmp_path):
     class FakeTargetLoader:
         def load(self, *, corpus_ids, limit):
-            return [RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id) for corpus_id in corpus_ids]
+            return [
+                RagTargetCorpusRow(corpus_id=corpus_id, pmid=corpus_id)
+                for corpus_id in corpus_ids
+            ]
 
     class FakeExistingLoader:
         def load_existing(self, *, corpus_ids):

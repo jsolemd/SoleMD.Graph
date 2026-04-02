@@ -18,7 +18,12 @@ from app.rag_ingest.chunk_quality import (
     MIN_USEFUL_NARRATIVE_TOKENS,
     is_weak_short_narrative_chunk_text,
 )
-from app.rag_ingest.orchestrator import _load_corpus_ids_file, _unique_ints
+from app.rag_ingest.corpus_ids import (
+    resolve_corpus_ids,
+)
+from app.rag_ingest.corpus_ids import (
+    unique_corpus_ids as _unique_ints,
+)
 from app.rag_ingest.section_context import (
     looks_like_structural_heading,
     repeated_nonstructural_section_label_counts,
@@ -470,9 +475,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = _unique_ints(
-        (args.corpus_ids or [])
-        + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = inspect_rag_warehouse_quality(

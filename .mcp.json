@@ -4,7 +4,7 @@
     "context7": {
       "type": "http",
       "url": "https://mcp.context7.com/mcp",
-      "instructions": "External library documentation lookups. Use when doc-search doesn't have the library indexed."
+      "instructions": "Fallback external library documentation lookups. Use when CodeAtlas docs tools do not have the library indexed."
     },
     "chrome-devtools": {
       "type": "http",
@@ -26,15 +26,10 @@
       "url": "http://localhost:8203/mcp",
       "instructions": "Query UMLS terminology data. Contains MRCONSO, MRREL, and semantic type tables."
     },
-    "code-search": {
+    "codeatlas": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.graph",
-      "instructions": "Primary tool for code exploration and navigation in the active project context. Use the streamlined 13-tool surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, find_clones, find_patterns, index_status. Default exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Narrow UI traversal with library_tag (for example mantine, framer-motion, tailwind, cosmograph) and ui_primitive (for example ActionIcon, Stack, motion.div). Promote good hits into persistent task context with slice_build(task=...) or slice_build(promote_refs=[symbol_ref, symbol_uid, ...]), then use slice_view(slice_id, detail=...) to escalate context. Read matched_on, rank_explain, source_bias_filtered, neighborhood, unresolved call-site telemetry, and CSS-aware metadata such as css_selector_targets, css_var_defs, css_at_rules, and has_css_important before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via explicit aliases: code-search-app, code-search-graph, code-search-make, code-search-wiki, and code-search-infra."
-    },
-    "doc-search": {
-      "type": "http",
-      "url": "http://localhost:8200/mcp",
-      "instructions": "Query external library documentation using hybrid search (BM25 + semantic). 30+ libraries indexed: React, Next.js, Supabase, Langfuse, FastAPI, Pydantic, etc. Use resolve-library-id to find library, then query-docs to search. For exact API names, use exactMatch=true. See /doc-search skill for full guide."
+      "instructions": "Primary MCP surface for CodeAtlas navigation in the active project context. It exposes both project code tools and external documentation tools on the same server. Code navigation surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, find_clones, find_patterns, index_status. Docs surface: resolve_library_id, search_docs, search_docs_multi, expand_doc_chunk, list_doc_libraries, read_doc, update_doc_library, add_doc_library, delete_doc_library, export_doc_bundle, import_doc_bundle. Default code exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. For external library docs: resolve_library_id(library_name=...) -> search_docs(library_id=..., query=...) -> read_doc(...) when full context is needed. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Narrow UI traversal with library_tag (for example mantine, framer-motion, tailwind, cosmograph) and ui_primitive (for example ActionIcon, Stack, motion.div). Read matched_on, rank_explain, unresolved call-site telemetry, and CSS-aware metadata such as css_selector_targets, css_var_defs, css_at_rules, and has_css_important before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via explicit aliases: codeatlas-app, codeatlas-graph, codeatlas-make, codeatlas-wiki, and codeatlas-infra."
     },
     "mantine": {
       "command": "node",
@@ -56,30 +51,30 @@
       },
       "instructions": "Neo4j graph database — direct Cypher queries via official Neo4j MCP server. Use for schema inspection (get-schema), read queries (read-cypher), and write operations (write-cypher). Code-search handles LLM-facing structural workflows via inspect_symbol, trace_flow, and analyze_impact. Use this server for direct ad-hoc Cypher."
     },
-    "code-search-app": {
+    "codeatlas-app": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.app",
-      "instructions": "Code search for SoleMD.App (Python biomedical NLP pipeline). Use when you need to find or understand App pipeline code, data models, DAL patterns, orchestration, or API contracts. Same 13-tool surface as code-search."
+      "instructions": "CodeAtlas for SoleMD.App (Python biomedical NLP pipeline). Use when you need to find or understand App pipeline code, data models, DAL patterns, orchestration, API contracts, or related external library docs through the unified code+docs MCP surface."
     },
-    "code-search-graph": {
+    "codeatlas-graph": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.graph",
-      "instructions": "Code search for SoleMD.Graph (biomedical knowledge graph). Use when you need to find or understand Graph components, pages, API routes, hooks, motion/UI patterns, or data fetch flows. Same 13-tool surface as code-search."
+      "instructions": "CodeAtlas for SoleMD.Graph (biomedical knowledge graph). Use when you need to find or understand Graph components, pages, API routes, hooks, motion/UI patterns, data fetch flows, or related external library docs through the unified code+docs MCP surface."
     },
-    "code-search-make": {
+    "codeatlas-make": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.make",
-      "instructions": "Code search for SoleMD.Make (markdown-first document generation). Use when you need to find or understand Pandoc, Typst, Carbone, slides, citation/Zotero workflows, filters, templates, or document source conventions. Same 13-tool surface as code-search."
+      "instructions": "CodeAtlas for SoleMD.Make (markdown-first document generation). Use when you need to find or understand Pandoc, Typst, Carbone, slides, citation/Zotero workflows, filters, templates, document source conventions, or related external library docs through the unified code+docs MCP surface."
     },
-    "code-search-wiki": {
+    "codeatlas-wiki": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.wiki",
-      "instructions": "Code search for SoleMD.Wiki (Quartz knowledge wiki). Use when you need to find or understand wiki content structure, Quartz configuration, plugins, or publishing/build behavior. Same 13-tool surface as code-search."
+      "instructions": "CodeAtlas for SoleMD.Wiki (Quartz knowledge wiki). Use when you need to find or understand wiki content structure, Quartz configuration, plugins, publishing/build behavior, or related external library docs through the unified code+docs MCP surface."
     },
-    "code-search-infra": {
+    "codeatlas-infra": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.infra",
-      "instructions": "Code search for SoleMD.Infra (shared infrastructure). Use when you need to find or understand Docker Compose, MCP servers, devcontainer generation, monitoring, or shared operational scripts. Same 13-tool surface as code-search."
+      "instructions": "CodeAtlas for SoleMD.Infra (shared infrastructure). Use when you need to find or understand Docker Compose, MCP servers, devcontainer generation, monitoring, shared operational scripts, or related external library docs through the unified code+docs MCP surface."
     }
   }
 }

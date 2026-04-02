@@ -11,6 +11,7 @@ from app.rag_ingest.sentence_segmentation import SyntokSentenceSegmenter
 from app.rag_ingest.source_parsers import (
     extract_biocxml_document_id,
     parse_biocxml_document,
+    parse_s2_paper_abstract,
     parse_s2orc_row,
 )
 
@@ -213,6 +214,32 @@ def test_parse_s2orc_row_does_not_promote_structural_heading_to_document_title()
     parsed = parse_s2orc_row(row, source_revision="2026-03-10", parser_version="parser-v1")
 
     assert parsed.document.title is None
+
+
+def test_parse_s2_paper_abstract_builds_canonical_abstract_source():
+    parsed = parse_s2_paper_abstract(
+        corpus_id=12345,
+        title_text="Example trial",
+        abstract_text=(
+            "Melatonin reduced delirium incidence in the randomized cohort. "
+            "No serious adverse events were observed."
+        ),
+        source_revision="2026-03-10",
+        parser_version="parser-v4",
+        paper_id="S2:paper-12345",
+        text_availability="fulltext",
+    )
+
+    assert parsed.document.title == "Example trial"
+    assert parsed.document.source_availability == "abstract"
+    assert parsed.document.raw_attrs_json["ingest_lane"] == "s2_papers_abstract"
+    assert parsed.document.raw_attrs_json["paper_id"] == "S2:paper-12345"
+    assert parsed.blocks[0].section_role == SectionRole.ABSTRACT
+    assert parsed.blocks[0].block_kind == PaperBlockKind.NARRATIVE_PARAGRAPH
+    assert len(parsed.sentences) == 2
+    assert {
+        sentence.segmentation_source for sentence in parsed.sentences
+    } == {SentenceSegmentationSource.STANZA_BIOMEDICAL}
 
 
 def test_parse_s2orc_row_normalizes_financial_support_header_to_front_matter():

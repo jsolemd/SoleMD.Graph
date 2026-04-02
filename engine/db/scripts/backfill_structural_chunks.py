@@ -15,6 +15,7 @@ from app.rag_ingest.chunk_backfill_runtime import (
     backfill_default_chunks,
     run_chunk_backfill,
 )
+from app.rag_ingest.corpus_ids import resolve_corpus_ids
 
 __all__ = [
     "CanonicalChunkRows",
@@ -22,16 +23,6 @@ __all__ = [
     "run_chunk_backfill",
     "main",
 ]
-
-
-def _load_corpus_ids_file(path: Path) -> list[int]:
-    values: list[int] = []
-    for line in path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        values.append(int(stripped))
-    return list(dict.fromkeys(values))
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -104,11 +95,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = list(
-        dict.fromkeys(
-            (args.corpus_ids or [])
-            + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
-        )
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = run_chunk_backfill(

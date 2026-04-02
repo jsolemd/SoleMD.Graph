@@ -10,17 +10,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app import db
+from app.rag_ingest.corpus_ids import resolve_corpus_ids
 from app.rag_ingest.document_title_sync import sync_rag_document_titles
-
-
-def _load_corpus_ids_file(path: Path) -> list[int]:
-    values: list[int] = []
-    for line in path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        values.append(int(stripped))
-    return list(dict.fromkeys(values))
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -52,11 +43,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    corpus_ids = list(
-        dict.fromkeys(
-            (args.corpus_ids or [])
-            + (_load_corpus_ids_file(args.corpus_ids_file) if args.corpus_ids_file else [])
-        )
+    corpus_ids = resolve_corpus_ids(
+        corpus_ids=args.corpus_ids,
+        corpus_ids_file=args.corpus_ids_file,
     )
     try:
         report = sync_rag_document_titles(corpus_ids=corpus_ids or None)
