@@ -15,6 +15,7 @@ class RuntimeEvalQueryFamily(StrEnum):
     TITLE_GLOBAL = "title_global"
     TITLE_SELECTED = "title_selected"
     SENTENCE_GLOBAL = "sentence_global"
+    GENERAL_GLOBAL = "general_global"
 
 
 class RuntimeEvalPaperRecord(ParseContractModel):

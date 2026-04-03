@@ -22,6 +22,11 @@ class RetrievalSearchPlan:
     prefer_precise_grounding: bool
     selected_context_bonus: float
 
+    exclude_retracted: bool = True
+    exclude_outdated_guidelines: bool = False
+    require_human_evidence: bool = False
+
+
 
 def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
     """Build a centralized runtime retrieval plan from the normalized query."""
@@ -45,6 +50,9 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
             preserve_selected_candidate=has_selected_context,
             prefer_precise_grounding=has_selected_context,
             selected_context_bonus=1.0 if has_selected_context else 0.0,
+            exclude_retracted=True,
+            exclude_outdated_guidelines=False,
+            require_human_evidence=False,
         )
 
     if query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP or use_chunk_lexical:
@@ -58,6 +66,9 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
             preserve_selected_candidate=has_selected_context,
             prefer_precise_grounding=True,
             selected_context_bonus=0.55 if has_selected_context else 0.0,
+            exclude_retracted=True,
+            exclude_outdated_guidelines=False,
+            require_human_evidence=False,
         )
 
     return RetrievalSearchPlan(
@@ -70,4 +81,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
         preserve_selected_candidate=False,
         prefer_precise_grounding=False,
         selected_context_bonus=0.0,
+        exclude_retracted=True,
+        exclude_outdated_guidelines=False,
+        require_human_evidence=False,
     )
