@@ -76,6 +76,22 @@ class ClinicalQueryIntent(StrEnum):
     MECHANISM = "mechanism"
 
 
+class QueryRiskTier(StrEnum):
+    """Assessed risk of answering the query based on clinical domains."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class QueryAnswerability(StrEnum):
+    """Whether the system is capable of or allowed to answer the query."""
+
+    ANSWERABLE = "answerable"
+    NONANSWERABLE = "nonanswerable"
+    HELPFUL_DEFERRAL = "helpful_deferral"
+
+
 class AnswerState(StrEnum):
     """Answer status summarizing grounding and conflict states."""
 

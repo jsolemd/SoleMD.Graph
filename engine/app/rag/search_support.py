@@ -8,6 +8,7 @@ from inspect import Parameter, signature
 from app.rag.clinical_priors import infer_clinical_query_intent
 from app.rag.models import PaperRetrievalQuery
 from app.rag.query_enrichment import (
+    analyze_query,
     determine_query_retrieval_profile,
     normalize_query_text,
     should_use_title_similarity,
@@ -84,10 +85,17 @@ def build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
     ):
         selection_graph_paper_refs = [selected_graph_paper_ref]
 
+    allow_terminal_punctuation = bool(selected_graph_paper_ref) or request.selected_layer_key == "paper"
+
     retrieval_profile = determine_query_retrieval_profile(
         request.query,
-        allow_terminal_title_punctuation=bool(selected_graph_paper_ref)
-        or request.selected_layer_key == "paper",
+        allow_terminal_title_punctuation=allow_terminal_punctuation,
+    )
+
+    analysis = analyze_query(
+        request.query,
+        allow_terminal_title_punctuation=allow_terminal_punctuation,
+        selected_paper_proof=bool(selected_graph_paper_ref)
     )
 
     return PaperRetrievalQuery(
@@ -106,6 +114,7 @@ def build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         retrieval_profile=retrieval_profile,
         clinical_intent=infer_clinical_query_intent(request.query),
         evidence_intent=request.evidence_intent,
+        analysis=analysis,
         k=request.k,
         rerank_topn=max(request.k, request.rerank_topn),
         use_lexical=request.use_lexical,

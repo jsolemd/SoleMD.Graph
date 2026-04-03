@@ -6,7 +6,8 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
-from app.rag.types import QueryRetrievalProfile
+from app.rag.models import PICOSlots, QueryAnalysis
+from app.rag.types import QueryAnswerability, QueryRetrievalProfile, QueryRiskTier
 
 MAX_QUERY_PHRASE_TOKENS = 4
 MAX_QUERY_PHRASES = 48
@@ -522,6 +523,66 @@ def determine_query_retrieval_profile(
     if normalized and len(normalized.split()) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
         return QueryRetrievalProfile.PASSAGE_LOOKUP
     return QueryRetrievalProfile.GENERAL
+
+
+def analyze_query(
+    text: str | None,
+    *,
+    allow_terminal_title_punctuation: bool = False,
+    selected_paper_proof: bool = False,
+) -> QueryAnalysis:
+    """Perform structured analysis on the query, replacing fragmented heuristics.
+
+    This function centralizes routing, risk assessment, and clinical concept
+    extraction (e.g. PICO). Currently, it acts as a structured wrapper around existing
+    heuristics. In a fully-realized EBM system, this should call an ontology-backed
+    linker or a constrained classifier (e.g., scispaCy) for explicit PICO and entity
+    resolution, rather than relying strictly on lexical rules.
+    """
+    profile = determine_query_retrieval_profile(
+        text, allow_terminal_title_punctuation=allow_terminal_title_punctuation
+    )
+
+    normalized = normalize_query_text(text or "")
+
+    # 1. Answerability / Deferral
+    # High-risk out-of-scope logic (e.g., asking for medical advice instead of literature)
+    # Placeholder for more complex LLM/classifier deferral
+    answerability = QueryAnswerability.ANSWERABLE
+    if "my symptoms" in normalized or "what should i take" in normalized:
+        answerability = QueryAnswerability.HELPFUL_DEFERRAL
+
+    # 2. Risk Tier
+    # If the query is highly focused on treatments or dosages, it is a high clinical risk.
+    risk_tier = QueryRiskTier.LOW
+    if "treatment" in normalized or "dosage" in normalized or "therapy" in normalized:
+        risk_tier = QueryRiskTier.HIGH
+    elif "diagnosis" in normalized or "symptom" in normalized:
+        risk_tier = QueryRiskTier.MEDIUM
+
+    # 3. PICO Extraction (Heuristic placeholder for Ontology Linker)
+    # In the future, replace this with UMLS/RxNorm linker calls.
+    pico_slots = None
+    if "treatment" in normalized or "efficacy" in normalized:
+        pico_slots = PICOSlots(intervention="placeholder_intervention")
+
+    # 4. Entities and Relations
+    entities = tuple(build_runtime_entity_resolution_phrases(
+        text or "",
+        retrieval_profile=profile,
+        normalized_query=normalized
+    ))
+    relations = tuple(derive_relation_terms(text or ""))
+
+    return QueryAnalysis(
+        query_kind=profile,
+        answerability=answerability,
+        risk_tier=risk_tier,
+        pico_slots=pico_slots,
+        entities=entities,
+        relation_intents=relations,
+        selected_paper_proof=selected_paper_proof,
+    )
 
 
 def should_use_exact_title_precheck(text: str | None) -> bool:
