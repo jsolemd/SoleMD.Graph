@@ -21,6 +21,7 @@ from app.rag.types import (
     GraphSignalKind,
     NodeLayer,
     RetrievalChannel,
+    AnswerState,
     RetrievalScope,
 )
 
@@ -170,6 +171,20 @@ class RetrievalChannelResult(RagSchema):
     hits: list[RetrievalChannelHit] = Field(default_factory=list)
 
 
+
+class QueryPicoAnalysis(RagSchema):
+    """Explicit representation of population, intervention, comparator, and outcome."""
+    population: list[str] = Field(default_factory=list)
+    intervention: list[str] = Field(default_factory=list)
+    comparator: list[str] = Field(default_factory=list)
+    outcome: list[str] = Field(default_factory=list)
+
+class ClaimAttribution(RagSchema):
+    """Claim-level citation verification."""
+    claim_text: str
+    supported: bool
+    cited_span_ids: list[str] = Field(default_factory=list)
+
 class GroundedAnswer(RagSchema):
     segments: list[AnswerSegment] = Field(default_factory=list)
     inline_citations: list[InlineCitationAnchor] = Field(default_factory=list)
@@ -229,6 +244,9 @@ class RagSearchResponse(RagSchema):
     query: str
     answer: str | None = None
     answer_model: str | None = None
+    answer_state: AnswerState | None = None
+    pico_analysis: QueryPicoAnalysis | None = None
+    claim_attributions: list[ClaimAttribution] = Field(default_factory=list)
     answer_corpus_ids: list[int] = Field(default_factory=list)
     grounded_answer: GroundedAnswer | None = None
     evidence_bundles: list[EvidenceBundle] = Field(default_factory=list)

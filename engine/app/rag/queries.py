@@ -260,6 +260,27 @@ ENTITY_FUZZY_SIMILARITY_THRESHOLD = 0.3
 ENTITY_TOP_CONCEPTS_PER_TERM = 3
 
 
+
+def build_clinical_hard_gates_sql(
+    *,
+    exclude_retracted: bool = True,
+    exclude_outdated_guidelines: bool = False,
+    require_human_evidence: bool = False
+) -> str:
+    """Generates WHERE clause conditions to enforce clinical safety contracts."""
+    conditions = []
+    if exclude_retracted:
+        conditions.append("p.is_retracted = false")
+    if exclude_outdated_guidelines:
+        conditions.append("p.is_outdated_guideline = false")
+    if require_human_evidence:
+        conditions.append("p.has_human_evidence = true")
+
+    if not conditions:
+        return "true"
+    return " AND ".join(conditions)
+
+
 def _paper_search_sql(*, include_title_similarity: bool) -> str:
     fts_title_similarity_sql = (
         f"""

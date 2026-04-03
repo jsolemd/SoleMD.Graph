@@ -12,6 +12,18 @@ class NodeLayer(StrEnum):
     CHUNK = "chunk"
 
 
+class AnswerState(StrEnum):
+    """Explicit answer states representing the consensus of evidence."""
+
+    SUPPORTED = "supported"
+    MIXED = "mixed"
+    INSUFFICIENT = "insufficient"
+    NONHUMAN_ONLY = "nonhuman-only"
+    OUTDATED = "outdated"
+    WAREHOUSE_INCOMPLETE = "warehouse-incomplete"
+
+
+
 class RetrievalChannel(StrEnum):
     """Retrieval channels currently exposed by the baseline service."""
 
