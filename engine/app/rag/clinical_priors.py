@@ -153,12 +153,54 @@ def score_clinical_prior(
     score = 0.0
     reasons: list[str] = []
     publication_types = _normalize_publication_types(paper.publication_types)
-    if publication_types & HIGH_CLINICAL_PUBLICATION_TYPES:
-        score += 0.32
-        reasons.append("high_clinical_publication_type")
-    elif publication_types & MODERATE_CLINICAL_PUBLICATION_TYPES:
-        score += 0.16
-        reasons.append("clinical_publication_type")
+
+    # EBM Level 1: Systematic reviews, meta-analyses, and practice guidelines
+    ebm_level_1 = publication_types & {"metaanalysis", "systematicreview", "practiceguideline", "guideline"}
+    # EBM Level 2: RCTs
+    ebm_level_2 = publication_types & {"randomizedcontrolledtrial", "clinicaltrial"}
+    # EBM Level 3: Cohort, case-control, observational
+    ebm_level_3 = publication_types & {"cohortstudy", "observationalstudy", "comparativestudy", "multicenterstudy", "validationstudy", "evaluationstudy"}
+    # EBM Level 4: Case reports/series, narrative reviews
+    ebm_level_4 = publication_types & {"review", "casereports"}
+
+    if query_intent == ClinicalQueryIntent.TREATMENT:
+        if ebm_level_1:
+            score += 0.40
+            reasons.append("ebm_level_1_treatment_evidence")
+        elif ebm_level_2:
+            score += 0.35
+            reasons.append("ebm_level_2_rct_evidence")
+        elif ebm_level_3:
+            score += 0.15
+            reasons.append("ebm_level_3_observational_evidence")
+    elif query_intent == ClinicalQueryIntent.DIAGNOSIS:
+        if ebm_level_1:
+            score += 0.35
+            reasons.append("ebm_level_1_diagnostic_evidence")
+        elif publication_types & {"validationstudy", "evaluationstudy"}:
+            score += 0.30
+            reasons.append("diagnostic_validation_signal")
+        elif ebm_level_3:
+            score += 0.15
+            reasons.append("ebm_level_3_observational_evidence")
+    elif query_intent == ClinicalQueryIntent.PROGNOSIS:
+        if ebm_level_1:
+            score += 0.35
+            reasons.append("ebm_level_1_prognostic_evidence")
+        elif "cohortstudy" in publication_types:
+            score += 0.30
+            reasons.append("prognostic_cohort_signal")
+        elif ebm_level_3:
+            score += 0.15
+            reasons.append("ebm_level_3_observational_evidence")
+    else:
+        # Fallback for general but actionable intents
+        if ebm_level_1:
+            score += 0.32
+            reasons.append("high_clinical_publication_type")
+        elif ebm_level_2 or ebm_level_3 or ebm_level_4:
+            score += 0.16
+            reasons.append("clinical_publication_type")
 
     if species_profile is None:
         return max(-0.35, min(score, 0.6)), reasons
@@ -175,14 +217,5 @@ def score_clinical_prior(
     elif species_profile.nonhuman_mentions > 0:
         score -= 0.14
         reasons.append("nonhuman_population_signal")
-
-    if query_intent == ClinicalQueryIntent.PROGNOSIS and "cohortstudy" in publication_types:
-        score += 0.08
-        reasons.append("prognostic_cohort_signal")
-    if query_intent == ClinicalQueryIntent.DIAGNOSIS and (
-        publication_types & {"validationstudy", "evaluationstudy"}
-    ):
-        score += 0.08
-        reasons.append("diagnostic_validation_signal")
 
     return max(-0.35, min(score, 0.6)), reasons

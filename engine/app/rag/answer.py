@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from app.rag.models import EvidenceBundle
 from app.rag.query_enrichment import normalize_title_key
 from app.rag.retrieval_policy import has_direct_retrieval_support
+from datetime import datetime
 from app.rag.text_alignment import score_text_alignment
 from app.rag.types import (
     DEFAULT_ANSWER_MODEL,
+    AnswerState,
     EvidenceIntent,
     QueryRetrievalProfile,
     RetrievalChannel,
@@ -21,6 +23,7 @@ from app.rag.types import (
 class BaselineAnswerPayload:
     text: str | None
     model: str | None
+    answer_state: AnswerState | None = None
     segment_texts: tuple[str, ...] = ()
     segment_corpus_ids: tuple[int | None, ...] = ()
     grounding_corpus_ids: tuple[int, ...] = ()
@@ -56,6 +59,45 @@ def generate_baseline_answer(
     return payload.text, payload.model
 
 
+def _evaluate_answer_state(bundles: list[EvidenceBundle]) -> AnswerState:
+    if not bundles:
+        return AnswerState.INSUFFICIENT
+
+    # Very weak top score suggests insufficient grounding
+    if bundles[0].score < 0.2:
+        return AnswerState.INSUFFICIENT
+
+    is_mixed = False
+    has_human = False
+    has_nonhuman = False
+    outdated_guideline = False
+
+    for bundle in bundles:
+        if bundle.paper.evidence_quality_score < 0:
+            is_mixed = True
+
+        # Determine species context based on explicit reason strings passed back by `clinical_priors.py`
+        reason_set = {r for r in bundle.match_reasons}
+        if "nonhuman_population_signal" in reason_set or "model_organism_only_signal" in reason_set or "Matched clinician-facing prior: nonhuman_population_signal" in reason_set or "Matched clinician-facing prior: model_organism_only_signal" in reason_set:
+            has_nonhuman = True
+        if "human_population_signal" in reason_set or "includes_human_population_signal" in reason_set or "Matched clinician-facing prior: human_population_signal" in reason_set or "Matched clinician-facing prior: includes_human_population_signal" in reason_set:
+            has_human = True
+
+        pub_types = [pt.lower() for pt in (bundle.paper.publication_types or [])]
+        if "guideline" in pub_types or "practiceguideline" in pub_types:
+            if bundle.paper.year and bundle.paper.year < (datetime.now().year - 8):
+                outdated_guideline = True
+
+    if is_mixed:
+        return AnswerState.MIXED
+    if outdated_guideline:
+        return AnswerState.OUTDATED
+    if has_nonhuman and not has_human:
+        return AnswerState.NONHUMAN_ONLY
+
+    return AnswerState.SUPPORTED
+
+
 def build_baseline_answer_payload(
     bundles: list[EvidenceBundle],
     *,
@@ -75,7 +117,7 @@ def build_baseline_answer_payload(
         selected_corpus_id=selected_corpus_id,
     )
     if not grounding_bundles:
-        return BaselineAnswerPayload(text=None, model=None)
+        return BaselineAnswerPayload(text=None, model=None, answer_state=AnswerState.INSUFFICIENT)
 
     heading = _answer_heading(evidence_intent)
     lines: list[str] = []
@@ -87,9 +129,12 @@ def build_baseline_answer_payload(
         lines.append(f"{title}{year}: {snippet}")
         segment_corpus_ids.append(bundle.paper.corpus_id)
 
+    answer_state = _evaluate_answer_state(grounding_bundles)
+
     return BaselineAnswerPayload(
         text=f"{heading}\n\n" + "\n\n".join(lines),
         model=DEFAULT_ANSWER_MODEL,
+        answer_state=answer_state,
         segment_texts=(heading, *lines),
         segment_corpus_ids=tuple(segment_corpus_ids),
         grounding_corpus_ids=tuple(bundle.paper.corpus_id for bundle in grounding_bundles),

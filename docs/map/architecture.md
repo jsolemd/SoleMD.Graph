@@ -136,6 +136,20 @@ bundle bootstrap, or first-paint Cosmograph configuration.
 
 ### Browser Runtime Contract
 
+### Target State vs Live Behavior
+
+The table below clarifies what is currently running by default, what is available as an option, what is planned for the future, and what was explicitly rejected.
+
+| Feature / Behavior | Live Default | Live Optional | Planned | Rejected |
+|--------------------|--------------|---------------|---------|----------|
+| **Primary Retrieval Spine** | Paper-first | — | Chunk-first fallback | Chunk-first as the primary spine |
+| **Answer Synthesis** | Extractive baseline | — | Free-form LLM synthesis | LLM smoothing over conflicts |
+| **Evidence Ranking** | Explicit query-type routing | PICO-aware EBM tiering | — | Uniform retrieval for all queries |
+| **Biomedical Reranker** | Off | MedCPT cross-encoder | Always-on | Heavy reranking on simple queries |
+| **Answer States** | Explicit (Supported/Mixed/etc.) | — | — | Undifferentiated prose |
+| **Claim Verification** | Grounded answers (coverage-gated) | — | Claim-level citation verification | Plausible but unverified citations |
+| **Multi-step QA** | One-shot | — | Iterative vignette mode | Bleeding complex QA into base |
+
 The browser path is split on purpose:
 
 - render path:

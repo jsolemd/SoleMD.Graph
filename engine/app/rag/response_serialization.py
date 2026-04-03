@@ -45,6 +45,7 @@ def serialize_search_result(result: RagSearchResult) -> RagSearchResponse:
             ).model_dump(),
             "query": result.query.query,
             "answer": result.answer,
+            "answer_state": result.answer_state,
             "answer_model": result.answer_model,
             "answer_corpus_ids": result.answer_corpus_ids,
             "grounded_answer": (

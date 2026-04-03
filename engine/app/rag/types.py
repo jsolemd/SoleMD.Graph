@@ -76,6 +76,17 @@ class ClinicalQueryIntent(StrEnum):
     MECHANISM = "mechanism"
 
 
+class AnswerState(StrEnum):
+    """Answer status summarizing grounding and conflict states."""
+
+    SUPPORTED = "supported"
+    MIXED = "mixed"
+    INSUFFICIENT = "insufficient"
+    NONHUMAN_ONLY = "nonhuman_only"
+    OUTDATED = "outdated"
+    WAREHOUSE_INCOMPLETE = "warehouse_incomplete"
+
+
 DEFAULT_RETRIEVAL_VERSION = "baseline-postgres-v1"
 DEFAULT_GRAPH_NAME = "living_graph"
 DEFAULT_GRAPH_CACHE_CONTROL = "no-store"

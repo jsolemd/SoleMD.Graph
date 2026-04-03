@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from collections.abc import Mapping
 
 from app.rag.clinical_priors import score_clinical_prior
@@ -52,7 +53,24 @@ def rank_paper_hits(
     species_profiles = species_profiles or {}
     score_profile = _ranking_profile(retrieval_profile)
     ranked: list[PaperEvidenceHit] = []
+
+    # Optional explicitly-penalized or excluded elements based on metadata
     for hit in paper_hits:
+        publication_types = {pt.lower() for pt in (hit.publication_types or [])}
+
+        # Hard penalty: Retracted publications
+        if "retractedpublication" in publication_types or (
+            hit.title and (hit.title.lower().startswith("retracted:") or hit.title.lower().startswith("retraction:"))
+        ):
+            continue  # Exclude entirely from ranking
+
+        # Hard penalty: Outdated clinical guidelines (older than 10 years, or older than 5 with newer versions available)
+        # Here we penalize them severely but don't completely exclude them in case they are explicitly asked for
+        outdated_guideline_penalty = 0.0
+        if "guideline" in publication_types or "practiceguideline" in publication_types:
+            if hit.year and hit.year < (datetime.now().year - 10):
+                outdated_guideline_penalty = -0.5
+
         direct_support = has_direct_retrieval_support(
             paper=hit,
             retrieval_profile=retrieval_profile,
@@ -174,6 +192,7 @@ def rank_paper_hits(
             + (hit.intent_score * score_profile.intent_weight)
             + (hit.biomedical_rerank_score * score_profile.biomedical_rerank_weight)
             + (hit.passage_alignment_score * score_profile.passage_alignment_weight)
+            + outdated_guideline_penalty
             + _direct_match_adjustment(
                 paper=hit,
                 retrieval_profile=retrieval_profile,
