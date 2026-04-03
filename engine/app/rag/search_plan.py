@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.rag.models import PaperRetrievalQuery
-from app.rag.types import QueryRetrievalProfile
+from app.rag.types import QueryAnswerability, QueryRetrievalProfile, QueryRiskTier
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +21,8 @@ class RetrievalSearchPlan:
     preserve_selected_candidate: bool
     prefer_precise_grounding: bool
     selected_context_bonus: float
+    # New safety/deflection fields
+    is_deflected: bool = False
 
 
 def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
@@ -34,6 +36,22 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
         and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
     )
 
+    # 1. Deflection Check
+    if query.analysis and query.analysis.answerability == QueryAnswerability.HELPFUL_DEFERRAL:
+        return RetrievalSearchPlan(
+            retrieval_profile=query.retrieval_profile,
+            allow_exact_title_matches=False,
+            use_paper_lexical=False,
+            use_chunk_lexical=False,
+            fallback_to_paper_lexical_on_empty_chunk=False,
+            expand_citation_frontier=False,
+            preserve_selected_candidate=False,
+            prefer_precise_grounding=False,
+            selected_context_bonus=0.0,
+            is_deflected=True,
+        )
+
+    # 2. Base routing
     if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
         return RetrievalSearchPlan(
             retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,

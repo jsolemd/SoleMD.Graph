@@ -227,6 +227,57 @@ def build_dense_audit_sentence_hard_benchmark(
     )
 
 
+def build_heuristic_brittleness_benchmark() -> list[RuntimeEvalQueryCase]:
+    """A frozen benchmark family to test routing resilience against surface cues.
+
+    This set tests the router's ability to handle colon-subtitle titles, acronyms,
+    statistical text, and misleading 'relation-like' query phrases without
+    falling back to brittle regex failures.
+    """
+    return [
+        RuntimeEvalQueryCase(
+            corpus_id=1000001,
+            title="Schizophrenia: a new mechanism",
+            primary_source_system="s2",
+            query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            query="Schizophrenia: a new mechanism",
+            stratum_key="benchmark:heuristic_brittleness|type:colon_subtitle",
+            benchmark_labels=["heuristic_brittleness", "colon_subtitle"],
+            representative_section_role="abstract",
+        ),
+        RuntimeEvalQueryCase(
+            corpus_id=1000002,
+            title="Statistical analysis of p < 0.05 in trials",
+            primary_source_system="s2",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="What are the effects when p < 0.05 and N=1200?",
+            stratum_key="benchmark:heuristic_brittleness|type:statistical_prose",
+            benchmark_labels=["heuristic_brittleness", "statistical_prose"],
+            representative_section_role="abstract",
+        ),
+        RuntimeEvalQueryCase(
+            corpus_id=1000003,
+            title="The impact of NMDA on memory",
+            primary_source_system="s2",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="Does NMDA receptor antagonism affect memory in mice?",
+            stratum_key="benchmark:heuristic_brittleness|type:acronym_polysemy",
+            benchmark_labels=["heuristic_brittleness", "acronym_polysemy"],
+            representative_section_role="abstract",
+        ),
+        RuntimeEvalQueryCase(
+            corpus_id=1000004,
+            title="Comparing lithium and valproate",
+            primary_source_system="s2",
+            query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+            query="Compare the efficacy of lithium and valproate for mania",
+            stratum_key="benchmark:heuristic_brittleness|type:incidental_relation",
+            benchmark_labels=["heuristic_brittleness", "incidental_relation"],
+            representative_section_role="abstract",
+        ),
+    ]
+
+
 def load_runtime_eval_benchmark_cases(
     benchmark_path: Path,
 ) -> tuple[RagRuntimeEvalBenchmarkReport, list[RuntimeEvalQueryCase]]:

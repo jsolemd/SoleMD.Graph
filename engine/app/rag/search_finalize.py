@@ -401,6 +401,7 @@ def finalize_search_result(
         else None
     )
     answer = answer_payload.text if answer_payload else None
+    answer_state = answer_payload.answer_state if answer_payload else None
     answer_model = answer_payload.model if answer_payload else None
     answer_corpus_ids = (
         list(answer_payload.grounding_corpus_ids)
@@ -524,6 +525,7 @@ def finalize_search_result(
         channels=channels,
         answer_corpus_ids=answer_corpus_ids,
         answer=answer,
+        answer_state=answer_state,
         answer_model=answer_model,
         grounded_answer=grounded_answer,
         debug_trace=trace.as_debug_trace(),

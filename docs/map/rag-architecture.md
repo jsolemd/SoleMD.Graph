@@ -17,6 +17,35 @@
 
 ---
 
+## Target State vs Live Behavior
+
+The table below clarifies what is currently running by default, what is available as an option, what is planned for the future, and what was explicitly rejected. This helps separate current baseline functionality from target medical RAG patterns.
+
+| Feature / Behavior | Live Default | Live Optional | Planned | Rejected |
+|--------------------|--------------|---------------|---------|----------|
+| **Primary Retrieval Spine** | Paper-first | — | Chunk-first fallback | Chunk-first as the primary spine |
+| **Answer Synthesis** | Extractive baseline | — | Free-form LLM synthesis | LLM smoothing over conflicts |
+| **Evidence Ranking** | Explicit query-type routing | PICO-aware EBM tiering | — | Uniform retrieval for all queries |
+| **Biomedical Reranker** | Off | MedCPT cross-encoder | Always-on | Heavy reranking on simple queries |
+| **Answer States** | Explicit (Supported/Mixed/etc.) | — | — | Undifferentiated prose |
+| **Claim Verification** | Grounded answers (coverage-gated) | — | Claim-level citation verification | Plausible but unverified citations |
+| **Multi-step QA** | One-shot | — | Iterative vignette mode | Bleeding complex QA into base |
+
+## Model Role Matrix
+
+The RAG stack delegates specific responsibilities to specific models to ensure high precision without unreasonable latency:
+
+| Role | Model | Status | Purpose |
+|------|-------|--------|---------|
+| **Graph Geometry** | `SPECTER2` (pre-computed) | Live | Academic lineage / citation clustering |
+| **Paper Dense Retrieval** | `allenai/specter2_adhoc_query` | Live | Ad-hoc query-to-paper search |
+| **Passage Dense Retrieval** | `MedCPT` (dual-encoder) | Planned | Deep sentence/chunk-level recall |
+| **Reranking** | `MedCPT-Cross-Encoder` | Live Optional | High-precision candidate sorting |
+| **Autocomplete / Extraction** | `GPT-4.1 Nano` / similar | Live | Cheap structured extraction/entity resolution |
+| **Answer Synthesis** | `Gemini 2.5 Flash` / `Claude Sonnet` | Planned | Free-form, grounded answer generation |
+
+---
+
 ## 1. Executive Summary
 
 SoleMD.Graph uses a **paper-first retrieval architecture with chunk-backed
@@ -1499,7 +1528,19 @@ If those steps are followed in that order, the current architecture can be repro
 
 ---
 
-## 30. Important Invariants
+## 30. Clinical Safety Contract
+
+Because SoleMD.Graph operates in a clinician-facing medical evidence domain, the RAG architecture implements a specific set of clinical safety policies to ensure the system does not present harmful or confidently wrong information.
+
+1. **Retractions**: Papers marked as retracted (`retractedpublication` in publication types or explicit "retracted" markers in titles) trigger a hard gate and are excluded entirely from evidence ranking and retrieval results.
+2. **Outdated Guidelines**: Clinical guidelines older than the established threshold (e.g. 10 years, or older than 5 with newer versions available) are heavily penalized in ranking. While they are not entirely excluded (in case they are explicitly searched for), they will not organically surface as top-ranked primary evidence.
+3. **Contradictions / Mixed Evidence**: If top-ranked bundles present conflicting `evidence_quality_score` indicators or contradictory PICO results, the system will explicitly label the `answer_state` as `MIXED`. The LLM layer (when active) is not permitted to smooth over these conflicts into a single definitive answer.
+4. **Nonhuman Evidence**: Evidence bundles relying purely on animal or *in vitro* models (e.g., mice, drosophila) without accompanying human population signals will trigger a `NONHUMAN_ONLY` `answer_state`.
+5. **Insufficient Grounding**: If retrieved bundles have very low direct support scores or if the semantic similarity is weak, the `answer_state` defaults to `INSUFFICIENT`. The system will refuse to generate a synthesized answer in this state, relying on fallback "no answer found" deflection instead.
+
+---
+
+## 31. Important Invariants
 
 These invariants define whether the architecture is being respected.
 
@@ -1516,7 +1557,7 @@ These invariants define whether the architecture is being respected.
 
 ---
 
-## 31. Key Modules By Responsibility
+## 32. Key Modules By Responsibility
 
 ### Ingest and warehouse
 
@@ -1576,7 +1617,7 @@ These invariants define whether the architecture is being respected.
 
 ---
 
-## 32. External References That Inform The Design
+## 33. External References That Inform The Design
 
 These are not the source of truth for the SoleMD.Graph implementation, but they
 help explain why certain choices are reasonable.
@@ -1596,7 +1637,7 @@ help explain why certain choices are reasonable.
 
 ---
 
-## 33. Final Mental Model
+## 34. Final Mental Model
 
 If you remember only one mental model, use this one:
 

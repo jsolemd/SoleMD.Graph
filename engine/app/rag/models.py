@@ -12,10 +12,35 @@ from app.rag.types import (
     EvidenceIntent,
     GraphSignalKind,
     NodeLayer,
+    QueryAnswerability,
     QueryRetrievalProfile,
+    QueryRiskTier,
     RetrievalChannel,
     RetrievalScope,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PICOSlots:
+    """Extracted PICO elements from the query."""
+
+    population: str | None = None
+    intervention: str | None = None
+    comparator: str | None = None
+    outcome: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class QueryAnalysis:
+    """Structured query analysis determining routing, risk, and intent."""
+
+    query_kind: QueryRetrievalProfile
+    answerability: QueryAnswerability
+    risk_tier: QueryRiskTier
+    pico_slots: PICOSlots | None
+    entities: tuple[str, ...]
+    relation_intents: tuple[str, ...]
+    selected_paper_proof: bool
 
 
 @dataclass(slots=True)
@@ -37,6 +62,7 @@ class PaperRetrievalQuery:
     retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL
     clinical_intent: ClinicalQueryIntent = ClinicalQueryIntent.GENERAL
     evidence_intent: EvidenceIntent | None = None
+    analysis: QueryAnalysis | None = None
     k: int = 6
     rerank_topn: int = 18
     use_lexical: bool = True
@@ -257,6 +283,7 @@ class RagSearchResult:
     channels: list[RetrievalChannelResult]
     answer_corpus_ids: list[int] = field(default_factory=list)
     answer: str | None = None
+    answer_state: str | None = None
     answer_model: str | None = None
     grounded_answer: GroundedAnswerRecord | None = None
     debug_trace: dict[str, object] = field(default_factory=dict)

@@ -16,6 +16,7 @@ from app.rag.types import (
     DEFAULT_GRAPH_CACHE_CONTROL,
     DEFAULT_GRAPH_NAME,
     DEFAULT_RETRIEVAL_VERSION,
+    AnswerState,
     CitationDirection,
     EvidenceIntent,
     GraphSignalKind,
@@ -228,6 +229,7 @@ class RagSearchResponse(RagSchema):
     graph_context: GraphContext
     query: str
     answer: str | None = None
+    answer_state: AnswerState | None = None
     answer_model: str | None = None
     answer_corpus_ids: list[int] = Field(default_factory=list)
     grounded_answer: GroundedAnswer | None = None
