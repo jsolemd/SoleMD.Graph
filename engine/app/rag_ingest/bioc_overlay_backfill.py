@@ -1,4 +1,13 @@
-"""Bounded backfill of BioC overlays over existing S2-backed warehouse papers."""
+"""Bounded BioCXML backfill for corpus papers with PMID/PMC/DOI identifiers.
+
+Finds papers in solemd.corpus that have PubMed/PMC/DOI identifiers but lack
+BioCXML warehouse coverage, then locates them in the BioCXML archive and runs
+the warehouse refresh to parse blocks, sentences, and chunks.
+
+Works for both:
+- Papers with existing S2ORC warehouse coverage (adds BioCXML as a secondary source)
+- Papers with no warehouse coverage at all (uses BioCXML as the primary source)
+"""
 
 from __future__ import annotations
 
@@ -27,21 +36,16 @@ from app.rag_ingest.orchestrator import (
 from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository
 from app.rag_ingest.source_locator_refresh import refresh_rag_source_locator
 
-_BIOC_OVERLAY_CANDIDATE_SQL = """
-SELECT d.corpus_id
-FROM solemd.paper_documents AS d
-JOIN solemd.paper_document_sources AS s2
-  ON s2.corpus_id = d.corpus_id
- AND s2.source_system = 's2orc_v2'
-JOIN solemd.corpus AS c
-  ON c.corpus_id = d.corpus_id
+_BIOC_BACKFILL_CANDIDATE_SQL = """
+SELECT c.corpus_id
+FROM solemd.corpus AS c
 LEFT JOIN solemd.paper_document_sources AS bioc
-  ON bioc.corpus_id = d.corpus_id
+  ON bioc.corpus_id = c.corpus_id
  AND bioc.source_system = 'biocxml'
 WHERE bioc.corpus_id IS NULL
-  AND (%s::BIGINT[] IS NULL OR d.corpus_id = ANY(%s))
+  AND (%s::BIGINT[] IS NULL OR c.corpus_id = ANY(%s))
   AND (c.pmid IS NOT NULL OR c.pmc_id IS NOT NULL OR c.doi IS NOT NULL)
-ORDER BY d.corpus_id
+ORDER BY c.corpus_id
 LIMIT %s
 """
 
@@ -94,7 +98,7 @@ class PostgresBioCOverlayCandidateLoader:
         normalized_ids = _unique_ints(corpus_ids)
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                _BIOC_OVERLAY_CANDIDATE_SQL,
+                _BIOC_BACKFILL_CANDIDATE_SQL,
                 (
                     normalized_ids or None,
                     normalized_ids or None,
@@ -192,8 +196,8 @@ def run_bioc_overlay_backfill(
             start_document_ordinal=discovery_start_document_ordinal,
             limit=limit,
             max_documents=discovery_max_documents,
-            require_existing_documents=True,
-            require_existing_s2_source=True,
+            require_existing_documents=False,
+            require_existing_s2_source=False,
             skip_existing_bioc=True,
             allowed_corpus_ids=normalized_requested_ids or None,
         )
@@ -302,7 +306,7 @@ def run_bioc_overlay_backfill(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Backfill BioC overlays over existing S2-backed RAG warehouse papers."
+        description="Backfill BioCXML warehouse coverage for corpus papers with PMID/PMC/DOI identifiers."
     )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--parser-version", required=True)

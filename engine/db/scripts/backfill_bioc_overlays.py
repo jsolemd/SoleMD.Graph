@@ -1,4 +1,4 @@
-"""Clear operator alias for bounded BioC overlay backfill over existing S2 papers."""
+"""Clear operator alias for bounded BioCXML backfill over corpus papers with PMID/PMC/DOI."""
 
 from __future__ import annotations
 

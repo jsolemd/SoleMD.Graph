@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.rag_ingest.bioc_overlay_backfill import run_bioc_overlay_backfill
 
 
-def test_bioc_overlay_backfill_archive_discovery_requires_s2_source():
+def test_bioc_backfill_archive_discovery_accepts_any_corpus_paper():
     def _archive_target_discoverer(**kwargs):
         class _Result:
             @property
@@ -45,8 +45,8 @@ def test_bioc_overlay_backfill_archive_discovery_requires_s2_source():
             def selected_corpus_ids(self):
                 return [11, 22]
 
-        assert kwargs["require_existing_documents"] is True
-        assert kwargs["require_existing_s2_source"] is True
+        assert kwargs["require_existing_documents"] is False
+        assert kwargs["require_existing_s2_source"] is False
         assert kwargs["skip_existing_bioc"] is True
         assert kwargs["start_document_ordinal"] == 750
         return _Result()
