@@ -25,10 +25,11 @@ dependencies = [
     "pydantic>=2.10.0",
     "pydantic-settings>=2.6.0",
     # Monitoring
-    "langfuse>=2.50.0",
+    "langfuse>=4.0.0,<5",
     "google-genai>=1.69.0",
     "openinference-instrumentation-google-genai>=0.1.14",
     "google-api-core>=2.30.0",
+    "ollama>=0.4.0",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +47,10 @@ graph = [
     "leidenalg>=0.10.2",
     "scikit-learn>=1.5.0",
     "numpy>=1.26.0",
+]
+# Evaluation (RAGAS context metrics, heavy deps)
+eval = [
+    "ragas>=0.2.0",
 ]
 # Development
 dev = [

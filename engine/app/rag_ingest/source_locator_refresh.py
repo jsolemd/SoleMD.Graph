@@ -13,6 +13,10 @@ from app import db
 from app.config import settings
 from app.rag.corpus_resolution import PostgresBioCCorpusResolver, normalize_bioc_document_id
 from app.rag.parse_contract import ParseContractModel, ParseSourceSystem
+from app.rag_ingest.bioc_archive_manifest import (
+    RagBioCArchiveManifestEntry,
+    SidecarBioCArchiveManifestRepository,
+)
 from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_document_ids
 from app.rag_ingest.corpus_ids import (
     load_corpus_ids_file,
@@ -358,6 +362,7 @@ def refresh_rag_source_locator(
         archive_paths = sorted(settings.pubtator_biocxml_dir_path.glob("BioCXML.*.tar.gz"))
         if max_bioc_archives is not None:
             archive_paths = archive_paths[:max_bioc_archives]
+        manifest_repo = SidecarBioCArchiveManifestRepository()
         for archive_path in archive_paths:
             if requested_set and not missing_bioc_ids:
                 break
@@ -366,6 +371,7 @@ def refresh_rag_source_locator(
             if archive_path.name not in report.bioc_stage.scanned_units:
                 report.bioc_stage.scanned_units.append(archive_path.name)
             pending_rows: list[tuple[str, int, str, str | None]] = []
+            manifest_batch: list[RagBioCArchiveManifestEntry] = []
             saved_ordinal = int(bioc_progress.unit_ordinals.get(archive_path.name, 0))
             for document_index, (document_id, member_name) in enumerate(
                 _iter_bioc_documents(archive_path),
@@ -377,6 +383,15 @@ def refresh_rag_source_locator(
                 if document_id:
                     pending_rows.append(
                         (document_id, document_index, archive_path.name, member_name)
+                    )
+                    manifest_batch.append(
+                        RagBioCArchiveManifestEntry(
+                            source_revision=settings.pubtator_release_id,
+                            archive_name=archive_path.name,
+                            document_ordinal=document_index,
+                            member_name=member_name or "",
+                            document_id=document_id,
+                        )
                     )
                 if len(pending_rows) >= 1_000 or document_index % DEFAULT_PROGRESS_INTERVAL == 0:
                     report.bioc_stage.written_entries += _flush_bioc_locator_batch(
@@ -390,6 +405,9 @@ def refresh_rag_source_locator(
                     )
                     missing_bioc_ids = requested_set - found_ids
                     pending_rows.clear()
+                    if manifest_batch:
+                        manifest_repo.upsert_entries(manifest_batch)
+                        manifest_batch.clear()
                     bioc_progress.unit_ordinals[archive_path.name] = document_index
                     report.bioc_stage.located_corpus_ids = sorted(found_ids)
                     _save_checkpoint(
@@ -417,6 +435,9 @@ def refresh_rag_source_locator(
                     found_ids=found_ids,
                 )
                 missing_bioc_ids = requested_set - found_ids
+            if manifest_batch:
+                manifest_repo.upsert_entries(manifest_batch)
+                manifest_batch.clear()
             bioc_progress.completed_units = sorted(
                 {*bioc_progress.completed_units, archive_path.name}
             )

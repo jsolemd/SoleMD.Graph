@@ -234,6 +234,7 @@ class RagSearchResponse(RagSchema):
     evidence_bundles: list[EvidenceBundle] = Field(default_factory=list)
     graph_signals: list[GraphSignal] = Field(default_factory=list)
     retrieval_channels: list[RetrievalChannelResult] = Field(default_factory=list)
+    evidence_flags: dict[str, bool] = Field(default_factory=dict)
 
 
 PaperSummary = PaperEvidenceHit

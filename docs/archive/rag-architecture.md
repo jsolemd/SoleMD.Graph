@@ -1,5 +1,8 @@
 # SoleMD.Graph RAG Architecture
 
+> **Archived**: moved out of `docs/map` on 2026-04-03 after consolidation into
+> [../map/rag.md](../map/rag.md) and [../map/rag-info.md](../map/rag-info.md).
+
 > **Canonical deep-dive**: this is the detailed architecture document for the
 > live SoleMD.Graph RAG system as implemented in the repository on
 > `2026-04-02`.
@@ -9,11 +12,11 @@
 > ranking, answer synthesis, grounding, frontend integration, and evaluation.
 >
 > **Read this with**:
-> - [rag.md](./rag.md) for the shorter high-level map
+> - [../map/rag.md](../map/rag.md) for the current shorter high-level map
 > - [rag-architecture-code.md](./rag-architecture-code.md) for the code-oriented companion
-> - [database.md](./database.md) for schema and migration detail
-> - [semantic-scholar.md](./semantic-scholar.md) for the Semantic Scholar side
-> - [pubtator3.md](./pubtator3.md) for the PubTator/BioC side
+> - [../map/database.md](../map/database.md) for schema and migration detail
+> - [../map/semantic-scholar.md](../map/semantic-scholar.md) for the Semantic Scholar side
+> - [../map/pubtator3.md](../map/pubtator3.md) for the PubTator/BioC side
 
 ---
 

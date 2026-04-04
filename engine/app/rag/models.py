@@ -260,3 +260,4 @@ class RagSearchResult:
     answer_model: str | None = None
     grounded_answer: GroundedAnswerRecord | None = None
     debug_trace: dict[str, object] = field(default_factory=dict)
+    evidence_flags: dict[str, bool] = field(default_factory=dict)

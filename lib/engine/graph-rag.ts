@@ -158,6 +158,7 @@ function mapEngineRagResponse(
     evidence_bundles: response.evidence_bundles.map(mapEvidenceBundle),
     graph_signals: response.graph_signals.map(mapGraphSignal),
     retrieval_channels: response.retrieval_channels,
+    evidence_flags: response.evidence_flags ?? {},
   }
 }
 

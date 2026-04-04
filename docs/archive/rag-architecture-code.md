@@ -1,5 +1,8 @@
 # SoleMD.Graph RAG Architecture Code Guide
 
+> **Archived**: moved out of `docs/map` on 2026-04-03 after consolidation into
+> [../map/rag.md](../map/rag.md) and [../map/rag-info.md](../map/rag-info.md).
+
 > **Companion document**: this is the code-oriented companion to
 > [rag-architecture.md](./rag-architecture.md).
 >
@@ -12,9 +15,9 @@
 > every guard and helper.
 >
 > **Read this with**:
-> - [rag.md](./rag.md) for the short overview
+> - [../map/rag.md](../map/rag.md) for the current short overview
 > - [rag-architecture.md](./rag-architecture.md) for the full narrative design
-> - [database.md](./database.md) for schema and migration detail
+> - [../map/database.md](../map/database.md) for schema and migration detail
 
 ---
 

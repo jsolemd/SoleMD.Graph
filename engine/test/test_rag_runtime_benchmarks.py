@@ -325,3 +325,47 @@ def test_run_rag_runtime_case_evaluation_uses_explicit_cases(monkeypatch):
     assert report.query_families == [RuntimeEvalQueryFamily.SENTENCE_GLOBAL]
     assert report.cases[0].query == "Frozen benchmark query"
     assert report.summary.overall.hit_at_1_rate == 1.0
+
+
+def test_benchmark_paper_disjointness():
+    """Verify no corpus_id appears in multiple benchmark files (overfit guard).
+
+    Legacy benchmarks (sentence_hard_v1, clinical_actionable_v1, evidence_intent_v1) were
+    built independently from the same graph corpus before the disjointness policy. Their
+    overlaps are documented. New benchmarks (title_global, adversarial_router, neuropsych_safety,
+    title_selected) MUST be disjoint from all others.
+    """
+    benchmark_dir = Path(__file__).resolve().parents[1] / "data" / "runtime_eval_benchmarks"
+    benchmark_paths = sorted(benchmark_dir.glob("*.json"))
+    assert benchmark_paths, "No benchmark files found"
+
+    # Legacy benchmarks that predate the disjointness policy — overlap is documented.
+    _LEGACY_OVERLAP_ALLOWED = frozenset({
+        "sentence_hard_v1",
+        "clinical_actionable_v1",
+        "evidence_intent_v1",
+    })
+
+    corpus_to_benchmarks: dict[int, list[str]] = {}
+    for path in benchmark_paths:
+        report = RagRuntimeEvalBenchmarkReport.model_validate_json(path.read_text())
+        for case in report.cases:
+            corpus_to_benchmarks.setdefault(case.corpus_id, []).append(report.benchmark_key)
+
+    # Filter: only flag overlaps that involve at least one non-legacy benchmark
+    violations = {}
+    for cid, keys in corpus_to_benchmarks.items():
+        if len(keys) <= 1:
+            continue
+        key_set = set(keys)
+        if key_set <= _LEGACY_OVERLAP_ALLOWED:
+            continue  # All-legacy overlap is documented, not a violation
+        violations[cid] = keys
+
+    assert not violations, (
+        f"Paper-disjointness violated: {len(violations)} corpus_ids appear in multiple benchmarks "
+        f"(including non-legacy): "
+        + ", ".join(
+            f"{cid} in [{', '.join(keys)}]" for cid, keys in sorted(violations.items())
+        )
+    )

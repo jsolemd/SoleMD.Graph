@@ -242,6 +242,7 @@ class RuntimeEvalSummary(ParseContractModel):
     by_stratum_key: dict[str, RuntimeEvalAggregate] = Field(default_factory=dict)
     by_evidence_intent: dict[str, RuntimeEvalAggregate] = Field(default_factory=dict)
     by_benchmark_label: dict[str, RuntimeEvalAggregate] = Field(default_factory=dict)
+    by_warehouse_depth: dict[str, RuntimeEvalAggregate] = Field(default_factory=dict)
     failure_theme_counts: dict[str, int] = Field(default_factory=dict)
     failure_examples: list[RuntimeEvalFailureExample] = Field(default_factory=list)
     latency: RuntimeEvalLatencySummary = Field(default_factory=RuntimeEvalLatencySummary)

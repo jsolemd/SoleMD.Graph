@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from collections.abc import Callable, Sequence
 
@@ -64,6 +65,8 @@ from app.rag_ingest.warehouse_quality import (
     inspect_rag_warehouse_quality,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def summarize_warehouse_quality(
     report: RagWarehouseQualityReport,
@@ -76,6 +79,40 @@ def summarize_warehouse_quality(
         flagged_papers=len(report.flagged_corpus_ids),
         flag_counts=dict(sorted(flag_counts.items())),
     )
+
+
+def _push_results_to_langfuse(results: Sequence[RuntimeEvalCaseResult]) -> None:
+    try:
+        from app.rag_ingest.eval_langfuse import push_scores_to_langfuse
+        from app.rag_ingest.eval_metrics import (
+            GroundedAnswerRate,
+            HitAt1,
+            HitAtK,
+            TargetInGroundedAnswer,
+            eval_case_from_runtime_result,
+            score_case,
+        )
+
+        metrics = [HitAt1(), HitAtK(), GroundedAnswerRate(), TargetInGroundedAnswer()]
+        for result in results:
+            case = eval_case_from_runtime_result(result)
+            scores = score_case(case, metrics)
+            trace_name = f"runtime-eval-{result.corpus_id}-{result.query_family}"
+            tags = {
+                "warehouse_depth": case.warehouse_depth,
+                "query_family": str(result.query_family),
+            }
+            if result.route_signature:
+                tags["route_signature"] = result.route_signature
+            push_scores_to_langfuse(
+                scores,
+                trace_name=trace_name,
+                trace_input={"query": result.query, "corpus_id": result.corpus_id},
+                trace_output={"hit_rank": result.hit_rank, "error": result.error},
+                tags=tags,
+            )
+    except Exception:
+        logger.debug("Langfuse score push failed", exc_info=True)
 
 
 def _build_runtime_eval_report(
@@ -134,6 +171,7 @@ def _build_runtime_eval_report(
             query_embedder=service.query_embedder,
         )
     query_families = list(dict.fromkeys(case.query_family for case in case_list))
+    _push_results_to_langfuse(results)
     return RagRuntimeEvaluationReport(
         graph_release_id=release.graph_release_id,
         graph_run_id=release.graph_run_id,

@@ -500,4 +500,5 @@ export interface GraphRagQueryResponsePayload {
   evidence_bundles: GraphEvidenceBundle[]
   graph_signals: GraphRagGraphSignal[]
   retrieval_channels: GraphRagRetrievalChannelResult[]
+  evidence_flags: Record<string, boolean>
 }

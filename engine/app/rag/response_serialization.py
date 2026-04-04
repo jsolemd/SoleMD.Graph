@@ -57,6 +57,7 @@ def serialize_search_result(result: RagSearchResult) -> RagSearchResponse:
             "retrieval_channels": [
                 _serialize_channel_result(channel) for channel in result.channels
             ],
+            "evidence_flags": result.evidence_flags,
         }
     )
 

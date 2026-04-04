@@ -45,6 +45,95 @@ from app.rag.types import (
 )
 
 
+def _compute_evidence_flags(
+    *,
+    top_hits: list[PaperEvidenceHit],
+    species_profiles: dict[int, object],
+    grounded_answer: object | None,
+    bundles: list[object],
+) -> dict[str, bool]:
+    """Compute thin typed evidence applicability flags from existing signals."""
+    flags: dict[str, bool] = {}
+
+    if not top_hits:
+        return flags
+
+    top_corpus_ids = [hit.corpus_id for hit in top_hits]
+
+    # direct_passage_support / indirect_only
+    has_passage_support = False
+    if grounded_answer is not None:
+        cited_spans = getattr(grounded_answer, "cited_spans", [])
+        has_passage_support = len(cited_spans) > 0
+    flags["direct_passage_support"] = has_passage_support
+    flags["indirect_only"] = not has_passage_support and len(bundles) > 0
+
+    # species flags — check species_profiles for top hits
+    if species_profiles:
+        resolved_profiles = [
+            species_profiles[cid]
+            for cid in top_corpus_ids
+            if cid in species_profiles
+        ]
+        if resolved_profiles:
+            all_nonhuman = all(
+                getattr(p, "human_mentions", 0) == 0
+                and getattr(p, "nonhuman_mentions", 0) > 0
+                for p in resolved_profiles
+            )
+            flags["nonhuman_only"] = all_nonhuman
+            flags["species_unresolved"] = False
+        else:
+            flags["nonhuman_only"] = False
+            flags["species_unresolved"] = True
+    else:
+        flags["nonhuman_only"] = False
+        flags["species_unresolved"] = True
+
+    # null_finding_present — check top bundle titles/snippets
+    _NULL_FINDING_SIGNALS = (
+        "no significant",
+        "no difference",
+        "not significant",
+        "failed to show",
+        "no effect",
+        "no benefit",
+        "did not improve",
+        "no association",
+        "no evidence",
+        "nonsignificant",
+        "non-significant",
+        "negative trial",
+        "negative result",
+    )
+    null_finding = False
+    for bundle in bundles[:3]:  # Check top 3 bundles only
+        title = getattr(getattr(bundle, "paper", None), "title", "") or ""
+        snippet = getattr(bundle, "snippet", "") or ""
+        combined = (title + " " + snippet).lower()
+        if any(signal in combined for signal in _NULL_FINDING_SIGNALS):
+            null_finding = True
+            break
+    flags["null_finding_present"] = null_finding
+
+    # grounding depth classification
+    grounding_depth = "none"
+    if grounded_answer is not None:
+        cited_spans = getattr(grounded_answer, "cited_spans", [])
+        if cited_spans:
+            has_body_spans = any(
+                getattr(span, "section_role", None)
+                not in (None, "abstract", "front_matter")
+                for span in cited_spans
+            )
+            grounding_depth = "fulltext" if has_body_spans else "abstract"
+    flags["grounding_depth_fulltext"] = grounding_depth == "fulltext"
+    flags["grounding_depth_abstract"] = grounding_depth == "abstract"
+    flags["grounding_depth_none"] = grounding_depth == "none"
+
+    return flags
+
+
 def _paper_id_for_corpus(corpus_id: int, paper_hits: list[PaperEvidenceHit]) -> str | None:
     for paper in paper_hits:
         if paper.corpus_id == corpus_id:
@@ -88,6 +177,7 @@ def finalize_search_result(
             answer=None,
             answer_model=None,
             debug_trace=trace.as_debug_trace(),
+            evidence_flags={},
         )
 
     initial_corpus_ids = [hit.corpus_id for hit in retrieval.initial_paper_hits]
@@ -512,6 +602,12 @@ def finalize_search_result(
             ],
         ),
     ]
+    evidence_flags = _compute_evidence_flags(
+        top_hits=top_hits,
+        species_profiles=species_profiles,
+        grounded_answer=grounded_answer,
+        bundles=bundles,
+    )
     return RagSearchResult(
         request_id=str(uuid4()),
         generated_at=datetime.now(UTC),
@@ -527,4 +623,5 @@ def finalize_search_result(
         answer_model=answer_model,
         grounded_answer=grounded_answer,
         debug_trace=trace.as_debug_trace(),
+        evidence_flags=evidence_flags,
     )

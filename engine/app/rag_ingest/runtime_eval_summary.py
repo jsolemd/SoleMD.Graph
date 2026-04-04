@@ -351,6 +351,7 @@ def summarize_runtime_results(
     stratum_groups: dict[str, list[RuntimeEvalCaseResult]] = {}
     evidence_intent_groups: dict[str, list[RuntimeEvalCaseResult]] = {}
     benchmark_label_groups: dict[str, list[RuntimeEvalCaseResult]] = {}
+    warehouse_depth_groups: dict[str, list[RuntimeEvalCaseResult]] = {}
     for result in results:
         family_groups.setdefault(str(result.query_family), []).append(result)
         source_groups.setdefault(result.primary_source_system, []).append(result)
@@ -359,6 +360,15 @@ def summarize_runtime_results(
             evidence_intent_groups.setdefault(str(result.evidence_intent), []).append(result)
         for label in result.benchmark_labels:
             benchmark_label_groups.setdefault(label, []).append(result)
+        # Grounding depth: fulltext if cited spans exist, abstract if grounded answer
+        # but no body-section cited spans, none otherwise
+        if result.cited_span_count > 0:
+            depth_key = "fulltext"
+        elif result.grounded_answer_present:
+            depth_key = "abstract"
+        else:
+            depth_key = "none"
+        warehouse_depth_groups.setdefault(depth_key, []).append(result)
         reasons = _failure_reasons(result)
         for reason in reasons:
             failure_theme_counts[f"{result.query_family}:{reason}"] += 1
@@ -388,6 +398,9 @@ def summarize_runtime_results(
         by_evidence_intent[key] = aggregate_case_results(grouped)
     for key, grouped in sorted(benchmark_label_groups.items()):
         by_benchmark_label[key] = aggregate_case_results(grouped)
+    by_warehouse_depth: dict[str, RuntimeEvalAggregate] = {}
+    for key, grouped in sorted(warehouse_depth_groups.items()):
+        by_warehouse_depth[key] = aggregate_case_results(grouped)
 
     return RuntimeEvalSummary(
         overall=overall,
@@ -396,6 +409,7 @@ def summarize_runtime_results(
         by_stratum_key=by_stratum_key,
         by_evidence_intent=by_evidence_intent,
         by_benchmark_label=by_benchmark_label,
+        by_warehouse_depth=by_warehouse_depth,
         failure_theme_counts=dict(failure_theme_counts.most_common()),
         failure_examples=failure_examples,
         latency=_summarize_latency(results),

@@ -235,6 +235,7 @@ export interface EngineRagSearchResponse {
   evidence_bundles: EngineEvidenceBundle[]
   graph_signals: EngineGraphSignal[]
   retrieval_channels: EngineRetrievalChannelResult[]
+  evidence_flags: Record<string, boolean>
 }
 
 export function searchEvidence(

@@ -63,6 +63,8 @@
 | CA-023 | completed | P0 | Durable docs→Neo4j metadata flow | Docs metadata reaches Neo4j today, but failure handling is still best-effort rather than replayable | Added durable replayable graph-sync jobs with retry/backoff and reconciliation so Neo4j outages no longer require full doc reindex churn | `tests/doc_search/test_graph.py`, health/status verification |
 | CA-024 | completed | P0 | Unified payload contract | `search_code` is flatter than the rest of the toolset, but `file_context`, docs admin/mutation tools, and some bridge payloads still spend tokens on inconsistent wrapping or duplicate fields | Flattened the remaining high-value payloads and aligned docs/code navigation fields so agent chaining stays compact and consistent | `56 passed` + `146 passed`, live payload inspection |
 | CA-025 | completed | P1 | Post-move stale references | The top-level move is real, but there are still stale old-path/index references and generated docs/config assumptions to clean up before closeout | Cleared the active stale-path/config references; the only remaining old-path hits are historical ledgers kept as records rather than runtime inputs | Grep audit, config review, live runtime smoke |
+| CA-026 | completed | P0 | Snapshot source centralization | Scraped/generated docs still depended on synthetic GitHub mirror repos, repo-coupled identities, and leftover mirror cache churn | Migrated scraped docs to Postgres-backed latest-only snapshot state, removed the shared-mirror helper path, imported Cosmograph into the new model, cleaned legacy mirror caches, and fixed the pipeline so successful snapshot reindex clears stale freshness state | `42 passed`, py-compile, live `solemd.graph` docs dogfood, docs DB verification |
+| CA-027 | verified | P2 | Watcher/sync/doc freshness audit | `/clean` audit of watcher, index sync, and doc freshness subsystems found all three structurally sound (git SHA comparison, content hashing, deterministic chunk IDs, debounced watcher, PostgreSQL job queue). One medium gap: incremental sync (`_sync_locked`) calls `_neo4j_update_file` with `inline_relationships=True` per-file but never runs the global `resolve_cross_file_calls()` pass, so cross-file CALLS edges can go stale until full reindex. File hash cache (`_file_hashes`) is memory-only, causing unnecessary re-hashing on restart. | W1 (cross-file call resolution after incremental) requires SoleMD.Infra change to `core_indexing.py`. W5/W7 (hash cache persistence) is a startup latency optimization. Both are pre-existing design tradeoffs, not regressions. Hand-off to SoleMD.Infra when prioritized. | Read-only code review of `core_indexing.py`, `core_file_ops.py`, `core_neo4j.py`, `graph.py`, `watcher.py`, `scheduler.py`, `worker.py`, `policy.py`, `recovery.py`, `pipeline.py`, `repository.py`, `db_jobs.py`, `db_libraries.py`, `tools/search.py` |
 
 ## Explicit Checklist
 
@@ -87,6 +89,15 @@
   - added an embedder-side input cap as a second guardrail against `413 Payload Too Large`
   - requeued the six broken libraries through the real docs worker path and cleared the registry back to `35 ready / 0 error`
   - next live cleanup target from the same logs is the repeated `solemd.infra` watcher delete churn (`Webhook drained: 100 changes`, repeated `code-search-files` deletes)
+- 2026-04-03 watcher/sync/doc freshness /clean audit:
+  - verified all three subsystems are structurally sound: git-based change detection, SHA256 content hashing, deterministic chunk IDs, debounced watcher with PendingEditsTracker, PostgreSQL job queue with `FOR UPDATE SKIP LOCKED`, priority-based scheduler with stable hash jitter
+  - W1 (medium): `_sync_locked()` in `core_indexing.py:42` calls per-file `_upsert_path_locked()` with `inline_relationships=True` (default in `core_neo4j.py:115`), but the global `resolve_cross_file_calls()` pass in `_refresh_workspace_graph_state()` only runs when `run_global_graph_passes=True` (line 199, gated on `force or is_full_project_scan`). Cross-file CALLS edges can go stale between full reindexes.
+  - W5/W7 (medium): `_file_hashes` dict in the indexer is memory-only, lost on container restart, causing a full re-hash scan on first sync. Disk persistence would avoid the cold-start churn.
+  - W2 (low): file trigram index has no reconciliation loop against main Qdrant index
+  - W3 (acceptable): orphan cleanup 20% safety threshold is a deliberate safety > precision tradeoff
+  - W4 (low): doc transient error retry has no max-retry cap; deleted repos retry forever
+  - W6 (acceptable): git timeout 60s cooldown without backoff is adequate for normal operation
+  - all findings are in SoleMD.Infra scope; hand-off per cross-project protocol when prioritized
 - 2026-04-02 follow-up:
   - moved docs exact-match ranking into a shared scorer so bare lookups like `Stack` can outrank dotted variants such as `Modal.Stack`
   - added late-bound dependency resolution in `doc_search.tools.handlers` so the unified docs tool layer is patchable/testable without import-time coupling to live DB/index functions
@@ -122,3 +133,9 @@
     - `rag entity selection scope cosmograph` -> `features/graph/lib/cosmograph-selection.ts`
     - `new writing panel mantine stack motion.div reveal` -> `features/graph/components/panels/PanelShell.tsx`
     - Mantine docs queries continue to recommend canonical pages, with only secondary-result noise left as non-blocking follow-up
+- 2026-04-02 snapshot-store migration:
+  - migrated scraped docs away from synthetic mirror repos into the native current-state snapshot model backed by the docs Postgres control plane
+  - published `/codeatlas/semantic-scholar-api`, `/codeatlas/pubtator3`, and `/codeatlas/cosmograph` through the snapshot path and confirmed all three are `source_type=snapshot`, `status=ready`, and `last_freshness_state=fresh`
+  - removed the obsolete mirror helper modules and rewrote scraper documentation around `/tmp` generation + in-container `--publish` instead of GitHub push flows
+  - fixed a real `/clean` regression in the docs pipeline: successful no-op snapshot reindex now clears stale freshness flags, and the git fast path no longer performs redundant hash scans before the unchanged-head skip gate
+  - deleted the old mirror repo caches from the live `codeatlas` container and verified they do not reappear once the runtime is fully on snapshot-backed libraries

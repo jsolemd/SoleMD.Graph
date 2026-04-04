@@ -1,0 +1,266 @@
+{
+  "benchmark_key": "title_global_v1",
+  "graph_release_id": "a9216e173007158807e9e8c063af987b1467f18831a0279f87ed87a0ad671799",
+  "graph_run_id": "f9ed7a59-0c4d-4810-a04d-3d35ff4e6c70",
+  "bundle_checksum": "a9216e173007158807e9e8c063af987b1467f18831a0279f87ed87a0ad671799",
+  "graph_name": "cosmograph",
+  "chunk_version_key": "default-structural-v1",
+  "benchmark_source": "curated title edge-case benchmark from the current graph-backed runtime cohort",
+  "max_cases": 12,
+  "min_failure_count": 0,
+  "min_max_rank": 0,
+  "high_recurrence_count": 0,
+  "deep_miss_rank": 0,
+  "selected_count": 12,
+  "selected_by_label": {
+    "abbreviation_heavy": 2,
+    "colon_subtitle": 2,
+    "greek_letter": 2,
+    "long_title": 2,
+    "question_title": 2,
+    "short_title": 2,
+    "title_global": 12
+  },
+  "cases": [
+    {
+      "corpus_id": 11161047,
+      "title": "The assessment and analysis of handedness: the Edinburgh inventory.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "The assessment and analysis of handedness: the Edinburgh inventory.",
+      "stratum_key": "benchmark:title_global_v1|filter:colon_subtitle|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "colon_subtitle"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 13035531,
+      "title": "The Pittsburgh Sleep Quality Index: a new instrument for psychiatric practice and research.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "The Pittsburgh Sleep Quality Index: a new instrument for psychiatric practice and research.",
+      "stratum_key": "benchmark:title_global_v1|filter:colon_subtitle|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "colon_subtitle"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 5172537,
+      "title": "Epworth sleepiness scale?",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "Epworth sleepiness scale?",
+      "stratum_key": "benchmark:title_global_v1|filter:question_title|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "question_title"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 351236,
+      "title": "Whither structured representation?",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "Whither structured representation?",
+      "stratum_key": "benchmark:title_global_v1|filter:question_title|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "question_title"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 41426429,
+      "title": "The Mini-International Neuropsychiatric Interview (M.I.N.I.): the development and validation of a structured diagnostic psychiatric interview for DSM-IV and ICD-10.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "The Mini-International Neuropsychiatric Interview (M.I.N.I.): the development and validation of a structured diagnostic psychiatric interview for DSM-IV and ICD-10.",
+      "stratum_key": "benchmark:title_global_v1|filter:abbreviation_heavy|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "abbreviation_heavy"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 1101322,
+      "title": "EEGLAB: an open source toolbox for analysis of single-trial EEG dynamics including independent component analysis.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "EEGLAB: an open source toolbox for analysis of single-trial EEG dynamics including independent component analysis.",
+      "stratum_key": "benchmark:title_global_v1|filter:abbreviation_heavy|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "abbreviation_heavy"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 32991755,
+      "title": "Soluble protein oligomers in neurodegeneration: lessons from the Alzheimer's amyloid β-peptide",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "Soluble protein oligomers in neurodegeneration: lessons from the Alzheimer's amyloid β-peptide",
+      "stratum_key": "benchmark:title_global_v1|filter:greek_letter|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "greek_letter"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 32419070,
+      "title": "Correlative Memory Deficits, Aβ Elevation, and Amyloid Plaques in Transgenic Mice",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "Correlative Memory Deficits, Aβ Elevation, and Amyloid Plaques in Transgenic Mice",
+      "stratum_key": "benchmark:title_global_v1|filter:greek_letter|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "greek_letter"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 6787660,
+      "title": "The diagnosis of dementia due to Alzheimer's disease: Recommendations from the National Institute on Aging‐Alzheimer's Association workgroups on diagnostic guidelines for Alzheimer's disease",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "The diagnosis of dementia due to Alzheimer's disease: Recommendations from the National Institute on Aging‐Alzheimer's Association workgroups on diagnostic guidelines for Alzheimer's disease",
+      "stratum_key": "benchmark:title_global_v1|filter:long_title|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "long_title"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 22462381,
+      "title": "Lifetime and 12-month prevalence of DSM-III-R psychiatric disorders in the United States. Results from the National Comorbidity Survey.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "Lifetime and 12-month prevalence of DSM-III-R psychiatric disorders in the United States. Results from the National Comorbidity Survey.",
+      "stratum_key": "benchmark:title_global_v1|filter:long_title|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "long_title"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 40145105,
+      "title": "An inventory for measuring depression.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "An inventory for measuring depression.",
+      "stratum_key": "benchmark:title_global_v1|filter:short_title|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "short_title"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    },
+    {
+      "corpus_id": 27546553,
+      "title": "The Satisfaction With Life Scale.",
+      "primary_source_system": "s2orc_v2",
+      "query_family": "title_global",
+      "query": "The Satisfaction With Life Scale.",
+      "stratum_key": "benchmark:title_global_v1|filter:short_title|source:s2orc_v2",
+      "evidence_intent": null,
+      "representative_section_role": null,
+      "benchmark_key": "title_global_v1",
+      "benchmark_labels": [
+        "title_global",
+        "short_title"
+      ],
+      "failure_count": 0,
+      "min_target_rank": 0,
+      "max_target_rank": 0,
+      "mean_target_rank": 0.0,
+      "source_lane_keys": []
+    }
+  ]
+}

@@ -143,7 +143,7 @@ def _rate_limited_generate(
         time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
 
     lf = get_client()
-    with lf.start_as_current_observation(
+    with lf.start_observation(
         as_type="generation",
         name=span_name,
     ) as gen:
