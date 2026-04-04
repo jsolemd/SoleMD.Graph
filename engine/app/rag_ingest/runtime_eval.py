@@ -104,11 +104,49 @@ def _push_results_to_langfuse(results: Sequence[RuntimeEvalCaseResult]) -> None:
             }
             if result.route_signature:
                 tags["route_signature"] = result.route_signature
+
+            # Full pipeline state for Langfuse trace inspection
+            trace_input = {
+                "query": result.query,
+                "corpus_id": result.corpus_id,
+                "title": result.title,
+                "query_family": str(result.query_family),
+                "evidence_intent": str(result.evidence_intent) if result.evidence_intent else None,
+                "benchmark_labels": result.benchmark_labels,
+                "stratum_key": result.stratum_key,
+            }
+            trace_output = {
+                "hit_rank": result.hit_rank,
+                "answer_present": result.answer_present,
+                "answer_corpus_ids": result.answer_corpus_ids,
+                "target_in_answer_corpus": result.target_in_answer_corpus,
+                "grounded_answer_present": result.grounded_answer_present,
+                "grounded_answer_linked_corpus_ids": result.grounded_answer_linked_corpus_ids,
+                "target_in_grounded_answer": result.target_in_grounded_answer,
+                "cited_span_count": result.cited_span_count,
+                "inline_citation_count": result.inline_citation_count,
+                "answer_segment_count": result.answer_segment_count,
+                "evidence_bundle_count": result.evidence_bundle_count,
+                "top_hits": [hit.model_dump() for hit in result.top_hits],
+                "retrieval_channel_hit_counts": result.retrieval_channel_hit_counts,
+                "error": result.error,
+            }
+            trace_metadata = {
+                "route_signature": result.route_signature,
+                "session_flags": result.session_flags,
+                "candidate_counts": result.candidate_counts,
+                "stage_durations_ms": result.stage_durations_ms,
+                "duration_ms": result.duration_ms,
+                "service_duration_ms": result.service_duration_ms,
+                "overhead_duration_ms": result.overhead_duration_ms,
+            }
+
             push_scores_to_langfuse(
                 scores,
                 trace_name=trace_name,
-                trace_input={"query": result.query, "corpus_id": result.corpus_id},
-                trace_output={"hit_rank": result.hit_rank, "error": result.error},
+                trace_input=trace_input,
+                trace_output=trace_output,
+                trace_metadata=trace_metadata,
                 tags=tags,
             )
     except Exception:

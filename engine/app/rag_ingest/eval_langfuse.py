@@ -27,6 +27,7 @@ def push_scores_to_langfuse(
     trace_name: str | None = None,
     trace_input: dict[str, Any] | None = None,
     trace_output: dict[str, Any] | None = None,
+    trace_metadata: dict[str, Any] | None = None,
     tags: dict[str, str] | None = None,
 ) -> None:
     """Create a Langfuse trace for an eval case and attach scores.
@@ -44,6 +45,7 @@ def push_scores_to_langfuse(
         as_type="evaluator",
         input=trace_input,
         output=trace_output,
+        metadata=trace_metadata,
     ):
         trace_id = client.get_current_trace_id()
         if trace_id is None:

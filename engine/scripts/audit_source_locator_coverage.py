@@ -1,7 +1,16 @@
 """Audit S2 + BioCXML source locator coverage against the corpus table.
 
-Read-only. Reports how many corpus papers have source locator entries
-for each source system, and identifies coverage gaps.
+Reads two SQLite sidecar files (source locators) and compares their corpus_id
+sets against the PostgreSQL solemd.corpus table:
+
+  S2 locator:      semantic-scholar/releases/<rev>/manifests/s2orc_v2.corpus_locator.sqlite
+  BioCXML locator: pubtator/releases/<rev>/manifests/biocxml.corpus_locator.sqlite
+
+These SQLite locators map corpus_id → (source_system, shard/archive, ordinal).
+They are built by source_locator_refresh and consumed by the warehouse refresh
+pipeline to fetch actual documents from S2 shards or BioCXML archives.
+
+Read-only — reports gaps but does not modify anything.
 
 Usage:
     cd engine

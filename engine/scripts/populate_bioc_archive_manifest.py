@@ -1,10 +1,24 @@
-"""Populate the BioCXML archive manifest index without PostgreSQL dependencies.
+"""Populate the BioCXML archive manifest index (SQLite sidecar, no PostgreSQL).
 
-Scans BioCXML tar archives and writes (archive_name, document_ordinal, member_name,
-document_id) entries to the release-sidecar SQLite manifest. This is a prerequisite
-for discovery, overlay backfill, and source locator refresh operations.
+Data flow context — three layers, each feeds the next:
 
-Zero PostgreSQL dependency — only reads tar archives and writes SQLite.
+  1. ARCHIVE MANIFEST (this script)
+     SQLite sidecar: releases/<rev>/manifests/biocxml.archive_manifest.sqlite
+     Maps document_id (PMID) → tar archive position (archive_name, ordinal, member).
+     Built by scanning tar archives. Zero PostgreSQL dependency.
+
+  2. SOURCE LOCATOR (refresh_rag_source_locator.py)
+     SQLite sidecar: releases/<rev>/manifests/biocxml.corpus_locator.sqlite
+     Maps corpus_id → source location. Consumes the archive manifest to avoid
+     re-scanning 190GB of tar archives. Requires PostgreSQL for corpus resolution.
+
+  3. WAREHOUSE (refresh_rag_warehouse.py / backfill_bioc_overlays.py)
+     PostgreSQL: solemd.paper_documents, paper_sections, paper_blocks, ...
+     Fetches actual BioCXML documents using source locator positions and parses
+     them into the warehouse schema.
+
+This script handles layer 1 only. Run it once per PubTator release, then
+source_locator_refresh and overlay backfill can use the manifest for instant lookups.
 
 Usage:
     # Single archive:
@@ -146,7 +160,15 @@ def populate_all_archives(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Populate BioCXML archive manifest index (no PostgreSQL).",
+        description=(
+            "Populate BioCXML archive manifest index. "
+            "Writes to SQLite sidecar at releases/<rev>/manifests/biocxml.archive_manifest.sqlite. "
+            "No PostgreSQL connection required."
+        ),
+        epilog=(
+            "After indexing, run source_locator_refresh to build the corpus_id→archive mapping, "
+            "then backfill_bioc_overlays to ingest documents into the PostgreSQL warehouse."
+        ),
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(

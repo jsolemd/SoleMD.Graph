@@ -391,6 +391,31 @@ system.
 Decision tree for warehouse operations. Use the **specific** script, not the
 generic `refresh_rag_warehouse.py`, unless you need the full multi-source pipeline.
 
+### Data flow — three layers of indexing
+
+Understanding where data lives prevents confusion about what each script does:
+
+```
+Layer 1: ARCHIVE MANIFEST (SQLite sidecar, no PostgreSQL)
+  File: releases/<rev>/manifests/biocxml.archive_manifest.sqlite
+  Maps: document_id (PMID) → tar archive position (archive, ordinal, member)
+  Built by: populate_bioc_archive_manifest.py  |  source_locator_refresh (auto)
+              ↓
+Layer 2: SOURCE LOCATOR (SQLite sidecar, reads PostgreSQL for corpus resolution)
+  Files: releases/<rev>/manifests/s2orc_v2.corpus_locator.sqlite
+         releases/<rev>/manifests/biocxml.corpus_locator.sqlite
+  Maps: corpus_id → source location (shard/archive, ordinal, document key)
+  Built by: refresh_rag_source_locator.py
+              ↓
+Layer 3: WAREHOUSE (PostgreSQL)
+  Tables: solemd.paper_documents, paper_sections, paper_blocks, paper_sentences, ...
+  Contains: parsed document structure, chunks, embeddings, entity mentions
+  Built by: refresh_rag_warehouse.py  |  backfill_bioc_overlays.py
+```
+
+Each layer feeds the next. Layer 1 must exist before layer 2 can index BioCXML
+sources. Layer 2 must exist before layer 3 can fetch documents for parsing.
+
 ### "I need to add new papers to the warehouse"
 
 | Scenario | Command | Key flags |
@@ -400,11 +425,11 @@ generic `refresh_rag_warehouse.py`, unless you need the full multi-source pipeli
 | BioCXML bounded window campaign | `ingest_bioc_archive_campaign.py` | `--archive-name --window-count N --limit-per-window N` |
 | S2ORC bounded campaign | `run_s2_refresh_campaign.py` | `--run-count N --limit-per-run N` |
 
-### "I need to build/rebuild the BioCXML archive manifest"
+### "I need to build/rebuild the BioCXML archive manifest" (Layer 1)
 
-The archive manifest maps every document in each BioCXML archive to its ordinal,
-member name, and document ID. Discovery, overlay backfill, and source locator refresh
-all use the manifest to avoid re-scanning 190GB of archives on every run.
+The archive manifest is a **SQLite sidecar** (not PostgreSQL) that maps every document
+in each BioCXML archive to its tar position. Without it, finding a specific PMID
+requires decompressing the entire ~20GB archive sequentially. With it, lookup is instant.
 
 ```bash
 # Single archive (e.g. after a partial failure):
@@ -440,14 +465,15 @@ for i in range(10):
 "
 ```
 
-### "I need to audit source locator coverage"
+### "I need to audit source locator coverage" (Layer 2)
 
 ```bash
 uv run python scripts/audit_source_locator_coverage.py
 ```
 
-Reports S2 + BioCXML source locator completeness against the corpus table. Identifies
-papers with neither source — these need a `source_locator_refresh` run.
+Reads the two **SQLite** source locator sidecars and compares against the **PostgreSQL**
+corpus table. Reports how many papers have S2 entries, BioCXML entries, both, or
+neither. Papers with neither need a `source_locator_refresh` run.
 
 ### "I need BioCXML overlay on existing S2 papers" (entities, full text)
 
