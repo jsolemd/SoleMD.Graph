@@ -216,7 +216,24 @@ Progress (2026-04-04):
   per the "do not invent a second backfill operator" rule
 - QA audit of chunk quality launched — verifying sentence alignment,
   chunk member text, ordinal sequencing, and grounded runtime status
-- Next: re-run frozen benchmarks to get real grounding metrics
+- Post-backfill benchmark re-evaluation showed `warehouse_depth` breakdown:
+  - title_global: 2 fulltext (grounded=1.0), 10 none (grounded=0.0)
+  - adversarial_router: 1 fulltext (grounded=1.0), 11 none (grounded=0.0)
+  - neuropsych_safety: 11 fulltext (grounded=1.0), 1 none (grounded=0.0)
+  - sentence_hard: 14 fulltext (grounded=1.0), clean
+  The `warehouse_depth=none` cases are the 28 papers with no parsed content.
+- Root cause: 28/77 benchmark papers were metadata-only in solemd.papers — S2ORC
+  had no full text or abstract. All 28 have PMIDs and all 28 are in the 40.7M
+  BioCXML archive on disk. The BioCXML backfill operator gate previously required
+  existing S2ORC paper_documents (overlay-only). Fixed the candidate SQL to accept
+  any corpus paper with PMID/PMC/DOI.
+- BioCXML primary ingest running for 28 papers. Expected outcome: abstract-level
+  warehouse coverage for most (pre-2000 paywalled literature), full-text for a few.
+- Existing eval infrastructure already tracks `by_warehouse_depth` breakdown
+  and `grounding_depth_fulltext`/`grounding_depth_abstract` evidence flags.
+  No new eval plumbing needed — the data just needs to be present.
+- After BioCXML ingest: chunk backfill, then re-run benchmarks to see abstract
+  vs fulltext grounding breakdown with real data
 
 ### Phase 2: Fix The Remaining Frozen Retrieval Classes
 
