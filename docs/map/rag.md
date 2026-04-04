@@ -47,14 +47,28 @@ These numbers matter because the repo currently has two truths at once:
 | Artifact | What it says now | Why it matters |
 |------|-------------------|----------------|
 | [`.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`](/home/workbench/SoleMD/SoleMD.Graph/.tmp/rag-runtime-eval-current-all-families-v30-recheck.json) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The live current-release runtime floor is fast, grounded, and stable on the broad sampled cohort. |
-| [`engine/.tmp/eval-title_global_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-title_global_v1-20260403.json) | `hit@1=1.0`, `grounded_answer_rate=0.1667`, `target_in_grounded_answer_rate=0.0833` | Retrieval is fine on this frozen title cohort, but grounding remains thin for the targeted title set. |
-| [`engine/.tmp/eval-title_selected_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-title_selected_v1-20260403.json) | `hit@1=1.0`, `grounded_answer_rate=0.2`, `target_in_grounded_answer_rate=0.2` | Selected-title retrieval is strong, but grounded cited output is still sparse on this frozen benchmark. |
-| [`engine/.tmp/eval-adversarial_router_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-adversarial_router_v1-20260403.json) | `hit@1=0.0833`, `target_in_answer_corpus_rate=0.3333`, `mean_service_duration_ms=32051.471` | Acronym-heavy and ambiguous sentence queries remain the sharpest retrieval/routing failure class. |
-| [`engine/.tmp/eval-neuropsych_safety_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-neuropsych_safety_v1-20260403.json) | `hit@1=0.25`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=0.25` | This cohort grounds cleanly on the papers it picks, but it still retrieves the wrong papers too often. |
 
-The practical interpretation is simple: the sampled release-level runtime is in
-good shape, but the frozen targeted cohorts still define the next work. They are
-not stale noise and they are not interchangeable with the broad `v30` cohort.
+Frozen benchmark snapshot (post-backfill, 2026-04-04):
+
+| Benchmark | hit@1 | grounded | target_grounded | target_corpus | mean_ms | Status |
+|-----------|-------|----------|-----------------|---------------|---------|--------|
+| sentence_hard_v1 | 1.0 | 1.0 | 1.0 | 1.0 | 491 | green |
+| evidence_intent_v1 | 0.80 | 0.80 | 0.80 | 0.80 | 368 | real signal, 20% retrieval miss |
+| clinical_actionable_v1 | 0.67 | 0.73 | 0.73 | 0.73 | 450 | real signal, 27-33% retrieval miss |
+| title_global_v1 | 1.0 | 0.17 | 0.08 | 1.0 | 438 | grounding gate issue (chunks exist) |
+| title_selected_v1 | 1.0 | 0.20 | 0.20 | 1.0 | 264 | grounding gate issue (chunks exist) |
+| neuropsych_safety_v1 | 0.17 | 0.92 | 0.33 | 0.33 | 769 | retrieval miss, grounding strong |
+| adversarial_router_v1 | 0.08 | 0.08 | 0.08 | 0.17 | 25,513 | hard retrieval failure |
+
+The practical interpretation now has more nuance than before:
+
+- **sentence_hard_v1** was only blocked by missing chunks and is now green
+- **evidence_intent and clinical_actionable** have genuine retrieval misses
+  that need diagnosis (not chunk coverage)
+- **title benchmarks** have perfect retrieval but the grounded answer gate
+  rejects output despite full chunk coverage — this is a runtime gate issue
+- **neuropsych_safety** retrieval is weak; QUESTION_LOOKUP routing validation needed
+- **adversarial_router** remains the hardest failure class
 
 ---
 

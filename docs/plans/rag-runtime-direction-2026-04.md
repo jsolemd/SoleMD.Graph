@@ -44,16 +44,32 @@ The broad current-release sampled cohort is healthy on the latest code:
 - `p99_service_duration_ms = 99.443`
 
 That broad cohort is not the whole story. The frozen targeted benchmarks still
-define the remaining weak classes:
+define the remaining weak classes.
 
-- `engine/.tmp/eval-title_global_v1-20260403.json`
-  - retrieval is strong, grounding is weak on the targeted title set
-- `engine/.tmp/eval-title_selected_v1-20260403.json`
-  - selected-title retrieval is strong, grounded cited output is still thin
-- `engine/.tmp/eval-adversarial_router_v1-20260403.json`
-  - acronym-heavy and ambiguous sentence queries remain a hard failure class
-- `engine/.tmp/eval-neuropsych_safety_v1-20260403.json`
-  - grounding can be present on the retrieved papers while the retrieved papers are still wrong
+Post-backfill frozen benchmark snapshot (2026-04-04, all 77 benchmark papers
+now have `default-structural-v1` chunks):
+
+| Benchmark | hit@1 | grounded | target_grounded | target_corpus | mean_ms |
+|-----------|-------|----------|-----------------|---------------|---------|
+| sentence_hard_v1 | 1.0 | 1.0 | 1.0 | 1.0 | 491 |
+| evidence_intent_v1 | 0.80 | 0.80 | 0.80 | 0.80 | 368 |
+| clinical_actionable_v1 | 0.67 | 0.73 | 0.73 | 0.73 | 450 |
+| title_global_v1 | 1.0 | 0.17 | 0.08 | 1.0 | 438 |
+| title_selected_v1 | 1.0 | 0.20 | 0.20 | 1.0 | 264 |
+| neuropsych_safety_v1 | 0.17 | 0.92 | 0.33 | 0.33 | 769 |
+| adversarial_router_v1 | 0.08 | 0.08 | 0.08 | 0.17 | 25,513 |
+
+Key observations:
+
+- **sentence_hard_v1 is green** — was only blocked by missing chunks
+- **evidence_intent and clinical_actionable now have real signal** — remaining
+  failures are genuine retrieval misses (20-33%)
+- **title benchmarks** — retrieval is perfect (hit@1=1.0, target_corpus=1.0) but
+  grounded answer rate is still very low despite full chunk coverage. The
+  grounding gap is in the runtime gate logic, not chunk availability.
+- **neuropsych_safety** — retrieval is weak (hit@1=0.17), grounding is strong on
+  what it finds (0.92). QUESTION_LOOKUP routing needs validation here.
+- **adversarial_router** — remains hard failure class (hit@1=0.08, 25s latency)
 
 ## Live Invariants To Preserve
 
@@ -137,6 +153,7 @@ Direction:
   ambiguous, statistical, and short clinical-shorthand queries
 - add a frozen `general`-profile cohort so the broad hybrid route is not judged
   only through sampled runs
+- add a frozen `question_lookup`-profile cohort for interrogative clinical queries
 - report benchmark overlap explicitly and prefer paper-disjoint reporting by
   default
 - rationalize the current polarity/conflict benchmark overlap instead of keeping
@@ -147,6 +164,16 @@ Success criteria:
 - frozen coverage exists across `title_lookup`, `question_lookup`,
   `passage_lookup`, and `general`
 - benchmark reports clearly separate paper-disjoint and paper-overlap views
+
+Progress (2026-04-04):
+
+- 7 frozen benchmarks exist: title_global_v1, title_selected_v1,
+  adversarial_router_v1, neuropsych_safety_v1, sentence_hard_v1,
+  clinical_actionable_v1, evidence_intent_v1 (77 unique papers total)
+- Overlap audit: clinical_actionable ↔ evidence_intent share 9 papers;
+  clinical_actionable ↔ sentence_hard share 2; evidence_intent ↔ sentence_hard
+  share 3. Title and adversarial benchmarks are fully paper-disjoint.
+- Remaining: `question_lookup` and `general` profile benchmarks not yet frozen
 
 ### Phase 1: Close The Frozen Grounding Gap
 
@@ -169,6 +196,27 @@ Success criteria:
 - improve `target_in_grounded_answer_rate` on the frozen title benchmarks, not
   only `grounded_answer_rate`
 - keep the broad current-release sampled cohort at its current latency floor
+
+Progress (2026-04-04):
+
+- Found 49/77 benchmark papers (64%) had no chunk rows despite having full
+  canonical blocks and sentences. Breakdown by benchmark:
+  - clinical_actionable_v1: 15/15 missing (100%)
+  - evidence_intent_v1: 15/15 missing (100%)
+  - sentence_hard_v1: 14/14 missing (100%)
+  - adversarial_router_v1: 10/12 missing (83%)
+  - neuropsych_safety_v1: 5/12 missing (42%)
+  - title_selected_v1: 2/10 missing (20%)
+  - title_global_v1: 1/12 missing (8%)
+- Backfilled all 49 papers using `backfill_structural_chunks.py` with
+  `--corpus-ids-file data/benchmark_missing_chunks.txt`. Sources:
+  s2orc_v2:2026-03-10 (43 papers), biocxml:2026-03-21 (6 papers).
+  407 chunks, 2138 chunk_members written, zero failures.
+- Tool used: existing `engine/db/scripts/backfill_structural_chunks.py`
+  per the "do not invent a second backfill operator" rule
+- QA audit of chunk quality launched — verifying sentence alignment,
+  chunk member text, ordinal sequencing, and grounded runtime status
+- Next: re-run frozen benchmarks to get real grounding metrics
 
 ### Phase 2: Fix The Remaining Frozen Retrieval Classes
 
