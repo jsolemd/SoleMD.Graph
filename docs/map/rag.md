@@ -348,6 +348,38 @@ inline citations, not an always-on free-form synthesis loop.
 The evaluation stack exists to keep route changes, corpus changes, and ranking
 changes measurable against the active release.
 
+### Operator workflow
+
+**Langfuse is the primary review surface for RAG evaluation.** Do not rely on
+JSON reports alone — always verify results through Langfuse traces.
+
+```bash
+cd engine
+
+# 1. Run benchmarks (traces push to Langfuse automatically)
+export LANGFUSE_HOST=http://localhost:3100
+export LANGFUSE_SECRET_KEY=sk-lf-...
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+
+uv run python -m scripts.evaluate_rag_runtime \
+  --benchmark-path data/runtime_eval_benchmarks/<name>.json \
+  --graph-release-id current
+
+# 2. Review in Langfuse UI at $LANGFUSE_HOST
+#    - Score Analytics: hit_at_1, grounded_answer_rate regressions
+#    - Filter by categorical tags: query_family, warehouse_depth, route_signature
+#    - Click any trace to inspect the full pipeline:
+#      Input:  query, corpus_id, query_family, evidence_intent
+#      Output: top_hits with rank_features, retrieval_channel_hit_counts
+#      Meta:   session_flags (route, profile, scope), candidate_counts, stage_durations_ms
+```
+
+Each trace captures the complete retrieval pipeline state — query in, which
+channels fired, how candidates were ranked, what features scored each hit,
+which route was taken, where time was spent, and what answer was selected.
+Use this for debugging regressions, comparing A/B routing changes, and
+understanding why a specific paper was or wasn't retrieved.
+
 ---
 
 ## Safety Posture
