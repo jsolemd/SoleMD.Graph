@@ -14,7 +14,7 @@
     "chrome-devtools-visible": {
       "type": "http",
       "url": "http://localhost:8401/mcp",
-      "instructions": "Visible Chrome on Windows host via HTTP proxy. Chrome must be running with --remote-debugging-port=9222. Start Chrome: 'solemd chrome start' or Start-ChromeDebug.ps1."
+      "instructions": "Visible Chrome on Windows host via HTTP proxy. Chrome must be running with --remote-debugging-port=9222. Start Chrome via Start-ChromeDebug.ps1 on Windows."
     },
     "supabase-solemd": {
       "type": "http",

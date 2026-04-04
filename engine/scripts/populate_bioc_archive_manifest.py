@@ -47,7 +47,7 @@ from app.rag_ingest.bioc_archive_manifest import (
     RagBioCArchiveManifestEntry,
     SidecarBioCArchiveManifestRepository,
 )
-from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_document_ids
+from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_all_document_ids
 
 
 def populate_archive_manifest(
@@ -67,34 +67,42 @@ def populate_archive_manifest(
         raise FileNotFoundError(f"BioC archive not found: {archive_path}")
 
     manifest = SidecarBioCArchiveManifestRepository()
-    start = 1
+
+    # Resume: check max existing ordinal. Since we now assign a global ordinal
+    # per document (not per tar member), resuming means starting at the member
+    # AFTER the one containing the max ordinal. But since we can't easily map
+    # ordinal→member for resume, we always re-index from the start when using
+    # the multi-doc scanner. The UPSERT is idempotent, so re-indexing is safe.
+    start_member = 1
+    existing_max = 0
     if resume:
         existing_max = manifest.max_document_ordinal(
             source_revision=resolved_revision,
             archive_name=archive_name,
         )
-        if existing_max > 0:
-            start = existing_max + 1
 
-    print(f"[{archive_name}] starting at ordinal {start} (batch_size={batch_size})")
+    print(
+        f"[{archive_name}] indexing all documents per batch file"
+        f" (existing_max_ordinal={existing_max}, batch_size={batch_size})"
+    )
 
     total_scanned = 0
     total_written = 0
-    last_ordinal: int | None = None
+    global_ordinal = 0
     pending: list[RagBioCArchiveManifestEntry] = []
     batch_start = time.monotonic()
 
-    for document_id, member_name, document_ordinal in iter_bioc_archive_document_ids(
+    for document_id, member_name, member_ordinal in iter_bioc_archive_all_document_ids(
         archive_path,
-        start_document_ordinal=start,
+        start_member_ordinal=start_member,
     ):
+        global_ordinal += 1
         total_scanned += 1
-        last_ordinal = document_ordinal
         pending.append(
             RagBioCArchiveManifestEntry(
                 source_revision=resolved_revision,
                 archive_name=archive_name,
-                document_ordinal=document_ordinal,
+                document_ordinal=global_ordinal,
                 member_name=member_name,
                 document_id=document_id,
             )
@@ -104,7 +112,8 @@ def populate_archive_manifest(
             elapsed = time.monotonic() - batch_start
             rate = batch_size / elapsed if elapsed > 0 else 0
             print(
-                f"[{archive_name}] ordinal={document_ordinal}"
+                f"[{archive_name}] ordinal={global_ordinal}"
+                f"  member={member_ordinal}"
                 f"  scanned={total_scanned}"
                 f"  written={total_written}"
                 f"  rate={rate:.0f}/s"
@@ -119,15 +128,15 @@ def populate_archive_manifest(
         f"[{archive_name}] done:"
         f" scanned={total_scanned}"
         f" written={total_written}"
-        f" last_ordinal={last_ordinal}"
+        f" last_ordinal={global_ordinal}"
     )
     return {
         "archive_name": archive_name,
         "source_revision": resolved_revision,
-        "start_document_ordinal": start,
+        "start_member_ordinal": start_member,
         "total_scanned": total_scanned,
         "total_written": total_written,
-        "last_document_ordinal": last_ordinal,
+        "last_document_ordinal": global_ordinal,
     }
 
 
