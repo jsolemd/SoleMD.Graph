@@ -18,7 +18,9 @@ from typing import Protocol
 from pydantic import Field
 
 from app import db
+from app.config import settings
 from app.rag.parse_contract import ParseContractModel
+from app.rag_ingest.bioc_archive_manifest import SidecarBioCArchiveManifestRepository
 from app.rag_ingest.bioc_target_discovery import (
     RagBioCTargetCandidate,
     build_bioc_locator_entries,
@@ -154,6 +156,61 @@ def _chunked(values: list[int], batch_size: int) -> list[list[int]]:
     return [values[index : index + batch_size] for index in range(0, len(values), batch_size)]
 
 
+def _resolve_candidates_from_manifest(
+    *,
+    corpus_ids: list[int],
+    connect=None,
+) -> dict[int, RagBioCTargetCandidate]:
+    """Resolve corpus_ids → PMIDs → manifest entries without scanning archives.
+
+    Uses the SQLite archive manifest index for O(n) lookup instead of the
+    O(all_archives) full-scan locator refresh.
+    """
+
+    if not corpus_ids:
+        return {}
+    connect_fn = connect or db.pooled
+    with connect_fn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT corpus_id, pmid, pmc_id, doi
+            FROM solemd.corpus
+            WHERE corpus_id = ANY(%s::BIGINT[])
+              AND (pmid IS NOT NULL OR pmc_id IS NOT NULL OR doi IS NOT NULL)
+            """,
+            (corpus_ids,),
+        )
+        rows = cur.fetchall()
+
+    pmid_to_corpus: dict[str, int] = {}
+    for row in rows:
+        if row["pmid"] is not None:
+            pmid_to_corpus[str(int(row["pmid"]))] = int(row["corpus_id"])
+
+    if not pmid_to_corpus:
+        return {}
+
+    manifest_repo = SidecarBioCArchiveManifestRepository()
+    manifest_entries = manifest_repo.resolve_by_document_ids(
+        source_revision=settings.pubtator_release_id,
+        document_ids=list(pmid_to_corpus.keys()),
+    )
+
+    candidates: dict[int, RagBioCTargetCandidate] = {}
+    for entry in manifest_entries:
+        corpus_id = pmid_to_corpus.get(entry.document_id)
+        if corpus_id is None:
+            continue
+        candidates[corpus_id] = RagBioCTargetCandidate(
+            corpus_id=corpus_id,
+            document_id=entry.document_id,
+            archive_name=entry.archive_name,
+            document_ordinal=entry.document_ordinal,
+            member_name=entry.member_name,
+        )
+    return candidates
+
+
 def run_bioc_overlay_backfill(
     *,
     run_id: str,
@@ -210,6 +267,9 @@ def run_bioc_overlay_backfill(
         candidate_corpus_ids = active_candidate_loader.load_candidate_corpus_ids(
             corpus_ids=normalized_requested_ids or None,
             limit=limit,
+        )
+        discovery_candidate_map = _resolve_candidates_from_manifest(
+            corpus_ids=candidate_corpus_ids,
         )
     report = RagBioCOverlayBackfillReport(
         run_id=run_id,

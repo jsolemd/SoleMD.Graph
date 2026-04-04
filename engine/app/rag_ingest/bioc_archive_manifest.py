@@ -53,6 +53,11 @@ _INDEX_SQL = (
     "ON archive_manifest (archive_name, document_id, document_ordinal)"
 )
 
+_DOCUMENT_ID_INDEX_SQL = (
+    "CREATE INDEX IF NOT EXISTS idx_archive_manifest_document_id_global "
+    "ON archive_manifest (document_id)"
+)
+
 _UPSERT_SQL = """
 INSERT INTO archive_manifest (
     archive_name,
@@ -116,6 +121,14 @@ WHERE archive_name = ?
   AND (skip_reason IS NULL OR skip_reason IS NOT ?)
 """
 
+_RESOLVE_BY_DOCUMENT_IDS_SQL = """
+SELECT archive_name, document_ordinal, member_name, document_id, skip_reason
+FROM archive_manifest
+WHERE document_id IN ({placeholders})
+  AND skip_reason IS NULL
+ORDER BY document_id, archive_name, document_ordinal
+"""
+
 _FETCH_SKIPPED_DOCUMENT_IDS_SQL = """
 SELECT document_id
 FROM archive_manifest
@@ -146,6 +159,7 @@ def _connect_sqlite(path: Path) -> sqlite3.Connection:
     conn.execute(_CREATE_SQL)
     _ensure_optional_columns(conn)
     conn.execute(_INDEX_SQL)
+    conn.execute(_DOCUMENT_ID_INDEX_SQL)
     return conn
 
 
@@ -281,6 +295,43 @@ class SidecarBioCArchiveManifestRepository:
                 conn.commit()
                 written += len(path_entries)
         return written
+
+    def resolve_by_document_ids(
+        self,
+        *,
+        source_revision: str,
+        document_ids: Sequence[str],
+    ) -> list[RagBioCArchiveManifestEntry]:
+        """Look up manifest entries by document_id (PMID) across all archives."""
+
+        normalized = list(dict.fromkeys(str(d) for d in document_ids))
+        if not normalized:
+            return []
+        path = bioc_archive_manifest_sidecar_path(source_revision=source_revision)
+        if not path.exists():
+            return []
+        placeholders = ", ".join("?" for _ in normalized)
+        sql = _RESOLVE_BY_DOCUMENT_IDS_SQL.format(placeholders=placeholders)
+        with _connect_sqlite(path) as conn:
+            rows = conn.execute(sql, normalized).fetchall()
+        seen: set[str] = set()
+        entries: list[RagBioCArchiveManifestEntry] = []
+        for row in rows:
+            doc_id = str(row["document_id"])
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+            entries.append(
+                RagBioCArchiveManifestEntry(
+                    source_revision=source_revision,
+                    archive_name=str(row["archive_name"]),
+                    document_ordinal=int(row["document_ordinal"]),
+                    member_name=str(row["member_name"]),
+                    document_id=doc_id,
+                    skip_reason=None,
+                )
+            )
+        return entries
 
     def fetch_skipped_document_ids(
         self,
