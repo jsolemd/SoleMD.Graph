@@ -154,7 +154,10 @@ def rank_paper_hits(
         )
         citation_score = hit.citation_boost
         dense_score = hit.dense_score
-        if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP and not direct_support:
+        if retrieval_profile in (
+            QueryRetrievalProfile.PASSAGE_LOOKUP,
+            QueryRetrievalProfile.QUESTION_LOOKUP,
+        ) and not direct_support:
             citation_score = 0.0
             dense_score *= 0.1
         hit.fused_score = (
@@ -229,7 +232,10 @@ def _rank_sort_key(
             item.citation_count or 0,
             item.corpus_id,
         )
-    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if retrieval_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return (
             1.0
             if has_direct_retrieval_support(

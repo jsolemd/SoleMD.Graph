@@ -114,7 +114,11 @@ def select_answer_grounding_bundles(
     selected: list[EvidenceBundle] = []
     remaining = list(bundles)
 
-    if query_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+    is_passage_like = query_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    )
+    if is_passage_like:
         _append_selected_bundle(
             selected,
             remaining,
@@ -151,7 +155,7 @@ def select_answer_grounding_bundles(
     )
     _append_selected_bundle(selected, remaining, query_anchor)
 
-    if query_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if is_passage_like:
         _append_selected_bundle(
             selected,
             remaining,

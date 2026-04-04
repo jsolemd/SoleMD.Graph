@@ -89,7 +89,10 @@ def chunk_search_queries(query: PaperRetrievalQuery) -> list[str]:
     primary_query = query.normalized_query or raw_query
     if not primary_query and not raw_query:
         return []
-    if query.retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if query.retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return [primary_query]
 
     candidates: list[str] = []
@@ -229,7 +232,10 @@ def should_run_paper_lexical_fallback(
 
     if not query.use_lexical:
         return False
-    if search_plan.retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if search_plan.retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return search_plan.use_paper_lexical
     if not search_plan.fallback_to_paper_lexical_on_empty_chunk:
         return False
@@ -311,7 +317,10 @@ def should_run_biomedical_reranker(
         return False
     if query.scope_mode != RetrievalScope.GLOBAL:
         return False
-    if query.retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if query.retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return False
     if query.clinical_intent == ClinicalQueryIntent.GENERAL:
         return False
@@ -325,7 +334,10 @@ def has_direct_retrieval_support(
 ) -> bool:
     """Return True when a paper has direct query support for the current profile."""
 
-    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if retrieval_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return (
             paper.chunk_lexical_score > 0
             or paper.lexical_score > 0
@@ -356,7 +368,10 @@ def citation_context_candidate_ids(
 ) -> list[int]:
     """Limit citation-context scoring to candidates that already have direct evidence."""
 
-    if retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return [hit.corpus_id for hit in paper_hits]
 
     return [
@@ -380,7 +395,10 @@ def entity_relation_candidate_ids(
     """Bound expensive entity/relation enrichment to the best-ranked candidates."""
 
     ordered_ids = [hit.corpus_id for hit in ranked_papers]
-    if retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return ordered_ids
 
     shortlist_limit = min(

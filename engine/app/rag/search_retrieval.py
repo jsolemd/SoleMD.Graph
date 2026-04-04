@@ -62,10 +62,12 @@ def _apply_query_enrichment(
     if not query_phrases:
         return _apply_relation_enrichment(query)
 
-    query.entity_terms = repository.resolve_query_entity_terms(
+    terms, high_confidence = repository.resolve_query_entity_terms(
         query_phrases=query_phrases,
         limit=5,
     )
+    query.entity_terms = terms
+    query.high_confidence_entity_terms = high_confidence
     return _apply_relation_enrichment(query)
 
 
@@ -86,7 +88,10 @@ def _paper_lexical_query_text(
     *,
     passage_fallback: bool,
 ) -> str:
-    if passage_fallback and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if passage_fallback and query.retrieval_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return query.query
     return _lexical_query_text(query)
 
@@ -95,11 +100,18 @@ def _entity_seed_terms_for_recall(
     *,
     explicit_entity_terms: list[str],
     resolved_entity_terms: list[str],
+    high_confidence_entity_terms: set[str] | None = None,
 ) -> list[str]:
     if explicit_entity_terms:
         return explicit_entity_terms
+    high_conf = high_confidence_entity_terms or set()
     return [
-        term for term in resolved_entity_terms if should_seed_resolved_entity_term(term)
+        term
+        for term in resolved_entity_terms
+        if should_seed_resolved_entity_term(
+            term,
+            entity_confidence="high" if term in high_conf else None,
+        )
     ]
 
 
@@ -236,7 +248,8 @@ def retrieve_search_state(
         not exact_title_hits
         and query.use_lexical
         and not selection_only_without_matches
-        and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+        and query.retrieval_profile
+        in (QueryRetrievalProfile.PASSAGE_LOOKUP, QueryRetrievalProfile.QUESTION_LOOKUP)
     ):
         describe_chunk_route = getattr(repository, "describe_chunk_search_route", None)
         trace.record_flag("chunk_search_queries", chunk_queries)
@@ -271,7 +284,8 @@ def retrieve_search_state(
 
     lexical_hits: list[PaperEvidenceHit] = list(exact_title_hits)
     sparse_passage_paper_fallback = (
-        search_plan.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+        search_plan.retrieval_profile
+        in (QueryRetrievalProfile.PASSAGE_LOOKUP, QueryRetrievalProfile.QUESTION_LOOKUP)
         and should_run_paper_lexical_fallback(
             query=query,
             search_plan=search_plan,
@@ -372,6 +386,7 @@ def retrieve_search_state(
     entity_seed_terms = _entity_seed_terms_for_recall(
         explicit_entity_terms=explicit_entity_terms,
         resolved_entity_terms=query.entity_terms,
+        high_confidence_entity_terms=query.high_confidence_entity_terms,
     )
     trace.record_count("entity_seed_terms", len(entity_seed_terms))
     entity_seed_hits = (

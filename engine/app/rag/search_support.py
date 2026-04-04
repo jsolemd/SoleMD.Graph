@@ -96,6 +96,7 @@ def build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         normalized_query=normalize_query_text(request.query),
         entity_terms=_normalize_terms(request.entity_terms),
         relation_terms=_normalize_relation_terms(request.relation_terms),
+        cited_corpus_ids=list(request.cited_corpus_ids),
         selected_layer_key=request.selected_layer_key,
         selected_node_id=request.selected_node_id,
         selected_graph_paper_ref=selected_graph_paper_ref,

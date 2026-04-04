@@ -56,7 +56,7 @@ class RagRepository(Protocol):
         *,
         query_phrases: Sequence[str],
         limit: int = 5,
-    ) -> list[str]: ...
+    ) -> tuple[list[str], set[str]]: ...
 
     def resolve_selected_corpus_id(
         self,

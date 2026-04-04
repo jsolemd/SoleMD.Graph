@@ -26,7 +26,9 @@ class PaperRetrievalQuery:
     query: str
     normalized_query: str
     entity_terms: list[str] = field(default_factory=list)
+    high_confidence_entity_terms: set[str] = field(default_factory=set)
     relation_terms: list[str] = field(default_factory=list)
+    cited_corpus_ids: list[int] = field(default_factory=list)
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
     selected_graph_paper_ref: str | None = None
@@ -103,6 +105,7 @@ class PaperEvidenceHit:
     selected_context_score: float = 0.0
     biomedical_rerank_score: float = 0.0
     fused_score: float = 0.0
+    lane_count: int = 0
     rank: int = 0
     chunk_ordinal: int | None = None
     chunk_snippet: str | None = None

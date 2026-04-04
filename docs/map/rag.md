@@ -3,8 +3,7 @@
 > **Scope**: current runtime architecture for evidence retrieval, ranking,
 > answer assembly, and graph grounding.
 >
-> **Use this doc for**: the stable high-level map of what is live now and the
-> grounded-generation direction the architecture is designed to support.
+> **Use this doc for**: the stable high-level map of what is live now.
 >
 > **Note**: this file now also carries the former `rag-info.md` contract and
 > implementation-summary content.
@@ -14,6 +13,8 @@
 >   `pubtator.*`
 > - [architecture.md](./architecture.md) — broader system architecture
 > - [data.md](./data.md) — ingestion and corpus data flow
+> - [../plans/rag-runtime-direction-2026-04.md](../plans/rag-runtime-direction-2026-04.md) —
+>   the post-ledger next-state runtime plan
 
 ---
 
@@ -22,16 +23,38 @@
 | Area | Current state |
 |------|---------------|
 | Retrieval unit | **Paper-first**. The runtime ranks papers, not free-floating chunks. |
-| Grounding unit | **Chunk-backed cited spans when coverage exists**; otherwise the system returns paper-grounded extractive evidence only. |
-| Query routing | `title_lookup`, `passage_lookup`, and `general` profiles shape which lanes run and how precision is favored. |
+| Grounding unit | **Chunk-backed cited spans when answer-linked papers are fully covered under the active chunk version**; otherwise the system returns paper-grounded extractive evidence only. |
+| Query routing | `title_lookup`, `question_lookup`, `passage_lookup`, and `general` shape which lanes run and how precision is favored. |
 | Corpus boundary | All retrieval is release-scoped through the active `graph_release_id` and `solemd.graph_points`. |
 | Scope control | Optional `selection_only` mode limits retrieval to selected graph papers resolved inside the current release. |
-| Current answer mode | `baseline-extractive-v1` from ranked evidence bundles. |
-| Generative direction | Planned: grounded generative synthesis over cited spans and inline citations, built on the same paper-first retrieval and warehouse contracts. |
+| Current answer mode | `baseline-extractive-v1` from ranked evidence bundles. `generate_answer` still means “build the baseline answer payload,” not “switch to live LLM synthesis.” |
+| Citation steering | `cited_corpus_ids` now crosses the web -> engine seam, but it is **not yet** a retrieval or ranking control in the live backend. |
+| Non-live scaffolding | Generated-answer and answer-verification modules now exist in tree, but they are **not** wired into the live request path. |
 | Dense retrieval | SPECTER2 ad-hoc query encoding against `solemd.papers.embedding`. |
-| Optional reranking | Bounded MedCPT reranking for clinician-intent passage queries only. |
+| Optional reranking | Bounded MedCPT reranking exists for clinician-intent passage queries, but the live runtime keeps it default-off (`rag_live_biomedical_reranker_enabled = false`). |
 | Chunk retrieval | Live only as **chunk lexical** search over `solemd.paper_chunks`; dense chunk ANN is not in the live request path. |
 | Frontend boundary | The backend returns typed evidence and graph signals; DuckDB resolves graph refs locally for Cosmograph. |
+
+---
+
+## Current Runtime Snapshot
+
+These numbers matter because the repo currently has two truths at once:
+
+- the broad current-release sampled cohort is healthy on the latest code
+- the frozen targeted benchmarks still define the remaining weak classes
+
+| Artifact | What it says now | Why it matters |
+|------|-------------------|----------------|
+| [`.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`](/home/workbench/SoleMD/SoleMD.Graph/.tmp/rag-runtime-eval-current-all-families-v30-recheck.json) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The live current-release runtime floor is fast, grounded, and stable on the broad sampled cohort. |
+| [`engine/.tmp/eval-title_global_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-title_global_v1-20260403.json) | `hit@1=1.0`, `grounded_answer_rate=0.1667`, `target_in_grounded_answer_rate=0.0833` | Retrieval is fine on this frozen title cohort, but grounding remains thin for the targeted title set. |
+| [`engine/.tmp/eval-title_selected_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-title_selected_v1-20260403.json) | `hit@1=1.0`, `grounded_answer_rate=0.2`, `target_in_grounded_answer_rate=0.2` | Selected-title retrieval is strong, but grounded cited output is still sparse on this frozen benchmark. |
+| [`engine/.tmp/eval-adversarial_router_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-adversarial_router_v1-20260403.json) | `hit@1=0.0833`, `target_in_answer_corpus_rate=0.3333`, `mean_service_duration_ms=32051.471` | Acronym-heavy and ambiguous sentence queries remain the sharpest retrieval/routing failure class. |
+| [`engine/.tmp/eval-neuropsych_safety_v1-20260403.json`](/home/workbench/SoleMD/SoleMD.Graph/engine/.tmp/eval-neuropsych_safety_v1-20260403.json) | `hit@1=0.25`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=0.25` | This cohort grounds cleanly on the papers it picks, but it still retrieves the wrong papers too often. |
+
+The practical interpretation is simple: the sampled release-level runtime is in
+good shape, but the frozen targeted cohorts still define the next work. They are
+not stale noise and they are not interchangeable with the broad `v30` cohort.
 
 ---
 
@@ -110,7 +133,7 @@
 - Chunk search is a retrieval lane, not the canonical result identity. The result spine stays paper-level.
 - Grounded answers are coverage-gated. If the requested answer papers are not covered by the warehouse chunk runtime, the system falls back to paper-grounded extractive output.
 - Selection context is first-class. A selected paper or `selection_only` scope can change routing, candidate preservation, and ranking.
-- The same grounding contract is intended to support later generative synthesis: retrieve and rank papers first, then generate only from source-traceable cited spans rather than from unconstrained model recall.
+- `cited_corpus_ids` is a live request seam, but it is not yet a retrieval guarantee or rank override.
 - DuckDB is the local graph resolver, not the evidence retriever. It maps backend-selected papers back onto the current graph bundle.
 
 ---
@@ -123,22 +146,19 @@
 4. Candidate papers are merged, reranked, enriched with citations, entities, relations, references, and assets, then packaged into evidence bundles and graph signals.
 5. The live answer path builds a paper-grounded extractive answer from the top bundles.
 6. If chunk runtime coverage is complete for the answer-linked papers, the engine also returns a `grounded_answer` with inline citation anchors and cited-span packets.
-7. That grounded packet layer is the intended substrate for later generative answer synthesis, so generation can be added without changing release scoping, retrieval identity, or graph resolution.
-8. The browser resolves returned corpus ids back into local graph rows and lights the mapped subset on Cosmograph.
+7. The browser resolves returned corpus ids back into local graph rows and lights the mapped subset on Cosmograph.
 
 ---
 
-## Generative Direction
+## In-Tree But Not Live
 
-The live runtime is still extractive, but the architecture is intentionally
-moving toward **grounded generation**, not away from grounding.
+These seams exist in the repository today but are not part of the live serving path:
 
-- Evidence selection stays paper-first and release-scoped.
-- Generation should happen only after ranking and span grounding are complete.
-- `grounded_answer`, inline citation anchors, and cited-span packets are the
-  contract that makes later generation source-traceable.
-- The intended upgrade is not "let the model answer freely." It is "let the
-  model compose an answer from bounded, cited, warehouse-backed evidence."
+- `engine/app/rag/answer_generation.py`
+- `engine/app/rag/answer_verification.py`
+- request-level `cited_corpus_ids` plumbing across the web -> engine boundary
+
+Their intended next use belongs in the plan doc, not here.
 
 ---
 
@@ -179,13 +199,12 @@ moving toward **grounded generation**, not away from grounding.
 | Dense chunk ANN retrieval | Not live |
 | Qdrant-backed serving | Not used |
 | Ungrounded or free-form LLM synthesis as the default answer path | Not live |
-| Grounded generative synthesis over cited spans | Planned, not yet live |
-| Faithfulness verification in the request hot path | Not live |
+| `cited_corpus_ids` as a retrieval/ranking constraint | Request seam only; not yet used by the live backend search path |
+| Grounded generative synthesis over cited spans | Scaffolding exists, not yet wired into the request hot path |
+| Faithfulness verification in the request hot path | Scaffolding exists, not yet wired into the request hot path |
 
 The live system today is a bounded evidence retrieval and extractive answer
-pipeline with optional chunk-backed grounding. The intended next answer layer is
-grounded generative synthesis over cited, source-traceable warehouse spans, not
-an ungrounded free-form assistant.
+pipeline with optional chunk-backed grounding.
 
 # SoleMD.Graph — RAG Info
 
@@ -214,16 +233,18 @@ an ungrounded free-form assistant.
 | `selection_graph_paper_refs` | Optional explicit selection scope. |
 | `scope_mode` | `global` or `selection_only`. |
 | `evidence_intent` | `support`, `refute`, or `both`. |
+| `cited_corpus_ids` | Explicit user-cited papers carried through the request seam. This field exists live, but backend retrieval does not yet enforce it. |
 | `k` / `rerank_topn` | Final bundle count and rerank window. |
-| `use_lexical` / `use_dense_query` / `generate_answer` | Engine toggles. The web ask path currently exposes `use_lexical` and `generate_answer`; the engine contract also supports `use_dense_query`. |
+| `use_lexical` / `use_dense_query` / `generate_answer` | Engine toggles. `generate_answer` currently controls the extractive baseline answer path, not a live generative mode switch. |
 
 ### Response surface
 
 | Field | Meaning |
 |------|---------|
 | `answer` | Extractive answer text from the baseline live path. |
+| `answer_model` | Usually `baseline-extractive-v1` when answer generation is enabled in the live path. |
 | `answer_corpus_ids` | Papers used to construct the answer payload. |
-| `grounded_answer` | Inline-cited chunk-backed answer record when coverage exists; this is also the intended substrate for later grounded generation. |
+| `grounded_answer` | Inline-cited chunk-backed answer record when coverage exists. |
 | `evidence_bundles` | Ranked per-paper evidence packages. |
 | `graph_signals` | Graph-lighting instructions for the browser. |
 | `retrieval_channels` | Per-lane hit summaries for debugging and UI transparency. |
@@ -236,6 +257,7 @@ an ungrounded free-form assistant.
 | Profile | Main use case | Retrieval posture |
 |--------|----------------|-------------------|
 | `title_lookup` | Exact or near-title queries | Prefer exact title anchors, suppress broader expansion when lexical title support is already strong |
+| `question_lookup` | Interrogative sentence queries | Run both paper lexical and chunk lexical lanes, allow bounded paper fallback when chunk anchors are weak, and prefer precise grounding |
 | `passage_lookup` | Sentence-like or passage-like queries | Run chunk lexical first, prefer direct grounding, keep citation expansion tight, allow bounded lexical fallback when chunk recall is weak |
 | `general` | Open topical queries | Broadest hybrid mix across lexical, dense, entity, relation, and citation signals |
 
@@ -276,7 +298,10 @@ query shape, while the plan is the concrete execution posture for that request.
 | Grounding | `build_grounded_answer_from_runtime()` | Inline citations and cited-span packets when chunk runtime coverage is complete |
 
 The exact ranking coefficients live in code, especially `ranking_support.py`.
-This doc names the seams and the intent, not the numeric weights.
+This doc names the seams and the intent, not the numeric weights. The live
+runtime also exposes route-level observability such as
+`paper_search_sparse_passage_fallback` in runtime-eval artifacts, which matters
+when passage-mode recovery is doing real work.
 
 ---
 
@@ -285,6 +310,10 @@ This doc names the seams and the intent, not the numeric weights.
 Grounded answers are deliberately coverage-gated. The runtime checks for the
 current chunk version and for full answer-paper coverage before it claims
 chunk-backed grounding.
+
+Current code reports this through `GroundedAnswerRuntimeStatus.fully_covered`
+plus `has_any_coverage`. Partial coverage is observable, but the live response
+only emits `grounded_answer` when the answer-linked paper set is fully covered.
 
 ### Grounding prerequisites
 
@@ -321,15 +350,15 @@ layer.
 | Model or artifact | Role | State |
 |-------------------|------|-------|
 | SPECTER2 ad-hoc query encoder | Dense paper retrieval | Live |
-| MedCPT reranker | Optional bounded reranking for clinician-intent passage queries | Live, gated |
+| MedCPT reranker | Optional bounded reranking for clinician-intent passage queries | Available, default-off |
 | `baseline-extractive-v1` | Default answer formatter | Live |
-| Grounded generative synthesis layer | Future answer mode that composes source-traceable cited spans into prose | Planned |
+| `answer_generation.py` | Generated cited-answer scaffolding | In tree, not live |
+| `answer_verification.py` | Serving-path faithfulness gate scaffolding | In tree, not live |
 | Patronus Lynx 8B tooling | Faithfulness checking for evaluation workflows | Available outside the live hot path |
 | RAGAS context metrics | Evaluation-only context precision and recall | Optional tooling |
 
 The live request path remains paper-first retrieval plus extractive answer
-assembly. The intended evolution is grounded generation over cited spans and
-inline citations, not an always-on free-form synthesis loop.
+assembly. Anything beyond that belongs in the future plan, not the current-state map.
 
 ---
 
@@ -347,6 +376,11 @@ inline citations, not an always-on free-form synthesis loop.
 
 The evaluation stack exists to keep route changes, corpus changes, and ranking
 changes measurable against the active release.
+
+The current review posture should use both:
+
+- the broad sampled release artifact for runtime floor and latency
+- the frozen targeted benchmarks for failure-class tracking
 
 ### Operator workflow
 
@@ -406,15 +440,20 @@ system.
 | `engine/app/api/rag.py` | FastAPI route boundary |
 | `engine/app/rag/service.py` | Runtime service entrypoint and warmup |
 | `engine/app/rag/search_support.py` | Query normalization and request-to-model conversion |
+| `engine/app/rag/query_enrichment.py` | Query-shape classification, title demotion, and question detection |
 | `engine/app/rag/search_plan.py` | Query-shape execution planning |
+| `engine/app/rag/retrieval_policy.py` | Centralized route gating, exact-title rescue, fallback policy, reranker gating |
 | `engine/app/rag/search_retrieval.py` | Initial retrieval stage |
 | `engine/app/rag/search_finalize.py` | Enrichment, ranking, answer assembly, response finalization |
 | `engine/app/rag/ranking.py` and `engine/app/rag/ranking_support.py` | Final scoring behavior |
 | `engine/app/rag/answer.py` | Extractive baseline answer selection |
 | `engine/app/rag/grounded_runtime.py` | Coverage gate for chunk-backed grounding |
 | `engine/app/rag/warehouse_grounding.py` | Conversion from warehouse rows to cited answer packets |
+| `engine/app/rag/answer_generation.py` | Generated-answer scaffolding that is not yet wired live |
+| `engine/app/rag/answer_verification.py` | Faithfulness-gate scaffolding that is not yet wired live |
 | `engine/app/rag/queries.py` | SQL substrate for release resolution, retrieval, enrichment, and grounding |
 | `engine/app/rag/repository_*.py` | PostgreSQL adapter mixins for each retrieval concern |
+| `docs/agentic/2026-04-01-solemd-graph-rag-runtime-ledger.md` | The durable record of the runtime optimization and cleanup sequence through A53 |
 
 ---
 
@@ -559,7 +598,7 @@ uv run python db/scripts/backfill_structural_chunks.py \
 | Depth | Meaning | What works | What doesn't |
 |-------|---------|------------|--------------|
 | `fulltext` | Real structural parsing (sections, blocks, sentences, chunks) | Retrieval + grounded answers + cited spans + evidence flags | — |
-| `front_matter_only` | Abstract-only stub (1 section, 1 block) | Retrieval + paper-level evidence | No passage grounding, no inline citations |
+| `front_matter_only` | Abstract-only canonical structure with thin document depth | Retrieval + chunk-backed grounding when chunks exist + paper-level evidence | Weaker citation density and thinner span coverage than fulltext papers |
 | `none` | Not in warehouse | Retrieval from metadata (title, abstract, embeddings) | No grounded answers |
 
 The `by_warehouse_depth` eval dimension stratifies metrics by this classification so

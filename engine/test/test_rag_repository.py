@@ -516,18 +516,19 @@ def test_search_session_skips_jit_override_when_disabled(mock_conn, monkeypatch)
 def test_resolve_query_entity_terms_maps_exact_canonical_matches(mock_conn):
     conn = mock_conn(
         rows=[
-            {"normalized_term": "melatonin"},
-            {"normalized_term": "delirium"},
+            {"normalized_term": "melatonin", "rule_confidence": None},
+            {"normalized_term": "delirium", "rule_confidence": None},
         ]
     )
     repo = PostgresRagRepository(connect=lambda: conn)
 
-    terms = repo.resolve_query_entity_terms(
+    terms, high_conf = repo.resolve_query_entity_terms(
         query_phrases=["melatonin", "delirium", "melatonin delirium"],
         limit=5,
     )
 
     assert terms == ["melatonin", "delirium"]
+    assert high_conf == set()
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.QUERY_ENTITY_TERM_MATCH_SQL,
@@ -536,15 +537,16 @@ def test_resolve_query_entity_terms_maps_exact_canonical_matches(mock_conn):
 
 
 def test_resolve_query_entity_terms_preserves_exact_concept_ids(mock_conn):
-    conn = mock_conn(rows=[{"normalized_term": "MESH:D008874"}])
+    conn = mock_conn(rows=[{"normalized_term": "MESH:D008874", "rule_confidence": "high"}])
     repo = PostgresRagRepository(connect=lambda: conn)
 
-    terms = repo.resolve_query_entity_terms(
+    terms, high_conf = repo.resolve_query_entity_terms(
         query_phrases=["mesh:d008874", "melatonin"],
         limit=5,
     )
 
     assert terms == ["MESH:D008874"]
+    assert high_conf == {"MESH:D008874"}
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.QUERY_ENTITY_TERM_MATCH_SQL,

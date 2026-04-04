@@ -19,6 +19,7 @@ from app.rag.chunk_runtime_contract import (
     ChunkRuntimePhase,
     build_chunk_runtime_cutover_plan,
 )
+from app.rag.corpus_ids import normalize_corpus_ids
 from app.rag.grounded_runtime import (
     GroundedAnswerRuntimeStatus,
     get_grounded_answer_runtime_status,
@@ -95,10 +96,6 @@ class ChunkRuntimeInspection(ParseContractModel):
     missing_post_load_indexes: list[str] = Field(default_factory=list)
     pending_runtime_phases: list[ChunkRuntimePhase] = Field(default_factory=list)
     pending_cutover_steps: list[ChunkCutoverStepKey] = Field(default_factory=list)
-
-
-def _normalize_corpus_ids(corpus_ids: list[int] | tuple[int, ...]) -> list[int]:
-    return list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
 
 
 def _post_load_index_names() -> list[str]:
@@ -202,7 +199,7 @@ def inspect_chunk_runtime(
     chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
     connect=None,
 ) -> ChunkRuntimeInspection:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
+    normalized_corpus_ids = normalize_corpus_ids(corpus_ids)
     runtime_status = get_grounded_answer_runtime_status(
         corpus_ids=normalized_corpus_ids,
         chunk_version_key=chunk_version_key,
@@ -230,12 +227,12 @@ def inspect_chunk_runtime(
         runtime_status=runtime_status,
         missing_post_load_indexes=missing_indexes,
     )
-    full_cutover_ready = runtime_status.enabled and not missing_indexes
+    full_cutover_ready = runtime_status.fully_covered and not missing_indexes
 
     return ChunkRuntimeInspection(
         corpus_ids=normalized_corpus_ids,
         chunk_version_key=chunk_version_key,
-        grounded_answer_runtime_ready=runtime_status.enabled,
+        grounded_answer_runtime_ready=runtime_status.fully_covered,
         full_cutover_ready=full_cutover_ready,
         runtime_status=runtime_status,
         counts=counts,

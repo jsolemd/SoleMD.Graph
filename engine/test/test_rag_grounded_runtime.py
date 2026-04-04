@@ -2,11 +2,21 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.rag.grounded_runtime import (
     build_grounded_answer_from_runtime,
     get_grounded_answer_runtime_status,
+    reset_table_readiness_cache,
 )
 from app.rag.runtime_trace import RuntimeTraceCollector
+
+
+@pytest.fixture(autouse=True)
+def _clear_table_cache():
+    reset_table_readiness_cache()
+    yield
+    reset_table_readiness_cache()
 
 
 def _mock_connection(*, fetchone_side_effect, fetchall_side_effect=None):
@@ -39,7 +49,7 @@ def test_grounded_runtime_status_reports_missing_tables():
         connect=lambda: conn,
     )
 
-    assert status.enabled is False
+    assert status.fully_covered is False
     assert status.has_chunk_version is False
     assert status.missing_tables == ["paper_chunk_versions", "paper_chunk_members"]
 

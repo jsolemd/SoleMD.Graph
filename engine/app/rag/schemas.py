@@ -189,6 +189,7 @@ class RagSearchRequest(RagSchema):
     scope_mode: RetrievalScope = RetrievalScope.GLOBAL
     entity_terms: list[str] = Field(default_factory=list)
     relation_terms: list[str] = Field(default_factory=list)
+    cited_corpus_ids: list[int] = Field(default_factory=list)
     evidence_intent: EvidenceIntent | None = None
     k: int = Field(default=6, ge=1, le=50)
     rerank_topn: int = Field(default=18, ge=1, le=200)

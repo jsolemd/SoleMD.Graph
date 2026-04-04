@@ -21,10 +21,12 @@ class _SeedSearchMixin:
         *,
         query_phrases: Sequence[str],
         limit: int = 5,
-    ) -> list[str]:
+    ) -> tuple[list[str], set[str]]:
+        """Resolve entity terms, returning (all_terms, high_confidence_terms)."""
+
         normalized_phrases = _unique_stripped(query_phrases)
         if not normalized_phrases:
-            return []
+            return [], set()
 
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -34,7 +36,13 @@ class _SeedSearchMixin:
                 )
                 rows = cur.fetchall()
 
-        return [str(row["normalized_term"]) for row in rows if row.get("normalized_term")]
+        terms = [str(row["normalized_term"]) for row in rows if row.get("normalized_term")]
+        high_confidence = {
+            str(row["normalized_term"])
+            for row in rows
+            if row.get("normalized_term") and row.get("rule_confidence") == "high"
+        }
+        return terms, high_confidence
 
     def search_relation_papers(
         self,

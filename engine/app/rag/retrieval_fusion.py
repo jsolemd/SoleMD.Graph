@@ -22,7 +22,7 @@ def build_channel_rankings(
     entity_seed_hits: list[PaperEvidenceHit],
     relation_seed_hits: list[PaperEvidenceHit],
     semantic_neighbors: list[GraphSignal],
-    dense_query_hits: list[PaperEvidenceHit] | None = None,
+    dense_query_hits: list[PaperEvidenceHit] = (),
 ) -> dict[RetrievalChannel, dict[int, int]]:
     rankings: dict[RetrievalChannel, dict[int, int]] = {}
     if lexical_hits:
@@ -62,70 +62,80 @@ def merge_candidate_papers(
     citation_seed_hits: list[PaperEvidenceHit],
     semantic_seed_hits: list[PaperEvidenceHit],
     semantic_neighbors: list[GraphSignal],
-    dense_query_hits: list[PaperEvidenceHit] | None = None,
+    dense_query_hits: list[PaperEvidenceHit] = (),
 ) -> list[PaperEvidenceHit]:
-    by_corpus_id: dict[int, PaperEvidenceHit] = {hit.corpus_id: hit for hit in lexical_hits}
+    lane_counts: dict[int, int] = {}
+    by_corpus_id: dict[int, PaperEvidenceHit] = {}
+    for hit in lexical_hits:
+        by_corpus_id[hit.corpus_id] = hit
+        lane_counts[hit.corpus_id] = lane_counts.get(hit.corpus_id, 0) + 1
 
     for hit in chunk_lexical_hits:
         existing = by_corpus_id.get(hit.corpus_id)
         if existing is None:
             by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.chunk_lexical_score = max(
-            existing.chunk_lexical_score,
-            hit.chunk_lexical_score,
-        )
-        if hit.chunk_snippet and (
-            not existing.chunk_snippet
-            or hit.chunk_lexical_score >= existing.chunk_lexical_score
-        ):
-            existing.chunk_snippet = hit.chunk_snippet
-            existing.chunk_ordinal = hit.chunk_ordinal
+        else:
+            existing.chunk_lexical_score = max(
+                existing.chunk_lexical_score,
+                hit.chunk_lexical_score,
+            )
+            if hit.chunk_snippet and (
+                not existing.chunk_snippet
+                or hit.chunk_lexical_score >= existing.chunk_lexical_score
+            ):
+                existing.chunk_snippet = hit.chunk_snippet
+                existing.chunk_ordinal = hit.chunk_ordinal
+        lane_counts[hit.corpus_id] = lane_counts.get(hit.corpus_id, 0) + 1
 
     for hit in selected_context_hits:
         existing = by_corpus_id.get(hit.corpus_id)
         if existing is None:
             by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.selected_context_score = max(
-            existing.selected_context_score,
-            hit.selected_context_score,
-        )
+        else:
+            existing.selected_context_score = max(
+                existing.selected_context_score,
+                hit.selected_context_score,
+            )
 
-    for hit in dense_query_hits or []:
+    for hit in dense_query_hits:
         existing = by_corpus_id.get(hit.corpus_id)
         if existing is None:
             by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.dense_score = max(existing.dense_score, hit.dense_score)
+        else:
+            existing.dense_score = max(existing.dense_score, hit.dense_score)
+        lane_counts[hit.corpus_id] = lane_counts.get(hit.corpus_id, 0) + 1
 
     for hit in entity_seed_hits:
         existing = by_corpus_id.get(hit.corpus_id)
         if existing is None:
             by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.entity_score = max(existing.entity_score, hit.entity_score)
+        else:
+            existing.entity_score = max(existing.entity_score, hit.entity_score)
+        lane_counts[hit.corpus_id] = lane_counts.get(hit.corpus_id, 0) + 1
 
     for hit in relation_seed_hits:
         existing = by_corpus_id.get(hit.corpus_id)
         if existing is None:
             by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.relation_score = max(existing.relation_score, hit.relation_score)
+        else:
+            existing.relation_score = max(existing.relation_score, hit.relation_score)
+        lane_counts[hit.corpus_id] = lane_counts.get(hit.corpus_id, 0) + 1
 
     for hit in citation_seed_hits:
         existing = by_corpus_id.get(hit.corpus_id)
         if existing is None:
             by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.citation_boost = max(existing.citation_boost, hit.citation_boost)
+        else:
+            existing.citation_boost = max(existing.citation_boost, hit.citation_boost)
+        lane_counts[hit.corpus_id] = lane_counts.get(hit.corpus_id, 0) + 1
 
     for hit in semantic_seed_hits:
         existing = by_corpus_id.get(hit.corpus_id)
         if existing is None:
             by_corpus_id[hit.corpus_id] = hit
-            continue
-        existing.semantic_score = max(existing.semantic_score, hit.semantic_score)
+        else:
+            existing.semantic_score = max(existing.semantic_score, hit.semantic_score)
+        lane_counts[hit.corpus_id] = lane_counts.get(hit.corpus_id, 0) + 1
 
     semantic_scores = {signal.corpus_id: signal.score for signal in semantic_neighbors}
     for corpus_id, score in semantic_scores.items():
@@ -133,6 +143,9 @@ def merge_candidate_papers(
         if hit is None:
             continue
         hit.semantic_score = max(hit.semantic_score, score)
+
+    for corpus_id, hit in by_corpus_id.items():
+        hit.lane_count = lane_counts.get(corpus_id, 1)
 
     return list(by_corpus_id.values())
 

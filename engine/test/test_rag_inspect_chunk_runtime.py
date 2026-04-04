@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.rag.chunk_cutover import ChunkCutoverStepKey
 from app.rag.chunk_runtime_contract import ChunkRuntimePhase
+from app.rag.grounded_runtime import reset_table_readiness_cache
 from db.scripts.inspect_chunk_runtime import inspect_chunk_runtime
+
+
+@pytest.fixture(autouse=True)
+def _clear_table_cache():
+    reset_table_readiness_cache()
+    yield
+    reset_table_readiness_cache()
 
 
 def _mock_connection(*, fetchone_side_effect, fetchall_side_effect=None):

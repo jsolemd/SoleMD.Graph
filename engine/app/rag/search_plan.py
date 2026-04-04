@@ -29,9 +29,9 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
     has_selected_context = bool(
         query.selected_graph_paper_ref or query.selected_paper_id or query.selected_node_id
     )
-    use_chunk_lexical = (
-        query.use_lexical
-        and query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+    use_chunk_lexical = query.use_lexical and query.retrieval_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
     )
 
     if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
@@ -45,6 +45,19 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
             preserve_selected_candidate=has_selected_context,
             prefer_precise_grounding=has_selected_context,
             selected_context_bonus=1.0 if has_selected_context else 0.0,
+        )
+
+    if query.retrieval_profile == QueryRetrievalProfile.QUESTION_LOOKUP:
+        return RetrievalSearchPlan(
+            retrieval_profile=QueryRetrievalProfile.QUESTION_LOOKUP,
+            allow_exact_title_matches=query.use_lexical,
+            use_paper_lexical=True,
+            use_chunk_lexical=True,
+            fallback_to_paper_lexical_on_empty_chunk=True,
+            expand_citation_frontier=not has_selected_context,
+            preserve_selected_candidate=has_selected_context,
+            prefer_precise_grounding=True,
+            selected_context_bonus=0.55 if has_selected_context else 0.0,
         )
 
     if query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP or use_chunk_lexical:

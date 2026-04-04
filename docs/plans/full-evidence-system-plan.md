@@ -8,8 +8,15 @@ Supersedes: duplicate implementation-spec draft now archived at `docs/archive/pl
 
 Stable architecture and current contract state now live in
 `docs/map/rag.md`.
+The focused post-ledger runtime direction now lives in
+`docs/plans/rag-runtime-direction-2026-04.md`.
 This file is the implementation tracker, milestone list, and future/provisional
 work plan.
+
+Note: the historical context below still includes pre-runtime buildout language
+from the earlier phase of this project. Treat `docs/map/rag.md` as the live
+current-state map and `docs/plans/rag-runtime-direction-2026-04.md` as the
+short next-state runtime plan.
 
 ## Why This Rewrite Exists
 
@@ -17,7 +24,7 @@ The prior evidence documents were directionally strong but too split, too
 spec-heavy relative to the live code, and too willing to let preview-era
 `paper_chunks` thinking leak into the canonical design.
 
-The repo truth on 2026-03-28 is:
+The historical repo truth on 2026-03-28 was:
 
 - the graph runtime is now explicitly `base -> universe -> overlay -> active -> evidence`
 - PostgreSQL is the canonical live substrate for the graph and evidence spine

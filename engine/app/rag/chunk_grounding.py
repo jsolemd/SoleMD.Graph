@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app import db
+from app.rag.corpus_ids import normalize_corpus_ids
 from app.rag.grounding_keys import PacketKey, row_packet_key
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse_rows
@@ -313,10 +314,6 @@ ORDER BY
 """
 
 
-def _normalize_corpus_ids(corpus_ids: Sequence[int]) -> list[int]:
-    return list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
-
-
 def _packet_key_arrays(
     packet_keys: Sequence[PacketKey],
 ) -> tuple[list[int], list[int], list[int | None]]:
@@ -337,7 +334,7 @@ def fetch_chunk_grounding_rows(
     chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
     limit_per_paper: int = 1,
 ) -> tuple[list[dict], list[dict]]:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
+    normalized_corpus_ids = normalize_corpus_ids(corpus_ids)
     if not normalized_corpus_ids:
         return [], []
 
@@ -378,7 +375,7 @@ def fetch_chunk_structural_rows(
     cursor,
     chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
 ) -> list[dict]:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
+    normalized_corpus_ids = normalize_corpus_ids(corpus_ids)
     if not normalized_corpus_ids:
         return []
 
@@ -398,7 +395,7 @@ def build_grounded_answer_from_chunks(
     limit_per_paper: int = 1,
     connect=None,
 ) -> GroundedAnswerRecord | None:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
+    normalized_corpus_ids = normalize_corpus_ids(corpus_ids)
     if not normalized_corpus_ids:
         return None
 

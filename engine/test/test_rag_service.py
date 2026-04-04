@@ -60,9 +60,9 @@ class FakeRepository:
             is_current=True,
         )
 
-    def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+    def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
         assert limit == 5
-        return []
+        return [], set()
 
     def resolve_selected_corpus_id(
         self,
@@ -373,8 +373,8 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
                 is_current=True,
             )
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
-            return []
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+            return [], set()
 
         def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
             return []
@@ -534,8 +534,8 @@ def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypa
                 is_current=True,
             )
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
-            return []
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+            return [], set()
 
         def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
             return []
@@ -2268,8 +2268,8 @@ def test_rag_service_skips_dense_and_semantic_neighbors_on_selected_direct_chunk
                 )
             ]
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
-            return []
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+            return [], set()
 
         def search_entity_papers(
             self,
@@ -3485,12 +3485,12 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
             assert selected_node_id is None
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             assert limit == 5
             assert "melatonin" in query_phrases
             assert "delirium" in query_phrases
             assert "positive correlate" in query_phrases
-            return ["melatonin", "delirium"]
+            return ["melatonin", "delirium"], set()
 
         def search_papers(
             self,
@@ -3639,8 +3639,8 @@ def test_rag_service_skips_auto_relation_seeding_for_long_passage_queries():
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
-            return []
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+            return [], set()
 
         def search_chunk_papers(
             self,
@@ -3795,9 +3795,9 @@ def test_rag_service_skips_runtime_entity_enrichment_without_entity_surface_sign
 
 def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
     class QueryEnrichmentRepository(FakeRepository):
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             assert "mesh:d008550" in [phrase.lower() for phrase in query_phrases]
-            return ["MESH:D008550"]
+            return ["MESH:D008550"], set()
 
         def resolve_selected_corpus_id(
             self,
@@ -3862,10 +3862,10 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
 
 def test_rag_service_uses_high_specificity_auto_enriched_name_terms_for_seeded_entity_recall():
     class QueryEnrichmentRepository(FakeRepository):
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             lowered_phrases = [phrase.lower() for phrase in query_phrases]
             assert "decreased perk1/2 levels in" in lowered_phrases
-            return ["pERK1/2"]
+            return ["pERK1/2"], set()
 
         def resolve_selected_corpus_id(
             self,

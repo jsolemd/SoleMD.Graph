@@ -63,6 +63,25 @@ SENTENCE_OPENING_PREFIXES = frozenset(
 )
 STATISTICAL_ANCHOR_PREFIXES = frozenset({"p", "n", "r"})
 
+NEGATION_SIGNALS = frozenset(
+    {"not", "without", "vs", "versus", "nor", "neither", "none"}
+)
+COMPARISON_PREFIXES = (
+    "difference between",
+    "compared to",
+    "risk of",
+    "effect of",
+    "association between",
+    "relationship between",
+    "role of",
+    "impact of",
+    "incidence of",
+    "prevalence of",
+)
+INTERROGATIVE_OPENERS = frozenset(
+    {"what", "how", "why", "does", "is", "can", "are", "which", "do", "could", "should", "when", "where"}
+)
+
 # Canonical PubTator relation labels currently exercised in the live dataset.
 SUPPORTED_RELATION_TYPES = frozenset(
     {
@@ -215,9 +234,9 @@ def build_runtime_entity_resolution_phrases(
 ) -> list[str]:
     """Build query phrases for runtime entity resolution without widening passage noise.
 
-    Title/general lookups keep the broader phrase inventory so generic biomedical
-    queries can still resolve missing entity terms. Passage lookups stay on the
-    compact anchor-aware lane to avoid spending time on statistical prose.
+    Title/general/question lookups keep the broader phrase inventory so generic
+    biomedical queries can still resolve missing entity terms. Passage lookups stay
+    on the compact anchor-aware lane to avoid spending time on statistical prose.
     """
 
     if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
@@ -272,12 +291,23 @@ def _has_specific_entity_token(token: str) -> bool:
     return (has_alpha and has_digit) or has_symbol
 
 
-def should_seed_resolved_entity_term(term: str) -> bool:
-    """Return True when an auto-resolved entity term is specific enough for recall seeding."""
+def should_seed_resolved_entity_term(
+    term: str,
+    *,
+    entity_confidence: str | None = None,
+) -> bool:
+    """Return True when an auto-resolved entity term is specific enough for recall seeding.
+
+    High-confidence entity_rules terms (from curated vocab) bypass the surface-structure
+    specificity check, allowing plain-English domain terms like "delirium" or
+    "serotonin syndrome" to seed the entity_match lane.
+    """
 
     stripped = term.strip()
     if not stripped:
         return False
+    if entity_confidence == "high":
+        return True
     return any(_has_specific_entity_token(token) for token in stripped.split())
 
 
@@ -456,6 +486,49 @@ def _has_obvious_sentence_opening(text: str) -> bool:
     return any(tuple(tokens[: len(prefix)]) == prefix for prefix in SENTENCE_OPENING_PREFIXES)
 
 
+def _should_demote_title_to_general(text: str) -> bool:
+    """Return True for query shapes that look like titles but are actually clinical/comparison queries.
+
+    Terse acronym-heavy queries, negated phrasing, and statistical/comparison shapes
+    perform better with multi-lane GENERAL retrieval than the narrow title lane.
+    """
+
+    normalized = normalize_query_text(text)
+    if not normalized:
+        return False
+    tokens = normalized.split()
+    if not tokens:
+        return False
+
+    # Queries with negation signals → GENERAL
+    if NEGATION_SIGNALS & set(tokens):
+        return True
+
+    # Queries matching comparison/statistical phrasing → GENERAL
+    if any(normalized.startswith(prefix) for prefix in COMPARISON_PREFIXES):
+        return True
+
+    # Short, mostly-uppercase-token queries (acronym-heavy) → GENERAL
+    if len(tokens) < 6:
+        upper_tokens = sum(1 for t in tokens if t == t.upper() and len(t) >= 2)
+        if upper_tokens > len(tokens) * 0.5:
+            return True
+
+    return False
+
+
+def _is_interrogative_query(text: str) -> bool:
+    """Return True when the query opens with an interrogative word or ends with '?'."""
+
+    stripped = text.strip()
+    if stripped.endswith("?"):
+        return True
+    tokens = normalize_query_text(stripped).split()
+    if tokens and tokens[0] in INTERROGATIVE_OPENERS:
+        return True
+    return False
+
+
 def is_title_like_query(
     text: str | None,
     *,
@@ -516,10 +589,20 @@ def determine_query_retrieval_profile(
         text,
         allow_terminal_punctuation=allow_terminal_title_punctuation,
     ):
+        if _should_demote_title_to_general(text or ""):
+            return QueryRetrievalProfile.GENERAL
         return QueryRetrievalProfile.TITLE_LOOKUP
 
     normalized = normalize_query_text(text or "")
-    if normalized and len(normalized.split()) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
+    tokens = normalized.split()
+    if not tokens:
+        return QueryRetrievalProfile.GENERAL
+
+    # Interrogative queries get dual-lane paper+chunk retrieval
+    if len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS and _is_interrogative_query(text or ""):
+        return QueryRetrievalProfile.QUESTION_LOOKUP
+
+    if len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
         return QueryRetrievalProfile.PASSAGE_LOOKUP
     return QueryRetrievalProfile.GENERAL
 
@@ -589,9 +672,9 @@ def should_use_title_similarity(
 def should_use_chunk_lexical_query(text: str | None) -> bool:
     """Route longer free-text queries through chunk lexical search."""
 
-    return (
-        determine_query_retrieval_profile(text)
-        == QueryRetrievalProfile.PASSAGE_LOOKUP
+    return determine_query_retrieval_profile(text) in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
     )
 
 

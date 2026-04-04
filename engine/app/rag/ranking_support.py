@@ -274,7 +274,10 @@ def _ranking_profile(
 ) -> RankingScoreProfile:
     if retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
         return TITLE_RANKING_PROFILE
-    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if retrieval_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return PASSAGE_RANKING_PROFILE
     return GENERAL_RANKING_PROFILE
 
@@ -285,7 +288,10 @@ def _direct_match_adjustment(
     retrieval_profile: QueryRetrievalProfile,
     score_profile: RankingScoreProfile,
 ) -> float:
-    if retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return 0.0
 
     direct_match_score = max(
@@ -320,7 +326,10 @@ def _passage_alignment_affinity(
     query_text: str | None,
     retrieval_profile: QueryRetrievalProfile,
 ) -> float:
-    if retrieval_profile != QueryRetrievalProfile.PASSAGE_LOOKUP:
+    if retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
         return 0.0
     if not query_text:
         return 0.0
@@ -389,12 +398,14 @@ def _channel_annotation(
     elif hit.title_anchor_score > 0:
         reasons.append("Strong title-prefix anchor for the query")
     if (
-        retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+        retrieval_profile
+        in (QueryRetrievalProfile.PASSAGE_LOOKUP, QueryRetrievalProfile.QUESTION_LOOKUP)
         and passage_alignment_score >= PASSAGE_ALIGNMENT_REASON_THRESHOLD
     ):
         reasons.append("Direct paper text closely matches the query")
     if (
-        retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP
+        retrieval_profile
+        in (QueryRetrievalProfile.PASSAGE_LOOKUP, QueryRetrievalProfile.QUESTION_LOOKUP)
         and hit.biomedical_rerank_score >= 0.5
     ):
         reasons.append("Promoted by biomedical article-level reranking")

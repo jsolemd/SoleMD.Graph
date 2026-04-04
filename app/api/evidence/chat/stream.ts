@@ -36,6 +36,25 @@ const GraphAskChatRequestSchema = z.object({
   client_request_id: z.number().int().nonnegative(),
 })
 
+const AT_MENTION_PATTERN = /@\[(\d+)\]/g
+
+function extractCitedCorpusIds(text: string): number[] {
+  const ids: number[] = []
+  const seen = new Set<number>()
+  for (const match of text.matchAll(AT_MENTION_PATTERN)) {
+    const id = parseInt(match[1], 10)
+    if (!seen.has(id)) {
+      seen.add(id)
+      ids.push(id)
+    }
+  }
+  return ids
+}
+
+function stripAtMentions(text: string): string {
+  return text.replace(AT_MENTION_PATTERN, '').replace(/\s{2,}/g, ' ').trim()
+}
+
 export type GraphAskChatRequest = z.infer<typeof GraphAskChatRequestSchema>
 
 export function parseGraphAskChatRequest(payload: unknown): GraphAskChatRequest {
@@ -54,8 +73,8 @@ export function createGraphAskMessageStream({
   return createUIMessageStream<GraphAskChatMessage>({
     originalMessages: messages,
     async execute({ writer }) {
-      const query = extractLatestUserText(messages)
-      if (!query) {
+      const rawQuery = extractLatestUserText(messages)
+      if (!rawQuery) {
         writer.write({
           type: 'data-engine-error',
           data: {
@@ -69,6 +88,9 @@ export function createGraphAskMessageStream({
         })
         return
       }
+
+      const citedCorpusIds = extractCitedCorpusIds(rawQuery)
+      const query = citedCorpusIds.length > 0 ? stripAtMentions(rawQuery) : rawQuery
 
       try {
         const response = await searchGraphEvidence(
@@ -88,6 +110,7 @@ export function createGraphAskMessageStream({
             rerank_topn: request.rerank_topn,
             use_lexical: request.use_lexical,
             generate_answer: request.generate_answer,
+            ...(citedCorpusIds.length > 0 ? { cited_corpus_ids: citedCorpusIds } : {}),
           },
           { signal },
         )

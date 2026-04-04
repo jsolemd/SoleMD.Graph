@@ -444,6 +444,7 @@ export interface GraphRagQueryRequestPayload {
   selected_cluster_id: number | null
   scope_mode?: 'global' | 'selection_only' | null
   evidence_intent?: 'support' | 'refute' | 'both' | null
+  cited_corpus_ids?: number[]
   k?: number
   rerank_topn?: number
   use_lexical?: boolean

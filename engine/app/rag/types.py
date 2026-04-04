@@ -63,6 +63,7 @@ class QueryRetrievalProfile(StrEnum):
 
     TITLE_LOOKUP = "title_lookup"
     PASSAGE_LOOKUP = "passage_lookup"
+    QUESTION_LOOKUP = "question_lookup"
     GENERAL = "general"
 
 

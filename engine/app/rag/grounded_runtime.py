@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from contextlib import nullcontext
 
@@ -9,6 +10,7 @@ from pydantic import Field
 
 from app import db
 from app.rag.chunk_grounding import fetch_chunk_grounding_rows, fetch_chunk_structural_rows
+from app.rag.corpus_ids import normalize_corpus_ids
 from app.rag.parse_contract import ParseContractModel
 from app.rag.runtime_trace import RuntimeTraceCollector
 from app.rag.serving_contract import GroundedAnswerRecord
@@ -23,6 +25,17 @@ SELECT
     to_regclass('solemd.paper_citation_mentions') IS NOT NULL AS has_citation_mentions,
     to_regclass('solemd.paper_entity_mentions') IS NOT NULL AS has_entity_mentions
 """
+
+_TABLE_READINESS_TTL_SECONDS = 300.0
+_cached_table_readiness: tuple[bool, list[str], float] | None = None
+
+
+def reset_table_readiness_cache() -> None:
+    """Clear the module-level table readiness cache (for tests)."""
+
+    global _cached_table_readiness  # noqa: PLW0603
+    _cached_table_readiness = None
+
 
 _RUNTIME_BACKFILL_SQL = """
 WITH requested(corpus_id) AS (
@@ -67,16 +80,16 @@ SELECT
 
 
 class GroundedAnswerRuntimeStatus(ParseContractModel):
-    enabled: bool
+    fully_covered: bool
     chunk_version_key: str
     missing_tables: list[str] = Field(default_factory=list)
     has_chunk_version: bool = False
     covered_corpus_ids: list[int] = Field(default_factory=list)
     missing_corpus_ids: list[int] = Field(default_factory=list)
 
-
-def _normalize_corpus_ids(corpus_ids: Sequence[int]) -> list[int]:
-    return list(dict.fromkeys(int(corpus_id) for corpus_id in corpus_ids))
+    @property
+    def has_any_coverage(self) -> bool:
+        return bool(self.covered_corpus_ids)
 
 
 def _trace_stage(trace: RuntimeTraceCollector | None, name: str):
@@ -85,34 +98,16 @@ def _trace_stage(trace: RuntimeTraceCollector | None, name: str):
     return trace.stage(name)
 
 
-def get_grounded_answer_runtime_status(
-    *,
-    corpus_ids: Sequence[int],
-    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
-    connect=None,
-) -> GroundedAnswerRuntimeStatus:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
-    if not normalized_corpus_ids:
-        return GroundedAnswerRuntimeStatus(
-            enabled=False,
-            chunk_version_key=chunk_version_key,
-        )
+def _check_table_readiness(cursor) -> tuple[bool, list[str]]:
+    """Check runtime table existence, with module-level TTL cache."""
 
-    connect_fn = connect or db.pooled
-    with connect_fn() as conn, conn.cursor() as cur:
-        return _get_runtime_status_with_cursor(
-            cursor=cur,
-            corpus_ids=normalized_corpus_ids,
-            chunk_version_key=chunk_version_key,
-        )
+    global _cached_table_readiness  # noqa: PLW0603
+    now = time.monotonic()
+    if _cached_table_readiness is not None:
+        ready, missing, cached_at = _cached_table_readiness
+        if now - cached_at < _TABLE_READINESS_TTL_SECONDS:
+            return ready, missing
 
-
-def _get_runtime_status_with_cursor(
-    *,
-    cursor,
-    corpus_ids: Sequence[int],
-    chunk_version_key: str,
-) -> GroundedAnswerRuntimeStatus:
     cursor.execute(_RUNTIME_TABLES_SQL)
     table_row = cursor.fetchone() or {}
     missing_tables = [
@@ -126,9 +121,43 @@ def _get_runtime_status_with_cursor(
         )
         if not bool(table_row.get(column_name))
     ]
-    if missing_tables:
+    ready = not missing_tables
+    _cached_table_readiness = (ready, missing_tables, now)
+    return ready, missing_tables
+
+
+def get_grounded_answer_runtime_status(
+    *,
+    corpus_ids: Sequence[int],
+    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+    connect=None,
+) -> GroundedAnswerRuntimeStatus:
+    normalized = normalize_corpus_ids(corpus_ids)
+    if not normalized:
         return GroundedAnswerRuntimeStatus(
-            enabled=False,
+            fully_covered=False,
+            chunk_version_key=chunk_version_key,
+        )
+
+    connect_fn = connect or db.pooled
+    with connect_fn() as conn, conn.cursor() as cur:
+        return _get_runtime_status_with_cursor(
+            cursor=cur,
+            corpus_ids=normalized,
+            chunk_version_key=chunk_version_key,
+        )
+
+
+def _get_runtime_status_with_cursor(
+    *,
+    cursor,
+    corpus_ids: Sequence[int],
+    chunk_version_key: str,
+) -> GroundedAnswerRuntimeStatus:
+    tables_ready, missing_tables = _check_table_readiness(cursor)
+    if not tables_ready:
+        return GroundedAnswerRuntimeStatus(
+            fully_covered=False,
             chunk_version_key=chunk_version_key,
             missing_tables=missing_tables,
         )
@@ -151,7 +180,7 @@ def _get_runtime_status_with_cursor(
         int(corpus_id) for corpus_id in backfill_row.get("missing_corpus_ids") or []
     ]
     return GroundedAnswerRuntimeStatus(
-        enabled=has_chunk_version and not missing_corpus_ids,
+        fully_covered=has_chunk_version and not missing_corpus_ids,
         chunk_version_key=chunk_version_key,
         has_chunk_version=has_chunk_version,
         covered_corpus_ids=covered_corpus_ids,
@@ -169,8 +198,8 @@ def build_grounded_answer_from_runtime(
     connect=None,
     trace: RuntimeTraceCollector | None = None,
 ) -> GroundedAnswerRecord | None:
-    normalized_corpus_ids = _normalize_corpus_ids(corpus_ids)
-    if not normalized_corpus_ids:
+    normalized = normalize_corpus_ids(corpus_ids)
+    if not normalized:
         return None
 
     connect_fn = connect or db.pooled
@@ -178,7 +207,7 @@ def build_grounded_answer_from_runtime(
         with _trace_stage(trace, "grounded_answer_runtime_status"):
             runtime_status = _get_runtime_status_with_cursor(
                 cursor=cur,
-                corpus_ids=normalized_corpus_ids,
+                corpus_ids=normalized,
                 chunk_version_key=chunk_version_key,
             )
         if runtime_status.missing_tables or not runtime_status.has_chunk_version:
@@ -188,7 +217,7 @@ def build_grounded_answer_from_runtime(
         if trace is not None:
             trace.record_counts(
                 {
-                    "grounded_answer_requested_corpus_ids": len(normalized_corpus_ids),
+                    "grounded_answer_requested_corpus_ids": len(normalized),
                     "grounded_answer_covered_corpus_ids": len(runtime_status.covered_corpus_ids),
                     "grounded_answer_missing_corpus_ids": len(runtime_status.missing_corpus_ids),
                 }

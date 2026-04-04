@@ -67,6 +67,7 @@ matched_entities AS (
             ELSE NULL
         END AS normalized_term,
         e.canonical_name,
+        e.concept_id,
         e.paper_count,
         CASE
             WHEN e.concept_id = qt.raw_term OR e.concept_id = qt.upper_term THEN 1.0
@@ -81,21 +82,27 @@ matched_entities AS (
         OR lower(e.canonical_name) = qt.lowered_term
       )
 )
-SELECT normalized_term
+SELECT
+    normalized_term,
+    MAX(rule_confidence) AS rule_confidence
 FROM (
     SELECT
-        normalized_term,
-        MAX(token_count) AS token_count,
-        MAX(match_score) AS match_score,
-        MAX(paper_count) AS paper_count
-    FROM matched_entities
-    WHERE normalized_term IS NOT NULL
-    GROUP BY normalized_term
+        me.normalized_term,
+        MAX(me.token_count) AS token_count,
+        MAX(me.match_score) AS match_score,
+        MAX(me.paper_count) AS paper_count,
+        MAX(er.confidence) AS rule_confidence
+    FROM matched_entities me
+    LEFT JOIN solemd.entity_rule er
+      ON er.concept_id = me.concept_id
+    WHERE me.normalized_term IS NOT NULL
+    GROUP BY me.normalized_term
 ) ranked_entities
+GROUP BY normalized_term
 ORDER BY
-    token_count DESC,
-    match_score DESC,
-    paper_count DESC,
+    MAX(token_count) DESC,
+    MAX(match_score) DESC,
+    MAX(paper_count) DESC,
     normalized_term
 LIMIT %s
 """

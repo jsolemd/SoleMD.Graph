@@ -118,6 +118,9 @@ export function buildEngineRagSearchRequest(
   if (typeof input.generate_answer === 'boolean') {
     request.generate_answer = input.generate_answer
   }
+  if (input.cited_corpus_ids && input.cited_corpus_ids.length > 0) {
+    request.cited_corpus_ids = input.cited_corpus_ids
+  }
 
   return request
 }
