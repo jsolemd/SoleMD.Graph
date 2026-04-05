@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+
 from app import db
+from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_GRAPH_EVIDENCE, observe
 
 BUILD_WORK_MEM = "512MB"
 BUILD_MAX_PARALLEL_WORKERS_PER_GATHER = 6
@@ -76,6 +78,7 @@ def _load_paper_evidence_counts(cur) -> dict[str, int]:
     }
 
 
+@observe(name=SPAN_GRAPH_EVIDENCE)
 def refresh_paper_evidence_summary() -> dict[str, int]:
     """Refresh paper evidence tables in one transaction from a shared source stage."""
     mapped_predicate = mapped_paper_predicate_sql("c", "p")
@@ -207,7 +210,8 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                     true AS has_curated_journal_family,
                     jf.family_key AS journal_family_key,
                     jf.family_label AS journal_family_label,
-                    jf.family_type AS journal_family_type
+                    jf.family_type AS journal_family_type,
+                    jf.score_multiplier AS journal_score_multiplier
                 FROM stg_paper_evidence_source src
                 JOIN solemd.journal_rule jr
                     ON jr.venue_normalized = src.venue_normalized
@@ -241,7 +245,8 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                 now() AS updated_at,
                 COALESCE(ea.entity_rule_families, 0) AS entity_rule_families,
                 COALESCE(ea.entity_rule_count, 0) AS entity_rule_count,
-                COALESCE(ea.entity_core_families, 0) AS entity_core_families
+                COALESCE(ea.entity_core_families, 0) AS entity_core_families,
+                COALESCE(jm.journal_score_multiplier, 1.0) AS journal_score_multiplier
             FROM stg_paper_evidence_source src
             LEFT JOIN entity_agg ea ON ea.corpus_id = src.corpus_id
             LEFT JOIN relation_count_agg rca ON rca.corpus_id = src.corpus_id
@@ -263,6 +268,13 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
     with db.connect_autocommit() as conn, conn.cursor() as cur:
         cur.execute("ANALYZE solemd.paper_evidence_summary")
         cur.execute("ANALYZE solemd.paper_relation_evidence")
+
+    try:
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(output=counts)
+    except Exception:
+        pass
 
     return counts
 

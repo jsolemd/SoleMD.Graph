@@ -1,0 +1,1 @@
+1. Selection panel favorte the node then can see all your favorites 

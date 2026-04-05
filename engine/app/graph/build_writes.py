@@ -7,8 +7,8 @@ from concurrent.futures import ThreadPoolExecutor
 import io
 from typing import TYPE_CHECKING
 
-from langfuse import observe
 
+from app.langfuse_config import SPAN_GRAPH_BUILD_WRITE_POINTS, SPAN_GRAPH_BUILD_WRITE_CLUSTERS, observe
 from app import db
 from app.graph._util import require_numpy
 
@@ -85,7 +85,7 @@ def _copy_chunk(chunk_data: bytes) -> None:
         conn.commit()
 
 
-@observe(name="graph.build.writeGraphPoints")
+@observe(name=SPAN_GRAPH_BUILD_WRITE_POINTS)
 def _write_graph_points(
     *,
     graph_run_id: str,
@@ -193,7 +193,7 @@ def _load_cluster_texts(*, graph_run_id: str, sample_per_cluster: int = 200) -> 
     return cluster_texts
 
 
-@observe(name="graph.build.writeGraphClusters")
+@observe(name=SPAN_GRAPH_BUILD_WRITE_CLUSTERS)
 def _write_graph_clusters(cluster_rows: list[tuple]) -> None:
     if not cluster_rows:
         return

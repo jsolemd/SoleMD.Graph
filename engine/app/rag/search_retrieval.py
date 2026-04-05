@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from langfuse import get_client as _get_langfuse, observe
+
+from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_RAG_RETRIEVE, observe
 
 from app.rag.models import GraphRelease, GraphSignal, PaperEvidenceHit, PaperRetrievalQuery
 from app.rag.query_embedding import RagQueryEmbedder
@@ -159,7 +160,7 @@ def apply_selected_context_hits(
     )
 
 
-@observe(name="rag.retrieve")
+@observe(name=SPAN_RAG_RETRIEVE)
 def retrieve_search_state(
     *,
     request: RagSearchRequest,
@@ -555,8 +556,9 @@ def retrieve_search_state(
     )
 
     try:
+        debug = trace.as_debug_trace()
         client = _get_langfuse()
-        client.update_current_observation(
+        client.update_current_span(
             input={
                 "query": query.text,
                 "retrieval_profile": str(query.retrieval_profile),
@@ -571,6 +573,10 @@ def retrieve_search_state(
                 "relation_seed_hits": len(relation_seed_hits),
                 "dense_query_hits": len(dense_query_hits),
                 "semantic_neighbor_hits": len(semantic_neighbors),
+            },
+            metadata={
+                "stage_durations_ms": debug.get("stage_durations_ms", {}),
+                "candidate_counts": debug.get("candidate_counts", {}),
             },
         )
     except Exception:

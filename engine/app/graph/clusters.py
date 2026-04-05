@@ -7,9 +7,17 @@ from importlib.util import find_spec
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+
 from app.graph.neighbors import NeighborGraphResult
 from app.graph.neighbors import prune_neighbor_graph
 from app.graph._util import require_numpy
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+    SPAN_GRAPH_CLUSTERS_LEIDEN,
+    SPAN_GRAPH_CLUSTERS_CUGRAPH,
+    SPAN_GRAPH_CLUSTERS_GPU_KNN,
+    observe,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +101,7 @@ def _edge_list_from_knn(
 # GPU Leiden (cugraph)
 # ---------------------------------------------------------------------------
 
+@observe(name=SPAN_GRAPH_CLUSTERS_CUGRAPH)
 def _run_cugraph_leiden(
     sources: "cupy.ndarray",
     targets: "cupy.ndarray",
@@ -139,6 +148,7 @@ def _run_cugraph_leiden(
     )
 
 
+@observe(name=SPAN_GRAPH_CLUSTERS_GPU_KNN)
 def _run_leiden_gpu_from_knn(
     knn_indices: "numpy.ndarray",
     knn_distances: "numpy.ndarray",
@@ -222,6 +232,7 @@ def _run_leiden_cpu_from_knn(
 # Public API
 # ---------------------------------------------------------------------------
 
+@observe(name=SPAN_GRAPH_CLUSTERS_LEIDEN)
 def run_leiden_from_knn(
     shared_knn: NeighborGraphResult,
     *,
@@ -250,19 +261,36 @@ def run_leiden_from_knn(
         )
 
     if backend in {"gpu", "cugraph"}:
-        return _run_leiden_gpu_from_knn(pruned.indices, pruned.distances, config)
+        result = _run_leiden_gpu_from_knn(pruned.indices, pruned.distances, config)
+    elif backend in {"cpu", "python_igraph"}:
+        result = _run_leiden_cpu_from_knn(pruned.indices, pruned.distances, config)
+    elif not _gpu_clustering_available():
+        result = _run_leiden_cpu_from_knn(pruned.indices, pruned.distances, config)
+    else:
+        try:
+            result = _run_leiden_gpu_from_knn(pruned.indices, pruned.distances, config)
+        except Exception:
+            logger.warning(
+                "GPU Leiden clustering from shared kNN failed, falling back to CPU",
+                exc_info=True,
+            )
+            result = _run_leiden_cpu_from_knn(pruned.indices, pruned.distances, config)
 
-    if backend in {"cpu", "python_igraph"}:
-        return _run_leiden_cpu_from_knn(pruned.indices, pruned.distances, config)
-
-    if not _gpu_clustering_available():
-        return _run_leiden_cpu_from_knn(pruned.indices, pruned.distances, config)
-
+    cluster_count = int(np.unique(result.cluster_ids[result.cluster_ids > 0]).size)
+    noise_count = int(result.is_noise.sum())
     try:
-        return _run_leiden_gpu_from_knn(pruned.indices, pruned.distances, config)
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(
+                output={
+                    "point_count": point_count,
+                    "cluster_count": cluster_count,
+                    "noise_count": noise_count,
+                    "resolution": config.resolution,
+                    "backend": result.backend,
+                },
+            )
     except Exception:
-        logger.warning(
-            "GPU Leiden clustering from shared kNN failed, falling back to CPU",
-            exc_info=True,
-        )
-        return _run_leiden_cpu_from_knn(pruned.indices, pruned.distances, config)
+        pass
+
+    return result

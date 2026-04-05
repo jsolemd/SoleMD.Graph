@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import time
 
-from langfuse import observe
 from collections.abc import Sequence
 from contextlib import nullcontext
 
 from pydantic import Field
 
 from app import db
+from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_RAG_GROUNDED, observe
 from app.rag.chunk_grounding import fetch_chunk_grounding_rows, fetch_chunk_structural_rows
 from app.rag.corpus_ids import normalize_corpus_ids
 from app.rag.parse_contract import ParseContractModel
@@ -190,7 +190,7 @@ def _get_runtime_status_with_cursor(
     )
 
 
-@observe(name="rag.groundedAnswer")
+@observe(name=SPAN_RAG_GROUNDED)
 def build_grounded_answer_from_runtime(
     *,
     corpus_ids: Sequence[int],
@@ -248,7 +248,7 @@ def build_grounded_answer_from_runtime(
                 chunk_version_key=chunk_version_key,
             )
 
-    return build_grounded_answer_from_warehouse_rows(
+    grounded = build_grounded_answer_from_warehouse_rows(
         citation_rows=citation_rows,
         entity_rows=entity_rows,
         segment_texts=segment_texts,
@@ -257,3 +257,19 @@ def build_grounded_answer_from_runtime(
         structural_rows=structural_rows,
         trace=trace,
     )
+
+    try:
+        client = _get_langfuse()
+        client.update_current_span(
+            output={
+                "requested_corpus_ids": len(normalized),
+                "covered_corpus_ids": len(runtime_status.covered_corpus_ids),
+                "missing_corpus_ids": len(runtime_status.missing_corpus_ids),
+                "cited_span_count": len(grounded.cited_spans) if grounded else 0,
+                "linked_corpus_ids": list(grounded.linked_corpus_ids) if grounded else [],
+            },
+        )
+    except Exception:
+        pass
+
+    return grounded

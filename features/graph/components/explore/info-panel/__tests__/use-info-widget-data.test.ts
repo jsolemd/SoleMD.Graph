@@ -96,12 +96,12 @@ describe("useInfoWidgetData", () => {
           { column: "year", kind: "histogram" },
           { column: "paperReferenceCount", kind: "histogram" },
         ],
-        requestKey: "request-key",
+        requestVersion: 1,
       }),
     );
 
     await waitFor(() => {
-      expect(result.current.lastLoadedKey).toBe("request-key");
+      expect(result.current.lastLoadedVersion).toBe(1);
     });
 
     expect(getInfoHistogramsBatch).toHaveBeenCalledTimes(4);

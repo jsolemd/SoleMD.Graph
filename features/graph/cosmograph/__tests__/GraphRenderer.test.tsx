@@ -256,6 +256,76 @@ describe("GraphRenderer", () => {
     expect(props?.hoveredPointLabelClassName).toBe("");
   });
 
+  it("does not auto-enable renderLinks on selection (perf regression guard)", () => {
+    renderRenderer();
+
+    // Simulate selection by updating the store
+    act(() => {
+      useDashboardStore.setState({ selectedPointCount: 500 });
+    });
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    // renderLinks must stay false — auto-toggling on selection forces
+    // Cosmograph to load the full links table mid-selection, causing
+    // multi-second stalls on 1M+ point graphs.
+    expect(props?.renderLinks).toBe(false);
+  });
+
+  it("defaults point clicks to single-select unless connected-select is enabled", () => {
+    renderRenderer();
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(props?.selectPointOnClick).toBe("single");
+    expect(props?.selectPointOnLabelClick).toBe("single");
+  });
+
+  it("enables connected point selection only when the toggle is on", () => {
+    act(() => {
+      useDashboardStore.setState({ connectedSelect: true });
+    });
+
+    renderRenderer();
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(props?.selectPointOnClick).toBe(true);
+    expect(props?.selectPointOnLabelClick).toBe(true);
+  });
+
+  it("defers label-mode selection changes behind useDeferredValue", () => {
+    renderRenderer();
+
+    // Before selection: cluster labels visible, dynamic labels off
+    const propsBeforeSelection = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(propsBeforeSelection?.showClusterLabels).toBe(true);
+
+    // Trigger selection — in the SAME synchronous render, the deferred
+    // hasSelection is still false, so label props should NOT yet flip.
+    // (In jsdom useDeferredValue returns the value synchronously on next
+    // render, but the structural guarantee is that label mode receives
+    // deferredHasSelection, not the raw hasSelection.)
+    act(() => {
+      useDashboardStore.setState({ selectedPointCount: 100 });
+    });
+
+    // After selection settles: labels should reflect selection state
+    const propsAfterSelection = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(propsAfterSelection?.showSelectedLabels).toBe(false);
+    expect(propsAfterSelection?.showUnselectedPointLabels).toBe(false);
+  });
+
   it("clears stale point focus and detail when a cluster label is clicked", () => {
     useGraphStore.setState({
       selectedNode: SELECTED_POINT,

@@ -43,6 +43,19 @@ describe("label-mode", () => {
     expect(focused.showLabelsFor).toEqual(["paper-7"]);
   });
 
+  it("suppresses bulk selected labels when there is no focused point", () => {
+    const selected = resolveGraphLabelMode({
+      ...BASE,
+      hasSelection: true,
+    });
+
+    expect(selected.showFocusedPointLabel).toBe(false);
+    expect(selected.showSelectedLabels).toBe(false);
+    expect(selected.showUnselectedPointLabels).toBe(false);
+    expect(selected.showDynamicLabels).toBe(false);
+    expect(selected.showTopLabels).toBe(false);
+  });
+
   it("gates hover labels on zoom level", () => {
     const zoomedOut = resolveGraphLabelMode(BASE);
     const zoomedIn = resolveGraphLabelMode({ ...BASE, zoomedIn: true });

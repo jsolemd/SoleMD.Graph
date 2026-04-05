@@ -28,11 +28,11 @@ const WIDGET_DESCRIPTORS = [
 function UseInfoWidgetDataHarness({
   queries,
   widgetDescriptors,
-  requestKey,
+  requestVersion,
 }: {
   queries: GraphBundleQueries;
   widgetDescriptors: Array<{ column: string; kind: "histogram" | "bars" | "facet-summary" }>;
-  requestKey: string;
+  requestVersion: number;
 }) {
   const result = useInfoWidgetData({
     queries,
@@ -41,10 +41,10 @@ function UseInfoWidgetDataHarness({
     includeFilteredLayer: true,
     filteredPointScopeSql: "year >= 2020",
     widgetDescriptors,
-    requestKey,
+    requestVersion,
   });
 
-  return <div data-testid="loaded-key">{result.lastLoadedKey ?? "pending"}</div>;
+  return <div data-testid="loaded-version">{result.lastLoadedVersion}</div>;
 }
 
 function createQueriesMock() {
@@ -95,12 +95,12 @@ describe("useInfoWidgetData", () => {
       <UseInfoWidgetDataHarness
         queries={queries}
         widgetDescriptors={WIDGET_DESCRIPTORS}
-        requestKey="request-a"
+        requestVersion={1}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("loaded-key")).toHaveTextContent("request-a");
+      expect(screen.getByTestId("loaded-version")).toHaveTextContent("1");
     });
 
     expect(queries.getInfoHistogramsBatch).toHaveBeenCalledTimes(4);
@@ -136,12 +136,12 @@ describe("useInfoWidgetData", () => {
       <UseInfoWidgetDataHarness
         queries={queries}
         widgetDescriptors={WIDGET_DESCRIPTORS}
-        requestKey="request-a"
+        requestVersion={1}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("loaded-key")).toHaveTextContent("request-a");
+      expect(screen.getByTestId("loaded-version")).toHaveTextContent("1");
     });
 
     expect(queries.getInfoBarsBatch).toHaveBeenCalledTimes(3);
@@ -152,7 +152,7 @@ describe("useInfoWidgetData", () => {
       <UseInfoWidgetDataHarness
         queries={queries}
         widgetDescriptors={WIDGET_DESCRIPTORS.map((descriptor) => ({ ...descriptor }))}
-        requestKey="request-a"
+        requestVersion={1}
       />,
     );
 

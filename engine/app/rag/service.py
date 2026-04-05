@@ -6,9 +6,17 @@ import logging
 from functools import lru_cache
 from time import perf_counter
 
-from langfuse import get_client as _get_langfuse, observe
 
-logging.getLogger("langfuse").setLevel(logging.ERROR)
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+    SCORE_DURATION_MS,
+    SCORE_EVIDENCE_BUNDLE_COUNT,
+    SCORE_GROUNDED_ANSWER_PRESENT,
+    SCORE_RETRIEVAL_PROFILE,
+    SCORE_ROUTE_SIGNATURE,
+    SPAN_RAG_SEARCH,
+    observe,
+)
 
 from app.rag.biomedical_reranking import (
     RagBiomedicalReranker,
@@ -35,7 +43,7 @@ def _update_langfuse_observation(request, result, trace):
         grounded = result.grounded_answer
 
         # --- input: everything the runtime received ---
-        client.update_current_observation(
+        client.update_current_generation(
             input={
                 "query": request.query,
                 "graph_release_id": request.graph_release_id,
@@ -104,17 +112,17 @@ def _update_langfuse_observation(request, result, trace):
         # --- per-trace scores ---
         trace_id = client.get_current_trace_id()
         if trace_id:
-            client.create_score(trace_id=trace_id, name="duration_ms", value=result.duration_ms)
-            client.create_score(trace_id=trace_id, name="evidence_bundle_count", value=float(len(result.bundles)))
-            client.create_score(trace_id=trace_id, name="grounded_answer_present", value=1.0 if grounded else 0.0)
+            client.create_score(trace_id=trace_id, name=SCORE_DURATION_MS, value=result.duration_ms)
+            client.create_score(trace_id=trace_id, name=SCORE_EVIDENCE_BUNDLE_COUNT, value=float(len(result.bundles)))
+            client.create_score(trace_id=trace_id, name=SCORE_GROUNDED_ANSWER_PRESENT, value=1.0 if grounded else 0.0)
             client.create_score(
-                trace_id=trace_id, name="retrieval_profile",
+                trace_id=trace_id, name=SCORE_RETRIEVAL_PROFILE,
                 value=str(query.retrieval_profile), data_type="CATEGORICAL",
             )
             route_sig = debug.get("session_flags", {}).get("route_signature")
             if route_sig:
                 client.create_score(
-                    trace_id=trace_id, name="route_signature",
+                    trace_id=trace_id, name=SCORE_ROUTE_SIGNATURE,
                     value=str(route_sig)[:200], data_type="CATEGORICAL",
                 )
 
@@ -200,7 +208,7 @@ class RagService:
     def query_embedder(self) -> RagQueryEmbedder:
         return self._query_embedder
 
-    @observe(name="rag.search", as_type="generation")
+    @observe(name=SPAN_RAG_SEARCH, as_type="generation")
     def search_result(
         self,
         request: RagSearchRequest,

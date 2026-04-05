@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Badge, Code, Collapse, Group, Text } from "@mantine/core";
-import { panelTextMutedStyle, panelTextDimStyle } from "../../panels/PanelShell";
+import { panelPillStyles, panelTextDimStyle, sectionLabelStyle } from "../../panels/PanelShell";
 import type { GraphQueryResult } from "@/features/graph/types";
 import { QueryResultTable } from "./QueryResultTable";
 
@@ -12,20 +12,10 @@ export function QueryResult({ result }: { result: GraphQueryResult }) {
   return (
     <>
       <Group justify="space-between" align="center">
-        <Text size="xs" fw={600} style={panelTextMutedStyle}>
+        <Text fw={600} style={sectionLabelStyle}>
           Result
         </Text>
-        <Badge
-          variant="light"
-          size="sm"
-          styles={{
-            root: {
-              backgroundColor: "var(--mode-accent-subtle)",
-              border: "1px solid var(--mode-accent-border)",
-              color: "var(--graph-panel-text)",
-            },
-          }}
-        >
+        <Badge size="xs" styles={panelPillStyles}>
           {result.rowCount} rows in {result.durationMs.toFixed(1)} ms
         </Badge>
       </Group>

@@ -9,7 +9,9 @@ import pyarrow as pa
 import pyarrow.ipc as pa_ipc
 from pydantic import ConfigDict, Field, field_validator
 
+
 from app import db
+from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_GRAPH_ATTACHMENT, observe
 from app.graph.point_projection import POINTS_SCHEMA, build_point_projection_select_sql
 from app.rag.parse_contract import ParseContractModel
 from app.rag.repository import PostgresRagRepository, RagRepository
@@ -30,9 +32,7 @@ requested_points AS (
         g.cluster_probability,
         COALESCE(bp.corpus_id IS NOT NULL, false) AS is_in_base,
         COALESCE(bp.base_rank, 0)::REAL AS base_rank,
-        gc.label AS cluster_label,
-        gc.parent_cluster_id,
-        gc.parent_label
+        gc.label AS cluster_label
     FROM solemd.graph_points g
     JOIN requested_corpus rc
       ON rc.corpus_id = g.corpus_id
@@ -42,7 +42,6 @@ requested_points AS (
     LEFT JOIN solemd.graph_clusters gc
       ON gc.graph_run_id = g.graph_run_id
      AND gc.cluster_id = g.cluster_id
-     AND gc.hierarchy_level = 0
     WHERE g.graph_run_id = %s
 ),
 corpus_base AS (
@@ -109,8 +108,6 @@ point_base AS (
         rp.y,
         rp.cluster_id,
         rp.cluster_label,
-        rp.parent_cluster_id,
-        rp.parent_label,
         rp.cluster_probability,
         rp.is_in_base,
         rp.base_rank,
@@ -195,6 +192,7 @@ class GraphPointAttachmentService:
     ) -> None:
         self._repository = repository or PostgresRagRepository()
 
+    @observe(name=SPAN_GRAPH_ATTACHMENT)
     def attach_points(self, request: GraphPointAttachmentRequest) -> bytes:
         release = self._repository.resolve_graph_release(request.graph_release_id)
         corpus_ids = self._repository.resolve_scope_corpus_ids(
@@ -207,6 +205,19 @@ class GraphPointAttachmentService:
             graph_run_id=release.graph_run_id,
             corpus_ids=corpus_ids,
         )
+
+        try:
+            client = _get_langfuse()
+            if client is not None:
+                client.update_current_span(
+                    output={
+                        "point_count": len(rows),
+                        "corpus_id_count": len(corpus_ids),
+                    },
+                )
+        except Exception:
+            pass
+
         return encode_point_rows_arrow_ipc(rows)
 
     def _fetch_point_rows(

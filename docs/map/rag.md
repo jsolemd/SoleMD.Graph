@@ -48,30 +48,116 @@ These numbers matter because the repo currently has two truths at once:
 |------|-------------------|----------------|
 | [`.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`](/home/workbench/SoleMD/SoleMD.Graph/.tmp/rag-runtime-eval-current-all-families-v30-recheck.json) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The live current-release runtime floor is fast, grounded, and stable on the broad sampled cohort. |
 
-Frozen benchmark snapshot (post-API-ingest, 2026-04-04):
+V2 consolidated benchmarks (abstract-first, signal-complete, 2026-04-05):
 
-| Benchmark | hit@1 | grounded | target_grounded | target_corpus | mean_ms | Status |
-|-----------|-------|----------|-----------------|---------------|---------|--------|
-| sentence_hard_v1 | 1.0 | 1.0 | 1.0 | 1.0 | 581 | green |
-| evidence_intent_v1 | 0.80 | 0.80 | 0.80 | 0.80 | 609 | real signal, 20% retrieval miss |
-| clinical_actionable_v1 | 0.67 | 0.73 | 0.73 | 0.73 | 507 | real signal, 27-33% retrieval miss |
-| title_global_v1 | 1.0 | 0.75 | 0.75 | 1.0 | 438 | grounding strong on covered papers |
-| title_selected_v1 | 1.0 | 0.90 | 0.90 | 1.0 | 276 | grounding strong on covered papers |
-| neuropsych_safety_v1 | 0.33 | 0.92 | 0.58 | 0.58 | 644 | retrieval miss, grounding strong |
-| adversarial_router_v1 | 0.08 | 0.17 | 0.17 | 0.17 | 38,894 | hard retrieval failure |
+| Benchmark | Items | hit@1 | hit@k | grounded | p50 ms | Status |
+|-----------|-------|-------|-------|----------|--------|--------|
+| title_retrieval_v2 | 12 | 1.00 | 1.00 | 0.50 | 277 | green |
+| clinical_evidence_v2 | 51 | 0.08 | 0.18 | 0.63 | 295 | real retrieval gap, all signals |
+| passage_retrieval_v2 | 3 | 0.33 | 0.33 | 0.33 | 51,984 | thin (only 287 papers have chunks) |
+| adversarial_routing_v2 | 12 | — | — | — | — | SDK flush timeout |
+| keyword_search_v2 | 12 | 0.00 | 0.17 | 0.00 | 180 | real signal, broad corpus |
+| abstract_stratum_v2 | 12 | — | — | — | — | SDK flush timeout |
 
-The practical interpretation after API ingest:
+Design principles:
+- **Abstract-first**: seeds resolve against full 2.4M corpus, not the 347
+  warehouse papers. Chunks are additive depth, not a gating requirement.
+- **Signal-complete**: each item emits 16 per-signal Langfuse scores
+  (`target_lexical_score`, `target_entity_score`, `target_dense_score`, etc.)
+  enabling weight suboptimization via Langfuse run comparison.
+- **Generation-ready**: when LLM generation goes live, faithfulness/citation
+  evaluators attach to existing suites — no structural changes needed.
 
-- **sentence_hard_v1** remains green
-- **evidence_intent and clinical_actionable** have genuine retrieval misses
-  that need diagnosis (not chunk coverage)
-- **title benchmarks** jumped from 0.08→0.75 and 0.20→0.90 target_grounded
-  after API-ingested abstract chunks filled the warehouse gap. Remaining
-  ungrounded papers are not in PubTator (3) or low-value shells.
-- **neuropsych_safety** improved from 0.33→0.58 target_grounded; 11/12 papers
-  now at fulltext depth. Remaining retrieval miss is genuine.
-- **adversarial_router** remains the hardest failure class; most papers lack
-  warehouse coverage (10/12 at `depth=none`)
+Interpretation:
+- **title_retrieval_v2** is the regression guard — 100% hit@1 confirms title
+  routing and exact matching work correctly.
+- **clinical_evidence_v2** (merged neuropsych_safety + clinical_actionable +
+  question_lookup + evidence_intent) is the core quality signal. 8% hit@1
+  reflects a real retrieval gap: FTS AND-conjunction is too strict for
+  natural-language clinical questions, and dense search (SPECTER2 title+abstract)
+  is semantically distant from interrogative queries.
+- **keyword_search_v2** now tests the full 2.4M corpus (was 1 item before).
+  0% hit@1 at a specific target but 17% hit@k shows the system finds related
+  papers, just not the exact seeded target.
+- **passage_retrieval_v2** is thin (3 items) because only 287 papers have chunks.
+  Will grow as BioCXML ingest progresses.
+
+---
+
+## Langfuse Evaluation System
+
+Langfuse is the **operational control plane** for RAG quality. All evaluation
+runs through the Langfuse SDK/API — not a separate dashboard or log parser.
+
+### Infrastructure
+
+| Component | State |
+|-----------|-------|
+| Langfuse server | v3.158.0, self-hosted at `localhost:3100` |
+| Python SDK | v4 (observation-centric model) |
+| Score configs | 22 dimensions registered via `ensure_score_configs()` |
+| Environment | `development` for experiments, `production` for live API |
+| Annotation queue | `rag-failure-review` for domain expert triage of hit@1=0 |
+
+### Benchmark Datasets (6 v2 suites)
+
+Benchmarks are Langfuse Datasets (source of truth). JSON snapshots are opt-in
+via `--snapshot` for git-tracked freezes.
+
+| Dataset | Cases | Clinical use case | Channels tested |
+|---------|-------|-------------------|-----------------|
+| title_retrieval_v2 | 12 | "Show me Smith 2023" | LEXICAL, title_anchor |
+| clinical_evidence_v2 | 51 | "How should I manage serotonin syndrome?" | All 7 channels + intent/quality |
+| passage_retrieval_v2 | 3 | Passage drill-down (chunk-gated) | CHUNK_LEXICAL, passage_alignment |
+| adversarial_routing_v2 | 12 | Edge cases that break router | All (routing correctness) |
+| keyword_search_v2 | 12 | "delirium" / "tardive dyskinesia" | LEXICAL, ENTITY, CITATION, DENSE |
+| abstract_stratum_v2 | 12 | Queries targeting unchunked papers | LEXICAL, DENSE, ENTITY |
+
+V1 suites are preserved for backward compatibility but no longer in
+`ALL_BENCHMARK_DATASETS`. Run with `--suites title_global ...` to access.
+
+### Score Dimensions
+
+**Retrieval**: `hit_at_1`, `hit_at_k`, `mrr`, `duration_ms`, `evidence_bundle_count`
+**Answer quality**: `grounded_answer_rate`, `target_in_grounded_answer`, `target_in_answer_corpus`, `faithfulness`
+**Signal decomposition** (per target paper): `target_lexical_score`, `target_chunk_lexical_score`, `target_dense_score`, `target_entity_score`, `target_relation_score`, `target_citation_boost`, `target_intent_score`, `target_publication_type_score`, `target_evidence_quality_score`, `target_biomedical_rerank_score`, `target_fused_score`, `fused_score_gap`
+**Channel contribution**: `channel_lexical`, `channel_chunk`, `channel_dense`, `channel_entity`, `channel_relation`, `channel_citation`, `target_lane_count`
+**Categorical**: `retrieval_profile`, `warehouse_depth`, `route_signature`, `source_system`, `has_chunks`
+**Ingest**: `section_count`, `block_count`, `sentence_count`, `entity_count`, `has_abstract_section`, `has_title_section`
+**Graph build**: `graph_point_count`, `graph_cluster_count`, `graph_bundle_bytes`, `graph_build_duration_s`
+
+### Evaluation Workflow
+
+```
+prepare_rag_curated_benchmarks.py  →  Langfuse Datasets (source of truth)
+                                       ↓
+rag_benchmark.py --diagnose  →  traces + scores + failure diagnosis
+                                       ↓
+                       --enqueue-failures  →  Annotation queue for expert review
+                                       ↓
+                     Fix routing/ranking  →  Re-run + compare runs in Langfuse UI
+```
+
+### Trace Tree (34 spans)
+
+```
+rag.search                     # Top-level (GENERATION)
+├── rag.execute
+│   ├── rag.retrieve
+│   ├── rag.finalize
+│   ├── rag.answerGeneration
+│   └── rag.groundedAnswer
+```
+
+### Operator Decision Tree
+
+| Scenario | Command |
+|----------|---------|
+| Generate benchmarks | `uv run python -m scripts.prepare_rag_curated_benchmarks` |
+| Run all baselines | `uv run python scripts/rag_benchmark.py --all-benchmarks --run baseline-YYYY-MM-DD --diagnose` |
+| Enqueue failures | Add `--enqueue-failures` to any run |
+| Quality gate | Add `--quality-gate avg_hit_at_1=0.9,error_rate=0` |
+| Compare runs | Langfuse UI → Datasets → select dataset → compare runs |
 
 ---
 

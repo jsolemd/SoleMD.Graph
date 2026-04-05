@@ -912,7 +912,7 @@ def test_search_entity_papers_maps_rows(mock_conn):
         ]
     )
     repo = PostgresRagRepository(connect=lambda: conn)
-    repo.resolve_query_entity_terms = MagicMock(return_value=[])
+    repo.resolve_query_entity_terms = MagicMock(return_value=([], set()))
 
     hits = repo.search_entity_papers("run-1", entity_terms=["melatonin"], limit=5)
 
@@ -939,7 +939,7 @@ def test_search_entity_papers_maps_rows(mock_conn):
 def test_search_entity_papers_can_scope_to_selected_corpus_ids(mock_conn):
     conn = mock_conn(rows=[])
     repo = PostgresRagRepository(connect=lambda: conn)
-    repo.resolve_query_entity_terms = MagicMock(return_value=[])
+    repo.resolve_query_entity_terms = MagicMock(return_value=([], set()))
 
     repo.search_entity_papers(
         "run-1",
@@ -993,7 +993,7 @@ def test_search_entity_papers_prefers_exact_entity_search_when_all_terms_resolve
     conn = mock_conn(rows=paper_rows)
     repo = PostgresRagRepository(connect=lambda: conn)
     repo.resolve_query_entity_terms = MagicMock(
-        return_value=["GM2 gangliosidosis variant B1"]
+        return_value=(["GM2 gangliosidosis variant B1"], {"GM2 gangliosidosis variant B1"})
     )
 
     hits = repo.search_entity_papers(

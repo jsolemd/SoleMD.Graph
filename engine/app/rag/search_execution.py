@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from langfuse import observe
 
+from app.langfuse_config import SPAN_RAG_EXECUTE, observe
 from app.rag.biomedical_reranking import RagBiomedicalReranker
 from app.rag.query_embedding import RagQueryEmbedder
 from app.rag.repository import RagRepository
@@ -13,7 +13,7 @@ from app.rag.search_finalize import finalize_search_result
 from app.rag.search_retrieval import retrieve_search_state
 
 
-@observe(name="rag.execute")
+@observe(name=SPAN_RAG_EXECUTE)
 def execute_search(
     *,
     request: RagSearchRequest,

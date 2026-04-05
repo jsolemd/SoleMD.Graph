@@ -1,5 +1,5 @@
 import { queryRows } from '../queries/core'
-import { queryInfoHistogramsBatch } from '../queries/summary'
+import { queryInfoHistogramsBatch } from '../queries/histograms'
 
 jest.mock('../queries/core', () => ({
   queryRows: jest.fn(),

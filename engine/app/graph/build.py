@@ -25,11 +25,13 @@ from psycopg.types.json import Jsonb
 
 import logging as _logging
 
-from langfuse import get_client as _get_langfuse, observe
-
-# Langfuse logs auth warnings when keys are absent (e.g. local devcontainer).
-# The GPU container has keys via env_file; locally, @observe is a safe no-op.
-_logging.getLogger("langfuse").setLevel(_logging.ERROR)
+from app.langfuse_config import (
+    SPAN_GRAPH_BUILD_RUN,
+    get_langfuse as _get_langfuse,
+    get_trace_context as _get_trace_context,
+    apply_trace_context as _apply_trace_context,
+    observe,
+)
 
 logger = _logging.getLogger(__name__)
 
@@ -303,7 +305,7 @@ def _insert_graph_run(
         conn.commit()
 
 
-@observe(name="graph.build.run")
+@observe(name=SPAN_GRAPH_BUILD_RUN)
 def run_graph_build(
     *,
     limit: int = 0,
@@ -367,7 +369,8 @@ def run_graph_build(
     evidence_future: Future[dict[str, int]] | None = None
     evidence_executor: ThreadPoolExecutor | None = None
     try:
-        t0 = time.monotonic()
+        build_t0 = time.monotonic()
+        t0 = build_t0
         corpus_ids, citation_counts, _needs_layout = _ensure_input_vectors(
             graph_run_id=graph_run_id,
             checkpoint_paths_=build_paths,
@@ -378,11 +381,19 @@ def run_graph_build(
             raise RuntimeError("no graph papers with embeddings available for graph build")
 
         if refresh_evidence_summary:
+            # Capture Langfuse trace context so the background thread
+            # can attach its spans to the same trace tree.
+            _trace_id, _obs_id = _get_trace_context()
+
+            def _evidence_with_trace():
+                _apply_trace_context(_trace_id, _obs_id)
+                return refresh_paper_evidence_summary()
+
             evidence_executor = ThreadPoolExecutor(
                 max_workers=1,
                 thread_name_prefix="paper-evidence-summary",
             )
-            evidence_future = evidence_executor.submit(refresh_paper_evidence_summary)
+            evidence_future = evidence_executor.submit(_evidence_with_trace)
 
         t0 = time.monotonic()
         layout_matrix, layout_backend = _ensure_layout_matrix(
@@ -506,6 +517,25 @@ def run_graph_build(
             publish_current=publish_current,
             skip_export=skip_export,
         )
+
+        build_duration_s = round(time.monotonic() - build_t0, 1)
+        try:
+            client = _get_langfuse()
+            if client is not None:
+                client.update_current_span(
+                    output={
+                        "graph_run_id": result.graph_run_id,
+                        "point_count": result.selected_papers,
+                        "cluster_count": result.cluster_count,
+                        "layout_backend": result.layout_backend,
+                        "cluster_backend": result.cluster_backend,
+                        "bundle_checksum": result.bundle_checksum,
+                        "build_duration_s": build_duration_s,
+                    },
+                )
+        except Exception:
+            pass
+
         return GraphBuildResult(
             graph_run_id=result.graph_run_id,
             selected_papers=result.selected_papers,
@@ -521,7 +551,8 @@ def run_graph_build(
     finally:
         if evidence_executor is not None:
             evidence_executor.shutdown(wait=True)
-        _get_langfuse().flush()
+        from app.langfuse_config import flush as _flush_langfuse
+        _flush_langfuse()
         db.close_pool()
 
 
@@ -591,6 +622,11 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--re-export",
+        action="store_true",
+        help="Re-export the current graph run's Parquet bundle (picks up label changes, evidence updates, etc.)",
+    )
+    parser.add_argument(
         "--cleanup",
         action="store_true",
         help="Delete stale graph runs from DB and filesystem, keep only current published run",
@@ -605,12 +641,13 @@ def main() -> None:
         args.refresh_evidence,
         bool(args.publish_run),
         args.cleanup,
+        args.re_export,
         llm_labels_standalone,
     ]
     if sum(1 for selected in selected_modes if selected) > 1:
         raise ValueError(
             "choose only one of --run, --sync-current, --refresh-evidence, "
-            "--publish-run, --cleanup, or --llm-labels (standalone)"
+            "--publish-run, --re-export, --cleanup, or --llm-labels (standalone)"
         )
     if args.resume_run and not args.run:
         raise ValueError("--resume-run can only be used with --run")
@@ -618,30 +655,30 @@ def main() -> None:
         raise ValueError("--resume-run cannot be combined with --limit")
 
     # Dispatch to GPU container for operations that touch bundle/checkpoint files.
-    # --sync-current and --refresh-evidence only touch the database, so they stay local.
-    needs_gpu_dispatch = (
-        (args.run or bool(args.publish_run) or llm_labels_standalone or args.cleanup)
-        and not args.local
-        and not _is_gpu_container()
-    )
+    # These operations run as root inside the container to avoid permission issues
+    # on /mnt/solemd-graph/bundles (owned by root from previous container runs).
+    #
+    # DB-only operations stay local:
+    #   --sync-current, --refresh-evidence, --llm-labels
+    #
+    # Bundle-writing operations dispatch to GPU container:
+    #   --run, --publish-run, --re-export, --cleanup
+    writes_bundles = args.run or bool(args.publish_run) or args.re_export or args.cleanup
+    needs_gpu_dispatch = writes_bundles and not args.local and not _is_gpu_container()
+
     if needs_gpu_dispatch:
         if _gpu_container_running():
             forward = [a for a in sys.argv[1:] if a != "--local"]
             rc = _dispatch_to_gpu(forward)
             sys.exit(rc)
-        elif args.run:
+        elif args.local:
+            pass  # user explicitly forced local
+        else:
             raise RuntimeError(
                 f"GPU container '{GPU_CONTAINER}' is not running.\n"
+                f"Bundle operations require the container for correct file ownership.\n"
                 f"Start it: docker compose -f docker/compose.yaml --profile gpu up -d graph\n"
-                f"Or use --local to force CPU execution "
-                f"(requires ~20GB RAM for 2.6M points)."
-            )
-        else:
-            import warnings
-            warnings.warn(
-                f"GPU container '{GPU_CONTAINER}' not running; "
-                f"proceeding locally (may hit permission issues on bundle files).",
-                stacklevel=2,
+                f"Or use --local to force local execution (may hit permission issues)."
             )
 
     try:
@@ -673,6 +710,23 @@ def main() -> None:
                     skip_export=args.skip_export,
                 )
             )
+        elif args.re_export:
+            with db.connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM solemd.graph_runs "
+                    "WHERE is_current = true LIMIT 1"
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise RuntimeError("No current graph run found")
+                current_run_id = str(row["id"])
+            payload = asdict(
+                publish_existing_graph_run(
+                    graph_run_id=current_run_id,
+                    publish_current=True,
+                    skip_export=False,
+                )
+            )
         elif args.sync_current:
             payload = sync_current_graph_membership()
         elif llm_labels_standalone:
@@ -688,11 +742,17 @@ def main() -> None:
                     raise RuntimeError("No current graph run found")
                 current_run_id = str(row["id"])
             payload = relabel_graph_run(current_run_id)
+            logger.info(
+                "Labels updated in DB. To export the Parquet bundle:\n"
+                "  uv run python -m app.graph.build --re-export --local"
+            )
         else:
             payload = asdict(load_graph_build_summary())
 
         print(json.dumps(payload, indent=2))
     finally:
+        from app.langfuse_config import flush as _flush_langfuse
+        _flush_langfuse()
         db.close_pool()
 
 

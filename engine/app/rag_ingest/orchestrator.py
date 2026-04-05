@@ -11,9 +11,8 @@ from pathlib import Path
 from typing import Protocol
 from xml.etree import ElementTree as ET
 
-from langfuse import observe
 
-logging.getLogger("langfuse").setLevel(logging.ERROR)
+from app.langfuse_config import SPAN_INGEST_REFRESH, observe
 
 from pydantic import Field
 
@@ -1385,7 +1384,7 @@ def _run_explicit_targeted_refresh(
         )
 
 
-@observe(name="ingest.ragRefresh")
+@observe(name=SPAN_INGEST_REFRESH)
 def run_rag_refresh(
     *,
     parser_version: str,

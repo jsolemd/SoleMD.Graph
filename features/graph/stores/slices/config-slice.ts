@@ -117,7 +117,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   activeLayer: 'corpus',
   availableLayers: ['corpus'],
 
-  pointColorColumn: 'parentLabel',
+  pointColorColumn: 'clusterLabel',
   pointColorStrategy: 'categorical',
   pointSizeColumn: 'paperReferenceCount',
   pointSizeRange: [1.5, 5],

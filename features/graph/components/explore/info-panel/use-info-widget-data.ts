@@ -30,7 +30,7 @@ interface UseInfoWidgetDataArgs {
   includeFilteredLayer: boolean;
   filteredPointScopeSql: string | null;
   widgetDescriptors: WidgetDescriptor[];
-  requestKey: string;
+  requestVersion: number;
 }
 
 export interface NumericStatsComparison {
@@ -44,7 +44,7 @@ interface UseInfoWidgetDataResult {
   histograms: Record<string, InfoHistogramComparison>;
   numericStats: Record<string, NumericStatsComparison>;
   widgetError: string | null;
-  lastLoadedKey: string | null;
+  lastLoadedVersion: number;
 }
 
 export function useInfoWidgetData({
@@ -54,7 +54,7 @@ export function useInfoWidgetData({
   includeFilteredLayer,
   filteredPointScopeSql,
   widgetDescriptors,
-  requestKey,
+  requestVersion,
 }: UseInfoWidgetDataArgs): UseInfoWidgetDataResult {
   const [categoricalSummaries, setCategoricalSummaries] = useState<
     Record<string, InfoComparisonFacetRow[]>
@@ -66,7 +66,7 @@ export function useInfoWidgetData({
     Record<string, NumericStatsComparison>
   >({});
   const [widgetError, setWidgetError] = useState<string | null>(null);
-  const [lastLoadedKey, setLastLoadedKey] = useState<string | null>(null);
+  const [lastLoadedVersion, setLastLoadedVersion] = useState(0);
 
   const queryPlan = useMemo(() => {
     const categoricalSlots = widgetDescriptors.filter(
@@ -312,7 +312,7 @@ export function useInfoWidgetData({
           ),
         );
         setWidgetError(null);
-        setLastLoadedKey(requestKey);
+        setLastLoadedVersion(requestVersion);
       })
       .catch((queryError: unknown) => {
         if (cancelled) {
@@ -324,7 +324,7 @@ export function useInfoWidgetData({
             ? queryError.message
             : "Failed to load info widgets",
         );
-        setLastLoadedKey(requestKey);
+        setLastLoadedVersion(requestVersion);
       });
 
     return () => {
@@ -336,7 +336,7 @@ export function useInfoWidgetData({
     includeFilteredLayer,
     includeSelectionLayer,
     queries,
-    requestKey,
+    requestVersion,
   ]);
 
   return {
@@ -344,6 +344,6 @@ export function useInfoWidgetData({
     histograms,
     numericStats,
     widgetError,
-    lastLoadedKey,
+    lastLoadedVersion,
   };
 }

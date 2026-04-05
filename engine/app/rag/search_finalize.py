@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from langfuse import get_client as _get_langfuse, observe
+
+from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_RAG_FINALIZE, observe
 from time import perf_counter
 from uuid import uuid4
 
@@ -154,7 +155,7 @@ def _empty_channel_results() -> list[RetrievalChannelResult]:
     return [_channel_result(channel, []) for channel in RETRIEVAL_CHANNEL_ORDER]
 
 
-@observe(name="rag.finalize")
+@observe(name=SPAN_RAG_FINALIZE)
 def finalize_search_result(
     *,
     retrieval: SearchRetrievalState,
@@ -611,6 +612,7 @@ def finalize_search_result(
         grounded_answer=grounded_answer,
         bundles=bundles,
     )
+    debug = trace.as_debug_trace()
     result = RagSearchResult(
         request_id=str(uuid4()),
         generated_at=datetime.now(UTC),
@@ -625,14 +627,14 @@ def finalize_search_result(
         answer=answer,
         answer_model=answer_model,
         grounded_answer=grounded_answer,
-        debug_trace=trace.as_debug_trace(),
+        debug_trace=debug,
         evidence_flags=evidence_flags,
     )
 
     try:
         client = _get_langfuse()
         top_corpus_ids = [b.paper.corpus_id for b in bundles[:5]] if bundles else []
-        client.update_current_observation(
+        client.update_current_span(
             output={
                 "top_corpus_ids": top_corpus_ids,
                 "bundle_count": len(bundles),
@@ -641,6 +643,10 @@ def finalize_search_result(
                 "grounded_answer_present": grounded_answer is not None,
                 "answer_corpus_ids": answer_corpus_ids,
                 "duration_ms": result.duration_ms,
+            },
+            metadata={
+                "stage_durations_ms": debug.get("stage_durations_ms", {}),
+                "candidate_counts": debug.get("candidate_counts", {}),
             },
         )
     except Exception:

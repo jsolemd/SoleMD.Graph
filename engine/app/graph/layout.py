@@ -7,9 +7,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 import warnings
 
+
 from app.graph.neighbors import NeighborGraphResult
 from app.graph.neighbors import prune_neighbor_graph
 from app.graph._util import require_numpy
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+    SPAN_GRAPH_LAYOUT_PREPROCESS,
+    SPAN_GRAPH_LAYOUT_PCA,
+    SPAN_GRAPH_LAYOUT_RUN,
+    observe,
+)
 
 if TYPE_CHECKING:
     import numpy
@@ -73,6 +81,7 @@ def _ensure_cuml_accel():
         _cuml_accel_installed = True
 
 
+@observe(name=SPAN_GRAPH_LAYOUT_PREPROCESS)
 def preprocess_embeddings(embeddings: numpy.ndarray, config: LayoutConfig) -> numpy.ndarray:
     np = require_numpy()
     matrix = embeddings.astype(np.float32, copy=config.copy_embeddings)
@@ -82,6 +91,21 @@ def preprocess_embeddings(embeddings: numpy.ndarray, config: LayoutConfig) -> nu
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
         matrix /= norms
+
+    try:
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(
+                output={
+                    "input_shape": list(embeddings.shape),
+                    "output_shape": list(matrix.shape),
+                    "mean_center": config.mean_center,
+                    "l2_normalize": config.l2_normalize,
+                },
+            )
+    except Exception:
+        pass
+
     return matrix
 
 
@@ -116,6 +140,7 @@ def _enable_layout_backend(config: LayoutConfig) -> str:
     return "cuml_accel"
 
 
+@observe(name=SPAN_GRAPH_LAYOUT_PCA)
 def _pca_for_layout(
     embeddings: numpy.ndarray,
     config: LayoutConfig,
@@ -161,6 +186,22 @@ def _pca_for_layout(
     for start in range(0, n, batch_size):
         end = min(start + batch_size, n)
         result[start:end] = reducer.transform(embeddings[start:end]).astype(np.float32)
+
+    try:
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(
+                output={
+                    "input_shape": list(embeddings.shape),
+                    "output_shape": list(result.shape),
+                    "pca_method": "incremental_pca",
+                    "n_components": n_components,
+                    "batch_size": batch_size,
+                },
+            )
+    except Exception:
+        pass
+
     return result
 
 
@@ -408,6 +449,7 @@ def _preprocess_chunk(embeddings: numpy.ndarray, config: LayoutConfig) -> numpy.
     return matrix
 
 
+@observe(name=SPAN_GRAPH_LAYOUT_RUN)
 def run_layout_from_matrix(
     layout_matrix: numpy.ndarray,
     *,
@@ -464,6 +506,22 @@ def run_layout_from_matrix(
             "UMAP produced NaN/Inf coordinates — likely divergence. "
             "Check input embeddings for NaN values."
         )
+
+    try:
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(
+                output={
+                    "input_shape": list(layout_matrix.shape),
+                    "output_shape": list(coordinates.shape),
+                    "backend": backend,
+                    "n_neighbors": config.n_neighbors,
+                    "precomputed_knn": shared_knn is not None,
+                },
+            )
+    except Exception:
+        pass
+
     return LayoutResult(
         coordinates=coordinates,
         backend=backend,

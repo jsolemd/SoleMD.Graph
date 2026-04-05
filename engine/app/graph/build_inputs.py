@@ -7,8 +7,8 @@ import struct
 from collections.abc import Generator
 from typing import TYPE_CHECKING
 
-from langfuse import observe
 
+from app.langfuse_config import SPAN_GRAPH_BUILD_VECTORS, observe
 from app import db
 from app.graph._util import require_numpy
 from app.graph.build_common import GraphInputData
@@ -251,7 +251,7 @@ def _load_checkpointed_ids(
     return corpus_ids, citation_counts
 
 
-@observe(name="graph.build.ensureInputVectors")
+@observe(name=SPAN_GRAPH_BUILD_VECTORS)
 def _ensure_input_vectors(
     *,
     graph_run_id: str,

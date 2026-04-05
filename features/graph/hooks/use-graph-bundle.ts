@@ -52,6 +52,17 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
     let cancelled = false
     let unsubscribeCanvas = () => {}
     if (process.env.NODE_ENV !== 'production') {
+      // Clear canvas/queries BEFORE disposing the old session so Cosmograph
+      // unmounts (via the `canvas && queries` guard) before the worker is
+      // terminated.  Without this, Cosmograph sends queries to a dead worker
+      // and logs "cannot send a message since the worker is not set!".
+      setState({
+        bundleChecksum: bundle.bundleChecksum,
+        canvas: null,
+        error: null,
+        progress: null,
+        queries: null,
+      })
       invalidateGraphBundleSessionCache(bundle.bundleChecksum)
     }
     const unsubscribeProgress = subscribeToGraphBundleProgress(

@@ -1,4 +1,10 @@
-"""Langfuse v4 integration for evaluation scores and datasets."""
+"""Langfuse v4 integration for evaluation scores and datasets.
+
+Score pushing is now handled automatically by ``experiment.py`` via
+``dataset.run_experiment()`` — the ``push_scores_to_langfuse()`` function
+has been removed.  This module retains dataset creation helpers and
+score config registration.
+"""
 
 from __future__ import annotations
 
@@ -6,76 +12,16 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from app.rag_ingest.eval_metrics import EvalScore
+from app.langfuse_config import get_langfuse as _get_langfuse, langfuse_api as _langfuse_api
 
 logger = logging.getLogger(__name__)
-
-
-def _get_langfuse_client():
-    try:
-        from langfuse import get_client
-
-        return get_client()
-    except Exception:
-        logger.debug("Langfuse client not available")
-        return None
-
-
-def push_scores_to_langfuse(
-    scores: dict[str, EvalScore],
-    *,
-    trace_name: str | None = None,
-    trace_input: dict[str, Any] | None = None,
-    trace_output: dict[str, Any] | None = None,
-    trace_metadata: dict[str, Any] | None = None,
-    tags: dict[str, str] | None = None,
-) -> None:
-    """Create a Langfuse trace for an eval case and attach scores.
-
-    Langfuse v4 (OTel-based) requires traces to exist before scores can be
-    attached.  We create a short-lived ``evaluator`` span that becomes the
-    trace, then push numeric and categorical scores against its trace ID.
-    """
-    client = _get_langfuse_client()
-    if client is None:
-        return
-
-    with client.start_as_current_observation(
-        name=trace_name or "runtime-eval",
-        as_type="evaluator",
-        input=trace_input,
-        output=trace_output,
-        metadata=trace_metadata,
-    ):
-        trace_id = client.get_current_trace_id()
-        if trace_id is None:
-            logger.warning("Langfuse trace_id is None; skipping score push")
-            return
-
-        for name, score in scores.items():
-            client.create_score(
-                trace_id=trace_id,
-                name=name,
-                value=score.value,
-                comment=score.reason,
-            )
-
-        # Push categorical tags as string-valued scores for Langfuse filtering
-        if tags:
-            for name, value in tags.items():
-                client.create_score(
-                    trace_id=trace_id,
-                    name=name,
-                    value=value,
-                    data_type="CATEGORICAL",
-                )
 
 
 def create_langfuse_dataset(
     dataset_name: str,
     items: Sequence[dict],
 ) -> None:
-    client = _get_langfuse_client()
+    client = _get_langfuse()
     if client is None:
         return
     client.create_dataset(name=dataset_name)
@@ -101,10 +47,10 @@ RAG_SCORE_CONFIGS: list[dict[str, Any]] = [
     {"name": "duration_ms", "dataType": "NUMERIC", "minValue": 0, "description": "Service duration in ms"},
     {"name": "evidence_bundle_count", "dataType": "NUMERIC", "minValue": 0, "description": "Evidence bundles returned"},
     {"name": "grounded_answer_present", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Grounded answer present (binary)"},
-    {"name": "faithfulness", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Answer faithfulness to retrieved context (future LLM-as-judge)"},
-    {"name": "retrieval_profile", "dataType": "CATEGORICAL", "categories": [{"value": "title_lookup", "label": "Title Lookup"}, {"value": "question_lookup", "label": "Question Lookup"}, {"value": "passage_lookup", "label": "Passage Lookup"}, {"value": "general", "label": "General"}], "description": "Query retrieval profile"},
-    {"name": "warehouse_depth", "dataType": "CATEGORICAL", "categories": [{"value": "fulltext", "label": "Full Text"}, {"value": "abstract", "label": "Abstract"}, {"value": "none", "label": "None"}], "description": "Warehouse content depth for target paper"},
-    {"name": "route_signature", "dataType": "CATEGORICAL", "description": "Full routing fingerprint"},
+    {"name": "faithfulness", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Answer faithfulness to retrieved context (managed evaluator or agent review)"},
+    {"name": "retrieval_profile", "dataType": "CATEGORICAL", "categories": [{"label": "title_lookup", "value": 0}, {"label": "question_lookup", "value": 1}, {"label": "passage_lookup", "value": 2}, {"label": "general", "value": 3}], "description": "Query retrieval profile"},
+    {"name": "warehouse_depth", "dataType": "CATEGORICAL", "categories": [{"label": "fulltext", "value": 0}, {"label": "abstract", "value": 1}, {"label": "none", "value": 2}], "description": "Warehouse content depth for target paper"},
+    {"name": "route_signature", "dataType": "CATEGORICAL", "categories": [{"label": "default", "value": 0}], "description": "Full routing fingerprint"},
     # Ingest quality scores
     {"name": "section_count", "dataType": "NUMERIC", "minValue": 0, "description": "Parsed section count"},
     {"name": "block_count", "dataType": "NUMERIC", "minValue": 0, "description": "Parsed block count"},
@@ -112,22 +58,42 @@ RAG_SCORE_CONFIGS: list[dict[str, Any]] = [
     {"name": "entity_count", "dataType": "NUMERIC", "minValue": 0, "description": "Entity mention count"},
     {"name": "has_abstract_section", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Parser detected abstract section role"},
     {"name": "has_title_section", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Parser detected title/front_matter section"},
-    {"name": "source_availability", "dataType": "CATEGORICAL", "categories": [{"value": "abstract", "label": "Abstract"}, {"value": "full_text", "label": "Full Text"}], "description": "Warehouse content availability"},
-    {"name": "source_system", "dataType": "CATEGORICAL", "categories": [{"value": "biocxml", "label": "BioCXML"}, {"value": "s2orc_v2", "label": "S2ORC"}], "description": "Primary source system"},
+    {"name": "source_availability", "dataType": "CATEGORICAL", "categories": [{"label": "abstract", "value": 0}, {"label": "full_text", "value": 1}], "description": "Warehouse content availability"},
+    {"name": "source_system", "dataType": "CATEGORICAL", "categories": [{"label": "biocxml", "value": 0}, {"label": "s2orc_v2", "value": 1}, {"label": "abstract_only", "value": 2}], "description": "Primary source system"},
+    # Graph build metrics
+    {"name": "graph_point_count", "dataType": "NUMERIC", "minValue": 0, "description": "Total graph points in build"},
+    {"name": "graph_cluster_count", "dataType": "NUMERIC", "minValue": 0, "description": "Leiden cluster count"},
+    {"name": "graph_bundle_bytes", "dataType": "NUMERIC", "minValue": 0, "description": "Export bundle total bytes"},
+    {"name": "graph_build_duration_s", "dataType": "NUMERIC", "minValue": 0, "description": "Full graph build wall-clock seconds"},
+    # Graph cluster labeling
+    {"name": "graph_cluster_labeled_count", "dataType": "NUMERIC", "minValue": 0, "description": "Clusters successfully labeled by LLM"},
+    {"name": "graph_cluster_error_count", "dataType": "NUMERIC", "minValue": 0, "description": "Batch labeling errors"},
+    {"name": "graph_cluster_total", "dataType": "NUMERIC", "minValue": 0, "description": "Total clusters in labeling run"},
 ]
 
 
 def ensure_score_configs() -> list[str]:
-    """Create or update all RAG score configs in Langfuse. Returns created names."""
-    client = _get_langfuse_client()
-    if client is None:
-        return []
-    created: list[str] = []
+    """Create or update all RAG score configs in Langfuse via REST API.
+
+    The v4 Python SDK doesn't expose ``create_score_config()``, so we use
+    the centralized ``langfuse_api()`` helper. Skips configs that already
+    exist (by name). Returns all config names (created + existing).
+    """
+    # Fetch existing configs to avoid duplicates
+    existing_names: set[str] = set()
+    resp = _langfuse_api("GET", "/score-configs")
+    if resp and "data" in resp:
+        for cfg in resp["data"]:
+            existing_names.add(cfg["name"])
+
+    result: list[str] = []
     for config in RAG_SCORE_CONFIGS:
-        try:
-            client.create_score_config(**config)
-            created.append(config["name"])
-        except Exception:
-            logger.debug("Score config %s may already exist", config["name"])
-            created.append(config["name"])
-    return created
+        name = config["name"]
+        if name in existing_names:
+            result.append(name)
+            continue
+        created = _langfuse_api("POST", "/score-configs", config)
+        if created is not None:
+            logger.debug("Registered score config: %s", name)
+        result.append(name)
+    return result

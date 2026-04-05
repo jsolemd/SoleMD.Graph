@@ -148,6 +148,32 @@ Adoption rule:
 - do not build custom benchmark registries, experiment UIs, or retrieval metric
   calculators unless the existing external tools demonstrably fail the runtime use case
 
+### Active Langfuse LLM-as-Judge Evaluators (2026-04-05)
+
+Three managed evaluators auto-score every `rag.search` GENERATION observation:
+
+| Evaluator | Source | Variables | Status |
+|-----------|--------|-----------|--------|
+| Faithfulness (Ragas) | Langfuse managed | `{{input}}` → Input, `{{output}}` → Output | Active |
+| Hallucination | Langfuse managed | `{{query}}` → Input, `{{generation}}` → Output | Active |
+| Contextrelevance | Langfuse managed | `{{query}}` → Input, `{{context}}` → Output | Active |
+
+SDK batch evaluators (`engine/scripts/run_llm_judge_evaluation.py`) fetch prompts
+from Langfuse Prompt Management with local fallbacks:
+
+| Prompt | Langfuse name | Variables |
+|--------|---------------|-----------|
+| Faithfulness | `rag-faithfulness-judge` | `question`, `context`, `answer` |
+| Context relevance | `rag-context-relevance-judge` | `question`, `context` |
+| Answer completeness | `rag-answer-completeness-judge` | `question`, `answer`, `bundle_count` |
+
+TODO — add when ground-truth QA set exists:
+
+- **Answer Correctness** (Ragas) — requires expert-verified reference answers per
+  query. Build a curated QA set from the neuropsych domain, then enable as a
+  managed evaluator. Most valuable once the generative answer path (Phase 8) is
+  live, since extractive answers are already faithfulness-bounded.
+
 ## Next Phases
 
 ### Phase 0: Harden The Benchmark Matrix

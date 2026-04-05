@@ -5,8 +5,15 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from langfuse import observe
 
+from app.langfuse_config import (
+    SPAN_GRAPH_BUILD_LAYOUT_MATRIX,
+    SPAN_GRAPH_BUILD_KNN,
+    SPAN_GRAPH_BUILD_COORDS,
+    SPAN_GRAPH_BUILD_CLUSTERS,
+    SPAN_GRAPH_BUILD_SCORED,
+    observe,
+)
 from app.graph.build_common import _checkpoint_stage_complete
 from app.graph.build_common import _mark_graph_run_stage
 from app.graph.build_inputs import _first_embedding
@@ -42,7 +49,7 @@ def _shared_neighbor_count(
     return max(int(layout_config.n_neighbors), int(cluster_config.n_neighbors) + 1)
 
 
-@observe(name="graph.build.ensureLayoutMatrix")
+@observe(name=SPAN_GRAPH_BUILD_LAYOUT_MATRIX)
 def _ensure_layout_matrix(
     *,
     graph_run_id: str,
@@ -107,7 +114,7 @@ def _ensure_layout_matrix(
     return layout_matrix, layout_backend
 
 
-@observe(name="graph.build.ensureSharedKnn")
+@observe(name=SPAN_GRAPH_BUILD_KNN)
 def _ensure_shared_neighbor_graph(
     *,
     graph_run_id: str,
@@ -152,7 +159,7 @@ def _ensure_shared_neighbor_graph(
     return shared_knn
 
 
-@observe(name="graph.build.ensureLayoutCoordinates")
+@observe(name=SPAN_GRAPH_BUILD_COORDS)
 def _ensure_layout_coordinates(
     *,
     graph_run_id: str,
@@ -185,7 +192,7 @@ def _ensure_layout_coordinates(
     return result.coordinates, result.backend
 
 
-@observe(name="graph.build.ensureClusterIds")
+@observe(name=SPAN_GRAPH_BUILD_CLUSTERS)
 def _ensure_cluster_ids(
     *,
     graph_run_id: str,
@@ -216,7 +223,7 @@ def _ensure_cluster_ids(
     return result.cluster_ids, result.backend
 
 
-@observe(name="graph.build.ensureScoredCoordinates")
+@observe(name=SPAN_GRAPH_BUILD_SCORED)
 def _ensure_scored_coordinates(
     *,
     graph_run_id: str,

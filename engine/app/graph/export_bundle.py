@@ -15,8 +15,10 @@ import uuid
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+
 from app import db
 from app.config import settings
+from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_EXPORT_VIEWS, SPAN_EXPORT_BUNDLE, observe
 from app.graph.export import bundle_contract
 from app.graph.paper_evidence import apply_build_session_settings
 from app.graph.point_projection import POINTS_SCHEMA, build_point_projection_select_sql
@@ -44,10 +46,7 @@ CLUSTERS_SCHEMA = pa.schema(
         ("mean_cluster_probability", pa.float32()),
         ("mean_outlier_score", pa.float32()),
         ("is_noise", pa.bool_()),
-        ("parent_cluster_id", pa.int32()),
-        ("parent_label", pa.string()),
         ("description", pa.string()),
-        ("hierarchy_level", pa.int32()),
     ]
 )
 
@@ -182,9 +181,7 @@ def _render_points_cte() -> str:
             COALESCE(bp.base_rank, 0)::REAL AS base_rank,
             gc.label AS cluster_label,
             gc.centroid_x,
-            gc.centroid_y,
-            gc.parent_cluster_id,
-            gc.parent_label
+            gc.centroid_y
         FROM solemd.graph_points g
         LEFT JOIN solemd.graph_base_points bp
             ON bp.graph_run_id = g.graph_run_id
@@ -192,7 +189,6 @@ def _render_points_cte() -> str:
         LEFT JOIN solemd.graph_clusters gc
             ON gc.graph_run_id = g.graph_run_id
            AND gc.cluster_id = g.cluster_id
-           AND gc.hierarchy_level = 0
         WHERE g.graph_run_id = %(graph_run_id)s
     ),
     render_points AS (
@@ -210,9 +206,7 @@ def _render_points_cte() -> str:
             rp.base_rank,
             rp.cluster_label,
             rp.centroid_x,
-            rp.centroid_y,
-            rp.parent_cluster_id,
-            rp.parent_label
+            rp.centroid_y
         FROM run_points rp
         WHERE {renderable_predicate}
     ),
@@ -234,9 +228,7 @@ def _render_points_cte() -> str:
             rp.base_rank,
             rp.cluster_label,
             rp.centroid_x,
-            rp.centroid_y,
-            rp.parent_cluster_id,
-            rp.parent_label
+            rp.centroid_y
         FROM render_points rp
         WHERE rp.is_in_base
     ),
@@ -263,9 +255,7 @@ def _render_points_cte() -> str:
             rp.base_rank,
             rp.cluster_label,
             rp.centroid_x,
-            rp.centroid_y,
-            rp.parent_cluster_id,
-            rp.parent_label
+            rp.centroid_y
         FROM render_points rp
         WHERE NOT rp.is_in_base
     ),
@@ -564,6 +554,7 @@ def _materialize_rollup(name: str, sql: str) -> None:
     log.info("materialized %s", name)
 
 
+@observe(name=SPAN_EXPORT_VIEWS)
 def _materialize_export_views(graph_run_id: str) -> None:
     """Pre-materialize paper_base via parallel rollup aggregations.
 
@@ -711,8 +702,6 @@ def _materialize_export_views(graph_run_id: str) -> None:
                 rp.y,
                 rp.cluster_id,
                 rp.cluster_label,
-                rp.parent_cluster_id,
-                rp.parent_label,
                 rp.cluster_probability,
                 rp.is_noise,
                 rp.is_in_base,
@@ -817,10 +806,7 @@ def _materialized_table_specs(bundle_profile: str) -> list[BundleTableSpec]:
                 COALESCE(r.mean_cluster_probability, gc.mean_cluster_probability) AS mean_cluster_probability,
                 COALESCE(r.mean_outlier_score, gc.mean_outlier_score) AS mean_outlier_score,
                 (gc.cluster_id = 0) AS is_noise,
-                gc.parent_cluster_id,
-                gc.parent_label,
-                gc.description,
-                gc.hierarchy_level
+                gc.description
             FROM solemd.graph_clusters gc
             JOIN render_cluster_rollup r
               ON r.cluster_id = gc.cluster_id
@@ -997,6 +983,7 @@ def _export_single_table(
     return spec.name, summary
 
 
+@observe(name=SPAN_EXPORT_BUNDLE)
 def export_graph_bundle(
     *,
     graph_run_id: str,
@@ -1046,6 +1033,25 @@ def export_graph_bundle(
     manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
     bundle_checksum = _hash_file(manifest_path)
     total_bytes += manifest_path.stat().st_size
+
+    try:
+        client = _get_langfuse()
+        if client is not None:
+            per_table = {
+                name: {"row_count": info.get("row_count", 0), "bytes": info.get("bytes", 0)}
+                for name, info in table_summaries.items()
+            }
+            client.update_current_span(
+                output={
+                    "table_count": len(table_summaries),
+                    "total_bytes": total_bytes,
+                    "bundle_checksum": bundle_checksum,
+                    "bundle_profile": bundle_profile,
+                    "per_table": per_table,
+                },
+            )
+    except Exception:
+        pass
 
     return BundleSummary(
         graph_run_id=graph_run_id_text,

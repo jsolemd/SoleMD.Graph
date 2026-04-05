@@ -87,7 +87,7 @@ class _SeedSearchMixin:
         if not normalized_terms:
             return []
 
-        exact_terms = self.resolve_query_entity_terms(
+        exact_terms, _high_conf = self.resolve_query_entity_terms(
             query_phrases=normalized_terms,
             limit=len(normalized_terms),
         )

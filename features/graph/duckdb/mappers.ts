@@ -23,10 +23,7 @@ export interface GraphClusterDetailRow {
   member_count: number
   paper_count: number | null
   representative_point_id: string | null
-  parent_cluster_id: number | null
-  parent_label: string | null
   description: string | null
-  hierarchy_level: number | null
 }
 
 export interface GraphClusterExemplarRow {
@@ -88,10 +85,7 @@ export function mapCluster(row: GraphClusterDetailRow): ClusterInfo {
     meanOutlierScore: row.mean_outlier_score ?? null,
     paperCount: row.paper_count ?? null,
     isNoise: Boolean(row.is_noise ?? row.cluster_id === 0),
-    parentClusterId: row.parent_cluster_id ?? null,
-    parentLabel: row.parent_label ?? null,
     description: row.description ?? null,
-    hierarchyLevel: row.hierarchy_level ?? 0,
   }
 }
 

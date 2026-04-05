@@ -7,7 +7,6 @@ import type {
 } from "@cosmograph/react";
 import {
   buildCurrentPointScopeSql,
-  buildIntentSelectionScopeSql,
   buildBudgetScopeSql,
   getSelectionSourceId,
   isBudgetScopeSelectionSourceId,
@@ -20,7 +19,7 @@ export function usePointsFiltered(deps: {
   cosmographRef: RefObject<CosmographRef | undefined>;
   activeLayer: MapLayer;
   selectionLocked: boolean;
-  selectedPointCount: number;
+  hasSelection: boolean;
   visibilityFocus: VisibilityFocus | null;
   selectNode: (node: null) => void;
   setCurrentPointScopeSql: (sql: string | null) => void;
@@ -32,6 +31,8 @@ export function usePointsFiltered(deps: {
 }) {
   const visibilityBudgetRequestId = useRef(0);
   const selectionWriteRequestId = useRef(0);
+  const deferredWriteHandle = useRef(0);
+  const deferredScopeHandle = useRef(0);
 
   // Stable ref that always points to the latest onPointsFiltered logic.
   // This avoids Cosmograph re-registering the handler every time any of
@@ -90,14 +91,10 @@ export function usePointsFiltered(deps: {
 
     // --- Main handler logic ---
     const pointsSelection = deps.cosmographRef.current?.pointsSelection ?? null;
-    const normalizedSelected =
-      callbackSelectedPointIndices?.filter(
-        (index): index is number => typeof index === "number",
-      ) ?? [];
+    const selectedCount = callbackSelectedPointIndices?.length ?? 0;
     const sourceId = deps.cosmographRef.current?.getActiveSelectionSourceId() ?? null;
     const isVisibilitySource = isVisibilitySelectionSourceId(sourceId);
     const hasIntentClauses = intentClauseIds.length > 0;
-    const selectedPointScopeSql = buildIntentSelectionScopeSql(pointsSelection);
     const pointClauseCount =
       pointsSelection?.clauses?.length ?? 0;
     const currentPointScopeSql =
@@ -105,44 +102,55 @@ export function usePointsFiltered(deps: {
         ? buildCurrentPointScopeSql({
             selection: deps.cosmographRef.current?.pointsSelection,
             selectionLocked: deps.selectionLocked,
-            hasSelectedBaseline: deps.selectedPointCount > 0,
+            hasSelectedBaseline: deps.hasSelection,
           })
         : null;
     const shouldRefreshVisibilityBudget =
       isBudgetScopeSelectionSourceId(sourceId) &&
       deps.visibilityFocus != null &&
       deps.visibilityFocus.layer === deps.activeLayer;
-    const persistSelectionIntent = async (args: {
-      scopeSql?: string | null;
-      pointIndices?: number[];
+    // Defer the DuckDB selection write by one animation frame so
+    // Cosmograph's WebGL render and internal DuckDB reads complete
+    // first. The shared connection is sequential — an immediate write
+    // would block Cosmograph's rendering queries and freeze the
+    // selection visual on 1M+ points.
+    const persistSelectionIntent = (args: {
+      pointIndices: number[];
       selectedCount: number;
       selectionSourceId: string | null;
       clearNode: boolean;
     }) => {
-      const requestId = ++selectionWriteRequestId.current;
+      // Cancel any pending scope-only update — we'll include it below
+      // so both store mutations land in one frame (one React render).
+      cancelAnimationFrame(deferredScopeHandle.current);
+      cancelAnimationFrame(deferredWriteHandle.current);
+      deferredWriteHandle.current = requestAnimationFrame(() => {
+        const requestId = ++selectionWriteRequestId.current;
 
-      try {
-        if (args.scopeSql && args.scopeSql.trim().length > 0) {
-          await deps.queries.setSelectedPointScopeSql(args.scopeSql);
-        } else {
-          await deps.queries.setSelectedPointIndices(args.pointIndices ?? []);
-        }
-      } catch {
-        return;
-      }
+        void deps.queries.setSelectedPointIndices(args.pointIndices).then(() => {
+          if (requestId !== selectionWriteRequestId.current) {
+            return;
+          }
 
-      if (requestId !== selectionWriteRequestId.current) {
-        return;
-      }
-
-      deps.setSelectedPointCount(args.selectedCount);
-      deps.setActiveSelectionSourceId(args.selectionSourceId);
-      if (args.clearNode) {
-        deps.selectNode(null);
-      }
+          // Batch all store updates in one synchronous block so React
+          // renders once, firing one info-panel query cycle instead of two.
+          deps.setCurrentPointScopeSql(currentPointScopeSql);
+          deps.setSelectedPointCount(args.selectedCount);
+          deps.setActiveSelectionSourceId(args.selectionSourceId);
+          if (args.clearNode) {
+            deps.selectNode(null);
+          }
+        }).catch(() => {});
+      });
     };
 
-    deps.setCurrentPointScopeSql(currentPointScopeSql);
+    // For non-intent paths (locked, visibility-only) that return early
+    // without calling persistSelectionIntent, defer the scope-SQL update
+    // on its own so Cosmograph's WebGL render still runs uncontested.
+    cancelAnimationFrame(deferredScopeHandle.current);
+    deferredScopeHandle.current = requestAnimationFrame(() => {
+      deps.setCurrentPointScopeSql(currentPointScopeSql);
+    });
 
     // Locked mode freezes persistent intent and lets filters only alter the
     // currently visible/highlighted subset. Intent-changing widgets should
@@ -171,7 +179,7 @@ export function usePointsFiltered(deps: {
     // a live selection clause. This is what prevents "clear selection under
     // active filters" from rehydrating intent from the current intersection.
     if (!hasIntentClauses) {
-      void persistSelectionIntent({
+      persistSelectionIntent({
         pointIndices: [],
         selectedCount: 0,
         selectionSourceId: null,
@@ -180,10 +188,18 @@ export function usePointsFiltered(deps: {
       return;
     }
 
+    // Always prefer raw indices from the callback for the DuckDB write —
+    // they're already computed by Cosmograph and a direct VALUES INSERT
+    // avoids scanning 1M rows. Scope SQL may be a giant IN(...) clause
+    // (cluster selections) which forces a full-table scan to re-derive
+    // the same indices we already have.
+    const pointIndices = callbackSelectedPointIndices?.filter(
+      (index): index is number => typeof index === "number",
+    ) ?? [];
+
     void persistSelectionIntent({
-      scopeSql: selectedPointScopeSql,
-      pointIndices: normalizedSelected,
-      selectedCount: normalizedSelected.length,
+      pointIndices,
+      selectedCount,
       selectionSourceId: sourceId,
       clearNode: false,
     });

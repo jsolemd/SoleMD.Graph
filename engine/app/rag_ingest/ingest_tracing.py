@@ -10,6 +10,17 @@ from __future__ import annotations
 import logging
 from collections import Counter
 
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+    SCORE_BLOCK_COUNT,
+    SCORE_ENTITY_COUNT,
+    SCORE_HAS_ABSTRACT,
+    SCORE_HAS_TITLE,
+    SCORE_SECTION_COUNT,
+    SCORE_SENTENCE_COUNT,
+    SCORE_SOURCE_AVAILABILITY,
+    SCORE_SOURCE_SYSTEM,
+)
 from app.rag.parse_contract import SectionRole
 from app.rag_ingest.source_parsers import (
     ParsedPaperSource,
@@ -18,15 +29,6 @@ from app.rag_ingest.source_parsers import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_langfuse_client():
-    try:
-        from langfuse import get_client
-
-        return get_client()
-    except Exception:
-        return None
 
 
 def _emit_parse_quality(
@@ -64,14 +66,14 @@ def _emit_parse_quality(
             return
 
         scores = {
-            "section_count": float(len(parsed.sections)),
-            "block_count": float(len(parsed.blocks)),
-            "sentence_count": float(len(parsed.sentences)),
-            "entity_count": float(len(parsed.entities)),
-            "has_abstract_section": (
+            SCORE_SECTION_COUNT: float(len(parsed.sections)),
+            SCORE_BLOCK_COUNT: float(len(parsed.blocks)),
+            SCORE_SENTENCE_COUNT: float(len(parsed.sentences)),
+            SCORE_ENTITY_COUNT: float(len(parsed.entities)),
+            SCORE_HAS_ABSTRACT: (
                 1.0 if any(r == SectionRole.ABSTRACT for r in section_roles) else 0.0
             ),
-            "has_title_section": (
+            SCORE_HAS_TITLE: (
                 1.0
                 if any(r == SectionRole.FRONT_MATTER for r in section_roles)
                 else 0.0
@@ -81,8 +83,8 @@ def _emit_parse_quality(
             client.create_score(trace_id=paper_trace_id, name=name, value=value)
 
         tags = {
-            "source_availability": parsed.document.source_availability or "unknown",
-            "source_system": source_system,
+            SCORE_SOURCE_AVAILABILITY: parsed.document.source_availability or "unknown",
+            SCORE_SOURCE_SYSTEM: source_system,
         }
         for name, value in tags.items():
             client.create_score(
@@ -110,7 +112,7 @@ def traced_parse_biocxml(
         **kwargs,
     )
     try:
-        client = _get_langfuse_client()
+        client = _get_langfuse()
         if client is not None:
             _emit_parse_quality(
                 client,
@@ -136,7 +138,7 @@ def traced_parse_s2orc(
         parser_version=parser_version,
     )
     try:
-        client = _get_langfuse_client()
+        client = _get_langfuse()
         if client is not None:
             _emit_parse_quality(
                 client,

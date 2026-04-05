@@ -50,6 +50,7 @@ export function createSessionQueryController({
     Promise<GraphVisibilityBudget | null>
   >()
   const scopeCoordinatesCache = createBoundedCache<string, Promise<number[] | null>>()
+  const tablePage1Cache = createBoundedCache<string, Promise<import('@/features/graph/types').GraphTablePageResult>>()
 
   const getCachedScopeCoordinates = (args: {
     layer: Parameters<typeof queryScopeCoordinates>[1]['layer']
@@ -125,6 +126,7 @@ export function createSessionQueryController({
       searchCache.clear()
       visibilityBudgetCache.clear()
       scopeCoordinatesCache.clear()
+      tablePage1Cache.clear()
     },
     runReadOnlyQuery(sql: string) {
       return executeReadOnlyQuery(conn, sql)
@@ -238,6 +240,24 @@ export function createSessionQueryController({
       return next
     },
     getTablePage(args) {
+      if (args.view === 'current' && args.page === 1 && args.currentPointScopeSql == null) {
+        const cacheKey = JSON.stringify({
+          layer: args.layer,
+          view: args.view,
+          pageSize: args.pageSize,
+        })
+        const cached = tablePage1Cache.get(cacheKey)
+        if (cached) {
+          return cached
+        }
+
+        const next = queryCorpusTablePage(conn, args).catch((error) => {
+          tablePage1Cache.delete(cacheKey)
+          throw error
+        })
+        tablePage1Cache.set(cacheKey, next)
+        return next
+      }
       return queryCorpusTablePage(conn, args)
     },
     exportTableCsv(args) {

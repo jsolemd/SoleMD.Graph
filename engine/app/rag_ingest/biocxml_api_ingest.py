@@ -16,9 +16,10 @@ import logging
 from pathlib import Path
 from typing import Protocol
 
-from langfuse import observe
 
-logging.getLogger("langfuse").setLevel(logging.ERROR)
+from app.langfuse_config import SPAN_INGEST_BIOCXML_API, observe
+
+logger = logging.getLogger(__name__)
 
 from pydantic import Field
 
@@ -139,7 +140,7 @@ def _source_revision_keys() -> list[str]:
     ]
 
 
-@observe(name="ingest.biocxmlApi")
+@observe(name=SPAN_INGEST_BIOCXML_API)
 def run_biocxml_api_ingest(
     *,
     corpus_ids: list[int],
@@ -291,31 +292,32 @@ def run_biocxml_api_ingest(
     )
 
     try:
-        from langfuse import get_client
-        client = get_client()
-        client.update_current_observation(
-            input={
-                "corpus_ids": normalized_ids,
-                "parser_version": parser_version,
-                "source_revision": effective_source_revision,
-                "batch_size": batch_size,
-            },
-            output={
-                "resolved_pmids": report.resolved_pmids,
-                "fetched_documents": report.fetched_documents,
-                "parsed_documents": report.parsed_documents,
-                "skipped_existing": report.skipped_existing,
-                "skipped_no_fetch": report.skipped_no_fetch,
-                "skipped_low_value": report.skipped_low_value,
-                "ingested_corpus_ids": report.ingested_corpus_ids,
-                "papers": [
-                    {"corpus_id": p.corpus_id, "pmid": p.pmid, "parsed": p.parsed, "skipped_reason": p.skipped_reason}
-                    for p in report.papers
-                ],
-            },
-        )
+        from app.langfuse_config import get_langfuse as _get_langfuse
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(
+                input={
+                    "corpus_ids": normalized_ids,
+                    "parser_version": parser_version,
+                    "source_revision": effective_source_revision,
+                    "batch_size": batch_size,
+                },
+                output={
+                    "resolved_pmids": report.resolved_pmids,
+                    "fetched_documents": report.fetched_documents,
+                    "parsed_documents": report.parsed_documents,
+                    "skipped_existing": report.skipped_existing,
+                    "skipped_no_fetch": report.skipped_no_fetch,
+                    "skipped_low_value": report.skipped_low_value,
+                    "ingested_corpus_ids": report.ingested_corpus_ids,
+                    "papers": [
+                        {"corpus_id": p.corpus_id, "pmid": p.pmid, "parsed": p.parsed, "skipped_reason": p.skipped_reason}
+                        for p in report.papers
+                    ],
+                },
+            )
     except Exception:
-        pass
+        logger.debug("Langfuse observation update failed", exc_info=True)
 
     return report
 

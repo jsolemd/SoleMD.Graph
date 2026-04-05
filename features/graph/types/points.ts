@@ -10,8 +10,6 @@ export interface GraphPointRecord {
   y: number
   clusterId: number
   clusterLabel: string | null
-  parentClusterId: number
-  parentLabel: string | null
   displayLabel: string | null
   displayPreview: string | null
   paperTitle: string | null

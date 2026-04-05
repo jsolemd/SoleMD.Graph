@@ -108,6 +108,9 @@ const QUERIES_STUB = {
   getInfoBarsBatch: jest.fn(),
   getInfoHistogram: jest.fn(),
   getInfoHistogramsBatch: jest.fn(),
+  getInfoSummary: jest.fn(),
+  getNumericStatsBatch: jest.fn(),
+  getTablePage: jest.fn(),
   runReadOnlyQuery: jest.fn(),
 } as unknown as GraphBundleQueries;
 
@@ -178,6 +181,82 @@ describe("DashboardShellClient", () => {
     });
 
     expect(mockQueryPanel).toHaveBeenCalledTimes(1);
+  });
+
+  function setupIdleCallback() {
+    const requestIdleCallback = jest.fn((callback: IdleRequestCallback) => {
+      callback({
+        didTimeout: false,
+        timeRemaining: () => 50,
+      } as IdleDeadline);
+      return 1;
+    });
+    const cancelIdleCallback = jest.fn();
+
+    Object.defineProperty(window, "requestIdleCallback", {
+      configurable: true,
+      writable: true,
+      value: requestIdleCallback,
+    });
+    Object.defineProperty(window, "cancelIdleCallback", {
+      configurable: true,
+      writable: true,
+      value: cancelIdleCallback,
+    });
+  }
+
+  function stubAllQueriesResolved() {
+    (QUERIES_STUB.getInfoBarsBatch as jest.Mock).mockResolvedValue({});
+    (QUERIES_STUB.getInfoHistogramsBatch as jest.Mock).mockResolvedValue({});
+    (QUERIES_STUB.getInfoSummary as jest.Mock).mockResolvedValue({});
+    (QUERIES_STUB.getNumericStatsBatch as jest.Mock).mockResolvedValue({});
+    (QUERIES_STUB.getTablePage as jest.Mock).mockResolvedValue({ rows: [], totalCount: 0 });
+  }
+
+  it("prefetches info summary with dataset scope after first paint", async () => {
+    setupIdleCallback();
+    stubAllQueriesResolved();
+
+    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
+
+    act(() => {
+      const props = mockGraphCanvas.mock.calls[0]?.[0] as { onFirstPaint?: () => void };
+      props.onFirstPaint?.();
+    });
+
+    await waitFor(() => {
+      expect(QUERIES_STUB.getInfoSummary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          layer: "corpus",
+          scope: "dataset",
+          currentPointScopeSql: null,
+        }),
+      );
+    });
+  });
+
+  it("prefetches table page 1 with dataset scope after first paint", async () => {
+    setupIdleCallback();
+    stubAllQueriesResolved();
+
+    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
+
+    act(() => {
+      const props = mockGraphCanvas.mock.calls[0]?.[0] as { onFirstPaint?: () => void };
+      props.onFirstPaint?.();
+    });
+
+    await waitFor(() => {
+      expect(QUERIES_STUB.getTablePage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          layer: "corpus",
+          view: "current",
+          page: 1,
+          pageSize: 100,
+          currentPointScopeSql: null,
+        }),
+      );
+    });
   });
 
   it("batches startup numeric filter warming after the first paint", async () => {

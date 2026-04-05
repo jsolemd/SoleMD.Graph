@@ -51,7 +51,7 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
     linkSourceIndexBy: LINK_COLUMNS.sourceIndexBy,
     linkTargetBy: LINK_COLUMNS.targetBy,
     linkTargetIndexBy: LINK_COLUMNS.targetIndexBy,
-    defaultColorColumn: 'parentLabel',
+    defaultColorColumn: 'clusterLabel',
     defaultColorStrategy: 'categorical',
     defaultSizeColumn: 'paperReferenceCount',
     defaultSizeStrategy: 'auto',

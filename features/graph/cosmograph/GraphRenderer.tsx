@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef } from "react";
 import {
   Cosmograph,
   type CosmographRef,
 } from "@cosmograph/react";
-import { useShallow } from "zustand/react/shallow";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
   BUDGET_FOCUS_SOURCE_ID,
@@ -57,22 +56,20 @@ export default function CosmographRenderer({
     activeLayer, fitViewPadding,
   } = config;
 
-  // Selection & interaction state
-  const {
-    setCurrentPointScopeSql, selectedPointCount,
-    setSelectedPointCount,
-    setActiveSelectionSourceId, selectionLocked,
-    visibilityFocus, clearVisibilityFocus, applyVisibilityBudget,
-  } = useDashboardStore(useShallow((s) => ({
-    setCurrentPointScopeSql: s.setCurrentPointScopeSql,
-    selectedPointCount: s.selectedPointCount,
-    setSelectedPointCount: s.setSelectedPointCount,
-    setActiveSelectionSourceId: s.setActiveSelectionSourceId,
-    selectionLocked: s.selectionLocked,
-    visibilityFocus: s.visibilityFocus,
-    clearVisibilityFocus: s.clearVisibilityFocus,
-    applyVisibilityBudget: s.applyVisibilityBudget,
-  })));
+  // Selection & interaction state — individual selectors avoid useShallow's
+  // per-render object allocation and prevent Cosmograph re-diffs on unrelated
+  // store changes.  hasSelection is a derived boolean (not the raw count) so
+  // the renderer only re-renders when selection starts or ends, not during
+  // a lasso drag that changes count from 50k to 200k.
+  const hasSelection = useDashboardStore((s) => s.selectedPointCount > 0);
+  const selectionLocked = useDashboardStore((s) => s.selectionLocked);
+  const connectedSelect = useDashboardStore((s) => s.connectedSelect);
+  const visibilityFocus = useDashboardStore((s) => s.visibilityFocus);
+  const setCurrentPointScopeSql = useDashboardStore((s) => s.setCurrentPointScopeSql);
+  const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
+  const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
+  const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
+  const applyVisibilityBudget = useDashboardStore((s) => s.applyVisibilityBudget);
   const isLocked = selectionLocked;
 
   const {
@@ -222,7 +219,7 @@ export default function CosmographRenderer({
     cosmographRef,
     activeLayer,
     selectionLocked,
-    selectedPointCount,
+    hasSelection,
     visibilityFocus,
     selectNode,
     setCurrentPointScopeSql,
@@ -232,6 +229,11 @@ export default function CosmographRenderer({
     applyVisibilityBudget,
     queries,
   });
+  // Defer hasSelection for label-mode so Cosmograph processes the selection
+  // highlight first (greying out / dot coloring) and the 7+ label prop changes
+  // arrive in the next concurrent render — eliminating a multi-prop re-diff
+  // that stalls the WebGL pipeline.
+  const deferredHasSelection = useDeferredValue(hasSelection);
   const labelMode = resolveGraphLabelMode({
     pointLabelColumn: config.pointLabelColumn,
     showPointLabels: config.showPointLabels,
@@ -241,7 +243,7 @@ export default function CosmographRenderer({
     zoomedIn,
     hasFocusedPoint: focusedPointIndex != null,
     focusedPointId: selectedNode?.id ?? null,
-    hasSelection: selectedPointCount > 0,
+    hasSelection: deferredHasSelection,
   });
   const pointLabelWeightBy =
     labelMode.effectivePointLabelColumn === "clusterLabel"
@@ -344,7 +346,7 @@ export default function CosmographRenderer({
       linkSourceIndexBy={config.layerConfig.linkSourceIndexBy}
       linkTargetBy={config.layerConfig.linkTargetBy}
       linkTargetIndexBy={config.layerConfig.linkTargetIndexBy}
-      renderLinks={config.hasLinks && (config.renderLinks || selectedPointCount > 0)}
+      renderLinks={config.hasLinks && config.renderLinks}
       linkColorByFn={config.hasLinks ? config.linkColorByFn : undefined}
       linkOpacity={config.hasLinks ? config.linkOpacity : undefined}
       linkGreyoutOpacity={config.hasLinks ? (config.renderLinks ? config.linkGreyoutOpacity : 0) : undefined}
@@ -378,8 +380,12 @@ export default function CosmographRenderer({
       usePointColorStrategyForClusterLabels={config.pointClusterColumn != null}
       clusterLabelClassName={resolveClusterLabelClassName}
       selectClusterOnLabelClick={!isLocked}
-      selectPointOnClick={isLocked ? false : config.hasLinks ? true : "single"}
-      selectPointOnLabelClick={isLocked ? false : config.hasLinks ? true : "single"}
+      selectPointOnClick={
+        isLocked ? false : config.hasLinks && connectedSelect ? true : "single"
+      }
+      selectPointOnLabelClick={
+        isLocked ? false : config.hasLinks && connectedSelect ? true : "single"
+      }
       focusPointOnClick={!isLocked}
       focusPointOnLabelClick={!isLocked}
       resetSelectionOnEmptyCanvasClick={!isLocked}

@@ -954,7 +954,7 @@ def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("entity resolution should be skipped for exact title anchors")
 
         def search_papers(
@@ -1058,7 +1058,7 @@ def test_rag_service_skips_dense_and_frontier_for_strong_title_prefix_anchor():
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("entity resolution should be skipped for strong title anchors")
 
         def search_exact_title_papers(
@@ -1187,7 +1187,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             assert selected_node_id == "paper:11857184"
             return 11857184
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("selected title anchors should skip runtime entity resolution")
 
         def search_selected_title_papers(
@@ -1374,7 +1374,7 @@ def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles(
             assert selected_node_id == "paper:4443808"
             return 4443808
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("selected title anchors should skip runtime entity resolution")
 
         def search_selected_title_papers(
@@ -2389,7 +2389,7 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
         ) -> list[PaperEvidenceHit]:
             raise AssertionError("title-shaped queries should stay on paper lexical lookup")
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("exact title promotion should skip runtime entity resolution")
 
         def search_chunk_papers(
@@ -2563,7 +2563,7 @@ def test_rag_service_uses_exact_title_precheck_for_long_passage_shaped_titles():
                 )
             ]
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("exact title precheck should skip runtime entity resolution")
 
         def search_chunk_papers(
@@ -3723,7 +3723,7 @@ def test_rag_service_skips_runtime_entity_enrichment_without_entity_surface_sign
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("generic title-like queries should skip runtime entity enrichment")
 
         def search_papers(
@@ -4233,7 +4233,7 @@ def test_rag_service_skips_entity_resolution_for_passage_noise_without_resolutio
                 is_current=True,
             )
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> list[str]:
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
             raise AssertionError("entity term resolution should be skipped")
 
         def resolve_selected_corpus_id(

@@ -11,6 +11,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+
+from app.langfuse_config import get_langfuse as _get_langfuse, get_prompt as _get_langfuse_prompt, SPAN_RAG_ANSWER, observe
 from app.rag.models import EvidenceBundle
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,15 @@ class GeneratedAnswer:
     grounding_corpus_ids: tuple[int, ...] = ()
 
 
+_EVIDENCE_PROMPT_FALLBACK = (
+    "You are a biomedical evidence assistant. Answer the question using "
+    "ONLY the provided sources. Cite sources using [N] markers.\n\n"
+    "QUESTION: {query}\n\n"
+    "SOURCES:\n{sources_text}\n\n"
+    "ANSWER:"
+)
+
+
 def _build_evidence_prompt(
     bundles: list[EvidenceBundle],
     query: str,
@@ -54,12 +65,10 @@ def _build_evidence_prompt(
         )
 
     sources_text = "\n\n".join(source_blocks)
-    return (
-        "You are a biomedical evidence assistant. Answer the question using "
-        "ONLY the provided sources. Cite sources using [N] markers.\n\n"
-        f"QUESTION: {query}\n\n"
-        f"SOURCES:\n{sources_text}\n\n"
-        "ANSWER:"
+    template = _get_langfuse_prompt("rag-evidence-answer", fallback=_EVIDENCE_PROMPT_FALLBACK)
+    return template.format(
+        query=query,
+        sources_text=sources_text,
     )
 
 
@@ -115,6 +124,7 @@ def _split_answer_segments(
     return tuple(segments), tuple(corpus_ids)
 
 
+@observe(name=SPAN_RAG_ANSWER)
 def generate_cited_answer(
     bundles: list[EvidenceBundle],
     query: str,
@@ -154,6 +164,27 @@ def generate_cited_answer(
     grounding_corpus_ids = tuple(
         m.corpus_id for m in markers if m.corpus_id is not None
     )
+
+    try:
+        client = _get_langfuse()
+        client.update_current_span(
+            input={
+                "query": query,
+                "source_count": len(bundles),
+                "prompt_length": len(prompt),
+            },
+            output={
+                "answer_length": len(text),
+                "citation_marker_count": len(markers),
+                "grounding_corpus_ids": list(grounding_corpus_ids),
+            },
+            metadata={
+                "model_name": model_name,
+                "prompt_template": "rag-evidence-answer",
+            },
+        )
+    except Exception:
+        pass
 
     return GeneratedAnswer(
         text=text,

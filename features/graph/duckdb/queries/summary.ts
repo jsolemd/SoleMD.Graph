@@ -62,8 +62,6 @@ export async function queryInfoSummary(
     cluster_id: number | null
     label: string | null
     member_count: number | null
-    parent_cluster_id: number | null
-    parent_label: string | null
   }>(
     conn,
     scope === 'dataset'
@@ -87,12 +85,10 @@ export async function queryInfoSummary(
        SELECT
          COALESCE(clusterId, 0)::INTEGER AS cluster_id,
          COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR)) AS label,
-         count(*)::INTEGER AS member_count,
-         COALESCE(parentClusterId, clusterId, 0)::INTEGER AS parent_cluster_id,
-         parentLabel AS parent_label
+         count(*)::INTEGER AS member_count
        FROM scoped
        WHERE COALESCE(clusterId, 0) > 0
-       GROUP BY COALESCE(clusterId, 0), COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR)), COALESCE(parentClusterId, clusterId, 0), parentLabel
+       GROUP BY COALESCE(clusterId, 0), COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR))
        ORDER BY member_count DESC, cluster_id
        LIMIT ${safeClusterLimit}
      )
@@ -109,9 +105,7 @@ export async function queryInfoSummary(
        year_max,
        NULL::INTEGER AS cluster_id,
        NULL::VARCHAR AS label,
-       NULL::INTEGER AS member_count,
-       NULL::INTEGER AS parent_cluster_id,
-       NULL::VARCHAR AS parent_label
+       NULL::INTEGER AS member_count
      FROM summary
      UNION ALL
      SELECT
@@ -127,9 +121,7 @@ export async function queryInfoSummary(
        NULL::INTEGER AS year_max,
        cluster_id,
        label,
-       member_count,
-       parent_cluster_id,
-       parent_label
+       member_count
      FROM clusters`
       : `WITH scoped AS (
        SELECT * FROM ${tableName} WHERE ${scopedPredicate}
@@ -151,12 +143,10 @@ export async function queryInfoSummary(
        SELECT
          COALESCE(clusterId, 0)::INTEGER AS cluster_id,
          COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR)) AS label,
-         count(*)::INTEGER AS member_count,
-         COALESCE(parentClusterId, clusterId, 0)::INTEGER AS parent_cluster_id,
-         parentLabel AS parent_label
+         count(*)::INTEGER AS member_count
        FROM scoped
        WHERE COALESCE(clusterId, 0) > 0
-       GROUP BY COALESCE(clusterId, 0), COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR)), COALESCE(parentClusterId, clusterId, 0), parentLabel
+       GROUP BY COALESCE(clusterId, 0), COALESCE(NULLIF(clusterLabel, ''), 'Cluster ' || CAST(COALESCE(clusterId, 0) AS VARCHAR))
        ORDER BY member_count DESC, cluster_id
        LIMIT ${safeClusterLimit}
      )
@@ -173,9 +163,7 @@ export async function queryInfoSummary(
        year_max,
        NULL::INTEGER AS cluster_id,
        NULL::VARCHAR AS label,
-       NULL::INTEGER AS member_count,
-       NULL::INTEGER AS parent_cluster_id,
-       NULL::VARCHAR AS parent_label
+       NULL::INTEGER AS member_count
      FROM summary totals
      UNION ALL
      SELECT
@@ -191,9 +179,7 @@ export async function queryInfoSummary(
        NULL::INTEGER AS year_max,
        cluster_id,
        label,
-       member_count,
-       parent_cluster_id,
-       parent_label
+       member_count
      FROM clusters`
     ,
     scope === 'dataset' ? [] : [datasetTotalCount ?? 0]
@@ -233,8 +219,6 @@ export async function queryInfoSummary(
       clusterId: row.cluster_id ?? 0,
       label: row.label ?? `Cluster ${row.cluster_id ?? 0}`,
       count: row.member_count ?? 0,
-      parentClusterId: row.parent_cluster_id ?? row.cluster_id ?? 0,
-      parentLabel: row.parent_label ?? null,
     })),
   }
 }

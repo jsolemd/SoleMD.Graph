@@ -8,6 +8,8 @@ services:
     image: pgvector/pgvector:pg16
     container_name: solemd-graph-db
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
     shm_size: 8g
     ports:
       - "5433:5432"  # publish on the local Docker host; required for WSL/devcontainer clients
@@ -17,10 +19,10 @@ services:
       POSTGRES_PASSWORD: solemd_local
     command: >
       postgres
-      -c shared_buffers=2GB
-      -c effective_cache_size=8GB
-      -c maintenance_work_mem=1GB
-      -c work_mem=64MB
+      -c shared_buffers=8GB
+      -c effective_cache_size=24GB
+      -c maintenance_work_mem=2GB
+      -c work_mem=256MB
       -c max_wal_size=8GB
       -c min_wal_size=1GB
       -c wal_compression=zstd
@@ -31,6 +33,7 @@ services:
       -c max_wal_senders=0
       -c track_io_timing=on
       -c log_min_duration_statement=1000
+      -c random_page_cost=1.1
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -44,6 +47,8 @@ services:
     image: redis:7-alpine
     container_name: solemd-graph-redis
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
     mem_limit: 512m
     ports:
       - "6380:6379"  # 6380 to avoid conflict with existing Redis

@@ -72,7 +72,9 @@ export function resolveGraphLabelMode({
       showHoveredPointLabel &&
       (hoverLabelAlwaysOn || zoomedIn),
     showFocusedPointLabel: hasFocusedPoint,
-    showSelectedLabels: labelsEnabled && hasSelection,
+    // Bulk selections are the hottest interaction path on large graphs.
+    // Keep native selected labels only for the focused-point case.
+    showSelectedLabels: hasFocusedPoint,
     showUnselectedPointLabels: !hasSelection,
     showClusterLabels: clusterLabelOverview,
     selectedPointLabelsLimit: hasFocusedPoint

@@ -185,21 +185,39 @@ distinctiveness to each cluster vs the corpus, not raw frequency. Uses sklearn's
 318-word English stopword list + biomedical extensions + `max_df=0.80` automatic
 filtering. Optional LLM relabeling via `--llm-labels`.
 
-### Cluster hierarchy (`llm_labels.py`)
+### LLM cluster labeling (`llm_labels.py`)
 
-Two-level hierarchy built after Leiden clustering:
+Gemini 2.5 Flash relabels all non-noise clusters with 2-4 word clinical labels and
+15-25 word descriptions. The prompt is managed in Langfuse Prompt Management
+(`graph-cluster-label`, production label) with a local fallback.
 
-| Level | Count | Role | How Built |
-|-------|-------|------|-----------|
-| Leaf clusters | 300-500 | Research communities (labels, drill-down) | Leiden at resolution 15.0 |
-| Superdomains | 15-25 | Color grouping, high-level navigation | Ward linkage on leaf centroids |
+**Pipeline**: Batches of 10 clusters. Each batch sends top journals, stratified
+titles (5 landmark, 5 recent, 10 random), entity families, and top entities to
+Gemini. Rate-limited to 10 RPM with exponential backoff. Per-batch DB writes so
+partial runs survive interruption. Resume support — skips clusters already labeled
+`label_mode='llm'`.
 
-**Frontend mapping**: Cosmograph colors by `parentLabel` (superdomain, ~20 distinct colors
-via native categorical palette). Labels show `clusterLabel` (leaf cluster, 300-500 names).
+**Prompt rules**: 1-4 words title case, acronyms ALL CAPS (PTSD, ADHD, TBI, etc.),
+no generic filler ("Research", "Studies"), established subspecialty names allowed
+("Forensic Psychiatry"), differentiate by research approach not just disease.
+
+**Langfuse observability**: Each batch is a generation span with full prompt, full
+response, model name, and token usage. Trace-level scores: `graph_cluster_labeled_count`,
+`graph_cluster_error_count`, `graph_cluster_total`. Per-batch flush for real-time
+visibility.
+
+**Quality review workflow**: After labeling, review labels agentically — check for
+duplicate labels across clusters, lowercase acronyms, redundant qualifiers, vague
+labels, near-duplicate differentiation, and clinical precision. Fix targeted clusters
+directly in DB, then re-export the bundle.
+
+**Frontend mapping**: Cosmograph colors by `clusterLabel` via the categorical palette
+(20-color palette cycled by `cluster_id MOD 20`). Labels show `clusterLabel` (leaf
+cluster names, LLM-generated).
 
 **Parquet columns**: Both `base_points.parquet` and `universe_points.parquet` carry
-`parent_cluster_id` and `parent_label` per point. `base_clusters.parquet` carries
-`parent_cluster_id`, `parent_label`, `description`, `hierarchy_level`.
+`cluster_id` and `cluster_label` per point. `base_clusters.parquet` carries
+`cluster_id`, `label`, `description`.
 
 ### Leiden resolution calibration
 
@@ -211,7 +229,7 @@ Resolution controls cluster granularity. Calibrated via 100K-point sample:
 | 15.0 | 289 | ~400-500 |
 | 20.0 | 428 | ~600-900 |
 
-**Current default**: 15.0 (`GRAPH_CLUSTER_RESOLUTION` in config). Override with
+**Current default**: 25.0 (`GRAPH_CLUSTER_RESOLUTION` in config). Override with
 `--cluster-resolution` CLI flag.
 
 ---
@@ -240,6 +258,16 @@ uv run python -m app.graph.build --run --resume-run <graph_run_id> --publish-cur
 
 ```bash
 uv run python -m app.graph.build --run --limit 500 --local
+```
+
+### LLM relabeling + bundle export
+
+```bash
+# Step 1: Relabel clusters (DB-only, runs locally, ~12 min for 715 clusters)
+uv run python -m app.graph.build --llm-labels
+
+# Step 2: Re-export Parquet bundle (auto-dispatches to GPU container)
+uv run python -m app.graph.build --re-export
 ```
 
 ### Publish an already-persisted run
@@ -287,10 +315,25 @@ uv run python -m app.graph.build --json
 | `--publish-run ID` | Publish a completed run with existing graph_points |
 | `--sync-current` | Backfill corpus membership from current published run |
 | `--cleanup` | Delete stale runs from DB + filesystem, keep published |
-| `--local` | Force CPU execution (skip GPU container dispatch) |
+| `--local` | Force local execution (skip GPU container dispatch — may cause permission errors on bundle writes) |
 | `--cluster-resolution F` | Override cluster resolution (default: config) |
-| `--llm-labels` | Run LLM relabeling after c-TF-IDF labels |
+| `--llm-labels` | Run LLM relabeling (standalone or with `--run`). Prints `--re-export` reminder when done |
+| `--re-export` | Re-export current run's Parquet bundle (picks up label/evidence changes). Auto-dispatches to GPU container |
 | `--json` | Emit JSON summary only |
+
+### GPU container dispatch
+
+Bundle-writing operations (`--run`, `--publish-run`, `--re-export`, `--cleanup`)
+auto-dispatch to the GPU container (`solemd-graph-graph`) when it's running. The
+container runs as root, matching the ownership of `/mnt/solemd-graph/bundles/`.
+
+DB-only operations (`--llm-labels`, `--sync-current`, `--refresh-evidence`) always
+run locally — they don't touch bundle files.
+
+If the GPU container is not running and a bundle-writing operation is attempted
+without `--local`, the CLI fails with a clear error and instructions to start the
+container. `--local` bypasses dispatch but may hit permission errors on bundle
+files created by previous container runs.
 
 ---
 
@@ -330,15 +373,25 @@ Every mapped paper receives a `domain_score`:
 
 ```
   domain_score =
+    (
       family_diversity^2 * min(rule_count, 20)    -- capped at 2000
-    + core_families * 200                          -- psych/neuro/NT/med
+    + core_families * 200                          -- psych/neuro/NT/med/symptom
     + 500 if has_relation_rule_hit                 -- PubTator relation
-    + 800 if flagship_journal                      -- domain/general flagship
     + ln(1 + citations) * 40                       -- citation impact
     + ln(1 + entity_count) * 10                    -- annotation density
     + ln(1 + relation_count) * 15
     + recency_bonus (30/20/10/5/0 by decade)
+    )
+    * journal_score_multiplier                     -- data-driven from base_journal_family
+    + 200 if journal_score_multiplier > 1.0        -- flagship venue floor
 ```
+
+The journal multiplier is **data-driven**: stored in
+`base_journal_family.score_multiplier` and populated into
+`paper_evidence_summary.journal_score_multiplier` during evidence refresh.
+Current tiers: flagship=1.5x (only with domain signal), penalized=0.3x,
+default=1.0x. Adding a new penalty or boost is an INSERT into
+`base_journal_family` — no Python code changes needed.
 
 The top `target_base_count` papers enter base; the rest stay in universe. The
 active target comes from `solemd.base_policy` and should be read from the

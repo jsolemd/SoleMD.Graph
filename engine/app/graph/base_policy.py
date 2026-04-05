@@ -15,14 +15,16 @@ from app.graph.paper_evidence import apply_build_session_settings
 from app.graph.render_policy import renderable_point_predicate_sql
 
 
-FLAGSHIP_FAMILY_SQL = "'domain_flagship', 'general_flagship'"
-
 # ── Domain-density score formula ──────────────────────────────────────
 # Weights calibrated to produce ~500K base from 2.6M mapped papers.
 # See docs/map/database.md § Base Scoring for rationale.
-DOMAIN_SCORE_SQL = f"""
+#
+# Journal multiplier is data-driven: read from paper_evidence_summary
+# (populated from base_journal_family.score_multiplier during evidence refresh).
+# flagship=1.5x (with domain signal), penalized=0.3x, everything else=1.0x.
+DOMAIN_SCORE_SQL = """
 (
-    -- Base domain score (everything except flagship)
+    -- Base domain score
     LEAST(
         pes.entity_rule_families * pes.entity_rule_families
         * LEAST(pes.entity_rule_count, 20),
@@ -41,18 +43,20 @@ DOMAIN_SCORE_SQL = f"""
         ELSE 0::REAL
       END
 )
--- Flagship amplifier: 1.5x for papers with domain signal, 1.0x otherwise
+-- Journal multiplier: read from paper_evidence_summary (populated from base_journal_family)
 * CASE
-    WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL})
+    WHEN pes.journal_score_multiplier > 1.0
          AND (pes.entity_core_families > 0
               OR pes.entity_rule_families > 0
               OR pes.has_relation_rule_hit)
-    THEN 1.5::REAL
+    THEN pes.journal_score_multiplier
+    WHEN pes.journal_score_multiplier < 1.0
+    THEN pes.journal_score_multiplier
     ELSE 1.0::REAL
   END
--- Flagship venue floor: 200 for being in a quality venue regardless
+-- Flagship venue floor: 200 for journals with multiplier > 1.0
 + CASE
-    WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL})
+    WHEN pes.journal_score_multiplier > 1.0
     THEN 200::REAL
     ELSE 0::REAL
   END
@@ -134,7 +138,7 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
                 -- Descriptive label (not a gate — the score decides admission)
                 CASE
                     WHEN pes.has_rule_evidence THEN 'rule'
-                    WHEN pes.journal_family_key IN ({FLAGSHIP_FAMILY_SQL}) THEN 'flagship'
+                    WHEN pes.journal_score_multiplier > 1.0 THEN 'flagship'
                     WHEN pes.has_vocab_match THEN 'vocab'
                     ELSE 'scored'
                 END AS base_reason,

@@ -15,8 +15,6 @@ POINTS_SCHEMA = pa.schema(
         ("y", pa.float32()),
         ("cluster_id", pa.int32()),
         ("cluster_label", pa.string()),
-        ("parent_cluster_id", pa.int32()),
-        ("parent_label", pa.string()),
         ("title", pa.string()),
         ("citekey", pa.string()),
         ("journal", pa.string()),
@@ -35,9 +33,9 @@ POINTS_SCHEMA = pa.schema(
 )
 
 
-# Superdomain palette (20 colors) — used for parent_cluster_id-based coloring.
-# Dark theme colors; light theme uses the same palette (frontend overrides as needed).
-_SUPERDOMAIN_PALETTE_DARK = [
+# Cluster palette (20 colors) — baked fallback for cluster_id-based coloring.
+# Frontend categorical color scheme is authoritative; these are the Parquet fallback.
+_CLUSTER_PALETTE_DARK = [
     '#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f',
     '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab',
     '#6a4c93', '#1982c4', '#8ac926', '#ffca3a', '#ff595e',
@@ -45,7 +43,7 @@ _SUPERDOMAIN_PALETTE_DARK = [
 ]
 
 # Light theme: darker/more saturated for contrast on white backgrounds.
-_SUPERDOMAIN_PALETTE_LIGHT = [
+_CLUSTER_PALETTE_LIGHT = [
     '#3a5d87', '#c06e1e', '#b83a3d', '#4d8a85', '#3f7a35',
     '#c4a020', '#8a5a80', '#d47078', '#7a5840', '#8a827c',
     '#4e3670', '#0f6a9e', '#6a9e1a', '#d4a020', '#d43a40',
@@ -70,14 +68,12 @@ def build_point_projection_select_sql(
     order_by: str,
 ) -> str:
     """Project canonical point rows into the frontend source-table shape."""
-    # Color by parent_cluster_id (superdomain) so each of 15-25 superdomains
-    # gets a distinct color. Falls back to cluster_id if parent is NULL.
-    color_col = "COALESCE(parent_cluster_id, cluster_id)"
+    color_col = "cluster_id"
     hex_color_sql = _build_color_case_sql(
-        _SUPERDOMAIN_PALETTE_DARK, color_col, '#555555',
+        _CLUSTER_PALETTE_DARK, color_col, '#555555',
     )
     hex_color_light_sql = _build_color_case_sql(
-        _SUPERDOMAIN_PALETTE_LIGHT, color_col, '#999999',
+        _CLUSTER_PALETTE_LIGHT, color_col, '#999999',
     )
     return f"""
         SELECT
@@ -90,8 +86,6 @@ def build_point_projection_select_sql(
             y,
             cluster_id,
             cluster_label,
-            parent_cluster_id,
-            parent_label,
             title,
             NULL::TEXT AS citekey,
             journal_name AS journal,

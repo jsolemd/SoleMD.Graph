@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     # Graph build
     graph_layout_backend: str = "auto"
     graph_cluster_backend: str = "auto"
-    graph_cluster_resolution: float = 15.0
+    graph_cluster_resolution: float = 25.0
     graph_pca_method: str = "sparse_random_projection"  # or "incremental_pca"
     graph_embedding_fetch_batch_size: int = 5000
     graph_label_sample_per_cluster: int = 200

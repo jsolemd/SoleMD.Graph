@@ -112,6 +112,37 @@ features/graph/cosmograph/
 - `cosmograph-selection.ts` and `cosmograph-columns.ts` stay in `lib/`
   because they import `@uwdata/mosaic-core`, not Cosmograph
 
+#### Adapter Boundary (`engine/app/langfuse_config.py`)
+
+All Langfuse SDK imports are contained behind `langfuse_config.py`. No engine
+module may import `observe`, `get_client`, or `propagate_attributes` directly
+from `langfuse` — all must come through `app.langfuse_config`.
+
+This solves a critical initialization order problem: the Langfuse v4 SDK uses
+OpenTelemetry, which initializes its exporter on the first `from langfuse import
+observe`. If the exporter initializes before `LANGFUSE_PUBLIC_KEY` is in
+`os.environ`, all traces silently become no-ops. `langfuse_config` loads
+`.env.local` credentials at module scope *before* importing from `langfuse`,
+guaranteeing correct initialization order.
+
+```
+engine/app/langfuse_config.py
+├── _load_env_local()         # Injects LANGFUSE_* into os.environ
+├── configure()               # Suppresses SDK log noise
+├── from langfuse import observe  # Safe — env vars loaded first
+├── get_langfuse()            # Safe client access (None if unavailable)
+├── flush()                   # Safe flush (no-op if unavailable)
+├── get_prompt()              # Langfuse Prompt Management with local fallback
+├── SPAN_*                    # Span name registry for all @observe decorators
+└── SCORE_*                   # Score name constants matching eval_langfuse.py configs
+```
+
+**Rules**:
+- `from app.langfuse_config import observe` — never `from langfuse import observe`
+- Span names use `SPAN_*` constants from the registry, not string literals
+- Score names use `SCORE_*` constants, matching `RAG_SCORE_CONFIGS` in `eval_langfuse.py`
+- `flush()` after long-running operations for real-time Langfuse visibility
+
 ### Layer Boundary Rule
 
 The canonical graph runtime is currently a single `corpus` layer. That is an
@@ -169,6 +200,42 @@ Hard rules:
 - focused-node drill-in is a UI-local accent state layered on top of the real
   selection state; preserve the underlying DuckDB/Cosmograph selection and use
   focus only for ring/label/detail emphasis
+
+#### Crossfilter Performance Trade-Off
+
+The filter and timeline widgets use Cosmograph's native crossfilter pipeline
+(`FilteringClient` → Mosaic coordinator → DuckDB-WASM). This enables **two-way
+interaction**: brushing a histogram or clicking a bar filters the graph, and
+selecting points on the graph updates the widgets. This is one of the strongest
+UX features Cosmograph provides.
+
+The cost: each registered `FilteringClient` fires a full-table DuckDB query on
+every selection change. With N active widgets on a 1M-point graph, the Mosaic
+coordinator executes N sequential queries (~3-4 seconds each on single-threaded
+DuckDB-WASM 1.32.0). This is the dominant contributor to selection lag at scale.
+
+Known constraints (as of 2026-04-05):
+
+- **DuckDB-WASM 1.32.0 has no working multi-threaded bundle** —
+  `getJsDelivrBundles()` deliberately excludes the COI (pthread) bundle.
+  Intra-query parallelism via `SharedArrayBuffer` is blocked until a future
+  duckdb-wasm release ships a functional COI bundle.
+- **Mosaic queries are sequential** — the single DuckDB-WASM worker processes
+  all coordinator queries one at a time. Multiple connections do not help.
+- **`FilteringClient.setActive(false)` does not prevent queries** — it changes
+  the query shape but the Mosaic coordinator still issues the request.
+- **No configurable debounce or batch size** — Mosaic's internal throttling
+  (`requestUpdate`) is fixed; there is no public API to control query timing.
+
+Mitigation levers available within app code:
+
+- Batch React store updates into a single `requestAnimationFrame` so the
+  info-panel query cycle fires once per selection, not per store mutation
+- Use direct `INSERT INTO ... VALUES` for `selected_point_indices` instead of
+  scanning `current_points_web`
+- Cache dataset-scope query results at the session level (already implemented)
+- Defer label-mode prop changes via `useDeferredValue` so Cosmograph processes
+  selection visuals before label layout restarts
 
 For evidence integration, this runtime split is paired with a second hard rule:
 

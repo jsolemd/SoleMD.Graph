@@ -201,6 +201,18 @@ html:not(.dark) .graph-filter-bars-widget .unselected > .info > .count {
   opacity: 0.68;
 }
 
+/* ── Type color legend — hide internal scrollbar ──
+   Cosmograph's .style_module_scrollbar__ class re-enables scrollbars
+   at higher specificity than our global hide rule.  Override it for
+   the type legend so the expanded "show more" list scrolls without a
+   visible bar — matching the Filters panel aesthetic. */
+[class*="style_module_typeLegend"] .scroll-container::-webkit-scrollbar {
+  display: none !important;
+}
+[class*="style_module_typeLegend"] .scroll-container {
+  scrollbar-width: none; /* Firefox */
+}
+
 /* ═══════════════════════════════════════════════════════════════════
    PILL ACTIVATION — one-shot pulse when pill transitions to active.
    Plays once on mount, then stops (not infinite).

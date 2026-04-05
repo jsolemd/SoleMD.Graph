@@ -9,6 +9,10 @@ let selectedBundlePromise: Promise<duckdb.DuckDBBundle> | null = null
 
 async function getSelectedDuckDBBundle() {
   if (!selectedBundlePromise) {
+    // DuckDB-WASM 1.32.0's COI (pthread) bundle ships in the package
+    // but is non-functional at runtime — getJsDelivrBundles() excludes
+    // it intentionally.  Stick with the EH bundle (single-threaded).
+    // TODO: Re-evaluate when Cosmograph upgrades duckdb-wasm.
     selectedBundlePromise = duckdb.selectBundle(duckdb.getJsDelivrBundles())
   }
 

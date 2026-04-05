@@ -55,6 +55,8 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
   const showSizeLegend = useDashboardStore((s) => s.showSizeLegend);
   const showTimeline = useDashboardStore((s) => s.showTimeline);
   const filterColumns = useDashboardStore((s) => s.filterColumns);
+  const infoWidgets = useDashboardStore((s) => s.infoWidgets);
+  const tablePageSize = useDashboardStore((s) => s.tablePageSize);
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const pointColorStrategy = useDashboardStore((s) => s.pointColorStrategy);
   const isSelectionLocked = useDashboardStore((s) => s.selectionLocked);
@@ -187,9 +189,86 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
       ]);
     };
 
+    const warmPanelDatasets = async () => {
+      if (cancelled) return;
+
+      const categoricalColumns = [
+        ...new Set(
+          infoWidgets
+            .filter((w) => w.kind === "bars" || w.kind === "facet-summary")
+            .map((w) => w.column),
+        ),
+      ];
+      const histogramColumns = [
+        ...new Set(
+          infoWidgets
+            .filter((w) => w.kind === "histogram")
+            .map((w) => w.column),
+        ),
+      ];
+      const linearHistogramColumns = histogramColumns.filter(
+        (col) => !shouldUseQuantileHistogram(col),
+      );
+      const quantileHistogramColumns = histogramColumns.filter((col) =>
+        shouldUseQuantileHistogram(col),
+      );
+
+      await Promise.allSettled([
+        queries.getInfoSummary({
+          layer: activeLayer,
+          scope: "dataset",
+          currentPointScopeSql: null,
+        }),
+        categoricalColumns.length > 0
+          ? queries.getInfoBarsBatch({
+              layer: activeLayer,
+              scope: "dataset",
+              columns: categoricalColumns,
+              maxItems: 24,
+              currentPointScopeSql: null,
+            })
+          : Promise.resolve(),
+        linearHistogramColumns.length > 0
+          ? queries.getInfoHistogramsBatch({
+              layer: activeLayer,
+              scope: "dataset",
+              columns: linearHistogramColumns,
+              bins: 16,
+              currentPointScopeSql: null,
+            })
+          : Promise.resolve(),
+        quantileHistogramColumns.length > 0
+          ? queries.getInfoHistogramsBatch({
+              layer: activeLayer,
+              scope: "dataset",
+              columns: quantileHistogramColumns,
+              bins: 16,
+              useQuantiles: true,
+              currentPointScopeSql: null,
+            })
+          : Promise.resolve(),
+        histogramColumns.length > 0
+          ? queries.getNumericStatsBatch({
+              layer: activeLayer,
+              scope: "dataset",
+              columns: histogramColumns,
+              currentPointScopeSql: null,
+            })
+          : Promise.resolve(),
+        queries.getTablePage({
+          layer: activeLayer,
+          view: "current",
+          page: 1,
+          pageSize: tablePageSize,
+          currentPointScopeSql: null,
+        }),
+      ]);
+    };
+
     const warmStartupDatasets = async () => {
       await warmCategoricalFilters(startupCategoricalFilters);
       await warmNumericFilters(startupNumericFilters);
+      await warmPanelDatasets();
 
       if (cancelled || deferredCategoricalFilters.length === 0) {
         return;
@@ -199,14 +278,6 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
         void warmCategoricalFilters(deferredCategoricalFilters);
       }, DEFERRED_CATEGORICAL_WARM_DELAY_MS);
     };
-
-    if (
-      startupCategoricalFilters.length === 0 &&
-      startupNumericFilters.length === 0 &&
-      !showTimeline
-    ) {
-      return;
-    }
 
     if (typeof window !== "undefined" && "requestIdleCallback" in window) {
       idleHandle = window.requestIdleCallback(() => {
@@ -238,8 +309,10 @@ export function DashboardShellClient({ bundle }: { bundle: GraphBundle }) {
     canvas?.overlayRevision,
     filterColumns,
     graphPaintReady,
+    infoWidgets,
     queries,
     showTimeline,
+    tablePageSize,
     bundle.bundleChecksum,
   ]);
 

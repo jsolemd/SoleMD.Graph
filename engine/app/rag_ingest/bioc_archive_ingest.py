@@ -7,9 +7,8 @@ import logging
 from pathlib import Path
 from typing import Protocol
 
-from langfuse import observe
 
-logging.getLogger("langfuse").setLevel(logging.ERROR)
+from app.langfuse_config import SPAN_INGEST_BIOC_ARCHIVE, observe
 
 from pydantic import Field
 
@@ -153,7 +152,7 @@ def _empty_bulk_ingest_result() -> RagWarehouseBulkIngestResult:
     )
 
 
-@observe(name="ingest.biocArchive")
+@observe(name=SPAN_INGEST_BIOC_ARCHIVE)
 def _run_direct_bioc_archive_ingest(
     *,
     run_id: str,

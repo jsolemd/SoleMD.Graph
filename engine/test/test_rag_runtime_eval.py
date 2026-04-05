@@ -886,7 +886,7 @@ def test_attach_slow_case_plan_profiles_adds_planner_metadata():
             {
                 "Plan": {
                     "Node Type": "Bitmap Heap Scan",
-                    "Index Name": "idx_papers_title_abstract_fts",
+                    "Index Name": "idx_papers_fts_vector",
                     "Plans": [],
                 }
             }
@@ -942,7 +942,7 @@ def test_attach_slow_case_plan_profiles_adds_planner_metadata():
     assert updated.latency.slow_cases[0].plan_profiles[0].sql_fingerprint
     assert updated.latency.slow_cases[0].plan_profiles[0].node_types == ["Bitmap Heap Scan"]
     assert updated.latency.slow_cases[0].plan_profiles[0].index_names == [
-        "idx_papers_title_abstract_fts"
+        "idx_papers_fts_vector"
     ]
 
 

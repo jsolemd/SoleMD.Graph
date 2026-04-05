@@ -65,11 +65,13 @@ class Specter2AdhocQueryEmbedder:
         self._runtime_error: str | None = None
 
     def initialize(self) -> bool:
+        if self._runtime_error is not None:
+            return False
         try:
             self._runtime_components()
         except Exception as exc:  # pragma: no cover - exercised in integration paths
             self._runtime_error = f"{type(exc).__name__}: {exc}"
-            logger.exception("dense_query_encoder_init_failed")
+            logger.warning("Dense query encoder unavailable: %s", self._runtime_error)
             return False
         return True
 
@@ -173,8 +175,9 @@ class Specter2AdhocQueryEmbedder:
 
 
 @lru_cache(maxsize=1)
+@lru_cache(maxsize=1)
 def get_query_embedder() -> RagQueryEmbedder:
-    """Return the configured dense-query embedder."""
+    """Return the configured dense-query embedder (singleton, cached)."""
 
     if not settings.rag_dense_query_enabled:
         return NoopQueryEmbedder()

@@ -237,7 +237,7 @@ export function QueryDrivenInfoPanel({
           ...(filteredInfo?.topClusters ?? []),
         ].map((cluster) => [
           cluster.clusterId,
-          getGraphClusterColor(cluster.parentClusterId),
+          getGraphClusterColor(cluster.clusterId),
         ]),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clusterIdKey is a stable string proxy for the topClusters arrays; re-computing only when cluster IDs actually change
@@ -284,8 +284,6 @@ export function QueryDrivenInfoPanel({
           filteredCount: filteredClustersArr != null
             ? (filteredClusters.get(clusterId)?.count ?? 0)
             : null,
-          parentClusterId: source?.parentClusterId ?? clusterId,
-          parentLabel: source?.parentLabel ?? null,
         };
       })
       .sort((left, right) =>

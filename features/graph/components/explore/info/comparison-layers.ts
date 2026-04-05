@@ -28,8 +28,6 @@ export interface InfoComparisonClusterRow {
   totalCount: number;
   selectionCount: number | null;
   filteredCount: number | null;
-  parentClusterId: number;
-  parentLabel: string | null;
 }
 
 export function areInfoSummariesEquivalent(

@@ -83,12 +83,13 @@ were superseded or never shipped; the canonical sequence skips those numbers.
 | 022 | Schema hygiene | Rename index, add column comments for graph_base_features |
 | 023 | Vocab terms table | `solemd.vocab_terms` — load 3,361 curated terms from TSV |
 | 024 | Psychiatric entity rules from vocab | Generate 572 entity_rules from enriched vocab_terms; add psychiatric treatment relation_rules; add mid-tier journal_rules |
-| 026 | Cluster hierarchy | `graph_clusters.parent_cluster_id`, `graph_clusters.parent_label`, `graph_clusters.description`, `graph_clusters.hierarchy_level` |
+| 026 | Cluster hierarchy | `graph_clusters.description` (parent_cluster_id, parent_label, hierarchy_level removed in 042) |
 | 027a | Graph base points table | `solemd.graph_base_points` — lean INSERT-only base admission table; drop `graph_points.is_in_base` and `graph_points.base_rank` |
 | 027b | Entity rule confidence gates | Downgrade broad metabolic/biochemistry terms and non-psychiatric meds to `requires_second_gate`; delete "disorder" non-diagnosis |
 | 028 | RAG canonical core | `solemd.paper_documents`, `solemd.paper_document_sources`, `solemd.paper_sections` |
 | 029 | RAG canonical spans + mentions | `solemd.paper_blocks`, `solemd.paper_sentences`, `solemd.paper_citation_mentions`, `solemd.paper_entity_mentions` (all hash-partitioned ×16) |
 | 030 | Continuous base scoring | `paper_evidence_summary.entity_rule_families`, `.entity_rule_count`, `.entity_core_families`; update base policy target to 500K |
+| 043 | Journal family score multiplier | `base_journal_family.score_multiplier`, `paper_evidence_summary.journal_score_multiplier`; add `penalized` family_type; data-driven scoring replaces hardcoded flagship keys |
 
 ---
 
@@ -192,8 +193,9 @@ Curated family definitions for journals used by base admission and audit.
 |--------|------|-------|
 | family_key | TEXT PK | Stable family identifier |
 | family_label | TEXT NOT NULL | Human-readable family name |
-| family_type | TEXT NOT NULL | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, or `specialty` |
+| family_type | TEXT NOT NULL | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, `specialty`, or `penalized` |
 | include_in_base | BOOLEAN NOT NULL DEFAULT true | Whether the family remains available to the active base policy |
+| score_multiplier | REAL NOT NULL DEFAULT 1.0 | Domain score multiplier: flagship=1.5, penalized=0.3, default=1.0. Read by the scoring formula — no Python code changes needed for adjustments. |
 | description | TEXT | Human-readable rationale |
 | added_at | TIMESTAMPTZ | |
 
@@ -331,10 +333,11 @@ materialized-view compatibility layer.
 | has_curated_journal_family | BOOLEAN NOT NULL DEFAULT false | Whether the paper also matches a curated journal family |
 | journal_family_key | TEXT | Matched base journal family, if any |
 | journal_family_label | TEXT | Human-readable base journal family label |
-| journal_family_type | TEXT | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, or `specialty` |
+| journal_family_type | TEXT | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, `specialty`, or `penalized` |
 | entity_rule_families | INTEGER NOT NULL DEFAULT 0 | Distinct entity_rule family_keys matched (high confidence only) |
 | entity_rule_count | INTEGER NOT NULL DEFAULT 0 | Distinct entity_rule concept_ids matched (high confidence only) |
-| entity_core_families | INTEGER NOT NULL DEFAULT 0 | Distinct core family_keys matched (psychiatric_disorder, neurological_disorder, psychiatric_medication, neurotransmitter_system) |
+| entity_core_families | INTEGER NOT NULL DEFAULT 0 | Distinct core family_keys matched (psychiatric_disorder, neurological_disorder, psychiatric_medication, neurotransmitter_system, neuropsych_symptom) |
+| journal_score_multiplier | REAL NOT NULL DEFAULT 1.0 | Score multiplier from `base_journal_family.score_multiplier` (flagship=1.5, penalized=0.3, default=1.0) |
 | created_at | TIMESTAMPTZ | |
 | updated_at | TIMESTAMPTZ | |
 
@@ -430,9 +433,6 @@ and hierarchical parent groups.
 | label_mode | TEXT | `ctfidf`, `llm`, `fixed` |
 | label_source | TEXT | `gemini-2.5-flash`, `ctfidf`, `system` |
 | description | TEXT | One-sentence cluster description (LLM-generated) |
-| parent_cluster_id | INTEGER | FK to parent group (hierarchy_level=0 row) |
-| parent_label | TEXT | Denormalized parent group label for quick access |
-| hierarchy_level | INTEGER DEFAULT 1 | 0=parent group, 1=leaf cluster |
 | member_count | INTEGER | Total mapped members |
 | paper_count | INTEGER | Paper count |
 | centroid_x | REAL | |
@@ -450,18 +450,6 @@ and hierarchical parent groups.
    representative paper abstracts/titles (200 papers per cluster, by citation)
 2. **LLM labeling** — sends keywords + 20 representative titles to Gemini 2.5
    Flash; generates specific clinical labels and descriptions (~$0.05/run)
-3. **Hierarchical grouping** — ward linkage on c-TF-IDF cosine distance matrix
-   produces 15-25 parent groups; Gemini labels each parent (~$0.02/run)
-
-**Parent groups** are stored as rows with `hierarchy_level=0`. Child clusters
-reference parent via `parent_cluster_id`. Example hierarchy:
-
-```
-Mood Disorders (parent, level 0)
-  ├── Ketamine for Treatment-Resistant Depression (level 1)
-  ├── SSRI Efficacy and Side Effect Profiles (level 1)
-  └── Bipolar Lithium Maintenance Therapy (level 1)
-```
 
 ### `solemd.graph_base_features`
 
@@ -822,8 +810,8 @@ Aligned entity mentions with concept identifiers. Hash-partitioned ×16.
 │  graph_points     │   │  graph_clusters     │   │  graph_base_points     │
 │  run_id, corp_id  │   │  run_id, cluster_id │   │  run_id, corpus_id     │
 │  x, y             │   │  label, description │   │  base_reason           │
-│  cluster_id       │   │  parent_cluster_id  │   │  base_rank             │
-│  point_index      │   │  hierarchy_level    │   └────────────────────────┘
+│  cluster_id       │   │  member_count       │   │  base_rank             │
+│  point_index      │   │  centroid_x/y       │   └────────────────────────┘
 └───────┬───────────┘   │  base_count         │
         │               └─────────────────────┘
         │ 1:1

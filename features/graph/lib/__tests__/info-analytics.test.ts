@@ -12,7 +12,7 @@ import {
 
 import type { GraphInfoHistogramBin } from '@/features/graph/types'
 import type { InfoComparisonFacetRow } from '@/features/graph/components/explore/info/comparison-layers'
-import type { NumericStatsRow } from '@/features/graph/duckdb/queries/summary'
+import type { NumericStatsRow } from '@/features/graph/duckdb/queries'
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

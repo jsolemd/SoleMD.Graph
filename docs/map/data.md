@@ -329,9 +329,7 @@ leaving richer interaction state in DuckDB query views or the backend API.
   │  Stage 4: LABELING                                       │
   │    c-TF-IDF keyword extraction per cluster               │
   │    → Gemini 2.5 Flash: clinical/scientific labels        │
-  │    → hierarchical grouping (ward linkage on c-TF-IDF)    │
-  │    → Gemini: parent category labels                      │
-  │    Cost: < $0.10 per full relabeling run                 │
+  │    Cost: < $0.05 per full relabeling run                 │
   │                                                          │
   │  Stage 5: BASE ADMISSION (reuses evidence from Stage 1)  │
   │    paper_evidence_summary → continuous domain_score       │

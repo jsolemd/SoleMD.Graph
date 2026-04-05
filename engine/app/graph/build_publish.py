@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from psycopg.types.json import Jsonb
 
-from langfuse import observe
 
+from app.langfuse_config import SPAN_GRAPH_BUILD_PUBLISH, observe
 from app import db
 from app.graph.build_common import GraphBuildResult
 from app.graph.build_common import GraphBuildSummary
@@ -217,7 +217,7 @@ def sync_current_graph_membership() -> dict[str, str | int]:
     }
 
 
-@observe(name="graph.build.publishGraphRun")
+@observe(name=SPAN_GRAPH_BUILD_PUBLISH)
 def publish_existing_graph_run(
     *,
     graph_run_id: str,

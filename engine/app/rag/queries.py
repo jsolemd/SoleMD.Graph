@@ -189,10 +189,7 @@ LEFT JOIN solemd.paper_evidence_summary pes
 """
 
 
-PAPER_SEARCH_VECTOR_SQL = """
-setweight(to_tsvector('english', COALESCE(p.title, '')), 'A') ||
-setweight(to_tsvector('english', COALESCE(p.abstract, '')), 'B')
-"""
+PAPER_SEARCH_VECTOR_SQL = "p.fts_vector"
 
 
 GRAPH_INPUT_CTE_SQL = """
@@ -202,14 +199,12 @@ graph_input AS (
 """
 
 
-PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL = """
-EXISTS (
-    SELECT 1
-    FROM solemd.graph_points gp
-    WHERE gp.graph_run_id = graph_input.graph_run_id
-      AND gp.corpus_id = p.corpus_id
-)
+PAPER_GRAPH_JOIN_SQL = """
+solemd.graph_points gp
+JOIN solemd.papers p ON p.corpus_id = gp.corpus_id
 """
+
+PAPER_GRAPH_WHERE_SQL = "gp.graph_run_id = graph_input.graph_run_id"
 
 
 PAPER_TITLE_TEXT_SQL = """
@@ -297,12 +292,12 @@ title_matches AS MATERIALIZED (
             END
         ) AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND {PAPER_GRAPH_WHERE_SQL}
         AND (
             {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
             OR {PAPER_TITLE_TEXT_SQL} %% query_input.lowered_query
@@ -328,12 +323,12 @@ normalized_title_matches AS MATERIALIZED (
         0.0 AS lexical_score,
         {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL} AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND {PAPER_GRAPH_WHERE_SQL}
         AND query_input.normalized_title_query <> ''
         AND query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
     ORDER BY
@@ -377,10 +372,10 @@ exact_title_matches AS MATERIALIZED (
         2.0 AS lexical_score,
         1.0 AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
-    WHERE {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+    WHERE {PAPER_GRAPH_WHERE_SQL}
         AND (
             (
                 query_input.lowered_query <> ''
@@ -410,12 +405,12 @@ fts_matches AS MATERIALIZED (
             ) AS lexical_score,
         {fts_title_similarity_sql} AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND {PAPER_GRAPH_WHERE_SQL}
         AND (
             {PAPER_SEARCH_VECTOR_SQL} @@ query_input.ts_query
             OR {PAPER_SEARCH_VECTOR_SQL} @@ query_input.title_phrase_query
@@ -535,16 +530,12 @@ matched_papers AS MATERIALIZED (
         COALESCE(p.citation_count, 0) AS citation_count
     FROM solemd.papers p
     CROSS JOIN query_input
-    CROSS JOIN LATERAL (
-        SELECT
-            {PAPER_SEARCH_VECTOR_SQL} AS search_vector
-    ) AS search_terms
     WHERE
         p.corpus_id = ANY(%s)
         AND NOT EXISTS (SELECT 1 FROM exact_title_matches)
         AND (
-            search_terms.search_vector @@ query_input.ts_query
-            OR search_terms.search_vector @@ query_input.title_phrase_query
+            {PAPER_SEARCH_VECTOR_SQL} @@ query_input.ts_query
+            OR {PAPER_SEARCH_VECTOR_SQL} @@ query_input.title_phrase_query
             OR (
                 query_input.allow_title_similarity
                 AND (
@@ -600,11 +591,11 @@ exact_title_matches AS MATERIALIZED (
         2.0 AS lexical_score,
         1.0 AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
-        {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        {PAPER_GRAPH_WHERE_SQL}
         AND (
             (
                 query_input.lowered_query <> ''
@@ -626,11 +617,11 @@ matched_papers AS MATERIALIZED (
     SELECT
         p.corpus_id,
         COALESCE(
-            ts_rank_cd(search_terms.search_vector, query_input.ts_query),
+            ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.ts_query),
             0
         ) + (
             COALESCE(
-                ts_rank_cd(search_terms.search_vector, query_input.title_phrase_query),
+                ts_rank_cd({PAPER_SEARCH_VECTOR_SQL}, query_input.title_phrase_query),
                 0
             ) * 0.35
         ) AS lexical_score,
@@ -646,12 +637,12 @@ matched_papers AS MATERIALIZED (
             ELSE 0.0
         END AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND {PAPER_GRAPH_WHERE_SQL}
         AND (
             {PAPER_SEARCH_VECTOR_SQL} @@ query_input.ts_query
             OR {PAPER_SEARCH_VECTOR_SQL} @@ query_input.title_phrase_query
@@ -786,11 +777,11 @@ exact_title_matches AS MATERIALIZED (
         2.0 AS lexical_score,
         1.0 AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
-        {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        {PAPER_GRAPH_WHERE_SQL}
         AND (
             (
                 query_input.lowered_query <> ''
@@ -821,12 +812,12 @@ prefix_title_matches AS MATERIALIZED (
             END
         ) AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND {PAPER_GRAPH_WHERE_SQL}
         AND query_input.lowered_query <> ''
         AND (
             {PAPER_TITLE_TEXT_SQL} LIKE (query_input.lowered_query || '%%')
@@ -856,13 +847,13 @@ title_matches AS MATERIALIZED (
             END
         ) AS title_similarity,
         COALESCE(p.citation_count, 0) AS citation_count
-    FROM solemd.papers p
+    FROM {PAPER_GRAPH_JOIN_SQL}
     CROSS JOIN query_input
     CROSS JOIN graph_input
     WHERE
         NOT EXISTS (SELECT 1 FROM exact_title_matches)
         AND NOT EXISTS (SELECT 1 FROM prefix_title_matches)
-        AND {PAPER_GRAPH_MEMBERSHIP_EXISTS_SQL}
+        AND {PAPER_GRAPH_WHERE_SQL}
         AND query_input.lowered_query <> ''
         AND (
             {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
