@@ -200,7 +200,7 @@ class RagService:
     def query_embedder(self) -> RagQueryEmbedder:
         return self._query_embedder
 
-    @observe(name="rag.search")
+    @observe(name="rag.search", as_type="generation")
     def search_result(
         self,
         request: RagSearchRequest,
