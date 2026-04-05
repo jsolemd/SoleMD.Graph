@@ -25,6 +25,7 @@ class ClusterConfig:
     metric: str = "cosine"
     resolution: float = 15.0
     random_seed: int = 42
+    weight_sigma: float = 0.05  # Gaussian kernel bandwidth for edge weights
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ def _vectorized_edge_dedup(
     sources: "numpy.ndarray",
     targets: "numpy.ndarray",
     dists: "numpy.ndarray",
+    weight_sigma: float = 0.05,
 ) -> tuple[list[tuple[int, int]], list[float]]:
     """Deduplicate undirected edges using numpy structured arrays.
 
@@ -62,7 +64,7 @@ def _vectorized_edge_dedup(
 
     lo = lo[unique_idx]
     hi = hi[unique_idx]
-    weights = np.maximum(np.float32(0.0), np.float32(1.0) - dists[unique_idx])
+    weights = np.exp(-dists[unique_idx] / np.float32(weight_sigma))
 
     edge_tuples = list(zip(lo.tolist(), hi.tolist()))
     return edge_tuples, weights.tolist()
@@ -95,7 +97,7 @@ def _edge_list(
     targets = indices[:, 1:].ravel().astype(np.int32)
     dists = distances[:, 1:].ravel().astype(np.float32)
 
-    return _vectorized_edge_dedup(sources, targets, dists)
+    return _vectorized_edge_dedup(sources, targets, dists, config.weight_sigma)
 
 
 def _edge_list_from_knn(
@@ -114,7 +116,7 @@ def _edge_list_from_knn(
     targets = knn_indices[:, 1:neighbor_columns].ravel().astype(np.int32)
     dists = knn_distances[:, 1:neighbor_columns].ravel().astype(np.float32)
 
-    return _vectorized_edge_dedup(sources, targets, dists)
+    return _vectorized_edge_dedup(sources, targets, dists, config.weight_sigma)
 
 
 def _run_leiden_gpu(
@@ -168,7 +170,9 @@ def _run_leiden_gpu(
 
         undirected_source = cp.minimum(source, target)
         undirected_target = cp.maximum(source, target)
-        weight = cp.maximum(cp.float32(0.0), cp.float32(1.0) - distance)
+        # Gaussian kernel: exp(-d/sigma) spreads weights across [0,1] instead of
+        # the compressed [0.84,0.99] range that 1-d produces on dense kNN graphs.
+        weight = cp.exp(-distance / cp.float32(config.weight_sigma))
 
         edge_df = cudf.DataFrame(
             {
@@ -250,7 +254,9 @@ def _run_leiden_gpu_from_knn(
 
         undirected_source = cp.minimum(source, target)
         undirected_target = cp.maximum(source, target)
-        weight = cp.maximum(cp.float32(0.0), cp.float32(1.0) - distance)
+        # Gaussian kernel: exp(-d/sigma) spreads weights across [0,1] instead of
+        # the compressed [0.84,0.99] range that 1-d produces on dense kNN graphs.
+        weight = cp.exp(-distance / cp.float32(config.weight_sigma))
 
         edge_df = cudf.DataFrame(
             {
