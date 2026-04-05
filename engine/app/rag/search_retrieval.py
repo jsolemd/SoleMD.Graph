@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from langfuse import get_client as _get_langfuse, observe
+
 from app.rag.models import GraphRelease, GraphSignal, PaperEvidenceHit, PaperRetrievalQuery
 from app.rag.query_embedding import RagQueryEmbedder
 from app.rag.query_enrichment import (
@@ -157,6 +159,7 @@ def apply_selected_context_hits(
     )
 
 
+@observe(name="rag.retrieve")
 def retrieve_search_state(
     *,
     request: RagSearchRequest,
@@ -535,7 +538,7 @@ def retrieve_search_state(
         }
     )
 
-    return SearchRetrievalState(
+    state = SearchRetrievalState(
         release=release,
         query=query,
         search_plan=search_plan,
@@ -550,3 +553,27 @@ def retrieve_search_state(
         semantic_seed_hits=semantic_seed_hits,
         initial_paper_hits=initial_paper_hits,
     )
+
+    try:
+        client = _get_langfuse()
+        client.update_current_observation(
+            input={
+                "query": query.text,
+                "retrieval_profile": str(query.retrieval_profile),
+                "scope_mode": str(query.scope_mode),
+                "selected_corpus_id": selected_corpus_id,
+            },
+            output={
+                "candidate_count": len(initial_paper_hits),
+                "lexical_hits": len(lexical_hits),
+                "chunk_lexical_hits": len(chunk_lexical_hits),
+                "entity_seed_hits": len(entity_seed_hits),
+                "relation_seed_hits": len(relation_seed_hits),
+                "dense_query_hits": len(dense_query_hits),
+                "semantic_neighbor_hits": len(semantic_neighbors),
+            },
+        )
+    except Exception:
+        pass
+
+    return state

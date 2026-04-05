@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+
+from langfuse import observe
 from collections.abc import Sequence
 from contextlib import nullcontext
 
@@ -188,6 +190,7 @@ def _get_runtime_status_with_cursor(
     )
 
 
+@observe(name="rag.groundedAnswer")
 def build_grounded_answer_from_runtime(
     *,
     corpus_ids: Sequence[int],

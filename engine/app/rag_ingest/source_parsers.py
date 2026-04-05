@@ -958,6 +958,14 @@ def parse_biocxml_document(
             section_type=section_type,
         )
         section_role = normalized_section_role
+        # Abstract-only BioCXML (API or PubMed-only) lacks section_type infons
+        # but carries passage type="abstract" or type="title_N".  Use passage
+        # type as a fallback when section_type didn't resolve.
+        if section_role == SectionRole.OTHER and passage_type:
+            if passage_type == "abstract":
+                section_role = SectionRole.ABSTRACT
+            elif passage_type.startswith("title") and section_type is None:
+                section_role = SectionRole.FRONT_MATTER
         if (
             passage_type
             and passage_type.startswith("title")
@@ -1110,6 +1118,19 @@ def parse_biocxml_document(
                     sentence_ordinal=sentence_ordinal,
                 )
             )
+
+    # Determine actual content depth: if no section has a body role beyond
+    # FRONT_MATTER and ABSTRACT, this is an abstract-only document.
+    _body_roles = {
+        SectionRole.INTRODUCTION,
+        SectionRole.METHODS,
+        SectionRole.RESULTS,
+        SectionRole.DISCUSSION,
+        SectionRole.CONCLUSION,
+    }
+    has_body_sections = any(s.section_role in _body_roles for s in sections)
+    if not has_body_sections:
+        document.source_availability = "abstract"
 
     return ParsedPaperSource(
         document=document,

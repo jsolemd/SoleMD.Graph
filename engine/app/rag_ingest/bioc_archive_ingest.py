@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 from typing import Protocol
+
+from langfuse import observe
+
+logging.getLogger("langfuse").setLevel(logging.ERROR)
 
 from pydantic import Field
 
@@ -39,6 +44,7 @@ from app.rag_ingest.orchestrator import (
     run_rag_refresh,
 )
 from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository
+from app.rag_ingest.ingest_tracing import traced_parse_biocxml
 from app.rag_ingest.source_parsers import parse_biocxml_document
 from app.rag_ingest.warehouse_quality import inspect_rag_warehouse_quality
 from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestResult, RagWarehouseWriter
@@ -147,6 +153,7 @@ def _empty_bulk_ingest_result() -> RagWarehouseBulkIngestResult:
     )
 
 
+@observe(name="ingest.biocArchive")
 def _run_direct_bioc_archive_ingest(
     *,
     run_id: str,
@@ -237,7 +244,7 @@ def _run_direct_bioc_archive_ingest(
             continue
         if candidate.member_name is None and member_result.member_name is not None:
             candidate.member_name = member_result.member_name
-        parsed = parse_biocxml_document(
+        parsed = traced_parse_biocxml(
             member_result.xml_text,
             source_revision=settings.pubtator_release_id,
             parser_version=parser_version,

@@ -48,27 +48,30 @@ These numbers matter because the repo currently has two truths at once:
 |------|-------------------|----------------|
 | [`.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`](/home/workbench/SoleMD/SoleMD.Graph/.tmp/rag-runtime-eval-current-all-families-v30-recheck.json) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The live current-release runtime floor is fast, grounded, and stable on the broad sampled cohort. |
 
-Frozen benchmark snapshot (post-backfill, 2026-04-04):
+Frozen benchmark snapshot (post-API-ingest, 2026-04-04):
 
 | Benchmark | hit@1 | grounded | target_grounded | target_corpus | mean_ms | Status |
 |-----------|-------|----------|-----------------|---------------|---------|--------|
-| sentence_hard_v1 | 1.0 | 1.0 | 1.0 | 1.0 | 491 | green |
-| evidence_intent_v1 | 0.80 | 0.80 | 0.80 | 0.80 | 368 | real signal, 20% retrieval miss |
-| clinical_actionable_v1 | 0.67 | 0.73 | 0.73 | 0.73 | 450 | real signal, 27-33% retrieval miss |
-| title_global_v1 | 1.0 | 0.17 | 0.08 | 1.0 | 438 | grounding gate issue (chunks exist) |
-| title_selected_v1 | 1.0 | 0.20 | 0.20 | 1.0 | 264 | grounding gate issue (chunks exist) |
-| neuropsych_safety_v1 | 0.17 | 0.92 | 0.33 | 0.33 | 769 | retrieval miss, grounding strong |
-| adversarial_router_v1 | 0.08 | 0.08 | 0.08 | 0.17 | 25,513 | hard retrieval failure |
+| sentence_hard_v1 | 1.0 | 1.0 | 1.0 | 1.0 | 581 | green |
+| evidence_intent_v1 | 0.80 | 0.80 | 0.80 | 0.80 | 609 | real signal, 20% retrieval miss |
+| clinical_actionable_v1 | 0.67 | 0.73 | 0.73 | 0.73 | 507 | real signal, 27-33% retrieval miss |
+| title_global_v1 | 1.0 | 0.75 | 0.75 | 1.0 | 438 | grounding strong on covered papers |
+| title_selected_v1 | 1.0 | 0.90 | 0.90 | 1.0 | 276 | grounding strong on covered papers |
+| neuropsych_safety_v1 | 0.33 | 0.92 | 0.58 | 0.58 | 644 | retrieval miss, grounding strong |
+| adversarial_router_v1 | 0.08 | 0.17 | 0.17 | 0.17 | 38,894 | hard retrieval failure |
 
-The practical interpretation now has more nuance than before:
+The practical interpretation after API ingest:
 
-- **sentence_hard_v1** was only blocked by missing chunks and is now green
+- **sentence_hard_v1** remains green
 - **evidence_intent and clinical_actionable** have genuine retrieval misses
   that need diagnosis (not chunk coverage)
-- **title benchmarks** have perfect retrieval but the grounded answer gate
-  rejects output despite full chunk coverage — this is a runtime gate issue
-- **neuropsych_safety** retrieval is weak; QUESTION_LOOKUP routing validation needed
-- **adversarial_router** remains the hardest failure class
+- **title benchmarks** jumped from 0.08→0.75 and 0.20→0.90 target_grounded
+  after API-ingested abstract chunks filled the warehouse gap. Remaining
+  ungrounded papers are not in PubTator (3) or low-value shells.
+- **neuropsych_safety** improved from 0.33→0.58 target_grounded; 11/12 papers
+  now at fulltext depth. Remaining retrieval miss is genuine.
+- **adversarial_router** remains the hardest failure class; most papers lack
+  warehouse coverage (10/12 at `depth=none`)
 
 ---
 

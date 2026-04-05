@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Protocol
 from xml.etree import ElementTree as ET
 
+from langfuse import observe
+
+logging.getLogger("langfuse").setLevel(logging.ERROR)
+
 from pydantic import Field
 
 from app import db
@@ -51,6 +55,7 @@ from app.rag_ingest.source_locator import (
     RagSourceLocatorLookup,
     SidecarRagSourceLocatorRepository,
 )
+from app.rag_ingest.ingest_tracing import traced_parse_biocxml, traced_parse_s2orc
 from app.rag_ingest.source_parsers import (
     ParsedPaperSource,
     extract_biocxml_document_id,
@@ -862,7 +867,7 @@ def _flush_discovered_s2_rows(
         corpus_id = int(row["corpusid"])
         if corpus_id not in accepted_id_set:
             continue
-        parsed = parse_s2orc_row(
+        parsed = traced_parse_s2orc(
             row,
             source_revision=source_revision,
             parser_version=parser_version,
@@ -1076,7 +1081,7 @@ def _run_explicit_targeted_refresh(
                             )
                             break
                         continue
-                    parsed = parse_s2orc_row(
+                    parsed = traced_parse_s2orc(
                         row,
                         source_revision=settings.s2_release_id,
                         parser_version=parser_version,
@@ -1250,7 +1255,7 @@ def _run_explicit_targeted_refresh(
                             member_name=member_name,
                         )
                     )
-                    parsed = parse_biocxml_document(
+                    parsed = traced_parse_biocxml(
                         xml_text,
                         source_revision=settings.pubtator_release_id,
                         parser_version=parser_version,
@@ -1380,6 +1385,7 @@ def _run_explicit_targeted_refresh(
         )
 
 
+@observe(name="ingest.ragRefresh")
 def run_rag_refresh(
     *,
     parser_version: str,
@@ -2032,7 +2038,7 @@ def run_rag_refresh(
                             )
                         continue
                     last_seen_bioc_corpus_id = corpus_id
-                    parsed = parse_biocxml_document(
+                    parsed = traced_parse_biocxml(
                         xml_text,
                         source_revision=settings.pubtator_release_id,
                         parser_version=parser_version,

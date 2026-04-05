@@ -47,29 +47,41 @@ That broad cohort is not the whole story. The frozen targeted benchmarks still
 define the remaining weak classes.
 
 Post-backfill frozen benchmark snapshot (2026-04-04, all 77 benchmark papers
-now have `default-structural-v1` chunks):
+now have `default-structural-v1` chunks; 20 of the 28 previously-unresolved
+papers now ingested via PubTator3 API; 4 not in PubTator, 4 low-value shells):
 
-| Benchmark | hit@1 | grounded | target_grounded | target_corpus | mean_ms |
-|-----------|-------|----------|-----------------|---------------|---------|
-| sentence_hard_v1 | 1.0 | 1.0 | 1.0 | 1.0 | 491 |
-| evidence_intent_v1 | 0.80 | 0.80 | 0.80 | 0.80 | 368 |
-| clinical_actionable_v1 | 0.67 | 0.73 | 0.73 | 0.73 | 450 |
-| title_global_v1 | 1.0 | 0.17 | 0.08 | 1.0 | 438 |
-| title_selected_v1 | 1.0 | 0.20 | 0.20 | 1.0 | 264 |
-| neuropsych_safety_v1 | 0.17 | 0.92 | 0.33 | 0.33 | 769 |
-| adversarial_router_v1 | 0.08 | 0.08 | 0.08 | 0.17 | 25,513 |
+| Benchmark | hit@1 | grounded | target_grounded | target_corpus | mean_ms | warehouse depth |
+|-----------|-------|----------|-----------------|---------------|---------|-----------------|
+| sentence_hard_v1 | 1.0 | 1.0 | 1.0 | 1.0 | 581 | fulltext:14 |
+| evidence_intent_v1 | 0.80 | 0.80 | 0.80 | 0.80 | 609 | fulltext:15, none:0 |
+| clinical_actionable_v1 | 0.67 | 0.73 | 0.73 | 0.73 | 507 | fulltext:15, none:0 |
+| title_global_v1 | 1.0 | 0.75 | 0.75 | 1.0 | 438 | fulltext:9, none:3 |
+| title_selected_v1 | 1.0 | 0.90 | 0.90 | 1.0 | 276 | fulltext:9, none:1 |
+| neuropsych_safety_v1 | 0.33 | 0.92 | 0.58 | 0.58 | 644 | fulltext:11, none:1 |
+| adversarial_router_v1 | 0.08 | 0.17 | 0.17 | 0.17 | 38,894 | fulltext:2, none:10 |
 
 Key observations:
 
-- **sentence_hard_v1 is green** — was only blocked by missing chunks
-- **evidence_intent and clinical_actionable now have real signal** — remaining
-  failures are genuine retrieval misses (20-33%)
-- **title benchmarks** — retrieval is perfect (hit@1=1.0, target_corpus=1.0) but
-  grounded answer rate is still very low despite full chunk coverage. The
-  grounding gap is in the runtime gate logic, not chunk availability.
-- **neuropsych_safety** — retrieval is weak (hit@1=0.17), grounding is strong on
-  what it finds (0.92). QUESTION_LOOKUP routing needs validation here.
-- **adversarial_router** — remains hard failure class (hit@1=0.08, 25s latency)
+- **sentence_hard_v1 remains green** — no change
+- **evidence_intent and clinical_actionable unchanged** — remaining failures are
+  genuine retrieval misses (20-33%), not warehouse coverage
+- **title_global grounding jumped 0.08 → 0.75** — API-ingested abstract chunks
+  enabled grounded answers for 9 of 12 papers. The 3 remaining `none` papers are
+  the ones not in PubTator or with low-value shells.
+- **title_selected grounding jumped 0.20 → 0.90** — same mechanism, 9 of 10
+  papers now grounded. Only 1 paper still at `warehouse_depth=none`.
+- **neuropsych_safety retrieval improved 0.17 → 0.33, tgt_grounded 0.33 → 0.58**
+  — API ingest expanded the coverage; 11 of 12 papers now at fulltext depth.
+  Remaining retrieval miss is a genuine ranking/routing gap, not warehouse.
+- **adversarial_router** — remains hard failure class. Only 2 of 12 papers have
+  warehouse coverage; 10 are still at `none`. The papers in this benchmark are
+  predominantly recent/unusual and 8 were not resolved by the API ingest.
+
+The PubTator3 API ingest closed the warehouse coverage gap for the majority of
+frozen benchmark papers. The remaining `warehouse_depth=none` cases (8 across
+all benchmarks) are papers not in PubTator (recent papers) or low-value shells
+(pre-1970 title-only records). These cannot be resolved through PubTator and
+would need S2ORC or manual ingest.
 
 ## Live Invariants To Preserve
 
@@ -234,6 +246,43 @@ Progress (2026-04-04):
   No new eval plumbing needed — the data just needs to be present.
 - After BioCXML ingest: chunk backfill, then re-run benchmarks to see abstract
   vs fulltext grounding breakdown with real data
+
+### Warehouse Scaling Phases
+
+The current warehouse covers 624 papers out of a 14M universe.  Closing the
+grounding gap on frozen benchmarks required building the PubTator3 API ingest
+path.  The same path now enables warehouse scaling to the full graph and
+beyond.
+
+**Phase A: Graph Paper Coverage (~2.5M papers)**
+
+- Parse all active graph papers via PubTator3 API (abstracts for all) plus
+  local BioCXML archives (PMC full text where available, ~6M PMC papers in
+  archive but only ~2.5M are in the active graph)
+- Estimated warehouse growth: ~100 GB
+- Tools: `db/scripts/ingest_biocxml_api.py` for API path,
+  `backfill_bioc_overlays.py` for PMC full-text archive overlay
+- Pipeline: API batches at 3 req/s with 100 PMIDs per batch → ~7 hours for
+  2.5M papers; archive campaigns in parallel for full-text upgrade
+- Timeline: hours (API), days (archive overlay for full text)
+
+**Phase B: Full 14M Universe**
+
+- Abstract-only for ~8M non-PMC papers via PubTator3 API batches (~13 hours
+  at 3 req/s with 100/batch)
+- Full-text for ~6M PMC papers from local BioCXML archives (keep 195 GB)
+- Estimated warehouse growth: ~260 GB → DB total ~500 GB
+- Tools: batch API ingest script + archive-based orchestrator campaigns
+- Timeline: days
+
+**Phase C: Production Hosting**
+
+- 500 GB managed PostgreSQL (US hosting per project requirement)
+- Monthly refresh cycle for new papers entering PubTator/S2
+- Incremental API-based ingest for papers added to graph between refreshes
+- Archive refresh only when PubTator ships a new annual release
+
+See `docs/map/rag-ingest.md` for the full pre-RAG pipeline documentation.
 
 ### Phase 2: Fix The Remaining Frozen Retrieval Classes
 

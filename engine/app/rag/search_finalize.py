@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+
+from langfuse import get_client as _get_langfuse, observe
 from time import perf_counter
 from uuid import uuid4
 
@@ -152,6 +154,7 @@ def _empty_channel_results() -> list[RetrievalChannelResult]:
     return [_channel_result(channel, []) for channel in RETRIEVAL_CHANNEL_ORDER]
 
 
+@observe(name="rag.finalize")
 def finalize_search_result(
     *,
     retrieval: SearchRetrievalState,
@@ -608,7 +611,7 @@ def finalize_search_result(
         grounded_answer=grounded_answer,
         bundles=bundles,
     )
-    return RagSearchResult(
+    result = RagSearchResult(
         request_id=str(uuid4()),
         generated_at=datetime.now(UTC),
         duration_ms=(perf_counter() - started) * 1000,
@@ -625,3 +628,22 @@ def finalize_search_result(
         debug_trace=trace.as_debug_trace(),
         evidence_flags=evidence_flags,
     )
+
+    try:
+        client = _get_langfuse()
+        top_corpus_ids = [b.paper.corpus_id for b in bundles[:5]] if bundles else []
+        client.update_current_observation(
+            output={
+                "top_corpus_ids": top_corpus_ids,
+                "bundle_count": len(bundles),
+                "answer_model": answer_model,
+                "answer_present": answer is not None,
+                "grounded_answer_present": grounded_answer is not None,
+                "answer_corpus_ids": answer_corpus_ids,
+                "duration_ms": result.duration_ms,
+            },
+        )
+    except Exception:
+        pass
+
+    return result
