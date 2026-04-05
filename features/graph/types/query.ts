@@ -27,6 +27,8 @@ export interface GraphInfoClusterStat {
   clusterId: number
   label: string
   count: number
+  parentClusterId: number
+  parentLabel: string | null
 }
 
 export interface GraphInfoSummary {

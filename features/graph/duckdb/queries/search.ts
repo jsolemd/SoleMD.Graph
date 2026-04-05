@@ -40,6 +40,8 @@ export async function queryPointSearch(
     y: number
     clusterId: number | null
     clusterLabel: string | null
+    parentClusterId: number | null
+    parentLabel: string | null
     displayLabel: string | null
     paperTitle: string | null
     citekey: string | null
@@ -73,6 +75,8 @@ export async function queryPointSearch(
        y,
        clusterId,
        clusterLabel,
+       parentClusterId,
+       parentLabel,
        displayLabel,
        paperTitle,
        citekey,

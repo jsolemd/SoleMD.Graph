@@ -30,7 +30,9 @@ requested_points AS (
         g.cluster_probability,
         COALESCE(bp.corpus_id IS NOT NULL, false) AS is_in_base,
         COALESCE(bp.base_rank, 0)::REAL AS base_rank,
-        gc.label AS cluster_label
+        gc.label AS cluster_label,
+        gc.parent_cluster_id,
+        gc.parent_label
     FROM solemd.graph_points g
     JOIN requested_corpus rc
       ON rc.corpus_id = g.corpus_id
@@ -40,6 +42,7 @@ requested_points AS (
     LEFT JOIN solemd.graph_clusters gc
       ON gc.graph_run_id = g.graph_run_id
      AND gc.cluster_id = g.cluster_id
+     AND gc.hierarchy_level = 0
     WHERE g.graph_run_id = %s
 ),
 corpus_base AS (
@@ -106,6 +109,8 @@ point_base AS (
         rp.y,
         rp.cluster_id,
         rp.cluster_label,
+        rp.parent_cluster_id,
+        rp.parent_label,
         rp.cluster_probability,
         rp.is_in_base,
         rp.base_rank,

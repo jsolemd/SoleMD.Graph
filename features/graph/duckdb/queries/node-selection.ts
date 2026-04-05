@@ -31,6 +31,8 @@ export interface GraphPointSelectionRow {
   isInBase: boolean | null
   baseRank: number | null
   isOverlayActive: boolean | null
+  parentClusterId: number | null
+  parentLabel: string | null
 }
 
 export function mapGraphPointRow(row: GraphPointSelectionRow): GraphPointRecord {
@@ -46,6 +48,8 @@ export function mapGraphPointRow(row: GraphPointSelectionRow): GraphPointRecord 
     y: row.y,
     clusterId: row.clusterId ?? 0,
     clusterLabel: row.clusterLabel,
+    parentClusterId: row.parentClusterId ?? row.clusterId ?? 0,
+    parentLabel: row.parentLabel,
     displayLabel: row.displayLabel,
     displayPreview: row.paperTitle ?? row.displayLabel,
     paperTitle: row.paperTitle,
@@ -87,6 +91,8 @@ export async function queryCorpusPointSelection(
       y,
       clusterId,
       clusterLabel,
+      parentClusterId,
+      parentLabel,
       displayLabel,
       paperTitle,
       citekey,

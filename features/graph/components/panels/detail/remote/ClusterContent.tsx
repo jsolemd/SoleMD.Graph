@@ -11,6 +11,16 @@ export function ClusterContent({ cluster }: { cluster: ClusterInfo | null }) {
 
   return (
     <Stack gap="xs">
+      {cluster.parentLabel && (
+        <Text size="xs" style={panelTextDimStyle}>
+          {cluster.parentLabel}
+        </Text>
+      )}
+      {cluster.description && (
+        <Text size="sm" style={panelTextStyle}>
+          {cluster.description}
+        </Text>
+      )}
       <KV label="Members" value={String(cluster.memberCount ?? "—")} />
       <KV label="Papers" value={String(cluster.paperCount ?? "—")} />
       <KV

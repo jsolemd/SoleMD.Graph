@@ -15,6 +15,8 @@ const REQUIRED_COLUMNS = [
   'y',
   'cluster_id',
   'cluster_label',
+  'parent_cluster_id',
+  'parent_label',
   'title',
   'citekey',
   'journal',

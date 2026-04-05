@@ -14,6 +14,10 @@ export interface ClusterInfo {
   meanOutlierScore: number | null
   paperCount: number | null
   isNoise: boolean
+  parentClusterId: number | null
+  parentLabel: string | null
+  description: string | null
+  hierarchyLevel: number
 }
 
 export interface ClusterExemplar {

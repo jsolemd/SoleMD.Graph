@@ -1,8 +1,7 @@
 "use client";
 
-import { type ReactNode, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Stack, Text } from "@mantine/core";
-import { useDebouncedValue } from "@mantine/hooks";
 import { getGraphClusterColor } from "@/features/graph/lib/colors";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
@@ -38,25 +37,20 @@ export function QueryDrivenInfoPanel({
   const currentPointScopeSql = useDashboardStore(
     (state) => state.currentPointScopeSql,
   );
-  const [debouncedCurrentPointScopeSql] = useDebouncedValue(
-    currentPointScopeSql,
-    120,
-  );
-  const deferredCurrentPointScopeSql = useDeferredValue(
-    debouncedCurrentPointScopeSql,
-  );
+  // useDeferredValue batches rapid store updates via React's scheduler — no
+  // fixed time penalty like useDebouncedValue(120). The selection store fires
+  // setCurrentPointScopeSql, setSelectedPointCount, and revision bumps in
+  // quick succession; React defers them all into a single concurrent render.
+  const deferredCurrentPointScopeSql = useDeferredValue(currentPointScopeSql);
   const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const deferredSelectedPointCount = useDeferredValue(selectedPointCount);
   const selectedPointRevision = useDashboardStore(
     (state) => state.selectedPointRevision,
   );
-  // Debounce selection signals so they settle together with the scope SQL
-  // debounce (120ms), preventing staggered query bursts where immediate
-  // revision bumps fire one batch and the debounced SQL fires another.
-  const [debouncedSelectedPointCount] = useDebouncedValue(selectedPointCount, 120);
-  const [debouncedSelectedPointRevision] = useDebouncedValue(selectedPointRevision, 120);
+  const deferredSelectedPointRevision = useDeferredValue(selectedPointRevision);
   const selectionLocked = useDashboardStore((state) => state.selectionLocked);
   const infoWidgets = useDashboardStore((state) => state.infoWidgets);
-  const hasSelection = debouncedSelectedPointCount > 0;
+  const hasSelection = deferredSelectedPointCount > 0;
   const hasCurrentSubset =
     typeof deferredCurrentPointScopeSql === "string" &&
     deferredCurrentPointScopeSql.trim().length > 0;
@@ -64,7 +58,7 @@ export function QueryDrivenInfoPanel({
   const [selectedInfo, setSelectedInfo] = useState<GraphInfoSummary | null>(null);
   const [currentInfo, setCurrentInfo] = useState<GraphInfoSummary | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [lastSummaryKey, setLastSummaryKey] = useState<string | null>(null);
+  const [lastSummaryVersion, setLastSummaryVersion] = useState(0);
 
   const widgetDescriptors = useMemo(
     () =>
@@ -78,54 +72,38 @@ export function QueryDrivenInfoPanel({
     [infoWidgets],
   );
 
-  const summaryRequestKey = useMemo(
-    () =>
-      JSON.stringify({
-        activeLayer,
-        hasSelection,
-        hasCurrentSubset,
-        filteredPointScopeSql: deferredCurrentPointScopeSql,
-        selectedPointCount: debouncedSelectedPointCount,
-        selectedPointRevision: debouncedSelectedPointRevision,
-        selectionLocked,
-        overlayRevision,
-      }),
-    [
-      activeLayer,
-      debouncedSelectedPointCount,
-      debouncedSelectedPointRevision,
-      deferredCurrentPointScopeSql,
-      hasCurrentSubset,
-      hasSelection,
-      overlayRevision,
-      selectionLocked,
-    ],
-  );
+  // Monotonic version counter — bumps when any summary query input changes.
+  // Replaces JSON.stringify: zero allocation, primitives only.
+  const summaryVersionRef = useRef(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are the trigger inputs; the callback intentionally ignores them and just bumps the counter
+  const summaryVersion = useMemo(() => ++summaryVersionRef.current, [
+    activeLayer,
+    deferredCurrentPointScopeSql,
+    deferredSelectedPointCount,
+    deferredSelectedPointRevision,
+    selectionLocked,
+    overlayRevision,
+  ]);
   const includeSelectionLayer = selectedInfo != null;
   const includeFilteredLayer =
     currentInfo != null &&
     !areInfoSummariesEquivalent(selectedInfo, currentInfo) &&
     (selectedInfo == null || selectionLocked);
-  const widgetKey = useMemo(
-    () => infoWidgets.map(w => `${w.column}:${w.kind}`).sort().join(","),
-    [infoWidgets],
-  );
-  const [debouncedWidgetRequestKey] = useDebouncedValue(
-    JSON.stringify({
-      summaryRequestKey,
-      widgets: widgetKey,
-      includeSelectionLayer,
-      includeFilteredLayer,
-    }),
-    180,
-  );
-  const deferredWidgetRequestKey = useDeferredValue(debouncedWidgetRequestKey);
+  const widgetVersionRef = useRef(0);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- same pattern as summaryVersion
+  const widgetVersion = useMemo(() => ++widgetVersionRef.current, [
+    summaryVersion,
+    widgetDescriptors,
+    includeSelectionLayer,
+    includeFilteredLayer,
+  ]);
+  const deferredWidgetVersion = useDeferredValue(widgetVersion);
   const {
     categoricalSummaries,
     histograms,
     numericStats,
     widgetError,
-    lastLoadedKey: lastWidgetKey,
+    lastLoadedVersion: lastWidgetVersion,
   } = useInfoWidgetData({
     queries,
     activeLayer,
@@ -133,12 +111,12 @@ export function QueryDrivenInfoPanel({
     includeFilteredLayer,
     filteredPointScopeSql: deferredCurrentPointScopeSql,
     widgetDescriptors,
-    requestKey: deferredWidgetRequestKey,
+    requestVersion: deferredWidgetVersion,
   });
-  const loading = datasetInfo == null && lastSummaryKey !== summaryRequestKey;
+  const loading = datasetInfo == null && lastSummaryVersion !== summaryVersion;
   const refreshing =
-    (datasetInfo != null && lastSummaryKey !== summaryRequestKey) ||
-    lastWidgetKey !== deferredWidgetRequestKey;
+    (datasetInfo != null && lastSummaryVersion !== summaryVersion) ||
+    lastWidgetVersion !== deferredWidgetVersion;
   const showHeaderLoader = loading || refreshing;
 
   useEffect(() => {
@@ -174,7 +152,7 @@ export function QueryDrivenInfoPanel({
         setSelectedInfo(nextSelectedInfo);
         setCurrentInfo(nextCurrentInfo);
         setSummaryError(null);
-        setLastSummaryKey(summaryRequestKey);
+        setLastSummaryVersion(summaryVersion);
       })
       .catch((queryError: unknown) => {
         if (cancelled) {
@@ -189,7 +167,7 @@ export function QueryDrivenInfoPanel({
             ? queryError.message
             : "Failed to load info summary",
         );
-        setLastSummaryKey(summaryRequestKey);
+        setLastSummaryVersion(summaryVersion);
       });
 
     return () => {
@@ -201,7 +179,7 @@ export function QueryDrivenInfoPanel({
     hasCurrentSubset,
     hasSelection,
     queries,
-    summaryRequestKey,
+    summaryVersion,
   ]);
 
   const filteredInfo = useMemo(() => {
@@ -259,7 +237,7 @@ export function QueryDrivenInfoPanel({
           ...(filteredInfo?.topClusters ?? []),
         ].map((cluster) => [
           cluster.clusterId,
-          getGraphClusterColor(cluster.clusterId),
+          getGraphClusterColor(cluster.parentClusterId),
         ]),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clusterIdKey is a stable string proxy for the topClusters arrays; re-computing only when cluster IDs actually change
@@ -291,21 +269,25 @@ export function QueryDrivenInfoPanel({
         ...(filteredClustersArr ?? []).map((cluster) => cluster.clusterId),
       ]),
     )
-      .map((clusterId) => ({
-        clusterId,
-        label:
-          datasetClusters.get(clusterId)?.label ??
-          selectedClusters.get(clusterId)?.label ??
-          filteredClusters.get(clusterId)?.label ??
-          `Cluster ${clusterId}`,
-        totalCount: datasetClusters.get(clusterId)?.count ?? 0,
-        selectionCount: selectedClustersArr != null
-          ? (selectedClusters.get(clusterId)?.count ?? 0)
-          : null,
-        filteredCount: filteredClustersArr != null
-          ? (filteredClusters.get(clusterId)?.count ?? 0)
-          : null,
-      }))
+      .map((clusterId) => {
+        const source =
+          datasetClusters.get(clusterId) ??
+          selectedClusters.get(clusterId) ??
+          filteredClusters.get(clusterId);
+        return {
+          clusterId,
+          label: source?.label ?? `Cluster ${clusterId}`,
+          totalCount: datasetClusters.get(clusterId)?.count ?? 0,
+          selectionCount: selectedClustersArr != null
+            ? (selectedClusters.get(clusterId)?.count ?? 0)
+            : null,
+          filteredCount: filteredClustersArr != null
+            ? (filteredClusters.get(clusterId)?.count ?? 0)
+            : null,
+          parentClusterId: source?.parentClusterId ?? clusterId,
+          parentLabel: source?.parentLabel ?? null,
+        };
+      })
       .sort((left, right) =>
         filteredClustersArr != null
           ? (right.filteredCount ?? 0) === (left.filteredCount ?? 0)

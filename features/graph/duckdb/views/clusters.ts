@@ -22,7 +22,11 @@ export async function registerClusterViews(conn: AsyncDuckDBConnection) {
        mean_cluster_probability,
        mean_outlier_score,
        paper_count,
-       is_noise
+       is_noise,
+       parent_cluster_id,
+       parent_label,
+       description,
+       hierarchy_level
      FROM ${clusterTable}`
   )
 

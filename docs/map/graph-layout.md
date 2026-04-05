@@ -112,7 +112,7 @@ with distinct research-community clusters. Full rebuild: ~15 minutes on GPU.
 | Parameter | Default | Effect |
 |-----------|---------|--------|
 | `n_neighbors` | 30 | Higher = smoother clusters, lower = more micro-structure |
-| `min_dist` | 0.5 | Intra-cluster breathing room. Higher = more spread within clusters |
+| `min_dist` | 0.1 | Tighter clusters for visual distinction at 300-500 cluster scale |
 | `spread` | 1.0 | Scales the overall embedding. Higher = more spread, less contrast |
 | `set_op_mix_ratio` | 0.25 | Lower = sharper cluster edges, outliers stay separated |
 | `repulsion_strength` | 1.2 | Push between non-neighbors. Lower = clusters sit closer |
@@ -120,10 +120,10 @@ with distinct research-community clusters. Full rebuild: ~15 minutes on GPU.
 
 **Key tradeoff**: The UMAP author says you cannot simultaneously maximize both
 cluster separation AND intra-cluster substructure at 2M+ scale. Current settings
-balance both: `min_dist=0.5` gives intra-cluster breathing room while
-`repulsion_strength=1.2` lets clusters sit slightly closer together. The post-UMAP
-overlap resolution (`gap_scale=0.65`) accepts 35% edge overlap, packing clusters
-tighter while preserving clear boundaries.
+favor tight, distinct clusters: `min_dist=0.1` packs points within clusters tightly
+while `repulsion_strength=1.2` lets clusters sit slightly closer together. The
+post-UMAP overlap resolution (`gap_scale=0.65`) accepts 35% edge overlap, packing
+clusters tighter while preserving clear boundaries.
 
 ### Cluster overlap resolution (`apply_cluster_repulsion`)
 
@@ -184,6 +184,35 @@ Uses c-TF-IDF (class-based TF-IDF) — the BERTopic standard. Terms are weighted
 distinctiveness to each cluster vs the corpus, not raw frequency. Uses sklearn's
 318-word English stopword list + biomedical extensions + `max_df=0.80` automatic
 filtering. Optional LLM relabeling via `--llm-labels`.
+
+### Cluster hierarchy (`llm_labels.py`)
+
+Two-level hierarchy built after Leiden clustering:
+
+| Level | Count | Role | How Built |
+|-------|-------|------|-----------|
+| Leaf clusters | 300-500 | Research communities (labels, drill-down) | Leiden at resolution 15.0 |
+| Superdomains | 15-25 | Color grouping, high-level navigation | Ward linkage on leaf centroids |
+
+**Frontend mapping**: Cosmograph colors by `parentLabel` (superdomain, ~20 distinct colors
+via native categorical palette). Labels show `clusterLabel` (leaf cluster, 300-500 names).
+
+**Parquet columns**: Both `base_points.parquet` and `universe_points.parquet` carry
+`parent_cluster_id` and `parent_label` per point. `base_clusters.parquet` carries
+`parent_cluster_id`, `parent_label`, `description`, `hierarchy_level`.
+
+### Leiden resolution calibration
+
+Resolution controls cluster granularity. Calibrated via 100K-point sample:
+
+| Resolution | Clusters (100K) | Est. full scale (2.5M) |
+|-----------|----------------|----------------------|
+| 3.0 | 47 | ~79 |
+| 15.0 | 289 | ~400-500 |
+| 20.0 | 428 | ~600-900 |
+
+**Current default**: 15.0 (`GRAPH_CLUSTER_RESOLUTION` in config). Override with
+`--cluster-resolution` CLI flag.
 
 ---
 

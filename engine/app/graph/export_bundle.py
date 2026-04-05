@@ -182,7 +182,9 @@ def _render_points_cte() -> str:
             COALESCE(bp.base_rank, 0)::REAL AS base_rank,
             gc.label AS cluster_label,
             gc.centroid_x,
-            gc.centroid_y
+            gc.centroid_y,
+            gc.parent_cluster_id,
+            gc.parent_label
         FROM solemd.graph_points g
         LEFT JOIN solemd.graph_base_points bp
             ON bp.graph_run_id = g.graph_run_id
@@ -190,6 +192,7 @@ def _render_points_cte() -> str:
         LEFT JOIN solemd.graph_clusters gc
             ON gc.graph_run_id = g.graph_run_id
            AND gc.cluster_id = g.cluster_id
+           AND gc.hierarchy_level = 0
         WHERE g.graph_run_id = %(graph_run_id)s
     ),
     render_points AS (
@@ -207,7 +210,9 @@ def _render_points_cte() -> str:
             rp.base_rank,
             rp.cluster_label,
             rp.centroid_x,
-            rp.centroid_y
+            rp.centroid_y,
+            rp.parent_cluster_id,
+            rp.parent_label
         FROM run_points rp
         WHERE {renderable_predicate}
     ),
@@ -229,7 +234,9 @@ def _render_points_cte() -> str:
             rp.base_rank,
             rp.cluster_label,
             rp.centroid_x,
-            rp.centroid_y
+            rp.centroid_y,
+            rp.parent_cluster_id,
+            rp.parent_label
         FROM render_points rp
         WHERE rp.is_in_base
     ),
@@ -256,7 +263,9 @@ def _render_points_cte() -> str:
             rp.base_rank,
             rp.cluster_label,
             rp.centroid_x,
-            rp.centroid_y
+            rp.centroid_y,
+            rp.parent_cluster_id,
+            rp.parent_label
         FROM render_points rp
         WHERE NOT rp.is_in_base
     ),
@@ -702,6 +711,8 @@ def _materialize_export_views(graph_run_id: str) -> None:
                 rp.y,
                 rp.cluster_id,
                 rp.cluster_label,
+                rp.parent_cluster_id,
+                rp.parent_label,
                 rp.cluster_probability,
                 rp.is_noise,
                 rp.is_in_base,

@@ -24,7 +24,7 @@ class LayoutConfig:
     pca_components: int = 50
     pca_batch_size: int = 10_000
     n_neighbors: int = 30
-    min_dist: float = 0.3
+    min_dist: float = 0.1
     spread: float = 1.0
     metric: str = "cosine"
     random_state: int = 42

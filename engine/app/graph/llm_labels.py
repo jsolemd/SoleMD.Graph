@@ -41,9 +41,18 @@ _MAX_RETRIES = 5
 _INITIAL_BACKOFF = 6.0  # seconds
 
 # ---------------------------------------------------------------------------
-# Prompt templates
+# Prompt loading — Langfuse Prompt Management with local fallbacks
 # ---------------------------------------------------------------------------
-_CLUSTER_LABEL_PROMPT = """\
+import re as _re
+
+_PROMPT_NAMES = {
+    "cluster_label": "graph-cluster-label",
+    "parent_label": "graph-parent-cluster-label",
+}
+
+_prompt_cache: dict[str, str] = {}
+
+_FALLBACK_CLUSTER_LABEL = """\
 You are a consultation-liaison psychiatrist and neuropsychiatry expert labeling \
 research community clusters in a knowledge graph that spans psychiatry, neurology, \
 and overlapping medical specialties.
@@ -85,7 +94,7 @@ Clusters:
 {clusters_json}
 """
 
-_PARENT_LABEL_PROMPT = """\
+_FALLBACK_PARENT_LABEL = """\
 You are a biomedical research librarian. Given a group of child cluster labels \
 from a neuroscience / psychiatry knowledge graph, produce a single parent label \
 that captures the overarching research theme.
@@ -97,6 +106,28 @@ Return a JSON object (no markdown fences) with exactly these keys:
 - "label": string, 3-7 words, clinical/scientific terminology, title case
 - "description": string, max 20 words summarizing the parent theme
 """
+
+
+def _get_prompt(key: str) -> str:
+    """Fetch prompt from Langfuse Prompt Management (cached), fall back to local."""
+    if key in _prompt_cache:
+        return _prompt_cache[key]
+
+    langfuse_name = _PROMPT_NAMES[key]
+    try:
+        lf = get_client()
+        if lf is not None:
+            prompt_obj = lf.get_prompt(langfuse_name, label="production")
+            text = _re.sub(r"\{\{(\w+)\}\}", r"{\1}", prompt_obj.prompt)
+            _prompt_cache[key] = text
+            logger.info("Loaded prompt '%s' from Langfuse (v%s)", langfuse_name, prompt_obj.version)
+            return text
+    except Exception:
+        logger.warning("Could not fetch prompt '%s' from Langfuse, using fallback", langfuse_name)
+
+    fallback = _FALLBACK_CLUSTER_LABEL if key == "cluster_label" else _FALLBACK_PARENT_LABEL
+    _prompt_cache[key] = fallback
+    return fallback
 
 
 # ---------------------------------------------------------------------------
@@ -143,58 +174,58 @@ def _rate_limited_generate(
         time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
 
     lf = get_client()
-    with lf.start_observation(
-        as_type="generation",
-        name=span_name,
-    ) as gen:
-        gen.update(input=contents[:1000], model=model)
+    gen = lf.start_observation(as_type="generation", name=span_name)
+    gen.update(input=contents[:1000], model=model)
 
-        backoff = _INITIAL_BACKOFF
-        for attempt in range(_MAX_RETRIES):
-            try:
-                _last_request_time = time.monotonic()
-                response = client.models.generate_content(
-                    model=model,
-                    contents=contents,
-                    config=genai.types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.3,
-                        safety_settings=[
-                            genai.types.SafetySetting(
-                                category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                                threshold="BLOCK_NONE",
-                            ),
-                            genai.types.SafetySetting(
-                                category="HARM_CATEGORY_HARASSMENT",
-                                threshold="BLOCK_NONE",
-                            ),
-                            genai.types.SafetySetting(
-                                category="HARM_CATEGORY_HATE_SPEECH",
-                                threshold="BLOCK_NONE",
-                            ),
-                            genai.types.SafetySetting(
-                                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                                threshold="BLOCK_NONE",
-                            ),
-                        ],
-                    ),
-                )
-                text = response.text or ""
-                gen.update(output=text[:1000])
-                return text
-            except (ResourceExhausted, ServiceUnavailable) as exc:
-                if attempt == _MAX_RETRIES - 1:
-                    raise
-                logger.warning(
-                    "Gemini %s (attempt %d/%d), backing off %.1fs",
-                    type(exc).__name__,
-                    attempt + 1,
-                    _MAX_RETRIES,
-                    backoff,
-                )
-                time.sleep(backoff)
-                backoff *= 2
+    backoff = _INITIAL_BACKOFF
+    for attempt in range(_MAX_RETRIES):
+        try:
+            _last_request_time = time.monotonic()
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=genai.types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.3,
+                    safety_settings=[
+                        genai.types.SafetySetting(
+                            category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                            threshold="BLOCK_NONE",
+                        ),
+                        genai.types.SafetySetting(
+                            category="HARM_CATEGORY_HARASSMENT",
+                            threshold="BLOCK_NONE",
+                        ),
+                        genai.types.SafetySetting(
+                            category="HARM_CATEGORY_HATE_SPEECH",
+                            threshold="BLOCK_NONE",
+                        ),
+                        genai.types.SafetySetting(
+                            category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                            threshold="BLOCK_NONE",
+                        ),
+                    ],
+                ),
+            )
+            text = response.text or ""
+            gen.update(output=text[:1000])
+            gen.end()
+            return text
+        except (ResourceExhausted, ServiceUnavailable) as exc:
+            if attempt == _MAX_RETRIES - 1:
+                gen.end()
+                raise
+            logger.warning(
+                "Gemini %s (attempt %d/%d), backing off %.1fs",
+                type(exc).__name__,
+                attempt + 1,
+                _MAX_RETRIES,
+                backoff,
+            )
+            time.sleep(backoff)
+            backoff *= 2
 
+    gen.end()
     raise RuntimeError("Exhausted retries for Gemini API call")
 
 
@@ -423,7 +454,7 @@ def label_clusters_with_llm(
             indent=2,
         )
 
-        prompt = _CLUSTER_LABEL_PROMPT.format(clusters_json=clusters_json)
+        prompt = _get_prompt("cluster_label").format(clusters_json=clusters_json)
 
         try:
             raw = _rate_limited_generate(
@@ -594,7 +625,7 @@ def _label_parent_groups(
             for cid in sorted(children)
         ]
         children_json = json.dumps(child_labels, indent=2)
-        prompt = _PARENT_LABEL_PROMPT.format(children_json=children_json)
+        prompt = _get_prompt("parent_label").format(children_json=children_json)
 
         try:
             raw = _rate_limited_generate(

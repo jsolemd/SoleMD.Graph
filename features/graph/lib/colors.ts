@@ -84,11 +84,10 @@ export const COLOR_SCHEME_OPTIONS = COSMOGRAPH_COLOR_SCHEME_ORDER.map((scheme) =
 
 const COLOR_PALETTES: Record<ColorSchemeName, readonly string[]> = {
   default: [
-    'rgba(43, 85, 168, 0.85)',
-    'rgba(153, 82, 213, 0.85)',
-    'rgba(240, 105, 180, 0.85)',
-    'rgba(255, 149, 131, 0.85)',
-    'rgba(254, 224, 139, 0.85)',
+    '#4e79a7', '#f28e2c', '#e15759', '#76b7b2', '#59a14f',
+    '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab',
+    '#6a4c93', '#1982c4', '#8ac926', '#ffca3a', '#ff595e',
+    '#3dc1d3', '#f15bb5', '#00bbf9', '#00f5d4', '#9b5de5',
   ],
   seasons: ['#2e9599', '#f7dc68', '#f46c3f', '#a7226f'],
   candy: ['#7f58af', '#64c5eb', '#e84d8a', '#feb326'],

@@ -23,7 +23,7 @@ class ClusterConfig:
     backend: str = "auto"
     n_neighbors: int = 15
     metric: str = "cosine"
-    resolution: float = 1.0
+    resolution: float = 15.0
     random_seed: int = 42
 
 
