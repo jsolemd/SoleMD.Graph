@@ -41,16 +41,9 @@ _MAX_RETRIES = 5
 _INITIAL_BACKOFF = 6.0  # seconds
 
 # ---------------------------------------------------------------------------
-# Prompt loading — Langfuse Prompt Management with local fallbacks
+# Prompt templates — fetched from Langfuse, local fallbacks for offline use
 # ---------------------------------------------------------------------------
-import re as _re
-
-_PROMPT_NAMES = {
-    "cluster_label": "graph-cluster-label",
-    "parent_label": "graph-parent-cluster-label",
-}
-
-_prompt_cache: dict[str, str] = {}
+from app.langfuse_config import get_prompt as _get_langfuse_prompt
 
 _FALLBACK_CLUSTER_LABEL = """\
 You are a consultation-liaison psychiatrist and neuropsychiatry expert labeling \
@@ -110,24 +103,9 @@ Return a JSON object (no markdown fences) with exactly these keys:
 
 def _get_prompt(key: str) -> str:
     """Fetch prompt from Langfuse Prompt Management (cached), fall back to local."""
-    if key in _prompt_cache:
-        return _prompt_cache[key]
-
-    langfuse_name = _PROMPT_NAMES[key]
-    try:
-        lf = get_client()
-        if lf is not None:
-            prompt_obj = lf.get_prompt(langfuse_name, label="production")
-            text = _re.sub(r"\{\{(\w+)\}\}", r"{\1}", prompt_obj.prompt)
-            _prompt_cache[key] = text
-            logger.info("Loaded prompt '%s' from Langfuse (v%s)", langfuse_name, prompt_obj.version)
-            return text
-    except Exception:
-        logger.warning("Could not fetch prompt '%s' from Langfuse, using fallback", langfuse_name)
-
+    name = {"cluster_label": "graph-cluster-label", "parent_label": "graph-parent-cluster-label"}[key]
     fallback = _FALLBACK_CLUSTER_LABEL if key == "cluster_label" else _FALLBACK_PARENT_LABEL
-    _prompt_cache[key] = fallback
-    return fallback
+    return _get_langfuse_prompt(name, fallback=fallback)
 
 
 # ---------------------------------------------------------------------------
@@ -177,56 +155,56 @@ def _rate_limited_generate(
     gen = lf.start_observation(as_type="generation", name=span_name)
     gen.update(input=contents[:1000], model=model)
 
-    backoff = _INITIAL_BACKOFF
-    for attempt in range(_MAX_RETRIES):
-        try:
-            _last_request_time = time.monotonic()
-            response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.3,
-                    safety_settings=[
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                            threshold="BLOCK_NONE",
-                        ),
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_HARASSMENT",
-                            threshold="BLOCK_NONE",
-                        ),
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_HATE_SPEECH",
-                            threshold="BLOCK_NONE",
-                        ),
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            threshold="BLOCK_NONE",
-                        ),
-                    ],
-                ),
-            )
-            text = response.text or ""
-            gen.update(output=text[:1000])
-            gen.end()
-            return text
-        except (ResourceExhausted, ServiceUnavailable) as exc:
-            if attempt == _MAX_RETRIES - 1:
-                gen.end()
-                raise
-            logger.warning(
-                "Gemini %s (attempt %d/%d), backing off %.1fs",
-                type(exc).__name__,
-                attempt + 1,
-                _MAX_RETRIES,
-                backoff,
-            )
-            time.sleep(backoff)
-            backoff *= 2
+    try:
+        backoff = _INITIAL_BACKOFF
+        for attempt in range(_MAX_RETRIES):
+            try:
+                _last_request_time = time.monotonic()
+                response = client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=genai.types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.3,
+                        safety_settings=[
+                            genai.types.SafetySetting(
+                                category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            genai.types.SafetySetting(
+                                category="HARM_CATEGORY_HARASSMENT",
+                                threshold="BLOCK_NONE",
+                            ),
+                            genai.types.SafetySetting(
+                                category="HARM_CATEGORY_HATE_SPEECH",
+                                threshold="BLOCK_NONE",
+                            ),
+                            genai.types.SafetySetting(
+                                category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                                threshold="BLOCK_NONE",
+                            ),
+                        ],
+                    ),
+                )
+                text = response.text or ""
+                gen.update(output=text[:1000])
+                return text
+            except (ResourceExhausted, ServiceUnavailable) as exc:
+                if attempt == _MAX_RETRIES - 1:
+                    raise
+                logger.warning(
+                    "Gemini %s (attempt %d/%d), backing off %.1fs",
+                    type(exc).__name__,
+                    attempt + 1,
+                    _MAX_RETRIES,
+                    backoff,
+                )
+                time.sleep(backoff)
+                backoff *= 2
 
-    gen.end()
-    raise RuntimeError("Exhausted retries for Gemini API call")
+        raise RuntimeError("Exhausted retries for Gemini API call")
+    finally:
+        gen.end()
 
 
 def _get_client() -> genai.Client:
