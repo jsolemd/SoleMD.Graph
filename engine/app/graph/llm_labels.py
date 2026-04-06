@@ -22,7 +22,6 @@ from app.langfuse_config import (
     SCORE_GRAPH_CLUSTER_ERRORS,
     SCORE_GRAPH_CLUSTER_LABELED,
     SCORE_GRAPH_CLUSTER_TOTAL,
-    SPAN_GRAPH_LABEL_BATCH,
     SPAN_GRAPH_LABEL_CLUSTERS,
     SPAN_GRAPH_LABEL_CONTEXT,
     SPAN_GRAPH_LABEL_RELABEL,
@@ -37,8 +36,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Rate-limiting / retry constants
 # ---------------------------------------------------------------------------
-_MAX_RPM = 200
-_MIN_REQUEST_INTERVAL = 60.0 / _MAX_RPM  # 0.3 seconds between requests
 _MAX_RETRIES = 5
 _INITIAL_BACKOFF = 2.0  # seconds
 _BATCH_POLL_INTERVAL = 10.0  # seconds between batch status polls
@@ -166,91 +163,37 @@ class ClusterLLMLabel:
 # ---------------------------------------------------------------------------
 # Gemini client helpers
 # ---------------------------------------------------------------------------
-_last_request_time: float = 0.0
+
+_GEMINI_CONFIG = genai.types.GenerateContentConfig(
+    response_mime_type="application/json",
+    temperature=0.3,
+    safety_settings=[
+        genai.types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
+        genai.types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
+        genai.types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
+        genai.types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
+    ],
+)
 
 
-@observe(as_type="generation", name=SPAN_GRAPH_LABEL_BATCH)
-def _rate_limited_generate(
-    client: genai.Client,
-    *,
-    model: str,
-    contents: str,
-    batch_cluster_ids: list[int] | None = None,
-) -> str:
-    """Call Gemini with rate limiting, exponential backoff, and Langfuse generation span."""
-    global _last_request_time
-
-    # Enforce minimum interval between requests
-    elapsed = time.monotonic() - _last_request_time
-    if elapsed < _MIN_REQUEST_INTERVAL:
-        time.sleep(_MIN_REQUEST_INTERVAL - elapsed)
-
-    lf = _get_langfuse()
-    if lf is not None:
-        lf.update_current_generation(
-            input=contents,
-            model=model,
-            metadata={"batch_cluster_ids": batch_cluster_ids} if batch_cluster_ids else None,
-        )
-
+def _generate(client: genai.Client, *, model: str, contents: str) -> str:
+    """Call Gemini with exponential backoff. Thread-safe, no Langfuse context."""
     backoff = _INITIAL_BACKOFF
     for attempt in range(_MAX_RETRIES):
         try:
-            _last_request_time = time.monotonic()
             response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.3,
-                    safety_settings=[
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                            threshold="BLOCK_NONE",
-                        ),
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_HARASSMENT",
-                            threshold="BLOCK_NONE",
-                        ),
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_HATE_SPEECH",
-                            threshold="BLOCK_NONE",
-                        ),
-                        genai.types.SafetySetting(
-                            category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            threshold="BLOCK_NONE",
-                        ),
-                    ],
-                ),
+                model=model, contents=contents, config=_GEMINI_CONFIG,
             )
-            text = response.text or ""
-            if lf is not None:
-                usage_details = {}
-                um = getattr(response, "usage_metadata", None)
-                if um is not None:
-                    usage_details = {
-                        "input": getattr(um, "prompt_token_count", None),
-                        "output": getattr(um, "candidates_token_count", None),
-                        "total": getattr(um, "total_token_count", None),
-                    }
-                lf.update_current_generation(
-                    output=text,
-                    usage_details=usage_details or None,
-                )
-            return text
+            return response.text or ""
         except (ResourceExhausted, ServiceUnavailable) as exc:
             if attempt == _MAX_RETRIES - 1:
                 raise
             logger.warning(
                 "Gemini %s (attempt %d/%d), backing off %.1fs",
-                type(exc).__name__,
-                attempt + 1,
-                _MAX_RETRIES,
-                backoff,
+                type(exc).__name__, attempt + 1, _MAX_RETRIES, backoff,
             )
             time.sleep(backoff)
             backoff *= 2
-
     raise RuntimeError("Exhausted retries for Gemini API call")
 
 
@@ -778,12 +721,7 @@ def _label_clusters_sequential(
         )
 
         try:
-            raw = _rate_limited_generate(
-                client,
-                model=model,
-                contents=prompt,
-                batch_cluster_ids=batch_ids,
-            )
+            raw = _generate(client, model=model, contents=prompt)
             parsed = _parse_label_response(raw)
 
             batch_labels = [
@@ -815,7 +753,7 @@ def _label_clusters_sequential(
     return {"labeled": labeled_count, "errors": error_count, "total": labeled_count + error_count * 10}
 
 
-_CONCURRENT_WORKERS = 8
+_CONCURRENT_WORKERS = 30
 
 
 def _label_clusters_concurrent(
@@ -850,9 +788,7 @@ def _label_clusters_concurrent(
     )
 
     def _process_batch(batch_ids: list[int], prompt: str) -> list[ClusterLLMLabel]:
-        raw = _rate_limited_generate(
-            client, model=model, contents=prompt, batch_cluster_ids=batch_ids,
-        )
+        raw = _generate(client, model=model, contents=prompt)
         parsed = _parse_label_response(raw)
         return [
             ClusterLLMLabel(
