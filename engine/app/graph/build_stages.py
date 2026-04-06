@@ -49,7 +49,7 @@ def _shared_neighbor_count(
     return max(int(layout_config.n_neighbors), int(cluster_config.n_neighbors) + 1)
 
 
-@observe(name=SPAN_GRAPH_BUILD_LAYOUT_MATRIX)
+@observe(name=SPAN_GRAPH_BUILD_LAYOUT_MATRIX, capture_input=False, capture_output=False)
 def _ensure_layout_matrix(
     *,
     graph_run_id: str,
@@ -114,7 +114,7 @@ def _ensure_layout_matrix(
     return layout_matrix, layout_backend
 
 
-@observe(name=SPAN_GRAPH_BUILD_KNN)
+@observe(name=SPAN_GRAPH_BUILD_KNN, capture_input=False, capture_output=False)
 def _ensure_shared_neighbor_graph(
     *,
     graph_run_id: str,
@@ -159,7 +159,7 @@ def _ensure_shared_neighbor_graph(
     return shared_knn
 
 
-@observe(name=SPAN_GRAPH_BUILD_COORDS)
+@observe(name=SPAN_GRAPH_BUILD_COORDS, capture_input=False, capture_output=False)
 def _ensure_layout_coordinates(
     *,
     graph_run_id: str,
@@ -192,7 +192,7 @@ def _ensure_layout_coordinates(
     return result.coordinates, result.backend
 
 
-@observe(name=SPAN_GRAPH_BUILD_CLUSTERS)
+@observe(name=SPAN_GRAPH_BUILD_CLUSTERS, capture_input=False, capture_output=False)
 def _ensure_cluster_ids(
     *,
     graph_run_id: str,
@@ -223,7 +223,7 @@ def _ensure_cluster_ids(
     return result.cluster_ids, result.backend
 
 
-@observe(name=SPAN_GRAPH_BUILD_SCORED)
+@observe(name=SPAN_GRAPH_BUILD_SCORED, capture_input=False, capture_output=False)
 def _ensure_scored_coordinates(
     *,
     graph_run_id: str,

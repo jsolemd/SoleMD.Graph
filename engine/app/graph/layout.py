@@ -50,6 +50,9 @@ class LayoutConfig:
     cluster_relaxation_iterations: int = 12
     cluster_relaxation_gap_scale: float = 1.45
     cluster_relaxation_step: float = 0.35
+    subsample_size: int = 500_000       # 0 = disabled (fit_transform all)
+    transform_batch_size: int = 200_000
+    subsample_n_epochs: int = 500       # explicit epochs for transform accuracy
     outlier_lof_neighbors: int = 20
     outlier_contamination: float = 0.02
     outlier_radial_percentile: float = 99.0
@@ -70,18 +73,17 @@ class LayoutResult:
     backend: str
 
 
-_cuml_accel_installed = False
+def _gpu_available() -> bool:
+    """Check if native cuML is available (no cuml.accel proxy)."""
+    try:
+        import cuml.manifold  # noqa: F401
+        import cupy  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
-def _ensure_cuml_accel():
-    global _cuml_accel_installed
-    if not _cuml_accel_installed:
-        import cuml.accel
-        cuml.accel.install()
-        _cuml_accel_installed = True
-
-
-@observe(name=SPAN_GRAPH_LAYOUT_PREPROCESS)
+@observe(name=SPAN_GRAPH_LAYOUT_PREPROCESS, capture_input=False, capture_output=False)
 def preprocess_embeddings(embeddings: numpy.ndarray, config: LayoutConfig) -> numpy.ndarray:
     np = require_numpy()
     matrix = embeddings.astype(np.float32, copy=config.copy_embeddings)
@@ -110,37 +112,30 @@ def preprocess_embeddings(embeddings: numpy.ndarray, config: LayoutConfig) -> nu
 
 
 def _enable_layout_backend(config: LayoutConfig) -> str:
-    """Enable the configured acceleration backend before sklearn/umap imports.
+    """Detect GPU availability for UMAP and kNN.
 
-    We keep the default graph code written against sklearn + umap-learn, then let
-    RAPIDS ``cuml.accel`` intercept those estimators when available. This keeps
-    the CPU path simple while allowing GPU acceleration for the same code path.
+    Uses native cuML directly with cupy arrays (data lives in VRAM).
+    Falls back to CPU umap-learn when cuML is not installed.
     """
-
     backend = config.backend.strip().lower()
-    if backend not in {"auto", "cpu", "gpu", "cuml_accel"}:
+    if backend not in {"auto", "cpu", "gpu", "cuml_native"}:
         raise ValueError(f"unsupported layout backend: {config.backend}")
 
     if backend == "cpu":
         return "cpu"
 
-    try:
-        import cuml.accel  # noqa: F401
-    except ImportError as exc:
-        if backend in {"gpu", "cuml_accel"}:
-            raise RuntimeError(
-                "GPU layout requested but RAPIDS cuML is not installed. "
-                "Install a compatible RAPIDS stack or use backend='cpu'."
-            ) from exc
-        return "cpu"
+    if _gpu_available():
+        return "cuml_native"
 
-    # RAPIDS docs recommend installing cuml.accel before importing sklearn or
-    # umap so supported estimators can be proxied onto the GPU.
-    _ensure_cuml_accel()
-    return "cuml_accel"
+    if backend in {"gpu", "cuml_native"}:
+        raise RuntimeError(
+            "GPU layout requested but RAPIDS cuML is not installed. "
+            "Install a compatible RAPIDS stack or use backend='cpu'."
+        )
+    return "cpu"
 
 
-@observe(name=SPAN_GRAPH_LAYOUT_PCA)
+@observe(name=SPAN_GRAPH_LAYOUT_PCA, capture_input=False, capture_output=False)
 def _pca_for_layout(
     embeddings: numpy.ndarray,
     config: LayoutConfig,
@@ -449,26 +444,208 @@ def _preprocess_chunk(embeddings: numpy.ndarray, config: LayoutConfig) -> numpy.
     return matrix
 
 
-@observe(name=SPAN_GRAPH_LAYOUT_RUN)
+def _random_subsample(
+    n_total: int,
+    target_size: int,
+    random_state: int = 42,
+) -> "numpy.ndarray":
+    """Select a random subsample of indices."""
+    np = require_numpy()
+    rng = np.random.default_rng(random_state)
+    return rng.choice(n_total, size=target_size, replace=False)
+
+
+def _use_subsample(config: LayoutConfig, n_points: int) -> bool:
+    """Whether to use subsample fit + batched transform."""
+    return config.subsample_size > 0 and n_points > config.subsample_size
+
+
+@observe(name=SPAN_GRAPH_LAYOUT_RUN, capture_input=False, capture_output=False)
 def run_layout_from_matrix(
-    layout_matrix: numpy.ndarray,
+    layout_matrix: "numpy.ndarray",
     *,
     config: LayoutConfig | None = None,
     shared_knn: NeighborGraphResult | None = None,
 ) -> LayoutResult:
-    """Project a PCA-space matrix to 2D with optional precomputed neighbors."""
+    """Project a PCA-space matrix to 2D.
+
+    GPU path uses native cuML with cupy arrays (data lives in VRAM).
+    CPU path uses umap-learn with numpy arrays.
+
+    When ``config.subsample_size > 0`` and the dataset exceeds that size,
+    fits UMAP on a random subsample then transforms the rest in batches.
+    """
     config = config or LayoutConfig()
     backend = _enable_layout_backend(config)
+    np = require_numpy()
 
     if layout_matrix.shape[0] <= 2:
-        return LayoutResult(
-            coordinates=layout_matrix[:, :2],
-            backend=backend,
+        return LayoutResult(coordinates=layout_matrix[:, :2], backend=backend)
+
+    n_points = layout_matrix.shape[0]
+    n_neighbors = min(config.n_neighbors, n_points - 1)
+    use_subsample = _use_subsample(config, n_points)
+
+    if backend == "cuml_native":
+        if use_subsample:
+            coordinates = _fit_transform_subsample_gpu(
+                layout_matrix, config=config, n_neighbors=n_neighbors,
+            )
+        else:
+            coordinates = _fit_transform_full_gpu(
+                layout_matrix, config=config, shared_knn=shared_knn,
+                n_neighbors=n_neighbors,
+            )
+    else:
+        coordinates = _fit_transform_cpu(
+            layout_matrix, config=config, shared_knn=shared_knn,
+            n_neighbors=n_neighbors,
+        )
+
+    if np.any(np.isnan(coordinates)) or np.any(np.isinf(coordinates)):
+        raise RuntimeError(
+            "UMAP produced NaN/Inf coordinates — likely divergence. "
+            "Check input embeddings for NaN values."
         )
 
     try:
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(
+                output={
+                    "input_shape": list(layout_matrix.shape),
+                    "output_shape": list(coordinates.shape),
+                    "backend": backend,
+                    "n_neighbors": n_neighbors,
+                    "subsample": use_subsample,
+                    "subsample_size": config.subsample_size if use_subsample else 0,
+                },
+            )
+    except Exception:
+        pass
+
+    return LayoutResult(coordinates=coordinates, backend=backend)
+
+
+# ---------------------------------------------------------------------------
+# GPU paths — native cuML with cupy arrays (data in VRAM)
+# ---------------------------------------------------------------------------
+
+def _fit_transform_full_gpu(
+    layout_matrix: "numpy.ndarray",
+    *,
+    config: LayoutConfig,
+    shared_knn: NeighborGraphResult | None,
+    n_neighbors: int,
+) -> "numpy.ndarray":
+    """Single-pass GPU fit_transform with optional precomputed kNN in VRAM."""
+    import cupy as cp
+    from cuml.manifold import UMAP
+
+    X_gpu = cp.asarray(layout_matrix)
+
+    kwargs: dict = dict(
+        n_neighbors=n_neighbors,
+        n_components=2,
+        min_dist=config.min_dist,
+        spread=config.spread,
+        metric=config.metric,
+        random_state=config.random_state,
+    )
+
+    if shared_knn is not None:
+        pruned = prune_neighbor_graph(shared_knn, column_count=config.n_neighbors)
+        kwargs["precomputed_knn"] = (
+            cp.asarray(pruned.indices),
+            cp.asarray(pruned.distances),
+        )
+
+    reducer = UMAP(**kwargs)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message=r"precomputed_knn")
+        coords_gpu = reducer.fit_transform(X_gpu)
+
+    coordinates = coords_gpu.get()
+    del X_gpu, coords_gpu
+    if "precomputed_knn" in kwargs:
+        del kwargs["precomputed_knn"]
+    return coordinates
+
+
+def _fit_transform_subsample_gpu(
+    layout_matrix: "numpy.ndarray",
+    *,
+    config: LayoutConfig,
+    n_neighbors: int,
+) -> "numpy.ndarray":
+    """Fit UMAP on a subsample in VRAM, transform the rest in batches.
+
+    No precomputed_knn — uses ``metric="cosine"`` so ``.transform()``
+    can compute neighbors for new points. ``n_epochs`` is set explicitly
+    because the default auto-calculation yields too few epochs for
+    accurate transform (cuML issue #3864).
+    """
+    import cupy as cp
+    from cuml.manifold import UMAP
+
+    np = require_numpy()
+    n_total = layout_matrix.shape[0]
+    subsample_idx = _random_subsample(n_total, config.subsample_size, config.random_state)
+    subsample_idx.sort()
+
+    rest_mask = np.ones(n_total, dtype=bool)
+    rest_mask[subsample_idx] = False
+    rest_idx = np.where(rest_mask)[0]
+
+    logger.info(
+        "Subsample UMAP (GPU): fit on %d, transform %d in batches of %d",
+        len(subsample_idx), len(rest_idx), config.transform_batch_size,
+    )
+
+    X_sub_gpu = cp.asarray(layout_matrix[subsample_idx])
+    reducer = UMAP(
+        n_neighbors=n_neighbors,
+        n_components=2,
+        n_epochs=config.subsample_n_epochs,
+        min_dist=config.min_dist,
+        spread=config.spread,
+        metric=config.metric,
+        random_state=config.random_state,
+    )
+    coords_sub_gpu = reducer.fit_transform(X_sub_gpu)
+
+    coordinates = np.empty((n_total, 2), dtype=np.float32)
+    coordinates[subsample_idx] = coords_sub_gpu.get()
+    del X_sub_gpu, coords_sub_gpu
+
+    logger.info("Subsample fit complete, transforming remaining %d points", len(rest_idx))
+    batch_size = config.transform_batch_size
+    for start in range(0, len(rest_idx), batch_size):
+        end = min(start + batch_size, len(rest_idx))
+        batch_gpu = cp.asarray(layout_matrix[rest_idx[start:end]])
+        coords_batch = reducer.transform(batch_gpu)
+        coordinates[rest_idx[start:end]] = coords_batch.get()
+        del batch_gpu, coords_batch
+        logger.info("Transform batch %d-%d / %d", start, end, len(rest_idx))
+
+    return coordinates
+
+
+# ---------------------------------------------------------------------------
+# CPU fallback — umap-learn with numpy arrays
+# ---------------------------------------------------------------------------
+
+def _fit_transform_cpu(
+    layout_matrix: "numpy.ndarray",
+    *,
+    config: LayoutConfig,
+    shared_knn: NeighborGraphResult | None,
+    n_neighbors: int,
+) -> "numpy.ndarray":
+    """CPU fallback using umap-learn with optional precomputed kNN."""
+    try:
         from umap import UMAP
-    except ImportError as exc:  # pragma: no cover - optional dependency
+    except ImportError as exc:
         raise RuntimeError(
             "Graph layout requires umap-learn. Install the graph extra: "
             "`uv sync --extra graph`."
@@ -480,7 +657,7 @@ def run_layout_from_matrix(
         precomputed_knn = (pruned.indices, pruned.distances)
 
     reducer = UMAP(
-        n_neighbors=min(config.n_neighbors, layout_matrix.shape[0] - 1),
+        n_neighbors=n_neighbors,
         n_components=2,
         min_dist=config.min_dist,
         spread=config.spread,
@@ -498,34 +675,7 @@ def run_layout_from_matrix(
             "ignore",
             message=r"precomputed_knn\[2\].*transform will be unavailable\.",
         )
-        coordinates = reducer.fit_transform(layout_matrix)
-
-    np = require_numpy()
-    if np.any(np.isnan(coordinates)) or np.any(np.isinf(coordinates)):
-        raise RuntimeError(
-            "UMAP produced NaN/Inf coordinates — likely divergence. "
-            "Check input embeddings for NaN values."
-        )
-
-    try:
-        client = _get_langfuse()
-        if client is not None:
-            client.update_current_span(
-                output={
-                    "input_shape": list(layout_matrix.shape),
-                    "output_shape": list(coordinates.shape),
-                    "backend": backend,
-                    "n_neighbors": config.n_neighbors,
-                    "precomputed_knn": shared_knn is not None,
-                },
-            )
-    except Exception:
-        pass
-
-    return LayoutResult(
-        coordinates=coordinates,
-        backend=backend,
-    )
+        return reducer.fit_transform(layout_matrix)
 
 
 def run_layout(

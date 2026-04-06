@@ -122,7 +122,7 @@ def _build_neighbor_graph_gpu(
         return NeighborGraphResult(
             indices=indices,
             distances=distances,
-            backend="cuml",
+            backend="cuml_native",
             neighbor_count=n_neighbors,
         )
     finally:
@@ -139,7 +139,7 @@ def build_neighbor_graph(
 ) -> NeighborGraphResult:
     """Build a shared self-inclusive kNN graph for layout and clustering."""
     normalized = backend.strip().lower()
-    if normalized not in {"auto", "cpu", "gpu", "cuml_accel", "cugraph"}:
+    if normalized not in {"auto", "cpu", "gpu", "cuml_native", "cugraph"}:
         raise ValueError(f"unsupported neighbor-graph backend: {backend}")
 
     if n_neighbors <= 0:
@@ -152,7 +152,7 @@ def build_neighbor_graph(
             metric=metric,
         )
 
-    if normalized in {"gpu", "cuml_accel", "cugraph"}:
+    if normalized in {"gpu", "cuml_native", "cugraph"}:
         return _build_neighbor_graph_gpu(
             matrix,
             n_neighbors=n_neighbors,

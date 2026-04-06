@@ -85,7 +85,7 @@ def _copy_chunk(chunk_data: bytes) -> None:
         conn.commit()
 
 
-@observe(name=SPAN_GRAPH_BUILD_WRITE_POINTS)
+@observe(name=SPAN_GRAPH_BUILD_WRITE_POINTS, capture_input=False, capture_output=False)
 def _write_graph_points(
     *,
     graph_run_id: str,
@@ -193,7 +193,7 @@ def _load_cluster_texts(*, graph_run_id: str, sample_per_cluster: int = 200) -> 
     return cluster_texts
 
 
-@observe(name=SPAN_GRAPH_BUILD_WRITE_CLUSTERS)
+@observe(name=SPAN_GRAPH_BUILD_WRITE_CLUSTERS, capture_input=False, capture_output=False)
 def _write_graph_clusters(cluster_rows: list[tuple]) -> None:
     if not cluster_rows:
         return

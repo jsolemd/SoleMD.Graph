@@ -101,7 +101,7 @@ def _edge_list_from_knn(
 # GPU Leiden (cugraph)
 # ---------------------------------------------------------------------------
 
-@observe(name=SPAN_GRAPH_CLUSTERS_CUGRAPH)
+@observe(name=SPAN_GRAPH_CLUSTERS_CUGRAPH, capture_input=False, capture_output=False)
 def _run_cugraph_leiden(
     sources: "cupy.ndarray",
     targets: "cupy.ndarray",
@@ -148,7 +148,7 @@ def _run_cugraph_leiden(
     )
 
 
-@observe(name=SPAN_GRAPH_CLUSTERS_GPU_KNN)
+@observe(name=SPAN_GRAPH_CLUSTERS_GPU_KNN, capture_input=False, capture_output=False)
 def _run_leiden_gpu_from_knn(
     knn_indices: "numpy.ndarray",
     knn_distances: "numpy.ndarray",
@@ -232,7 +232,7 @@ def _run_leiden_cpu_from_knn(
 # Public API
 # ---------------------------------------------------------------------------
 
-@observe(name=SPAN_GRAPH_CLUSTERS_LEIDEN)
+@observe(name=SPAN_GRAPH_CLUSTERS_LEIDEN, capture_input=False, capture_output=False)
 def run_leiden_from_knn(
     shared_knn: NeighborGraphResult,
     *,

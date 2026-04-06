@@ -251,7 +251,7 @@ def _load_checkpointed_ids(
     return corpus_ids, citation_counts
 
 
-@observe(name=SPAN_GRAPH_BUILD_VECTORS)
+@observe(name=SPAN_GRAPH_BUILD_VECTORS, capture_input=False, capture_output=False)
 def _ensure_input_vectors(
     *,
     graph_run_id: str,

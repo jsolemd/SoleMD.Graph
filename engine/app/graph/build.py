@@ -426,6 +426,7 @@ def run_graph_build(
             layout_config=layout_config,
         )
         logger.info("Stage layout_coordinates: %.1fs", time.monotonic() - t0)
+        del layout_matrix  # free ~490 MB before clustering
 
         t0 = time.monotonic()
         cluster_ids, cluster_backend = _ensure_cluster_ids(
@@ -436,6 +437,9 @@ def run_graph_build(
         )
         logger.info("Stage cluster_ids: %.1fs, backend=%s", time.monotonic() - t0, cluster_backend)
 
+        knn_indices = shared_knn.indices  # keep for scored_coordinates
+        del shared_knn  # free distances array ~294 MB
+
         t0 = time.monotonic()
         coordinates, outlier_scores, merged_noise = _ensure_scored_coordinates(
             graph_run_id=graph_run_id,
@@ -443,7 +447,7 @@ def run_graph_build(
             coordinates=coordinates,
             cluster_ids=cluster_ids,
             layout_config=layout_config,
-            knn_indices=shared_knn.indices,
+            knn_indices=knn_indices,
         )
         logger.info("Stage scored_coordinates: %.1fs", time.monotonic() - t0)
 
