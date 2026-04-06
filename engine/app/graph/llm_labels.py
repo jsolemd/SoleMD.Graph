@@ -871,7 +871,7 @@ def _write_llm_labels(graph_run_id: str, labels: list[ClusterLLMLabel]) -> None:
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
-@observe(name=SPAN_GRAPH_LABEL_RELABEL)
+@observe(name=SPAN_GRAPH_LABEL_RELABEL, capture_input=False, capture_output=False)
 def relabel_graph_run(graph_run_id: str) -> dict:
     """Full relabeling pipeline: LLM labels for leaf clusters.
 

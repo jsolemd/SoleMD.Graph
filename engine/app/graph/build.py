@@ -305,7 +305,7 @@ def _insert_graph_run(
         conn.commit()
 
 
-@observe(name=SPAN_GRAPH_BUILD_RUN)
+@observe(name=SPAN_GRAPH_BUILD_RUN, capture_input=False, capture_output=False)
 def run_graph_build(
     *,
     limit: int = 0,
@@ -318,6 +318,23 @@ def run_graph_build(
 ) -> GraphBuildResult:
     if limit and publish_current:
         raise ValueError("partial graph builds cannot be published as current")
+
+    # Name the trace explicitly so it's not "Unnamed trace" in Langfuse
+    try:
+        client = _get_langfuse()
+        if client is not None:
+            client.update_current_span(
+                name=SPAN_GRAPH_BUILD_RUN,
+                input={
+                    "limit": limit,
+                    "publish_current": publish_current,
+                    "resume_run_id": resume_run_id,
+                    "cluster_resolution": cluster_resolution,
+                    "llm_labels": llm_labels,
+                },
+            )
+    except Exception:
+        pass
 
     _check_memory_pressure()
     _cleanup_stale_build_artifacts(
