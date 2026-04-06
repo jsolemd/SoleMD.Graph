@@ -881,7 +881,7 @@ def relabel_graph_run(graph_run_id: str) -> dict:
     """
     lf = _get_langfuse()
     if lf is not None:
-        lf.update_current_trace(
+        lf.update_current_span(
             input={"graph_run_id": graph_run_id},
         )
 
@@ -919,7 +919,7 @@ def relabel_graph_run(graph_run_id: str) -> dict:
     }
 
     if lf is not None:
-        lf.update_current_trace(output=result)
+        lf.update_current_span(output=result)
 
     _langfuse_flush()
 

@@ -350,18 +350,16 @@ def stream_random_projection(
 ) -> tuple[numpy.ndarray, str]:
     """Single-pass streaming dimensionality reduction via SparseRandomProjection.
 
-    Unlike IncrementalPCA (two passes — fit then transform), random projection
-    is data-independent: the sparse projection matrix depends only on the
-    input/output dimensions and a random seed. This eliminates the fit pass
-    entirely, halving DB reads.
+    GPU path: uses cuML SparseRandomProjection with cupy arrays. Each chunk
+    streams DB → numpy → cupy (VRAM) → GPU SRP → accumulates in VRAM.
+    Final result stays as numpy for checkpoint saving but the computation
+    runs entirely on GPU.
+
+    CPU path: sklearn SparseRandomProjection with numpy arrays.
 
     Quality justification: A 2025 benchmarking study (PMC11838541) found
     SparseRandomProjection produces equal or better clustering quality than
-    PCA for UMAP preprocessing on biomedical datasets. The Johnson-Lindenstrauss
-    lemma guarantees pairwise distance preservation within (1±ε), which is
-    exactly what UMAP's kNN graph construction needs.
-
-    Peak memory: ~300 MB (one chunk) + 500 MB output array.
+    PCA for UMAP preprocessing on biomedical datasets.
 
     Args:
         chunk_fn: Callable returning a generator of (corpus_ids, citation_counts,
@@ -386,6 +384,77 @@ def stream_random_projection(
         all_emb = np.concatenate(chunks, axis=0)
         return all_emb[:, :min(config.pca_components, all_emb.shape[1])], backend
 
+    n_components = min(config.pca_components, total_count - 1, embedding_dim)
+    if n_components < 2:
+        chunks = []
+        for _ids, _cites, emb in chunk_fn():
+            chunks.append(emb)
+        return np.concatenate(chunks, axis=0) if chunks else np.empty((0, embedding_dim), dtype=np.float32), backend
+
+    if backend == "cuml_native":
+        return _stream_srp_gpu(chunk_fn, config=config, embedding_dim=embedding_dim,
+                               total_count=total_count, n_components=n_components, backend=backend)
+    return _stream_srp_cpu(chunk_fn, config=config, embedding_dim=embedding_dim,
+                           total_count=total_count, n_components=n_components, backend=backend)
+
+
+def _stream_srp_gpu(
+    chunk_fn,
+    *,
+    config: LayoutConfig,
+    embedding_dim: int,
+    total_count: int,
+    n_components: int,
+    backend: str,
+) -> tuple[numpy.ndarray, str]:
+    """GPU SRP: stream chunks to VRAM, project on GPU, accumulate result."""
+    import cupy as cp
+    from cuml.random_projection import SparseRandomProjection
+
+    np = require_numpy()
+
+    # SRP is data-independent — fit on dummy to build projection matrix on GPU
+    reducer = SparseRandomProjection(
+        n_components=n_components,
+        density="auto",
+        random_state=config.random_state,
+    )
+    reducer.fit(cp.zeros((1, embedding_dim), dtype=cp.float32))
+
+    # Stream: DB → numpy → cupy → GPU L2 norm → GPU SRP → accumulate
+    result = np.empty((total_count, n_components), dtype=np.float32)
+    offset = 0
+    for _ids, _cites, embeddings_chunk in _prefetch(chunk_fn()):
+        chunk_gpu = cp.asarray(embeddings_chunk, dtype=cp.float32)
+        if config.l2_normalize:
+            norms = cp.linalg.norm(chunk_gpu, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            chunk_gpu /= norms
+        projected = reducer.transform(chunk_gpu)
+        n = projected.shape[0]
+        result[offset:offset + n] = projected.get()
+        offset += n
+        del chunk_gpu, projected
+
+    if offset != total_count:
+        result = result[:offset]
+
+    logger.info("GPU SRP complete: %d rows × %d components", offset, n_components)
+    return result, backend
+
+
+def _stream_srp_cpu(
+    chunk_fn,
+    *,
+    config: LayoutConfig,
+    embedding_dim: int,
+    total_count: int,
+    n_components: int,
+    backend: str,
+) -> tuple[numpy.ndarray, str]:
+    """CPU SRP fallback: sklearn SparseRandomProjection with numpy."""
+    np = require_numpy()
+
     try:
         from sklearn.random_projection import SparseRandomProjection
     except ImportError as exc:
@@ -394,14 +463,6 @@ def stream_random_projection(
             "`uv sync --extra graph`."
         ) from exc
 
-    n_components = min(config.pca_components, total_count - 1, embedding_dim)
-    if n_components < 2:
-        chunks = []
-        for _ids, _cites, emb in chunk_fn():
-            chunks.append(emb)
-        return np.concatenate(chunks, axis=0) if chunks else np.empty((0, embedding_dim), dtype=np.float32), backend
-
-    # Fit on dummy data — SRP only needs dimensions, not data statistics
     reducer = SparseRandomProjection(
         n_components=n_components,
         density="auto",
@@ -409,7 +470,6 @@ def stream_random_projection(
     )
     reducer.fit(np.zeros((1, embedding_dim), dtype=np.float32))
 
-    # Single pass: stream → preprocess → transform → accumulate
     result = np.empty((total_count, n_components), dtype=np.float32)
     offset = 0
     for _ids, _cites, embeddings_chunk in _prefetch(chunk_fn()):
