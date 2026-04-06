@@ -595,7 +595,7 @@ def label_clusters_with_llm(
 
     if use_batch_api:
         return _label_clusters_batch(graph_run_id, contexts, already_labeled, model)
-    return _label_clusters_sequential(graph_run_id, contexts, already_labeled, model)
+    return _label_clusters_concurrent(graph_run_id, contexts, already_labeled, model)
 
 
 def _label_clusters_batch(
@@ -812,6 +812,77 @@ def _label_clusters_sequential(
 
         _langfuse_flush()
 
+    return {"labeled": labeled_count, "errors": error_count, "total": labeled_count + error_count * 10}
+
+
+_CONCURRENT_WORKERS = 8
+
+
+def _label_clusters_concurrent(
+    graph_run_id: str,
+    contexts: list[ClusterContext],
+    already_labeled: set[int],
+    model: str,
+) -> dict:
+    """Label clusters with concurrent Gemini requests.
+
+    Fires up to ``_CONCURRENT_WORKERS`` requests in parallel. Each request
+    gets the dedup context from already-labeled clusters (from DB) but not
+    from sister concurrent requests — a post-hoc dedup pass isn't needed
+    because the v4 prompt's rule 11 + used_labels_block prevents most
+    collisions, and the agentic review catches any remaining dupes.
+
+    Results are written to DB per-batch as they complete, so partial runs
+    survive interruption.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    client = _get_client()
+    existing_labels = _get_existing_labels(graph_run_id, already_labeled)
+    prompt_batches = _build_batch_prompts(contexts, already_used_labels=existing_labels)
+
+    labeled_count = len(already_labeled)
+    error_count = 0
+
+    logger.info(
+        "Concurrent labeling: %d batches, %d workers, %d clusters",
+        len(prompt_batches), _CONCURRENT_WORKERS, len(contexts),
+    )
+
+    def _process_batch(batch_ids: list[int], prompt: str) -> list[ClusterLLMLabel]:
+        raw = _rate_limited_generate(
+            client, model=model, contents=prompt, batch_cluster_ids=batch_ids,
+        )
+        parsed = _parse_label_response(raw)
+        return [
+            ClusterLLMLabel(
+                cluster_id=int(item["cluster_id"]),
+                label=str(item["label"])[:200],
+                description=str(item.get("description", ""))[:200],
+            )
+            for item in parsed
+        ]
+
+    with ThreadPoolExecutor(max_workers=_CONCURRENT_WORKERS) as pool:
+        futures = {
+            pool.submit(_process_batch, batch_ids, prompt): batch_ids
+            for batch_ids, prompt in prompt_batches
+        }
+        for future in as_completed(futures):
+            batch_ids = futures[future]
+            try:
+                batch_labels = future.result()
+                _write_llm_labels(graph_run_id, batch_labels)
+                labeled_count += len(batch_labels)
+                logger.info(
+                    "Labeled batch %d-%d (%d clusters, %d total)",
+                    batch_ids[0], batch_ids[-1], len(batch_labels), labeled_count,
+                )
+            except Exception:
+                error_count += 1
+                logger.exception("Failed to label batch %d-%d", batch_ids[0], batch_ids[-1])
+
+    _langfuse_flush()
     return {"labeled": labeled_count, "errors": error_count, "total": labeled_count + error_count * 10}
 
 
