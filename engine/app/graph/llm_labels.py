@@ -176,7 +176,14 @@ _GEMINI_CONFIG = genai.types.GenerateContentConfig(
 )
 
 
-def _generate(client: genai.Client, *, model: str, contents: str) -> str:
+@dataclass(frozen=True, slots=True)
+class _GeminiResult:
+    text: str
+    input_tokens: int
+    output_tokens: int
+
+
+def _generate(client: genai.Client, *, model: str, contents: str) -> _GeminiResult:
     """Call Gemini with exponential backoff. Thread-safe, no Langfuse context."""
     backoff = _INITIAL_BACKOFF
     for attempt in range(_MAX_RETRIES):
@@ -184,7 +191,12 @@ def _generate(client: genai.Client, *, model: str, contents: str) -> str:
             response = client.models.generate_content(
                 model=model, contents=contents, config=_GEMINI_CONFIG,
             )
-            return response.text or ""
+            um = getattr(response, "usage_metadata", None)
+            return _GeminiResult(
+                text=response.text or "",
+                input_tokens=getattr(um, "prompt_token_count", 0) or 0,
+                output_tokens=getattr(um, "candidates_token_count", 0) or 0,
+            )
         except (ResourceExhausted, ServiceUnavailable) as exc:
             if attempt == _MAX_RETRIES - 1:
                 raise
@@ -721,8 +733,8 @@ def _label_clusters_sequential(
         )
 
         try:
-            raw = _generate(client, model=model, contents=prompt)
-            parsed = _parse_label_response(raw)
+            result = _generate(client, model=model, contents=prompt)
+            parsed = _parse_label_response(result.text)
 
             batch_labels = [
                 ClusterLLMLabel(
@@ -787,10 +799,13 @@ def _label_clusters_concurrent(
         len(prompt_batches), _CONCURRENT_WORKERS, len(contexts),
     )
 
-    def _process_batch(batch_ids: list[int], prompt: str) -> list[ClusterLLMLabel]:
-        raw = _generate(client, model=model, contents=prompt)
-        parsed = _parse_label_response(raw)
-        return [
+    total_input_tokens = 0
+    total_output_tokens = 0
+
+    def _process_batch(batch_ids: list[int], prompt: str) -> tuple[list[ClusterLLMLabel], int, int]:
+        result = _generate(client, model=model, contents=prompt)
+        parsed = _parse_label_response(result.text)
+        labels = [
             ClusterLLMLabel(
                 cluster_id=int(item["cluster_id"]),
                 label=str(item["label"])[:200],
@@ -798,6 +813,7 @@ def _label_clusters_concurrent(
             )
             for item in parsed
         ]
+        return labels, result.input_tokens, result.output_tokens
 
     with ThreadPoolExecutor(max_workers=_CONCURRENT_WORKERS) as pool:
         futures = {
@@ -807,9 +823,11 @@ def _label_clusters_concurrent(
         for future in as_completed(futures):
             batch_ids = futures[future]
             try:
-                batch_labels = future.result()
+                batch_labels, in_tok, out_tok = future.result()
                 _write_llm_labels(graph_run_id, batch_labels)
                 labeled_count += len(batch_labels)
+                total_input_tokens += in_tok
+                total_output_tokens += out_tok
                 logger.info(
                     "Labeled batch %d-%d (%d clusters, %d total)",
                     batch_ids[0], batch_ids[-1], len(batch_labels), labeled_count,
@@ -817,6 +835,24 @@ def _label_clusters_concurrent(
             except Exception:
                 error_count += 1
                 logger.exception("Failed to label batch %d-%d", batch_ids[0], batch_ids[-1])
+
+    # Log aggregated usage to Langfuse
+    lf = _get_langfuse()
+    if lf is not None:
+        try:
+            lf.update_current_span(
+                output={
+                    "labeled": labeled_count,
+                    "errors": error_count,
+                    "batches": len(prompt_batches),
+                    "workers": _CONCURRENT_WORKERS,
+                    "input_tokens": total_input_tokens,
+                    "output_tokens": total_output_tokens,
+                    "model": model,
+                },
+            )
+        except Exception:
+            pass
 
     _langfuse_flush()
     return {"labeled": labeled_count, "errors": error_count, "total": labeled_count + error_count * 10}
