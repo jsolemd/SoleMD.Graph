@@ -19,19 +19,20 @@ with distinct research-community clusters. Full rebuild: ~15 minutes on GPU.
     │
     ▼
   SparseRandomProjection (768D → 50D) ─────── single-pass JL-lemma projection
-    │  data-independent fit, no second DB scan  ~800 MB → ~50 MB per chunk
-    │  vectorized dedup: 3x less RAM than set
+    │  GPU: cuML SRP with cupy (VRAM)           ~800 MB → ~50 MB per chunk
+    │  CPU fallback: sklearn SRP
     │
     ▼
   Shared kNN graph (k=30) ──────────────────── one neighbor graph, reused twice
-    │  NNDescent (CPU) or cuML (GPU)            avoids double kNN computation
-    │  n_jobs=-1: all CPU cores
+    │  GPU: native cuML NearestNeighbors        avoids double kNN computation
+    │  CPU fallback: sklearn NearestNeighbors
     │
     ├───────────────────────┐
     ▼                       ▼
   UMAP (2D)               Leiden clustering
-    │  precomputed_knn       │  GPU cugraph or CPU igraph
-    │  n_jobs=-1             │  resolution from config (default 3.0)
+    │  GPU: native cuML UMAP │  GPU cugraph or CPU igraph
+    │  subsample 500K fit +  │  resolution from config (default 25.0)
+    │  batched transform     │
     │                        │
     ▼                        │
   Coordinates ◄──────────────┘
@@ -91,16 +92,23 @@ with distinct research-community clusters. Full rebuild: ~15 minutes on GPU.
 ```
   Component                   Before optimization    After (current)
   ──────────────────────────  ────────────────────    ───────────────
-  Raw embeddings (768D f32)   7.2 GB in-memory       0 GB (streamed)
-  Projected matrix (50D f32)  477 MB (memmap)         477 MB (memmap)
-  kNN indices (30 neighbors)  286 MB                  286 MB
-  kNN distances               286 MB                  286 MB
+  Raw embeddings (768D f32)   7.2 GB in-memory       0 GB (streamed to VRAM)
+  Projected matrix (50D f32)  477 MB (memmap)         477 MB (memmap on host)
+  kNN indices (30 neighbors)  286 MB                  286 MB (host checkpoint)
+  kNN distances               286 MB                  286 MB (host checkpoint)
   UMAP coordinates (2D f32)   19 MB                   19 MB
   Cluster IDs (int32)         10 MB                   10 MB
   Outlier scores (f32)        10 MB                   10 MB
   ──────────────────────────  ────────────────────    ───────────────
-  Python process peak         ~12 GB                  ~2 GB
-  GPU VRAM (if GPU)           n/a                     ~4 GB (UMAP+Leiden)
+  Container host RAM peak     ~12 GB                  ~4 GB
+  GPU VRAM peak               n/a                     ~8–12 GB (SRP+kNN+UMAP+Leiden)
+
+  GPU pipeline (native cuML, no cuml.accel proxy):
+  - SRP: cuML SparseRandomProjection — chunks stream DB → cupy → VRAM → project
+  - kNN: cuML NearestNeighbors — full matrix in VRAM, results back to host for checkpoint
+  - UMAP: cuML UMAP — subsample 500K fit in VRAM, transform rest in 200K batches
+  - Leiden: cugraph — kNN loaded to VRAM, edge list built on GPU
+  - Memory freed between stages: del layout_matrix after UMAP, del shared_knn after Leiden
 ```
 
 ---
@@ -117,6 +125,9 @@ with distinct research-community clusters. Full rebuild: ~15 minutes on GPU.
 | `set_op_mix_ratio` | 0.25 | Lower = sharper cluster edges, outliers stay separated |
 | `repulsion_strength` | 1.2 | Push between non-neighbors. Lower = clusters sit closer |
 | `negative_sample_rate` | 10 | More negative samples = stronger repulsion (default is 5) |
+| `subsample_size` | 500,000 | Fit UMAP on subsample, transform rest in batches. 0 = disabled |
+| `transform_batch_size` | 200,000 | Points per transform batch (controls VRAM per batch) |
+| `subsample_n_epochs` | 500 | Explicit epochs for subsample fit (critical for transform accuracy) |
 
 **Key tradeoff**: The UMAP author says you cannot simultaneously maximize both
 cluster separation AND intra-cluster substructure at 2M+ scale. Current settings
@@ -498,8 +509,9 @@ equal or better clustering quality than PCA for UMAP preprocessing.
 - [UMAP clustering docs](https://umap-learn.readthedocs.io/en/latest/clustering.html) — recommends `min_dist=0`, `n_neighbors=30`
 - [UMAP FAQ](https://umap-learn.readthedocs.io/en/latest/faq.html) — multicore behavior and GPU guidance
 - [UMAP outlier detection](https://umap-learn.readthedocs.io/en/latest/outliers.html) — recommends LOF on 2D coordinates
-- [RAPIDS cuml.accel FAQ](https://docs.rapids.ai/api/cuml/legacy/cuml-accel/faq/) — zero-code-change acceleration notes
+- [cuML UMAP API](https://docs.rapids.ai/api/cuml/nightly/api/generated/cuml.manifold.umap/) — native GPU UMAP with cupy arrays
 - [cuGraph API docs](https://docs.rapids.ai/api/cugraph/stable/api_docs/cugraph/) — GPU Leiden support
+- [Out-of-Core DR (arXiv 2408.04129)](https://arxiv.org/html/2408.04129v1) — subsample UMAP quality at 5-20%
 - [c-TF-IDF (BERTopic)](https://maartengr.github.io/BERTopic/getting_started/ctfidf/ctfidf.html)
 - [Centroid repulsion / HD-SDR](https://journals.sagepub.com/doi/full/10.1177/14738716221086589) — sharpened dimensionality reduction
 - [Johnson-Lindenstrauss lemma](https://en.wikipedia.org/wiki/Johnson%E2%80%93Lindenstrauss_lemma) — pairwise distance preservation guarantee for random projection
