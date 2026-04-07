@@ -216,29 +216,50 @@ Langfuse Project
     └── hit@1=0 traces for domain expert review
 ```
 
-## Baseline Results (post-optimization-2026-04-05)
+## Baseline Results (post-cte-fix-2026-04-07)
 
-| Suite | hit@1 | hit@k | p50 (ms) | Notes |
-|-------|-------|-------|----------|-------|
-| title_retrieval_v2 | 100% | 100% | 677 | Title matching is excellent |
-| clinical_evidence_v2 | 7.8% | 17.6% | 31,030 | Low recall; fused_score_gap=0.30 |
-| passage_retrieval_v2 | 13.3% | 46.7% | 176,707 | Dense + citation channels carrying |
-| adversarial_routing_v2 | 16.7% | 41.7% | 96,419 | Lexical active (42%), dense=0 |
-| keyword_search_v2 | 0% | 16.7% | 174 | FTS fast but ranking misses |
-| abstract_stratum_v2 | 0% | 8.3% | 65,155 | Abstract-only papers barely retrieved |
-| question_evidence_v2 | 8.3% | 33.3% | 24,039 | Weak lexical, some dense/citation |
-| semantic_recall_v2 | 0% | 0% | 73,790 | Dense alone can't bridge terminology |
-| entity_relation_v2 | 8.3% | 8.3% | 74,075 | Entity channel = 0% — inactive |
+First trustworthy baseline after the CTE-planner regression fix
+(`55884b9`) and the title_matches fast-fail (`1ff0f9a`). Previous
+baselines were dominated by a 29-second paper-search regression
+introduced by migration 044 and masked every quality signal.
 
-Latency note: p50 values reflect concurrent benchmark load (max_concurrency=4)
-with cold buffer cache. Single-query production latency is much lower: FTS
-alone measured at 13ms (EXPLAIN ANALYZE), keyword_search p50=174ms shows the
-optimized path. The high p50 on other suites is dominated by HNSW vector scans
-on a cold 10GB index with I/O contention.
+| Suite | hit@1 | hit@k | mrr | routing_match | p50 (ms) | p95 (ms) |
+|-------|-------|-------|-----|---------------|----------|----------|
+| title_retrieval_v2 | 91.7% | 100.0% | 0.958 | 0.750 | 1481 | 10592 |
+| clinical_evidence_v2 | 7.8% | 19.6% | 0.123 | 1.000 | 514 | 2116 |
+| passage_retrieval_v2 | 20.0% | 46.7% | 0.289 | 0.455 | 650 | 2118 |
+| adversarial_routing_v2 | 16.7% | 33.3% | 0.211 | 0.250 | 888 | 1856 |
+| keyword_search_v2 | 0.0% | 16.7% | 0.042 | 0.000 | 429 | 956 |
+| abstract_stratum_v2 | 0.0% | 8.3% | 0.042 | — | 1032 | 1825 |
+| question_evidence_v2 | 20.0% | 26.7% | 0.213 | 1.000 | 536 | 1198 |
+| semantic_recall_v2 | 0.0% | 0.0% | 0.000 | 0.000 | 347 | 964 |
+| entity_relation_v2 | 7.7% | 7.7% | 0.077 | 0.000 | 1341 | 1872 |
 
-> **Snapshot date**: These results are from a specific benchmark run and will
-> diverge as ranking code, embeddings, or ingested corpus change. Re-run
-> `--all-benchmarks` to capture current performance.
+Latency impact of the fix (vs. the 2026-04-05 pre-fix baselines):
+clinical_evidence 31,030 → 514 ms (60×), passage_retrieval 176,707 →
+650 ms (272×), adversarial_routing 96,419 → 888 ms (108×),
+abstract_stratum 65,155 → 1,032 ms (63×), question_evidence 24,039 →
+536 ms (45×). title_retrieval p50 went *up* from 677 → 1,481 ms because
+Phase 3 flipped the biomedical cross-encoder on for GENERAL profile by
+default — accepted tradeoff for the expected score lift on passage
+queries.
+
+**Quality gaps the new baseline surfaces** (previously masked by the
+regression, now actionable):
+
+- `keyword_search_v2`, `semantic_recall_v2`, `entity_relation_v2` all
+  sit at or near zero hit@1. Entity and relation seed channels are
+  silent on the last two — entity/relation enrichment needs investigation.
+- `routing_match` is zero on three suites even though their cases carry
+  `expected_retrieval_profile`. Decide per-suite whether the router or
+  the seeds are wrong — the score is there to make this data-driven.
+  `adversarial_routing_v2` at 0.250 is expected (it tests edge cases).
+- `title_retrieval_v2` routing_match 0.750 means 3/12 title cases
+  routed to a non-TITLE profile. Check traces to confirm these are
+  genuine ambiguity, not router drift.
+
+> **Snapshot date**: 2026-04-07. Re-run `--all-benchmarks` after any
+> routing, ranking, or ingestion change to capture current performance.
 
 ## Key Files
 
