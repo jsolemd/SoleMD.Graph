@@ -193,7 +193,7 @@ PAPER_SEARCH_VECTOR_SQL = "p.fts_vector"
 
 
 GRAPH_INPUT_CTE_SQL = """
-graph_input AS (
+graph_input AS NOT MATERIALIZED (
     SELECT %s::uuid AS graph_run_id
 )
 """
@@ -358,7 +358,7 @@ normalized_title_matches AS MATERIALIZED (
         else "mp.lexical_score DESC"
     )
     return f"""
-WITH query_input AS (
+WITH query_input AS NOT MATERIALIZED (
     SELECT
         websearch_to_tsquery('english', %s) AS ts_query,
         phraseto_tsquery('english', %s) AS title_phrase_query,
@@ -474,7 +474,7 @@ PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY = _paper_search_sql(include_title_similarit
 
 
 PAPER_SEARCH_IN_SELECTION_SQL = f"""
-WITH query_input AS (
+WITH query_input AS NOT MATERIALIZED (
     SELECT
         websearch_to_tsquery('english', %s) AS ts_query,
         phraseto_tsquery('english', %s) AS title_phrase_query,
@@ -576,7 +576,7 @@ LIMIT %s
 
 
 PAPER_SEARCH_IN_GRAPH_SQL = f"""
-WITH query_input AS (
+WITH query_input AS NOT MATERIALIZED (
     SELECT
         websearch_to_tsquery('english', %s) AS ts_query,
         phraseto_tsquery('english', %s) AS title_phrase_query,
@@ -765,7 +765,7 @@ LIMIT %s
 
 
 PAPER_TITLE_LOOKUP_IN_GRAPH_SQL = f"""
-WITH query_input AS (
+WITH query_input AS NOT MATERIALIZED (
     SELECT
         lower(%s) AS lowered_query,
         %s::text AS normalized_title_query
@@ -911,7 +911,7 @@ ORDER BY
 
 
 PAPER_TITLE_LOOKUP_SQL = f"""
-WITH query_input AS (
+WITH query_input AS NOT MATERIALIZED (
     SELECT
         lower(%s) AS lowered_query,
         %s::text AS normalized_title_query
