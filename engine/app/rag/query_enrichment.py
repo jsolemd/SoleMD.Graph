@@ -43,6 +43,13 @@ PROSE_CLAUSE_TOKENS = frozenset(
         "had",
         "has",
         "have",
+        # Narrow paraphrase markers — "from" (causal origin) and "against"
+        # (adversarial comparison) rarely appear inside legitimate paper
+        # titles but are common in natural-language paraphrases that should
+        # flip out of the title lane (e.g. "liver problems from psychiatric
+        # medications", "efficacy against placebo controls").
+        "from",
+        "against",
     }
 )
 SENTENCE_OPENING_PREFIXES = frozenset(
@@ -457,9 +464,16 @@ def _is_extended_structured_title(text: str, *, token_count: int) -> bool:
     return any(marker in text for marker in (":", " - ", " – ", "; "))
 
 
-def _has_prose_clause_signal(text: str, *, token_count: int) -> bool:
-    if token_count <= MAX_TITLE_LIKE_QUERY_WORDS:
-        return False
+def _has_prose_clause_signal(text: str) -> bool:
+    """Detect prose-shape tokens that don't appear inside legitimate titles.
+
+    The prose-clause tokens (auxiliaries ``is``/``are``/``was``/``were``,
+    connectors ``that``/``which``/``because``, paraphrase markers
+    ``from``/``against``, temporal ``before``/``during``/``after``) are
+    narrow enough to apply at any length — they rarely appear inside real
+    paper titles, so seeing one is a strong signal the query is a
+    sentence-shaped paraphrase rather than a title lookup.
+    """
     tokens = normalize_query_text(text).split()
     return any(token in PROSE_CLAUSE_TOKENS for token in tokens)
 
@@ -563,10 +577,7 @@ def is_title_like_query(
         and not allows_extended_structured_title
     ):
         return False
-    if (
-        _has_prose_clause_signal(normalized, token_count=token_count)
-        and not allows_question_subtitle
-    ):
+    if _has_prose_clause_signal(normalized) and not allows_question_subtitle:
         return False
 
     if (
@@ -638,7 +649,7 @@ def should_use_exact_title_precheck(text: str | None) -> bool:
         return False
     if token_count < MIN_EXACT_TITLE_PRECHECK_WORDS:
         return False
-    if _has_prose_clause_signal(normalized, token_count=token_count):
+    if _has_prose_clause_signal(normalized):
         return False
     return True
 

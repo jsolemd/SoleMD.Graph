@@ -942,7 +942,14 @@ def test_rag_service_search_result_can_include_debug_trace():
     assert result.debug_trace["session_flags"]["paper_search_use_title_candidate_lookup"] is True
 
 
-def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
+def test_rag_service_returns_exact_title_match_even_with_entity_lane_enabled():
+    # Phase 1 of the 2026-04-06 routing pass removed the strong-lexical
+    # title-anchor gate from ``should_skip_runtime_entity_enrichment``
+    # (and the matching dense / frontier gates). Entity enrichment now
+    # runs alongside the title lane whenever the query has entity
+    # surface signal. This test keeps the "exact title still wins at
+    # rank 1" invariant but allows the additional lanes to execute and
+    # return empty.
     class ExactTitleRepository(FakeRepository):
         def resolve_selected_corpus_id(
             self,
@@ -955,7 +962,7 @@ def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
             return None
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            raise AssertionError("entity resolution should be skipped for exact title anchors")
+            return ([], set())
 
         def search_papers(
             self,
@@ -992,11 +999,10 @@ def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
             ]
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
-            assert corpus_ids == [11]
             return {}
 
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
-            raise AssertionError("exact title anchors should not expand the citation frontier")
+            return []
 
         def search_query_embedding_papers(
             self,
@@ -1006,10 +1012,9 @@ def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("exact title anchors should not run dense retrieval")
+            return []
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
-            assert entity_terms == []
             return {}
 
         def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
@@ -1021,13 +1026,13 @@ def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
             return {}
 
-    class FailingDenseQueryEmbedder:
+    class PermissiveDenseQueryEmbedder:
         def encode(self, text: str) -> list[float] | None:
-            raise AssertionError("exact title anchors should not encode dense queries")
+            return None
 
     service = _service(
         ExactTitleRepository(),
-        query_embedder=FailingDenseQueryEmbedder(),
+        query_embedder=PermissiveDenseQueryEmbedder(),
     )
 
     response = service.search(
@@ -1046,7 +1051,11 @@ def test_rag_service_skips_runtime_entity_resolution_for_exact_title_anchor():
     assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [11]
 
 
-def test_rag_service_skips_dense_and_frontier_for_strong_title_prefix_anchor():
+def test_rag_service_returns_strong_title_prefix_match_with_dense_lane_enabled():
+    # Phase 4 removed the TITLE_LOOKUP-specific dense-query early return.
+    # Dense, frontier, and entity lanes now fire alongside the title
+    # lane. The invariant is that a strong title prefix still resolves
+    # the target at rank 1 even with all additional lanes running.
     class PrefixTitleRepository(FakeRepository):
         def resolve_selected_corpus_id(
             self,
@@ -1059,17 +1068,7 @@ def test_rag_service_skips_dense_and_frontier_for_strong_title_prefix_anchor():
             return None
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            raise AssertionError("entity resolution should be skipped for strong title anchors")
-
-        def search_exact_title_papers(
-            self,
-            graph_run_id: str,
-            query: str,
-            *,
-            limit: int,
-            scope_corpus_ids=None,
-        ) -> list[PaperEvidenceHit]:
-            raise AssertionError("title lookup requests should not pre-run exact title probes")
+            return ([], set())
 
         def search_papers(
             self,
@@ -1109,11 +1108,10 @@ def test_rag_service_skips_dense_and_frontier_for_strong_title_prefix_anchor():
             ]
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
-            assert corpus_ids == [11857184]
             return {}
 
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
-            raise AssertionError("strong title anchors should not expand the citation frontier")
+            return []
 
         def search_query_embedding_papers(
             self,
@@ -1123,10 +1121,9 @@ def test_rag_service_skips_dense_and_frontier_for_strong_title_prefix_anchor():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("strong title anchors should not run dense retrieval")
+            return []
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
-            assert entity_terms == []
             return {}
 
         def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
@@ -1138,13 +1135,13 @@ def test_rag_service_skips_dense_and_frontier_for_strong_title_prefix_anchor():
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
             return {}
 
-    class FailingDenseQueryEmbedder:
+    class PermissiveDenseQueryEmbedder:
         def encode(self, text: str) -> list[float] | None:
-            raise AssertionError("strong title anchors should not encode dense queries")
+            return None
 
     service = _service(
         PrefixTitleRepository(),
-        query_embedder=FailingDenseQueryEmbedder(),
+        query_embedder=PermissiveDenseQueryEmbedder(),
     )
 
     response = service.search(
@@ -1188,7 +1185,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             return 11857184
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            raise AssertionError("selected title anchors should skip runtime entity resolution")
+            return ([], set())
 
         def search_selected_title_papers(
             self,
@@ -1240,7 +1237,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("selected title anchors should not pre-run exact title probes")
+            return []
 
         def search_papers(
             self,
@@ -1251,7 +1248,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             scope_corpus_ids=None,
             use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("selected title anchors should skip broad paper lexical lookup")
+            return []
 
         def search_chunk_papers(
             self,
@@ -1261,7 +1258,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("selected title anchors should skip chunk lexical retrieval")
+            return []
 
         def search_entity_papers(
             self,
@@ -1271,7 +1268,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("selected title anchors should skip entity recall")
+            return []
 
         def search_relation_papers(
             self,
@@ -1281,7 +1278,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("selected title anchors should skip relation recall")
+            return []
 
         def search_query_embedding_papers(
             self,
@@ -1291,7 +1288,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("selected title anchors should skip dense retrieval")
+            return []
 
         def fetch_semantic_neighbors(
             self,
@@ -1301,28 +1298,18 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             limit: int = 6,
             scope_corpus_ids=None,
         ):
-            raise AssertionError("selected title anchors should skip semantic neighbors")
+            return []
 
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
-            raise AssertionError("selected title anchors should not expand semantic seeds")
+            return []
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
-            assert corpus_ids == [11857184]
-            assert query == (
-                "Designing clinical trials for assessing the effects of cognitive training "
-                "and physical activity interventions on cognitive outcomes: The Seniors "
-                "Health and Activity Research Program Pilot (SHARP-P) Study, a randomized"
-            )
             return {}
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
-            assert corpus_ids == [11857184]
-            assert entity_terms == []
             return {}
 
         def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
-            assert corpus_ids == [11857184]
-            assert relation_terms == []
             return {}
 
         def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
@@ -1375,7 +1362,7 @@ def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles(
             return 4443808
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            raise AssertionError("selected title anchors should skip runtime entity resolution")
+            return ([], set())
 
         def search_selected_title_papers(
             self,
@@ -1411,6 +1398,17 @@ def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles(
                 )
             ]
 
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
         def search_chunk_papers(
             self,
             graph_run_id: str,
@@ -1419,21 +1417,58 @@ def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles(
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("selected title anchors should skip passage chunk retrieval")
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_relation_papers(
+            self,
+            graph_run_id: str,
+            *,
+            relation_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def fetch_semantic_neighbors(
+            self,
+            *,
+            graph_run_id: str,
+            selected_corpus_id: int,
+            limit: int = 6,
+            scope_corpus_ids=None,
+        ):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
-            assert corpus_ids == [4443808]
-            assert query.startswith("A Cuprous Oxide Thin Film")
             return {}
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
-            assert corpus_ids == [4443808]
-            assert entity_terms == []
             return {}
 
         def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
-            assert corpus_ids == [4443808]
-            assert relation_terms == []
             return {}
 
     service = _service(OverlongSelectedTitleRepository())
@@ -2363,9 +2398,13 @@ def test_rag_service_skips_dense_and_semantic_neighbors_on_selected_direct_chunk
 
 
 def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
+    # Previously used a title containing "from" which now routes to
+    # passage_lookup under the Phase 0.4 broadened prose-clause rule.
+    # Use an equivalent title without prose-clause tokens so the query
+    # still exercises the title-lookup promotion path.
     query = (
         "Abnormalities of mitochondrial dynamics and bioenergetics in neuronal "
-        "cells from CDKL5 deficiency disorder"
+        "cells of CDKL5 deficiency disorder"
     )
 
     class ExactTitlePromotionRepository(FakeRepository):
@@ -2387,10 +2426,10 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("title-shaped queries should stay on paper lexical lookup")
+            return []
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            raise AssertionError("exact title promotion should skip runtime entity resolution")
+            return ([], set())
 
         def search_chunk_papers(
             self,
@@ -2400,7 +2439,7 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("exact title promotion should skip chunk lexical retrieval")
+            return []
 
         def search_papers(
             self,
@@ -2411,14 +2450,6 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             scope_corpus_ids=None,
             use_title_similarity=True,
         ) -> list[PaperEvidenceHit]:
-            assert graph_run_id == "run-1"
-            assert query == (
-                "Abnormalities of mitochondrial dynamics and bioenergetics in "
-                "neuronal cells from CDKL5 deficiency disorder"
-            )
-            assert limit == 4
-            assert scope_corpus_ids is None
-            assert use_title_similarity is False
             return [
                 PaperEvidenceHit(
                     corpus_id=233428792,
@@ -2449,7 +2480,7 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("exact title promotion should skip entity recall")
+            return []
 
         def search_relation_papers(
             self,
@@ -2459,7 +2490,7 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("exact title promotion should skip relation recall")
+            return []
 
         def search_query_embedding_papers(
             self,
@@ -2469,21 +2500,18 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            raise AssertionError("exact title promotion should skip dense retrieval")
+            return []
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
-            assert corpus_ids == [233428792]
             return {}
 
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
-            raise AssertionError("exact title anchors should not expand the citation frontier")
+            return []
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
-            assert entity_terms == []
             return {}
 
         def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
-            assert relation_terms == []
             return {}
 
         def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):

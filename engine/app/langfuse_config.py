@@ -333,9 +333,13 @@ SCORE_DURATION_MS = "duration_ms"
 SCORE_EVIDENCE_BUNDLE_COUNT = "evidence_bundle_count"
 
 # Categorical
+# NOTE: When querying categorical scores via the Langfuse API/SDK, always
+# read ``stringValue`` — the numeric ``value`` field is always 0 for
+# categorical scores because the SDK doesn't compute the category index
+# client-side. ``route_signature`` was removed in favor of reading the full
+# signature from observation metadata (``session_flags.route_signature``).
 SCORE_RETRIEVAL_PROFILE = "retrieval_profile"
 SCORE_WAREHOUSE_DEPTH = "warehouse_depth"
-SCORE_ROUTE_SIGNATURE = "route_signature"
 
 # Graph build
 SCORE_GRAPH_POINT_COUNT = "graph_point_count"

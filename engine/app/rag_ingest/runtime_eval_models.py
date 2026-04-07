@@ -78,6 +78,7 @@ class RuntimeEvalBenchmarkCase(ParseContractModel):
     max_target_rank: int = 0
     mean_target_rank: float = 0.0
     source_lane_keys: list[str] = Field(default_factory=list)
+    expected_retrieval_profile: str | None = None
 
 
 class RuntimeEvalTopHit(ParseContractModel):

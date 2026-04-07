@@ -138,16 +138,16 @@ def has_strong_lexical_title_anchor(
 def should_skip_runtime_entity_enrichment(
     *,
     query: PaperRetrievalQuery,
-    lexical_hits: Sequence[PaperEvidenceHit],
 ) -> bool:
-    """Skip expensive enrichment when an exact title anchor already resolved the query."""
+    """Decide whether runtime entity enrichment should be skipped.
 
+    Entity enrichment runs alongside lexical retrieval whenever the query
+    has entity surface signal or explicit relation terms. We no longer
+    gate it behind the "strong lexical title anchor" check — lexical-first
+    ranking was burying entity-rich candidates even when they carried
+    direct surface signal worth pursuing.
+    """
     if query.entity_terms:
-        return True
-    if has_strong_lexical_title_anchor(
-        query_text=query.query,
-        lexical_hits=lexical_hits,
-    ):
         return True
     if query.relation_terms:
         return False
@@ -158,22 +158,21 @@ def should_run_dense_query(
     *,
     query: PaperRetrievalQuery,
     search_plan: RetrievalSearchPlan,
-    lexical_hits: Sequence[PaperEvidenceHit],
     selected_direct_anchor: bool = False,
 ) -> bool:
-    """Allow dense query search only when it adds real recall beyond lexical anchors."""
+    """Allow dense query search unless a selected-context anchor already resolved the query.
 
+    The previous TITLE_LOOKUP-specific early return was suppressing the
+    dense channel on legitimate title lookups where dense recall would
+    have helped paraphrased or near-title queries. We now skip dense only
+    when a selected-context direct anchor already pinned the target and
+    the plan explicitly prefers precise grounding.
+    """
     if not query.use_dense_query:
         return False
     if selected_direct_anchor and search_plan.prefer_precise_grounding:
         return False
-    return not (
-        search_plan.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
-        and has_strong_lexical_title_anchor(
-            query_text=query.query,
-            lexical_hits=lexical_hits,
-        )
-    )
+    return True
 
 
 def should_fetch_semantic_neighbors(
@@ -309,20 +308,21 @@ def should_run_biomedical_reranker(
     ranked_papers: Sequence[PaperEvidenceHit],
     enabled: bool,
 ) -> bool:
-    """Run the live biomedical reranker only on clinician-intent passage queries."""
+    """Run the live biomedical reranker on global, corpus-unrestricted queries.
 
+    Previously gated on PASSAGE/QUESTION profiles and clinician intent.
+    The reranker now runs wherever it has enough candidates to rerank —
+    the TITLE lane is excluded by the GENERAL/PASSAGE/QUESTION sort keys
+    (only GENERAL and PASSAGE/QUESTION profile weights include
+    ``biomedical_rerank_score`` today), so this check stays cheap. Adding
+    TITLE reranker influence is intentionally deferred until we see
+    GENERAL data.
+    """
     if not enabled:
         return False
     if selected_corpus_id is not None:
         return False
     if query.scope_mode != RetrievalScope.GLOBAL:
-        return False
-    if query.retrieval_profile not in (
-        QueryRetrievalProfile.PASSAGE_LOOKUP,
-        QueryRetrievalProfile.QUESTION_LOOKUP,
-    ):
-        return False
-    if query.clinical_intent == ClinicalQueryIntent.GENERAL:
         return False
     return len(ranked_papers) >= MIN_BIOMEDICAL_RERANK_CANDIDATES
 

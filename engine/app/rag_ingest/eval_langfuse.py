@@ -48,9 +48,9 @@ RAG_SCORE_CONFIGS: list[dict[str, Any]] = [
     {"name": "evidence_bundle_count", "dataType": "NUMERIC", "minValue": 0, "description": "Evidence bundles returned"},
     {"name": "grounded_answer_present", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Grounded answer present (binary)"},
     {"name": "faithfulness", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Answer faithfulness to retrieved context (managed evaluator or agent review)"},
-    {"name": "retrieval_profile", "dataType": "CATEGORICAL", "categories": [{"label": "title_lookup", "value": 0}, {"label": "question_lookup", "value": 1}, {"label": "passage_lookup", "value": 2}, {"label": "general", "value": 3}], "description": "Query retrieval profile"},
+    {"name": "retrieval_profile", "dataType": "CATEGORICAL", "categories": [{"label": "title_lookup", "value": 0}, {"label": "question_lookup", "value": 1}, {"label": "passage_lookup", "value": 2}, {"label": "general", "value": 3}], "description": "Query retrieval profile (read via stringValue, not the numeric value field)"},
     {"name": "warehouse_depth", "dataType": "CATEGORICAL", "categories": [{"label": "fulltext", "value": 0}, {"label": "abstract", "value": 1}, {"label": "none", "value": 2}], "description": "Warehouse content depth for target paper"},
-    {"name": "route_signature", "dataType": "CATEGORICAL", "categories": [{"label": "default", "value": 0}], "description": "Full routing fingerprint"},
+    {"name": "routing_match", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Actual retrieval_profile matches expected_retrieval_profile on the dataset case"},
     # Ingest quality scores
     {"name": "section_count", "dataType": "NUMERIC", "minValue": 0, "description": "Parsed section count"},
     {"name": "block_count", "dataType": "NUMERIC", "minValue": 0, "description": "Parsed block count"},

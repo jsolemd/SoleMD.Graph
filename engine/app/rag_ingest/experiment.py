@@ -322,14 +322,10 @@ def structural_evaluator(*, input, output, expected_output=None, metadata=None, 
     ]
 
     # Categorical scores
-    route_sig = output.get("route_signature")
-    if route_sig:
-        evals.append(Evaluation(
-            name="route_signature",
-            value=str(route_sig)[:200],
-            data_type="CATEGORICAL",
-        ))
-
+    # route_signature is intentionally NOT emitted as a score — it's a
+    # high-cardinality arbitrary string that can't fit a categorical config.
+    # The full signature lives in ``output["route_signature"]`` and in
+    # observation metadata (``session_flags``) for diagnosis.
     warehouse_depth = output.get("warehouse_depth")
     if warehouse_depth:
         evals.append(Evaluation(
@@ -384,6 +380,31 @@ def structural_evaluator(*, input, output, expected_output=None, metadata=None, 
         ))
 
     return evals
+
+
+def routing_evaluator(*, output, expected_output=None, **kwargs):
+    """Emit ``routing_match`` when the frozen case carries an expected profile.
+
+    The dataset item sets ``expected_retrieval_profile`` on cases that the
+    benchmark author expects to route a specific way (e.g. ``title_lookup``
+    for title_retrieval_v2). Emits 1.0 on match, 0.0 on mismatch. Items
+    without an expectation return no evaluations — the score simply won't
+    appear in their trace, which is the correct "n/a" behavior.
+    """
+    from langfuse import Evaluation
+
+    expected = (expected_output or {}).get("expected_retrieval_profile")
+    if not expected:
+        return []
+    actual = (output or {}).get("retrieval_profile")
+    matched = 1.0 if actual == expected else 0.0
+    return [
+        Evaluation(
+            name="routing_match",
+            value=matched,
+            comment=f"expected={expected} actual={actual}",
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +536,9 @@ ALL_BENCHMARK_DATASETS = [
     "benchmark-adversarial_routing_v2",
     "benchmark-keyword_search_v2",
     "benchmark-abstract_stratum_v2",
+    "benchmark-question_evidence_v2",
+    "benchmark-semantic_recall_v2",
+    "benchmark-entity_relation_v2",
 ]
 
 
@@ -757,7 +781,7 @@ def run_benchmark(
     return dataset.run_experiment(
         name=run_name,
         task=task,
-        evaluators=[structural_evaluator],
+        evaluators=[structural_evaluator, routing_evaluator],
         run_evaluators=[
             avg_hit_at_1,
             avg_hit_at_k,

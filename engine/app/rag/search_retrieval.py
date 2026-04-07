@@ -377,10 +377,7 @@ def retrieve_search_state(
         )
     trace.record_count("lexical_hits", len(lexical_hits))
 
-    if not should_skip_runtime_entity_enrichment(
-        query=query,
-        lexical_hits=lexical_hits,
-    ):
+    if not should_skip_runtime_entity_enrichment(query=query):
         query = trace.call(
             "query_entity_enrichment",
             _apply_query_enrichment,
@@ -430,7 +427,6 @@ def retrieve_search_state(
         and should_run_dense_query(
             query=query,
             search_plan=search_plan,
-            lexical_hits=lexical_hits,
             selected_direct_anchor=selected_direct_anchor,
         )
         else None

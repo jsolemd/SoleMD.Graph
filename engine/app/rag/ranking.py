@@ -53,10 +53,6 @@ def rank_paper_hits(
     score_profile = _ranking_profile(retrieval_profile)
     ranked: list[PaperEvidenceHit] = []
     for hit in paper_hits:
-        direct_support = has_direct_retrieval_support(
-            paper=hit,
-            retrieval_profile=retrieval_profile,
-        )
         paper_citation_hits = citation_hits.get(hit.corpus_id, [])
         paper_entity_hits = entity_hits.get(hit.corpus_id, [])
         paper_relation_hits = relation_hits.get(hit.corpus_id, [])
@@ -152,25 +148,17 @@ def rank_paper_hits(
                 ],
             )
         )
-        citation_score = hit.citation_boost
-        dense_score = hit.dense_score
-        if retrieval_profile in (
-            QueryRetrievalProfile.PASSAGE_LOOKUP,
-            QueryRetrievalProfile.QUESTION_LOOKUP,
-        ) and not direct_support:
-            citation_score = 0.0
-            dense_score *= 0.1
         hit.fused_score = (
             channel_fusion_score
             + (hit.title_similarity * score_profile.title_similarity_weight)
             + (hit.chunk_lexical_score * score_profile.chunk_lexical_weight)
             + (hit.title_anchor_score * score_profile.title_anchor_weight)
             + (hit.selected_context_score * score_profile.selected_context_weight)
-            + (citation_score * score_profile.citation_weight)
+            + (hit.citation_boost * score_profile.citation_weight)
             + (hit.citation_intent_score * score_profile.citation_intent_weight)
             + (hit.entity_score * score_profile.entity_weight)
             + (hit.relation_score * score_profile.relation_weight)
-            + (dense_score * score_profile.dense_weight)
+            + (hit.dense_score * score_profile.dense_weight)
             + (hit.publication_type_score * score_profile.publication_type_weight)
             + (hit.evidence_quality_score * score_profile.evidence_quality_weight)
             + (hit.clinical_prior_score * score_profile.clinical_prior_weight)
@@ -252,8 +240,13 @@ def _rank_sort_key(
             item.citation_count or 0,
             item.corpus_id,
         )
+    # GENERAL profile: cross-encoder rerank score breaks ties after
+    # fused_score. Title lane is unaffected — its sort key does not use
+    # ``biomedical_rerank_score`` and adding TITLE reranker influence is
+    # deferred pending GENERAL observability data.
     return (
         item.fused_score,
+        item.biomedical_rerank_score,
         item.chunk_lexical_score,
         item.semantic_score,
         item.lexical_score,

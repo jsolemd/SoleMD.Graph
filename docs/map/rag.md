@@ -118,11 +118,11 @@ V1 suites are preserved for backward compatibility but no longer in
 
 ### Score Dimensions
 
-**Retrieval**: `hit_at_1`, `hit_at_k`, `mrr`, `duration_ms`, `evidence_bundle_count`
+**Retrieval**: `hit_at_1`, `hit_at_k`, `mrr`, `routing_match`, `duration_ms`, `evidence_bundle_count`
 **Answer quality**: `grounded_answer_rate`, `target_in_grounded_answer`, `target_in_answer_corpus`, `faithfulness`
 **Signal decomposition** (per target paper): `target_lexical_score`, `target_chunk_lexical_score`, `target_dense_score`, `target_entity_score`, `target_relation_score`, `target_citation_boost`, `target_intent_score`, `target_publication_type_score`, `target_evidence_quality_score`, `target_biomedical_rerank_score`, `target_fused_score`, `fused_score_gap`
 **Channel contribution**: `channel_lexical`, `channel_chunk`, `channel_dense`, `channel_entity`, `channel_relation`, `channel_citation`, `target_lane_count`
-**Categorical**: `retrieval_profile`, `warehouse_depth`, `route_signature`, `source_system`, `has_chunks`
+**Categorical**: `retrieval_profile`, `warehouse_depth`, `source_system`, `has_chunks`
 **Ingest**: `section_count`, `block_count`, `sentence_count`, `entity_count`, `has_abstract_section`, `has_title_section`
 **Graph build**: `graph_point_count`, `graph_cluster_count`, `graph_bundle_bytes`, `graph_build_duration_s`
 
@@ -271,7 +271,7 @@ Their intended next use belongs in the plan doc, not here.
 |------|----------------------------------|-------|
 | `solemd.graph_runs` | Resolves `graph_release_id` to one concrete graph run | Supports `current`, explicit run ids, and bundle checksums |
 | `solemd.graph_points` | Defines release membership for retrieval and graph resolution | Every live query is scoped through the resolved run |
-| `solemd.papers` | Core paper metadata, paper FTS, and dense embeddings | Title, abstract, TLDR, venue, counts, `embedding` |
+| `solemd.papers` | Core paper metadata, paper FTS, and dense embeddings | Title, abstract, TLDR, venue, counts, `embedding`, `fts_vector` (stored tsvector); all graph-scoped queries JOIN through `graph_points` before FTS evaluation |
 | `solemd.citations` | Citation-context recall and bounded neighbor expansion | Boost-only lane, not a standalone result spine |
 | `solemd.paper_entity_mentions` | Entity seed recall and post-rank enrichment | Also anchors species and concept-level signals |
 | `pubtator.relations` | Relation seed recall and relation enrichment | Supplies normalized subject/object relation matching |
@@ -374,7 +374,7 @@ query shape, while the plan is the concrete execution posture for that request.
 
 | Channel | Source | Live role | Notes |
 |--------|--------|-----------|-------|
-| `lexical` | `solemd.papers` FTS | Paper recall | Title/abstract-weighted search with title-similarity helpers |
+| `lexical` | `solemd.papers.fts_vector` | Paper recall | Stored tsvector (title weight A, abstract weight B) via graph_points JOIN; GIN-indexed for sub-100ms retrieval |
 | `chunk_lexical` | `solemd.paper_chunks` FTS | Passage recall | Current chunk lane; no dense chunk ANN in the live path |
 | `dense_query` | `solemd.papers.embedding` | Semantic paper recall | Uses SPECTER2 ad-hoc query encoding |
 | `entity_match` | `solemd.paper_entity_mentions` | Seed recall and enrichment | Exact concept or canonical-name matching with bounded terms |
@@ -503,12 +503,15 @@ uv run python -m scripts.evaluate_rag_runtime \
   --graph-release-id current
 
 # 2. Review in Langfuse UI at $LANGFUSE_HOST
-#    - Score Analytics: hit_at_1, grounded_answer_rate regressions
-#    - Filter by categorical tags: query_family, warehouse_depth, route_signature
+#    - Score Analytics: hit_at_1, routing_match, grounded_answer_rate regressions
+#    - Filter by categorical tags: query_family, warehouse_depth, retrieval_profile
 #    - Click any trace to inspect the full pipeline:
 #      Input:  query, corpus_id, query_family, evidence_intent
 #      Output: top_hits with rank_features, retrieval_channel_hit_counts
 #      Meta:   session_flags (route, profile, scope), candidate_counts, stage_durations_ms
+#    - Inspect observation metadata for the full routing fingerprint:
+#      session_flags.route_signature captures the per-request route string
+#      (arbitrary high-cardinality, not a score — read directly from the trace).
 ```
 
 Each trace captures the complete retrieval pipeline state — query in, which
@@ -706,6 +709,32 @@ uv run python db/scripts/backfill_structural_chunks.py \
 
 The `by_warehouse_depth` eval dimension stratifies metrics by this classification so
 quality numbers are never conflated across depth levels.
+
+---
+
+## Out Of Scope — 2026-04-06 Architecture Pass
+
+The 2026-04-06 routing + ranking improvements intentionally did **not**
+touch the items below. They remain tracked but deferred:
+
+- **Reshaping benchmark seeds.** Cases now carry
+  `expected_retrieval_profile` via `RuntimeEvalBenchmarkCase` and the
+  `routing_match` score surfaces mismatches. A future pass can either
+  reshape seeds or add more router heuristics with stronger evidence —
+  we don't want to chase individual seeds without a broader justification.
+- **Adding TITLE-profile reranker influence.** The cross-encoder is now
+  live on GENERAL/PASSAGE/QUESTION profiles. TITLE will wait until we
+  have GENERAL observability data on latency and score impact before
+  expanding the reranker to the already-100% title lane.
+- **Adding an `expected_active_channels` field.** Additive observability
+  that would let us assert which retrieval channels should light up per
+  case. Can be added alongside a channel evaluator in a later pass.
+- **Aggressive router heuristics.** Length-only demote rules and
+  broad preposition lists (`in`, `with`, `on`, `by`, `via`, `into`)
+  were rejected — they regress legitimate biomedical titles such as
+  `Lithium in Bipolar Disorder`. Only the narrow paraphrase markers
+  `from` and `against` joined `PROSE_CLAUSE_TOKENS`, and the auxiliary
+  verbs already in the set were broadened to apply at any query length.
 
 ---
 

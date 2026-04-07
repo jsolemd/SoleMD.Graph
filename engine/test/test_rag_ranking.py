@@ -723,7 +723,11 @@ def test_rank_paper_hits_prefers_direct_title_support_over_citation_only_neighbo
     assert RetrievalChannel.LEXICAL in ranked[0].matched_channels
 
 
-def test_rank_paper_hits_penalizes_indirect_only_passage_candidates():
+def test_rank_paper_hits_prefers_direct_over_indirect_passage_candidates():
+    # The indirect-only fusion penalty was removed — ordering now follows
+    # the passage sort key's ``has_direct_retrieval_support`` tiebreaker
+    # (direct > indirect) rather than a negative adjustment on the fused
+    # score.
     papers = [
         PaperEvidenceHit(
             corpus_id=11,

@@ -118,7 +118,6 @@ class RankingScoreProfile:
     passage_alignment_weight: float = 0.0
     selected_context_weight: float = 0.0
     direct_match_bonus_weight: float = 0.0
-    indirect_only_penalty_weight: float = 0.0
 
 
 GENERAL_RANKING_PROFILE = RankingScoreProfile(
@@ -135,6 +134,7 @@ GENERAL_RANKING_PROFILE = RankingScoreProfile(
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
     clinical_prior_weight=CLINICAL_PRIOR_WEIGHT,
     intent_weight=INTENT_WEIGHT,
+    biomedical_rerank_weight=0.18,
 )
 TITLE_RANKING_PROFILE = RankingScoreProfile(
     channel_rrf_weights=TITLE_RRF_WEIGHTS,
@@ -170,7 +170,6 @@ PASSAGE_RANKING_PROFILE = RankingScoreProfile(
     passage_alignment_weight=0.22,
     selected_context_weight=0.1,
     direct_match_bonus_weight=0.18,
-    indirect_only_penalty_weight=0.14,
 )
 
 
@@ -288,6 +287,14 @@ def _direct_match_adjustment(
     retrieval_profile: QueryRetrievalProfile,
     score_profile: RankingScoreProfile,
 ) -> float:
+    """Apply the passage/question direct-match bonus.
+
+    The indirect-only penalty was removed: previously any paper matched
+    only via dense or citation lanes took a hard negative adjustment,
+    which over-suppressed legitimate semantic and citation-path evidence
+    on question-shaped queries. The direct-match bonus still fires when
+    lexical/chunk/passage alignment signal is present.
+    """
     if retrieval_profile not in (
         QueryRetrievalProfile.PASSAGE_LOOKUP,
         QueryRetrievalProfile.QUESTION_LOOKUP,
@@ -301,9 +308,6 @@ def _direct_match_adjustment(
     )
     if direct_match_score > 0:
         return direct_match_score * score_profile.direct_match_bonus_weight
-
-    if paper.dense_score > 0 or paper.citation_boost > 0:
-        return -score_profile.indirect_only_penalty_weight
     return 0.0
 
 

@@ -95,7 +95,7 @@ def test_should_use_title_similarity_disables_broad_lane_for_long_exact_titles()
 
 
 def test_should_use_title_similarity_keeps_shorter_title_lookup_queries():
-    title = "Motor Performance Is not Enhanced by Daytime Naps in Older Adults"
+    title = "Melatonin for Postoperative Delirium in Older Adults"
 
     assert is_title_like_query(title)
     assert (
@@ -147,9 +147,31 @@ def test_derive_relation_terms_skips_incidental_relation_verbs_in_long_passages(
 
 
 def test_is_title_like_query_accepts_paper_title_but_not_sentence():
-    assert is_title_like_query("Motor Performance Is not Enhanced by Daytime Naps in Older Adults")
+    # Title-cased paper titles pass; discussion-sentence prose is rejected.
+    # Prose-clause tokens (``is``, ``are``, ``was``, ``were``, ``from``,
+    # ``against``, etc.) now fire at any length — titles using an explicit
+    # auxiliary verb such as "Motor Performance Is Not Enhanced..." route
+    # through PASSAGE_LOOKUP instead of TITLE_LOOKUP. This is an
+    # intentional accuracy trade-off documented in the router tests below.
+    assert is_title_like_query(
+        "Melatonin for Postoperative Delirium in Older Adults"
+    )
     assert not is_title_like_query(
         "This is a representative discussion sentence with a concluding period."
+    )
+
+
+def test_is_title_like_query_rejects_titles_containing_prose_clause_tokens():
+    # Broadened prose-clause rule: any query containing an auxiliary verb
+    # or narrow paraphrase marker routes out of the title lane.
+    assert not is_title_like_query(
+        "Motor Performance Is Not Enhanced by Daytime Naps in Older Adults"
+    )
+    assert not is_title_like_query(
+        "ApoE4 Genotype Is Associated with Accelerated Cognitive Decline"
+    )
+    assert not is_title_like_query(
+        "Liver Problems from Psychiatric Medications"
     )
 
 
@@ -234,5 +256,5 @@ def test_should_use_chunk_lexical_query_routes_longer_free_text():
         "Does melatonin reduce postoperative delirium in older adults?"
     )
     assert not should_use_chunk_lexical_query(
-        "Motor Performance Is not Enhanced by Daytime Naps in Older Adults"
+        "Melatonin for Postoperative Delirium in Older Adults"
     )

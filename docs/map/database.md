@@ -90,6 +90,7 @@ were superseded or never shipped; the canonical sequence skips those numbers.
 | 029 | RAG canonical spans + mentions | `solemd.paper_blocks`, `solemd.paper_sentences`, `solemd.paper_citation_mentions`, `solemd.paper_entity_mentions` (all hash-partitioned ×16) |
 | 030 | Continuous base scoring | `paper_evidence_summary.entity_rule_families`, `.entity_rule_count`, `.entity_core_families`; update base policy target to 500K |
 | 043 | Journal family score multiplier | `base_journal_family.score_multiplier`, `paper_evidence_summary.journal_score_multiplier`; add `penalized` family_type; data-driven scoring replaces hardcoded flagship keys |
+| 044 | Papers table rebuild — stored fts_vector + index optimization | CTAS+swap rebuild: add `papers.fts_vector` (stored tsvector), drop 6 redundant indexes (GIN trgm, citation_count, year, venue, fos, pub_types — 9 GB saved), add missing `s2_references_checked_at` partial index, zero-bloat foundation (101 GB → 65 GB) |
 
 ---
 
@@ -151,8 +152,35 @@ Typical columns:
 - `s2_embedding_release_id`
 - `s2_references_checked_at`
 - `s2_references_release_id`
+- `fts_vector` — stored tsvector: `setweight(title, 'A') || setweight(abstract, 'B')`, auto-maintained by trigger on INSERT/UPDATE OF title, abstract
 - `created_at`
 - `updated_at`
+
+#### Papers index strategy (post migration 044)
+
+13 indexes optimized for the three hot paths: RAG retrieval, graph build, and
+S2 ingestion. 6 redundant indexes were dropped (GIN trgm duplicating GiST,
+btree on columns never filtered). Total index footprint: ~33 GB (was 41 GB).
+
+| Index | Type | Purpose |
+|-------|------|---------|
+| `papers_pkey` | btree | PK — every JOIN, UPDATE, UPSERT |
+| `idx_papers_paper_id` | btree unique | S2 paper_id dedup on enrichment |
+| `idx_papers_lower_title` | btree | Exact/prefix title matching (RAG fast-path) |
+| `idx_papers_normalized_title_key` | btree | Exact/prefix normalized title matching |
+| `idx_papers_title_gist_trgm` | GiST | KNN title similarity (`<<->`) + containment (`%%`) |
+| `idx_papers_normalized_title_key_gist_trgm` | GiST | KNN normalized title similarity (`<<<->`) |
+| `idx_papers_title_fts` | GIN | Title-only phrase search |
+| `idx_papers_fts_vector` | GIN | Stored title+abstract FTS (fastupdate=off) |
+| `idx_papers_embedding_hnsw` | HNSW | Vector cosine similarity (768-dim SPECTER2) |
+| `idx_papers_s2_full_checked_at` | btree partial | Find un-enriched papers (IS NULL) |
+| `idx_papers_s2_embedding_checked_at` | btree partial | Find un-embedded papers (IS NULL) |
+| `idx_papers_s2_references_checked_at` | btree partial | Find un-referenced papers (IS NULL) |
+| `idx_papers_retracted` | btree partial | Filter retracted papers |
+
+The `fts_vector` column is auto-maintained by `trg_papers_fts_vector` (BEFORE
+INSERT OR UPDATE OF title, abstract). The trigger only fires when title or
+abstract changes — embedding-only or metadata-only updates skip it.
 
 ### `solemd.load_history`
 

@@ -108,22 +108,23 @@ def test_has_strong_lexical_title_anchor_accepts_long_title_prefix():
     )
 
 
-def test_should_run_dense_query_skips_exact_title_anchor_lookups():
+def test_should_run_dense_query_runs_for_title_lookup_without_selected_anchor():
+    """Dense lane is no longer gated behind lexical title anchors.
+
+    The earlier TITLE_LOOKUP-specific early return over-suppressed dense
+    recall on paraphrased or near-title queries. The only remaining
+    early-skip is the selected-direct-anchor + precise-grounding gate.
+    """
     query = _query(
         "Selected paper title.",
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
     )
     search_plan = build_search_plan(query)
-    lexical_hits = [_paper_hit(11, title="Selected paper title", lexical_score=1.0)]
 
-    assert not should_run_dense_query(
-        query=query,
-        search_plan=search_plan,
-        lexical_hits=lexical_hits,
-    )
+    assert should_run_dense_query(query=query, search_plan=search_plan)
 
 
-def test_should_run_dense_query_skips_strong_title_prefix_anchor_lookups():
+def test_should_run_dense_query_runs_for_strong_title_prefix_without_selected_anchor():
     query = _query(
         (
             "Designing clinical trials for assessing the effects of cognitive "
@@ -134,24 +135,8 @@ def test_should_run_dense_query_skips_strong_title_prefix_anchor_lookups():
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
     )
     search_plan = build_search_plan(query)
-    lexical_hits = [
-        _paper_hit(
-            11857184,
-            title=(
-                "Designing clinical trials for assessing the effects of cognitive "
-                "training and physical activity interventions on cognitive outcomes: "
-                "The Seniors Health and Activity Research Program Pilot "
-                "(SHARP-P) Study, a randomized controlled trial"
-            ),
-            lexical_score=1.7,
-        )
-    ]
 
-    assert not should_run_dense_query(
-        query=query,
-        search_plan=search_plan,
-        lexical_hits=lexical_hits,
-    )
+    assert should_run_dense_query(query=query, search_plan=search_plan)
 
 
 def test_should_run_dense_query_skips_selected_direct_anchor_when_precision_is_preferred():
@@ -165,7 +150,6 @@ def test_should_run_dense_query_skips_selected_direct_anchor_when_precision_is_p
     assert not should_run_dense_query(
         query=query,
         search_plan=search_plan,
-        lexical_hits=[],
         selected_direct_anchor=True,
     )
 
@@ -195,10 +179,7 @@ def test_should_skip_runtime_entity_enrichment_skips_generic_passage_without_ent
         retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
     )
 
-    assert should_skip_runtime_entity_enrichment(
-        query=query,
-        lexical_hits=[],
-    )
+    assert should_skip_runtime_entity_enrichment(query=query)
 
 
 def test_should_skip_runtime_entity_enrichment_keeps_entity_like_queries_enabled():
@@ -207,10 +188,7 @@ def test_should_skip_runtime_entity_enrichment_keeps_entity_like_queries_enabled
         retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
     )
 
-    assert not should_skip_runtime_entity_enrichment(
-        query=query,
-        lexical_hits=[],
-    )
+    assert not should_skip_runtime_entity_enrichment(query=query)
 
 
 def test_should_fetch_semantic_neighbors_skips_selected_title_when_exact_anchor_exists():
@@ -326,7 +304,12 @@ def test_should_run_paper_lexical_fallback_stays_chunk_only_for_nonclinical_weak
     )
 
 
-def test_should_run_biomedical_reranker_only_for_global_clinical_passage_queries():
+def test_should_run_biomedical_reranker_runs_for_global_queries_with_candidates():
+    """The reranker now runs on any global query with enough candidates.
+
+    The profile + clinical-intent gates were removed so GENERAL queries
+    pick up cross-encoder influence through their sort-key tiebreaker.
+    """
     query = _query(
         "Melatonin reduced postoperative delirium incidence in surgical patients.",
         retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
@@ -345,24 +328,16 @@ def test_should_run_biomedical_reranker_only_for_global_clinical_passage_queries
     )
 
 
-def test_should_run_biomedical_reranker_skips_selected_or_nonpassage_queries():
-    title_query = _query(
-        "Selected paper title",
-        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+def test_should_run_biomedical_reranker_runs_for_general_profile_queries():
+    """GENERAL profile queries now benefit from cross-encoder reranking."""
+    query = _query(
+        "psychiatric medication liver risk",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        clinical_intent=ClinicalQueryIntent.GENERAL,
     )
 
-    assert not should_run_biomedical_reranker(
-        query=title_query,
-        selected_corpus_id=None,
-        ranked_papers=[_paper_hit(11, lexical_score=1.0) for _ in range(3)],
-        enabled=True,
-    )
-    assert not should_run_biomedical_reranker(
-        query=_query(
-            "Melatonin reduced postoperative delirium incidence in surgical patients.",
-            retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
-            clinical_intent=ClinicalQueryIntent.GENERAL,
-        ),
+    assert should_run_biomedical_reranker(
+        query=query,
         selected_corpus_id=None,
         ranked_papers=[
             _paper_hit(11, chunk_lexical_score=0.9),
@@ -371,6 +346,11 @@ def test_should_run_biomedical_reranker_skips_selected_or_nonpassage_queries():
         ],
         enabled=True,
     )
+
+
+def test_should_run_biomedical_reranker_skips_selected_or_non_global_queries():
+    # Selected-paper queries stay out of the reranker — they're already
+    # anchored and the reranker would waste latency reordering a pinned result.
     assert not should_run_biomedical_reranker(
         query=_query(
             "Melatonin reduced postoperative delirium incidence in surgical patients.",
@@ -383,6 +363,17 @@ def test_should_run_biomedical_reranker_skips_selected_or_nonpassage_queries():
             _paper_hit(22, chunk_lexical_score=0.8),
             _paper_hit(33, chunk_lexical_score=0.7),
         ],
+        enabled=True,
+    )
+    # Below-threshold candidate pools still skip the reranker to avoid noise.
+    assert not should_run_biomedical_reranker(
+        query=_query(
+            "Melatonin reduced postoperative delirium incidence in surgical patients.",
+            retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+            clinical_intent=ClinicalQueryIntent.TREATMENT,
+        ),
+        selected_corpus_id=None,
+        ranked_papers=[_paper_hit(11, chunk_lexical_score=0.9)],
         enabled=True,
     )
 

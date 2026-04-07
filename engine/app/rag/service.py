@@ -13,7 +13,6 @@ from app.langfuse_config import (
     SCORE_EVIDENCE_BUNDLE_COUNT,
     SCORE_GROUNDED_ANSWER_PRESENT,
     SCORE_RETRIEVAL_PROFILE,
-    SCORE_ROUTE_SIGNATURE,
     SPAN_RAG_SEARCH,
     observe,
 )
@@ -110,6 +109,13 @@ def _update_langfuse_observation(request, result, trace):
         )
 
         # --- per-trace scores ---
+        # route_signature is intentionally NOT a score: it's an arbitrary
+        # high-cardinality string that can't fit a categorical config.
+        # The full signature lives in observation metadata (session_flags).
+        # For CATEGORICAL scores (retrieval_profile), always read
+        # ``stringValue`` when querying the Langfuse API — the numeric
+        # ``value`` field is always 0 because the SDK doesn't compute the
+        # category index client-side.
         trace_id = client.get_current_trace_id()
         if trace_id:
             client.create_score(trace_id=trace_id, name=SCORE_DURATION_MS, value=result.duration_ms)
@@ -119,12 +125,6 @@ def _update_langfuse_observation(request, result, trace):
                 trace_id=trace_id, name=SCORE_RETRIEVAL_PROFILE,
                 value=str(query.retrieval_profile), data_type="CATEGORICAL",
             )
-            route_sig = debug.get("session_flags", {}).get("route_signature")
-            if route_sig:
-                client.create_score(
-                    trace_id=trace_id, name=SCORE_ROUTE_SIGNATURE,
-                    value=str(route_sig)[:200], data_type="CATEGORICAL",
-                )
 
     except Exception:
         logger.debug("Langfuse observation update failed", exc_info=True)

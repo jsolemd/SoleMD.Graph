@@ -538,6 +538,290 @@ SENTENCE_HARD_SEEDS: list[dict[str, object]] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Passage retrieval seeds: passage-style claims targeting chunked papers
+# Designed for require_chunks=True — queries phrased as natural language claims
+# that should trigger passage_lookup routing and chunk grounding.
+# ---------------------------------------------------------------------------
+PASSAGE_RETRIEVAL_SEEDS: list[dict[str, object]] = [
+    {
+        "query": "Autoimmune encephalitis can develop as a complication following herpes simplex encephalitis",
+        "search_terms": "autoimmune encephalitis herpes simplex",
+        "labels": ["passage_retrieval", "autoimmune_encephalitis"],
+    },
+    {
+        "query": "Plasma phospho-tau assays show different diagnostic accuracy in prodromal Alzheimer disease",
+        "search_terms": "phospho-tau assay prodromal Alzheimer",
+        "labels": ["passage_retrieval", "alzheimer_biomarker"],
+    },
+    {
+        "query": "ApoE4 genotype is associated with increased risk of Alzheimer disease through multiple mechanisms",
+        "search_terms": "ApoE4 Alzheimer therapeutic target",
+        "labels": ["passage_retrieval", "genetic_risk"],
+    },
+    {
+        "query": "Catatonia is underdiagnosed and has multiple etiologies requiring systematic workup",
+        "search_terms": "catatonia diagnosis treatment pathophysiology",
+        "labels": ["passage_retrieval", "catatonia_workup"],
+    },
+    {
+        "query": "Vascular cognitive impairment following stroke involves strategic infarct location",
+        "search_terms": "stroke cognitive impairment vascular dementia",
+        "labels": ["passage_retrieval", "vascular_dementia"],
+    },
+    {
+        "query": "Therapeutic hypothermia improves neurological outcomes in perinatal hypoxic ischemic encephalopathy",
+        "search_terms": "hypothermia perinatal hypoxic ischaemic encephalopathy",
+        "labels": ["passage_retrieval", "neonatal_neuroprotection"],
+    },
+    {
+        "query": "The gut microbiome changes observed in early Parkinson disease may contribute to disease progression",
+        "search_terms": "gut metagenome Parkinson L-DOPA",
+        "labels": ["passage_retrieval", "gut_brain_axis"],
+    },
+    {
+        "query": "Amyloid beta peptide disrupts glucose transport in hippocampal neurons",
+        "search_terms": "amyloid beta glucose transport hippocampal",
+        "labels": ["passage_retrieval", "amyloid_metabolism"],
+    },
+    {
+        "query": "The diagnostic criteria for dementia due to Alzheimer disease include both clinical and biomarker evidence",
+        "search_terms": "diagnosis dementia Alzheimer diagnostic guidelines",
+        "labels": ["passage_retrieval", "alzheimer_criteria"],
+    },
+    {
+        "query": "Matrix metalloproteinases participate in remyelination by processing inhibitory proteoglycans",
+        "search_terms": "matrix metalloproteinase remyelination NG2",
+        "labels": ["passage_retrieval", "remyelination"],
+    },
+    {
+        "query": "Hippocampal dendritic structure undergoes dynamic remodeling during development",
+        "search_terms": "dendritic structure hippocampal development",
+        "labels": ["passage_retrieval", "neuronal_development"],
+    },
+    {
+        "query": "Machine learning models can predict intraoperative hypoxemia using preoperative patient features",
+        "search_terms": "machine learning hypoxaemia surgery prediction",
+        "labels": ["passage_retrieval", "clinical_prediction"],
+    },
+    {
+        "query": "Central nervous system tumors are classified according to WHO grading criteria based on histological features",
+        "search_terms": "WHO classification tumours central nervous system",
+        "labels": ["passage_retrieval", "neuro_oncology"],
+    },
+    {
+        "query": "Diabetes management standards require individualized glycemic targets",
+        "search_terms": "standards medical care diabetes",
+        "labels": ["passage_retrieval", "diabetes_management"],
+    },
+    {
+        "query": "COPD is characterized by progressive decline in lung function over time",
+        "search_terms": "lung function decline COPD",
+        "labels": ["passage_retrieval", "copd_progression"],
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Question evidence seeds: interrogative clinical questions for question_lookup
+# These are NEW seeds distinct from QUESTION_LOOKUP_SEEDS (already in clinical_evidence_v2)
+# ---------------------------------------------------------------------------
+QUESTION_EVIDENCE_SEEDS: list[dict[str, object]] = [
+    {
+        "query": "What is the mechanism of action of lithium in bipolar disorder?",
+        "search_terms": "lithium mechanism bipolar",
+        "labels": ["question_evidence", "mechanism"],
+    },
+    {
+        "query": "How does delirium differ from dementia on electroencephalography?",
+        "search_terms": "delirium dementia EEG differentiation",
+        "labels": ["question_evidence", "differential_diagnosis"],
+    },
+    {
+        "query": "Why are benzodiazepines considered first-line treatment for catatonia?",
+        "search_terms": "benzodiazepine catatonia first-line",
+        "labels": ["question_evidence", "treatment_rationale"],
+    },
+    {
+        "query": "What percentage of autoimmune encephalitis cases present with psychiatric symptoms first?",
+        "search_terms": "autoimmune encephalitis psychiatric presentation prevalence",
+        "labels": ["question_evidence", "epidemiology"],
+    },
+    {
+        "query": "Which antipsychotics have the lowest risk of metabolic side effects?",
+        "search_terms": "antipsychotic metabolic side effect comparison",
+        "labels": ["question_evidence", "drug_safety"],
+    },
+    {
+        "query": "How is neuroleptic malignant syndrome diagnosed and distinguished from serotonin syndrome?",
+        "search_terms": "neuroleptic malignant syndrome diagnosis serotonin syndrome",
+        "labels": ["question_evidence", "diagnostic_workup"],
+    },
+    {
+        "query": "What are the neuropsychiatric manifestations of systemic lupus erythematosus?",
+        "search_terms": "neuropsychiatric lupus erythematosus manifestations",
+        "labels": ["question_evidence", "autoimmune_neuro"],
+    },
+    {
+        "query": "Does electroconvulsive therapy work for treatment-resistant catatonia?",
+        "search_terms": "electroconvulsive therapy catatonia treatment-resistant",
+        "labels": ["question_evidence", "treatment_efficacy"],
+    },
+    {
+        "query": "What is the role of NMDA receptor antibodies in new-onset psychosis?",
+        "search_terms": "NMDA receptor antibody psychosis",
+        "labels": ["question_evidence", "biomarker"],
+    },
+    {
+        "query": "What cognitive domains are affected in HIV-associated neurocognitive disorder?",
+        "search_terms": "HIV neurocognitive disorder cognitive domains",
+        "labels": ["question_evidence", "infectious_neuro"],
+    },
+    {
+        "query": "How should clozapine be initiated and monitored for treatment-resistant schizophrenia?",
+        "search_terms": "clozapine initiation monitoring schizophrenia",
+        "labels": ["question_evidence", "prescribing"],
+    },
+    {
+        "query": "What is the evidence for transcranial magnetic stimulation in major depressive disorder?",
+        "search_terms": "transcranial magnetic stimulation depression",
+        "labels": ["question_evidence", "neuromodulation"],
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Semantic recall seeds: paraphrased/colloquial queries where FTS fails
+# but dense vector similarity should succeed (different terminology)
+# ---------------------------------------------------------------------------
+SEMANTIC_RECALL_SEEDS: list[dict[str, object]] = [
+    {
+        "query": "brain inflammation after COVID infection",
+        "search_terms": "neuroinflammation SARS-CoV-2",
+        "labels": ["semantic_recall", "paraphrased"],
+    },
+    {
+        "query": "liver problems from psychiatric medications",
+        "search_terms": "hepatotoxicity psychotropic",
+        "labels": ["semantic_recall", "paraphrased"],
+    },
+    {
+        "query": "memory loss after surgery in elderly patients",
+        "search_terms": "postoperative cognitive dysfunction",
+        "labels": ["semantic_recall", "paraphrased"],
+    },
+    {
+        "query": "why patients refuse to take their psychiatric medications",
+        "search_terms": "treatment nonadherence anosognosia",
+        "labels": ["semantic_recall", "paraphrased"],
+    },
+    {
+        "query": "brain zaps from stopping antidepressants",
+        "search_terms": "SSRI discontinuation syndrome",
+        "labels": ["semantic_recall", "colloquial"],
+    },
+    {
+        "query": "acting out dreams during sleep and hitting bed partner",
+        "search_terms": "REM sleep behavior disorder",
+        "labels": ["semantic_recall", "colloquial"],
+    },
+    {
+        "query": "shaking hands from too much lithium",
+        "search_terms": "lithium toxicity tremor",
+        "labels": ["semantic_recall", "colloquial"],
+    },
+    {
+        "query": "can't sit still as a side effect of antipsychotics",
+        "search_terms": "akathisia antipsychotic",
+        "labels": ["semantic_recall", "colloquial"],
+    },
+    {
+        "query": "confused elderly patient who just had surgery",
+        "search_terms": "postoperative delirium elderly",
+        "labels": ["semantic_recall", "paraphrased"],
+    },
+    {
+        "query": "personality change after head injury",
+        "search_terms": "traumatic brain injury behavioral disturbance",
+        "labels": ["semantic_recall", "paraphrased"],
+    },
+    {
+        "query": "seeing things that aren't there in Parkinson's disease",
+        "search_terms": "Parkinson disease psychosis visual hallucinations",
+        "labels": ["semantic_recall", "colloquial"],
+    },
+    {
+        "query": "involuntary tongue and jaw movements from long-term antipsychotic use",
+        "search_terms": "tardive dyskinesia",
+        "labels": ["semantic_recall", "colloquial"],
+    },
+]
+
+# ---------------------------------------------------------------------------
+# Entity/relation seeds: queries rich in specific biomedical entities
+# Tests entity_match and relation_match retrieval channels
+# ---------------------------------------------------------------------------
+ENTITY_RELATION_SEEDS: list[dict[str, object]] = [
+    {
+        "query": "COMT Val158Met polymorphism and psychosis risk",
+        "search_terms": "COMT Val158Met psychosis",
+        "labels": ["entity_relation", "gene_variant"],
+    },
+    {
+        "query": "CYP2D6 poor metabolizer status and haloperidol dosing",
+        "search_terms": "CYP2D6 haloperidol metabolism",
+        "labels": ["entity_relation", "pharmacogenomics"],
+    },
+    {
+        "query": "anti-NMDAR encephalitis treatment with rituximab",
+        "search_terms": "anti-NMDA receptor encephalitis rituximab",
+        "labels": ["entity_relation", "immunotherapy"],
+    },
+    {
+        "query": "lithium nephrotoxicity and chronic kidney disease progression",
+        "search_terms": "lithium nephrotoxicity kidney",
+        "labels": ["entity_relation", "drug_toxicity"],
+    },
+    {
+        "query": "clozapine-induced myocarditis and cardiomyopathy",
+        "search_terms": "clozapine myocarditis cardiomyopathy",
+        "labels": ["entity_relation", "drug_adverse_effect"],
+    },
+    {
+        "query": "APOE4 allele and risk of Alzheimer disease",
+        "search_terms": "APOE4 Alzheimer risk",
+        "labels": ["entity_relation", "genetic_risk"],
+    },
+    {
+        "query": "serotonin transporter SLC6A4 and depression susceptibility",
+        "search_terms": "SLC6A4 serotonin transporter depression",
+        "labels": ["entity_relation", "gene_association"],
+    },
+    {
+        "query": "dopamine D2 receptor occupancy and antipsychotic efficacy threshold",
+        "search_terms": "dopamine D2 receptor occupancy antipsychotic",
+        "labels": ["entity_relation", "receptor_pharmacology"],
+    },
+    {
+        "query": "GABAergic interneuron dysfunction in schizophrenia pathophysiology",
+        "search_terms": "GABA interneuron schizophrenia",
+        "labels": ["entity_relation", "neurotransmitter"],
+    },
+    {
+        "query": "BDNF Val66Met polymorphism and ketamine antidepressant response",
+        "search_terms": "BDNF Val66Met ketamine",
+        "labels": ["entity_relation", "pharmacogenomics"],
+    },
+    {
+        "query": "TNF-alpha mediated neuroinflammation in major depressive disorder",
+        "search_terms": "TNF-alpha neuroinflammation depression",
+        "labels": ["entity_relation", "inflammatory_pathway"],
+    },
+    {
+        "query": "HLA-B*15:02 allele and carbamazepine-induced Stevens-Johnson syndrome",
+        "search_terms": "HLA-B*15:02 carbamazepine Stevens-Johnson",
+        "labels": ["entity_relation", "pharmacogenomics"],
+    },
+]
+
+# ---------------------------------------------------------------------------
 # Evidence-intent seeds: clinician queries with explicit support/refute intent
 # ---------------------------------------------------------------------------
 EVIDENCE_INTENT_SEEDS: list[dict[str, object]] = [
@@ -739,6 +1023,7 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
                 "corpus_id": case.corpus_id,
                 "title": case.title,
                 "primary_source_system": case.primary_source_system,
+                "expected_retrieval_profile": case.expected_retrieval_profile,
             }
             # Deterministic ID: upserts on re-run instead of appending duplicates
             item_id = f"{report.benchmark_key}:{case.corpus_id}"
@@ -850,8 +1135,7 @@ WHERE grp.graph_run_id = %s
   AND p.corpus_id != ALL(%s::BIGINT[])
   AND p.title IS NOT NULL
   AND (
-    setweight(to_tsvector('english', COALESCE(p.title, '')), 'A')
-    || setweight(to_tsvector('english', COALESCE(p.abstract, '')), 'B')
+    p.fts_vector
   ) @@ websearch_to_tsquery('english', %s)
 ORDER BY p.citation_count DESC NULLS LAST
 LIMIT 1
@@ -867,8 +1151,7 @@ WHERE grp.graph_run_id = %s
   AND p.corpus_id != ALL(%s::BIGINT[])
   AND p.title IS NOT NULL
   AND (
-    setweight(to_tsvector('english', COALESCE(p.title, '')), 'A')
-    || setweight(to_tsvector('english', COALESCE(p.abstract, '')), 'B')
+    p.fts_vector
   ) @@ websearch_to_tsquery('english', %s)
   AND EXISTS (
     SELECT 1 FROM solemd.paper_chunks pc
@@ -888,8 +1171,7 @@ WHERE grp.graph_run_id = %s
   AND p.corpus_id != ALL(%s::BIGINT[])
   AND p.title IS NOT NULL
   AND (
-    setweight(to_tsvector('english', COALESCE(p.title, '')), 'A')
-    || setweight(to_tsvector('english', COALESCE(p.abstract, '')), 'B')
+    p.fts_vector
   ) @@ websearch_to_tsquery('english', %s)
 ORDER BY p.citation_count DESC NULLS LAST
 LIMIT 1
@@ -1699,6 +1981,7 @@ def _resolve_seed_item(
     query_family: RuntimeEvalQueryFamily,
     require_chunks: bool = False,
     exclude_warehouse: bool = False,
+    expected_retrieval_profile: str | None = None,
 ) -> RuntimeEvalBenchmarkCase | None:
     """Resolve a single seed dict into a benchmark case, or None if unresolvable."""
     query = str(seed["query"]) if "query" in seed else ""
@@ -1741,6 +2024,7 @@ def _resolve_seed_item(
         max_target_rank=0,
         mean_target_rank=0.0,
         source_lane_keys=[],
+        expected_retrieval_profile=expected_retrieval_profile,
     )
 
 
@@ -1791,6 +2075,7 @@ def build_title_retrieval_v2(
                 benchmark_labels=sorted(set(labels)),
                 failure_count=0, min_target_rank=0, max_target_rank=0,
                 mean_target_rank=0.0, source_lane_keys=[],
+                expected_retrieval_profile="title_lookup",
             )
         )
         excluded.add(corpus_id)
@@ -1832,6 +2117,7 @@ def build_title_retrieval_v2(
                 benchmark_labels=sorted(set(labels)),
                 failure_count=0, min_target_rank=0, max_target_rank=0,
                 mean_target_rank=0.0, source_lane_keys=[],
+                expected_retrieval_profile="title_lookup",
             )
         )
         excluded.add(corpus_id)
@@ -1882,6 +2168,7 @@ def build_clinical_evidence_v2(
                 excluded=excluded,
                 benchmark_key="clinical_evidence_v2",
                 query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile="question_lookup",
             )
             if case is None:
                 query = seed.get("query", seed.get("search_terms", "?"))
@@ -1916,7 +2203,7 @@ def build_passage_retrieval_v2(
 
     cases = []
     with connect_fn() as conn, conn.cursor() as cur:
-        for seed in SENTENCE_HARD_SEEDS:
+        for seed in PASSAGE_RETRIEVAL_SEEDS:
             case = _resolve_seed_item(
                 cursor=cur,
                 graph_run_id=release.graph_run_id,
@@ -1925,6 +2212,7 @@ def build_passage_retrieval_v2(
                 benchmark_key="passage_retrieval_v2",
                 query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
                 require_chunks=True,
+                expected_retrieval_profile="passage_lookup",
             )
             if case is None:
                 print(f"  SKIP (no match): {seed.get('query', '?')[:60]}")
@@ -1934,7 +2222,7 @@ def build_passage_retrieval_v2(
 
     return _build_curated_benchmark(
         benchmark_key="passage_retrieval_v2",
-        benchmark_source="Passage-level retrieval stress tests, chunk-gated",
+        benchmark_source="Passage-level retrieval, chunk-gated, natural language claims",
         release=release,
         chunk_version_key=chunk_version_key,
         cases=cases,
@@ -1966,6 +2254,7 @@ def build_adversarial_routing_v2(
                 excluded=excluded,
                 benchmark_key="adversarial_routing_v2",
                 query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile="general",
             )
             if case is None:
                 print(f"  SKIP (no match): {seed.get('query', '?')[:60]}")
@@ -2007,6 +2296,7 @@ def build_keyword_search_v2(
                 excluded=excluded,
                 benchmark_key="keyword_search_v2",
                 query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile="general",
             )
             if case is None:
                 print(f"  SKIP (no match): {seed.get('query', seed.get('search_terms', '?'))[:60]}")
@@ -2051,8 +2341,7 @@ def build_abstract_stratum_v2(
       AND length(p.abstract) > 100
       AND pd.corpus_id IS NULL
       AND (
-        setweight(to_tsvector('english', COALESCE(p.title, '')), 'A')
-        || setweight(to_tsvector('english', COALESCE(p.abstract, '')), 'B')
+        p.fts_vector
       ) @@ websearch_to_tsquery('english', %s)
     ORDER BY p.citation_count DESC NULLS LAST
     LIMIT 1
@@ -2104,6 +2393,132 @@ def build_abstract_stratum_v2(
     )
 
 
+def build_question_evidence_v2(
+    *,
+    graph_release_id: str = "current",
+    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+    exclude_corpus_ids: set[int] | None = None,
+    connect=None,
+) -> RagRuntimeEvalBenchmarkReport:
+    """V2: Interrogative clinical questions testing question_lookup routing."""
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn, chunk_version_key=chunk_version_key
+    )
+    release = repository.resolve_graph_release(graph_release_id)
+    excluded = set(exclude_corpus_ids or set())
+
+    cases = []
+    with connect_fn() as conn, conn.cursor() as cur:
+        for seed in QUESTION_EVIDENCE_SEEDS:
+            case = _resolve_seed_item(
+                cursor=cur,
+                graph_run_id=release.graph_run_id,
+                seed=seed,
+                excluded=excluded,
+                benchmark_key="question_evidence_v2",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile="question_lookup",
+            )
+            if case is None:
+                print(f"  SKIP (no match): {seed.get('query', '?')[:60]}")
+                continue
+            cases.append(case)
+            excluded.add(case.corpus_id)
+
+    return _build_curated_benchmark(
+        benchmark_key="question_evidence_v2",
+        benchmark_source="Interrogative clinical questions — question_lookup routing",
+        release=release,
+        chunk_version_key=chunk_version_key,
+        cases=cases,
+    )
+
+
+def build_semantic_recall_v2(
+    *,
+    graph_release_id: str = "current",
+    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+    exclude_corpus_ids: set[int] | None = None,
+    connect=None,
+) -> RagRuntimeEvalBenchmarkReport:
+    """V2: Paraphrased/colloquial queries testing dense vector retrieval channel."""
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn, chunk_version_key=chunk_version_key
+    )
+    release = repository.resolve_graph_release(graph_release_id)
+    excluded = set(exclude_corpus_ids or set())
+
+    cases = []
+    with connect_fn() as conn, conn.cursor() as cur:
+        for seed in SEMANTIC_RECALL_SEEDS:
+            case = _resolve_seed_item(
+                cursor=cur,
+                graph_run_id=release.graph_run_id,
+                seed=seed,
+                excluded=excluded,
+                benchmark_key="semantic_recall_v2",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile="general",
+            )
+            if case is None:
+                print(f"  SKIP (no match): {seed.get('query', '?')[:60]}")
+                continue
+            cases.append(case)
+            excluded.add(case.corpus_id)
+
+    return _build_curated_benchmark(
+        benchmark_key="semantic_recall_v2",
+        benchmark_source="Paraphrased/colloquial queries — dense vector recall isolation",
+        release=release,
+        chunk_version_key=chunk_version_key,
+        cases=cases,
+    )
+
+
+def build_entity_relation_v2(
+    *,
+    graph_release_id: str = "current",
+    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+    exclude_corpus_ids: set[int] | None = None,
+    connect=None,
+) -> RagRuntimeEvalBenchmarkReport:
+    """V2: Entity/gene/drug-rich queries testing entity_match and relation_match channels."""
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn, chunk_version_key=chunk_version_key
+    )
+    release = repository.resolve_graph_release(graph_release_id)
+    excluded = set(exclude_corpus_ids or set())
+
+    cases = []
+    with connect_fn() as conn, conn.cursor() as cur:
+        for seed in ENTITY_RELATION_SEEDS:
+            case = _resolve_seed_item(
+                cursor=cur,
+                graph_run_id=release.graph_run_id,
+                seed=seed,
+                excluded=excluded,
+                benchmark_key="entity_relation_v2",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile="general",
+            )
+            if case is None:
+                print(f"  SKIP (no match): {seed.get('query', '?')[:60]}")
+                continue
+            cases.append(case)
+            excluded.add(case.corpus_id)
+
+    return _build_curated_benchmark(
+        benchmark_key="entity_relation_v2",
+        benchmark_source="Entity/gene/drug queries — entity_match and relation_match isolation",
+        release=release,
+        chunk_version_key=chunk_version_key,
+        cases=cases,
+    )
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Prepare curated frozen benchmarks for title, adversarial, and neuropsych suites."
@@ -2126,11 +2541,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=[
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
             "adversarial_routing_v2", "keyword_search_v2", "abstract_stratum_v2",
+            "question_evidence_v2", "semantic_recall_v2", "entity_relation_v2",
         ],
         choices=[
             # V2 suites (default)
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
             "adversarial_routing_v2", "keyword_search_v2", "abstract_stratum_v2",
+            "question_evidence_v2", "semantic_recall_v2", "entity_relation_v2",
             # V1 suites (legacy, kept for backward compat)
             "title_global", "title_selected", "adversarial_router", "neuropsych_safety",
             "question_lookup", "general_profile", "abstract_only",
@@ -2164,6 +2581,9 @@ def main(argv: list[str] | None = None) -> int:
         "adversarial_routing_v2": (build_adversarial_routing_v2, "adversarial_routing_v2.json"),
         "keyword_search_v2": (build_keyword_search_v2, "keyword_search_v2.json"),
         "abstract_stratum_v2": (build_abstract_stratum_v2, "abstract_stratum_v2.json"),
+        "question_evidence_v2": (build_question_evidence_v2, "question_evidence_v2.json"),
+        "semantic_recall_v2": (build_semantic_recall_v2, "semantic_recall_v2.json"),
+        "entity_relation_v2": (build_entity_relation_v2, "entity_relation_v2.json"),
         # V1 legacy suites (kept for backward compat)
         "title_global": (build_title_global_benchmark, "title_global_v1.json"),
         "title_selected": (build_title_selected_benchmark, "title_selected_v1.json"),

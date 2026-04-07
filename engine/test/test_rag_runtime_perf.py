@@ -767,6 +767,13 @@ def test_runtime_dense_query_title_global_tail_stays_bounded():
 @pytest.mark.integration
 @pytest.mark.slow
 def test_runtime_long_title_global_query_uses_exact_title_precheck():
+    """Long title queries hit the exact-title precheck and stay bounded.
+
+    Phase 4 removed the TITLE_LOOKUP-specific dense-query skip, so the
+    dense stage now runs even on strong title anchors. The exact-title
+    promotion still resolves the target, and the overall p95 latency
+    budget bounds the combined lane cost.
+    """
     report = _runtime_perf_report_for(
         (22309903,),
         (RuntimeEvalQueryFamily.TITLE_GLOBAL,),
@@ -778,9 +785,8 @@ def test_runtime_long_title_global_query_uses_exact_title_precheck():
     title_global = _family(report, RuntimeEvalQueryFamily.TITLE_GLOBAL)
 
     assert title_global.target_in_grounded_answer_rate == 1.0
-    assert title_global.p95_service_duration_ms <= 300.0
+    assert title_global.p95_service_duration_ms <= 500.0
     assert case.candidate_counts.get("exact_title_hits", 0) == 1
-    assert case.stage_durations_ms.get("search_query_embedding_papers", 0.0) <= 1.0
 
 
 @pytest.mark.integration
@@ -822,7 +828,13 @@ def test_runtime_sentence_global_skips_incidental_relation_lane():
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_runtime_sentence_global_general_query_skips_biomedical_reranker():
+def test_runtime_sentence_global_general_query_runs_biomedical_reranker():
+    """Phase 3 removed the clinical-intent gate on the biomedical reranker.
+
+    Global passage/question/general queries now always get the reranker
+    when the candidate pool is large enough, so GENERAL sentence queries
+    pick up cross-encoder influence rather than skipping it.
+    """
     _require_runtime_db()
 
     previous_enabled = settings.rag_live_biomedical_reranker_enabled
@@ -846,18 +858,10 @@ def test_runtime_sentence_global_general_query_skips_biomedical_reranker():
     sentence_global = _family(report, RuntimeEvalQueryFamily.SENTENCE_GLOBAL)
 
     assert sentence_global.target_in_grounded_answer_rate == 1.0
-    assert sentence_global.p95_service_duration_ms <= 300.0
-    assert (
-        case.route_signature
-        == "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|"
-        "dense_query_route=dense_query_ann_broad_scope"
-    )
+    assert sentence_global.p95_service_duration_ms <= 400.0
     assert case.session_flags.get("biomedical_reranker_enabled") is True
-    assert case.session_flags.get("biomedical_rerank_requested") is False
+    assert case.session_flags.get("biomedical_rerank_requested") is True
     assert case.session_flags.get("biomedical_reranker_backend") == "medcpt_cross_encoder"
-    assert case.candidate_counts.get("biomedical_rerank_candidates", 0) == 0
-    assert case.candidate_counts.get("biomedical_rerank_promotions", 0) == 0
-    assert case.stage_durations_ms.get("biomedical_rerank", 0.0) == 0.0
 
 
 @pytest.mark.integration
