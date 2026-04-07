@@ -174,8 +174,6 @@ class _PaperSearchMixin:
                 graph_run_id,
                 limit,
                 candidate_limit,
-                candidate_limit,
-                candidate_limit,
                 limit,
             ),
         )

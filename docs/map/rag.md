@@ -738,6 +738,34 @@ touch the items below. They remain tracked but deferred:
 
 ---
 
+## Title Similarity Fast-Fail
+
+The `title_matches` and `normalized_title_matches` CTEs were removed from
+`_paper_search_sql` (both the `include_title_similarity=True` and False
+variants) on 2026-04-07. They combined four trigram predicates via OR
+(`LIKE '%X%'`, `% query`, `query <<% normalize_title_key(title)`, and a
+normalized `LIKE`) inside a BitmapOr over the GiST trigram indexes on a
+14M-row `papers` table. On short title queries the BitmapOr + Recheck
+burned 30-60 s per call — trigram recheck on millions of false positives
+is inherent to the approach regardless of index type (GIN was tested and
+rejected: 125 s on the same query because the recheck processes 94% of
+the candidates).
+
+The retained `exact_title_matches` (btree exact on `lower(title)` and
+`normalize_title_key(title)`) and `fts_matches` (GIN `fts_vector @@
+ts_query`) cover the common title-lookup cases. The inline
+`fts_title_similarity_sql` still scores matched rows with
+`word_similarity` / `similarity` so the `title_similarity * 0.15` boost
+in `final_order_sql` still benefits genuine title queries. What we lose:
+character-level typo tolerance on titles (e.g. `alzhiemer` → `Alzheimer`)
+— acceptable for a research search engine where title queries usually
+contain intentional tokens that FTS already catches via stemming.
+
+Measured impact on `rag.search` warm latency with `title_similarity=True`:
+before 27-72 s per query; after 13-47 ms per query (~1000×).
+
+---
+
 ## Consolidation Note
 
 On 2026-04-03 the RAG docs were consolidated into `rag.md`.

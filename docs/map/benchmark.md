@@ -108,6 +108,7 @@ entity_relation_v2       ██       ░      ░      ██      ██      
 | `hit_at_1` | numeric 0/1 | Target paper at rank 1 |
 | `hit_at_k` | numeric 0/1 | Target paper in top-k results |
 | `mrr` | numeric 0-1 | 1/rank of target paper (0 if not found) |
+| `routing_match` | numeric 0/1 | Actual retrieval_profile matches expected_retrieval_profile (fires only when case carries expectation) |
 | `grounded_answer_rate` | numeric 0/1 | Grounded answer present |
 | `target_in_grounded_answer` | numeric 0/1 | Target paper in grounded answer |
 | `target_in_answer_corpus` | numeric 0/1 | Target paper in answer corpus |
@@ -154,9 +155,13 @@ entity_relation_v2       ██       ░      ░      ██      ██      
 | Score | Values |
 |-------|--------|
 | `retrieval_profile` | title_lookup, question_lookup, passage_lookup, general |
-| `route_signature` | Full routing decision fingerprint |
 | `warehouse_depth` | fulltext, abstract, none |
 | `source_system` | biocxml, s2orc_v2, abstract_only |
+
+> **Not a score:** `route_signature` is an arbitrary high-cardinality string
+> (the full routing decision fingerprint). It does not fit a categorical config
+> and is captured in observation metadata at `session_flags.route_signature` —
+> read it directly from the trace when diagnosing routing decisions.
 
 ## Run-Level Aggregates
 
@@ -201,9 +206,9 @@ Langfuse Project
 │       └── Evaluations attached to trace
 │
 ├── Score Configs (28 registered dimensions)
-│   ├── 8 retrieval metrics
+│   ├── 9 retrieval metrics (hit_at_1, hit_at_k, mrr, routing_match, duration_ms, evidence_bundle_count, target_in_*)
 │   ├── 2 answer quality (grounded_answer_present, faithfulness)
-│   ├── 5 categorical (retrieval_profile, warehouse_depth, route_signature, source_availability, source_system)
+│   ├── 4 categorical (retrieval_profile, warehouse_depth, source_availability, source_system)
 │   ├── 6 ingest quality (section/block/sentence/entity counts, has_abstract, has_title)
 │   └── 7 graph observability (point_count, cluster_count, bundle_bytes, build_duration, cluster_labeled/error/total)
 │

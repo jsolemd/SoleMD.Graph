@@ -277,80 +277,23 @@ def _paper_search_sql(*, include_title_similarity: bool) -> str:
         if include_title_similarity
         else "0.0"
     )
-    title_similarity_ctes = (
-        f""",
-title_matches AS MATERIALIZED (
-    SELECT
-        p.corpus_id,
-        0.0 AS lexical_score,
-        GREATEST(
-            {PAPER_TITLE_SIMILARITY_SQL},
-            CASE
-                WHEN query_input.normalized_title_query <> ''
-                THEN {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL}
-                ELSE 0.0
-            END
-        ) AS title_similarity,
-        COALESCE(p.citation_count, 0) AS citation_count
-    FROM {PAPER_GRAPH_JOIN_SQL}
-    CROSS JOIN query_input
-    CROSS JOIN graph_input
-    WHERE
-        NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_WHERE_SQL}
-        AND (
-            {PAPER_TITLE_TEXT_SQL} LIKE ('%%' || query_input.lowered_query || '%%')
-            OR {PAPER_TITLE_TEXT_SQL} %% query_input.lowered_query
-            OR (
-                query_input.normalized_title_query <> ''
-                AND (
-                    query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
-                    OR {PAPER_NORMALIZED_TITLE_KEY_SQL} LIKE (
-                        '%%' || query_input.normalized_title_query || '%%'
-                    )
-                )
-            )
-        )
-    ORDER BY
-        title_similarity DESC,
-        citation_count DESC,
-        p.corpus_id DESC
-    LIMIT %s
-),
-normalized_title_matches AS MATERIALIZED (
-    SELECT
-        p.corpus_id,
-        0.0 AS lexical_score,
-        {PAPER_NORMALIZED_TITLE_SIMILARITY_SQL} AS title_similarity,
-        COALESCE(p.citation_count, 0) AS citation_count
-    FROM {PAPER_GRAPH_JOIN_SQL}
-    CROSS JOIN query_input
-    CROSS JOIN graph_input
-    WHERE
-        NOT EXISTS (SELECT 1 FROM exact_title_matches)
-        AND {PAPER_GRAPH_WHERE_SQL}
-        AND query_input.normalized_title_query <> ''
-        AND query_input.normalized_title_query <<%% {PAPER_NORMALIZED_TITLE_KEY_SQL}
-    ORDER BY
-        query_input.normalized_title_query <<<-> {PAPER_NORMALIZED_TITLE_KEY_SQL},
-        citation_count DESC,
-        p.corpus_id DESC
-    LIMIT %s
-)"""
-        if include_title_similarity
-        else ""
-    )
+    # The historical ``title_matches`` and ``normalized_title_matches`` CTEs
+    # were dropped because they combined four trigram predicates via OR —
+    # ``LIKE '%X%'`` + ``% query`` + ``normalized_title_query <<% ...`` +
+    # ``... LIKE '%Y%'`` — inside a BitmapOr over GiST/GIN trigram indexes
+    # on a 14M-row papers table. On short title queries the trigram recheck
+    # burned 30-60 s per call (see the docs/map/rag.md "title_similarity
+    # fast-fail" note). The retained ``exact_title_matches`` (btree exact)
+    # and ``fts_matches`` (GIN tsvector) cover the common cases — exact
+    # title lookup and word-level containment via FTS. The inline
+    # ``fts_title_similarity_sql`` still scores matched rows with
+    # word_similarity/similarity so the title boost in ``final_order_sql``
+    # still benefits genuine title queries.
+    title_similarity_ctes = ""
     candidate_match_sources = """
         SELECT * FROM exact_title_matches
         UNION ALL
         SELECT * FROM fts_matches
-"""
-    if include_title_similarity:
-        candidate_match_sources += """
-        UNION ALL
-        SELECT * FROM title_matches
-        UNION ALL
-        SELECT * FROM normalized_title_matches
 """
     final_order_sql = (
         "(mp.lexical_score + (mp.title_similarity * 0.15)) DESC"

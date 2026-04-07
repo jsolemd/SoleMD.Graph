@@ -110,8 +110,6 @@ def test_search_papers_maps_rows(mock_conn):
             "run-1",
             5,
             120,
-            120,
-            120,
             5,
         ),
     )
