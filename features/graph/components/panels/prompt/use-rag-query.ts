@@ -3,6 +3,11 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { fetchGraphRagQuery } from "@/features/graph/lib/detail-service";
 import {
+  createGraphInteractionTrace,
+  createInteractionTraceStage,
+  getInteractionNow,
+} from "@/features/graph/lib/interaction-trace";
+import {
   GRAPH_ASK_ENGINE_ERROR_DATA_PART,
   extractLatestEvidencePayload,
   getLatestAssistantText,
@@ -17,6 +22,7 @@ import {
 import type {
   GraphBundle,
   GraphBundleQueries,
+  GraphInteractionTrace,
   GraphPointRecord,
   GraphRagQueryResponsePayload,
   OverlayProducerId,
@@ -28,6 +34,7 @@ import {
 } from "./rag-graph-sync";
 
 export interface RagResponseSession {
+  requestId: number;
   origin: "ask" | "compose";
   evidenceIntent: EvidenceAssistRequest["intent"] | null;
   queryPreview: string | null;
@@ -68,6 +75,8 @@ export function useRagQuery({
   const [ragSession, setRagSession] = useState<RagResponseSession | null>(null);
   const [ragGraphAvailability, setRagGraphAvailability] =
     useState<RagGraphAvailabilitySummary | null>(null);
+  const [ragInteractionTrace, setRagInteractionTrace] =
+    useState<GraphInteractionTrace | null>(null);
   const activeRequestIdRef = useRef(0);
   const activeOverlayProducerIdRef = useRef<OverlayProducerId | null>(null);
 
@@ -170,6 +179,7 @@ export function useRagQuery({
         setRagResponse(null);
         setRagError(part.data.error_message);
         setRagGraphAvailability(null);
+        setRagInteractionTrace(null);
         clearOwnedOverlay();
         clearAnswerSelection();
         return;
@@ -180,6 +190,7 @@ export function useRagQuery({
       setRagResponse(null);
       setRagError(error.message);
       setRagGraphAvailability(null);
+      setRagInteractionTrace(null);
       clearOwnedOverlay();
       clearAnswerSelection();
     },
@@ -205,6 +216,7 @@ export function useRagQuery({
       return;
     }
 
+    const requestId = ragSession?.requestId ?? activeRequestIdRef.current;
     const producerId = activeOverlayProducerIdRef.current;
     if (!producerId) {
       return;
@@ -212,27 +224,61 @@ export function useRagQuery({
 
     let cancelled = false;
     syncRagGraphSignals({
+      interactionId: `prompt:${requestId}`,
+      origin: {
+        surface: "prompt",
+        interactionKey: `${ragSession?.origin ?? "ask"}:${producerId}`,
+        producerId,
+        metadata: {
+          requestId,
+          origin: ragSession?.origin ?? "ask",
+          evidenceIntent: ragSession?.evidenceIntent ?? null,
+          queryPreview: ragSession?.queryPreview ?? null,
+        },
+      },
       producerId,
       queries,
       ragResponse,
     })
-      .then(({ answerSelectedPointIndices, graphAvailabilitySummary }) => {
+      .then(async ({ answerSelectedPointIndices, graphAvailabilitySummary, interactionTrace }) => {
         if (cancelled) {
           return;
         }
 
+        const renderStartedAt = getInteractionNow();
+        await queries.setSelectedPointIndices(answerSelectedPointIndices);
         setRagGraphAvailability(graphAvailabilitySummary);
-        void queries.setSelectedPointIndices(answerSelectedPointIndices);
         setSelectedPointCount(answerSelectedPointIndices.length);
         setActiveSelectionSourceId(
           answerSelectedPointIndices.length > 0
             ? RAG_ANSWER_SELECTION_SOURCE_ID
             : null,
         );
+        setRagInteractionTrace(
+          createGraphInteractionTrace({
+            interactionId: interactionTrace.interactionId,
+            intentId: interactionTrace.intentId,
+            origin: interactionTrace.origin,
+            stages: [
+              ...interactionTrace.stages,
+              createInteractionTraceStage({
+                stage: "render",
+                startedAt: renderStartedAt,
+                metadata: {
+                  selectedPointCount: answerSelectedPointIndices.length,
+                  overlayPromotedGraphPaperRefCount:
+                    graphAvailabilitySummary.overlayPromotedGraphPaperRefs.length,
+                },
+              }),
+            ],
+            metadata: interactionTrace.metadata,
+          }),
+        );
       })
       .catch(() => {
         if (!cancelled) {
           setRagGraphAvailability(null);
+          setRagInteractionTrace(null);
           clearOwnedOverlay(producerId);
           clearAnswerSelection();
         }
@@ -246,6 +292,7 @@ export function useRagQuery({
     clearOwnedOverlay,
     queries,
     ragResponse,
+    ragSession,
     setActiveSelectionSourceId,
     setSelectedPointCount,
   ]);
@@ -286,11 +333,13 @@ export function useRagQuery({
     activeRequestIdRef.current = requestId;
     setIsSubmitting(true);
     setRagSession({
+      requestId,
       origin,
       evidenceIntent,
       queryPreview,
     });
     setRagGraphAvailability(null);
+    setRagInteractionTrace(null);
     fetchGraphRagQuery({
       bundle,
       query,
@@ -317,6 +366,7 @@ export function useRagQuery({
         setRagResponse(null);
         setRagError(error instanceof Error ? error.message : "Failed to query the graph");
         setRagGraphAvailability(null);
+        setRagInteractionTrace(null);
         clearOwnedOverlay(nextOverlayProducerId);
         clearAnswerSelection();
       })
@@ -363,10 +413,12 @@ export function useRagQuery({
       setRagError(null);
       setRagGraphAvailability(null);
       setRagSession({
+        requestId,
         origin: "ask",
         evidenceIntent: null,
         queryPreview: null,
       });
+      setRagInteractionTrace(null);
       askChat.clearError();
       askChat.setMessages([]);
       void askChat.sendMessage(
@@ -397,6 +449,7 @@ export function useRagQuery({
         setRagResponse(null);
         setRagError(error instanceof Error ? error.message : "Failed to query the graph");
         setRagGraphAvailability(null);
+        setRagInteractionTrace(null);
         clearOwnedOverlay(activeOverlayProducerIdRef.current);
         clearAnswerSelection();
       });
@@ -435,6 +488,7 @@ export function useRagQuery({
       setRagResponse(null);
       setRagGraphAvailability(null);
       setRagSession(null);
+      setRagInteractionTrace(null);
       clearOwnedOverlay();
       clearAnswerSelection();
     }
@@ -446,6 +500,7 @@ export function useRagQuery({
     ragError,
     ragSession,
     ragGraphAvailability,
+    ragInteractionTrace,
     isSubmitting,
     handleSubmit,
     runEvidenceAssistQuery,

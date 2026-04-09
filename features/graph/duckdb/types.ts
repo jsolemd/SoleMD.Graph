@@ -7,6 +7,7 @@ import type {
   GraphInfoHistogramResult,
   GraphInfoScope,
   GraphInfoSummary,
+  GraphOverlayMutationResult,
   GraphPointRecord,
   GraphPaperAvailabilityResult,
   GraphSearchResult,
@@ -46,14 +47,14 @@ export interface GraphBundleSession {
   setOverlayProducerPointIds: (args: {
     producerId: OverlayProducerId
     pointIds: string[]
-  }) => Promise<{ overlayCount: number }>
-  clearOverlayProducer: (producerId: OverlayProducerId) => Promise<{ overlayCount: number }>
+  }) => Promise<GraphOverlayMutationResult>
+  clearOverlayProducer: (producerId: OverlayProducerId) => Promise<GraphOverlayMutationResult>
   reconcileOverlayPointIds: (args: {
     previousPointIds: string[]
     nextPointIds: string[]
-  }) => Promise<{ overlayCount: number }>
-  setOverlayPointIds: (pointIds: string[]) => Promise<{ overlayCount: number }>
-  clearOverlay: () => Promise<{ overlayCount: number }>
+  }) => Promise<GraphOverlayMutationResult>
+  setOverlayPointIds: (pointIds: string[]) => Promise<GraphOverlayMutationResult>
+  clearOverlay: () => Promise<GraphOverlayMutationResult>
   activateOverlay: (args: OverlayActivationRequest) => Promise<OverlayActivationResult>
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getPaperDocument: (paperId: string) => Promise<PaperDocument | null>

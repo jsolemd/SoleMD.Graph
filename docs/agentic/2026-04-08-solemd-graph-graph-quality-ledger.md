@@ -69,6 +69,12 @@
 - Make the interaction-runtime doc a required architecture reference for future graph-aware work
 - Define the next adoption targets before adding PromptBox-specific hover/projection behavior
 
+### Batch 11
+
+- Adopt `GraphInteractionTrace` on the live prompt-to-overlay runtime instead of leaving timing as a doc-only contract
+- Return canonical trace stages from DuckDB availability/attachment and overlay mutation paths
+- Verify the final prompt interaction trace does not close before async point-selection mutation completes
+
 ## Findings
 
 - `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
@@ -167,6 +173,15 @@
 - Added `docs/map/graph-interaction.md` to define the structural contract stack, producer rules, observability split, manuscript fingerprint model, and next adoption targets
 - Recorded the next convergence targets around prompt/RAG sync, DuckDB availability/attachment, overlay mutation, and interaction timing before further PromptBox UX expansion
 
+### Batch 11
+
+- Added `features/graph/lib/interaction-trace.ts` as the shared browser-side helper for canonical interaction-stage timing
+- Extended `features/graph/duckdb/session/query-controller.ts` so graph-paper availability and on-demand attachment return `availability` and `attach` trace stages
+- Extended `features/graph/duckdb/session/overlay-controller.ts` so overlay mutation returns `project` and `refresh` trace stages with producer/overlay metadata
+- Extended `features/graph/components/panels/prompt/rag-graph-sync.ts` and `features/graph/components/panels/prompt/use-rag-query.ts` so the live prompt/RAG path emits a composed `GraphInteractionTrace`
+- Fixed the prompt hook so the final interaction trace waits for the async `setSelectedPointIndices(...)` mutation before closing the final stage
+- Added focused prompt/overlay regression coverage for interaction-stage ordering and final-trace timing correctness
+
 ## Blockers
 
 - No blocking correctness issues remain.
@@ -191,4 +206,4 @@
 5. Design the next overlay transport step for million-point live extension around backend-ranked membership/cohort payloads instead of row-hydration attachment.
 6. Revisit whether the remaining repeated `HEAD` requests can be eliminated entirely by registering hot bundle parquet assets under stable local DuckDB file handles instead of HTTP-backed `read_parquet(...)` views.
 7. Converge `rag-graph-sync`, `use-rag-query`, DuckDB availability/attachment, and overlay mutation onto the new interaction-runtime contracts before adding PromptBox hover, `@` mention projection, or manuscript fingerprint features.
-8. Add internal `GraphInteractionTrace` timing to the canonical browser-side interaction path, then use those timings to set overlay/prompt latency budgets before browser E2E work.
+8. Use the new browser-side `GraphInteractionTrace` timings to set overlay/prompt latency budgets before browser E2E work.

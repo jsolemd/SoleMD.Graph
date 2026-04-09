@@ -1,5 +1,6 @@
 import type {
   GraphBundleQueries,
+  GraphInteractionOrigin,
   GraphRagQueryResponsePayload,
   PaperNode,
 } from "@/features/graph/types";
@@ -43,14 +44,25 @@ function createQueries({
       nextOverlayPointIds = Array.from(
         new Set(Array.from(producerPointIds.values()).flat()),
       );
-      return { overlayCount: nextOverlayPointIds.length };
+      return {
+        overlayCount: nextOverlayPointIds.length,
+        overlayRevision: 1,
+        traceStages: [
+          { stage: "project", durationMs: 1 },
+          { stage: "refresh", durationMs: 2 },
+        ],
+      };
     }),
     clearOverlayProducer: jest.fn(async (producerId) => {
       producerPointIds.delete(producerId);
       nextOverlayPointIds = Array.from(
         new Set(Array.from(producerPointIds.values()).flat()),
       );
-      return { overlayCount: nextOverlayPointIds.length };
+      return {
+        overlayCount: nextOverlayPointIds.length,
+        overlayRevision: 1,
+        traceStages: [{ stage: "project", durationMs: 1 }],
+      };
     }),
     setOverlayPointIds: jest.fn(async (pointIds: string[]) => {
       nextOverlayPointIds = [...pointIds];
@@ -84,6 +96,12 @@ function createQueries({
         unresolvedGraphPaperRefs: unresolvedAfterActive.filter(
           (graphPaperRef) => !(graphPaperRef in universePointIdsByGraphPaperRef),
         ),
+        traceStages: [
+          { stage: "availability", durationMs: 1 },
+          ...(unresolvedAfterActive.some((graphPaperRef) => !(graphPaperRef in universePointIds))
+            ? [{ stage: "attach", durationMs: 1 } as const]
+            : []),
+        ],
       };
     }),
     getPaperNodesByGraphPaperRefs: jest.fn(async (graphPaperRefs: string[]) => {
@@ -109,6 +127,12 @@ function createQueries({
     runReadOnlyQuery: jest.fn(),
   } as jest.Mocked<GraphBundleQueries>;
 }
+
+const promptOrigin: GraphInteractionOrigin = {
+  surface: "prompt",
+  interactionKey: "ask:rag:ask",
+  producerId: RAG_ASK_OVERLAY_PRODUCER,
+};
 
 function createRagResponse(
   paperIds: Array<string | null>,
@@ -159,6 +183,8 @@ describe("rag-graph-sync", () => {
     });
 
     const result = await syncRagGraphSignals({
+      interactionId: "prompt:1",
+      origin: promptOrigin,
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse(["paper-1"]),
@@ -179,6 +205,12 @@ describe("rag-graph-sync", () => {
       evidenceOnlyGraphPaperRefs: [],
     });
     expect(result.answerSelectedPointIndices).toEqual([7]);
+    expect(result.interactionTrace.stages.map((stage) => stage.stage)).toEqual([
+      "intent",
+      "availability",
+      "project",
+      "resolve",
+    ]);
   });
 
   it("promotes non-active papers into the RAG producer without dropping other overlay producers", async () => {
@@ -199,6 +231,8 @@ describe("rag-graph-sync", () => {
     });
 
     const result = await syncRagGraphSignals({
+      interactionId: "prompt:2",
+      origin: promptOrigin,
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse: createRagResponse(["paper-2"]),
@@ -221,6 +255,13 @@ describe("rag-graph-sync", () => {
       evidenceOnlyGraphPaperRefs: [],
     });
     expect(result.answerSelectedPointIndices).toEqual([12]);
+    expect(result.interactionTrace.stages.map((stage) => stage.stage)).toEqual([
+      "intent",
+      "availability",
+      "project",
+      "refresh",
+      "resolve",
+    ]);
   });
 
   it("selects only the explicit answer-linked subset when broader graph signals are present", async () => {
@@ -241,6 +282,8 @@ describe("rag-graph-sync", () => {
     ragResponse.answer_graph_paper_refs = ["paper-1"];
 
     const result = await syncRagGraphSignals({
+      interactionId: "prompt:3",
+      origin: promptOrigin,
       producerId: RAG_ASK_OVERLAY_PRODUCER,
       queries,
       ragResponse,
@@ -252,6 +295,14 @@ describe("rag-graph-sync", () => {
       evidenceOnlyGraphPaperRefs: ["paper-3"],
     });
     expect(result.answerSelectedPointIndices).toEqual([7]);
+    expect(result.interactionTrace.stages.map((stage) => stage.stage)).toEqual([
+      "intent",
+      "availability",
+      "attach",
+      "project",
+      "refresh",
+      "resolve",
+    ]);
   });
 
   it("clears the RAG overlay producer when clearing ask state", async () => {

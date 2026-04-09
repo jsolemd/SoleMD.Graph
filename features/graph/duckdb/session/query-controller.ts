@@ -26,6 +26,7 @@ import {
   queryVisibilityBudget,
 } from '../queries'
 import { createBoundedCache } from '../utils'
+import { createInteractionTraceStage, getInteractionNow } from '@/features/graph/lib/interaction-trace'
 import {
   normalizeGraphPaperRefs,
   normalizeSelectedPointScopeSql,
@@ -160,9 +161,11 @@ export function createSessionQueryController({
           activeGraphPaperRefs: [],
           universePointIdsByGraphPaperRef: {},
           unresolvedGraphPaperRefs: [],
+          traceStages: [],
         }
       }
 
+      const availabilityStartedAt = getInteractionNow()
       const activePaperNodes = await queryPaperNodesByGraphPaperRefs(
         conn,
         requestedGraphPaperRefs
@@ -171,12 +174,25 @@ export function createSessionQueryController({
       const unresolvedGraphPaperRefs = requestedGraphPaperRefs.filter(
         (graphPaperRef) => !activeGraphPaperRefSet.has(graphPaperRef)
       )
+      const traceStages = []
 
       if (unresolvedGraphPaperRefs.length === 0) {
         return {
           activeGraphPaperRefs: requestedGraphPaperRefs,
           universePointIdsByGraphPaperRef: {},
           unresolvedGraphPaperRefs: [],
+          traceStages: [
+            createInteractionTraceStage({
+              stage: 'availability',
+              startedAt: availabilityStartedAt,
+              metadata: {
+                requestedGraphPaperRefCount: requestedGraphPaperRefs.length,
+                activeGraphPaperRefCount: requestedGraphPaperRefs.length,
+                overlayCapableGraphPaperRefCount: 0,
+                unresolvedGraphPaperRefCount: 0,
+              },
+            }),
+          ],
         }
       }
 
@@ -185,17 +201,42 @@ export function createSessionQueryController({
         conn,
         unresolvedGraphPaperRefs
       )
+      traceStages.push(
+        createInteractionTraceStage({
+          stage: 'availability',
+          startedAt: availabilityStartedAt,
+          metadata: {
+            requestedGraphPaperRefCount: requestedGraphPaperRefs.length,
+            activeGraphPaperRefCount: activeGraphPaperRefSet.size,
+            overlayCapableGraphPaperRefCount: Object.keys(universePointIdsByGraphPaperRef).length,
+            unresolvedGraphPaperRefCount:
+              unresolvedGraphPaperRefs.length -
+              Object.keys(universePointIdsByGraphPaperRef).length,
+          },
+        })
+      )
       let stillUnresolvedGraphPaperRefs = unresolvedGraphPaperRefs.filter(
         (graphPaperRef) => !(graphPaperRef in universePointIdsByGraphPaperRef)
       )
 
       if (stillUnresolvedGraphPaperRefs.length > 0) {
+        const attachStartedAt = getInteractionNow()
         const attached = await maybeAttachGraphPaperRefs({
           bundle,
           conn,
           graphPaperRefs: stillUnresolvedGraphPaperRefs,
           ensureOptionalBundleTables,
         })
+        traceStages.push(
+          createInteractionTraceStage({
+            stage: 'attach',
+            startedAt: attachStartedAt,
+            metadata: {
+              requestedGraphPaperRefCount: stillUnresolvedGraphPaperRefs.length,
+              attached,
+            },
+          })
+        )
 
         if (attached) {
           await ensureOptionalBundleTables(['universe_points'])
@@ -215,6 +256,7 @@ export function createSessionQueryController({
         activeGraphPaperRefs: Object.keys(activePaperNodes),
         universePointIdsByGraphPaperRef,
         unresolvedGraphPaperRefs: stillUnresolvedGraphPaperRefs,
+        traceStages,
       }
     },
     async getUniversePointIdsByGraphPaperRefs(graphPaperRefs: string[]) {

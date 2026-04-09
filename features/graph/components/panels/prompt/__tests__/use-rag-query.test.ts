@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useChat } from "@ai-sdk/react";
 import {
   GRAPH_ASK_ENGINE_ERROR_DATA_PART,
@@ -15,6 +15,7 @@ import {
 import type {
   GraphBundle,
   GraphBundleQueries,
+  GraphInteractionTrace,
   GraphNode,
   GraphRagQueryResponsePayload,
 } from "@/features/graph/types";
@@ -57,6 +58,22 @@ let chatMock: MockChat;
 let chatOptions:
   | Parameters<typeof useChat>[0]
   | undefined;
+const mockInteractionTrace: GraphInteractionTrace = {
+  interactionId: "prompt:1",
+  intentId: "prompt:1",
+  origin: {
+    surface: "prompt",
+    interactionKey: "ask:rag:ask",
+    producerId: RAG_ASK_OVERLAY_PRODUCER,
+  },
+  totalDurationMs: 4,
+  stages: [
+    { stage: "intent", durationMs: 1 },
+    { stage: "availability", durationMs: 1 },
+    { stage: "project", durationMs: 1 },
+    { stage: "resolve", durationMs: 1 },
+  ],
+};
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -187,6 +204,7 @@ describe("useRagQuery", () => {
         evidenceOnlyGraphPaperRefs: [],
       },
       answerSelectedPointIndices: [],
+      interactionTrace: mockInteractionTrace,
     });
   });
 
@@ -248,10 +266,29 @@ describe("useRagQuery", () => {
     expect(result.current.ragResponse?.query).toBe("second question");
     expect(mockedSyncRagGraphSignals).toHaveBeenCalledTimes(1);
     expect(mockedSyncRagGraphSignals).toHaveBeenCalledWith({
+      interactionId: "prompt:2",
+      origin: {
+        surface: "prompt",
+        interactionKey: "compose:rag:evidence-assist:support",
+        producerId: RAG_EVIDENCE_ASSIST_SUPPORT_OVERLAY_PRODUCER,
+        metadata: {
+          requestId: 2,
+          origin: "compose",
+          evidenceIntent: "support",
+          queryPreview: "second question",
+        },
+      },
       producerId: RAG_EVIDENCE_ASSIST_SUPPORT_OVERLAY_PRODUCER,
       queries,
       ragResponse: expect.objectContaining({ query: "second question" }),
     });
+    expect(result.current.ragInteractionTrace?.stages.map((stage) => stage.stage)).toEqual([
+      "intent",
+      "availability",
+      "project",
+      "resolve",
+      "render",
+    ]);
   });
 
   it("submits ask requests through the AI SDK transport with the current graph context", async () => {
@@ -563,19 +600,83 @@ describe("useRagQuery", () => {
       await flushMicrotasks();
     });
 
-    await act(async () => {
-      await flushMicrotasks();
-    });
-
     expect(queries.setSelectedPointIndices).toHaveBeenCalledWith([7, 9]);
     expect(setSelectedPointCount).toHaveBeenCalledWith(2);
     expect(setActiveSelectionSourceId).toHaveBeenCalledWith(
       RAG_ANSWER_SELECTION_SOURCE_ID,
     );
-    expect(result.current.ragGraphAvailability).toEqual({
-      activeResolvedGraphPaperRefs: ["paper-11", "paper-22"],
-      overlayPromotedGraphPaperRefs: [],
-      evidenceOnlyGraphPaperRefs: [],
+  });
+
+  it("waits for point-selection mutation before finalizing the interaction trace", async () => {
+    const queries = createQueries();
+    const selectionUpdate = deferred<void>();
+    queries.setSelectedPointIndices.mockReturnValue(selectionUpdate.promise);
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
+    mockedFetchGraphRagQuery.mockResolvedValue(
+      createResponse("timed question"),
+    );
+    mockedSyncRagGraphSignals.mockResolvedValue({
+      availability: {
+        activeGraphPaperRefs: ["paper-11"],
+        universePointIdsByGraphPaperRef: {},
+        unresolvedGraphPaperRefs: [],
+      },
+      graphAvailabilitySummary: {
+        activeResolvedGraphPaperRefs: ["paper-11"],
+        overlayPromotedGraphPaperRefs: [],
+        evidenceOnlyGraphPaperRefs: [],
+      },
+      answerSelectedPointIndices: [7],
+      interactionTrace: mockInteractionTrace,
     });
+
+    const { result } = renderHook(() =>
+      useRagQuery({
+        bundle: { bundleChecksum: "bundle-checksum", runId: "run-id" } as GraphBundle,
+        queries,
+        isAsk: false,
+        selectedNode: null,
+        currentPointScopeSql: null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
+        getPromptText: () => "timed question",
+      }),
+    );
+
+    await act(async () => {
+      result.current.runEvidenceAssistQuery({
+        intent: "support",
+        queryText: "timed question",
+        previewText: "timed question",
+        paragraphText: "timed question",
+      });
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(result.current.ragInteractionTrace).toBeNull();
+    expect(setSelectedPointCount).not.toHaveBeenCalled();
+
+    await act(async () => {
+      selectionUpdate.resolve();
+      await flushMicrotasks();
+    });
+
+    expect(setSelectedPointCount).toHaveBeenCalledWith(1);
+    expect(setActiveSelectionSourceId).toHaveBeenCalledWith(
+      RAG_ANSWER_SELECTION_SOURCE_ID,
+    );
+    expect(result.current.ragInteractionTrace?.stages.map((stage) => stage.stage)).toEqual([
+      "intent",
+      "availability",
+      "project",
+      "resolve",
+      "render",
+    ]);
   });
 });

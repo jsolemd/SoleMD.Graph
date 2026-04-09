@@ -1,11 +1,16 @@
 import type {
   OverlayActivationResult,
+  GraphOverlayMutationResult,
   OverlayProducerId,
 } from '@/features/graph/types'
 import {
   LEGACY_OVERLAY_PRODUCER,
   MANUAL_CLUSTER_NEIGHBORHOOD_OVERLAY_PRODUCER,
 } from '@/features/graph/lib/overlay-producers'
+import {
+  createInteractionTraceStage,
+  getInteractionNow,
+} from '@/features/graph/lib/interaction-trace'
 
 import {
   buildCanvasSource,
@@ -83,7 +88,7 @@ export function createSessionOverlayController({
       overlayRevision,
     })
     emitCanvas()
-    return { overlayCount: canvas.overlayCount }
+    return { overlayCount: canvas.overlayCount, overlayRevision }
   }
 
   let overlayMutationChain: Promise<void> = Promise.resolve()
@@ -142,7 +147,7 @@ export function createSessionOverlayController({
       .filter((pointId): pointId is string => typeof pointId === 'string' && pointId.length > 0)
   }
 
-  const refreshOverlayCanvas = async () => {
+  const refreshOverlayCanvas = async (): Promise<GraphOverlayMutationResult> => {
     const { overlayCount } = await refreshActivePointRuntimeTables(conn, basePointCount)
     await clearSelectedPointState()
     return refreshCanvas({ overlayCount })
@@ -154,14 +159,29 @@ export function createSessionOverlayController({
   }: {
     producerId: OverlayProducerId
     pointIds: string[]
-  }) => {
+  }): Promise<GraphOverlayMutationResult> => {
     const nextProducerPointIds = normalizeOverlayPointIds(pointIds)
     const currentProducerPointIds = await queryOverlayProducerPointIds(producerId)
 
     if (haveSamePointIds(currentProducerPointIds, nextProducerPointIds)) {
-      return { overlayCount: canvas.overlayCount }
+      return {
+        overlayCount: canvas.overlayCount,
+        overlayRevision: canvas.overlayRevision,
+        traceStages: [
+          {
+            stage: 'project',
+            durationMs: 0,
+            metadata: {
+              producerId,
+              changed: false,
+              overlayPointCount: canvas.overlayCount,
+            },
+          },
+        ],
+      }
     }
 
+    const projectStartedAt = getInteractionNow()
     resetOverlayDependentCaches()
     if (nextProducerPointIds.length === 0) {
       await clearOverlayProducerPointIds(conn, producerId)
@@ -173,18 +193,83 @@ export function createSessionOverlayController({
       })
     }
 
-    return refreshOverlayCanvas()
+    const projectStage = createInteractionTraceStage({
+      stage: 'project',
+      startedAt: projectStartedAt,
+      metadata: {
+        producerId,
+        changed: true,
+        nextProducerPointCount: nextProducerPointIds.length,
+      },
+    })
+    const refreshStartedAt = getInteractionNow()
+    const refreshResult = await refreshOverlayCanvas()
+    const refreshStage = createInteractionTraceStage({
+      stage: 'refresh',
+      startedAt: refreshStartedAt,
+      metadata: {
+        producerId,
+        overlayCount: refreshResult.overlayCount,
+        overlayRevision: refreshResult.overlayRevision ?? canvas.overlayRevision,
+      },
+    })
+
+    return {
+      ...refreshResult,
+      traceStages: [projectStage, refreshStage],
+    }
   }
 
-  const clearOverlayProducerInternal = async (producerId: OverlayProducerId) => {
+  const clearOverlayProducerInternal = async (
+    producerId: OverlayProducerId
+  ): Promise<GraphOverlayMutationResult> => {
     const currentProducerPointIds = await queryOverlayProducerPointIds(producerId)
     if (currentProducerPointIds.length === 0) {
-      return { overlayCount: canvas.overlayCount }
+      return {
+        overlayCount: canvas.overlayCount,
+        overlayRevision: canvas.overlayRevision,
+        traceStages: [
+          {
+            stage: 'project',
+            durationMs: 0,
+            metadata: {
+              producerId,
+              changed: false,
+              overlayPointCount: canvas.overlayCount,
+            },
+          },
+        ],
+      }
     }
 
+    const projectStartedAt = getInteractionNow()
     resetOverlayDependentCaches()
     await clearOverlayProducerPointIds(conn, producerId)
-    return refreshOverlayCanvas()
+    const projectStage = createInteractionTraceStage({
+      stage: 'project',
+      startedAt: projectStartedAt,
+      metadata: {
+        producerId,
+        changed: true,
+        clearedPointCount: currentProducerPointIds.length,
+      },
+    })
+    const refreshStartedAt = getInteractionNow()
+    const refreshResult = await refreshOverlayCanvas()
+    const refreshStage = createInteractionTraceStage({
+      stage: 'refresh',
+      startedAt: refreshStartedAt,
+      metadata: {
+        producerId,
+        overlayCount: refreshResult.overlayCount,
+        overlayRevision: refreshResult.overlayRevision ?? canvas.overlayRevision,
+      },
+    })
+
+    return {
+      ...refreshResult,
+      traceStages: [projectStage, refreshStage],
+    }
   }
 
   const reconcileOverlayPointIdsInternal = async ({
@@ -193,7 +278,7 @@ export function createSessionOverlayController({
   }: {
     previousPointIds: string[]
     nextPointIds: string[]
-  }) => {
+  }): Promise<GraphOverlayMutationResult> => {
     const currentOverlayPointIds = await queryOverlayPointIds(conn)
     const previousPointIdSet = new Set(normalizeOverlayPointIds(previousPointIds))
     const preservedPointIds = currentOverlayPointIds.filter(
@@ -280,12 +365,51 @@ export function createSessionOverlayController({
     async clearOverlay() {
       return runOverlayMutation(async () => {
         if (canvas.overlayCount === 0) {
-          return { overlayCount: 0 }
+          return {
+            overlayCount: 0,
+            overlayRevision: canvas.overlayRevision,
+            traceStages: [
+              {
+                stage: 'project',
+                durationMs: 0,
+                metadata: {
+                  producerId: null,
+                  changed: false,
+                  overlayPointCount: 0,
+                },
+              },
+            ],
+          }
         }
 
+        const projectStartedAt = getInteractionNow()
         resetOverlayDependentCaches()
         await clearAllOverlayPointIds(conn)
-        return refreshOverlayCanvas()
+        const projectStage = createInteractionTraceStage({
+          stage: 'project',
+          startedAt: projectStartedAt,
+          metadata: {
+            producerId: null,
+            changed: true,
+            clearedAll: true,
+          },
+        })
+        const refreshStartedAt = getInteractionNow()
+        const refreshResult = await refreshOverlayCanvas()
+        const refreshStage = createInteractionTraceStage({
+          stage: 'refresh',
+          startedAt: refreshStartedAt,
+          metadata: {
+            producerId: null,
+            overlayCount: refreshResult.overlayCount,
+            overlayRevision: refreshResult.overlayRevision ?? canvas.overlayRevision,
+          },
+        })
+
+        return {
+          ...refreshResult,
+          traceStages: [projectStage, refreshStage],
+        }
       })
     },
     async activateOverlay(args): Promise<OverlayActivationResult> {

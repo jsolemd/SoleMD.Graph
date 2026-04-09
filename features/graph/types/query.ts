@@ -3,6 +3,7 @@ import type { GraphClusterDetail } from './detail'
 import type { PaperDocument } from './detail'
 import type { GraphSelectionDetail } from './detail'
 import type { MapLayer } from './config'
+import type { GraphInteractionTraceStage } from './interaction-runtime'
 import type { NumericStatsRow } from '@/features/graph/duckdb/queries'
 
 export interface GraphQueryResult {
@@ -109,6 +110,13 @@ export interface GraphPaperAvailabilityResult {
   activeGraphPaperRefs: string[]
   universePointIdsByGraphPaperRef: Record<string, string>
   unresolvedGraphPaperRefs: string[]
+  traceStages?: GraphInteractionTraceStage[]
+}
+
+export interface GraphOverlayMutationResult {
+  overlayCount: number
+  overlayRevision?: number | null
+  traceStages?: GraphInteractionTraceStage[]
 }
 
 export interface GraphScopeQueryArgs {
@@ -125,10 +133,10 @@ export interface GraphBundleQueries {
   setOverlayProducerPointIds: (args: {
     producerId: OverlayProducerId
     pointIds: string[]
-  }) => Promise<{ overlayCount: number }>
-  clearOverlayProducer: (producerId: OverlayProducerId) => Promise<{ overlayCount: number }>
-  setOverlayPointIds: (pointIds: string[]) => Promise<{ overlayCount: number }>
-  clearOverlay: () => Promise<{ overlayCount: number }>
+  }) => Promise<GraphOverlayMutationResult>
+  clearOverlayProducer: (producerId: OverlayProducerId) => Promise<GraphOverlayMutationResult>
+  setOverlayPointIds: (pointIds: string[]) => Promise<GraphOverlayMutationResult>
+  clearOverlay: () => Promise<GraphOverlayMutationResult>
   activateOverlay: (args: OverlayActivationRequest) => Promise<OverlayActivationResult>
   getClusterDetail: (clusterId: number) => Promise<GraphClusterDetail>
   getSelectionDetail: (point: GraphPointRecord) => Promise<GraphSelectionDetail>
