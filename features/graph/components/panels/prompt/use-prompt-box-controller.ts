@@ -32,6 +32,16 @@ import { getSelectionScopeToggleLabel, isSelectionScopeAvailable, isSelectionSco
 import { useFocusedAvoidanceRects } from "./use-focused-avoidance-rects";
 import { usePromptPosition } from "./use-prompt-position";
 import { useRagQuery } from "./use-rag-query";
+import {
+  EVIDENCE_ASSIST_PROVIDER,
+  isEvidenceAssistRequest,
+} from "./evidence-assist";
+import type { PromptInteractionRequest } from "../editor/prompt-interactions";
+import {
+  createPromptInteractionHandler,
+  dispatchPromptInteraction,
+  getPromptInteractionProviders,
+} from "./prompt-interaction-runtime";
 import { BOTTOM_BASE, MAX_CARD_W, SCOPE_LABELS, VIEWPORT_MARGIN, VW_RATIO, cardWidth } from "./constants";
 
 export interface PromptBoxControllerProps {
@@ -64,7 +74,8 @@ export interface PromptBoxControllerState {
   ragGraphAvailability: ReturnType<typeof useRagQuery>["ragGraphAvailability"];
   isSubmitting: boolean;
   handleSubmit: ReturnType<typeof useRagQuery>["handleSubmit"];
-  runEvidenceAssistQuery: ReturnType<typeof useRagQuery>["runEvidenceAssistQuery"];
+  promptInteractionProviders: ReturnType<typeof getPromptInteractionProviders>;
+  handlePromptInteraction: (request: PromptInteractionRequest) => void;
   clearRag: ReturnType<typeof useRagQuery>["clearRag"];
   handlePromptContentChange: (markdown: string) => void;
   handlePromptEmptyChange: (empty: boolean) => void;
@@ -374,6 +385,30 @@ export function usePromptBoxController({
     setSelectionScopeManuallyDisabled((current) => !current);
   }, [selectionScopeAvailable]);
 
+  const promptInteractionHandlers = useMemo(
+    () =>
+      [
+        createPromptInteractionHandler({
+          provider: EVIDENCE_ASSIST_PROVIDER,
+          matches: isEvidenceAssistRequest,
+          handle: runEvidenceAssistQuery,
+        }),
+      ] as const,
+    [runEvidenceAssistQuery],
+  );
+
+  const promptInteractionProviders = useMemo(
+    () => getPromptInteractionProviders(promptInteractionHandlers),
+    [promptInteractionHandlers],
+  );
+
+  const handlePromptInteraction = useCallback(
+    (request: PromptInteractionRequest) => {
+      void dispatchPromptInteraction(promptInteractionHandlers, request);
+    },
+    [promptInteractionHandlers],
+  );
+
   const normalCardWidth = cardWidth(vw, leftClearance, rightClearance);
   const normalWidth = vw === 0 ? `min(${MAX_CARD_W}px, ${VW_RATIO * 100}vw)` : `${normalCardWidth}px`;
 
@@ -402,7 +437,8 @@ export function usePromptBoxController({
     ragGraphAvailability,
     isSubmitting,
     handleSubmit,
-    runEvidenceAssistQuery,
+    promptInteractionProviders,
+    handlePromptInteraction,
     clearRag,
     handlePromptContentChange,
     handlePromptEmptyChange,

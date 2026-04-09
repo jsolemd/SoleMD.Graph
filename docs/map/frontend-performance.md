@@ -55,6 +55,9 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Avoid effect cascades that cause a second fetch/render immediately after first paint.
 - Keep the editor subtree isolated from response streaming and panel chrome updates so prompt/manuscript interactions do not rerender the rich-text surface unless editor-facing props actually changed.
 - Prompt/evidence stream lifecycles must treat repeated `onData`/`onFinish` payloads for the same backend response as idempotent; graph projection and overlay mutation run once per response, not once per stream callback.
+- Prompt/editor interactions must be provider-based inside the editor layer: evidence assist, future `@` mentions, and transient entity annotations extend one shared prompt interaction seam instead of adding PromptBox-local trigger branches.
+- Mention suggestions and transient entity highlights must stay behind the Tiptap adapter and editor interaction modules; hover cards and graph projection UI stay outside the editor subtree.
+- The editor controller is a host, not the permanent home for mention matching or entity decoration logic. Future `@` references belong in Tiptap extension modules, transient entity highlights belong in decoration/plugin modules, and PromptBox consumes them through the shared prompt interaction runtime.
 
 7. Centralize performance-sensitive contracts
 

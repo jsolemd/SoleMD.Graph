@@ -1,24 +1,18 @@
 import type { Editor } from "@/features/graph/tiptap";
+import {
+  type PromptInteractionCommandList,
+  type PromptInteractionCommand,
+  type PromptInteractionProvider,
+  type PromptInteractionRequest,
+  type PromptInteractionTrigger,
+} from "../editor/prompt-interactions";
 
 export type EvidenceAssistIntent = "support" | "refute" | "both";
-export type EvidenceAssistTriggerAction = "menu" | "intent";
+export const EVIDENCE_ASSIST_PROVIDER_ID = "evidence-assist";
 
-export interface EvidenceAssistCommand {
-  intent: EvidenceAssistIntent;
-  label: string;
-  description: string;
-}
-
-export interface EvidenceAssistTrigger {
-  pattern: string;
-  action: EvidenceAssistTriggerAction;
-  label: string;
-  description: string;
-  defaultIntent: EvidenceAssistIntent;
-}
-
-export interface EvidenceAssistRequest {
-  intent: EvidenceAssistIntent;
+export interface EvidenceAssistRequest extends PromptInteractionRequest {
+  providerId: typeof EVIDENCE_ASSIST_PROVIDER_ID;
+  commandId: EvidenceAssistIntent;
   queryText: string;
   previewText: string;
   paragraphText: string;
@@ -37,32 +31,31 @@ interface SentenceSegment {
   end: number;
 }
 
-export const EVIDENCE_ASSIST_COMMANDS: EvidenceAssistCommand[] = [
+export const EVIDENCE_ASSIST_COMMANDS: PromptInteractionCommandList<EvidenceAssistCommand> = [
   {
-    intent: "support",
+    id: "support",
     label: "Support",
     description: "Find studies that support the current claim.",
   },
   {
-    intent: "refute",
+    id: "refute",
     label: "Refute",
     description: "Find studies that challenge the current claim.",
   },
 ];
 
-export const EVIDENCE_ASSIST_TRIGGERS: readonly EvidenceAssistTrigger[] = [
+export const EVIDENCE_ASSIST_TRIGGERS: readonly PromptInteractionTrigger[] = [
   {
     pattern: "@",
     action: "menu",
     label: "@ Evidence",
     description: "Open evidence assist with support/refute options.",
-    defaultIntent: "support",
+    defaultCommandId: "support",
   },
 ] as const;
 
-export interface EvidenceAssistTriggerMatch {
-  trigger: EvidenceAssistTrigger;
-  deletePrefixChars: number;
+export interface EvidenceAssistCommand extends PromptInteractionCommand {
+  id: EvidenceAssistIntent;
 }
 
 export function selectEvidenceAssistExcerpt({
@@ -116,57 +109,27 @@ export function extractEvidenceAssistRequestFromEditor(
   }
 
   return {
-    intent,
+    providerId: EVIDENCE_ASSIST_PROVIDER_ID,
+    commandId: intent,
     queryText,
     previewText: buildPreviewText(queryText),
     paragraphText,
   };
 }
 
-export function getEvidenceAssistDefaultCommandIndex(
-  intent: EvidenceAssistIntent,
-): number {
-  const index = EVIDENCE_ASSIST_COMMANDS.findIndex(
-    (command) => command.intent === intent,
-  );
-  return index >= 0 ? index : 0;
-}
+export const EVIDENCE_ASSIST_PROVIDER: PromptInteractionProvider<EvidenceAssistRequest> =
+  {
+    id: EVIDENCE_ASSIST_PROVIDER_ID,
+    commands: EVIDENCE_ASSIST_COMMANDS,
+    triggers: EVIDENCE_ASSIST_TRIGGERS,
+    buildRequest(editor, commandId) {
+      if (!isEvidenceAssistIntent(commandId)) {
+        return null;
+      }
 
-export function resolveEvidenceAssistTriggerMatch({
-  textBeforeCursor,
-  insertedText,
-}: {
-  textBeforeCursor: string;
-  insertedText: string;
-}): EvidenceAssistTriggerMatch | null {
-  const candidateText = `${textBeforeCursor}${insertedText}`;
-  if (!candidateText.trim()) {
-    return null;
-  }
-
-  const triggers = [...EVIDENCE_ASSIST_TRIGGERS].sort(
-    (left, right) => right.pattern.length - left.pattern.length,
-  );
-  for (const trigger of triggers) {
-    if (!candidateText.endsWith(trigger.pattern)) {
-      continue;
-    }
-
-    const boundaryIndex = candidateText.length - trigger.pattern.length - 1;
-    const boundaryCharacter =
-      boundaryIndex >= 0 ? candidateText.slice(boundaryIndex, boundaryIndex + 1) : null;
-    if (boundaryCharacter && !/[\s([{'"“‘-]/.test(boundaryCharacter)) {
-      continue;
-    }
-
-    return {
-      trigger,
-      deletePrefixChars: Math.max(0, trigger.pattern.length - insertedText.length),
-    };
-  }
-
-  return null;
-}
+      return extractEvidenceAssistRequestFromEditor(editor, commandId);
+    },
+  };
 
 function buildPreviewText(text: string, maxChars = 160): string {
   const normalizedText = text.trim();
@@ -216,4 +179,15 @@ function segmentSentences(text: string): SentenceSegment[] {
       end: segment.index + segment.segment.length,
     }))
     .filter((segment) => segment.text.trim().length > 0);
+}
+
+function isEvidenceAssistIntent(value: string): value is EvidenceAssistIntent {
+  return value === "support" || value === "refute" || value === "both";
+}
+
+export function isEvidenceAssistRequest(
+  request: PromptInteractionRequest,
+): request is EvidenceAssistRequest {
+  return request.providerId === EVIDENCE_ASSIST_PROVIDER_ID &&
+    isEvidenceAssistIntent(request.commandId);
 }

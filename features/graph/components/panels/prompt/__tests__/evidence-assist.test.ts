@@ -1,9 +1,13 @@
 import {
+  EVIDENCE_ASSIST_PROVIDER,
   extractEvidenceAssistRequestFromEditor,
-  getEvidenceAssistDefaultCommandIndex,
-  resolveEvidenceAssistTriggerMatch,
+  isEvidenceAssistRequest,
   selectEvidenceAssistExcerpt,
 } from "../evidence-assist";
+import {
+  getPromptInteractionDefaultCommandIndex,
+  resolvePromptInteractionTriggerMatch,
+} from "../../editor/prompt-interactions";
 
 describe("evidence-assist", () => {
   it("selects the last completed sentences leading into the cursor from the current paragraph", () => {
@@ -47,23 +51,26 @@ describe("evidence-assist", () => {
     );
 
     expect(request).toEqual({
-      intent: "refute",
+      providerId: "evidence-assist",
+      commandId: "refute",
       queryText: paragraphText,
       previewText: paragraphText,
       paragraphText,
     });
   });
 
-  it("matches the support trigger at a valid boundary", () => {
+  it("exposes a provider that resolves the generic prompt interaction contract", () => {
     expect(
-      resolveEvidenceAssistTriggerMatch({
+      resolvePromptInteractionTriggerMatch({
+        providers: [EVIDENCE_ASSIST_PROVIDER],
         textBeforeCursor: "This claim suggests ",
         insertedText: "@",
       }),
     ).toMatchObject({
+      provider: EVIDENCE_ASSIST_PROVIDER,
       trigger: {
         pattern: "@",
-        defaultIntent: "support",
+        defaultCommandId: "support",
       },
       deletePrefixChars: 0,
     });
@@ -71,16 +78,33 @@ describe("evidence-assist", () => {
 
   it("does not fire triggers inside words", () => {
     expect(
-      resolveEvidenceAssistTriggerMatch({
+      resolvePromptInteractionTriggerMatch({
+        providers: [EVIDENCE_ASSIST_PROVIDER],
         textBeforeCursor: "email",
         insertedText: "@",
       }),
     ).toBeNull();
   });
 
-  it("maps default intents to the correct menu selection index", () => {
-    expect(getEvidenceAssistDefaultCommandIndex("support")).toBe(0);
-    expect(getEvidenceAssistDefaultCommandIndex("refute")).toBe(1);
-    expect(getEvidenceAssistDefaultCommandIndex("both")).toBe(0);
+  it("maps evidence-assist commands through the generic default-command index helper", () => {
+    expect(getPromptInteractionDefaultCommandIndex(EVIDENCE_ASSIST_PROVIDER, "support")).toBe(0);
+    expect(getPromptInteractionDefaultCommandIndex(EVIDENCE_ASSIST_PROVIDER, "refute")).toBe(1);
+    expect(getPromptInteractionDefaultCommandIndex(EVIDENCE_ASSIST_PROVIDER, "both")).toBe(0);
+  });
+
+  it("narrowly identifies evidence-assist requests from the shared interaction contract", () => {
+    expect(
+      isEvidenceAssistRequest({
+        providerId: "evidence-assist",
+        commandId: "support",
+      }),
+    ).toBe(true);
+
+    expect(
+      isEvidenceAssistRequest({
+        providerId: "not-evidence-assist",
+        commandId: "support",
+      }),
+    ).toBe(false);
   });
 });

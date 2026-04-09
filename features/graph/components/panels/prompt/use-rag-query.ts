@@ -29,7 +29,7 @@ import {
 
 export interface RagResponseSession {
   origin: "ask" | "compose";
-  evidenceIntent: EvidenceAssistRequest["intent"] | null;
+  evidenceIntent: EvidenceAssistRequest["commandId"] | null;
   queryPreview: string | null;
 }
 
@@ -307,7 +307,7 @@ export function useRagQuery({
   }: {
     query: string;
     origin: RagResponseSession["origin"];
-    evidenceIntent?: EvidenceAssistRequest["intent"] | null;
+    evidenceIntent?: EvidenceAssistRequest["commandId"] | null;
     queryPreview?: string | null;
     generateAnswer?: boolean;
   }) => {
@@ -402,7 +402,7 @@ export function useRagQuery({
     void runQuery({
       query: request.queryText,
       origin: "compose",
-      evidenceIntent: request.intent,
+      evidenceIntent: request.commandId,
       queryPreview: request.previewText,
     });
   }, [runQuery]);

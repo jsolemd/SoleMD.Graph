@@ -46,7 +46,8 @@ export function PromptBoxSurface({
   ragGraphAvailability,
   isSubmitting,
   handleSubmit,
-  runEvidenceAssistQuery,
+  promptInteractionProviders,
+  handlePromptInteraction,
   clearRag,
   handlePromptContentChange,
   handlePromptEmptyChange,
@@ -175,7 +176,8 @@ export function PromptBoxSurface({
                 onContentChange={handlePromptContentChange}
                 onEmptyChange={handlePromptEmptyChange}
                 onSubmit={isAsk ? handleSubmit : undefined}
-                onEvidenceAssistIntent={isCreate ? runEvidenceAssistQuery : undefined}
+                onPromptInteraction={isCreate ? handlePromptInteraction : undefined}
+                promptInteractionProviders={isCreate ? promptInteractionProviders : undefined}
                 ariaLabel={`${activeMode.label} prompt`}
                 debounceMs={isCreate ? 300 : 0}
                 compact={!isFullHeightMode}

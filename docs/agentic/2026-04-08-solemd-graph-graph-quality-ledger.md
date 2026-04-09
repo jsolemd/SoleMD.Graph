@@ -190,10 +190,26 @@
 
 ### Batch 15
 
+- Introduced a shared editor prompt interaction seam in `features/graph/components/panels/editor/prompt-interactions.ts` so evidence assist now rides the same provider-based menu/trigger contract that future `@` mentions and entity annotations will use
+- Refactored `features/graph/components/panels/editor/use-create-editor-controller.ts` and `CreateEditorSurface.tsx` to host generic prompt interaction providers instead of hard-coding evidence-assist menu state
+- Kept evidence assist as one provider in `features/graph/components/panels/prompt/evidence-assist.ts`, and routed `PromptBoxSurface.tsx` through that provider rather than a one-off editor branch
+- Extended the Tiptap adapter in `features/graph/tiptap/index.ts` with suggestion and decoration exports so future mention/annotation work stays behind the adapter boundary
+
+### Batch 15
+
 - Stabilized `clearAnswerSelection()` in `features/graph/components/panels/prompt/use-rag-query.ts` against selection-source ownership rerenders so one streamed ask response no longer replays graph sync after it selects answer-linked points
 - Added a stateful PromptBox regression in `features/graph/components/panels/prompt/__tests__/use-rag-query.test.ts` that reproduces the ownership-rerender path and locks graph sync to a single pass
 - Extended the canonical frontend requirement in `docs/map/frontend-performance.md`: prompt/entity/mention graph projection must stay on one shared runtime path, and streamed ask responses must remain idempotent across `onData`, `onFinish`, and ownership rerenders
 - Rebuilt and re-baselined the production app in visible Chrome on `http://localhost:3000`: the dopamine/schizophrenia prompt now produces `POST /api/evidence/chat` plus exactly one `POST /api/graph/attach-points`, with no `universe_points.parquet` hydration or duplicate attach post in the hot path
+
+### Batch 16
+
+- Removed the evidence-assist-only wrapper surface from `features/graph/components/panels/prompt/evidence-assist.ts` tests so trigger/default-command regression coverage now proves the shared `features/graph/components/panels/editor/prompt-interactions.ts` contract directly
+- Added `features/graph/components/panels/prompt/prompt-interaction-runtime.ts` so PromptBox provider registration and request dispatch are centralized in one small runtime registry instead of `use-prompt-box-controller.ts` hard-coding a single provider path
+- Tightened the provider contract in `features/graph/components/panels/editor/prompt-interactions.ts` and `use-create-editor-controller.ts` so prompt interaction menus are structurally non-empty and defensively guarded at runtime before keyboard/menu math runs
+- Removed the duplicate `intent` field from `EvidenceAssistRequest` and switched `features/graph/components/panels/prompt/use-rag-query.ts` to treat `commandId` as the canonical evidence intent
+- Extended the Tiptap adapter barrel in `features/graph/tiptap/index.ts` with mention, suggestion, plugin-key, transaction, view, renderer, and attribute exports so future `@` references and transient entity highlighting can stay behind the adapter boundary
+- Added focused runtime coverage in `features/graph/components/panels/prompt/__tests__/prompt-interaction-runtime.test.ts` and refreshed the prompt/editor suites to lock the new registry and canonical request shape in place
 
 ## Blockers
 

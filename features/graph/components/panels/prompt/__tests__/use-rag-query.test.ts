@@ -219,7 +219,8 @@ describe("useRagQuery", () => {
 
     await act(async () => {
       result.current.runEvidenceAssistQuery({
-        intent: "support",
+        providerId: "evidence-assist",
+        commandId: "support",
         queryText: "first question",
         previewText: "first question",
         paragraphText: "first question",
@@ -229,7 +230,8 @@ describe("useRagQuery", () => {
     promptText = "second question";
     await act(async () => {
       result.current.runEvidenceAssistQuery({
-        intent: "support",
+        providerId: "evidence-assist",
+        commandId: "support",
         queryText: "second question",
         previewText: "second question",
         paragraphText: "second question",
@@ -681,7 +683,8 @@ describe("useRagQuery", () => {
 
     await act(async () => {
       result.current.runEvidenceAssistQuery({
-        intent: "support",
+        providerId: "evidence-assist",
+        commandId: "support",
         queryText: "grounded question",
         previewText: "grounded question",
         paragraphText: "grounded question",

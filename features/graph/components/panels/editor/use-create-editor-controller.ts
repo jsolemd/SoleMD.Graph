@@ -23,19 +23,19 @@ import {
 } from "@/features/graph/tiptap";
 import { EMPTY_TOOLBAR_STATE } from "./EditorToolbar";
 import {
-  EVIDENCE_ASSIST_COMMANDS,
-  extractEvidenceAssistRequestFromEditor,
-  getEvidenceAssistDefaultCommandIndex,
-  resolveEvidenceAssistTriggerMatch,
-  type EvidenceAssistRequest,
-} from "../prompt/evidence-assist";
+  getPromptInteractionDefaultCommandIndex,
+  resolvePromptInteractionTriggerMatch,
+  type PromptInteractionRequest,
+  type PromptInteractionProvider,
+} from "./prompt-interactions";
 
 export interface CreateEditorControllerProps {
   content: string;
   onContentChange: (md: string) => void;
   onEmptyChange: (empty: boolean) => void;
   onSubmit?: () => void;
-  onEvidenceAssistIntent?: (request: EvidenceAssistRequest) => void;
+  onPromptInteraction?: (request: PromptInteractionRequest) => void;
+  promptInteractionProviders?: readonly PromptInteractionProvider<PromptInteractionRequest>[];
   ariaLabel: string;
   debounceMs?: number;
   showToolbar?: boolean;
@@ -48,19 +48,20 @@ export interface CreateEditorControllerState {
   setSourceMode: Dispatch<SetStateAction<boolean>>;
   sourceText: string;
   editorFrameRef: RefObject<HTMLDivElement | null>;
-  evidenceAssistMenuRef: RefObject<HTMLDivElement | null>;
-  evidenceAssistMenu: {
+  promptInteractionMenuRef: RefObject<HTMLDivElement | null>;
+  promptInteractionMenu: {
+    provider: PromptInteractionProvider<PromptInteractionRequest>;
     x: number;
     y: number;
     selectedIndex: number;
   } | null;
-  closeEvidenceAssistMenu: () => void;
-  handleEvidenceAssistMenuHover: (index: number) => void;
-  handleEvidenceAssistMenuKeyDown: (
+  closePromptInteractionMenu: () => void;
+  handlePromptInteractionMenuHover: (index: number) => void;
+  handlePromptInteractionMenuKeyDown: (
     event: KeyboardEvent<HTMLDivElement>,
   ) => void;
   handleSourceTextChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
-  submitEvidenceAssistIntent: (intent: EvidenceAssistRequest["intent"]) => void;
+  submitPromptInteractionCommand: (commandId: string) => void;
   flush: () => string;
   getText: () => string;
 }
@@ -70,7 +71,8 @@ export function useCreateEditorController({
   onContentChange,
   onEmptyChange,
   onSubmit,
-  onEvidenceAssistIntent,
+  onPromptInteraction,
+  promptInteractionProviders,
   ariaLabel,
   debounceMs = 300,
   showToolbar = false,
@@ -81,18 +83,23 @@ export function useCreateEditorController({
   onEmptyChangeRef.current = onEmptyChange;
   const onContentChangeRef = useRef(onContentChange);
   onContentChangeRef.current = onContentChange;
-  const onEvidenceAssistIntentRef = useRef(onEvidenceAssistIntent);
-  onEvidenceAssistIntentRef.current = onEvidenceAssistIntent;
+  const onPromptInteractionRef = useRef(onPromptInteraction);
+  onPromptInteractionRef.current = onPromptInteraction;
+  const promptInteractionProvidersRef = useRef(promptInteractionProviders);
+  promptInteractionProvidersRef.current = promptInteractionProviders;
   const contentRef = useRef(content);
   contentRef.current = content;
 
   const editorRef = useRef<Editor | null>(null);
   const editorFrameRef = useRef<HTMLDivElement | null>(null);
-  const evidenceAssistMenuRef = useRef<HTMLDivElement | null>(null);
+  const promptInteractionMenuRef = useRef<HTMLDivElement | null>(null);
+  const activePromptInteractionProviderRef =
+    useRef<PromptInteractionProvider<PromptInteractionRequest> | null>(null);
 
   const [sourceMode, setSourceMode] = useState(false);
   const [sourceText, setSourceText] = useState("");
-  const [evidenceAssistMenu, setEvidenceAssistMenu] = useState<{
+  const [promptInteractionMenu, setPromptInteractionMenu] = useState<{
+    provider: PromptInteractionProvider<PromptInteractionRequest>;
     x: number;
     y: number;
     selectedIndex: number;
@@ -144,58 +151,69 @@ export function useCreateEditorController({
     [debounceMs, getMarkdown],
   );
 
-  const closeEvidenceAssistMenu = useCallback(() => {
-    setEvidenceAssistMenu(null);
+  const closePromptInteractionMenu = useCallback(() => {
+    activePromptInteractionProviderRef.current = null;
+    setPromptInteractionMenu(null);
   }, []);
 
-  const submitEvidenceAssistIntent = useCallback(
-    (intent: EvidenceAssistRequest["intent"]) => {
+  const submitPromptInteractionCommand = useCallback(
+    (
+      commandId: string,
+      providerOverride?: PromptInteractionProvider<PromptInteractionRequest>,
+    ) => {
       const ed = editorRef.current;
-      const onEvidenceAssist = onEvidenceAssistIntentRef.current;
+      const onPromptInteraction = onPromptInteractionRef.current;
+      const provider =
+        providerOverride ?? activePromptInteractionProviderRef.current;
 
-      closeEvidenceAssistMenu();
-      if (!ed || !onEvidenceAssist) {
+      closePromptInteractionMenu();
+      if (!ed || !onPromptInteraction || !provider || provider.commands.length === 0) {
         return;
       }
 
-      const request = extractEvidenceAssistRequestFromEditor(ed, intent);
+      const request = provider.buildRequest(ed, commandId);
       ed.commands.focus();
       if (!request) {
         return;
       }
 
-      onEvidenceAssist(request);
+      onPromptInteraction(request);
     },
-    [closeEvidenceAssistMenu],
+    [closePromptInteractionMenu],
   );
 
-  const handleEvidenceAssistMenuHover = useCallback((index: number) => {
-    setEvidenceAssistMenu((current) =>
+  const handlePromptInteractionMenuHover = useCallback((index: number) => {
+    setPromptInteractionMenu((current) =>
       current ? { ...current, selectedIndex: index } : current,
     );
   }, []);
 
-  const handleEvidenceAssistMenuKeyDown = useCallback(
+  const handlePromptInteractionMenuKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
-      if (!evidenceAssistMenu) {
+      if (!promptInteractionMenu) {
+        return;
+      }
+
+      if (promptInteractionMenu.provider.commands.length === 0) {
+        closePromptInteractionMenu();
         return;
       }
 
       if (event.key === "Escape") {
         event.preventDefault();
-        closeEvidenceAssistMenu();
+        closePromptInteractionMenu();
         editorRef.current?.commands.focus();
         return;
       }
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setEvidenceAssistMenu((current) =>
+        setPromptInteractionMenu((current) =>
           current
             ? {
                 ...current,
                 selectedIndex:
-                  (current.selectedIndex + 1) % EVIDENCE_ASSIST_COMMANDS.length,
+                  (current.selectedIndex + 1) % current.provider.commands.length,
               }
             : current,
         );
@@ -204,13 +222,13 @@ export function useCreateEditorController({
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setEvidenceAssistMenu((current) =>
+        setPromptInteractionMenu((current) =>
           current
             ? {
                 ...current,
                 selectedIndex:
-                  (current.selectedIndex - 1 + EVIDENCE_ASSIST_COMMANDS.length) %
-                  EVIDENCE_ASSIST_COMMANDS.length,
+                  (current.selectedIndex - 1 + current.provider.commands.length) %
+                  current.provider.commands.length,
               }
             : current,
         );
@@ -219,12 +237,12 @@ export function useCreateEditorController({
 
       if (event.key === "Enter") {
         event.preventDefault();
-        submitEvidenceAssistIntent(
-          EVIDENCE_ASSIST_COMMANDS[evidenceAssistMenu.selectedIndex].intent,
+        submitPromptInteractionCommand(
+          promptInteractionMenu.provider.commands[promptInteractionMenu.selectedIndex].id,
         );
       }
     },
-    [closeEvidenceAssistMenu, evidenceAssistMenu, submitEvidenceAssistIntent],
+    [closePromptInteractionMenu, promptInteractionMenu, submitPromptInteractionCommand],
   );
 
   const handleSourceTextChange = useCallback(
@@ -257,13 +275,14 @@ export function useCreateEditorController({
         },
       }),
       Extension.create({
-        name: "evidenceAssistTrigger",
+        name: "promptInteractionTrigger",
         addProseMirrorPlugins() {
           return [
             new Plugin({
               props: {
                 handleTextInput: (_view, from, _to, text) => {
-                  if (!onEvidenceAssistIntentRef.current) {
+                  const providers = promptInteractionProvidersRef.current ?? [];
+                  if (!onPromptInteractionRef.current || providers.length === 0) {
                     return false;
                   }
 
@@ -277,28 +296,12 @@ export function useCreateEditorController({
                       0,
                       currentEditor.state.selection.$from.parentOffset,
                     );
-                  const triggerMatch = resolveEvidenceAssistTriggerMatch({
+                  const triggerMatch = resolvePromptInteractionTriggerMatch({
+                    providers,
                     textBeforeCursor,
                     insertedText: text,
                   });
                   if (!triggerMatch) {
-                    return false;
-                  }
-
-                  if (triggerMatch.trigger.action === "intent") {
-                    currentEditor
-                      .chain()
-                      .focus()
-                      .deleteRange({
-                        from: Math.max(0, from - triggerMatch.deletePrefixChars),
-                        to: from,
-                      })
-                      .run();
-                    submitEvidenceAssistIntent(triggerMatch.trigger.defaultIntent);
-                    return true;
-                  }
-
-                  if (!editorFrameRef.current) {
                     return false;
                   }
 
@@ -314,14 +317,33 @@ export function useCreateEditorController({
                       .run();
                   }
 
+                  if (triggerMatch.trigger.action === "submit") {
+                    submitPromptInteractionCommand(
+                      triggerMatch.trigger.defaultCommandId,
+                      triggerMatch.provider,
+                    );
+                    return true;
+                  }
+
+                  if (!editorFrameRef.current) {
+                    return false;
+                  }
+
+                  if (triggerMatch.provider.commands.length === 0) {
+                    return false;
+                  }
+
                   const cursorCoordinates = currentEditor.view.coordsAtPos(anchorPos);
                   const frameBounds = editorFrameRef.current.getBoundingClientRect();
 
-                  setEvidenceAssistMenu({
+                  activePromptInteractionProviderRef.current = triggerMatch.provider;
+                  setPromptInteractionMenu({
+                    provider: triggerMatch.provider,
                     x: cursorCoordinates.left - frameBounds.left,
                     y: cursorCoordinates.bottom - frameBounds.top + 8,
-                    selectedIndex: getEvidenceAssistDefaultCommandIndex(
-                      triggerMatch.trigger.defaultIntent,
+                    selectedIndex: getPromptInteractionDefaultCommandIndex(
+                      triggerMatch.provider,
+                      triggerMatch.trigger.defaultCommandId,
                     ),
                   });
                   return true;
@@ -332,7 +354,7 @@ export function useCreateEditorController({
         },
       }),
     ],
-    [submitEvidenceAssistIntent],
+    [submitPromptInteractionCommand],
   );
 
   const editor = useEditor({
@@ -393,27 +415,27 @@ export function useCreateEditorController({
   editorRef.current = editor;
 
   useEffect(() => {
-    if (sourceMode && evidenceAssistMenu) {
-      closeEvidenceAssistMenu();
+    if (sourceMode && promptInteractionMenu) {
+      closePromptInteractionMenu();
     }
-  }, [closeEvidenceAssistMenu, evidenceAssistMenu, sourceMode]);
+  }, [closePromptInteractionMenu, promptInteractionMenu, sourceMode]);
 
   useEffect(() => {
-    if (!evidenceAssistMenuRef.current) {
+    if (!promptInteractionMenuRef.current) {
       return;
     }
 
-    evidenceAssistMenuRef.current.focus();
-  }, [evidenceAssistMenu]);
+    promptInteractionMenuRef.current.focus();
+  }, [promptInteractionMenu]);
 
   useEffect(() => {
-    if (!evidenceAssistMenu) {
+    if (!promptInteractionMenu) {
       return;
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (!evidenceAssistMenuRef.current?.contains(event.target as Node)) {
-        closeEvidenceAssistMenu();
+      if (!promptInteractionMenuRef.current?.contains(event.target as Node)) {
+        closePromptInteractionMenu();
       }
     };
 
@@ -421,7 +443,7 @@ export function useCreateEditorController({
     return () => {
       window.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [closeEvidenceAssistMenu, evidenceAssistMenu]);
+  }, [closePromptInteractionMenu, promptInteractionMenu]);
 
   const lastSyncedContent = useRef(content);
   useEffect(() => {
@@ -487,13 +509,13 @@ export function useCreateEditorController({
     setSourceMode,
     sourceText,
     editorFrameRef,
-    evidenceAssistMenuRef,
-    evidenceAssistMenu,
-    closeEvidenceAssistMenu,
-    handleEvidenceAssistMenuHover,
-    handleEvidenceAssistMenuKeyDown,
+    promptInteractionMenuRef,
+    promptInteractionMenu,
+    closePromptInteractionMenu,
+    handlePromptInteractionMenuHover,
+    handlePromptInteractionMenuKeyDown,
     handleSourceTextChange,
-    submitEvidenceAssistIntent,
+    submitPromptInteractionCommand,
     flush,
     getText,
   };
