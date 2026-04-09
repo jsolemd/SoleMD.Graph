@@ -12,15 +12,15 @@ import {
   useRef,
   useState,
 } from "react";
-import { Extension } from "@tiptap/core";
-import { Markdown } from "@tiptap/markdown";
-import { Plugin } from "@tiptap/pm/state";
-import StarterKit from "@tiptap/starter-kit";
 import {
+  Extension,
+  Markdown,
+  Plugin,
+  StarterKit,
   useEditor,
   useEditorState,
   type Editor,
-} from "@tiptap/react";
+} from "@/features/graph/tiptap";
 import { EMPTY_TOOLBAR_STATE } from "./EditorToolbar";
 import {
   EVIDENCE_ASSIST_COMMANDS,

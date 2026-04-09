@@ -1,4 +1,4 @@
-import type { Editor } from "@tiptap/core";
+import type { Editor } from "@/features/graph/tiptap";
 
 export type EvidenceAssistIntent = "support" | "refute" | "both";
 export type EvidenceAssistTriggerAction = "menu" | "intent";

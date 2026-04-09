@@ -2,7 +2,7 @@
 
 import { type ReactNode } from "react";
 import { AnimatePresence } from "framer-motion";
-import { EditorContent } from "@tiptap/react";
+import { EditorContent } from "@/features/graph/tiptap";
 import { EditorToolbar } from "./EditorToolbar";
 import type { CreateEditorControllerState } from "./use-create-editor-controller";
 import {
@@ -109,7 +109,8 @@ export function CreateEditorSurface({
         )}
         {sourceMode ? (
           <textarea
-            className="tiptap-source"
+            className="tiptap-source thin-scrollbar"
+            style={{ "--scrollbar-thumb": "var(--graph-prompt-divider)" } as React.CSSProperties}
             value={sourceText}
             onChange={handleSourceTextChange}
             aria-label={`${ariaLabel} (markdown source)`}

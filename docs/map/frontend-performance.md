@@ -12,6 +12,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Use DuckDB SQL and DuckDB-Wasm configuration directly before adding JS-side workarounds.
 - Use Next.js lazy loading, route conventions, and client/server boundaries directly.
 - Keep Cosmograph usage behind `features/graph/cosmograph/**` adapters.
+- Keep Tiptap/ProseMirror usage behind `features/graph/tiptap/**` adapters instead of importing `@tiptap/*` directly in feature code.
 
 2. One canonical query/state path
 
@@ -48,6 +49,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Lazy-load heavy chrome, controls, legends, and noncritical panels.
 - Do not import graph-only controls into always-visible brand/header surfaces unless they are split behind a lazy boundary.
 - Avoid effect cascades that cause a second fetch/render immediately after first paint.
+- Keep the editor subtree isolated from response streaming and panel chrome updates so prompt/manuscript interactions do not rerender the rich-text surface unless editor-facing props actually changed.
 
 7. Centralize performance-sensitive contracts
 
@@ -77,6 +79,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Hot first-paint tables left as parquet-backed views instead of one local session table.
 - Reopening DuckDB to work around invalidation or cache issues.
 - Local one-off fixes that bypass `features/graph/cosmograph/**` or `features/graph/duckdb/**`.
+- Local one-off fixes that bypass `features/graph/tiptap/**` and couple feature code directly to raw `@tiptap/*` imports.
 - Adding a second implementation path instead of replacing the old one.
 
 ## Review Checklist

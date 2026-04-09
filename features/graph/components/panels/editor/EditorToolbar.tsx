@@ -20,7 +20,7 @@ import {
   Strikethrough,
   Undo2,
 } from "lucide-react";
-import type { Editor } from "@tiptap/react";
+import type { Editor } from "@/features/graph/tiptap";
 
 type ToolbarButtonProps = {
   icon: ReactNode;

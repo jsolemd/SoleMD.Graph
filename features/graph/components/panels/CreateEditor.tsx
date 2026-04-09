@@ -2,6 +2,7 @@
 
 import {
   forwardRef,
+  memo,
   type ReactNode,
   useImperativeHandle,
 } from "react";
@@ -23,7 +24,7 @@ interface CreateEditorProps extends CreateEditorControllerProps {
   placeholder?: ReactNode;
 }
 
-export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
+const CreateEditorComponent = forwardRef<CreateEditorHandle, CreateEditorProps>(
   function CreateEditor(
     {
       compact = false,
@@ -59,3 +60,8 @@ export const CreateEditor = forwardRef<CreateEditorHandle, CreateEditorProps>(
     );
   },
 );
+
+CreateEditorComponent.displayName = "CreateEditor";
+
+export const CreateEditor = memo(CreateEditorComponent);
+CreateEditor.displayName = "CreateEditor";

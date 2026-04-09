@@ -148,8 +148,24 @@
 - Removed ask-mode draft mirroring from `use-prompt-box-controller.ts` so prompt typing no longer routes full markdown through top-level PromptBox React state on every keystroke
 - Switched prompt submit readiness in `PromptBoxSurface.tsx` to the canonical `hasInput` contract instead of the mirrored markdown string
 - Restored the ProseMirror/Tiptap content CSS contract in `app/styles/editor.css` so the editor surface preserves whitespace correctly without runtime warnings
-- Added a focused prompt-shell render regression test in `features/graph/components/panels/prompt/__tests__/use-prompt-box-controller.test.ts`
+- Added a focused prompt-shell render regression test in `features/graph/components/panels/prompt/__tests__/PromptBoxSurface.test.tsx`
 - Re-verified the production app in visible Chrome on `http://localhost:3000`: cold load remained at 38 requests, the ProseMirror warning disappeared on focus, and typing enabled submit without bootstrap regressions
+
+### Batch 10
+
+- Added explicit idle control to `use-typewriter.ts` so placeholder timers stop when the placeholder is hidden
+- Wired `use-prompt-box-controller.ts` to disable typewriter churn while the prompt has input or the prompt shell is collapsed
+- Added focused regression coverage in `features/graph/hooks/__tests__/use-typewriter.test.ts`
+- Added `features/graph/components/panels/prompt/__tests__/PromptBoxSurface.test.tsx` to lock submit readiness to the canonical `hasInput` signal
+- Re-verified the production app in visible Chrome on `http://localhost:3000`: no console warnings on load or editor focus, computed editor whitespace is `break-spaces`, and ask submit enables on typed input
+
+### Batch 11
+
+- Added `features/graph/tiptap/index.ts` as the one adapter boundary for Tiptap/ProseMirror imports
+- Rewired editor consumers to import Tiptap through the adapter barrel instead of raw `@tiptap/*` packages
+- Memoized `features/graph/components/panels/CreateEditor.tsx` so prompt response/chrome rerenders do not rerun the editor subtree when editor-facing props are unchanged
+- Added a focused render-isolation regression test in `features/graph/components/panels/editor/__tests__/CreateEditor.test.tsx`
+- Codified the Tiptap adapter/isolation requirement in `docs/map/frontend-performance.md` so future prompt/manuscript work keeps one upgrade boundary and one rich-text runtime path
 
 ## Blockers
 
