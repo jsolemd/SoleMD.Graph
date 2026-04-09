@@ -41,6 +41,20 @@ async function getSelectedDuckDBBundle() {
   return selectedBundlePromise
 }
 
+function resolveBrowserAssetUrl(assetUrl: string): string
+function resolveBrowserAssetUrl(assetUrl: string | null | undefined): string | null
+function resolveBrowserAssetUrl(assetUrl: string | null | undefined) {
+  if (!assetUrl) {
+    return assetUrl ?? null
+  }
+
+  if (/^https?:\/\//.test(assetUrl) || assetUrl.startsWith('blob:')) {
+    return assetUrl
+  }
+
+  return new URL(assetUrl, window.location.origin).toString()
+}
+
 export async function createConnection() {
   const bundle = await getSelectedDuckDBBundle()
 
@@ -51,14 +65,18 @@ export async function createConnection() {
     )
   }
 
+  const mainWorkerUrl = resolveBrowserAssetUrl(bundle.mainWorker)
+  const mainModuleUrl = resolveBrowserAssetUrl(bundle.mainModule)
+  const pthreadWorkerUrl = resolveBrowserAssetUrl(bundle.pthreadWorker)
+
   const workerUrl = URL.createObjectURL(
-    new Blob([`importScripts("${bundle.mainWorker}");`], {
+    new Blob([`importScripts("${mainWorkerUrl}");`], {
       type: 'text/javascript',
     })
   )
   const worker = new Worker(workerUrl)
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker)
-  await db.instantiate(bundle.mainModule, bundle.pthreadWorker)
+  await db.instantiate(mainModuleUrl, pthreadWorkerUrl)
   URL.revokeObjectURL(workerUrl)
   await db.open({
     maximumThreads: 1,
