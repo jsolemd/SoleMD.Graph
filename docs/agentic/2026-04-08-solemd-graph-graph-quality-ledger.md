@@ -211,6 +211,12 @@
 - Extended the Tiptap adapter barrel in `features/graph/tiptap/index.ts` with mention, suggestion, plugin-key, transaction, view, renderer, and attribute exports so future `@` references and transient entity highlighting can stay behind the adapter boundary
 - Added focused runtime coverage in `features/graph/components/panels/prompt/__tests__/prompt-interaction-runtime.test.ts` and refreshed the prompt/editor suites to lock the new registry and canonical request shape in place
 
+### Batch 17
+
+- Extracted the inline prompt-trigger ProseMirror plugin from `features/graph/components/panels/editor/use-create-editor-controller.ts` into `features/graph/components/panels/editor/prompt-interaction-extension.ts` so the controller keeps shrinking toward a pure editor host
+- Centralized prompt interaction menu typing in the new `PromptInteractionMenuState` export so the controller, surface, and extension share one menu-state contract
+- Re-verified the prompt/editor slice after extraction with focused Jest, `npm run typecheck`, `npm run lint`, `npm run build`, and a visible Chrome console pass on `http://localhost:3000` with no console errors
+
 ## Blockers
 
 - No blocking correctness issues remain.

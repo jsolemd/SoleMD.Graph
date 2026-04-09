@@ -15,7 +15,6 @@ import {
 import {
   Extension,
   Markdown,
-  Plugin,
   StarterKit,
   useEditor,
   useEditorState,
@@ -23,11 +22,13 @@ import {
 } from "@/features/graph/tiptap";
 import { EMPTY_TOOLBAR_STATE } from "./EditorToolbar";
 import {
-  getPromptInteractionDefaultCommandIndex,
-  resolvePromptInteractionTriggerMatch,
   type PromptInteractionRequest,
   type PromptInteractionProvider,
 } from "./prompt-interactions";
+import {
+  createPromptInteractionExtension,
+  type PromptInteractionMenuState,
+} from "./prompt-interaction-extension";
 
 export interface CreateEditorControllerProps {
   content: string;
@@ -49,12 +50,7 @@ export interface CreateEditorControllerState {
   sourceText: string;
   editorFrameRef: RefObject<HTMLDivElement | null>;
   promptInteractionMenuRef: RefObject<HTMLDivElement | null>;
-  promptInteractionMenu: {
-    provider: PromptInteractionProvider<PromptInteractionRequest>;
-    x: number;
-    y: number;
-    selectedIndex: number;
-  } | null;
+  promptInteractionMenu: PromptInteractionMenuState | null;
   closePromptInteractionMenu: () => void;
   handlePromptInteractionMenuHover: (index: number) => void;
   handlePromptInteractionMenuKeyDown: (
@@ -98,12 +94,8 @@ export function useCreateEditorController({
 
   const [sourceMode, setSourceMode] = useState(false);
   const [sourceText, setSourceText] = useState("");
-  const [promptInteractionMenu, setPromptInteractionMenu] = useState<{
-    provider: PromptInteractionProvider<PromptInteractionRequest>;
-    x: number;
-    y: number;
-    selectedIndex: number;
-  } | null>(null);
+  const [promptInteractionMenu, setPromptInteractionMenu] =
+    useState<PromptInteractionMenuState | null>(null);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const getMarkdown = useCallback((ed: Editor | null) => {
@@ -274,84 +266,14 @@ export function useCreateEditorController({
           };
         },
       }),
-      Extension.create({
-        name: "promptInteractionTrigger",
-        addProseMirrorPlugins() {
-          return [
-            new Plugin({
-              props: {
-                handleTextInput: (_view, from, _to, text) => {
-                  const providers = promptInteractionProvidersRef.current ?? [];
-                  if (!onPromptInteractionRef.current || providers.length === 0) {
-                    return false;
-                  }
-
-                  const currentEditor = editorRef.current;
-                  if (!currentEditor) {
-                    return false;
-                  }
-
-                  const textBeforeCursor =
-                    currentEditor.state.selection.$from.parent.textContent.slice(
-                      0,
-                      currentEditor.state.selection.$from.parentOffset,
-                    );
-                  const triggerMatch = resolvePromptInteractionTriggerMatch({
-                    providers,
-                    textBeforeCursor,
-                    insertedText: text,
-                  });
-                  if (!triggerMatch) {
-                    return false;
-                  }
-
-                  const anchorPos = Math.max(1, from - triggerMatch.deletePrefixChars);
-                  if (triggerMatch.deletePrefixChars > 0) {
-                    currentEditor
-                      .chain()
-                      .focus()
-                      .deleteRange({
-                        from: Math.max(0, from - triggerMatch.deletePrefixChars),
-                        to: from,
-                      })
-                      .run();
-                  }
-
-                  if (triggerMatch.trigger.action === "submit") {
-                    submitPromptInteractionCommand(
-                      triggerMatch.trigger.defaultCommandId,
-                      triggerMatch.provider,
-                    );
-                    return true;
-                  }
-
-                  if (!editorFrameRef.current) {
-                    return false;
-                  }
-
-                  if (triggerMatch.provider.commands.length === 0) {
-                    return false;
-                  }
-
-                  const cursorCoordinates = currentEditor.view.coordsAtPos(anchorPos);
-                  const frameBounds = editorFrameRef.current.getBoundingClientRect();
-
-                  activePromptInteractionProviderRef.current = triggerMatch.provider;
-                  setPromptInteractionMenu({
-                    provider: triggerMatch.provider,
-                    x: cursorCoordinates.left - frameBounds.left,
-                    y: cursorCoordinates.bottom - frameBounds.top + 8,
-                    selectedIndex: getPromptInteractionDefaultCommandIndex(
-                      triggerMatch.provider,
-                      triggerMatch.trigger.defaultCommandId,
-                    ),
-                  });
-                  return true;
-                },
-              },
-            }),
-          ];
-        },
+      createPromptInteractionExtension({
+        editorRef,
+        editorFrameRef,
+        onPromptInteractionRef,
+        promptInteractionProvidersRef,
+        activePromptInteractionProviderRef,
+        setPromptInteractionMenu,
+        submitPromptInteractionCommand,
       }),
     ],
     [submitPromptInteractionCommand],
