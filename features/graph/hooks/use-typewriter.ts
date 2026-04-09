@@ -47,18 +47,28 @@ function reducer(state: TypewriterState, action: TypewriterAction): TypewriterSt
 /** Cycles through texts once with a typewriter type/delete effect, then stops. */
 export function useTypewriter(
   texts: string[],
-  { speed = 45, deleteSpeed = 25, waitTime = 2000, initialDelay = 600 } = {},
+  {
+    speed = 45,
+    deleteSpeed = 25,
+    waitTime = 2000,
+    initialDelay = 600,
+    enabled = true,
+  } = {},
 ) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const textsRef = useRef(texts);
 
-  // Reset when texts array identity changes (mode switch)
+  // Reset when the source texts change or the animation is re-enabled.
   useEffect(() => {
     textsRef.current = texts;
     dispatch({ type: "RESET" });
-  }, [texts]);
+  }, [texts, enabled]);
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     const { phase, textIdx, charIdx, display } = state;
     if (phase === "done") return;
     const current = textsRef.current[textIdx];
@@ -95,7 +105,7 @@ export function useTypewriter(
         break;
     }
     return () => clearTimeout(timeout);
-  }, [state, speed, deleteSpeed, waitTime, initialDelay]);
+  }, [enabled, state, speed, deleteSpeed, waitTime, initialDelay]);
 
   const done = state.phase === "done";
   const isLast = state.textIdx >= texts.length - 1;

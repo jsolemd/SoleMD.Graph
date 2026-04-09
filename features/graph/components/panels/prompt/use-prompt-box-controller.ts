@@ -116,8 +116,10 @@ export function usePromptBoxController({
   const activeMode = getModeConfig(mode);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-pick on mode change
   const examples = useMemo(() => [...pickRandom(MODE_EXAMPLES[mode], 2), `${activeMode.label} with the knowledge graph...`], [mode]);
-  const { text: typewriterText, isLast: typewriterIsLast } = useTypewriter(examples);
   const [hasInput, setHasInput] = useState(false);
+  const { text: typewriterText, isLast: typewriterIsLast } = useTypewriter(examples, {
+    enabled: !hasInput && promptMode !== "collapsed",
+  });
   const askPromptValueRef = useRef("");
   const [showFormattingTools, setShowFormattingTools] = useState(false);
   const [selectionScopeManuallyDisabled, setSelectionScopeManuallyDisabled] = useState(false);
