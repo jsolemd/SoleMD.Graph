@@ -1,7 +1,10 @@
 export { refreshActivePointRuntimeTables, registerActivePointViews } from './active-points'
 export {
+  BASE_POINT_CANVAS_RUNTIME_SOURCE_TABLE,
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
+  registerBasePointCanvasView,
+  registerBasePointQueryViews,
   registerBasePointsView,
 } from './base-points'
 export { registerClusterViews } from './clusters'

@@ -38,6 +38,9 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Treat `base_points`, `base_clusters`, and other interaction-critical graph tables as hot-path assets.
 - Prefer local temp/materialized tables for hot-path data that powers repeated faceting, table paging, search, and high-frequency interactions once the interactive path is active.
 - Keep one canonical bootstrap path: first-paint views may stay attached to remote bundle tables, but interactive views must converge onto one shared promoted runtime table when that promotion reduces repeated work.
+- When Chrome traces show repeated remote Parquet metadata probes on first render, move render-critical base canvas tables onto one local bootstrap runtime before Cosmograph mounts instead of leaving the canvas on HTTP-backed `read_parquet(...)` views.
+- Once the canvas is on a local bootstrap runtime, later interactive-query promotion must update query views only. Do not repoint the live canvas table during idle prewarm.
+- When no overlay is active, bootstrap `active_*` graph views as thin aliases over base views. Do not eagerly materialize overlay runtime tables or active index remaps during no-overlay startup.
 - Optional or evidence-heavy relations may stay lazy, but only if they are not on the first-paint or high-frequency path.
 
 6. No hidden hydration/runtime penalties
@@ -65,6 +68,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 
 - Use Chrome DevTools MCP and/or browser-network inspection for frontend latency changes.
 - For DuckDB/runtime changes, verify whether requests, `HEAD` probes, or remote Parquet reads were reduced.
+- For bundle asset transport changes, verify that repeated immutable asset probes no longer repeat database lookups or filesystem resolution on the server path.
 - Prefer structural fixes over debounce-only masking.
 
 10. Performance regressions require tests

@@ -6,12 +6,15 @@ import { validateTableName, requireBundleTable } from '../utils'
 
 import { refreshActivePointRuntimeTables, registerActivePointViews } from './active-points'
 import {
+  BASE_POINT_CANVAS_RUNTIME_SOURCE_TABLE,
   BASE_POINT_CANONICAL_SOURCE_TABLE,
   BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
+  LOCAL_POINT_CANVAS_RUNTIME_COLUMNS,
   LOCAL_POINT_RUNTIME_COLUMNS,
-  registerBasePointsView,
+  registerBasePointCanvasView,
+  registerBasePointQueryViews,
 } from './base-points'
 import {
   BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
@@ -62,10 +65,29 @@ export async function registerInitialSessionViews(
 
   const buildPointCanvasProjectionSql = createPointCanvasProjectionSql(bundle)
   const buildPointQueryProjectionSql = createPointQueryProjectionSql(bundle)
-  await runBootstrapStep('base point views', () =>
-    registerBasePointsView(conn, {
-      sourceTable: validateTableName(BASE_POINT_CANONICAL_SOURCE_TABLE),
+  await runBootstrapStep('bootstrap runtime materialization', () =>
+    materializeBundleParquetTables(conn, bundle, [
+      {
+        tableName: BASE_POINT_CANONICAL_SOURCE_TABLE,
+        runtimeTableName: BASE_POINT_CANVAS_RUNTIME_SOURCE_TABLE,
+        selectedColumns: LOCAL_POINT_CANVAS_RUNTIME_COLUMNS,
+      },
+      {
+        tableName: BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
+        runtimeTableName: BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
+        selectedColumns: LOCAL_CLUSTER_RUNTIME_COLUMNS,
+      },
+    ])
+  )
+  await runBootstrapStep('base point canvas views', () =>
+    registerBasePointCanvasView(conn, {
+      sourceTable: validateTableName(BASE_POINT_CANVAS_RUNTIME_SOURCE_TABLE),
       buildPointCanvasProjectionSql,
+    })
+  )
+  await runBootstrapStep('base point query views', () =>
+    registerBasePointQueryViews(conn, {
+      sourceTable: validateTableName(BASE_POINT_CANONICAL_SOURCE_TABLE),
       buildPointQueryProjectionSql,
     })
   )
@@ -102,7 +124,7 @@ export async function registerInitialSessionViews(
   )
 
   await runBootstrapStep('cluster views', () =>
-    registerClusterViews(conn, validateTableName(BASE_CLUSTER_CANONICAL_SOURCE_TABLE))
+    registerClusterViews(conn, validateTableName(BASE_CLUSTER_RUNTIME_SOURCE_TABLE))
   )
 
   const availableLayers: MapLayer[] = ['corpus']
@@ -150,10 +172,9 @@ export function createEnsurePrimaryQueryTables(
         ])
       )
 
-      await runBootstrapStep('interactive base point views', () =>
-        registerBasePointsView(conn, {
+      await runBootstrapStep('interactive base point query views', () =>
+        registerBasePointQueryViews(conn, {
           sourceTable: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
-          buildPointCanvasProjectionSql: state.buildPointCanvasProjectionSql,
           buildPointQueryProjectionSql: state.buildPointQueryProjectionSql,
         })
       )

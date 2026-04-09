@@ -5,7 +5,29 @@ import type { GraphBundle } from '@/features/graph/types'
 import { requireBundleTable, validateTableName } from '../utils'
 
 export const BASE_POINT_CANONICAL_SOURCE_TABLE = 'base_points'
+export const BASE_POINT_CANVAS_RUNTIME_SOURCE_TABLE = 'base_points_canvas_runtime'
 export const BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE = 'base_points_query_runtime'
+
+export const LOCAL_POINT_CANVAS_RUNTIME_COLUMNS = [
+  'point_index',
+  'id',
+  'paper_id',
+  'hex_color',
+  'hex_color_light',
+  'x',
+  'y',
+  'cluster_id',
+  'cluster_label',
+  'title',
+  'citekey',
+  'journal',
+  'year',
+  'display_label',
+  'paper_author_count',
+  'paper_reference_count',
+  'paper_entity_count',
+  'paper_relation_count',
+] as const
 
 export const LOCAL_POINT_RUNTIME_COLUMNS = [
   'point_index',
@@ -135,14 +157,31 @@ export async function registerBasePointsView(
     args.sourceTable ?? BASE_POINT_CANONICAL_SOURCE_TABLE
   )
 
-  await conn.query(
-    `CREATE OR REPLACE VIEW base_points_canvas_web AS
-     ${args.buildPointCanvasProjectionSql(pointTable, 'point_index')}`
-  )
+  await registerBasePointCanvasView(conn, {
+    sourceTable: pointTable,
+    buildPointCanvasProjectionSql: args.buildPointCanvasProjectionSql,
+  })
   await registerBasePointQueryViews(conn, {
     sourceTable: pointTable,
     buildPointQueryProjectionSql: args.buildPointQueryProjectionSql,
   })
+}
+
+export async function registerBasePointCanvasView(
+  conn: AsyncDuckDBConnection,
+  args: {
+    sourceTable?: string
+    buildPointCanvasProjectionSql: (sourceTable: string, indexSql: string) => string
+  }
+) {
+  const pointTable = validateTableName(
+    args.sourceTable ?? BASE_POINT_CANVAS_RUNTIME_SOURCE_TABLE
+  )
+
+  await conn.query(
+    `CREATE OR REPLACE VIEW base_points_canvas_web AS
+     ${args.buildPointCanvasProjectionSql(pointTable, 'point_index')}`
+  )
   await conn.query(
     `CREATE OR REPLACE VIEW base_paper_points_canvas_web AS
      SELECT

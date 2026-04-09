@@ -53,6 +53,14 @@
 - Keep point-only overlay updates off `universe_links`
 - Codify live-overlay runtime rules in the canonical frontend/runtime docs
 
+### Batch 9
+
+- Reduce repeated bundle-asset probe cost on the immutable `/api/graph-bundles/**` path
+- Stop no-overlay startup from materializing overlay runtime tables or active index remaps
+- Move the render-critical base canvas bootstrap off remote `read_parquet(...)` views
+- Keep idle interactive-query promotion from re-pointing the live canvas after first paint
+- Re-measure visible-Chrome startup/network behavior after the transport/bootstrap changes
+
 ## Findings
 
 - `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
@@ -133,6 +141,15 @@
 - Raised the narrow row-attachment batch contract to 5,000 refs per request and kept batching on the one canonical browser attachment path
 - Added regression tests for DuckDB connection asset normalization, active runtime table materialization, overlay session refresh behavior, remote attachment batching, and attachment request validation
 
+### Batch 9
+
+- Added a checksum-keyed cached bundle asset catalog so repeated immutable asset probes reuse one graph-run lookup, one root/directory resolution, and one stat pass per bundle
+- Rewired `/api/graph-bundles/[checksum]/[asset]` to serve from the cached asset descriptor path instead of re-querying the database and filesystem on every `HEAD`/`GET`
+- Changed no-overlay DuckDB bootstrap so `active_*` views stay as base aliases until an actual overlay/runtime refresh occurs
+- Materialized the base canvas/bootstrap point table and base clusters into local DuckDB runtime tables before mounting Cosmograph, which cut the visible-Chrome `base_points.parquet` `HEAD` burst substantially on a fresh production load
+- Kept the later shared `base_points_query_runtime` promotion query-only so the graph canvas does not rebuild onto a second local table during idle prewarm
+- Added regression coverage for cached asset resolution and the no-overlay active-view bootstrap contract
+
 ## Blockers
 
 - No blocking correctness issues remain.
@@ -155,3 +172,4 @@
 3. Continue replacing local trim/scope checks with the shared selection-query resolver where any duplication still exists.
 4. If desired, remove the remaining `DashboardShellClient` test console warning with an explicit async-load test harness.
 5. Design the next overlay transport step for million-point live extension around backend-ranked membership/cohort payloads instead of row-hydration attachment.
+6. Revisit whether the remaining repeated `HEAD` requests can be eliminated entirely by registering hot bundle parquet assets under stable local DuckDB file handles instead of HTTP-backed `read_parquet(...)` views.

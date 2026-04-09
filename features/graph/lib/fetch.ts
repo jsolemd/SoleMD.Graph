@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { realpath } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { and, desc, eq } from 'drizzle-orm'
@@ -19,6 +19,25 @@ import {
   coerceNumber,
   normalizeBundleManifest,
 } from './fetch/normalize'
+
+interface GraphBundleAssetDescriptor {
+  assetPath: string
+  etag: string
+  size: number
+}
+
+interface GraphBundleAssetCatalog {
+  assets: Map<string, GraphBundleAssetDescriptor>
+  bundle: GraphBundle
+  bundleDirectory: string
+}
+
+const graphRunByChecksumCache = new Map<string, Promise<GraphRunRow>>()
+const graphBundleAssetCatalogCache = new Map<
+  string,
+  Promise<GraphBundleAssetCatalog>
+>()
+let graphBundleRootPromise: Promise<string> | null = null
 
 function buildBundleAssetUrl(bundleChecksum: string, assetPath: string) {
   const encodedAssetPath = assetPath
@@ -140,9 +159,28 @@ async function queryGraphRunByChecksum(bundleChecksum: string): Promise<GraphRun
   }
 }
 
-// TODO: Replace with `"use cache"` + `cacheLife('minutes')` when real queries are in place
+async function getResolvedGraphBundleRoot() {
+  if (!graphBundleRootPromise) {
+    graphBundleRootPromise = realpath(GRAPH_BUNDLE_ROOT).catch((error) => {
+      graphBundleRootPromise = null
+      throw error
+    })
+  }
+
+  return graphBundleRootPromise
+}
+
 async function getCachedGraphRunByChecksum(bundleChecksum: string): Promise<GraphRunRow> {
-  return queryGraphRunByChecksum(bundleChecksum)
+  let cached = graphRunByChecksumCache.get(bundleChecksum)
+  if (!cached) {
+    cached = queryGraphRunByChecksum(bundleChecksum).catch((error) => {
+      graphRunByChecksumCache.delete(bundleChecksum)
+      throw error
+    })
+    graphRunByChecksumCache.set(bundleChecksum, cached)
+  }
+
+  return cached
 }
 
 export async function fetchActiveGraphBundle(): Promise<GraphBundle> {
@@ -158,7 +196,7 @@ export async function fetchGraphBundleByChecksum(
 export async function resolveGraphBundleDirectory(bundle: GraphBundle) {
   const bundleDirectory = resolveBundleUriPath(bundle.bundleUri)
   const [resolvedRoot, resolvedDirectory] = await Promise.all([
-    realpath(GRAPH_BUNDLE_ROOT),
+    getResolvedGraphBundleRoot(),
     realpath(bundleDirectory),
   ])
 
@@ -180,4 +218,89 @@ export function getGraphBundleAssetNames(bundle: GraphBundle) {
   }
 
   return assetNames
+}
+
+function buildGraphBundleAssetEtag(args: {
+  asset: string
+  bundleChecksum: string
+  sha256: string | null
+  size: number
+}) {
+  const versionToken = args.sha256 ?? String(args.size)
+  return `"${args.bundleChecksum}:${args.asset}:${versionToken}"`
+}
+
+function resolveBundleAssetPath(bundleDirectory: string, asset: string) {
+  const assetPath = path.resolve(bundleDirectory, asset)
+
+  if (
+    assetPath !== bundleDirectory &&
+    !assetPath.startsWith(`${bundleDirectory}${path.sep}`)
+  ) {
+    throw new Error(`Graph bundle asset path escapes bundle directory: ${asset}`)
+  }
+
+  return assetPath
+}
+
+async function buildGraphBundleAssetCatalog(
+  bundleChecksum: string
+): Promise<GraphBundleAssetCatalog> {
+  const bundle = await fetchGraphBundleByChecksum(bundleChecksum)
+  const bundleDirectory = await resolveGraphBundleDirectory(bundle)
+  const tableManifestByAsset = new Map(
+    Object.values(bundle.bundleManifest.tables).map((tableManifest) => [
+      tableManifest.parquetFile,
+      tableManifest,
+    ])
+  )
+  const assetNames = [...getGraphBundleAssetNames(bundle)]
+
+  const descriptors = await Promise.all(
+    assetNames.map(async (asset) => {
+      const assetPath = resolveBundleAssetPath(bundleDirectory, asset)
+      const assetStats = await stat(assetPath)
+      if (!assetStats.isFile()) {
+        throw new Error(`Graph bundle asset is not a file: ${asset}`)
+      }
+
+      const tableManifest = tableManifestByAsset.get(asset) ?? null
+      return [
+        asset,
+        {
+          assetPath,
+          etag: buildGraphBundleAssetEtag({
+            asset,
+            bundleChecksum: bundle.bundleChecksum,
+            sha256: tableManifest?.sha256 ?? null,
+            size: assetStats.size,
+          }),
+          size: assetStats.size,
+        },
+      ] as const
+    })
+  )
+
+  return {
+    assets: new Map(descriptors),
+    bundle,
+    bundleDirectory,
+  }
+}
+
+export async function resolveGraphBundleAsset(
+  bundleChecksum: string,
+  asset: string
+): Promise<GraphBundleAssetDescriptor | null> {
+  let cached = graphBundleAssetCatalogCache.get(bundleChecksum)
+  if (!cached) {
+    cached = buildGraphBundleAssetCatalog(bundleChecksum).catch((error) => {
+      graphBundleAssetCatalogCache.delete(bundleChecksum)
+      throw error
+    })
+    graphBundleAssetCatalogCache.set(bundleChecksum, cached)
+  }
+
+  const catalog = await cached
+  return catalog.assets.get(asset) ?? null
 }
