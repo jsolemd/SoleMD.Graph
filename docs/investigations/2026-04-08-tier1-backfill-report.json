@@ -1,0 +1,715 @@
+{
+  "parser_version": "parser-v5",
+  "source_revision": "pubtator3-api:2026-03-21",
+  "requested_corpus_ids": [
+    727504,
+    2466571,
+    2693021,
+    2748365,
+    3116111,
+    3470330,
+    5641094,
+    6787660,
+    8775898,
+    10194153,
+    12211939,
+    12675042,
+    13014340,
+    13895810,
+    14309634,
+    15285970,
+    15826427,
+    16038098,
+    19879595,
+    20543885,
+    21133978,
+    23741869,
+    27634567,
+    32736596,
+    35677096,
+    40937173,
+    53211242,
+    73507008,
+    81621267,
+    84183536,
+    85899164,
+    231764143,
+    231885860,
+    233034933,
+    252181354,
+    258637667,
+    268292752,
+    273819609,
+    275142263,
+    275392102,
+    283056730
+  ],
+  "resolved_pmids": 41,
+  "skipped_existing": 0,
+  "fetched_documents": 41,
+  "parsed_documents": 17,
+  "skipped_low_value": 2,
+  "skipped_no_fetch": 22,
+  "ingested_corpus_ids": [
+    2693021,
+    5641094,
+    6787660,
+    10194153,
+    12675042,
+    13014340,
+    14309634,
+    15826427,
+    19879595,
+    20543885,
+    21133978,
+    40937173,
+    73507008,
+    231764143,
+    233034933,
+    268292752,
+    275392102
+  ],
+  "warehouse_result": {
+    "papers": [
+      {
+        "corpus_id": 2693021,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 5641094,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 6787660,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 10194153,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 12675042,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 13014340,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 14309634,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 15826427,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 19879595,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 20543885,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 21133978,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 40937173,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 73507008,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 231764143,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 233034933,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 268292752,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 275392102,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      }
+    ],
+    "batch_total_rows": 631,
+    "written_rows": 631,
+    "deferred_stage_names": []
+  },
+  "chunk_backfill_result": {
+    "chunk_version_key": "default-structural-v1",
+    "source_revision_keys": [
+      "biocxml:2026-03-21",
+      "s2orc_v2:2026-03-10"
+    ],
+    "parser_version": "parser-v5",
+    "corpus_ids": [
+      2693021,
+      5641094,
+      6787660,
+      10194153,
+      12675042,
+      13014340,
+      14309634,
+      15826427,
+      19879595,
+      20543885,
+      21133978,
+      40937173,
+      73507008,
+      231764143,
+      233034933,
+      268292752,
+      275392102
+    ],
+    "papers": [
+      {
+        "corpus_id": 2693021,
+        "block_rows": 1,
+        "sentence_rows": 11,
+        "chunk_rows": 2,
+        "chunk_member_rows": 11,
+        "batch_total_rows": 13,
+        "written_rows": 13,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 5641094,
+        "block_rows": 1,
+        "sentence_rows": 8,
+        "chunk_rows": 2,
+        "chunk_member_rows": 8,
+        "batch_total_rows": 10,
+        "written_rows": 10,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 6787660,
+        "block_rows": 1,
+        "sentence_rows": 9,
+        "chunk_rows": 1,
+        "chunk_member_rows": 9,
+        "batch_total_rows": 10,
+        "written_rows": 10,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 10194153,
+        "block_rows": 1,
+        "sentence_rows": 4,
+        "chunk_rows": 1,
+        "chunk_member_rows": 4,
+        "batch_total_rows": 5,
+        "written_rows": 5,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 12675042,
+        "block_rows": 1,
+        "sentence_rows": 8,
+        "chunk_rows": 1,
+        "chunk_member_rows": 8,
+        "batch_total_rows": 9,
+        "written_rows": 9,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 13014340,
+        "block_rows": 1,
+        "sentence_rows": 6,
+        "chunk_rows": 1,
+        "chunk_member_rows": 6,
+        "batch_total_rows": 7,
+        "written_rows": 7,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 14309634,
+        "block_rows": 1,
+        "sentence_rows": 6,
+        "chunk_rows": 1,
+        "chunk_member_rows": 6,
+        "batch_total_rows": 7,
+        "written_rows": 7,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 15826427,
+        "block_rows": 1,
+        "sentence_rows": 6,
+        "chunk_rows": 1,
+        "chunk_member_rows": 6,
+        "batch_total_rows": 7,
+        "written_rows": 7,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 19879595,
+        "block_rows": 1,
+        "sentence_rows": 10,
+        "chunk_rows": 2,
+        "chunk_member_rows": 10,
+        "batch_total_rows": 12,
+        "written_rows": 12,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 20543885,
+        "block_rows": 1,
+        "sentence_rows": 16,
+        "chunk_rows": 2,
+        "chunk_member_rows": 16,
+        "batch_total_rows": 18,
+        "written_rows": 18,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 21133978,
+        "block_rows": 1,
+        "sentence_rows": 10,
+        "chunk_rows": 1,
+        "chunk_member_rows": 10,
+        "batch_total_rows": 11,
+        "written_rows": 11,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 40937173,
+        "block_rows": 1,
+        "sentence_rows": 6,
+        "chunk_rows": 1,
+        "chunk_member_rows": 6,
+        "batch_total_rows": 7,
+        "written_rows": 7,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 73507008,
+        "block_rows": 1,
+        "sentence_rows": 12,
+        "chunk_rows": 2,
+        "chunk_member_rows": 12,
+        "batch_total_rows": 14,
+        "written_rows": 14,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 231764143,
+        "block_rows": 1,
+        "sentence_rows": 13,
+        "chunk_rows": 2,
+        "chunk_member_rows": 13,
+        "batch_total_rows": 15,
+        "written_rows": 15,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 233034933,
+        "block_rows": 1,
+        "sentence_rows": 15,
+        "chunk_rows": 2,
+        "chunk_member_rows": 15,
+        "batch_total_rows": 17,
+        "written_rows": 17,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 268292752,
+        "block_rows": 1,
+        "sentence_rows": 10,
+        "chunk_rows": 2,
+        "chunk_member_rows": 10,
+        "batch_total_rows": 12,
+        "written_rows": 12,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      },
+      {
+        "corpus_id": 275392102,
+        "block_rows": 1,
+        "sentence_rows": 17,
+        "chunk_rows": 2,
+        "chunk_member_rows": 17,
+        "batch_total_rows": 19,
+        "written_rows": 19,
+        "deferred_stage_names": [],
+        "executed": true,
+        "skipped_reason": null
+      }
+    ],
+    "total_block_rows": 17,
+    "total_sentence_rows": 167,
+    "total_chunk_rows": 26,
+    "total_chunk_member_rows": 167,
+    "total_batch_rows": 193,
+    "total_written_rows": 193,
+    "deferred_stage_names": [],
+    "missing_corpus_ids": [],
+    "executed": true,
+    "checkpoint_run_id": null,
+    "checkpoint_dir": null,
+    "resumed_from_checkpoint": false
+  },
+  "papers": [
+    {
+      "corpus_id": 727504,
+      "pmid": 27900734,
+      "document_id": "27900734",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 2466571,
+      "pmid": 20808944,
+      "document_id": "20808944",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 2693021,
+      "pmid": 9525362,
+      "document_id": "9525362",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 2748365,
+      "pmid": 28476759,
+      "document_id": "28476759",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 3116111,
+      "pmid": 22371650,
+      "document_id": "22371650",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 3470330,
+      "pmid": 28592453,
+      "document_id": "28592453",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 5641094,
+      "pmid": 16156715,
+      "document_id": "16156715",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 6787660,
+      "pmid": 21514250,
+      "document_id": "21514250",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 8775898,
+      "pmid": 28217372,
+      "document_id": "28217372",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 10194153,
+      "pmid": 6121548,
+      "document_id": "6121548",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 12211939,
+      "pmid": 22187469,
+      "document_id": "22187469",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 12675042,
+      "pmid": 10200732,
+      "document_id": "10200732",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 13014340,
+      "pmid": 8622128,
+      "document_id": "8622128",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 13895810,
+      "pmid": 28078203,
+      "document_id": "28078203",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 14309634,
+      "pmid": 14657171,
+      "document_id": "14657171",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 15285970,
+      "pmid": 23588782,
+      "document_id": "23588782",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 15826427,
+      "pmid": 17959792,
+      "document_id": "17959792",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 16038098,
+      "pmid": 23355817,
+      "document_id": "23355817",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 19879595,
+      "pmid": 9989565,
+      "document_id": "9989565",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 20543885,
+      "pmid": 19106695,
+      "document_id": "19106695",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 21133978,
+      "pmid": 10584719,
+      "document_id": "10584719",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 23741869,
+      "pmid": 26806700,
+      "document_id": "26806700",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 27634567,
+      "pmid": 20144981,
+      "document_id": "20144981",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 32736596,
+      "pmid": 6121550,
+      "document_id": "6121550",
+      "parsed": false,
+      "skipped_reason": "low_value"
+    },
+    {
+      "corpus_id": 35677096,
+      "pmid": 19047564,
+      "document_id": "19047564",
+      "parsed": false,
+      "skipped_reason": "low_value"
+    },
+    {
+      "corpus_id": 40937173,
+      "pmid": 19679070,
+      "document_id": "19679070",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 53211242,
+      "pmid": 30390660,
+      "document_id": "30390660",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 73507008,
+      "pmid": 30850328,
+      "document_id": "30850328",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 81621267,
+      "pmid": 31001455,
+      "document_id": "31001455",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 84183536,
+      "pmid": 30890171,
+      "document_id": "30890171",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 85899164,
+      "pmid": 17618441,
+      "document_id": "17618441",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 231764143,
+      "pmid": 33501939,
+      "document_id": "33501939",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 231885860,
+      "pmid": 33643008,
+      "document_id": "33643008",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 233034933,
+      "pmid": 33822001,
+      "document_id": "33822001",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 252181354,
+      "pmid": 36087307,
+      "document_id": "36087307",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 258637667,
+      "pmid": 37171471,
+      "document_id": "37171471",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 268292752,
+      "pmid": 38460603,
+      "document_id": "38460603",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 273819609,
+      "pmid": 39497060,
+      "document_id": "39497060",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 275142263,
+      "pmid": 39736793,
+      "document_id": "39736793",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 275392102,
+      "pmid": 39761033,
+      "document_id": "39761033",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 283056730,
+      "pmid": 41249138,
+      "document_id": "41249138",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    }
+  ]
+}

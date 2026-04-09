@@ -36,6 +36,8 @@ from app.langfuse_config import (
     SCORE_MRR,
     SCORE_TARGET_IN_CORPUS,
     SCORE_TARGET_IN_GROUNDED,
+)
+from app.langfuse_config import (
     langfuse_api as _langfuse_api,
 )
 from app.rag.response_serialization import serialize_search_result
@@ -71,6 +73,9 @@ def _build_request_from_item(
     return RagSearchRequest(
         graph_release_id=graph_release_id,
         query=item_input["query"],
+        selected_layer_key=item_input.get("selected_layer_key"),
+        selected_node_id=item_input.get("selected_node_id"),
+        selection_graph_paper_refs=list(item_input.get("selection_graph_paper_refs") or []),
         evidence_intent=evidence_intent,
         k=k,
         rerank_topn=max(k, rerank_topn),
@@ -530,6 +535,7 @@ def enqueue_failures(result, queue_id: str) -> int:
 
 
 ALL_BENCHMARK_DATASETS = [
+    "benchmark-biomedical_optimization_v3",
     "benchmark-title_retrieval_v2",
     "benchmark-clinical_evidence_v2",
     "benchmark-passage_retrieval_v2",

@@ -19,7 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import json
+import hashlib
 import logging
 import os
 import sys
@@ -43,7 +43,10 @@ from app import db
 from app.rag.repository import PostgresRagRepository
 from app.rag.types import EvidenceIntent
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
-from app.rag_ingest.runtime_eval_benchmarks import load_runtime_eval_benchmark_cases
+from app.rag_ingest.runtime_eval_benchmarks import (
+    build_biomedical_optimization_benchmark,
+    load_runtime_eval_benchmark_cases,
+)
 from app.rag_ingest.runtime_eval_models import (
     RagRuntimeEvalBenchmarkReport,
     RuntimeEvalBenchmarkCase,
@@ -981,6 +984,20 @@ CLINICAL_ACTIONABLE_SEEDS: list[dict[str, object]] = [
 ]
 
 
+def _dataset_item_id(
+    report: RagRuntimeEvalBenchmarkReport,
+    case: RuntimeEvalBenchmarkCase,
+    *,
+    duplicate_logical_keys: set[tuple[int, str]],
+) -> str:
+    family_key = str(case.query_family)
+    base_id = f"{report.benchmark_key}:{case.corpus_id}:{family_key}"
+    if (case.corpus_id, family_key) not in duplicate_logical_keys:
+        return base_id
+    query_hash = hashlib.sha1(case.query.encode("utf-8")).hexdigest()[:10]
+    return f"{base_id}:{query_hash}"
+
+
 def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
     """Push a benchmark report directly to Langfuse as a dataset.
 
@@ -1012,10 +1029,21 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
             },
         )
 
+        logical_key_counts = Counter(
+            (case.corpus_id, str(case.query_family))
+            for case in report.cases
+        )
+        duplicate_logical_keys = {
+            key for key, count in logical_key_counts.items() if count > 1
+        }
+
         for case in report.cases:
             input_data = {
                 "query": case.query,
                 "query_family": str(case.query_family),
+                "selected_layer_key": case.selected_layer_key,
+                "selected_node_id": case.selected_node_id,
+                "selection_graph_paper_refs": case.selection_graph_paper_refs,
                 "evidence_intent": str(case.evidence_intent) if case.evidence_intent else None,
                 "benchmark_labels": case.benchmark_labels,
             }
@@ -1025,8 +1053,11 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
                 "primary_source_system": case.primary_source_system,
                 "expected_retrieval_profile": case.expected_retrieval_profile,
             }
-            # Deterministic ID: upserts on re-run instead of appending duplicates
-            item_id = f"{report.benchmark_key}:{case.corpus_id}"
+            item_id = _dataset_item_id(
+                report,
+                case,
+                duplicate_logical_keys=duplicate_logical_keys,
+            )
             client.create_dataset_item(
                 dataset_name=dataset_name,
                 id=item_id,
@@ -1034,8 +1065,8 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
                 expected_output=expected_output,
                 metadata={
                     "primary_source_system": case.primary_source_system,
-                    "stratum_key": case.stratum_key,
                     "benchmark_key": case.benchmark_key,
+                    "query_family": str(case.query_family),
                     "has_chunks": "has_chunks" in case.benchmark_labels,
                 },
             )
@@ -1048,12 +1079,19 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
         return False
 
 
-def _load_existing_corpus_ids(benchmark_dir: Path) -> set[int]:
-    """Load all corpus_ids from checked-in benchmarks to ensure disjointness."""
+def _load_existing_corpus_ids(
+    benchmark_dir: Path,
+    *,
+    exclude_benchmark_keys: set[str] | None = None,
+) -> set[int]:
+    """Load corpus_ids from other benchmark snapshots to ensure disjointness."""
     existing: set[int] = set()
+    excluded_keys = exclude_benchmark_keys or set()
     for path in sorted(benchmark_dir.glob("*.json")):
         try:
-            _report, cases = load_runtime_eval_benchmark_cases(path)
+            report, cases = load_runtime_eval_benchmark_cases(path)
+            if report.benchmark_key in excluded_keys:
+                continue
             existing.update(case.corpus_id for case in cases)
         except Exception:
             continue
@@ -2113,6 +2151,8 @@ def build_title_retrieval_v2(
                 query_family=RuntimeEvalQueryFamily.TITLE_SELECTED,
                 query=title,
                 stratum_key=f"benchmark:title_retrieval_v2|type:selected|source:{row['source_system']}",
+                selected_layer_key="paper",
+                selected_node_id=f"paper:{corpus_id}",
                 benchmark_key="title_retrieval_v2",
                 benchmark_labels=sorted(set(labels)),
                 failure_count=0, min_target_rank=0, max_target_rank=0,
@@ -2539,12 +2579,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--suites",
         nargs="*",
         default=[
+            "biomedical_optimization_v3",
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
             "adversarial_routing_v2", "keyword_search_v2", "abstract_stratum_v2",
             "question_evidence_v2", "semantic_recall_v2", "entity_relation_v2",
         ],
         choices=[
             # V2 suites (default)
+            "biomedical_optimization_v3",
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
             "adversarial_routing_v2", "keyword_search_v2", "abstract_stratum_v2",
             "question_evidence_v2", "semantic_recall_v2", "entity_relation_v2",
@@ -2553,6 +2595,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "question_lookup", "general_profile", "abstract_only",
             "sentence_hard", "evidence_intent", "clinical_actionable",
         ],
+    )
+    parser.add_argument(
+        "--optimization-paper-sample-size",
+        type=int,
+        default=120,
+        help="Maximum covered papers to sample for biomedical_optimization_v3.",
+    )
+    parser.add_argument(
+        "--optimization-sample-seed",
+        type=int,
+        default=7,
+        help="Deterministic sampling seed for biomedical_optimization_v3.",
     )
     return parser.parse_args(argv)
 
@@ -2567,7 +2621,10 @@ def main(argv: list[str] | None = None) -> int:
     # Register all score configs in Langfuse (idempotent)
     ensure_score_configs()
 
-    existing_corpus_ids = _load_existing_corpus_ids(output_dir)
+    existing_corpus_ids = _load_existing_corpus_ids(
+        output_dir,
+        exclude_benchmark_keys=set(args.suites),
+    )
     print(f"Existing corpus_ids across benchmarks: {len(existing_corpus_ids)}")
 
     excluded = set(existing_corpus_ids)
@@ -2575,6 +2632,14 @@ def main(argv: list[str] | None = None) -> int:
 
     builders = {
         # V2 consolidated suites (abstract-first, signal-complete)
+        "biomedical_optimization_v3": (
+            lambda **kwargs: build_biomedical_optimization_benchmark(
+                paper_sample_size=args.optimization_paper_sample_size,
+                sample_seed=args.optimization_sample_seed,
+                **kwargs,
+            ),
+            "biomedical_optimization_v3.json",
+        ),
         "title_retrieval_v2": (build_title_retrieval_v2, "title_retrieval_v2.json"),
         "clinical_evidence_v2": (build_clinical_evidence_v2, "clinical_evidence_v2.json"),
         "passage_retrieval_v2": (build_passage_retrieval_v2, "passage_retrieval_v2.json"),
@@ -2601,14 +2666,20 @@ def main(argv: list[str] | None = None) -> int:
         for suite_name in args.suites:
             builder_fn, filename = builders[suite_name]
             print(f"\nBuilding {suite_name}...")
+            suite_excluded = (
+                set()
+                if suite_name == "biomedical_optimization_v3"
+                else excluded
+            )
             report = builder_fn(
                 graph_release_id=args.graph_release_id,
                 chunk_version_key=args.chunk_version_key,
-                exclude_corpus_ids=excluded,
+                exclude_corpus_ids=suite_excluded,
                 connect=connect,
             )
-            for case in report.cases:
-                excluded.add(case.corpus_id)
+            if suite_name != "biomedical_optimization_v3":
+                for case in report.cases:
+                    excluded.add(case.corpus_id)
 
             # Push directly to Langfuse (source of truth)
             pushed = _push_report_to_langfuse(report)

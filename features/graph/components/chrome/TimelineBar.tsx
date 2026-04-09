@@ -2,7 +2,7 @@
 
 import { memo, useState } from "react";
 import { motion } from "framer-motion";
-import { useCosmograph } from "@/features/graph/cosmograph";
+import { useGraphInstance } from "@/features/graph/cosmograph";
 import { Badge, Popover, Slider, Text, Tooltip } from "@mantine/core";
 import { Gauge } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
@@ -18,7 +18,7 @@ import {
   multiplierToSliderStep,
   sliderStepToMultiplier,
   speedMultiplierToMs,
-} from "@/features/graph/stores/slices/timeline-slice";
+} from "@/features/graph/lib/timeline-utils";
 import { edgeReveal } from "@/lib/motion";
 import {
   panelChromeStyle,
@@ -65,7 +65,7 @@ const speedSliderStyles = {
 } as const;
 
 function TimelineBarComponent() {
-  const { cosmograph } = useCosmograph();
+  const cosmograph = useGraphInstance();
   const timelineColumn = useDashboardStore((s) => s.timelineColumn);
   const timelineSelection = useDashboardStore((s) => s.timelineSelection);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from app import db
@@ -17,7 +17,12 @@ from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalQueryCase,
     RuntimeEvalQueryFamily,
 )
-from app.rag_ingest.runtime_eval_population import fetch_runtime_eval_population
+from app.rag_ingest.runtime_eval_population import (
+    build_runtime_eval_query_cases,
+    fetch_runtime_eval_population,
+    filter_runtime_eval_population,
+    select_stratified_sample,
+)
 
 
 def _difficulty_bucket(max_rank: int) -> str:
@@ -137,6 +142,168 @@ def _build_benchmark_case(
     )
 
 
+_TITLE_LOOKUP_FAMILIES = frozenset(
+    {
+        RuntimeEvalQueryFamily.TITLE_GLOBAL,
+        RuntimeEvalQueryFamily.TITLE_SELECTED,
+    }
+)
+
+
+def _has_optimization_title_quality(title: str) -> bool:
+    normalized = " ".join(title.split()).strip()
+    return (
+        len(normalized) >= 25
+        and len(normalized.split()) >= 4
+        and not normalized.isupper()
+    )
+
+
+def _optimization_expected_profile(
+    query_family: RuntimeEvalQueryFamily,
+) -> str | None:
+    if query_family in _TITLE_LOOKUP_FAMILIES:
+        return "title_lookup"
+    return None
+
+
+def _build_optimization_case(
+    *,
+    benchmark_key: str,
+    paper: RuntimeEvalPaperRecord,
+    query_case: RuntimeEvalQueryCase,
+) -> RuntimeEvalBenchmarkCase:
+    labels = [
+        "biomedical_optimization",
+        f"family:{query_case.query_family}",
+        f"source:{paper.primary_source_system}",
+        "has_chunks",
+        "has_entities",
+    ]
+    if paper.representative_sentence:
+        labels.append("has_sentence_seed")
+    return RuntimeEvalBenchmarkCase(
+        corpus_id=paper.corpus_id,
+        title=paper.title,
+        primary_source_system=paper.primary_source_system,
+        query_family=query_case.query_family,
+        query=query_case.query,
+        stratum_key=f"benchmark:{benchmark_key}|family:{query_case.query_family}|{query_case.stratum_key}",
+        representative_section_role=query_case.representative_section_role,
+        selected_layer_key=query_case.selected_layer_key,
+        selected_node_id=query_case.selected_node_id,
+        selection_graph_paper_refs=query_case.selection_graph_paper_refs,
+        benchmark_key=benchmark_key,
+        benchmark_labels=sorted(set(labels)),
+        expected_retrieval_profile=_optimization_expected_profile(
+            query_case.query_family
+        ),
+    )
+
+
+def build_biomedical_optimization_benchmark(
+    *,
+    graph_release_id: str = "current",
+    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+    benchmark_key: str = "biomedical_optimization_v3",
+    paper_sample_size: int = 120,
+    sample_seed: int = 7,
+    query_families: Sequence[RuntimeEvalQueryFamily] | None = None,
+    exclude_corpus_ids: set[int] | None = None,
+    min_chunk_count: int = 1,
+    min_entity_mentions: int = 1,
+    require_sentence_seed: bool = True,
+    connect: Callable[..., object] | None = None,
+) -> RagRuntimeEvalBenchmarkReport:
+    """Build a larger covered benchmark for primary RAG optimization work.
+
+    Samples from the live warehouse population after enforcing structural
+    coverage so benchmark movement reflects retrieval quality instead of
+    missing ingest state.
+    """
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn,
+        chunk_version_key=chunk_version_key,
+    )
+    release = repository.resolve_graph_release(graph_release_id)
+    excluded = set(exclude_corpus_ids or set())
+    families = tuple(
+        query_families
+        or (
+            RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            RuntimeEvalQueryFamily.TITLE_SELECTED,
+            RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+        )
+    )
+    population = fetch_runtime_eval_population(
+        graph_run_id=release.graph_run_id,
+        chunk_version_key=chunk_version_key,
+        connect=connect_fn,
+    )
+    covered_population = filter_runtime_eval_population(
+        population,
+        min_chunk_count=min_chunk_count,
+        min_entity_mentions=min_entity_mentions,
+        require_sentence_seed=require_sentence_seed,
+    )
+    eligible_population = [
+        paper for paper in covered_population if paper.corpus_id not in excluded
+    ]
+    if any(family in _TITLE_LOOKUP_FAMILIES for family in families):
+        eligible_population = [
+            paper
+            for paper in eligible_population
+            if _has_optimization_title_quality(paper.title)
+        ]
+    sample = select_stratified_sample(
+        eligible_population,
+        sample_size=paper_sample_size,
+        seed=sample_seed,
+    )
+    sample_by_corpus_id = {paper.corpus_id: paper for paper in sample}
+    query_cases = build_runtime_eval_query_cases(
+        sample,
+        query_families=families,
+    )
+    cases = [
+        _build_optimization_case(
+            benchmark_key=benchmark_key,
+            paper=sample_by_corpus_id[query_case.corpus_id],
+            query_case=query_case,
+        )
+        for query_case in query_cases
+    ]
+    label_counts = Counter()
+    for case in cases:
+        label_counts.update(case.benchmark_labels)
+    source_counts = Counter(paper.primary_source_system for paper in sample)
+    return RagRuntimeEvalBenchmarkReport(
+        benchmark_key=benchmark_key,
+        graph_release_id=release.graph_release_id,
+        graph_run_id=release.graph_run_id,
+        bundle_checksum=release.bundle_checksum,
+        graph_name=release.graph_name,
+        chunk_version_key=chunk_version_key,
+        benchmark_source=(
+            "Covered runtime-eval population sampled from the live warehouse "
+            "with canonical paper titles. "
+            f"eligible_papers={len(eligible_population)} "
+            f"sampled_papers={len(sample)} "
+            f"families={','.join(str(family) for family in families)} "
+            f"source_mix={dict(sorted(source_counts.items()))}"
+        ),
+        max_cases=paper_sample_size * len(families),
+        min_failure_count=0,
+        min_max_rank=0,
+        high_recurrence_count=0,
+        deep_miss_rank=0,
+        selected_count=len(cases),
+        selected_by_label=dict(sorted(label_counts.items())),
+        cases=cases,
+    )
+
+
 def build_dense_audit_sentence_hard_benchmark(
     *,
     dense_audit_report_path: Path,
@@ -244,6 +411,9 @@ def load_runtime_eval_benchmark_cases(
             evidence_intent=case.evidence_intent,
             benchmark_labels=case.benchmark_labels,
             representative_section_role=case.representative_section_role,
+            selected_layer_key=case.selected_layer_key,
+            selected_node_id=case.selected_node_id,
+            selection_graph_paper_refs=case.selection_graph_paper_refs,
         )
         for case in benchmark_report.cases
     ]

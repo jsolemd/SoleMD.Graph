@@ -22,11 +22,14 @@ _EVAL_POPULATION_SQL = """
 WITH requested_docs AS (
     SELECT DISTINCT
         d.corpus_id,
-        d.title,
+        NULLIF(trim(p.title), '') AS canonical_title,
+        NULLIF(trim(d.title), '') AS document_title,
         d.primary_source_system
     FROM solemd.paper_documents d
     JOIN solemd.graph_points gp
       ON gp.corpus_id = d.corpus_id
+    LEFT JOIN solemd.papers p
+      ON p.corpus_id = d.corpus_id
     WHERE gp.graph_run_id = %s::UUID
       AND (
           %s::BIGINT[] IS NULL
@@ -102,7 +105,8 @@ sentence_seeds AS (
 )
 SELECT
     d.corpus_id,
-    d.title,
+    d.canonical_title,
+    d.document_title,
     d.primary_source_system,
     COALESCE(sc.section_count, 0) AS section_count,
     COALESCE(bc.table_block_count, 0) AS table_block_count,
@@ -242,6 +246,21 @@ _SENTENCE_MAX_CHARS = 220
 _SENTENCE_MAX_WORDS = 28
 
 
+def _resolve_runtime_eval_title(
+    *,
+    corpus_id: int,
+    canonical_title: str | None,
+    document_title: str | None,
+) -> str:
+    canonical = " ".join((canonical_title or "").split()).strip()
+    if canonical:
+        return canonical
+    document = " ".join((document_title or "").split()).strip()
+    if document:
+        return document
+    return f"Corpus {corpus_id}"
+
+
 def _normalize_query_text(
     text: str,
     *,
@@ -296,17 +315,60 @@ def _sentence_seed_profile(paper: RuntimeEvalPaperRecord) -> str:
     return f"sentence_seeded:{section_role}"
 
 
+def runtime_eval_profile_labels(paper: RuntimeEvalPaperRecord) -> tuple[str, ...]:
+    return (
+        _table_profile(paper),
+        _size_profile(paper),
+        _entity_density_profile(paper),
+        _citation_density_profile(paper),
+        _sentence_seed_profile(paper),
+    )
+
+
 def runtime_eval_stratum_key(paper: RuntimeEvalPaperRecord) -> str:
     return "|".join(
         (
             paper.primary_source_system or "unknown",
-            _table_profile(paper),
-            _size_profile(paper),
-            _entity_density_profile(paper),
-            _citation_density_profile(paper),
-            _sentence_seed_profile(paper),
+            *runtime_eval_profile_labels(paper),
         )
     )
+
+
+def has_runtime_eval_coverage(
+    paper: RuntimeEvalPaperRecord,
+    *,
+    min_chunk_count: int = 1,
+    min_entity_mentions: int = 1,
+    require_sentence_seed: bool = True,
+) -> bool:
+    if paper.chunk_count < min_chunk_count:
+        return False
+    if paper.entity_mention_count < min_entity_mentions:
+        return False
+    if paper.narrative_block_count <= 0:
+        return False
+    if require_sentence_seed and not paper.representative_sentence:
+        return False
+    return True
+
+
+def filter_runtime_eval_population(
+    papers: Sequence[RuntimeEvalPaperRecord],
+    *,
+    min_chunk_count: int = 1,
+    min_entity_mentions: int = 1,
+    require_sentence_seed: bool = True,
+) -> list[RuntimeEvalPaperRecord]:
+    return [
+        paper
+        for paper in papers
+        if has_runtime_eval_coverage(
+            paper,
+            min_chunk_count=min_chunk_count,
+            min_entity_mentions=min_entity_mentions,
+            require_sentence_seed=require_sentence_seed,
+        )
+    ]
 
 
 def _stratified_round_robin_sample[T](
@@ -358,7 +420,16 @@ def fetch_runtime_eval_population(
             _EVAL_POPULATION_SQL,
             (graph_run_id, normalized_corpus_ids, normalized_corpus_ids, chunk_version_key),
         )
-        return [RuntimeEvalPaperRecord.model_validate(dict(row)) for row in cur.fetchall()]
+        papers: list[RuntimeEvalPaperRecord] = []
+        for raw_row in cur.fetchall():
+            row = dict(raw_row)
+            row["title"] = _resolve_runtime_eval_title(
+                corpus_id=int(row["corpus_id"]),
+                canonical_title=row.pop("canonical_title", None),
+                document_title=row.pop("document_title", None),
+            )
+            papers.append(RuntimeEvalPaperRecord.model_validate(row))
+        return papers
 
 
 def select_stratified_sample(
@@ -427,6 +498,7 @@ def build_runtime_eval_query_cases(
                         representative_section_role=paper.representative_section_role,
                         selected_layer_key="paper",
                         selected_node_id=f"paper:{paper.corpus_id}",
+                        selection_graph_paper_refs=[f"paper:{paper.corpus_id}"],
                     )
                 )
             elif family == RuntimeEvalQueryFamily.SENTENCE_GLOBAL and sentence_query:

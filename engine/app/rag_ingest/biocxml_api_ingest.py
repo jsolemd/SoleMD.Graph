@@ -31,7 +31,8 @@ from app.rag_ingest.chunk_backfill_runtime import run_chunk_backfill
 from app.rag_ingest.chunk_seed import RagChunkSeeder
 from app.rag_ingest.corpus_ids import resolve_corpus_ids, unique_corpus_ids as _unique_ints
 from app.rag_ingest.ingest_tracing import traced_parse_biocxml
-from app.rag_ingest.pubtator_api import BioCXMLFetchResult, fetch_biocxml_documents
+from app.rag_ingest.pubtator_api import fetch_biocxml_documents
+from app.rag_ingest.source_parsers import BioCXMLDocumentPayload
 from app.rag_ingest.warehouse_writer import (
     RagWarehouseBulkIngestResult,
     RagWarehouseWriter,
@@ -91,7 +92,7 @@ class PostgresExistingSourceChecker:
 
 
 class BioCXMLApiFetcher(Protocol):
-    def __call__(self, pmids: list[int], **kwargs) -> list[BioCXMLFetchResult]: ...
+    def __call__(self, pmids: list[int], **kwargs) -> list[BioCXMLDocumentPayload]: ...
 
 
 class BulkWarehouseWriter(Protocol):
@@ -190,7 +191,7 @@ def run_biocxml_api_ingest(
         batch_size=batch_size,
         rate_limit=rate_limit,
     )
-    fetched_by_document_id: dict[str, BioCXMLFetchResult] = {
+    fetched_by_document_id: dict[str, BioCXMLDocumentPayload] = {
         result.document_id: result for result in fetch_results
     }
 

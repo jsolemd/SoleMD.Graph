@@ -155,6 +155,66 @@ def test_rank_paper_hits_preserves_entity_seed_scores_without_enrichment_hits():
     assert RetrievalChannel.ENTITY_MATCH in ranked[0].matched_channels
 
 
+def test_rank_paper_hits_uses_entity_support_as_direct_title_evidence():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="COMT psychosis endophenotype study",
+            journal_name=None,
+            year=2013,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="Candidate surfaced by canonical entity matching.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=30,
+            reference_count=62,
+            entity_score=1.34,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="COMT Val158Met and psychotic experiences",
+            journal_name=None,
+            year=2018,
+            doi=None,
+            pmid=202,
+            pmcid=None,
+            abstract="Lexical near-match with weaker overall evidence.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=20,
+            reference_count=40,
+            lexical_score=0.031,
+            title_similarity=0.56,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text="COMT Val158Met polymorphism and psychosis risk",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.ENTITY_MATCH: {1: 1},
+            RetrievalChannel.LEXICAL: {2: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+    assert ranked[0].entity_score == 1.34
+    assert ranked[0].fused_score > ranked[1].fused_score
+    assert RetrievalChannel.ENTITY_MATCH in ranked[0].matched_channels
+
+
 def test_rank_paper_hits_preserves_relation_seed_scores_without_enrichment_hits():
     papers = [
         PaperEvidenceHit(
@@ -872,6 +932,84 @@ def test_rank_paper_hits_prefers_higher_fused_score_between_direct_passage_match
     assert ranked[0].fused_score > ranked[1].fused_score
 
 
+def test_rank_paper_hits_prefers_chunk_backed_passage_over_alignment_only_dense_review():
+    query_text = (
+        "Attention-deficit hyperactivity disorder (ADHD) is a multifactorial, "
+        "neurodevelopmental disorder that often persists into adolescence and "
+        "adulthood and is characterized by inattention, hyperactivity and "
+        "impulsiveness."
+    )
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=35014340,
+            paper_id="paper-35014340",
+            semantic_scholar_paper_id="paper-35014340",
+            title="Attention-Deficit/Hyperactivity Disorder",
+            journal_name=None,
+            year=2014,
+            doi=None,
+            pmid=35014340,
+            pmcid=None,
+            abstract=(
+                "Attention-deficit/hyperactivity disorder (ADHD) is a "
+                "neurobiological condition of childhood onset with the "
+                "hallmarks of inattention, impulsivity, and hyperactivity."
+            ),
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=15,
+            reference_count=40,
+            dense_score=0.8723,
+            biomedical_rerank_score=0.571429,
+        ),
+        PaperEvidenceHit(
+            corpus_id=116587801,
+            paper_id="paper-116587801",
+            semantic_scholar_paper_id="paper-116587801",
+            title=(
+                "Meta-analysis of brain-derived neurotrophic factor p.Val66Met "
+                "in adult ADHD in four European populations"
+            ),
+            journal_name=None,
+            year=2010,
+            doi=None,
+            pmid=116587801,
+            pmcid=None,
+            abstract=query_text,
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=3,
+            reference_count=12,
+            publication_types=["MetaAnalysis"],
+            fields_of_study=["Medicine"],
+            chunk_lexical_score=0.461,
+            citation_boost=3.0,
+            evidence_quality_score=0.18,
+            biomedical_rerank_score=0.428571,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text=query_text,
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.DENSE_QUERY: {35014340: 1},
+            RetrievalChannel.CHUNK_LEXICAL: {116587801: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [116587801, 35014340]
+    assert ranked[0].fused_score > ranked[1].fused_score
+    assert ranked[0].chunk_lexical_score > 0
+    assert ranked[1].passage_alignment_score >= 0.55
+
+
 def test_rank_paper_hits_prefers_direct_passage_alignment_over_generic_chunk_match():
     query_text = (
         "In this study we investigated whether reduced physical performance and "
@@ -1028,6 +1166,80 @@ def test_rank_paper_hits_promotes_near_exact_title_sentence_in_passage_lookup():
     assert [paper.corpus_id for paper in ranked] == [22, 11]
     assert ranked[0].passage_alignment_score >= 0.65
     assert "Direct paper text closely matches the query" in ranked[0].match_reasons
+
+
+def test_rank_paper_hits_prefers_title_anchor_over_weak_chunk_noise_in_passage_lookup():
+    query_text = (
+        "The diagnosis of dementia due to Alzheimer's disease: "
+        "Recommendations from the National Institute on Aging-Alzheimer's "
+        "Association workgroups on diagnostic guidelines for Alzheimer's disease"
+    )
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=3470330,
+            paper_id="paper-3470330",
+            semantic_scholar_paper_id="paper-3470330",
+            title=(
+                "The diagnosis of dementia due to Alzheimer's disease: "
+                "Recommendations from the National Institute on Aging-"
+                "Alzheimer's Association workgroups on diagnostic guidelines "
+                "for Alzheimer's disease"
+            ),
+            journal_name=None,
+            year=2011,
+            doi=None,
+            pmid=3470330,
+            pmcid=None,
+            abstract=None,
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=40,
+            reference_count=120,
+            dense_score=0.8467,
+            biomedical_rerank_score=1.0,
+        ),
+        PaperEvidenceHit(
+            corpus_id=6787660,
+            paper_id="paper-6787660",
+            semantic_scholar_paper_id="paper-6787660",
+            title="Competing guideline commentary",
+            journal_name=None,
+            year=2014,
+            doi=None,
+            pmid=6787660,
+            pmcid=None,
+            abstract="Indirect guideline commentary with chunk support.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=8,
+            reference_count=14,
+            publication_types=["Review"],
+            fields_of_study=["Medicine"],
+            chunk_lexical_score=0.0248,
+            citation_boost=8.0,
+            evidence_quality_score=0.2,
+            biomedical_rerank_score=0.142857,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text=query_text,
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.DENSE_QUERY: {3470330: 1},
+            RetrievalChannel.CHUNK_LEXICAL: {6787660: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [3470330, 6787660]
+    assert ranked[0].title_anchor_score == 1.0
+    assert ranked[1].chunk_lexical_score > 0
 
 
 def test_rank_paper_hits_treats_strong_passage_alignment_as_direct_support():

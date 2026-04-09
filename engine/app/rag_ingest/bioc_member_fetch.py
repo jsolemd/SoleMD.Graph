@@ -10,6 +10,7 @@ from pydantic import Field
 
 from app.config import settings
 from app.rag.parse_contract import ParseContractModel
+from app.rag_ingest.source_parsers import split_biocxml_collection
 
 
 class RagBioCArchiveMemberRequest(ParseContractModel):
@@ -70,7 +71,7 @@ def _safe_member_relative_path(member_name: str) -> Path:
 
 
 class SidecarBioCMemberCacheRepository:
-    """Release-sidecar cache for extracted BioC archive members."""
+    """Release-sidecar cache for raw BioC archive member payloads."""
 
     def read_member(
         self,
@@ -136,64 +137,109 @@ def fetch_bioc_archive_members(
         )
 
     results_by_document: dict[str, RagBioCArchiveMemberResult] = {}
-    pending_by_member: dict[str, RagBioCArchiveMemberRequest] = {}
-    pending_by_ordinal: dict[int, RagBioCArchiveMemberRequest] = {}
+    pending_by_document: dict[str, RagBioCArchiveMemberRequest] = {
+        request.document_id: request for request in normalized_requests
+    }
+    pending_by_ordinal: dict[int, RagBioCArchiveMemberRequest] = {
+        int(request.document_ordinal): request for request in normalized_requests
+    }
+    pending_member_names = sorted(
+        {
+            str(request.member_name)
+            for request in normalized_requests
+            if request.member_name
+        }
+    )
 
-    for request in normalized_requests:
-        if request.member_name:
-            cached = active_cache.read_member(
-                source_revision=revision,
-                archive_name=archive_name,
-                member_name=request.member_name,
-            )
-            if cached is not None:
-                results_by_document[request.document_id] = RagBioCArchiveMemberResult(
-                    archive_name=archive_name,
-                    document_id=request.document_id,
-                    document_ordinal=request.document_ordinal,
-                    member_name=request.member_name,
-                    xml_text=cached,
-                    cache_hit=True,
-                )
+    def _consume_member_payload(
+        *,
+        member_name: str,
+        xml_text: str,
+        cache_hit: bool,
+        starting_document_ordinal: int | None = None,
+    ) -> int:
+        current_document_ordinal = starting_document_ordinal or 0
+        for document in split_biocxml_collection(xml_text):
+            if starting_document_ordinal is not None:
+                current_document_ordinal += 1
+            request = pending_by_document.get(document.document_id)
+            if request is None and starting_document_ordinal is not None:
+                request = pending_by_ordinal.get(current_document_ordinal)
+            if request is None:
                 continue
-            pending_by_member[request.member_name] = request
-        pending_by_ordinal[int(request.document_ordinal)] = request
+            results_by_document[request.document_id] = RagBioCArchiveMemberResult(
+                archive_name=archive_name,
+                document_id=request.document_id,
+                document_ordinal=(
+                    current_document_ordinal
+                    if starting_document_ordinal is not None
+                    else int(request.document_ordinal)
+                ),
+                member_name=member_name,
+                xml_text=document.xml_text,
+                cache_hit=cache_hit,
+            )
+            pending_by_document.pop(request.document_id, None)
+            pending_by_ordinal.pop(int(request.document_ordinal), None)
+        return current_document_ordinal
 
+    for member_name in pending_member_names:
+        if not pending_by_document:
+            break
+        cached = active_cache.read_member(
+            source_revision=revision,
+            archive_name=archive_name,
+            member_name=member_name,
+        )
+        if cached is None:
+            continue
+        _consume_member_payload(
+            member_name=member_name,
+            xml_text=cached,
+            cache_hit=True,
+        )
+
+    pending_member_names = sorted(
+        {
+            str(request.member_name)
+            for request in pending_by_document.values()
+            if request.member_name
+        }
+    )
     archive_reads = 0
-    if pending_by_ordinal:
+    current_document_ordinal = 0
+    needs_ordinal_scan = any(
+        request.member_name is None for request in pending_by_document.values()
+    )
+    if pending_by_document:
         archive_path = settings.pubtator_biocxml_dir_path / archive_name
         with tarfile.open(archive_path, "r|gz") as archive:
-            for document_ordinal, member in enumerate(archive, start=1):
+            for member in archive:
                 if not member.isfile():
                     continue
-                request = pending_by_member.pop(member.name, None)
-                if request is None:
-                    request = pending_by_ordinal.get(document_ordinal)
-                if request is None:
+                if (
+                    not needs_ordinal_scan
+                    and member.name not in pending_member_names
+                ):
                     continue
                 extracted = archive.extractfile(member)
                 if extracted is None:
                     continue
                 xml_text = extracted.read().decode("utf-8", errors="replace")
                 archive_reads += 1
-                resolved_member_name = request.member_name or member.name
-                if resolved_member_name:
-                    active_cache.write_member(
-                        source_revision=revision,
-                        archive_name=archive_name,
-                        member_name=resolved_member_name,
-                        xml_text=xml_text,
-                    )
-                results_by_document[request.document_id] = RagBioCArchiveMemberResult(
+                active_cache.write_member(
+                    source_revision=revision,
                     archive_name=archive_name,
-                    document_id=request.document_id,
-                    document_ordinal=int(document_ordinal),
-                    member_name=resolved_member_name,
+                    member_name=member.name,
+                    xml_text=xml_text,
+                )
+                current_document_ordinal = _consume_member_payload(
+                    member_name=member.name,
                     xml_text=xml_text,
                     cache_hit=False,
+                    starting_document_ordinal=current_document_ordinal,
                 )
-                pending_by_ordinal.pop(int(request.document_ordinal), None)
-                if not pending_by_ordinal:
+                if not pending_by_document:
                     break
 
     ordered_results = [

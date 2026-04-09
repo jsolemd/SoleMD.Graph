@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useCosmograph } from "@/features/graph/cosmograph";
+import { useGraphInstance } from "@/features/graph/cosmograph";
 import {
   FOCUSED_LABEL_ESTIMATED_CHAR_WIDTH,
   FOCUSED_LABEL_HEIGHT,
@@ -151,7 +151,7 @@ export function useFocusedAvoidanceRects({
   cameraSettledRevision: number;
   labelText: string | null;
 }) {
-  const { cosmograph } = useCosmograph();
+  const cosmograph = useGraphInstance();
   const [avoidRects, setAvoidRects] = useState<PromptAvoidRect[]>([]);
   const resolvedLabelTextRef = useRef(getFocusedPointText(labelText));
   const lastFocusedPointIndexRef = useRef<number | null>(null);

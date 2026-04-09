@@ -258,3 +258,219 @@ def test_should_use_chunk_lexical_query_routes_longer_free_text():
     assert not should_use_chunk_lexical_query(
         "Melatonin for Postoperative Delirium in Older Adults"
     )
+
+
+# ---------------------------------------------------------------------------
+# Router refinement — Rule A: short lowercase keyword demotion
+# ---------------------------------------------------------------------------
+#
+# Short biomedical noun-phrase queries like "tardive dyskinesia" were
+# landing in TITLE_LOOKUP and being ranked through TITLE_RANKING_PROFILE,
+# which down-weights the channels keyword searches depend on. The demote
+# rule fires only on 2-3 token, lowercase-dominant queries without any
+# title-shape punctuation. A single capitalized eponym is permitted so
+# "Wilson disease" / "Wernicke encephalopathy" also demote cleanly.
+
+
+def test_determine_retrieval_profile_demotes_short_lowercase_keywords_to_general():
+    for keyword in (
+        "tardive dyskinesia",
+        "serotonin syndrome",
+        "status epilepticus",
+        "myasthenia gravis",
+        "normal pressure hydrocephalus",
+        "restless legs syndrome",
+        "conversion disorder",
+        "pseudobulbar affect",
+        "neuroleptic sensitivity dementia",
+        "psychogenic seizures",
+    ):
+        assert (
+            determine_query_retrieval_profile(keyword)
+            == QueryRetrievalProfile.GENERAL
+        ), keyword
+
+
+def test_determine_retrieval_profile_demotes_single_eponym_keywords_to_general():
+    assert (
+        determine_query_retrieval_profile("Wilson disease")
+        == QueryRetrievalProfile.GENERAL
+    )
+    assert (
+        determine_query_retrieval_profile("Wernicke encephalopathy")
+        == QueryRetrievalProfile.GENERAL
+    )
+
+
+def test_determine_retrieval_profile_preserves_short_titles_with_terminal_punct():
+    # Short titles with terminal punctuation still classify as title when
+    # the runtime opts into terminal-punct acceptance (selected-paper flow).
+    assert (
+        determine_query_retrieval_profile(
+            "The Satisfaction With Life Scale.",
+            allow_terminal_title_punctuation=True,
+        )
+        == QueryRetrievalProfile.TITLE_LOOKUP
+    )
+    assert (
+        determine_query_retrieval_profile(
+            "Whither structured representation?",
+            allow_terminal_title_punctuation=True,
+        )
+        == QueryRetrievalProfile.TITLE_LOOKUP
+    )
+
+
+def test_determine_retrieval_profile_preserves_multi_capitalized_titles():
+    # The demote rule permits only a single capitalized eponym. Titles with
+    # multiple capitalized tokens stay in the title lane regardless of
+    # length.
+    assert (
+        determine_query_retrieval_profile("The Selfish Gene")
+        == QueryRetrievalProfile.TITLE_LOOKUP
+    )
+    assert (
+        determine_query_retrieval_profile(
+            "The Hospital Anxiety and Depression Scale"
+        )
+        == QueryRetrievalProfile.TITLE_LOOKUP
+    )
+
+
+def test_determine_retrieval_profile_preserves_acronym_heavy_adversarial_cases():
+    # These were already handled by the existing acronym-demotion branch —
+    # pin them here so Rule A doesn't silently change their behavior.
+    assert (
+        determine_query_retrieval_profile("lithium CKD bipolar")
+        == QueryRetrievalProfile.GENERAL
+    )
+    assert (
+        determine_query_retrieval_profile("delirium psychosis")
+        == QueryRetrievalProfile.GENERAL
+    )
+
+
+# ---------------------------------------------------------------------------
+# Router refinement — Rule B: "from"/"against" paraphrase demotion
+# ---------------------------------------------------------------------------
+#
+# Phase 0.4 added ``from``/``against`` to PROSE_CLAUSE_TOKENS so paraphrased
+# lay-speak queries exit the title lane. The passage lane is chunk-anchored
+# and ranks them poorly. The paraphrase rule routes them to GENERAL when
+# they have no passage verb, no title punctuation, and are not
+# interrogative.
+
+
+def test_determine_retrieval_profile_demotes_from_paraphrases_to_general():
+    for paraphrase in (
+        "involuntary tongue and jaw movements from long-term antipsychotic use",
+        "liver problems from psychiatric medications",
+        "shaking hands from too much lithium",
+        "brain zaps from stopping antidepressants",
+    ):
+        assert (
+            determine_query_retrieval_profile(paraphrase)
+            == QueryRetrievalProfile.GENERAL
+        ), paraphrase
+
+
+def test_determine_retrieval_profile_preserves_passage_claims_with_passage_verbs():
+    # Passage suite seeds contain verbs like ``undergoes``/``affects``/
+    # ``requires`` — the paraphrase rule must NOT demote these.
+    assert (
+        determine_query_retrieval_profile(
+            "Hippocampal dendritic structure undergoes dynamic remodeling during development"
+        )
+        == QueryRetrievalProfile.PASSAGE_LOOKUP
+    )
+
+
+def test_determine_retrieval_profile_preserves_long_sentence_global_runtime_queries():
+    # Runtime SENTENCE_GLOBAL benchmarks feed ~30-token representative
+    # sentences into the router. They contain ``from`` but use rare verbs
+    # ("interfere", "promote") that are not in our curated passage-verb
+    # set. The token-count cap on the paraphrase rule protects these from
+    # being demoted to GENERAL and regressing runtime_perf benchmarks.
+    long_sentence = (
+        "PF 6 -inhibition of ouabain-sensitive Na,K ATPase located on "
+        "endothelial cells interfere with the efflux of K + from the brain "
+        "to the lumen and may promote its"
+    )
+    assert (
+        determine_query_retrieval_profile(long_sentence)
+        == QueryRetrievalProfile.PASSAGE_LOOKUP
+    )
+
+
+def test_determine_retrieval_profile_preserves_titles_with_colon_and_from():
+    # Real paper titles shaped "topic: lessons from Y" must NOT be demoted
+    # by the paraphrase rule. The colon gate is what protects them.
+    title = (
+        "Soluble protein oligomers in neurodegeneration: "
+        "lessons from the Alzheimer's amyloid beta-peptide"
+    )
+    assert (
+        determine_query_retrieval_profile(title)
+        != QueryRetrievalProfile.GENERAL
+    )
+
+
+def test_determine_retrieval_profile_preserves_question_lookups_with_paraphrase_markers():
+    # Interrogative branch runs before the paraphrase rule; questions
+    # that happen to contain ``is``/``are``/``from`` must still route to
+    # QUESTION_LOOKUP.
+    assert (
+        determine_query_retrieval_profile(
+            "What is the role of NMDA receptor antibodies in new-onset psychosis?"
+        )
+        == QueryRetrievalProfile.QUESTION_LOOKUP
+    )
+    assert (
+        determine_query_retrieval_profile(
+            "Why are benzodiazepines considered first-line treatment for catatonia?"
+        )
+        == QueryRetrievalProfile.QUESTION_LOOKUP
+    )
+
+
+def test_determine_retrieval_profile_short_keyword_skipped_in_title_friendly_context():
+    # UI selected-paper flow opts into terminal-punctuation acceptance; the
+    # short-keyword demotion must NOT fire in that context so a brief
+    # noun-phrase query typed while browsing a paper still uses title
+    # candidate lookup. "melatonin delirium" is the canonical fixture.
+    assert (
+        determine_query_retrieval_profile(
+            "melatonin delirium",
+            allow_terminal_title_punctuation=True,
+        )
+        == QueryRetrievalProfile.TITLE_LOOKUP
+    )
+    # Benchmark/global context (no selected paper) keeps the demotion.
+    assert (
+        determine_query_retrieval_profile("melatonin delirium")
+        == QueryRetrievalProfile.GENERAL
+    )
+
+
+def test_determine_retrieval_profile_preserves_keyword_search_seed_distribution():
+    # Concrete pin for the keyword_search_v2 suite: every seed must land
+    # in GENERAL so the suite stops being ranked through TITLE_RANKING_PROFILE.
+    seeds = (
+        "tardive dyskinesia",
+        "serotonin syndrome",
+        "Wilson disease",
+        "status epilepticus",
+        "myasthenia gravis",
+        "normal pressure hydrocephalus",
+        "restless legs syndrome",
+        "conversion disorder",
+        "pseudobulbar affect",
+        "neuroleptic sensitivity dementia",
+        "Wernicke encephalopathy",
+        "psychogenic seizures",
+    )
+    for seed in seeds:
+        assert (
+            determine_query_retrieval_profile(seed)
+            == QueryRetrievalProfile.GENERAL
+        ), seed

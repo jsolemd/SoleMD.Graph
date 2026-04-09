@@ -1,0 +1,2346 @@
+{
+  "generated_at": "2026-04-08",
+  "datasets": {
+    "benchmark-entity_relation_v2": {
+      "dataset_id": "cmnmqbp0b0017kt07f13i017x",
+      "runs": {
+        "baseline": {
+          "id": "8ef98584-d7fb-4f13-98f4-679f5e026af1",
+          "name": "post-router-narrow-2026-04-07 - 2026-04-07T22:45:04.676131Z",
+          "created_at": "2026-04-07 22:45:04.681000+00:00"
+        },
+        "post": {
+          "id": "9dca4aaf-f357-4673-a8e6-3ef2ea00602d",
+          "name": "post-bioc-tier1-2026-04-08 - 2026-04-08T16:00:27.685513Z",
+          "created_at": "2026-04-08 16:00:27.698000+00:00"
+        }
+      },
+      "baseline_summary": {
+        "items": 13,
+        "hit_at_1_rate": 0.0769,
+        "hit_at_k_rate": 0.0769,
+        "target_in_answer_corpus_rate": 0.0769,
+        "grounded_answer_rate": 0.1538,
+        "p50_duration_ms": 949.7,
+        "p95_duration_ms": 1457.1,
+        "entity_seed_hits_mean": 0.0,
+        "relation_seed_hits_mean": 0.0,
+        "lexical_hits_mean": 4.769,
+        "chunk_lexical_hits_mean": 0.0,
+        "dense_query_hits_mean": 10.0,
+        "entity_seed_positive_rate": 0.0,
+        "chunk_lexical_positive_rate": 0.0,
+        "dense_query_positive_rate": 1.0,
+        "route_signature_counts": {
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global|paper_search_use_title_similarity=True|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 13
+        },
+        "warehouse_depth_counts": {
+          "none": 11,
+          "fulltext": 2
+        },
+        "source_system_counts": {
+          "s2orc_v2": 13
+        },
+        "retrieval_profile_counts": {
+          "title_lookup": 13
+        }
+      },
+      "post_summary": {
+        "items": 13,
+        "hit_at_1_rate": 0.0769,
+        "hit_at_k_rate": 0.1538,
+        "target_in_answer_corpus_rate": 0.0769,
+        "grounded_answer_rate": 0.1538,
+        "p50_duration_ms": 1759.7,
+        "p95_duration_ms": 10627.6,
+        "entity_seed_hits_mean": 0.0,
+        "relation_seed_hits_mean": 0.0,
+        "lexical_hits_mean": 4.769,
+        "chunk_lexical_hits_mean": 0.0,
+        "dense_query_hits_mean": 10.0,
+        "entity_seed_positive_rate": 0.0,
+        "chunk_lexical_positive_rate": 0.0,
+        "dense_query_positive_rate": 1.0,
+        "route_signature_counts": {
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global|paper_search_use_title_similarity=True|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 13
+        },
+        "warehouse_depth_counts": {
+          "none": 11,
+          "fulltext": 2
+        },
+        "source_system_counts": {
+          "s2orc_v2": 13
+        },
+        "retrieval_profile_counts": {
+          "title_lookup": 13
+        }
+      },
+      "case_deltas": [
+        {
+          "dataset_item_id": "entity_relation_v2:15285970",
+          "query": "CYP2D6 poor metabolizer status and haloperidol dosing",
+          "target_corpus_id": 15285970,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 3,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 993.1032479507849
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 3,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1770.53854893893
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 777.435
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:15826427",
+          "query": "GABAergic interneuron dysfunction in schizophrenia pathophysiology",
+          "target_corpus_id": 15826427,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 143.83251103572547
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 2079.7575910110027
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1935.925
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:16038098",
+          "query": "COMT Val158Met polymorphism and psychosis risk",
+          "target_corpus_id": 16038098,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 5,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 998.229986988008
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 5,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1817.5921899965033
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 819.362
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:19879595",
+          "query": "dopamine D2 receptor occupancy and antipsychotic efficacy threshold",
+          "target_corpus_id": 19879595,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 3,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1001.930377096869
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 3,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 2167.7385920193046
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1165.808
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:21133978",
+          "query": "clozapine-induced myocarditis and cardiomyopathy",
+          "target_corpus_id": 21133978,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 88.38551305234432
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 897.8789920220152
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 809.493
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:231885860",
+          "query": "BDNF Val66Met polymorphism and ketamine antidepressant response",
+          "target_corpus_id": 231885860,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1002.959470031783
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1759.6919509815052
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 756.732
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:2466571",
+          "query": "serotonin transporter SLC6A4 and depression susceptibility",
+          "target_corpus_id": 2466571,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 5,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 949.7036429820582
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 5,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 10627.645950997248
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 9677.942
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:268292752",
+          "query": "lithium nephrotoxicity and chronic kidney disease progression",
+          "target_corpus_id": 268292752,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 101.2339519802481
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 503.88885696884245
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 402.655
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:2748365",
+          "query": "HLA-B*15:02 allele and carbamazepine-induced Stevens-Johnson syndrome",
+          "target_corpus_id": 2748365,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1457.0961019489914
+          },
+          "post": {
+            "hit_rank": 3,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1734.4935509609058
+          },
+          "delta": {
+            "hit_rank": -996,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 277.397
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:283056730",
+          "query": "TNF-alpha mediated neuroinflammation in major depressive disorder",
+          "target_corpus_id": 283056730,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 124.56611904781312
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1501.6751150833443
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1377.109
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:35677096",
+          "query": "anti-NMDAR encephalitis treatment with rituximab",
+          "target_corpus_id": 35677096,
+          "coverage_status": "low_value_unrepaired",
+          "ingest_path": [
+            "archive_low_value"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 94.97648803517222
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 991.2726320326328
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 896.296
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:40937173",
+          "query": "APOE4 allele and risk of Alzheimer disease",
+          "target_corpus_id": 40937173,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1050.7779530016705
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 2399.223527056165
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1348.446
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "entity_relation_v2:53211242",
+          "query": "lithium nephrotoxicity and chronic kidney disease progression",
+          "target_corpus_id": 53211242,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 91.34376107249409
+          },
+          "post": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 92.0212889323011
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 0.678
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        }
+      ],
+      "delta_summary": {
+        "hit_at_1_delta": 0.0,
+        "hit_at_k_delta": 0.0769,
+        "target_in_answer_corpus_delta": 0.0,
+        "grounded_answer_delta": 0.0,
+        "entity_seed_hits_mean_delta": 0.0,
+        "chunk_lexical_hits_mean_delta": 0.0,
+        "dense_query_hits_mean_delta": 0.0,
+        "improved_cases": 1,
+        "regressed_cases": 0,
+        "route_changed_cases": 0,
+        "source_changed_cases": 0,
+        "warehouse_depth_changed_cases": 0
+      }
+    },
+    "benchmark-passage_retrieval_v2": {
+      "dataset_id": "cmnm9r6k700i3qv072xbzrj6a",
+      "runs": {
+        "baseline": {
+          "id": "ca0cb1e2-70b1-4200-9339-034d3baeae51",
+          "name": "post-router-narrow-2026-04-07 - 2026-04-07T22:44:34.402399Z",
+          "created_at": "2026-04-07 22:44:34.409000+00:00"
+        },
+        "post": {
+          "id": "59a0c48e-c97c-46c0-a323-36658b58c142",
+          "name": "post-bioc-tier1-2026-04-08 - 2026-04-08T16:01:06.008373Z",
+          "created_at": "2026-04-08 16:01:06.024000+00:00"
+        }
+      },
+      "baseline_summary": {
+        "items": 15,
+        "hit_at_1_rate": 0.2,
+        "hit_at_k_rate": 0.4667,
+        "target_in_answer_corpus_rate": 0.2667,
+        "grounded_answer_rate": 0.4667,
+        "p50_duration_ms": 117.3,
+        "p95_duration_ms": 1461.0,
+        "entity_seed_hits_mean": 0.0,
+        "relation_seed_hits_mean": 0.0,
+        "lexical_hits_mean": 3.4,
+        "chunk_lexical_hits_mean": 0.467,
+        "dense_query_hits_mean": 10.0,
+        "entity_seed_positive_rate": 0.0,
+        "chunk_lexical_positive_rate": 0.3333,
+        "dense_query_positive_rate": 1.0,
+        "route_signature_counts": {
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global|paper_search_use_title_similarity=True|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 9,
+          "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope": 4,
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global_fts_only|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 1,
+          "retrieval_profile=passage_lookup|paper_search_route=paper_search_global_fts_only|paper_search_sparse_passage_fallback=True|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=False|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope": 1
+        },
+        "warehouse_depth_counts": {
+          "none": 8,
+          "fulltext": 7
+        },
+        "source_system_counts": {
+          "s2orc_v2": 15
+        },
+        "retrieval_profile_counts": {
+          "title_lookup": 10,
+          "passage_lookup": 5
+        }
+      },
+      "post_summary": {
+        "items": 15,
+        "hit_at_1_rate": 0.2,
+        "hit_at_k_rate": 0.4667,
+        "target_in_answer_corpus_rate": 0.2667,
+        "grounded_answer_rate": 0.4667,
+        "p50_duration_ms": 1077.4,
+        "p95_duration_ms": 6783.9,
+        "entity_seed_hits_mean": 0.0,
+        "relation_seed_hits_mean": 0.0,
+        "lexical_hits_mean": 3.467,
+        "chunk_lexical_hits_mean": 0.733,
+        "dense_query_hits_mean": 10.0,
+        "entity_seed_positive_rate": 0.0,
+        "chunk_lexical_positive_rate": 0.2667,
+        "dense_query_positive_rate": 1.0,
+        "route_signature_counts": {
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global|paper_search_use_title_similarity=True|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 9,
+          "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope": 3,
+          "retrieval_profile=passage_lookup|paper_search_route=paper_search_global_fts_only|paper_search_sparse_passage_fallback=True|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=False|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope": 2,
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global_fts_only|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 1
+        },
+        "warehouse_depth_counts": {
+          "none": 8,
+          "fulltext": 7
+        },
+        "source_system_counts": {
+          "s2orc_v2": 15
+        },
+        "retrieval_profile_counts": {
+          "title_lookup": 10,
+          "passage_lookup": 5
+        }
+      },
+      "case_deltas": [
+        {
+          "dataset_item_id": "passage_retrieval_v2:12211939",
+          "query": "Diabetes management standards require individualized glycemic targets",
+          "target_corpus_id": 12211939,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": 4,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 5,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 174.14689797442406
+          },
+          "post": {
+            "hit_rank": 4,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 5,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 2327.003997983411
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 2152.857
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:13014340",
+          "query": "Hippocampal dendritic structure undergoes dynamic remodeling during development",
+          "target_corpus_id": 13014340,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 118.7989111058414
+          },
+          "post": {
+            "hit_rank": 2,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 730.72554403916
+          },
+          "delta": {
+            "hit_rank": 1,
+            "hit_at_1": -1,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": -1,
+            "dense_query_hits": 0,
+            "duration_ms": 611.927
+          },
+          "changed_route": true,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:13895810",
+          "query": "Catatonia is underdiagnosed and has multiple etiologies requiring systematic workup",
+          "target_corpus_id": 13895810,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 107.00083791743964
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 503.9411090547219
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 396.94
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:14309634",
+          "query": "Matrix metalloproteinases participate in remyelination by processing inhibitory proteoglycans",
+          "target_corpus_id": 14309634,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": 4,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 133.352424018085
+          },
+          "post": {
+            "hit_rank": 4,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1468.176219961606
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1334.824
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:23741869",
+          "query": "Vascular cognitive impairment following stroke involves strategic infarct location",
+          "target_corpus_id": 23741869,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 102.40137402433902
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 864.0539570478722
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 761.653
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:252181354",
+          "query": "Plasma phospho-tau assays show different diagnostic accuracy in prodromal Alzheimer disease",
+          "target_corpus_id": 252181354,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": 2,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 212.2102149296552
+          },
+          "post": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1362.0167090557516
+          },
+          "delta": {
+            "hit_rank": -1,
+            "hit_at_1": 1,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1149.806
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:258637667",
+          "query": "electroconvulsive therapy treatment resistant depression efficacy",
+          "target_corpus_id": 258637667,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 117.33453290071338
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1077.3737389827147
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 960.039
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:273819609",
+          "query": "central pontine myelinolysis osmotic demyelination sodium correction",
+          "target_corpus_id": 273819609,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 92.02151489444077
+          },
+          "post": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 758.9443910401314
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 666.923
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:275142263",
+          "query": "frontotemporal dementia behavioral variant diagnosis criteria",
+          "target_corpus_id": 275142263,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 105.27493094559759
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1154.8367069335654
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1049.562
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:27634567",
+          "query": "Therapeutic hypothermia improves neurological outcomes in perinatal hypoxic ischemic encephalopathy",
+          "target_corpus_id": 27634567,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 9,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 103.15670107956976
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 9,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 820.3940310049802
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 717.237
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:3116111",
+          "query": "COPD is characterized by progressive decline in lung function over time",
+          "target_corpus_id": 3116111,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 708.5726609220728
+          },
+          "post": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 6783.946237992495
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 6075.374
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:6787660",
+          "query": "The diagnostic criteria for dementia due to Alzheimer disease include both clinical and biomarker evidence",
+          "target_corpus_id": 6787660,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 6,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 1460.9677880071104
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 6,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 6517.972987960093
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 5057.005
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:81621267",
+          "query": "Machine learning models can predict intraoperative hypoxemia using preoperative patient features",
+          "target_corpus_id": 81621267,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": 3,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 116.6254710406065
+          },
+          "post": {
+            "hit_rank": 3,
+            "hit_at_1": 0,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 749.4398590642959
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 632.814
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:84183536",
+          "query": "ApoE4 genotype is associated with increased risk of Alzheimer disease through multiple mechanisms",
+          "target_corpus_id": 84183536,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 978.6253540078178
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 2,
+            "dense_query_hits": 10,
+            "duration_ms": 1160.2922729216516
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 0,
+            "duration_ms": 181.667
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "passage_retrieval_v2:85899164",
+          "query": "Central nervous system tumors are classified according to WHO grading criteria based on histological features",
+          "target_corpus_id": 85899164,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 3,
+            "dense_query_hits": 10,
+            "duration_ms": 112.36275499686599
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 7,
+            "dense_query_hits": 10,
+            "duration_ms": 850.8236519992352
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 4,
+            "dense_query_hits": 0,
+            "duration_ms": 738.461
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        }
+      ],
+      "delta_summary": {
+        "hit_at_1_delta": 0.0,
+        "hit_at_k_delta": 0.0,
+        "target_in_answer_corpus_delta": 0.0,
+        "grounded_answer_delta": 0.0,
+        "entity_seed_hits_mean_delta": 0.0,
+        "chunk_lexical_hits_mean_delta": 0.266,
+        "dense_query_hits_mean_delta": 0.0,
+        "improved_cases": 0,
+        "regressed_cases": 0,
+        "route_changed_cases": 1,
+        "source_changed_cases": 0,
+        "warehouse_depth_changed_cases": 0
+      }
+    },
+    "benchmark-semantic_recall_v2": {
+      "dataset_id": "cmnmqbor6000skt07fym9sewr",
+      "runs": {
+        "baseline": {
+          "id": "e05c9b7b-16b8-4c1a-aa95-5170423c16bb",
+          "name": "post-router-narrow-2026-04-07 - 2026-04-07T22:45:00.635608Z",
+          "created_at": "2026-04-07 22:45:00.640000+00:00"
+        },
+        "post": {
+          "id": "4dabea8c-9f1c-4ba0-bd44-d641d121d40c",
+          "name": "post-bioc-tier1-2026-04-08 - 2026-04-08T16:01:39.769063Z",
+          "created_at": "2026-04-08 16:01:39.775000+00:00"
+        }
+      },
+      "baseline_summary": {
+        "items": 13,
+        "hit_at_1_rate": 0.0,
+        "hit_at_k_rate": 0.0,
+        "target_in_answer_corpus_rate": 0.0,
+        "grounded_answer_rate": 0.3846,
+        "p50_duration_ms": 107.7,
+        "p95_duration_ms": 830.2,
+        "entity_seed_hits_mean": 0.0,
+        "relation_seed_hits_mean": 0.0,
+        "lexical_hits_mean": 1.769,
+        "chunk_lexical_hits_mean": 2.154,
+        "dense_query_hits_mean": 10.0,
+        "entity_seed_positive_rate": 0.0,
+        "chunk_lexical_positive_rate": 0.3846,
+        "dense_query_positive_rate": 1.0,
+        "route_signature_counts": {
+          "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope": 5,
+          "retrieval_profile=general|paper_search_route=paper_search_global_fts_only|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=False|dense_query_route=dense_query_ann_broad_scope": 5,
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global|paper_search_use_title_similarity=True|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 2,
+          "retrieval_profile=passage_lookup|paper_search_route=paper_search_global_fts_only|paper_search_sparse_passage_fallback=True|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=False|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope": 1
+        },
+        "warehouse_depth_counts": {
+          "none": 8,
+          "fulltext": 5
+        },
+        "source_system_counts": {
+          "s2orc_v2": 13
+        },
+        "retrieval_profile_counts": {
+          "passage_lookup": 6,
+          "general": 5,
+          "title_lookup": 2
+        }
+      },
+      "post_summary": {
+        "items": 13,
+        "hit_at_1_rate": 0.2308,
+        "hit_at_k_rate": 0.2308,
+        "target_in_answer_corpus_rate": 0.2308,
+        "grounded_answer_rate": 0.4615,
+        "p50_duration_ms": 664.1,
+        "p95_duration_ms": 4987.1,
+        "entity_seed_hits_mean": 0.0,
+        "relation_seed_hits_mean": 0.0,
+        "lexical_hits_mean": 1.769,
+        "chunk_lexical_hits_mean": 1.923,
+        "dense_query_hits_mean": 10.0,
+        "entity_seed_positive_rate": 0.0,
+        "chunk_lexical_positive_rate": 0.4615,
+        "dense_query_positive_rate": 1.0,
+        "route_signature_counts": {
+          "retrieval_profile=passage_lookup|chunk_search_route=chunk_search_global|dense_query_route=dense_query_ann_broad_scope": 6,
+          "retrieval_profile=general|paper_search_route=paper_search_global_fts_only|paper_search_use_title_similarity=False|paper_search_use_title_candidate_lookup=False|dense_query_route=dense_query_ann_broad_scope": 4,
+          "retrieval_profile=title_lookup|paper_search_route=paper_search_global|paper_search_use_title_similarity=True|paper_search_use_title_candidate_lookup=True|dense_query_route=dense_query_ann_broad_scope": 2,
+          "null": 1
+        },
+        "warehouse_depth_counts": {
+          "none": 7,
+          "fulltext": 6
+        },
+        "source_system_counts": {
+          "s2orc_v2": 13
+        },
+        "retrieval_profile_counts": {
+          "passage_lookup": 6,
+          "general": 5,
+          "title_lookup": 2
+        }
+      },
+      "case_deltas": [
+        {
+          "dataset_item_id": "semantic_recall_v2:10194153",
+          "query": "involuntary tongue and jaw movements from long-term antipsychotic use",
+          "target_corpus_id": 10194153,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 830.2484579617158
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 4987.08422400523
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 4156.836
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:12675042",
+          "query": "can't sit still as a side effect of antipsychotics",
+          "target_corpus_id": 12675042,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 106.37089097872376
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 943.9437399851158
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 837.573
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:20543885",
+          "query": "confused elderly patient who just had surgery",
+          "target_corpus_id": 20543885,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 8,
+            "dense_query_hits": 10,
+            "duration_ms": 109.43314898759127
+          },
+          "post": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 601.1567889945582
+          },
+          "delta": {
+            "hit_rank": -998,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": -7,
+            "dense_query_hits": 0,
+            "duration_ms": 491.724
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:231764143",
+          "query": "seeing things that aren't there in Parkinson's disease",
+          "target_corpus_id": 231764143,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 10,
+            "dense_query_hits": 10,
+            "duration_ms": 193.88440204784274
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 10,
+            "dense_query_hits": 10,
+            "duration_ms": 1624.2686259793118
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 1430.384
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:233034933",
+          "query": "brain inflammation after COVID infection",
+          "target_corpus_id": 233034933,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 102.04625595360994
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 471.23205999378115
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 369.186
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:2693021",
+          "query": "memory loss after surgery in elderly patients",
+          "target_corpus_id": 2693021,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 93.30661001149565
+          },
+          "post": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 2,
+            "dense_query_hits": 10,
+            "duration_ms": 651.8882369855419
+          },
+          "delta": {
+            "hit_rank": -998,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 0,
+            "duration_ms": 558.582
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:275392102",
+          "query": "why patients refuse to take their psychiatric medications",
+          "target_corpus_id": 275392102,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 106.40395397786051
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "title_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 10,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 969.1697099478915
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 862.766
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:32736596",
+          "query": "involuntary tongue and jaw movements from long-term antipsychotic use",
+          "target_corpus_id": 32736596,
+          "coverage_status": "low_value_unrepaired",
+          "ingest_path": [
+            "archive_low_value"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 94.78792210575193
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 2,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 88.79021904431283
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": -5.998
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:3470330",
+          "query": "acting out dreams during sleep and hitting bed partner",
+          "target_corpus_id": 3470330,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 79.48940200731158
+          },
+          "post": {
+            "hit_rank": 1,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 10,
+            "duration_ms": 419.1481589805335
+          },
+          "delta": {
+            "hit_rank": -998,
+            "hit_at_1": 1,
+            "hit_at_k": 1,
+            "target_in_answer_corpus": 1,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 1,
+            "dense_query_hits": 0,
+            "duration_ms": 339.659
+          },
+          "changed_route": true,
+          "changed_source_system": false,
+          "changed_warehouse_depth": true
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:5641094",
+          "query": "personality change after head injury",
+          "target_corpus_id": 5641094,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 8,
+            "dense_query_hits": 10,
+            "duration_ms": 107.6851449906826
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "passage_lookup",
+            "warehouse_depth": "fulltext",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 10,
+            "dense_query_hits": 10,
+            "duration_ms": 583.8644310133532
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 2,
+            "dense_query_hits": 0,
+            "duration_ms": 476.179
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:727504",
+          "query": "shaking hands from too much lithium",
+          "target_corpus_id": 727504,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 242.48299200553447
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 664.1086069867015
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 421.626
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:73507008",
+          "query": "brain zaps from stopping antidepressants",
+          "target_corpus_id": 73507008,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "pubtator_api"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 232.67978592775762
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 1,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 864.5525890169665
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 631.873
+          },
+          "changed_route": true,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        },
+        {
+          "dataset_item_id": "semantic_recall_v2:8775898",
+          "query": "liver problems from psychiatric medications",
+          "target_corpus_id": 8775898,
+          "coverage_status": "repaired",
+          "ingest_path": [
+            "archive_member_fetch"
+          ],
+          "baseline": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 7,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 361.2308129668236
+          },
+          "post": {
+            "hit_rank": null,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "retrieval_profile": "general",
+            "warehouse_depth": "none",
+            "source_system": "s2orc_v2",
+            "entity_seed_hits": 0,
+            "lexical_hits": 7,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 10,
+            "duration_ms": 913.0592329893261
+          },
+          "delta": {
+            "hit_rank": 0,
+            "hit_at_1": 0,
+            "hit_at_k": 0,
+            "target_in_answer_corpus": 0,
+            "entity_seed_hits": 0,
+            "chunk_lexical_hits": 0,
+            "dense_query_hits": 0,
+            "duration_ms": 551.828
+          },
+          "changed_route": false,
+          "changed_source_system": false,
+          "changed_warehouse_depth": false
+        }
+      ],
+      "delta_summary": {
+        "hit_at_1_delta": 0.2308,
+        "hit_at_k_delta": 0.2308,
+        "target_in_answer_corpus_delta": 0.2308,
+        "grounded_answer_delta": 0.0769,
+        "entity_seed_hits_mean_delta": 0.0,
+        "chunk_lexical_hits_mean_delta": -0.231,
+        "dense_query_hits_mean_delta": 0.0,
+        "improved_cases": 3,
+        "regressed_cases": 0,
+        "route_changed_cases": 2,
+        "source_changed_cases": 0,
+        "warehouse_depth_changed_cases": 1
+      }
+    }
+  }
+}

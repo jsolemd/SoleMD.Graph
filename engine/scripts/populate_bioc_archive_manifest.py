@@ -4,7 +4,8 @@ Data flow context — three layers, each feeds the next:
 
   1. ARCHIVE MANIFEST (this script)
      SQLite sidecar: releases/<rev>/manifests/biocxml.archive_manifest.sqlite
-     Maps document_id (PMID) → tar archive position (archive_name, ordinal, member).
+     Maps document_id (PMID) → archive/member identity
+     (archive_name, ordinal, member).
      Built by scanning tar archives. Zero PostgreSQL dependency.
 
   2. SOURCE LOCATOR (refresh_rag_source_locator.py)
@@ -18,7 +19,8 @@ Data flow context — three layers, each feeds the next:
      them into the warehouse schema.
 
 This script handles layer 1 only. Run it once per PubTator release, then
-source_locator_refresh and overlay backfill can use the manifest for instant lookups.
+source_locator_refresh and overlay backfill can use the manifest to bound work
+to the correct archive and member family.
 
 Usage:
     # Single archive:
@@ -40,14 +42,13 @@ from __future__ import annotations
 
 import argparse
 import time
-from pathlib import Path
 
 from app.config import settings
 from app.rag_ingest.bioc_archive_manifest import (
     RagBioCArchiveManifestEntry,
     SidecarBioCArchiveManifestRepository,
 )
-from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_all_document_ids
+from app.rag_ingest.bioc_archive_scan import iter_bioc_archive_document_ids
 
 
 def populate_archive_manifest(
@@ -68,41 +69,36 @@ def populate_archive_manifest(
 
     manifest = SidecarBioCArchiveManifestRepository()
 
-    # Resume: check max existing ordinal. Since we now assign a global ordinal
-    # per document (not per tar member), resuming means starting at the member
-    # AFTER the one containing the max ordinal. But since we can't easily map
-    # ordinal→member for resume, we always re-index from the start when using
-    # the multi-doc scanner. The UPSERT is idempotent, so re-indexing is safe.
-    start_member = 1
     existing_max = 0
     if resume:
         existing_max = manifest.max_document_ordinal(
             source_revision=resolved_revision,
             archive_name=archive_name,
         )
+    start_document_ordinal = existing_max + 1 if existing_max > 0 else 1
 
     print(
-        f"[{archive_name}] indexing all documents per batch file"
-        f" (existing_max_ordinal={existing_max}, batch_size={batch_size})"
+        f"[{archive_name}] indexing per-document archive manifest"
+        f" (existing_max_ordinal={existing_max},"
+        f" start_document_ordinal={start_document_ordinal},"
+        f" batch_size={batch_size})"
     )
 
     total_scanned = 0
     total_written = 0
-    global_ordinal = 0
     pending: list[RagBioCArchiveManifestEntry] = []
     batch_start = time.monotonic()
 
-    for document_id, member_name, member_ordinal in iter_bioc_archive_all_document_ids(
+    for document_id, member_name, document_ordinal in iter_bioc_archive_document_ids(
         archive_path,
-        start_member_ordinal=start_member,
+        start_document_ordinal=start_document_ordinal,
     ):
-        global_ordinal += 1
         total_scanned += 1
         pending.append(
             RagBioCArchiveManifestEntry(
                 source_revision=resolved_revision,
                 archive_name=archive_name,
-                document_ordinal=global_ordinal,
+                document_ordinal=document_ordinal,
                 member_name=member_name,
                 document_id=document_id,
             )
@@ -112,8 +108,7 @@ def populate_archive_manifest(
             elapsed = time.monotonic() - batch_start
             rate = batch_size / elapsed if elapsed > 0 else 0
             print(
-                f"[{archive_name}] ordinal={global_ordinal}"
-                f"  member={member_ordinal}"
+                f"[{archive_name}] ordinal={document_ordinal}"
                 f"  scanned={total_scanned}"
                 f"  written={total_written}"
                 f"  rate={rate:.0f}/s"
@@ -124,19 +119,20 @@ def populate_archive_manifest(
     if pending:
         total_written += manifest.upsert_entries(pending)
 
+    last_document_ordinal = existing_max + total_scanned
     print(
         f"[{archive_name}] done:"
         f" scanned={total_scanned}"
         f" written={total_written}"
-        f" last_ordinal={global_ordinal}"
+        f" last_ordinal={last_document_ordinal}"
     )
     return {
         "archive_name": archive_name,
         "source_revision": resolved_revision,
-        "start_member_ordinal": start_member,
+        "start_document_ordinal": start_document_ordinal,
         "total_scanned": total_scanned,
         "total_written": total_written,
-        "last_document_ordinal": global_ordinal,
+        "last_document_ordinal": last_document_ordinal,
     }
 
 

@@ -1,4 +1,4 @@
-# SoleMD.Graph — RAG
+# SoleMD.Graph -- RAG
 
 > **Scope**: current runtime architecture for evidence retrieval, ranking,
 > answer assembly, and graph grounding.
@@ -9,11 +9,11 @@
 > implementation-summary content.
 >
 > **Companion docs**:
-> - [database.md](./database.md) — full schema detail for `solemd.*` and
+> - [database.md](./database.md) -- full schema detail for `solemd.*` and
 >   `pubtator.*`
-> - [architecture.md](./architecture.md) — broader system architecture
-> - [data.md](./data.md) — ingestion and corpus data flow
-> - [../plans/rag-runtime-direction-2026-04.md](../plans/rag-runtime-direction-2026-04.md) —
+> - [architecture.md](./architecture.md) -- broader system architecture
+> - [ingest.md](./ingest.md) -- ingestion and corpus data flow
+> - [../plans/rag-runtime-direction-2026-04.md](../plans/rag-runtime-direction-2026-04.md) --
 >   the post-ledger next-state runtime plan
 
 ---
@@ -27,7 +27,7 @@
 | Query routing | `title_lookup`, `question_lookup`, `passage_lookup`, and `general` shape which lanes run and how precision is favored. |
 | Corpus boundary | All retrieval is release-scoped through the active `graph_release_id` and `solemd.graph_points`. |
 | Scope control | Optional `selection_only` mode limits retrieval to selected graph papers resolved inside the current release. |
-| Current answer mode | `baseline-extractive-v1` from ranked evidence bundles. `generate_answer` still means “build the baseline answer payload,” not “switch to live LLM synthesis.” |
+| Current answer mode | `baseline-extractive-v1` from ranked evidence bundles. `generate_answer` still means "build the baseline answer payload," not "switch to live LLM synthesis." |
 | Citation steering | `cited_corpus_ids` now crosses the web -> engine seam, but it is **not yet** a retrieval or ranking control in the live backend. |
 | Non-live scaffolding | Generated-answer and answer-verification modules now exist in tree, but they are **not** wired into the live request path. |
 | Dense retrieval | SPECTER2 ad-hoc query encoding against `solemd.papers.embedding`. |
@@ -55,9 +55,9 @@ V2 consolidated benchmarks (abstract-first, signal-complete, 2026-04-05):
 | title_retrieval_v2 | 12 | 1.00 | 1.00 | 0.50 | 277 | green |
 | clinical_evidence_v2 | 51 | 0.08 | 0.18 | 0.63 | 295 | real retrieval gap, all signals |
 | passage_retrieval_v2 | 3 | 0.33 | 0.33 | 0.33 | 51,984 | thin (only 287 papers have chunks) |
-| adversarial_routing_v2 | 12 | — | — | — | — | SDK flush timeout |
+| adversarial_routing_v2 | 12 | -- | -- | -- | -- | SDK flush timeout |
 | keyword_search_v2 | 12 | 0.00 | 0.17 | 0.00 | 180 | real signal, broad corpus |
-| abstract_stratum_v2 | 12 | — | — | — | — | SDK flush timeout |
+| abstract_stratum_v2 | 12 | -- | -- | -- | -- | SDK flush timeout |
 
 Design principles:
 - **Abstract-first**: seeds resolve against full 2.4M corpus, not the 347
@@ -66,10 +66,10 @@ Design principles:
   (`target_lexical_score`, `target_entity_score`, `target_dense_score`, etc.)
   enabling weight suboptimization via Langfuse run comparison.
 - **Generation-ready**: when LLM generation goes live, faithfulness/citation
-  evaluators attach to existing suites — no structural changes needed.
+  evaluators attach to existing suites -- no structural changes needed.
 
 Interpretation:
-- **title_retrieval_v2** is the regression guard — 100% hit@1 confirms title
+- **title_retrieval_v2** is the regression guard -- 100% hit@1 confirms title
   routing and exact matching work correctly.
 - **clinical_evidence_v2** (merged neuropsych_safety + clinical_actionable +
   question_lookup + evidence_intent) is the core quality signal. 8% hit@1
@@ -87,7 +87,7 @@ Interpretation:
 ## Langfuse Evaluation System
 
 Langfuse is the **operational control plane** for RAG quality. All evaluation
-runs through the Langfuse SDK/API — not a separate dashboard or log parser.
+runs through the Langfuse SDK/API -- not a separate dashboard or log parser.
 
 ### Infrastructure
 
@@ -129,24 +129,24 @@ V1 suites are preserved for backward compatibility but no longer in
 ### Evaluation Workflow
 
 ```
-prepare_rag_curated_benchmarks.py  →  Langfuse Datasets (source of truth)
-                                       ↓
-rag_benchmark.py --diagnose  →  traces + scores + failure diagnosis
-                                       ↓
-                       --enqueue-failures  →  Annotation queue for expert review
-                                       ↓
-                     Fix routing/ranking  →  Re-run + compare runs in Langfuse UI
+prepare_rag_curated_benchmarks.py  ->  Langfuse Datasets (source of truth)
+                                       v
+rag_benchmark.py --diagnose  ->  traces + scores + failure diagnosis
+                                       v
+                       --enqueue-failures  ->  Annotation queue for expert review
+                                       v
+                     Fix routing/ranking  ->  Re-run + compare runs in Langfuse UI
 ```
 
 ### Trace Tree (34 spans)
 
 ```
 rag.search                     # Top-level (GENERATION)
-├── rag.execute
-│   ├── rag.retrieve
-│   ├── rag.finalize
-│   ├── rag.answerGeneration
-│   └── rag.groundedAnswer
++-- rag.execute
+|   +-- rag.retrieve
+|   +-- rag.finalize
+|   +-- rag.answerGeneration
+|   +-- rag.groundedAnswer
 ```
 
 ### Operator Decision Tree
@@ -157,7 +157,7 @@ rag.search                     # Top-level (GENERATION)
 | Run all baselines | `uv run python scripts/rag_benchmark.py --all-benchmarks --run baseline-YYYY-MM-DD --diagnose` |
 | Enqueue failures | Add `--enqueue-failures` to any run |
 | Quality gate | Add `--quality-gate avg_hit_at_1=0.9,error_rate=0` |
-| Compare runs | Langfuse UI → Datasets → select dataset → compare runs |
+| Compare runs | Langfuse UI -> Datasets -> select dataset -> compare runs |
 
 ---
 
@@ -309,7 +309,7 @@ Their intended next use belongs in the plan doc, not here.
 The live system today is a bounded evidence retrieval and extractive answer
 pipeline with optional chunk-backed grounding.
 
-# SoleMD.Graph — RAG Info
+# SoleMD.Graph -- RAG Info
 
 > **Purpose**: condensed implementation notes and runtime contract details that
 > used to be split across `rag-runtime-contract.md`,
@@ -488,7 +488,7 @@ The current review posture should use both:
 ### Operator workflow
 
 **Langfuse is the primary review surface for RAG evaluation.** Do not rely on
-JSON reports alone — always verify results through Langfuse traces.
+JSON reports alone -- always verify results through Langfuse traces.
 
 ```bash
 cd engine
@@ -511,10 +511,10 @@ uv run python -m scripts.evaluate_rag_runtime \
 #      Meta:   session_flags (route, profile, scope), candidate_counts, stage_durations_ms
 #    - Inspect observation metadata for the full routing fingerprint:
 #      session_flags.route_signature captures the per-request route string
-#      (arbitrary high-cardinality, not a score — read directly from the trace).
+#      (arbitrary high-cardinality, not a score -- read directly from the trace).
 ```
 
-Each trace captures the complete retrieval pipeline state — query in, which
+Each trace captures the complete retrieval pipeline state -- query in, which
 channels fired, how candidates were ranked, what features scored each hit,
 which route was taken, where time was spent, and what answer was selected.
 Use this for debugging regressions, comparing A/B routing changes, and
@@ -568,22 +568,22 @@ system.
 Decision tree for warehouse operations. Use the **specific** script, not the
 generic `refresh_rag_warehouse.py`, unless you need the full multi-source pipeline.
 
-### Data flow — three layers of indexing
+### Data flow -- three layers of indexing
 
 Understanding where data lives prevents confusion about what each script does:
 
 ```
 Layer 1: ARCHIVE MANIFEST (SQLite sidecar, no PostgreSQL)
   File: releases/<rev>/manifests/biocxml.archive_manifest.sqlite
-  Maps: document_id (PMID) → tar archive position (archive, ordinal, member)
+  Maps: document_id (PMID) -> tar archive position (archive, ordinal, member)
   Built by: populate_bioc_archive_manifest.py  |  source_locator_refresh (auto)
-              ↓
+              v
 Layer 2: SOURCE LOCATOR (SQLite sidecar, reads PostgreSQL for corpus resolution)
   Files: releases/<rev>/manifests/s2orc_v2.corpus_locator.sqlite
          releases/<rev>/manifests/biocxml.corpus_locator.sqlite
-  Maps: corpus_id → source location (shard/archive, ordinal, document key)
+  Maps: corpus_id -> source location (shard/archive, ordinal, document key)
   Built by: refresh_rag_source_locator.py
-              ↓
+              v
 Layer 3: WAREHOUSE (PostgreSQL)
   Tables: solemd.paper_documents, paper_sections, paper_blocks, paper_sentences, ...
   Contains: parsed document structure, chunks, embeddings, entity mentions
@@ -654,10 +654,10 @@ neither. Papers with neither need a `source_locator_refresh` run.
 
 ### "I need BioCXML overlay on existing S2 papers" (entities, full text)
 
-**Use `backfill_bioc_overlays.py`** — NOT `refresh_rag_warehouse.py`.
+**Use `backfill_bioc_overlays.py`** -- NOT `refresh_rag_warehouse.py`.
 
 ```bash
-# Single archive (fastest — targets one archive):
+# Single archive (fastest -- targets one archive):
 uv run python db/scripts/backfill_bioc_overlays.py \
   --run-id overlay-YYYYMMDD \
   --parser-version parser-v1 \
@@ -703,7 +703,7 @@ uv run python db/scripts/backfill_structural_chunks.py \
 
 | Depth | Meaning | What works | What doesn't |
 |-------|---------|------------|--------------|
-| `fulltext` | Real structural parsing (sections, blocks, sentences, chunks) | Retrieval + grounded answers + cited spans + evidence flags | — |
+| `fulltext` | Real structural parsing (sections, blocks, sentences, chunks) | Retrieval + grounded answers + cited spans + evidence flags | -- |
 | `front_matter_only` | Abstract-only canonical structure with thin document depth | Retrieval + chunk-backed grounding when chunks exist + paper-level evidence | Weaker citation density and thinner span coverage than fulltext papers |
 | `none` | Not in warehouse | Retrieval from metadata (title, abstract, embeddings) | No grounded answers |
 
@@ -712,7 +712,7 @@ quality numbers are never conflated across depth levels.
 
 ---
 
-## Out Of Scope — 2026-04-06 Architecture Pass
+## Out Of Scope -- 2026-04-06 Architecture Pass
 
 The 2026-04-06 routing + ranking improvements intentionally did **not**
 touch the items below. They remain tracked but deferred:
@@ -720,7 +720,7 @@ touch the items below. They remain tracked but deferred:
 - **Reshaping benchmark seeds.** Cases now carry
   `expected_retrieval_profile` via `RuntimeEvalBenchmarkCase` and the
   `routing_match` score surfaces mismatches. A future pass can either
-  reshape seeds or add more router heuristics with stronger evidence —
+  reshape seeds or add more router heuristics with stronger evidence --
   we don't want to chase individual seeds without a broader justification.
 - **Adding TITLE-profile reranker influence.** The cross-encoder is now
   live on GENERAL/PASSAGE/QUESTION profiles. TITLE will wait until we
@@ -731,7 +731,7 @@ touch the items below. They remain tracked but deferred:
   case. Can be added alongside a channel evaluator in a later pass.
 - **Aggressive router heuristics.** Length-only demote rules and
   broad preposition lists (`in`, `with`, `on`, `by`, `via`, `into`)
-  were rejected — they regress legitimate biomedical titles such as
+  were rejected -- they regress legitimate biomedical titles such as
   `Lithium in Bipolar Disorder`. Only the narrow paraphrase markers
   `from` and `against` joined `PROSE_CLAUSE_TOKENS`, and the auxiliary
   verbs already in the set were broadened to apply at any query length.
@@ -746,7 +746,7 @@ variants) on 2026-04-07. They combined four trigram predicates via OR
 (`LIKE '%X%'`, `% query`, `query <<% normalize_title_key(title)`, and a
 normalized `LIKE`) inside a BitmapOr over the GiST trigram indexes on a
 14M-row `papers` table. On short title queries the BitmapOr + Recheck
-burned 30-60 s per call — trigram recheck on millions of false positives
+burned 30-60 s per call -- trigram recheck on millions of false positives
 is inherent to the approach regardless of index type (GIN was tested and
 rejected: 125 s on the same query because the recheck processes 94% of
 the candidates).
@@ -757,22 +757,13 @@ ts_query`) cover the common title-lookup cases. The inline
 `fts_title_similarity_sql` still scores matched rows with
 `word_similarity` / `similarity` so the `title_similarity * 0.15` boost
 in `final_order_sql` still benefits genuine title queries. What we lose:
-character-level typo tolerance on titles (e.g. `alzhiemer` → `Alzheimer`)
-— acceptable for a research search engine where title queries usually
+character-level typo tolerance on titles (e.g. `alzhiemer` -> `Alzheimer`)
+-- acceptable for a research search engine where title queries usually
 contain intentional tokens that FTS already catches via stemming.
 
 Measured impact on `rag.search` warm latency with `title_similarity=True`:
-before 27-72 s per query; after 13-47 ms per query (~1000×).
+before 27-72 s per query; after 13-47 ms per query (~1000x).
 
 ---
 
-## Consolidation Note
-
-On 2026-04-03 the RAG docs were consolidated into `rag.md`.
-
-The former `rag-info.md` content is now folded into this document, and the
-older split deep-dive docs were moved to archive:
-
-- [../archive/rag-architecture.md](../archive/rag-architecture.md)
-- [../archive/rag-architecture-code.md](../archive/rag-architecture-code.md)
-- [../archive/rag-runtime-contract.md](../archive/rag-runtime-contract.md)
+_Last verified against code: 2026-04-08_

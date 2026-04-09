@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-
-from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_RAG_RETRIEVE, observe
-
+from app.langfuse_config import SPAN_RAG_RETRIEVE, observe
+from app.langfuse_config import get_langfuse as _get_langfuse
 from app.rag.models import GraphRelease, GraphSignal, PaperEvidenceHit, PaperRetrievalQuery
 from app.rag.query_embedding import RagQueryEmbedder
 from app.rag.query_enrichment import (
@@ -19,11 +18,15 @@ from app.rag.repository import RagRepository
 from app.rag.retrieval_fusion import merge_candidate_papers
 from app.rag.retrieval_policy import (
     chunk_search_queries,
+    has_precise_title_resolution,
     has_selected_direct_anchor,
+    has_strong_lexical_title_anchor,
     should_fetch_semantic_neighbors,
     should_run_dense_query,
     should_run_paper_lexical_fallback,
+    should_run_seeded_channel_search,
     should_skip_runtime_entity_enrichment,
+    title_anchor_candidate_ids,
 )
 from app.rag.runtime_trace import RuntimeTraceCollector
 from app.rag.schemas import RagSearchRequest
@@ -39,6 +42,8 @@ class SearchRetrievalState:
     search_plan: RetrievalSearchPlan
     scope_corpus_ids: list[int]
     selected_corpus_id: int | None
+    selected_direct_anchor: bool
+    precise_title_resolution: bool
     lexical_hits: list[PaperEvidenceHit]
     chunk_lexical_hits: list[PaperEvidenceHit]
     entity_seed_hits: list[PaperEvidenceHit]
@@ -375,9 +380,54 @@ def retrieve_search_state(
             paper_search_query_text,
             **paper_search_kwargs,
         )
+    if (
+        lexical_hits
+        and query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP
+        and has_strong_lexical_title_anchor(
+            query_text=query.query,
+            lexical_hits=lexical_hits,
+        )
+    ):
+        query = replace(
+            query,
+            retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        )
+        search_plan = trace.call(
+            "rebuild_search_plan_after_lexical_title_anchor",
+            build_search_plan,
+            query,
+        )
     trace.record_count("lexical_hits", len(lexical_hits))
+    selected_direct_anchor = has_selected_direct_anchor(
+        selected_corpus_id=selected_corpus_id,
+        retrieval_profile=query.retrieval_profile,
+        paper_hits=[*lexical_hits, *chunk_lexical_hits],
+    )
+    title_anchor_ids = title_anchor_candidate_ids(
+        query_text=query.query,
+        lexical_hits=lexical_hits,
+    )
+    trace.record_count("title_anchor_candidates", len(title_anchor_ids))
+    precise_title_resolution = has_precise_title_resolution(
+        query_text=query.query,
+        retrieval_profile=query.retrieval_profile,
+        lexical_hits=lexical_hits,
+        selected_direct_anchor=selected_direct_anchor,
+    )
+    ambiguous_title_anchor_candidates = (
+        query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+        and len(title_anchor_ids) > 1
+    )
+    seeded_channel_search = should_run_seeded_channel_search(
+        query=query,
+        lexical_hits=lexical_hits,
+        selected_direct_anchor=selected_direct_anchor,
+    )
 
-    if not should_skip_runtime_entity_enrichment(query=query):
+    if (
+        (seeded_channel_search or ambiguous_title_anchor_candidates)
+        and not should_skip_runtime_entity_enrichment(query=query)
+    ):
         query = trace.call(
             "query_entity_enrichment",
             _apply_query_enrichment,
@@ -399,7 +449,11 @@ def retrieve_search_state(
             limit=query.rerank_topn,
             scope_corpus_ids=scope_corpus_ids or None,
         )
-        if entity_seed_terms and not selection_only_without_matches
+        if (
+            seeded_channel_search
+            and entity_seed_terms
+            and not selection_only_without_matches
+        )
         else []
     )
     trace.record_count("entity_seed_hits", len(entity_seed_hits))
@@ -412,22 +466,21 @@ def retrieve_search_state(
             limit=query.rerank_topn,
             scope_corpus_ids=scope_corpus_ids or None,
         )
-        if query.relation_terms and not selection_only_without_matches
+        if (
+            seeded_channel_search
+            and query.relation_terms
+            and not selection_only_without_matches
+        )
         else []
     )
     trace.record_count("relation_seed_hits", len(relation_seed_hits))
-    selected_direct_anchor = has_selected_direct_anchor(
-        selected_corpus_id=selected_corpus_id,
-        retrieval_profile=query.retrieval_profile,
-        paper_hits=[*lexical_hits, *chunk_lexical_hits],
-    )
     dense_query_embedding = (
         trace.call("encode_dense_query", query_embedder.encode, query.query)
         if not selection_only_without_matches
         and should_run_dense_query(
             query=query,
-            search_plan=search_plan,
             selected_direct_anchor=selected_direct_anchor,
+            lexical_hits=lexical_hits,
         )
         else None
     )
@@ -529,6 +582,9 @@ def retrieve_search_state(
             "selected_corpus_id_present": selected_corpus_id is not None,
             "selection_only_without_matches": selection_only_without_matches,
             "selected_direct_anchor": selected_direct_anchor,
+            "ambiguous_title_anchor_candidates": ambiguous_title_anchor_candidates,
+            "precise_title_resolution": precise_title_resolution,
+            "seeded_channel_search": seeded_channel_search,
             "use_lexical": query.use_lexical,
             "use_dense_query": query.use_dense_query,
             "session_jit_disabled": getattr(repository, "_disable_session_jit", False),
@@ -541,6 +597,8 @@ def retrieve_search_state(
         search_plan=search_plan,
         scope_corpus_ids=list(scope_corpus_ids),
         selected_corpus_id=selected_corpus_id,
+        selected_direct_anchor=selected_direct_anchor,
+        precise_title_resolution=precise_title_resolution,
         lexical_hits=lexical_hits,
         chunk_lexical_hits=chunk_lexical_hits,
         entity_seed_hits=entity_seed_hits,

@@ -127,6 +127,34 @@ function formatValidationError(value: unknown) {
   return message
 }
 
+async function executeEnginePost(
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+  accept?: string,
+): Promise<Response> {
+  let response: Response
+  try {
+    response = await fetch(`${getEngineUrl()}${path}`, buildEngineRequestInit(body, signal, accept))
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error
+    }
+    throw new EngineApiError(
+      `Evidence engine unavailable at ${getEngineUrl()}. Start the engine or set ENGINE_URL.`,
+      503,
+      { error_code: 'engine_request_failed', request_id: null, retry_after: null },
+    )
+  }
+
+  if (!response.ok) {
+    const errorBody = await parseErrorBody(response)
+    throw new EngineApiError(getErrorMessage(response.status, errorBody), response.status, errorBody)
+  }
+
+  return response
+}
+
 export async function postEngineJson<TRequest, TResponse>(
   path: string,
   body: TRequest,
@@ -134,33 +162,7 @@ export async function postEngineJson<TRequest, TResponse>(
     signal?: AbortSignal
   },
 ): Promise<TResponse> {
-  let response: Response
-  try {
-    response = await fetch(`${getEngineUrl()}${path}`, {
-      ...buildEngineRequestInit(body, init?.signal),
-    })
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw error
-    }
-
-    throw new EngineApiError(
-      `Evidence engine unavailable at ${getEngineUrl()}. Start the engine or set ENGINE_URL.`,
-      503,
-      {
-        error_code: 'engine_request_failed',
-        request_id: null,
-        retry_after: null,
-      },
-    )
-  }
-
-  if (!response.ok) {
-    const errorBody = await parseErrorBody(response)
-    const message = getErrorMessage(response.status, errorBody)
-    throw new EngineApiError(message, response.status, errorBody)
-  }
-
+  const response = await executeEnginePost(path, body, init?.signal)
   return response.json() as Promise<TResponse>
 }
 
@@ -172,33 +174,6 @@ export async function postEngineBinary<TRequest>(
     accept?: string
   },
 ): Promise<Uint8Array> {
-  let response: Response
-  try {
-    response = await fetch(
-      `${getEngineUrl()}${path}`,
-      buildEngineRequestInit(body, init?.signal, init?.accept),
-    )
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw error
-    }
-
-    throw new EngineApiError(
-      `Evidence engine unavailable at ${getEngineUrl()}. Start the engine or set ENGINE_URL.`,
-      503,
-      {
-        error_code: 'engine_request_failed',
-        request_id: null,
-        retry_after: null,
-      },
-    )
-  }
-
-  if (!response.ok) {
-    const errorBody = await parseErrorBody(response)
-    const message = getErrorMessage(response.status, errorBody)
-    throw new EngineApiError(message, response.status, errorBody)
-  }
-
+  const response = await executeEnginePost(path, body, init?.signal, init?.accept)
   return new Uint8Array(await response.arrayBuffer())
 }

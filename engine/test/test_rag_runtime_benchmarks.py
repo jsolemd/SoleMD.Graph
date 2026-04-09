@@ -7,6 +7,7 @@ from app.rag.grounded_runtime import GroundedAnswerRuntimeStatus
 from app.rag.types import EvidenceIntent
 from app.rag_ingest import runtime_eval
 from app.rag_ingest.runtime_eval_benchmarks import (
+    build_biomedical_optimization_benchmark,
     build_dense_audit_sentence_hard_benchmark,
     load_runtime_eval_benchmark_cases,
 )
@@ -156,6 +157,85 @@ def test_build_dense_audit_sentence_hard_benchmark_selects_recurrent_failures(
     assert report.deep_miss_rank == 20
 
 
+def test_build_biomedical_optimization_benchmark_samples_only_covered_papers(
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    covered_paper = _paper(
+        11,
+        title="Covered biomedical benchmark paper",
+    )
+    covered_paper.primary_source_system = "biocxml"
+    sparse_entity_paper = _paper(
+        22,
+        title="Sparse entity biomedical paper",
+    )
+    sparse_entity_paper.entity_mention_count = 0
+    no_sentence_seed = _paper(
+        33,
+        title="No sentence seed biomedical paper",
+    )
+    no_sentence_seed.representative_sentence = None
+    second_covered = _paper(
+        44,
+        title="Second covered biomedical paper",
+    )
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: [
+            covered_paper,
+            sparse_entity_paper,
+            no_sentence_seed,
+            second_covered,
+        ],
+    )
+
+    report = build_biomedical_optimization_benchmark(
+        graph_release_id="current",
+        paper_sample_size=8,
+        exclude_corpus_ids={44},
+        connect=lambda: None,
+    )
+
+    assert report.selected_count == 3
+    assert {case.corpus_id for case in report.cases} == {11}
+    by_family = {case.query_family: case for case in report.cases}
+    assert set(by_family) == {
+        RuntimeEvalQueryFamily.TITLE_GLOBAL,
+        RuntimeEvalQueryFamily.TITLE_SELECTED,
+        RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+    }
+    assert (
+        by_family[RuntimeEvalQueryFamily.TITLE_GLOBAL].expected_retrieval_profile
+        == "title_lookup"
+    )
+    assert by_family[RuntimeEvalQueryFamily.TITLE_SELECTED].selected_layer_key == "paper"
+    assert by_family[RuntimeEvalQueryFamily.TITLE_SELECTED].selected_node_id == "paper:11"
+    assert by_family[RuntimeEvalQueryFamily.SENTENCE_GLOBAL].expected_retrieval_profile is None
+    assert (
+        "biomedical_optimization"
+        in by_family[RuntimeEvalQueryFamily.SENTENCE_GLOBAL].benchmark_labels
+    )
+    assert "has_entities" in by_family[RuntimeEvalQueryFamily.SENTENCE_GLOBAL].benchmark_labels
+
+
 def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: Path):
     benchmark_report = RagRuntimeEvalBenchmarkReport(
         benchmark_key="sentence_hard_v1",
@@ -182,6 +262,9 @@ def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: 
                 stratum_key="benchmark:sentence_hard_v1|difficulty:rank_20_49|source:s2orc_v2",
                 evidence_intent=EvidenceIntent.REFUTE,
                 representative_section_role="discussion",
+                selected_layer_key="paper",
+                selected_node_id="paper:11",
+                selection_graph_paper_refs=["paper:11"],
                 benchmark_key="sentence_hard_v1",
                 benchmark_labels=["dense_audit_failure", "deep_miss"],
                 failure_count=3,
@@ -209,6 +292,9 @@ def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: 
         evidence_intent=EvidenceIntent.REFUTE,
         benchmark_labels=["dense_audit_failure", "deep_miss"],
         representative_section_role="discussion",
+        selected_layer_key="paper",
+        selected_node_id="paper:11",
+        selection_graph_paper_refs=["paper:11"],
     )
 
 
@@ -278,7 +364,7 @@ def test_run_rag_runtime_case_evaluation_uses_explicit_cases(monkeypatch):
         runtime_eval,
         "get_grounded_answer_runtime_status",
         lambda **kwargs: GroundedAnswerRuntimeStatus(
-            enabled=True,
+            fully_covered=True,
             chunk_version_key="default-structural-v1",
             covered_corpus_ids=[11],
         ),
@@ -345,12 +431,17 @@ def test_benchmark_paper_disjointness():
         "clinical_actionable_v1",
         "evidence_intent_v1",
     })
+    _REPLACEMENT_OVERLAP_ALLOWED = frozenset({
+        "biomedical_optimization_v2",
+        "biomedical_optimization_v3",
+    })
 
     corpus_to_benchmarks: dict[int, list[str]] = {}
     for path in benchmark_paths:
         report = RagRuntimeEvalBenchmarkReport.model_validate_json(path.read_text())
-        for case in report.cases:
-            corpus_to_benchmarks.setdefault(case.corpus_id, []).append(report.benchmark_key)
+        report_keys = {case.corpus_id for case in report.cases}
+        for corpus_id in report_keys:
+            corpus_to_benchmarks.setdefault(corpus_id, []).append(report.benchmark_key)
 
     # Filter: only flag overlaps that involve at least one non-legacy benchmark
     violations = {}
@@ -360,6 +451,8 @@ def test_benchmark_paper_disjointness():
         key_set = set(keys)
         if key_set <= _LEGACY_OVERLAP_ALLOWED:
             continue  # All-legacy overlap is documented, not a violation
+        if key_set <= _REPLACEMENT_OVERLAP_ALLOWED:
+            continue  # v3 intentionally supersedes the invalid v2 benchmark
         violations[cid] = keys
 
     assert not violations, (

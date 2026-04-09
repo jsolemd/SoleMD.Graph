@@ -2,83 +2,11 @@
 
 from __future__ import annotations
 
-from app.rag_ingest.pubtator_api import BioCXMLFetchResult, _split_biocxml_collection
-
-
-_SAMPLE_COLLECTION_XML = """\
-<collection>
-  <source>PubTator</source>
-  <date>2026-04-04</date>
-  <key>biocxml</key>
-  <document>
-    <id>12345</id>
-    <passage>
-      <infon key="type">title</infon>
-      <offset>0</offset>
-      <text>Sample Title One</text>
-    </passage>
-    <passage>
-      <infon key="type">abstract</infon>
-      <offset>17</offset>
-      <text>Abstract text for paper one.</text>
-    </passage>
-  </document>
-  <document>
-    <id>67890</id>
-    <passage>
-      <infon key="type">title</infon>
-      <offset>0</offset>
-      <text>Sample Title Two</text>
-    </passage>
-  </document>
-</collection>
-"""
-
-
-def test_split_biocxml_collection_extracts_two_documents():
-    results = _split_biocxml_collection(_SAMPLE_COLLECTION_XML)
-    assert len(results) == 2
-    assert results[0].document_id == "12345"
-    assert results[1].document_id == "67890"
-
-
-def test_split_biocxml_collection_wraps_in_collection():
-    results = _split_biocxml_collection(_SAMPLE_COLLECTION_XML)
-    for result in results:
-        assert "<collection>" in result.xml_text
-        assert "<document>" in result.xml_text
-        assert "<source>PubTator</source>" in result.xml_text
-
-
-def test_split_biocxml_collection_preserves_passages():
-    results = _split_biocxml_collection(_SAMPLE_COLLECTION_XML)
-    assert "Sample Title One" in results[0].xml_text
-    assert "Abstract text for paper one." in results[0].xml_text
-    assert "Sample Title Two" in results[1].xml_text
-    assert "Abstract text for paper one." not in results[1].xml_text
-
-
-def test_split_biocxml_collection_empty():
-    results = _split_biocxml_collection("<collection><source>PubTator</source></collection>")
-    assert results == []
-
-
-def test_split_biocxml_collection_skips_empty_id():
-    xml = """\
-<collection>
-  <source>PubTator</source>
-  <document><id></id><passage><infon key="type">title</infon><offset>0</offset><text>No ID</text></passage></document>
-  <document><id>11111</id><passage><infon key="type">title</infon><offset>0</offset><text>Has ID</text></passage></document>
-</collection>
-"""
-    results = _split_biocxml_collection(xml)
-    assert len(results) == 1
-    assert results[0].document_id == "11111"
-
-
-# --- API ingest pipeline tests ---
-
 from app.rag_ingest.biocxml_api_ingest import run_biocxml_api_ingest
+from app.rag_ingest.source_parsers import (
+    BioCXMLDocumentPayload,
+    split_biocxml_collection,
+)
 
 
 def _make_collection_xml(pmid: int, title: str, abstract: str) -> str:
@@ -124,12 +52,12 @@ class FakeApiFetcher:
         self._responses = responses
         self.called_pmids: list[int] = []
 
-    def __call__(self, pmids: list[int], **kwargs) -> list[BioCXMLFetchResult]:
+    def __call__(self, pmids: list[int], **kwargs) -> list[BioCXMLDocumentPayload]:
         self.called_pmids.extend(pmids)
-        results = []
+        results: list[BioCXMLDocumentPayload] = []
         for pmid in pmids:
             if pmid in self._responses:
-                results.extend(_split_biocxml_collection(self._responses[pmid]))
+                results.extend(split_biocxml_collection(self._responses[pmid]))
         return results
 
 

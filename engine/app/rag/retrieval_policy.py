@@ -18,8 +18,10 @@ MAX_CHUNK_FALLBACK_PHRASES = 8
 MIN_CHUNK_FALLBACK_WORDS = 3
 MIN_PASSAGE_ENRICHMENT_CANDIDATES = 12
 PASSAGE_ENRICHMENT_K_MULTIPLIER = 2
+TITLE_ENRICHMENT_SHORTLIST_LIMIT = 1
 MIN_BIOMEDICAL_RERANK_CANDIDATES = 3
 MIN_DIRECT_PASSAGE_ALIGNMENT = 0.55
+MIN_STRONG_PASSAGE_SURFACE_SCORE = 0.01
 MAX_WEAK_PASSAGE_CHUNK_HITS = 2
 MAX_WEAK_PASSAGE_TOP_CHUNK_SCORE = 0.0014
 CHUNK_FALLBACK_STOPWORDS = frozenset(
@@ -127,11 +129,57 @@ def has_strong_lexical_title_anchor(
 ) -> bool:
     """Return True when lexical retrieval already surfaced a strong title anchor."""
 
-    if not lexical_hits:
+    return bool(
+        title_anchor_candidate_ids(
+            query_text=query_text,
+            lexical_hits=lexical_hits,
+        )
+    )
+
+
+def title_anchor_candidate_ids(
+    *,
+    query_text: str,
+    lexical_hits: Sequence[PaperEvidenceHit],
+) -> list[int]:
+    """Return lexical candidates that are exact/strong-prefix title anchors."""
+
+    candidate_ids: list[int] = []
+    seen: set[int] = set()
+    for hit in lexical_hits:
+        if not has_strong_title_anchor(
+            query_text=query_text,
+            title_text=hit.title,
+        ):
+            continue
+        if hit.corpus_id in seen:
+            continue
+        seen.add(hit.corpus_id)
+        candidate_ids.append(hit.corpus_id)
+    return candidate_ids
+
+
+def has_precise_title_resolution(
+    *,
+    query_text: str,
+    retrieval_profile: QueryRetrievalProfile,
+    lexical_hits: Sequence[PaperEvidenceHit],
+    selected_direct_anchor: bool = False,
+) -> bool:
+    """Return True when title retrieval already pinned the target precisely."""
+
+    if retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
         return False
-    return has_strong_title_anchor(
-        query_text=query_text,
-        title_text=lexical_hits[0].title,
+    if selected_direct_anchor:
+        return True
+    return (
+        len(
+            title_anchor_candidate_ids(
+                query_text=query_text,
+                lexical_hits=lexical_hits,
+            )
+        )
+        == 1
     )
 
 
@@ -154,23 +202,44 @@ def should_skip_runtime_entity_enrichment(
     return not has_query_entity_surface_signal(query.query)
 
 
+def should_run_seeded_channel_search(
+    *,
+    query: PaperRetrievalQuery,
+    lexical_hits: Sequence[PaperEvidenceHit],
+    selected_direct_anchor: bool = False,
+) -> bool:
+    """Skip seeded recall lanes once precise title grounding has already landed."""
+
+    if selected_direct_anchor:
+        return False
+    if query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
+        return True
+    return not title_anchor_candidate_ids(
+        query_text=query.query,
+        lexical_hits=lexical_hits,
+    )
+
+
 def should_run_dense_query(
     *,
     query: PaperRetrievalQuery,
-    search_plan: RetrievalSearchPlan,
     selected_direct_anchor: bool = False,
+    lexical_hits: Sequence[PaperEvidenceHit] = (),
 ) -> bool:
-    """Allow dense query search unless a selected-context anchor already resolved the query.
+    """Allow dense search unless precise title grounding already resolved recall.
 
-    The previous TITLE_LOOKUP-specific early return was suppressing the
-    dense channel on legitimate title lookups where dense recall would
-    have helped paraphrased or near-title queries. We now skip dense only
-    when a selected-context direct anchor already pinned the target and
-    the plan explicitly prefers precise grounding.
+    Dense recall still runs on paraphrased title lookups; the skip only
+    applies once lexical title matching or a selected direct anchor has
+    already pinned the target with high confidence.
     """
     if not query.use_dense_query:
         return False
-    if selected_direct_anchor and search_plan.prefer_precise_grounding:
+    if selected_direct_anchor:
+        return False
+    if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP and title_anchor_candidate_ids(
+        query_text=query.query,
+        lexical_hits=lexical_hits,
+    ):
         return False
     return True
 
@@ -311,18 +380,22 @@ def should_run_biomedical_reranker(
     """Run the live biomedical reranker on global, corpus-unrestricted queries.
 
     Previously gated on PASSAGE/QUESTION profiles and clinician intent.
-    The reranker now runs wherever it has enough candidates to rerank —
-    the TITLE lane is excluded by the GENERAL/PASSAGE/QUESTION sort keys
-    (only GENERAL and PASSAGE/QUESTION profile weights include
-    ``biomedical_rerank_score`` today), so this check stays cheap. Adding
-    TITLE reranker influence is intentionally deferred until we see
-    GENERAL data.
+    The reranker now runs wherever its score is actually consumed by the
+    final sort key — only GENERAL and PASSAGE/QUESTION profile weights
+    include ``biomedical_rerank_score`` today. TITLE_LOOKUP is skipped
+    explicitly because ``TITLE_RANKING_PROFILE.biomedical_rerank_weight``
+    is ``0.0``; running the ~800 ms MedCPT pass on title queries only to
+    multiply its output by zero at fusion was the entire title latency
+    regression. Adding TITLE reranker influence is intentionally deferred
+    until we see GENERAL data that justifies paying the cost.
     """
     if not enabled:
         return False
     if selected_corpus_id is not None:
         return False
     if query.scope_mode != RetrievalScope.GLOBAL:
+        return False
+    if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
         return False
     return len(ranked_papers) >= MIN_BIOMEDICAL_RERANK_CANDIDATES
 
@@ -348,6 +421,8 @@ def has_direct_retrieval_support(
             paper.lexical_score > 0
             or paper.title_anchor_score > 0
             or paper.selected_context_score > 0
+            or paper.entity_score > 0
+            or paper.relation_score > 0
         )
     return any(
         score > 0
@@ -359,6 +434,24 @@ def has_direct_retrieval_support(
             paper.relation_score,
         )
     )
+
+
+def passage_direct_support_tier(paper: PaperEvidenceHit) -> int:
+    """Return the passage direct-support tier used by passage/question ranking.
+
+    Tier 2 is a true lexical or chunk-backed surface hit. Tier 1 is weaker
+    text alignment from abstract/title/TLDR without lexical evidence. Tier 0
+    has no direct passage support.
+    """
+
+    if (
+        paper.chunk_lexical_score >= MIN_STRONG_PASSAGE_SURFACE_SCORE
+        or paper.lexical_score >= MIN_STRONG_PASSAGE_SURFACE_SCORE
+    ):
+        return 2
+    if paper.passage_alignment_score >= MIN_DIRECT_PASSAGE_ALIGNMENT:
+        return 1
+    return 0
 
 
 def citation_context_candidate_ids(
@@ -384,17 +477,76 @@ def citation_context_candidate_ids(
     ]
 
 
+def _limit_prioritized_candidate_ids(
+    *,
+    prioritized_ids: Sequence[int],
+    limit: int,
+) -> list[int]:
+    deduped: list[int] = []
+    seen: set[int] = set()
+    for corpus_id in prioritized_ids:
+        if corpus_id in seen:
+            continue
+        seen.add(corpus_id)
+        deduped.append(corpus_id)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
 def entity_relation_candidate_ids(
     *,
     ranked_papers: Sequence[PaperEvidenceHit],
     retrieval_profile: QueryRetrievalProfile,
     k: int,
     rerank_topn: int,
+    query_text: str | None = None,
+    lexical_hits: Sequence[PaperEvidenceHit] = (),
     selected_corpus_id: int | None = None,
+    selected_direct_anchor: bool = False,
 ) -> list[int]:
     """Bound expensive entity/relation enrichment to the best-ranked candidates."""
 
     ordered_ids = [hit.corpus_id for hit in ranked_papers]
+    direct_ids = [
+        hit.corpus_id
+        for hit in ranked_papers
+        if has_direct_retrieval_support(
+            paper=hit,
+            retrieval_profile=retrieval_profile,
+        )
+    ]
+    title_anchor_ids = (
+        title_anchor_candidate_ids(
+            query_text=query_text,
+            lexical_hits=lexical_hits,
+        )
+        if query_text
+        else []
+    )
+    prioritized: list[int] = []
+    if selected_corpus_id is not None and selected_corpus_id in ordered_ids:
+        prioritized.append(selected_corpus_id)
+    prioritized.extend(title_anchor_ids)
+    prioritized.extend(direct_ids)
+    prioritized.extend(ordered_ids)
+
+    if selected_direct_anchor:
+        return _limit_prioritized_candidate_ids(
+            prioritized_ids=prioritized,
+            limit=min(len(ordered_ids), TITLE_ENRICHMENT_SHORTLIST_LIMIT),
+        )
+    if title_anchor_ids and retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
+        return _limit_prioritized_candidate_ids(
+            prioritized_ids=prioritized,
+            limit=min(
+                len(ordered_ids),
+                len(title_anchor_ids)
+                if len(title_anchor_ids) > 1
+                else TITLE_ENRICHMENT_SHORTLIST_LIMIT,
+            ),
+        )
+
     if retrieval_profile not in (
         QueryRetrievalProfile.PASSAGE_LOOKUP,
         QueryRetrievalProfile.QUESTION_LOOKUP,
@@ -408,28 +560,7 @@ def entity_relation_candidate_ids(
             max(MIN_PASSAGE_ENRICHMENT_CANDIDATES, k * PASSAGE_ENRICHMENT_K_MULTIPLIER),
         ),
     )
-    direct_ids = [
-        hit.corpus_id
-        for hit in ranked_papers
-        if has_direct_retrieval_support(
-            paper=hit,
-            retrieval_profile=retrieval_profile,
-        )
-    ]
-
-    prioritized: list[int] = []
-    if selected_corpus_id is not None and selected_corpus_id in ordered_ids:
-        prioritized.append(selected_corpus_id)
-    prioritized.extend(direct_ids)
-    prioritized.extend(ordered_ids)
-
-    deduped: list[int] = []
-    seen: set[int] = set()
-    for corpus_id in prioritized:
-        if corpus_id in seen:
-            continue
-        seen.add(corpus_id)
-        deduped.append(corpus_id)
-        if len(deduped) >= shortlist_limit:
-            break
-    return deduped
+    return _limit_prioritized_candidate_ids(
+        prioritized_ids=prioritized,
+        limit=shortlist_limit,
+    )

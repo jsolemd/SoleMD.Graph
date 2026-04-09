@@ -70,4 +70,20 @@ export function buildScopedLayerPredicate(
   return 'TRUE'
 }
 
+export function escapeSqlLiteral(value: string): string {
+  return value.replaceAll("'", "''")
+}
+
+export function getSafeScopedContext(args: {
+  layer: MapLayer
+  scope: GraphInfoScope
+  currentPointScopeSql: string | null
+}) {
+  const { layer, scope, currentPointScopeSql } = args
+  return {
+    tableName: getLayerTableName(layer),
+    scopedPredicate: buildScopedLayerPredicate(layer, scope, currentPointScopeSql),
+  }
+}
+
 export { getColumnMetaForLayer }

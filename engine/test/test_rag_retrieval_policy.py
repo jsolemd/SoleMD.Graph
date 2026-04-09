@@ -7,13 +7,16 @@ from app.rag.retrieval_policy import (
     citation_context_candidate_ids,
     entity_relation_candidate_ids,
     has_direct_retrieval_support,
+    has_precise_title_resolution,
     has_selected_direct_anchor,
     has_strong_lexical_title_anchor,
     has_weak_passage_anchor,
+    passage_direct_support_tier,
     should_fetch_semantic_neighbors,
     should_run_biomedical_reranker,
     should_run_dense_query,
     should_run_paper_lexical_fallback,
+    should_run_seeded_channel_search,
     should_skip_runtime_entity_enrichment,
 )
 from app.rag.search_plan import build_search_plan
@@ -28,6 +31,8 @@ def _paper_hit(
     chunk_lexical_score: float = 0.0,
     passage_alignment_score: float = 0.0,
     selected_context_score: float = 0.0,
+    entity_score: float = 0.0,
+    relation_score: float = 0.0,
 ) -> PaperEvidenceHit:
     return PaperEvidenceHit(
         corpus_id=corpus_id,
@@ -47,6 +52,8 @@ def _paper_hit(
         chunk_lexical_score=chunk_lexical_score,
         passage_alignment_score=passage_alignment_score,
         selected_context_score=selected_context_score,
+        entity_score=entity_score,
+        relation_score=relation_score,
     )
 
 
@@ -109,19 +116,13 @@ def test_has_strong_lexical_title_anchor_accepts_long_title_prefix():
 
 
 def test_should_run_dense_query_runs_for_title_lookup_without_selected_anchor():
-    """Dense lane is no longer gated behind lexical title anchors.
-
-    The earlier TITLE_LOOKUP-specific early return over-suppressed dense
-    recall on paraphrased or near-title queries. The only remaining
-    early-skip is the selected-direct-anchor + precise-grounding gate.
-    """
+    """Dense lane stays available until a precise title anchor actually lands."""
     query = _query(
         "Selected paper title.",
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
     )
-    search_plan = build_search_plan(query)
 
-    assert should_run_dense_query(query=query, search_plan=search_plan)
+    assert should_run_dense_query(query=query)
 
 
 def test_should_run_dense_query_runs_for_strong_title_prefix_without_selected_anchor():
@@ -134,9 +135,76 @@ def test_should_run_dense_query_runs_for_strong_title_prefix_without_selected_an
         ),
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
     )
-    search_plan = build_search_plan(query)
 
-    assert should_run_dense_query(query=query, search_plan=search_plan)
+    assert should_run_dense_query(query=query)
+
+
+def test_has_precise_title_resolution_accepts_strong_lexical_anchor():
+    query = _query(
+        "Selected paper title.",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert has_precise_title_resolution(
+        query_text=query.query,
+        retrieval_profile=query.retrieval_profile,
+        lexical_hits=[_paper_hit(11, title="Selected paper title")],
+    )
+
+
+def test_has_precise_title_resolution_rejects_duplicate_strong_title_anchors():
+    query = _query(
+        "Selected paper title.",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not has_precise_title_resolution(
+        query_text=query.query,
+        retrieval_profile=query.retrieval_profile,
+        lexical_hits=[
+            _paper_hit(11, title="Selected paper title"),
+            _paper_hit(22, title="Selected paper title"),
+        ],
+    )
+
+
+def test_should_run_seeded_channel_search_skips_precise_title_resolution():
+    query = _query(
+        "Selected paper title.",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_run_seeded_channel_search(
+        query=query,
+        lexical_hits=[_paper_hit(11, title="Selected paper title")],
+    )
+
+
+def test_should_run_seeded_channel_search_skips_duplicate_title_anchor_set():
+    query = _query(
+        "Selected paper title.",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_run_seeded_channel_search(
+        query=query,
+        lexical_hits=[
+            _paper_hit(11, title="Selected paper title"),
+            _paper_hit(22, title="Selected paper title"),
+        ],
+    )
+
+
+def test_should_run_dense_query_skips_strong_title_anchor_even_without_selected_context():
+    query = _query(
+        "Selected paper title.",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_run_dense_query(
+        query=query,
+        lexical_hits=[_paper_hit(11, title="Selected paper title")],
+    )
 
 
 def test_should_run_dense_query_skips_selected_direct_anchor_when_precision_is_preferred():
@@ -145,11 +213,9 @@ def test_should_run_dense_query_skips_selected_direct_anchor_when_precision_is_p
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
         selected_node_id="paper:11",
     )
-    search_plan = build_search_plan(query)
 
     assert not should_run_dense_query(
         query=query,
-        search_plan=search_plan,
         selected_direct_anchor=True,
     )
 
@@ -348,6 +414,25 @@ def test_should_run_biomedical_reranker_runs_for_general_profile_queries():
     )
 
 
+def test_should_run_biomedical_reranker_skips_title_lookup_queries():
+    query = _query(
+        "COMT Val158Met polymorphism and psychosis risk",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        clinical_intent=ClinicalQueryIntent.PROGNOSIS,
+    )
+
+    assert not should_run_biomedical_reranker(
+        query=query,
+        selected_corpus_id=None,
+        ranked_papers=[
+            _paper_hit(11, lexical_score=0.8),
+            _paper_hit(22, lexical_score=0.6),
+            _paper_hit(33, lexical_score=0.4),
+        ],
+        enabled=True,
+    )
+
+
 def test_should_run_biomedical_reranker_skips_selected_or_non_global_queries():
     # Selected-paper queries stay out of the reranker — they're already
     # anchored and the reranker would waste latency reordering a pinned result.
@@ -420,9 +505,57 @@ def test_entity_relation_candidate_ids_keeps_full_rank_order_for_non_passage_que
     ) == [11, 22, 33]
 
 
+def test_entity_relation_candidate_ids_limits_precise_title_resolution_to_top_candidate():
+    ranked = [
+        _paper_hit(11, title="Selected paper title", lexical_score=0.95),
+        _paper_hit(22, title="Selected paper title supplementary analysis", lexical_score=0.7),
+        _paper_hit(33),
+    ]
+
+    assert entity_relation_candidate_ids(
+        ranked_papers=ranked,
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        k=3,
+        rerank_topn=6,
+        query_text="Selected paper title",
+        lexical_hits=[ranked[0]],
+    ) == [11]
+
+
+def test_entity_relation_candidate_ids_limits_duplicate_title_anchors_to_anchor_set():
+    ranked = [
+        _paper_hit(11, title="Selected paper title", lexical_score=0.95),
+        _paper_hit(22, title="Selected paper title", lexical_score=0.95),
+        _paper_hit(33, lexical_score=0.4),
+    ]
+
+    assert entity_relation_candidate_ids(
+        ranked_papers=ranked,
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        k=3,
+        rerank_topn=6,
+        query_text="Selected paper title",
+        lexical_hits=[ranked[0], ranked[1]],
+    ) == [11, 22]
+
+
 def test_has_direct_retrieval_support_uses_selected_context_for_title_queries():
     assert has_direct_retrieval_support(
         paper=_paper_hit(11, selected_context_score=1.0),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+
+def test_has_direct_retrieval_support_uses_entity_support_for_title_queries():
+    assert has_direct_retrieval_support(
+        paper=_paper_hit(11, entity_score=0.8),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+
+def test_has_direct_retrieval_support_uses_relation_support_for_title_queries():
+    assert has_direct_retrieval_support(
+        paper=_paper_hit(11, relation_score=0.7),
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
     )
 
@@ -432,6 +565,30 @@ def test_has_direct_retrieval_support_uses_passage_alignment_for_passage_queries
         paper=_paper_hit(11, passage_alignment_score=0.7),
         retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
     )
+
+
+def test_passage_direct_support_tier_prefers_chunk_or_lexical_hits():
+    assert passage_direct_support_tier(
+        _paper_hit(11, chunk_lexical_score=0.42, passage_alignment_score=1.0)
+    ) == 2
+    assert passage_direct_support_tier(
+        _paper_hit(22, lexical_score=0.2, passage_alignment_score=0.8)
+    ) == 2
+
+
+def test_passage_direct_support_tier_uses_alignment_only_as_weaker_direct_support():
+    assert passage_direct_support_tier(
+        _paper_hit(11, passage_alignment_score=0.7)
+    ) == 1
+    assert passage_direct_support_tier(
+        _paper_hit(22, passage_alignment_score=0.3)
+    ) == 0
+
+
+def test_passage_direct_support_tier_ignores_trace_level_chunk_noise():
+    assert passage_direct_support_tier(
+        _paper_hit(11, chunk_lexical_score=0.002)
+    ) == 0
 
 
 def test_has_selected_direct_anchor_matches_selected_hit_with_direct_support():

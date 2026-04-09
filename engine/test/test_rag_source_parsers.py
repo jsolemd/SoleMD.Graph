@@ -13,7 +13,104 @@ from app.rag_ingest.source_parsers import (
     parse_biocxml_document,
     parse_s2_paper_abstract,
     parse_s2orc_row,
+    split_biocxml_collection,
 )
+
+
+def test_split_biocxml_collection_expands_each_document_into_a_standalone_payload():
+    payloads = split_biocxml_collection(
+        """
+        <collection>
+          <source>PubTator</source>
+          <date>2026-03-21</date>
+          <key>batch-1</key>
+          <document>
+            <id>100</id>
+            <passage><text>First.</text></passage>
+          </document>
+          <document>
+            <id>200</id>
+            <passage><text>Second.</text></passage>
+          </document>
+        </collection>
+        """
+    )
+
+    assert [payload.document_id for payload in payloads] == ["100", "200"]
+    assert all(payload.xml_text.startswith("<collection>") for payload in payloads)
+    assert "<id>100</id>" in payloads[0].xml_text
+    assert "<id>200</id>" in payloads[1].xml_text
+    assert "<source>PubTator</source>" in payloads[0].xml_text
+    assert "<date>2026-03-21</date>" in payloads[1].xml_text
+
+
+def test_split_biocxml_collection_accepts_single_document_payloads():
+    payloads = split_biocxml_collection("<document><id>300</id></document>")
+
+    assert len(payloads) == 1
+    assert payloads[0].document_id == "300"
+    assert payloads[0].xml_text == "<document><id>300</id></document>"
+
+
+def test_split_biocxml_collection_preserves_passage_text_per_document():
+    payloads = split_biocxml_collection(
+        """
+        <collection>
+          <source>PubTator</source>
+          <date>2026-04-04</date>
+          <key>biocxml</key>
+          <document>
+            <id>12345</id>
+            <passage>
+              <infon key="type">title</infon>
+              <offset>0</offset>
+              <text>Sample Title One</text>
+            </passage>
+            <passage>
+              <infon key="type">abstract</infon>
+              <offset>17</offset>
+              <text>Abstract text for paper one.</text>
+            </passage>
+          </document>
+          <document>
+            <id>67890</id>
+            <passage>
+              <infon key="type">title</infon>
+              <offset>0</offset>
+              <text>Sample Title Two</text>
+            </passage>
+          </document>
+        </collection>
+        """
+    )
+
+    assert [payload.document_id for payload in payloads] == ["12345", "67890"]
+    assert "Sample Title One" in payloads[0].xml_text
+    assert "Abstract text for paper one." in payloads[0].xml_text
+    assert "Sample Title Two" in payloads[1].xml_text
+    assert "Abstract text for paper one." not in payloads[1].xml_text
+
+
+def test_split_biocxml_collection_returns_empty_list_for_collection_without_documents():
+    payloads = split_biocxml_collection(
+        "<collection><source>PubTator</source></collection>"
+    )
+
+    assert payloads == []
+
+
+def test_split_biocxml_collection_skips_documents_with_empty_id():
+    payloads = split_biocxml_collection(
+        """
+        <collection>
+          <source>PubTator</source>
+          <document><id></id><passage><text>No ID</text></passage></document>
+          <document><id>11111</id><passage><text>Has ID</text></passage></document>
+        </collection>
+        """
+    )
+
+    assert [payload.document_id for payload in payloads] == ["11111"]
 
 
 def test_parse_s2orc_row_emits_reference_and_citation_bridge_records():

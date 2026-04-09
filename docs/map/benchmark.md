@@ -6,30 +6,30 @@ RAG retrieval channel, ranking signal, and grounding dimension.
 ## Operational Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    BENCHMARK LIFECYCLE                               │
-│                                                                     │
-│  ┌──────────────┐    ┌──────────────┐    ┌────────────────────┐    │
-│  │  Seed Lists   │───▶│  Prepare     │───▶│  Langfuse Datasets │    │
-│  │  (curated     │    │  Script      │    │  (source of truth) │    │
-│  │   queries)    │    │              │    │  9 v2 suites       │    │
-│  └──────────────┘    └──────────────┘    └────────┬───────────┘    │
-│                                                    │                │
-│                                                    ▼                │
-│  ┌──────────────┐    ┌──────────────┐    ┌────────────────────┐    │
-│  │  Analysis     │◀───│  Experiment  │◀───│  Benchmark Runner  │    │
-│  │  (Langfuse UI │    │  Runner      │    │  rag_benchmark.py  │    │
-│  │   + CLI)      │    │  (per-item   │    │  --all-benchmarks  │    │
-│  │              │    │   scores)    │    │                    │    │
-│  └──────────────┘    └──────────────┘    └────────────────────┘    │
-│                                                                     │
-│  Each item produces:                                                │
-│    • 8 retrieval metrics (hit@1, MRR, grounded_answer_rate, ...)   │
-│    • 16 signal decomposition scores (per ranking channel)           │
-│    • 8 channel contribution scores (per ranking channel)             │
-│    • 4 categorical dimensions (route, profile, depth, source)       │
-│    • Langfuse trace with 5 RAG observations (1 generation + 4 spans)│
-└─────────────────────────────────────────────────────────────────────┘
++---------------------------------------------------------------------+
+|                    BENCHMARK LIFECYCLE                               |
+|                                                                     |
+|  +--------------+    +--------------+    +--------------------+    |
+|  |  Seed Lists   |--->|  Prepare     |--->|  Langfuse Datasets |    |
+|  |  (curated     |    |  Script      |    |  (source of truth) |    |
+|  |   queries)    |    |              |    |  9 v2 suites       |    |
+|  +--------------+    +--------------+    +--------+-----------+    |
+|                                                    |                |
+|                                                    v                |
+|  +--------------+    +--------------+    +--------------------+    |
+|  |  Analysis     |<---|  Experiment  |<---|  Benchmark Runner  |    |
+|  |  (Langfuse UI |    |  Runner      |    |  rag_benchmark.py  |    |
+|  |   + CLI)      |    |  (per-item   |    |  --all-benchmarks  |    |
+|  |              |    |   scores)    |    |                    |    |
+|  +--------------+    +--------------+    +--------------------+    |
+|                                                                     |
+|  Each item produces:                                                |
+|    * 8 retrieval metrics (hit@1, MRR, grounded_answer_rate, ...)   |
+|    * 16 signal decomposition scores (per ranking channel)           |
+|    * 8 channel contribution scores (per ranking channel)             |
+|    * 4 categorical dimensions (route, profile, depth, source)       |
+|    * Langfuse trace with 5 RAG observations (1 generation + 4 spans)|
++---------------------------------------------------------------------+
 ```
 
 ## Commands
@@ -60,7 +60,7 @@ uv run python scripts/rag_benchmark.py --all-benchmarks \
 #   --max-concurrency <n>   Parallel tasks per dataset (default 8)
 #   --graph-release-id <s>  Graph release to query (default "current")
 
-# Langfuse CLI — inspect datasets and results
+# Langfuse CLI -- inspect datasets and results
 langfuse --env .env.local api datasets list
 langfuse --env .env.local api dataset-items list --dataset-name benchmark-clinical_evidence_v2
 langfuse --env .env.local api traces list --limit 10
@@ -85,18 +85,18 @@ langfuse --env .env.local api traces list --limit 10
 
 ```
                          lexical  dense  chunk  entity  relation  citation  title
-                         ───────  ─────  ─────  ──────  ────────  ────────  ─────
-title_retrieval_v2       ██       ░      ░      ░       ░         ░         ██
-clinical_evidence_v2     ██       ██     ░      ░       ░         ██        ░
-passage_retrieval_v2     ██       ██     ██     ░       ░         ██        ░
-adversarial_routing_v2   ██       ░      ░      ░       ░         ██        ░
-keyword_search_v2        ██       ░      ░      ░       ░         ░         ░
-abstract_stratum_v2      ██       ██     ░      ░       ░         ░         ░
-question_evidence_v2     ██       ██     ░      ░       ░         ██        ░
-semantic_recall_v2       ░        ██     ░      ░       ░         ░         ░
-entity_relation_v2       ██       ░      ░      ██      ██        ░         ░
+                         -------  -----  -----  ------  --------  --------  -----
+title_retrieval_v2       ##       .      .      .       .         .         ##
+clinical_evidence_v2     ##       ##     .      .       .         ##        .
+passage_retrieval_v2     ##       ##     ##     .       .         ##        .
+adversarial_routing_v2   ##       .      .      .       .         ##        .
+keyword_search_v2        ##       .      .      .       .         .         .
+abstract_stratum_v2      ##       ##     .      .       .         .         .
+question_evidence_v2     ##       ##     .      .       .         ##        .
+semantic_recall_v2       .        ##     .      .       .         .         .
+entity_relation_v2       ##       .      .      ##      ##        .         .
 
-██ = primary test target   ░ = implicit/secondary
+## = primary test target   . = implicit/secondary
 ```
 
 ## Per-Item Scores (Langfuse Evaluations)
@@ -160,7 +160,7 @@ entity_relation_v2       ██       ░      ░      ██      ██      
 
 > **Not a score:** `route_signature` is an arbitrary high-cardinality string
 > (the full routing decision fingerprint). It does not fit a categorical config
-> and is captured in observation metadata at `session_flags.route_signature` —
+> and is captured in observation metadata at `session_flags.route_signature` --
 > read it directly from the trace when diagnosing routing decisions.
 
 ## Run-Level Aggregates
@@ -179,41 +179,41 @@ entity_relation_v2       ██       ░      ░      ██      ██      
 
 ```
 Langfuse Project
-├── Datasets (9 v2 benchmark suites)
-│   ├── benchmark-title_retrieval_v2         (12 items)
-│   ├── benchmark-clinical_evidence_v2       (51 items)
-│   ├── benchmark-passage_retrieval_v2       (15 items)
-│   ├── benchmark-adversarial_routing_v2     (12 items)
-│   ├── benchmark-keyword_search_v2          (12 items)
-│   ├── benchmark-abstract_stratum_v2        (12 items)
-│   ├── benchmark-question_evidence_v2       (12 items)
-│   ├── benchmark-semantic_recall_v2         (12 items)
-│   └── benchmark-entity_relation_v2         (12 items)
-│
-├── Dataset Runs (one per benchmark execution)
-│   └── post-optimization-2026-04-05
-│       ├── Per-item evaluations (40+ scores each)
-│       ├── Run-level aggregates (avg_hit@1, p50, etc.)
-│       └── Linked traces (full RAG span tree)
-│
-├── Traces (per benchmark item)
-│   └── experiment-item-run
-│       ├── rag.search (GENERATION)
-│       │   └── rag.execute (SPAN)
-│       │       ├── rag.retrieve (SPAN)
-│       │       └── rag.finalize (SPAN)
-│       │           └── rag.groundedAnswer (SPAN)
-│       └── Evaluations attached to trace
-│
-├── Score Configs (28 registered dimensions)
-│   ├── 9 retrieval metrics (hit_at_1, hit_at_k, mrr, routing_match, duration_ms, evidence_bundle_count, target_in_*)
-│   ├── 2 answer quality (grounded_answer_present, faithfulness)
-│   ├── 4 categorical (retrieval_profile, warehouse_depth, source_availability, source_system)
-│   ├── 6 ingest quality (section/block/sentence/entity counts, has_abstract, has_title)
-│   └── 7 graph observability (point_count, cluster_count, bundle_bytes, build_duration, cluster_labeled/error/total)
-│
-└── Annotation Queue: rag-failure-review
-    └── hit@1=0 traces for domain expert review
++-- Datasets (9 v2 benchmark suites)
+|   +-- benchmark-title_retrieval_v2         (12 items)
+|   +-- benchmark-clinical_evidence_v2       (51 items)
+|   +-- benchmark-passage_retrieval_v2       (15 items)
+|   +-- benchmark-adversarial_routing_v2     (12 items)
+|   +-- benchmark-keyword_search_v2          (12 items)
+|   +-- benchmark-abstract_stratum_v2        (12 items)
+|   +-- benchmark-question_evidence_v2       (12 items)
+|   +-- benchmark-semantic_recall_v2         (12 items)
+|   +-- benchmark-entity_relation_v2         (12 items)
+|
++-- Dataset Runs (one per benchmark execution)
+|   +-- post-optimization-2026-04-05
+|       +-- Per-item evaluations (40+ scores each)
+|       +-- Run-level aggregates (avg_hit@1, p50, etc.)
+|       +-- Linked traces (full RAG span tree)
+|
++-- Traces (per benchmark item)
+|   +-- experiment-item-run
+|       +-- rag.search (GENERATION)
+|       |   +-- rag.execute (SPAN)
+|       |       +-- rag.retrieve (SPAN)
+|       |       +-- rag.finalize (SPAN)
+|       |           +-- rag.groundedAnswer (SPAN)
+|       +-- Evaluations attached to trace
+|
++-- Score Configs (28 registered dimensions)
+|   +-- 9 retrieval metrics (hit_at_1, hit_at_k, mrr, routing_match, duration_ms, evidence_bundle_count, target_in_*)
+|   +-- 2 answer quality (grounded_answer_present, faithfulness)
+|   +-- 4 categorical (retrieval_profile, warehouse_depth, source_availability, source_system)
+|   +-- 6 ingest quality (section/block/sentence/entity counts, has_abstract, has_title)
+|   +-- 7 graph observability (point_count, cluster_count, bundle_bytes, build_duration, cluster_labeled/error/total)
+|
++-- Annotation Queue: rag-failure-review
+    +-- hit@1=0 traces for domain expert review
 ```
 
 ## Baseline Results (post-cte-fix-2026-04-07)
@@ -230,18 +230,18 @@ introduced by migration 044 and masked every quality signal.
 | passage_retrieval_v2 | 20.0% | 46.7% | 0.289 | 0.455 | 650 | 2118 |
 | adversarial_routing_v2 | 16.7% | 33.3% | 0.211 | 0.250 | 888 | 1856 |
 | keyword_search_v2 | 0.0% | 16.7% | 0.042 | 0.000 | 429 | 956 |
-| abstract_stratum_v2 | 0.0% | 8.3% | 0.042 | — | 1032 | 1825 |
+| abstract_stratum_v2 | 0.0% | 8.3% | 0.042 | -- | 1032 | 1825 |
 | question_evidence_v2 | 20.0% | 26.7% | 0.213 | 1.000 | 536 | 1198 |
 | semantic_recall_v2 | 0.0% | 0.0% | 0.000 | 0.000 | 347 | 964 |
 | entity_relation_v2 | 7.7% | 7.7% | 0.077 | 0.000 | 1341 | 1872 |
 
 Latency impact of the fix (vs. the 2026-04-05 pre-fix baselines):
-clinical_evidence 31,030 → 514 ms (60×), passage_retrieval 176,707 →
-650 ms (272×), adversarial_routing 96,419 → 888 ms (108×),
-abstract_stratum 65,155 → 1,032 ms (63×), question_evidence 24,039 →
-536 ms (45×). title_retrieval p50 went *up* from 677 → 1,481 ms because
+clinical_evidence 31,030 -> 514 ms (60x), passage_retrieval 176,707 ->
+650 ms (272x), adversarial_routing 96,419 -> 888 ms (108x),
+abstract_stratum 65,155 -> 1,032 ms (63x), question_evidence 24,039 ->
+536 ms (45x). title_retrieval p50 went *up* from 677 -> 1,481 ms because
 Phase 3 flipped the biomedical cross-encoder on for GENERAL profile by
-default — accepted tradeoff for the expected score lift on passage
+default -- accepted tradeoff for the expected score lift on passage
 queries.
 
 **Quality gaps the new baseline surfaces** (previously masked by the
@@ -249,10 +249,10 @@ regression, now actionable):
 
 - `keyword_search_v2`, `semantic_recall_v2`, `entity_relation_v2` all
   sit at or near zero hit@1. Entity and relation seed channels are
-  silent on the last two — entity/relation enrichment needs investigation.
+  silent on the last two -- entity/relation enrichment needs investigation.
 - `routing_match` is zero on three suites even though their cases carry
   `expected_retrieval_profile`. Decide per-suite whether the router or
-  the seeds are wrong — the score is there to make this data-driven.
+  the seeds are wrong -- the score is there to make this data-driven.
   `adversarial_routing_v2` at 0.250 is expected (it tests edge cases).
 - `title_retrieval_v2` routing_match 0.750 means 3/12 title cases
   routed to a non-TITLE profile. Check traces to confirm these are
@@ -276,18 +276,18 @@ regression, now actionable):
 The benchmark system is designed for agent-driven quality improvement:
 
 ```
-  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-  │  Run          │     │  Diagnose     │     │  Optimize     │
-  │  Benchmarks   │────▶│  Signals      │────▶│  Code/Config  │
-  │               │     │               │     │               │
-  │  9 suites     │     │  Which        │     │  Ranking       │
-  │  150 items    │     │  channels     │     │  weights,      │
-  │  Langfuse     │     │  fail?        │     │  thresholds,   │
-  │  traces       │     │  fused_score  │     │  entity rules, │
-  │               │     │  gap?         │     │  embeddings    │
-  └──────────────┘     └──────────────┘     └──────┬───────┘
-         ▲                                          │
-         └──────────────────────────────────────────┘
+  +--------------+     +--------------+     +--------------+
+  |  Run          |     |  Diagnose     |     |  Optimize     |
+  |  Benchmarks   |---->|  Signals      |---->|  Code/Config  |
+  |               |     |               |     |               |
+  |  9 suites     |     |  Which        |     |  Ranking       |
+  |  150 items    |     |  channels     |     |  weights,      |
+  |  Langfuse     |     |  fail?        |     |  thresholds,   |
+  |  traces       |     |  fused_score  |     |  entity rules, |
+  |               |     |  gap?         |     |  embeddings    |
+  +--------------+     +--------------+     +------+-------+
+         ^                                          |
+         +------------------------------------------+
                     re-run to verify
 ```
 
@@ -298,7 +298,7 @@ The benchmark system is designed for agent-driven quality improvement:
 5. **Re-run** to verify improvement; quality gates catch regressions
 
 The signal decomposition (16 scores per item) tells the agent exactly which
-retrieval component to fix — no guesswork needed.
+retrieval component to fix -- no guesswork needed.
 
 ## Retrieval Architecture Recommendations
 
@@ -306,72 +306,76 @@ Five evidence-based improvements organized by pipeline layer. Each operates
 at a distinct stage to ensure non-overlapping, independent contributions.
 
 ```
-Layer 1: COVERAGE   → Do all documents have retrieval surfaces?
-Layer 2: RECALL     → Are all independent channels active for target queries?
-Layer 3: FUSION     → Are channel scores combined fairly?
-Layer 4: RERANKING  → Is cross-encoder precision applied broadly?
+Layer 1: COVERAGE   -> Do all documents have retrieval surfaces?
+Layer 2: RECALL     -> Are all independent channels active for target queries?
+Layer 3: FUSION     -> Are channel scores combined fairly?
+Layer 4: RERANKING  -> Is cross-encoder precision applied broadly?
 ```
 
-### Rec 1 — COVERAGE: Abstract-only paper embeddings
+### Rec 1 -- COVERAGE: Abstract-only paper embeddings
 
 | Dimension | Detail |
 |-----------|--------|
-| **Suite** | `abstract_stratum_v2` — 0% hit@1, 8.3% hit@k |
+| **Suite** | `abstract_stratum_v2` -- 0% hit@1, 8.3% hit@k |
 | **Root cause** | `WHERE p.embedding IS NOT NULL` silently drops abstract-only papers from dense recall |
 | **RAG principle** | Partial embedding coverage is a well-known silent retrieval failure in pgvector systems. Documents without embeddings are invisible to dense retrieval regardless of model quality. |
 | **Action** | Ingest pipeline: populate SPECTER2 embeddings for abstract-only papers |
 | **Files** | `repository_vector_search.py:48-52` (filter), ingest pipeline (embedding generation) |
 
-### Rec 2 — RECALL (entity): Lower entity enrichment skip thresholds
+### Rec 2 -- RECALL (entity): Lower entity enrichment skip thresholds
 
 | Dimension | Detail |
 |-----------|--------|
-| **Suite** | `entity_relation_v2` — entity_score=0% across all items |
+| **Suite** | `entity_relation_v2` -- entity_score=0% across all items |
 | **Root cause** | `should_skip_runtime_entity_enrichment()` returns True when strong lexical anchors exist, skipping entity resolution entirely (`retrieval_policy.py:145-154`) |
 | **RAG principle** | Multi-lane retrieval channels must run independently, not gate on each other's results. Gating entity recall on lexical success destroys complementarity. (Bruch et al., ACM TOIS 2023; RAG-Fusion 2024) |
 | **Action** | Lower or remove the lexical-anchor gate so entity enrichment runs alongside lexical |
 | **Files** | `retrieval_policy.py:145-154`, `search_retrieval.py:380-389` |
-| **Independence** | Entity matching resolves structured biomedical CUIs — orthogonal to term overlap (lexical) and semantic similarity (dense) |
+| **Independence** | Entity matching resolves structured biomedical CUIs -- orthogonal to term overlap (lexical) and semantic similarity (dense) |
 
-### Rec 3 — RECALL (dense): Decouple dense from title-lookup gating
+### Rec 3 -- RECALL (dense): Decouple dense from title-lookup gating
 
 | Dimension | Detail |
 |-----------|--------|
-| **Suite** | `adversarial_routing_v2` — dense=0; lexical active (42%) |
+| **Suite** | `adversarial_routing_v2` -- dense=0; lexical active (42%) |
 | **Root cause** | Queries reclassified as TITLE_LOOKUP trigger `prefer_precise_grounding=True`, which gates dense via `should_run_dense_query()` (`retrieval_policy.py:168-169`) |
 | **RAG principle** | Dense and lexical are complementary, not redundant. No hybrid search literature supports gating dense off when lexical succeeds. (Bruch et al. 2023) |
 | **Action** | Allow dense + title retrieval simultaneously; decouple `prefer_precise_grounding` from dense gating |
 | **Files** | `retrieval_policy.py:157-176`, `search_plan.py:59` |
-| **Independence** | Dense handles semantic similarity — orthogonal to entity's structured concept resolution (Rec 2) |
+| **Independence** | Dense handles semantic similarity -- orthogonal to entity's structured concept resolution (Rec 2) |
 
-### Rec 4 — FUSION: Remove ad-hoc dense_score 0.1x penalty
+### Rec 4 -- FUSION: Remove ad-hoc dense_score 0.1x penalty
 
 | Dimension | Detail |
 |-----------|--------|
-| **Suite** | `keyword_search_v2` — 0% hit@1, 16.7% hit@k (found but not ranked) |
+| **Suite** | `keyword_search_v2` -- 0% hit@1, 16.7% hit@k (found but not ranked) |
 | **Root cause** | `dense_score *= 0.1` penalty for papers without direct passage support (`ranking.py:157-162`). This discards valid dense signals at the fusion layer. |
 | **RAG principle** | Standard RRF is parameter-free beyond k. Ad-hoc multiplicative penalties based on what other channels contributed corrupts rank-based invariance. Fusion weights should be query-independent or learned. (Elastic WRRF; Benham 2017) |
 | **Action** | Remove or reduce the 0.1x penalty; let fusion weights alone determine channel importance |
 | **Files** | `ranking.py:157-162`, `ranking_support.py:24-47`, `ranking_support.py:124-174` |
-| **Independence** | Operates at fusion layer — Recs 2-3 activate recall channels; this ensures their signals aren't discarded during ranking |
+| **Independence** | Operates at fusion layer -- Recs 2-3 activate recall channels; this ensures their signals aren't discarded during ranking |
 
-### Rec 5 — RERANKING: Broaden MedCPT cross-encoder activation
+### Rec 5 -- RERANKING: Broaden MedCPT cross-encoder activation
 
 | Dimension | Detail |
 |-----------|--------|
-| **Suite** | `semantic_recall_v2` — 0% hit@1, 0% hit@k |
+| **Suite** | `semantic_recall_v2` -- 0% hit@1, 0% hit@k |
 | **Root cause** | `should_run_biomedical_reranker()` gates MedCPT to PASSAGE/QUESTION profiles with non-GENERAL clinical_intent (`retrieval_policy.py:305-327`), restricting it to a fraction of queries |
-| **RAG principle** | BEIR benchmarks show cross-encoders achieve highest zero-shot nDCG@10 when applied universally. MedCPT (trained on 18M PubMed pairs) is a general-purpose biomedical reranker — no evidence supports restricting it by query profile. (Thakur et al., NeurIPS 2021; Rosa et al. 2022) |
+| **RAG principle** | BEIR benchmarks show cross-encoders achieve highest zero-shot nDCG@10 when applied universally. MedCPT (trained on 18M PubMed pairs) is a general-purpose biomedical reranker -- no evidence supports restricting it by query profile. (Thakur et al., NeurIPS 2021; Rosa et al. 2022) |
 | **Action** | Enable MedCPT for all profiles with >= 3 candidates by relaxing conditions in `should_run_biomedical_reranker()` |
 | **Files** | `retrieval_policy.py:305-327`, `biomedical_reranking.py:68-151` |
-| **Independence** | Post-recall precision layer — orthogonal to all recall channels and fusion; operates on the fused candidate set |
+| **Independence** | Post-recall precision layer -- orthogonal to all recall channels and fusion; operates on the fused candidate set |
 
 ### Priority and Independence Summary
 
 | # | Layer | Channel | Suite | Independence |
 |---|-------|---------|-------|-------------|
-| 1 | Coverage | Embeddings | abstract_stratum_v2 | Infrastructure — no channel logic overlap |
+| 1 | Coverage | Embeddings | abstract_stratum_v2 | Infrastructure -- no channel logic overlap |
 | 2 | Recall | Entity | entity_relation_v2 | Structured CUI resolution, not term/semantic |
 | 3 | Recall | Dense | adversarial_routing_v2 | Semantic similarity, not structured/term |
 | 4 | Fusion | RRF weights | keyword_search_v2 | Ranking layer, not recall layer |
 | 5 | Reranking | Cross-encoder | semantic_recall_v2 | Post-fusion precision, not recall or fusion |
+
+---
+
+_Last verified against code: 2026-04-08_

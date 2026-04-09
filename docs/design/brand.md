@@ -5,7 +5,7 @@
 
 ## Personality
 
-Premium quality that never shouts. The word "elegant" is intentionally woven throughout the codebase and copy. The graph feels like a **glowing landscape** — inviting, ambient, alive with knowledge. Not a clinical data dashboard. Not enterprise SaaS.
+Premium quality that never shouts. The word "elegant" is intentionally woven throughout the codebase and copy. The graph feels like a **glowing landscape** -- inviting, ambient, alive with knowledge. Not a clinical data dashboard. Not enterprise SaaS.
 
 **Anti-references**: Dense medical dashboards, clinical-grey institutional sites, aggressive dark themes.
 
@@ -15,7 +15,7 @@ Premium quality that never shouts. The word "elegant" is intentionally woven thr
 
 1. **White space is a feature, not waste.** Generous spacing creates the calm, premium feel. Never compress layouts to "fit more in."
 2. **Color communicates meaning.** Each section has a dedicated color that tints the UI. Color is semantic, not decorative.
-3. **Motion earns attention.** Animations are soft, purposeful, scroll/interaction-triggered. Float, fade, lift — never bounce, shake, flash.
+3. **Motion earns attention.** Animations are soft, purposeful, scroll/interaction-triggered. Float, fade, lift -- never bounce, shake, flash.
 4. **Depth through layering.** Matte floating cards with deep multi-layer shadows create distinct planes. Cards hover above the canvas.
 5. **Accessibility is non-negotiable.** WCAG AA (4.5:1 text, 3:1 large text). Keyboard-navigable. Respect `prefers-reduced-motion`.
 6. **Zero chrome.** No sidebar, no nav bar, no hamburger menu. The graph IS the page. The prompt box is the only control.
@@ -24,14 +24,14 @@ Premium quality that never shouts. The word "elegant" is intentionally woven thr
 
 ## Aesthetic Principles
 
-- **Matte floating cards** — solid opaque surfaces, NOT glass/frosted/backdrop-blur
+- **Matte floating cards** -- solid opaque surfaces, NOT glass/frosted/backdrop-blur
 - **Deep multi-layer shadows** create the "hovering" depth feel
-- **Generous rounding** — `rounded-3xl` on prompt box, `rounded-2xl` on controls, `rounded-xl` on widgets
-- **Spring physics everywhere** — shared presets in `lib/motion.ts` (`snappy`, `smooth`, `responsive`, `bouncy`, `settle`)
-- **Mode-colored submit** — pastel bg + dark `#1a1b1e` icon
-- **Gradient dividers** — brand-accent gradient separators between grouped actions
-- **Muted icons at rest** — `--graph-prompt-inactive`, colored accent when active at 15% bg tint
-- **Minimalism preferred** — no decorative chrome, no labels where icons suffice
+- **Generous rounding** -- `rounded-3xl` on prompt box, `rounded-2xl` on controls, `rounded-xl` on widgets
+- **Spring physics everywhere** -- shared presets in `lib/motion.ts` (`snappy`, `smooth`, `responsive`, `bouncy`, `settle`)
+- **Mode-colored submit** -- pastel bg + dark `#1a1b1e` icon
+- **Gradient dividers** -- brand-accent gradient separators between grouped actions
+- **Muted icons at rest** -- `--graph-prompt-inactive`, colored accent when active at 15% bg tint
+- **Minimalism preferred** -- no decorative chrome, no labels where icons suffice
 
 ---
 
@@ -39,7 +39,7 @@ Premium quality that never shouts. The word "elegant" is intentionally woven thr
 
 | Role | Font | Weight Range |
 |------|------|-------------|
-| All text | System font stack | 300–700 |
+| All text | System font stack | 300-700 |
 | Code | JetBrains Mono | 400 |
 
 ```css
@@ -80,7 +80,7 @@ Headings: `font-weight: 500`, `line-height: 1.25`. Body: `font-weight: 400`, `li
 | `--brand-accent` | `#747caa` (muted indigo) | `#a8c5e9` (soft blue) |
 | `--brand-accent-alt` | `#a8c5e9` (soft blue) | `#89a3bf` (muted blue) |
 
-Note: brand-accent **swaps** between light and dark — indigo in light, blue in dark.
+Note: brand-accent **swaps** between light and dark -- indigo in light, blue in dark.
 
 ### Semantic Foundations
 
@@ -119,11 +119,11 @@ Light mode uses subtle rgba shadows. Dark mode uses deep black shadows.
 ## Motion
 
 - **Framework**: Framer Motion for layout animations, spring physics for panels
-- **Spring presets**: `lib/motion.ts` — `snappy` (panels), `smooth` (mode shifts), `settle` (icons), `bouncy` (micro-interactions), `responsive` (drag)
+- **Spring presets**: `lib/motion.ts` -- `snappy` (panels), `smooth` (mode shifts), `settle` (icons), `bouncy` (micro-interactions), `responsive` (drag)
 - **Mode transitions**: `layout` animations via framer-motion. Nothing snaps or jumps.
-- **Graph transitions**: The canvas component never unmounts — it transforms fluidly
+- **Graph transitions**: The canvas component never unmounts -- it transforms fluidly
 - **Scroll triggers**: Soft reveal on scroll, not auto-playing
-- **Reduced motion**: Respect `prefers-reduced-motion` — skip animations, show content immediately
+- **Reduced motion**: Respect `prefers-reduced-motion` -- skip animations, show content immediately
 
 ---
 
@@ -136,17 +136,17 @@ Every visual property on the graph encodes information. Nothing is decorative.
 | Size | Importance (citations, mentions) | Evidence weight |
 | Color | Type + category | Relationship type |
 | Opacity | Relevance to context | Confidence |
-| Glow | Semantic similarity | — |
-| Position | Embedding proximity | — |
-| Style | — | Scientific certainty |
+| Glow | Semantic similarity | -- |
+| Position | Embedding proximity | -- |
+| Style | -- | Scientific certainty |
 
 ### Edge Semantics
 
 ```
-━━━▶    affirmed (solid arrow = direction)
-· · ·▶  speculative ("may", "could")
-━╳━┤    negated (explicitly denied, flat bar = stop)
-═⚡═     conflict (papers disagree)
+--->    affirmed (solid arrow = direction)
+. . .>  speculative ("may", "could")
+-X-+    negated (explicitly denied, flat bar = stop)
+=!=     conflict (papers disagree)
 
 THICK = many papers support
 THIN  = single paper
@@ -168,7 +168,7 @@ SPECTER2 positions papers. SapBERT positions entities. MedCPT positions chunks. 
 | Minimal | Zero chrome, one control (prompt box), panels emerge from interaction |
 | Floating | Matte cards hover above canvas, deep shadows, generous rounding |
 | Breathing | Smooth spring transitions, no snaps, no jumps |
-| Alive | Graph reacts to conversation, typing, hover — it responds to you |
+| Alive | Graph reacts to conversation, typing, hover -- it responds to you |
 
 ---
 
@@ -177,8 +177,12 @@ SPECTER2 positions papers. SapBERT positions entities. MedCPT positions chunks. 
 | File | Role |
 |------|------|
 | `app/globals.css` | All design tokens (semantic + graph + Cosmograph, ~280 lines) |
-| `lib/mantine-theme.ts` | Mantine ↔ CSS variable bridge |
+| `lib/mantine-theme.ts` | Mantine <-> CSS variable bridge |
 | `components/mantine-theme-provider.tsx` | `defaultColorScheme="auto"`, DarkClassSync |
 | `components/graph/PanelShell.tsx` | Shared panel chrome, style exports, `ICON_BTN_STYLES` |
 | `lib/motion.ts` | Spring presets (`snappy`, `smooth`, `settle`, `bouncy`, `responsive`) |
 | `cosmograph/GraphRenderer.tsx` | `BRAND.light` / `BRAND.dark` WebGL constants |
+
+---
+
+_Last verified against code: 2026-04-08_

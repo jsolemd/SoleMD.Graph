@@ -132,8 +132,35 @@ def test_local_bioc_archive_reader_skips_malformed_members(tmp_path, caplog):
     with caplog.at_level("WARNING"):
         records = list(reader.iter_documents(archive_path))
 
-    assert records == [("12345", "valid.xml", _bioc_xml("12345"))]
+    assert len(records) == 1
+    assert records[0][0] == "12345"
+    assert records[0][1] == "valid.xml"
+    assert "<id>12345</id>" in records[0][2]
     assert "Skipping malformed BioC XML member invalid.xml" in caplog.text
+
+
+def test_local_bioc_archive_reader_expands_multi_document_members(tmp_path):
+    archive_path = tmp_path / "BioCXML.multi.tar.gz"
+    payload = (
+        b"<collection>"
+        b"<document><id>100</id><passage><text>First.</text></passage></document>"
+        b"<document><id>200</id><passage><text>Second.</text></passage></document>"
+        b"</collection>"
+    )
+    with tarfile.open(archive_path, "w:gz") as archive:
+        info = tarfile.TarInfo("batch.xml")
+        info.size = len(payload)
+        archive.addfile(info, BytesIO(payload))
+
+    reader = LocalBioCArchiveReader()
+    records = list(reader.iter_documents(archive_path))
+
+    assert [(document_id, member_name) for document_id, member_name, _ in records] == [
+        ("100", "batch.xml"),
+        ("200", "batch.xml"),
+    ]
+    assert "<id>100</id>" in records[0][2]
+    assert "<id>200</id>" in records[1][2]
 
 
 class FakeUnitStore:

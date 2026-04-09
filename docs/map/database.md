@@ -64,8 +64,8 @@ were superseded or never shipped; the canonical sequence skips those numbers.
 | 002 | Add retraction tracking | `papers.is_retracted` |
 | 003 | Add layout_status column | `corpus.layout_status` (`candidate` / `mapped`) |
 | 004 | Current-run flags, journal_rule, mapped_papers view | `corpus.is_in_current_map`, `corpus.is_in_current_base`, `solemd.journal_rule`, `solemd.clean_venue()`, `solemd.mapped_papers` view |
-| 004b | Entity-based promotion rules | `solemd.entity_rule` — behaviors, neuropsych diseases, neurotransmitter genes |
-| 004c | Relation rules + base expansion | `solemd.relation_rule` — chemical→cause toxicity families |
+| 004b | Entity-based promotion rules | `solemd.entity_rule` -- behaviors, neuropsych diseases, neurotransmitter genes |
+| 004c | Relation rules + base expansion | `solemd.relation_rule` -- chemical->cause toxicity families |
 | 004d | Final pre-freeze base expansion | Respiratory bridge entities, final toxicity relations |
 | 004e | Endocrine/metabolic base additions | DKA, myxedema entity rules |
 | 005 | S2 enrichment tracking | `papers.s2_full_checked_at`, `papers.s2_found` |
@@ -76,21 +76,21 @@ were superseded or never shipped; the canonical sequence skips those numbers.
 | 010 | Extend citations for bulk dataset | `citations.contexts`, `citations.intents`, `citations.is_influential` |
 | 011 | Bulk citation checkpoints | `solemd.bulk_citation_ingest_batches` |
 | 012 | Canonical entity records | `solemd.entities` |
-| 013 | PubTator tables set LOGGED | Convert `pubtator.*` from UNLOGGED → LOGGED (fix for 342M row loss) |
-| 019 | Simplify base admission naming | Rename corpus_tier→layout_status, is_default_visible→is_in_current_base; create `solemd.base_journal_family`, `solemd.base_policy`; normalize journal families; drop legacy visibility tables |
-| 020 | Paper evidence summary | `solemd.paper_evidence_summary` — durable per-paper evidence for restartable base admission |
-| 021 | Refine base admission terms | Rename is_direct_evidence→has_rule_evidence, is_journal_base→has_curated_journal_family, base_source→base_reason; activate curated_base_v2 policy |
+| 013 | PubTator tables set LOGGED | Convert `pubtator.*` from UNLOGGED -> LOGGED (fix for 342M row loss) |
+| 019 | Simplify base admission naming | Rename corpus_tier->layout_status, is_default_visible->is_in_current_base; create `solemd.base_journal_family`, `solemd.base_policy`; normalize journal families; drop legacy visibility tables |
+| 020 | Paper evidence summary | `solemd.paper_evidence_summary` -- durable per-paper evidence for restartable base admission |
+| 021 | Refine base admission terms | Rename is_direct_evidence->has_rule_evidence, is_journal_base->has_curated_journal_family, base_source->base_reason; activate curated_base_v2 policy |
 | 022 | Schema hygiene | Rename index, add column comments for graph_base_features |
-| 023 | Vocab terms table | `solemd.vocab_terms` — load 3,361 curated terms from TSV |
+| 023 | Vocab terms table | `solemd.vocab_terms` -- load 3,361 curated terms from TSV |
 | 024 | Psychiatric entity rules from vocab | Generate 572 entity_rules from enriched vocab_terms; add psychiatric treatment relation_rules; add mid-tier journal_rules |
 | 026 | Cluster hierarchy | `graph_clusters.description` (parent_cluster_id, parent_label, hierarchy_level removed in 042) |
-| 027a | Graph base points table | `solemd.graph_base_points` — lean INSERT-only base admission table; drop `graph_points.is_in_base` and `graph_points.base_rank` |
+| 027a | Graph base points table | `solemd.graph_base_points` -- lean INSERT-only base admission table; drop `graph_points.is_in_base` and `graph_points.base_rank` |
 | 027b | Entity rule confidence gates | Downgrade broad metabolic/biochemistry terms and non-psychiatric meds to `requires_second_gate`; delete "disorder" non-diagnosis |
 | 028 | RAG canonical core | `solemd.paper_documents`, `solemd.paper_document_sources`, `solemd.paper_sections` |
-| 029 | RAG canonical spans + mentions | `solemd.paper_blocks`, `solemd.paper_sentences`, `solemd.paper_citation_mentions`, `solemd.paper_entity_mentions` (all hash-partitioned ×16) |
+| 029 | RAG canonical spans + mentions | `solemd.paper_blocks`, `solemd.paper_sentences`, `solemd.paper_citation_mentions`, `solemd.paper_entity_mentions` (all hash-partitioned x16) |
 | 030 | Continuous base scoring | `paper_evidence_summary.entity_rule_families`, `.entity_rule_count`, `.entity_core_families`; update base policy target to 500K |
 | 043 | Journal family score multiplier | `base_journal_family.score_multiplier`, `paper_evidence_summary.journal_score_multiplier`; add `penalized` family_type; data-driven scoring replaces hardcoded flagship keys |
-| 044 | Papers table rebuild — stored fts_vector + index optimization | CTAS+swap rebuild: add `papers.fts_vector` (stored tsvector), drop 6 redundant indexes (GIN trgm, citation_count, year, venue, fos, pub_types — 9 GB saved), add missing `s2_references_checked_at` partial index, zero-bloat foundation (101 GB → 65 GB) |
+| 044 | Papers table rebuild -- stored fts_vector + index optimization | CTAS+swap rebuild: add `papers.fts_vector` (stored tsvector), drop 6 redundant indexes (GIN trgm, citation_count, year, venue, fos, pub_types -- 9 GB saved), add missing `s2_references_checked_at` partial index, zero-bloat foundation (101 GB -> 65 GB) |
 
 ---
 
@@ -109,7 +109,7 @@ overlay promotion.
 | doi | TEXT | External linking |
 | pmc_id | TEXT | PubMed Central cross-reference |
 | admission_reason | TEXT NOT NULL | Why the paper entered the corpus; e.g. `journal_and_vocab`, `vocab_entity_match`, or other corpus-admission paths |
-| layout_status | TEXT NOT NULL DEFAULT 'candidate' | `candidate` or `mapped` — whether the paper has been promoted into the coordinate universe |
+| layout_status | TEXT NOT NULL DEFAULT 'candidate' | `candidate` or `mapped` -- whether the paper has been promoted into the coordinate universe |
 | is_in_current_map | BOOLEAN NOT NULL DEFAULT false | True once the paper is present in the current published graph run |
 | is_in_current_base | BOOLEAN NOT NULL DEFAULT false | True once the paper is admitted into the current published `base_points` scaffold |
 | created_at | TIMESTAMPTZ | |
@@ -152,7 +152,7 @@ Typical columns:
 - `s2_embedding_release_id`
 - `s2_references_checked_at`
 - `s2_references_release_id`
-- `fts_vector` — stored tsvector: `setweight(title, 'A') || setweight(abstract, 'B')`, auto-maintained by trigger on INSERT/UPDATE OF title, abstract
+- `fts_vector` -- stored tsvector: `setweight(title, 'A') || setweight(abstract, 'B')`, auto-maintained by trigger on INSERT/UPDATE OF title, abstract
 - `created_at`
 - `updated_at`
 
@@ -164,7 +164,7 @@ btree on columns never filtered). Total index footprint: ~33 GB (was 41 GB).
 
 | Index | Type | Purpose |
 |-------|------|---------|
-| `papers_pkey` | btree | PK — every JOIN, UPDATE, UPSERT |
+| `papers_pkey` | btree | PK -- every JOIN, UPDATE, UPSERT |
 | `idx_papers_paper_id` | btree unique | S2 paper_id dedup on enrichment |
 | `idx_papers_lower_title` | btree | Exact/prefix title matching (RAG fast-path) |
 | `idx_papers_normalized_title_key` | btree | Exact/prefix normalized title matching |
@@ -180,7 +180,7 @@ btree on columns never filtered). Total index footprint: ~33 GB (was 41 GB).
 
 The `fts_vector` column is auto-maintained by `trg_papers_fts_vector` (BEFORE
 INSERT OR UPDATE OF title, abstract). The trigger only fires when title or
-abstract changes — embedding-only or metadata-only updates skip it.
+abstract changes -- embedding-only or metadata-only updates skip it.
 
 ### `solemd.load_history`
 
@@ -223,7 +223,7 @@ Curated family definitions for journals used by base admission and audit.
 | family_label | TEXT NOT NULL | Human-readable family name |
 | family_type | TEXT NOT NULL | `general_flagship`, `domain_flagship`, `domain_base`, `organ_overlap`, `specialty`, or `penalized` |
 | include_in_base | BOOLEAN NOT NULL DEFAULT true | Whether the family remains available to the active base policy |
-| score_multiplier | REAL NOT NULL DEFAULT 1.0 | Domain score multiplier: flagship=1.5, penalized=0.3, default=1.0. Read by the scoring formula — no Python code changes needed for adjustments. |
+| score_multiplier | REAL NOT NULL DEFAULT 1.0 | Domain score multiplier: flagship=1.5, penalized=0.3, default=1.0. Read by the scoring formula -- no Python code changes needed for adjustments. |
 | description | TEXT | Human-readable rationale |
 | added_at | TIMESTAMPTZ | |
 
@@ -266,7 +266,7 @@ generation (migration 024).
 
 Entity-driven base admission rules. 572 rules across 14 domain-specific families,
 generated from `vocab_terms` (migration 024) plus 39 original C-L overlap rules.
-Broad medical entities (`cl_disorder`, `clinical_symptom`) are excluded — those
+Broad medical entities (`cl_disorder`, `clinical_symptom`) are excluded -- those
 conditions span all of medicine and belong in the universe layer.
 
 | Column | Type | Notes |
@@ -284,8 +284,8 @@ conditions span all of medicine and belong in the universe layer.
 (lipids, glucose, cholesterol, etc.), non-psychiatric medications
 (immunosuppressants, antibiotics, chemo), and brain tumors are set to
 `requires_second_gate`. They contribute to paper_entity_count (scoring) but do
-not drive base admission alone — the paper must also have a high-confidence
-entity match or ≥100 citations.
+not drive base admission alone -- the paper must also have a high-confidence
+entity match or >=100 citations.
 
 **Domain families** (14):
 
@@ -347,7 +347,7 @@ materialized-view compatibility layer.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| corpus_id | BIGINT PK FK→corpus | Stable paper key |
+| corpus_id | BIGINT PK FK->corpus | Stable paper key |
 | admission_reason | TEXT NOT NULL | Current corpus admission reason |
 | pmid | INTEGER | Nullable because some papers do not have PubMed ids |
 | citation_count | INTEGER NOT NULL DEFAULT 0 | Citation count used for evidence thresholds |
@@ -376,11 +376,11 @@ base refreshes and publishes consume that table directly.
 
 **Continuous domain-density scoring** (migration 030): The `entity_rule_families`,
 `entity_rule_count`, and `entity_core_families` columns enable a continuous
-`domain_score` formula that replaces binary has_rule_evidence → base admission.
+`domain_score` formula that replaces binary has_rule_evidence -> base admission.
 The top `target_base_count` papers by domain_score enter base; the rest remain
 universe. The score rewards family diversity (squared), core family matches
 (200 pts each), relation rule hits (500 pts), flagship journals (800 pts),
-citation count (log-scaled ×40), and recency (30 pts for 2020+).
+citation count (log-scaled x40), and recency (30 pts for 2020+).
 
 ### `solemd.graph_runs`
 
@@ -419,8 +419,8 @@ and cluster assignments. Base admission decisions are stored separately in
 
 | Column | Type | Notes |
 |--------|------|-------|
-| graph_run_id | UUID FK→graph_runs | |
-| corpus_id | BIGINT FK→corpus | |
+| graph_run_id | UUID FK->graph_runs | |
+| corpus_id | BIGINT FK->corpus | |
 | point_index | INTEGER | Dense browser-facing index derived from run order |
 | x | REAL NOT NULL | UMAP dimension 1 |
 | y | REAL NOT NULL | UMAP dimension 2 |
@@ -455,7 +455,7 @@ and hierarchical parent groups.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| graph_run_id | UUID FK→graph_runs | |
+| graph_run_id | UUID FK->graph_runs | |
 | cluster_id | INTEGER | |
 | label | TEXT | LLM-generated clinical/scientific label (3-7 words) |
 | label_mode | TEXT | `ctfidf`, `llm`, `fixed` |
@@ -474,9 +474,9 @@ and hierarchical parent groups.
 
 **Labeling pipeline** (modular, each step re-runnable independently):
 
-1. **c-TF-IDF** — extracts top 10 distinctive keywords per cluster from
+1. **c-TF-IDF** -- extracts top 10 distinctive keywords per cluster from
    representative paper abstracts/titles (200 papers per cluster, by citation)
-2. **LLM labeling** — sends keywords + 20 representative titles to Gemini 2.5
+2. **LLM labeling** -- sends keywords + 20 representative titles to Gemini 2.5
    Flash; generates specific clinical labels and descriptions (~$0.05/run)
 
 ### `solemd.graph_base_features`
@@ -486,8 +486,8 @@ paper did or did not enter the base scaffold.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| graph_run_id | UUID FK→graph_runs | |
-| corpus_id | BIGINT FK→corpus | |
+| graph_run_id | UUID FK->graph_runs | |
+| corpus_id | BIGINT FK->corpus | |
 | admission_reason | TEXT | Corpus admission reason |
 | has_vocab_match | BOOLEAN | Whether corpus admission came through vocab-bearing gates |
 | citation_count | INTEGER | |
@@ -506,7 +506,7 @@ paper did or did not enter the base scaffold.
 ### `solemd.mapped_papers` view
 
 Quality-filtered mapped universe view joining corpus + papers. Used for graph
-layout, base admission, and bundle export (NOT for enrichment — enrichment
+layout, base admission, and bundle export (NOT for enrichment -- enrichment
 targets all mapped papers including low-cite items).
 
 The view applies quality filters: excludes pre-1945 papers, low-cite
@@ -574,9 +574,9 @@ Per-paper author snapshot from S2 Graph API. Source for future geo enrichment.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| corpus_id | BIGINT FK→papers | |
+| corpus_id | BIGINT FK->papers | |
 | author_position | INTEGER | Ordinal position on paper |
-| author_id | TEXT FK→authors | Nullable (some authors lack S2 IDs) |
+| author_id | TEXT FK->authors | Nullable (some authors lack S2 IDs) |
 | name | TEXT NOT NULL | |
 | affiliations | TEXT[] | Raw affiliation strings |
 | external_ids | JSONB | |
@@ -611,7 +611,7 @@ External or mirrored paper assets such as open-access PDFs.
 | Column | Type | Notes |
 |--------|------|-------|
 | asset_id | BIGSERIAL PK | |
-| corpus_id | BIGINT FK→papers | |
+| corpus_id | BIGINT FK->papers | |
 | asset_kind | TEXT NOT NULL | `open_access_pdf`, etc. |
 | source | TEXT DEFAULT 'semantic_scholar_graph_api' | |
 | remote_url | TEXT | |
@@ -629,10 +629,10 @@ Outgoing reference list per paper from S2 Graph API.
 | Column | Type | Notes |
 |--------|------|-------|
 | reference_id | BIGSERIAL PK | |
-| corpus_id | BIGINT FK→papers | |
+| corpus_id | BIGINT FK->papers | |
 | reference_index | INTEGER NOT NULL | Order in reference list |
 | referenced_paper_id | TEXT | S2 paperId of the cited paper |
-| referenced_corpus_id | BIGINT FK→corpus | Populated when the cited paper is in our domain |
+| referenced_corpus_id | BIGINT FK->corpus | Populated when the cited paper is in our domain |
 | title | TEXT | |
 | year | INTEGER | |
 | external_ids | JSONB | DOI, PMID, etc. |
@@ -645,8 +645,8 @@ Domain-domain citation edges. Primary graph edge source from S2 bulk dataset.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| citing_corpus_id | BIGINT FK→corpus | |
-| cited_corpus_id | BIGINT FK→corpus | |
+| citing_corpus_id | BIGINT FK->corpus | |
+| cited_corpus_id | BIGINT FK->corpus | |
 | citation_id | BIGINT | S2 bulk dataset identifier |
 | cited_paper_id | TEXT | S2 paperId |
 | contexts | JSONB DEFAULT '[]' | Citation context snippets from S2 bulk |
@@ -668,32 +668,32 @@ form a hierarchical document model.
 ### Document hierarchy
 
 ```
-┌──────────────────────┐
-│   paper_documents    │  1 per corpus_id — document metadata
-└──────────┬───────────┘
-           │ 1:N
-┌──────────┴───────────┐
-│ paper_document_sources│  provenance per source system (S2, PubTator, S2ORC)
-└──────────────────────┘
-           │
-┌──────────┴───────────┐
-│   paper_sections     │  hierarchical section tree (title, abstract, body, ...)
-└──────────┬───────────┘
-           │ 1:N
-┌──────────┴───────────┐
-│    paper_blocks      │  paragraph-level text spans (hash-partitioned ×16)
-└──────────┬───────────┘
-           │ 1:N
-┌──────────┴───────────┐
-│  paper_sentences     │  sentence-level spans (hash-partitioned ×16)
-└──────────────────────┘
++----------------------+
+|   paper_documents    |  1 per corpus_id -- document metadata
++----------+-----------+
+           | 1:N
++----------+-----------+
+| paper_document_sources|  provenance per source system (S2, PubTator, S2ORC)
++----------------------+
+           |
++----------+-----------+
+|   paper_sections     |  hierarchical section tree (title, abstract, body, ...)
++----------+-----------+
+           | 1:N
++----------+-----------+
+|    paper_blocks      |  paragraph-level text spans (hash-partitioned x16)
++----------+-----------+
+           | 1:N
++----------+-----------+
+|  paper_sentences     |  sentence-level spans (hash-partitioned x16)
++----------------------+
 ```
 
 ### `solemd.paper_documents`
 
 | Column | Type | Notes |
 |--------|------|-------|
-| corpus_id | BIGINT PK FK→papers | |
+| corpus_id | BIGINT PK FK->papers | |
 | title | TEXT | Document title |
 | language | TEXT | Detected language |
 | source_availability | TEXT | What text is available |
@@ -705,7 +705,7 @@ form a hierarchical document model.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| corpus_id | BIGINT FK→paper_documents | |
+| corpus_id | BIGINT FK->paper_documents | |
 | document_source_ordinal | INTEGER | Source order |
 | source_system | TEXT NOT NULL | e.g. `semantic_scholar`, `pubtator3`, `s2orc` |
 | source_revision | TEXT NOT NULL | Release/version identifier |
@@ -720,7 +720,7 @@ form a hierarchical document model.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| corpus_id | BIGINT FK→paper_documents | |
+| corpus_id | BIGINT FK->paper_documents | |
 | section_ordinal | INTEGER | Section order within document |
 | parent_section_ordinal | INTEGER | Self-referential FK for nested sections |
 | section_role | TEXT NOT NULL | `title`, `abstract`, `introduction`, `methods`, etc. |
@@ -748,7 +748,7 @@ for scale.
 
 ### `solemd.paper_sentences`
 
-Sentence-level spans within blocks. Hash-partitioned ×16.
+Sentence-level spans within blocks. Hash-partitioned x16.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -762,7 +762,7 @@ Sentence-level spans within blocks. Hash-partitioned ×16.
 
 ### `solemd.paper_citation_mentions`
 
-Aligned in-text citation mentions with canonical span lineage. Hash-partitioned ×16.
+Aligned in-text citation mentions with canonical span lineage. Hash-partitioned x16.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -774,11 +774,11 @@ Aligned in-text citation mentions with canonical span lineage. Hash-partitioned 
 | text | TEXT | Mention surface text |
 | canonical_section_ordinal / canonical_block_ordinal / canonical_sentence_ordinal | INTEGER | Aligned canonical position |
 | source_citation_key | TEXT NOT NULL | Key from source citation marker |
-| matched_corpus_id | BIGINT FK→corpus | Resolved target paper |
+| matched_corpus_id | BIGINT FK->corpus | Resolved target paper |
 
 ### `solemd.paper_entity_mentions`
 
-Aligned entity mentions with concept identifiers. Hash-partitioned ×16.
+Aligned entity mentions with concept identifiers. Hash-partitioned x16.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -798,69 +798,69 @@ Aligned entity mentions with concept identifiers. Hash-partitioned ×16.
 ## Key Table Relationships
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        solemd.corpus                             │
-│  corpus_id (PK) │ pmid │ admission_reason │ layout_status        │
-└────────┬─────────────────────────────────────────────────────────┘
-         │ 1:1
-         ├─────────────────────────────────────────────────────────┐
-         │                                                         │
-┌────────┴──────────────┐                              ┌───────────┴──────────────┐
-│    solemd.papers      │                              │ paper_evidence_summary    │
-│  corpus_id (PK/FK)    │                              │  corpus_id (PK/FK)       │
-│  title, year, venue   │                              │  has_rule_evidence       │
-│  citation_count       │                              │  entity_rule_families    │
-│  embedding(768)       │                              │  domain_score inputs     │
-│  abstract, tldr       │                              └──────────────────────────┘
-│  publication_venue_id─┼──→ publication_venues
-└────────┬──────────────┘
-         │ 1:N
-         ├──────────────┬──────────────┬───────────────┬───────────────┐
-         │              │              │               │               │
-┌────────┴────────┐ ┌───┴───────────┐ ┌┴──────────────┐ ┌┴────────────┐ ┌┴──────────────┐
-│ paper_references│ │ paper_authors │ │paper_documents│ │ paper_assets│ │   citations   │
-│ corpus_id (FK)  │ │ corpus_id(FK) │ │corpus_id(PK) │ │corpus_id(FK)│ │citing/cited FK│
-│ ref_corpus_id   │ │ author_id(FK) │ │→ sections    │ │asset_kind   │ │contexts,intents│
-│ title, year     │ │ name, affils  │ │  → blocks    │ │remote_url   │ │is_influential │
-└─────────────────┘ │  ↓            │ │    → sents   │ └─────────────┘ └───────────────┘
-                    │ author_affils │ │  → cit_ments │
-                    └───────────────┘ │  → ent_ments │
-                                      └──────────────┘
++------------------------------------------------------------------+
+|                        solemd.corpus                             |
+|  corpus_id (PK) | pmid | admission_reason | layout_status        |
++--------+---------------------------------------------------------+
+         | 1:1
+         +---------------------------------------------------------+
+         |                                                         |
++--------+--------------+                              +-----------+--------------+
+|    solemd.papers      |                              | paper_evidence_summary    |
+|  corpus_id (PK/FK)    |                              |  corpus_id (PK/FK)       |
+|  title, year, venue   |                              |  has_rule_evidence       |
+|  citation_count       |                              |  entity_rule_families    |
+|  embedding(768)       |                              |  domain_score inputs     |
+|  abstract, tldr       |                              +--------------------------+
+|  publication_venue_id-+---> publication_venues
++--------+--------------+
+         | 1:N
+         +--------------+--------------+---------------+---------------+
+         |              |              |               |               |
++--------+--------+ +---+-----------+ ++--------------+ ++------------+ ++--------------+
+| paper_references| | paper_authors | |paper_documents| | paper_assets| |   citations   |
+| corpus_id (FK)  | | corpus_id(FK) | |corpus_id(PK) | |corpus_id(FK)| |citing/cited FK|
+| ref_corpus_id   | | author_id(FK) | |-> sections    | |asset_kind   | |contexts,intents|
+| title, year     | | name, affils  | |  -> blocks    | |remote_url   | |is_influential |
++-----------------+ |  v            | |    -> sents   | +-------------+ +---------------+
+                    | author_affils | |  -> cit_ments |
+                    +---------------+ |  -> ent_ments |
+                                      +--------------+
 
-┌──────────────────────────────────────────────────────────────────┐
-│                       solemd.graph_runs                          │
-│  id (PK) │ graph_name │ status │ is_current │ bundle_manifest    │
-└────────┬─────────────────────────────────────────────────────────┘
-         │ 1:N
-         ├──────────────────────────┬──────────────────────────────┐
-         │                          │                              │
-┌────────┴──────────┐   ┌──────────┴──────────┐   ┌───────────────┴────────┐
-│  graph_points     │   │  graph_clusters     │   │  graph_base_points     │
-│  run_id, corp_id  │   │  run_id, cluster_id │   │  run_id, corpus_id     │
-│  x, y             │   │  label, description │   │  base_reason           │
-│  cluster_id       │   │  member_count       │   │  base_rank             │
-│  point_index      │   │  centroid_x/y       │   └────────────────────────┘
-└───────┬───────────┘   │  base_count         │
-        │               └─────────────────────┘
-        │ 1:1
-┌───────┴───────────┐
-│ graph_base_features│
-│  run_id, corp_id  │
-│  base_reason      │
-│  has_rule_evidence│
-└───────────────────┘
++------------------------------------------------------------------+
+|                       solemd.graph_runs                          |
+|  id (PK) | graph_name | status | is_current | bundle_manifest    |
++--------+---------------------------------------------------------+
+         | 1:N
+         +--------------------------+------------------------------+
+         |                          |                              |
++--------+----------+   +----------+----------+   +---------------+--------+
+|  graph_points     |   |  graph_clusters     |   |  graph_base_points     |
+|  run_id, corp_id  |   |  run_id, cluster_id |   |  run_id, corpus_id     |
+|  x, y             |   |  label, description |   |  base_reason           |
+|  cluster_id       |   |  member_count       |   |  base_rank             |
+|  point_index      |   |  centroid_x/y       |   +------------------------+
++-------+-----------+   |  base_count         |
+        |               +---------------------+
+        | 1:1
++-------+-----------+
+| graph_base_features|
+|  run_id, corp_id  |
+|  base_reason      |
+|  has_rule_evidence|
++-------------------+
 
-┌────────────────────────────────────┐     ┌──────────────────────────┐
-│  pubtator.entity_annotations      │     │   pubtator.relations     │
-│  pmid, entity_type, concept_id    │     │   pmid, relation_type    │
-│  mentions, resource               │     │   subject/object type+id │
-└────────────────────────────────────┘     └──────────────────────────┘
-         ↑ joined via pmid                          ↑ joined via pmid
-         │                                          │
-┌────────┴──────────────────────────────────────────┴──────────────┐
-│  solemd.entity_rule / solemd.relation_rule                       │
-│  concept-driven base admission rules                             │
-└──────────────────────────────────────────────────────────────────┘
++------------------------------------+     +--------------------------+
+|  pubtator.entity_annotations      |     |   pubtator.relations     |
+|  pmid, entity_type, concept_id    |     |   pmid, relation_type    |
+|  mentions, resource               |     |   subject/object type+id |
++------------------------------------+     +--------------------------+
+         ^ joined via pmid                          ^ joined via pmid
+         |                                          |
++--------+------------------------------------------+--------------+
+|  solemd.entity_rule / solemd.relation_rule                       |
+|  concept-driven base admission rules                             |
++------------------------------------------------------------------+
 ```
 
 ---
@@ -1165,4 +1165,8 @@ Declared `IMMUTABLE PARALLEL SAFE` for use in indexes and parallel queries.
 7. There is no legacy multi-tier policy in this schema.
 8. `paper_evidence_summary` is the durable upstream substrate for base admission; `graph_base_features` is run-scoped audit output.
 9. Base admission uses continuous domain-density scoring, not binary rule-hit thresholds.
-10. RAG canonical tables (paper_documents → sections → blocks → sentences → mentions) form a self-contained warehouse spine that does not branch through the graph admission path.
+10. RAG canonical tables (paper_documents -> sections -> blocks -> sentences -> mentions) form a self-contained warehouse spine that does not branch through the graph admission path.
+
+---
+
+_Last verified against code: 2026-04-08_

@@ -340,6 +340,7 @@ SCORE_EVIDENCE_BUNDLE_COUNT = "evidence_bundle_count"
 # signature from observation metadata (``session_flags.route_signature``).
 SCORE_RETRIEVAL_PROFILE = "retrieval_profile"
 SCORE_WAREHOUSE_DEPTH = "warehouse_depth"
+SCORE_ROUTING_MATCH = "routing_match"
 
 # Graph build
 SCORE_GRAPH_POINT_COUNT = "graph_point_count"

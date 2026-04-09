@@ -3,6 +3,7 @@ import {
   getColumnMeta,
   getRenderableColumnsForLayer,
 } from '@/features/graph/lib/columns'
+import { hasSameRange } from '@/features/graph/lib/helpers'
 import type { InfoWidgetSlot } from '@/features/graph/lib/info-widgets'
 import { getLayerConfig } from '@/features/graph/lib/layers'
 import { useGraphStore } from '../graph-store'
@@ -34,13 +35,6 @@ const CORPUS_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric
 function getDefaultFiltersForLayer(layer: MapLayer) {
   void layer
   return CORPUS_FILTER_COLUMNS
-}
-
-function hasSameRange(
-  current: [number, number],
-  next: [number, number],
-) {
-  return current[0] === next[0] && current[1] === next[1]
 }
 
 export interface ConfigSlice {

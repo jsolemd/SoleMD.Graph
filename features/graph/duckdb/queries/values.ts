@@ -3,26 +3,12 @@ import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 import type { GraphInfoScope, MapLayer } from "@/features/graph/types";
 
 import {
-  buildScopedLayerPredicate,
   getColumnMetaForLayer,
-  getLayerTableName,
+  getSafeScopedContext,
   resolveInfoColumn,
 } from "../sql-helpers";
 
 import { queryRows } from "./core";
-
-function getSafeScopedContext(args: {
-  layer: MapLayer;
-  scope: GraphInfoScope;
-  currentPointScopeSql: string | null;
-}) {
-  const { layer, scope, currentPointScopeSql } = args;
-
-  return {
-    tableName: getLayerTableName(layer),
-    scopedPredicate: buildScopedLayerPredicate(layer, scope, currentPointScopeSql),
-  };
-}
 
 export async function queryCategoricalValues(
   conn: AsyncDuckDBConnection,

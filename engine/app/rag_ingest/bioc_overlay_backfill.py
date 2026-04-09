@@ -2,11 +2,16 @@
 
 Finds papers in solemd.corpus that have PubMed/PMC/DOI identifiers but lack
 BioCXML warehouse coverage, then locates them in the BioCXML archive and runs
-the warehouse refresh to parse blocks, sentences, and chunks.
+the targeted warehouse refresh to reparse canonical document structure from
+BioCXML.
 
 Works for both:
-- Papers with existing S2ORC warehouse coverage (adds BioCXML as a secondary source)
+- Papers with existing S2ORC warehouse coverage (replaces the canonical
+  warehouse text spine with the BioCXML parse for that targeted refresh)
 - Papers with no warehouse coverage at all (uses BioCXML as the primary source)
+
+Chunk backfill is optional and runs as a second stage after the canonical
+BioCXML write. It is not implied by the warehouse refresh itself.
 """
 
 from __future__ import annotations
@@ -225,6 +230,10 @@ def run_bioc_overlay_backfill(
     max_bioc_archives: int | None = None,
     stage_row_budget: int | None = None,
     stage_byte_budget: int | None = None,
+    seed_chunk_version: bool = False,
+    backfill_chunks: bool = False,
+    chunk_backfill_batch_size: int = 250,
+    embedding_model: str | None = None,
     checkpoint_root: Path | None = None,
     reset_run: bool = False,
     candidate_loader: BioCOverlayCandidateLoader | None = None,
@@ -336,6 +345,10 @@ def run_bioc_overlay_backfill(
                 refresh_existing=True,
                 max_bioc_archives=max_bioc_archives,
                 skip_s2_primary=True,
+                seed_chunk_version=seed_chunk_version,
+                backfill_chunks=backfill_chunks,
+                chunk_backfill_batch_size=chunk_backfill_batch_size,
+                embedding_model=embedding_model,
                 reset_run=reset_run,
                 checkpoint_root=checkpoint_root,
             )
@@ -366,7 +379,10 @@ def run_bioc_overlay_backfill(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Backfill BioCXML warehouse coverage for corpus papers with PMID/PMC/DOI identifiers."
+        description=(
+            "Backfill BioCXML warehouse coverage for corpus papers with "
+            "PMID/PMC/DOI identifiers."
+        )
     )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--parser-version", required=True)
@@ -381,6 +397,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-bioc-archives", type=int, default=None)
     parser.add_argument("--stage-row-budget", type=int, default=None)
     parser.add_argument("--stage-byte-budget", type=int, default=None)
+    parser.add_argument("--seed-chunk-version", action="store_true")
+    parser.add_argument("--backfill-chunks", action="store_true")
+    parser.add_argument("--chunk-backfill-batch-size", type=int, default=250)
+    parser.add_argument("--embedding-model", default=None)
     parser.add_argument("--reset-run", action="store_true")
     parser.add_argument("--checkpoint-root", type=Path, default=None)
     parser.add_argument("--report-path", type=Path, default=None)
@@ -407,6 +427,10 @@ def main(argv: list[str] | None = None) -> int:
             max_bioc_archives=args.max_bioc_archives,
             stage_row_budget=args.stage_row_budget,
             stage_byte_budget=args.stage_byte_budget,
+            seed_chunk_version=args.seed_chunk_version,
+            backfill_chunks=args.backfill_chunks,
+            chunk_backfill_batch_size=args.chunk_backfill_batch_size,
+            embedding_model=args.embedding_model,
             checkpoint_root=args.checkpoint_root,
             reset_run=args.reset_run,
         )

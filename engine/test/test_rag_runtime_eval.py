@@ -24,6 +24,7 @@ from app.rag_ingest.runtime_eval_models import (
     RuntimeEvalQueryFamily,
 )
 from app.rag_ingest.runtime_eval_population import (
+    _resolve_runtime_eval_title,
     fetch_runtime_eval_population,
     population_summary,
     runtime_eval_cohort_stratum_key,
@@ -98,6 +99,24 @@ def test_runtime_eval_stratum_key_uses_structural_profiles():
         runtime_eval_stratum_key(paper)
         == "s2orc_v2|table_heavy|long|entity_present|citation_sparse|sentence_unseeded"
     )
+
+
+def test_resolve_runtime_eval_title_prefers_canonical_paper_title():
+    assert _resolve_runtime_eval_title(
+        corpus_id=11,
+        canonical_title="Canonical paper title",
+        document_title="Structural heading",
+    ) == "Canonical paper title"
+    assert _resolve_runtime_eval_title(
+        corpus_id=11,
+        canonical_title=None,
+        document_title="Structural heading",
+    ) == "Structural heading"
+    assert _resolve_runtime_eval_title(
+        corpus_id=11,
+        canonical_title=None,
+        document_title=None,
+    ) == "Corpus 11"
 
 
 def test_select_stratified_sample_round_robins_across_strata():

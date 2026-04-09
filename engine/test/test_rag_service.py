@@ -942,14 +942,7 @@ def test_rag_service_search_result_can_include_debug_trace():
     assert result.debug_trace["session_flags"]["paper_search_use_title_candidate_lookup"] is True
 
 
-def test_rag_service_returns_exact_title_match_even_with_entity_lane_enabled():
-    # Phase 1 of the 2026-04-06 routing pass removed the strong-lexical
-    # title-anchor gate from ``should_skip_runtime_entity_enrichment``
-    # (and the matching dense / frontier gates). Entity enrichment now
-    # runs alongside the title lane whenever the query has entity
-    # surface signal. This test keeps the "exact title still wins at
-    # rank 1" invariant but allows the additional lanes to execute and
-    # return empty.
+def test_rag_service_returns_exact_title_match_while_skipping_extra_seed_lanes():
     class ExactTitleRepository(FakeRepository):
         def resolve_selected_corpus_id(
             self,
@@ -962,7 +955,7 @@ def test_rag_service_returns_exact_title_match_even_with_entity_lane_enabled():
             return None
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            return ([], set())
+            raise AssertionError("precise title resolution should skip runtime entity resolution")
 
         def search_papers(
             self,
@@ -1004,6 +997,26 @@ def test_rag_service_returns_exact_title_match_even_with_entity_lane_enabled():
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
             return []
 
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("precise title resolution should skip seeded entity recall")
+
+        def search_relation_papers(
+            self,
+            graph_run_id: str,
+            *,
+            relation_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("precise title resolution should skip seeded relation recall")
+
         def search_query_embedding_papers(
             self,
             *,
@@ -1012,12 +1025,16 @@ def test_rag_service_returns_exact_title_match_even_with_entity_lane_enabled():
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            return []
+            raise AssertionError("precise title resolution should skip dense retrieval")
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11]
+            assert entity_terms == []
             return {}
 
         def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11]
+            assert relation_terms == []
             return {}
 
         def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
@@ -1026,13 +1043,13 @@ def test_rag_service_returns_exact_title_match_even_with_entity_lane_enabled():
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
             return {}
 
-    class PermissiveDenseQueryEmbedder:
+    class FailingDenseQueryEmbedder:
         def encode(self, text: str) -> list[float] | None:
-            return None
+            raise AssertionError("precise title resolution should skip dense encoding")
 
     service = _service(
         ExactTitleRepository(),
-        query_embedder=PermissiveDenseQueryEmbedder(),
+        query_embedder=FailingDenseQueryEmbedder(),
     )
 
     response = service.search(
@@ -1051,11 +1068,7 @@ def test_rag_service_returns_exact_title_match_even_with_entity_lane_enabled():
     assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [11]
 
 
-def test_rag_service_returns_strong_title_prefix_match_with_dense_lane_enabled():
-    # Phase 4 removed the TITLE_LOOKUP-specific dense-query early return.
-    # Dense, frontier, and entity lanes now fire alongside the title
-    # lane. The invariant is that a strong title prefix still resolves
-    # the target at rank 1 even with all additional lanes running.
+def test_rag_service_returns_strong_title_prefix_match_without_dense_lane():
     class PrefixTitleRepository(FakeRepository):
         def resolve_selected_corpus_id(
             self,
@@ -1068,7 +1081,7 @@ def test_rag_service_returns_strong_title_prefix_match_with_dense_lane_enabled()
             return None
 
         def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            return ([], set())
+            raise AssertionError("strong title prefix should skip runtime entity resolution")
 
         def search_papers(
             self,
@@ -1113,6 +1126,16 @@ def test_rag_service_returns_strong_title_prefix_match_with_dense_lane_enabled()
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
             return []
 
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("strong title prefix should skip seeded entity recall")
+
         def search_query_embedding_papers(
             self,
             *,
@@ -1121,9 +1144,10 @@ def test_rag_service_returns_strong_title_prefix_match_with_dense_lane_enabled()
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
-            return []
+            raise AssertionError("strong title prefix should skip dense retrieval")
 
         def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11857184]
             return {}
 
         def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
@@ -1135,13 +1159,13 @@ def test_rag_service_returns_strong_title_prefix_match_with_dense_lane_enabled()
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
             return {}
 
-    class PermissiveDenseQueryEmbedder:
+    class FailingDenseQueryEmbedder:
         def encode(self, text: str) -> list[float] | None:
-            return None
+            raise AssertionError("strong title prefix should skip dense encoding")
 
     service = _service(
         PrefixTitleRepository(),
-        query_embedder=PermissiveDenseQueryEmbedder(),
+        query_embedder=FailingDenseQueryEmbedder(),
     )
 
     response = service.search(
@@ -1160,6 +1184,253 @@ def test_rag_service_returns_strong_title_prefix_match_with_dense_lane_enabled()
     )
 
     assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [11857184]
+
+
+def test_rag_service_limits_title_entity_enrichment_to_top_candidate():
+    class TitleEntityEnrichmentRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=11,
+                    paper_id="paper-11",
+                    semantic_scholar_paper_id="paper-11",
+                    title="Selected paper title",
+                    journal_name="JAMA",
+                    year=2024,
+                    doi="10.1/example",
+                    pmid=111,
+                    pmcid=None,
+                    abstract="Primary title match.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    lexical_score=2.0,
+                    title_similarity=1.0,
+                ),
+                PaperEvidenceHit(
+                    corpus_id=22,
+                    paper_id="paper-22",
+                    semantic_scholar_paper_id="paper-22",
+                    title="Selected paper title supplementary analysis",
+                    journal_name="JAMA",
+                    year=2023,
+                    doi="10.1/example-2",
+                    pmid=222,
+                    pmcid=None,
+                    abstract="Secondary candidate.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    lexical_score=0.8,
+                    title_similarity=0.7,
+                ),
+            ]
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("precise title resolution should skip seeded entity recall")
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("precise title resolution should skip dense retrieval")
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [11]
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11]
+            assert entity_terms == ["aspergillosis"]
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11]
+            assert relation_terms == []
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [11]
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [11]
+            return {}
+
+    service = _service(TitleEntityEnrichmentRepository())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="Selected paper title",
+            entity_terms=["aspergillosis"],
+            k=1,
+            rerank_topn=6,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [11]
+
+
+def test_rag_service_uses_local_entity_enrichment_for_duplicate_title_anchors():
+    class DuplicateTitleAnchorRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+            return (["Lewy bodies", "dementia"], {"Lewy bodies", "dementia"})
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=11,
+                    paper_id="paper-11",
+                    semantic_scholar_paper_id="paper-11",
+                    title="Diagnosis and management of dementia with Lewy bodies",
+                    journal_name="Neurology",
+                    year=2005,
+                    doi="10.1/example-11",
+                    pmid=111,
+                    pmcid=None,
+                    abstract="Older duplicate title candidate.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=False,
+                    lexical_score=2.0,
+                    title_similarity=1.0,
+                ),
+                PaperEvidenceHit(
+                    corpus_id=22,
+                    paper_id="paper-22",
+                    semantic_scholar_paper_id="paper-22",
+                    title="Diagnosis and management of dementia with Lewy bodies",
+                    journal_name="Neurology",
+                    year=2017,
+                    doi="10.1/example-22",
+                    pmid=222,
+                    pmcid="PMC22",
+                    abstract="Newer duplicate title candidate.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    lexical_score=2.0,
+                    title_similarity=1.0,
+                ),
+            ]
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("duplicate title anchors should skip global seeded entity recall")
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("duplicate title anchors should skip global dense retrieval")
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [22]
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11, 22]
+            assert entity_terms == ["Lewy bodies", "dementia"]
+            return {
+                22: [
+                    EntityMatchedPaperHit(
+                        corpus_id=22,
+                        entity_type="disease",
+                        concept_id="D020961",
+                        matched_terms=["Lewy bodies", "dementia"],
+                        mention_count=12,
+                        structural_span_count=8,
+                        retrieval_default_mention_count=10,
+                        score=0.99,
+                    )
+                ]
+            }
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11, 22]
+            assert relation_terms == []
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [22]
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [22]
+            return {}
+
+    service = _service(DuplicateTitleAnchorRepository())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="Diagnosis and management of dementia with Lewy bodies",
+            k=1,
+            rerank_topn=6,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [22]
 
 
 def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():

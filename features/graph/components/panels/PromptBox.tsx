@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useViewportSize } from "@mantine/hooks";
-import { useCosmograph } from "@/features/graph/cosmograph";
+import { useGraphInstance } from "@/features/graph/cosmograph";
 import {
   motion,
   animate,
@@ -81,7 +81,7 @@ function PromptBoxComponent({
   const { width: vw, height: vh } = useViewportSize();
   const editorRef = useRef<CreateEditorHandle>(null);
   const cardRef = useRef<HTMLDivElement>(null);
-  const { cosmograph } = useCosmograph();
+  const cosmograph = useGraphInstance();
   const isCreate = mode === "create";
   const isAsk = mode === "ask";
   const isCollapsed = promptMode === "collapsed";

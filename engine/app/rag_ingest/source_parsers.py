@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,6 +46,14 @@ class ParsedPaperSource:
     entities: list[PaperEntityMentionRecord] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class BioCXMLDocumentPayload:
+    """One standalone BioCXML document payload extracted from a collection."""
+
+    document_id: str
+    xml_text: str
+
+
 def _parse_biocxml_document_elem(xml_text: str) -> tuple[ET.Element, str]:
     root = ET.fromstring(xml_text)
     document_elem = root.find(".//document") if root.tag != "document" else root
@@ -61,6 +70,53 @@ def extract_biocxml_document_id(xml_text: str) -> str:
 
     _, document_id = _parse_biocxml_document_elem(xml_text)
     return document_id
+
+
+def split_biocxml_collection(xml_text: str) -> list[BioCXMLDocumentPayload]:
+    """Split a BioCXML payload into standalone per-document XML payloads.
+
+    PubTator archive members and API responses commonly store many
+    ``<document>`` elements inside one ``<collection>`` wrapper. Downstream
+    warehouse parsing is document-granular, so callers should normalize the
+    payload to one document per XML string before parsing or caching.
+    """
+
+    root = ET.fromstring(xml_text)
+    if root.tag == "document":
+        document_id = (root.findtext("id") or "").strip()
+        if not document_id:
+            raise ValueError("BioCXML document must contain a non-empty <id>")
+        return [
+            BioCXMLDocumentPayload(
+                document_id=document_id,
+                xml_text=ET.tostring(root, encoding="unicode", xml_declaration=False),
+            )
+        ]
+
+    source_text = (root.findtext("source") or "PubTator").strip() or "PubTator"
+    key_text = (root.findtext("key") or "").strip()
+    date_text = (root.findtext("date") or "").strip()
+
+    results: list[BioCXMLDocumentPayload] = []
+    for document_elem in root.findall(".//document"):
+        document_id = (document_elem.findtext("id") or "").strip()
+        if not document_id:
+            continue
+        wrapper = ET.Element("collection")
+        ET.SubElement(wrapper, "source").text = source_text
+        if date_text:
+            ET.SubElement(wrapper, "date").text = date_text
+        if key_text:
+            ET.SubElement(wrapper, "key").text = key_text
+        wrapper.append(deepcopy(document_elem))
+        results.append(
+            BioCXMLDocumentPayload(
+                document_id=document_id,
+                xml_text=ET.tostring(wrapper, encoding="unicode", xml_declaration=False),
+            )
+        )
+
+    return results
 
 
 def _decode_annotation_group(raw_value: Any) -> list[dict[str, Any]]:

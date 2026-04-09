@@ -59,6 +59,11 @@ def test_bioc_backfill_archive_discovery_accepts_any_corpus_paper():
         return _Result()
 
     def _refresh_runner(**kwargs):
+        assert kwargs["seed_chunk_version"] is True
+        assert kwargs["backfill_chunks"] is True
+        assert kwargs["chunk_backfill_batch_size"] == 17
+        assert kwargs["embedding_model"] == "medcpt-chunk-v1"
+
         class _Result:
             def model_dump(self, mode="python"):
                 return {
@@ -90,6 +95,10 @@ def test_bioc_backfill_archive_discovery_accepts_any_corpus_paper():
         locator_refresher=_locator_refresher,
         refresh_runner=_refresh_runner,
         locator_repository=repository,
+        seed_chunk_version=True,
+        backfill_chunks=True,
+        chunk_backfill_batch_size=17,
+        embedding_model="medcpt-chunk-v1",
     )
 
     assert report.archive_name == "BioCXML.0.tar.gz"

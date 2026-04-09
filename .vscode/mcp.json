@@ -19,16 +19,6 @@
       "url": "http://localhost:8401/mcp",
       "instructions": "Visible Chrome on Windows host via HTTP proxy. Chrome must be running with --remote-debugging-port=9222. Start Chrome via Start-ChromeDebug.ps1 on Windows."
     },
-    "supabase-solemd": {
-      "type": "http",
-      "url": "http://localhost:8201/mcp",
-      "instructions": "SQL-based access to ALL project schemas (solemd, vocab, make, web, wiki, zotero). Query live schema first - it's authoritative."
-    },
-    "supabase-umls": {
-      "type": "http",
-      "url": "http://localhost:8203/mcp",
-      "instructions": "Query UMLS terminology data. Contains MRCONSO, MRREL, and semantic type tables."
-    },
     "codeatlas": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.graph",
@@ -40,7 +30,7 @@
         "/workspaces/SoleMD.Graph/node_modules/@mantine/mcp-server/bin/mantine-mcp-server.cjs"
       ],
       "env": {
-        "MANTINE_MCP_DATA_URL": "https://alpha.mantine.dev/mcp"
+        "MANTINE_MCP_DATA_URL": "https://mantine.dev/mcp"
       },
       "instructions": "Official Mantine MCP server (first-party, 145 components). Tools: list_items, get_item_doc (full markdown docs), get_item_props (normalized props), search_docs (keyword search). Prefer this for Mantine-specific queries."
     },

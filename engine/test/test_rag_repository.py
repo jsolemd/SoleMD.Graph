@@ -1246,6 +1246,13 @@ def test_runtime_entity_queries_use_canonical_entity_mentions():
     assert "ranked_papers AS (" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "\n,\n" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "FROM solemd.paper_entity_mentions pem" in queries.ENTITY_MATCH_SQL
+    assert "lower(COALESCE(pem.entity_type, ''))" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert (
+        "split_part(COALESCE(pem.concept_id, ''), ':', 2)"
+        in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    )
+    assert "lower(COALESCE(e.entity_type, ''))" in queries.ENTITY_MATCH_SQL
+    assert "split_part(COALESCE(e.concept_id, ''), ':', 2)" in queries.ENTITY_MATCH_SQL
     assert "pubtator.entity_annotations" not in queries.ENTITY_MATCH_SQL
 
 

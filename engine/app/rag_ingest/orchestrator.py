@@ -11,13 +11,11 @@ from pathlib import Path
 from typing import Protocol
 from xml.etree import ElementTree as ET
 
-
-from app.langfuse_config import SPAN_INGEST_REFRESH, observe
-
 from pydantic import Field
 
 from app import db
 from app.config import settings
+from app.langfuse_config import SPAN_INGEST_REFRESH, observe
 from app.rag.corpus_resolution import normalize_bioc_document_id
 from app.rag.parse_contract import ParseContractModel, ParseSourceSystem
 from app.rag.source_selection import (
@@ -30,9 +28,8 @@ from app.rag_ingest.corpus_ids import (
     load_corpus_ids_file,
     resolve_corpus_ids,
 )
-from app.rag_ingest.corpus_ids import (
-    unique_corpus_ids as _unique_ints,
-)
+from app.rag_ingest.corpus_ids import unique_corpus_ids as _unique_ints
+from app.rag_ingest.ingest_tracing import traced_parse_biocxml, traced_parse_s2orc
 from app.rag_ingest.orchestrator_checkpoint import (
     RagRefreshCheckpointState,
     load_checkpoint_state,
@@ -54,13 +51,11 @@ from app.rag_ingest.source_locator import (
     RagSourceLocatorLookup,
     SidecarRagSourceLocatorRepository,
 )
-from app.rag_ingest.ingest_tracing import traced_parse_biocxml, traced_parse_s2orc
 from app.rag_ingest.source_parsers import (
     ParsedPaperSource,
-    extract_biocxml_document_id,
-    parse_biocxml_document,
     parse_s2_paper_abstract,
     parse_s2orc_row,
+    split_biocxml_collection,
 )
 from app.rag_ingest.target_corpus import (
     PostgresTargetCorpusLoader,
@@ -276,15 +271,15 @@ class LocalBioCArchiveReader:
                     continue
                 xml_text = extracted.read().decode("utf-8", errors="replace")
                 try:
-                    document_id = extract_biocxml_document_id(xml_text)
-                except ET.ParseError:
+                    for document in split_biocxml_collection(xml_text):
+                        yield document.document_id, member.name, document.xml_text
+                except (ET.ParseError, ValueError):
                     logger.warning(
                         "Skipping malformed BioC XML member %s from %s",
                         member.name,
                         archive_path.name,
                     )
                     continue
-                yield document_id, member.name, xml_text
 
 
 def _unpack_bioc_document_record(record) -> tuple[str, str | None, str]:

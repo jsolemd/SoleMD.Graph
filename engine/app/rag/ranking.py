@@ -23,7 +23,10 @@ from app.rag.ranking_support import (
     _ranking_profile,
     _rrf_score,
 )
-from app.rag.retrieval_policy import has_direct_retrieval_support
+from app.rag.retrieval_policy import (
+    has_direct_retrieval_support,
+    passage_direct_support_tier,
+)
 from app.rag.title_anchor import compute_title_anchor_score
 from app.rag.types import (
     ClinicalQueryIntent,
@@ -225,16 +228,13 @@ def _rank_sort_key(
         QueryRetrievalProfile.QUESTION_LOOKUP,
     ):
         return (
-            1.0
-            if has_direct_retrieval_support(
-                paper=item,
-                retrieval_profile=retrieval_profile,
-            )
-            else 0.0,
-            item.biomedical_rerank_score,
-            item.passage_alignment_score,
+            item.title_anchor_score,
+            float(passage_direct_support_tier(item)),
             item.fused_score,
+            item.passage_alignment_score,
             item.chunk_lexical_score,
+            item.citation_boost,
+            item.biomedical_rerank_score,
             item.lexical_score,
             item.selected_context_score,
             item.citation_count or 0,

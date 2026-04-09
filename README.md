@@ -46,6 +46,9 @@ uv run uvicorn app.main:app --port 8300
 
 ## Documentation
 
-- `docs/map/architecture.md` -- Full architecture and technology decisions
-- `docs/map/pubtator3.md` -- PubTator3 download, parse, load guide
-- `docs/map/semantic-scholar.md` -- Semantic Scholar datasets guide
+- `docs/map/map.md` -- Entry point with reader-journey diagram and doc index
+- `docs/map/architecture.md` -- Hard boundaries, adapter rules, tech stack
+- `docs/map/ingest.md` -- PubTator3 + Semantic Scholar + RAG warehouse pipeline
+- `docs/map/graph-build.md` -- Engine pipeline (UMAP/Leiden/base admission)
+- `docs/map/graph-runtime.md` -- Browser runtime (DuckDB-WASM + Cosmograph)
+- `docs/map/rag.md` -- RAG retrieval + answer runtime

@@ -6,6 +6,7 @@ export { default as GraphRenderer } from "./GraphRenderer";
 
 export { useGraphCamera } from "./hooks/use-graph-camera";
 export { useGraphFocus } from "./hooks/use-graph-focus";
+export { useGraphInstance } from "./hooks/use-graph-instance";
 export { useGraphSelection } from "./hooks/use-graph-selection";
 export { useGraphExport } from "./hooks/use-graph-export";
 
@@ -16,5 +17,3 @@ export { FilterBarWidget } from "./widgets/FilterBarWidget";
 export { FilterHistogramWidget } from "./widgets/FilterHistogramWidget";
 export { ColorLegends } from "./widgets/ColorLegends";
 export { SizeLegend } from "./widgets/SizeLegend";
-
-export { useCosmograph } from "@cosmograph/react";

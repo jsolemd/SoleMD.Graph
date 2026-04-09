@@ -1,3 +1,11 @@
+/** Stable equality check for numeric range tuples — avoids spurious store updates. */
+export function hasSameRange(
+  current: [number, number],
+  next: [number, number],
+): boolean {
+  return current[0] === next[0] && current[1] === next[1]
+}
+
 /** Loop-safe min that avoids stack overflow from spread on large arrays. */
 export function safeMin(values: number[]): number {
   if (values.length === 0) return 0;

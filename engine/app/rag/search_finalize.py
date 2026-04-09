@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-
-
-from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_RAG_FINALIZE, observe
 from time import perf_counter
 from uuid import uuid4
 
 from app.config import settings
+from app.langfuse_config import SPAN_RAG_FINALIZE, observe
+from app.langfuse_config import get_langfuse as _get_langfuse
 from app.rag.answer import build_baseline_answer_payload
 from app.rag.biomedical_reranking import RagBiomedicalReranker, apply_biomedical_rerank
 from app.rag.bundle import assemble_evidence_bundles, merge_graph_signals
@@ -362,7 +361,10 @@ def finalize_search_result(
         retrieval_profile=query.retrieval_profile,
         k=query.k,
         rerank_topn=query.rerank_topn,
+        query_text=query.query,
+        lexical_hits=retrieval.lexical_hits,
         selected_corpus_id=retrieval.selected_corpus_id,
+        selected_direct_anchor=retrieval.selected_direct_anchor,
     )
     trace.record_count("preliminary_ranked_hits", len(preliminary_ranked_hits))
     trace.record_count("enrichment_corpus_ids", len(enrichment_corpus_ids))

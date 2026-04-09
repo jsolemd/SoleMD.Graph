@@ -1,419 +1,121 @@
-"""Backend-owned query enrichment for the paper-level evidence baseline."""
+"""Backend-owned query enrichment for the paper-level evidence baseline.
+
+Modular layout:
+- ``_query_enrichment_const`` — pure constants, vocab sets, and the
+  ``QueryEnrichmentTerms`` dataclass. No sibling-rag imports.
+- ``_query_enrichment_phrases`` — pure surface normalization, phrase
+  builders, and entity-shape detectors. Imports only from
+  ``_query_enrichment_const`` and ``app.rag.types``.
+- This file — title-shape classification and retrieval profile selection.
+  Composes the helpers above and is the public surface every external
+  caller imports from.
+
+All symbols defined in the helper modules are re-exported here so the
+historical ``from app.rag.query_enrichment import …`` import paths keep
+working without churn.
+"""
 
 from __future__ import annotations
 
-import re
 import unicodedata
-from dataclasses import dataclass
 
+from app.rag._query_enrichment_const import (
+    COMPARISON_PREFIXES,
+    DEFAULT_QUERY_SYMBOLS,
+    ENTITY_QUERY_SYMBOLS,
+    INTERROGATIVE_OPENERS,
+    MAX_AUTO_RELATION_QUERY_WORDS,
+    MAX_ENTITY_ACRONYM_TOKEN_CHARS,
+    MAX_ENTITY_RESOLUTION_PHRASES,
+    MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS,
+    MAX_PARAPHRASE_QUERY_TOKENS,
+    MAX_QUERY_PHRASE_TOKENS,
+    MAX_QUERY_PHRASES,
+    MAX_SHORT_KEYWORD_TOKENS,
+    MAX_TITLE_LIKE_QUERY_CHARS,
+    MAX_TITLE_LIKE_QUERY_WORDS,
+    MAX_TITLE_SUBTITLE_WORDS,
+    MIN_CHUNK_LEXICAL_QUERY_WORDS,
+    MIN_ENTITY_PROPER_NOUN_CHARS,
+    MIN_EXACT_TITLE_PRECHECK_CHARS,
+    MIN_EXACT_TITLE_PRECHECK_WORDS,
+    MIN_EXTENDED_TITLE_LIKE_QUERY_CHARS,
+    NEGATION_SIGNALS,
+    PARAPHRASE_MARKER_TOKENS,
+    PARAPHRASE_TITLE_PUNCT,
+    PASSAGE_VERB_TOKENS,
+    PROSE_CLAUSE_TOKENS,
+    QueryEnrichmentTerms,
+    SENTENCE_OPENING_PREFIXES,
+    SHORT_KEYWORD_TITLE_PUNCT,
+    STATISTICAL_ANCHOR_PREFIXES,
+    SUPPORTED_RELATION_TYPES,
+)
+from app.rag._query_enrichment_phrases import (
+    build_entity_query_phrases,
+    build_query_entity_resolution_phrases,
+    build_query_phrases,
+    build_runtime_entity_resolution_phrases,
+    has_query_entity_surface_signal,
+    has_statistical_surface_signal,
+    normalize_entity_query_text,
+    normalize_query_text,
+    normalize_title_key,
+    should_seed_resolved_entity_term,
+)
 from app.rag.types import QueryRetrievalProfile
 
-MAX_QUERY_PHRASE_TOKENS = 4
-MAX_QUERY_PHRASES = 48
-MAX_ENTITY_RESOLUTION_PHRASES = 12
-MIN_EXACT_TITLE_PRECHECK_CHARS = 96
-MIN_EXACT_TITLE_PRECHECK_WORDS = 12
-MAX_TITLE_LIKE_QUERY_CHARS = 220
-MAX_TITLE_LIKE_QUERY_WORDS = 24
-MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS = 40
-MAX_TITLE_SUBTITLE_WORDS = 10
-MAX_AUTO_RELATION_QUERY_WORDS = 12
-MIN_CHUNK_LEXICAL_QUERY_WORDS = 4
-MIN_EXTENDED_TITLE_LIKE_QUERY_CHARS = 120
-MAX_ENTITY_ACRONYM_TOKEN_CHARS = 8
-MIN_ENTITY_PROPER_NOUN_CHARS = 4
-DEFAULT_QUERY_SYMBOLS = frozenset({":", "-", "_"})
-ENTITY_QUERY_SYMBOLS = frozenset({":", "-", "_", "/", "+"})
-PROSE_CLAUSE_TOKENS = frozenset(
-    {
-        "aimed",
-        "before",
-        "during",
-        "after",
-        "because",
-        "emerged",
-        "measured",
-        "proposed",
-        "that",
-        "which",
-        "were",
-        "was",
-        "is",
-        "are",
-        "had",
-        "has",
-        "have",
-        # Narrow paraphrase markers — "from" (causal origin) and "against"
-        # (adversarial comparison) rarely appear inside legitimate paper
-        # titles but are common in natural-language paraphrases that should
-        # flip out of the title lane (e.g. "liver problems from psychiatric
-        # medications", "efficacy against placebo controls").
-        "from",
-        "against",
-    }
-)
-SENTENCE_OPENING_PREFIXES = frozenset(
-    {
-        ("this",),
-        ("these",),
-        ("those",),
-        ("we",),
-        ("our",),
-        ("here",),
-        ("in", "this"),
-        ("this", "is"),
-        ("this", "study"),
-        ("we", "show"),
-        ("we", "investigated"),
-        ("our", "results"),
-    }
-)
-STATISTICAL_ANCHOR_PREFIXES = frozenset({"p", "n", "r"})
-
-NEGATION_SIGNALS = frozenset(
-    {"not", "without", "vs", "versus", "nor", "neither", "none"}
-)
-COMPARISON_PREFIXES = (
-    "difference between",
-    "compared to",
-    "risk of",
-    "effect of",
-    "association between",
-    "relationship between",
-    "role of",
-    "impact of",
-    "incidence of",
-    "prevalence of",
-)
-INTERROGATIVE_OPENERS = frozenset(
-    {"what", "how", "why", "does", "is", "can", "are", "which", "do", "could", "should", "when", "where"}
-)
-
-# Canonical PubTator relation labels currently exercised in the live dataset.
-SUPPORTED_RELATION_TYPES = frozenset(
-    {
-        "associate",
-        "cause",
-        "compare",
-        "cotreat",
-        "drug_interact",
-        "inhibit",
-        "interact",
-        "negative_correlate",
-        "positive_correlate",
-        "prevent",
-        "stimulate",
-        "treat",
-    }
-)
-
-
-@dataclass(frozen=True, slots=True)
-class QueryEnrichmentTerms:
-    entity_terms: list[str]
-    relation_terms: list[str]
-
-
-def _normalize_query_text_with_symbols(
-    text: str,
-    *,
-    allowed_symbols: frozenset[str],
-) -> str:
-    normalized = unicodedata.normalize("NFKC", text or "")
-    chars: list[str] = []
-    for char in normalized:
-        if char.isalnum() or char in allowed_symbols:
-            chars.append(char.lower())
-            continue
-        chars.append(" ")
-    return " ".join("".join(chars).split())
-
-
-def normalize_query_text(text: str) -> str:
-    """Normalize free-text queries into a conservative token surface."""
-
-    return _normalize_query_text_with_symbols(
-        text,
-        allowed_symbols=DEFAULT_QUERY_SYMBOLS,
-    )
-
-
-def normalize_entity_query_text(text: str) -> str:
-    """Normalize entity-oriented phrases while preserving biomedical symbol tokens."""
-
-    return _normalize_query_text_with_symbols(
-        text,
-        allowed_symbols=ENTITY_QUERY_SYMBOLS,
-    )
-
-
-def _build_query_phrases_from_tokens(tokens: list[str]) -> list[str]:
-    if not tokens:
-        return []
-
-    phrases: list[str] = []
-    seen: set[str] = set()
-    max_tokens = min(MAX_QUERY_PHRASE_TOKENS, len(tokens))
-    for size in range(max_tokens, 0, -1):
-        for start in range(0, len(tokens) - size + 1):
-            phrase = " ".join(tokens[start : start + size]).strip()
-            if len(phrase) < 3 or phrase in seen:
-                continue
-            seen.add(phrase)
-            phrases.append(phrase)
-            if len(phrases) >= MAX_QUERY_PHRASES:
-                return phrases
-    return phrases
-
-
-def build_query_phrases(text: str) -> list[str]:
-    """Build bounded contiguous query phrases without frontend heuristics."""
-
-    return _build_query_phrases_from_tokens(normalize_query_text(text).split())
-
-
-def build_entity_query_phrases(text: str) -> list[str]:
-    """Build bounded entity-oriented phrases without stripping biomedical symbols."""
-
-    return _build_query_phrases_from_tokens(normalize_entity_query_text(text).split())
-
-
-def _entity_surface_anchor_tokens(text: str) -> list[str]:
-    anchors: list[str] = []
-    seen: set[str] = set()
-    for token in _surface_tokens(text):
-        normalized = normalize_entity_query_text(token)
-        if not normalized or normalized in seen:
-            continue
-        if _is_short_upper_acronym(token):
-            seen.add(normalized)
-            anchors.append(normalized)
-            continue
-        if _has_specific_entity_surface_token(token, normalized):
-            seen.add(normalized)
-            anchors.append(normalized)
-    return anchors
-
-
-def _phrase_contains_anchor(phrase: str, anchor: str) -> bool:
-    phrase_tokens = phrase.split()
-    anchor_tokens = anchor.split()
-    if not phrase_tokens or not anchor_tokens:
-        return False
-    if len(anchor_tokens) == 1:
-        return anchor_tokens[0] in phrase_tokens
-    return any(
-        phrase_tokens[index : index + len(anchor_tokens)] == anchor_tokens
-        for index in range(0, len(phrase_tokens) - len(anchor_tokens) + 1)
-    )
-
-
-def build_query_entity_resolution_phrases(text: str) -> list[str]:
-    """Build a compact, anchor-aware phrase set for runtime entity resolution.
-
-    Runtime entity enrichment is intentionally high-precision. Keep only phrase
-    windows that actually contain a raw surface anchor such as an acronym,
-    concept-id-like token, or biomedical symbol token.
-    """
-
-    anchors = _entity_surface_anchor_tokens(text)
-    if not anchors:
-        return []
-
-    filtered: list[str] = []
-    seen: set[str] = set()
-    for phrase in build_entity_query_phrases(text):
-        if phrase in seen:
-            continue
-        if any(_phrase_contains_anchor(phrase, anchor) for anchor in anchors):
-            seen.add(phrase)
-            filtered.append(phrase)
-        if len(filtered) >= MAX_ENTITY_RESOLUTION_PHRASES:
-            break
-    return filtered
-
-
-def build_runtime_entity_resolution_phrases(
-    text: str,
-    *,
-    retrieval_profile: QueryRetrievalProfile,
-    normalized_query: str | None = None,
-) -> list[str]:
-    """Build query phrases for runtime entity resolution without widening passage noise.
-
-    Title/general/question lookups keep the broader phrase inventory so generic
-    biomedical queries can still resolve missing entity terms. Passage lookups stay
-    on the compact anchor-aware lane to avoid spending time on statistical prose.
-    """
-
-    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
-        return build_query_entity_resolution_phrases(text)
-
-    return list(
-        dict.fromkeys(
-            [
-                *build_entity_query_phrases(text),
-                *build_query_phrases(normalized_query or text),
-            ]
-        )
-    )
-
-
-def _is_statistical_surface_token(raw_token: str, normalized_token: str) -> bool:
-    raw = raw_token.strip().casefold()
-    normalized_parts = normalized_token.split()
-    if not raw or not normalized_parts:
-        return False
-    if len(normalized_parts) > 1 and normalized_parts[0] in STATISTICAL_ANCHOR_PREFIXES:
-        if all(part.isdigit() for part in normalized_parts[1:]):
-            return True
-    return bool(re.fullmatch(r"[<>~=]?\d+(?:\.\d+)?%?", raw))
-
-
-def _has_specific_entity_surface_token(raw_token: str, normalized_token: str) -> bool:
-    stripped = raw_token.strip()
-    if not stripped or _is_statistical_surface_token(raw_token, normalized_token):
-        return False
-
-    alpha_count = sum(char.isalpha() for char in stripped)
-    digit_count = sum(char.isdigit() for char in stripped)
-    has_connector = any(char in {":", "/", "+", "-"} for char in stripped)
-
-    if has_connector and alpha_count >= 2:
-        return True
-    if alpha_count >= 2 and digit_count >= 1:
-        return True
-    return False
-
-
-def _has_specific_entity_token(token: str) -> bool:
-    stripped = token.strip()
-    if not stripped:
-        return False
-    if ":" in stripped:
-        return True
-    has_alpha = any(char.isalpha() for char in stripped)
-    has_digit = any(char.isdigit() for char in stripped)
-    has_symbol = any(char in ENTITY_QUERY_SYMBOLS - DEFAULT_QUERY_SYMBOLS for char in stripped)
-    return (has_alpha and has_digit) or has_symbol
-
-
-def should_seed_resolved_entity_term(
-    term: str,
-    *,
-    entity_confidence: str | None = None,
-) -> bool:
-    """Return True when an auto-resolved entity term is specific enough for recall seeding.
-
-    High-confidence entity_rules terms (from curated vocab) bypass the surface-structure
-    specificity check, allowing plain-English domain terms like "delirium" or
-    "serotonin syndrome" to seed the entity_match lane.
-    """
-
-    stripped = term.strip()
-    if not stripped:
-        return False
-    if entity_confidence == "high":
-        return True
-    return any(_has_specific_entity_token(token) for token in stripped.split())
-
-
-def _surface_tokens(text: str) -> list[str]:
-    normalized = unicodedata.normalize("NFKC", text or "")
-    return [
-        token.strip("()[]{}.,;:!?\"'")
-        for token in normalized.split()
-        if token.strip("()[]{}.,;:!?\"'")
-    ]
-
-
-def _is_short_upper_acronym(token: str) -> bool:
-    stripped = token.strip()
-    return (
-        2 <= len(stripped) <= MAX_ENTITY_ACRONYM_TOKEN_CHARS
-        and stripped.isupper()
-        and any(char.isalpha() for char in stripped)
-        and all(char.isalnum() or char in "/+-" for char in stripped)
-    )
-
-
-def _has_mid_sentence_proper_noun(tokens: list[str]) -> bool:
-    for token in tokens[1:]:
-        if len(token) < MIN_ENTITY_PROPER_NOUN_CHARS:
-            continue
-        if token[0].isupper() and token[1:].islower():
-            return True
-    return False
-
-
-def has_query_entity_surface_signal(text: str) -> bool:
-    """Return True when the query text carries a high-precision entity-like surface signal."""
-
-    normalized = unicodedata.normalize("NFKC", text or "")
-    if not normalized:
-        return False
-    if re.search(r"\(([A-Z][A-Z0-9/+:-]{1,7})\)", normalized):
-        return True
-
-    tokens = _surface_tokens(normalized)
-    for token in tokens:
-        normalized_token = normalize_entity_query_text(token)
-        if normalized_token and _has_specific_entity_token(normalized_token):
-            return True
-        if _is_short_upper_acronym(token):
-            return True
-    return _has_mid_sentence_proper_noun(tokens)
-
-
-def has_statistical_surface_signal(text: str) -> bool:
-    """Return True when the query surface looks like a numeric/statistical excerpt.
-
-    Keep this deliberately narrow for runtime fallback policy. Passage queries with
-    multiple numeric/statistical tokens or mixed acronym-plus-stat surfaces tend to
-    be weak chunk anchors but can still resolve via cheap paper-level FTS.
-    """
-
-    normalized = unicodedata.normalize("NFKC", text or "")
-    if not normalized:
-        return False
-
-    statistical_tokens = 0
-    acronym_tokens = 0
-    for token in _surface_tokens(normalized):
-        normalized_token = normalize_entity_query_text(token)
-        if not normalized_token:
-            continue
-        if _is_statistical_surface_token(token, normalized_token):
-            statistical_tokens += 1
-            continue
-        if _is_short_upper_acronym(token):
-            acronym_tokens += 1
-
-    return statistical_tokens >= 2 or (
-        statistical_tokens >= 1 and acronym_tokens >= 1
-    )
-
-
-def normalize_title_key(text: str | None) -> str:
-    """Normalize a title-like string into a stable lexical comparison key.
-
-    Keep this aligned with the PostgreSQL helper `solemd.normalize_title_key`
-    used by the runtime retrieval indexes and exact-title search path.
-    """
-
-    normalized = unicodedata.normalize("NFKC", text or "")
-    tokens: list[str] = []
-    current: list[str] = []
-    for char in normalized.casefold():
-        if char.isalnum():
-            current.append(char)
-            continue
-        if current:
-            tokens.append("".join(current))
-            current = []
-    if current:
-        tokens.append("".join(current))
-    return " ".join(tokens)
+__all__ = [
+    # Constants & dataclass (re-exported from _query_enrichment_const)
+    "COMPARISON_PREFIXES",
+    "DEFAULT_QUERY_SYMBOLS",
+    "ENTITY_QUERY_SYMBOLS",
+    "INTERROGATIVE_OPENERS",
+    "MAX_AUTO_RELATION_QUERY_WORDS",
+    "MAX_ENTITY_ACRONYM_TOKEN_CHARS",
+    "MAX_ENTITY_RESOLUTION_PHRASES",
+    "MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS",
+    "MAX_PARAPHRASE_QUERY_TOKENS",
+    "MAX_QUERY_PHRASE_TOKENS",
+    "MAX_QUERY_PHRASES",
+    "MAX_SHORT_KEYWORD_TOKENS",
+    "MAX_TITLE_LIKE_QUERY_CHARS",
+    "MAX_TITLE_LIKE_QUERY_WORDS",
+    "MAX_TITLE_SUBTITLE_WORDS",
+    "MIN_CHUNK_LEXICAL_QUERY_WORDS",
+    "MIN_ENTITY_PROPER_NOUN_CHARS",
+    "MIN_EXACT_TITLE_PRECHECK_CHARS",
+    "MIN_EXACT_TITLE_PRECHECK_WORDS",
+    "MIN_EXTENDED_TITLE_LIKE_QUERY_CHARS",
+    "NEGATION_SIGNALS",
+    "PARAPHRASE_MARKER_TOKENS",
+    "PARAPHRASE_TITLE_PUNCT",
+    "PASSAGE_VERB_TOKENS",
+    "PROSE_CLAUSE_TOKENS",
+    "QueryEnrichmentTerms",
+    "SENTENCE_OPENING_PREFIXES",
+    "SHORT_KEYWORD_TITLE_PUNCT",
+    "STATISTICAL_ANCHOR_PREFIXES",
+    "SUPPORTED_RELATION_TYPES",
+    # Phrase / surface helpers (re-exported from _query_enrichment_phrases)
+    "build_entity_query_phrases",
+    "build_query_entity_resolution_phrases",
+    "build_query_phrases",
+    "build_runtime_entity_resolution_phrases",
+    "has_query_entity_surface_signal",
+    "has_statistical_surface_signal",
+    "normalize_entity_query_text",
+    "normalize_query_text",
+    "normalize_title_key",
+    "should_seed_resolved_entity_term",
+    # Title classification (defined in this file)
+    "derive_relation_terms",
+    "determine_query_retrieval_profile",
+    "is_title_like_query",
+    "should_use_chunk_lexical_query",
+    "should_use_exact_title_precheck",
+    "should_use_title_similarity",
+]
 
 
 def _has_inline_sentence_boundary(text: str) -> bool:
@@ -500,11 +202,24 @@ def _has_obvious_sentence_opening(text: str) -> bool:
     return any(tuple(tokens[: len(prefix)]) == prefix for prefix in SENTENCE_OPENING_PREFIXES)
 
 
-def _should_demote_title_to_general(text: str) -> bool:
-    """Return True for query shapes that look like titles but are actually clinical/comparison queries.
+def _should_demote_title_to_general(
+    text: str,
+    *,
+    in_title_friendly_context: bool = False,
+) -> bool:
+    """Return True for title-shaped queries that are actually clinical/comparison prompts.
 
     Terse acronym-heavy queries, negated phrasing, and statistical/comparison shapes
     perform better with multi-lane GENERAL retrieval than the narrow title lane.
+
+    ``in_title_friendly_context`` mirrors the runtime's
+    ``allow_terminal_title_punctuation`` flag. When the caller has
+    explicitly opted into title-friendly routing (for example the UI
+    selected-paper flow), the short-keyword demotion is skipped so users
+    who type a brief noun-phrase query while a paper is selected still
+    get title candidate lookup. Structural demotions (negation,
+    comparison, acronym-heavy) fire regardless — those are always wrong
+    for the title lane.
     """
 
     normalized = normalize_query_text(text)
@@ -528,6 +243,25 @@ def _should_demote_title_to_general(text: str) -> bool:
         if upper_tokens > len(tokens) * 0.5:
             return True
 
+    # Short, lowercase-dominant biomedical keyword queries → GENERAL.
+    # Catches terse lookups like "tardive dyskinesia", "Wilson disease",
+    # "normal pressure hydrocephalus" that currently get trapped in the
+    # TITLE_LOOKUP lane because they are noun-phrase shaped. Real short
+    # titles almost always carry title-shape punctuation (colon, em dash,
+    # period) or multiple capitalized tokens. One capitalized eponym is
+    # permitted so that "Wilson disease" / "Wernicke encephalopathy" still
+    # demote cleanly. Skipped in title-friendly UI contexts so a
+    # selected-paper browse that types a brief noun phrase still uses
+    # title candidate lookup.
+    if not in_title_friendly_context and len(tokens) <= MAX_SHORT_KEYWORD_TOKENS:
+        stripped = text.strip()
+        if not any(ch in stripped for ch in SHORT_KEYWORD_TITLE_PUNCT):
+            raw_tokens = stripped.split()
+            if raw_tokens:
+                lowercase_tokens = sum(1 for t in raw_tokens if t == t.lower())
+                if lowercase_tokens >= len(raw_tokens) - 1:
+                    return True
+
     return False
 
 
@@ -541,6 +275,43 @@ def _is_interrogative_query(text: str) -> bool:
     if tokens and tokens[0] in INTERROGATIVE_OPENERS:
         return True
     return False
+
+
+def _is_paraphrase_marker_query(text: str, tokens: list[str]) -> bool:
+    """Return True for colloquial paraphrase queries that belong in GENERAL.
+
+    Targets lay-speak noun-phrase queries with ``from``/``against`` that
+    Phase 0.4 correctly pulled out of the title lane but which then fell
+    through to PASSAGE_LOOKUP by default. These queries have no passage
+    anchor to chunk against; they belong in the broad GENERAL fusion.
+
+    Gates are conservative:
+      - Must be short (``<= MAX_PARAPHRASE_QUERY_TOKENS``) — real
+        paraphrases are brief lay descriptions; long clinical sentences
+        are passage claims even when their verb vocabulary is unusual
+      - Must contain ``from`` or ``against`` (the narrow Phase 0.4 markers)
+      - Must NOT contain title-shape punctuation (colon/semicolon/dash) —
+        protects legitimate titles like "Soluble protein oligomers in
+        neurodegeneration: lessons from the Alzheimer's amyloid β-peptide"
+      - Must NOT contain any curated passage verb — second-line defense
+        for short queries that still read as passage claims
+      - Must NOT be interrogative — preserved by calling this AFTER the
+        question check in ``determine_query_retrieval_profile``, but
+        double-gated here for defense in depth
+    """
+
+    if not tokens or len(tokens) > MAX_PARAPHRASE_QUERY_TOKENS:
+        return False
+    if not any(t in PARAPHRASE_MARKER_TOKENS for t in tokens):
+        return False
+    stripped = text.strip()
+    if any(ch in stripped for ch in PARAPHRASE_TITLE_PUNCT):
+        return False
+    if any(t in PASSAGE_VERB_TOKENS for t in tokens):
+        return False
+    if _is_interrogative_query(stripped):
+        return False
+    return True
 
 
 def is_title_like_query(
@@ -600,7 +371,10 @@ def determine_query_retrieval_profile(
         text,
         allow_terminal_punctuation=allow_terminal_title_punctuation,
     ):
-        if _should_demote_title_to_general(text or ""):
+        if _should_demote_title_to_general(
+            text or "",
+            in_title_friendly_context=allow_terminal_title_punctuation,
+        ):
             return QueryRetrievalProfile.GENERAL
         return QueryRetrievalProfile.TITLE_LOOKUP
 
@@ -612,6 +386,12 @@ def determine_query_retrieval_profile(
     # Interrogative queries get dual-lane paper+chunk retrieval
     if len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS and _is_interrogative_query(text or ""):
         return QueryRetrievalProfile.QUESTION_LOOKUP
+
+    # Paraphrased noun-phrase queries with "from"/"against" but no passage
+    # verb anchor belong in GENERAL fusion, not the chunk-anchored passage
+    # lane. See ``_is_paraphrase_marker_query`` for the full gate.
+    if _is_paraphrase_marker_query(text or "", tokens):
+        return QueryRetrievalProfile.GENERAL
 
     if len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
         return QueryRetrievalProfile.PASSAGE_LOOKUP

@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ActionIcon, Button, Select, Stack, Text } from "@mantine/core";
-import { useCosmograph } from "@/features/graph/cosmograph";
+import { useGraphInstance } from "@/features/graph/cosmograph";
 import { Plus, X } from "lucide-react";
 import {
   clearSelectionClause,
@@ -38,7 +38,7 @@ export function FilterPanelShell({
   filterItemStyle,
   onVisibleFiltersChange,
 }: FilterPanelShellProps) {
-  const { cosmograph } = useCosmograph();
+  const cosmograph = useGraphInstance();
   const filterColumns = useDashboardStore((s) => s.filterColumns);
   const addFilter = useDashboardStore((s) => s.addFilter);
   const removeFilter = useDashboardStore((s) => s.removeFilter);

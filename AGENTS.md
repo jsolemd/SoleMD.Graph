@@ -39,8 +39,12 @@ cd engine && uv run pytest     # Engine tests
 
 | Topic | Location |
 |-------|----------|
-| System vision map | `docs/map/map.md` |
-| Data flow | `docs/map/data.md` |
-| PubTator3 pipeline | `docs/map/pubtator3.md` |
-| Semantic Scholar | `docs/map/semantic-scholar.md` |
+| Entry point + reader journey | `docs/map/map.md` |
+| Hard boundaries + adapters | `docs/map/architecture.md` |
 | Database schema | `docs/map/database.md` |
+| Ingest (PubTator3 + S2 + warehouse) | `docs/map/ingest.md` |
+| Graph build (engine pipeline) | `docs/map/graph-build.md` |
+| Graph runtime (browser + DuckDB + bundle) | `docs/map/graph-runtime.md` |
+| RAG runtime | `docs/map/rag.md` |
+| RAG benchmark | `docs/map/benchmark.md` |
+| Product vision + roadmap | `docs/design/vision.md` |

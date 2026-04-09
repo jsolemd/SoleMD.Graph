@@ -39,16 +39,19 @@ if _env_local.exists():
             value = value.strip().strip('"').strip("'")
             os.environ.setdefault(key.strip(), value)
 
-import app.langfuse_config  # noqa: F401  — centralized Langfuse logging config
-from app.langfuse_config import ensure_score_configs, flush as _langfuse_flush
-
 from app import db
+from app.langfuse_config import ensure_score_configs
+from app.langfuse_config import flush as _langfuse_flush
 from app.rag_ingest.experiment import (
     diagnose_experiment,
     enqueue_failures,
     ensure_annotation_queue,
     iter_all_benchmarks,
     run_benchmark,
+)
+from app.rag_ingest.langfuse_run_review import (
+    format_experiment_review,
+    review_experiment_result,
 )
 
 
@@ -152,6 +155,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "E.g. --quality-gate avg_hit_at_1=0.9,error_rate=0"
         ),
     )
+    parser.add_argument(
+        "--review-live",
+        action="store_true",
+        help="Print a live Langfuse-backed family breakdown and miss taxonomy.",
+    )
+    parser.add_argument(
+        "--review-max-misses",
+        type=int,
+        default=10,
+        help="Maximum miss examples to include in the live review output.",
+    )
     return parser.parse_args(argv)
 
 
@@ -195,6 +209,16 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  Langfuse: {result.dataset_run_url}", flush=True)
                 if args.diagnose:
                     print(diagnose_experiment(result), flush=True)
+                if args.review_live:
+                    print(
+                        format_experiment_review(
+                            review_experiment_result(
+                                result,
+                                max_miss_examples=args.review_max_misses,
+                            )
+                        ),
+                        flush=True,
+                    )
                 if queue_id:
                     n = enqueue_failures(result, queue_id)
                     if n:
@@ -218,6 +242,18 @@ def main(argv: list[str] | None = None) -> int:
                 print("Failure Diagnosis")
                 print(f"{'=' * 60}")
                 print(diagnose_experiment(result))
+            if args.review_live:
+                print(f"\n{'=' * 60}")
+                print("Live Langfuse Review")
+                print(f"{'=' * 60}")
+                print(
+                    format_experiment_review(
+                        review_experiment_result(
+                            result,
+                            max_miss_examples=args.review_max_misses,
+                        )
+                    )
+                )
             if queue_id:
                 n = enqueue_failures(result, queue_id)
                 if n:

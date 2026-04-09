@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand'
+import { hasSameRange } from '@/features/graph/lib/helpers'
 import type { DashboardState } from '../dashboard-store'
 
 export interface LinksSlice {
@@ -21,13 +22,6 @@ export interface LinksSlice {
   setCurvedLinks: (curved: boolean) => void
   setLinkDefaultArrows: (arrows: boolean) => void
   setScaleLinksOnZoom: (scale: boolean) => void
-}
-
-function hasSameRange(
-  current: [number, number],
-  next: [number, number],
-) {
-  return current[0] === next[0] && current[1] === next[1]
 }
 
 export const createLinksSlice: StateCreator<DashboardState, [], [], LinksSlice> = (set) => ({

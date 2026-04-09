@@ -40,28 +40,24 @@ interface GraphNeighborhoodInput {
 
 type GraphRagQueryInput = GraphEvidenceSearchInput
 
-// Phase 3 stubs — these server actions will be wired to the engine API once
-// the graph detail endpoints are implemented. Return typed stubs so callers
-// get a clean signal instead of an unhandled exception.
-
 const NOT_IMPLEMENTED = 'Not implemented — awaiting engine API (Phase 3)'
 
 export async function getGraphNodeDetail(
   _input: GraphNodeDetailInput,
 ): Promise<GraphNodeDetailResponsePayload> {
-  return { error: NOT_IMPLEMENTED } as unknown as GraphNodeDetailResponsePayload
+  throw new Error(NOT_IMPLEMENTED)
 }
 
 export async function getGraphAssetUrl(
   _input: GraphAssetUrlInput,
 ): Promise<GraphAssetUrlResponsePayload> {
-  return { error: NOT_IMPLEMENTED } as unknown as GraphAssetUrlResponsePayload
+  throw new Error(NOT_IMPLEMENTED)
 }
 
 export async function getGraphNeighborhood(
   _input: GraphNeighborhoodInput,
 ): Promise<GraphNeighborhoodResponsePayload> {
-  return { error: NOT_IMPLEMENTED } as unknown as GraphNeighborhoodResponsePayload
+  throw new Error(NOT_IMPLEMENTED)
 }
 
 export async function getGraphRagQuery(

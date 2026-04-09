@@ -60,6 +60,7 @@ class RuntimeEvalQueryCase(ParseContractModel):
     representative_section_role: str | None = None
     selected_layer_key: str | None = None
     selected_node_id: str | None = None
+    selection_graph_paper_refs: list[str] = Field(default_factory=list)
 
 
 class RuntimeEvalBenchmarkCase(ParseContractModel):
@@ -71,6 +72,9 @@ class RuntimeEvalBenchmarkCase(ParseContractModel):
     stratum_key: str
     evidence_intent: EvidenceIntent | None = None
     representative_section_role: str | None = None
+    selected_layer_key: str | None = None
+    selected_node_id: str | None = None
+    selection_graph_paper_refs: list[str] = Field(default_factory=list)
     benchmark_key: str
     benchmark_labels: list[str] = Field(default_factory=list)
     failure_count: int = 0
