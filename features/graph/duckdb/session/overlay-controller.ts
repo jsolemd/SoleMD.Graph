@@ -166,7 +166,6 @@ export function createSessionOverlayController({
     if (nextProducerPointIds.length === 0) {
       await clearOverlayProducerPointIds(conn, producerId)
     } else {
-      await ensureOptionalBundleTables(['universe_points', 'universe_links'])
       await replaceOverlayProducerPointIds(conn, {
         producerId,
         pointIds: nextProducerPointIds,

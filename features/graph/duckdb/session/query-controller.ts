@@ -25,7 +25,7 @@ import {
   queryUniversePointIdsByGraphPaperRefs,
   queryVisibilityBudget,
 } from '../queries'
-import { createBoundedCache } from '../utils'
+import { cachedQuery, createBoundedCache } from '../utils'
 import {
   normalizeGraphPaperRefs,
   normalizeSelectedPointScopeSql,
@@ -42,7 +42,7 @@ export function createSessionQueryController({
 }: CreateSessionQueryControllerArgs): SessionQueryController {
   const pointSelectionCache = createBoundedCache<string, Promise<GraphPointRecord | null>>()
   const selectionCache = createBoundedCache<string, Promise<GraphSelectionDetail>>()
-  const clusterCache = createBoundedCache<number, Promise<GraphClusterDetail>>()
+  const clusterCache = createBoundedCache<string, Promise<GraphClusterDetail>>()
   const paperDocumentCache = createBoundedCache<string, Promise<PaperDocument | null>>()
   const searchCache = createBoundedCache<string, Promise<GraphSearchResult[]>>()
   const visibilityBudgetCache = createBoundedCache<
@@ -56,24 +56,12 @@ export function createSessionQueryController({
     layer: Parameters<typeof queryScopeCoordinates>[1]['layer']
     scope: Parameters<typeof queryScopeCoordinates>[1]['scope']
     currentPointScopeSql: string | null
-  }) => {
-    const cacheKey = JSON.stringify({
-      layer: args.layer,
-      scope: args.scope,
-      currentPointScopeSql: args.currentPointScopeSql,
-    })
-    const cached = scopeCoordinatesCache.get(cacheKey)
-    if (cached) {
-      return cached
-    }
-
-    const next = queryScopeCoordinates(conn, args).catch((error: unknown) => {
-      scopeCoordinatesCache.delete(cacheKey)
-      throw error
-    })
-    scopeCoordinatesCache.set(cacheKey, next)
-    return next
-  }
+  }) =>
+    cachedQuery(
+      scopeCoordinatesCache,
+      { layer: args.layer, scope: args.scope, currentPointScopeSql: args.currentPointScopeSql },
+      () => queryScopeCoordinates(conn, args),
+    )
 
   const getCachedDatasetScopeCoordinates = (
     layer: Parameters<typeof queryScopeCoordinates>[1]['layer']
@@ -94,31 +82,22 @@ export function createSessionQueryController({
       currentPointScopeSql,
     })
 
-  const getCachedClusterDetail = (clusterId: number) => {
-    const cached = clusterCache.get(clusterId)
-    if (cached) {
-      return cached
-    }
-
-    const next = (async (): Promise<GraphClusterDetail> => {
-      await ensureOptionalBundleTables(['cluster_exemplars'])
-      const [clusterRows, exemplarRows] = await Promise.all([
-        queryClusterRows(conn, clusterId),
-        queryExemplarRows(conn, clusterId),
-      ])
-
-      return {
-        cluster: clusterRows[0] ? mapCluster(clusterRows[0]) : null,
-        exemplars: exemplarRows.map(mapExemplar),
-      }
-    })().catch((error: unknown) => {
-      clusterCache.delete(clusterId)
-      throw error
-    })
-
-    clusterCache.set(clusterId, next)
-    return next
-  }
+  const getCachedClusterDetail = (clusterId: number) =>
+    cachedQuery(
+      clusterCache,
+      { clusterId },
+      async (): Promise<GraphClusterDetail> => {
+        await ensureOptionalBundleTables(['cluster_exemplars'])
+        const [clusterRows, exemplarRows] = await Promise.all([
+          queryClusterRows(conn, clusterId),
+          queryExemplarRows(conn, clusterId),
+        ])
+        return {
+          cluster: clusterRows[0] ? mapCluster(clusterRows[0]) : null,
+          exemplars: exemplarRows.map(mapExemplar),
+        }
+      },
+    )
 
   return {
     resetOverlayDependentCaches() {
@@ -132,20 +111,14 @@ export function createSessionQueryController({
       return executeReadOnlyQuery(conn, sql)
     },
     getPaperDocument(paperId: string) {
-      const cached = paperDocumentCache.get(paperId)
-      if (cached) {
-        return cached
-      }
-
-      const next = (async () => {
-        await ensureOptionalBundleTables(['paper_documents'])
-        return queryPaperDocument(conn, paperId)
-      })().catch((error) => {
-        paperDocumentCache.delete(paperId)
-        throw error
-      })
-      paperDocumentCache.set(paperId, next)
-      return next
+      return cachedQuery(
+        paperDocumentCache,
+        { paperId },
+        async () => {
+          await ensureOptionalBundleTables(['paper_documents'])
+          return queryPaperDocument(conn, paperId)
+        },
+      )
     },
     getSelectionScopeGraphPaperRefs(args) {
       return querySelectionScopeGraphPaperRefs(conn, args)
@@ -180,7 +153,6 @@ export function createSessionQueryController({
         }
       }
 
-      await ensureOptionalBundleTables(['universe_points'])
       let universePointIdsByGraphPaperRef = await queryUniversePointIdsByGraphPaperRefs(
         conn,
         unresolvedGraphPaperRefs
@@ -190,6 +162,7 @@ export function createSessionQueryController({
       )
 
       if (stillUnresolvedGraphPaperRefs.length > 0) {
+        // Reuse already-local attached universe rows before paying another network attach.
         const attached = await maybeAttachGraphPaperRefs({
           bundle,
           conn,
@@ -198,7 +171,6 @@ export function createSessionQueryController({
         })
 
         if (attached) {
-          await ensureOptionalBundleTables(['universe_points'])
           const attachedUniversePointIdsByGraphPaperRef =
             await queryUniversePointIdsByGraphPaperRefs(conn, stillUnresolvedGraphPaperRefs)
           universePointIdsByGraphPaperRef = {
@@ -209,6 +181,19 @@ export function createSessionQueryController({
             (graphPaperRef) => !(graphPaperRef in attachedUniversePointIdsByGraphPaperRef)
           )
         }
+      }
+
+      if (stillUnresolvedGraphPaperRefs.length > 0) {
+        await ensureOptionalBundleTables(['universe_points'])
+        const bundledUniversePointIdsByGraphPaperRef =
+          await queryUniversePointIdsByGraphPaperRefs(conn, stillUnresolvedGraphPaperRefs)
+        universePointIdsByGraphPaperRef = {
+          ...universePointIdsByGraphPaperRef,
+          ...bundledUniversePointIdsByGraphPaperRef,
+        }
+        stillUnresolvedGraphPaperRefs = stillUnresolvedGraphPaperRefs.filter(
+          (graphPaperRef) => !(graphPaperRef in bundledUniversePointIdsByGraphPaperRef)
+        )
       }
 
       return {
@@ -222,41 +207,19 @@ export function createSessionQueryController({
       return queryUniversePointIdsByGraphPaperRefs(conn, graphPaperRefs)
     },
     resolvePointSelection(layer, selector) {
-      const cacheKey = JSON.stringify({
-        layer,
-        id: selector.id ?? null,
-        index: selector.index ?? null,
-      })
-      const cached = pointSelectionCache.get(cacheKey)
-      if (cached) {
-        return cached
-      }
-
-      const next = queryCorpusPointSelection(conn, selector).catch((error: unknown) => {
-        pointSelectionCache.delete(cacheKey)
-        throw error
-      })
-      pointSelectionCache.set(cacheKey, next)
-      return next
+      return cachedQuery(
+        pointSelectionCache,
+        { layer, id: selector.id ?? null, index: selector.index ?? null },
+        () => queryCorpusPointSelection(conn, selector),
+      )
     },
     getTablePage(args) {
       if (args.view === 'current' && args.page === 1 && args.currentPointScopeSql == null) {
-        const cacheKey = JSON.stringify({
-          layer: args.layer,
-          view: args.view,
-          pageSize: args.pageSize,
-        })
-        const cached = tablePage1Cache.get(cacheKey)
-        if (cached) {
-          return cached
-        }
-
-        const next = queryCorpusTablePage(conn, args).catch((error: unknown) => {
-          tablePage1Cache.delete(cacheKey)
-          throw error
-        })
-        tablePage1Cache.set(cacheKey, next)
-        return next
+        return cachedQuery(
+          tablePage1Cache,
+          { layer: args.layer, view: args.view, pageSize: args.pageSize },
+          () => queryCorpusTablePage(conn, args),
+        )
       }
       return queryCorpusTablePage(conn, args)
     },
@@ -264,63 +227,38 @@ export function createSessionQueryController({
       return exportCorpusTableCsv(conn, args)
     },
     searchPoints(args) {
-      const cacheKey = JSON.stringify({
-        layer: args.layer,
-        column: args.column,
-        query: args.query.trim().toLowerCase(),
-        limit: args.limit ?? 12,
-      })
-      const cached = searchCache.get(cacheKey)
-      if (cached) {
-        return cached
-      }
-
-      const next = queryPointSearch(conn, args).catch((error: unknown) => {
-        searchCache.delete(cacheKey)
-        throw error
-      })
-      searchCache.set(cacheKey, next)
-      return next
+      return cachedQuery(
+        searchCache,
+        { layer: args.layer, column: args.column, query: args.query.trim().toLowerCase(), limit: args.limit ?? 12 },
+        () => queryPointSearch(conn, args),
+      )
     },
     getVisibilityBudget(args) {
       const normalizedScopeSql = normalizeSelectedPointScopeSql(args.scopeSql ?? null)
-      const cacheKey = JSON.stringify({
-        layer: args.layer,
-        id: args.selector.id ?? null,
-        index: args.selector.index ?? null,
-        scopeSql: normalizedScopeSql,
-      })
-      const cached = visibilityBudgetCache.get(cacheKey)
-      if (cached) {
-        return cached
-      }
+      return cachedQuery(
+        visibilityBudgetCache,
+        { layer: args.layer, id: args.selector.id ?? null, index: args.selector.index ?? null, scopeSql: normalizedScopeSql },
+        async () => {
+          const resolvedScopeCoordinates =
+            normalizedScopeSql != null
+              ? await getCachedCurrentScopeCoordinates(args.layer, normalizedScopeSql)
+              : await getCachedDatasetScopeCoordinates(args.layer)
 
-      const next = (async () => {
-        const resolvedScopeCoordinates =
-          normalizedScopeSql != null
-            ? await getCachedCurrentScopeCoordinates(args.layer, normalizedScopeSql)
-            : await getCachedDatasetScopeCoordinates(args.layer)
-
-        return queryVisibilityBudget(conn, {
-          ...args,
-          scopeSql: normalizedScopeSql,
-          scopeCoordinates:
-            resolvedScopeCoordinates == null || resolvedScopeCoordinates.length !== 4
-              ? null
-              : [
-                  resolvedScopeCoordinates[0],
-                  resolvedScopeCoordinates[1],
-                  resolvedScopeCoordinates[2],
-                  resolvedScopeCoordinates[3],
-                ],
-        })
-      })().catch((error: unknown) => {
-        visibilityBudgetCache.delete(cacheKey)
-        throw error
-      })
-
-      visibilityBudgetCache.set(cacheKey, next)
-      return next
+          return queryVisibilityBudget(conn, {
+            ...args,
+            scopeSql: normalizedScopeSql,
+            scopeCoordinates:
+              resolvedScopeCoordinates == null || resolvedScopeCoordinates.length !== 4
+                ? null
+                : [
+                    resolvedScopeCoordinates[0],
+                    resolvedScopeCoordinates[1],
+                    resolvedScopeCoordinates[2],
+                    resolvedScopeCoordinates[3],
+                  ],
+          })
+        },
+      )
     },
     getScopeCoordinates(args) {
       return getCachedScopeCoordinates(args)
@@ -329,30 +267,22 @@ export function createSessionQueryController({
       return getCachedClusterDetail(clusterId)
     },
     getSelectionDetail(point: GraphPointRecord) {
-      const cached = selectionCache.get(point.id)
-      if (cached) {
-        return cached
-      }
-
-      const next = (async (): Promise<GraphSelectionDetail> => {
-        const [clusterDetail, paperRows] = await Promise.all([
-          getCachedClusterDetail(point.clusterId),
-          queryPaperDetail(conn, point.paperId ?? point.id),
-        ])
-
-        return {
-          cluster: clusterDetail.cluster,
-          exemplars: clusterDetail.exemplars,
-          paper: paperRows[0] ? mapPaper(paperRows[0]) : null,
-          paperDocument: null,
-        }
-      })().catch((error: unknown) => {
-        selectionCache.delete(point.id)
-        throw error
-      })
-
-      selectionCache.set(point.id, next)
-      return next
+      return cachedQuery(
+        selectionCache,
+        { id: point.id },
+        async (): Promise<GraphSelectionDetail> => {
+          const [clusterDetail, paperRows] = await Promise.all([
+            getCachedClusterDetail(point.clusterId),
+            queryPaperDetail(conn, point.paperId ?? point.id),
+          ])
+          return {
+            cluster: clusterDetail.cluster,
+            exemplars: clusterDetail.exemplars,
+            paper: paperRows[0] ? mapPaper(paperRows[0]) : null,
+            paperDocument: null,
+          }
+        },
+      )
     },
   }
 }

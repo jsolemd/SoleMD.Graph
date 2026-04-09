@@ -19,6 +19,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Selection, current-scope, and table/info query intent must resolve through one shared layer.
 - Do not rebuild selection/scope resolution independently in multiple panels.
 - If a query needs scope-aware behavior, extend the shared resolver instead of adding a new local branch.
+- Prompt, entity-hover, and future `@` mention interactions must resolve graph projection through one shared prompt/runtime path instead of separate PromptBox-local branches.
 
 3. Zero redundant DuckDB work
 
@@ -41,6 +42,9 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Materialize `base_points` and `base_clusters` into local DuckDB tables during bootstrap because first paint already depends on them.
 - Prefer local temp/materialized tables for hot-path data that powers repeated faceting, table paging, search, and high-frequency interactions once the interactive path is active.
 - If an interactive-only runtime table is still needed, build it from the local canonical table instead of reading parquet again.
+- Prompt/entity-driven point resolution must prefer targeted browser attachment before hydrating `universe_points.parquet`; only fall back to the bundled universe table for refs that remain unresolved after the targeted attach path.
+- Point-only overlay producer updates must operate against whatever universe rows are already local instead of eagerly hydrating `universe_points.parquet`.
+- Point-only overlay or attachment updates must not eagerly load `universe_links`; link-bearing tables load only when a link-dependent feature explicitly needs them.
 - Optional or evidence-heavy relations may stay lazy, but only if they are not on the first-paint or high-frequency path.
 
 6. No hidden hydration/runtime penalties
@@ -50,6 +54,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Do not import graph-only controls into always-visible brand/header surfaces unless they are split behind a lazy boundary.
 - Avoid effect cascades that cause a second fetch/render immediately after first paint.
 - Keep the editor subtree isolated from response streaming and panel chrome updates so prompt/manuscript interactions do not rerender the rich-text surface unless editor-facing props actually changed.
+- Prompt/evidence stream lifecycles must treat repeated `onData`/`onFinish` payloads for the same backend response as idempotent; graph projection and overlay mutation run once per response, not once per stream callback.
 
 7. Centralize performance-sensitive contracts
 
@@ -61,6 +66,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 
 - Use Chrome DevTools MCP and/or browser-network inspection for frontend latency changes.
 - For DuckDB/runtime changes, verify whether requests, `HEAD` probes, or remote Parquet reads were reduced.
+- Streamed ask responses must not replay the same graph projection work when `onData`, `onFinish`, or selection-source rerenders all carry the same resolved response.
 - Prefer structural fixes over debounce-only masking.
 
 9. Performance regressions require tests

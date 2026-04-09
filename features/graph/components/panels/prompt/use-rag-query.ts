@@ -70,21 +70,22 @@ export function useRagQuery({
     useState<RagGraphAvailabilitySummary | null>(null);
   const activeRequestIdRef = useRef(0);
   const activeOverlayProducerIdRef = useRef<OverlayProducerId | null>(null);
+  const appliedRagResponseRequestIdRef = useRef<string | null>(null);
+  const activeSelectionSourceIdRef = useRef(activeSelectionSourceId);
+  activeSelectionSourceIdRef.current = activeSelectionSourceId;
 
   const clearAnswerSelection = useCallback(() => {
-    if (!queries || activeSelectionSourceId !== RAG_ANSWER_SELECTION_SOURCE_ID) {
+    if (
+      !queries ||
+      activeSelectionSourceIdRef.current !== RAG_ANSWER_SELECTION_SOURCE_ID
+    ) {
       return;
     }
 
     void queries.setSelectedPointIndices([]);
     setSelectedPointCount(0);
     setActiveSelectionSourceId(null);
-  }, [
-    activeSelectionSourceId,
-    queries,
-    setActiveSelectionSourceId,
-    setSelectedPointCount,
-  ]);
+  }, [queries, setActiveSelectionSourceId, setSelectedPointCount]);
 
   const clearOwnedOverlay = useCallback((producerId?: OverlayProducerId | null) => {
     const ownedProducerId = producerId ?? activeOverlayProducerIdRef.current;
@@ -101,6 +102,20 @@ export function useRagQuery({
       queries,
     });
   }, [queries]);
+
+  const clearRagResponse = useCallback(() => {
+    appliedRagResponseRequestIdRef.current = null;
+    setRagResponse(null);
+  }, []);
+
+  const applyRagResponse = useCallback((response: GraphRagQueryResponsePayload) => {
+    if (appliedRagResponseRequestIdRef.current === response.meta.request_id) {
+      return;
+    }
+
+    appliedRagResponseRequestIdRef.current = response.meta.request_id;
+    setRagResponse(response);
+  }, []);
 
   const askTransport = useMemo(
     () => new DefaultChatTransport<GraphAskChatMessage>({ api: "/api/evidence/chat" }),
@@ -157,7 +172,7 @@ export function useRagQuery({
         part.type === GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART &&
         part.data.client_request_id === activeRequestIdRef.current
       ) {
-        setRagResponse(part.data.response);
+        applyRagResponse(part.data.response);
         setRagError(null);
         return;
       }
@@ -167,7 +182,7 @@ export function useRagQuery({
         part.data.client_request_id === activeRequestIdRef.current
       ) {
         setIsSubmitting(false);
-        setRagResponse(null);
+        clearRagResponse();
         setRagError(part.data.error_message);
         setRagGraphAvailability(null);
         clearOwnedOverlay();
@@ -177,7 +192,7 @@ export function useRagQuery({
     },
     onError: (error) => {
       setIsSubmitting(false);
-      setRagResponse(null);
+      clearRagResponse();
       setRagError(error.message);
       setRagGraphAvailability(null);
       clearOwnedOverlay();
@@ -193,7 +208,7 @@ export function useRagQuery({
       }
 
       setIsSubmitting(false);
-      setRagResponse(latestEvidencePayload.response);
+      applyRagResponse(latestEvidencePayload.response);
       setRagError(null);
     },
   });
@@ -250,6 +265,39 @@ export function useRagQuery({
     setSelectedPointCount,
   ]);
 
+  const prepareRagRequest = useCallback(async (session: RagResponseSession) => {
+    const scopeRequest = await resolveSelectionScopeRequest();
+    const producerId = getRagOverlayProducerId({
+      origin: session.origin,
+      evidenceIntent: session.evidenceIntent,
+    });
+
+    clearOwnedOverlay();
+    clearAnswerSelection();
+    activeOverlayProducerIdRef.current = producerId;
+    const requestId = activeRequestIdRef.current + 1;
+    activeRequestIdRef.current = requestId;
+    setIsSubmitting(true);
+    clearRagResponse();
+    setRagError(null);
+    setRagGraphAvailability(null);
+    setRagSession(session);
+
+    return { requestId, scopeRequest, producerId };
+  }, [clearAnswerSelection, clearOwnedOverlay, clearRagResponse, resolveSelectionScopeRequest]);
+
+  const handleRagError = useCallback((error: unknown, requestId: number, producerId?: OverlayProducerId | null) => {
+    if (activeRequestIdRef.current !== requestId) {
+      return;
+    }
+    setIsSubmitting(false);
+    clearRagResponse();
+    setRagError(error instanceof Error ? error.message : "Failed to query the graph");
+    setRagGraphAvailability(null);
+    clearOwnedOverlay(producerId);
+    clearAnswerSelection();
+  }, [clearAnswerSelection, clearOwnedOverlay, clearRagResponse]);
+
   const runQuery = useCallback(async ({
     query,
     origin,
@@ -263,34 +311,15 @@ export function useRagQuery({
     queryPreview?: string | null;
     generateAnswer?: boolean;
   }) => {
-    let scopeRequest: {
-      selectionGraphPaperRefs: string[] | null;
-      scopeMode: "selection_only" | null;
-    };
+    let prepared: Awaited<ReturnType<typeof prepareRagRequest>>;
     try {
-      scopeRequest = await resolveSelectionScopeRequest();
+      prepared = await prepareRagRequest({ origin, evidenceIntent, queryPreview });
     } catch (error) {
       setRagError(error instanceof Error ? error.message : "Failed to resolve selection scope");
       return;
     }
 
-    const nextOverlayProducerId = getRagOverlayProducerId({
-      origin,
-      evidenceIntent,
-    });
-
-    clearOwnedOverlay();
-    clearAnswerSelection();
-    activeOverlayProducerIdRef.current = nextOverlayProducerId;
-    const requestId = activeRequestIdRef.current + 1;
-    activeRequestIdRef.current = requestId;
-    setIsSubmitting(true);
-    setRagSession({
-      origin,
-      evidenceIntent,
-      queryPreview,
-    });
-    setRagGraphAvailability(null);
+    const { requestId, scopeRequest, producerId } = prepared;
     fetchGraphRagQuery({
       bundle,
       query,
@@ -307,31 +336,16 @@ export function useRagQuery({
         if (activeRequestIdRef.current !== requestId) {
           return;
         }
-        setRagResponse(response);
+        applyRagResponse(response);
         setRagError(null);
       })
-      .catch((error) => {
-        if (activeRequestIdRef.current !== requestId) {
-          return;
-        }
-        setRagResponse(null);
-        setRagError(error instanceof Error ? error.message : "Failed to query the graph");
-        setRagGraphAvailability(null);
-        clearOwnedOverlay(nextOverlayProducerId);
-        clearAnswerSelection();
-      })
+      .catch((error) => handleRagError(error, requestId, producerId))
       .finally(() => {
         if (activeRequestIdRef.current === requestId) {
           setIsSubmitting(false);
         }
       });
-  }, [
-    bundle,
-    clearAnswerSelection,
-    clearOwnedOverlay,
-    resolveSelectionScopeRequest,
-    selectedNode,
-  ]);
+  }, [applyRagResponse, bundle, handleRagError, prepareRagRequest, selectedNode]);
 
   const handleSubmit = useCallback(() => {
     const query = getPromptText().trim();
@@ -339,34 +353,15 @@ export function useRagQuery({
       return;
     }
     void (async () => {
-      let scopeRequest: {
-        selectionGraphPaperRefs: string[] | null;
-        scopeMode: "selection_only" | null;
-      };
+      let prepared: Awaited<ReturnType<typeof prepareRagRequest>>;
       try {
-        scopeRequest = await resolveSelectionScopeRequest();
+        prepared = await prepareRagRequest({ origin: "ask", evidenceIntent: null, queryPreview: null });
       } catch (error) {
         setRagError(error instanceof Error ? error.message : "Failed to resolve selection scope");
         return;
       }
 
-      const requestId = activeRequestIdRef.current + 1;
-      clearOwnedOverlay();
-      clearAnswerSelection();
-      activeOverlayProducerIdRef.current = getRagOverlayProducerId({
-        origin: "ask",
-        evidenceIntent: null,
-      });
-      activeRequestIdRef.current = requestId;
-      setIsSubmitting(true);
-      setRagResponse(null);
-      setRagError(null);
-      setRagGraphAvailability(null);
-      setRagSession({
-        origin: "ask",
-        evidenceIntent: null,
-        queryPreview: null,
-      });
+      const { requestId, scopeRequest } = prepared;
       askChat.clearError();
       askChat.setMessages([]);
       void askChat.sendMessage(
@@ -389,28 +384,17 @@ export function useRagQuery({
             generate_answer: true,
           },
         },
-      ).catch((error) => {
-        if (activeRequestIdRef.current !== requestId) {
-          return;
-        }
-        setIsSubmitting(false);
-        setRagResponse(null);
-        setRagError(error instanceof Error ? error.message : "Failed to query the graph");
-        setRagGraphAvailability(null);
-        clearOwnedOverlay(activeOverlayProducerIdRef.current);
-        clearAnswerSelection();
-      });
+      ).catch((error) => handleRagError(error, requestId, activeOverlayProducerIdRef.current));
     })();
   }, [
     askChat,
     bundle.bundleChecksum,
     bundle.runId,
-    clearAnswerSelection,
-    clearOwnedOverlay,
     getPromptText,
+    handleRagError,
     isAsk,
     isSubmitting,
-    resolveSelectionScopeRequest,
+    prepareRagRequest,
     selectedNode,
   ]);
 
@@ -432,13 +416,13 @@ export function useRagQuery({
       void askChat.stop();
       askChat.clearError();
       askChat.setMessages([]);
-      setRagResponse(null);
+      clearRagResponse();
       setRagGraphAvailability(null);
       setRagSession(null);
       clearOwnedOverlay();
       clearAnswerSelection();
     }
-  }, [askChat, clearAnswerSelection, clearOwnedOverlay]);
+  }, [askChat, clearAnswerSelection, clearOwnedOverlay, clearRagResponse]);
 
   return {
     ragResponse,

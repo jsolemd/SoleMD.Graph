@@ -1,6 +1,7 @@
 /**
  * @jest-environment jsdom
  */
+import { useState } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { useChat } from "@ai-sdk/react";
 import {
@@ -474,6 +475,131 @@ describe("useRagQuery", () => {
     });
 
     expect(result.current.ragResponse).toBeNull();
+  });
+
+  it("does not resync graph signals when ask onFinish repeats the streamed evidence payload", async () => {
+    const queries = createQueries();
+    const setSelectedPointCount = jest.fn();
+    const setActiveSelectionSourceId = jest.fn();
+    const response = createResponse("working question");
+
+    const { result } = renderHook(() =>
+      useRagQuery({
+        bundle: { bundleChecksum: "bundle-checksum", runId: "run-id" } as GraphBundle,
+        queries,
+        isAsk: true,
+        selectedNode: null,
+        currentPointScopeSql: null,
+        activeSelectionSourceId: null,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
+        getPromptText: () => "working question",
+      }),
+    );
+
+    await act(async () => {
+      result.current.handleSubmit();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      chatOptions?.onData?.({
+        type: GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART,
+        data: {
+          client_request_id: 1,
+          response,
+        },
+      } as never);
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      chatOptions?.onFinish?.({
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            parts: [
+              {
+                type: GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART,
+                data: {
+                  client_request_id: 1,
+                  response,
+                },
+              },
+            ],
+          },
+        ],
+      } as never);
+      await flushMicrotasks();
+    });
+
+    expect(result.current.ragResponse).toEqual(response);
+    expect(mockedSyncRagGraphSignals).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not resync graph signals when answer selection ownership rerenders the hook", async () => {
+    const queries = createQueries();
+    const response = createResponse("working question");
+    response.answer_graph_paper_refs = ["paper-11"];
+    mockedSyncRagGraphSignals.mockResolvedValue({
+      availability: {
+        activeGraphPaperRefs: ["paper-11"],
+        universePointIdsByGraphPaperRef: {},
+        unresolvedGraphPaperRefs: [],
+      },
+      graphAvailabilitySummary: {
+        activeResolvedGraphPaperRefs: ["paper-11"],
+        overlayPromotedGraphPaperRefs: [],
+        evidenceOnlyGraphPaperRefs: [],
+      },
+      answerSelectedPointIndices: [11],
+    });
+
+    const { result } = renderHook(() => {
+      const [activeSelectionSourceId, setActiveSelectionSourceId] = useState<string | null>(
+        null,
+      );
+      const [selectedPointCount, setSelectedPointCount] = useState(0);
+
+      return {
+        activeSelectionSourceId,
+        selectedPointCount,
+        ...useRagQuery({
+          bundle: { bundleChecksum: "bundle-checksum", runId: "run-id" } as GraphBundle,
+          queries,
+          isAsk: true,
+          selectedNode: null,
+          currentPointScopeSql: null,
+          activeSelectionSourceId,
+          setSelectedPointCount,
+          setActiveSelectionSourceId,
+          getPromptText: () => "working question",
+        }),
+      };
+    });
+
+    await act(async () => {
+      result.current.handleSubmit();
+      await flushMicrotasks();
+    });
+
+    await act(async () => {
+      chatOptions?.onData?.({
+        type: GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART,
+        data: {
+          client_request_id: 1,
+          response,
+        },
+      } as never);
+      await flushMicrotasks();
+    });
+
+    expect(result.current.activeSelectionSourceId).toBe(
+      RAG_ANSWER_SELECTION_SOURCE_ID,
+    );
+    expect(result.current.selectedPointCount).toBe(1);
+    expect(mockedSyncRagGraphSignals).toHaveBeenCalledTimes(1);
   });
 
   it("passes selected graph paper refs when selection scope is enabled", async () => {

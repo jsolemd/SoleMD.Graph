@@ -167,6 +167,34 @@
 - Added a focused render-isolation regression test in `features/graph/components/panels/editor/__tests__/CreateEditor.test.tsx`
 - Codified the Tiptap adapter/isolation requirement in `docs/map/frontend-performance.md` so future prompt/manuscript work keeps one upgrade boundary and one rich-text runtime path
 
+### Batch 12
+
+- Removed eager optional-table loading from point-only overlay producer updates in `features/graph/duckdb/session/overlay-controller.ts`
+- Kept the optimization scoped to point-only overlay mutations so prompt/RAG promotion no longer pays universe/link-table work before the graph actually needs those tables
+- Added focused session coverage in `features/graph/duckdb/__tests__/session.test.ts` to lock point-only overlay updates off the optional-table path
+- Codified the rule in `docs/map/frontend-performance.md`: point-only overlay and attachment paths must not eagerly load optional universe/link tables
+
+### Batch 13
+
+- Reordered `ensureGraphPaperRefsAvailable` in `features/graph/duckdb/session/query-controller.ts` to prefer targeted browser attachment before hydrating `universe_points.parquet`
+- Kept `universe_points` as a fallback only for graph paper refs still unresolved after the targeted attach path
+- Added focused query-controller coverage in `features/graph/duckdb/__tests__/query-controller.test.ts` for both the targeted-attach fast path and the bundled-universe fallback
+- Verified the live PromptBox path against the running engine on `http://localhost:3000`: submit now hits real evidence, and the first graph-side follow-up stays on the narrower overlay resolution path unless unresolved refs force a universe fallback
+
+### Batch 14
+
+- Made ask-stream graph projection idempotent in `features/graph/components/panels/prompt/use-rag-query.ts` so duplicate `onData`/`onFinish` payloads for the same backend response no longer rerun PromptBox graph sync
+- Taught `ensureGraphPaperRefsAvailable` in `features/graph/duckdb/session/query-controller.ts` to reuse already-local rows from `universe_points_web` before posting another targeted attach request
+- Added focused coverage in `features/graph/components/panels/prompt/__tests__/use-rag-query.test.ts` and `features/graph/duckdb/__tests__/query-controller.test.ts` for idempotent ask sync and local-universe reuse
+- Re-baselined the live app in Chrome on `http://localhost:3000`: cold reload stayed at 38 requests with no console errors, and first submit stayed off `universe_points.parquet`, leaving duplicated attach posts as the remaining hot-path waste targeted by this batch
+
+### Batch 15
+
+- Stabilized `clearAnswerSelection()` in `features/graph/components/panels/prompt/use-rag-query.ts` against selection-source ownership rerenders so one streamed ask response no longer replays graph sync after it selects answer-linked points
+- Added a stateful PromptBox regression in `features/graph/components/panels/prompt/__tests__/use-rag-query.test.ts` that reproduces the ownership-rerender path and locks graph sync to a single pass
+- Extended the canonical frontend requirement in `docs/map/frontend-performance.md`: prompt/entity/mention graph projection must stay on one shared runtime path, and streamed ask responses must remain idempotent across `onData`, `onFinish`, and ownership rerenders
+- Rebuilt and re-baselined the production app in visible Chrome on `http://localhost:3000`: the dopamine/schizophrenia prompt now produces `POST /api/evidence/chat` plus exactly one `POST /api/graph/attach-points`, with no `universe_points.parquet` hydration or duplicate attach post in the hot path
+
 ## Blockers
 
 - No blocking correctness issues remain.

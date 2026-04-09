@@ -115,10 +115,12 @@ describe('createGraphBundleSession', () => {
   const db = {}
   const worker = { terminate: jest.fn() }
   let ensurePrimaryQueryTablesMock: jest.Mock<Promise<void>, []>
+  let ensureOptionalBundleTablesMock: jest.Mock<Promise<void>, [string[]]>
 
   beforeEach(() => {
     jest.clearAllMocks()
     ensurePrimaryQueryTablesMock = jest.fn(async () => undefined)
+    ensureOptionalBundleTablesMock = jest.fn(async () => undefined)
 
     createConnectionMock.mockResolvedValue({
       conn: conn as never,
@@ -136,7 +138,7 @@ describe('createGraphBundleSession', () => {
       buildPointQueryProjectionSql: jest.fn(),
     })
     createEnsurePrimaryQueryTablesMock.mockReturnValue(ensurePrimaryQueryTablesMock)
-    createEnsureOptionalBundleTablesMock.mockReturnValue(jest.fn(async () => undefined))
+    createEnsureOptionalBundleTablesMock.mockReturnValue(ensureOptionalBundleTablesMock)
     initializeSelectedPointTableMock.mockResolvedValue(undefined)
     materializeOverlayPointIdsMock.mockResolvedValue({ overlayCount: 7 })
     replaceOverlayProducerPointIdsMock.mockResolvedValue({ producerCount: 1 })
@@ -197,6 +199,7 @@ describe('createGraphBundleSession', () => {
 
     await session.setOverlayPointIds(['point-1'])
 
+    expect(ensureOptionalBundleTablesMock).not.toHaveBeenCalled()
     expect(materializeOverlayPointIdsMock).toHaveBeenCalledTimes(1)
     expect(replaceSelectedPointIndicesMock).not.toHaveBeenCalled()
     expect(
@@ -217,6 +220,21 @@ describe('createGraphBundleSession', () => {
       overlayCount: 0,
       overlayRevision: 2,
     })
+  })
+
+  it('keeps point-only producer updates off the universe link path', async () => {
+    const session = await createGraphBundleSession(createBundle() as never, jest.fn())
+
+    await session.setOverlayProducerPointIds({
+      producerId: 'rag:answer',
+      pointIds: ['point-7'],
+    })
+
+    expect(ensureOptionalBundleTablesMock).not.toHaveBeenCalled()
+    expect(ensureOptionalBundleTablesMock).not.toHaveBeenCalledWith([
+      'universe_points',
+      'universe_links',
+    ])
   })
 
   it('does not materialize interactive query tables during bootstrap', async () => {

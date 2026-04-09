@@ -5,8 +5,11 @@ import {
   queryCorpusTablePage,
   queryExemplarRows,
   queryPaperDetail,
+  queryPaperNodesByGraphPaperRefs,
   queryPointSearch,
+  queryUniversePointIdsByGraphPaperRefs,
 } from '../queries'
+import { maybeAttachGraphPaperRefs } from '../attachment'
 import { createSessionQueryController } from '../session/query-controller'
 
 jest.mock('../queries', () => {
@@ -20,8 +23,14 @@ jest.mock('../queries', () => {
     queryCorpusTablePage: jest.fn(),
     queryExemplarRows: jest.fn(),
     queryPaperDetail: jest.fn(),
+    queryPaperNodesByGraphPaperRefs: jest.fn(),
+    queryUniversePointIdsByGraphPaperRefs: jest.fn(),
   }
 })
+
+jest.mock('../attachment', () => ({
+  maybeAttachGraphPaperRefs: jest.fn(),
+}))
 
 const executeReadOnlyQueryMock = jest.mocked(executeReadOnlyQuery)
 const queryClusterRowsMock = jest.mocked(queryClusterRows)
@@ -30,10 +39,16 @@ const queryPointSearchMock = jest.mocked(queryPointSearch)
 const queryCorpusTablePageMock = jest.mocked(queryCorpusTablePage)
 const queryExemplarRowsMock = jest.mocked(queryExemplarRows)
 const queryPaperDetailMock = jest.mocked(queryPaperDetail)
+const queryPaperNodesByGraphPaperRefsMock = jest.mocked(queryPaperNodesByGraphPaperRefs)
+const queryUniversePointIdsByGraphPaperRefsMock = jest.mocked(queryUniversePointIdsByGraphPaperRefs)
+const maybeAttachGraphPaperRefsMock = jest.mocked(maybeAttachGraphPaperRefs)
 
 describe('createSessionQueryController', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    queryPaperNodesByGraphPaperRefsMock.mockResolvedValue({})
+    queryUniversePointIdsByGraphPaperRefsMock.mockResolvedValue({})
+    maybeAttachGraphPaperRefsMock.mockResolvedValue(false)
   })
 
   it('evicts failed search cache entries so retries can recover', async () => {
@@ -213,5 +228,104 @@ describe('createSessionQueryController', () => {
     expect(executeReadOnlyQueryMock).toHaveBeenCalledWith({} as never, 'SELECT 1')
     expect(queryClusterRowsMock).toHaveBeenCalledWith({} as never, 1)
     expect(queryPaperDetailMock).toHaveBeenCalledWith({} as never, 'paper-1')
+  })
+
+  it('prefers targeted attachment before hydrating the full universe table', async () => {
+    const ensureOptionalBundleTables = jest.fn(async () => undefined)
+    maybeAttachGraphPaperRefsMock.mockResolvedValue(true)
+    queryUniversePointIdsByGraphPaperRefsMock
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        'paper:1': 'overlay-1',
+      })
+
+    const controller = createSessionQueryController({
+      bundle: { bundleChecksum: 'bundle-1' } as never,
+      conn: {} as never,
+      ensureOptionalBundleTables,
+    })
+
+    await expect(
+      controller.ensureGraphPaperRefsAvailable(['paper:1'])
+    ).resolves.toEqual({
+      activeGraphPaperRefs: [],
+      universePointIdsByGraphPaperRef: {
+        'paper:1': 'overlay-1',
+      },
+      unresolvedGraphPaperRefs: [],
+    })
+
+    expect(maybeAttachGraphPaperRefsMock).toHaveBeenCalledTimes(1)
+    expect(ensureOptionalBundleTables).not.toHaveBeenCalled()
+    expect(queryUniversePointIdsByGraphPaperRefsMock).toHaveBeenCalledTimes(2)
+    expect(queryUniversePointIdsByGraphPaperRefsMock).toHaveBeenNthCalledWith(
+      1,
+      {} as never,
+      ['paper:1']
+    )
+    expect(queryUniversePointIdsByGraphPaperRefsMock).toHaveBeenNthCalledWith(
+      2,
+      {} as never,
+      ['paper:1']
+    )
+  })
+
+  it('reuses already-local universe rows before re-attaching graph paper refs', async () => {
+    const ensureOptionalBundleTables = jest.fn(async () => undefined)
+    queryUniversePointIdsByGraphPaperRefsMock.mockResolvedValue({
+      'paper:local': 'overlay-local',
+    })
+
+    const controller = createSessionQueryController({
+      bundle: { bundleChecksum: 'bundle-1' } as never,
+      conn: {} as never,
+      ensureOptionalBundleTables,
+    })
+
+    await expect(
+      controller.ensureGraphPaperRefsAvailable(['paper:local'])
+    ).resolves.toEqual({
+      activeGraphPaperRefs: [],
+      universePointIdsByGraphPaperRef: {
+        'paper:local': 'overlay-local',
+      },
+      unresolvedGraphPaperRefs: [],
+    })
+
+    expect(maybeAttachGraphPaperRefsMock).not.toHaveBeenCalled()
+    expect(ensureOptionalBundleTables).not.toHaveBeenCalled()
+    expect(queryUniversePointIdsByGraphPaperRefsMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to the bundled universe table only for refs still unresolved after attachment', async () => {
+    const ensureOptionalBundleTables = jest.fn(async () => undefined)
+    maybeAttachGraphPaperRefsMock.mockResolvedValue(true)
+    queryUniversePointIdsByGraphPaperRefsMock
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({
+        'paper:2': 'overlay-2',
+      })
+
+    const controller = createSessionQueryController({
+      bundle: { bundleChecksum: 'bundle-1' } as never,
+      conn: {} as never,
+      ensureOptionalBundleTables,
+    })
+
+    await expect(
+      controller.ensureGraphPaperRefsAvailable(['paper:2'])
+    ).resolves.toEqual({
+      activeGraphPaperRefs: [],
+      universePointIdsByGraphPaperRef: {
+        'paper:2': 'overlay-2',
+      },
+      unresolvedGraphPaperRefs: [],
+    })
+
+    expect(maybeAttachGraphPaperRefsMock).toHaveBeenCalledTimes(1)
+    expect(ensureOptionalBundleTables).toHaveBeenCalledTimes(1)
+    expect(ensureOptionalBundleTables).toHaveBeenCalledWith(['universe_points'])
+    expect(queryUniversePointIdsByGraphPaperRefsMock).toHaveBeenCalledTimes(3)
   })
 })
