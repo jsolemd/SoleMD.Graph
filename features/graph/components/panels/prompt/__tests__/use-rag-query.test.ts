@@ -574,6 +574,7 @@ describe("useRagQuery", () => {
         evidenceOnlyGraphPaperRefs: [],
       },
       answerSelectedPointIndices: [7, 9],
+      interactionTrace: mockInteractionTrace,
     });
 
     const { result } = renderHook(() =>

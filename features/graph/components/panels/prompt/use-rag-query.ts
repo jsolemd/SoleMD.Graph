@@ -247,6 +247,9 @@ export function useRagQuery({
 
         const renderStartedAt = getInteractionNow();
         await queries.setSelectedPointIndices(answerSelectedPointIndices);
+        if (cancelled) {
+          return;
+        }
         setRagGraphAvailability(graphAvailabilitySummary);
         setSelectedPointCount(answerSelectedPointIndices.length);
         setActiveSelectionSourceId(
