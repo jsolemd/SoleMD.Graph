@@ -10,8 +10,8 @@ import {
   clearAllOverlayPointIds,
   createEnsurePrimaryQueryTables,
   createEnsureOptionalBundleTables,
+  refreshActivePointRuntimeTables,
   initializeSelectedPointTable,
-  materializeOverlayPointIds,
   registerInitialSessionViews,
   replaceOverlayProducerPointIds,
   replaceSelectedPointIndices,
@@ -54,8 +54,8 @@ jest.mock('../views', () => {
     clearAllOverlayPointIds: jest.fn(async () => undefined),
     createEnsurePrimaryQueryTables: jest.fn(() => jest.fn(async () => undefined)),
     createEnsureOptionalBundleTables: jest.fn(() => jest.fn(async () => undefined)),
+    refreshActivePointRuntimeTables: jest.fn(async () => ({ overlayCount: 0 })),
     initializeSelectedPointTable: jest.fn(async () => undefined),
-    materializeOverlayPointIds: jest.fn(async () => ({ overlayCount: 0 })),
     registerInitialSessionViews: jest.fn(async () => ({
       attachedTableSet: new Set<string>(),
       availableLayers: ['corpus'],
@@ -77,8 +77,8 @@ const queryRowsMock = jest.mocked(queryRows)
 const clearAllOverlayPointIdsMock = jest.mocked(clearAllOverlayPointIds)
 const createEnsurePrimaryQueryTablesMock = jest.mocked(createEnsurePrimaryQueryTables)
 const createEnsureOptionalBundleTablesMock = jest.mocked(createEnsureOptionalBundleTables)
+const refreshActivePointRuntimeTablesMock = jest.mocked(refreshActivePointRuntimeTables)
 const initializeSelectedPointTableMock = jest.mocked(initializeSelectedPointTable)
-const materializeOverlayPointIdsMock = jest.mocked(materializeOverlayPointIds)
 const registerInitialSessionViewsMock = jest.mocked(registerInitialSessionViews)
 const replaceOverlayProducerPointIdsMock = jest.mocked(replaceOverlayProducerPointIds)
 const replaceSelectedPointIndicesMock = jest.mocked(replaceSelectedPointIndices)
@@ -109,10 +109,12 @@ describe('createGraphBundleSession', () => {
   const db = {}
   const worker = { terminate: jest.fn() }
   let ensurePrimaryQueryTablesMock: jest.Mock<Promise<void>, []>
+  let ensureOptionalBundleTablesMock: jest.Mock<Promise<void>, [string[]]>
 
   beforeEach(() => {
     jest.clearAllMocks()
     ensurePrimaryQueryTablesMock = jest.fn(async () => undefined)
+    ensureOptionalBundleTablesMock = jest.fn(async () => undefined)
 
     createConnectionMock.mockResolvedValue({
       conn: conn as never,
@@ -130,9 +132,11 @@ describe('createGraphBundleSession', () => {
       buildPointQueryProjectionSql: jest.fn(),
     })
     createEnsurePrimaryQueryTablesMock.mockReturnValue(ensurePrimaryQueryTablesMock)
-    createEnsureOptionalBundleTablesMock.mockReturnValue(jest.fn(async () => undefined))
+    createEnsureOptionalBundleTablesMock.mockReturnValue(ensureOptionalBundleTablesMock)
     initializeSelectedPointTableMock.mockResolvedValue(undefined)
-    materializeOverlayPointIdsMock.mockResolvedValue({ overlayCount: 7 })
+    refreshActivePointRuntimeTablesMock
+      .mockResolvedValueOnce({ overlayCount: 7 })
+      .mockResolvedValueOnce({ overlayCount: 0 })
     replaceOverlayProducerPointIdsMock.mockResolvedValue({ producerCount: 1 })
     replaceSelectedPointIndicesMock.mockResolvedValue(undefined)
     replaceSelectedPointScopeSqlMock.mockResolvedValue(undefined)
@@ -186,7 +190,8 @@ describe('createGraphBundleSession', () => {
 
     await session.setOverlayPointIds(['point-1'])
 
-    expect(materializeOverlayPointIdsMock).toHaveBeenCalledTimes(1)
+    expect(ensureOptionalBundleTablesMock).toHaveBeenCalledWith(['universe_points'])
+    expect(refreshActivePointRuntimeTablesMock).toHaveBeenCalledTimes(1)
     expect(replaceSelectedPointIndicesMock).not.toHaveBeenCalled()
     expect(
       queryRowsMock.mock.calls.filter(([, sql]) => sql.includes('FROM overlay_points_web'))
@@ -199,6 +204,7 @@ describe('createGraphBundleSession', () => {
     await session.clearOverlay()
 
     expect(clearAllOverlayPointIdsMock).toHaveBeenCalledTimes(1)
+    expect(refreshActivePointRuntimeTablesMock).toHaveBeenCalledTimes(2)
     expect(
       queryRowsMock.mock.calls.filter(([, sql]) => sql.includes('FROM overlay_points_web'))
     ).toHaveLength(0)

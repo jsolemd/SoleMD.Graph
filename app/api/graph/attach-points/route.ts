@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
+import { GRAPH_POINT_ATTACHMENT_MAX_REFS } from '@/features/graph/duckdb/attachment-contract'
 import { EngineApiError } from '@/lib/engine/client'
 import {
   fetchGraphPointAttachment,
@@ -9,7 +10,7 @@ import {
 
 const GraphPointAttachmentRequestSchema = z.object({
   graph_release_id: z.string().min(1),
-  graph_paper_refs: z.array(z.string()).max(1000).default([]),
+  graph_paper_refs: z.array(z.string()).max(GRAPH_POINT_ATTACHMENT_MAX_REFS).default([]),
 })
 
 export async function POST(request: Request) {

@@ -3,6 +3,7 @@
 import type { GraphBundle } from '@/features/graph/types'
 
 import type { GraphPaperAttachmentProvider } from './attachment'
+import { GRAPH_POINT_ATTACHMENT_MAX_REFS } from './attachment-contract'
 import { ATTACHED_UNIVERSE_POINTS_TABLE } from './views/universe'
 import { LOCAL_POINT_RUNTIME_COLUMNS } from './views/base-points'
 
@@ -19,6 +20,16 @@ function resolveGraphReleaseId(bundle: GraphBundle) {
 
 function getStageProjectionSql() {
   return LOCAL_POINT_RUNTIME_COLUMNS.join(', ')
+}
+
+function chunkGraphPaperRefs(graphPaperRefs: string[]) {
+  const batches: string[][] = []
+
+  for (let index = 0; index < graphPaperRefs.length; index += GRAPH_POINT_ATTACHMENT_MAX_REFS) {
+    batches.push(graphPaperRefs.slice(index, index + GRAPH_POINT_ATTACHMENT_MAX_REFS))
+  }
+
+  return batches
 }
 
 async function parseAttachmentError(response: Response) {
@@ -53,42 +64,46 @@ export const remoteGraphPaperAttachmentProvider: GraphPaperAttachmentProvider = 
       return
     }
 
-    const response = await fetch(GRAPH_POINT_ATTACHMENT_ROUTE, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        graph_release_id: resolveGraphReleaseId(bundle),
-        graph_paper_refs: uniqueGraphPaperRefs,
-      }),
-      cache: 'no-store',
-    })
+    const graphReleaseId = resolveGraphReleaseId(bundle)
 
-    if (!response.ok) {
-      throw new Error(await parseAttachmentError(response))
-    }
-
-    const payload = new Uint8Array(await response.arrayBuffer())
-
-    await conn.query(`DROP TABLE IF EXISTS ${ATTACHED_UNIVERSE_STAGE_TABLE}`)
-    try {
-      await conn.insertArrowFromIPCStream(payload, {
-        name: ATTACHED_UNIVERSE_STAGE_TABLE,
-        create: true,
+    for (const graphPaperRefsBatch of chunkGraphPaperRefs(uniqueGraphPaperRefs)) {
+      const response = await fetch(GRAPH_POINT_ATTACHMENT_ROUTE, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          graph_release_id: graphReleaseId,
+          graph_paper_refs: graphPaperRefsBatch,
+        }),
+        cache: 'no-store',
       })
-      await conn.query(
-        `DELETE FROM ${ATTACHED_UNIVERSE_POINTS_TABLE}
-         USING ${ATTACHED_UNIVERSE_STAGE_TABLE}
-         WHERE ${ATTACHED_UNIVERSE_POINTS_TABLE}.id = ${ATTACHED_UNIVERSE_STAGE_TABLE}.id`
-      )
-      await conn.query(
-        `INSERT INTO ${ATTACHED_UNIVERSE_POINTS_TABLE}
-         SELECT ${getStageProjectionSql()}
-         FROM ${ATTACHED_UNIVERSE_STAGE_TABLE}`
-      )
-    } finally {
+
+      if (!response.ok) {
+        throw new Error(await parseAttachmentError(response))
+      }
+
+      const payload = new Uint8Array(await response.arrayBuffer())
+
       await conn.query(`DROP TABLE IF EXISTS ${ATTACHED_UNIVERSE_STAGE_TABLE}`)
+      try {
+        await conn.insertArrowFromIPCStream(payload, {
+          name: ATTACHED_UNIVERSE_STAGE_TABLE,
+          create: true,
+        })
+        await conn.query(
+          `DELETE FROM ${ATTACHED_UNIVERSE_POINTS_TABLE}
+           USING ${ATTACHED_UNIVERSE_STAGE_TABLE}
+           WHERE ${ATTACHED_UNIVERSE_POINTS_TABLE}.id = ${ATTACHED_UNIVERSE_STAGE_TABLE}.id`
+        )
+        await conn.query(
+          `INSERT INTO ${ATTACHED_UNIVERSE_POINTS_TABLE}
+           SELECT ${getStageProjectionSql()}
+           FROM ${ATTACHED_UNIVERSE_STAGE_TABLE}`
+        )
+      } finally {
+        await conn.query(`DROP TABLE IF EXISTS ${ATTACHED_UNIVERSE_STAGE_TABLE}`)
+      }
     }
   },
 }

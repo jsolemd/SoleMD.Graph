@@ -8,6 +8,7 @@
 - Prompt/editor modularization
 - Selection and scope-state centralization
 - Frontend latency and DuckDB runtime bootstrap optimization
+- Live overlay/runtime materialization for dynamic graph extension
 - Repo-level quality gate and CI
 - Non-RAG graph runtime and quality improvements only
 
@@ -45,6 +46,13 @@
 - Decide whether an idle-time prewarm of `base_points_query_runtime` after first paint improves perceived latency
 - Continue collapsing any remaining one-off selection/scope checks onto the shared resolver
 
+### Batch 8
+
+- Fix visible-Chrome DuckDB worker bootstrap so runtime testing is reliable in foreground DevTools
+- Replace hot-path overlay filter/index work with materialized overlay runtime tables and active lookup state
+- Keep point-only overlay updates off `universe_links`
+- Codify live-overlay runtime rules in the canonical frontend/runtime docs
+
 ## Findings
 
 - `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
@@ -53,6 +61,8 @@
 - `features/graph/components/panels/DetailPanel.tsx` and `features/graph/components/panels/detail/use-detail-data.ts` currently use only local DuckDB-backed detail, not remote graph detail.
 - `base_points_web` is a valid canonical query surface immediately after session bootstrap; the regression was that session info/table/search paths were still forcing `ensurePrimaryQueryTables()` before dataset reads.
 - The clean split is two-phase: canonical attached bundle views for startup, then one shared promotion into `base_points_query_runtime` when selection/current-scope-heavy interaction begins.
+- The remaining hot overlay bottleneck is not connection churn. It is repeated `overlay_point_ids -> active_points_web` union/index work paid on reads instead of once per overlay revision.
+- Visible Chrome exposed a DuckDB worker bootstrap bug in dev where `importScripts('/_next/static/...')` failed from the blob worker because the worker asset URL was not normalized to the app origin.
 
 ## Completed Batches
 
@@ -114,6 +124,15 @@
 - Kept the one-time `base_points_query_runtime` promotion behind the shared interactive query surface for scoped/selection-heavy reads
 - Tightened the session/query contract with regression tests so dataset reads no longer call `ensurePrimaryQueryTables()` while scoped reads still do
 
+### Batch 8
+
+- Normalized DuckDB-Wasm worker/module URLs against `window.location.href` so the visible Chrome dev runtime can instantiate DuckDB reliably
+- Replaced hot overlay filter/index read work with materialized DuckDB-local overlay runtime tables plus active index lookup rebuilt once per overlay revision
+- Kept `overlay_point_ids_by_producer` as the overlay source of truth and made `overlay_point_ids` a derived view instead of delete/reinsert state
+- Stopped point-only overlay updates from eagerly attaching `universe_links`
+- Raised the narrow row-attachment batch contract to 5,000 refs per request and kept batching on the one canonical browser attachment path
+- Added regression tests for DuckDB connection asset normalization, active runtime table materialization, overlay session refresh behavior, remote attachment batching, and attachment request validation
+
 ## Blockers
 
 - No blocking correctness issues remain.
@@ -127,7 +146,7 @@
 
 ## Commits
 
-- None yet
+- `283361e` Improve graph shell quality and runtime latency
 
 ## Next Recommended Passes
 
@@ -135,3 +154,4 @@
 2. Evaluate an idle-time post-paint prewarm of `base_points_query_runtime` only if the trace shows remaining first-interaction jank.
 3. Continue replacing local trim/scope checks with the shared selection-query resolver where any duplication still exists.
 4. If desired, remove the remaining `DashboardShellClient` test console warning with an explicit async-load test harness.
+5. Design the next overlay transport step for million-point live extension around backend-ranked membership/cohort payloads instead of row-hydration attachment.

@@ -3,8 +3,10 @@ from __future__ import annotations
 from io import BytesIO
 
 import pyarrow.ipc as pa_ipc
+import pytest
 
 from app.graph.attachment import (
+    GRAPH_POINT_ATTACHMENT_MAX_REFS,
     GraphPointAttachmentRequest,
     GraphPointAttachmentService,
 )
@@ -128,3 +130,13 @@ def test_graph_point_attachment_service_returns_empty_stream_when_nothing_resolv
 
     table = pa_ipc.open_stream(BytesIO(payload)).read_all()
     assert table.num_rows == 0
+
+
+def test_graph_point_attachment_request_rejects_requests_above_batch_cap():
+    with pytest.raises(ValueError):
+        GraphPointAttachmentRequest(
+            graph_release_id="release-1",
+            graph_paper_refs=[
+                f"paper:{index + 1}" for index in range(GRAPH_POINT_ATTACHMENT_MAX_REFS + 1)
+            ],
+        )

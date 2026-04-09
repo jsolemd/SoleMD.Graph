@@ -30,12 +30,31 @@ const LOCAL_DUCKDB_BUNDLES: duckdb.DuckDBBundles = {
   },
 }
 
+function resolveDuckDBBundleAssetUrl(assetUrl: string | null | undefined) {
+  if (!assetUrl) {
+    return assetUrl ?? null
+  }
+
+  return new URL(assetUrl, window.location.href).toString()
+}
+
 async function getSelectedDuckDBBundle() {
   if (!selectedBundlePromise) {
     // Keep DuckDB-Wasm on the app origin to avoid a CDN round-trip on every
     // cold start. The COI pthread bundle stays excluded because it is still
     // non-functional at runtime for our graph shell.
-    selectedBundlePromise = duckdb.selectBundle(LOCAL_DUCKDB_BUNDLES)
+    selectedBundlePromise = duckdb.selectBundle(LOCAL_DUCKDB_BUNDLES).then((bundle) => {
+      if (!bundle) {
+        throw new Error('DuckDB bundle selection failed to resolve a compatible bundle.')
+      }
+
+      return {
+        ...bundle,
+        mainModule: resolveDuckDBBundleAssetUrl(bundle.mainModule) ?? bundle.mainModule,
+        mainWorker: resolveDuckDBBundleAssetUrl(bundle.mainWorker) ?? bundle.mainWorker,
+        pthreadWorker: resolveDuckDBBundleAssetUrl(bundle.pthreadWorker),
+      }
+    })
   }
 
   return selectedBundlePromise
@@ -70,6 +89,7 @@ export async function createConnection() {
   })
 
   const conn = await db.connect()
+  await conn.query('PRAGMA enable_object_cache')
   await conn.query("SET preserve_insertion_order = false")
   await conn.query("SET memory_limit = '1500MB'")
   await conn.query("SET threads = 1")

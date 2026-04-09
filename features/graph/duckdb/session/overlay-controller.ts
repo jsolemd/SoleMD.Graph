@@ -17,7 +17,7 @@ import { queryOverlayPointIds, queryRows } from '../queries'
 import {
   clearAllOverlayPointIds,
   clearOverlayProducerPointIds,
-  materializeOverlayPointIds,
+  refreshActivePointRuntimeTables,
   replaceOverlayProducerPointIds,
   replaceSelectedPointIndices,
   replaceSelectedPointIndicesFromScopeSql,
@@ -143,7 +143,7 @@ export function createSessionOverlayController({
   }
 
   const refreshOverlayCanvas = async () => {
-    const { overlayCount } = await materializeOverlayPointIds(conn)
+    const { overlayCount } = await refreshActivePointRuntimeTables(conn, basePointCount)
     await clearSelectedPointState()
     return refreshCanvas({ overlayCount })
   }
@@ -166,7 +166,7 @@ export function createSessionOverlayController({
     if (nextProducerPointIds.length === 0) {
       await clearOverlayProducerPointIds(conn, producerId)
     } else {
-      await ensureOptionalBundleTables(['universe_points', 'universe_links'])
+      await ensureOptionalBundleTables(['universe_points'])
       await replaceOverlayProducerPointIds(conn, {
         producerId,
         pointIds: nextProducerPointIds,
@@ -285,13 +285,12 @@ export function createSessionOverlayController({
 
         resetOverlayDependentCaches()
         await clearAllOverlayPointIds(conn)
-        await clearSelectedPointState()
-        return refreshCanvas({ overlayCount: 0 })
+        return refreshOverlayCanvas()
       })
     },
     async activateOverlay(args): Promise<OverlayActivationResult> {
       return runOverlayMutation(async () => {
-        await ensureOptionalBundleTables(['universe_points', 'universe_links'])
+        await ensureOptionalBundleTables(['universe_points'])
         resetOverlayDependentCaches()
         const result =
           args.kind === 'cluster-neighborhood'

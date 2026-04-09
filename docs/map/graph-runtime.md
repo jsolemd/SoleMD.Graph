@@ -102,7 +102,7 @@ What each layer is for:
 |---|---|---|---|
 | Base | `base_points.parquet` | First paint (mandatory) | Render, color, size, fast faceting, local search, paged table |
 | Universe | `universe_points.parquet` | Attached on interaction | Overlay promotion from mapped remainder |
-| Active | DuckDB views + overlay membership tables | Immediately after base | Base + promoted overlay in one dense canvas table |
+| Active | DuckDB overlay membership tables + materialized runtime tables | Immediately after base | Base + promoted overlay in one dense canvas/query runtime |
 | Evidence | FastAPI endpoints | On demand | Paper detail, citation neighborhoods, full text, assets |
 
 ---
@@ -169,10 +169,11 @@ Active canvas state is DuckDB-local and derived from loaded Parquet.
 | `current_paper_points_web` | Paper-level query alias for detail panels |
 | `current_links_web` | Links alias bound to current ids |
 | `overlay_point_ids_by_producer` | Mutable overlay membership by promoter source |
-| `overlay_point_ids` | Union of producer memberships |
-| `overlay_points_web` | Overlay query view (for richer lookups) |
+| `overlay_point_ids` | Derived union of producer memberships |
+| `overlay_points_*_runtime` | DuckDB-local overlay runtime tables rebuilt per overlay revision |
+| `overlay_points_web` | Overlay query alias over the materialized runtime |
 | `active_point_index_lookup_web` | Remaps ids to dense active indices |
-| `active_points_web` | Dense union of base + overlay |
+| `active_points_web` | Thin active alias over base + materialized overlay runtime |
 | `selected_point_indices` | Materialized from live Cosmograph selection clauses |
 
 **Hard rules:**
@@ -183,7 +184,8 @@ Active canvas state is DuckDB-local and derived from loaded Parquet.
   synthetic active union is built
 - React/Zustand holds only scalar invalidation signals (`selectedPointCount`,
   `currentScopeRevision`, `currentPointScopeSql`), never the full active set
-- Overlay mutates **id membership tables**, not rich point tables
+- Overlay mutates **producer membership tables**, then rebuilds the overlay/runtime
+  tables once per overlay revision inside DuckDB
 
 ### Evidence contract
 
@@ -210,7 +212,7 @@ enforced today; breaking any of them is a regression.
 | 4 | Parquet through narrow projection views | Pushdown + statistics; no full hydration | `features/graph/duckdb/views/register-all.ts` |
 | 5 | Render path narrower than query path | Cosmograph gets minimum shape; widgets query richer | `features/graph/duckdb/canvas.ts` |
 | 6 | `pointIncludeColumns` empty unless a native widget needs it | Every column widens the coordinator path | `features/graph/cosmograph/hooks/use-cosmograph-config.ts` |
-| 7 | Mutate membership tables, not rich point tables | Membership churn is cheap; copied rich tables are not | `features/graph/duckdb/views/overlay.ts`, `views/selection.ts` |
+| 7 | Keep producer membership as source of truth and materialize overlay runtime + active lookup once per revision | Reads stay hot without duplicating the full base dataset | `features/graph/duckdb/views/overlay.ts`, `views/active-points.ts` |
 | 8 | Batch widget queries, cache by overlay revision | Info panels otherwise fan out | `features/graph/duckdb/session/info-queries.ts` |
 | 9 | Reuse prepared statements for hot parameterized paths | Prepare/close churn hurts | `features/graph/duckdb/queries/core.ts` |
 | 10 | Evict failed cache entries | Don't pin rejected promises | `features/graph/duckdb/session/query-controller.ts` |
@@ -236,6 +238,19 @@ enforced today; breaking any of them is a regression.
 The wrong model: "100M nodes exist globally, so the browser should load 100M
 node rows." The right model: the browser receives a bounded base scaffold,
 promotes overlays on demand, and delegates heavy retrieval to the backend.
+
+### Live overlay scaling rules
+
+- The prompt/RAG path, manual activation path, and future semantic/entity overlay
+  paths all feed the same browser-side overlay contract.
+- Point-only overlay mutations attach `universe_points` only. `universe_links`
+  stays lazy unless the interaction actually needs links.
+- Narrow row attachment is the right contract for filling holes in the locally
+  attached universe. It is not the final transport for million-point overlays.
+- If live graph extension needs to approach 1M-2M visible points, evolve the
+  canonical overlay contract toward backend-ranked cohorts or membership payloads
+  that DuckDB can join locally against `universe_points`, rather than sending all
+  rich point rows through JS arrays.
 
 ---
 

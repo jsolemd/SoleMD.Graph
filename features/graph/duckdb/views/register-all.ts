@@ -4,14 +4,13 @@ import type { GraphBundle, MapLayer } from '@/features/graph/types'
 
 import { validateTableName, requireBundleTable } from '../utils'
 
-import { registerActivePointViews } from './active-points'
+import { refreshActivePointRuntimeTables, registerActivePointViews } from './active-points'
 import {
   BASE_POINT_CANONICAL_SOURCE_TABLE,
   BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
   LOCAL_POINT_RUNTIME_COLUMNS,
-  registerBasePointQueryViews,
   registerBasePointsView,
 } from './base-points'
 import {
@@ -151,14 +150,18 @@ export function createEnsurePrimaryQueryTables(
         ])
       )
 
-      await runBootstrapStep('interactive point query views', () =>
-        registerBasePointQueryViews(conn, {
+      await runBootstrapStep('interactive base point views', () =>
+        registerBasePointsView(conn, {
           sourceTable: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+          buildPointCanvasProjectionSql: state.buildPointCanvasProjectionSql,
           buildPointQueryProjectionSql: state.buildPointQueryProjectionSql,
         })
       )
       await runBootstrapStep('interactive cluster query views', () =>
         registerClusterViews(conn, BASE_CLUSTER_RUNTIME_SOURCE_TABLE)
+      )
+      await runBootstrapStep('interactive active runtime refresh', () =>
+        refreshActivePointRuntimeTables(conn, state.basePointCount)
       )
 
       materialized = true

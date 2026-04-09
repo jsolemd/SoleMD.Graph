@@ -90,4 +90,40 @@ describe('remote graph paper attachment provider', () => {
       }),
     ).rejects.toThrow('Unknown graph release')
   })
+
+  it('batches large attachment requests through the single attachment route', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async () =>
+      new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/vnd.apache.arrow.stream',
+        },
+      }),
+    )
+
+    await remoteGraphPaperAttachmentProvider.attachGraphPaperRefs({
+      bundle: {
+        bundleChecksum: 'bundle-1',
+        runId: 'run-1',
+        bundleManifest: {
+          graphRunId: 'run-1',
+        },
+      } as never,
+      conn: {
+        query: jest.fn(async () => undefined),
+        insertArrowFromIPCStream: jest.fn(async () => undefined),
+      } as never,
+      graphPaperRefs: Array.from({ length: 5001 }, (_, index) => `paper:${index + 1}`),
+      ensureOptionalBundleTables: jest.fn(),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/graph/attach-points',
+      expect.objectContaining({
+        body: expect.stringContaining('"graph_paper_refs"'),
+      }),
+    )
+  })
 })

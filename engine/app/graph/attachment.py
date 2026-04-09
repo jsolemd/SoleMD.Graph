@@ -17,6 +17,7 @@ from app.rag.parse_contract import ParseContractModel
 from app.rag.repository import PostgresRagRepository, RagRepository
 
 GRAPH_POINT_ATTACHMENT_MEDIA_TYPE = "application/vnd.apache.arrow.stream"
+GRAPH_POINT_ATTACHMENT_MAX_REFS = 5000
 GRAPH_POINT_ATTACHMENT_SQL = (
     """
 WITH requested_corpus AS (
@@ -166,8 +167,10 @@ class GraphPointAttachmentRequest(ParseContractModel):
     @classmethod
     def validate_graph_paper_refs(cls, value: list[str]) -> list[str]:
         normalized = list(dict.fromkeys(ref.strip() for ref in value if ref and ref.strip()))
-        if len(normalized) > 1000:
-            raise ValueError("graph_paper_refs must not contain more than 1000 items")
+        if len(normalized) > GRAPH_POINT_ATTACHMENT_MAX_REFS:
+            raise ValueError(
+                f"graph_paper_refs must not contain more than {GRAPH_POINT_ATTACHMENT_MAX_REFS} items"
+            )
         return normalized
 
 

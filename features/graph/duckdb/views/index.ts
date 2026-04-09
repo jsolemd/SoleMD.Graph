@@ -1,4 +1,4 @@
-export { registerActivePointViews } from './active-points'
+export { refreshActivePointRuntimeTables, registerActivePointViews } from './active-points'
 export {
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
@@ -10,7 +10,6 @@ export {
   clearAllOverlayPointIds,
   clearOverlayProducerPointIds,
   initializeOverlayMembershipTable,
-  materializeOverlayPointIds,
   replaceOverlayProducerPointIds,
 } from './overlay'
 export { registerPaperDocumentViews } from './paper-documents'

@@ -4,8 +4,8 @@ import { executeStatement, queryRows } from '../queries'
 import { buildPlaceholderList } from '../utils'
 
 export async function initializeOverlayMembershipTable(conn: AsyncDuckDBConnection) {
+  await conn.query(`DROP VIEW IF EXISTS overlay_point_ids`)
   await conn.query(`DROP TABLE IF EXISTS overlay_point_ids_by_producer`)
-  await conn.query(`DROP TABLE IF EXISTS overlay_point_ids`)
   await conn.query(
     `CREATE TEMP TABLE overlay_point_ids_by_producer (
        producer_id VARCHAR NOT NULL,
@@ -14,9 +14,9 @@ export async function initializeOverlayMembershipTable(conn: AsyncDuckDBConnecti
      )`
   )
   await conn.query(
-    `CREATE TEMP TABLE overlay_point_ids (
-       id VARCHAR PRIMARY KEY
-     )`
+    `CREATE OR REPLACE TEMP VIEW overlay_point_ids AS
+     SELECT DISTINCT id
+     FROM overlay_point_ids_by_producer`
   )
 }
 
@@ -74,23 +74,4 @@ export async function clearOverlayProducerPointIds(
 
 export async function clearAllOverlayPointIds(conn: AsyncDuckDBConnection): Promise<void> {
   await conn.query(`DELETE FROM overlay_point_ids_by_producer`)
-  await conn.query(`DELETE FROM overlay_point_ids`)
-}
-
-export async function materializeOverlayPointIds(
-  conn: AsyncDuckDBConnection
-): Promise<{ overlayCount: number }> {
-  await conn.query(`DELETE FROM overlay_point_ids`)
-  await conn.query(
-    `INSERT INTO overlay_point_ids
-     SELECT DISTINCT id
-     FROM overlay_point_ids_by_producer`
-  )
-
-  const rows = await queryRows<{ count: number }>(
-    conn,
-    `SELECT count(*)::INTEGER AS count FROM overlay_point_ids`
-  )
-
-  return { overlayCount: rows[0]?.count ?? 0 }
 }

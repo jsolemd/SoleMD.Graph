@@ -53,13 +53,21 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - If two panels need the same derived query inputs, extract that derivation into a shared hook or library module.
 - If two DuckDB consumers need the same projection, predicate, or cache key, centralize it.
 
-8. Measure before and after
+8. Overlay runtime is materialized once per revision
+
+- `overlay_point_ids_by_producer` is the mutable source of truth for overlay membership.
+- When overlay membership changes, rebuild the overlay runtime tables and active index lookup once in DuckDB.
+- Do not leave `overlay_points_*` or active index remapping as non-materialized filter/window work on the hot read path.
+- Keep the final active union thin; do not duplicate the full base dataset into another million-row temp table just to expose `active_points_*`.
+- Point-only overlay mutations must not attach `universe_links` just to keep link views structurally available.
+
+9. Measure before and after
 
 - Use Chrome DevTools MCP and/or browser-network inspection for frontend latency changes.
 - For DuckDB/runtime changes, verify whether requests, `HEAD` probes, or remote Parquet reads were reduced.
 - Prefer structural fixes over debounce-only masking.
 
-9. Performance regressions require tests
+10. Performance regressions require tests
 
 - Changes affecting shell startup, DuckDB bootstrap, selection/query orchestration, or repeated interaction latency must add or update regression tests.
 - Tests should verify the canonical behavior directly:
@@ -67,6 +75,13 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
   - hidden panels do not prefetch
   - selection/scope resolution stays shared
   - repeated queries use caches where intended
+  - overlay reads hit materialized runtime tables instead of rebuilding unions/windows
+
+11. Large live overlays use one contract, not ad hoc paths
+
+- Keep one public browser-side entry for graph-paper availability and attachment.
+- Reduce round trips by batching through that contract; do not create one-off fetch paths per panel or prompt mode.
+- The current narrow row-attachment contract is for demand-attached points, not the final transport for million-point overlays. If the live graph must extend toward million-scale visible overlays, evolve the canonical contract toward cohort or membership transport instead of hydrating every point row through JS arrays.
 
 ## Anti-Patterns
 
@@ -76,6 +91,9 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Reopening DuckDB to work around invalidation or cache issues.
 - Local one-off fixes that bypass `features/graph/cosmograph/**` or `features/graph/duckdb/**`.
 - Adding a second implementation path instead of replacing the old one.
+- Recomputing overlay unions and overlay `ROW_NUMBER()` index remaps inside live read views.
+- Pulling `universe_links` during point-only overlay promotion.
+- Treating row-hydration attachment as the final path for million-point live overlays.
 
 ## Review Checklist
 
