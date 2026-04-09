@@ -143,6 +143,14 @@
 - Materialized `base_points` and `base_clusters` into local DuckDB tables during startup so mandatory first-paint assets stop behaving like parquet-backed views
 - Changed interactive query-runtime promotion to copy from those local canonical tables instead of reading parquet again
 
+### Batch 9
+
+- Removed ask-mode draft mirroring from `use-prompt-box-controller.ts` so prompt typing no longer routes full markdown through top-level PromptBox React state on every keystroke
+- Switched prompt submit readiness in `PromptBoxSurface.tsx` to the canonical `hasInput` contract instead of the mirrored markdown string
+- Restored the ProseMirror/Tiptap content CSS contract in `app/styles/editor.css` so the editor surface preserves whitespace correctly without runtime warnings
+- Added a focused prompt-shell render regression test in `features/graph/components/panels/prompt/__tests__/use-prompt-box-controller.test.ts`
+- Re-verified the production app in visible Chrome on `http://localhost:3000`: cold load remained at 38 requests, the ProseMirror warning disappeared on focus, and typing enabled submit without bootstrap regressions
+
 ## Blockers
 
 - No blocking correctness issues remain.

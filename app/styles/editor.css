@@ -94,19 +94,33 @@
   line-height: 1.5;
   color: var(--graph-prompt-text);
   caret-color: var(--mode-accent);
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  -webkit-font-variant-ligatures: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+
+.tiptap-create .tiptap [contenteditable="false"] {
+  white-space: normal;
+}
+
+.tiptap-create .tiptap [contenteditable="false"] [contenteditable="true"] {
+  white-space: pre-wrap;
 }
 
 .tiptap-create--compact .tiptap {
   max-height: calc(4 * 1.5em + 0.5rem);
 }
 
+/* Tiptap editor — thin scrollbar matching prompt divider color.
+   Cannot add .thin-scrollbar class to Tiptap's auto-rendered element,
+   so these rules mirror the .thin-scrollbar pattern with a custom thumb. */
 .tiptap-create .tiptap { scrollbar-gutter: stable; }
 .tiptap-create .tiptap::-webkit-scrollbar { width: 4px; }
 .tiptap-create .tiptap::-webkit-scrollbar-track { background: transparent; }
-.tiptap-create .tiptap::-webkit-scrollbar-thumb {
-  background: var(--graph-prompt-divider);
-  border-radius: 2px;
-}
+.tiptap-create .tiptap::-webkit-scrollbar-thumb { background: var(--graph-prompt-divider); border-radius: 2px; }
 
 /* ── Prose formatting — minimal, inherits PromptBox text tokens ── */
 .tiptap-create .tiptap h1 {
@@ -153,6 +167,7 @@
   border-radius: 8px;
   margin: 0.5rem 0;
   overflow-x: auto;
+  white-space: pre-wrap;
 }
 
 .tiptap-create .tiptap ul,
@@ -193,10 +208,7 @@
 
 .tiptap-source::-webkit-scrollbar { width: 4px; }
 .tiptap-source::-webkit-scrollbar-track { background: transparent; }
-.tiptap-source::-webkit-scrollbar-thumb {
-  background: var(--graph-prompt-divider);
-  border-radius: 2px;
-}
+.tiptap-source::-webkit-scrollbar-thumb { background: var(--graph-prompt-divider); border-radius: 2px; }
 
 .tiptap-source::selection {
   background: var(--mode-accent-subtle);

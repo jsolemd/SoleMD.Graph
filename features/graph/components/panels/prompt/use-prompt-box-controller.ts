@@ -118,7 +118,7 @@ export function usePromptBoxController({
   const examples = useMemo(() => [...pickRandom(MODE_EXAMPLES[mode], 2), `${activeMode.label} with the knowledge graph...`], [mode]);
   const { text: typewriterText, isLast: typewriterIsLast } = useTypewriter(examples);
   const [hasInput, setHasInput] = useState(false);
-  const [promptValue, setPromptValue] = useState("");
+  const askPromptValueRef = useRef("");
   const [showFormattingTools, setShowFormattingTools] = useState(false);
   const [selectionScopeManuallyDisabled, setSelectionScopeManuallyDisabled] = useState(false);
   const { width: vw, height: vh } = useViewportSize();
@@ -130,7 +130,7 @@ export function usePromptBoxController({
   const isCollapsed = promptMode === "collapsed";
   const isMaximized = promptMode === "maximized";
   const isCreateMaximized = isCreate && isMaximized;
-  const activePromptValue = isCreate ? writeContent : promptValue;
+  const activePromptValue = isCreate ? writeContent : askPromptValueRef.current;
   const selectionScopeAvailable = isSelectionScopeAvailable({
     hasQueries: Boolean(queries),
     currentPointScopeSql,
@@ -163,7 +163,12 @@ export function usePromptBoxController({
     activeSelectionSourceId,
     setSelectedPointCount,
     setActiveSelectionSourceId,
-    getPromptText: useCallback(() => editorRef.current?.getText() ?? activePromptValue, [activePromptValue]),
+    getPromptText: useCallback(
+      () =>
+        editorRef.current?.getText() ??
+        (isCreate ? writeContent : askPromptValueRef.current),
+      [isCreate, writeContent],
+    ),
   });
 
   const leftPanelBottom = useDashboardStore((s) => s.panelBottomY.left);
@@ -237,7 +242,11 @@ export function usePromptBoxController({
     previousModeRef.current = mode;
     editorRef.current?.flush();
     clearRag();
-    setHasInput(mode === "create" ? writeContent.length > 0 : promptValue.length > 0);
+    setHasInput(
+      mode === "create"
+        ? writeContent.length > 0
+        : askPromptValueRef.current.length > 0,
+    );
 
     const focusHandle = globalThis.setTimeout(() => {
       editorRef.current?.focus();
@@ -246,7 +255,7 @@ export function usePromptBoxController({
     return () => {
       globalThis.clearTimeout(focusHandle);
     };
-  }, [mode, writeContent, promptValue, clearRag]);
+  }, [mode, writeContent, clearRag]);
 
   const handlePillClick = useCallback(() => {
     if (isDragging.current) {
@@ -342,7 +351,7 @@ export function usePromptBoxController({
         return;
       }
 
-      setPromptValue(markdown);
+      askPromptValueRef.current = markdown;
     },
     [isCreate, setWriteContent],
   );
