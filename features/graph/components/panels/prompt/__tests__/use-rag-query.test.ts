@@ -660,6 +660,11 @@ describe("useRagQuery", () => {
       await flushMicrotasks();
     });
 
+    expect(result.current.ragGraphAvailability).toEqual({
+      activeResolvedGraphPaperRefs: ["paper-11"],
+      overlayPromotedGraphPaperRefs: [],
+      evidenceOnlyGraphPaperRefs: [],
+    });
     expect(result.current.ragInteractionTrace).toBeNull();
     expect(setSelectedPointCount).not.toHaveBeenCalled();
 

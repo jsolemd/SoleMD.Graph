@@ -32,6 +32,7 @@ export function PromptBoxSurface({
   isMaximized,
   isCreateMaximized,
   activePromptValue,
+  hasInput,
   showFormattingTools,
   selectionScopeAvailable,
   selectionOnlyEnabled,
@@ -240,7 +241,7 @@ export function PromptBoxSurface({
                   onClick={handleSubmit}
                   size="md"
                   active
-                  disabled={!isAsk || !activePromptValue.trim() || isSubmitting}
+                  disabled={!isAsk || !hasInput || isSubmitting}
                 />
               </div>
             )}

@@ -118,7 +118,6 @@ export function usePromptBoxController({
   const examples = useMemo(() => [...pickRandom(MODE_EXAMPLES[mode], 2), `${activeMode.label} with the knowledge graph...`], [mode]);
   const { text: typewriterText, isLast: typewriterIsLast } = useTypewriter(examples);
   const [hasInput, setHasInput] = useState(false);
-  const [promptValue, setPromptValue] = useState("");
   const [showFormattingTools, setShowFormattingTools] = useState(false);
   const [selectionScopeManuallyDisabled, setSelectionScopeManuallyDisabled] = useState(false);
   const { width: vw, height: vh } = useViewportSize();
@@ -130,7 +129,7 @@ export function usePromptBoxController({
   const isCollapsed = promptMode === "collapsed";
   const isMaximized = promptMode === "maximized";
   const isCreateMaximized = isCreate && isMaximized;
-  const activePromptValue = isCreate ? writeContent : promptValue;
+  const activePromptValue = isCreate ? writeContent : "";
   const selectionScopeAvailable = isSelectionScopeAvailable({
     hasQueries: Boolean(queries),
     currentPointScopeSql,
@@ -237,7 +236,7 @@ export function usePromptBoxController({
     previousModeRef.current = mode;
     editorRef.current?.flush();
     clearRag();
-    setHasInput(mode === "create" ? writeContent.length > 0 : promptValue.length > 0);
+    setHasInput(mode === "create" ? writeContent.length > 0 : false);
 
     const focusHandle = globalThis.setTimeout(() => {
       editorRef.current?.focus();
@@ -246,7 +245,7 @@ export function usePromptBoxController({
     return () => {
       globalThis.clearTimeout(focusHandle);
     };
-  }, [mode, writeContent, promptValue, clearRag]);
+  }, [mode, writeContent, clearRag]);
 
   const handlePillClick = useCallback(() => {
     if (isDragging.current) {
@@ -339,10 +338,7 @@ export function usePromptBoxController({
     (markdown: string) => {
       if (isCreate) {
         setWriteContent(markdown);
-        return;
       }
-
-      setPromptValue(markdown);
     },
     [isCreate, setWriteContent],
   );

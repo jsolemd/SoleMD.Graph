@@ -75,6 +75,12 @@
 - Return canonical trace stages from DuckDB availability/attachment and overlay mutation paths
 - Verify the final prompt interaction trace does not close before async point-selection mutation completes
 
+### Batch 12
+
+- Remove ask-mode full-text mirroring from the PromptBox hot render path so typing no longer drives the whole prompt shell through React state on every keystroke
+- Publish graph-availability feedback before async point-selection mutation finishes so the response panel feels faster even when final graph selection work is still in flight
+- Add focused regression coverage for the new prompt-surface contract
+
 ## Findings
 
 - `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
@@ -87,6 +93,7 @@
 - Visible Chrome exposed a DuckDB worker bootstrap bug in dev where `importScripts('/_next/static/...')` failed from the blob worker because the worker asset URL was not normalized to the app origin.
 - The repo already points agents and reader-path docs at `graph-interaction.md`; the missing piece was the canonical doc content and type contract behind those references.
 - The clean structural boundary is not “PromptBox integration.” It is a source-agnostic `ReferenceIntent -> ReferenceResolution -> GraphAnnotationSet -> GraphProjectionRequest -> GraphProjectionResult -> GraphInteractionTrace` runtime that PromptBox, manuscript mode, and future interaction surfaces all consume.
+- The ask path was still mirroring full editor markdown through `usePromptBoxController` on every content update even though submit already reads from the editor handle; that was unnecessary shell churn on the hottest interaction path.
 
 ## Completed Batches
 
@@ -181,6 +188,13 @@
 - Extended `features/graph/components/panels/prompt/rag-graph-sync.ts` and `features/graph/components/panels/prompt/use-rag-query.ts` so the live prompt/RAG path emits a composed `GraphInteractionTrace`
 - Fixed the prompt hook so the final interaction trace waits for the async `setSelectedPointIndices(...)` mutation before closing the final stage
 - Added focused prompt/overlay regression coverage for interaction-stage ordering and final-trace timing correctness
+
+### Batch 12
+
+- Changed `features/graph/components/panels/prompt/use-prompt-box-controller.ts` so ask-mode typing no longer mirrors full editor content through top-level PromptBox React state; the ask editor now stays editor-local and uses `hasInput` as the shell-level submit signal
+- Changed `features/graph/components/panels/prompt/PromptBoxSurface.tsx` so ask submit readiness depends on the existing empty/non-empty contract instead of full mirrored ask text
+- Changed `features/graph/components/panels/prompt/use-rag-query.ts` so `ragGraphAvailability` is published before the async `setSelectedPointIndices(...)` mutation resolves, while the final interaction trace still waits for the selection mutation
+- Added `features/graph/components/panels/prompt/__tests__/PromptBoxSurface.test.tsx` to lock the ask-mode submit contract and extended `features/graph/components/panels/prompt/__tests__/use-rag-query.test.ts` to verify early graph-availability visibility during deferred selection mutation
 
 ## Blockers
 

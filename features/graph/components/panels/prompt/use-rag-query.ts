@@ -246,11 +246,11 @@ export function useRagQuery({
         }
 
         const renderStartedAt = getInteractionNow();
+        setRagGraphAvailability(graphAvailabilitySummary);
         await queries.setSelectedPointIndices(answerSelectedPointIndices);
         if (cancelled) {
           return;
         }
-        setRagGraphAvailability(graphAvailabilitySummary);
         setSelectedPointCount(answerSelectedPointIndices.length);
         setActiveSelectionSourceId(
           answerSelectedPointIndices.length > 0
