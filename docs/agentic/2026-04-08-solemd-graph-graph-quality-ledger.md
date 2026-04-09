@@ -69,12 +69,6 @@
 - Make the interaction-runtime doc a required architecture reference for future graph-aware work
 - Define the next adoption targets before adding PromptBox-specific hover/projection behavior
 
-### Batch 10
-
-- Codify a source-agnostic graph interaction runtime for prompt, manuscript, search, selection, and system workflows
-- Make the interaction contract canonical in docs and agent guidance instead of letting PromptBox semantics become the default graph architecture
-- Keep projection, annotation, and observability structurally separate so future live-graph features reuse one runtime
-
 ## Findings
 
 - `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
@@ -173,13 +167,6 @@
 - Added `docs/map/graph-interaction.md` to define the structural contract stack, producer rules, observability split, manuscript fingerprint model, and next adoption targets
 - Recorded the next convergence targets around prompt/RAG sync, DuckDB availability/attachment, overlay mutation, and interaction timing before further PromptBox UX expansion
 
-### Batch 10
-
-- Added `features/graph/types/interaction-runtime.ts` as the canonical type surface for source-agnostic graph interaction contracts
-- Added `docs/map/graph-interaction.md` as the canonical human-readable contract for `ReferenceIntent`, `ReferenceResolution`, `GraphAnnotationSet`, `GraphProjectionRequest`, `GraphProjectionResult`, and `GraphInteractionTrace`
-- Linked the interaction runtime into `docs/map/map.md`, `docs/map/architecture.md`, `docs/map/graph-runtime.md`, `docs/map/frontend-performance.md`, and `AGENTS.md` so future graph work treats it as required architecture
-- Explicitly codified that PromptBox, manuscript mode, search, and selection are clients of one graph interaction runtime rather than owners of independent graph semantics
-
 ## Blockers
 
 - No blocking correctness issues remain.
@@ -190,11 +177,10 @@
 
 - If desired, make the dynamic shell test warning-free by wrapping the `next/dynamic` loadable updates in explicit test `act(...)` handling.
 - Re-evaluate whether any future remote detail surface should be reintroduced only after an actual engine endpoint exists.
-- No callable subagent tool was exposed in this session, so the architecture pass stayed local even though the work was planned in subagent-sized slices.
-
 ## Commits
 
 - `283361e` Improve graph shell quality and runtime latency
+- `2ac1bc9` Codify graph interaction runtime contracts
 
 ## Next Recommended Passes
 
