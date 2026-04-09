@@ -36,8 +36,10 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 5. Local-first hot data
 
 - Treat `base_points`, `base_clusters`, and other interaction-critical graph tables as hot-path assets.
+- Register bundle parquet assets once per DuckDB session under stable logical file names before building canonical views.
+- Materialize `base_points` and `base_clusters` into local DuckDB tables during bootstrap because first paint already depends on them.
 - Prefer local temp/materialized tables for hot-path data that powers repeated faceting, table paging, search, and high-frequency interactions once the interactive path is active.
-- Keep one canonical bootstrap path: first-paint views may stay attached to remote bundle tables, but interactive views must converge onto one shared promoted runtime table when that promotion reduces repeated work.
+- If an interactive-only runtime table is still needed, build it from the local canonical table instead of reading parquet again.
 - Optional or evidence-heavy relations may stay lazy, but only if they are not on the first-paint or high-frequency path.
 
 6. No hidden hydration/runtime penalties
@@ -72,7 +74,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 
 - Rebuilding selection or scope logic inside each panel.
 - Querying hidden panels on mount “just in case”.
-- Remote `read_parquet(...)` relations left on hot first-paint paths.
+- Hot first-paint tables left as parquet-backed views instead of one local session table.
 - Reopening DuckDB to work around invalidation or cache issues.
 - Local one-off fixes that bypass `features/graph/cosmograph/**` or `features/graph/duckdb/**`.
 - Adding a second implementation path instead of replacing the old one.

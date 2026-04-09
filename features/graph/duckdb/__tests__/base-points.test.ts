@@ -1,5 +1,6 @@
 import type { GraphBundle } from '@/features/graph/types'
 
+import { getRegisteredBundleTableFileName } from '../bundle-files'
 import {
   BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
   LOCAL_POINT_RUNTIME_COLUMNS,
@@ -211,7 +212,9 @@ describe('base point projections', () => {
     )
     expect(query).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining("FROM read_parquet('https://example.test/base_points.parquet')")
+      expect.stringContaining(
+        `FROM read_parquet('${getRegisteredBundleTableFileName(createBundle(), 'base_points')}')`
+      )
     )
     expect(query).toHaveBeenNthCalledWith(
       2,

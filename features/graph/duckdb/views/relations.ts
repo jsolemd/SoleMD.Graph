@@ -2,9 +2,11 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type { GraphBundle } from '@/features/graph/types'
 
-import { escapeSqlString, getAbsoluteUrl } from '../queries'
+import { getRegisteredBundleTableFileName } from '../bundle-files'
+import { escapeSqlString } from '../queries'
 import { validateTableName } from '../utils'
 import { LOCAL_POINT_RUNTIME_COLUMNS } from './base-points'
+import { LOCAL_CLUSTER_RUNTIME_COLUMNS } from './clusters'
 
 interface BundleParquetMaterialization {
   tableName: string
@@ -18,22 +20,19 @@ export async function materializeBundleParquetTables(
   tables: readonly BundleParquetMaterialization[]
 ): Promise<void> {
   for (const { tableName, runtimeTableName, selectedColumns } of tables) {
-    const tableUrl = bundle.tableUrls[tableName]
-    if (!tableUrl) {
-      throw new Error(`Graph bundle is missing table URL for "${tableName}"`)
-    }
-
     const safeRuntimeTableName = validateTableName(runtimeTableName)
-    const absoluteTableUrl = getAbsoluteUrl(tableUrl)
     const selectList =
       selectedColumns && selectedColumns.length > 0
         ? selectedColumns.map((column) => validateTableName(column)).join(', ')
         : '*'
+    const registeredFileName = escapeSqlString(
+      getRegisteredBundleTableFileName(bundle, tableName)
+    )
 
     await conn.query(
       `CREATE TEMP TABLE IF NOT EXISTS ${safeRuntimeTableName} AS
        SELECT ${selectList}
-       FROM read_parquet('${escapeSqlString(absoluteTableUrl)}')`
+       FROM read_parquet('${registeredFileName}')`
     )
   }
 }
@@ -51,14 +50,16 @@ export async function resolveBundleRelations(
     return
   }
 
-  const localTableNames = new Set(['universe_points'])
+  const localTableNames = new Set(['base_points', 'base_clusters', 'universe_points'])
   const materializedTables: BundleParquetMaterialization[] = selectedTableNames
     .filter((tableName) => localTableNames.has(tableName))
     .map((tableName) => ({
       tableName,
       runtimeTableName: tableName,
       selectedColumns:
-        tableName === 'universe_points' ? LOCAL_POINT_RUNTIME_COLUMNS : undefined,
+        tableName === 'base_clusters'
+          ? LOCAL_CLUSTER_RUNTIME_COLUMNS
+          : LOCAL_POINT_RUNTIME_COLUMNS,
     }))
 
   if (materializedTables.length > 0) {
@@ -66,16 +67,12 @@ export async function resolveBundleRelations(
   }
 
   for (const tableName of selectedTableNames.filter((name) => !localTableNames.has(name))) {
-    const tableUrl = bundle.tableUrls[tableName]
-    if (!tableUrl) {
-      throw new Error(`Graph bundle is missing table URL for "${tableName}"`)
-    }
     const safe = validateTableName(tableName)
-    const absoluteTableUrl = getAbsoluteUrl(tableUrl)
+    const registeredFileName = escapeSqlString(
+      getRegisteredBundleTableFileName(bundle, tableName)
+    )
     await conn.query(
-      `CREATE OR REPLACE VIEW ${safe} AS SELECT * FROM read_parquet('${escapeSqlString(
-        absoluteTableUrl
-      )}')`
+      `CREATE OR REPLACE VIEW ${safe} AS SELECT * FROM read_parquet('${registeredFileName}')`
     )
   }
 }

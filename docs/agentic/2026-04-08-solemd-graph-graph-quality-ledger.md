@@ -45,6 +45,18 @@
 - Decide whether an idle-time prewarm of `base_points_query_runtime` after first paint improves perceived latency
 - Continue collapsing any remaining one-off selection/scope checks onto the shared resolver
 
+### Batch 8
+
+- Capture a real browser bootstrap trace on `localhost:3000`
+- Eliminate repeated base bundle `HEAD`/metadata churn without adding a second runtime path
+- Re-codify the asset/bootstrap rule in the canonical performance doc
+
+### Batch 8
+
+- Remove hidden first-paint interactive-query warmup from the shell
+- Re-verify browser request churn on `localhost:3000`
+- Keep interactive query-runtime promotion strictly demand-driven
+
 ## Findings
 
 - `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
@@ -113,6 +125,23 @@
 - Kept dataset-scoped table/info/search reads on canonical attached bundle views so first paint does not block on local temp-table build
 - Kept the one-time `base_points_query_runtime` promotion behind the shared interactive query surface for scoped/selection-heavy reads
 - Tightened the session/query contract with regression tests so dataset reads no longer call `ensurePrimaryQueryTables()` while scoped reads still do
+
+### Batch 8
+
+- Captured a visible Chrome reload baseline on `http://localhost:3000` and confirmed repeated `HEAD` storms on `base_points.parquet`/`base_clusters.parquet` during bootstrap
+- Added one canonical DuckDB bundle-file registration layer so bundle parquet assets are registered once per session under stable logical file names instead of being referenced by raw HTTP URLs in every `read_parquet(...)` view
+- Restored checksum-scoped graph asset catalog caching on the bundle route so repeated `HEAD`/`GET` probes reuse one graph-run lookup and one asset stat pass
+- Added regression coverage for bundle file registration and checksum-scoped asset catalog reuse
+
+### Batch 8
+
+- Removed the shell-level `primeInteractiveQueryTables()` idle prewarm from `use-dashboard-shell-controller.ts`
+- Removed the now-dead `primeInteractiveQueryTables()` public query/session surface
+- Updated `DashboardShellClient` regression coverage so first paint no longer blesses hidden interactive-runtime warmup
+- Aligned the implementation with `docs/map/frontend-performance.md`: hidden shell startup must not trigger local query-runtime materialization
+- Registered bundle parquet assets with stable DuckDB file handles before session view bootstrap
+- Materialized `base_points` and `base_clusters` into local DuckDB tables during startup so mandatory first-paint assets stop behaving like parquet-backed views
+- Changed interactive query-runtime promotion to copy from those local canonical tables instead of reading parquet again
 
 ## Blockers
 

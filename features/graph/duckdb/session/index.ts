@@ -1,5 +1,6 @@
 import type { GraphBundle } from '@/features/graph/types'
 
+import { registerBundleTableFiles } from '../bundle-files'
 import { getCanvasPointCounts, registerActiveCanvasAliasViews } from '../canvas'
 import { createConnection, closeConnection } from '../connection'
 import type { GraphBundleSession, ProgressCallback } from '../types'
@@ -36,6 +37,7 @@ export async function createGraphBundleSession(
       percent: 10,
     })
 
+    await registerBundleTableFiles(db, bundle)
     const viewState = await registerInitialSessionViews(conn, bundle, autoloadTables)
     const { availableLayers, basePointCount } = viewState
     const ensureOptionalBundleTables = createEnsureOptionalBundleTables(conn, bundle, viewState)
@@ -102,7 +104,6 @@ export async function createGraphBundleSession(
         disposed = true
         await closeConnection(conn, db, worker)
       },
-      primeInteractiveQueryTables: ensurePrimaryQueryTables,
       subscribeCanvas: overlayController.subscribeCanvas,
       setSelectedPointIndices: overlayController.setSelectedPointIndices,
       setSelectedPointScopeSql: overlayController.setSelectedPointScopeSql,

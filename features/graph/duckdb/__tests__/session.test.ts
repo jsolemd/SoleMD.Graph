@@ -1,4 +1,5 @@
 import { createGraphBundleSession } from '../session'
+import { registerBundleTableFiles } from '../bundle-files'
 import {
   buildCanvasSource,
   getCanvasPointCounts,
@@ -21,6 +22,10 @@ import {
 jest.mock('../connection', () => ({
   closeConnection: jest.fn(async () => undefined),
   createConnection: jest.fn(),
+}))
+
+jest.mock('../bundle-files', () => ({
+  registerBundleTableFiles: jest.fn(async () => undefined),
 }))
 
 jest.mock('../canvas', () => ({
@@ -70,6 +75,7 @@ jest.mock('../views', () => {
 })
 
 const createConnectionMock = jest.mocked(createConnection)
+const registerBundleTableFilesMock = jest.mocked(registerBundleTableFiles)
 const buildCanvasSourceMock = jest.mocked(buildCanvasSource)
 const getCanvasPointCountsMock = jest.mocked(getCanvasPointCounts)
 const registerActiveCanvasAliasViewsMock = jest.mocked(registerActiveCanvasAliasViews)
@@ -164,6 +170,11 @@ describe('createGraphBundleSession', () => {
   it('skips no-op selected-point table rewrites', async () => {
     const session = await createGraphBundleSession(createBundle() as never, jest.fn())
 
+    expect(registerBundleTableFilesMock).toHaveBeenCalledWith(
+      db as never,
+      createBundle()
+    )
+
     await session.setSelectedPointIndices([3, 1, 3])
     await session.setSelectedPointIndices([1, 3])
     await session.setSelectedPointIndices([])
@@ -208,11 +219,9 @@ describe('createGraphBundleSession', () => {
     })
   })
 
-  it('exposes a single interactive-query prewarm entrypoint', async () => {
-    const session = await createGraphBundleSession(createBundle() as never, jest.fn())
+  it('does not materialize interactive query tables during bootstrap', async () => {
+    await createGraphBundleSession(createBundle() as never, jest.fn())
 
-    await session.primeInteractiveQueryTables()
-
-    expect(ensurePrimaryQueryTablesMock).toHaveBeenCalledTimes(1)
+    expect(ensurePrimaryQueryTablesMock).not.toHaveBeenCalled()
   })
 })
