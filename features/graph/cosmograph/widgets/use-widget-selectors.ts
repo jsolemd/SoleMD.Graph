@@ -6,6 +6,7 @@ import {
   buildVisibilityScopeSqlExcludingSource,
   createSelectionSource,
 } from "@/features/graph/lib/cosmograph-selection";
+import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { getLayerTableName } from "@/features/graph/duckdb/sql-helpers";
 import { useDashboardStore } from "@/features/graph/stores";
 import { resolveWidgetBaselineScope } from "./widget-baseline";
@@ -63,7 +64,7 @@ export function useWidgetSelectors(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deferredScopeRevision batches rapid revision bumps
     [cosmograph, deferredScopeRevision, sourceId],
   );
-  const isSubset = typeof scopeSql === "string" && scopeSql.trim().length > 0;
+  const isSubset = hasCurrentPointScopeSql(scopeSql);
 
   return {
     cosmograph,

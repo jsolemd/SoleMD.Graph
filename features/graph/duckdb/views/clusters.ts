@@ -2,8 +2,31 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import { validateTableName } from '../utils'
 
-export async function registerClusterViews(conn: AsyncDuckDBConnection) {
-  const clusterTable = validateTableName('base_clusters')
+export const BASE_CLUSTER_CANONICAL_SOURCE_TABLE = 'base_clusters'
+export const BASE_CLUSTER_RUNTIME_SOURCE_TABLE = 'base_clusters_runtime'
+
+export const LOCAL_CLUSTER_RUNTIME_COLUMNS = [
+  'cluster_id',
+  'label',
+  'label_mode',
+  'member_count',
+  'centroid_x',
+  'centroid_y',
+  'representative_node_id',
+  'label_source',
+  'candidate_count',
+  'mean_cluster_probability',
+  'mean_outlier_score',
+  'paper_count',
+  'is_noise',
+  'description',
+] as const
+
+export async function registerClusterViews(
+  conn: AsyncDuckDBConnection,
+  sourceTable = BASE_CLUSTER_RUNTIME_SOURCE_TABLE
+) {
+  const clusterTable = validateTableName(sourceTable)
 
   await conn.query(
     `CREATE OR REPLACE VIEW graph_clusters AS

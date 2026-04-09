@@ -3,8 +3,10 @@
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Stack, Text } from "@mantine/core";
 import { getGraphClusterColor } from "@/features/graph/lib/colors";
+import { useSelectionQueryState } from "@/features/graph/hooks/use-selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
+import { useShallow } from "zustand/react/shallow";
 import { PANEL_BODY_CLASS, PanelDivider, PanelInlineLoader, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
 import {
   AddInsightButton,
@@ -27,33 +29,35 @@ interface QueryDrivenInfoPanelProps {
   overlayCount: number;
 }
 
+interface InfoPanelSnapshot {
+  activeLayer: ReturnType<typeof useDashboardStore.getState>["activeLayer"];
+  infoWidgets: ReturnType<typeof useDashboardStore.getState>["infoWidgets"];
+  setActivePanel: ReturnType<typeof useDashboardStore.getState>["setActivePanel"];
+}
+
 export function QueryDrivenInfoPanel({
   queries,
   overlayRevision,
   overlayCount,
 }: QueryDrivenInfoPanelProps) {
-  const setActivePanel = useDashboardStore((state) => state.setActivePanel);
-  const activeLayer = useDashboardStore((state) => state.activeLayer);
-  const currentPointScopeSql = useDashboardStore(
-    (state) => state.currentPointScopeSql,
+  const selectionState = useSelectionQueryState();
+  const { activeLayer, infoWidgets, setActivePanel } = useDashboardStore(
+    useShallow(
+      (state): InfoPanelSnapshot => ({
+        activeLayer: state.activeLayer,
+        infoWidgets: state.infoWidgets,
+        setActivePanel: state.setActivePanel,
+      }),
+    ),
   );
-  // useDeferredValue batches rapid store updates via React's scheduler — no
-  // fixed time penalty like useDebouncedValue(120). The selection store fires
-  // setCurrentPointScopeSql, setSelectedPointCount, and revision bumps in
-  // quick succession; React defers them all into a single concurrent render.
-  const deferredCurrentPointScopeSql = useDeferredValue(currentPointScopeSql);
-  const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
-  const deferredSelectedPointCount = useDeferredValue(selectedPointCount);
-  const selectedPointRevision = useDashboardStore(
-    (state) => state.selectedPointRevision,
-  );
-  const deferredSelectedPointRevision = useDeferredValue(selectedPointRevision);
-  const selectionLocked = useDashboardStore((state) => state.selectionLocked);
-  const infoWidgets = useDashboardStore((state) => state.infoWidgets);
-  const hasSelection = deferredSelectedPointCount > 0;
-  const hasCurrentSubset =
-    typeof deferredCurrentPointScopeSql === "string" &&
-    deferredCurrentPointScopeSql.trim().length > 0;
+  const selectionLocked = selectionState.selectionLocked;
+  // useSelectionQueryState batches current-scope and selected-point updates through
+  // React's deferred scheduler so the info panel reacts once per logical selection change.
+  const deferredCurrentPointScopeSql = selectionState.deferredCurrentPointScopeSql;
+  const hasSelection = selectionState.deferredHasSelection;
+  const deferredSelectedPointRevision =
+    selectionState.deferredSelectedPointRevision;
+  const hasCurrentSubset = selectionState.deferredHasCurrentSubset;
   const [datasetInfo, setDatasetInfo] = useState<GraphInfoSummary | null>(null);
   const [selectedInfo, setSelectedInfo] = useState<GraphInfoSummary | null>(null);
   const [currentInfo, setCurrentInfo] = useState<GraphInfoSummary | null>(null);
@@ -79,7 +83,6 @@ export function QueryDrivenInfoPanel({
   const summaryVersion = useMemo(() => ++summaryVersionRef.current, [
     activeLayer,
     deferredCurrentPointScopeSql,
-    deferredSelectedPointCount,
     deferredSelectedPointRevision,
     selectionLocked,
     overlayRevision,

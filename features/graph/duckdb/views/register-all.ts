@@ -6,15 +6,24 @@ import { validateTableName, requireBundleTable } from '../utils'
 
 import { registerActivePointViews } from './active-points'
 import {
+  BASE_POINT_CANONICAL_SOURCE_TABLE,
+  BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
+  LOCAL_POINT_RUNTIME_COLUMNS,
+  registerBasePointQueryViews,
   registerBasePointsView,
 } from './base-points'
-import { registerClusterViews } from './clusters'
+import {
+  BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
+  BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
+  LOCAL_CLUSTER_RUNTIME_COLUMNS,
+  registerClusterViews,
+} from './clusters'
 import { registerClusterExemplarView } from './details'
 import { initializeOverlayMembershipTable } from './overlay'
 import { registerPaperDocumentViews } from './paper-documents'
-import { resolveBundleRelations } from './relations'
+import { materializeBundleParquetTables, resolveBundleRelations } from './relations'
 import {
   initializeAttachedUniversePointTable,
   registerUniverseLinksViews,
@@ -55,14 +64,17 @@ export async function registerInitialSessionViews(
   const buildPointCanvasProjectionSql = createPointCanvasProjectionSql(bundle)
   const buildPointQueryProjectionSql = createPointQueryProjectionSql(bundle)
   await runBootstrapStep('base point views', () =>
-    registerBasePointsView(
-      conn,
+    registerBasePointsView(conn, {
+      sourceTable: validateTableName(BASE_POINT_CANONICAL_SOURCE_TABLE),
       buildPointCanvasProjectionSql,
-      buildPointQueryProjectionSql
-    )
+      buildPointQueryProjectionSql,
+    })
   )
   await runBootstrapStep('attached universe point table', () =>
-    initializeAttachedUniversePointTable(conn)
+    initializeAttachedUniversePointTable(
+      conn,
+      validateTableName(BASE_POINT_CANONICAL_SOURCE_TABLE)
+    )
   )
 
   await runBootstrapStep('universe point views', () =>
@@ -90,7 +102,9 @@ export async function registerInitialSessionViews(
     })
   )
 
-  await runBootstrapStep('cluster views', () => registerClusterViews(conn))
+  await runBootstrapStep('cluster views', () =>
+    registerClusterViews(conn, validateTableName(BASE_CLUSTER_CANONICAL_SOURCE_TABLE))
+  )
 
   const availableLayers: MapLayer[] = ['corpus']
 
@@ -100,6 +114,59 @@ export async function registerInitialSessionViews(
     basePointCount,
     buildPointCanvasProjectionSql,
     buildPointQueryProjectionSql,
+  }
+}
+
+export function createEnsurePrimaryQueryTables(
+  conn: AsyncDuckDBConnection,
+  bundle: GraphBundle,
+  state: SessionViewState
+) {
+  let ensurePromise: Promise<void> | null = null
+  let materialized = false
+
+  return async () => {
+    if (materialized) {
+      return
+    }
+
+    if (ensurePromise) {
+      await ensurePromise
+      return
+    }
+
+    ensurePromise = (async () => {
+      await runBootstrapStep('interactive query runtime materialization', () =>
+        materializeBundleParquetTables(conn, bundle, [
+          {
+            tableName: BASE_POINT_CANONICAL_SOURCE_TABLE,
+            runtimeTableName: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+            selectedColumns: LOCAL_POINT_RUNTIME_COLUMNS,
+          },
+          {
+            tableName: BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
+            runtimeTableName: BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
+            selectedColumns: LOCAL_CLUSTER_RUNTIME_COLUMNS,
+          },
+        ])
+      )
+
+      await runBootstrapStep('interactive point query views', () =>
+        registerBasePointQueryViews(conn, {
+          sourceTable: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+          buildPointQueryProjectionSql: state.buildPointQueryProjectionSql,
+        })
+      )
+      await runBootstrapStep('interactive cluster query views', () =>
+        registerClusterViews(conn, BASE_CLUSTER_RUNTIME_SOURCE_TABLE)
+      )
+
+      materialized = true
+    })().finally(() => {
+      ensurePromise = null
+    })
+
+    await ensurePromise
   }
 }
 

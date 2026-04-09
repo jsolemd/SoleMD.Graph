@@ -9,6 +9,7 @@ import {
   GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART,
   type GraphAskChatMessage,
 } from "@/features/graph/lib/rag-chat";
+import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import {
   getRagOverlayProducerId,
   RAG_ANSWER_SELECTION_SOURCE_ID,
@@ -114,9 +115,7 @@ export function useRagQuery({
       } as const;
     }
 
-    const hasCurrentScope =
-      typeof currentPointScopeSql === "string" &&
-      currentPointScopeSql.trim().length > 0;
+    const hasCurrentScope = hasCurrentPointScopeSql(currentPointScopeSql);
     const selectionGraphPaperRefs = queries
       ? Array.from(
           new Set(

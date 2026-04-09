@@ -26,6 +26,7 @@ docker compose -f docker/compose.yaml up -d
 # Frontend
 npm install
 npm run dev
+npm run quality
 
 # Data engine
 cd engine

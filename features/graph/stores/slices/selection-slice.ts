@@ -1,4 +1,8 @@
 import type { StateCreator } from 'zustand'
+import {
+  hasCurrentPointScopeSql,
+  normalizeCurrentPointScopeSql,
+} from '@/features/graph/lib/selection-query-state'
 import type { DashboardState } from '../dashboard-store'
 
 export interface SelectionSlice {
@@ -39,7 +43,7 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
   )),
   toggleConnectedSelect: () => set((s) => ({ connectedSelect: !s.connectedSelect })),
   setCurrentPointScopeSql: (sql) => set((state) => {
-    const next = sql?.trim() ? sql : null
+    const next = normalizeCurrentPointScopeSql(sql)
     return state.currentPointScopeSql === next
       ? state
       : {
@@ -62,11 +66,7 @@ export const createSelectionSlice: StateCreator<DashboardState, [], [], Selectio
       : { activeSelectionSourceId: sourceId }
   )),
   lockSelection: () => set((s) => {
-    const hasCurrentSubset =
-      typeof s.currentPointScopeSql === 'string' &&
-      s.currentPointScopeSql.trim().length > 0
-
-    if (s.selectedPointCount === 0 && !hasCurrentSubset) {
+    if (s.selectedPointCount === 0 && !hasCurrentPointScopeSql(s.currentPointScopeSql)) {
       return s
     }
 

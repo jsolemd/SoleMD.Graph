@@ -1,28 +1,22 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
+import dynamic from "next/dynamic";
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { useGraphCamera, useGraphSelection, useGraphExport } from "@/features/graph/cosmograph";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BrainCircuit,
-  Camera,
   Database,
   Eye,
   EyeOff,
   Filter,
   Info,
   LayoutPanelLeft,
-  Maximize,
-  Minus,
-  Plus,
-  Share2,
   SlidersHorizontal,
 } from "lucide-react";
 import ThemeToggle from "@/features/graph/components/chrome/ThemeToggle";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { getModeConfig } from "@/features/graph/lib/modes";
-import { getLayerConfig } from "@/features/graph/lib/layers";
 import { iconBtnStyles } from "../panels/PanelShell";
 import { settle, chromeToggle } from "@/lib/motion";
 import type { ActivePanel } from "@/features/graph/stores";
@@ -39,6 +33,14 @@ const PANEL_ITEMS: Array<{
   { panel: "query", icon: Database, label: "SQL Explorer" },
 ];
 
+const WordmarkGraphControls = dynamic(
+  () =>
+    import("./WordmarkGraphControls").then(
+      (mod) => mod.WordmarkGraphControls,
+    ),
+  { loading: () => null },
+);
+
 export function Wordmark() {
   const mode = useGraphStore((s) => s.mode);
   const activePanel = useDashboardStore((s) => s.activePanel);
@@ -47,65 +49,9 @@ export function Wordmark() {
   const toggleUiHidden = useDashboardStore((s) => s.toggleUiHidden);
   const togglePanel = useDashboardStore((s) => s.togglePanel);
   const togglePanelsVisible = useDashboardStore((s) => s.togglePanelsVisible);
-  const activeLayer = useDashboardStore((s) => s.activeLayer);
-  const connectedSelect = useDashboardStore((s) => s.connectedSelect);
-  const toggleConnectedSelect = useDashboardStore((s) => s.toggleConnectedSelect);
-  const renderLinks = useDashboardStore((s) => s.renderLinks);
-  const setRenderLinks = useDashboardStore((s) => s.setRenderLinks);
-  const selectedNode = useGraphStore((s) => s.selectedNode);
-  const layerConfig = getLayerConfig(activeLayer);
-  const layerHasLinks = layerConfig.hasLinks;
   const { color: modeColor } = getModeConfig(mode);
   const [spinCount, setSpinCount] = useState(0);
-  const { fitView, fitViewByIndices, zoomToPoint, zoomIn, zoomOut } = useGraphCamera();
-  const { selectPoint, getSelectedPointIndices } = useGraphSelection();
-  const { captureScreenshot } = useGraphExport();
   const { contrastAttr, contrastBlurClass } = useGraphControlContrast();
-
-  // Context-aware links button:
-  // - No selection: toggle link visibility (show/hide citation lines)
-  // - Node selected: toggle connected select (expand/collapse neighbors)
-  const handleLinksToggle = useCallback(() => {
-    if (selectedNode) {
-      const turningOn = !connectedSelect;
-      toggleConnectedSelect();
-      if (turningOn) {
-        selectPoint(selectedNode.index, false, true);
-      } else {
-        selectPoint(selectedNode.index, false, false);
-      }
-    } else {
-      setRenderLinks(!renderLinks);
-    }
-  }, [connectedSelect, renderLinks, selectPoint, selectedNode, setRenderLinks, toggleConnectedSelect]);
-
-  const linksButtonActive = selectedNode ? connectedSelect : renderLinks;
-  const linksButtonLabel = selectedNode
-    ? (connectedSelect ? "Hide connected nodes" : "Show connected nodes")
-    : (renderLinks ? "Hide links" : "Show links");
-
-  const handleFitView = useCallback(() => {
-    const selected = getSelectedPointIndices();
-    if (selected.length === 1) {
-      zoomToPoint(selected[0], 250);
-    } else if (selected.length > 1) {
-      fitViewByIndices(selected, 250, 0.1);
-    } else {
-      fitView(250, 0.1);
-    }
-  }, [fitView, fitViewByIndices, getSelectedPointIndices, zoomToPoint]);
-
-  const handleZoomIn = useCallback(() => {
-    zoomIn();
-  }, [zoomIn]);
-
-  const handleZoomOut = useCallback(() => {
-    zoomOut();
-  }, [zoomOut]);
-
-  const handleScreenshot = useCallback(() => {
-    captureScreenshot();
-  }, [captureScreenshot]);
 
   return (
     <>
@@ -186,79 +132,7 @@ export function Wordmark() {
       >
         {!uiHidden && (
           <>
-            {layerHasLinks && (
-              <>
-                <Tooltip label={linksButtonLabel} position="bottom" withArrow>
-                  <ActionIcon
-                    variant="transparent"
-                    size="lg"
-                    radius="xl"
-                    className="graph-icon-btn"
-                    styles={iconBtnStyles}
-                    onClick={handleLinksToggle}
-                    aria-pressed={linksButtonActive}
-                    aria-label={linksButtonLabel}
-                  >
-                    <Share2 />
-                  </ActionIcon>
-                </Tooltip>
-                <div className="mx-1 h-5 w-px" style={{ backgroundColor: "var(--graph-panel-border)" }} />
-              </>
-            )}
-            <Tooltip label="Fit view" position="bottom" withArrow>
-              <ActionIcon
-                variant="transparent"
-                size="lg"
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={handleFitView}
-                aria-label="Fit view"
-              >
-                <Maximize />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Zoom in" position="bottom" withArrow>
-              <ActionIcon
-                variant="transparent"
-                size="lg"
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={handleZoomIn}
-                aria-label="Zoom in"
-              >
-                <Plus />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Zoom out" position="bottom" withArrow>
-              <ActionIcon
-                variant="transparent"
-                size="lg"
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={handleZoomOut}
-                aria-label="Zoom out"
-              >
-                <Minus />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Save screenshot" position="bottom" withArrow>
-              <ActionIcon
-                variant="transparent"
-                size="lg"
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={handleScreenshot}
-                aria-label="Save screenshot"
-              >
-                <Camera />
-              </ActionIcon>
-            </Tooltip>
-
-            <div className="mx-1 h-5 w-px" style={{ backgroundColor: "var(--graph-panel-border)" }} />
+            <WordmarkGraphControls />
 
             <Tooltip
               label={panelsVisible ? "Hide panels" : "Show panels"}

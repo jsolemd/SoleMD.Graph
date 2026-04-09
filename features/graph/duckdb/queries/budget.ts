@@ -2,6 +2,7 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type { GraphVisibilityBudget, MapLayer } from '@/features/graph/types'
 
+import { hasCurrentPointScopeSql } from '@/features/graph/lib/selection-query-state'
 import { buildScopedLayerPredicate, getLayerTableName } from '../sql-helpers'
 
 import { queryRows } from './core'
@@ -24,7 +25,7 @@ export async function queryVisibilityBudget(
   const tableName = getLayerTableName(layer)
   const whereClause = id != null ? 'id = ?' : 'index = ?'
   const normalizedScopeSql =
-    typeof scopeSql === 'string' && scopeSql.trim().length > 0
+    typeof scopeSql === 'string' && hasCurrentPointScopeSql(scopeSql)
       ? scopeSql.trim()
       : null
   const normalizedScopeCoordinates =

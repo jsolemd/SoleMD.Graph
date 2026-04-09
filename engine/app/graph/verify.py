@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import argparse
 import ctypes.util
-from dataclasses import asdict
-from dataclasses import dataclass
 import json
 import os
 import shutil
 import subprocess
+from dataclasses import asdict, dataclass
 
 from app.config import settings
-from app.graph.build import load_graph_build_summary
+from app.graph._util import (
+    has_native_cuml_layout_stack,
+    require_graph_layout_backend,
+    resolve_graph_layout_backend,
+)
+from app.graph.build_publish import load_graph_build_summary
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +30,7 @@ class GraphEnvironmentSummary:
     ptxas_present: bool
     nvrtc_present: bool
     cuml_available: bool
-    cuml_accel_available: bool
+    cuml_native_available: bool
     cugraph_available: bool
     cupy_available: bool
     effective_layout_backend: str
@@ -118,17 +122,15 @@ def load_graph_environment_summary() -> GraphEnvironmentSummary:
     nvidia_present, nvidia_ok, gpu_name = _probe_nvidia_smi()
     cuda_toolkit_present, nvcc_present, ptxas_present, nvrtc_present = _cuda_runtime_summary()
     cuml_available = _module_available("cuml")
-    cuml_accel_available = _module_available("cuml.accel")
+    cuml_native_available = has_native_cuml_layout_stack()
     cugraph_available = _module_available("cugraph")
     cupy_available = _module_available("cupy")
 
     requested = settings.graph_layout_backend.strip().lower()
-    if requested == "cpu":
-        effective = "cpu"
-    elif requested in {"gpu", "cuml_accel"}:
-        effective = "cuml_accel" if cuml_accel_available else "cpu"
-    else:
-        effective = "cuml_accel" if cuml_accel_available else "cpu"
+    effective = resolve_graph_layout_backend(
+        requested,
+        native_available=cuml_native_available,
+    )
 
     return GraphEnvironmentSummary(
         graph_layout_backend_requested=settings.graph_layout_backend,
@@ -140,7 +142,7 @@ def load_graph_environment_summary() -> GraphEnvironmentSummary:
         ptxas_present=ptxas_present,
         nvrtc_present=nvrtc_present,
         cuml_available=cuml_available,
-        cuml_accel_available=cuml_accel_available,
+        cuml_native_available=cuml_native_available,
         cugraph_available=cugraph_available,
         cupy_available=cupy_available,
         effective_layout_backend=effective,
@@ -160,6 +162,24 @@ def load_graph_verification_summary() -> GraphVerificationSummary:
         missing_text_availability=build.missing_text_availability,
         environment=environment,
     )
+
+
+def require_graph_build_preflight() -> GraphVerificationSummary:
+    """Fail fast when the current graph build cannot proceed safely."""
+    summary = load_graph_verification_summary()
+    if summary.ready_for_layout <= 0 or summary.missing_embeddings != 0:
+        raise RuntimeError(
+            "graph build is not ready for layout: mapped papers are missing embeddings "
+            "or no mapped papers are available."
+        )
+
+    # Force the backend contract to be evaluated now rather than deep in the
+    # layout stage or GPU container dispatch path.
+    require_graph_layout_backend(
+        summary.environment.graph_layout_backend_requested,
+        native_available=summary.environment.cuml_native_available,
+    )
+    return summary
 
 
 def main() -> None:

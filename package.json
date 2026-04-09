@@ -8,6 +8,7 @@
     "predev": "bash /workspaces/SoleMD.Infra/mcp/chrome-devtools-mcp/scripts/start-chrome-debug.sh 2>/dev/null || true",
     "dev": "next dev",
     "lint": "eslint .",
+    "quality": "npm run build && npm run lint && npm run typecheck && npm test -- --runInBand && cd engine && uv run pytest test/test_graph_verify.py test/test_graph_bundle_contract.py test/test_graph_build_preflight.py test/test_graph_publish.py",
     "start": "next start",
     "test": "jest",
     "test:watch": "jest --watch",

@@ -63,14 +63,10 @@ describe('detail panel helpers', () => {
         displayPreview:
           'This paper describes a clinically useful and graph-relevant summary paragraph for the selected paper.',
       } as any,
-      servicePaper: {
-        narrative_chunks: [{ preview: 'A strong supporting passage.' }],
-      } as any,
     })
 
     expect(markdown).toContain('# A paper')
     expect(markdown).toContain('## Preview')
     expect(markdown).toContain('## Authors')
-    expect(markdown).toContain('## Key Passages')
   })
 })

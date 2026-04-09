@@ -5,6 +5,7 @@ import type { GraphBundle } from '@/features/graph/types'
 import type { GraphBundleSession, GraphCanvasSource } from '../types'
 
 export type EnsureOptionalBundleTables = (tableNames: string[]) => Promise<void>
+export type EnsurePrimaryQueryTables = () => Promise<void>
 
 export interface SessionOverlayController
   extends Pick<

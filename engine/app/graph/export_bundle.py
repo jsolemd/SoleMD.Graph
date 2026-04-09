@@ -2,27 +2,25 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
-from dataclasses import asdict
-from dataclasses import dataclass
-from hashlib import sha256
 import json
 import logging
-from pathlib import Path
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import asdict, dataclass
+from hashlib import sha256
+from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-
 from app import db
 from app.config import settings
-from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_EXPORT_VIEWS, SPAN_EXPORT_BUNDLE, observe
-from app.graph.export import bundle_contract
+from app.graph.export import bundle_contract, validate_bundle_manifest_contract
 from app.graph.paper_evidence import apply_build_session_settings
 from app.graph.point_projection import POINTS_SCHEMA, build_point_projection_select_sql
 from app.graph.render_policy import renderable_point_predicate_sql
+from app.langfuse_config import SPAN_EXPORT_BUNDLE, SPAN_EXPORT_VIEWS, observe
+from app.langfuse_config import get_langfuse as _get_langfuse
 
 log = logging.getLogger(__name__)
 
@@ -331,9 +329,15 @@ def _point_documents_cte() -> str:
         SELECT
             a.corpus_id,
             count(*)::INTEGER AS asset_count,
-            max(a.remote_url) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_url,
-            max(a.access_status) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_status,
-            max(a.license) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_license
+            max(a.remote_url) FILTER (
+                WHERE a.asset_kind = 'open_access_pdf'
+            ) AS open_access_pdf_url,
+            max(a.access_status) FILTER (
+                WHERE a.asset_kind = 'open_access_pdf'
+            ) AS open_access_pdf_status,
+            max(a.license) FILTER (
+                WHERE a.asset_kind = 'open_access_pdf'
+            ) AS open_access_pdf_license
         FROM solemd.paper_assets a
         JOIN export_points rp ON rp.corpus_id = a.corpus_id
         GROUP BY a.corpus_id
@@ -342,23 +346,43 @@ def _point_documents_cte() -> str:
         SELECT
             ranked.corpus_id,
             sum(ranked.hit_count)::INTEGER AS entity_count,
-            string_agg(DISTINCT ranked.entity_type, ', ' ORDER BY ranked.entity_type) AS semantic_groups_csv,
-            string_agg(ranked.entity_label, ' | ' ORDER BY ranked.hit_count DESC, ranked.entity_label)
+            string_agg(
+                DISTINCT ranked.entity_type,
+                ', ' ORDER BY ranked.entity_type
+            ) AS semantic_groups_csv,
+            string_agg(
+                ranked.entity_label,
+                ' | ' ORDER BY ranked.hit_count DESC, ranked.entity_label
+            )
                 FILTER (WHERE ranked.rank <= 5) AS top_entities_csv
         FROM (
             SELECT
                 c.corpus_id,
                 ea.entity_type,
-                COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id) AS entity_label,
+                COALESCE(
+                    NULLIF(split_part(ea.mentions, '|', 1), ''),
+                    ea.concept_id
+                ) AS entity_label,
                 count(*)::INTEGER AS hit_count,
                 row_number() OVER (
                     PARTITION BY c.corpus_id
-                    ORDER BY count(*) DESC, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
+                    ORDER BY
+                        count(*) DESC,
+                        COALESCE(
+                            NULLIF(split_part(ea.mentions, '|', 1), ''),
+                            ea.concept_id
+                        )
                 ) AS rank
             FROM solemd.corpus c
             JOIN export_points rp ON rp.corpus_id = c.corpus_id
             JOIN pubtator.entity_annotations ea ON ea.pmid = c.pmid
-            GROUP BY c.corpus_id, ea.entity_type, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
+            GROUP BY
+                c.corpus_id,
+                ea.entity_type,
+                COALESCE(
+                    NULLIF(split_part(ea.mentions, '|', 1), ''),
+                    ea.concept_id
+                )
         ) AS ranked
         GROUP BY ranked.corpus_id
     ),
@@ -366,7 +390,10 @@ def _point_documents_cte() -> str:
         SELECT
             ranked.corpus_id,
             sum(ranked.hit_count)::INTEGER AS relation_count,
-            string_agg(ranked.relation_type, ', ' ORDER BY ranked.hit_count DESC, ranked.relation_type)
+            string_agg(
+                ranked.relation_type,
+                ', ' ORDER BY ranked.hit_count DESC, ranked.relation_type
+            )
                 FILTER (WHERE ranked.rank <= 5) AS relation_categories_csv
         FROM (
             SELECT
@@ -585,7 +612,7 @@ def _materialize_export_views(graph_run_id: str) -> None:
 
     # Step 2: Parallel rollup aggregations
     rollups = {
-        "author_rollup": f"""
+        "author_rollup": """
             CREATE UNLOGGED TABLE solemd._tmp_author_rollup AS
             SELECT
                 pa.corpus_id,
@@ -610,9 +637,15 @@ def _materialize_export_views(graph_run_id: str) -> None:
             SELECT
                 a.corpus_id,
                 count(*)::INTEGER AS asset_count,
-                max(a.remote_url) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_url,
-                max(a.access_status) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_status,
-                max(a.license) FILTER (WHERE a.asset_kind = 'open_access_pdf') AS open_access_pdf_license
+                max(a.remote_url) FILTER (
+                    WHERE a.asset_kind = 'open_access_pdf'
+                ) AS open_access_pdf_url,
+                max(a.access_status) FILTER (
+                    WHERE a.asset_kind = 'open_access_pdf'
+                ) AS open_access_pdf_status,
+                max(a.license) FILTER (
+                    WHERE a.asset_kind = 'open_access_pdf'
+                ) AS open_access_pdf_license
             FROM solemd.paper_assets a
             JOIN solemd._tmp_export_points rp ON rp.corpus_id = a.corpus_id
             GROUP BY a.corpus_id
@@ -622,23 +655,43 @@ def _materialize_export_views(graph_run_id: str) -> None:
             SELECT
                 ranked.corpus_id,
                 sum(ranked.hit_count)::INTEGER AS entity_count,
-                string_agg(DISTINCT ranked.entity_type, ', ' ORDER BY ranked.entity_type) AS semantic_groups_csv,
-                string_agg(ranked.entity_label, ' | ' ORDER BY ranked.hit_count DESC, ranked.entity_label)
+                string_agg(
+                    DISTINCT ranked.entity_type,
+                    ', ' ORDER BY ranked.entity_type
+                ) AS semantic_groups_csv,
+                string_agg(
+                    ranked.entity_label,
+                    ' | ' ORDER BY ranked.hit_count DESC, ranked.entity_label
+                )
                     FILTER (WHERE ranked.rank <= 5) AS top_entities_csv
             FROM (
                 SELECT
                     c.corpus_id,
                     ea.entity_type,
-                    COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id) AS entity_label,
+                    COALESCE(
+                        NULLIF(split_part(ea.mentions, '|', 1), ''),
+                        ea.concept_id
+                    ) AS entity_label,
                     count(*)::INTEGER AS hit_count,
                     row_number() OVER (
                         PARTITION BY c.corpus_id
-                        ORDER BY count(*) DESC, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
+                        ORDER BY
+                            count(*) DESC,
+                            COALESCE(
+                                NULLIF(split_part(ea.mentions, '|', 1), ''),
+                                ea.concept_id
+                            )
                     ) AS rank
                 FROM solemd.corpus c
                 JOIN solemd._tmp_export_points rp ON rp.corpus_id = c.corpus_id
                 JOIN pubtator.entity_annotations ea ON ea.pmid = c.pmid
-                GROUP BY c.corpus_id, ea.entity_type, COALESCE(NULLIF(split_part(ea.mentions, '|', 1), ''), ea.concept_id)
+                GROUP BY
+                    c.corpus_id,
+                    ea.entity_type,
+                    COALESCE(
+                        NULLIF(split_part(ea.mentions, '|', 1), ''),
+                        ea.concept_id
+                    )
             ) AS ranked
             GROUP BY ranked.corpus_id
         """,
@@ -647,7 +700,10 @@ def _materialize_export_views(graph_run_id: str) -> None:
             SELECT
                 ranked.corpus_id,
                 sum(ranked.hit_count)::INTEGER AS relation_count,
-                string_agg(ranked.relation_type, ', ' ORDER BY ranked.hit_count DESC, ranked.relation_type)
+                string_agg(
+                    ranked.relation_type,
+                    ', ' ORDER BY ranked.hit_count DESC, ranked.relation_type
+                )
                     FILTER (WHERE ranked.rank <= 5) AS relation_categories_csv
             FROM (
                 SELECT
@@ -803,8 +859,14 @@ def _materialized_table_specs(bundle_profile: str) -> list[BundleTableSpec]:
                 rep.representative_node_id,
                 rep.representative_node_kind,
                 gc.candidate_count,
-                COALESCE(r.mean_cluster_probability, gc.mean_cluster_probability) AS mean_cluster_probability,
-                COALESCE(r.mean_outlier_score, gc.mean_outlier_score) AS mean_outlier_score,
+                COALESCE(
+                    r.mean_cluster_probability,
+                    gc.mean_cluster_probability
+                ) AS mean_cluster_probability,
+                COALESCE(
+                    r.mean_outlier_score,
+                    gc.mean_outlier_score
+                ) AS mean_outlier_score,
                 (gc.cluster_id = 0) AS is_noise,
                 gc.description
             FROM solemd.graph_clusters gc
@@ -872,13 +934,23 @@ def _materialized_table_specs(bundle_profile: str) -> list[BundleTableSpec]:
                     ROW_NUMBER() OVER (
                         PARTITION BY cluster_id
                         ORDER BY
-                            ((x - centroid_x) * (x - centroid_x)) + ((y - centroid_y) * (y - centroid_y)),
+                            (
+                                (x - centroid_x) * (x - centroid_x)
+                            ) + (
+                                (y - centroid_y) * (y - centroid_y)
+                            ),
                             COALESCE(citation_count, 0) DESC,
                             corpus_id
                     ) AS rank,
                     'paper:' || corpus_id::TEXT AS node_id,
                     COALESCE(paper_id, 'corpus:' || corpus_id::TEXT) AS paper_id,
-                    sqrt(((x - centroid_x) * (x - centroid_x)) + ((y - centroid_y) * (y - centroid_y)))::REAL AS exemplar_score,
+                    sqrt(
+                        (
+                            (x - centroid_x) * (x - centroid_x)
+                        ) + (
+                            (y - centroid_y) * (y - centroid_y)
+                        )
+                    )::REAL AS exemplar_score,
                     title,
                     journal_name AS journal,
                     year,
@@ -1033,6 +1105,7 @@ def export_graph_bundle(
     manifest_path.write_text(json.dumps(manifest_payload, indent=2), encoding="utf-8")
     bundle_checksum = _hash_file(manifest_path)
     total_bytes += manifest_path.stat().st_size
+    validate_bundle_manifest_contract(manifest_payload, bundle_profile=bundle_profile)
 
     try:
         client = _get_langfuse()

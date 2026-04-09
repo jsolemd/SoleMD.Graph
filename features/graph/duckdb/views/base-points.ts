@@ -4,6 +4,9 @@ import type { GraphBundle } from '@/features/graph/types'
 
 import { requireBundleTable, validateTableName } from '../utils'
 
+export const BASE_POINT_CANONICAL_SOURCE_TABLE = 'base_points'
+export const BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE = 'base_points_query_runtime'
+
 export const LOCAL_POINT_RUNTIME_COLUMNS = [
   'point_index',
   'id',
@@ -122,19 +125,24 @@ export function createPointQueryProjectionSql(bundle: GraphBundle) {
 
 export async function registerBasePointsView(
   conn: AsyncDuckDBConnection,
-  buildPointCanvasProjectionSql: (sourceTable: string, indexSql: string) => string,
-  buildPointQueryProjectionSql: (sourceTable: string, indexSql: string) => string
+  args: {
+    sourceTable?: string
+    buildPointCanvasProjectionSql: (sourceTable: string, indexSql: string) => string
+    buildPointQueryProjectionSql: (sourceTable: string, indexSql: string) => string
+  }
 ) {
-  const pointTable = validateTableName('base_points')
+  const pointTable = validateTableName(
+    args.sourceTable ?? BASE_POINT_CANONICAL_SOURCE_TABLE
+  )
 
   await conn.query(
     `CREATE OR REPLACE VIEW base_points_canvas_web AS
-     ${buildPointCanvasProjectionSql(pointTable, 'point_index')}`
+     ${args.buildPointCanvasProjectionSql(pointTable, 'point_index')}`
   )
-  await conn.query(
-    `CREATE OR REPLACE VIEW base_points_web AS
-     ${buildPointQueryProjectionSql(pointTable, 'point_index')}`
-  )
+  await registerBasePointQueryViews(conn, {
+    sourceTable: pointTable,
+    buildPointQueryProjectionSql: args.buildPointQueryProjectionSql,
+  })
   await conn.query(
     `CREATE OR REPLACE VIEW base_paper_points_canvas_web AS
      SELECT
@@ -142,6 +150,23 @@ export async function registerBasePointsView(
        base_points_canvas_web.* EXCLUDE (index),
        index AS paperIndex
      FROM base_points_canvas_web`
+  )
+}
+
+export async function registerBasePointQueryViews(
+  conn: AsyncDuckDBConnection,
+  args: {
+    sourceTable?: string
+    buildPointQueryProjectionSql: (sourceTable: string, indexSql: string) => string
+  }
+) {
+  const pointTable = validateTableName(
+    args.sourceTable ?? BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE
+  )
+
+  await conn.query(
+    `CREATE OR REPLACE VIEW base_points_web AS
+     ${args.buildPointQueryProjectionSql(pointTable, 'point_index')}`
   )
   await conn.query(
     `CREATE OR REPLACE VIEW base_paper_points_web AS

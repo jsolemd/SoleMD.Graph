@@ -1,6 +1,6 @@
 "use client";
 
-import { useCosmograph } from "@/features/graph/cosmograph";
+import { useGraphInstance } from "@/features/graph/cosmograph";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { GanttChart, Table2 } from "lucide-react";
 import {
@@ -14,7 +14,7 @@ import { useGraphControlContrast } from "../../chrome/use-graph-control-contrast
 
 /** Bottom-left toggle bar for timeline and data table. */
 export function BottomToolbar() {
-  const { cosmograph } = useCosmograph();
+  const cosmograph = useGraphInstance();
   const showTimeline = useDashboardStore((s) => s.showTimeline);
   const timelineColumn = useDashboardStore((s) => s.timelineColumn);
   const setTimelineSelection = useDashboardStore((s) => s.setTimelineSelection);

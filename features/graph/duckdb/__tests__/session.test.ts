@@ -8,6 +8,7 @@ import { createConnection } from '../connection'
 import { queryRows } from '../queries'
 import {
   clearAllOverlayPointIds,
+  createEnsurePrimaryQueryTables,
   createEnsureOptionalBundleTables,
   initializeSelectedPointTable,
   materializeOverlayPointIds,
@@ -51,6 +52,7 @@ jest.mock('../views', () => {
   return {
     ...actual,
     clearAllOverlayPointIds: jest.fn(async () => undefined),
+    createEnsurePrimaryQueryTables: jest.fn(() => jest.fn(async () => undefined)),
     createEnsureOptionalBundleTables: jest.fn(() => jest.fn(async () => undefined)),
     initializeSelectedPointTable: jest.fn(async () => undefined),
     materializeOverlayPointIds: jest.fn(async () => ({ overlayCount: 0 })),
@@ -73,6 +75,7 @@ const getCanvasPointCountsMock = jest.mocked(getCanvasPointCounts)
 const registerActiveCanvasAliasViewsMock = jest.mocked(registerActiveCanvasAliasViews)
 const queryRowsMock = jest.mocked(queryRows)
 const clearAllOverlayPointIdsMock = jest.mocked(clearAllOverlayPointIds)
+const createEnsurePrimaryQueryTablesMock = jest.mocked(createEnsurePrimaryQueryTables)
 const createEnsureOptionalBundleTablesMock = jest.mocked(createEnsureOptionalBundleTables)
 const initializeSelectedPointTableMock = jest.mocked(initializeSelectedPointTable)
 const materializeOverlayPointIdsMock = jest.mocked(materializeOverlayPointIds)
@@ -105,9 +108,11 @@ describe('createGraphBundleSession', () => {
   }
   const db = {}
   const worker = { terminate: jest.fn() }
+  let ensurePrimaryQueryTablesMock: jest.Mock<Promise<void>, []>
 
   beforeEach(() => {
     jest.clearAllMocks()
+    ensurePrimaryQueryTablesMock = jest.fn(async () => undefined)
 
     createConnectionMock.mockResolvedValue({
       conn: conn as never,
@@ -124,6 +129,7 @@ describe('createGraphBundleSession', () => {
       buildPointCanvasProjectionSql: jest.fn(),
       buildPointQueryProjectionSql: jest.fn(),
     })
+    createEnsurePrimaryQueryTablesMock.mockReturnValue(ensurePrimaryQueryTablesMock)
     createEnsureOptionalBundleTablesMock.mockReturnValue(jest.fn(async () => undefined))
     initializeSelectedPointTableMock.mockResolvedValue(undefined)
     materializeOverlayPointIdsMock.mockResolvedValue({ overlayCount: 7 })
@@ -200,5 +206,13 @@ describe('createGraphBundleSession', () => {
       overlayCount: 0,
       overlayRevision: 2,
     })
+  })
+
+  it('exposes a single interactive-query prewarm entrypoint', async () => {
+    const session = await createGraphBundleSession(createBundle() as never, jest.fn())
+
+    await session.primeInteractiveQueryTables()
+
+    expect(ensurePrimaryQueryTablesMock).toHaveBeenCalledTimes(1)
   })
 })

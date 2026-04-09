@@ -5,6 +5,7 @@ import { ActionIcon, Stack, Tooltip } from "@mantine/core";
 import { ArrowLeft } from "lucide-react";
 import { useGraphSelection, useGraphCamera } from "@/features/graph/cosmograph";
 import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
+import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import type {
   GraphBundle,
@@ -40,7 +41,7 @@ function DetailPanelComponent({
   const { fitViewByIndices } = useGraphCamera();
 
   const hasSelectionContext =
-    Boolean(currentPointScopeSql?.trim().length) || selectedPointCount > 1;
+    hasCurrentPointScopeSql(currentPointScopeSql) || selectedPointCount > 1;
 
   const closePanel = useCallback(() => {
     selectNode(null);
@@ -78,7 +79,6 @@ function DetailPanelComponent({
       nodeDisplayPreview: selectedNode.displayPreview,
       paper: detail?.paper ?? null,
       paperDocument: detail?.paperDocument ?? null,
-      servicePaper: null,
     });
 
     try {
@@ -138,7 +138,7 @@ function DetailPanelComponent({
             error={error ?? paperDocumentError}
           />
 
-          <PaperSection paper={detail?.paper ?? null} servicePaper={null} />
+          <PaperSection paper={detail?.paper ?? null} />
 
           <DetailAccordions
             detail={detail}

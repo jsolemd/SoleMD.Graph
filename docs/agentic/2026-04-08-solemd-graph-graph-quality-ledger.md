@@ -1,0 +1,137 @@
+# 2026-04-08 SoleMD.Graph Graph Quality Ledger
+
+## Scope
+
+- Graph shell maintainability and orchestration
+- Graph build/publish/verify contract hardening
+- Graph action/detail boundary cleanup
+- Prompt/editor modularization
+- Selection and scope-state centralization
+- Frontend latency and DuckDB runtime bootstrap optimization
+- Repo-level quality gate and CI
+- Non-RAG graph runtime and quality improvements only
+
+## Ranked Themes
+
+1. Shell orchestration is too centralized in `features/graph/components/shell/DashboardShellClient.tsx`.
+2. Graph build/publish verification is not enforced tightly enough in `engine/app/graph/`.
+3. The graph action/detail surface contains placeholder or dead paths centered on `app/actions/graph.ts`.
+4. Bundle and graph-run contracts need stronger tests across engine and frontend boundaries.
+5. The DuckDB query runtime is paying startup cost too early instead of promoting into local temp tables only when the interactive path needs them.
+
+## Active Batches
+
+### Batch 1
+
+- Inspect worktree and concurrent edits
+- Evaluate `DashboardShell.tsx` and `DashboardShellClient.tsx`
+- Launch subagents for shell refactor, graph build boundary hardening, and detail-boundary analysis
+
+### Batch 2
+
+- Remove or shrink dead remote-detail surfaces
+- Integrate subagent changes
+- Run targeted frontend and engine verification
+
+### Batch 3
+
+- Modularize prompt and editor surfaces into controller/view layers
+- Centralize selection/scope query state across graph explore panels
+- Add a canonical repo quality gate and matching CI workflow
+
+### Batch 7
+
+- Verify the dataset-vs-interactive DuckDB split against a reliable foreground browser trace
+- Decide whether an idle-time prewarm of `base_points_query_runtime` after first paint improves perceived latency
+- Continue collapsing any remaining one-off selection/scope checks onto the shared resolver
+
+## Findings
+
+- `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
+- `features/graph/components/shell/DashboardShellClient.tsx` has active external edits and appears to have dropped the dataset warmup path while adding dynamic imports.
+- `app/actions/graph.ts` has one dependent: `features/graph/lib/detail-service.ts`.
+- `features/graph/components/panels/DetailPanel.tsx` and `features/graph/components/panels/detail/use-detail-data.ts` currently use only local DuckDB-backed detail, not remote graph detail.
+- `base_points_web` is a valid canonical query surface immediately after session bootstrap; the regression was that session info/table/search paths were still forcing `ensurePrimaryQueryTables()` before dataset reads.
+- The clean split is two-phase: canonical attached bundle views for startup, then one shared promotion into `base_points_query_runtime` when selection/current-scope-heavy interaction begins.
+
+## Completed Batches
+
+### Batch 1
+
+- Inspected worktree and concurrent edits
+- Confirmed `DashboardShell.tsx` is a thin dynamic entrypoint and left it that way
+- Split shell orchestration into:
+  - `features/graph/components/shell/use-dashboard-shell-controller.ts`
+  - `features/graph/components/shell/DashboardShellViewport.tsx`
+  - thin `features/graph/components/shell/DashboardShellClient.tsx`
+
+### Batch 2
+
+- Removed the dead remote graph-detail/action path
+- Simplified `app/actions/graph.ts` to the live graph RAG action boundary
+- Simplified detail panel helpers/sections to the local DuckDB-backed runtime
+- Removed unused remote detail components and signed-asset refresh hook
+
+### Batch 3
+
+- Added graph build preflight gating before cleanup/build execution
+- Centralized native layout backend resolution
+- Added bundle manifest contract validation at export/publish boundaries
+- Added targeted graph engine tests for preflight, publish, contract, and verify
+
+### Batch 4
+
+- Split `features/graph/components/panels/PromptBox.tsx` into a thin wrapper plus:
+  - `features/graph/components/panels/prompt/use-prompt-box-controller.ts`
+  - `features/graph/components/panels/prompt/PromptBoxSurface.tsx`
+- Split `features/graph/components/panels/CreateEditor.tsx` into a thin wrapper plus:
+  - `features/graph/components/panels/editor/use-create-editor-controller.ts`
+  - `features/graph/components/panels/editor/CreateEditorSurface.tsx`
+- Preserved prompt/editor behavior while removing responsibility concentration from the entry files
+
+### Batch 5
+
+- Added `features/graph/lib/selection-query-state.ts` as the shared source of truth for current-scope normalization and table-scope resolution
+- Added `features/graph/hooks/use-selection-query-state.ts` for deferred graph selection/query state
+- Rewired table and info-panel selection handling to consume the shared hook/utilities
+- Added focused tests for the shared selection-state resolver
+
+### Batch 6
+
+- Added root `npm run quality` as the canonical repo-level quality gate
+- Added `.github/workflows/quality.yml` to run the same root gate in CI
+- Cleared the residual graph-engine Ruff debt in:
+  - `engine/app/graph/build.py`
+  - `engine/app/graph/layout.py`
+  - `engine/app/graph/export_bundle.py`
+- Removed the remaining frontend lint warning in `features/graph/components/chrome/Wordmark.tsx`
+
+### Batch 7
+
+- Added `docs/map/frontend-performance.md` as the canonical frontend latency/runtime contract
+- Linked `AGENTS.md` and `CLAUDE.md` to the canonical frontend performance requirements
+- Kept dataset-scoped table/info/search reads on canonical attached bundle views so first paint does not block on local temp-table build
+- Kept the one-time `base_points_query_runtime` promotion behind the shared interactive query surface for scoped/selection-heavy reads
+- Tightened the session/query contract with regression tests so dataset reads no longer call `ensurePrimaryQueryTables()` while scoped reads still do
+
+## Blockers
+
+- No blocking correctness issues remain.
+- The only residual verification noise is a pre-existing React `act(...)` console warning in `features/graph/components/shell/__tests__/DashboardShellClient.test.tsx`; it does not fail tests or the quality gate.
+- The visible Chrome debugger is reachable, but foreground-dependent perf audits still need a reliable run before treating Lighthouse output as authoritative.
+
+## Follow-On Work
+
+- If desired, make the dynamic shell test warning-free by wrapping the `next/dynamic` loadable updates in explicit test `act(...)` handling.
+- Re-evaluate whether any future remote detail surface should be reintroduced only after an actual engine endpoint exists.
+
+## Commits
+
+- None yet
+
+## Next Recommended Passes
+
+1. Capture a clean foreground Chrome trace and compare first interaction latency before/after the dataset-vs-interactive DuckDB split.
+2. Evaluate an idle-time post-paint prewarm of `base_points_query_runtime` only if the trace shows remaining first-interaction jank.
+3. Continue replacing local trim/scope checks with the shared selection-query resolver where any duplication still exists.
+4. If desired, remove the remaining `DashboardShellClient` test console warning with an explicit async-load test harness.

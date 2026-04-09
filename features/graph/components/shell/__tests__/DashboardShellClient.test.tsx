@@ -111,6 +111,7 @@ const QUERIES_STUB = {
   getInfoSummary: jest.fn(),
   getNumericStatsBatch: jest.fn(),
   getTablePage: jest.fn(),
+  primeInteractiveQueryTables: jest.fn(),
   runReadOnlyQuery: jest.fn(),
 } as unknown as GraphBundleQueries;
 
@@ -125,64 +126,6 @@ const BUNDLE_STUB = {
 import { DashboardShellClient } from "../DashboardShellClient";
 
 describe("DashboardShellClient", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    useDashboardStore.setState(useDashboardStore.getInitialState());
-    useGraphStore.setState(useGraphStore.getInitialState());
-    useGraphBundle.mockReturnValue({
-      canvas: CANVAS_STUB,
-      error: null,
-      loading: false,
-      progress: null,
-      queries: QUERIES_STUB,
-    });
-  });
-
-  it("does not re-render GraphCanvas when unrelated shell chrome state changes", () => {
-    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
-
-    expect(screen.getByTestId("graph-canvas")).toBeInTheDocument();
-    expect(mockGraphCanvas).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      useDashboardStore.setState({ showSizeLegend: true });
-    });
-
-    expect(mockGraphCanvas).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not re-render ConfigPanel, DetailPanel, or CanvasControls when unrelated shell chrome changes", () => {
-    useDashboardStore.setState({ activePanel: "config" });
-
-    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
-
-    expect(mockConfigPanel).toHaveBeenCalledTimes(1);
-    expect(mockDetailPanel).toHaveBeenCalledTimes(1);
-    expect(mockCanvasControls).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      useDashboardStore.setState({ showSizeLegend: true });
-    });
-
-    expect(mockConfigPanel).toHaveBeenCalledTimes(1);
-    expect(mockDetailPanel).toHaveBeenCalledTimes(1);
-    expect(mockCanvasControls).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not re-render QueryPanel when unrelated shell chrome changes", () => {
-    useDashboardStore.setState({ activePanel: "query" });
-
-    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
-
-    expect(mockQueryPanel).toHaveBeenCalledTimes(1);
-
-    act(() => {
-      useDashboardStore.setState({ showTimeline: true });
-    });
-
-    expect(mockQueryPanel).toHaveBeenCalledTimes(1);
-  });
-
   function setupIdleCallback() {
     const requestIdleCallback = jest.fn((callback: IdleRequestCallback) => {
       callback({
@@ -205,90 +148,111 @@ describe("DashboardShellClient", () => {
     });
   }
 
-  function stubAllQueriesResolved() {
+  function stubResolvedQueries() {
     (QUERIES_STUB.getInfoBarsBatch as jest.Mock).mockResolvedValue({});
     (QUERIES_STUB.getInfoHistogramsBatch as jest.Mock).mockResolvedValue({});
-    (QUERIES_STUB.getInfoSummary as jest.Mock).mockResolvedValue({});
+    (QUERIES_STUB.getInfoSummary as jest.Mock).mockResolvedValue({
+      baseCount: 0,
+      hasSelection: false,
+      isSubset: false,
+      overlayCount: 0,
+      papers: 0,
+      scopedCount: 0,
+      scope: "dataset",
+      totalCount: 0,
+    });
     (QUERIES_STUB.getNumericStatsBatch as jest.Mock).mockResolvedValue({});
-    (QUERIES_STUB.getTablePage as jest.Mock).mockResolvedValue({ rows: [], totalCount: 0 });
+    (QUERIES_STUB.getTablePage as jest.Mock).mockResolvedValue({
+      page: 1,
+      pageSize: 100,
+      rows: [],
+      totalRows: 0,
+    });
   }
 
-  it("prefetches info summary with dataset scope after first paint", async () => {
-    setupIdleCallback();
-    stubAllQueriesResolved();
-
-    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
-
-    act(() => {
-      const props = mockGraphCanvas.mock.calls[0]?.[0] as { onFirstPaint?: () => void };
-      props.onFirstPaint?.();
-    });
-
-    await waitFor(() => {
-      expect(QUERIES_STUB.getInfoSummary).toHaveBeenCalledWith(
-        expect.objectContaining({
-          layer: "corpus",
-          scope: "dataset",
-          currentPointScopeSql: null,
-        }),
-      );
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useDashboardStore.setState(useDashboardStore.getInitialState());
+    useGraphStore.setState(useGraphStore.getInitialState());
+    useGraphBundle.mockReturnValue({
+      canvas: CANVAS_STUB,
+      error: null,
+      loading: false,
+      progress: null,
+      queries: QUERIES_STUB,
     });
   });
 
-  it("prefetches table page 1 with dataset scope after first paint", async () => {
-    setupIdleCallback();
-    stubAllQueriesResolved();
-
-    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
-
-    act(() => {
-      const props = mockGraphCanvas.mock.calls[0]?.[0] as { onFirstPaint?: () => void };
-      props.onFirstPaint?.();
-    });
-
-    await waitFor(() => {
-      expect(QUERIES_STUB.getTablePage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          layer: "corpus",
-          view: "current",
-          page: 1,
-          pageSize: 100,
-          currentPointScopeSql: null,
-        }),
-      );
-    });
+  afterEach(() => {
+    const windowWithIdle = window as Window & {
+      requestIdleCallback?: unknown;
+      cancelIdleCallback?: unknown;
+    };
+    delete windowWithIdle.requestIdleCallback;
+    delete windowWithIdle.cancelIdleCallback;
   });
 
-  it("batches startup numeric filter warming after the first paint", async () => {
-    const requestIdleCallback = jest.fn((callback: IdleRequestCallback) => {
-      callback({
-        didTimeout: false,
-        timeRemaining: () => 50,
-      } as IdleDeadline);
-      return 1;
-    });
-    const cancelIdleCallback = jest.fn();
-
-    Object.defineProperty(window, "requestIdleCallback", {
-      configurable: true,
-      writable: true,
-      value: requestIdleCallback,
-    });
-    Object.defineProperty(window, "cancelIdleCallback", {
-      configurable: true,
-      writable: true,
-      value: cancelIdleCallback,
+  it("does not re-render GraphCanvas when unrelated shell chrome state changes", async () => {
+    await act(async () => {
+      render(<DashboardShellClient bundle={BUNDLE_STUB} />);
     });
 
-    QUERIES_STUB.getInfoHistogramsBatch.mockResolvedValue({});
-    useDashboardStore.setState({
-      filterColumns: [
-        { column: "year", type: "numeric" },
-        { column: "pageNumber", type: "numeric" },
-      ],
+    expect(screen.getByTestId("graph-canvas")).toBeInTheDocument();
+    expect(mockGraphCanvas).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      useDashboardStore.setState({ showSizeLegend: true });
     });
 
-    render(<DashboardShellClient bundle={BUNDLE_STUB} />);
+    expect(mockGraphCanvas).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-render ConfigPanel, DetailPanel, or CanvasControls when unrelated shell chrome changes", async () => {
+    useDashboardStore.setState({ activePanel: "config" });
+
+    await act(async () => {
+      render(<DashboardShellClient bundle={BUNDLE_STUB} />);
+    });
+
+    await waitFor(() => {
+      expect(mockConfigPanel).toHaveBeenCalledTimes(1);
+      expect(mockDetailPanel).toHaveBeenCalledTimes(1);
+      expect(mockCanvasControls).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      useDashboardStore.setState({ showSizeLegend: true });
+    });
+
+    expect(mockConfigPanel).toHaveBeenCalledTimes(1);
+    expect(mockDetailPanel).toHaveBeenCalledTimes(1);
+    expect(mockCanvasControls).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not re-render QueryPanel when unrelated shell chrome changes", async () => {
+    useDashboardStore.setState({ activePanel: "query" });
+
+    await act(async () => {
+      render(<DashboardShellClient bundle={BUNDLE_STUB} />);
+    });
+
+    await waitFor(() => {
+      expect(mockQueryPanel).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      useDashboardStore.setState({ showTimeline: true });
+    });
+
+    expect(mockQueryPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prefetch hidden panel datasets after first paint", async () => {
+    setupIdleCallback();
+
+    await act(async () => {
+      render(<DashboardShellClient bundle={BUNDLE_STUB} />);
+    });
 
     act(() => {
       const props = mockGraphCanvas.mock.calls[0]?.[0] as { onFirstPaint?: () => void };
@@ -296,15 +260,14 @@ describe("DashboardShellClient", () => {
     });
 
     await waitFor(() => {
-      expect(QUERIES_STUB.getInfoHistogramsBatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          layer: "corpus",
-          scope: "dataset",
-          columns: ["year", "pageNumber"],
-          bins: 20,
-          currentPointScopeSql: null,
-        }),
-      );
+      expect(screen.queryByTestId("loading-overlay")).not.toBeInTheDocument();
     });
+
+    expect(QUERIES_STUB.primeInteractiveQueryTables).toHaveBeenCalledTimes(1);
+    expect(QUERIES_STUB.getInfoBarsBatch).not.toHaveBeenCalled();
+    expect(QUERIES_STUB.getInfoHistogramsBatch).not.toHaveBeenCalled();
+    expect(QUERIES_STUB.getInfoSummary).not.toHaveBeenCalled();
+    expect(QUERIES_STUB.getNumericStatsBatch).not.toHaveBeenCalled();
+    expect(QUERIES_STUB.getTablePage).not.toHaveBeenCalled();
   });
 });

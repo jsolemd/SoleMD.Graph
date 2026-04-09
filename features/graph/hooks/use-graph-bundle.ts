@@ -101,6 +101,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
         useDashboardStore.getState().setAvailableLayers(session.availableLayers)
 
         const queries: GraphBundleQueries = {
+          primeInteractiveQueryTables: session.primeInteractiveQueryTables,
           setSelectedPointIndices: session.setSelectedPointIndices,
           setSelectedPointScopeSql: session.setSelectedPointScopeSql,
           getOverlayPointIds: session.getOverlayPointIds,

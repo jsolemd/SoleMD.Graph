@@ -1,10 +1,12 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useDebouncedValue } from "@mantine/hooks";
+import { useTableSelectionQueryState } from "@/features/graph/hooks/use-selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
 import { clamp } from "@/lib/helpers";
 import type { GraphBundleQueries, GraphPointRecord, MapLayer } from "@/features/graph/types";
+import { useShallow } from "zustand/react/shallow";
 
 interface UseTableDataOptions {
   queries: GraphBundleQueries;
@@ -29,54 +31,34 @@ export interface TableDataState {
   selectionAvailable: boolean;
 }
 
+interface TableDataSnapshot {
+  activeLayer: MapLayer;
+  setTablePage: ReturnType<typeof useDashboardStore.getState>["setTablePage"];
+  tablePage: number;
+  tablePageSize: number;
+  tableView: "selection" | "dataset";
+}
+
 export function useTableData({ queries, overlayRevision }: UseTableDataOptions): TableDataState {
-  const activeLayer = useDashboardStore((s) => s.activeLayer);
-  const tablePage = useDashboardStore((s) => s.tablePage);
-  const tablePageSize = useDashboardStore((s) => s.tablePageSize);
-  const tableView = useDashboardStore((s) => s.tableView);
-  const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
-  const currentScopeRevision = useDashboardStore((s) => s.currentScopeRevision);
-  const [debouncedCurrentPointScopeSql] = useDebouncedValue(currentPointScopeSql, 120);
-  const deferredCurrentPointScopeSql = useDeferredValue(debouncedCurrentPointScopeSql);
-  const selectedPointCount = useDashboardStore((s) => s.selectedPointCount);
-  const selectedPointRevision = useDashboardStore((s) => s.selectedPointRevision);
-  const setTablePage = useDashboardStore((s) => s.setTablePage);
+  const { activeLayer, setTablePage, tablePage, tablePageSize, tableView } =
+    useDashboardStore(
+      useShallow(
+        (state): TableDataSnapshot => ({
+          activeLayer: state.activeLayer,
+          setTablePage: state.setTablePage,
+          tablePage: state.tablePage,
+          tablePageSize: state.tablePageSize,
+          tableView: state.tableView,
+        }),
+      ),
+    );
+  const tableSelectionState = useTableSelectionQueryState(tableView);
 
   const [pageRows, setPageRows] = useState<GraphPointRecord[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [lastResolvedKey, setLastResolvedKey] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  const hasCurrentSubset =
-    typeof deferredCurrentPointScopeSql === "string" &&
-    deferredCurrentPointScopeSql.trim().length > 0;
-  const hasManualSelection = selectedPointCount > 0;
-  const preferredSelectionQueryView: "current" | "selected" | null =
-    hasCurrentSubset ? "current" : hasManualSelection ? "selected" : null;
-  const selectionAvailable = preferredSelectionQueryView !== null;
-  const resolvedTableView: "selection" | "dataset" =
-    tableView === "dataset" || !selectionAvailable ? "dataset" : "selection";
-  const queryTableView: "current" | "selected" =
-    resolvedTableView === "dataset"
-      ? "current"
-      : preferredSelectionQueryView ?? "current";
-  const scopedCurrentPointScopeSql =
-    resolvedTableView === "selection" && queryTableView === "current"
-      ? deferredCurrentPointScopeSql
-      : null;
-  const scopedCurrentScopeRevision =
-    resolvedTableView === "selection" && queryTableView === "current"
-      ? currentScopeRevision
-      : 0;
-  const scopedSelectedPointCount =
-    resolvedTableView === "selection" && queryTableView === "selected"
-      ? selectedPointCount
-      : 0;
-  const scopedSelectedPointRevision =
-    resolvedTableView === "selection" && queryTableView === "selected"
-      ? selectedPointRevision
-      : 0;
-  const [debouncedSelectedRevision] = useDebouncedValue(scopedSelectedPointRevision, 120);
   const totalPages = Math.max(1, Math.ceil(totalRows / tablePageSize));
   const safePage = clamp(tablePage, 1, totalPages);
   const [debouncedSafePage] = useDebouncedValue(safePage, 80);
@@ -85,26 +67,26 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     () =>
       JSON.stringify({
         activeLayer,
-        resolvedTableView,
-        queryTableView,
+        resolvedTableView: tableSelectionState.resolvedTableView,
+        queryTableView: tableSelectionState.queryTableView,
         safePage: debouncedSafePage,
         tablePageSize,
-        currentScopeSql: scopedCurrentPointScopeSql,
-        currentScopeRevision: scopedCurrentScopeRevision,
-        selectedCount: scopedSelectedPointCount,
-        selectedPointRevision: debouncedSelectedRevision,
+        currentScopeSql: tableSelectionState.scopedCurrentPointScopeSql,
+        currentScopeRevision: tableSelectionState.scopedCurrentScopeRevision,
+        selectedCount: tableSelectionState.scopedSelectedPointCount,
+        selectedPointRevision: tableSelectionState.scopedSelectedPointRevision,
         overlayRevision,
       }),
     [
       activeLayer,
-      queryTableView,
+      tableSelectionState.queryTableView,
       overlayRevision,
-      resolvedTableView,
+      tableSelectionState.resolvedTableView,
       debouncedSafePage,
-      scopedCurrentPointScopeSql,
-      scopedCurrentScopeRevision,
-      scopedSelectedPointCount,
-      debouncedSelectedRevision,
+      tableSelectionState.scopedCurrentPointScopeSql,
+      tableSelectionState.scopedCurrentScopeRevision,
+      tableSelectionState.scopedSelectedPointCount,
+      tableSelectionState.scopedSelectedPointRevision,
       tablePageSize,
     ]
   );
@@ -123,10 +105,10 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     queries
       .getTablePage({
         layer: activeLayer,
-        view: queryTableView,
+        view: tableSelectionState.queryTableView,
         page: debouncedSafePage,
         pageSize: tablePageSize,
-        currentPointScopeSql: scopedCurrentPointScopeSql,
+        currentPointScopeSql: tableSelectionState.scopedCurrentPointScopeSql,
       })
       .then((result) => {
         if (cancelled) {
@@ -157,10 +139,10 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
   }, [
     activeLayer,
     queries,
-    queryTableView,
+    tableSelectionState.queryTableView,
     requestKey,
     debouncedSafePage,
-    scopedCurrentPointScopeSql,
+    tableSelectionState.scopedCurrentPointScopeSql,
     tablePageSize,
   ]);
 
@@ -174,11 +156,11 @@ export function useTableData({ queries, overlayRevision }: UseTableDataOptions):
     pageLoading,
     pageRefreshing,
     pageError,
-    resolvedTableView,
-    queryTableView,
+    resolvedTableView: tableSelectionState.resolvedTableView,
+    queryTableView: tableSelectionState.queryTableView,
     tablePageSize,
-    currentPointScopeSql: scopedCurrentPointScopeSql,
-    selectedPointCount,
-    selectionAvailable,
+    currentPointScopeSql: tableSelectionState.scopedCurrentPointScopeSql,
+    selectedPointCount: tableSelectionState.selectedPointCount,
+    selectionAvailable: tableSelectionState.selectionAvailable,
   };
 }

@@ -2,6 +2,7 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import type { GraphPointRecord } from '@/features/graph/types'
 
+import { hasCurrentPointScopeSql } from '@/features/graph/lib/selection-query-state'
 import { buildSelectedViewPredicate } from '../sql-helpers'
 import { queryRows } from './core'
 
@@ -121,8 +122,8 @@ export async function querySelectionScopeGraphPaperRefs(
   },
 ): Promise<string[]> {
   const normalizedScopeSql =
-    typeof args.currentPointScopeSql === "string" &&
-    args.currentPointScopeSql.trim().length > 0
+    typeof args.currentPointScopeSql === 'string' &&
+    hasCurrentPointScopeSql(args.currentPointScopeSql)
       ? args.currentPointScopeSql.trim()
       : null;
   const whereClause =

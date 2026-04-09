@@ -38,6 +38,7 @@ export interface GraphBundleSession {
   availableLayers: MapLayer[]
   canvas: GraphCanvasSource
   dispose: () => Promise<void>
+  primeInteractiveQueryTables: () => Promise<void>
   subscribeCanvas: (listener: GraphCanvasListener) => () => void
   setSelectedPointIndices: (pointIndices: number[]) => Promise<void>
   setSelectedPointScopeSql: (scopeSql: string | null) => Promise<void>

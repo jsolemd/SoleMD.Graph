@@ -1,9 +1,18 @@
 import type { GraphBundle } from '@/features/graph/types'
 
 import {
+  BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+  LOCAL_POINT_RUNTIME_COLUMNS,
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
+  registerBasePointQueryViews,
+  registerBasePointsView,
 } from '../views/base-points'
+import {
+  BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
+  LOCAL_CLUSTER_RUNTIME_COLUMNS,
+} from '../views/clusters'
+import { materializeBundleParquetTables } from '../views/relations'
 
 const REQUIRED_COLUMNS = [
   'point_index',
@@ -55,6 +64,14 @@ function createBundle(): GraphBundle {
       graphRunId: 'run-id',
       nodeKind: 'corpus',
       tables: {
+        base_clusters: {
+          bytes: 0,
+          columns: [...LOCAL_CLUSTER_RUNTIME_COLUMNS],
+          parquetFile: 'base_clusters.parquet',
+          rowCount: 0,
+          schema: [],
+          sha256: 'sha-clusters',
+        },
         base_points: {
           bytes: 0,
           columns: [...REQUIRED_COLUMNS],
@@ -72,7 +89,10 @@ function createBundle(): GraphBundle {
     nodeKind: 'corpus',
     qaSummary: null,
     runId: 'run-id',
-    tableUrls: {},
+    tableUrls: {
+      base_clusters: 'https://example.test/base_clusters.parquet',
+      base_points: 'https://example.test/base_points.parquet',
+    },
   }
 }
 
@@ -110,5 +130,98 @@ describe('base point projections', () => {
     expect(querySql).toContain("WHEN COALESCE(cluster_id, 0) > 0")
     expect(querySql).toContain("NULLIF(cluster_label, '')")
     expect(querySql).toContain("AS clusterLabel")
+  })
+
+  it('builds the public base point views from the canonical bundle relation by default', async () => {
+    const query = jest.fn(async () => undefined)
+
+    await registerBasePointsView(
+      {
+        query,
+      } as never,
+      {
+        buildPointCanvasProjectionSql: (sourceTable, indexSql) =>
+          `SELECT ${indexSql} AS index FROM ${sourceTable}`,
+        buildPointQueryProjectionSql: (sourceTable, indexSql) =>
+          `SELECT ${indexSql} AS index FROM ${sourceTable}`,
+      }
+    )
+
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('FROM base_points')
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('FROM base_points')
+    )
+  })
+
+  it('can switch the query views to the local interactive runtime table', async () => {
+    const query = jest.fn(async () => undefined)
+
+    await registerBasePointQueryViews(
+      {
+        query,
+      } as never,
+      {
+        sourceTable: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+        buildPointQueryProjectionSql: (sourceTable, indexSql) =>
+          `SELECT ${indexSql} AS index FROM ${sourceTable}`,
+      }
+    )
+
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining(`FROM ${BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE}`)
+    )
+  })
+
+  it('materializes the interactive base parquet sources into local temp tables once per session', async () => {
+    const query = jest.fn(async () => undefined)
+
+    await materializeBundleParquetTables(
+      {
+        query,
+      } as never,
+      createBundle(),
+      [
+        {
+          tableName: 'base_points',
+          runtimeTableName: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+          selectedColumns: LOCAL_POINT_RUNTIME_COLUMNS,
+        },
+        {
+          tableName: 'base_clusters',
+          runtimeTableName: BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
+          selectedColumns: LOCAL_CLUSTER_RUNTIME_COLUMNS,
+        },
+      ]
+    )
+
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE} AS`)
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining(
+        `SELECT ${LOCAL_POINT_RUNTIME_COLUMNS.join(', ')}`
+      )
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining("FROM read_parquet('https://example.test/base_points.parquet')")
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_CLUSTER_RUNTIME_SOURCE_TABLE} AS`)
+    )
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining(
+        `SELECT ${LOCAL_CLUSTER_RUNTIME_COLUMNS.join(', ')}`
+      )
+    )
   })
 })

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Button, Group, Stack } from "@mantine/core";
 import { useGraphCamera } from "@/features/graph/cosmograph";
+import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import { PANEL_ACCENT } from "../../panels/PanelShell";
@@ -30,8 +31,7 @@ export function SelectionActions({
   const [isActivatingOverlay, setIsActivatingOverlay] = useState(false);
   const [isClearingOverlay, setIsClearingOverlay] = useState(false);
 
-  const hasCurrentSubset =
-    Boolean(currentPointScopeSql && currentPointScopeSql.trim().length > 0);
+  const hasCurrentSubset = hasCurrentPointScopeSql(currentPointScopeSql);
   const canActivateOverlay =
     Boolean(queries) &&
     ((subsetScope === "selected" && selectedPointCount > 0) ||

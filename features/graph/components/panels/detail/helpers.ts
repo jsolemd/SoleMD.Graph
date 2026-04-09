@@ -2,7 +2,6 @@ import type {
   GraphPaperDetail,
   PaperDocument,
   PaperNode,
-  GraphNodeDetailResponsePayload,
 } from "@/features/graph/types";
 
 function joinNonEmpty(values: Array<string | null | undefined>) {
@@ -90,61 +89,34 @@ export function findPaperNodeByPaperId(
   );
 }
 
-function normalizeTextBlock(value: string | null | undefined) {
-  if (!value) return null;
-  const normalized = collapseWhitespace(value);
-  return normalized || null;
-}
-
-function markdownBulletList(values: string[]) {
-  return values.map((value) => `- ${value}`);
-}
-
 export function buildPaperNoteMarkdown({
   nodeDisplayPreview,
   paper,
   paperDocument,
-  servicePaper,
 }: {
   nodeDisplayPreview: string | null;
   paper: GraphPaperDetail | null;
   paperDocument: PaperDocument | null;
-  servicePaper: GraphNodeDetailResponsePayload["paper"] | null;
 }) {
-  const title = servicePaper?.title ?? paper?.title ?? "Untitled paper";
+  const title = paper?.title ?? "Untitled paper";
   const meta = joinNonEmpty([
-    servicePaper?.journal ?? paper?.journal ?? null,
-    servicePaper?.year != null
-      ? String(servicePaper.year)
-      : paper?.year != null
-        ? String(paper.year)
-        : null,
-    servicePaper?.citekey ?? paper?.citekey ?? null,
+    paper?.journal ?? null,
+    paper?.year != null ? String(paper.year) : null,
+    paper?.citekey ?? null,
   ]);
-  const doi = servicePaper?.doi ?? paper?.doi ?? null;
-  const authors =
-    servicePaper?.authors?.map((author) => author.name) ??
-    paper?.authors?.map((author) => author.name) ??
-    [];
+  const doi = paper?.doi ?? null;
+  const authors = paper?.authors?.map((author) => author.name) ?? [];
   const preview = getPreferredPaperPreview({
-    abstract: servicePaper?.abstract ?? paper?.abstract ?? null,
+    abstract: paper?.abstract ?? null,
     displayPreview: paperDocument?.displayPreview ?? null,
     nodeDisplayPreview,
   }).text;
-  const passages =
-    servicePaper?.narrative_chunks
-      ?.map((chunk) => normalizeTextBlock(chunk.preview))
-      .filter((chunk): chunk is string => Boolean(chunk))
-      .slice(0, 3) ?? [];
 
   const lines: string[] = [`# ${title}`];
   if (meta) lines.push("", meta);
   if (doi) lines.push("", `DOI: ${doi}`);
   if (preview) lines.push("", "## Preview", preview);
   if (authors.length) lines.push("", "## Authors", authors.join(", "));
-  if (passages.length) {
-    lines.push("", "## Key Passages", ...markdownBulletList(passages));
-  }
 
   return lines.join("\n");
 }

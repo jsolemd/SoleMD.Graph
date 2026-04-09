@@ -10,6 +10,7 @@ import {
   buildActivePointSelectionScopeSql,
   buildCurrentPointScopeSql,
 } from "@/features/graph/lib/cosmograph-selection";
+import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { SelectionToolbar, type SelectionToolbarHandle } from "@/features/graph/cosmograph";
 import type { GraphBundleQueries } from "@/features/graph/types";
@@ -151,7 +152,7 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
     const activeScopeSql = buildActivePointSelectionScopeSql(pointsSelection);
     const nextSelectedPointCount = getSelectedPointIndices().length;
 
-    if (activeScopeSql && activeScopeSql.trim().length > 0) {
+    if (hasCurrentPointScopeSql(activeScopeSql)) {
       try {
         await queries.setSelectedPointScopeSql(activeScopeSql);
       } catch {

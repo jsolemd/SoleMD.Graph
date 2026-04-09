@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-import warnings
 
-
-from app.graph.neighbors import NeighborGraphResult
-from app.graph.neighbors import prune_neighbor_graph
-from app.graph._util import require_numpy
+from app.graph._util import require_numpy, resolve_graph_layout_backend
+from app.graph.neighbors import NeighborGraphResult, prune_neighbor_graph
 from app.langfuse_config import (
-    get_langfuse as _get_langfuse,
-    SPAN_GRAPH_LAYOUT_PREPROCESS,
     SPAN_GRAPH_LAYOUT_PCA,
+    SPAN_GRAPH_LAYOUT_PREPROCESS,
     SPAN_GRAPH_LAYOUT_RUN,
     observe,
+)
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
 )
 
 if TYPE_CHECKING:
@@ -73,16 +73,6 @@ class LayoutResult:
     backend: str
 
 
-def _gpu_available() -> bool:
-    """Check if native cuML is available (no cuml.accel proxy)."""
-    try:
-        import cuml.manifold  # noqa: F401
-        import cupy  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-
 @observe(name=SPAN_GRAPH_LAYOUT_PREPROCESS, capture_input=False, capture_output=False)
 def preprocess_embeddings(embeddings: numpy.ndarray, config: LayoutConfig) -> numpy.ndarray:
     np = require_numpy()
@@ -117,22 +107,7 @@ def _enable_layout_backend(config: LayoutConfig) -> str:
     Uses native cuML directly with cupy arrays (data lives in VRAM).
     Falls back to CPU umap-learn when cuML is not installed.
     """
-    backend = config.backend.strip().lower()
-    if backend not in {"auto", "cpu", "gpu", "cuml_native"}:
-        raise ValueError(f"unsupported layout backend: {config.backend}")
-
-    if backend == "cpu":
-        return "cpu"
-
-    if _gpu_available():
-        return "cuml_native"
-
-    if backend in {"gpu", "cuml_native"}:
-        raise RuntimeError(
-            "GPU layout requested but RAPIDS cuML is not installed. "
-            "Install a compatible RAPIDS stack or use backend='cpu'."
-        )
-    return "cpu"
+    return resolve_graph_layout_backend(config.backend)
 
 
 @observe(name=SPAN_GRAPH_LAYOUT_PCA, capture_input=False, capture_output=False)
@@ -315,7 +290,12 @@ def stream_incremental_pca(
         chunks = []
         for _ids, _cites, emb in chunk_fn():
             chunks.append(emb)
-        return np.concatenate(chunks, axis=0) if chunks else np.empty((0, embedding_dim), dtype=np.float32), backend
+        return (
+            np.concatenate(chunks, axis=0)
+            if chunks
+            else np.empty((0, embedding_dim), dtype=np.float32),
+            backend,
+        )
 
     batch_size = max(n_components + 1, min(config.pca_batch_size, total_count))
     reducer = IncrementalPCA(n_components=n_components, batch_size=batch_size)
@@ -389,13 +369,30 @@ def stream_random_projection(
         chunks = []
         for _ids, _cites, emb in chunk_fn():
             chunks.append(emb)
-        return np.concatenate(chunks, axis=0) if chunks else np.empty((0, embedding_dim), dtype=np.float32), backend
+        return (
+            np.concatenate(chunks, axis=0)
+            if chunks
+            else np.empty((0, embedding_dim), dtype=np.float32),
+            backend,
+        )
 
     if backend == "cuml_native":
-        return _stream_srp_gpu(chunk_fn, config=config, embedding_dim=embedding_dim,
-                               total_count=total_count, n_components=n_components, backend=backend)
-    return _stream_srp_cpu(chunk_fn, config=config, embedding_dim=embedding_dim,
-                           total_count=total_count, n_components=n_components, backend=backend)
+        return _stream_srp_gpu(
+            chunk_fn,
+            config=config,
+            embedding_dim=embedding_dim,
+            total_count=total_count,
+            n_components=n_components,
+            backend=backend,
+        )
+    return _stream_srp_cpu(
+        chunk_fn,
+        config=config,
+        embedding_dim=embedding_dim,
+        total_count=total_count,
+        n_components=n_components,
+        backend=backend,
+    )
 
 
 def _stream_srp_gpu(
@@ -508,7 +505,7 @@ def _random_subsample(
     n_total: int,
     target_size: int,
     random_state: int = 42,
-) -> "numpy.ndarray":
+) -> numpy.ndarray:
     """Select a random subsample of indices."""
     np = require_numpy()
     rng = np.random.default_rng(random_state)
@@ -522,7 +519,7 @@ def _use_subsample(config: LayoutConfig, n_points: int) -> bool:
 
 @observe(name=SPAN_GRAPH_LAYOUT_RUN, capture_input=False, capture_output=False)
 def run_layout_from_matrix(
-    layout_matrix: "numpy.ndarray",
+    layout_matrix: numpy.ndarray,
     *,
     config: LayoutConfig | None = None,
     shared_knn: NeighborGraphResult | None = None,
@@ -592,12 +589,12 @@ def run_layout_from_matrix(
 # ---------------------------------------------------------------------------
 
 def _fit_transform_full_gpu(
-    layout_matrix: "numpy.ndarray",
+    layout_matrix: numpy.ndarray,
     *,
     config: LayoutConfig,
     shared_knn: NeighborGraphResult | None,
     n_neighbors: int,
-) -> "numpy.ndarray":
+) -> numpy.ndarray:
     """Single-pass GPU fit_transform with optional precomputed kNN in VRAM."""
     import cupy as cp
     from cuml.manifold import UMAP
@@ -633,11 +630,11 @@ def _fit_transform_full_gpu(
 
 
 def _fit_transform_subsample_gpu(
-    layout_matrix: "numpy.ndarray",
+    layout_matrix: numpy.ndarray,
     *,
     config: LayoutConfig,
     n_neighbors: int,
-) -> "numpy.ndarray":
+) -> numpy.ndarray:
     """Fit UMAP on a subsample in VRAM, transform the rest in batches.
 
     No precomputed_knn — uses ``metric="cosine"`` so ``.transform()``
@@ -696,12 +693,12 @@ def _fit_transform_subsample_gpu(
 # ---------------------------------------------------------------------------
 
 def _fit_transform_cpu(
-    layout_matrix: "numpy.ndarray",
+    layout_matrix: numpy.ndarray,
     *,
     config: LayoutConfig,
     shared_knn: NeighborGraphResult | None,
     n_neighbors: int,
-) -> "numpy.ndarray":
+) -> numpy.ndarray:
     """CPU fallback using umap-learn with optional precomputed kNN."""
     try:
         from umap import UMAP
@@ -827,7 +824,8 @@ def _pairwise_cluster_repulsion(
     total_sizes = sizes_f[:, None] + sizes_f[None, :]
     # Size weights: how much each cluster moves (inverse of its size).
     # w_i = size_j / (size_i + size_j)
-    weight_matrix = sizes_f[None, :] / np.maximum(total_sizes, 1.0)  # C×C: weight_matrix[i,j] = size_j/(size_i+size_j)
+    weight_matrix = sizes_f[None, :] / np.maximum(total_sizes, 1.0)
+    # C×C: weight_matrix[i,j] = size_j/(size_i+size_j)
 
     # Precompute density: count of other centroids within 2× median distance.
     dists_all = np.linalg.norm(
@@ -887,8 +885,10 @@ def _pairwise_cluster_repulsion(
         overlap_vals = np.where(overlap_mask, overlap, 0.0)
 
         # Force contribution from i<j pairs.
-        force_mag_i = overlap_vals * weight_matrix * 0.5       # weight_matrix[i,j] = size_j/(si+sj) → weight for i
-        force_mag_j = overlap_vals * weight_matrix.T * 0.5     # weight_matrix[j,i] = size_i/(si+sj) → weight for j
+        force_mag_i = overlap_vals * weight_matrix * 0.5
+        # weight_matrix[i,j] = size_j/(si+sj) → weight for i
+        force_mag_j = overlap_vals * weight_matrix.T * 0.5
+        # weight_matrix[j,i] = size_i/(si+sj) → weight for j
 
         # Sum forces along axis 1 for each cluster.
         forces += np.sum(force_mag_i[:, :, None] * direction * overlap_mask[:, :, None], axis=1)

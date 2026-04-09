@@ -1,72 +1,21 @@
 import {
-  clearDetailCache,
-  fetchGraphNodeDetail,
   fetchGraphRagQuery,
   GraphRagRequestError,
-  refreshGraphAssetUrl,
 } from '../detail-service'
 import {
-  getGraphNodeDetail,
-  getGraphAssetUrl,
   getGraphRagQuery,
 } from '../../../../app/actions/graph'
 import type { GraphBundle, GraphNode } from '../../types'
 
 jest.mock('../../../../app/actions/graph', () => ({
-  getGraphNodeDetail: jest.fn(),
-  getGraphAssetUrl: jest.fn(),
-  getGraphNeighborhood: jest.fn(),
   getGraphRagQuery: jest.fn(),
 }))
 
-const mockedGetGraphNodeDetail = getGraphNodeDetail as jest.MockedFunction<typeof getGraphNodeDetail>
-const mockedGetGraphAssetUrl = getGraphAssetUrl as jest.MockedFunction<typeof getGraphAssetUrl>
 const mockedGetGraphRagQuery = getGraphRagQuery as jest.MockedFunction<typeof getGraphRagQuery>
 
 describe('detail-service', () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    clearDetailCache()
-  })
-
-  it('disables remote graph node detail for the corpus runtime', async () => {
-    const bundle = {
-      bundleChecksum: 'bundle-checksum',
-      runId: 'run-id',
-    } as GraphBundle
-
-    const node = {
-      nodeKind: 'paper',
-      id: 'paper-node',
-    } as GraphNode
-
-    await expect(
-      fetchGraphNodeDetail({ bundle, node })
-    ).rejects.toThrow('Remote graph detail is not enabled for the corpus runtime')
-    expect(mockedGetGraphNodeDetail).not.toHaveBeenCalled()
-  })
-
-  it('disables signed asset refresh for the corpus runtime', async () => {
-    const bundle = {
-      bundleChecksum: 'bundle-checksum',
-      runId: 'run-id',
-    } as GraphBundle
-
-    const node = {
-      nodeKind: 'paper',
-      id: 'paper-node',
-    } as GraphNode
-
-    const asset = {
-      asset_id: 'asset-1',
-      asset_type: 'pdf',
-      storage_path: 'papers/hash/file.pdf',
-    } as never
-
-    await expect(
-      refreshGraphAssetUrl({ bundle, node, asset })
-    ).rejects.toThrow('Remote graph asset URLs are not enabled for the corpus runtime')
-    expect(mockedGetGraphAssetUrl).not.toHaveBeenCalled()
   })
 
   it('calls getGraphRagQuery with selected node context', async () => {

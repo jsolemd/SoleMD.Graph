@@ -12,66 +12,81 @@ This is the thin orchestrator that coordinates submodules:
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import Future
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
 import json
+import logging as _logging
 import shutil
 import sys
 import time
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import asdict
 
 from psycopg.types.json import Jsonb
 
-import logging as _logging
+from app import db
+from app.config import settings
+from app.graph.base_policy import get_active_base_policy_version
 
+# --- Re-exports from submodules (backwards compatibility) ---
+from app.graph.build_common import (
+    GraphBuildResult,  # noqa: F401
+    GraphBuildSummary,  # noqa: F401
+    GraphInputData,  # noqa: F401
+    _checkpoint_stage_complete,  # noqa: F401
+    _graph_temp_dir,
+    _mark_graph_run_stage,
+)
+from app.graph.build_dispatch import (
+    GPU_CONTAINER,
+    _dispatch_to_gpu,
+    _gpu_container_running,
+    _is_gpu_container,
+)
+from app.graph.build_inputs import _ensure_input_vectors
+from app.graph.build_publish import (
+    _mark_graph_run_failed,
+    load_graph_build_summary,  # noqa: F401
+    publish_existing_graph_run,
+    sync_current_graph_membership,
+)
+from app.graph.build_stages import (
+    _ensure_cluster_ids,
+    _ensure_layout_coordinates,
+    _ensure_layout_matrix,
+    _ensure_scored_coordinates,
+    _ensure_shared_neighbor_graph,
+)
+from app.graph.build_writes import (
+    _cluster_rows,
+    _load_cluster_texts,  # noqa: F401 - used by labels.py
+    _write_graph_clusters,
+    _write_graph_points,
+)
+from app.graph.checkpoints import checkpoint_paths, update_checkpoint_metadata
+from app.graph.clusters import ClusterConfig
+from app.graph.labels import build_cluster_labels
+from app.graph.layout import LayoutConfig
+from app.graph.paper_evidence import (
+    PAPER_EVIDENCE_STAGES,
+    refresh_paper_evidence_summary,
+    refresh_paper_evidence_summary_stage,
+)
+from app.graph.verify import require_graph_build_preflight
 from app.langfuse_config import (
     SPAN_GRAPH_BUILD_RUN,
-    get_langfuse as _get_langfuse,
-    get_trace_context as _get_trace_context,
-    apply_trace_context as _apply_trace_context,
     observe,
+)
+from app.langfuse_config import (
+    apply_trace_context as _apply_trace_context,
+)
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+)
+from app.langfuse_config import (
+    get_trace_context as _get_trace_context,
 )
 
 logger = _logging.getLogger(__name__)
-
-from app import db
-from app.config import settings
-from app.graph.checkpoints import checkpoint_paths
-from app.graph.checkpoints import update_checkpoint_metadata
-from app.graph.clusters import ClusterConfig
-from app.graph.layout import LayoutConfig
-from app.graph.base_policy import get_active_base_policy_version
-from app.graph.labels import build_cluster_labels
-from app.graph.paper_evidence import PAPER_EVIDENCE_STAGES
-from app.graph.paper_evidence import refresh_paper_evidence_summary
-from app.graph.paper_evidence import refresh_paper_evidence_summary_stage
-
-# --- Re-exports from submodules (backwards compatibility) ---
-from app.graph.build_common import GraphBuildResult  # noqa: F401
-from app.graph.build_common import GraphBuildSummary  # noqa: F401
-from app.graph.build_common import GraphInputData  # noqa: F401
-from app.graph.build_common import _checkpoint_stage_complete  # noqa: F401
-from app.graph.build_common import _graph_temp_dir
-from app.graph.build_common import _mark_graph_run_stage
-from app.graph.build_inputs import _ensure_input_vectors
-from app.graph.build_stages import _ensure_cluster_ids
-from app.graph.build_stages import _ensure_layout_coordinates
-from app.graph.build_stages import _ensure_layout_matrix
-from app.graph.build_stages import _ensure_scored_coordinates
-from app.graph.build_stages import _ensure_shared_neighbor_graph
-from app.graph.build_writes import _cluster_rows
-from app.graph.build_writes import _load_cluster_texts  # noqa: F401 - used by labels.py
-from app.graph.build_writes import _write_graph_clusters
-from app.graph.build_writes import _write_graph_points
-from app.graph.build_publish import _mark_graph_run_failed
-from app.graph.build_publish import load_graph_build_summary  # noqa: F401
-from app.graph.build_publish import publish_existing_graph_run
-from app.graph.build_publish import sync_current_graph_membership
-from app.graph.build_dispatch import GPU_CONTAINER
-from app.graph.build_dispatch import _dispatch_to_gpu
-from app.graph.build_dispatch import _gpu_container_running
-from app.graph.build_dispatch import _is_gpu_container
 
 
 def _check_memory_pressure() -> None:
@@ -261,8 +276,16 @@ def _graph_run_row_counts(graph_run_id: str) -> tuple[int, int]:
         cur.execute(
             """
             SELECT
-                (SELECT COUNT(*)::INTEGER FROM solemd.graph_points WHERE graph_run_id = %s) AS point_count,
-                (SELECT COUNT(*)::INTEGER FROM solemd.graph_clusters WHERE graph_run_id = %s) AS cluster_count
+                (
+                    SELECT COUNT(*)::INTEGER
+                    FROM solemd.graph_points
+                    WHERE graph_run_id = %s
+                ) AS point_count,
+                (
+                    SELECT COUNT(*)::INTEGER
+                    FROM solemd.graph_clusters
+                    WHERE graph_run_id = %s
+                ) AS cluster_count
             """,
             (graph_run_id, graph_run_id),
         )
@@ -337,10 +360,12 @@ def run_graph_build(
         pass
 
     _check_memory_pressure()
+    require_graph_build_preflight()
     _cleanup_stale_build_artifacts(
         keep_run_ids={resume_run_id} if resume_run_id else None,
     )
 
+    graph_run_id: str | None = None
     if resume_run_id:
         graph_run_id = resume_run_id
         limit, base_policy, layout_config, cluster_config = _resume_graph_run(graph_run_id)
@@ -353,7 +378,11 @@ def run_graph_build(
         )
         cluster_kwargs: dict = {
             "backend": settings.graph_cluster_backend,
-            "resolution": cluster_resolution if cluster_resolution is not None else settings.graph_cluster_resolution,
+            "resolution": (
+                cluster_resolution
+                if cluster_resolution is not None
+                else settings.graph_cluster_resolution
+            ),
         }
         cluster_config = ClusterConfig(**cluster_kwargs)
         _insert_graph_run(
@@ -567,7 +596,8 @@ def run_graph_build(
             bundle_checksum=result.bundle_checksum,
         )
     except Exception as exc:
-        _mark_graph_run_failed(graph_run_id, exc)
+        if graph_run_id is not None:
+            _mark_graph_run_failed(graph_run_id, exc)
         raise
     finally:
         if evidence_executor is not None:
@@ -580,7 +610,11 @@ def run_graph_build(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Summarize or run graph builds")
     parser.add_argument("--json", action="store_true", help="Emit JSON only")
-    parser.add_argument("--run", action="store_true", help="Run a graph build instead of summary only")
+    parser.add_argument(
+        "--run",
+        action="store_true",
+        help="Run a graph build instead of summary only",
+    )
     parser.add_argument(
         "--refresh-evidence",
         action="store_true",
@@ -590,7 +624,10 @@ def main() -> None:
         "--evidence-stage",
         choices=("all", *PAPER_EVIDENCE_STAGES),
         default="all",
-        help="Retained for compatibility; always triggers a full single-pass rebuild regardless of stage",
+        help=(
+            "Retained for compatibility; always triggers a full single-pass "
+            "rebuild regardless of stage"
+        ),
     )
     parser.add_argument(
         "--publish-run",
@@ -600,9 +637,17 @@ def main() -> None:
     parser.add_argument(
         "--sync-current",
         action="store_true",
-        help="Backfill corpus.is_in_current_map and corpus.is_in_current_base from the current published graph run",
+        help=(
+            "Backfill corpus.is_in_current_map and corpus.is_in_current_base "
+            "from the current published graph run"
+        ),
     )
-    parser.add_argument("--limit", type=int, default=0, help="Limit papers for a canary graph build")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Limit papers for a canary graph build",
+    )
     parser.add_argument(
         "--resume-run",
         type=str,
@@ -611,7 +656,10 @@ def main() -> None:
     parser.add_argument(
         "--publish-current",
         action="store_true",
-        help="Mark the completed graph run as current and sync current map/base membership on corpus",
+        help=(
+            "Mark the completed graph run as current and sync current "
+            "map/base membership on corpus"
+        ),
     )
     parser.add_argument(
         "--skip-export",
@@ -645,7 +693,10 @@ def main() -> None:
     parser.add_argument(
         "--re-export",
         action="store_true",
-        help="Re-export the current graph run's Parquet bundle (picks up label changes, evidence updates, etc.)",
+        help=(
+            "Re-export the current graph run's Parquet bundle (picks up "
+            "label changes, evidence updates, etc.)"
+        ),
     )
     parser.add_argument(
         "--cleanup",

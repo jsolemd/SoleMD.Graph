@@ -1,3 +1,4 @@
+import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { RAG_ANSWER_SELECTION_SOURCE_ID } from "@/features/graph/lib/overlay-producers";
 
 export type SelectionScopeSource =
@@ -6,13 +7,6 @@ export type SelectionScopeSource =
   | "selected"
   | "focused"
   | "answer_linked";
-
-function hasCurrentSelectionScope(currentPointScopeSql?: string | null): boolean {
-  return (
-    typeof currentPointScopeSql === "string" &&
-    currentPointScopeSql.trim().length > 0
-  );
-}
 
 export function getSelectionScopeSource(args: {
   hasQueries: boolean
@@ -33,7 +27,7 @@ export function getSelectionScopeSource(args: {
     return args.hasSelectedNode ? "focused" : "answer_linked";
   }
 
-  if (hasCurrentSelectionScope(args.currentPointScopeSql)) {
+  if (hasCurrentPointScopeSql(args.currentPointScopeSql)) {
     return "current";
   }
 

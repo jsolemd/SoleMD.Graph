@@ -138,21 +138,133 @@ The duplicate-title outlier is no longer a title-family tail risk:
 
 This is the current best live run for `benchmark-biomedical_optimization_v3`.
 
-## Remaining miss
+## Passage ranking repair
 
-There is one top-1 miss in the full `v3` run:
+The remaining `sentence_global` miss was a real ranking defect, not a
+benchmark-construction or ingest issue:
 
 - Corpus: `116587801`
 - Title: `Meta‐analysis of brain‐derived neurotrophic factor p.Val66Met in adult ADHD in four European populations`
-- Family: `sentence_global`
-- Retrieval profile: `passage_lookup`
-- Warehouse depth: `fulltext`
-- Hit rank: `2`
-- Query: `Attention-deficit hyperactivity disorder (ADHD) is a multifactorial, neurodevelopmental disorder that often persists into adolescence and adulthood and is characterized by inattention, hyperactivity and impulsiveness.`
 - Trace: http://localhost:3100/project/cmnc35ixm0003ms07z5xup9oz/traces/23f7f7f880220f3e2dd98e1784c42237
 
-This is a genuine ranking problem, not a benchmark-construction or ingest
-problem.
+Langfuse showed the failure mode clearly:
+
+- the target had stronger integrated evidence
+  - `chunk_lexical_score=0.461`
+  - `citation_boost=3`
+  - `passage_alignment_score=1.0`
+  - `fused_score=0.8799`
+- the winning paper was dense-only, but still counted as "direct" because its
+  abstract/title alignment hit `0.72`
+- the passage sort key then let raw `biomedical_rerank_score` override
+  `fused_score`, which buried the target at rank `2`
+
+Two runtime fixes resolved that:
+
+1. passage/question ranking now distinguishes strong lexical/chunk support from
+   weaker alignment-only support
+2. title-anchor precedence was added inside passage/question sort so title-like
+   queries that still route as `passage_lookup` keep title behavior
+
+### Passage tier v1
+
+- Run name: `biomedical-optimization-v3-passage-tier-v1-2026-04-08 - 2026-04-09T02:57:10.005661Z`
+- Dataset run: http://localhost:3100/project/cmnc35ixm0003ms07z5xup9oz/datasets/cmnqqft3x00iakt07eukgzrem/runs/28090c40-6367-4418-b60a-39eb8dd010e4
+
+This fixed the ADHD `sentence_global` miss, but it was too broad: two
+`title_global` cases that still routed as `passage_lookup` regressed to rank
+`2`.
+
+### Passage tier v2
+
+- Run name: `biomedical-optimization-v3-passage-tier-v2-2026-04-08 - 2026-04-09T02:59:28.096601Z`
+- Dataset run: http://localhost:3100/project/cmnc35ixm0003ms07z5xup9oz/datasets/cmnqqft3x00iakt07eukgzrem/runs/9ea21843-0ad4-4b5b-a3b9-fd5b9f73b276
+
+This repaired the title regressions while preserving the ADHD recovery:
+
+- `hit@1`: `1.000`
+- `hit@k`: `1.000`
+- `grounded_answer_rate`: `1.000`
+- `p50_duration_ms`: `75.2`
+- `p95_duration_ms`: `349.5`
+- `p99_duration_ms`: `710.1`
+
+At this point the covered optimization benchmark reached `100%` accuracy.
+
+## Warmed benchmark runner
+
+The worst remaining tail was a cold runtime path, not a steady-state one.
+
+Langfuse trace `6c9bddde8610ae02d43519ddac19fb92` showed:
+
+- `encode_dense_query=3238.6 ms`
+- `search_query_embedding_papers=785.5 ms`
+- `biomedical_reranker_ready=False`
+
+The codebase already had the right native fix: `RagService.warm()`. The
+benchmark runner simply was not calling it. The experiment path now warms the
+service once when it is built, instead of measuring the first query against a
+cold encoder/reranker path.
+
+### Passage tier v3 warm
+
+- Run name: `biomedical-optimization-v3-passage-tier-v3-warm-2026-04-08 - 2026-04-09T03:03:29.960793Z`
+- Dataset run: http://localhost:3100/project/cmnc35ixm0003ms07z5xup9oz/datasets/cmnqqft3x00iakt07eukgzrem/runs/8a5d68f0-e083-44ec-a46b-15b9ebed1bd9
+
+Warmup removed the cold-start tail without changing quality:
+
+- `hit@1`: `1.000`
+- `p50_duration_ms`: `78.2`
+- `p95_duration_ms`: `328.0`
+- `p99_duration_ms`: `549.8`
+
+The original `4779.4 ms` sentence outlier disappeared. After warmup, the slow
+surface shifted to citation-heavy passage cases and duplicate-title
+disambiguation.
+
+## Citation-context pruning
+
+The next slow case was the sleep-quality sentence query:
+
+- Trace: http://localhost:3100/project/cmnc35ixm0003ms07z5xup9oz/traces/76632ee83d2ced0adcc0508916824960
+- `fetch_citation_contexts_initial=701.9 ms`
+- `fetch_citation_contexts_missing_top_hits=41.7 ms`
+- `citation_context_ids=1`
+
+The query was sending `19` unique citation terms into the context matcher. A
+direct timing check on the live DB showed that bounding those terms helped
+substantially for the same result set:
+
+- all unique terms: `~632 ms`
+- top `8` high-information terms: `~303 ms`
+- top `6` high-information terms: `~250 ms`
+
+The runtime now caps citation-context lookup to the top `8` high-information
+terms (longest unique normalized terms, preserving original order among the
+selected subset).
+
+### Passage tier v4 citation terms
+
+- Run name: `biomedical-optimization-v3-passage-tier-v4-citation-terms-2026-04-08 - 2026-04-09T03:07:25.409349Z`
+- Dataset run: http://localhost:3100/project/cmnc35ixm0003ms07z5xup9oz/datasets/cmnqqft3x00iakt07eukgzrem/runs/f5c13848-198f-4f8f-804e-c96e3344a91f
+
+This is the current best live run:
+
+- `hit@1`: `1.000`
+- `hit@k`: `1.000`
+- `grounded_answer_rate`: `1.000`
+- `p50_duration_ms`: `72.7`
+- `p95_duration_ms`: `258.7`
+- `p99_duration_ms`: `482.3`
+
+Family breakdown:
+
+- `sentence_global`: `1.000 hit@1`, `p50 122.6 ms`, `p95 306.1 ms`
+- `title_global`: `1.000 hit@1`, `p50 55.4 ms`, `p95 258.7 ms`
+- `title_selected`: `1.000 hit@1`, `p50 45.2 ms`, `p95 183.3 ms`
+
+The previously slow sleep-quality case dropped from `840.5 ms` to `482.3 ms`
+while keeping the same retrieval outcome.
 
 ## What changed
 
@@ -163,11 +275,18 @@ problem.
   so future refreshes update the benchmark cleanly instead of accumulating stale
   cases.
 - `rag_benchmark.py` now has `--review-live` for run-scoped Langfuse review.
+- Passage/question ranking now treats chunk/lexical-backed evidence as stronger
+  than alignment-only support and lets title anchors recover title-like queries
+  that still route through passage lookup.
+- The Langfuse benchmark runner now warms `RagService` before timed execution.
+- Citation-context lookup now uses a bounded high-information term subset
+  instead of the full long-query token list.
 
 ## Next optimization target
 
-1. Fix the single ADHD `sentence_global` rank-2 miss. Accuracy loss is now
-   concentrated in one passage-ranking case.
-2. Reduce the remaining `sentence_global` long-tail latency, starting with the
-   DCA/nomogram trace at `6217.1 ms`.
+1. Investigate duplicate-title entity disambiguation cost on
+   `Diagnosis and management of dementia with Lewy bodies`
+   (`fetch_entity_matches=510 ms`).
+2. Review the new worst `sentence_global` tail at
+   `32419070` (`791.7 ms`) before widening the benchmark further.
 3. Only after that, update the `docs/map/*` current-state docs for this session.

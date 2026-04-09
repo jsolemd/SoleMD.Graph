@@ -1,16 +1,20 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import { LOCAL_POINT_RUNTIME_COLUMNS } from './base-points'
+import {
+  BASE_POINT_CANONICAL_SOURCE_TABLE,
+  LOCAL_POINT_RUNTIME_COLUMNS,
+} from './base-points'
 
 export const ATTACHED_UNIVERSE_POINTS_TABLE = 'attached_universe_points'
 
 export async function initializeAttachedUniversePointTable(
-  conn: AsyncDuckDBConnection
+  conn: AsyncDuckDBConnection,
+  sourceTable = BASE_POINT_CANONICAL_SOURCE_TABLE
 ) {
   await conn.query(
     `CREATE TEMP TABLE IF NOT EXISTS ${ATTACHED_UNIVERSE_POINTS_TABLE} AS
      SELECT ${LOCAL_POINT_RUNTIME_COLUMNS.join(', ')}
-     FROM base_points
+     FROM ${sourceTable}
      WHERE false`
   )
 }

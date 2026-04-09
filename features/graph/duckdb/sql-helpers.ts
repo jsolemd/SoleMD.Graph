@@ -1,5 +1,9 @@
 import { getColumnMetaForLayer, getColumnsForLayer } from '@/features/graph/lib/columns'
 import { getLayerConfig } from '@/features/graph/lib/layers'
+import {
+  hasCurrentPointScopeSql,
+  normalizeCurrentPointScopeSql,
+} from '@/features/graph/lib/selection-query-state'
 import type { GraphInfoScope, MapLayer } from '@/features/graph/types'
 
 import { validateTableName } from './utils'
@@ -12,8 +16,8 @@ export function buildCurrentViewPredicate(args: {
   currentPointScopeSql: string | null
 }): string {
   const { currentPointScopeSql } = args
-  if (currentPointScopeSql && currentPointScopeSql.trim().length > 0) {
-    return currentPointScopeSql
+  if (hasCurrentPointScopeSql(currentPointScopeSql)) {
+    return normalizeCurrentPointScopeSql(currentPointScopeSql) ?? 'TRUE'
   }
 
   return 'TRUE'
@@ -62,8 +66,8 @@ export function buildScopedLayerPredicate(
   }
 
   if (scope === 'current') {
-    if (currentPointScopeSql && currentPointScopeSql.trim().length > 0) {
-      return currentPointScopeSql
+    if (hasCurrentPointScopeSql(currentPointScopeSql)) {
+      return normalizeCurrentPointScopeSql(currentPointScopeSql) ?? 'TRUE'
     }
   }
 

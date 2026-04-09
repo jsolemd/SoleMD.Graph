@@ -4,17 +4,14 @@ from __future__ import annotations
 
 from psycopg.types.json import Jsonb
 
-
-from app.langfuse_config import SPAN_GRAPH_BUILD_PUBLISH, observe
 from app import db
-from app.graph.build_common import GraphBuildResult
-from app.graph.build_common import GraphBuildSummary
-from app.graph.base_policy import get_active_base_policy_version
-from app.graph.base_policy import materialize_base_admission
+from app.graph.base_policy import get_active_base_policy_version, materialize_base_admission
+from app.graph.build_common import GraphBuildResult, GraphBuildSummary
 from app.graph.checkpoints import checkpoint_paths
-from app.graph.export_bundle import BUNDLE_VERSION
-from app.graph.export_bundle import export_graph_bundle
+from app.graph.export import validate_bundle_manifest_contract
+from app.graph.export_bundle import BUNDLE_VERSION, export_graph_bundle
 from app.graph.render_policy import base_point_predicate_sql
+from app.langfuse_config import SPAN_GRAPH_BUILD_PUBLISH, observe
 
 
 def load_graph_build_summary() -> GraphBuildSummary:
@@ -288,6 +285,10 @@ def publish_existing_graph_run(
     if not skip_export:
         bundle = export_graph_bundle(
             graph_run_id=graph_run_id,
+            bundle_profile="base",
+        )
+        validate_bundle_manifest_contract(
+            bundle.bundle_manifest,
             bundle_profile="base",
         )
         bundle_dir = bundle.bundle_dir

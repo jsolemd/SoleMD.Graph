@@ -47,6 +47,16 @@ npm run build && npm run lint  # Build + lint
 cd engine && uv run pytest     # Engine tests
 ```
 
+## Frontend Performance
+
+Frontend latency and graph-runtime performance rules are canonical requirements in:
+
+- `docs/map/frontend-performance.md`
+
+Any agent changing shell startup, DuckDB-Wasm/bootstrap, panel query orchestration,
+selection/scope resolution, or Cosmograph runtime paths must read and follow that
+document before editing code.
+
 ## Docs
 
 | Topic | Location |
@@ -54,6 +64,7 @@ cd engine && uv run pytest     # Engine tests
 | Entry point + reader journey | `docs/map/map.md` |
 | Hard boundaries + adapters | `docs/map/architecture.md` |
 | Database schema | `docs/map/database.md` |
+| Frontend latency + runtime rules | `docs/map/frontend-performance.md` |
 | Ingest (PubTator3 + S2 + warehouse) | `docs/map/ingest.md` |
 | Graph build (engine pipeline) | `docs/map/graph-build.md` |
 | Graph runtime (browser + DuckDB + bundle) | `docs/map/graph-runtime.md` |

@@ -1,5 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
+import { hasCurrentPointScopeSql } from '@/features/graph/lib/selection-query-state'
 import type { GraphInfoFacetRow } from '@/features/graph/types'
 
 import { queryFacetSummary, queryFacetSummaries, queryInfoBarsBatch } from '../queries'
@@ -183,7 +184,7 @@ export function mergeFacetSummaryRows(args: {
 }
 
 export function hasCurrentScopeSql(scopeSql: string | null) {
-  return typeof scopeSql === 'string' && scopeSql.trim().length > 0
+  return hasCurrentPointScopeSql(scopeSql)
 }
 
 export function hasFiniteExtent(extent: [number, number] | null | undefined) {

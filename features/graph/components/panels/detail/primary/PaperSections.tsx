@@ -1,7 +1,7 @@
 "use client";
 
 import { Group, Text } from "@mantine/core";
-import type { GraphNodeDetailResponsePayload, GraphPaperDetail, PaperDocument } from "@/features/graph/types";
+import type { GraphPaperDetail, PaperDocument } from "@/features/graph/types";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,
@@ -15,7 +15,7 @@ import {
 } from "../ui";
 import { getPreferredPaperPreview } from "../helpers";
 
-function buildPaperLinks(paper: GraphPaperDetail | GraphNodeDetailResponsePayload["paper"] | null) {
+function buildPaperLinks(paper: GraphPaperDetail | null) {
   if (!paper) return { doi: null, pmc: null, pubmed: null };
   return {
     doi: paper.doi ? `https://doi.org/${paper.doi}` : null,
@@ -82,18 +82,13 @@ export function PaperDocumentSection({
 
 export function PaperSection({
   paper,
-  servicePaper,
 }: {
   paper: GraphPaperDetail | null;
-  servicePaper: GraphNodeDetailResponsePayload["paper"] | null;
 }) {
-  const resolvedPaper = servicePaper ?? paper;
-  if (!resolvedPaper) return null;
+  if (!paper) return null;
 
-  const links = buildPaperLinks(resolvedPaper);
-  const authorNames = servicePaper?.authors?.length
-    ? servicePaper.authors.map((author) => author.name)
-    : paper?.authors?.map((author) => author.name) ?? [];
+  const links = buildPaperLinks(paper);
+  const authorNames = paper.authors?.map((author) => author.name) ?? [];
 
   return (
     <div>
@@ -111,11 +106,11 @@ export function PaperSection({
       <div className="mt-2">
         <InlineStats
           items={[
-            { label: "chunks", value: servicePaper?.chunk_count ?? paper?.chunkCount },
-            { label: "refs", value: servicePaper?.reference_count ?? paper?.referenceCount },
-            { label: "pages", value: servicePaper?.page_count ?? paper?.pageCount },
-            { label: "figs", value: servicePaper?.figure_count ?? paper?.figureCount },
-            { label: "tables", value: servicePaper?.table_count ?? paper?.tableCount },
+            { label: "chunks", value: paper.chunkCount },
+            { label: "refs", value: paper.referenceCount },
+            { label: "pages", value: paper.pageCount },
+            { label: "figs", value: paper.figureCount },
+            { label: "tables", value: paper.tableCount },
           ]}
         />
       </div>

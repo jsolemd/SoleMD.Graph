@@ -1,17 +1,35 @@
-import { queryCorpusTablePage, queryPointSearch } from '../queries'
+import {
+  executeReadOnlyQuery,
+  queryClusterRows,
+  queryCorpusPointSelection,
+  queryCorpusTablePage,
+  queryExemplarRows,
+  queryPaperDetail,
+  queryPointSearch,
+} from '../queries'
 import { createSessionQueryController } from '../session/query-controller'
 
 jest.mock('../queries', () => {
   const actual = jest.requireActual('../queries')
   return {
     ...actual,
+    executeReadOnlyQuery: jest.fn(),
+    queryClusterRows: jest.fn(),
+    queryCorpusPointSelection: jest.fn(),
     queryPointSearch: jest.fn(),
     queryCorpusTablePage: jest.fn(),
+    queryExemplarRows: jest.fn(),
+    queryPaperDetail: jest.fn(),
   }
 })
 
+const executeReadOnlyQueryMock = jest.mocked(executeReadOnlyQuery)
+const queryClusterRowsMock = jest.mocked(queryClusterRows)
+const queryCorpusPointSelectionMock = jest.mocked(queryCorpusPointSelection)
 const queryPointSearchMock = jest.mocked(queryPointSearch)
 const queryCorpusTablePageMock = jest.mocked(queryCorpusTablePage)
+const queryExemplarRowsMock = jest.mocked(queryExemplarRows)
+const queryPaperDetailMock = jest.mocked(queryPaperDetail)
 
 describe('createSessionQueryController', () => {
   beforeEach(() => {
@@ -156,5 +174,44 @@ describe('createSessionQueryController', () => {
 
     await Promise.all([p1, p2, p3, p4])
     expect(queryCorpusTablePageMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('resolves point selections through the canonical active views', async () => {
+    queryCorpusPointSelectionMock.mockResolvedValue({ id: 'point-1' } as never)
+
+    const controller = createSessionQueryController({
+      bundle: {} as never,
+      conn: {} as never,
+      ensureOptionalBundleTables: jest.fn(async () => undefined),
+    })
+
+    await controller.resolvePointSelection('corpus', { id: 'point-1' })
+
+    expect(queryCorpusPointSelectionMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('routes controller reads through the shared session views', async () => {
+    executeReadOnlyQueryMock.mockResolvedValue({ columns: [], rows: [] } as never)
+    queryClusterRowsMock.mockResolvedValue([] as never)
+    queryExemplarRowsMock.mockResolvedValue([] as never)
+    queryPaperDetailMock.mockResolvedValue([] as never)
+
+    const controller = createSessionQueryController({
+      bundle: {} as never,
+      conn: {} as never,
+      ensureOptionalBundleTables: jest.fn(async () => undefined),
+    })
+
+    await controller.runReadOnlyQuery('SELECT 1')
+    await controller.getClusterDetail(1)
+    await controller.getSelectionDetail({
+      id: 'point-1',
+      clusterId: 1,
+      paperId: 'paper-1',
+    } as never)
+
+    expect(executeReadOnlyQueryMock).toHaveBeenCalledWith({} as never, 'SELECT 1')
+    expect(queryClusterRowsMock).toHaveBeenCalledWith({} as never, 1)
+    expect(queryPaperDetailMock).toHaveBeenCalledWith({} as never, 'paper-1')
   })
 })

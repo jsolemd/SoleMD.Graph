@@ -118,6 +118,7 @@ export interface GraphScopeQueryArgs {
 }
 
 export interface GraphBundleQueries {
+  primeInteractiveQueryTables: () => Promise<void>
   setSelectedPointIndices: (pointIndices: number[]) => Promise<void>
   setSelectedPointScopeSql: (scopeSql: string | null) => Promise<void>
   getOverlayPointIds: () => Promise<string[]>

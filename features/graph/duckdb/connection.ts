@@ -7,13 +7,35 @@ import { closePreparedStatements } from './queries/core'
 
 let selectedBundlePromise: Promise<duckdb.DuckDBBundle> | null = null
 
+const LOCAL_DUCKDB_BUNDLES: duckdb.DuckDBBundles = {
+  eh: {
+    mainModule: new URL(
+      '@duckdb/duckdb-wasm/dist/duckdb-eh.wasm',
+      import.meta.url
+    ).toString(),
+    mainWorker: new URL(
+      '@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js',
+      import.meta.url
+    ).toString(),
+  },
+  mvp: {
+    mainModule: new URL(
+      '@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm',
+      import.meta.url
+    ).toString(),
+    mainWorker: new URL(
+      '@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js',
+      import.meta.url
+    ).toString(),
+  },
+}
+
 async function getSelectedDuckDBBundle() {
   if (!selectedBundlePromise) {
-    // DuckDB-WASM 1.32.0's COI (pthread) bundle ships in the package
-    // but is non-functional at runtime — getJsDelivrBundles() excludes
-    // it intentionally.  Stick with the EH bundle (single-threaded).
-    // TODO: Re-evaluate when Cosmograph upgrades duckdb-wasm.
-    selectedBundlePromise = duckdb.selectBundle(duckdb.getJsDelivrBundles())
+    // Keep DuckDB-Wasm on the app origin to avoid a CDN round-trip on every
+    // cold start. The COI pthread bundle stays excluded because it is still
+    // non-functional at runtime for our graph shell.
+    selectedBundlePromise = duckdb.selectBundle(LOCAL_DUCKDB_BUNDLES)
   }
 
   return selectedBundlePromise
@@ -40,6 +62,11 @@ export async function createConnection() {
   URL.revokeObjectURL(workerUrl)
   await db.open({
     maximumThreads: 1,
+    filesystem: {
+      // The graph runtime reads app-served Parquet assets repeatedly inside one
+      // live session. Avoid leaning on repeated HEAD probes for file discovery.
+      reliableHeadRequests: false,
+    },
   })
 
   const conn = await db.connect()

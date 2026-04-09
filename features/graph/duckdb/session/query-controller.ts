@@ -67,7 +67,7 @@ export function createSessionQueryController({
       return cached
     }
 
-    const next = queryScopeCoordinates(conn, args).catch((error) => {
+    const next = queryScopeCoordinates(conn, args).catch((error: unknown) => {
       scopeCoordinatesCache.delete(cacheKey)
       throw error
     })
@@ -111,7 +111,7 @@ export function createSessionQueryController({
         cluster: clusterRows[0] ? mapCluster(clusterRows[0]) : null,
         exemplars: exemplarRows.map(mapExemplar),
       }
-    })().catch((error) => {
+    })().catch((error: unknown) => {
       clusterCache.delete(clusterId)
       throw error
     })
@@ -232,7 +232,7 @@ export function createSessionQueryController({
         return cached
       }
 
-      const next = queryCorpusPointSelection(conn, selector).catch((error) => {
+      const next = queryCorpusPointSelection(conn, selector).catch((error: unknown) => {
         pointSelectionCache.delete(cacheKey)
         throw error
       })
@@ -251,7 +251,7 @@ export function createSessionQueryController({
           return cached
         }
 
-        const next = queryCorpusTablePage(conn, args).catch((error) => {
+        const next = queryCorpusTablePage(conn, args).catch((error: unknown) => {
           tablePage1Cache.delete(cacheKey)
           throw error
         })
@@ -275,7 +275,7 @@ export function createSessionQueryController({
         return cached
       }
 
-      const next = queryPointSearch(conn, args).catch((error) => {
+      const next = queryPointSearch(conn, args).catch((error: unknown) => {
         searchCache.delete(cacheKey)
         throw error
       })
@@ -314,7 +314,7 @@ export function createSessionQueryController({
                   resolvedScopeCoordinates[3],
                 ],
         })
-      })().catch((error) => {
+      })().catch((error: unknown) => {
         visibilityBudgetCache.delete(cacheKey)
         throw error
       })
@@ -346,7 +346,7 @@ export function createSessionQueryController({
           paper: paperRows[0] ? mapPaper(paperRows[0]) : null,
           paperDocument: null,
         }
-      })().catch((error) => {
+      })().catch((error: unknown) => {
         selectionCache.delete(point.id)
         throw error
       })
