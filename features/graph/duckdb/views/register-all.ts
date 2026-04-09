@@ -23,7 +23,7 @@ import {
 import { registerClusterExemplarView } from './details'
 import { initializeOverlayMembershipTable } from './overlay'
 import { registerPaperDocumentViews } from './paper-documents'
-import { materializeBundleParquetTables, resolveBundleRelations } from './relations'
+import { resolveBundleRelations } from './relations'
 import {
   initializeAttachedUniversePointTable,
   registerUniverseLinksViews,
@@ -44,6 +44,29 @@ async function runBootstrapStep<T>(label: string, operation: () => Promise<T>) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Graph bundle bootstrap failed at ${label}: ${message}`)
+  }
+}
+
+async function materializeLocalRuntimeTables(
+  conn: AsyncDuckDBConnection,
+  tables: ReadonlyArray<{
+    runtimeTableName: string
+    selectedColumns: readonly string[]
+    sourceTable: string
+  }>
+) {
+  for (const { runtimeTableName, selectedColumns, sourceTable } of tables) {
+    const safeRuntimeTableName = validateTableName(runtimeTableName)
+    const safeSourceTable = validateTableName(sourceTable)
+    const selectList = selectedColumns
+      .map((column) => validateTableName(column))
+      .join(', ')
+
+    await conn.query(
+      `CREATE TEMP TABLE IF NOT EXISTS ${safeRuntimeTableName} AS
+       SELECT ${selectList}
+       FROM ${safeSourceTable}`
+    )
   }
 }
 
@@ -119,7 +142,7 @@ export async function registerInitialSessionViews(
 
 export function createEnsurePrimaryQueryTables(
   conn: AsyncDuckDBConnection,
-  bundle: GraphBundle,
+  _bundle: GraphBundle,
   state: SessionViewState
 ) {
   let ensurePromise: Promise<void> | null = null
@@ -137,16 +160,16 @@ export function createEnsurePrimaryQueryTables(
 
     ensurePromise = (async () => {
       await runBootstrapStep('interactive query runtime materialization', () =>
-        materializeBundleParquetTables(conn, bundle, [
+        materializeLocalRuntimeTables(conn, [
           {
-            tableName: BASE_POINT_CANONICAL_SOURCE_TABLE,
             runtimeTableName: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
             selectedColumns: LOCAL_POINT_RUNTIME_COLUMNS,
+            sourceTable: BASE_POINT_CANONICAL_SOURCE_TABLE,
           },
           {
-            tableName: BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
             runtimeTableName: BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
             selectedColumns: LOCAL_CLUSTER_RUNTIME_COLUMNS,
+            sourceTable: BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
           },
         ])
       )
