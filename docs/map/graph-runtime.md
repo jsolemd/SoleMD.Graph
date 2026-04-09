@@ -242,7 +242,10 @@ promotes overlays on demand, and delegates heavy retrieval to the backend.
 ### Live overlay scaling rules
 
 - The prompt/RAG path, manual activation path, and future semantic/entity overlay
-  paths all feed the same browser-side overlay contract.
+  paths all feed the same browser-side overlay contract described in
+  [`graph-interaction.md`](graph-interaction.md).
+- Interaction surfaces emit source-agnostic intents and producer-scoped
+  projection requests; they do not own overlay semantics directly.
 - Point-only overlay mutations attach `universe_points` only. `universe_links`
   stays lazy unless the interaction actually needs links.
 - Narrow row attachment is the right contract for filling holes in the locally

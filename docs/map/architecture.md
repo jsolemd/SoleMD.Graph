@@ -165,8 +165,9 @@ expansion.
 ## Browser runtime contract
 
 The browser path is split into three lanes on purpose. See
-[`graph-runtime.md`](graph-runtime.md) for the full implementation; this doc
-owns the hard rules.
+[`graph-runtime.md`](graph-runtime.md) for the full implementation and
+[`graph-interaction.md`](graph-interaction.md) for the source-agnostic
+interaction contracts; this doc owns the hard rules.
 
 | Lane | Views | What it's for |
 |---|---|---|
@@ -187,6 +188,8 @@ owns the hard rules.
 | 7 | Filter/timeline UI may mount native `@cosmograph/ui` controls, but only through adapters bound to `current_points_web` -- no Cosmograph accessor widgets that require `pointIncludeColumns` |
 | 8 | Focused-node drill-in is a UI-local accent state layered on the real selection -- preserve the underlying DuckDB/Cosmograph selection, use focus only for ring/label/detail emphasis |
 | 9 | Frontend adapts to what backend can provide, but adaptations happen at typed integration points -- do not collapse frontend + backend concerns into one layer |
+| 10 | Graph-aware UI surfaces must enter the runtime through the canonical `ReferenceIntent -> ReferenceResolution -> GraphAnnotationSet -> GraphProjectionRequest -> GraphProjectionResult` stack defined in [`graph-interaction.md`](graph-interaction.md) |
+| 11 | PromptBox, manuscript mode, search, and selection are orchestration clients only; no surface may invent its own graph-resolution or overlay-mutation contract |
 
 At launch scale this implies a three-domain model:
 

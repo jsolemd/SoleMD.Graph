@@ -87,6 +87,13 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Reduce round trips by batching through that contract; do not create one-off fetch paths per panel or prompt mode.
 - The current narrow row-attachment contract is for demand-attached points, not the final transport for million-point overlays. If the live graph must extend toward million-scale visible overlays, evolve the canonical contract toward cohort or membership transport instead of hydrating every point row through JS arrays.
 
+12. Graph interaction contracts stay source-agnostic
+
+- PromptBox, manuscript mode, `@` search, selection actions, and system workflows are all clients of one graph interaction runtime.
+- Route graph-aware behavior through the canonical contracts in `docs/map/graph-interaction.md` and `features/graph/types/interaction-runtime.ts`.
+- Keep hover/annotation payloads separate from projection and overlay mutation.
+- Do not introduce PromptBox-only or manuscript-only graph contracts when the behavior is structurally resolution, annotation, or projection work.
+
 ## Anti-Patterns
 
 - Rebuilding selection or scope logic inside each panel.
@@ -98,6 +105,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Recomputing overlay unions and overlay `ROW_NUMBER()` index remaps inside live read views.
 - Pulling `universe_links` during point-only overlay promotion.
 - Treating row-hydration attachment as the final path for million-point live overlays.
+- Letting PromptBox, manuscript, or another surface invent its own graph intent/projection path outside the shared interaction runtime.
 
 ## Review Checklist
 

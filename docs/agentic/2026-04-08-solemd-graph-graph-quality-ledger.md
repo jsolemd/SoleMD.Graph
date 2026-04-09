@@ -9,6 +9,7 @@
 - Selection and scope-state centralization
 - Frontend latency and DuckDB runtime bootstrap optimization
 - Live overlay/runtime materialization for dynamic graph extension
+- Source-agnostic graph interaction runtime codification
 - Repo-level quality gate and CI
 - Non-RAG graph runtime and quality improvements only
 
@@ -61,6 +62,19 @@
 - Keep idle interactive-query promotion from re-pointing the live canvas after first paint
 - Re-measure visible-Chrome startup/network behavior after the transport/bootstrap changes
 
+### Batch 10
+
+- Codify one source-agnostic graph interaction runtime for prompt, manuscript, search, and selection surfaces
+- Add canonical runtime types for intent, resolution, annotation, projection, and interaction tracing
+- Make the interaction-runtime doc a required architecture reference for future graph-aware work
+- Define the next adoption targets before adding PromptBox-specific hover/projection behavior
+
+### Batch 10
+
+- Codify a source-agnostic graph interaction runtime for prompt, manuscript, search, selection, and system workflows
+- Make the interaction contract canonical in docs and agent guidance instead of letting PromptBox semantics become the default graph architecture
+- Keep projection, annotation, and observability structurally separate so future live-graph features reuse one runtime
+
 ## Findings
 
 - `features/graph/components/shell/DashboardShell.tsx` currently has no local diff and is a thin dynamic wrapper.
@@ -71,6 +85,8 @@
 - The clean split is two-phase: canonical attached bundle views for startup, then one shared promotion into `base_points_query_runtime` when selection/current-scope-heavy interaction begins.
 - The remaining hot overlay bottleneck is not connection churn. It is repeated `overlay_point_ids -> active_points_web` union/index work paid on reads instead of once per overlay revision.
 - Visible Chrome exposed a DuckDB worker bootstrap bug in dev where `importScripts('/_next/static/...')` failed from the blob worker because the worker asset URL was not normalized to the app origin.
+- The repo already points agents and reader-path docs at `graph-interaction.md`; the missing piece was the canonical doc content and type contract behind those references.
+- The clean structural boundary is not “PromptBox integration.” It is a source-agnostic `ReferenceIntent -> ReferenceResolution -> GraphAnnotationSet -> GraphProjectionRequest -> GraphProjectionResult -> GraphInteractionTrace` runtime that PromptBox, manuscript mode, and future interaction surfaces all consume.
 
 ## Completed Batches
 
@@ -150,6 +166,20 @@
 - Kept the later shared `base_points_query_runtime` promotion query-only so the graph canvas does not rebuild onto a second local table during idle prewarm
 - Added regression coverage for cached asset resolution and the no-overlay active-view bootstrap contract
 
+### Batch 10
+
+- Added `features/graph/types/interaction-runtime.ts` as the canonical source-agnostic contract home for graph-aware interaction
+- Exported the new runtime types through `features/graph/types/index.ts`, keeping the existing graph type barrel as the single import surface
+- Added `docs/map/graph-interaction.md` to define the structural contract stack, producer rules, observability split, manuscript fingerprint model, and next adoption targets
+- Recorded the next convergence targets around prompt/RAG sync, DuckDB availability/attachment, overlay mutation, and interaction timing before further PromptBox UX expansion
+
+### Batch 10
+
+- Added `features/graph/types/interaction-runtime.ts` as the canonical type surface for source-agnostic graph interaction contracts
+- Added `docs/map/graph-interaction.md` as the canonical human-readable contract for `ReferenceIntent`, `ReferenceResolution`, `GraphAnnotationSet`, `GraphProjectionRequest`, `GraphProjectionResult`, and `GraphInteractionTrace`
+- Linked the interaction runtime into `docs/map/map.md`, `docs/map/architecture.md`, `docs/map/graph-runtime.md`, `docs/map/frontend-performance.md`, and `AGENTS.md` so future graph work treats it as required architecture
+- Explicitly codified that PromptBox, manuscript mode, search, and selection are clients of one graph interaction runtime rather than owners of independent graph semantics
+
 ## Blockers
 
 - No blocking correctness issues remain.
@@ -160,6 +190,7 @@
 
 - If desired, make the dynamic shell test warning-free by wrapping the `next/dynamic` loadable updates in explicit test `act(...)` handling.
 - Re-evaluate whether any future remote detail surface should be reintroduced only after an actual engine endpoint exists.
+- No callable subagent tool was exposed in this session, so the architecture pass stayed local even though the work was planned in subagent-sized slices.
 
 ## Commits
 
@@ -173,3 +204,5 @@
 4. If desired, remove the remaining `DashboardShellClient` test console warning with an explicit async-load test harness.
 5. Design the next overlay transport step for million-point live extension around backend-ranked membership/cohort payloads instead of row-hydration attachment.
 6. Revisit whether the remaining repeated `HEAD` requests can be eliminated entirely by registering hot bundle parquet assets under stable local DuckDB file handles instead of HTTP-backed `read_parquet(...)` views.
+7. Converge `rag-graph-sync`, `use-rag-query`, DuckDB availability/attachment, and overlay mutation onto the new interaction-runtime contracts before adding PromptBox hover, `@` mention projection, or manuscript fingerprint features.
+8. Add internal `GraphInteractionTrace` timing to the canonical browser-side interaction path, then use those timings to set overlay/prompt latency budgets before browser E2E work.

@@ -65,6 +65,9 @@ Pick a question, follow the arrow.
    HOW DOES THE BROWSER RENDER IT?
 
       [graph-runtime.md]  bundle -> DuckDB-WASM -> Cosmograph
+         |
+         v
+      [graph-interaction.md]  reference intent -> resolution -> annotation -> projection
 
    HOW DOES EVIDENCE RETRIEVAL WORK?
 
@@ -91,6 +94,7 @@ Pick a question, follow the arrow.
 | [ingest.md](ingest.md) | Where does data come from? | PubTator3 + S2 pipelines, RAG warehouse ingest, BioCXML overlays, operator CLIs |
 | [graph-build.md](graph-build.md) | How is the bundle built? | UMAP/Leiden/base-admission pipeline, CLI flags, checkpoint + recovery |
 | [graph-runtime.md](graph-runtime.md) | How does the browser render it? | Bundle contract, three nested layers, DuckDB-WASM rules, crossfilter cost |
+| [graph-interaction.md](graph-interaction.md) | How do interaction surfaces talk to the live graph? | Source-agnostic intent/resolution/annotation/projection contracts |
 | [rag.md](rag.md) | How does evidence retrieval work? | RAG runtime, retrieval channels, grounding, answer assembly |
 | [benchmark.md](benchmark.md) | How do I measure RAG quality? | Langfuse benchmark pipeline, v2 suites, baseline interpretation |
 | [ideas.md](ideas.md) | (placeholder) | Future brainstorming |
@@ -146,7 +150,7 @@ See the individual docs for the full CLI reference.
 
 ## Footer
 
-- Docs last verified against code: **2026-04-08**
+- Docs last verified against code: **2026-04-09**
 - CodeAtlas index: 649 files, 7,451 chunks, fresh (watcher lag < 60s)
 - Project branch: `main`
 - LLM readers: use CodeAtlas -- these docs are for humans. Every file path

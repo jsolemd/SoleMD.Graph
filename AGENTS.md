@@ -45,6 +45,17 @@ Any agent changing shell startup, DuckDB-Wasm/bootstrap, panel query orchestrati
 selection/scope resolution, or Cosmograph runtime paths must read and follow that
 document before editing code.
 
+## Graph Interaction Runtime
+
+Graph-aware interaction contracts are canonical requirements in:
+
+- `docs/map/graph-interaction.md`
+
+Any agent changing PromptBox behavior, manuscript-writing graph projection,
+search/selection-driven projection, overlay producer semantics, reference
+resolution, hover/annotation payloads, or graph interaction observability must
+read and follow that document before editing code.
+
 ## Docs
 
 | Topic | Location |
@@ -53,6 +64,7 @@ document before editing code.
 | Hard boundaries + adapters | `docs/map/architecture.md` |
 | Database schema | `docs/map/database.md` |
 | Frontend latency + runtime rules | `docs/map/frontend-performance.md` |
+| Graph interaction runtime | `docs/map/graph-interaction.md` |
 | Ingest (PubTator3 + S2 + warehouse) | `docs/map/ingest.md` |
 | Graph build (engine pipeline) | `docs/map/graph-build.md` |
 | Graph runtime (browser + DuckDB + bundle) | `docs/map/graph-runtime.md` |
