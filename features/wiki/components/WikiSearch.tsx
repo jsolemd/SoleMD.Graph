@@ -160,10 +160,16 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
             <button
               key={hit.slug}
               type="button"
-              className="w-full border-0 bg-transparent px-2.5 py-1.5 text-left outline-none"
-              style={{ transition: "background-color 0.1s" }}
+              style={{
+                all: "unset",
+                display: "block",
+                width: "100%",
+                padding: "6px 10px",
+                cursor: "pointer",
+                boxSizing: "border-box",
+              }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--mode-accent-subtle)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
               onClick={() => handleSelect(hit.slug)}
             >
               <div style={panelTextStyle}>{hit.title}</div>
