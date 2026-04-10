@@ -149,11 +149,10 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
       />
       {hits.length > 0 && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg backdrop-blur-xl"
+          className="absolute right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg"
           style={{
             width: 240,
-            backgroundColor: "var(--graph-panel-input-bg)",
-            border: "1px solid var(--graph-panel-border)",
+            backgroundColor: "var(--graph-panel-bg)",
             boxShadow: "var(--graph-panel-shadow)",
           }}
         >
@@ -161,7 +160,7 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
             <button
               key={hit.slug}
               type="button"
-              className="w-full px-2.5 py-1.5 text-left"
+              className="w-full border-0 bg-transparent px-2.5 py-1.5 text-left outline-none"
               style={{ transition: "background-color 0.1s" }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--mode-accent-subtle)"; }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}
@@ -179,11 +178,11 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
       )}
       {searching && hits.length === 0 && debouncedQuery.trim().length >= 2 && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 rounded-lg px-2.5 py-1.5 backdrop-blur-xl"
+          className="absolute right-0 top-full z-50 mt-1 rounded-lg px-2.5 py-1.5"
           style={{
             width: 240,
-            backgroundColor: "var(--graph-panel-input-bg)",
-            border: "1px solid var(--graph-panel-border)",
+            backgroundColor: "var(--graph-panel-bg)",
+            boxShadow: "var(--graph-panel-shadow)",
           }}
         >
           <span style={panelTextMutedStyle}>Searching...</span>

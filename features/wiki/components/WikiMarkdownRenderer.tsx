@@ -26,6 +26,18 @@ const ELEMENTS = { WikiLink, PaperCitation, Callout } as const;
 const rehypePlugins = createWikiRehypePlugins();
 
 /**
+ * Custom URL transform that preserves wiki: and pmid: scheme URLs.
+ * React-markdown's default sanitizer strips non-standard schemes.
+ */
+function wikiUrlTransform(url: string): string {
+  if (url.startsWith('wiki:') || url.startsWith('pmid:')) return url;
+  // Fall back to default sanitization for all other URLs
+  const decoded = decodeURIComponent(url);
+  if (decoded.startsWith('javascript:') || decoded.startsWith('vbscript:') || decoded.startsWith('data:')) return '';
+  return url;
+}
+
+/**
  * Renders wiki markdown content with interactive wikilinks, PMID citations,
  * and Obsidian-style callouts.
  *
@@ -72,6 +84,7 @@ function WikiMarkdownRendererInner({
         remarkPlugins={remarkPlugins}
         rehypePlugins={rehypePlugins}
         components={components}
+        urlTransform={wikiUrlTransform}
       >
         {processedMd}
       </ReactMarkdown>
