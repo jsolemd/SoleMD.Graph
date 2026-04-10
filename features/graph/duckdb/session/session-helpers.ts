@@ -187,6 +187,13 @@ export function hasCurrentScopeSql(scopeSql: string | null) {
   return hasCurrentPointScopeSql(scopeSql)
 }
 
+export function isEffectivelyDatasetScope(
+  scope: 'dataset' | 'current' | 'selected',
+  currentPointScopeSql: string | null,
+): boolean {
+  return scope === 'dataset' || (scope === 'current' && !hasCurrentPointScopeSql(currentPointScopeSql))
+}
+
 export function hasFiniteExtent(extent: [number, number] | null | undefined) {
   return (
     Array.isArray(extent) &&

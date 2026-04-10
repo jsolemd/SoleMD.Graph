@@ -1549,22 +1549,24 @@ def run_rag_refresh(
             pending_primary_ids=explicit_pending_primary_ids,
             skip_s2_primary=skip_s2_primary,
         )
-        _preload_explicit_metadata_abstracts(
-            parser_version=parser_version,
-            run_id=run_id,
-            target_rows=target_rows,
-            target_corpus_ids=target_corpus_ids,
-            pending_primary_ids=explicit_pending_primary_ids,
-            refresh_existing=refresh_existing,
-            metadata_abstract_only=metadata_abstract_only,
-            checkpoint_paths=checkpoint_paths,
-            worker=worker,
-            report=report,
-            active_writer=active_writer,
-        )
-        bootstrapped_metadata_ids = set(report.s2_stage.ingested_corpus_ids).intersection(
-            metadata_abstract_ids
-        )
+        bootstrapped_metadata_ids: set[int] = set()
+        if not skip_s2_primary:
+            _preload_explicit_metadata_abstracts(
+                parser_version=parser_version,
+                run_id=run_id,
+                target_rows=target_rows,
+                target_corpus_ids=target_corpus_ids,
+                pending_primary_ids=explicit_pending_primary_ids,
+                refresh_existing=refresh_existing,
+                metadata_abstract_only=metadata_abstract_only,
+                checkpoint_paths=checkpoint_paths,
+                worker=worker,
+                report=report,
+                active_writer=active_writer,
+            )
+            bootstrapped_metadata_ids = set(report.s2_stage.ingested_corpus_ids).intersection(
+                metadata_abstract_ids
+            )
         if refresh_source_locators:
             if active_source_locator_refresher is None:
                 from app.rag_ingest.source_locator_refresh import refresh_rag_source_locator

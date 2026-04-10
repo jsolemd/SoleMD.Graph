@@ -4,6 +4,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.rag.chunk_grounding import (
+    CHUNK_CITATION_PACKET_SQL,
+    CHUNK_ENTITY_FALLBACK_PACKET_SQL,
+    CHUNK_ENTITY_PACKET_SQL,
+    CHUNK_STRUCTURAL_PACKET_SQL,
+    fetch_chunk_grounding_rows,
+    fetch_chunk_structural_rows,
+)
 from app.rag.grounded_runtime import (
     build_grounded_answer_from_runtime,
     get_grounded_answer_runtime_status,
@@ -52,6 +60,175 @@ def test_grounded_runtime_status_reports_missing_tables():
     assert status.fully_covered is False
     assert status.has_chunk_version is False
     assert status.missing_tables == ["paper_chunk_versions", "paper_chunk_members"]
+
+
+def test_fetch_chunk_grounding_rows_uses_fallback_entity_query_without_citations():
+    cursor = MagicMock()
+    cursor.fetchall.side_effect = [
+        [],
+        [{"corpus_id": 12345, "source_start_offset": 8, "source_end_offset": 18}],
+    ]
+
+    citation_rows, entity_rows = fetch_chunk_grounding_rows(
+        corpus_ids=[12345],
+        cursor=cursor,
+    )
+
+    assert citation_rows == []
+    assert entity_rows == [
+        {"corpus_id": 12345, "source_start_offset": 8, "source_end_offset": 18}
+    ]
+    assert cursor.execute.call_count == 2
+    assert cursor.execute.call_args_list[0].args[0] != CHUNK_ENTITY_FALLBACK_PACKET_SQL
+    assert "m.corpus_id = %s" in cursor.execute.call_args_list[0].args[0]
+    assert cursor.execute.call_args_list[0].args[1] == (
+        "default-structural-v1",
+        12345,
+        1,
+    )
+    assert cursor.execute.call_args_list[1].args[0] != CHUNK_ENTITY_FALLBACK_PACKET_SQL
+    assert "e.corpus_id = %s" in cursor.execute.call_args_list[1].args[0]
+    assert cursor.execute.call_args_list[1].args[1] == (
+        "default-structural-v1",
+        12345,
+        1,
+    )
+
+
+def test_fetch_chunk_grounding_rows_uses_requested_packet_query_when_citations_exist():
+    cursor = MagicMock()
+    cursor.fetchall.side_effect = [
+        [
+            {
+                "corpus_id": 12345,
+                "canonical_block_ordinal": 0,
+                "canonical_sentence_ordinal": 0,
+            }
+        ],
+        [{"corpus_id": 12345, "source_start_offset": 8, "source_end_offset": 18}],
+    ]
+
+    citation_rows, entity_rows = fetch_chunk_grounding_rows(
+        corpus_ids=[12345],
+        cursor=cursor,
+    )
+
+    assert len(citation_rows) == 1
+    assert len(entity_rows) == 1
+    assert cursor.execute.call_count == 2
+    assert cursor.execute.call_args_list[0].args[0] != CHUNK_ENTITY_PACKET_SQL
+    assert "m.corpus_id = %s" in cursor.execute.call_args_list[0].args[0]
+    assert cursor.execute.call_args_list[0].args[1] == (
+        "default-structural-v1",
+        12345,
+        1,
+    )
+    assert cursor.execute.call_args_list[1].args[0] == CHUNK_ENTITY_PACKET_SQL
+    assert cursor.execute.call_args_list[1].args[1] == (
+        [12345],
+        [0],
+        [0],
+        "default-structural-v1",
+    )
+
+
+def test_fetch_chunk_grounding_rows_preserves_array_filter_for_multi_corpus():
+    cursor = MagicMock()
+    cursor.fetchall.side_effect = [
+        [],
+        [{"corpus_id": 12345, "source_start_offset": 8, "source_end_offset": 18}],
+    ]
+
+    fetch_chunk_grounding_rows(
+        corpus_ids=[12345, 99999],
+        cursor=cursor,
+    )
+
+    assert cursor.execute.call_count == 2
+    assert cursor.execute.call_args_list[0].args[0] == CHUNK_CITATION_PACKET_SQL
+    assert cursor.execute.call_args_list[0].args[1] == (
+        "default-structural-v1",
+        [12345, 99999],
+        1,
+    )
+    assert cursor.execute.call_args_list[1].args[0] == CHUNK_ENTITY_FALLBACK_PACKET_SQL
+    assert cursor.execute.call_args_list[1].args[1] == (
+        "default-structural-v1",
+        [12345, 99999],
+        1,
+    )
+
+
+def test_fetch_chunk_grounding_rows_runs_fallback_only_for_corpora_without_exact_entities():
+    cursor = MagicMock()
+    cursor.fetchall.side_effect = [
+        [
+            {
+                "corpus_id": 12345,
+                "canonical_block_ordinal": 0,
+                "canonical_sentence_ordinal": 0,
+            }
+        ],
+        [{"corpus_id": 12345, "source_start_offset": 8, "source_end_offset": 18}],
+        [{"corpus_id": 99999, "source_start_offset": 5, "source_end_offset": 14}],
+    ]
+
+    citation_rows, entity_rows = fetch_chunk_grounding_rows(
+        corpus_ids=[12345, 99999],
+        cursor=cursor,
+    )
+
+    assert len(citation_rows) == 1
+    assert len(entity_rows) == 2
+    assert cursor.execute.call_count == 3
+    assert cursor.execute.call_args_list[0].args[0] == CHUNK_CITATION_PACKET_SQL
+    assert cursor.execute.call_args_list[1].args[0] == CHUNK_ENTITY_PACKET_SQL
+    assert cursor.execute.call_args_list[1].args[1] == (
+        [12345],
+        [0],
+        [0],
+        "default-structural-v1",
+    )
+    assert cursor.execute.call_args_list[2].args[0] != CHUNK_ENTITY_FALLBACK_PACKET_SQL
+    assert "e.corpus_id = %s" in cursor.execute.call_args_list[2].args[0]
+    assert cursor.execute.call_args_list[2].args[1] == (
+        "default-structural-v1",
+        99999,
+        1,
+    )
+
+
+def test_fetch_chunk_structural_rows_uses_scalar_filter_for_single_corpus():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{"corpus_id": 12345, "chunk_ordinal": 0}]
+
+    rows = fetch_chunk_structural_rows(
+        corpus_ids=[12345],
+        cursor=cursor,
+    )
+
+    assert rows == [{"corpus_id": 12345, "chunk_ordinal": 0}]
+    assert cursor.execute.call_count == 1
+    assert cursor.execute.call_args.args[0] != CHUNK_STRUCTURAL_PACKET_SQL
+    assert "cm.corpus_id = %s" in cursor.execute.call_args.args[0]
+    assert cursor.execute.call_args.args[1] == ("default-structural-v1", 12345)
+
+
+def test_fetch_chunk_structural_rows_preserves_array_filter_for_multi_corpus():
+    cursor = MagicMock()
+    cursor.fetchall.return_value = [{"corpus_id": 12345, "chunk_ordinal": 0}]
+
+    fetch_chunk_structural_rows(
+        corpus_ids=[12345, 99999],
+        cursor=cursor,
+    )
+
+    assert cursor.execute.call_count == 1
+    assert cursor.execute.call_args.args[0] == CHUNK_STRUCTURAL_PACKET_SQL
+    assert cursor.execute.call_args.args[1] == (
+        "default-structural-v1",
+        [12345, 99999],
+    )
 
 
 def test_grounded_runtime_returns_none_until_chunk_backfill_exists():
@@ -231,6 +408,7 @@ def test_grounded_runtime_uses_covered_subset_when_some_answer_papers_are_missin
                 }
             ],
             [],
+            [],
         ],
     )
 
@@ -250,8 +428,10 @@ def test_grounded_runtime_uses_covered_subset_when_some_answer_papers_are_missin
     assert grounded.segments[0].citation_anchor_ids == []
     assert grounded.segments[1].citation_anchor_ids == ["anchor:1"]
     assert grounded.segments[2].citation_anchor_ids == []
-    fetch_call = cur.execute.call_args_list[2]
-    assert fetch_call.args[1][1] == [12345]
+    citation_fetch_call = cur.execute.call_args_list[2]
+    fallback_fetch_call = cur.execute.call_args_list[4]
+    assert citation_fetch_call.args[1][1] == 12345
+    assert fallback_fetch_call.args[1][1] == 12345
 
 
 def test_grounded_runtime_falls_back_to_structural_chunk_members_without_mentions():

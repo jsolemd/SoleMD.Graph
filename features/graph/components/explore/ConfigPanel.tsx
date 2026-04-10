@@ -14,7 +14,7 @@ function ConfigPanelComponent() {
       side="left"
       onClose={() => setActivePanel(null)}
     >
-      <div className={`config-scroll min-h-0 ${PANEL_BODY_CLASS}`}>
+      <div className={`thin-scrollbar min-h-0 ${PANEL_BODY_CLASS}`}>
         <PointsConfig />
       </div>
     </PanelShell>

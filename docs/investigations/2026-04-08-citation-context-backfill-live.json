@@ -1,0 +1,22 @@
+{
+  "after_citing_corpus_id": 0,
+  "batch_size": 250,
+  "batches_completed": 1,
+  "citation_edges_processed": 3603,
+  "citing_corpus_ids_processed": 250,
+  "completed": false,
+  "context_rows_written": 6556,
+  "dry_run": false,
+  "last_completed_citing_corpus_id": 4118,
+  "max_citing_corpus_id": null,
+  "recent_batches": [
+    {
+      "batch_index": 1,
+      "citation_edge_count": 3603,
+      "citing_corpus_count": 250,
+      "context_rows_written": 6556,
+      "first_citing_corpus_id": 14,
+      "last_citing_corpus_id": 4118
+    }
+  ]
+}

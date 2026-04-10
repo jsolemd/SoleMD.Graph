@@ -6,9 +6,7 @@ import logging
 from functools import lru_cache
 from time import perf_counter
 
-
 from app.langfuse_config import (
-    get_langfuse as _get_langfuse,
     SCORE_DURATION_MS,
     SCORE_EVIDENCE_BUNDLE_COUNT,
     SCORE_GROUNDED_ANSWER_PRESENT,
@@ -16,7 +14,9 @@ from app.langfuse_config import (
     SPAN_RAG_SEARCH,
     observe,
 )
-
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+)
 from app.rag.biomedical_reranking import (
     RagBiomedicalReranker,
     get_runtime_biomedical_reranker,
@@ -29,6 +29,7 @@ from app.rag.runtime_trace import RuntimeTraceCollector
 from app.rag.schemas import RagSearchRequest, RagSearchResponse
 from app.rag.search_execution import execute_search
 from app.rag.search_support import repository_search_session
+
 
 def _update_langfuse_observation(request, result, trace):
     """Push the full pipeline state to the active Langfuse observation."""
@@ -52,7 +53,11 @@ def _update_langfuse_observation(request, result, trace):
                 "use_dense_query": request.use_dense_query,
                 "generate_answer": request.generate_answer,
                 "selected_paper_id": request.selected_paper_id,
-                "evidence_intent": str(request.evidence_intent) if request.evidence_intent else None,
+                "evidence_intent": (
+                    str(request.evidence_intent)
+                    if request.evidence_intent
+                    else None
+                ),
                 "cited_corpus_ids": request.cited_corpus_ids,
                 "selected_graph_paper_ref": request.selected_graph_paper_ref,
                 "selection_graph_paper_refs": request.selection_graph_paper_refs,
@@ -65,22 +70,66 @@ def _update_langfuse_observation(request, result, trace):
                 # Grounding
                 "grounded_answer_present": grounded is not None,
                 "grounded_answer_linked_corpus_ids": (
-                    list(grounded.linked_corpus_ids) if grounded and hasattr(grounded, "linked_corpus_ids") else []
+                    list(grounded.linked_corpus_ids)
+                    if grounded and hasattr(grounded, "linked_corpus_ids")
+                    else []
                 ),
-                "cited_span_count": grounded.cited_span_count if grounded and hasattr(grounded, "cited_span_count") else 0,
-                "inline_citation_count": grounded.inline_citation_count if grounded and hasattr(grounded, "inline_citation_count") else 0,
+                "cited_span_count": (
+                    grounded.cited_span_count
+                    if grounded and hasattr(grounded, "cited_span_count")
+                    else 0
+                ),
+                "inline_citation_count": (
+                    grounded.inline_citation_count
+                    if grounded and hasattr(grounded, "inline_citation_count")
+                    else 0
+                ),
                 # Evidence bundles (top 5 with rank features)
                 "evidence_bundle_count": len(result.bundles),
                 "top_bundles": [
                     {
                         "corpus_id": b.paper.corpus_id,
                         "title": getattr(b.paper, "title", None),
+                        "journal_name": getattr(b.paper, "journal_name", None),
+                        "year": getattr(b.paper, "year", None),
                         "score": round(b.score, 4),
                         "rank": b.rank,
+                        "citation_count": getattr(b.paper, "citation_count", None),
+                        "influential_citation_count": getattr(
+                            b.paper,
+                            "influential_citation_count",
+                            None,
+                        ),
+                        "reference_count": getattr(b.paper, "reference_count", None),
+                        "authors": [
+                            author.name
+                            for author in b.authors[:3]
+                            if getattr(author, "name", None)
+                        ],
+                        "publication_types": list(
+                            getattr(b.paper, "publication_types", [])[:4]
+                        ),
+                        "fields_of_study": list(
+                            getattr(b.paper, "fields_of_study", [])[:4]
+                        ),
+                        "text_availability": getattr(
+                            b.paper,
+                            "text_availability",
+                            None,
+                        ),
                         "matched_channels": [str(c) for c in b.matched_channels],
                         "match_reasons": b.match_reasons,
-                        "rank_features": {k: round(v, 4) for k, v in b.rank_features.items()},
-                        "snippet": (b.snippet[:200] + "...") if b.snippet and len(b.snippet) > 200 else b.snippet,
+                        "rank_features": {
+                            k: round(v, 4) for k, v in b.rank_features.items()
+                        },
+                        "entity_hit_count": len(b.entity_hits),
+                        "relation_hit_count": len(b.relation_hits),
+                        "reference_hit_count": len(b.references),
+                        "snippet": (
+                            (b.snippet[:200] + "...")
+                            if b.snippet and len(b.snippet) > 200
+                            else b.snippet
+                        ),
                     }
                     for b in result.bundles[:5]
                 ],
@@ -96,6 +145,16 @@ def _update_langfuse_observation(request, result, trace):
                 "retrieval_profile": str(query.retrieval_profile),
                 "clinical_intent": str(query.clinical_intent),
                 "entity_terms": query.entity_terms[:10],
+                "entity_enrichment_terms": (
+                    list(
+                        debug.get("session_flags", {}).get(
+                            "entity_enrichment_terms",
+                            [],
+                        )
+                    )[
+                        :10
+                    ]
+                ),
                 "relation_terms": query.relation_terms[:10],
                 "normalized_query": query.normalized_query,
                 # Full RuntimeTraceCollector dump
@@ -118,12 +177,26 @@ def _update_langfuse_observation(request, result, trace):
         # category index client-side.
         trace_id = client.get_current_trace_id()
         if trace_id:
-            client.create_score(trace_id=trace_id, name=SCORE_DURATION_MS, value=result.duration_ms)
-            client.create_score(trace_id=trace_id, name=SCORE_EVIDENCE_BUNDLE_COUNT, value=float(len(result.bundles)))
-            client.create_score(trace_id=trace_id, name=SCORE_GROUNDED_ANSWER_PRESENT, value=1.0 if grounded else 0.0)
             client.create_score(
-                trace_id=trace_id, name=SCORE_RETRIEVAL_PROFILE,
-                value=str(query.retrieval_profile), data_type="CATEGORICAL",
+                trace_id=trace_id,
+                name=SCORE_DURATION_MS,
+                value=result.duration_ms,
+            )
+            client.create_score(
+                trace_id=trace_id,
+                name=SCORE_EVIDENCE_BUNDLE_COUNT,
+                value=float(len(result.bundles)),
+            )
+            client.create_score(
+                trace_id=trace_id,
+                name=SCORE_GROUNDED_ANSWER_PRESENT,
+                value=1.0 if grounded else 0.0,
+            )
+            client.create_score(
+                trace_id=trace_id,
+                name=SCORE_RETRIEVAL_PROFILE,
+                value=str(query.retrieval_profile),
+                data_type="CATEGORICAL",
             )
 
     except Exception:

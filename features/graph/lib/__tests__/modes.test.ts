@@ -53,11 +53,22 @@ describe('modes registry', () => {
     expect(MODES.learn.layout.defaultPromptMode).toBe('normal')
   })
 
-  it('all modes share the same panel set', () => {
+  it('all modes share the same panel set including wiki', () => {
     const panels = MODES.ask.layout.availablePanels
+    expect(panels).toContain('wiki')
     for (const key of Object.keys(MODES) as GraphMode[]) {
       expect(MODES[key].layout.availablePanels).toEqual(panels)
     }
+  })
+
+  it('learn mode has defaultPanel set to wiki', () => {
+    expect(MODES.learn.layout.defaultPanel).toBe('wiki')
+  })
+
+  it('other modes do not have a defaultPanel', () => {
+    expect(MODES.ask.layout.defaultPanel).toBeUndefined()
+    expect(MODES.explore.layout.defaultPanel).toBeUndefined()
+    expect(MODES.create.layout.defaultPanel).toBeUndefined()
   })
 })
 

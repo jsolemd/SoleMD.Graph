@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  BookOpen,
   BrainCircuit,
   Database,
   Eye,
@@ -22,16 +23,16 @@ import { settle, chromeToggle } from "@/lib/motion";
 import type { ActivePanel } from "@/features/graph/stores";
 import { useGraphControlContrast } from "./use-graph-control-contrast";
 
-const PANEL_ITEMS: Array<{
-  panel: Exclude<ActivePanel, null>;
-  icon: typeof SlidersHorizontal;
-  label: string;
-}> = [
-  { panel: "config", icon: SlidersHorizontal, label: "Configuration" },
-  { panel: "filters", icon: Filter, label: "Filters" },
-  { panel: "info", icon: Info, label: "Info" },
-  { panel: "query", icon: Database, label: "SQL Explorer" },
-];
+const PANEL_REGISTRY: Record<
+  string,
+  { icon: typeof SlidersHorizontal; label: string }
+> = {
+  config: { icon: SlidersHorizontal, label: "Configuration" },
+  filters: { icon: Filter, label: "Filters" },
+  info: { icon: Info, label: "Info" },
+  query: { icon: Database, label: "SQL Explorer" },
+  wiki: { icon: BookOpen, label: "Wiki" },
+};
 
 const WordmarkGraphControls = dynamic(
   () =>
@@ -49,7 +50,11 @@ export function Wordmark() {
   const toggleUiHidden = useDashboardStore((s) => s.toggleUiHidden);
   const togglePanel = useDashboardStore((s) => s.togglePanel);
   const togglePanelsVisible = useDashboardStore((s) => s.togglePanelsVisible);
-  const { color: modeColor } = getModeConfig(mode);
+  const modeConfig = getModeConfig(mode);
+  const modeColor = modeConfig.color;
+  const panelItems = modeConfig.layout.availablePanels
+    .filter((p): p is Exclude<ActivePanel, null | 'about'> => p !== null && p in PANEL_REGISTRY)
+    .map((panel) => ({ panel, ...PANEL_REGISTRY[panel] }));
   const [spinCount, setSpinCount] = useState(0);
   const { contrastAttr, contrastBlurClass } = useGraphControlContrast();
 
@@ -99,7 +104,7 @@ export function Wordmark() {
               className="flex items-center gap-0.5"
               {...chromeToggle}
             >
-              {PANEL_ITEMS.map(({ panel, icon: Icon, label }) => {
+              {panelItems.map(({ panel, icon: Icon, label }) => {
                 const isActive = activePanel === panel;
                 return (
                   <Tooltip key={panel} label={label} position="bottom" withArrow>

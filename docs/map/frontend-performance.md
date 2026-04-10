@@ -33,6 +33,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 
 - Reuse the session/connection for the active bundle instead of reconnecting per panel or per query.
 - Preserve DuckDB-local caches and metadata for the lifetime of the active bundle session.
+- Same-checksum rerenders/remounts must reuse the active bundle session. Do not invalidate or rebuild DuckDB just because a dev remount, Fast Refresh, or parent rerender recreated the same bundle prop.
 - Any change that would re-open DuckDB or rebuild hot tables must be justified with measured benefit.
 
 5. Local-first hot data
@@ -58,6 +59,12 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Prompt/editor interactions must be provider-based inside the editor layer: evidence assist, future `@` mentions, and transient entity annotations extend one shared prompt interaction seam instead of adding PromptBox-local trigger branches.
 - Mention suggestions and transient entity highlights must stay behind the Tiptap adapter and editor interaction modules; hover cards and graph projection UI stay outside the editor subtree.
 - The editor controller is a host, not the permanent home for mention matching or entity decoration logic. Future `@` references belong in Tiptap extension modules, transient entity highlights belong in decoration/plugin modules, and PromptBox consumes them through the shared prompt interaction runtime.
+- Canonical entity recognition and hover detail must resolve through one shared entity runtime and one dedicated entity API boundary. Do not embed entity matching logic in PromptBox controllers, editor components, or graph panels.
+- Client-side entity services must use explicit HTTP route handlers (`/api/entities/**`) instead of Next server actions so text-window matching behaves like an ordinary frontend request path, remains observable in DevTools, and does not replay hidden form-action work on every editor update.
+- Entity highlights carry canonical identity plus editor ranges only. Hover cards fetch reusable entity detail from the shared entity service; do not bake wiki/detail strings into decoration payloads.
+- Reserve `@` for persisted reference mentions. Command-style affordances such as evidence assist must use explicit command triggers instead of competing for the mention character.
+- `@` suggestion search must derive from the local sentence-window context plus the shared prompt scope resolver, then call the canonical prompt/runtime evidence adapter. Do not bolt on editor-local lexical search or a second mention-specific request path.
+- Floating editor UI belongs in one external overlay surface anchored to the editor frame. Mention menus and transient entity hover cards render there, never as React subtrees inside `EditorContent`.
 
 7. Centralize performance-sensitive contracts
 
@@ -81,6 +88,17 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
   - selection/scope resolution stays shared
   - repeated queries use caches where intended
 
+10. Entity runtime performance
+
+- Entity text matching fires only on stable text-window changes. The trigger gate normalizes text via lowercase + whitespace collapse (mirroring the backend alias key normalization). Cursor-only movement within the same paragraph must NOT trigger a new match cycle.
+- Every new match request must abort the previous in-flight request via `AbortController`. Only the latest request's results commit to state. Sequence numbers remain as a secondary guard against stale responses from cached promises.
+- Match results carry a 60-second TTL with on-access staleness checks. Expired cache entries are evicted on next access and by a periodic background sweep. Detail results are cached for session lifetime since entity metadata rarely changes within a session.
+- The four-contract API split must remain: match (hot, debounced, abortable), detail (cold, hover-triggered), search (future, prefix/fuzzy for explicit entity pickers), overlay (future, canonical ID resolution to graph points). Do not merge match and detail into a single request.
+- The match query path must be a single-table read from `entity_aliases` with no JOIN to `entities`. Entity type filters must use bare equality (`ea.entity_type = ANY(...)`) without `lower()` wrapping since inputs are pre-normalized by the request schema. This preserves btree index coverage.
+- Runtime metrics (requests per minute, abort rate, cache hit rate, p50/p95 latency) are tracked via `window.__entityMatchMetrics` in development only. Metrics must not affect render timing or be persisted to React state.
+- Fuzzy/prefix search belongs to a future dedicated search contract only. The inline match path uses exact normalized matching.
+- The inline match query currently filters to `is_canonical = true` as an interim precision guardrail. PubTator synonym aliases (11.6M rows, 72% of catalog) are designed for recall-maximizing bulk NER and contain common English words ("for", "has", "both", "text") mapped to high-paper-count entities. The full synonym catalog stays in `entity_aliases` for the future `entities/search` contract. The structural end-state replaces the provenance filter with an explicit eligibility field (`highlight_eligible`) so that promoted synonyms can be opted into inline matching and ambiguous canonicals (TEXT, SET, short all-caps) can be downgraded to case-sensitive-only or disabled.
+
 ## Anti-Patterns
 
 - Rebuilding selection or scope logic inside each panel.
@@ -90,6 +108,12 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Local one-off fixes that bypass `features/graph/cosmograph/**` or `features/graph/duckdb/**`.
 - Local one-off fixes that bypass `features/graph/tiptap/**` and couple feature code directly to raw `@tiptap/*` imports.
 - Adding a second implementation path instead of replacing the old one.
+- Firing entity match requests on cursor-only moves within the same text window.
+- Holding multiple in-flight entity match requests open simultaneously without aborting stale ones.
+- Caching match results indefinitely without a TTL eviction policy.
+- JOINing `entity_aliases` to `entities` on the hot match path.
+- Wrapping indexed columns in `lower()` when inputs are already normalized by the schema.
+- Using PubTator synonym aliases for inline entity highlighting without a quality gate.
 
 ## Review Checklist
 

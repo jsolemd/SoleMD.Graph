@@ -24,7 +24,13 @@ WITH requested_docs AS (
         d.corpus_id,
         NULLIF(trim(p.title), '') AS canonical_title,
         NULLIF(trim(d.title), '') AS document_title,
-        d.primary_source_system
+        d.primary_source_system,
+        COALESCE(NULLIF(trim(p.journal_name), ''), NULLIF(trim(p.venue), '')) AS journal_name,
+        p.year,
+        COALESCE(p.publication_types, ARRAY[]::TEXT[]) AS publication_types,
+        COALESCE(p.citation_count, 0)::INT AS citation_count,
+        COALESCE(p.reference_count, 0)::INT AS reference_count,
+        p.text_availability
     FROM solemd.paper_documents d
     JOIN solemd.graph_points gp
       ON gp.corpus_id = d.corpus_id
@@ -73,6 +79,15 @@ citation_counts AS (
     WHERE corpus_id IN (SELECT corpus_id FROM requested_docs)
     GROUP BY corpus_id
 ),
+first_authors AS (
+    SELECT DISTINCT ON (pa.corpus_id)
+        pa.corpus_id,
+        NULLIF(trim(pa.name), '') AS first_author_name
+    FROM solemd.paper_authors pa
+    WHERE pa.corpus_id IN (SELECT corpus_id FROM requested_docs)
+      AND NULLIF(trim(pa.name), '') IS NOT NULL
+    ORDER BY pa.corpus_id, pa.author_position
+),
 sentence_seeds AS (
     SELECT DISTINCT ON (s.corpus_id)
         s.corpus_id,
@@ -108,6 +123,13 @@ SELECT
     d.canonical_title,
     d.document_title,
     d.primary_source_system,
+    d.journal_name,
+    d.year,
+    d.publication_types,
+    d.citation_count,
+    d.reference_count,
+    d.text_availability,
+    fa.first_author_name,
     COALESCE(sc.section_count, 0) AS section_count,
     COALESCE(bc.table_block_count, 0) AS table_block_count,
     COALESCE(bc.narrative_block_count, 0) AS narrative_block_count,
@@ -123,6 +145,7 @@ LEFT JOIN block_counts bc USING (corpus_id)
 LEFT JOIN chunk_counts cc USING (corpus_id)
 LEFT JOIN entity_counts ec USING (corpus_id)
 LEFT JOIN citation_counts cic USING (corpus_id)
+LEFT JOIN first_authors fa USING (corpus_id)
 LEFT JOIN sentence_seeds ss USING (corpus_id)
 ORDER BY d.corpus_id
 """

@@ -1,0 +1,24 @@
+{
+  "after_corpus_id": 0,
+  "batch_size": 100,
+  "batches_completed": 1,
+  "citation_edges_processed": 35501,
+  "completed": true,
+  "context_rows_written": 71139,
+  "corpus_ids_processed": 82,
+  "dry_run": false,
+  "last_completed_corpus_id": 283056730,
+  "max_corpus_id": null,
+  "recent_batches": [
+    {
+      "batch_index": 1,
+      "citation_edge_count": 35501,
+      "context_rows_written": 71139,
+      "corpus_id_count": 82,
+      "first_corpus_id": 727504,
+      "last_corpus_id": 283056730
+    }
+  ],
+  "selection_mode": "targeted_corpus",
+  "target_corpus_id_count": 82
+}

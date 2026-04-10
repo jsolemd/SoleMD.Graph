@@ -8,9 +8,9 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from app.rag.parse_contract import (
+    PaperBlockKind,
     ParseContractModel,
     ParseSourceSystem,
-    PaperBlockKind,
     SectionRole,
     SentenceSegmentationSource,
     SourcePlane,
@@ -67,7 +67,7 @@ class PaperDocumentSourceRow(ParseContractModel):
     raw_attrs_json: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_row(self) -> "PaperDocumentSourceRow":
+    def validate_row(self) -> PaperDocumentSourceRow:
         if self.document_source_ordinal < 0:
             raise ValueError("document_source_ordinal must be non-negative")
         if not self.source_revision:
@@ -87,10 +87,13 @@ class PaperSectionRow(ParseContractModel):
     text: str
 
     @model_validator(mode="after")
-    def validate_row(self) -> "PaperSectionRow":
+    def validate_row(self) -> PaperSectionRow:
         if self.section_ordinal < 0:
             raise ValueError("section_ordinal must be non-negative")
-        if self.parent_section_ordinal is not None and self.parent_section_ordinal >= self.section_ordinal:
+        if (
+            self.parent_section_ordinal is not None
+            and self.parent_section_ordinal >= self.section_ordinal
+        ):
             raise ValueError("parent_section_ordinal must be less than section_ordinal")
         if not self.text:
             raise ValueError("text must not be empty")
@@ -108,7 +111,7 @@ class PaperBlockRow(ParseContractModel):
     linked_asset_ref: str | None = None
 
     @model_validator(mode="after")
-    def validate_row(self) -> "PaperBlockRow":
+    def validate_row(self) -> PaperBlockRow:
         if self.block_ordinal < 0 or self.section_ordinal < 0:
             raise ValueError("block_ordinal and section_ordinal must be non-negative")
         if not self.text:
@@ -125,7 +128,7 @@ class PaperSentenceRow(ParseContractModel):
     text: str
 
     @model_validator(mode="after")
-    def validate_row(self) -> "PaperSentenceRow":
+    def validate_row(self) -> PaperSentenceRow:
         if self.block_ordinal < 0 or self.sentence_ordinal < 0 or self.section_ordinal < 0:
             raise ValueError(
                 "block_ordinal, sentence_ordinal, and section_ordinal must be non-negative"
@@ -144,7 +147,7 @@ class PaperReferenceEntryRow(ParseContractModel):
     matched_corpus_id: int | None = None
 
     @model_validator(mode="after")
-    def validate_row(self) -> "PaperReferenceEntryRow":
+    def validate_row(self) -> PaperReferenceEntryRow:
         if self.reference_ordinal < 0:
             raise ValueError("reference_ordinal must be non-negative")
         if not self.source_reference_key:
@@ -294,10 +297,30 @@ def build_warehouse_table_specs() -> list[WarehouseTableSpec]:
             partition_key=("corpus_id",),
             indexes=[
                 WarehouseIndexSpec(
-                    name="idx_paper_entity_mentions_concept",
+                    name="idx_paper_entity_mentions_runtime_namespace_concept",
                     kind=IndexKind.BTREE,
-                    columns=("concept_namespace", "concept_id", "corpus_id"),
-                    where_sql="concept_namespace IS NOT NULL AND concept_id IS NOT NULL",
+                    columns=(
+                        "runtime_concept_namespace_key",
+                        "runtime_concept_id_key",
+                        "corpus_id",
+                    ),
+                    where_sql=(
+                        "runtime_concept_namespace_key IS NOT NULL "
+                        "AND runtime_concept_id_key <> ''"
+                    ),
+                ),
+                WarehouseIndexSpec(
+                    name="idx_paper_entity_mentions_runtime_type_concept",
+                    kind=IndexKind.BTREE,
+                    columns=(
+                        "runtime_entity_type_key",
+                        "runtime_concept_id_key",
+                        "corpus_id",
+                    ),
+                    where_sql=(
+                        "runtime_concept_namespace_key IS NULL "
+                        "AND runtime_concept_id_key <> ''"
+                    ),
                 ),
                 WarehouseIndexSpec(
                     name="idx_paper_entity_mentions_canonical_span",

@@ -365,9 +365,7 @@ _REFERENCE_ADAPTER_INSERT_SQL = (
     f"FROM {_REFERENCE_ADAPTER_STAGING_TABLE}"
 )
 
-_REPLACE_EXISTING_DELETE_TABLES: tuple[str, ...] = (
-    "paper_chunk_members",
-    "paper_chunks",
+_REPLACE_EXISTING_DOCUMENT_DELETE_TABLES: tuple[str, ...] = (
     "paper_citation_mentions",
     "paper_entity_mentions",
     "paper_sentences",
@@ -376,6 +374,11 @@ _REPLACE_EXISTING_DELETE_TABLES: tuple[str, ...] = (
     "paper_document_sources",
     "paper_references",
     "paper_documents",
+)
+
+_REPLACE_EXISTING_CHUNK_DELETE_TABLES: tuple[str, ...] = (
+    "paper_chunk_members",
+    "paper_chunks",
 )
 
 
@@ -524,7 +527,13 @@ class PostgresRagWriteRepository:
     def _replace_existing_rows_with_cursor(self, *, cur, batch: RagWarehouseWriteBatch) -> None:
         document_corpus_ids = sorted({int(row.corpus_id) for row in batch.documents})
         if document_corpus_ids:
-            for table_name in _REPLACE_EXISTING_DELETE_TABLES:
+            delete_tables = list(_REPLACE_EXISTING_DOCUMENT_DELETE_TABLES)
+            if batch.chunk_versions or batch.chunks or batch.chunk_members:
+                delete_tables = [
+                    *_REPLACE_EXISTING_CHUNK_DELETE_TABLES,
+                    *delete_tables,
+                ]
+            for table_name in delete_tables:
                 if not self._table_exists_probe(cur, "solemd", table_name):
                     continue
                 cur.execute(

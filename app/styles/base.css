@@ -35,6 +35,15 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   THIN SCROLLBAR — reusable 4px scrollbar for panels/editors.
+   Apply `.thin-scrollbar` and optionally set `--scrollbar-thumb`.
+   ═══════════════════════════════════════════════════════════════════ */
+.thin-scrollbar { scrollbar-gutter: stable; }
+.thin-scrollbar::-webkit-scrollbar { width: 4px; }
+.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb, var(--graph-panel-border)); border-radius: 2px; }
+
+/* ═══════════════════════════════════════════════════════════════════
    GLOBAL SCROLLBAR — invisible by default, still scrollable.
    Cosmograph widgets override with their own class-scoped rules
    (.style_module_scrollbar__*) at higher specificity, so expanded

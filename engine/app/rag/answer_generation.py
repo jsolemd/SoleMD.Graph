@@ -11,8 +11,16 @@ import logging
 import re
 from dataclasses import dataclass
 
-
-from app.langfuse_config import get_langfuse as _get_langfuse, get_prompt as _get_langfuse_prompt, SPAN_RAG_ANSWER, observe
+from app.langfuse_config import (
+    SPAN_RAG_ANSWER,
+    observe,
+)
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+)
+from app.langfuse_config import (
+    get_prompt as _get_langfuse_prompt,
+)
 from app.rag.models import EvidenceBundle
 
 logger = logging.getLogger(__name__)
@@ -48,6 +56,33 @@ _EVIDENCE_PROMPT_FALLBACK = (
 )
 
 
+def _author_prompt_label(bundle: EvidenceBundle) -> str | None:
+    names = [author.name.strip() for author in bundle.authors if author.name]
+    if not names:
+        return None
+    first_tokens = names[0].split()
+    if not first_tokens:
+        return None
+    lead = first_tokens[-1].rstrip(",")
+    if len(names) > 1:
+        return f"{lead} et al."
+    return lead
+
+
+def _bundle_prompt_heading(index: int, bundle: EvidenceBundle) -> str:
+    title = bundle.paper.title or "Untitled"
+    parts: list[str] = [f"[{index}]"]
+    author_label = _author_prompt_label(bundle)
+    if author_label:
+        parts.append(author_label)
+    if bundle.paper.journal_name:
+        parts.append(bundle.paper.journal_name)
+    if bundle.paper.year:
+        parts.append(str(bundle.paper.year))
+    parts.append(title)
+    return " | ".join(parts)
+
+
 def _build_evidence_prompt(
     bundles: list[EvidenceBundle],
     query: str,
@@ -56,13 +91,9 @@ def _build_evidence_prompt(
 
     source_blocks: list[str] = []
     for index, bundle in enumerate(bundles, start=1):
-        title = bundle.paper.title or "Untitled"
-        year = bundle.paper.year or ""
         snippet = bundle.snippet or bundle.paper.abstract or ""
         snippet_excerpt = snippet[:600].strip()
-        source_blocks.append(
-            f"[{index}] {title} ({year})\n{snippet_excerpt}"
-        )
+        source_blocks.append(f"{_bundle_prompt_heading(index, bundle)}\n{snippet_excerpt}")
 
     sources_text = "\n\n".join(source_blocks)
     template = _get_langfuse_prompt("rag-evidence-answer", fallback=_EVIDENCE_PROMPT_FALLBACK)

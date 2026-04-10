@@ -13,6 +13,8 @@ from app.rag._query_enrichment_const import (
     MAX_QUERY_PHRASE_TOKENS,
     MAX_QUERY_PHRASES,
     MIN_ENTITY_PROPER_NOUN_CHARS,
+    PROSE_CLAUSE_TOKENS,
+    RUNTIME_ENTITY_NOISE_TOKENS,
     STATISTICAL_ANCHOR_PREFIXES,
 )
 from app.rag.types import QueryRetrievalProfile
@@ -169,6 +171,42 @@ def should_seed_resolved_entity_term(
     return any(_has_specific_entity_token(token) for token in stripped.split())
 
 
+def should_enrich_resolved_entity_term(
+    term: str,
+    *,
+    entity_confidence: str | None = None,
+) -> bool:
+    """Return True when an auto-resolved term is specific enough for top-hit enrichment.
+
+    Enrichment can be broader than recall seeding because it only runs against the
+    shortlisted papers, but it still needs to exclude query scaffolding such as
+    stopwords and generic title nouns ("diagnosis", "management") that add latency
+    without improving disambiguation.
+    """
+
+    normalized = normalize_entity_query_text(term)
+    if not normalized:
+        return False
+    if entity_confidence == "high":
+        return True
+
+    tokens = [token for token in normalized.split() if token]
+    if not tokens:
+        return False
+
+    informative_tokens = [
+        token for token in tokens if token not in RUNTIME_ENTITY_NOISE_TOKENS
+    ]
+    if not informative_tokens:
+        return False
+    if any(_has_specific_entity_token(token) for token in informative_tokens):
+        return True
+    if len(informative_tokens) >= 2:
+        return True
+    token = informative_tokens[0]
+    return len(token) >= 4 and token not in PROSE_CLAUSE_TOKENS
+
+
 def _entity_surface_anchor_tokens(text: str) -> list[str]:
     anchors: list[str] = []
     seen: set[str] = set()
@@ -199,6 +237,11 @@ def _phrase_contains_anchor(phrase: str, anchor: str) -> bool:
     )
 
 
+def _is_runtime_entity_noise_phrase(phrase: str) -> bool:
+    tokens = [token for token in phrase.split() if token]
+    return bool(tokens) and all(token in RUNTIME_ENTITY_NOISE_TOKENS for token in tokens)
+
+
 def build_query_entity_resolution_phrases(text: str) -> list[str]:
     """Build a compact, anchor-aware phrase set for runtime entity resolution.
 
@@ -215,6 +258,8 @@ def build_query_entity_resolution_phrases(text: str) -> list[str]:
     seen: set[str] = set()
     for phrase in build_entity_query_phrases(text):
         if phrase in seen:
+            continue
+        if _is_runtime_entity_noise_phrase(phrase):
             continue
         if any(_phrase_contains_anchor(phrase, anchor) for anchor in anchors):
             seen.add(phrase)
@@ -240,14 +285,16 @@ def build_runtime_entity_resolution_phrases(
     if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
         return build_query_entity_resolution_phrases(text)
 
-    return list(
-        dict.fromkeys(
+    return [
+        phrase
+        for phrase in dict.fromkeys(
             [
                 *build_entity_query_phrases(text),
                 *build_query_phrases(normalized_query or text),
             ]
         )
-    )
+        if not _is_runtime_entity_noise_phrase(phrase)
+    ]
 
 
 def has_query_entity_surface_signal(text: str) -> bool:

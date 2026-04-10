@@ -21,6 +21,12 @@ import {
   type Editor,
 } from "@/features/graph/tiptap";
 import { EMPTY_TOOLBAR_STATE } from "./EditorToolbar";
+import type { EntityHoverCardModel } from "@/features/graph/components/entities/entity-hover-card";
+import {
+  clearEntityHighlights,
+  createEntityHighlightExtension,
+  setEntityHighlights,
+} from "./entity-highlight-extension";
 import {
   type PromptInteractionRequest,
   type PromptInteractionProvider,
@@ -29,6 +35,13 @@ import {
   createPromptInteractionExtension,
   type PromptInteractionMenuState,
 } from "./prompt-interaction-extension";
+import {
+  createReferenceMentionExtension,
+  type ReferenceMentionMenuState,
+  type ReferenceMentionSource,
+} from "./reference-mention-extension";
+import { readEditorTextContext } from "./editor-text-context";
+import { useEditorEntityRuntime } from "./use-editor-entity-runtime";
 
 export interface CreateEditorControllerProps {
   content: string;
@@ -37,6 +50,7 @@ export interface CreateEditorControllerProps {
   onSubmit?: () => void;
   onPromptInteraction?: (request: PromptInteractionRequest) => void;
   promptInteractionProviders?: readonly PromptInteractionProvider<PromptInteractionRequest>[];
+  referenceMentionSource?: ReferenceMentionSource;
   ariaLabel: string;
   debounceMs?: number;
   showToolbar?: boolean;
@@ -51,6 +65,8 @@ export interface CreateEditorControllerState {
   editorFrameRef: RefObject<HTMLDivElement | null>;
   promptInteractionMenuRef: RefObject<HTMLDivElement | null>;
   promptInteractionMenu: PromptInteractionMenuState | null;
+  referenceMentionMenu: ReferenceMentionMenuState | null;
+  entityHoverCard: EntityHoverCardModel | null;
   closePromptInteractionMenu: () => void;
   handlePromptInteractionMenuHover: (index: number) => void;
   handlePromptInteractionMenuKeyDown: (
@@ -69,6 +85,7 @@ export function useCreateEditorController({
   onSubmit,
   onPromptInteraction,
   promptInteractionProviders,
+  referenceMentionSource,
   ariaLabel,
   debounceMs = 300,
   showToolbar = false,
@@ -83,6 +100,8 @@ export function useCreateEditorController({
   onPromptInteractionRef.current = onPromptInteraction;
   const promptInteractionProvidersRef = useRef(promptInteractionProviders);
   promptInteractionProvidersRef.current = promptInteractionProviders;
+  const referenceMentionSourceRef = useRef(referenceMentionSource);
+  referenceMentionSourceRef.current = referenceMentionSource;
   const contentRef = useRef(content);
   contentRef.current = content;
 
@@ -96,6 +115,8 @@ export function useCreateEditorController({
   const [sourceText, setSourceText] = useState("");
   const [promptInteractionMenu, setPromptInteractionMenu] =
     useState<PromptInteractionMenuState | null>(null);
+  const [referenceMentionMenu, setReferenceMentionMenu] =
+    useState<ReferenceMentionMenuState | null>(null);
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const getMarkdown = useCallback((ed: Editor | null) => {
@@ -247,6 +268,15 @@ export function useCreateEditorController({
     [],
   );
 
+  const {
+    entityHighlights,
+    entityHoverCard,
+    handleEntityHoverChange,
+    handleTextContextChange,
+  } = useEditorEntityRuntime({
+    enabled: !sourceMode,
+  });
+
   const extensions = useMemo(
     () => [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
@@ -275,8 +305,16 @@ export function useCreateEditorController({
         setPromptInteractionMenu,
         submitPromptInteractionCommand,
       }),
+      createReferenceMentionExtension({
+        editorFrameRef,
+        referenceMentionSourceRef,
+        setReferenceMentionMenu,
+      }),
+      createEntityHighlightExtension({
+        setEntityHighlightHover: handleEntityHoverChange,
+      }),
     ],
-    [submitPromptInteractionCommand],
+    [handleEntityHoverChange, submitPromptInteractionCommand],
   );
 
   const editor = useEditor({
@@ -293,10 +331,12 @@ export function useCreateEditorController({
     },
     onCreate: ({ editor: ed }) => {
       onEmptyChangeRef.current(ed.isEmpty);
+      handleTextContextChange(readEditorTextContext(ed));
     },
     onUpdate: ({ editor: ed }) => {
       onEmptyChangeRef.current(ed.isEmpty);
       debouncedSync(ed);
+      handleTextContextChange(readEditorTextContext(ed));
     },
   });
 
@@ -337,10 +377,40 @@ export function useCreateEditorController({
   editorRef.current = editor;
 
   useEffect(() => {
-    if (sourceMode && promptInteractionMenu) {
+    if (!editor || editor.isDestroyed) {
+      handleTextContextChange(null);
+      return;
+    }
+
+    const syncTextContext = () => {
+      handleTextContextChange(readEditorTextContext(editor));
+    };
+
+    syncTextContext();
+    editor.on("selectionUpdate", syncTextContext);
+
+    return () => {
+      editor.off("selectionUpdate", syncTextContext);
+    };
+  }, [editor, handleTextContextChange]);
+
+  useEffect(() => {
+    if (!sourceMode) {
+      return;
+    }
+
+    if (promptInteractionMenu) {
       closePromptInteractionMenu();
     }
-  }, [closePromptInteractionMenu, promptInteractionMenu, sourceMode]);
+    if (referenceMentionMenu) {
+      setReferenceMentionMenu(null);
+    }
+  }, [
+    closePromptInteractionMenu,
+    promptInteractionMenu,
+    referenceMentionMenu,
+    sourceMode,
+  ]);
 
   useEffect(() => {
     if (!promptInteractionMenuRef.current) {
@@ -424,6 +494,19 @@ export function useCreateEditorController({
     };
   }, [flush]);
 
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) {
+      return;
+    }
+
+    if (entityHighlights && entityHighlights.length > 0) {
+      setEntityHighlights(editor, entityHighlights);
+      return;
+    }
+
+    clearEntityHighlights(editor);
+  }, [editor, entityHighlights]);
+
   return {
     editor,
     toolbarState,
@@ -433,6 +516,8 @@ export function useCreateEditorController({
     editorFrameRef,
     promptInteractionMenuRef,
     promptInteractionMenu,
+    referenceMentionMenu,
+    entityHoverCard,
     closePromptInteractionMenu,
     handlePromptInteractionMenuHover,
     handlePromptInteractionMenuKeyDown,

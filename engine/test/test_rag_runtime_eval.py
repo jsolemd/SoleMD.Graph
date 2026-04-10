@@ -933,6 +933,7 @@ def test_attach_slow_case_plan_profiles_adds_planner_metadata():
             scope_corpus_ids,
             use_title_similarity: bool,
             use_exact_graph_search: bool,
+            query_metadata_hints,
         ):
             assert graph_run_id == "run-1"
             assert query == "Slow title-like paper"
@@ -941,6 +942,7 @@ def test_attach_slow_case_plan_profiles_adds_planner_metadata():
             assert scope_corpus_ids is None
             assert use_title_similarity is True
             assert use_exact_graph_search is False
+            assert query_metadata_hints.has_searchable_metadata_filters is False
             return SimpleNamespace(
                 route_name="paper_search_global",
                 sql="SELECT 1",

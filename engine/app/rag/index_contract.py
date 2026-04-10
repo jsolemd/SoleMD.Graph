@@ -42,7 +42,7 @@ class RagIndexSpec(ParseContractModel):
     rationale: str
 
     @model_validator(mode="after")
-    def validate_spec(self) -> "RagIndexSpec":
+    def validate_spec(self) -> RagIndexSpec:
         if not self.name:
             raise ValueError("name must not be empty")
         if not self.table_name:
@@ -112,7 +112,10 @@ def build_index_matrix() -> list[RagIndexSpec]:
             role=IndexRole.LINEAGE_LOOKUP,
             build_phase=IndexBuildPhase.INITIAL_SCHEMA,
             key_columns=["corpus_id", "source_reference_key"],
-            rationale="Supports citation-mention to bibliography-entry resolution inside one paper.",
+            rationale=(
+                "Supports citation-mention to bibliography-entry resolution "
+                "inside one paper."
+            ),
         ),
         RagIndexSpec(
             name="idx_paper_reference_entries_matched_corpus",
@@ -153,17 +156,50 @@ def build_index_matrix() -> list[RagIndexSpec]:
             key_columns=["matched_corpus_id", "corpus_id"],
             predicate_sql="matched_corpus_id IS NOT NULL",
             concurrent_if_live=True,
-            rationale="Supports cited-paper to citing-paper expansion without scanning all mention rows.",
+            rationale=(
+                "Supports cited-paper to citing-paper expansion without "
+                "scanning all mention rows."
+            ),
         ),
         RagIndexSpec(
-            name="idx_paper_entity_mentions_concept",
+            name="idx_paper_entity_mentions_runtime_namespace_concept",
             table_name="paper_entity_mentions",
             method=RagIndexMethod.BTREE,
             role=IndexRole.GROUNDING_LOOKUP,
             build_phase=IndexBuildPhase.INITIAL_SCHEMA,
-            key_columns=["concept_namespace", "concept_id", "corpus_id"],
-            predicate_sql="concept_namespace IS NOT NULL AND concept_id IS NOT NULL",
-            rationale="Supports concept-normalized entity lookup and query-time biasing.",
+            key_columns=[
+                "runtime_concept_namespace_key",
+                "runtime_concept_id_key",
+                "corpus_id",
+            ],
+            predicate_sql=(
+                "runtime_concept_namespace_key IS NOT NULL "
+                "AND runtime_concept_id_key <> ''"
+            ),
+            rationale=(
+                "Supports canonical namespace-backed entity lookup without "
+                "query-time normalization."
+            ),
+        ),
+        RagIndexSpec(
+            name="idx_paper_entity_mentions_runtime_type_concept",
+            table_name="paper_entity_mentions",
+            method=RagIndexMethod.BTREE,
+            role=IndexRole.GROUNDING_LOOKUP,
+            build_phase=IndexBuildPhase.INITIAL_SCHEMA,
+            key_columns=[
+                "runtime_entity_type_key",
+                "runtime_concept_id_key",
+                "corpus_id",
+            ],
+            predicate_sql=(
+                "runtime_concept_namespace_key IS NULL "
+                "AND runtime_concept_id_key <> ''"
+            ),
+            rationale=(
+                "Supports canonical type-backed entity lookup for "
+                "namespace-free mention families."
+            ),
         ),
         RagIndexSpec(
             name="idx_paper_entity_mentions_canonical_span",
@@ -211,7 +247,10 @@ def build_index_matrix() -> list[RagIndexSpec]:
             build_phase=IndexBuildPhase.POST_LOAD,
             expression_sql="to_tsvector('english', coalesce(text, ''))",
             concurrent_if_live=True,
-            rationale="Supports lexical fallback over canonical blocks after load and normalization are stable.",
+            rationale=(
+                "Supports lexical fallback over canonical blocks after load "
+                "and normalization are stable."
+            ),
         ),
         RagIndexSpec(
             name="idx_paper_chunks_search_tsv",
@@ -221,6 +260,9 @@ def build_index_matrix() -> list[RagIndexSpec]:
             build_phase=IndexBuildPhase.POST_LOAD,
             expression_sql="to_tsvector('english', coalesce(text, ''))",
             concurrent_if_live=True,
-            rationale="Supports lexical fallback over served chunk text when dense retrieval is unavailable or needs fusion.",
+            rationale=(
+                "Supports lexical fallback over served chunk text when dense "
+                "retrieval is unavailable or needs fusion."
+            ),
         ),
     ]

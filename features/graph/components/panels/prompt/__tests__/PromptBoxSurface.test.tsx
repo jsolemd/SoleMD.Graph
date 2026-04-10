@@ -112,6 +112,9 @@ function createProps(
     isSubmitting: false,
     handleSubmit: jest.fn(),
     promptInteractionProviders: [],
+    referenceMentionSource: {
+      getItems: jest.fn(async () => []),
+    },
     handlePromptInteraction: jest.fn(),
     clearRag: jest.fn(),
     handlePromptContentChange: jest.fn(),

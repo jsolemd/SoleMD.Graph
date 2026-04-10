@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, call
 
+from app.rag.entity_runtime_keys import (
+    normalize_runtime_concept_id_key,
+    normalize_runtime_concept_namespace_key,
+    normalize_runtime_entity_type_key,
+)
 from app.rag.parse_contract import (
     PaperBlockKind,
     ParseSourceSystem,
@@ -225,6 +230,15 @@ def test_stage_rows_reads_batch_components_by_stage_name():
     assert len(stage_rows(batch, WriteStage.ENTITIES)) == 0
 
 
+def test_runtime_entity_lookup_key_helpers_normalize_lookup_contract():
+    assert normalize_runtime_entity_type_key("ProteinMutation") == "mutation"
+    assert normalize_runtime_entity_type_key("cellline") == "cellline"
+    assert normalize_runtime_concept_namespace_key("MeSH") == "mesh"
+    assert normalize_runtime_concept_namespace_key(None) is None
+    assert normalize_runtime_concept_id_key("MESH:D014406") == "D014406"
+    assert normalize_runtime_concept_id_key("7157") == "7157"
+
+
 def test_runtime_write_stage_support_only_enables_live_physical_tables():
     support = build_runtime_write_stage_support_map()
 
@@ -411,14 +425,46 @@ def test_postgres_rag_write_repository_can_replace_existing_chunk_rows_only():
         )
         in cur.execute.call_args_list
     )
-    assert (
-        call(
-            """
-                DELETE FROM solemd.paper_chunks
-                 WHERE corpus_id = ANY(%s)
-                   AND chunk_version_key = ANY(%s)
-                """,
-            ([12345], ["v1"]),
-        )
-        in cur.execute.call_args_list
+
+
+def test_replace_existing_document_batch_preserves_chunks_without_chunk_payloads():
+    conn = MagicMock()
+    cur = MagicMock()
+    copy = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    cur.copy.return_value.__enter__.return_value = copy
+    cur.copy.return_value.__exit__.return_value = False
+
+    sample = _sample_write_batch()
+    document_only_batch = RagWarehouseWriteBatch(
+        documents=list(sample.documents),
+        document_sources=list(sample.document_sources),
+        sections=list(sample.sections),
+        blocks=list(sample.blocks),
+        sentences=list(sample.sentences),
+        references=list(sample.references),
+        citations=list(sample.citations),
     )
+
+    repo = PostgresRagWriteRepository(
+        connect=lambda: conn,
+        table_exists_probe=lambda _cur, schema_name, table_name: schema_name == "solemd",
+    )
+
+    repo.apply_write_batch(document_only_batch, replace_existing=True)
+
+    assert call(
+        "DELETE FROM solemd.paper_chunk_members WHERE corpus_id = ANY(%s)",
+        ([12345],),
+    ) not in cur.execute.call_args_list
+    assert call(
+        "DELETE FROM solemd.paper_chunks WHERE corpus_id = ANY(%s)",
+        ([12345],),
+    ) not in cur.execute.call_args_list
+    assert call(
+        "DELETE FROM solemd.paper_entity_mentions WHERE corpus_id = ANY(%s)",
+        ([12345],),
+    ) in cur.execute.call_args_list

@@ -1,14 +1,19 @@
 """Bounded BioCXML backfill for corpus papers with PMID/PMC/DOI identifiers.
 
-Finds papers in solemd.corpus that have PubMed/PMC/DOI identifiers but lack
-BioCXML warehouse coverage, then locates them in the BioCXML archive and runs
-the targeted warehouse refresh to reparse canonical document structure from
-BioCXML.
+Finds papers in solemd.corpus that have PubMed/PMC/DOI identifiers, locates
+them in the BioCXML archive, and runs the targeted warehouse refresh to reparse
+canonical document structure from BioCXML.
+
+Default discovery mode only selects papers that do not already have a BioCXML
+source row. When explicit corpus ids are provided, those ids are honored even if
+they already have BioCXML coverage so stale or partial parses can be refreshed
+cleanly.
 
 Works for both:
 - Papers with existing S2ORC warehouse coverage (replaces the canonical
   warehouse text spine with the BioCXML parse for that targeted refresh)
 - Papers with no warehouse coverage at all (uses BioCXML as the primary source)
+- Papers with existing BioCXML rows that need a targeted reparsing refresh
 
 Chunk backfill is optional and runs as a second stage after the canonical
 BioCXML write. It is not implied by the warehouse refresh itself.
@@ -17,6 +22,7 @@ BioCXML write. It is not implied by the warehouse refresh itself.
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 from typing import Protocol
 
@@ -43,6 +49,8 @@ from app.rag_ingest.orchestrator import (
 from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository
 from app.rag_ingest.source_locator_refresh import refresh_rag_source_locator
 
+logger = logging.getLogger(__name__)
+
 _BIOC_BACKFILL_CANDIDATE_SQL = """
 SELECT c.corpus_id
 FROM solemd.corpus AS c
@@ -51,6 +59,15 @@ LEFT JOIN solemd.paper_document_sources AS bioc
  AND bioc.source_system = 'biocxml'
 WHERE bioc.corpus_id IS NULL
   AND (%s::BIGINT[] IS NULL OR c.corpus_id = ANY(%s))
+  AND (c.pmid IS NOT NULL OR c.pmc_id IS NOT NULL OR c.doi IS NOT NULL)
+ORDER BY c.corpus_id
+LIMIT %s
+"""
+
+_BIOC_EXPLICIT_CANDIDATE_SQL = """
+SELECT c.corpus_id
+FROM solemd.corpus AS c
+WHERE (%s::BIGINT[] IS NULL OR c.corpus_id = ANY(%s))
   AND (c.pmid IS NOT NULL OR c.pmc_id IS NOT NULL OR c.doi IS NOT NULL)
 ORDER BY c.corpus_id
 LIMIT %s
@@ -103,9 +120,14 @@ class PostgresBioCOverlayCandidateLoader:
         limit: int | None,
     ) -> list[int]:
         normalized_ids = _unique_ints(corpus_ids)
+        sql = (
+            _BIOC_EXPLICIT_CANDIDATE_SQL
+            if normalized_ids
+            else _BIOC_BACKFILL_CANDIDATE_SQL
+        )
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
-                _BIOC_BACKFILL_CANDIDATE_SQL,
+                sql,
                 (
                     normalized_ids or None,
                     normalized_ids or None,
@@ -159,6 +181,74 @@ class LocatorRepository(Protocol):
 
 def _chunked(values: list[int], batch_size: int) -> list[list[int]]:
     return [values[index : index + batch_size] for index in range(0, len(values), batch_size)]
+
+
+def _order_candidate_corpus_ids(
+    *,
+    corpus_ids: list[int],
+    candidate_map: dict[int, RagBioCTargetCandidate],
+) -> list[int]:
+    """Sort candidates by archive locality to minimize redundant archive scans."""
+
+    def _sort_key(corpus_id: int) -> tuple[int, str, int, int]:
+        candidate = candidate_map.get(corpus_id)
+        if candidate is None:
+            return (1, "", 0, corpus_id)
+        return (
+            0,
+            candidate.archive_name,
+            int(candidate.document_ordinal),
+            corpus_id,
+        )
+
+    return sorted(corpus_ids, key=_sort_key)
+
+
+def _chunk_candidate_corpus_ids(
+    *,
+    corpus_ids: list[int],
+    candidate_map: dict[int, RagBioCTargetCandidate],
+    batch_size: int,
+) -> list[list[int]]:
+    """Batch candidates by archive locality before falling back to unresolved ids.
+
+    Manifest-seeded candidates are grouped by archive and document ordinal so each
+    batch tends to walk one archive contiguously. Unresolved ids, if any, are
+    appended in plain fixed-size batches at the end.
+    """
+
+    ordered = _order_candidate_corpus_ids(corpus_ids=corpus_ids, candidate_map=candidate_map)
+    seeded_batches: list[list[int]] = []
+    unresolved: list[int] = []
+    current_archive: str | None = None
+    current_batch: list[int] = []
+
+    def _flush_current() -> None:
+        nonlocal current_batch, current_archive
+        if current_batch:
+            seeded_batches.append(current_batch)
+        current_batch = []
+        current_archive = None
+
+    for corpus_id in ordered:
+        candidate = candidate_map.get(corpus_id)
+        if candidate is None:
+            _flush_current()
+            unresolved.append(corpus_id)
+            continue
+        archive_name = candidate.archive_name
+        if (
+            current_batch
+            and (archive_name != current_archive or len(current_batch) >= batch_size)
+        ):
+            _flush_current()
+        current_archive = archive_name
+        current_batch.append(corpus_id)
+        if len(current_batch) >= batch_size:
+            _flush_current()
+
+    _flush_current()
+    return seeded_batches + _chunked(unresolved, batch_size)
 
 
 def _resolve_candidates_from_manifest(
@@ -280,6 +370,10 @@ def run_bioc_overlay_backfill(
         discovery_candidate_map = _resolve_candidates_from_manifest(
             corpus_ids=candidate_corpus_ids,
         )
+    candidate_corpus_ids = _order_candidate_corpus_ids(
+        corpus_ids=candidate_corpus_ids,
+        candidate_map=discovery_candidate_map,
+    )
     report = RagBioCOverlayBackfillReport(
         run_id=run_id,
         parser_version=parser_version,
@@ -294,8 +388,25 @@ def run_bioc_overlay_backfill(
         discovery_report=discovery_dump,
     )
 
-    batch_groups = _chunked(candidate_corpus_ids, candidate_batch_size)
+    batch_groups = _chunk_candidate_corpus_ids(
+        corpus_ids=candidate_corpus_ids,
+        candidate_map=discovery_candidate_map,
+        batch_size=candidate_batch_size,
+    )
+    logger.info(
+        "BioC overlay backfill %s: %d candidate corpus ids across %d batches",
+        run_id,
+        len(candidate_corpus_ids),
+        len(batch_groups),
+    )
     for batch_index, batch_ids in enumerate(batch_groups, start=1):
+        logger.info(
+            "BioC overlay backfill %s: batch %d/%d requested=%d",
+            run_id,
+            batch_index,
+            len(batch_groups),
+            len(batch_ids),
+        )
         seeded_candidates = [
             discovery_candidate_map[corpus_id]
             for corpus_id in batch_ids
@@ -335,6 +446,13 @@ def run_bioc_overlay_backfill(
         refreshed_corpus_ids: list[int] = []
         warehouse_dump: dict[str, object] | None = None
         if located_corpus_ids:
+            logger.info(
+                "BioC overlay backfill %s: batch %d/%d located=%d, refreshing",
+                run_id,
+                batch_index,
+                len(batch_groups),
+                len(located_corpus_ids),
+            )
             refresh_result = active_refresh_runner(
                 parser_version=parser_version,
                 run_id=f"{run_id}-refresh-{batch_index:04d}",
@@ -355,6 +473,20 @@ def run_bioc_overlay_backfill(
             warehouse_dump = refresh_result.model_dump(mode="python")
             refreshed_corpus_ids = _unique_ints(
                 list(warehouse_dump.get("bioc_fallback_stage", {}).get("ingested_corpus_ids", []))
+            )
+            logger.info(
+                "BioC overlay backfill %s: batch %d/%d refreshed=%d",
+                run_id,
+                batch_index,
+                len(batch_groups),
+                len(refreshed_corpus_ids),
+            )
+        else:
+            logger.info(
+                "BioC overlay backfill %s: batch %d/%d had no located corpus ids",
+                run_id,
+                batch_index,
+                len(batch_groups),
             )
 
         report.batches.append(

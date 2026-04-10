@@ -42,9 +42,12 @@ class Settings(BaseSettings):
     rag_runtime_exact_graph_search_max_papers: int = 5000
     rag_runtime_disable_jit: bool = True
     rag_dense_query_enabled: bool = True
-    rag_dense_query_candidate_multiplier: int = 4
-    rag_dense_query_min_candidates: int = 20
+    rag_dense_query_candidate_multiplier: int = 2
+    rag_dense_query_min_candidates: int = 10
     rag_dense_query_max_candidates: int = 3840
+    rag_dense_query_hnsw_ef_search: int = 32
+    rag_dense_query_hnsw_max_scan_tuples: int = 8000
+    rag_dense_query_exact_parallel_workers: int = 4
     rag_dense_query_use_gpu: bool = True
     rag_dense_query_base_model: str = "allenai/specter2_base"
     rag_dense_query_adapter_name: str = "allenai/specter2_adhoc_query"

@@ -98,6 +98,295 @@ def test_rank_paper_hits_applies_citation_and_entity_boosts():
     assert ranked[0].fused_score > ranked[1].fused_score
 
 
+def test_rank_paper_hits_uses_citation_spine_and_grounding_readiness_priors():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Full-text trial with citation spine",
+            journal_name="Clinical Evidence",
+            year=2024,
+            doi=None,
+            pmid=101,
+            pmcid="PMC1",
+            abstract="Randomized study with directly grounded full text.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=12,
+            influential_citation_count=4,
+            reference_count=24,
+            lexical_score=0.35,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Abstract-only candidate",
+            journal_name="Clinical Evidence",
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid=None,
+            abstract="Comparable study without full-text or citation-spine support.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=False,
+            citation_count=12,
+            influential_citation_count=0,
+            reference_count=0,
+            lexical_score=0.35,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        channel_rankings={RetrievalChannel.LEXICAL: {1: 1, 2: 2}},
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+    assert ranked[0].evidence_quality_score > ranked[1].evidence_quality_score
+    assert any(
+        "Matched evidence-quality priors" in reason
+        for reason in ranked[0].match_reasons
+    )
+
+
+def test_rank_paper_hits_keeps_title_lookup_focused_on_title_over_metadata_priors():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Delirium in the intensive care unit",
+            journal_name="Critical Care",
+            year=2004,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="Exact title candidate without a heavy citation spine.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=False,
+            citation_count=5,
+            influential_citation_count=0,
+            reference_count=4,
+            lexical_score=0.75,
+            title_similarity=1.0,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Delirium management in critical care",
+            journal_name="Critical Care",
+            year=2021,
+            doi=None,
+            pmid=202,
+            pmcid="PMC2",
+            abstract="Near-title candidate with stronger structural metadata.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=30,
+            influential_citation_count=6,
+            reference_count=45,
+            lexical_score=0.72,
+            title_similarity=0.74,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text="Delirium in the intensive care unit",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        channel_rankings={RetrievalChannel.LEXICAL: {1: 1, 2: 2}},
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+    assert ranked[0].evidence_quality_score <= ranked[1].evidence_quality_score
+
+
+def test_rank_paper_hits_uses_metadata_score_for_general_queries():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Different permeability of potassium salts across the blood-brain barrier",
+            journal_name="PLoS ONE",
+            year=2013,
+            doi=None,
+            pmid=101,
+            pmcid="PMC1",
+            abstract="Paper matching author/year/topic metadata.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            lexical_score=0.35,
+            metadata_score=1.4,
+            metadata_match_fields=["author", "year", "topic"],
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Alternative potassium paper",
+            journal_name="PLoS ONE",
+            year=2013,
+            doi=None,
+            pmid=202,
+            pmcid="PMC2",
+            abstract="Near-topic paper without metadata agreement.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            lexical_score=0.52,
+            metadata_score=0.0,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text="Breschi 2013 different permeability potassium salts across blood-brain",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        channel_rankings={RetrievalChannel.LEXICAL: {1: 2, 2: 1}},
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+    assert any(
+        "Matched citation-style metadata" in reason
+        for reason in ranked[0].match_reasons
+    )
+
+
+def test_rank_paper_hits_prefers_requested_publication_type_matches():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Meta-analysis of BDNF Val66Met",
+            journal_name="Biological Psychiatry",
+            year=2020,
+            doi=None,
+            pmid=101,
+            pmcid="PMC1",
+            abstract="Meta-analysis study.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            lexical_score=0.35,
+            publication_types=["MetaAnalysis"],
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Narrative review of BDNF polymorphisms",
+            journal_name="Neuroscience Review",
+            year=2020,
+            doi=None,
+            pmid=202,
+            pmcid="PMC2",
+            abstract="Narrative review paper.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            lexical_score=0.36,
+            publication_types=["Review"],
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        requested_publication_types=("MetaAnalysis",),
+        query_text="meta-analysis evidence analysis brain derived neurotrophic factor val66met",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        channel_rankings={RetrievalChannel.LEXICAL: {1: 2, 2: 1}},
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+    assert ranked[0].publication_type_score > ranked[1].publication_type_score
+
+
+def test_rank_paper_hits_prefers_results_narrative_over_methods_table_for_passage_queries():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Results-backed cohort paper",
+            journal_name="Neurology",
+            year=2024,
+            doi=None,
+            pmid=101,
+            pmcid="PMC1",
+            abstract="Paper with evidence-bearing results text.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=8,
+            reference_count=20,
+            chunk_lexical_score=0.72,
+            chunk_section_role="results",
+            chunk_primary_block_kind="narrative_paragraph",
+            chunk_snippet="Results showed lower delirium incidence after melatonin.",
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Methods-heavy protocol paper",
+            journal_name="Neurology",
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid="PMC2",
+            abstract="Paper with protocol-oriented table text.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=8,
+            reference_count=20,
+            chunk_lexical_score=0.72,
+            chunk_section_role="methods",
+            chunk_primary_block_kind="table_caption",
+            chunk_snippet="Methods table describing the intervention schedule.",
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text="melatonin reduced delirium incidence",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        channel_rankings={RetrievalChannel.CHUNK_LEXICAL: {1: 1, 2: 2}},
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+    assert ranked[0].passage_structure_score > ranked[1].passage_structure_score
+    assert any(
+        "Matched evidence-bearing section" in reason
+        for reason in ranked[0].match_reasons
+    )
+
+
 def test_rank_paper_hits_preserves_entity_seed_scores_without_enrichment_hits():
     papers = [
         PaperEvidenceHit(
@@ -647,6 +936,60 @@ def test_rank_paper_hits_uses_selected_context_for_title_queries():
 
     assert [paper.corpus_id for paper in ranked] == [11, 22]
     assert "Preserved explicitly selected paper context" in ranked[0].match_reasons
+
+
+def test_rank_paper_hits_uses_cited_context_independently_of_selected_context():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=11,
+            paper_id="paper-11",
+            semantic_scholar_paper_id="paper-11",
+            title="Explicitly cited study",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=11,
+            pmcid=None,
+            abstract="Cited-study abstract",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=4,
+            reference_count=8,
+            cited_context_score=0.2,
+        ),
+        PaperEvidenceHit(
+            corpus_id=22,
+            paper_id="paper-22",
+            semantic_scholar_paper_id="paper-22",
+            title="Uncited dense paper",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=22,
+            pmcid=None,
+            abstract="Competing dense-only hit.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=1,
+            reference_count=2,
+            dense_score=0.09,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text="clinical comparison query",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        channel_rankings={RetrievalChannel.DENSE_QUERY: {22: 1}},
+    )
+
+    assert ranked[0].corpus_id == 11
+    assert "Preserved explicitly cited paper context" in ranked[0].match_reasons
 
 
 def test_rank_paper_hits_prefers_strong_title_prefix_anchor_in_title_lookup():

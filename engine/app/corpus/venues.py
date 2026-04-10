@@ -17,6 +17,7 @@ The pipeline is designed to start small and expand:
 
 import json
 import re
+import unicodedata
 from functools import lru_cache
 
 from app.config import settings
@@ -25,10 +26,18 @@ from app.config import settings
 def _clean_venue(name: str) -> str:
     """Normalize a journal/venue name for matching.
 
-    Lowercases, strips leading "the", trailing dots, subtitles after ":",
-    and parenthetical notes. Used on both NLM titles and S2 venue values.
+    Lowercases, strips accents, removes leading "the", trailing dots,
+    subtitles after ":", and parenthetical notes. Used on both NLM titles
+    and S2 venue values.
     """
-    s = name.lower().strip().rstrip(".")
+    s = (
+        unicodedata.normalize("NFKD", name)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .lower()
+        .strip()
+        .rstrip(".")
+    )
     s = re.sub(r"^the\s+", "", s)
     s = re.sub(r"\s*[:]\s+.*$", "", s)
     s = re.sub(r"\s*\(.*?\)\s*$", "", s)
@@ -94,7 +103,7 @@ def register_duckdb_helpers(con, table_name: str = "nlm_venues") -> None:
                 regexp_replace(
                     regexp_replace(
                         regexp_replace(
-                            lower(trim(v)),
+                            lower(strip_accents(trim(v))),
                             '\.$', ''
                         ),
                         '^\s*the\s+', ''

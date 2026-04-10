@@ -311,6 +311,10 @@ SPAN_EXPORT_BUNDLE = "graph.export.bundle"
 SPAN_GRAPH_ATTACHMENT = "graph.attachment.resolve"
 SPAN_GRAPH_EVIDENCE = "graph.evidence.refresh"
 
+# Wiki spans
+SPAN_WIKI_GET_PAGE = "wiki.getPage"
+SPAN_WIKI_SEARCH = "wiki.search"
+
 
 # ---------------------------------------------------------------------------
 # 6. Score name constants — must match RAG_SCORE_CONFIGS in eval_langfuse.py
@@ -331,6 +335,10 @@ SCORE_FAITHFULNESS = "faithfulness"
 # Runtime
 SCORE_DURATION_MS = "duration_ms"
 SCORE_EVIDENCE_BUNDLE_COUNT = "evidence_bundle_count"
+SCORE_DISPLAY_AUTHOR_COVERAGE = "display_author_coverage"
+SCORE_DISPLAY_JOURNAL_COVERAGE = "display_journal_coverage"
+SCORE_DISPLAY_YEAR_COVERAGE = "display_year_coverage"
+SCORE_DISPLAY_STUDY_METADATA_COVERAGE = "display_study_metadata_coverage"
 
 # Categorical
 # NOTE: When querying categorical scores via the Langfuse API/SDK, always

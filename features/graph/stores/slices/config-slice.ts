@@ -107,7 +107,11 @@ export interface ConfigSlice {
   setAvailableLayers: (layers: MapLayer[]) => void
 }
 
-export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice> = (set) => ({
+export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice> = (set) => {
+  const guard = <K extends keyof DashboardState>(key: K) =>
+    (val: DashboardState[K]) => set((s) => (s[key] === val ? s : { [key]: val } as Partial<DashboardState>))
+
+  return {
   activeLayer: 'corpus',
   availableLayers: ['corpus'],
 
@@ -139,33 +143,17 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   hoverLabelAlwaysOn: false,
   renderHoveredPointRing: true,
 
-  setPointColorColumn: (col) => set((s) => (
-    s.pointColorColumn === col ? s : { pointColorColumn: col }
-  )),
-  setPointColorStrategy: (strategy) => set((s) => (
-    s.pointColorStrategy === strategy ? s : { pointColorStrategy: strategy }
-  )),
-  setPointSizeColumn: (col) => set((s) => (
-    s.pointSizeColumn === col ? s : { pointSizeColumn: col }
-  )),
+  setPointColorColumn: guard('pointColorColumn'),
+  setPointColorStrategy: guard('pointColorStrategy'),
+  setPointSizeColumn: guard('pointSizeColumn'),
   setPointSizeRange: (range) => set((s) => (
     hasSameRange(s.pointSizeRange, range) ? s : { pointSizeRange: range }
   )),
-  setPointLabelColumn: (col) => set((s) => (
-    s.pointLabelColumn === col ? s : { pointLabelColumn: col }
-  )),
-  setShowPointLabels: (show) => set((s) => (
-    s.showPointLabels === show ? s : { showPointLabels: show }
-  )),
-  setShowDynamicLabels: (show) => set((s) => (
-    s.showDynamicLabels === show ? s : { showDynamicLabels: show }
-  )),
-  setPositionXColumn: (col) => set((s) => (
-    s.positionXColumn === col ? s : { positionXColumn: col }
-  )),
-  setPositionYColumn: (col) => set((s) => (
-    s.positionYColumn === col ? s : { positionYColumn: col }
-  )),
+  setPointLabelColumn: guard('pointLabelColumn'),
+  setShowPointLabels: guard('showPointLabels'),
+  setShowDynamicLabels: guard('showDynamicLabels'),
+  setPositionXColumn: guard('positionXColumn'),
+  setPositionYColumn: guard('positionYColumn'),
   addInfoWidget: (slot) =>
     set((s) => (
       s.infoWidgets.some((w) => w.column === slot.column)
@@ -202,39 +190,17 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
         ? s
         : { filterColumns: nextFilterColumns }
     }),
-  setTablePage: (page) => set((s) => (
-    s.tablePage === page ? s : { tablePage: page }
-  )),
-  setTablePageSize: (size) => set((s) => (
-    s.tablePageSize === size ? s : { tablePageSize: size }
-  )),
-  setTableView: (view) => set((s) => (
-    s.tableView === view ? s : { tableView: view }
-  )),
-  setColorScheme: (scheme) => set((s) => (
-    s.colorScheme === scheme ? s : { colorScheme: scheme }
-  )),
-  setShowColorLegend: (show) => set((s) => (
-    s.showColorLegend === show ? s : { showColorLegend: show }
-  )),
-  setPointSizeStrategy: (strategy) => set((s) => (
-    s.pointSizeStrategy === strategy ? s : { pointSizeStrategy: strategy }
-  )),
-  setScalePointsOnZoom: (scale) => set((s) => (
-    s.scalePointsOnZoom === scale ? s : { scalePointsOnZoom: scale }
-  )),
-  setShowSizeLegend: (show) => set((s) => (
-    s.showSizeLegend === show ? s : { showSizeLegend: show }
-  )),
-  setShowHoveredPointLabel: (show) => set((s) => (
-    s.showHoveredPointLabel === show ? s : { showHoveredPointLabel: show }
-  )),
-  setHoverLabelAlwaysOn: (on) => set((s) => (
-    s.hoverLabelAlwaysOn === on ? s : { hoverLabelAlwaysOn: on }
-  )),
-  setRenderHoveredPointRing: (show) => set((s) => (
-    s.renderHoveredPointRing === show ? s : { renderHoveredPointRing: show }
-  )),
+  setTablePage: guard('tablePage'),
+  setTablePageSize: guard('tablePageSize'),
+  setTableView: guard('tableView'),
+  setColorScheme: guard('colorScheme'),
+  setShowColorLegend: guard('showColorLegend'),
+  setPointSizeStrategy: guard('pointSizeStrategy'),
+  setScalePointsOnZoom: guard('scalePointsOnZoom'),
+  setShowSizeLegend: guard('showSizeLegend'),
+  setShowHoveredPointLabel: guard('showHoveredPointLabel'),
+  setHoverLabelAlwaysOn: guard('hoverLabelAlwaysOn'),
+  setRenderHoveredPointRing: guard('renderHoveredPointRing'),
   setActiveLayer: (layer) => {
     set((s) => {
       if (s.activeLayer === layer) {
@@ -286,4 +252,4 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
       ? state
       : { availableLayers: layers }
   )),
-})
+}}

@@ -217,6 +217,45 @@
 - Centralized prompt interaction menu typing in the new `PromptInteractionMenuState` export so the controller, surface, and extension share one menu-state contract
 - Re-verified the prompt/editor slice after extraction with focused Jest, `npm run typecheck`, `npm run lint`, `npm run build`, and a visible Chrome console pass on `http://localhost:3000` with no console errors
 
+### Batch 18
+
+- Freed `@` for persisted reference mentions by moving evidence assist onto the explicit `/evidence` trigger in `features/graph/components/panels/prompt/evidence-assist.ts`
+- Added `features/graph/components/panels/prompt/text-context-window.ts` and `prompt-scope-request.ts` so sentence-window extraction and selection-scope resolution stay canonical across evidence assist, prompt submit, and future mention/entity workflows
+- Added `features/graph/components/panels/prompt/use-reference-mention-source.ts` so prompt-side `@` suggestions resolve through the existing graph evidence adapter with support intent instead of adding a second editor-local lookup path
+- Added `features/graph/components/panels/editor/reference-mention-extension.ts` so persisted references now ride a native Tiptap mention extension behind the adapter boundary and serialize plain text as `@[corpusId]` for ask-mode request handling
+- Added `features/graph/components/panels/editor/entity-highlight-extension.ts` as the transient decoration/plugin seam for future prompt-entity highlighting without storing those annotations in document content
+- Added `features/graph/components/panels/editor/EditorOverlaySurface.tsx` so prompt menus, reference suggestions, and future entity hover cards share one external editor overlay root instead of accumulating UI inside `EditorContent`
+- Rewired `use-create-editor-controller.ts`, `CreateEditorSurface.tsx`, `PromptBoxSurface.tsx`, and `use-prompt-box-controller.ts` so the editor remains a thin host while PromptBox owns provider registration and mention-source wiring
+- Added focused frontend regressions in:
+  - `features/graph/components/panels/prompt/__tests__/use-reference-mention-source.test.ts`
+  - `features/graph/components/panels/prompt/__tests__/text-context-window.test.ts`
+  - refreshed prompt/editor surface tests for the widened editor contract
+- Verified this slice with focused Jest, `npm run lint`, `npm run typecheck`, and `npm run build`
+- Browser note: a stale chunk/runtime mismatch on the old `3000` process surfaced during reload; restarting the `3000` dev server cleared that mismatch, but the Chrome DevTools visible transport dropped immediately after the restart, so final live `@` interaction smoke still needs one clean foreground browser session
+
+### Batch 19
+
+- Added a dedicated canonical entity API boundary under `engine/app/api/entities.py` with reusable service/repository modules in `engine/app/entities/**` so live entity matching and hover detail no longer need to piggyback on the evidence search surface
+- Implemented exact text-window entity matching against `solemd.entity_aliases` plus canonical hover detail from `solemd.entities`, with runtime concept namespace/id normalization shared through `engine/app/rag/entity_runtime_keys.py`
+- Added frontend entity transport in `app/actions/entity.ts`, `lib/engine/entities.ts`, `features/graph/lib/entity-service.ts`, and `features/graph/types/entity-service.ts` so entity match/detail requests have one stable adapter surface
+- Wired `features/graph/components/panels/editor/use-editor-entity-runtime.ts` into `use-create-editor-controller.ts` so entity matching, caching, and hover detail stay local to the editor runtime instead of rerendering PromptBox shell state
+- Kept transient entity highlighting in `entity-highlight-extension.ts` and hover rendering in `EditorOverlaySurface.tsx`, with detail fetched separately so decoration payloads carry identity and ranges only
+- Added focused regression coverage in `engine/test/test_entity_service.py`, `engine/test/test_entity_api.py`, and `features/graph/components/panels/editor/__tests__/use-editor-entity-runtime.test.ts`
+- Verified this slice with focused Jest, engine pytest, `npm run typecheck`, `npm run lint`, and `npm run build`
+- Browser note: the visible Chrome MCP health check passed, but the foreground DevTools transport still closed on live tool calls this pass, so the final interactive browser smoke remains pending even though `http://localhost:3000` is serving and the production build is green
+
+### Batch 20
+
+- Extracted the canonical text-window match/detail cache into `features/graph/components/entities/use-entity-text-runtime.ts` plus `entity-text-runtime.ts`, leaving `features/graph/components/panels/editor/use-editor-entity-runtime.ts` as a thin editor adapter over shared entity runtime contracts
+- Pulled the reusable hover-card model and surface into `features/graph/components/entities/entity-hover-card.ts` and `EntityHoverCard.tsx` so hover detail is no longer coupled to the editor subtree
+- Replaced the old entity server-action path with explicit Next route handlers in `app/api/entities/match/route.ts` and `app/api/entities/detail/route.ts`, then removed `app/actions/entity.ts`; client entity requests now travel through `features/graph/lib/entity-service.ts` as ordinary HTTP calls instead of hidden `POST /` form actions
+- Fixed `lib/engine/entities.ts` detail mapping to match the real FastAPI alias payload shape so hover-card aliases will deserialize correctly once the engine is available
+- Hardened `use-entity-text-runtime.ts` so failed match/detail requests delete stale cache entries and degrade quietly instead of surfacing uncaught promise errors during prompt typing
+- Tightened `features/graph/hooks/use-graph-bundle.ts` so same-checksum rerenders reuse the active DuckDB session and only invalidate the previous session when the bundle checksum actually changes
+- Added focused regression coverage in `features/graph/components/entities/__tests__/use-entity-text-runtime.test.ts`, `features/graph/components/entities/__tests__/EntityHoverCard.test.tsx`, and `features/graph/hooks/__tests__/use-graph-bundle.test.ts`
+- Verified this slice with focused Jest, engine pytest, `npm run typecheck`, `npm run lint`, and `npm run build`
+- Browser note: after the bundle-hook fix, a hard reload on `http://localhost:3000` dropped the duplicate DuckDB bootstrap in dev from two worker/wasm/parquet-extension/base-parquet fetches to one each; with the engine down, prompt typing no longer throws uncaught entity-match promise errors, though the visible-browser text-injection path still needs a cleaner manual smoke before claiming live entity highlighting end to end
+
 ## Blockers
 
 - No blocking correctness issues remain.

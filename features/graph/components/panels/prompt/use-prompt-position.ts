@@ -1,21 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { animate, useDragControls, useMotionValue } from "framer-motion";
-import { responsive, smooth } from "@/lib/motion";
+import { smooth } from "@/lib/motion";
 import { useDashboardStore, type PromptMode } from "@/features/graph/stores";
 import {
   BOTTOM_BASE,
-  VIEWPORT_MARGIN,
   WRITE_TOP_CLEARANCE,
   WRITE_TOP_BASE,
   MAX_CARD_W,
   MIN_CARD_W_CREATE,
   PILL_H,
-  PILL_LEFT,
-  cardWidth,
 } from "./constants";
-import { resolvePromptAutoPosition, type PromptAvoidRect } from "./avoidance";
+import type { PromptAvoidRect } from "./avoidance";
+import {
+  resolveCollapsedTarget,
+  resolveNormalTarget,
+  type LayoutClearances,
+} from "./prompt-layout";
 
 export function usePromptPosition({
   isCreate,
@@ -54,7 +56,6 @@ export function usePromptPosition({
   const dragY = useMotionValue(0);
   const cardHeightRef = useRef(100);
 
-  // Animated card height for full-height modes.
   const cardHeight = useMotionValue(0);
   const [heightOverride, setHeightOverride] = useState(false);
   const [isShellTransitioning, setIsShellTransitioning] = useState(false);
@@ -71,8 +72,11 @@ export function usePromptPosition({
   const [isOffset, setIsOffset] = useState(false);
 
   const targetY = Math.min(0, BOTTOM_BASE - bottomClearance);
+  const clearances: LayoutClearances = useMemo(
+    () => ({ leftClearance, rightClearance, leftPanelBottom, rightPanelBottom }),
+    [leftClearance, rightClearance, leftPanelBottom, rightPanelBottom],
+  );
 
-  // Unified positioning — clear precedence: write > collapsed > obstacle avoidance.
   const posAnim = useRef<{ x?: ReturnType<typeof animate>; y?: ReturnType<typeof animate>; h?: ReturnType<typeof animate> }>({});
   const fullHeightEnteredRef = useRef(false);
   const heightAnimatingRef = useRef(false);
@@ -108,47 +112,7 @@ export function usePromptPosition({
     heightAnimatingRef.current = false;
   }, []);
 
-  const resolveCollapsedTarget = useCallback(() => ({
-    x: PILL_LEFT - vw / 2,
-    y: targetY,
-  }), [targetY, vw]);
-
-  const resolveNormalTarget = useCallback((cardH: number, useAvoidRects: boolean) => {
-    const cardW = cardWidth(vw, leftClearance, rightClearance);
-    const promptTop = vh - BOTTOM_BASE - cardH + targetY;
-    const centeredLeft = vw / 2 - cardW / 2;
-    const centeredRight = centeredLeft + cardW;
-    let minX = VIEWPORT_MARGIN - centeredLeft;
-    let maxX = (vw - VIEWPORT_MARGIN) - centeredRight;
-    const maxUp = -(vh - BOTTOM_BASE - cardH - VIEWPORT_MARGIN);
-
-    if (leftClearance > 0 && leftPanelBottom > promptTop && centeredLeft < leftClearance) {
-      minX = leftClearance - centeredLeft;
-    }
-    if (rightClearance > 0 && rightPanelBottom > promptTop && centeredRight > vw - rightClearance) {
-      maxX = (vw - rightClearance) - centeredRight;
-    }
-
-    const baseTargetX = minX <= maxX
-      ? Math.max(minX, Math.min(0, maxX))
-      : Math.max(Math.min(0, minX), maxX);
-
-    return resolvePromptAutoPosition({
-      vw,
-      vh,
-      cardW,
-      cardH,
-      baseX: baseTargetX,
-      baseY: targetY,
-      minX,
-      maxX,
-      minY: maxUp,
-      maxY: targetY,
-      bottomBase: BOTTOM_BASE,
-      avoidRects: useAvoidRects ? avoidRects : undefined,
-    });
-  }, [avoidRects, leftClearance, leftPanelBottom, rightClearance, rightPanelBottom, targetY, vh, vw]);
-
+  // Effect 1: Full-height mode transitions (create/maximized enter/exit)
   useEffect(() => {
     if (vw === 0) return;
 
@@ -182,14 +146,10 @@ export function usePromptPosition({
       posAnim.current.x = animate(dragX, targetX, smooth);
       posAnim.current.y = animate(dragY, targetY, smooth);
       startHeightAnim(targetH, () => {
-        if (!mountedRef.current) {
-          return;
-        }
+        if (!mountedRef.current) return;
         setIsShellTransitioning(false);
       });
-      return () => {
-        cancelAnimations();
-      };
+      return () => { cancelAnimations(); };
     }
 
     if ((previousLayoutMode === "create" || previousLayoutMode === "maximized") && modeChanged) {
@@ -235,11 +195,10 @@ export function usePromptPosition({
     vw,
   ]);
 
+  // Effect 2: Pending exit animation (layout effect for synchronous measurement)
   useLayoutEffect(() => {
     const pendingExit = pendingExitRef.current;
-    if (!pendingExit || heightOverride || vw === 0) {
-      return;
-    }
+    if (!pendingExit || heightOverride || vw === 0) return;
 
     pendingExitRef.current = null;
 
@@ -248,8 +207,8 @@ export function usePromptPosition({
     const targetH = measuredH ?? (pendingExit.targetMode === "collapsed" ? PILL_H : 100);
     const targetPosition =
       pendingExit.targetMode === "collapsed"
-        ? resolveCollapsedTarget()
-        : resolveNormalTarget(targetH, true);
+        ? resolveCollapsedTarget(vw, targetY)
+        : resolveNormalTarget(vw, vh, targetY, targetH, clearances, avoidRects);
 
     cancelAnimations();
     cardHeight.set(pendingExit.fromHeight);
@@ -259,44 +218,43 @@ export function usePromptPosition({
     posAnim.current.x = animate(dragX, targetPosition.x, smooth);
     posAnim.current.y = animate(dragY, targetPosition.y, smooth);
     startHeightAnim(targetH, () => {
-      if (!mountedRef.current) {
-        return;
-      }
+      if (!mountedRef.current) return;
       setHeightOverride(false);
       setIsShellTransitioning(false);
       setPromptShellFullHeight(false);
     });
   }, [
+    avoidRects,
     cancelAnimations,
     cardHeight,
     cardRef,
+    clearances,
     dragX,
     dragY,
     heightOverride,
-    resolveCollapsedTarget,
-    resolveNormalTarget,
     startHeightAnim,
     setPromptShellFullHeight,
+    targetY,
+    vh,
     vw,
   ]);
 
+  // Effect 3: Normal/collapsed positioning + obstacle avoidance
   useEffect(() => {
-    if (vw === 0 || isFullHeightMode || isShellTransitioning) {
-      return;
-    }
+    if (vw === 0 || isFullHeightMode || isShellTransitioning) return;
 
     posAnim.current.x?.stop();
     posAnim.current.y?.stop();
 
     if (layoutMode === "collapsed") {
-      const target = resolveCollapsedTarget();
+      const target = resolveCollapsedTarget(vw, targetY);
       autoTargetXRef.current = target.x;
       autoTargetYRef.current = target.y;
-      posAnim.current.x = animate(dragX, userDragX.current || target.x, responsive);
-      posAnim.current.y = animate(dragY, Math.min(userDragY.current || target.y, targetY), responsive);
+      posAnim.current.x = animate(dragX, userDragX.current || target.x, smooth);
+      posAnim.current.y = animate(dragY, Math.min(userDragY.current || target.y, targetY), smooth);
     } else {
       const cardH = cardRef.current?.offsetHeight ?? cardHeightRef.current;
-      const target = resolveNormalTarget(cardH, true);
+      const target = resolveNormalTarget(vw, vh, targetY, cardH, clearances, avoidRects);
 
       if (autoTargetXRef.current !== target.x) {
         userDragX.current = 0;
@@ -309,11 +267,11 @@ export function usePromptPosition({
 
       autoTargetXRef.current = target.x;
       autoTargetYRef.current = target.y;
-      posAnim.current.x = animate(dragX, userDragX.current || target.x, responsive);
+      posAnim.current.x = animate(dragX, userDragX.current || target.x, smooth);
       posAnim.current.y = animate(
         dragY,
         userDragY.current !== 0 ? Math.min(userDragY.current, targetY) : target.y,
-        responsive,
+        smooth,
       );
     }
 
@@ -323,15 +281,16 @@ export function usePromptPosition({
       currentPosAnim.y?.stop();
     };
   }, [
+    avoidRects,
     cardRef,
+    clearances,
     dragX,
     dragY,
     isFullHeightMode,
     isShellTransitioning,
     layoutMode,
-    resolveCollapsedTarget,
-    resolveNormalTarget,
     targetY,
+    vh,
     vw,
   ]);
 

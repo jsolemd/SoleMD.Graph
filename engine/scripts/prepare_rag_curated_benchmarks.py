@@ -42,9 +42,17 @@ sys.path.insert(0, str(_engine_root))
 from app import db
 from app.rag.repository import PostgresRagRepository
 from app.rag.types import EvidenceIntent
+from app.rag_ingest.benchmark_catalog import (
+    benchmark_suite_gate_maps,
+    get_benchmark_suite_spec,
+)
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag_ingest.runtime_eval_benchmarks import (
+    build_biomedical_holdout_benchmark,
+    build_biomedical_evidence_type_benchmark,
+    build_biomedical_metadata_retrieval_benchmark,
     build_biomedical_optimization_benchmark,
+    build_citation_context_benchmark,
     load_runtime_eval_benchmark_cases,
 )
 from app.rag_ingest.runtime_eval_models import (
@@ -983,6 +991,35 @@ CLINICAL_ACTIONABLE_SEEDS: list[dict[str, object]] = [
     },
 ]
 
+BIOMEDICAL_NARRATIVE_SEEDS: list[dict[str, object]] = [
+    {
+        "query": "Tell me about prednisone neuropsychiatric symptoms and the evidence base for management.",
+        "search_terms": "corticosteroid psychosis psychiatric",
+        "labels": ["biomedical_narrative", "steroid_neuropsychiatric"],
+    },
+    *[
+        {
+            **seed,
+            "labels": ["biomedical_narrative", *list(seed.get("labels", []))],
+        }
+        for seed in QUESTION_EVIDENCE_SEEDS
+    ],
+    *[
+        {
+            **seed,
+            "labels": ["biomedical_narrative", *list(seed.get("labels", []))],
+        }
+        for seed in CLINICAL_ACTIONABLE_SEEDS[:11]
+    ],
+    *[
+        {
+            **seed,
+            "labels": ["biomedical_narrative", *list(seed.get("labels", []))],
+        }
+        for seed in NEUROPSYCH_SAFETY_SEEDS[:12]
+    ],
+]
+
 
 def _dataset_item_id(
     report: RagRuntimeEvalBenchmarkReport,
@@ -998,6 +1035,54 @@ def _dataset_item_id(
     return f"{base_id}:{query_hash}"
 
 
+def _iter_langfuse_dataset_items(
+    client,
+    *,
+    dataset_name: str,
+    page_size: int = 100,
+) -> list[object]:
+    dataset_items_api = getattr(getattr(client, "api", None), "dataset_items", None)
+    if dataset_items_api is None:
+        return []
+
+    items: list[object] = []
+    page = 1
+    while True:
+        response = dataset_items_api.list(
+            dataset_name=dataset_name,
+            page=page,
+            limit=page_size,
+        )
+        batch = getattr(response, "data", response) or []
+        if not batch:
+            break
+        items.extend(batch)
+        if len(batch) < page_size:
+            break
+        page += 1
+    return items
+
+
+def _prune_stale_langfuse_dataset_items(
+    client,
+    *,
+    dataset_name: str,
+    keep_item_ids: set[str],
+) -> int:
+    dataset_items_api = getattr(getattr(client, "api", None), "dataset_items", None)
+    if dataset_items_api is None:
+        return 0
+
+    stale_ids = [
+        str(getattr(item, "id", ""))
+        for item in _iter_langfuse_dataset_items(client, dataset_name=dataset_name)
+        if str(getattr(item, "id", "")) not in keep_item_ids
+    ]
+    for item_id in stale_ids:
+        dataset_items_api.delete(id=item_id)
+    return len(stale_ids)
+
+
 def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
     """Push a benchmark report directly to Langfuse as a dataset.
 
@@ -1006,6 +1091,12 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
 
     Returns True if push succeeded, False otherwise (graceful degradation).
     """
+    if report.selected_count <= 0 or not report.cases:
+        logger.warning(
+            "Benchmark '%s' has no cases — refusing empty Langfuse dataset push",
+            report.benchmark_key,
+        )
+        return False
     try:
         from app.langfuse_config import get_langfuse
 
@@ -1015,6 +1106,8 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
             return False
 
         dataset_name = f"benchmark-{report.benchmark_key}"
+        suite_spec = get_benchmark_suite_spec(report.benchmark_key)
+        lower_gates, upper_gates = benchmark_suite_gate_maps(report.benchmark_key)
         client.create_dataset(
             name=dataset_name,
             description=(
@@ -1026,6 +1119,18 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
                 "benchmark_key": report.benchmark_key,
                 "graph_release_id": report.graph_release_id,
                 "graph_run_id": report.graph_run_id,
+                "selected_count": report.selected_count,
+                "selected_by_label": report.selected_by_label,
+                "suite_family": suite_spec.suite_family if suite_spec else None,
+                "gate_mode": suite_spec.gate_mode if suite_spec else None,
+                "target_case_count": (
+                    suite_spec.target_case_count if suite_spec else report.selected_count
+                ),
+                "acceptance_focus": (
+                    suite_spec.acceptance_focus if suite_spec else None
+                ),
+                "quality_gate_lower_bounds": lower_gates,
+                "quality_gate_upper_bounds": upper_gates,
             },
         )
 
@@ -1036,22 +1141,56 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
         duplicate_logical_keys = {
             key for key, count in logical_key_counts.items() if count > 1
         }
+        expected_item_ids = {
+            _dataset_item_id(
+                report,
+                case,
+                duplicate_logical_keys=duplicate_logical_keys,
+            )
+            for case in report.cases
+        }
+        pruned_count = _prune_stale_langfuse_dataset_items(
+            client,
+            dataset_name=dataset_name,
+            keep_item_ids=expected_item_ids,
+        )
+
+        def _langfuse_case_metadata(case: RuntimeEvalBenchmarkCase) -> dict[str, object]:
+            return {
+                "qf": str(case.query_family),
+                "src": case.primary_source_system,
+                "cov": case.coverage_bucket,
+                "wd": case.warehouse_depth,
+                "part": case.evaluation_partition,
+            }
 
         for case in report.cases:
-            input_data = {
+            input_data: dict[str, object] = {
                 "query": case.query,
                 "query_family": str(case.query_family),
-                "selected_layer_key": case.selected_layer_key,
-                "selected_node_id": case.selected_node_id,
-                "selection_graph_paper_refs": case.selection_graph_paper_refs,
-                "evidence_intent": str(case.evidence_intent) if case.evidence_intent else None,
-                "benchmark_labels": case.benchmark_labels,
             }
+            if case.selected_layer_key:
+                input_data["selected_layer_key"] = case.selected_layer_key
+            if case.selected_node_id is not None:
+                input_data["selected_node_id"] = case.selected_node_id
+            if case.selection_graph_paper_refs:
+                input_data["selection_graph_paper_refs"] = case.selection_graph_paper_refs
+            if case.cited_corpus_ids:
+                input_data["cited_corpus_ids"] = case.cited_corpus_ids
+            if case.evidence_intent:
+                input_data["evidence_intent"] = str(case.evidence_intent)
             expected_output = {
                 "corpus_id": case.corpus_id,
                 "title": case.title,
+                "normalized_title_key": case.normalized_title_key,
                 "primary_source_system": case.primary_source_system,
                 "expected_retrieval_profile": case.expected_retrieval_profile,
+                "coverage_bucket": case.coverage_bucket,
+                "warehouse_depth": case.warehouse_depth,
+                "evaluation_partition": case.evaluation_partition,
+                "benchmark_key": case.benchmark_key,
+                "benchmark_labels": case.benchmark_labels,
+                "stratum_key": case.stratum_key,
             }
             item_id = _dataset_item_id(
                 report,
@@ -1063,16 +1202,16 @@ def _push_report_to_langfuse(report: RagRuntimeEvalBenchmarkReport) -> bool:
                 id=item_id,
                 input=input_data,
                 expected_output=expected_output,
-                metadata={
-                    "primary_source_system": case.primary_source_system,
-                    "benchmark_key": case.benchmark_key,
-                    "query_family": str(case.query_family),
-                    "has_chunks": "has_chunks" in case.benchmark_labels,
-                },
+                metadata=_langfuse_case_metadata(case),
             )
 
         client.flush()
-        logger.info("Pushed %d items to Langfuse dataset '%s'", len(report.cases), dataset_name)
+        logger.info(
+            "Pushed %d items to Langfuse dataset '%s' (pruned %d stale items)",
+            len(report.cases),
+            dataset_name,
+            pruned_count,
+        )
         return True
     except Exception:
         logger.warning("Failed to push to Langfuse", exc_info=True)
@@ -2226,6 +2365,62 @@ def build_clinical_evidence_v2(
     )
 
 
+def build_biomedical_narrative_v1(
+    *,
+    graph_release_id: str = "current",
+    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+    exclude_corpus_ids: set[int] | None = None,
+    connect=None,
+) -> RagRuntimeEvalBenchmarkReport:
+    """General clinician-style biomedical narrative questions."""
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn, chunk_version_key=chunk_version_key
+    )
+    release = repository.resolve_graph_release(graph_release_id)
+    excluded = set(exclude_corpus_ids or set())
+
+    cases = []
+    with connect_fn() as conn, conn.cursor() as cur:
+        for seed in BIOMEDICAL_NARRATIVE_SEEDS:
+            query = str(seed.get("query", ""))
+            expected_profile = (
+                "question_lookup" if query.strip().endswith("?") else "general"
+            )
+            case = _resolve_seed_item(
+                cursor=cur,
+                graph_run_id=release.graph_run_id,
+                seed=seed,
+                excluded=excluded,
+                benchmark_key="biomedical_narrative_v1",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile=expected_profile,
+            )
+            if case is None:
+                print(f"  SKIP (no match): {query[:60]}")
+                continue
+            cases.append(case)
+            excluded.add(case.corpus_id)
+
+    expected_case_count = len(BIOMEDICAL_NARRATIVE_SEEDS)
+    if len(cases) != expected_case_count:
+        raise ValueError(
+            f"biomedical_narrative_v1 produced {len(cases)} cases; "
+            f"expected {expected_case_count}"
+        )
+
+    return _build_curated_benchmark(
+        benchmark_key="biomedical_narrative_v1",
+        benchmark_source=(
+            "General biomedical narrative QA benchmark combining clinician-style "
+            "questions, management prompts, and neuropsychiatric safety prompts"
+        ),
+        release=release,
+        chunk_version_key=chunk_version_key,
+        cases=cases,
+    )
+
+
 def build_passage_retrieval_v2(
     *,
     graph_release_id: str = "current",
@@ -2580,6 +2775,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs="*",
         default=[
             "biomedical_optimization_v3",
+            "biomedical_holdout_v1",
+            "biomedical_citation_context_v1",
+            "biomedical_narrative_v1",
+            "biomedical_metadata_retrieval_v1",
+            "biomedical_evidence_type_v1",
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
             "adversarial_routing_v2", "keyword_search_v2", "abstract_stratum_v2",
             "question_evidence_v2", "semantic_recall_v2", "entity_relation_v2",
@@ -2587,6 +2787,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=[
             # V2 suites (default)
             "biomedical_optimization_v3",
+            "biomedical_holdout_v1",
+            "biomedical_citation_context_v1",
+            "biomedical_narrative_v1",
+            "biomedical_metadata_retrieval_v1",
+            "biomedical_evidence_type_v1",
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
             "adversarial_routing_v2", "keyword_search_v2", "abstract_stratum_v2",
             "question_evidence_v2", "semantic_recall_v2", "entity_relation_v2",
@@ -2608,6 +2813,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=7,
         help="Deterministic sampling seed for biomedical_optimization_v3.",
     )
+    parser.add_argument(
+        "--holdout-paper-sample-size",
+        type=int,
+        default=48,
+        help="Disjoint covered papers to reserve/build for biomedical_holdout_v1.",
+    )
     return parser.parse_args(argv)
 
 
@@ -2617,13 +2828,27 @@ def main(argv: list[str] | None = None) -> int:
 
     args = _parse_args(argv)
     output_dir: Path = args.output_dir
+    requested_suites = list(dict.fromkeys(args.suites))
+    if {
+        "biomedical_optimization_v3",
+        "biomedical_holdout_v1",
+    }.issubset(requested_suites):
+        requested_suites = [
+            suite_name
+            for suite_name in requested_suites
+            if suite_name != "biomedical_holdout_v1"
+        ]
+        requested_suites.insert(
+            requested_suites.index("biomedical_optimization_v3") + 1,
+            "biomedical_holdout_v1",
+        )
 
     # Register all score configs in Langfuse (idempotent)
     ensure_score_configs()
 
     existing_corpus_ids = _load_existing_corpus_ids(
         output_dir,
-        exclude_benchmark_keys=set(args.suites),
+        exclude_benchmark_keys=set(requested_suites),
     )
     print(f"Existing corpus_ids across benchmarks: {len(existing_corpus_ids)}")
 
@@ -2635,10 +2860,45 @@ def main(argv: list[str] | None = None) -> int:
         "biomedical_optimization_v3": (
             lambda **kwargs: build_biomedical_optimization_benchmark(
                 paper_sample_size=args.optimization_paper_sample_size,
+                reserve_holdout_papers=(
+                    args.holdout_paper_sample_size
+                    if "biomedical_holdout_v1" in requested_suites
+                    else 0
+                ),
                 sample_seed=args.optimization_sample_seed,
                 **kwargs,
             ),
             "biomedical_optimization_v3.json",
+        ),
+        "biomedical_holdout_v1": (
+            lambda **kwargs: build_biomedical_holdout_benchmark(
+                paper_sample_size=args.holdout_paper_sample_size,
+                sample_seed=args.optimization_sample_seed + 10,
+                optimize_benchmark_path=(
+                    BENCHMARK_DIR / "biomedical_optimization_v3.json"
+                ),
+                **kwargs,
+            ),
+            "biomedical_holdout_v1.json",
+        ),
+        "biomedical_citation_context_v1": (
+            lambda **kwargs: build_citation_context_benchmark(
+                source_benchmark_path=(BENCHMARK_DIR / "biomedical_holdout_v1.json"),
+                **kwargs,
+            ),
+            "biomedical_citation_context_v1.json",
+        ),
+        "biomedical_narrative_v1": (
+            build_biomedical_narrative_v1,
+            "biomedical_narrative_v1.json",
+        ),
+        "biomedical_metadata_retrieval_v1": (
+            build_biomedical_metadata_retrieval_benchmark,
+            "biomedical_metadata_retrieval_v1.json",
+        ),
+        "biomedical_evidence_type_v1": (
+            build_biomedical_evidence_type_benchmark,
+            "biomedical_evidence_type_v1.json",
         ),
         "title_retrieval_v2": (build_title_retrieval_v2, "title_retrieval_v2.json"),
         "clinical_evidence_v2": (build_clinical_evidence_v2, "clinical_evidence_v2.json"),
@@ -2662,22 +2922,31 @@ def main(argv: list[str] | None = None) -> int:
         "clinical_actionable": (build_clinical_actionable_benchmark, "clinical_actionable_v1.json"),
     }
 
+    overlap_allowed_suites = {
+        "biomedical_optimization_v3",
+        "biomedical_holdout_v1",
+        "biomedical_citation_context_v1",
+        "biomedical_narrative_v1",
+        "biomedical_metadata_retrieval_v1",
+        "biomedical_evidence_type_v1",
+    }
+
     try:
-        for suite_name in args.suites:
+        for suite_name in requested_suites:
             builder_fn, filename = builders[suite_name]
             print(f"\nBuilding {suite_name}...")
-            suite_excluded = (
-                set()
-                if suite_name == "biomedical_optimization_v3"
-                else excluded
-            )
+            suite_excluded = set() if suite_name in overlap_allowed_suites else excluded
             report = builder_fn(
                 graph_release_id=args.graph_release_id,
                 chunk_version_key=args.chunk_version_key,
                 exclude_corpus_ids=suite_excluded,
                 connect=connect,
             )
-            if suite_name != "biomedical_optimization_v3":
+            if report.selected_count <= 0 or not report.cases:
+                raise ValueError(
+                    f"{suite_name} produced 0 cases; benchmark build is invalid"
+                )
+            if suite_name not in overlap_allowed_suites:
                 for case in report.cases:
                     excluded.add(case.corpus_id)
 

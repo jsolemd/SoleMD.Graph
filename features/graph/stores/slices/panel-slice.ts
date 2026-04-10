@@ -1,7 +1,7 @@
 import type { StateCreator } from 'zustand'
 import type { DashboardState } from '../dashboard-store'
 
-export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | null
+export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | 'wiki' | null
 export type PromptMode = 'collapsed' | 'normal' | 'maximized'
 type ExpandedPromptMode = Exclude<PromptMode, 'collapsed'>
 
@@ -18,6 +18,10 @@ export interface PanelSlice {
   promptMode: PromptMode
   lastExpandedPromptMode: ExpandedPromptMode
   promptShellFullHeight: boolean
+
+  // Wiki panel expanded mode
+  wikiExpanded: boolean
+  wikiExpandedWidth: number
 
   // Write mode
   writeContent: string
@@ -43,6 +47,8 @@ export interface PanelSlice {
   stepPromptUp: () => void
   togglePromptCollapsed: () => void
   setWriteContent: (content: string) => void
+  setWikiExpanded: (expanded: boolean) => void
+  setWikiExpandedWidth: (width: number) => void
 }
 
 export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> = (set) => ({
@@ -55,6 +61,8 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   promptMode: 'normal',
   lastExpandedPromptMode: 'normal',
   promptShellFullHeight: false,
+  wikiExpanded: false,
+  wikiExpandedWidth: 420,
   writeContent: '',
 
   setActivePanel: (panel) => set((s) => (
@@ -157,5 +165,11 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
     })),
   setWriteContent: (content) => set((s) => (
     s.writeContent === content ? s : { writeContent: content }
+  )),
+  setWikiExpanded: (expanded) => set((s) => (
+    s.wikiExpanded === expanded ? s : { wikiExpanded: expanded }
+  )),
+  setWikiExpandedWidth: (width) => set((s) => (
+    s.wikiExpandedWidth === width ? s : { wikiExpandedWidth: width }
   )),
 })

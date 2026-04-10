@@ -31,6 +31,7 @@ from app.rag._query_enrichment_const import (
     MAX_PARAPHRASE_QUERY_TOKENS,
     MAX_QUERY_PHRASE_TOKENS,
     MAX_QUERY_PHRASES,
+    MAX_SEMANTIC_LOOKUP_TOKENS,
     MAX_SHORT_KEYWORD_TOKENS,
     MAX_TITLE_LIKE_QUERY_CHARS,
     MAX_TITLE_LIKE_QUERY_WORDS,
@@ -45,11 +46,13 @@ from app.rag._query_enrichment_const import (
     PARAPHRASE_TITLE_PUNCT,
     PASSAGE_VERB_TOKENS,
     PROSE_CLAUSE_TOKENS,
-    QueryEnrichmentTerms,
+    RUNTIME_ENTITY_NOISE_TOKENS,
+    SEMANTIC_LOOKUP_ANCHOR_TOKENS,
     SENTENCE_OPENING_PREFIXES,
     SHORT_KEYWORD_TITLE_PUNCT,
     STATISTICAL_ANCHOR_PREFIXES,
     SUPPORTED_RELATION_TYPES,
+    QueryEnrichmentTerms,
 )
 from app.rag._query_enrichment_phrases import (
     build_entity_query_phrases,
@@ -61,8 +64,10 @@ from app.rag._query_enrichment_phrases import (
     normalize_entity_query_text,
     normalize_query_text,
     normalize_title_key,
+    should_enrich_resolved_entity_term,
     should_seed_resolved_entity_term,
 )
+from app.rag.query_metadata import QueryMetadataHints, extract_query_metadata_hints
 from app.rag.types import QueryRetrievalProfile
 
 __all__ = [
@@ -78,6 +83,7 @@ __all__ = [
     "MAX_PARAPHRASE_QUERY_TOKENS",
     "MAX_QUERY_PHRASE_TOKENS",
     "MAX_QUERY_PHRASES",
+    "MAX_SEMANTIC_LOOKUP_TOKENS",
     "MAX_SHORT_KEYWORD_TOKENS",
     "MAX_TITLE_LIKE_QUERY_CHARS",
     "MAX_TITLE_LIKE_QUERY_WORDS",
@@ -93,6 +99,8 @@ __all__ = [
     "PASSAGE_VERB_TOKENS",
     "PROSE_CLAUSE_TOKENS",
     "QueryEnrichmentTerms",
+    "RUNTIME_ENTITY_NOISE_TOKENS",
+    "SEMANTIC_LOOKUP_ANCHOR_TOKENS",
     "SENTENCE_OPENING_PREFIXES",
     "SHORT_KEYWORD_TITLE_PUNCT",
     "STATISTICAL_ANCHOR_PREFIXES",
@@ -107,6 +115,8 @@ __all__ = [
     "normalize_entity_query_text",
     "normalize_query_text",
     "normalize_title_key",
+    "extract_query_metadata_hints",
+    "should_enrich_resolved_entity_term",
     "should_seed_resolved_entity_term",
     # Title classification (defined in this file)
     "derive_relation_terms",
@@ -202,6 +212,66 @@ def _has_obvious_sentence_opening(text: str) -> bool:
     return any(tuple(tokens[: len(prefix)]) == prefix for prefix in SENTENCE_OPENING_PREFIXES)
 
 
+def _has_fragment_truncation_signal(text: str) -> bool:
+    """Detect clipped excerpt surfaces that should not enter title lookup.
+
+    Representative sentence seeds can be truncated mid-clause when lifted from
+    abstracts or section snippets. Those fragments are noun-heavy enough to look
+    title-like, but real paper titles almost never carry unmatched delimiters or
+    trail off with operator-style mutation tails.
+    """
+
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if stripped.count("(") != stripped.count(")"):
+        return True
+    if stripped.count("[") != stripped.count("]"):
+        return True
+    if stripped.count("{") != stripped.count("}"):
+        return True
+    return stripped.endswith(("-->", "->", "<--", "<-", "=>", "=<"))
+
+
+def _is_lowercase_dominant_surface(text: str) -> bool:
+    raw_tokens = [
+        token.strip("()[]{}.,;:!?\"'")
+        for token in text.strip().split()
+        if token.strip("()[]{}.,;:!?\"'")
+    ]
+    alpha_tokens = [token for token in raw_tokens if any(char.isalpha() for char in token)]
+    if not alpha_tokens:
+        return False
+    lowercase_tokens = sum(1 for token in alpha_tokens if token == token.lower())
+    return lowercase_tokens >= max(2, len(alpha_tokens) // 2 + 1)
+
+
+def _has_bare_interrogative_opening(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped or stripped.endswith("?"):
+        return False
+    if _is_title_with_question_subtitle(stripped):
+        return False
+    first_raw_token = stripped.split()[0].strip("()[]{}.,;:!?\"'").casefold()
+    if first_raw_token.endswith("n't"):
+        return False
+    tokens = normalize_query_text(stripped).split()
+    return bool(tokens) and tokens[0] in INTERROGATIVE_OPENERS
+
+
+def _should_demote_title_to_passage_lookup(text: str) -> bool:
+    normalized = normalize_query_text(text)
+    tokens = normalized.split()
+    if len(tokens) < MIN_CHUNK_LEXICAL_QUERY_WORDS:
+        return False
+    stripped = text.strip()
+    if any(ch in stripped for ch in SHORT_KEYWORD_TITLE_PUNCT):
+        return False
+    if not _is_lowercase_dominant_surface(text):
+        return False
+    return any(token in PASSAGE_VERB_TOKENS for token in tokens)
+
+
 def _should_demote_title_to_general(
     text: str,
     *,
@@ -242,6 +312,31 @@ def _should_demote_title_to_general(
         upper_tokens = sum(1 for t in tokens if t == t.upper() and len(t) >= 2)
         if upper_tokens > len(tokens) * 0.5:
             return True
+
+    # Lowercase-dominant biomedical semantic prompts with entity or
+    # relation/property anchors perform better on the broad GENERAL
+    # fusion than the narrow title lane. Exact-title rescue still
+    # protects real titles even after this demotion.
+    if len(tokens) <= MAX_SEMANTIC_LOOKUP_TOKENS:
+        stripped = text.strip()
+        if not any(ch in stripped for ch in SHORT_KEYWORD_TITLE_PUNCT):
+            raw_tokens = [
+                token.strip("()[]{}.,;:!?\"'")
+                for token in stripped.split()
+                if token.strip("()[]{}.,;:!?\"'")
+            ]
+            lowercase_dominant = _is_lowercase_dominant_surface(text)
+            semantic_anchor = bool(SEMANTIC_LOOKUP_ANCHOR_TOKENS & set(tokens)) or any(
+                token.endswith("-induced") or token == "induced" for token in tokens
+            ) or {"side", "effect"} <= set(tokens)
+            biomedical_surface = has_query_entity_surface_signal(text) or any(
+                "-" in token and any(char.isalpha() for char in token)
+                for token in raw_tokens
+            )
+            if lowercase_dominant and semantic_anchor and (
+                biomedical_surface or len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS
+            ):
+                return True
 
     # Short, lowercase-dominant biomedical keyword queries → GENERAL.
     # Catches terse lookups like "tardive dyskinesia", "Wilson disease",
@@ -328,6 +423,8 @@ def is_title_like_query(
         return False
     if _has_leading_section_label(normalized):
         return False
+    if _has_fragment_truncation_signal(normalized):
+        return False
 
     token_count = _token_count(normalized)
     if token_count == 0 or token_count > MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS:
@@ -364,24 +461,39 @@ def determine_query_retrieval_profile(
     text: str | None,
     *,
     allow_terminal_title_punctuation: bool = False,
+    metadata_hints: QueryMetadataHints | None = None,
 ) -> QueryRetrievalProfile:
     """Classify the query shape for runtime retrieval planning."""
+
+    metadata_hints = metadata_hints or extract_query_metadata_hints(text)
+    if metadata_hints.has_structured_signal:
+        return QueryRetrievalProfile.GENERAL
+
+    normalized = normalize_query_text(text or "")
+    tokens = normalized.split()
+    if not tokens:
+        return QueryRetrievalProfile.GENERAL
+
+    # Bare interrogative prompts without a terminal question mark are
+    # user questions, not titles. Question-subtitle paper titles are
+    # explicitly exempted and stay title-eligible.
+    if _has_bare_interrogative_opening(text or ""):
+        if len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
+            return QueryRetrievalProfile.QUESTION_LOOKUP
+        return QueryRetrievalProfile.GENERAL
 
     if is_title_like_query(
         text,
         allow_terminal_punctuation=allow_terminal_title_punctuation,
     ):
+        if _should_demote_title_to_passage_lookup(text or ""):
+            return QueryRetrievalProfile.PASSAGE_LOOKUP
         if _should_demote_title_to_general(
             text or "",
             in_title_friendly_context=allow_terminal_title_punctuation,
         ):
             return QueryRetrievalProfile.GENERAL
         return QueryRetrievalProfile.TITLE_LOOKUP
-
-    normalized = normalize_query_text(text or "")
-    tokens = normalized.split()
-    if not tokens:
-        return QueryRetrievalProfile.GENERAL
 
     # Interrogative queries get dual-lane paper+chunk retrieval
     if len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS and _is_interrogative_query(text or ""):
@@ -398,39 +510,47 @@ def determine_query_retrieval_profile(
     return QueryRetrievalProfile.GENERAL
 
 
-def should_use_exact_title_precheck(text: str | None) -> bool:
+def should_use_exact_title_precheck(
+    text: str | None,
+    *,
+    metadata_hints: QueryMetadataHints | None = None,
+) -> bool:
     """Return True when a long passage-shaped query deserves exact-title rescue.
 
-    This is intentionally narrower than the title classifier. The precheck exists
-    to recover long full-paper titles that fall into the passage lane because of
-    terminal punctuation, not to run on ordinary sentence queries.
+    This is intentionally broader than the title classifier for one narrow case:
+    exact-title lookup is cheap and exact, so it is safe to probe it for long
+    non-question queries that are not obvious prose openings even when the
+    surface classifier keeps them in the passage lane.
     """
 
     normalized = unicodedata.normalize("NFKC", text or "").strip()
-    if not normalized or is_title_like_query(normalized):
+    if not normalized:
+        return False
+    metadata_hints = metadata_hints or extract_query_metadata_hints(normalized)
+    if metadata_hints.has_structured_signal:
         return False
 
     token_count = _token_count(normalized)
     if token_count == 0 or token_count > MAX_EXTENDED_TITLE_LIKE_QUERY_WORDS:
         return False
-    if _has_inline_sentence_boundary(normalized):
+    if _has_leading_section_label(normalized) or _has_obvious_sentence_opening(normalized):
         return False
-    if _has_leading_section_label(normalized):
+    if _has_fragment_truncation_signal(normalized):
         return False
-    if _has_obvious_sentence_opening(normalized):
+    if _is_interrogative_query(normalized):
         return False
 
     if is_title_like_query(normalized, allow_terminal_punctuation=True):
         return True
 
-    if not normalized.endswith((".", "?", "!")):
-        return False
-    if len(normalized) < MIN_EXACT_TITLE_PRECHECK_CHARS:
-        return False
     if token_count < MIN_EXACT_TITLE_PRECHECK_WORDS:
         return False
-    if _has_prose_clause_signal(normalized):
-        return False
+
+    # The exact candidate probe is materially cheaper than falling through the
+    # full passage/dense/entity stack. Once the query is long enough and not an
+    # obvious sentence opening, it is worth paying this exact rescue even when
+    # subtitle punctuation or auxiliary verbs made the title classifier
+    # conservative.
     return True
 
 

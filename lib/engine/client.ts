@@ -155,6 +155,40 @@ async function executeEnginePost(
   return response
 }
 
+export async function getEngineJson<TResponse>(
+  path: string,
+  init?: {
+    signal?: AbortSignal
+  },
+): Promise<TResponse> {
+  const headers = getEngineHeaders()
+  let response: Response
+  try {
+    response = await fetch(`${getEngineUrl()}${path}`, {
+      method: 'GET',
+      headers,
+      cache: 'no-store' as const,
+      signal: init?.signal,
+    })
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw error
+    }
+    throw new EngineApiError(
+      `Evidence engine unavailable at ${getEngineUrl()}. Start the engine or set ENGINE_URL.`,
+      503,
+      { error_code: 'engine_request_failed', request_id: null, retry_after: null },
+    )
+  }
+
+  if (!response.ok) {
+    const errorBody = await parseErrorBody(response)
+    throw new EngineApiError(getErrorMessage(response.status, errorBody), response.status, errorBody)
+  }
+
+  return response.json() as Promise<TResponse>
+}
+
 export async function postEngineJson<TRequest, TResponse>(
   path: string,
   body: TRequest,

@@ -33,6 +33,7 @@ _ROUTE_SIGNATURE_KEYS = (
     "paper_search_use_title_similarity",
     "paper_search_use_title_candidate_lookup",
     "chunk_search_route",
+    "title_chunk_rescue_route",
     "dense_query_route",
 )
 

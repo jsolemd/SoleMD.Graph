@@ -28,6 +28,10 @@ from typing import Any
 
 from app import db
 from app.langfuse_config import (
+    SCORE_DISPLAY_AUTHOR_COVERAGE,
+    SCORE_DISPLAY_JOURNAL_COVERAGE,
+    SCORE_DISPLAY_STUDY_METADATA_COVERAGE,
+    SCORE_DISPLAY_YEAR_COVERAGE,
     SCORE_DURATION_MS,
     SCORE_EVIDENCE_BUNDLE_COUNT,
     SCORE_GROUNDED_ANSWER_RATE,
@@ -54,6 +58,7 @@ logger = logging.getLogger(__name__)
 # 1. Task function — wraps RagService.search_result()
 # ---------------------------------------------------------------------------
 
+
 def _build_request_from_item(
     item_input: dict[str, Any],
     *,
@@ -76,6 +81,7 @@ def _build_request_from_item(
         selected_layer_key=item_input.get("selected_layer_key"),
         selected_node_id=item_input.get("selected_node_id"),
         selection_graph_paper_refs=list(item_input.get("selection_graph_paper_refs") or []),
+        cited_corpus_ids=list(item_input.get("cited_corpus_ids") or []),
         evidence_intent=evidence_intent,
         k=k,
         rerank_topn=max(k, rerank_topn),
@@ -86,12 +92,23 @@ def _build_request_from_item(
 
 
 _SIGNAL_FIELDS = [
-    "lexical_score", "chunk_lexical_score", "dense_score",
-    "entity_score", "relation_score", "citation_boost",
-    "citation_intent_score", "title_anchor_score",
-    "passage_alignment_score", "selected_context_score",
-    "intent_score", "publication_type_score", "evidence_quality_score",
-    "clinical_prior_score", "biomedical_rerank_score", "fused_score",
+    "lexical_score",
+    "chunk_lexical_score",
+    "dense_score",
+    "entity_score",
+    "relation_score",
+    "citation_boost",
+    "citation_intent_score",
+    "title_anchor_score",
+    "passage_alignment_score",
+    "selected_context_score",
+    "cited_context_score",
+    "intent_score",
+    "publication_type_score",
+    "evidence_quality_score",
+    "clinical_prior_score",
+    "biomedical_rerank_score",
+    "fused_score",
 ]
 
 
@@ -104,6 +121,49 @@ def _extract_signal_scores(hit) -> dict[str, float]:
     channels = getattr(hit, "matched_channels", [])
     scores["matched_channels"] = [str(c) for c in channels] if channels else []
     return scores
+
+
+def _display_metadata_coverage(response, *, limit: int = 3) -> dict[str, float]:
+    """Measure how citeable the displayed evidence set is.
+
+    Coverage is computed across the first ``limit`` evidence bundles because that is
+    the study set the UI and answer prompts expose most prominently.
+    """
+    bundles = list(response.evidence_bundles[: max(limit, 0)])
+    if not bundles:
+        return {
+            "display_author_coverage": 0.0,
+            "display_journal_coverage": 0.0,
+            "display_year_coverage": 0.0,
+            "display_study_metadata_coverage": 0.0,
+        }
+
+    def _bundle_has_author(bundle) -> bool:
+        return any(
+            str(getattr(author, "name", "") or "").strip()
+            for author in getattr(bundle, "authors", [])
+        )
+
+    def _bundle_has_journal(bundle) -> bool:
+        return bool(str(getattr(bundle.paper, "journal_name", "") or "").strip())
+
+    def _bundle_has_year(bundle) -> bool:
+        year = getattr(bundle.paper, "year", None)
+        return isinstance(year, int) and year > 0
+
+    bundle_count = float(len(bundles))
+    author_coverage = sum(1.0 for bundle in bundles if _bundle_has_author(bundle)) / bundle_count
+    journal_coverage = sum(1.0 for bundle in bundles if _bundle_has_journal(bundle)) / bundle_count
+    year_coverage = sum(1.0 for bundle in bundles if _bundle_has_year(bundle)) / bundle_count
+    return {
+        "display_author_coverage": round(author_coverage, 4),
+        "display_journal_coverage": round(journal_coverage, 4),
+        "display_year_coverage": round(year_coverage, 4),
+        "display_study_metadata_coverage": round(
+            (author_coverage + journal_coverage + year_coverage) / 3.0,
+            4,
+        ),
+    }
 
 
 def _serialize_task_output(
@@ -133,7 +193,7 @@ def _serialize_task_output(
     for i, b in enumerate(response.evidence_bundles[:5]):
         title = b.paper.title or "Unknown"
         snippet = b.snippet or ""
-        context_parts.append(f"[{i+1}] (ID: {b.paper.corpus_id}) {title}\n    {snippet}")
+        context_parts.append(f"[{i + 1}] (ID: {b.paper.corpus_id}) {title}\n    {snippet}")
     context_str = "\n\n".join(context_parts) if context_parts else "(no evidence retrieved)"
 
     source_system = (expected_output or {}).get("primary_source_system")
@@ -143,6 +203,7 @@ def _serialize_task_output(
     target_signals: dict[str, Any] = {}
     top1_signals: dict[str, Any] = {}
     fused_score_gap = 0.0
+    display_metadata = _display_metadata_coverage(response)
 
     raw_bundles = internal_result.bundles or []
     if raw_bundles:
@@ -157,7 +218,9 @@ def _serialize_task_output(
             )
             if target_bundle:
                 target_signals = _extract_signal_scores(target_bundle.paper)
-                fused_score_gap = top1_signals.get("fused_score", 0.0) - target_signals.get("fused_score", 0.0)
+                fused_score_gap = top1_signals.get("fused_score", 0.0) - target_signals.get(
+                    "fused_score", 0.0
+                )
             else:
                 # Target not in results — report zeros
                 target_signals = {f: 0.0 for f in _SIGNAL_FIELDS}
@@ -172,18 +235,24 @@ def _serialize_task_output(
         "source_system": source_system,
         "answer": response.answer or "",
         "answer_corpus_ids": response.answer_corpus_ids,
-        "target_in_answer_corpus": target_corpus_id in response.answer_corpus_ids if target_corpus_id else False,
+        "target_in_answer_corpus": (
+            target_corpus_id in response.answer_corpus_ids if target_corpus_id else False
+        ),
         "grounded_answer_present": grounded is not None,
         "grounded_answer_linked_corpus_ids": grounded_ids,
-        "target_in_grounded_answer": target_corpus_id in grounded_ids if target_corpus_id else False,
+        "target_in_grounded_answer": (
+            target_corpus_id in grounded_ids if target_corpus_id else False
+        ),
         "evidence_bundle_count": len(response.evidence_bundles),
         "cited_span_count": len(grounded.cited_spans) if grounded else 0,
         "duration_ms": float(internal_result.duration_ms),
         "route_signature": _route_signature(session_flags),
         "retrieval_profile": session_flags.get("retrieval_profile"),
         "warehouse_depth": (
-            "fulltext" if (grounded and len(grounded.cited_spans) > 0)
-            else "abstract" if grounded is not None
+            "fulltext"
+            if (grounded and len(grounded.cited_spans) > 0)
+            else "abstract"
+            if grounded is not None
             else "none"
         ),
         "context": context_str,
@@ -192,6 +261,7 @@ def _serialize_task_output(
         "target_signals": target_signals,
         "top1_signals": top1_signals,
         "fused_score_gap": fused_score_gap,
+        **display_metadata,
     }
 
 
@@ -218,11 +288,21 @@ def _make_task_function(
         chunk_version_key=chunk_version_key,
         connect=connect_fn,
     )
+    warm = getattr(service, "warm", None)
+    if callable(warm):
+        try:
+            warm()
+        except Exception:  # pragma: no cover - benchmark warmup failure falls back to measured path
+            logger.debug("rag_benchmark_service_warm_failed", exc_info=True)
     trace_tags = tags or []
 
     def task(*, item, **kwargs) -> dict[str, Any]:
         item_input = item.input if hasattr(item, "input") else item.get("input", {})
-        expected = item.expected_output if hasattr(item, "expected_output") else item.get("expected_output")
+        expected = (
+            item.expected_output
+            if hasattr(item, "expected_output")
+            else item.get("expected_output")
+        )
         request = _build_request_from_item(
             item_input,
             graph_release_id=graph_release_id,
@@ -280,6 +360,7 @@ def _make_task_function(
 # 2. Item-level evaluators
 # ---------------------------------------------------------------------------
 
+
 def structural_evaluator(*, input, output, expected_output=None, metadata=None, **kwargs):
     """Return structural retrieval and grounding scores for a single item.
 
@@ -324,6 +405,22 @@ def structural_evaluator(*, input, output, expected_output=None, metadata=None, 
             name=SCORE_EVIDENCE_BUNDLE_COUNT,
             value=float(output.get("evidence_bundle_count", 0)),
         ),
+        Evaluation(
+            name=SCORE_DISPLAY_AUTHOR_COVERAGE,
+            value=float(output.get("display_author_coverage", 0.0)),
+        ),
+        Evaluation(
+            name=SCORE_DISPLAY_JOURNAL_COVERAGE,
+            value=float(output.get("display_journal_coverage", 0.0)),
+        ),
+        Evaluation(
+            name=SCORE_DISPLAY_YEAR_COVERAGE,
+            value=float(output.get("display_year_coverage", 0.0)),
+        ),
+        Evaluation(
+            name=SCORE_DISPLAY_STUDY_METADATA_COVERAGE,
+            value=float(output.get("display_study_metadata_coverage", 0.0)),
+        ),
     ]
 
     # Categorical scores
@@ -333,27 +430,33 @@ def structural_evaluator(*, input, output, expected_output=None, metadata=None, 
     # observation metadata (``session_flags``) for diagnosis.
     warehouse_depth = output.get("warehouse_depth")
     if warehouse_depth:
-        evals.append(Evaluation(
-            name="warehouse_depth",
-            value=warehouse_depth,
-            data_type="CATEGORICAL",
-        ))
+        evals.append(
+            Evaluation(
+                name="warehouse_depth",
+                value=warehouse_depth,
+                data_type="CATEGORICAL",
+            )
+        )
 
     source_system = output.get("source_system")
     if source_system:
-        evals.append(Evaluation(
-            name="source_system",
-            value=source_system,
-            data_type="CATEGORICAL",
-        ))
+        evals.append(
+            Evaluation(
+                name="source_system",
+                value=source_system,
+                data_type="CATEGORICAL",
+            )
+        )
 
     retrieval_profile = output.get("retrieval_profile")
     if retrieval_profile:
-        evals.append(Evaluation(
-            name="retrieval_profile",
-            value=str(retrieval_profile),
-            data_type="CATEGORICAL",
-        ))
+        evals.append(
+            Evaluation(
+                name="retrieval_profile",
+                value=str(retrieval_profile),
+                data_type="CATEGORICAL",
+            )
+        )
 
     # Signal decomposition: per-signal scores for the TARGET paper
     target_signals = output.get("target_signals", {})
@@ -361,28 +464,67 @@ def structural_evaluator(*, input, output, expected_output=None, metadata=None, 
         for signal_name in _SIGNAL_FIELDS:
             val = target_signals.get(signal_name, 0.0)
             if isinstance(val, (int, float)):
-                evals.append(Evaluation(
-                    name=f"target_{signal_name}",
-                    value=round(float(val), 4),
-                ))
+                evals.append(
+                    Evaluation(
+                        name=f"target_{signal_name}",
+                        value=round(float(val), 4),
+                    )
+                )
 
         # Channel contribution booleans
-        evals.append(Evaluation(name="channel_lexical", value=1.0 if target_signals.get("lexical_score", 0) > 0 else 0.0))
-        evals.append(Evaluation(name="channel_chunk", value=1.0 if target_signals.get("chunk_lexical_score", 0) > 0 else 0.0))
-        evals.append(Evaluation(name="channel_dense", value=1.0 if target_signals.get("dense_score", 0) > 0 else 0.0))
-        evals.append(Evaluation(name="channel_entity", value=1.0 if target_signals.get("entity_score", 0) > 0 else 0.0))
-        evals.append(Evaluation(name="channel_relation", value=1.0 if target_signals.get("relation_score", 0) > 0 else 0.0))
-        evals.append(Evaluation(name="channel_citation", value=1.0 if target_signals.get("citation_boost", 0) > 0 else 0.0))
-        evals.append(Evaluation(name="target_lane_count", value=float(target_signals.get("lane_count", 0))))
+        evals.append(
+            Evaluation(
+                name="channel_lexical",
+                value=(1.0 if target_signals.get("lexical_score", 0) > 0 else 0.0),
+            )
+        )
+        evals.append(
+            Evaluation(
+                name="channel_chunk",
+                value=(1.0 if target_signals.get("chunk_lexical_score", 0) > 0 else 0.0),
+            )
+        )
+        evals.append(
+            Evaluation(
+                name="channel_dense",
+                value=1.0 if target_signals.get("dense_score", 0) > 0 else 0.0,
+            )
+        )
+        evals.append(
+            Evaluation(
+                name="channel_entity",
+                value=1.0 if target_signals.get("entity_score", 0) > 0 else 0.0,
+            )
+        )
+        evals.append(
+            Evaluation(
+                name="channel_relation",
+                value=(1.0 if target_signals.get("relation_score", 0) > 0 else 0.0),
+            )
+        )
+        evals.append(
+            Evaluation(
+                name="channel_citation",
+                value=(1.0 if target_signals.get("citation_boost", 0) > 0 else 0.0),
+            )
+        )
+        evals.append(
+            Evaluation(
+                name="target_lane_count",
+                value=float(target_signals.get("lane_count", 0)),
+            )
+        )
 
     # Fused score gap (target vs #1 — what to optimize)
     fused_gap = output.get("fused_score_gap", 0.0)
     if isinstance(fused_gap, (int, float)):
-        evals.append(Evaluation(
-            name="fused_score_gap",
-            value=round(float(fused_gap), 4),
-            comment="gap between #1 and target fused_score",
-        ))
+        evals.append(
+            Evaluation(
+                name="fused_score_gap",
+                value=round(float(fused_gap), 4),
+                comment="gap between #1 and target fused_score",
+            )
+        )
 
     return evals
 
@@ -416,6 +558,7 @@ def routing_evaluator(*, output, expected_output=None, **kwargs):
 # 3. Run-level evaluators (aggregates)
 # ---------------------------------------------------------------------------
 
+
 def _extract_score(item_results, score_name: str) -> list[float]:
     """Extract numeric score values from experiment item results."""
     return [
@@ -428,6 +571,7 @@ def _extract_score(item_results, score_name: str) -> list[float]:
 
 def avg_hit_at_1(*, item_results, **kwargs):
     from langfuse import Evaluation
+
     scores = _extract_score(item_results, SCORE_HIT_AT_1)
     avg = sum(scores) / len(scores) if scores else 0.0
     return Evaluation(name="avg_hit_at_1", value=avg, comment=f"{avg:.2%} ({len(scores)} items)")
@@ -435,6 +579,7 @@ def avg_hit_at_1(*, item_results, **kwargs):
 
 def avg_hit_at_k(*, item_results, **kwargs):
     from langfuse import Evaluation
+
     scores = _extract_score(item_results, SCORE_HIT_AT_K)
     avg = sum(scores) / len(scores) if scores else 0.0
     return Evaluation(name="avg_hit_at_k", value=avg, comment=f"{avg:.2%} ({len(scores)} items)")
@@ -442,13 +587,19 @@ def avg_hit_at_k(*, item_results, **kwargs):
 
 def avg_grounded_answer_rate(*, item_results, **kwargs):
     from langfuse import Evaluation
+
     scores = _extract_score(item_results, SCORE_GROUNDED_ANSWER_RATE)
     avg = sum(scores) / len(scores) if scores else 0.0
-    return Evaluation(name="avg_grounded_answer_rate", value=avg, comment=f"{avg:.2%} ({len(scores)} items)")
+    return Evaluation(
+        name="avg_grounded_answer_rate",
+        value=avg,
+        comment=f"{avg:.2%} ({len(scores)} items)",
+    )
 
 
 def latency_summary(*, item_results, **kwargs):
     from langfuse import Evaluation
+
     durations = _extract_score(item_results, SCORE_DURATION_MS)
     if not durations:
         return Evaluation(name="p50_duration_ms", value=0.0)
@@ -466,6 +617,7 @@ def latency_summary(*, item_results, **kwargs):
 
 def error_rate(*, item_results, **kwargs):
     from langfuse import Evaluation
+
     errors = sum(1 for r in item_results if r.output and r.output.get("error"))
     total = len(item_results) or 1
     return Evaluation(name="error_rate", value=errors / total, comment=f"{errors}/{total}")
@@ -500,11 +652,15 @@ def ensure_annotation_queue() -> str | None:
                 score_config_ids.append(cfg["id"])
                 break
 
-    result = _langfuse_api("POST", "/annotation-queues", {
-        "name": _ANNOTATION_QUEUE_NAME,
-        "description": "Hit@1=0 cases requiring domain expert review of retrieval failures",
-        "scoreConfigIds": score_config_ids,
-    })
+    result = _langfuse_api(
+        "POST",
+        "/annotation-queues",
+        {
+            "name": _ANNOTATION_QUEUE_NAME,
+            "description": "Hit@1=0 cases requiring domain expert review of retrieval failures",
+            "scoreConfigIds": score_config_ids,
+        },
+    )
     if result:
         logger.info("Created annotation queue '%s'", _ANNOTATION_QUEUE_NAME)
         return result.get("id")
@@ -536,6 +692,11 @@ def enqueue_failures(result, queue_id: str) -> int:
 
 ALL_BENCHMARK_DATASETS = [
     "benchmark-biomedical_optimization_v3",
+    "benchmark-biomedical_holdout_v1",
+    "benchmark-biomedical_citation_context_v1",
+    "benchmark-biomedical_narrative_v1",
+    "benchmark-biomedical_metadata_retrieval_v1",
+    "benchmark-biomedical_evidence_type_v1",
     "benchmark-title_retrieval_v2",
     "benchmark-clinical_evidence_v2",
     "benchmark-passage_retrieval_v2",
@@ -551,6 +712,7 @@ ALL_BENCHMARK_DATASETS = [
 # ---------------------------------------------------------------------------
 # 5. Experiment diagnosis
 # ---------------------------------------------------------------------------
+
 
 def _recommend_actions(failures: list[dict]) -> list[str]:
     """Generate actionable recommendations from failure patterns.
@@ -646,19 +808,21 @@ def diagnose_experiment(result) -> str:
         if hit_at_1 == 0.0:
             output = r.output or {}
             item_input = r.item.input if hasattr(r.item, "input") else {}
-            failures.append({
-                "query": item_input.get("query", "?")[:80],
-                "route": output.get("route_signature"),
-                "depth": output.get("warehouse_depth"),
-                "source": output.get("source_system"),
-                "profile": output.get("retrieval_profile"),
-                "bundles": output.get("evidence_bundle_count", 0),
-                "error": output.get("error"),
-                "trace_id": getattr(r, "trace_id", None),
-            })
+            failures.append(
+                {
+                    "query": item_input.get("query", "?")[:80],
+                    "route": output.get("route_signature"),
+                    "depth": output.get("warehouse_depth"),
+                    "source": output.get("source_system"),
+                    "profile": output.get("retrieval_profile"),
+                    "bundles": output.get("evidence_bundle_count", 0),
+                    "error": output.get("error"),
+                    "trace_id": getattr(r, "trace_id", None),
+                }
+            )
 
     total = len(result.item_results)
-    lines.append(f"Failures: {len(failures)}/{total} ({len(failures)/max(total,1):.0%})")
+    lines.append(f"Failures: {len(failures)}/{total} ({len(failures) / max(total, 1):.0%})")
 
     if not failures:
         lines.append("All items passed hit@1.")
@@ -742,6 +906,45 @@ def _patch_flush_timeout(client) -> None:
     client.flush = _timeout_flush
 
 
+def _strip_dataset_item_metadata(dataset):
+    """Return dataset items with benchmark metadata cleared.
+
+    Benchmark tasks consume only ``input`` and ``expected_output``. Langfuse's
+    experiment runner propagates ``item.metadata`` into child-span attributes,
+    which is redundant for these benchmarks and can overflow attribute limits on
+    large suites. Langfuse SDK dataset items are frozen models, so the stripped
+    items must be copied rather than mutated in place.
+    """
+
+    stripped_items = []
+    for item in getattr(dataset, "items", []) or []:
+        if isinstance(item, dict):
+            stripped_item = dict(item)
+            stripped_item["metadata"] = None
+            stripped_items.append(stripped_item)
+            continue
+        if hasattr(item, "model_copy"):
+            stripped_items.append(item.model_copy(update={"metadata": None}))
+            continue
+        if hasattr(item, "metadata"):
+            try:
+                item.metadata = None
+                stripped_items.append(item)
+            except Exception:  # pragma: no cover - defensive for SDK shape drift
+                logger.debug("could_not_clear_dataset_item_metadata", exc_info=True)
+                stripped_items.append(item)
+            continue
+        stripped_items.append(item)
+
+    if hasattr(dataset, "items"):
+        try:
+            dataset.items = stripped_items
+        except Exception:  # pragma: no cover - defensive for SDK shape drift
+            logger.debug("could_not_replace_dataset_items", exc_info=True)
+
+    return stripped_items
+
+
 def run_benchmark(
     *,
     dataset_name: str,
@@ -770,6 +973,7 @@ def run_benchmark(
     _patch_flush_timeout(langfuse)
 
     dataset = langfuse.get_dataset(dataset_name)
+    stripped_items = _strip_dataset_item_metadata(dataset)
 
     task = _make_task_function(
         graph_release_id=graph_release_id,
@@ -784,8 +988,10 @@ def run_benchmark(
         connect=connect,
     )
 
-    return dataset.run_experiment(
+    return langfuse.run_experiment(
         name=run_name,
+        run_name=run_name,
+        data=stripped_items,
         task=task,
         evaluators=[structural_evaluator, routing_evaluator],
         run_evaluators=[
@@ -804,6 +1010,7 @@ def run_benchmark(
             "use_lexical": use_lexical,
             "use_dense_query": use_dense_query,
         },
+        _dataset_version=getattr(dataset, "version", None),
     )
 
 

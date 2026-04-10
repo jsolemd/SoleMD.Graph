@@ -40,6 +40,9 @@ class TestCleanVenue:
     def test_strip_parenthetical(self):
         assert _clean_venue("Neurology (Minneap)") == "neurology"
 
+    def test_strip_accents(self):
+        assert _clean_venue("Revista de Saúde Pública") == "revista de saude publica"
+
     def test_combined_normalization(self):
         assert _clean_venue("The Journal of Neuroscience: Official Publication.") == (
             "journal of neuroscience"
@@ -170,6 +173,8 @@ class TestRegisterDuckdbHelpers:
 
         # Should have called execute at least twice: macro + table creation
         assert mock_con.execute.call_count >= 2
+        macro_sql = mock_con.execute.call_args_list[0].args[0]
+        assert "strip_accents" in macro_sql
         # executemany should insert the venues
         mock_con.executemany.assert_called_once()
         insert_sql, rows = mock_con.executemany.call_args.args

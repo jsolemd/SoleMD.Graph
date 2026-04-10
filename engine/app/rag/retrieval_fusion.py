@@ -57,6 +57,7 @@ def merge_candidate_papers(
     lexical_hits: list[PaperEvidenceHit],
     chunk_lexical_hits: list[PaperEvidenceHit],
     selected_context_hits: list[PaperEvidenceHit],
+    cited_context_hits: list[PaperEvidenceHit],
     entity_seed_hits: list[PaperEvidenceHit],
     relation_seed_hits: list[PaperEvidenceHit],
     citation_seed_hits: list[PaperEvidenceHit],
@@ -95,6 +96,16 @@ def merge_candidate_papers(
             existing.selected_context_score = max(
                 existing.selected_context_score,
                 hit.selected_context_score,
+            )
+
+    for hit in cited_context_hits:
+        existing = by_corpus_id.get(hit.corpus_id)
+        if existing is None:
+            by_corpus_id[hit.corpus_id] = hit
+        else:
+            existing.cited_context_score = max(
+                existing.cited_context_score,
+                hit.cited_context_score,
             )
 
     for hit in dense_query_hits:

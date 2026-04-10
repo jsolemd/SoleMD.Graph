@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.rag.query_metadata import QueryMetadataHints
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.types import (
     CitationDirection,
@@ -25,6 +26,8 @@ class PaperRetrievalQuery:
     graph_release_id: str
     query: str
     normalized_query: str
+    focused_query: str = ""
+    metadata_hints: QueryMetadataHints = field(default_factory=QueryMetadataHints)
     entity_terms: list[str] = field(default_factory=list)
     high_confidence_entity_terms: set[str] = field(default_factory=set)
     relation_terms: list[str] = field(default_factory=list)
@@ -95,6 +98,7 @@ class PaperEvidenceHit:
     relation_score: float = 0.0
     semantic_score: float = 0.0
     dense_score: float = 0.0
+    metadata_score: float = 0.0
     intent_score: float = 0.0
     citation_intent_score: float = 0.0
     publication_type_score: float = 0.0
@@ -103,12 +107,17 @@ class PaperEvidenceHit:
     title_anchor_score: float = 0.0
     passage_alignment_score: float = 0.0
     selected_context_score: float = 0.0
+    cited_context_score: float = 0.0
     biomedical_rerank_score: float = 0.0
     fused_score: float = 0.0
     lane_count: int = 0
     rank: int = 0
     chunk_ordinal: int | None = None
+    chunk_section_role: str | None = None
+    chunk_primary_block_kind: str | None = None
     chunk_snippet: str | None = None
+    passage_structure_score: float = 0.0
+    metadata_match_fields: list[str] = field(default_factory=list)
     matched_channels: list[RetrievalChannel] = field(default_factory=list)
     match_reasons: list[str] = field(default_factory=list)
 
@@ -181,6 +190,16 @@ class PaperReferenceRecord:
 
 
 @dataclass(slots=True)
+class PaperAuthorRecord:
+    """Ordered author summary attached to an evidence bundle."""
+
+    corpus_id: int
+    author_position: int
+    author_id: str | None = None
+    name: str | None = None
+
+
+@dataclass(slots=True)
 class PaperAssetRecord:
     """Asset summary attached to an evidence bundle."""
 
@@ -241,6 +260,7 @@ class EvidenceBundle:
     citation_contexts: list[CitationContextHit] = field(default_factory=list)
     entity_hits: list[EntityMatchedPaperHit] = field(default_factory=list)
     relation_hits: list[RelationMatchedPaperHit] = field(default_factory=list)
+    authors: list[PaperAuthorRecord] = field(default_factory=list)
     references: list[PaperReferenceRecord] = field(default_factory=list)
     assets: list[PaperAssetRecord] = field(default_factory=list)
 

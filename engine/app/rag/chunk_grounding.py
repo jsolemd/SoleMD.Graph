@@ -11,7 +11,7 @@ from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.warehouse_grounding import build_grounded_answer_from_warehouse_rows
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 
-CHUNK_CITATION_PACKET_SQL = """
+_CHUNK_CITATION_PACKET_SQL_TEMPLATE = """
 WITH matched_mentions AS (
     SELECT DISTINCT ON (
         m.corpus_id,
@@ -37,7 +37,7 @@ WITH matched_mentions AS (
      AND c.corpus_id = cm.corpus_id
      AND c.chunk_ordinal = cm.chunk_ordinal
     WHERE
-        m.corpus_id = ANY(%s)
+        {corpus_filter}
         AND m.canonical_block_ordinal IS NOT NULL
     ORDER BY
         m.corpus_id,
@@ -85,7 +85,7 @@ WHERE rm.packet_rank <= %s
 ORDER BY rm.corpus_id, rm.packet_rank, rm.source_start_offset
 """
 
-CHUNK_ENTITY_PACKET_SQL = """
+_CHUNK_ENTITY_PACKET_SQL_TEMPLATE = """
 WITH requested_packets AS (
     SELECT *
     FROM unnest(%s::BIGINT[], %s::INTEGER[], %s::INTEGER[])
@@ -149,8 +149,15 @@ exact_packet_entities AS (
         e.source_start_offset,
         e.source_end_offset,
         c.chunk_ordinal
-),
-fallback_packet_candidates AS (
+)
+SELECT *
+FROM exact_packet_entities
+ORDER BY corpus_id, packet_rank, source_start_offset
+"""
+
+
+_CHUNK_ENTITY_FALLBACK_PACKET_SQL_TEMPLATE = """
+WITH fallback_packet_candidates AS (
     SELECT DISTINCT ON (
         e.corpus_id,
         e.canonical_block_ordinal,
@@ -183,23 +190,9 @@ fallback_packet_candidates AS (
       ON c.chunk_version_key = cm.chunk_version_key
      AND c.corpus_id = cm.corpus_id
      AND c.chunk_ordinal = cm.chunk_ordinal
-    LEFT JOIN requested_packets rp
-      ON rp.corpus_id = e.corpus_id
-     AND rp.canonical_block_ordinal = e.canonical_block_ordinal
-     AND (
-        (
-            rp.canonical_sentence_ordinal IS NOT NULL
-            AND e.canonical_sentence_ordinal = rp.canonical_sentence_ordinal
-        )
-        OR (
-            rp.canonical_sentence_ordinal IS NULL
-            AND e.canonical_sentence_ordinal IS NULL
-        )
-     )
     WHERE
-        e.corpus_id = ANY(%s)
+        {corpus_filter}
         AND e.canonical_block_ordinal IS NOT NULL
-        AND rp.corpus_id IS NULL
     ORDER BY
         e.corpus_id,
         e.canonical_block_ordinal,
@@ -266,15 +259,12 @@ fallback_packet_entities AS (
         rp.packet_rank
 )
 SELECT *
-FROM exact_packet_entities
-UNION ALL
-SELECT *
 FROM fallback_packet_entities
 ORDER BY corpus_id, packet_rank, source_start_offset
 """
 
 
-CHUNK_STRUCTURAL_PACKET_SQL = """
+_CHUNK_STRUCTURAL_PACKET_SQL_TEMPLATE = """
 SELECT
     cm.corpus_id,
     cm.chunk_ordinal,
@@ -305,13 +295,46 @@ LEFT JOIN solemd.paper_sentences s
  AND s.sentence_ordinal = cm.canonical_sentence_ordinal
 WHERE
     cm.chunk_version_key = %s
-    AND cm.corpus_id = ANY(%s)
+    AND {corpus_filter}
     AND c.is_retrieval_default = true
 ORDER BY
     cm.corpus_id,
     cm.chunk_ordinal,
     cm.member_ordinal
 """
+
+
+def _render_corpus_scoped_sql(
+    *,
+    template: str,
+    column_sql: str,
+    corpus_ids: Sequence[int],
+) -> tuple[str, int | list[int]]:
+    if len(corpus_ids) == 1:
+        return template.format(corpus_filter=f"{column_sql} = %s"), corpus_ids[0]
+    return template.format(corpus_filter=f"{column_sql} = ANY(%s)"), list(corpus_ids)
+
+
+CHUNK_CITATION_PACKET_SQL, _ = _render_corpus_scoped_sql(
+    template=_CHUNK_CITATION_PACKET_SQL_TEMPLATE,
+    column_sql="m.corpus_id",
+    corpus_ids=[0, 1],
+)
+CHUNK_ENTITY_PACKET_SQL, _ = _render_corpus_scoped_sql(
+    template=_CHUNK_ENTITY_PACKET_SQL_TEMPLATE,
+    column_sql="e.corpus_id",
+    corpus_ids=[0, 1],
+)
+CHUNK_ENTITY_FALLBACK_PACKET_SQL, _ = _render_corpus_scoped_sql(
+    template=_CHUNK_ENTITY_FALLBACK_PACKET_SQL_TEMPLATE,
+    column_sql="e.corpus_id",
+    corpus_ids=[0, 1],
+)
+CHUNK_STRUCTURAL_PACKET_SQL, _ = _render_corpus_scoped_sql(
+    template=_CHUNK_STRUCTURAL_PACKET_SQL_TEMPLATE,
+    column_sql="cm.corpus_id",
+    corpus_ids=[0, 1],
+)
 
 
 def _packet_key_arrays(
@@ -338,9 +361,14 @@ def fetch_chunk_grounding_rows(
     if not normalized_corpus_ids:
         return [], []
 
+    citation_sql, citation_corpus_param = _render_corpus_scoped_sql(
+        template=_CHUNK_CITATION_PACKET_SQL_TEMPLATE,
+        column_sql="m.corpus_id",
+        corpus_ids=normalized_corpus_ids,
+    )
     cursor.execute(
-        CHUNK_CITATION_PACKET_SQL,
-        (chunk_version_key, normalized_corpus_ids, limit_per_paper),
+        citation_sql,
+        (chunk_version_key, citation_corpus_param, limit_per_paper),
     )
     citation_rows = cursor.fetchall()
     citation_packet_keys = list(
@@ -353,19 +381,57 @@ def fetch_chunk_grounding_rows(
     packet_corpus_ids, packet_block_ordinals, packet_sentence_ordinals = _packet_key_arrays(
         citation_packet_keys
     )
-    cursor.execute(
-        CHUNK_ENTITY_PACKET_SQL,
-        (
-            packet_corpus_ids,
-            packet_block_ordinals,
-            packet_sentence_ordinals,
-            chunk_version_key,
-            chunk_version_key,
-            normalized_corpus_ids,
-            limit_per_paper,
-        ),
-    )
-    entity_rows = cursor.fetchall()
+    if citation_packet_keys:
+        cursor.execute(
+            CHUNK_ENTITY_PACKET_SQL,
+            (
+                packet_corpus_ids,
+                packet_block_ordinals,
+                packet_sentence_ordinals,
+                chunk_version_key,
+            ),
+        )
+        entity_rows = cursor.fetchall()
+        exact_entity_corpus_ids = {
+            int(row["corpus_id"])
+            for row in entity_rows
+            if row.get("corpus_id") is not None
+        }
+        fallback_corpus_ids = [
+            corpus_id
+            for corpus_id in normalized_corpus_ids
+            if corpus_id not in exact_entity_corpus_ids
+        ]
+        if fallback_corpus_ids:
+            fallback_sql, fallback_corpus_param = _render_corpus_scoped_sql(
+                template=_CHUNK_ENTITY_FALLBACK_PACKET_SQL_TEMPLATE,
+                column_sql="e.corpus_id",
+                corpus_ids=fallback_corpus_ids,
+            )
+            cursor.execute(
+                fallback_sql,
+                (
+                    chunk_version_key,
+                    fallback_corpus_param,
+                    limit_per_paper,
+                ),
+            )
+            entity_rows.extend(cursor.fetchall())
+    else:
+        fallback_sql, fallback_corpus_param = _render_corpus_scoped_sql(
+            template=_CHUNK_ENTITY_FALLBACK_PACKET_SQL_TEMPLATE,
+            column_sql="e.corpus_id",
+            corpus_ids=normalized_corpus_ids,
+        )
+        cursor.execute(
+            fallback_sql,
+            (
+                chunk_version_key,
+                fallback_corpus_param,
+                limit_per_paper,
+            ),
+        )
+        entity_rows = cursor.fetchall()
     return citation_rows, entity_rows
 
 
@@ -379,9 +445,14 @@ def fetch_chunk_structural_rows(
     if not normalized_corpus_ids:
         return []
 
+    structural_sql, structural_corpus_param = _render_corpus_scoped_sql(
+        template=_CHUNK_STRUCTURAL_PACKET_SQL_TEMPLATE,
+        column_sql="cm.corpus_id",
+        corpus_ids=normalized_corpus_ids,
+    )
     cursor.execute(
-        CHUNK_STRUCTURAL_PACKET_SQL,
-        (chunk_version_key, normalized_corpus_ids),
+        structural_sql,
+        (chunk_version_key, structural_corpus_param),
     )
     return cursor.fetchall()
 

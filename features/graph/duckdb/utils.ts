@@ -16,6 +16,35 @@ export function createBoundedCache<K, V>(max = CACHE_MAX_ENTRIES): Map<K, V> {
   return map
 }
 
+/**
+ * Cache-aside helper for promise-based queries.
+ *
+ * Deduplicates in-flight requests via the same cache key, auto-evicts on error,
+ * and optionally evicts empty/falsy results.
+ */
+export function cachedQuery<V>(
+  cache: Map<string, Promise<V>>,
+  keyParts: Record<string, unknown>,
+  query: () => Promise<V>,
+  opts?: { evictWhen?: (result: V) => boolean },
+): Promise<V> {
+  const cacheKey = JSON.stringify(keyParts)
+  const cached = cache.get(cacheKey)
+  if (cached) return cached
+
+  const next = query()
+    .then((result) => {
+      if (opts?.evictWhen?.(result)) cache.delete(cacheKey)
+      return result
+    })
+    .catch((error) => {
+      cache.delete(cacheKey)
+      throw error
+    })
+  cache.set(cacheKey, next)
+  return next
+}
+
 const TABLE_NAME_RE = /^[a-z_][a-z0-9_]*$/i
 
 export function validateTableName(name: string): string {

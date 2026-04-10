@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   invalidateGraphBundleSessionCache,
   loadGraphBundle,
@@ -33,6 +33,12 @@ interface GraphBundleState {
 }
 
 export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
+  const activeBundleChecksumRef = useRef<string | null>(null)
+  const sessionBundleRef = useRef(bundle)
+  if (sessionBundleRef.current.bundleChecksum !== bundle.bundleChecksum) {
+    sessionBundleRef.current = bundle
+  }
+  const sessionBundle = sessionBundleRef.current
   const [state, setState] = useState<ResolvedGraphBundleState>({
       bundleChecksum: null,
       canvas: null,
@@ -51,22 +57,29 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
   useEffect(() => {
     let cancelled = false
     let unsubscribeCanvas = () => {}
-    if (process.env.NODE_ENV !== 'production') {
+    const previousBundleChecksum = activeBundleChecksumRef.current
+
+    if (
+      process.env.NODE_ENV !== 'production' &&
+      previousBundleChecksum &&
+      previousBundleChecksum !== sessionBundle.bundleChecksum
+    ) {
       // Clear canvas/queries BEFORE disposing the old session so Cosmograph
       // unmounts (via the `canvas && queries` guard) before the worker is
       // terminated.  Without this, Cosmograph sends queries to a dead worker
       // and logs "cannot send a message since the worker is not set!".
       setState({
-        bundleChecksum: bundle.bundleChecksum,
+        bundleChecksum: sessionBundle.bundleChecksum,
         canvas: null,
         error: null,
         progress: null,
         queries: null,
       })
-      invalidateGraphBundleSessionCache(bundle.bundleChecksum)
+      invalidateGraphBundleSessionCache(previousBundleChecksum)
     }
+    activeBundleChecksumRef.current = sessionBundle.bundleChecksum
     const unsubscribeProgress = subscribeToGraphBundleProgress(
-      bundle.bundleChecksum,
+      sessionBundle.bundleChecksum,
       (progress) => {
         if (cancelled) {
           return
@@ -74,13 +87,13 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
 
         setState((current) => ({
           ...current,
-          bundleChecksum: bundle.bundleChecksum,
+          bundleChecksum: sessionBundle.bundleChecksum,
           progress,
         }))
       }
     )
 
-    loadGraphBundle(bundle)
+    loadGraphBundle(sessionBundle)
       .then((session) => {
         if (cancelled) {
           return
@@ -93,7 +106,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
 
           setState((current) => ({
             ...current,
-            bundleChecksum: bundle.bundleChecksum,
+            bundleChecksum: sessionBundle.bundleChecksum,
             canvas: nextCanvas,
           }))
         })
@@ -101,7 +114,6 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
         useDashboardStore.getState().setAvailableLayers(session.availableLayers)
 
         const queries: GraphBundleQueries = {
-          primeInteractiveQueryTables: session.primeInteractiveQueryTables,
           setSelectedPointIndices: session.setSelectedPointIndices,
           setSelectedPointScopeSql: session.setSelectedPointScopeSql,
           getOverlayPointIds: session.getOverlayPointIds,
@@ -140,7 +152,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
 
         setState((current) => ({
           ...current,
-          bundleChecksum: bundle.bundleChecksum,
+          bundleChecksum: sessionBundle.bundleChecksum,
           canvas: session.canvas,
           queries,
           error: null,
@@ -152,7 +164,7 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
         }
 
         setState({
-          bundleChecksum: bundle.bundleChecksum,
+          bundleChecksum: sessionBundle.bundleChecksum,
           canvas: null,
           error: error instanceof Error ? error : new Error('Failed to load graph bundle'),
           progress: null,
@@ -165,9 +177,9 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
       unsubscribeCanvas()
       unsubscribeProgress()
     }
-  }, [bundle])
+  }, [sessionBundle])
 
-  const isResolvedBundle = state.bundleChecksum === bundle.bundleChecksum
+  const isResolvedBundle = state.bundleChecksum === sessionBundle.bundleChecksum
   const isCanvasReady =
     isResolvedBundle && Boolean(state.canvas) && Boolean(state.queries)
 

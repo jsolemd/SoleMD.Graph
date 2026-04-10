@@ -12,7 +12,7 @@ export interface HistogramHighlightValue {
 import type {
   GraphInfoHistogramBin,
 } from "@/features/graph/types";
-import { panelTextDimStyle, panelTextStyle } from "../../panels/PanelShell";
+import { panelPillStyles, panelTextDimStyle, panelTextStyle, panelTypePillStyles } from "../../panels/PanelShell";
 import {
   getInfoComparisonColors,
   getInfoComparisonDisplayValue,
@@ -38,18 +38,6 @@ const getInfoFillStyle = (widthPct: number, color: string, opacity = 1) =>
     borderRadius: 999,
     opacity,
   }) as CSSProperties;
-
-export function QueryInfoBars({
-  rows,
-  comparisonState,
-  visibleCount,
-}: {
-  rows: InfoComparisonFacetRow[];
-  comparisonState: InfoComparisonState;
-  visibleCount?: number;
-}) {
-  return <QueryFacetSummary rows={rows} comparisonState={comparisonState} visibleCount={visibleCount} />;
-}
 
 const YEAR_COLUMNS = new Set(["year", "pageNumber"]);
 
@@ -282,24 +270,7 @@ export function QueryFacetSummary({
                 {enrichmentBadge && (
                   <Badge
                     size="xs"
-                    styles={{
-                      root: {
-                        backgroundColor: enrichmentBadge.accent
-                          ? "var(--mode-accent-subtle)"
-                          : "var(--graph-panel-input-bg)",
-                        color: enrichmentBadge.accent
-                          ? "var(--mode-accent)"
-                          : "var(--graph-panel-text-dim)",
-                        border: `1px solid ${enrichmentBadge.accent ? "var(--mode-accent-border)" : "var(--graph-panel-border)"}`,
-                        height: 14,
-                        minHeight: 14,
-                        paddingLeft: 3,
-                        paddingRight: 3,
-                        fontSize: 8,
-                        lineHeight: 1,
-                      },
-                      label: { lineHeight: 1 },
-                    }}
+                    styles={enrichmentBadge.accent ? panelPillStyles : panelTypePillStyles}
                   >
                     {enrichmentBadge.label}
                   </Badge>

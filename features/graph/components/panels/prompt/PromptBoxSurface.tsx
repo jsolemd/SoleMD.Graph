@@ -47,6 +47,7 @@ export function PromptBoxSurface({
   isSubmitting,
   handleSubmit,
   promptInteractionProviders,
+  referenceMentionSource,
   handlePromptInteraction,
   clearRag,
   handlePromptContentChange,
@@ -178,6 +179,7 @@ export function PromptBoxSurface({
                 onSubmit={isAsk ? handleSubmit : undefined}
                 onPromptInteraction={isCreate ? handlePromptInteraction : undefined}
                 promptInteractionProviders={isCreate ? promptInteractionProviders : undefined}
+                referenceMentionSource={referenceMentionSource}
                 ariaLabel={`${activeMode.label} prompt`}
                 debounceMs={isCreate ? 300 : 0}
                 compact={!isFullHeightMode}

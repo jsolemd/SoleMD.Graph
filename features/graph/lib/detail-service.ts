@@ -7,6 +7,7 @@ import type {
   GraphRagErrorResponsePayload,
   GraphRagQueryResponsePayload,
 } from '@/features/graph/types/detail-service'
+import { resolveGraphReleaseId } from '@/features/graph/lib/graph-release'
 
 interface FetchGraphRagQueryArgs {
   bundle: GraphBundle
@@ -32,10 +33,6 @@ export class GraphRagRequestError extends Error {
   }
 }
 
-function getGraphReleaseId(bundle: GraphBundle) {
-  return bundle.bundleChecksum || bundle.runId || 'current'
-}
-
 export async function fetchGraphRagQuery({
   bundle,
   query,
@@ -50,7 +47,7 @@ export async function fetchGraphRagQuery({
   generateAnswer,
 }: FetchGraphRagQueryArgs): Promise<GraphRagQueryResponsePayload> {
   const result = await getGraphRagQuery({
-    graph_release_id: getGraphReleaseId(bundle),
+    graph_release_id: resolveGraphReleaseId(bundle),
     query,
     selected_layer_key: selectedNode ? 'paper' : null,
     selected_node_id: selectedNode?.id ?? null,

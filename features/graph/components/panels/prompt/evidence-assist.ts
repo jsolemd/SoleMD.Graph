@@ -6,6 +6,7 @@ import {
   type PromptInteractionRequest,
   type PromptInteractionTrigger,
 } from "../editor/prompt-interactions";
+import { selectTextContextWindow } from "./text-context-window";
 
 export type EvidenceAssistIntent = "support" | "refute" | "both";
 export const EVIDENCE_ASSIST_PROVIDER_ID = "evidence-assist";
@@ -16,19 +17,6 @@ export interface EvidenceAssistRequest extends PromptInteractionRequest {
   queryText: string;
   previewText: string;
   paragraphText: string;
-}
-
-interface EvidenceAssistExcerptArgs {
-  paragraphText: string;
-  cursorOffset: number;
-  maxSentences?: number;
-  maxChars?: number;
-}
-
-interface SentenceSegment {
-  text: string;
-  start: number;
-  end: number;
 }
 
 export const EVIDENCE_ASSIST_COMMANDS: PromptInteractionCommandList<EvidenceAssistCommand> = [
@@ -46,9 +34,9 @@ export const EVIDENCE_ASSIST_COMMANDS: PromptInteractionCommandList<EvidenceAssi
 
 export const EVIDENCE_ASSIST_TRIGGERS: readonly PromptInteractionTrigger[] = [
   {
-    pattern: "@",
+    pattern: "/evidence",
     action: "menu",
-    label: "@ Evidence",
+    label: "/evidence",
     description: "Open evidence assist with support/refute options.",
     defaultCommandId: "support",
   },
@@ -63,28 +51,18 @@ export function selectEvidenceAssistExcerpt({
   cursorOffset,
   maxSentences = 3,
   maxChars = 600,
-}: EvidenceAssistExcerptArgs): string {
-  const normalizedParagraph = paragraphText.trim();
-  if (!normalizedParagraph) {
-    return "";
-  }
-
-  const sentenceSegments = segmentSentences(normalizedParagraph);
-  if (sentenceSegments.length === 0) {
-    return clampExcerpt(normalizedParagraph, maxChars);
-  }
-
-  const safeCursorOffset = Math.max(0, Math.min(cursorOffset, normalizedParagraph.length));
-  const activeSentenceIndex = findActiveSentenceIndex(sentenceSegments, safeCursorOffset);
-  const selectedSegments = sentenceSegments.slice(
-    Math.max(0, activeSentenceIndex - maxSentences + 1),
-    activeSentenceIndex + 1,
-  );
-
-  return clampExcerpt(
-    selectedSegments.map((segment) => segment.text.trim()).join(" "),
+}: {
+  paragraphText: string;
+  cursorOffset: number;
+  maxSentences?: number;
+  maxChars?: number;
+}): string {
+  return selectTextContextWindow({
+    paragraphText,
+    cursorOffset,
+    maxSentences,
     maxChars,
-  );
+  });
 }
 
 export function extractEvidenceAssistRequestFromEditor(
@@ -138,47 +116,6 @@ function buildPreviewText(text: string, maxChars = 160): string {
   }
 
   return `${normalizedText.slice(0, maxChars - 1).trimEnd()}…`;
-}
-
-function clampExcerpt(text: string, maxChars: number): string {
-  const normalizedText = text.trim();
-  if (normalizedText.length <= maxChars) {
-    return normalizedText;
-  }
-
-  return `${normalizedText.slice(0, maxChars - 1).trimEnd()}…`;
-}
-
-function findActiveSentenceIndex(
-  sentenceSegments: SentenceSegment[],
-  cursorOffset: number,
-): number {
-  for (let index = sentenceSegments.length - 1; index >= 0; index -= 1) {
-    if (
-      cursorOffset > sentenceSegments[index].start ||
-      (index === 0 && cursorOffset === sentenceSegments[index].start)
-    ) {
-      return index;
-    }
-  }
-
-  return sentenceSegments.length - 1;
-}
-
-function segmentSentences(text: string): SentenceSegment[] {
-  if (typeof Intl === "undefined" || typeof Intl.Segmenter === "undefined") {
-    return [{ text, start: 0, end: text.length }];
-  }
-
-  const segmenter = new Intl.Segmenter(undefined, { granularity: "sentence" });
-
-  return Array.from(segmenter.segment(text))
-    .map((segment) => ({
-      text: segment.segment,
-      start: segment.index,
-      end: segment.index + segment.segment.length,
-    }))
-    .filter((segment) => segment.text.trim().length > 0);
 }
 
 function isEvidenceAssistIntent(value: string): value is EvidenceAssistIntent {

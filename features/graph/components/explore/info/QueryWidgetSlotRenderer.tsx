@@ -20,7 +20,7 @@ import {
   type InfoComparisonState,
   type InfoHistogramComparison,
 } from "./comparison-layers";
-import { QueryFacetSummary, QueryInfoBars, QueryInfoHistogram, type HistogramHighlightValue } from "./QueryWidgetVisualizations";
+import { QueryFacetSummary, QueryInfoHistogram, type HistogramHighlightValue } from "./QueryWidgetVisualizations";
 import { queryWidgetThemeVars } from "../widget-theme";
 
 const YEAR_LIKE = new Set(["year", "pageNumber"]);
@@ -311,7 +311,7 @@ export function QueryWidgetSlotRenderer({
         )
       ) : prefetchedCategoricalRows ? (
         <>
-          <QueryInfoBars
+          <QueryFacetSummary
             rows={prefetchedCategoricalRows}
             comparisonState={comparisonState}
             visibleCount={visibleCount}

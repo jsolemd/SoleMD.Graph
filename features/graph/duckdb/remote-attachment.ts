@@ -1,6 +1,6 @@
 'use client'
 
-import type { GraphBundle } from '@/features/graph/types'
+import { resolveGraphReleaseId } from '@/features/graph/lib/graph-release'
 
 import type { GraphPaperAttachmentProvider } from './attachment'
 import { ATTACHED_UNIVERSE_POINTS_TABLE } from './views/universe'
@@ -8,14 +8,6 @@ import { LOCAL_POINT_RUNTIME_COLUMNS } from './views/base-points'
 
 const ATTACHED_UNIVERSE_STAGE_TABLE = 'attached_universe_points_stage'
 const GRAPH_POINT_ATTACHMENT_ROUTE = '/api/graph/attach-points'
-
-function resolveGraphReleaseId(bundle: GraphBundle) {
-  return (
-    bundle.bundleChecksum ||
-    bundle.runId ||
-    bundle.bundleManifest.graphRunId
-  )
-}
 
 function getStageProjectionSql() {
   return LOCAL_POINT_RUNTIME_COLUMNS.join(', ')

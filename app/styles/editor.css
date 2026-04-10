@@ -186,6 +186,22 @@
   background: var(--mode-accent-subtle);
 }
 
+.tiptap-create .tiptap .tiptap-reference-mention {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--mode-accent-subtle);
+  color: var(--mode-accent);
+  font-weight: 600;
+}
+
+.tiptap-create .tiptap .tiptap-entity-highlight {
+  border-radius: 4px;
+  background: var(--mode-accent-subtle);
+  box-shadow: inset 0 -1px 0 var(--mode-accent-border);
+}
+
 /* ── Source mode textarea — monospace raw markdown view ── */
 .tiptap-source {
   flex: 1;

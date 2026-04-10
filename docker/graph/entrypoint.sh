@@ -9,21 +9,27 @@ ENGINE_DIR=/workspaces/SoleMD.Graph/engine
 export CUDA_PATH=${CUDA_PATH:-/opt/conda/targets/x86_64-linux}
 export CUDA_HOME=${CUDA_HOME:-/opt/conda/targets/x86_64-linux}
 
-# Auto-provision on first run (venv persisted via named volume)
-if [ -d "$ENGINE_DIR" ] && [ ! -f "$ENGINE_DIR/.venv/pyvenv.cfg" ]; then
-    echo "==> Provisioning engine environment (first run)..."
+# Auto-provision on first run, then sync on every start so the persisted
+# venv cannot drift away from the lockfile or required extras.
+if [ -d "$ENGINE_DIR" ]; then
     cd "$ENGINE_DIR"
 
-    # Create venv inheriting RAPIDS from system (conda) site-packages
-    uv venv --system-site-packages
+    if [ ! -f "$ENGINE_DIR/.venv/pyvenv.cfg" ]; then
+        echo "==> Provisioning engine environment (first run)..."
+        uv venv --system-site-packages
+    fi
 
-    # Install engine deps from lockfile
-    uv sync --frozen --extra graph
+    echo "==> Syncing engine environment..."
+    uv sync --frozen --extra graph --extra ml
 
-    # Verify RAPIDS is accessible through the venv
-    uv run python -c "import cuml; print('  cuml OK')"
-    uv run python -c "import cugraph; print('  cugraph OK')"
-    uv run python -c "import cupy; print('  cupy OK')"
+    # Verify the runtime surfaces that the graph container is expected to serve.
+    # Single invocation avoids 4x Python interpreter startup overhead.
+    uv run python -c "
+import cuml; print('  cuml OK')
+import cugraph; print('  cugraph OK')
+import cupy; print('  cupy OK')
+import adapters; print('  adapters OK')
+"
 
     echo "==> GPU environment ready."
 fi

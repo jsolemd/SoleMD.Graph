@@ -70,8 +70,14 @@ const PANEL_WIDTHS: Record<string, number> = {
   filters: 300,
   info: 320,
   query: 420,
+  wiki: 420,
 };
 const PANEL_MARGIN = 24; // panel left (12) + gap (12)
+
+/** Pure wiki width computation — reusable in selector and components. */
+export function resolveWikiPanelWidth(viewportWidth: number, expanded: boolean): number {
+  return expanded ? Math.min(700, Math.floor(viewportWidth * 0.65)) : PANEL_WIDTHS.wiki;
+}
 
 /** Total px of left-edge space occupied by an open panel. */
 export function selectLeftClearance(s: DashboardState): number {
@@ -79,6 +85,9 @@ export function selectLeftClearance(s: DashboardState): number {
   // About panel renders regardless of panelsVisible
   if (s.activePanel === 'about') return PANEL_WIDTHS.about + PANEL_MARGIN;
   if (!s.panelsVisible) return 0;
+  if (s.activePanel === 'wiki' && s.wikiExpanded) {
+    return (s.wikiExpandedWidth ?? PANEL_WIDTHS.wiki) + PANEL_MARGIN;
+  }
   return (PANEL_WIDTHS[s.activePanel] ?? 300) + PANEL_MARGIN;
 }
 

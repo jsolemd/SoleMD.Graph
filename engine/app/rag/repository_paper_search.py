@@ -6,7 +6,11 @@ from collections.abc import Sequence
 
 from app.rag import queries
 from app.rag.models import PaperEvidenceHit
-from app.rag.query_enrichment import normalize_entity_query_text, normalize_title_key
+from app.rag.query_enrichment import (
+    normalize_entity_query_text,
+    normalize_title_key,
+)
+from app.rag.query_metadata import QueryMetadataHints
 from app.rag.repository_support import _SqlSpec, _unique_int_ids
 from app.rag.title_anchor import compute_title_anchor_score, prefix_range_upper_bound
 
@@ -21,8 +25,11 @@ class _PaperSearchMixin:
         scope_corpus_ids: Sequence[int] | None = None,
         use_title_similarity: bool = True,
         use_title_candidate_lookup: bool | None = None,
+        query_metadata_hints: QueryMetadataHints | None = None,
     ) -> list[PaperEvidenceHit]:
         normalized_title_query = normalize_title_key(query)
+        metadata_hints = query_metadata_hints or QueryMetadataHints()
+        use_metadata_search = metadata_hints.has_searchable_metadata_filters
         if use_title_candidate_lookup is None:
             use_title_candidate_lookup = use_title_similarity
         use_exact_graph_search = (
@@ -31,6 +38,8 @@ class _PaperSearchMixin:
             else False
         )
         should_probe_global_title_candidates = (
+            not use_metadata_search
+            and
             use_title_candidate_lookup
             and not scope_corpus_ids
             and (not use_exact_graph_search or not use_title_similarity)
@@ -74,6 +83,7 @@ class _PaperSearchMixin:
             scope_corpus_ids=scope_corpus_ids,
             use_title_similarity=use_title_similarity,
             use_exact_graph_search=use_exact_graph_search,
+            query_metadata_hints=metadata_hints,
         )
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -98,7 +108,16 @@ class _PaperSearchMixin:
         scope_corpus_ids: Sequence[int] | None,
         use_title_similarity: bool,
         use_exact_graph_search: bool,
+        query_metadata_hints: QueryMetadataHints,
     ) -> _SqlSpec:
+        if query_metadata_hints.has_searchable_metadata_filters:
+            return self._paper_metadata_search_sql_spec(
+                graph_run_id=graph_run_id,
+                query=query,
+                limit=limit,
+                scope_corpus_ids=scope_corpus_ids,
+                query_metadata_hints=query_metadata_hints,
+            )
         if scope_corpus_ids:
             unique_scope_ids = _unique_int_ids(scope_corpus_ids)
             return _SqlSpec(
@@ -187,6 +206,7 @@ class _PaperSearchMixin:
         scope_corpus_ids: Sequence[int] | None = None,
         use_title_similarity: bool = True,
         use_title_candidate_lookup: bool | None = None,
+        query_metadata_hints: QueryMetadataHints | None = None,
     ) -> str:
         normalized_title_query = normalize_title_key(query)
         if use_title_candidate_lookup is None:
@@ -204,7 +224,350 @@ class _PaperSearchMixin:
             scope_corpus_ids=scope_corpus_ids,
             use_title_similarity=use_title_similarity,
             use_exact_graph_search=use_exact_graph_search,
+            query_metadata_hints=query_metadata_hints or QueryMetadataHints(),
         ).route_name
+
+    def _paper_metadata_search_sql_spec(
+        self,
+        *,
+        graph_run_id: str,
+        query: str,
+        limit: int,
+        scope_corpus_ids: Sequence[int] | None,
+        query_metadata_hints: QueryMetadataHints,
+    ) -> _SqlSpec:
+        topic_query = (query_metadata_hints.topic_query or query).strip()
+        normalized_topic_query = normalize_title_key(topic_query) or topic_query
+        author_hint = query_metadata_hints.author_hint or ""
+        journal_hint = query_metadata_hints.journal_hint or ""
+        publication_type_hints = list(query_metadata_hints.requested_publication_types)
+        author_year_only_query = (
+            bool(author_hint)
+            and query_metadata_hints.year_hint is not None
+            and not journal_hint
+            and not publication_type_hints
+        )
+        journal_year_only_query = (
+            bool(journal_hint)
+            and query_metadata_hints.year_hint is not None
+            and not author_hint
+            and not publication_type_hints
+        )
+        publication_type_only_query = (
+            bool(publication_type_hints)
+            and query_metadata_hints.year_hint is None
+            and not author_hint
+            and not journal_hint
+        )
+        if scope_corpus_ids:
+            unique_scope_ids = _unique_int_ids(scope_corpus_ids)
+            if author_year_only_query:
+                candidate_limit = max(limit * 24, 120)
+                return _SqlSpec(
+                    route_name="paper_search_author_year_in_selection",
+                    sql=queries.PAPER_AUTHOR_YEAR_SEARCH_IN_SELECTION_SQL,
+                    params=(
+                        topic_query,
+                        topic_query,
+                        topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        author_hint,
+                        author_hint,
+                        author_hint,
+                        "",
+                        "",
+                        "",
+                        query_metadata_hints.year_hint,
+                        publication_type_hints,
+                        unique_scope_ids,
+                        unique_scope_ids,
+                        candidate_limit,
+                        candidate_limit,
+                        candidate_limit,
+                        candidate_limit,
+                        limit,
+                    ),
+                )
+            if journal_year_only_query:
+                candidate_limit = max(limit * 24, 120)
+                return _SqlSpec(
+                    route_name="paper_search_journal_year_in_selection",
+                    sql=queries.PAPER_JOURNAL_YEAR_SEARCH_IN_SELECTION_SQL,
+                    params=(
+                        topic_query,
+                        topic_query,
+                        topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        author_hint,
+                        author_hint,
+                        author_hint,
+                        journal_hint,
+                        journal_hint,
+                        journal_hint,
+                        query_metadata_hints.year_hint,
+                        publication_type_hints,
+                        unique_scope_ids,
+                        unique_scope_ids,
+                        candidate_limit,
+                        candidate_limit,
+                        candidate_limit,
+                        limit,
+                    ),
+                )
+            if publication_type_only_query:
+                candidate_limit = max(limit * 24, 120)
+                return _SqlSpec(
+                    route_name="paper_search_publication_type_in_selection",
+                    sql=queries.PAPER_PUBLICATION_TYPE_TOPIC_SEARCH_IN_SELECTION_SQL,
+                    params=(
+                        topic_query,
+                        topic_query,
+                        topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        author_hint,
+                        author_hint,
+                        author_hint,
+                        journal_hint,
+                        journal_hint,
+                        journal_hint,
+                        query_metadata_hints.year_hint,
+                        publication_type_hints,
+                        unique_scope_ids,
+                        candidate_limit,
+                        limit,
+                    ),
+                )
+            return _SqlSpec(
+                route_name="paper_search_metadata_in_selection",
+                sql=queries.PAPER_METADATA_SEARCH_IN_SELECTION_SQL,
+                params=(
+                    topic_query,
+                    topic_query,
+                    topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    author_hint,
+                    author_hint,
+                    author_hint,
+                    journal_hint,
+                    journal_hint,
+                    journal_hint,
+                    query_metadata_hints.year_hint,
+                    publication_type_hints,
+                    unique_scope_ids,
+                    unique_scope_ids,
+                    unique_scope_ids,
+                    unique_scope_ids,
+                    limit,
+                    limit,
+                ),
+            )
+        if self._is_current_graph_run(graph_run_id):
+            candidate_limit = max(limit * 24, 120)
+            if author_year_only_query:
+                return _SqlSpec(
+                    route_name="paper_search_author_year_current_map",
+                    sql=queries.PAPER_AUTHOR_YEAR_SEARCH_CURRENT_MAP_SQL,
+                    params=(
+                        topic_query,
+                        topic_query,
+                        topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        author_hint,
+                        author_hint,
+                        author_hint,
+                        "",
+                        "",
+                        "",
+                        query_metadata_hints.year_hint,
+                        publication_type_hints,
+                        candidate_limit,
+                        candidate_limit,
+                        candidate_limit,
+                        candidate_limit,
+                        limit,
+                    ),
+                )
+            if journal_year_only_query:
+                return _SqlSpec(
+                    route_name="paper_search_journal_year_current_map",
+                    sql=queries.PAPER_JOURNAL_YEAR_SEARCH_CURRENT_MAP_SQL,
+                    params=(
+                        topic_query,
+                        topic_query,
+                        topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        author_hint,
+                        author_hint,
+                        author_hint,
+                        journal_hint,
+                        journal_hint,
+                        journal_hint,
+                        query_metadata_hints.year_hint,
+                        publication_type_hints,
+                        candidate_limit,
+                        candidate_limit,
+                        candidate_limit,
+                        limit,
+                    ),
+                )
+            if publication_type_only_query:
+                return _SqlSpec(
+                    route_name="paper_search_publication_type_current_map",
+                    sql=queries.PAPER_PUBLICATION_TYPE_TOPIC_SEARCH_CURRENT_MAP_SQL,
+                    params=(
+                        topic_query,
+                        topic_query,
+                        topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        normalized_topic_query,
+                        author_hint,
+                        author_hint,
+                        author_hint,
+                        journal_hint,
+                        journal_hint,
+                        journal_hint,
+                        query_metadata_hints.year_hint,
+                        publication_type_hints,
+                        candidate_limit,
+                        limit,
+                    ),
+                )
+            return _SqlSpec(
+                route_name="paper_search_metadata_current_map",
+                sql=queries.PAPER_METADATA_SEARCH_CURRENT_MAP_SQL,
+                params=(
+                    topic_query,
+                    topic_query,
+                    topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    author_hint,
+                    author_hint,
+                    author_hint,
+                    journal_hint,
+                    journal_hint,
+                    journal_hint,
+                    query_metadata_hints.year_hint,
+                    publication_type_hints,
+                    candidate_limit,
+                    limit,
+                ),
+            )
+        candidate_limit = max(limit * 24, 120)
+        if author_year_only_query:
+            return _SqlSpec(
+                route_name="paper_search_author_year_global",
+                sql=queries.PAPER_AUTHOR_YEAR_SEARCH_SQL,
+                params=(
+                    topic_query,
+                    topic_query,
+                    topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    author_hint,
+                    author_hint,
+                    author_hint,
+                    "",
+                    "",
+                    "",
+                    query_metadata_hints.year_hint,
+                    publication_type_hints,
+                    graph_run_id,
+                    candidate_limit,
+                    candidate_limit,
+                    candidate_limit,
+                    candidate_limit,
+                    limit,
+                ),
+            )
+        if journal_year_only_query:
+            return _SqlSpec(
+                route_name="paper_search_journal_year_global",
+                sql=queries.PAPER_JOURNAL_YEAR_SEARCH_SQL,
+                params=(
+                    topic_query,
+                    topic_query,
+                    topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    author_hint,
+                    author_hint,
+                    author_hint,
+                    journal_hint,
+                    journal_hint,
+                    journal_hint,
+                    query_metadata_hints.year_hint,
+                    publication_type_hints,
+                    graph_run_id,
+                    candidate_limit,
+                    candidate_limit,
+                    candidate_limit,
+                    limit,
+                ),
+            )
+        if publication_type_only_query:
+            return _SqlSpec(
+                route_name="paper_search_publication_type_global",
+                sql=queries.PAPER_PUBLICATION_TYPE_TOPIC_SEARCH_SQL,
+                params=(
+                    topic_query,
+                    topic_query,
+                    topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    author_hint,
+                    author_hint,
+                    author_hint,
+                    journal_hint,
+                    journal_hint,
+                    journal_hint,
+                    query_metadata_hints.year_hint,
+                    publication_type_hints,
+                    graph_run_id,
+                    candidate_limit,
+                    limit,
+                ),
+            )
+        return _SqlSpec(
+            route_name="paper_search_metadata_global",
+            sql=queries.PAPER_METADATA_SEARCH_SQL,
+                params=(
+                    topic_query,
+                    topic_query,
+                    topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                    normalized_topic_query,
+                author_hint,
+                author_hint,
+                author_hint,
+                journal_hint,
+                journal_hint,
+                journal_hint,
+                    query_metadata_hints.year_hint,
+                    publication_type_hints,
+                    graph_run_id,
+                    candidate_limit,
+                    limit,
+                ),
+        )
 
     def _search_title_lookup_candidate_papers(
         self,

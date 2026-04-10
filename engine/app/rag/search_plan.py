@@ -21,6 +21,7 @@ class RetrievalSearchPlan:
     preserve_selected_candidate: bool
     prefer_precise_grounding: bool
     selected_context_bonus: float
+    cited_context_bonus: float
 
 
 def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
@@ -29,6 +30,8 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
     has_selected_context = bool(
         query.selected_graph_paper_ref or query.selected_paper_id or query.selected_node_id
     )
+    has_cited_context = bool(query.cited_corpus_ids)
+    has_metadata_filters = query.metadata_hints.has_searchable_metadata_filters
     use_chunk_lexical = query.use_lexical and query.retrieval_profile in (
         QueryRetrievalProfile.PASSAGE_LOOKUP,
         QueryRetrievalProfile.QUESTION_LOOKUP,
@@ -45,6 +48,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
             preserve_selected_candidate=has_selected_context,
             prefer_precise_grounding=has_selected_context,
             selected_context_bonus=1.0 if has_selected_context else 0.0,
+            cited_context_bonus=0.0,
         )
 
     if query.retrieval_profile == QueryRetrievalProfile.QUESTION_LOOKUP:
@@ -58,6 +62,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
             preserve_selected_candidate=has_selected_context,
             prefer_precise_grounding=True,
             selected_context_bonus=0.55 if has_selected_context else 0.0,
+            cited_context_bonus=0.28 if has_cited_context else 0.0,
         )
 
     if query.retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP or use_chunk_lexical:
@@ -71,6 +76,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
             preserve_selected_candidate=has_selected_context,
             prefer_precise_grounding=True,
             selected_context_bonus=0.55 if has_selected_context else 0.0,
+            cited_context_bonus=0.28 if has_cited_context else 0.0,
         )
 
     return RetrievalSearchPlan(
@@ -79,8 +85,9 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
         use_paper_lexical=True,
         use_chunk_lexical=False,
         fallback_to_paper_lexical_on_empty_chunk=False,
-        expand_citation_frontier=True,
+        expand_citation_frontier=not has_metadata_filters,
         preserve_selected_candidate=False,
-        prefer_precise_grounding=False,
+        prefer_precise_grounding=has_metadata_filters,
         selected_context_bonus=0.0,
+        cited_context_bonus=0.2 if has_cited_context else 0.0,
     )

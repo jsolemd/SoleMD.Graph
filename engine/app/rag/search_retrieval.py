@@ -11,6 +11,7 @@ from app.rag.query_embedding import RagQueryEmbedder
 from app.rag.query_enrichment import (
     build_runtime_entity_resolution_phrases,
     derive_relation_terms,
+    should_enrich_resolved_entity_term,
     should_seed_resolved_entity_term,
     should_use_exact_title_precheck,
 )
@@ -18,13 +19,14 @@ from app.rag.repository import RagRepository
 from app.rag.retrieval_fusion import merge_candidate_papers
 from app.rag.retrieval_policy import (
     chunk_search_queries,
+    dense_query_decision,
     has_precise_title_resolution,
     has_selected_direct_anchor,
     has_strong_lexical_title_anchor,
     should_fetch_semantic_neighbors,
-    should_run_dense_query,
     should_run_paper_lexical_fallback,
     should_run_seeded_channel_search,
+    should_run_title_chunk_rescue,
     should_skip_runtime_entity_enrichment,
     title_anchor_candidate_ids,
 )
@@ -44,6 +46,7 @@ class SearchRetrievalState:
     selected_corpus_id: int | None
     selected_direct_anchor: bool
     precise_title_resolution: bool
+    entity_enrichment_terms: list[str]
     lexical_hits: list[PaperEvidenceHit]
     chunk_lexical_hits: list[PaperEvidenceHit]
     entity_seed_hits: list[PaperEvidenceHit]
@@ -63,7 +66,7 @@ def _apply_query_enrichment(
         return query
 
     query_phrases = build_runtime_entity_resolution_phrases(
-        query.query,
+        query.focused_query or query.query,
         retrieval_profile=query.retrieval_profile,
         normalized_query=query.normalized_query,
     )
@@ -88,7 +91,7 @@ def _apply_relation_enrichment(query: PaperRetrievalQuery) -> PaperRetrievalQuer
 def _lexical_query_text(query: PaperRetrievalQuery) -> str:
     if query.use_title_similarity or query.use_title_candidate_lookup:
         return query.query
-    return query.normalized_query or query.query
+    return query.focused_query or query.normalized_query or query.query
 
 
 def _paper_lexical_query_text(
@@ -100,8 +103,58 @@ def _paper_lexical_query_text(
         QueryRetrievalProfile.PASSAGE_LOOKUP,
         QueryRetrievalProfile.QUESTION_LOOKUP,
     ):
-        return query.query
+        return query.focused_query or query.query
     return _lexical_query_text(query)
+
+
+def _run_chunk_search(
+    *,
+    repository: RagRepository,
+    trace: RuntimeTraceCollector,
+    graph_run_id: str,
+    chunk_queries: list[str],
+    limit: int,
+    scope_corpus_ids: list[int] | None,
+    trace_key_prefix: str = "chunk_search",
+) -> tuple[list[PaperEvidenceHit], int]:
+    chunk_lexical_hits: list[PaperEvidenceHit] = []
+    chunk_attempts_executed = 0
+    resolved_scope_corpus_ids = scope_corpus_ids or None
+    trace.record_count(f"{trace_key_prefix}_attempt_candidates", len(chunk_queries))
+    if not chunk_queries:
+        return chunk_lexical_hits, chunk_attempts_executed
+
+    describe_chunk_route = getattr(repository, "describe_chunk_search_route", None)
+    trace.record_flag(f"{trace_key_prefix}_queries", chunk_queries)
+    for chunk_query in chunk_queries:
+        chunk_attempts_executed += 1
+        trace.record_flag(f"{trace_key_prefix}_query_text", chunk_query)
+        if callable(describe_chunk_route):
+            trace.record_flag(
+                f"{trace_key_prefix}_route",
+                describe_chunk_route(
+                    graph_run_id=graph_run_id,
+                    query=chunk_query,
+                    limit=limit,
+                    scope_corpus_ids=resolved_scope_corpus_ids,
+                ),
+            )
+        chunk_lexical_hits = trace.call(
+            "search_chunk_papers",
+            repository.search_chunk_papers,
+            graph_run_id,
+            chunk_query,
+            limit=limit,
+            scope_corpus_ids=resolved_scope_corpus_ids,
+        )
+        if chunk_lexical_hits:
+            break
+
+    trace.record_count(
+        f"{trace_key_prefix}_attempts_executed",
+        chunk_attempts_executed,
+    )
+    return chunk_lexical_hits, chunk_attempts_executed
 
 
 def _entity_seed_terms_for_recall(
@@ -117,6 +170,25 @@ def _entity_seed_terms_for_recall(
         term
         for term in resolved_entity_terms
         if should_seed_resolved_entity_term(
+            term,
+            entity_confidence="high" if term in high_conf else None,
+        )
+    ]
+
+
+def _entity_terms_for_enrichment(
+    *,
+    explicit_entity_terms: list[str],
+    resolved_entity_terms: list[str],
+    high_confidence_entity_terms: set[str] | None = None,
+) -> list[str]:
+    if explicit_entity_terms:
+        return explicit_entity_terms
+    high_conf = high_confidence_entity_terms or set()
+    return [
+        term
+        for term in resolved_entity_terms
+        if should_enrich_resolved_entity_term(
             term,
             entity_confidence="high" if term in high_conf else None,
         )
@@ -156,6 +228,51 @@ def apply_selected_context_hits(
         lexical_hits=paper_hits,
         chunk_lexical_hits=[],
         selected_context_hits=selected_context_hits,
+        cited_context_hits=[],
+        dense_query_hits=[],
+        entity_seed_hits=[],
+        relation_seed_hits=[],
+        citation_seed_hits=[],
+        semantic_seed_hits=[],
+        semantic_neighbors=[],
+    )
+
+
+def apply_cited_context_hits(
+    *,
+    repository: RagRepository,
+    paper_hits: list[PaperEvidenceHit],
+    cited_corpus_ids: list[int],
+    search_plan: RetrievalSearchPlan,
+) -> list[PaperEvidenceHit]:
+    if not cited_corpus_ids or search_plan.cited_context_bonus <= 0:
+        return paper_hits
+
+    normalized_cited_ids = list(dict.fromkeys(int(corpus_id) for corpus_id in cited_corpus_ids))
+    cited_hit_ids = set(normalized_cited_ids)
+    missing_ids: list[int] = []
+    for hit in paper_hits:
+        if hit.corpus_id in cited_hit_ids:
+            hit.cited_context_score = max(
+                hit.cited_context_score,
+                search_plan.cited_context_bonus,
+            )
+            cited_hit_ids.discard(hit.corpus_id)
+    missing_ids.extend(cited_hit_ids)
+    if not missing_ids:
+        return paper_hits
+
+    cited_context_hits = repository.fetch_known_scoped_papers_by_corpus_ids(missing_ids)
+    for hit in cited_context_hits:
+        hit.cited_context_score = max(
+            hit.cited_context_score,
+            search_plan.cited_context_bonus,
+        )
+    return merge_candidate_papers(
+        lexical_hits=paper_hits,
+        chunk_lexical_hits=[],
+        selected_context_hits=[],
+        cited_context_hits=cited_context_hits,
         dense_query_hits=[],
         entity_seed_hits=[],
         relation_seed_hits=[],
@@ -228,7 +345,10 @@ def retrieve_search_state(
         not exact_title_hits
         and query.use_lexical
         and search_plan.allow_exact_title_matches
-        and should_use_exact_title_precheck(query.query)
+        and should_use_exact_title_precheck(
+            query.query,
+            metadata_hints=query.metadata_hints,
+        )
         and not selection_only_without_matches
     ):
         exact_title_hits = trace.call(
@@ -251,8 +371,6 @@ def retrieve_search_state(
 
     chunk_lexical_hits: list[PaperEvidenceHit] = []
     chunk_queries = chunk_search_queries(query)
-    chunk_attempts_executed = 0
-    trace.record_count("chunk_search_attempt_candidates", len(chunk_queries))
     if (
         not exact_title_hits
         and query.use_lexical
@@ -260,36 +378,17 @@ def retrieve_search_state(
         and query.retrieval_profile
         in (QueryRetrievalProfile.PASSAGE_LOOKUP, QueryRetrievalProfile.QUESTION_LOOKUP)
     ):
-        describe_chunk_route = getattr(repository, "describe_chunk_search_route", None)
-        trace.record_flag("chunk_search_queries", chunk_queries)
-        for chunk_query in chunk_queries:
-            chunk_attempts_executed += 1
-            trace.record_flag("chunk_search_query_text", chunk_query)
-            if callable(describe_chunk_route):
-                trace.record_flag(
-                    "chunk_search_route",
-                    describe_chunk_route(
-                        graph_run_id=release.graph_run_id,
-                        query=chunk_query,
-                        limit=query.rerank_topn,
-                        scope_corpus_ids=scope_corpus_ids or None,
-                    ),
-                )
-            chunk_lexical_hits = trace.call(
-                "search_chunk_papers",
-                repository.search_chunk_papers,
-                release.graph_run_id,
-                chunk_query,
-                limit=query.rerank_topn,
-                scope_corpus_ids=scope_corpus_ids or None,
-            )
-            if chunk_lexical_hits:
-                break
-    trace.record_count(
-        "chunk_search_attempts_executed",
-        chunk_attempts_executed,
-    )
-    trace.record_count("chunk_lexical_hits", len(chunk_lexical_hits))
+        chunk_lexical_hits, _chunk_attempts = _run_chunk_search(
+            repository=repository,
+            trace=trace,
+            graph_run_id=release.graph_run_id,
+            chunk_queries=chunk_queries,
+            limit=query.rerank_topn,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+    else:
+        trace.record_count("chunk_search_attempt_candidates", len(chunk_queries))
+        trace.record_count("chunk_search_attempts_executed", 0)
 
     lexical_hits: list[PaperEvidenceHit] = list(exact_title_hits)
     sparse_passage_paper_fallback = (
@@ -333,6 +432,7 @@ def retrieve_search_state(
                 "paper_search_use_title_candidate_lookup": (
                     paper_search_use_title_candidate_lookup
                 ),
+                "paper_search_metadata_cues": query.metadata_hints.matched_cues,
             }
         )
         describe_paper_route = getattr(repository, "describe_paper_search_route", None)
@@ -341,6 +441,14 @@ def retrieve_search_state(
             "scope_corpus_ids": scope_corpus_ids or None,
             "use_title_similarity": paper_search_use_title_similarity,
         }
+        if (
+            query.metadata_hints.has_structured_signal
+            and callable_supports_kwarg(
+                repository.search_papers,
+                "query_metadata_hints",
+            )
+        ):
+            paper_search_kwargs["query_metadata_hints"] = query.metadata_hints
         if (
             paper_search_use_title_candidate_lookup != paper_search_use_title_similarity
             and callable_supports_kwarg(
@@ -381,11 +489,49 @@ def retrieve_search_state(
             **paper_search_kwargs,
         )
     if (
-        lexical_hits
-        and query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP
-        and has_strong_lexical_title_anchor(
-            query_text=query.query,
+        not chunk_lexical_hits
+        and not selection_only_without_matches
+        and should_run_title_chunk_rescue(
+            query=query,
+            exact_title_hits=exact_title_hits,
             lexical_hits=lexical_hits,
+        )
+    ):
+        trace.record_flag("title_chunk_rescue_requested", True)
+        title_chunk_queries = list(
+            dict.fromkeys(
+                [
+                    query.query,
+                    *chunk_search_queries(
+                        replace(
+                            query,
+                            retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+                        )
+                    ),
+                ]
+            )
+        )
+        chunk_lexical_hits, _title_chunk_attempts = _run_chunk_search(
+            repository=repository,
+            trace=trace,
+            graph_run_id=release.graph_run_id,
+            chunk_queries=title_chunk_queries,
+            limit=query.rerank_topn,
+            scope_corpus_ids=scope_corpus_ids,
+            trace_key_prefix="title_chunk_rescue",
+        )
+    else:
+        trace.record_count("title_chunk_rescue_attempt_candidates", 0)
+        trace.record_count("title_chunk_rescue_attempts_executed", 0)
+    trace.record_count("chunk_lexical_hits", len(chunk_lexical_hits))
+    direct_support_hits = [*lexical_hits, *chunk_lexical_hits]
+    if (
+        direct_support_hits
+        and query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP
+        and not query.metadata_hints.has_structured_signal
+        and has_strong_lexical_title_anchor(
+            query_text=query.focused_query or query.query,
+            lexical_hits=direct_support_hits,
         )
     ):
         query = replace(
@@ -404,14 +550,14 @@ def retrieve_search_state(
         paper_hits=[*lexical_hits, *chunk_lexical_hits],
     )
     title_anchor_ids = title_anchor_candidate_ids(
-        query_text=query.query,
-        lexical_hits=lexical_hits,
+        query_text=query.focused_query or query.query,
+        lexical_hits=direct_support_hits,
     )
     trace.record_count("title_anchor_candidates", len(title_anchor_ids))
     precise_title_resolution = has_precise_title_resolution(
-        query_text=query.query,
+        query_text=query.focused_query or query.query,
         retrieval_profile=query.retrieval_profile,
-        lexical_hits=lexical_hits,
+        lexical_hits=direct_support_hits,
         selected_direct_anchor=selected_direct_anchor,
     )
     ambiguous_title_anchor_candidates = (
@@ -421,6 +567,7 @@ def retrieve_search_state(
     seeded_channel_search = should_run_seeded_channel_search(
         query=query,
         lexical_hits=lexical_hits,
+        chunk_lexical_hits=chunk_lexical_hits,
         selected_direct_anchor=selected_direct_anchor,
     )
 
@@ -439,7 +586,15 @@ def retrieve_search_state(
         resolved_entity_terms=query.entity_terms,
         high_confidence_entity_terms=query.high_confidence_entity_terms,
     )
+    entity_enrichment_terms = _entity_terms_for_enrichment(
+        explicit_entity_terms=explicit_entity_terms,
+        resolved_entity_terms=query.entity_terms,
+        high_confidence_entity_terms=query.high_confidence_entity_terms,
+    )
+    trace.record_count("resolved_entity_terms", len(query.entity_terms))
+    trace.record_count("entity_enrichment_terms", len(entity_enrichment_terms))
     trace.record_count("entity_seed_terms", len(entity_seed_terms))
+    trace.record_flag("entity_enrichment_terms", entity_enrichment_terms)
     entity_seed_hits = (
         trace.call(
             "search_entity_papers",
@@ -474,14 +629,26 @@ def retrieve_search_state(
         else []
     )
     trace.record_count("relation_seed_hits", len(relation_seed_hits))
+    dense_query_requested, dense_query_reason = dense_query_decision(
+        query=query,
+        selected_direct_anchor=selected_direct_anchor,
+        lexical_hits=lexical_hits,
+        chunk_lexical_hits=chunk_lexical_hits,
+    )
+    trace.record_flags(
+        {
+            "dense_query_requested": dense_query_requested,
+            "dense_query_reason": dense_query_reason,
+        }
+    )
     dense_query_embedding = (
-        trace.call("encode_dense_query", query_embedder.encode, query.query)
-        if not selection_only_without_matches
-        and should_run_dense_query(
-            query=query,
-            selected_direct_anchor=selected_direct_anchor,
-            lexical_hits=lexical_hits,
+        trace.call(
+            "encode_dense_query",
+            query_embedder.encode,
+            query.focused_query or query.query,
         )
+        if not selection_only_without_matches
+        and dense_query_requested
         else None
     )
     dense_query_hits = (
@@ -509,6 +676,13 @@ def retrieve_search_state(
                     "dense_query_route": dense_route["route"],
                     "dense_query_candidate_limit": dense_route["candidate_limit"],
                     "dense_query_search_mode": dense_route["search_mode"],
+                    "dense_query_hnsw_ef_search": dense_route.get("hnsw_ef_search"),
+                    "dense_query_hnsw_max_scan_tuples": dense_route.get(
+                        "hnsw_max_scan_tuples"
+                    ),
+                    "dense_query_exact_parallel_workers": dense_route.get(
+                        "exact_parallel_workers"
+                    ),
                 }
             )
     trace.record_count("dense_query_hits", len(dense_query_hits))
@@ -527,6 +701,7 @@ def retrieve_search_state(
             search_plan=search_plan,
             selected_corpus_id=selected_corpus_id,
             lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
             selected_direct_anchor=selected_direct_anchor,
         )
         else []
@@ -558,6 +733,7 @@ def retrieve_search_state(
         lexical_hits=lexical_hits,
         chunk_lexical_hits=chunk_lexical_hits,
         selected_context_hits=[],
+        cited_context_hits=[],
         dense_query_hits=dense_query_hits,
         entity_seed_hits=entity_seed_hits,
         relation_seed_hits=relation_seed_hits,
@@ -573,6 +749,15 @@ def retrieve_search_state(
         selected_corpus_id=selected_corpus_id,
         search_plan=search_plan,
     )
+    trace.record_count("cited_context_ids", len(query.cited_corpus_ids))
+    initial_paper_hits = trace.call(
+        "apply_cited_context_initial",
+        apply_cited_context_hits,
+        repository=repository,
+        paper_hits=initial_paper_hits,
+        cited_corpus_ids=query.cited_corpus_ids,
+        search_plan=search_plan,
+    )
     trace.record_count("initial_paper_hits", len(initial_paper_hits))
     trace.record_flags(
         {
@@ -585,6 +770,7 @@ def retrieve_search_state(
             "ambiguous_title_anchor_candidates": ambiguous_title_anchor_candidates,
             "precise_title_resolution": precise_title_resolution,
             "seeded_channel_search": seeded_channel_search,
+            "metadata_query_cues": list(query.metadata_hints.matched_cues),
             "use_lexical": query.use_lexical,
             "use_dense_query": query.use_dense_query,
             "session_jit_disabled": getattr(repository, "_disable_session_jit", False),
@@ -599,6 +785,7 @@ def retrieve_search_state(
         selected_corpus_id=selected_corpus_id,
         selected_direct_anchor=selected_direct_anchor,
         precise_title_resolution=precise_title_resolution,
+        entity_enrichment_terms=entity_enrichment_terms,
         lexical_hits=lexical_hits,
         chunk_lexical_hits=chunk_lexical_hits,
         entity_seed_hits=entity_seed_hits,
@@ -614,7 +801,7 @@ def retrieve_search_state(
         client = _get_langfuse()
         client.update_current_span(
             input={
-                "query": query.text,
+                "query": query.query,
                 "retrieval_profile": str(query.retrieval_profile),
                 "scope_mode": str(query.scope_mode),
                 "selected_corpus_id": selected_corpus_id,

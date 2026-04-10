@@ -13,6 +13,7 @@ from app.rag.models import (
     GraphRelease,
     GraphSignal,
     PaperAssetRecord,
+    PaperAuthorRecord,
     PaperEvidenceHit,
     PaperReferenceRecord,
     RelationMatchedPaperHit,
@@ -29,6 +30,8 @@ from app.rag.types import (
     RetrievalChannel,
     RetrievalScope,
 )
+
+ResolvedTermsResult = tuple[list[str], set[str]]
 
 
 class FakeRepository:
@@ -60,7 +63,12 @@ class FakeRepository:
             is_current=True,
         )
 
-    def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+    def resolve_query_entity_terms(
+        self,
+        *,
+        query_phrases,
+        limit: int = 5,
+    ) -> ResolvedTermsResult:
         assert limit == 5
         return [], set()
 
@@ -195,7 +203,7 @@ class FakeRepository:
     ) -> list[PaperEvidenceHit]:
         assert graph_run_id == "run-1"
         assert limit == 6
-        assert scope_corpus_ids in (None, [11, 22])
+        assert scope_corpus_ids in (None, [], [11, 22])
         return []
 
     def search_entity_papers(
@@ -318,6 +326,18 @@ class FakeRepository:
             ]
         }
 
+    def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+        return {
+            11: [
+                PaperAuthorRecord(
+                    corpus_id=11,
+                    author_position=0,
+                    author_id="author-11",
+                    name="Jane Doe",
+                )
+            ]
+        }
+
     def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
         return {
             11: [
@@ -373,7 +393,12 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
                 is_current=True,
             )
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             return [], set()
 
         def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
@@ -489,6 +514,9 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
         def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
             return {}
 
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
             return {}
 
@@ -534,7 +562,12 @@ def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypa
                 is_current=True,
             )
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             return [], set()
 
         def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
@@ -621,6 +654,9 @@ def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypa
             return {}
 
         def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
             return {}
 
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
@@ -954,7 +990,12 @@ def test_rag_service_returns_exact_title_match_while_skipping_extra_seed_lanes()
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             raise AssertionError("precise title resolution should skip runtime entity resolution")
 
         def search_papers(
@@ -1080,7 +1121,12 @@ def test_rag_service_returns_strong_title_prefix_match_without_dense_lane():
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             raise AssertionError("strong title prefix should skip runtime entity resolution")
 
         def search_papers(
@@ -1302,7 +1348,7 @@ def test_rag_service_limits_title_entity_enrichment_to_top_candidate():
     assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [11]
 
 
-def test_rag_service_uses_local_entity_enrichment_for_duplicate_title_anchors():
+def test_rag_service_filters_runtime_entity_terms_for_duplicate_title_anchors():
     class DuplicateTitleAnchorRepository(FakeRepository):
         def resolve_selected_corpus_id(
             self,
@@ -1314,8 +1360,16 @@ def test_rag_service_uses_local_entity_enrichment_for_duplicate_title_anchors():
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
-            return (["Lewy bodies", "dementia"], {"Lewy bodies", "dementia"})
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return (
+                ["Lewy bodies", "dementia", "and", "diagnosis", "with"],
+                {"Lewy bodies", "dementia"},
+            )
 
         def search_papers(
             self,
@@ -1455,7 +1509,12 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             assert selected_node_id == "paper:11857184"
             return 11857184
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             return ([], set())
 
         def search_selected_title_papers(
@@ -1632,7 +1691,12 @@ def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles(
             assert selected_node_id == "paper:4443808"
             return 4443808
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             return ([], set())
 
         def search_selected_title_papers(
@@ -1907,6 +1971,160 @@ def test_rag_service_keeps_title_candidate_lookup_for_long_title_queries():
     assert response.evidence_bundles == []
 
 
+def test_rag_service_uses_chunk_rescue_for_failed_long_title_lookup():
+    query = (
+        "Transgenic mice overexpressing the 695-amino acid isoform of human "
+        "Alzheimer beta-amyloid (Abeta) precursor protein containing a "
+        "Lys670 --> Asn, Met671 -->"
+    )
+
+    class TitleChunkRescueRepository(FakeRepository):
+        def __init__(self) -> None:
+            self.chunk_queries: list[str] = []
+            self.dense_called = False
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def describe_paper_search_route(
+            self,
+            *,
+            graph_run_id: str,
+            query: str,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity: bool = True,
+            use_title_candidate_lookup: bool | None = None,
+        ) -> str:
+            assert graph_run_id == "run-1"
+            assert query.startswith("Transgenic mice overexpressing")
+            assert limit == 6
+            assert scope_corpus_ids in (None, [])
+            assert use_title_similarity is False
+            assert use_title_candidate_lookup is True
+            return "paper_search_global_fts_only"
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+            use_title_candidate_lookup: bool | None = None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert query.startswith("Transgenic mice overexpressing")
+            assert limit == 6
+            assert scope_corpus_ids in (None, [])
+            assert use_title_similarity is False
+            assert use_title_candidate_lookup is True
+            return []
+
+        def describe_chunk_search_route(
+            self,
+            *,
+            graph_run_id: str,
+            query: str,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> str:
+            assert graph_run_id == "run-1"
+            assert limit == 6
+            assert scope_corpus_ids in (None, [])
+            return "chunk_search_global"
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert limit == 6
+            assert scope_corpus_ids in (None, [])
+            self.chunk_queries.append(query)
+            return [
+                PaperEvidenceHit(
+                    corpus_id=32419070,
+                    paper_id="paper-32419070",
+                    semantic_scholar_paper_id="paper-32419070",
+                    title=(
+                        "Correlative Memory Deficits, Aβ Elevation, and Amyloid "
+                        "Plaques in Transgenic Mice"
+                    ),
+                    journal_name="Nature",
+                    year=1999,
+                    doi=None,
+                    pmid=32419070,
+                    pmcid=None,
+                    abstract="Representative abstract.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=42,
+                    reference_count=27,
+                    chunk_lexical_score=0.08,
+                    chunk_ordinal=0,
+                    chunk_snippet=(
+                        "Transgenic mice overexpressing the 695-amino acid isoform..."
+                    ),
+                )
+            ]
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            self.dense_called = True
+            raise AssertionError("dense query should be skipped after stable title chunk rescue")
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            raise AssertionError("semantic neighbors should not run without a selected paper")
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [32419070]
+            assert entity_terms == []
+            return {}
+
+        def fetch_relation_matches(
+            self,
+            corpus_ids,
+            *,
+            relation_terms,
+            limit_per_paper: int = 5,
+        ):
+            assert corpus_ids == [32419070]
+            assert relation_terms == []
+            return {}
+
+    service = _service(TitleChunkRescueRepository(), query_embedder=NoopQueryEmbedder())
+    response = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=query,
+            k=1,
+            rerank_topn=6,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.bundles] == [32419070]
+    assert response.debug_trace["session_flags"]["retrieval_profile"] == "passage_lookup"
+    assert response.debug_trace["session_flags"].get("paper_search_route") is None
+    assert response.debug_trace["session_flags"].get("title_chunk_rescue_requested") is None
+    assert response.debug_trace["candidate_counts"]["chunk_search_attempts_executed"] == 1
+    assert response.debug_trace["candidate_counts"]["chunk_lexical_hits"] == 1
+
+
 def test_rag_service_does_not_expand_citation_frontier_for_passage_queries():
     class PassageRepository(FakeRepository):
         def resolve_selected_corpus_id(
@@ -2021,6 +2239,9 @@ def test_rag_service_does_not_expand_citation_frontier_for_passage_queries():
             return {}
 
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 5):
             return {}
 
     class PassageDenseQueryEmbedder:
@@ -2574,7 +2795,12 @@ def test_rag_service_skips_dense_and_semantic_neighbors_on_selected_direct_chunk
                 )
             ]
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             return [], set()
 
         def search_entity_papers(
@@ -2699,7 +2925,12 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
         ) -> list[PaperEvidenceHit]:
             return []
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             return ([], set())
 
         def search_chunk_papers(
@@ -2808,6 +3039,170 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
     assert [hit.corpus_id for hit in response.retrieval_channels[0].hits] == [233428792]
 
 
+def test_rag_service_promotes_chunk_title_anchor_before_passage_lookup():
+    query = (
+        "Health-Related Quality of Life is Impacted by Proximity to an Airport "
+        "in Noise-Sensitive People"
+    )
+
+    class ChunkTitleAnchorRepository(FakeRepository):
+        dense_called = False
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_exact_title_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=13826013,
+                    paper_id="paper-13826013",
+                    semantic_scholar_paper_id="paper-13826013",
+                    title=query,
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=13826013,
+                    pmcid=None,
+                    abstract=None,
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=12,
+                    reference_count=20,
+                    chunk_lexical_score=0.91,
+                    chunk_snippet="Title block match",
+                )
+            ]
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_relation_papers(
+            self,
+            graph_run_id: str,
+            *,
+            relation_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            self.dense_called = True
+            return [
+                PaperEvidenceHit(
+                    corpus_id=999,
+                    paper_id="paper-999",
+                    semantic_scholar_paper_id="paper-999",
+                    title="Dense distractor",
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=999,
+                    pmcid=None,
+                    abstract="Dense distractor abstract.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=1,
+                    reference_count=1,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(
+            self,
+            corpus_ids,
+            *,
+            relation_terms,
+            limit_per_paper: int = 5,
+        ):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = ChunkTitleAnchorRepository()
+    service = _service(repository)
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query=query,
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [13826013]
+    assert repository.dense_called is False
+    assert result.debug_trace["session_flags"]["retrieval_profile"] == "title_lookup"
+    assert result.debug_trace["candidate_counts"]["title_anchor_candidates"] == 1
+    assert result.debug_trace["candidate_counts"]["dense_query_hits"] == 0
+
+
 def test_rag_service_uses_exact_title_precheck_for_long_passage_shaped_titles():
     query = (
         "A theory-informed qualitative exploration of social and environmental "
@@ -2862,7 +3257,12 @@ def test_rag_service_uses_exact_title_precheck_for_long_passage_shaped_titles():
                 )
             ]
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             raise AssertionError("exact title precheck should skip runtime entity resolution")
 
         def search_chunk_papers(
@@ -2917,8 +3317,9 @@ def test_rag_service_uses_exact_title_precheck_for_long_passage_shaped_titles():
             raise AssertionError("exact title precheck should skip dense retrieval")
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
-            assert corpus_ids == [22309903]
-            return {}
+            raise AssertionError(
+                "precise exact-title resolution with abstract preview should skip citation fetch"
+            )
 
         def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
             raise AssertionError("exact title anchors should not expand the citation frontier")
@@ -3043,6 +3444,99 @@ def test_rag_service_skips_citation_frontier_expansion_for_passage_queries():
 
     assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [202]
     assert response.answer_corpus_ids[0] == 202
+
+
+def test_rag_service_skips_initial_citation_prefetch_for_single_strong_chunk_anchor():
+    class SingleChunkPassageRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("strong chunk passage should not hit paper lexical fallback")
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=202,
+                    paper_id="paper-202",
+                    semantic_scholar_paper_id="paper-202",
+                    title="Sleep quality assessment paper",
+                    journal_name="Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=None,
+                    pmcid=None,
+                    abstract="Abstract preview.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    chunk_lexical_score=0.02,
+                    chunk_snippet="Direct chunk-backed evidence.",
+                )
+            ]
+
+        def search_query_embedding_papers(
+            self,
+            *,
+            graph_run_id: str,
+            query_embedding,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            raise AssertionError(
+                "single strong chunk anchor should skip pre-ranking citation fetch"
+            )
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    service = _service(SingleChunkPassageRepository())
+
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="Representative claim sentence about sleep quality outcomes.",
+            k=1,
+            rerank_topn=4,
+            generate_answer=False,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [202]
 
 
 def test_rag_service_returns_bundles_graph_signals_and_answer():
@@ -3468,6 +3962,130 @@ def test_rag_service_can_seed_candidates_from_entity_normalization():
     assert entity_channel.hits[0].reasons == ["melatonin"]
 
 
+def test_rag_service_filters_runtime_entity_phrases_for_ambiguous_title_enrichment():
+    class AmbiguousTitleEntityRepository(FakeRepository):
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            assert query == "Diagnosis and management of dementia with Lewy bodies"
+            return [
+                PaperEvidenceHit(
+                    corpus_id=3470330,
+                    paper_id="paper-3470330",
+                    semantic_scholar_paper_id="paper-3470330",
+                    title="Diagnosis and management of dementia with Lewy bodies",
+                    journal_name="Journal",
+                    year=2005,
+                    doi=None,
+                    pmid=15804557,
+                    pmcid=None,
+                    abstract="Primary Lewy body dementia review.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=False,
+                    citation_count=40,
+                    reference_count=55,
+                    lexical_score=0.99,
+                ),
+                PaperEvidenceHit(
+                    corpus_id=14354793,
+                    paper_id="paper-14354793",
+                    semantic_scholar_paper_id="paper-14354793",
+                    title="Diagnosis and management of dementia with Lewy bodies",
+                    journal_name="Journal",
+                    year=2017,
+                    doi=None,
+                    pmid=28101586,
+                    pmcid=None,
+                    abstract="Updated Lewy body dementia review.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=False,
+                    citation_count=41,
+                    reference_count=56,
+                    lexical_score=0.98,
+                ),
+            ]
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            raise AssertionError("entity seed search should stay off for ambiguous title anchors")
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            assert "and" not in query_phrases
+            assert "with" not in query_phrases
+            assert "management" not in query_phrases
+            assert "diagnosis" not in query_phrases
+            return ["Lewy bodies", "dementia", "diagnosis"], {"Lewy bodies", "dementia"}
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            assert corpus_ids == [3470330, 14354793]
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [3470330, 14354793]
+            assert entity_terms == ["Lewy bodies", "dementia"]
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [3470330, 14354793]
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [3470330, 14354793]
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [3470330, 14354793]
+            return {}
+
+    service = _service(AmbiguousTitleEntityRepository())
+    response = service.search(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="Diagnosis and management of dementia with Lewy bodies",
+            evidence_intent="support",
+            k=3,
+            rerank_topn=6,
+            generate_answer=False,
+            selected_layer_key=None,
+            selected_node_id=None,
+        )
+    )
+
+    assert [bundle.paper.corpus_id for bundle in response.evidence_bundles] == [
+        3470330,
+        14354793,
+    ]
+
+
 def test_rag_service_can_seed_candidates_from_relation_normalization():
     class RelationSeedRepository(FakeRepository):
         def resolve_selected_corpus_id(
@@ -3784,7 +4402,12 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
             assert selected_node_id is None
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             assert limit == 5
             assert "melatonin" in query_phrases
             assert "delirium" in query_phrases
@@ -3938,7 +4561,12 @@ def test_rag_service_skips_auto_relation_seeding_for_long_passage_queries():
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             return [], set()
 
         def search_chunk_papers(
@@ -4022,7 +4650,12 @@ def test_rag_service_skips_runtime_entity_enrichment_without_entity_surface_sign
         ) -> int | None:
             return None
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             raise AssertionError("generic title-like queries should skip runtime entity enrichment")
 
         def search_papers(
@@ -4094,7 +4727,12 @@ def test_rag_service_skips_runtime_entity_enrichment_without_entity_surface_sign
 
 def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
     class QueryEnrichmentRepository(FakeRepository):
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             assert "mesh:d008550" in [phrase.lower() for phrase in query_phrases]
             return ["MESH:D008550"], set()
 
@@ -4161,7 +4799,12 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
 
 def test_rag_service_uses_high_specificity_auto_enriched_name_terms_for_seeded_entity_recall():
     class QueryEnrichmentRepository(FakeRepository):
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             lowered_phrases = [phrase.lower() for phrase in query_phrases]
             assert "decreased perk1/2 levels in" in lowered_phrases
             return ["pERK1/2"], set()
@@ -4232,8 +4875,8 @@ def test_rag_service_can_attach_warehouse_grounded_answer_when_available():
         assert segment_texts == [
             "Potentially supporting evidence:",
             (
-                "Melatonin for delirium prevention (2024): Melatonin reduced "
-                "delirium in selected cohorts."
+                "Doe | JAMA | 2024 | Melatonin for delirium prevention: "
+                "Melatonin reduced delirium in selected cohorts."
             ),
         ]
         assert segment_corpus_ids == [None, 11]
@@ -4498,6 +5141,10 @@ def test_rag_service_preserves_dense_query_candidates_in_final_bundle_pool():
             assert corpus_ids == [77]
             return {}
 
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 5):
+            assert corpus_ids == [77]
+            return {}
+
     service = _service(DenseOnlyRepository(), query_embedder=FakeDenseQueryEmbedder())
     request = RagSearchRequest(
         graph_release_id="release-1",
@@ -4532,7 +5179,12 @@ def test_rag_service_skips_entity_resolution_for_passage_noise_without_resolutio
                 is_current=True,
             )
 
-        def resolve_query_entity_terms(self, *, query_phrases, limit: int = 5) -> tuple[list[str], set[str]]:
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
             raise AssertionError("entity term resolution should be skipped")
 
         def resolve_selected_corpus_id(
@@ -4678,6 +5330,10 @@ def test_rag_service_skips_entity_resolution_for_passage_noise_without_resolutio
             return {}
 
         def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            assert corpus_ids == [77]
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 5):
             assert corpus_ids == [77]
             return {}
 

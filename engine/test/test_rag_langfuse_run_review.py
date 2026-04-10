@@ -38,7 +38,15 @@ def _item_result(
     return SimpleNamespace(
         item=SimpleNamespace(
             input={"query_family": query_family, "query": query},
-            expected_output={"corpus_id": corpus_id, "title": title},
+            expected_output={
+                "corpus_id": corpus_id,
+                "title": title,
+                "normalized_title_key": title.casefold().replace(" ", "-"),
+                "primary_source_system": "biocxml",
+                "coverage_bucket": "covered",
+                "warehouse_depth": "chunks_entities_sentence",
+                "evaluation_partition": "optimize",
+            },
         ),
         evaluations=evaluations,
         output=output,
@@ -65,9 +73,13 @@ def test_review_experiment_result_groups_families_and_classifies_misses():
                     "retrieval_profile": "title_lookup",
                     "warehouse_depth": "none",
                     "route_signature": "sig-a",
+                    "display_author_coverage": 0.0,
+                    "display_journal_coverage": 0.0,
+                    "display_year_coverage": 0.0,
+                    "display_study_metadata_coverage": 0.0,
                     "top_corpus_ids": [1, 2, 3],
                     "hit_rank": None,
-                    "target_signals": {},
+                    "target_signals": {"cited_context_score": 0.0},
                 },
             ),
             _item_result(
@@ -85,9 +97,13 @@ def test_review_experiment_result_groups_families_and_classifies_misses():
                     "retrieval_profile": "title_lookup",
                     "warehouse_depth": "fulltext",
                     "route_signature": "sig-b",
+                    "display_author_coverage": 1.0,
+                    "display_journal_coverage": 1.0,
+                    "display_year_coverage": 1.0,
+                    "display_study_metadata_coverage": 1.0,
                     "top_corpus_ids": [22, 1, 2],
                     "hit_rank": 1,
-                    "target_signals": {"lane_count": 2.0},
+                    "target_signals": {"lane_count": 2.0, "cited_context_score": 0.2},
                 },
                 trace_id="trace-2",
             ),
@@ -102,10 +118,38 @@ def test_review_experiment_result_groups_families_and_classifies_misses():
 
     assert review["cases"] == 2
     assert review["hit_at_1"] == 0.5
+    assert review["target_cited_context_rate"] == 0.5
+    assert review["display_author_coverage"] == 0.5
+    assert review["display_journal_coverage"] == 0.5
+    assert review["display_year_coverage"] == 0.5
+    assert review["display_study_metadata_coverage"] == 0.5
+    assert review["distinct_papers"] == 2
+    assert review["distinct_corpus_ids"] == 2
+    assert review["distinct_titles"] == 2
+    assert review["distinct_title_keys"] == 2
+    assert review["repeated_paper_cases"] == 0
+    assert review["repeated_title_cases"] == 0
+    assert review["max_cases_per_paper"] == 1
+    assert review["max_cases_per_title"] == 1
+    assert review["max_cases_per_corpus"] == 1
+    assert review["max_cases_per_title_key"] == 1
+    assert review["partition_bucket_count"] == 1
+    assert review["focus_bucket_count"] == 2
+    assert review["source_bucket_count"] == 1
+    assert review["coverage_bucket_count"] == 1
+    assert review["title_cases"] == 2
+    assert review["title_hit_at_1"] == 0.5
+    assert review["title_display_study_metadata_coverage"] == 0.5
+    assert review["non_title_cases"] == 0
+    assert review["non_title_hit_at_1"] == 0.0
+    assert review["non_title_display_study_metadata_coverage"] == 0.0
     assert review["by_family"]["title_global"]["cases"] == 1
-    assert review["by_family"]["title_global"]["miss_category_counts"] == {
-        "no_target_signal": 1
-    }
+    assert review["by_focus"]["title_queries"]["cases"] == 2
+    assert review["by_focus"]["non_title_queries"]["cases"] == 0
+    assert review["by_partition"]["optimize"]["cases"] == 2
+    assert review["by_source"]["biocxml"]["cases"] == 2
+    assert review["by_coverage"]["covered"]["cases"] == 2
+    assert review["by_family"]["title_global"]["miss_category_counts"] == {"no_target_signal": 1}
     assert review["by_family"]["title_selected"]["hit_at_1"] == 1.0
     assert review["by_family"]["title_selected"]["routing_match"] == 1.0
     assert review["miss_examples"][0]["query_family"] == "title_global"
@@ -132,9 +176,19 @@ def test_review_experiment_result_scales_to_200_items_within_budget():
                 "retrieval_profile": "title_lookup" if i % 2 else "passage_lookup",
                 "warehouse_depth": "fulltext" if i % 3 else "none",
                 "route_signature": f"sig-{i % 10}",
+                "display_author_coverage": 1.0 if i % 2 else 0.0,
+                "display_journal_coverage": 1.0 if i % 3 else 0.0,
+                "display_year_coverage": 1.0 if i % 5 else 0.0,
+                "display_study_metadata_coverage": (
+                    (1.0 if i % 2 else 0.0) + (1.0 if i % 3 else 0.0) + (1.0 if i % 5 else 0.0)
+                )
+                / 3.0,
                 "top_corpus_ids": [100 + i, 101 + i, 102 + i] if i % 4 else [],
                 "hit_rank": 1 if i % 2 else None,
-                "target_signals": {"lane_count": float(i % 3)},
+                "target_signals": {
+                    "lane_count": float(i % 3),
+                    "cited_context_score": 0.2 if i % 5 == 0 else 0.0,
+                },
                 "error": None,
             },
             trace_id=f"trace-{i}",
@@ -147,8 +201,16 @@ def test_review_experiment_result_scales_to_200_items_within_budget():
     review = review_experiment_result(result, max_miss_examples=10, fetch_trace_urls=False)
     elapsed_ms = (time.perf_counter() - start) * 1000
 
-    assert elapsed_ms < 200, f"review_experiment_result took {elapsed_ms:.1f}ms for 200 items (budget: 200ms)"
+    assert elapsed_ms < 200, (
+        f"review_experiment_result took {elapsed_ms:.1f}ms for 200 items (budget: 200ms)"
+    )
     assert review["cases"] == 200
+    assert review["distinct_papers"] == 200
     assert len(review["by_family"]) == len(query_families)
+    assert review["focus_bucket_count"] == 2
+    assert review["title_cases"] == 100
+    assert review["non_title_cases"] == 100
+    assert review["display_study_metadata_coverage"] >= 0.0
+    assert review["distinct_corpus_ids"] == 200
     assert len(review["miss_examples"]) <= 10
     assert len(review["slow_examples"]) <= 10

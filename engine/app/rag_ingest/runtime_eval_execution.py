@@ -59,6 +59,8 @@ def build_runtime_eval_request(
         query=case.query,
         selected_layer_key=case.selected_layer_key,
         selected_node_id=case.selected_node_id,
+        selection_graph_paper_refs=case.selection_graph_paper_refs,
+        cited_corpus_ids=case.cited_corpus_ids,
         evidence_intent=case.evidence_intent,
         k=k,
         rerank_topn=max(k, rerank_topn),

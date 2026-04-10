@@ -80,4 +80,47 @@ describe("useGraphModeController", () => {
     });
     expect(useDashboardStore.getState().promptMode).toBe("normal");
   });
+
+  it("learn mode auto-opens wiki panel and expands it", () => {
+    const { result } = renderHook(() => useGraphModeController());
+
+    act(() => {
+      result.current.applyMode("learn");
+    });
+    expect(useGraphStore.getState().mode).toBe("learn");
+    expect(useDashboardStore.getState().activePanel).toBe("wiki");
+    expect(useDashboardStore.getState().wikiExpanded).toBe(true);
+  });
+
+  it("ask mode does not change active panel and collapses wiki", () => {
+    useDashboardStore.setState({ activePanel: "config", wikiExpanded: true });
+    const { result } = renderHook(() => useGraphModeController());
+
+    act(() => {
+      result.current.applyMode("ask");
+    });
+    expect(useDashboardStore.getState().activePanel).toBe("config");
+    expect(useDashboardStore.getState().wikiExpanded).toBe(false);
+  });
+
+  it("explore mode does not change active panel and collapses wiki", () => {
+    useDashboardStore.setState({ activePanel: "filters", wikiExpanded: true });
+    const { result } = renderHook(() => useGraphModeController());
+
+    act(() => {
+      result.current.applyMode("explore");
+    });
+    expect(useDashboardStore.getState().activePanel).toBe("filters");
+    expect(useDashboardStore.getState().wikiExpanded).toBe(false);
+  });
+
+  it("create mode does not change active panel", () => {
+    useDashboardStore.setState({ activePanel: "info" });
+    const { result } = renderHook(() => useGraphModeController());
+
+    act(() => {
+      result.current.applyMode("create");
+    });
+    expect(useDashboardStore.getState().activePanel).toBe("info");
+  });
 });

@@ -27,6 +27,51 @@ MAX_ENTITY_ACRONYM_TOKEN_CHARS = 8
 MIN_ENTITY_PROPER_NOUN_CHARS = 4
 DEFAULT_QUERY_SYMBOLS = frozenset({":", "-", "_"})
 ENTITY_QUERY_SYMBOLS = frozenset({":", "-", "_", "/", "+"})
+RUNTIME_ENTITY_NOISE_TOKENS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "association",
+        "associations",
+        "at",
+        "by",
+        "comparison",
+        "comparisons",
+        "diagnosis",
+        "effect",
+        "effects",
+        "evaluation",
+        "evaluations",
+        "for",
+        "from",
+        "impact",
+        "impacts",
+        "in",
+        "incidence",
+        "management",
+        "of",
+        "on",
+        "or",
+        "outcome",
+        "outcomes",
+        "overview",
+        "prevalence",
+        "review",
+        "risk",
+        "risks",
+        "role",
+        "roles",
+        "studies",
+        "study",
+        "to",
+        "use",
+        "uses",
+        "utility",
+        "with",
+        "without",
+    }
+)
 PROSE_CLAUSE_TOKENS = frozenset(
     {
         "aimed",
@@ -123,6 +168,7 @@ PARAPHRASE_MARKER_TOKENS = frozenset({"from", "against"})
 # regressing the SENTENCE_GLOBAL runtime benchmarks, whose representative
 # sentences are ~30 tokens.
 MAX_PARAPHRASE_QUERY_TOKENS = 10
+MAX_SEMANTIC_LOOKUP_TOKENS = 12
 
 # Small curated set of verb-like tokens that reliably mark sentence-shaped
 # clinical passage claims. Intentionally not a general POS tagger — any
@@ -171,6 +217,61 @@ PASSAGE_VERB_TOKENS = frozenset(
 )
 
 PARAPHRASE_TITLE_PUNCT = frozenset({":", ";", "—", "–"})
+
+# Lowercase-dominant biomedical semantic prompts frequently describe an
+# entity/relation/property lookup rather than a pasted title. These
+# anchors are intentionally noun-heavy and conservative: they capture
+# relation / response / dosing / criteria style questions that should use
+# the broad GENERAL fusion, while exact-title rescue still protects real
+# titles entered in sentence case.
+SEMANTIC_LOOKUP_ANCHOR_TOKENS = frozenset(
+    {
+        "allele",
+        "alleles",
+        "accuracy",
+        "classification",
+        "classifications",
+        "criteria",
+        "dose",
+        "doses",
+        "dosage",
+        "dosing",
+        "diagnosis",
+        "diagnostic",
+        "dysfunction",
+        "efficacy",
+        "genotype",
+        "genotypes",
+        "grading",
+        "mechanism",
+        "mechanisms",
+        "metabolizer",
+        "metabolizers",
+        "mutation",
+        "mutations",
+        "nomenclature",
+        "neuroinflammation",
+        "occupancy",
+        "outcome",
+        "outcomes",
+        "pathophysiology",
+        "polymorphism",
+        "polymorphisms",
+        "progression",
+        "response",
+        "responses",
+        "risk",
+        "risks",
+        "status",
+        "susceptibility",
+        "threshold",
+        "thresholds",
+        "treatment",
+        "treatments",
+        "variant",
+        "variants",
+    }
+)
 
 # Canonical PubTator relation labels currently exercised in the live dataset.
 SUPPORTED_RELATION_TYPES = frozenset(

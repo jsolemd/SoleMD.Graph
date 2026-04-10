@@ -111,7 +111,6 @@ const QUERIES_STUB = {
   getInfoSummary: jest.fn(),
   getNumericStatsBatch: jest.fn(),
   getTablePage: jest.fn(),
-  primeInteractiveQueryTables: jest.fn(),
   runReadOnlyQuery: jest.fn(),
 } as unknown as GraphBundleQueries;
 
@@ -126,28 +125,6 @@ const BUNDLE_STUB = {
 import { DashboardShellClient } from "../DashboardShellClient";
 
 describe("DashboardShellClient", () => {
-  function setupIdleCallback() {
-    const requestIdleCallback = jest.fn((callback: IdleRequestCallback) => {
-      callback({
-        didTimeout: false,
-        timeRemaining: () => 50,
-      } as IdleDeadline);
-      return 1;
-    });
-    const cancelIdleCallback = jest.fn();
-
-    Object.defineProperty(window, "requestIdleCallback", {
-      configurable: true,
-      writable: true,
-      value: requestIdleCallback,
-    });
-    Object.defineProperty(window, "cancelIdleCallback", {
-      configurable: true,
-      writable: true,
-      value: cancelIdleCallback,
-    });
-  }
-
   function stubResolvedQueries() {
     (QUERIES_STUB.getInfoBarsBatch as jest.Mock).mockResolvedValue({});
     (QUERIES_STUB.getInfoHistogramsBatch as jest.Mock).mockResolvedValue({});
@@ -181,15 +158,6 @@ describe("DashboardShellClient", () => {
       progress: null,
       queries: QUERIES_STUB,
     });
-  });
-
-  afterEach(() => {
-    const windowWithIdle = window as Window & {
-      requestIdleCallback?: unknown;
-      cancelIdleCallback?: unknown;
-    };
-    delete windowWithIdle.requestIdleCallback;
-    delete windowWithIdle.cancelIdleCallback;
   });
 
   it("does not re-render GraphCanvas when unrelated shell chrome state changes", async () => {
@@ -247,9 +215,7 @@ describe("DashboardShellClient", () => {
     expect(mockQueryPanel).toHaveBeenCalledTimes(1);
   });
 
-  it("does not prefetch hidden panel datasets after first paint", async () => {
-    setupIdleCallback();
-
+  it("does not trigger hidden query work after first paint", async () => {
     await act(async () => {
       render(<DashboardShellClient bundle={BUNDLE_STUB} />);
     });
@@ -263,7 +229,6 @@ describe("DashboardShellClient", () => {
       expect(screen.queryByTestId("loading-overlay")).not.toBeInTheDocument();
     });
 
-    expect(QUERIES_STUB.primeInteractiveQueryTables).toHaveBeenCalledTimes(1);
     expect(QUERIES_STUB.getInfoBarsBatch).not.toHaveBeenCalled();
     expect(QUERIES_STUB.getInfoHistogramsBatch).not.toHaveBeenCalled();
     expect(QUERIES_STUB.getInfoSummary).not.toHaveBeenCalled();

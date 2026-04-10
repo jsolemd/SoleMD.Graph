@@ -1,0 +1,25 @@
+# SoleMD.Graph — Docker build context exclusions
+# Build context is repo root (docker compose context: ..)
+# Only docker/graph/Dockerfile and docker/graph/entrypoint.sh are needed.
+
+node_modules/
+.next/
+out/
+build/
+dist/
+test-results/
+coverage/
+data/
+
+# Development artifacts
+*.log
+.env*
+!.env.example
+.git/
+.vscode/
+.claude/
+
+# Documentation and config not needed in build
+docs/
+*.md
+!docker/**

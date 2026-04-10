@@ -4,6 +4,12 @@ All other _queries_*.py modules import from this file. Keep this
 module free of circular imports — it must not import from siblings.
 """
 
+from app.rag.entity_runtime_keys import (
+    runtime_concept_id_key_sql,
+    runtime_concept_namespace_key_sql,
+    runtime_entity_type_key_sql,
+)
+
 # ---------------------------------------------------------------------------
 # Graph / release meta
 # ---------------------------------------------------------------------------
@@ -29,16 +35,46 @@ ORDER BY is_current DESC, created_at DESC
 LIMIT 1
 """
 
-GRAPH_RELEASE_PAPER_COUNT_SQL = """
-SELECT COUNT(*)::INT AS paper_count
-FROM solemd.graph_points
-WHERE graph_run_id = %s
+GRAPH_RELEASE_PAPER_COUNT_SUMMARY_SQL = """
+SELECT COALESCE(NULLIF(qa_summary->>'point_count', '')::BIGINT, 0) AS paper_count
+FROM solemd.graph_runs
+WHERE id = %s
+LIMIT 1
 """
 
-EMBEDDED_PAPER_COUNT_SQL = """
-SELECT COUNT(*)::INT AS paper_count
-FROM solemd.papers
-WHERE embedding IS NOT NULL
+CURRENT_MAP_PAPER_COUNT_ESTIMATE_SQL = """
+SELECT COALESCE(c.reltuples::BIGINT, 0) AS paper_count
+FROM pg_class c
+WHERE c.oid = to_regclass('solemd.idx_corpus_current_map')
+"""
+
+GRAPH_POINTS_GRAPH_RUN_ESTIMATE_SQL = """
+SELECT
+    (
+        SELECT reltuples::DOUBLE PRECISION
+        FROM pg_class c
+        JOIN pg_namespace n
+          ON n.oid = c.relnamespace
+        WHERE
+            n.nspname = 'solemd'
+            AND c.relname = 'graph_points'
+        LIMIT 1
+    ) AS total_rows,
+    s.n_distinct::DOUBLE PRECISION AS n_distinct,
+    s.most_common_vals::TEXT AS most_common_vals,
+    s.most_common_freqs
+FROM pg_stats s
+WHERE
+    s.schemaname = 'solemd'
+    AND s.tablename = 'graph_points'
+    AND s.attname = 'graph_run_id'
+LIMIT 1
+"""
+
+EMBEDDED_PAPER_COUNT_ESTIMATE_SQL = """
+SELECT COALESCE(c.reltuples::BIGINT, 0) AS paper_count
+FROM pg_class c
+WHERE c.oid = to_regclass('solemd.idx_papers_embedding_hnsw')
 """
 
 PAPER_EMBEDDING_LITERAL_SQL = """
@@ -54,7 +90,63 @@ LIMIT 1
 # Entity term resolution
 # ---------------------------------------------------------------------------
 
-QUERY_ENTITY_TERM_MATCH_SQL = """
+def _entity_join_type_sql(expr: str) -> str:
+    return runtime_entity_type_key_sql(expr)
+
+
+def _entity_catalog_namespace_sql(
+    *,
+    concept_id_expr: str,
+    entity_type_expr: str,
+) -> str:
+    return f"""
+CASE
+    WHEN upper(COALESCE({concept_id_expr}, '')) LIKE 'MESH:%%'
+        THEN 'mesh'
+    WHEN lower(COALESCE({entity_type_expr}, '')) = 'gene'
+        THEN 'ncbi_gene'
+    WHEN lower(COALESCE({entity_type_expr}, '')) = 'species'
+        THEN 'ncbi_taxonomy'
+    ELSE NULL
+END
+""".strip()
+
+
+def _entity_catalog_mention_concept_id_sql(
+    *,
+    concept_id_expr: str,
+    entity_type_expr: str,
+) -> str:
+    return f"""
+CASE
+    WHEN upper(COALESCE({concept_id_expr}, '')) LIKE 'MESH:%%'
+        THEN split_part(COALESCE({concept_id_expr}, ''), ':', 2)
+    WHEN lower(COALESCE({entity_type_expr}, '')) = 'cellline'
+        THEN replace(COALESCE({concept_id_expr}, ''), '_', ':')
+    ELSE COALESCE({concept_id_expr}, '')
+END
+""".strip()
+
+
+ENTITY_TABLE_TYPE_KEY_SQL = _entity_join_type_sql("e.entity_type")
+ENTITY_TABLE_NAMESPACE_KEY_SQL = _entity_catalog_namespace_sql(
+    concept_id_expr="e.concept_id",
+    entity_type_expr="e.entity_type",
+)
+ENTITY_TABLE_CONCEPT_KEY_SQL = _entity_catalog_mention_concept_id_sql(
+    concept_id_expr="e.concept_id",
+    entity_type_expr="e.entity_type",
+)
+ENTITY_MENTION_TYPE_KEY_SQL = "pem.runtime_entity_type_key"
+ENTITY_MENTION_NAMESPACE_KEY_SQL = "pem.runtime_concept_namespace_key"
+ENTITY_MENTION_CONCEPT_KEY_SQL = "pem.runtime_concept_id_key"
+ENTITY_INPUT_TYPE_KEY_SQL = runtime_entity_type_key_sql("resolved.entity_type")
+ENTITY_INPUT_NAMESPACE_KEY_SQL = runtime_concept_namespace_key_sql(
+    "resolved.concept_namespace"
+)
+ENTITY_INPUT_CONCEPT_KEY_SQL = runtime_concept_id_key_sql("resolved.concept_id")
+
+QUERY_ENTITY_TERM_MATCH_SQL = f"""
 WITH query_terms AS (
     SELECT DISTINCT
         trim(term) AS raw_term,
@@ -64,76 +156,232 @@ WITH query_terms AS (
     FROM unnest(%s::text[]) AS term
     WHERE length(trim(term)) >= 3
 ),
-matched_entities AS (
+catalog_exact_matches AS (
     SELECT
-        qt.raw_term,
-        qt.lowered_term,
+        qt.raw_term AS query_term,
         qt.token_count,
-        CASE
-            WHEN e.concept_id = qt.raw_term OR e.concept_id = qt.upper_term THEN e.concept_id
-            WHEN lower(e.canonical_name) = qt.lowered_term THEN e.canonical_name
-            ELSE NULL
-        END AS normalized_term,
-        e.canonical_name,
-        e.concept_id,
+        e.concept_id AS normalized_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
         e.paper_count,
-        CASE
-            WHEN e.concept_id = qt.raw_term OR e.concept_id = qt.upper_term THEN 1.0
-            WHEN lower(e.canonical_name) = qt.lowered_term THEN 0.98
-            ELSE 0.0
-        END AS match_score
+        1.0 AS match_score,
+        CASE COALESCE(er.confidence, '')
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END AS rule_confidence_rank
     FROM query_terms qt
     JOIN solemd.entities e
-      ON (
-        e.concept_id = qt.raw_term
-        OR e.concept_id = qt.upper_term
-        OR lower(e.canonical_name) = qt.lowered_term
-      )
+      ON e.concept_id = qt.raw_term
+    LEFT JOIN solemd.entity_rule er
+      ON er.entity_type = {ENTITY_TABLE_TYPE_KEY_SQL}
+     AND er.concept_id = e.concept_id
+    WHERE COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term AS query_term,
+        qt.token_count,
+        e.concept_id AS normalized_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS match_score,
+        CASE COALESCE(er.confidence, '')
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END AS rule_confidence_rank
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = qt.upper_term
+    LEFT JOIN solemd.entity_rule er
+      ON er.entity_type = {ENTITY_TABLE_TYPE_KEY_SQL}
+     AND er.concept_id = e.concept_id
+    WHERE
+        qt.upper_term <> qt.raw_term
+        AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term AS query_term,
+        qt.token_count,
+        e.concept_id AS normalized_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS match_score,
+        CASE COALESCE(er.confidence, '')
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END AS rule_confidence_rank
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('MESH:' || qt.raw_term)
+    LEFT JOIN solemd.entity_rule er
+      ON er.entity_type = {ENTITY_TABLE_TYPE_KEY_SQL}
+     AND er.concept_id = e.concept_id
+    WHERE
+        qt.raw_term NOT LIKE '%%:%%'
+        AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term AS query_term,
+        qt.token_count,
+        e.concept_id AS normalized_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS match_score,
+        CASE COALESCE(er.confidence, '')
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END AS rule_confidence_rank
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('MESH:' || qt.upper_term)
+    LEFT JOIN solemd.entity_rule er
+      ON er.entity_type = {ENTITY_TABLE_TYPE_KEY_SQL}
+     AND er.concept_id = e.concept_id
+    WHERE
+        qt.raw_term NOT LIKE '%%:%%'
+        AND qt.upper_term <> qt.raw_term
+        AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+),
+catalog_alias_exact_matches AS (
+    SELECT
+        qt.raw_term AS query_term,
+        qt.token_count,
+        COALESCE(NULLIF(trim(e.canonical_name), ''), ea.alias_text, qt.raw_term) AS normalized_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        CASE
+            WHEN ea.is_canonical THEN 0.98
+            ELSE 0.97
+        END AS match_score,
+        CASE COALESCE(er.confidence, '')
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END AS rule_confidence_rank
+    FROM query_terms qt
+    JOIN solemd.entity_aliases ea
+      ON ea.alias_key = qt.lowered_term
+    JOIN solemd.entities e
+      ON e.concept_id = ea.concept_id
+     AND e.entity_type = ea.entity_type
+    LEFT JOIN solemd.entity_rule er
+      ON er.entity_type = {ENTITY_TABLE_TYPE_KEY_SQL}
+     AND er.concept_id = e.concept_id
+    WHERE COALESCE(e.concept_id, '') NOT IN ('', '-')
+),
+matched_entities AS (
+    SELECT * FROM catalog_exact_matches
+    UNION ALL
+    SELECT * FROM catalog_alias_exact_matches
+),
+selected_terms AS MATERIALIZED (
+    SELECT
+        query_term,
+        MAX(token_count) AS token_count,
+        MAX(match_score) AS match_score,
+        MAX(paper_count) AS paper_count,
+        MAX(rule_confidence_rank) AS rule_confidence_rank
+    FROM matched_entities
+    WHERE normalized_term IS NOT NULL
+    GROUP BY query_term
+    ORDER BY
+        MAX(token_count) DESC,
+        MAX(match_score) DESC,
+        MAX(paper_count) DESC,
+        query_term
+    LIMIT %s
+),
+ranked_entities AS (
+    SELECT
+        me.query_term,
+        me.normalized_term,
+        me.entity_type,
+        me.concept_namespace,
+        me.concept_id,
+        st.rule_confidence_rank,
+        st.token_count,
+        st.match_score,
+        st.paper_count,
+        ROW_NUMBER() OVER (
+            PARTITION BY me.query_term, me.normalized_term
+            ORDER BY me.match_score DESC, me.paper_count DESC, me.concept_id
+        ) AS concept_rank
+    FROM (
+        SELECT DISTINCT
+            query_term,
+            normalized_term,
+            entity_type,
+            concept_namespace,
+            concept_id,
+            match_score,
+            paper_count
+        FROM matched_entities
+        WHERE normalized_term IS NOT NULL
+    ) me
+    JOIN selected_terms st
+      ON st.query_term = me.query_term
 )
 SELECT
+    query_term,
     normalized_term,
-    MAX(rule_confidence) AS rule_confidence
-FROM (
-    SELECT
-        me.normalized_term,
-        MAX(me.token_count) AS token_count,
-        MAX(me.match_score) AS match_score,
-        MAX(me.paper_count) AS paper_count,
-        MAX(er.confidence) AS rule_confidence
-    FROM matched_entities me
-    LEFT JOIN solemd.entity_rule er
-      ON er.concept_id = me.concept_id
-    WHERE me.normalized_term IS NOT NULL
-    GROUP BY me.normalized_term
-) ranked_entities
-GROUP BY normalized_term
+    entity_type,
+    concept_namespace,
+    concept_id,
+    CASE rule_confidence_rank
+        WHEN 3 THEN 'high'
+        WHEN 2 THEN 'medium'
+        WHEN 1 THEN 'low'
+        ELSE NULL
+    END AS rule_confidence
+FROM ranked_entities
+WHERE concept_rank <= 3
 ORDER BY
-    MAX(token_count) DESC,
-    MAX(match_score) DESC,
-    MAX(paper_count) DESC,
-    normalized_term
-LIMIT %s
+    token_count DESC,
+    match_score DESC,
+    paper_count DESC,
+    query_term,
+    normalized_term,
+    concept_rank
 """
 
-
-def _normalized_entity_type_sql(expr: str) -> str:
-    return f"lower(COALESCE({expr}, ''))"
-
-
-def _normalized_entity_concept_id_sql(expr: str) -> str:
-    return f"""
-CASE
-    WHEN upper(COALESCE({expr}, '')) LIKE 'MESH:%%'
-        THEN split_part(COALESCE({expr}, ''), ':', 2)
-    ELSE COALESCE({expr}, '')
-END
-""".strip()
-
-
-ENTITY_TABLE_TYPE_KEY_SQL = _normalized_entity_type_sql("e.entity_type")
-ENTITY_TABLE_CONCEPT_KEY_SQL = _normalized_entity_concept_id_sql("e.concept_id")
-ENTITY_MENTION_TYPE_KEY_SQL = _normalized_entity_type_sql("pem.entity_type")
-ENTITY_MENTION_CONCEPT_KEY_SQL = _normalized_entity_concept_id_sql("pem.concept_id")
+ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL = f"""
+top_concepts AS MATERIALIZED (
+    SELECT DISTINCT
+        trim(raw_term) AS raw_term,
+        lower(trim(raw_term)) AS lowered_term,
+        {ENTITY_INPUT_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_INPUT_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_INPUT_CONCEPT_KEY_SQL} AS concept_id,
+        1.0 AS concept_score
+    FROM unnest(
+        %s::text[],
+        %s::text[],
+        %s::text[],
+        %s::text[]
+    ) AS resolved(raw_term, entity_type, concept_namespace, concept_id)
+    WHERE
+        trim(raw_term) <> ''
+        AND trim(entity_type) <> ''
+        AND trim(concept_id) <> ''
+)
+"""
 
 # ---------------------------------------------------------------------------
 # Paper column lists

@@ -57,36 +57,18 @@ def main() -> None:
     release = repo.resolve_graph_release(args.graph_release_id)
     normalized_title_query = normalize_title_key(args.query)
     prefix_limit = repo._title_prefix_candidate_limit(args.limit)
-    similarity_limit = repo._title_similarity_candidate_limit(args.limit)
     use_exact_graph_search = repo._should_use_exact_graph_search(release.graph_run_id)
 
-    if use_exact_graph_search:
-        strategy = "graph_title_lookup"
-        final_sql = queries.PAPER_TITLE_LOOKUP_IN_GRAPH_SQL
-        final_params = (
-            args.query,
-            normalized_title_query,
-            release.graph_run_id,
-            args.limit,
-            prefix_limit,
-            similarity_limit,
-        )
-    else:
-        strategy = "graph_title_candidate_plus_paper_search"
-        final_sql = queries.PAPER_SEARCH_SQL
-        final_params = (
-            args.query,
-            args.query,
-            args.query,
-            normalized_title_query,
-            False,
-            release.graph_run_id,
-            args.limit,
-            similarity_limit,
-            similarity_limit,
-            similarity_limit,
-            args.limit,
-        )
+    final_sql_spec = repo._paper_search_sql_spec(
+        graph_run_id=release.graph_run_id,
+        query=args.query,
+        normalized_title_query=normalized_title_query,
+        limit=args.limit,
+        scope_corpus_ids=None,
+        use_title_similarity=True,
+        use_exact_graph_search=use_exact_graph_search,
+    )
+    strategy = final_sql_spec.route_name
 
     candidate_sql = [
         {
@@ -160,8 +142,8 @@ def main() -> None:
             final_plan = _plan_summary(
                 _query_plan(
                     cur,
-                    sql=final_sql,
-                    params=final_params,
+                    sql=final_sql_spec.sql,
+                    params=final_sql_spec.params,
                     analyze=args.analyze,
                 )
             )

@@ -20,7 +20,7 @@ services:
     command: >
       postgres
       -c shared_buffers=8GB
-      -c effective_cache_size=24GB
+      -c effective_cache_size=9GB
       -c maintenance_work_mem=2GB
       -c work_mem=256MB
       -c max_wal_size=8GB
@@ -37,11 +37,25 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U solemd -d solemd_graph"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 12g
+        reservations:
+          memory: 2g
 
   redis:
     image: redis:7-alpine
@@ -53,11 +67,19 @@ services:
     ports:
       - "6380:6379"  # 6380 to avoid conflict with existing Redis
     command: ["redis-server", "--requirepass", "local_dev"]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "local_dev", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   graph:
     build:
@@ -91,14 +113,20 @@ services:
       LANGFUSE_BASE_URL: http://host.docker.internal:3100
       GRAPH_LAYOUT_BACKEND: gpu
       GRAPH_CLUSTER_BACKEND: gpu
-      CUDA_PATH: /opt/conda/targets/x86_64-linux
-      CUDA_HOME: /opt/conda/targets/x86_64-linux
+      # CUDA_PATH / CUDA_HOME are set in Dockerfile (authoritative source)
       # Data paths: override .env.local defaults for container volume mounts
       SEMANTIC_SCHOLAR_DIR: /mnt/e/SoleMD.Graph/data/semantic-scholar
       PUBTATOR_DIR: /mnt/e/SoleMD.Graph/data/pubtator
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
     command: sleep infinity
 
 volumes:

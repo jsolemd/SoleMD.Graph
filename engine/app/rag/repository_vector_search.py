@@ -40,15 +40,13 @@ class _VectorSearchMixin:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 if sql_spec.metadata.get("search_mode") == "ann":
-                    self._configure_hnsw_session(cur)
+                    self._configure_dense_query_hnsw_session(cur)
                 elif sql_spec.metadata.get("search_mode") == "exact":
-                    self._configure_exact_vector_session(cur)
+                    self._configure_dense_query_exact_session(cur)
                 cur.execute(sql_spec.sql, sql_spec.params)
                 rows = cur.fetchall()
         return self._hydrate_ranked_dense_hits(
             ranked_rows=rows,
-            graph_run_id=graph_run_id,
-            use_direct_lookup=bool(scope_corpus_ids),
         )
 
     def describe_dense_query_route(
@@ -79,11 +77,20 @@ class _VectorSearchMixin:
                     limit=limit,
                 ),
                 "search_mode": "ann",
+                "hnsw_ef_search": max(int(settings.rag_dense_query_hnsw_ef_search), 1),
+                "hnsw_max_scan_tuples": max(
+                    int(settings.rag_dense_query_hnsw_max_scan_tuples),
+                    1,
+                ),
             }
         return {
             "route": "dense_query_exact_graph_fallback",
             "candidate_limit": normalized_limit,
             "search_mode": "exact",
+            "exact_parallel_workers": max(
+                int(settings.rag_dense_query_exact_parallel_workers),
+                0,
+            ),
         }
 
     def fetch_semantic_neighbors(
@@ -134,14 +141,22 @@ class _VectorSearchMixin:
         if cached is not None:
             return cached
 
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(queries.GRAPH_RELEASE_PAPER_COUNT_SQL, (graph_run_id,))
-                row = cur.fetchone()
+        paper_count = self._graph_run_paper_count_from_summary(graph_run_id)
+        if paper_count <= 0 and self._is_current_graph_run(graph_run_id):
+            paper_count = self._current_map_paper_count_estimate()
+        if paper_count <= 0:
+            paper_count = self._graph_run_paper_count_from_stats(graph_run_id)
 
-        paper_count = int((row or {}).get("paper_count") or 0)
         self._graph_scope_paper_counts[graph_run_id] = paper_count
         return paper_count
+
+    def _graph_run_paper_count_from_summary(self, graph_run_id: str) -> int:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(queries.GRAPH_RELEASE_PAPER_COUNT_SUMMARY_SQL, (graph_run_id,))
+                row = cur.fetchone()
+
+        return int((row or {}).get("paper_count") or 0)
 
     def _embedded_paper_count_value(self) -> int:
         if self._embedded_paper_count is not None:
@@ -149,11 +164,96 @@ class _VectorSearchMixin:
 
         with self._connect() as conn:
             with conn.cursor() as cur:
-                cur.execute(queries.EMBEDDED_PAPER_COUNT_SQL)
+                cur.execute(queries.EMBEDDED_PAPER_COUNT_ESTIMATE_SQL)
                 row = cur.fetchone()
 
         self._embedded_paper_count = int((row or {}).get("paper_count") or 0)
         return self._embedded_paper_count
+
+    def _current_map_paper_count_estimate(self) -> int:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(queries.CURRENT_MAP_PAPER_COUNT_ESTIMATE_SQL)
+                row = cur.fetchone()
+
+        return int((row or {}).get("paper_count") or 0)
+
+    def _graph_run_paper_count_from_stats(self, graph_run_id: str) -> int:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(queries.GRAPH_POINTS_GRAPH_RUN_ESTIMATE_SQL)
+                row = cur.fetchone()
+
+        if not row:
+            return 0
+
+        total_rows = float(row.get("total_rows") or 0.0)
+        if total_rows <= 0:
+            return 0
+
+        estimate = self._estimate_graph_run_rows_from_stats(
+            graph_run_id=graph_run_id,
+            total_rows=total_rows,
+            most_common_vals=row.get("most_common_vals"),
+            most_common_freqs=row.get("most_common_freqs"),
+            n_distinct=row.get("n_distinct"),
+        )
+        return max(int(round(estimate)), 0)
+
+    def _estimate_graph_run_rows_from_stats(
+        self,
+        *,
+        graph_run_id: str,
+        total_rows: float,
+        most_common_vals: Any,
+        most_common_freqs: Any,
+        n_distinct: Any,
+    ) -> float:
+        mcv_values = self._graph_run_stat_values(most_common_vals)
+        mcv_freqs = self._graph_run_stat_frequencies(most_common_freqs)
+        for value, freq in zip(mcv_values, mcv_freqs, strict=False):
+            if value == graph_run_id and freq > 0:
+                return total_rows * freq
+
+        try:
+            distinct_value = float(n_distinct or 0.0)
+        except (TypeError, ValueError):
+            distinct_value = 0.0
+
+        if distinct_value < 0:
+            distinct_count = abs(distinct_value) * total_rows
+        else:
+            distinct_count = distinct_value
+        if distinct_count <= 0:
+            return 0.0
+        return total_rows / distinct_count
+
+    def _graph_run_stat_values(self, raw_values: Any) -> list[str]:
+        if raw_values is None:
+            return []
+        if isinstance(raw_values, str):
+            stripped = raw_values.strip()
+            if stripped.startswith("{") and stripped.endswith("}"):
+                stripped = stripped[1:-1]
+            if not stripped:
+                return []
+            return [part.strip().strip('"') for part in stripped.split(",") if part.strip()]
+        if isinstance(raw_values, Sequence) and not isinstance(raw_values, (bytes, bytearray)):
+            return [str(value).strip() for value in raw_values if str(value).strip()]
+        return []
+
+    def _graph_run_stat_frequencies(self, raw_freqs: Any) -> list[float]:
+        if raw_freqs is None:
+            return []
+        if isinstance(raw_freqs, Sequence) and not isinstance(raw_freqs, (str, bytes, bytearray)):
+            values: list[float] = []
+            for value in raw_freqs:
+                try:
+                    values.append(float(value))
+                except (TypeError, ValueError):
+                    continue
+            return values
+        return []
 
     def _graph_scope_coverage(self, graph_run_id: str) -> float:
         cached = self._graph_scope_coverages.get(graph_run_id)
@@ -215,20 +315,50 @@ class _VectorSearchMixin:
             <= settings.rag_runtime_exact_graph_search_max_papers
         )
 
-    def _configure_hnsw_session(self, cur: Any) -> None:
+    def _configure_ann_session(
+        self,
+        cur: Any,
+        *,
+        ef_search: int,
+        max_scan_tuples: int,
+    ) -> None:
         cur.execute("SET LOCAL hnsw.iterative_scan = strict_order")
-        ef_search = max(int(settings.rag_semantic_neighbor_hnsw_ef_search), 1)
         cur.execute(f"SET LOCAL hnsw.ef_search = {ef_search}")
         cur.execute(
             "SET LOCAL hnsw.max_scan_tuples = "
-            f"{max(int(settings.rag_semantic_neighbor_hnsw_max_scan_tuples), 1)}"
+            f"{max_scan_tuples}"
         )
 
-    def _configure_exact_vector_session(self, cur: Any) -> None:
-        parallel_workers = max(int(settings.rag_semantic_neighbor_exact_parallel_workers), 0)
+    def _configure_semantic_neighbor_hnsw_session(self, cur: Any) -> None:
+        self._configure_ann_session(
+            cur,
+            ef_search=max(int(settings.rag_semantic_neighbor_hnsw_ef_search), 1),
+            max_scan_tuples=max(int(settings.rag_semantic_neighbor_hnsw_max_scan_tuples), 1),
+        )
+
+    def _configure_dense_query_hnsw_session(self, cur: Any) -> None:
+        self._configure_ann_session(
+            cur,
+            ef_search=max(int(settings.rag_dense_query_hnsw_ef_search), 1),
+            max_scan_tuples=max(int(settings.rag_dense_query_hnsw_max_scan_tuples), 1),
+        )
+
+    def _configure_exact_vector_session(self, cur: Any, *, parallel_workers: int) -> None:
         cur.execute(f"SET LOCAL max_parallel_workers_per_gather = {parallel_workers}")
         cur.execute("SET LOCAL enable_indexscan = off")
         cur.execute("SET LOCAL enable_indexonlyscan = off")
+
+    def _configure_semantic_neighbor_exact_session(self, cur: Any) -> None:
+        self._configure_exact_vector_session(
+            cur,
+            parallel_workers=max(int(settings.rag_semantic_neighbor_exact_parallel_workers), 0),
+        )
+
+    def _configure_dense_query_exact_session(self, cur: Any) -> None:
+        self._configure_exact_vector_session(
+            cur,
+            parallel_workers=max(int(settings.rag_dense_query_exact_parallel_workers), 0),
+        )
 
     def _semantic_neighbor_index_is_ready(self) -> bool:
         if not settings.rag_semantic_neighbor_ann_enabled:
@@ -329,7 +459,7 @@ class _VectorSearchMixin:
         )
         with self._connect() as conn:
             with conn.cursor() as cur:
-                self._configure_hnsw_session(cur)
+                self._configure_semantic_neighbor_hnsw_session(cur)
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_ANN_BROAD_SCOPE_SQL,
                     (
@@ -347,17 +477,12 @@ class _VectorSearchMixin:
         self,
         *,
         ranked_rows: Sequence[dict[str, Any]],
-        graph_run_id: str,
-        use_direct_lookup: bool,
     ) -> list[PaperEvidenceHit]:
         if not ranked_rows:
             return []
 
         ranked_ids = _unique_int_ids(int(row["corpus_id"]) for row in ranked_rows)
-        if use_direct_lookup:
-            hydrated_hits = self.fetch_known_scoped_papers_by_corpus_ids(ranked_ids)
-        else:
-            hydrated_hits = self.fetch_papers_by_corpus_ids(graph_run_id, ranked_ids)
+        hydrated_hits = self.fetch_known_scoped_papers_by_corpus_ids(ranked_ids)
 
         hits_by_corpus_id = {hit.corpus_id: hit for hit in hydrated_hits}
         ordered_hits: list[PaperEvidenceHit] = []
@@ -431,7 +556,7 @@ class _VectorSearchMixin:
     ) -> list[dict[str, Any]]:
         with self._connect() as conn:
             with conn.cursor() as cur:
-                self._configure_exact_vector_session(cur)
+                self._configure_semantic_neighbor_exact_session(cur)
                 cur.execute(
                     queries.SEMANTIC_NEIGHBOR_SQL,
                     (

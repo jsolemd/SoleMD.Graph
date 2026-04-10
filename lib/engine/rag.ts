@@ -21,6 +21,7 @@ export interface EngineGraphContext {
   selected_graph_paper_ref: string | null
   selected_paper_id: string | null
   selection_graph_paper_refs: string[]
+  cited_corpus_ids: number[]
   selected_cluster_id: number | null
   scope_mode: 'global' | 'selection_only'
 }
@@ -83,6 +84,13 @@ export interface EnginePaperReference {
   pmcid: string | null
   referenced_paper_id: string | null
   referenced_corpus_id: number | null
+}
+
+export interface EnginePaperAuthor {
+  corpus_id: number
+  author_position: number
+  author_id: string | null
+  name: string | null
 }
 
 export interface EnginePaperAsset {
@@ -185,6 +193,7 @@ export interface EngineEvidenceBundle {
   citation_contexts: EngineCitationContextHit[]
   entity_hits: EngineEntityMatchedPaperHit[]
   relation_hits: EngineRelationMatchedPaperHit[]
+  authors: EnginePaperAuthor[]
   references: EnginePaperReference[]
   assets: EnginePaperAsset[]
 }

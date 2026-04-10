@@ -6,7 +6,7 @@ import type {
   GraphInfoSummary,
 } from '@/features/graph/types'
 
-import { createBoundedCache } from '../utils'
+import { cachedQuery, createBoundedCache } from '../utils'
 import {
   queryCategoricalValues,
   queryFacetSummaries,
@@ -23,8 +23,8 @@ import type { NumericStatsRow } from '../queries'
 import { getColumnMetaForLayer } from '../sql-helpers'
 import {
   getScopedFacetBarCounts,
-  hasCurrentScopeSql,
   hasFiniteExtent,
+  isEffectivelyDatasetScope,
   mapBarsToFacetRows,
   mergeFacetSummaryRows,
   partitionFacetColumns,
@@ -75,252 +75,162 @@ export function createSessionInfoQueries({
     layer: Parameters<typeof queryFacetSummaries>[1]['layer']
     columns: string[]
     maxItems: number
-  }) => {
-    const cacheKey = JSON.stringify({
-      layer: args.layer,
-      columns: [...new Set(args.columns)].sort(),
-      maxItems: args.maxItems,
-      overlayRevision: getOverlayRevision(),
-    })
-    const cached = facetDatasetCache.get(cacheKey)
-    if (cached) {
-      return cached
-    }
+  }) =>
+    cachedQuery(
+      facetDatasetCache,
+      {
+        layer: args.layer,
+        columns: [...new Set(args.columns)].sort(),
+        maxItems: args.maxItems,
+        overlayRevision: getOverlayRevision(),
+      },
+      () =>
+        withCanonicalQueryTables(async () => {
+          const { simpleColumns, multiValueColumns } = partitionFacetColumns(
+            args.layer,
+            args.columns
+          )
 
-    const next = withCanonicalQueryTables(async () => {
-      const { simpleColumns, multiValueColumns } = partitionFacetColumns(
-        args.layer,
-        args.columns
-      )
+          const [simpleResults, multiValueResults] = await Promise.all([
+            simpleColumns.length > 0
+              ? queryInfoBarsBatch(conn, {
+                  layer: args.layer,
+                  scope: 'dataset',
+                  columns: simpleColumns,
+                  maxItems: args.maxItems,
+                  currentPointScopeSql: null,
+                })
+              : Promise.resolve({} as Record<string, Array<{ value: string; count: number }>>),
+            multiValueColumns.length > 0
+              ? queryFacetSummaries(conn, {
+                  layer: args.layer,
+                  scope: 'dataset',
+                  columns: multiValueColumns,
+                  maxItems: args.maxItems,
+                  currentPointScopeSql: null,
+                })
+              : Promise.resolve({} as Record<string, GraphInfoFacetRow[]>),
+          ])
 
-      const [simpleResults, multiValueResults] = await Promise.all([
-        simpleColumns.length > 0
-          ? queryInfoBarsBatch(conn, {
-              layer: args.layer,
-              scope: 'dataset',
-              columns: simpleColumns,
-              maxItems: args.maxItems,
-              currentPointScopeSql: null,
-            })
-          : Promise.resolve({} as Record<string, Array<{ value: string; count: number }>>),
-        multiValueColumns.length > 0
-          ? queryFacetSummaries(conn, {
-              layer: args.layer,
-              scope: 'dataset',
-              columns: multiValueColumns,
-              maxItems: args.maxItems,
-              currentPointScopeSql: null,
-            })
-          : Promise.resolve({} as Record<string, GraphInfoFacetRow[]>),
-      ])
-
-      const result: Record<string, GraphInfoFacetRow[]> = {}
-
-      for (const column of simpleColumns) {
-        result[column] = mapBarsToFacetRows(simpleResults[column] ?? [])
-      }
-
-      for (const column of multiValueColumns) {
-        result[column] = multiValueResults[column] ?? []
-      }
-
-      return result
-    })
-      .then((result) => {
-        const hasAnyRows = Object.values(result).some((rows) => rows.length > 0)
-        if (!hasAnyRows) {
-          facetDatasetCache.delete(cacheKey)
-        }
-        return result
-      })
-      .catch((error) => {
-        facetDatasetCache.delete(cacheKey)
-        throw error
-      })
-    facetDatasetCache.set(cacheKey, next)
-    return next
-  }
+          const result: Record<string, GraphInfoFacetRow[]> = {}
+          for (const column of simpleColumns) {
+            result[column] = mapBarsToFacetRows(simpleResults[column] ?? [])
+          }
+          for (const column of multiValueColumns) {
+            result[column] = multiValueResults[column] ?? []
+          }
+          return result
+        }),
+      {
+        evictWhen: (result) =>
+          !Object.values(result).some((rows) => rows.length > 0),
+      },
+    )
 
   const getCachedDatasetInfoSummary = (
     layer: Parameters<typeof queryInfoSummary>[1]['layer']
-  ) => {
-    const cacheKey = JSON.stringify({
-      layer,
-      overlayRevision: getOverlayRevision(),
-    })
-    const cached = summaryDatasetCache.get(cacheKey)
-    if (cached) {
-      return cached
-    }
-
-    const next = withCanonicalQueryTables(() =>
-      queryInfoSummary(conn, {
-        layer,
-        scope: 'dataset',
-        currentPointScopeSql: null,
-      })
+  ) =>
+    cachedQuery(
+      summaryDatasetCache,
+      { layer, overlayRevision: getOverlayRevision() },
+      () =>
+        withCanonicalQueryTables(() =>
+          queryInfoSummary(conn, { layer, scope: 'dataset', currentPointScopeSql: null })
+        ),
     )
-      .catch((error) => {
-        summaryDatasetCache.delete(cacheKey)
-        throw error
-      })
-    summaryDatasetCache.set(cacheKey, next)
-    return next
-  }
 
   const getCachedDatasetInfoHistograms = (args: {
     layer: Parameters<typeof queryInfoHistogramsBatch>[1]['layer']
     columns: string[]
     bins: number
     useQuantiles?: boolean
-  }) => {
-    const cacheKey = JSON.stringify({
-      layer: args.layer,
-      columns: [...new Set(args.columns)].sort(),
-      bins: args.bins,
-      useQuantiles: args.useQuantiles === true,
-      overlayRevision: getOverlayRevision(),
-    })
-    const cached = histogramDatasetCache.get(cacheKey)
-    if (cached) {
-      return cached
-    }
-
-    const next = withCanonicalQueryTables(() =>
-        queryInfoHistogramsBatch(conn, {
-          layer: args.layer,
-          scope: 'dataset',
-          columns: args.columns,
-          bins: args.bins,
-          useQuantiles: args.useQuantiles === true,
-          currentPointScopeSql: null,
-        })
-      )
-      .then((result) => {
-        const hasAnyBins = Object.values(result).some(
-          (entry) => entry.totalCount > 0 || entry.bins.length > 0
-        )
-        if (!hasAnyBins) {
-          histogramDatasetCache.delete(cacheKey)
-        }
-        return result
-      })
-      .catch((error) => {
-        histogramDatasetCache.delete(cacheKey)
-        throw error
-      })
-    histogramDatasetCache.set(cacheKey, next)
-    return next
-  }
+  }) =>
+    cachedQuery(
+      histogramDatasetCache,
+      {
+        layer: args.layer,
+        columns: [...new Set(args.columns)].sort(),
+        bins: args.bins,
+        useQuantiles: args.useQuantiles === true,
+        overlayRevision: getOverlayRevision(),
+      },
+      () =>
+        withCanonicalQueryTables(() =>
+          queryInfoHistogramsBatch(conn, {
+            layer: args.layer,
+            scope: 'dataset',
+            columns: args.columns,
+            bins: args.bins,
+            useQuantiles: args.useQuantiles === true,
+            currentPointScopeSql: null,
+          })
+        ),
+      {
+        evictWhen: (result) =>
+          !Object.values(result).some((entry) => entry.totalCount > 0 || entry.bins.length > 0),
+      },
+    )
 
   const getCachedDatasetNumericStats = (args: {
     layer: Parameters<typeof queryNumericStatsBatch>[1]['layer']
     columns: string[]
-  }) => {
-    const sortedColumns = [...new Set(args.columns)].sort()
-    const cacheKey = JSON.stringify({
-      layer: args.layer,
-      columns: sortedColumns,
-      overlayRevision: getOverlayRevision(),
-    })
-    const cached = numericStatsDatasetCache.get(cacheKey)
-    if (cached) {
-      return cached
-    }
-
-    const next = withCanonicalQueryTables(() =>
-        queryNumericStatsBatch(conn, {
-          layer: args.layer,
-          scope: 'dataset',
-          columns: args.columns,
-          currentPointScopeSql: null,
-        })
-      )
-      .then((result) => {
-        if (Object.keys(result).length === 0) {
-          numericStatsDatasetCache.delete(cacheKey)
-        }
-        return result
-      })
-      .catch((error) => {
-        numericStatsDatasetCache.delete(cacheKey)
-        throw error
-      })
-    numericStatsDatasetCache.set(cacheKey, next)
-    return next
-  }
+  }) =>
+    cachedQuery(
+      numericStatsDatasetCache,
+      {
+        layer: args.layer,
+        columns: [...new Set(args.columns)].sort(),
+        overlayRevision: getOverlayRevision(),
+      },
+      () =>
+        withCanonicalQueryTables(() =>
+          queryNumericStatsBatch(conn, {
+            layer: args.layer,
+            scope: 'dataset',
+            columns: args.columns,
+            currentPointScopeSql: null,
+          })
+        ),
+      { evictWhen: (result) => Object.keys(result).length === 0 },
+    )
 
   const getCachedCategoricalValues = (args: {
     layer: Parameters<typeof queryCategoricalValues>[1]['layer']
     column: string
-  }) => {
-    const cacheKey = JSON.stringify({
-      layer: args.layer,
-      column: args.column,
-      overlayRevision: getOverlayRevision(),
-    })
-    const cached = categoricalValueDatasetCache.get(cacheKey)
-    if (cached) {
-      return cached
-    }
-
-    const next = withCanonicalQueryTables(() =>
-        queryCategoricalValues(conn, {
-          layer: args.layer,
-          scope: 'dataset',
-          column: args.column,
-          currentPointScopeSql: null,
-        })
-      )
-      .then((values) => {
-        if (values.length === 0) {
-          categoricalValueDatasetCache.delete(cacheKey)
-        }
-        return values
-      })
-      .catch((error) => {
-        categoricalValueDatasetCache.delete(cacheKey)
-        throw error
-      })
-    categoricalValueDatasetCache.set(cacheKey, next)
-    return next
-  }
+  }) =>
+    cachedQuery(
+      categoricalValueDatasetCache,
+      { layer: args.layer, column: args.column, overlayRevision: getOverlayRevision() },
+      () =>
+        withCanonicalQueryTables(() =>
+          queryCategoricalValues(conn, {
+            layer: args.layer,
+            scope: 'dataset',
+            column: args.column,
+            currentPointScopeSql: null,
+          })
+        ),
+      { evictWhen: (values) => values.length === 0 },
+    )
 
   const getCachedNumericValues = (args: {
     layer: Parameters<typeof queryNumericValues>[1]['layer']
     column: string
-  }) => {
-    const cacheKey = JSON.stringify({
-      layer: args.layer,
-      column: args.column,
-      overlayRevision: getOverlayRevision(),
-    })
-    const cached = numericValueDatasetCache.get(cacheKey)
-    if (cached) {
-      return cached
-    }
-
-    const next = withCanonicalQueryTables(() =>
-        queryNumericValues(conn, {
-          layer: args.layer,
-          scope: 'dataset',
-          column: args.column,
-          currentPointScopeSql: null,
-        })
-      )
-      .then((values) => {
-        if (values.length === 0) {
-          numericValueDatasetCache.delete(cacheKey)
-        }
-        return values
-      })
-      .catch((error) => {
-        numericValueDatasetCache.delete(cacheKey)
-        throw error
-      })
-    numericValueDatasetCache.set(cacheKey, next)
-    return next
-  }
+  }) =>
+    cachedQuery(
+      numericValueDatasetCache,
+      { layer: args.layer, column: args.column, overlayRevision: getOverlayRevision() },
+      () =>
+        withCanonicalQueryTables(() =>
+          queryNumericValues(conn, {
+            layer: args.layer,
+            scope: 'dataset',
+            column: args.column,
+            currentPointScopeSql: null,
+          })
+        ),
+      { evictWhen: (values) => values.length === 0 },
+    )
 
   return {
     reset() {
@@ -332,7 +242,7 @@ export function createSessionInfoQueries({
       numericValueDatasetCache.clear()
     },
     getInfoSummary(args) {
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedDatasetInfoSummary(args.layer)
       }
 
@@ -344,7 +254,7 @@ export function createSessionInfoQueries({
       )
     },
     getCategoricalValues(args) {
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedCategoricalValues({
           layer: args.layer,
           column: args.column,
@@ -354,7 +264,7 @@ export function createSessionInfoQueries({
       return withInteractiveQueryTables(() => queryCategoricalValues(conn, args))
     },
     getNumericValues(args) {
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedNumericValues({
           layer: args.layer,
           column: args.column,
@@ -367,7 +277,7 @@ export function createSessionInfoQueries({
       const safeMaxItems = args.maxItems ?? 8
       const scopedScope: 'current' | 'selected' =
         args.scope === 'selected' ? 'selected' : 'current'
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedDatasetFacetSummaries({
           layer: args.layer,
           columns: [args.column],
@@ -403,7 +313,7 @@ export function createSessionInfoQueries({
       const safeMaxItems = args.maxItems ?? 8
       const scopedScope: 'current' | 'selected' =
         args.scope === 'selected' ? 'selected' : 'current'
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedDatasetFacetSummaries({
           layer: args.layer,
           columns: args.columns,
@@ -437,7 +347,7 @@ export function createSessionInfoQueries({
 
       if (
         !hasFiniteExtent(args.extent) &&
-        (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql)))
+        (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql))
       ) {
         return getCachedDatasetInfoHistograms({
           layer: args.layer,
@@ -461,7 +371,7 @@ export function createSessionInfoQueries({
       if (
         !hasFiniteExtent(args.extent) &&
         !hasCustomExtentsByColumn &&
-        (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql)))
+        (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql))
       ) {
         return getCachedDatasetInfoHistograms({
           layer: args.layer,
@@ -476,7 +386,7 @@ export function createSessionInfoQueries({
       )
     },
     getNumericStatsBatch(args) {
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedDatasetNumericStats({
           layer: args.layer,
           columns: args.columns,
@@ -489,7 +399,7 @@ export function createSessionInfoQueries({
       const safeMaxItems = args.maxItems ?? 6
       const scopedScope: 'current' | 'selected' =
         args.scope === 'selected' ? 'selected' : 'current'
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedDatasetFacetSummaries({
           layer: args.layer,
           columns: [args.column],
@@ -535,7 +445,7 @@ export function createSessionInfoQueries({
       const safeMaxItems = args.maxItems ?? 6
       const scopedScope: 'current' | 'selected' =
         args.scope === 'selected' ? 'selected' : 'current'
-      if (args.scope === 'dataset' || (args.scope === 'current' && !hasCurrentScopeSql(args.currentPointScopeSql))) {
+      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
         return getCachedDatasetFacetSummaries({
           layer: args.layer,
           columns: args.columns,

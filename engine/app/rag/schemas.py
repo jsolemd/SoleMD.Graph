@@ -50,6 +50,7 @@ class GraphContext(RagSchema):
     selected_graph_paper_ref: str | None = None
     selected_paper_id: str | None = None
     selection_graph_paper_refs: list[str] = Field(default_factory=list)
+    cited_corpus_ids: list[int] = Field(default_factory=list)
     selected_cluster_id: int | None = None
     scope_mode: RetrievalScope = RetrievalScope.GLOBAL
 
@@ -71,7 +72,14 @@ class PaperEvidenceHit(RagSchema):
     text_availability: str | None = None
     is_open_access: bool | None = None
     citation_count: int | None = None
+    influential_citation_count: int | None = None
     reference_count: int | None = None
+    publication_types: list[str] = Field(default_factory=list)
+    fields_of_study: list[str] = Field(default_factory=list)
+    has_curated_journal_family: bool = False
+    journal_family_type: str | None = None
+    chunk_section_role: str | None = None
+    chunk_primary_block_kind: str | None = None
 
 
 class CitationContextHit(RagSchema):
@@ -121,6 +129,13 @@ class PaperReference(RagSchema):
     referenced_corpus_id: int | None = None
 
 
+class PaperAuthor(RagSchema):
+    corpus_id: int
+    author_position: int
+    author_id: str | None = None
+    name: str | None = None
+
+
 class PaperAsset(RagSchema):
     corpus_id: int
     asset_id: int
@@ -154,6 +169,7 @@ class EvidenceBundle(RagSchema):
     citation_contexts: list[CitationContextHit] = Field(default_factory=list)
     entity_hits: list[EntityMatchedPaperHit] = Field(default_factory=list)
     relation_hits: list[RelationMatchedPaperHit] = Field(default_factory=list)
+    authors: list[PaperAuthor] = Field(default_factory=list)
     references: list[PaperReference] = Field(default_factory=list)
     assets: list[PaperAsset] = Field(default_factory=list)
 

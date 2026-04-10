@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from collections.abc import Sequence
 
@@ -11,6 +12,7 @@ from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
     PaperAssetRecord,
+    PaperAuthorRecord,
     PaperReferenceRecord,
     PaperSpeciesProfile,
     RelationMatchedPaperHit,
@@ -18,11 +20,40 @@ from app.rag.models import (
 from app.rag.query_enrichment import normalize_query_text
 from app.rag.repository_support import (
     _normalize_json_strings,
+    _resolved_entity_concept_arrays,
     _SqlSpec,
     _unique_int_ids,
     _unique_stripped,
 )
 from app.rag.types import CitationDirection
+
+MAX_CITATION_CONTEXT_QUERY_TERMS = 8
+_CITATION_CONTEXT_TERM_TRIM_RE = re.compile(r"^\W+|\W+$")
+
+
+def _citation_query_terms(query: str) -> list[str]:
+    """Return a bounded, high-information term set for citation-context lookup."""
+
+    ordered_terms: list[tuple[int, str]] = []
+    seen: set[str] = set()
+    for index, raw_term in enumerate(normalize_query_text(query).split()):
+        term = _CITATION_CONTEXT_TERM_TRIM_RE.sub("", raw_term)
+        if len(term) < 4 or term in seen:
+            continue
+        seen.add(term)
+        ordered_terms.append((index, term))
+
+    if len(ordered_terms) <= MAX_CITATION_CONTEXT_QUERY_TERMS:
+        return [term for _, term in ordered_terms]
+
+    selected_terms = {
+        term
+        for _, term in sorted(
+            ordered_terms,
+            key=lambda item: (-len(item[1]), item[0]),
+        )[:MAX_CITATION_CONTEXT_QUERY_TERMS]
+    }
+    return [term for _, term in ordered_terms if term in selected_terms]
 
 
 class _EvidenceLookupMixin:
@@ -81,9 +112,7 @@ class _EvidenceLookupMixin:
         limit_per_paper: int,
     ) -> _SqlSpec:
         normalized_corpus_ids = _unique_int_ids(corpus_ids)
-        query_terms = [
-            part for part in normalize_query_text(query).split() if len(part) >= 4
-        ]
+        query_terms = _citation_query_terms(query)
         return _SqlSpec(
             route_name="citation_context_lookup",
             sql=queries.CITATION_CONTEXT_SQL,
@@ -110,13 +139,30 @@ class _EvidenceLookupMixin:
         if not unique_corpus_ids or not normalized_terms:
             return {}
 
+        resolved_concepts = self._resolve_query_entity_concepts(
+            query_phrases=normalized_terms,
+            limit=len(normalized_terms),
+        )
+        (
+            raw_terms,
+            entity_types,
+            concept_namespaces,
+            concept_ids,
+        ) = _resolved_entity_concept_arrays(resolved_concepts)
+        if not raw_terms:
+            return {}
+
         grouped: dict[int, list[EntityMatchedPaperHit]] = defaultdict(list)
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     queries.ENTITY_MATCH_SQL,
                     (
-                        normalized_terms,
+                        raw_terms,
+                        entity_types,
+                        concept_namespaces,
+                        concept_ids,
+                        unique_corpus_ids,
                         unique_corpus_ids,
                         limit_per_paper,
                     ),
@@ -243,6 +289,37 @@ class _EvidenceLookupMixin:
                     pmcid=row.get("pmcid"),
                     referenced_paper_id=row.get("referenced_paper_id"),
                     referenced_corpus_id=row.get("referenced_corpus_id"),
+                )
+            )
+        return dict(grouped)
+
+    def fetch_authors(
+        self,
+        corpus_ids: Sequence[int],
+        *,
+        limit_per_paper: int = 3,
+    ) -> dict[int, list[PaperAuthorRecord]]:
+        unique_corpus_ids = _unique_int_ids(corpus_ids)
+        if not unique_corpus_ids:
+            return {}
+
+        grouped: dict[int, list[PaperAuthorRecord]] = defaultdict(list)
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    queries.AUTHOR_LOOKUP_SQL,
+                    (unique_corpus_ids, max(limit_per_paper, 1)),
+                )
+                rows = cur.fetchall()
+
+        for row in rows:
+            corpus_id = int(row["corpus_id"])
+            grouped[corpus_id].append(
+                PaperAuthorRecord(
+                    corpus_id=corpus_id,
+                    author_position=int(row["author_position"]),
+                    author_id=row.get("author_id"),
+                    name=row.get("name"),
                 )
             )
         return dict(grouped)

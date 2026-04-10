@@ -6,10 +6,13 @@ from app.rag.query_enrichment import (
     build_entity_query_phrases,
     build_query_entity_resolution_phrases,
     build_query_phrases,
+    build_runtime_entity_resolution_phrases,
     derive_relation_terms,
     determine_query_retrieval_profile,
+    extract_query_metadata_hints,
     has_query_entity_surface_signal,
     is_title_like_query,
+    should_enrich_resolved_entity_term,
     should_seed_resolved_entity_term,
     should_use_chunk_lexical_query,
     should_use_exact_title_precheck,
@@ -58,6 +61,20 @@ def test_build_query_entity_resolution_phrases_skips_non_entity_prose_noise():
     assert build_query_entity_resolution_phrases(text) == []
 
 
+def test_build_runtime_entity_resolution_phrases_skips_noise_only_terms():
+    phrases = build_runtime_entity_resolution_phrases(
+        "Diagnosis and management of dementia with Lewy bodies",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert "and" not in phrases
+    assert "with" not in phrases
+    assert "management" not in phrases
+    assert "diagnosis" not in phrases
+    assert "dementia" in phrases
+    assert "lewy bodies" in phrases
+
+
 def test_should_use_exact_title_precheck_accepts_long_terminal_title_candidates():
     title = (
         "A theory-informed qualitative exploration of social and environmental "
@@ -75,6 +92,22 @@ def test_should_use_exact_title_precheck_accepts_short_terminal_title_candidates
 def test_should_use_exact_title_precheck_rejects_ordinary_sentence_queries():
     assert not should_use_exact_title_precheck(
         "This is a representative discussion sentence with a concluding period."
+    )
+
+
+def test_should_use_exact_title_precheck_accepts_false_negative_biomedical_titles():
+    assert should_use_exact_title_precheck(
+        "Health-Related Quality of Life is Impacted by Proximity to an Airport in "
+        "Noise-Sensitive People"
+    )
+    assert should_use_exact_title_precheck(
+        "Lifetime and 12-month prevalence of DSM-III-R psychiatric disorders in "
+        "the United States. Results from the National Comorbidity Survey."
+    )
+    assert should_use_exact_title_precheck(
+        "Erythrocyte P2X1 receptor expression is correlated with change in "
+        "haematocrit in patients admitted to the ICU with blood pathogen-positive "
+        "sepsis"
     )
 
 
@@ -115,6 +148,15 @@ def test_should_seed_resolved_entity_term_requires_specificity_for_auto_recall()
     assert not should_seed_resolved_entity_term("A 4")
     assert not should_seed_resolved_entity_term("melatonin")
     assert not should_seed_resolved_entity_term("delirium")
+
+
+def test_should_enrich_resolved_entity_term_keeps_meaningful_plain_entities_but_drops_scaffolding():
+    assert should_enrich_resolved_entity_term("melatonin")
+    assert should_enrich_resolved_entity_term("delirium")
+    assert should_enrich_resolved_entity_term("Lewy bodies")
+    assert not should_enrich_resolved_entity_term("and")
+    assert not should_enrich_resolved_entity_term("with")
+    assert not should_enrich_resolved_entity_term("diagnosis")
 
 
 def test_has_query_entity_surface_signal_detects_high_precision_entity_shapes():
@@ -191,6 +233,75 @@ def test_determine_query_retrieval_profile_allows_terminal_punctuation_for_selec
     )
 
 
+def test_extract_query_metadata_hints_parses_author_year_topic_query():
+    hints = extract_query_metadata_hints(
+        "Breschi 2013 different permeability potassium salts across blood-brain"
+    )
+
+    assert hints.author_hint == "Breschi"
+    assert hints.year_hint == 2013
+    assert hints.topic_query == "different permeability potassium salts across blood-brain"
+    assert hints.journal_hint is None
+    assert hints.has_precise_citation_filters is True
+    assert hints.has_evidence_type_filters is False
+    assert hints.matched_cues == ("author", "year")
+
+
+def test_extract_query_metadata_hints_parses_publication_type_prefixes():
+    hints = extract_query_metadata_hints(
+        "meta-analysis evidence risk factors incident delirium among older"
+    )
+
+    assert hints.requested_publication_types == ("MetaAnalysis", "SystematicReview")
+    assert hints.topic_query == "risk factors incident delirium among older"
+    assert hints.has_precise_citation_filters is False
+    assert hints.has_evidence_type_filters is True
+    assert "meta-analysis_evidence" in hints.matched_cues
+
+
+def test_extract_query_metadata_hints_parses_generic_study_evidence_prefix():
+    hints = extract_query_metadata_hints(
+        "study evidence association dopamine transporter gene parkinson's disease"
+    )
+
+    assert hints.topic_query == "association dopamine transporter gene parkinson's disease"
+    assert hints.requested_publication_types == ()
+    assert hints.has_structured_signal is True
+    assert hints.has_searchable_metadata_filters is False
+    assert hints.has_precise_citation_filters is False
+    assert hints.has_evidence_type_filters is False
+    assert "study_evidence" in hints.matched_cues
+
+
+def test_metadata_queries_route_to_general_and_skip_exact_title_precheck():
+    query = "BMC Medicine 2014 dsm-5 criteria level arousal delirium diagnosis"
+    hints = extract_query_metadata_hints(query)
+
+    assert hints.author_hint is None
+    assert hints.journal_hint == "BMC Medicine"
+    assert hints.year_hint == 2014
+    assert hints.has_structured_signal is True
+    assert (
+        determine_query_retrieval_profile(query, metadata_hints=hints)
+        == QueryRetrievalProfile.GENERAL
+    )
+    assert should_use_exact_title_precheck(query, metadata_hints=hints) is False
+
+
+def test_single_token_year_prefixes_default_to_author_hint_only():
+    query = "Neurology 2018 score that predicts 1-year functional status"
+    hints = extract_query_metadata_hints(query)
+
+    assert hints.author_hint == "Neurology"
+    assert hints.journal_hint is None
+    assert hints.year_hint == 2018
+    assert hints.has_searchable_metadata_filters is True
+    assert (
+        determine_query_retrieval_profile(query, metadata_hints=hints)
+        == QueryRetrievalProfile.GENERAL
+    )
+
+
 def test_title_classifier_accepts_question_subtitle_paper_titles():
     title = (
         "What physical performance measures predict incident cognitive decline among "
@@ -249,6 +360,30 @@ def test_title_classifier_rejects_abstract_header_prose_clauses():
     assert not is_title_like_query(text)
     assert determine_query_retrieval_profile(text) == QueryRetrievalProfile.PASSAGE_LOOKUP
     assert should_use_chunk_lexical_query(text)
+
+
+def test_title_classifier_rejects_truncated_sentence_fragments_with_mutation_tails():
+    text = (
+        "Transgenic mice overexpressing the 695-amino acid isoform of human "
+        "Alzheimer beta-amyloid (Abeta) precursor protein containing a "
+        "Lys670 --> Asn, Met671 -->"
+    )
+
+    assert not is_title_like_query(text)
+    assert determine_query_retrieval_profile(text) == QueryRetrievalProfile.PASSAGE_LOOKUP
+    assert not should_use_exact_title_precheck(text)
+
+
+def test_title_classifier_rejects_unbalanced_parenthetical_sentence_fragments():
+    text = (
+        "Veterans in the second time CSR group (N = 24) were diagnosed with "
+        "suffering combat stress reaction (CSR) during both wars; the first "
+        "time CSR group (N ="
+    )
+
+    assert not is_title_like_query(text)
+    assert determine_query_retrieval_profile(text) == QueryRetrievalProfile.PASSAGE_LOOKUP
+    assert not should_use_exact_title_precheck(text)
 
 
 def test_should_use_chunk_lexical_query_routes_longer_free_text():
@@ -474,3 +609,76 @@ def test_determine_retrieval_profile_preserves_keyword_search_seed_distribution(
             determine_query_retrieval_profile(seed)
             == QueryRetrievalProfile.GENERAL
         ), seed
+
+
+def test_determine_retrieval_profile_demotes_biomedical_relation_lookup_queries():
+    for query in (
+        "APOE4 allele and risk of Alzheimer disease",
+        "BDNF Val66Met polymorphism and ketamine antidepressant response",
+        "dopamine D2 receptor occupancy and antipsychotic efficacy threshold",
+        "CYP2D6 poor metabolizer status and haloperidol dosing",
+        "clozapine-induced myocarditis and cardiomyopathy",
+        "central nervous system tumors WHO grading criteria",
+    ):
+        assert (
+            determine_query_retrieval_profile(query)
+            == QueryRetrievalProfile.GENERAL
+        ), query
+
+
+def test_determine_retrieval_profile_preserves_title_cased_biomedical_relation_titles():
+    for title in (
+        "APOE4 Allele and Alzheimer Disease Risk",
+        "Dopamine D2 Receptor Occupancy and Antipsychotic Efficacy Thresholds",
+    ):
+        assert (
+            determine_query_retrieval_profile(title)
+            == QueryRetrievalProfile.TITLE_LOOKUP
+        ), title
+
+
+def test_determine_retrieval_profile_semantic_relation_demote_ignores_title_friendly_context():
+    assert (
+        determine_query_retrieval_profile(
+            "APOE4 allele and risk of Alzheimer disease",
+            allow_terminal_title_punctuation=True,
+        )
+        == QueryRetrievalProfile.GENERAL
+    )
+
+
+def test_determine_retrieval_profile_demotes_lowercase_semantic_anchors_without_entity_symbols():
+    for query in (
+        "electroconvulsive therapy treatment resistant depression efficacy",
+        "frontotemporal dementia behavioral variant diagnosis criteria",
+        "serotonin transporter slc6a4 and depression susceptibility",
+        "gabaergic interneuron dysfunction in schizophrenia pathophysiology",
+        "can't sit still as a side effect of antipsychotics",
+    ):
+        assert (
+            determine_query_retrieval_profile(query)
+            == QueryRetrievalProfile.GENERAL
+        ), query
+
+
+def test_determine_retrieval_profile_demotes_lowercase_passage_claim_titles_to_passage_lookup():
+    for query in (
+        "therapeutic hypothermia improves neurological outcomes in perinatal "
+        "hypoxic ischemic encephalopathy",
+        "vascular cognitive impairment following stroke involves strategic infarct location",
+        "plasma phospho-tau assays show different diagnostic accuracy in "
+        "prodromal Alzheimer disease",
+    ):
+        assert (
+            determine_query_retrieval_profile(query)
+            == QueryRetrievalProfile.PASSAGE_LOOKUP
+        ), query
+
+
+def test_determine_retrieval_profile_routes_bare_interrogative_openings_to_question_lookup():
+    assert (
+        determine_query_retrieval_profile(
+            "why patients refuse to take their psychiatric medications"
+        )
+        == QueryRetrievalProfile.QUESTION_LOOKUP
+    )

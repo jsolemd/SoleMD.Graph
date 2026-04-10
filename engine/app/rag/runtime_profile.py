@@ -7,6 +7,7 @@ import hashlib
 from app.pgvector_utils import format_vector_literal
 from app.rag.query_embedding import RagQueryEmbedder
 from app.rag.query_enrichment import normalize_entity_query_text, normalize_title_key
+from app.rag.query_metadata import extract_query_metadata_hints
 from app.rag.query_plan import plan_hash, plan_index_names, plan_node_names
 from app.rag.repository import PostgresRagRepository, _SqlSpec
 from app.rag_ingest.runtime_eval_models import (
@@ -80,6 +81,7 @@ def profile_runtime_case_sql_plans(
                 scope_corpus_ids=None,
                 use_title_similarity=use_title_similarity,
                 use_exact_graph_search=repository._should_use_exact_graph_search(graph_run_id),
+                query_metadata_hints=extract_query_metadata_hints(query_text),
             )
         elif stage_name == "search_chunk_papers":
             chunk_query = str(result.session_flags.get("chunk_search_query_text") or case.query)

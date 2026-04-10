@@ -30,29 +30,16 @@ _engine_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_engine_root))
 
 # Load .env.local for Langfuse credentials
-_env_local = _engine_root.parent / ".env.local"
-if _env_local.exists():
-    for line in _env_local.read_text().splitlines():
+def _load_env_local() -> None:
+    env_local = _engine_root.parent / ".env.local"
+    if not env_local.exists():
+        return
+    for line in env_local.read_text().splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             key, _, value = line.partition("=")
             value = value.strip().strip('"').strip("'")
             os.environ.setdefault(key.strip(), value)
-
-from app import db
-from app.langfuse_config import ensure_score_configs
-from app.langfuse_config import flush as _langfuse_flush
-from app.rag_ingest.experiment import (
-    diagnose_experiment,
-    enqueue_failures,
-    ensure_annotation_queue,
-    iter_all_benchmarks,
-    run_benchmark,
-)
-from app.rag_ingest.langfuse_run_review import (
-    format_experiment_review,
-    review_experiment_result,
-)
 
 
 def _parse_quality_gates(raw: str | None) -> dict[str, float]:
@@ -73,6 +60,8 @@ def _check_quality_gates(
     result,
     gates: dict[str, float],
     dataset_name: str = "",
+    review: dict[str, float] | None = None,
+    upper_bound_gates: set[str] | None = None,
 ) -> list[str]:
     """Check run-level evaluator scores against quality gate thresholds.
 
@@ -86,6 +75,41 @@ def _check_quality_gates(
                 run_scores[ev.name] = ev.value
     if hasattr(result, "scores") and isinstance(result.scores, dict):
         run_scores.update(result.scores)
+    if review:
+        run_scores.update(
+            {
+                key: float(value)
+                for key, value in review.items()
+                if isinstance(value, (int, float))
+            }
+        )
+        run_scores.update(
+            {
+                "distinct_papers": float(review.get("distinct_papers") or 0),
+                "distinct_titles": float(review.get("distinct_titles") or 0),
+                "repeated_paper_cases": float(review.get("repeated_paper_cases") or 0),
+                "repeated_title_cases": float(review.get("repeated_title_cases") or 0),
+                "max_cases_per_paper": float(review.get("max_cases_per_paper") or 0),
+                "max_cases_per_title": float(review.get("max_cases_per_title") or 0),
+                "partition_bucket_count": float(
+                    review.get("partition_bucket_count") or 0
+                ),
+                "source_bucket_count": float(review.get("source_bucket_count") or 0),
+                "coverage_bucket_count": float(
+                    review.get("coverage_bucket_count") or 0
+                ),
+            }
+        )
+
+    active_upper_bound_gates = {
+        "error_rate",
+        "repeated_paper_cases",
+        "repeated_title_cases",
+        "max_cases_per_paper",
+        "max_cases_per_title",
+    }
+    if upper_bound_gates:
+        active_upper_bound_gates.update(upper_bound_gates)
 
     for gate_name, threshold in gates.items():
         actual = run_scores.get(gate_name)
@@ -93,7 +117,7 @@ def _check_quality_gates(
             failures.append(
                 f"  GATE MISS [{dataset_name}]: {gate_name} not found in run scores"
             )
-        elif gate_name == "error_rate":
+        elif gate_name in active_upper_bound_gates:
             if actual > threshold:
                 failures.append(
                     f"  GATE FAIL [{dataset_name}]: {gate_name}={actual:.4f} > {threshold}"
@@ -166,10 +190,37 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=10,
         help="Maximum miss examples to include in the live review output.",
     )
+    parser.add_argument(
+        "--use-suite-gates",
+        action="store_true",
+        help="Apply benchmark-specific default acceptance gates from the benchmark catalog.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    _load_env_local()
+
+    from app import db
+    from app.langfuse_config import ensure_score_configs
+    from app.langfuse_config import flush as _langfuse_flush
+    from app.rag_ingest.benchmark_catalog import (
+        BenchmarkSuiteGateMode,
+        benchmark_suite_gate_maps,
+        get_benchmark_suite_spec,
+    )
+    from app.rag_ingest.experiment import (
+        diagnose_experiment,
+        enqueue_failures,
+        ensure_annotation_queue,
+        iter_all_benchmarks,
+        run_benchmark,
+    )
+    from app.rag_ingest.langfuse_run_review import (
+        format_experiment_review,
+        review_experiment_result,
+    )
+
     args = _parse_args(argv)
     gates = _parse_quality_gates(args.quality_gate)
 
@@ -196,6 +247,21 @@ def main(argv: list[str] | None = None) -> int:
 
     gate_failures: list[str] = []
 
+    def _resolved_gates(dataset_name: str) -> tuple[dict[str, float], set[str]]:
+        lower_bounds = dict(gates)
+        upper_bounds: dict[str, float] = {}
+        if args.use_suite_gates:
+            suite_spec = get_benchmark_suite_spec(dataset_name)
+            if suite_spec and suite_spec.gate_mode != BenchmarkSuiteGateMode.SHADOW:
+                suite_lower, suite_upper = benchmark_suite_gate_maps(dataset_name)
+                for key, value in suite_lower.items():
+                    lower_bounds.setdefault(key, value)
+                for key, value in suite_upper.items():
+                    if key not in lower_bounds:
+                        lower_bounds[key] = value
+                    upper_bounds[key] = value
+        return lower_bounds, set(upper_bounds)
+
     try:
         if args.all_benchmarks:
             completed = 0
@@ -203,28 +269,38 @@ def main(argv: list[str] | None = None) -> int:
                 run_name=args.run_name, **common_kwargs,
             ):
                 completed += 1
+                review = None
                 print(f"\n--- {name} ---", flush=True)
                 print(result.format(), flush=True)
                 if hasattr(result, "dataset_run_url") and result.dataset_run_url:
                     print(f"  Langfuse: {result.dataset_run_url}", flush=True)
                 if args.diagnose:
                     print(diagnose_experiment(result), flush=True)
-                if args.review_live:
+                if args.review_live or gates or args.use_suite_gates:
+                    review = review_experiment_result(
+                        result,
+                        max_miss_examples=args.review_max_misses,
+                    )
+                if args.review_live and review is not None:
                     print(
-                        format_experiment_review(
-                            review_experiment_result(
-                                result,
-                                max_miss_examples=args.review_max_misses,
-                            )
-                        ),
+                        format_experiment_review(review),
                         flush=True,
                     )
                 if queue_id:
                     n = enqueue_failures(result, queue_id)
                     if n:
                         print(f"  Enqueued {n} failure(s) for review", flush=True)
-                if gates:
-                    gate_failures.extend(_check_quality_gates(result, gates, name))
+                effective_gates, upper_bound_gates = _resolved_gates(name)
+                if effective_gates:
+                    gate_failures.extend(
+                        _check_quality_gates(
+                            result,
+                            effective_gates,
+                            name,
+                            review=review,
+                            upper_bound_gates=upper_bound_gates,
+                        )
+                    )
             print(f"\n{'=' * 60}")
             print(f"Completed {completed} benchmarks")
             print(f"{'=' * 60}")
@@ -234,6 +310,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_name=args.run_name,
                 **common_kwargs,
             )
+            review = None
             print(result.format())
             if hasattr(result, "dataset_run_url") and result.dataset_run_url:
                 print(f"\nLangfuse dataset run: {result.dataset_run_url}")
@@ -242,25 +319,30 @@ def main(argv: list[str] | None = None) -> int:
                 print("Failure Diagnosis")
                 print(f"{'=' * 60}")
                 print(diagnose_experiment(result))
-            if args.review_live:
+            if args.review_live or gates or args.use_suite_gates:
+                review = review_experiment_result(
+                    result,
+                    max_miss_examples=args.review_max_misses,
+                )
+            if args.review_live and review is not None:
                 print(f"\n{'=' * 60}")
                 print("Live Langfuse Review")
                 print(f"{'=' * 60}")
-                print(
-                    format_experiment_review(
-                        review_experiment_result(
-                            result,
-                            max_miss_examples=args.review_max_misses,
-                        )
-                    )
-                )
+                print(format_experiment_review(review))
             if queue_id:
                 n = enqueue_failures(result, queue_id)
                 if n:
                     print(f"\nEnqueued {n} failure(s) to annotation queue")
-            if gates:
+            effective_gates, upper_bound_gates = _resolved_gates(args.dataset or "")
+            if effective_gates:
                 gate_failures.extend(
-                    _check_quality_gates(result, gates, args.dataset or "")
+                    _check_quality_gates(
+                        result,
+                        effective_gates,
+                        args.dataset or "",
+                        review=review,
+                        upper_bound_gates=upper_bound_gates,
+                    )
                 )
     finally:
         _langfuse_flush()
@@ -274,8 +356,9 @@ def main(argv: list[str] | None = None) -> int:
             print(msg)
         return 1
 
-    if gates:
-        print(f"\nQuality gate passed: {args.quality_gate}")
+    if gates or args.use_suite_gates:
+        gate_label = args.quality_gate or "suite-default"
+        print(f"\nQuality gate passed: {gate_label}")
 
     return 0
 

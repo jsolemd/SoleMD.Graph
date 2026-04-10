@@ -187,30 +187,30 @@ def test_runtime_sentence_query_family_keeps_precision_and_latency_floor():
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_runtime_sentence_hard_benchmark_remains_grounded_and_bounded():
-    report = _runtime_benchmark_report("sentence_hard_v1")
+def test_runtime_biomedical_optimization_benchmark_remains_grounded_and_bounded():
+    report = _runtime_benchmark_report("biomedical_optimization_v3")
     overall = report.summary.overall
 
     assert overall.error_count == 0
-    assert overall.hit_at_k_rate >= 0.9
+    assert overall.hit_at_k_rate >= 0.99
     assert overall.grounded_answer_rate == 1.0
-    assert overall.target_in_grounded_answer_rate >= 0.9
+    assert overall.target_in_grounded_answer_rate == 1.0
     assert overall.over_1000ms_count == 0
-    assert overall.p95_service_duration_ms <= 700.0
+    assert overall.p95_service_duration_ms <= 250.0
 
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_runtime_clinical_actionable_benchmark_remains_grounded_and_bounded():
-    report = _runtime_benchmark_report("clinical_actionable_v1")
+def test_runtime_biomedical_holdout_benchmark_remains_grounded_and_bounded():
+    report = _runtime_benchmark_report("biomedical_holdout_v1")
     overall = report.summary.overall
 
     assert overall.error_count == 0
-    assert overall.hit_at_k_rate >= 0.9
+    assert overall.hit_at_k_rate == 1.0
     assert overall.grounded_answer_rate == 1.0
-    assert overall.target_in_grounded_answer_rate >= 0.9
+    assert overall.target_in_grounded_answer_rate == 1.0
     assert overall.over_1000ms_count == 0
-    assert overall.p95_service_duration_ms <= 500.0
+    assert overall.p95_service_duration_ms <= 250.0
 
 
 @pytest.mark.integration
@@ -250,6 +250,27 @@ def test_runtime_long_biomedical_exact_title_global_lookup_stays_grounded_and_fa
 
     assert title_global.target_in_grounded_answer_rate == 1.0
     assert title_global.p95_service_duration_ms <= 500.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_holdout_exact_title_grounding_fast_path_stays_bounded():
+    report = _runtime_benchmark_case_report("biomedical_holdout_v1", 219104019)
+
+    overall = report.summary.overall
+    case = report.cases[0]
+
+    assert overall.error_count == 0
+    assert overall.target_in_grounded_answer_rate == 1.0
+    assert case.session_flags.get("retrieval_profile") == "title_lookup"
+    assert case.session_flags.get("dense_query_requested") is False
+    assert case.session_flags.get("biomedical_rerank_requested") is False
+    assert case.candidate_counts.get("grounded_answer_requested_corpus_ids") == 1
+    assert case.candidate_counts.get("grounded_answer_citation_rows") == 0
+    assert case.candidate_counts.get("grounded_answer_packet_count") == 1
+    assert case.stage_durations_ms.get("grounded_answer_fetch_chunk_packets", 0.0) <= 15.0
+    assert case.stage_durations_ms.get("build_grounded_answer", 0.0) <= 20.0
+    assert overall.p95_service_duration_ms <= 100.0
 
 
 @pytest.mark.integration
@@ -593,7 +614,7 @@ def test_runtime_semantic_neighbor_ann_uses_hnsw_index():
         vector_literal = _paper_embedding_literal(selected_corpus_id)
         with db.pooled() as conn, conn.cursor() as cur:
             repo._configure_search_session(cur)
-            repo._configure_hnsw_session(cur)
+            repo._configure_semantic_neighbor_hnsw_session(cur)
             cur.execute(
                 "EXPLAIN (FORMAT JSON) " + queries.SEMANTIC_NEIGHBOR_SQL,
                 (
@@ -627,7 +648,7 @@ def test_runtime_dense_query_ann_uses_hnsw_index():
         vector_literal = _paper_embedding_literal(22309903)
         with db.pooled() as conn, conn.cursor() as cur:
             repo._configure_search_session(cur)
-            repo._configure_hnsw_session(cur)
+            repo._configure_dense_query_hnsw_session(cur)
             cur.execute(
                 "EXPLAIN (FORMAT JSON) " + queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
                 (
@@ -866,7 +887,7 @@ def test_runtime_sentence_global_general_query_runs_biomedical_reranker():
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_runtime_clinical_actionable_live_biomedical_reranker_stays_bounded_and_grounded():
+def test_runtime_holdout_ambiguous_passage_query_applies_bounded_biomedical_reranker():
     _require_runtime_db()
 
     previous_enabled = settings.rag_live_biomedical_reranker_enabled
@@ -874,7 +895,7 @@ def test_runtime_clinical_actionable_live_biomedical_reranker_stays_bounded_and_
     get_runtime_biomedical_reranker.cache_clear()
     settings.rag_live_biomedical_reranker_enabled = True
     try:
-        report = _runtime_benchmark_case_report("clinical_actionable_v1", 277023583)
+        report = _runtime_benchmark_case_report("biomedical_holdout_v1", 4919542)
     finally:
         settings.rag_live_biomedical_reranker_enabled = previous_enabled
         _runtime_benchmark_case_report.cache_clear()
@@ -888,11 +909,14 @@ def test_runtime_clinical_actionable_live_biomedical_reranker_stays_bounded_and_
     assert overall.target_in_grounded_answer_rate == 1.0
     assert overall.p95_service_duration_ms <= 200.0
     assert case.session_flags.get("biomedical_reranker_enabled") is True
+    assert case.session_flags.get("dense_query_requested") is True
+    assert case.session_flags.get("dense_query_reason") == "candidate_recovery"
     assert case.session_flags.get("biomedical_rerank_requested") is True
+    assert case.session_flags.get("biomedical_rerank_reason") == "candidate_ambiguity"
     assert case.session_flags.get("biomedical_rerank_applied") is True
     assert case.session_flags.get("biomedical_reranker_backend") == "medcpt_cross_encoder"
     assert case.session_flags.get("biomedical_reranker_device") == "cuda"
-    assert case.candidate_counts.get("biomedical_rerank_candidates", 0) == 8
+    assert case.candidate_counts.get("biomedical_rerank_candidates", 0) >= 3
     assert case.candidate_counts.get("biomedical_rerank_promotions", 0) >= 1
     assert case.stage_durations_ms.get("biomedical_rerank", 0.0) <= 75.0
     assert case.stage_durations_ms.get("rank_preliminary_hits_biomedical", 0.0) <= 10.0
@@ -900,23 +924,53 @@ def test_runtime_clinical_actionable_live_biomedical_reranker_stays_bounded_and_
 
 @pytest.mark.integration
 @pytest.mark.slow
-def test_runtime_clinical_actionable_sparse_passage_fallback_route_is_explicit():
-    report = _runtime_benchmark_case_report("clinical_actionable_v1", 229929738)
+def test_runtime_holdout_stable_direct_passage_leader_skips_biomedical_reranker():
+    report = _runtime_benchmark_case_report("biomedical_holdout_v1", 220883733)
 
     overall = report.summary.overall
     case = report.cases[0]
 
     assert overall.error_count == 0
     assert overall.target_in_grounded_answer_rate == 1.0
-    assert overall.p95_service_duration_ms <= 300.0
-    assert case.session_flags.get("paper_search_sparse_passage_fallback") is True
-    assert (
-        case.route_signature
-        == "retrieval_profile=passage_lookup|"
-        "paper_search_route=paper_search_global_fts_only|"
-        "paper_search_sparse_passage_fallback=True|"
-        "paper_search_use_title_similarity=False|"
-        "paper_search_use_title_candidate_lookup=False|"
-        "chunk_search_route=chunk_search_global|"
-        "dense_query_route=dense_query_ann_broad_scope"
+    assert overall.p95_service_duration_ms <= 200.0
+    assert case.session_flags.get("dense_query_requested") is False
+    assert case.session_flags.get("dense_query_reason") == "stable_direct_passage_leader"
+    assert case.session_flags.get("biomedical_rerank_requested") is False
+    assert case.session_flags.get("biomedical_rerank_reason") == "insufficient_candidates"
+    assert case.route_signature == (
+        "retrieval_profile=passage_lookup|"
+        "chunk_search_route=chunk_search_global"
     )
+    assert case.stage_durations_ms.get("biomedical_rerank", 0.0) == 0.0
+    assert case.stage_durations_ms.get("search_query_embedding_papers", 0.0) == 0.0
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_runtime_holdout_unanchored_title_lookup_bounds_expensive_enrichment_frontier():
+    report = _runtime_benchmark_case_report("biomedical_holdout_v1", 32419070)
+
+    overall = report.summary.overall
+    case = report.cases[0]
+
+    assert overall.error_count == 0
+    assert overall.target_in_grounded_answer_rate == 1.0
+    assert case.session_flags.get("retrieval_profile") == "title_lookup"
+    assert case.session_flags.get("selected_direct_anchor") is False
+    assert case.session_flags.get("title_chunk_rescue_requested") is True
+    assert case.session_flags.get("dense_query_requested") is False
+    assert case.session_flags.get("dense_query_reason") == "stable_direct_passage_leader"
+    assert case.candidate_counts.get("title_chunk_rescue_attempts_executed", 0) == 1
+    assert case.candidate_counts.get("chunk_lexical_hits", 0) == 1
+    assert case.candidate_counts.get("citation_context_ids", 0) <= 3
+    assert case.candidate_counts.get("enrichment_corpus_ids", 0) <= 3
+    assert case.stage_durations_ms.get("search_query_embedding_papers", 0.0) == 0.0
+    assert case.stage_durations_ms.get("fetch_semantic_neighbors", 0.0) == 0.0
+    assert case.route_signature == (
+        "retrieval_profile=title_lookup|"
+        "paper_search_route=paper_search_global_fts_only|"
+        "paper_search_use_title_similarity=False|"
+        "paper_search_use_title_candidate_lookup=True|"
+        "title_chunk_rescue_route=chunk_search_global"
+    )
+    assert case.service_duration_ms <= 250.0

@@ -8,7 +8,6 @@ from app.rag._queries_paper_core import (
     PAPER_SELECT_COLUMNS,
 )
 
-
 CHUNK_SEARCH_SQL = f"""
 WITH query_input AS (
     SELECT
@@ -21,6 +20,8 @@ scored_chunks AS MATERIALIZED (
     SELECT
         c.corpus_id,
         c.chunk_ordinal,
+        c.section_role AS chunk_section_role,
+        c.primary_block_kind AS chunk_primary_block_kind,
         c.text AS chunk_text,
         chunk_eval.chunk_lexical_score,
         COALESCE(p.citation_count, 0) AS citation_count,
@@ -84,6 +85,8 @@ matched_papers AS MATERIALIZED (
     SELECT
         sc.corpus_id,
         sc.chunk_ordinal,
+        sc.chunk_section_role,
+        sc.chunk_primary_block_kind,
         sc.chunk_text,
         sc.chunk_lexical_score,
         sc.citation_count
@@ -100,6 +103,8 @@ SELECT
     0.0 AS lexical_score,
     0.0 AS title_similarity,
     mp.chunk_ordinal,
+    mp.chunk_section_role,
+    mp.chunk_primary_block_kind,
     replace(
         replace(
             ts_headline(
@@ -143,6 +148,8 @@ scored_chunks AS MATERIALIZED (
     SELECT
         c.corpus_id,
         c.chunk_ordinal,
+        c.section_role AS chunk_section_role,
+        c.primary_block_kind AS chunk_primary_block_kind,
         c.text AS chunk_text,
         chunk_eval.chunk_lexical_score,
         COALESCE(p.citation_count, 0) AS citation_count,
@@ -204,6 +211,8 @@ matched_chunks AS MATERIALIZED (
     SELECT
         sc.corpus_id,
         sc.chunk_ordinal,
+        sc.chunk_section_role,
+        sc.chunk_primary_block_kind,
         sc.chunk_text,
         sc.chunk_lexical_score,
         sc.citation_count
@@ -215,6 +224,8 @@ SELECT
     0.0 AS lexical_score,
     0.0 AS title_similarity,
     mc.chunk_ordinal,
+    mc.chunk_section_role,
+    mc.chunk_primary_block_kind,
     replace(
         replace(
             ts_headline(

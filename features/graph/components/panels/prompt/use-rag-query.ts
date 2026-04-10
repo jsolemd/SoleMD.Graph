@@ -9,7 +9,6 @@ import {
   GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART,
   type GraphAskChatMessage,
 } from "@/features/graph/lib/rag-chat";
-import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import {
   getRagOverlayProducerId,
   RAG_ANSWER_SELECTION_SOURCE_ID,
@@ -22,6 +21,7 @@ import type {
   OverlayProducerId,
 } from "@/features/graph/types";
 import type { EvidenceAssistRequest } from "./evidence-assist";
+import { resolvePromptScopeRequest } from "./prompt-scope-request";
 import {
   clearRagGraphOverlay,
   syncRagGraphSignals,
@@ -123,45 +123,12 @@ export function useRagQuery({
   );
 
   const resolveSelectionScopeRequest = useCallback(async () => {
-    if (!selectionScopeEnabled) {
-      return {
-        selectionGraphPaperRefs: null,
-        scopeMode: null,
-      } as const;
-    }
-
-    const hasCurrentScope = hasCurrentPointScopeSql(currentPointScopeSql);
-    const selectionGraphPaperRefs = queries
-      ? Array.from(
-          new Set(
-            (await queries.getSelectionScopeGraphPaperRefs({
-              currentPointScopeSql,
-            })).filter(
-              (graphPaperRef) => graphPaperRef.trim().length > 0,
-            ),
-          ),
-        )
-      : [];
-    const fallbackGraphPaperRef =
-      !hasCurrentScope ? (selectedNode?.paperId ?? selectedNode?.id ?? null) : null;
-
-    if (selectionGraphPaperRefs.length > 0) {
-      return {
-        selectionGraphPaperRefs,
-        scopeMode: "selection_only" as const,
-      };
-    }
-
-    if (fallbackGraphPaperRef) {
-      return {
-        selectionGraphPaperRefs: [fallbackGraphPaperRef],
-        scopeMode: "selection_only" as const,
-      };
-    }
-
-    throw new Error(
-      "Selection scope is enabled, but no graph papers are available in the current graph selection.",
-    );
+    return resolvePromptScopeRequest({
+      selectionScopeEnabled,
+      currentPointScopeSql,
+      queries,
+      selectedNode,
+    });
   }, [currentPointScopeSql, queries, selectedNode, selectionScopeEnabled]);
 
   const askChat = useChat<GraphAskChatMessage>({

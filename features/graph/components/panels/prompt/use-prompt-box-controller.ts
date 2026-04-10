@@ -32,11 +32,13 @@ import { getSelectionScopeToggleLabel, isSelectionScopeAvailable, isSelectionSco
 import { useFocusedAvoidanceRects } from "./use-focused-avoidance-rects";
 import { usePromptPosition } from "./use-prompt-position";
 import { useRagQuery } from "./use-rag-query";
+import { useReferenceMentionSource } from "./use-reference-mention-source";
 import {
   EVIDENCE_ASSIST_PROVIDER,
   isEvidenceAssistRequest,
 } from "./evidence-assist";
 import type { PromptInteractionRequest } from "../editor/prompt-interactions";
+import type { ReferenceMentionSource } from "../editor/reference-mention-extension";
 import {
   createPromptInteractionHandler,
   dispatchPromptInteraction,
@@ -75,6 +77,7 @@ export interface PromptBoxControllerState {
   isSubmitting: boolean;
   handleSubmit: ReturnType<typeof useRagQuery>["handleSubmit"];
   promptInteractionProviders: ReturnType<typeof getPromptInteractionProviders>;
+  referenceMentionSource: ReferenceMentionSource;
   handlePromptInteraction: (request: PromptInteractionRequest) => void;
   clearRag: ReturnType<typeof useRagQuery>["clearRag"];
   handlePromptContentChange: (markdown: string) => void;
@@ -154,6 +157,13 @@ export function usePromptBoxController({
   const selectionOnlyEnabled = isSelectionScopeEnabled({
     available: selectionScopeAvailable,
     manuallyDisabled: selectionScopeManuallyDisabled,
+  });
+  const referenceMentionSource = useReferenceMentionSource({
+    bundle,
+    queries,
+    selectedNode,
+    currentPointScopeSql,
+    selectionScopeEnabled: selectionOnlyEnabled,
   });
 
   const {
@@ -438,6 +448,7 @@ export function usePromptBoxController({
     isSubmitting,
     handleSubmit,
     promptInteractionProviders,
+    referenceMentionSource,
     handlePromptInteraction,
     clearRag,
     handlePromptContentChange,

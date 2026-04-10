@@ -23,6 +23,8 @@ export interface ModeLayout {
   defaultPromptMode: PromptMode
   /** Which side panels are available to open */
   availablePanels: ActivePanel[]
+  /** Optional panel to auto-open when entering this mode. Omit to leave panel state untouched. */
+  defaultPanel?: ActivePanel
 }
 
 /** Configuration for a single mode. */
@@ -42,7 +44,7 @@ export interface ModeConfig {
 }
 
 /** All modes share the same panel set — colors adapt via --mode-accent. */
-const SHARED_PANELS: ActivePanel[] = ['config', 'filters', 'info', 'query']
+const SHARED_PANELS: ActivePanel[] = ['config', 'filters', 'info', 'query', 'wiki']
 
 /**
  * Mode registry — single source of truth for all mode behavior.
@@ -108,6 +110,7 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       showDataTable: true,
       defaultPromptMode: 'normal',
       availablePanels: SHARED_PANELS,
+      defaultPanel: 'wiki',
     },
   },
   create: {

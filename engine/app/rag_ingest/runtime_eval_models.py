@@ -21,6 +21,13 @@ class RuntimeEvalPaperRecord(ParseContractModel):
     corpus_id: int
     title: str
     primary_source_system: str
+    journal_name: str | None = None
+    year: int | None = None
+    publication_types: list[str] = Field(default_factory=list)
+    first_author_name: str | None = None
+    citation_count: int = 0
+    reference_count: int = 0
+    text_availability: str | None = None
     section_count: int = 0
     table_block_count: int = 0
     narrative_block_count: int = 0
@@ -61,11 +68,13 @@ class RuntimeEvalQueryCase(ParseContractModel):
     selected_layer_key: str | None = None
     selected_node_id: str | None = None
     selection_graph_paper_refs: list[str] = Field(default_factory=list)
+    cited_corpus_ids: list[int] = Field(default_factory=list)
 
 
 class RuntimeEvalBenchmarkCase(ParseContractModel):
     corpus_id: int
     title: str
+    normalized_title_key: str | None = None
     primary_source_system: str
     query_family: RuntimeEvalQueryFamily
     query: str
@@ -75,6 +84,7 @@ class RuntimeEvalBenchmarkCase(ParseContractModel):
     selected_layer_key: str | None = None
     selected_node_id: str | None = None
     selection_graph_paper_refs: list[str] = Field(default_factory=list)
+    cited_corpus_ids: list[int] = Field(default_factory=list)
     benchmark_key: str
     benchmark_labels: list[str] = Field(default_factory=list)
     failure_count: int = 0
@@ -83,6 +93,12 @@ class RuntimeEvalBenchmarkCase(ParseContractModel):
     mean_target_rank: float = 0.0
     source_lane_keys: list[str] = Field(default_factory=list)
     expected_retrieval_profile: str | None = None
+    has_chunks: bool = False
+    has_entities: bool = False
+    has_sentence_seed: bool = False
+    coverage_bucket: str | None = None
+    warehouse_depth: str | None = None
+    evaluation_partition: str | None = None
 
 
 class RuntimeEvalTopHit(ParseContractModel):

@@ -7,9 +7,9 @@ from enum import StrEnum
 from pydantic import Field, model_validator
 
 from app.rag.parse_contract import (
-    ParseContractModel,
     PaperCitationMentionRecord,
     PaperEntityMentionRecord,
+    ParseContractModel,
     ParseSourceSystem,
     SourcePlane,
 )
@@ -48,7 +48,7 @@ class WarehouseAlignedSpanRow(WarehouseRowBase):
     canonical_sentence_ordinal: int | None = None
 
     @model_validator(mode="after")
-    def validate_alignment(self) -> "WarehouseAlignedSpanRow":
+    def validate_alignment(self) -> WarehouseAlignedSpanRow:
         if self.source_start_offset < 0:
             raise ValueError("source_start_offset must be non-negative")
         if self.source_end_offset < self.source_start_offset:
@@ -87,7 +87,7 @@ class PaperEntityMentionRow(WarehouseAlignedSpanRow):
     concept_id: str | None = None
 
     @model_validator(mode="after")
-    def validate_entity(self) -> "PaperEntityMentionRow":
+    def validate_entity(self) -> PaperEntityMentionRow:
         if not self.entity_type:
             raise ValueError("entity_type must not be empty")
         if self.concept_namespace and not self.concept_id:

@@ -9,6 +9,7 @@ from app.rag.models import (
     EntityMatchedPaperHit,
     EvidenceBundle,
     GraphSignal,
+    PaperAuthorRecord,
     PaperEvidenceHit,
     PaperReferenceRecord,
     RagSearchResult,
@@ -40,6 +41,7 @@ def serialize_search_result(result: RagSearchResult) -> RagSearchResponse:
                 selected_graph_paper_ref=result.query.selected_graph_paper_ref,
                 selected_paper_id=result.query.selected_paper_id,
                 selection_graph_paper_refs=result.query.selection_graph_paper_refs,
+                cited_corpus_ids=result.query.cited_corpus_ids,
                 selected_cluster_id=result.query.selected_cluster_id,
                 scope_mode=result.query.scope_mode,
             ).model_dump(),
@@ -78,7 +80,14 @@ def _serialize_paper_hit(paper: PaperEvidenceHit) -> dict[str, object]:
         "text_availability": paper.text_availability,
         "is_open_access": paper.is_open_access,
         "citation_count": paper.citation_count,
+        "influential_citation_count": paper.influential_citation_count,
         "reference_count": paper.reference_count,
+        "publication_types": paper.publication_types,
+        "fields_of_study": paper.fields_of_study,
+        "has_curated_journal_family": paper.has_curated_journal_family,
+        "journal_family_type": paper.journal_family_type,
+        "chunk_section_role": paper.chunk_section_role,
+        "chunk_primary_block_kind": paper.chunk_primary_block_kind,
     }
 
 
@@ -124,6 +133,10 @@ def _serialize_reference(reference: PaperReferenceRecord) -> dict[str, object]:
     return asdict(reference)
 
 
+def _serialize_author(author: PaperAuthorRecord) -> dict[str, object]:
+    return asdict(author)
+
+
 def _serialize_graph_signal(signal: GraphSignal) -> dict[str, object]:
     return {
         "corpus_id": signal.corpus_id,
@@ -160,6 +173,7 @@ def _serialize_bundle(bundle: EvidenceBundle) -> dict[str, object]:
         "relation_hits": [
             _serialize_relation_hit(hit) for hit in bundle.relation_hits
         ],
+        "authors": [_serialize_author(author) for author in bundle.authors],
         "references": [_serialize_reference(reference) for reference in bundle.references],
         "assets": [asdict(asset) for asset in bundle.assets],
     }

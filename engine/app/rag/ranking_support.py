@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from app.rag.models import (
@@ -91,6 +91,7 @@ HIGH_VALUE_PUBLICATION_TYPES = frozenset(
 )
 LOW_VALUE_PUBLICATION_TYPES = frozenset({"editorial", "lettersandcomments", "news"})
 BIOMEDICAL_FIELDS = frozenset({"biology", "chemistry", "medicine", "psychology"})
+FULLTEXT_AVAILABILITY = frozenset({"fulltext"})
 HIGH_SIGNAL_CITATION_INTENTS = {
     "background": 0.03,
     "compareorcontrast": 0.1,
@@ -110,13 +111,16 @@ class RankingScoreProfile:
     entity_weight: float
     relation_weight: float
     dense_weight: float
+    metadata_weight: float
     publication_type_weight: float
     evidence_quality_weight: float
     clinical_prior_weight: float
     intent_weight: float
     biomedical_rerank_weight: float = 0.0
     passage_alignment_weight: float = 0.0
+    passage_structure_weight: float = 0.0
     selected_context_weight: float = 0.0
+    cited_context_weight: float = 0.0
     direct_match_bonus_weight: float = 0.0
 
 
@@ -130,11 +134,13 @@ GENERAL_RANKING_PROFILE = RankingScoreProfile(
     entity_weight=0.24,
     relation_weight=0.16,
     dense_weight=0.16,
+    metadata_weight=0.22,
     publication_type_weight=PUBLICATION_TYPE_WEIGHT,
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
     clinical_prior_weight=CLINICAL_PRIOR_WEIGHT,
     intent_weight=INTENT_WEIGHT,
     biomedical_rerank_weight=0.18,
+    cited_context_weight=0.18,
 )
 TITLE_RANKING_PROFILE = RankingScoreProfile(
     channel_rrf_weights=TITLE_RRF_WEIGHTS,
@@ -146,11 +152,13 @@ TITLE_RANKING_PROFILE = RankingScoreProfile(
     entity_weight=0.18,
     relation_weight=0.12,
     dense_weight=0.1,
+    metadata_weight=0.0,
     publication_type_weight=PUBLICATION_TYPE_WEIGHT,
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
     clinical_prior_weight=CLINICAL_PRIOR_WEIGHT,
     intent_weight=INTENT_WEIGHT,
     selected_context_weight=0.24,
+    cited_context_weight=0.08,
 )
 PASSAGE_RANKING_PROFILE = RankingScoreProfile(
     channel_rrf_weights=PASSAGE_RRF_WEIGHTS,
@@ -162,15 +170,38 @@ PASSAGE_RANKING_PROFILE = RankingScoreProfile(
     entity_weight=0.2,
     relation_weight=0.14,
     dense_weight=0.08,
+    metadata_weight=0.08,
     publication_type_weight=PUBLICATION_TYPE_WEIGHT,
     evidence_quality_weight=EVIDENCE_QUALITY_WEIGHT,
     clinical_prior_weight=CLINICAL_PRIOR_WEIGHT,
     intent_weight=INTENT_WEIGHT,
     biomedical_rerank_weight=0.24,
     passage_alignment_weight=0.22,
+    passage_structure_weight=0.1,
     selected_context_weight=0.1,
+    cited_context_weight=0.12,
     direct_match_bonus_weight=0.18,
 )
+
+PASSAGE_SECTION_ROLE_PRIORS: Mapping[str, float] = {
+    "results": 0.12,
+    "conclusion": 0.1,
+    "discussion": 0.08,
+    "abstract": 0.06,
+    "introduction": 0.02,
+    "other": 0.0,
+    "supplement": -0.01,
+    "methods": -0.04,
+    "reference": -0.08,
+    "front_matter": -0.08,
+}
+PASSAGE_BLOCK_KIND_PRIORS: Mapping[str, float] = {
+    "narrative_paragraph": 0.02,
+    "figure_caption": -0.01,
+    "table_caption": -0.015,
+    "table_footnote": -0.02,
+    "table_body_text": -0.015,
+}
 
 
 def _rrf_score(rank: int | None, *, weight: float) -> float:
@@ -233,8 +264,27 @@ def _citation_intent_affinity(
     return best_score, list(dict.fromkeys(matched))
 
 
-def _publication_type_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str]]:
+def _publication_type_affinity(
+    paper: PaperEvidenceHit,
+    *,
+    requested_publication_types: Sequence[str] = (),
+) -> tuple[float, list[str]]:
     normalized = {_normalize_label(value) for value in paper.publication_types}
+    requested = {_normalize_label(value) for value in requested_publication_types}
+
+    if requested:
+        exact_matches = normalized & requested
+        if exact_matches:
+            return (
+                min(0.26, 0.14 + (0.04 * len(exact_matches))),
+                [
+                    value
+                    for value in paper.publication_types
+                    if _normalize_label(value) in exact_matches
+                ],
+            )
+        return 0.0, []
+
     if normalized & LOW_VALUE_PUBLICATION_TYPES:
         return -0.08, sorted(paper.publication_types)
 
@@ -245,7 +295,11 @@ def _publication_type_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str
     return 0.0, []
 
 
-def _evidence_quality_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str]]:
+def _evidence_quality_affinity(
+    paper: PaperEvidenceHit,
+    *,
+    retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
+) -> tuple[float, list[str]]:
     score = 0.0
     reasons: list[str] = []
     if paper.has_rule_evidence:
@@ -265,7 +319,55 @@ def _evidence_quality_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str
     if biomedical_fields:
         score += min(0.03, 0.01 * len(biomedical_fields))
         reasons.append("biomedical_field")
+    if retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
+        citation_graph_score, citation_graph_reasons = _citation_graph_affinity(paper)
+        score += citation_graph_score
+        reasons.extend(citation_graph_reasons)
+        grounding_readiness_score, grounding_readiness_reasons = (
+            _grounding_readiness_affinity(paper)
+        )
+        score += grounding_readiness_score
+        reasons.extend(grounding_readiness_reasons)
     return min(score, 0.2), reasons
+
+
+def _citation_graph_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str]]:
+    citation_count = max(paper.citation_count or 0, 0)
+    influential_citation_count = max(paper.influential_citation_count or 0, 0)
+    reference_count = max(paper.reference_count or 0, 0)
+
+    score = 0.0
+    reasons: list[str] = []
+    if citation_count > 0 and reference_count >= 8:
+        score += 0.03
+        reasons.append("citation_spine")
+    elif reference_count >= 15:
+        score += 0.01
+        reasons.append("reference_rich")
+
+    if influential_citation_count >= 2:
+        score += min(0.03, 0.01 * min(influential_citation_count, 3))
+        reasons.append("influential_citations")
+    elif citation_count >= 15:
+        score += 0.01
+        reasons.append("citation_history")
+
+    return min(score, 0.06), reasons
+
+
+def _grounding_readiness_affinity(paper: PaperEvidenceHit) -> tuple[float, list[str]]:
+    availability = _normalize_label(paper.text_availability)
+    score = 0.0
+    reasons: list[str] = []
+
+    if availability in FULLTEXT_AVAILABILITY:
+        score += 0.03
+        reasons.append("fulltext_available")
+    if paper.is_open_access:
+        score += 0.01
+        reasons.append("open_access")
+
+    return min(score, 0.04), reasons
 
 
 def _ranking_profile(
@@ -353,6 +455,24 @@ def _passage_alignment_affinity(
     return min(best_score, 1.0)
 
 
+def _passage_structure_affinity(
+    paper: PaperEvidenceHit,
+    *,
+    retrieval_profile: QueryRetrievalProfile,
+) -> float:
+    if retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
+        return 0.0
+
+    section_role = _normalize_label(paper.chunk_section_role)
+    block_kind = _normalize_label(paper.chunk_primary_block_kind)
+    score = PASSAGE_SECTION_ROLE_PRIORS.get(section_role, 0.0)
+    score += PASSAGE_BLOCK_KIND_PRIORS.get(block_kind, 0.0)
+    return max(-0.08, min(score, 0.14))
+
+
 def _channel_annotation(
     *,
     hit: PaperEvidenceHit,
@@ -401,6 +521,11 @@ def _channel_annotation(
         reasons.append("Exact title anchor for the query")
     elif hit.title_anchor_score > 0:
         reasons.append("Strong title-prefix anchor for the query")
+    if hit.metadata_score > 0 and hit.metadata_match_fields:
+        reasons.append(
+            "Matched citation-style metadata"
+            + f": {', '.join(hit.metadata_match_fields[:3])}"
+        )
     if (
         retrieval_profile
         in (QueryRetrievalProfile.PASSAGE_LOOKUP, QueryRetrievalProfile.QUESTION_LOOKUP)
@@ -413,8 +538,20 @@ def _channel_annotation(
         and hit.biomedical_rerank_score >= 0.5
     ):
         reasons.append("Promoted by biomedical article-level reranking")
+    if (
+        retrieval_profile
+        in (QueryRetrievalProfile.PASSAGE_LOOKUP, QueryRetrievalProfile.QUESTION_LOOKUP)
+        and hit.passage_structure_score > 0
+        and hit.chunk_section_role
+        ):
+            reasons.append(
+                "Matched evidence-bearing section"
+                + f": {hit.chunk_section_role.replace('_', ' ')}"
+            )
     if hit.selected_context_score > 0:
         reasons.append("Preserved explicitly selected paper context")
+    if hit.cited_context_score > 0:
+        reasons.append("Preserved explicitly cited paper context")
     if hit.citation_intent_score > 0 and matched_citation_intents:
         reasons.append(
             "Matched citation intent context"

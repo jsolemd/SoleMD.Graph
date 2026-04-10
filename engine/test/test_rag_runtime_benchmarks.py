@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
 from app.rag.grounded_runtime import GroundedAnswerRuntimeStatus
 from app.rag.types import EvidenceIntent
 from app.rag_ingest import runtime_eval
+from app.rag_ingest.benchmark_catalog import (
+    BenchmarkSuiteGateMode,
+    get_benchmark_suite_spec,
+)
 from app.rag_ingest.runtime_eval_benchmarks import (
+    build_biomedical_evidence_type_benchmark,
+    build_biomedical_holdout_benchmark,
+    build_biomedical_metadata_retrieval_benchmark,
     build_biomedical_optimization_benchmark,
+    build_citation_context_benchmark,
     build_dense_audit_sentence_hard_benchmark,
     load_runtime_eval_benchmark_cases,
 )
@@ -26,6 +35,13 @@ def _paper(corpus_id: int, *, title: str) -> RuntimeEvalPaperRecord:
         corpus_id=corpus_id,
         title=title,
         primary_source_system="s2orc_v2",
+        journal_name="Example Journal",
+        year=2024,
+        publication_types=["Review"],
+        first_author_name="Jane Doe",
+        citation_count=24,
+        reference_count=10,
+        text_availability="fulltext",
         section_count=4,
         table_block_count=0,
         narrative_block_count=8,
@@ -35,6 +51,121 @@ def _paper(corpus_id: int, *, title: str) -> RuntimeEvalPaperRecord:
         citation_mention_count=4,
         representative_section_role="discussion",
         representative_sentence=f"Representative sentence for {title}.",
+    )
+
+
+def test_build_biomedical_metadata_retrieval_benchmark_emits_two_metadata_variants(
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    papers = [
+        _paper(idx, title=f"Clinical evidence paper {idx}")
+        for idx in range(1, 8)
+    ]
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: papers,
+    )
+
+    report = build_biomedical_metadata_retrieval_benchmark(
+        graph_release_id="current",
+        paper_sample_size=3,
+        connect=lambda: None,
+    )
+
+    assert report.benchmark_key == "biomedical_metadata_retrieval_v1"
+    assert report.selected_count == 6
+    assert len({case.corpus_id for case in report.cases}) == 3
+    assert {
+        label
+        for case in report.cases
+        for label in case.benchmark_labels
+        if label.startswith("metadata_variant:")
+    } == {"metadata_variant:author_year", "metadata_variant:journal_year"}
+    assert all(case.query_family == RuntimeEvalQueryFamily.SENTENCE_GLOBAL for case in report.cases)
+
+
+def test_build_biomedical_evidence_type_benchmark_samples_each_publication_bucket(
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    paper_specs = [
+        ("Meta-analysis evidence paper A", ["MetaAnalysis"]),
+        ("Meta-analysis evidence paper B", ["MetaAnalysis"]),
+        ("Trial evidence paper A", ["ClinicalTrial"]),
+        ("Trial evidence paper B", ["ClinicalTrial"]),
+        ("Study evidence paper A", ["Study"]),
+        ("Study evidence paper B", ["Study"]),
+        ("Review evidence paper A", ["Review"]),
+        ("Review evidence paper B", ["Review"]),
+    ]
+    papers = []
+    for corpus_id, (title, publication_types) in enumerate(paper_specs, start=1):
+        paper = _paper(corpus_id, title=title)
+        paper.publication_types = publication_types
+        papers.append(paper)
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: papers,
+    )
+
+    report = build_biomedical_evidence_type_benchmark(
+        graph_release_id="current",
+        papers_per_type=2,
+        connect=lambda: None,
+    )
+
+    assert report.benchmark_key == "biomedical_evidence_type_v1"
+    assert report.selected_count == 8
+    study_type_labels = Counter(
+        next(
+            label
+            for label in case.benchmark_labels
+            if label.startswith("study_type:")
+        )
+        for case in report.cases
+    )
+    assert study_type_labels == Counter(
+        {
+            "study_type:meta_analysis": 2,
+            "study_type:clinical_trial": 2,
+            "study_type:study": 2,
+            "study_type:review": 2,
+        }
     )
 
 
@@ -236,6 +367,409 @@ def test_build_biomedical_optimization_benchmark_samples_only_covered_papers(
     assert "has_entities" in by_family[RuntimeEvalQueryFamily.SENTENCE_GLOBAL].benchmark_labels
 
 
+def test_build_citation_context_benchmark_derives_sentence_cases(tmp_path: Path):
+    source_report = RagRuntimeEvalBenchmarkReport(
+        benchmark_key="biomedical_holdout_v1",
+        graph_release_id="current",
+        graph_run_id="run-1",
+        bundle_checksum="checksum",
+        graph_name="Current Graph",
+        chunk_version_key="default-structural-v1",
+        benchmark_source="unit test",
+        max_cases=2,
+        min_failure_count=0,
+        min_max_rank=0,
+        high_recurrence_count=0,
+        deep_miss_rank=0,
+        selected_count=2,
+        cases=[
+            RuntimeEvalBenchmarkCase(
+                corpus_id=11,
+                title="Holdout paper",
+                normalized_title_key="holdout-paper",
+                primary_source_system="biocxml",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                query="Representative sentence for holdout paper.",
+                stratum_key="benchmark:biomedical_holdout_v1|family:sentence_global|x",
+                benchmark_key="biomedical_holdout_v1",
+                benchmark_labels=["biomedical_holdout"],
+                has_chunks=True,
+                has_entities=True,
+                has_sentence_seed=True,
+                coverage_bucket="covered",
+                warehouse_depth="chunks_entities_sentence",
+                evaluation_partition="holdout",
+            ),
+            RuntimeEvalBenchmarkCase(
+                corpus_id=22,
+                title="Holdout title case",
+                normalized_title_key="holdout-title-case",
+                primary_source_system="biocxml",
+                query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+                query="Holdout title case",
+                stratum_key="benchmark:biomedical_holdout_v1|family:title_global|x",
+                benchmark_key="biomedical_holdout_v1",
+                benchmark_labels=["biomedical_holdout"],
+                has_chunks=True,
+                has_entities=True,
+                has_sentence_seed=True,
+                coverage_bucket="covered",
+                warehouse_depth="chunks_entities_sentence",
+                evaluation_partition="holdout",
+            ),
+        ],
+    )
+    source_path = tmp_path / "biomedical_holdout_v1.json"
+    source_path.write_text(source_report.model_dump_json(indent=2))
+
+    report = build_citation_context_benchmark(source_benchmark_path=source_path)
+
+    assert report.benchmark_key == "biomedical_citation_context_v1"
+    assert report.selected_count == 1
+    assert report.cases[0].corpus_id == 11
+    assert report.cases[0].cited_corpus_ids == [11]
+    assert "citation_context" in report.cases[0].benchmark_labels
+
+
+def test_build_biomedical_optimization_benchmark_applies_title_quality_per_family(
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    sentence_only_paper = _paper(55, title="Outcome heading")
+    sentence_only_paper.primary_source_system = "biocxml"
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: [sentence_only_paper],
+    )
+
+    report = build_biomedical_optimization_benchmark(
+        graph_release_id="current",
+        paper_sample_size=4,
+        query_families=[
+            RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+        ],
+        connect=lambda: None,
+    )
+
+    assert report.selected_count == 1
+    assert [case.query_family for case in report.cases] == [
+        RuntimeEvalQueryFamily.SENTENCE_GLOBAL
+    ]
+
+
+def test_build_biomedical_optimization_benchmark_reserves_holdout_budget(
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    first = _paper(11, title="First covered biomedical benchmark paper")
+    second = _paper(22, title="Second covered biomedical benchmark paper")
+    third = _paper(33, title="Third covered biomedical benchmark paper")
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: [first, second, third],
+    )
+
+    report = build_biomedical_optimization_benchmark(
+        graph_release_id="current",
+        paper_sample_size=12,
+        reserve_holdout_papers=1,
+        connect=lambda: None,
+    )
+
+    assert report.max_cases == 6
+    assert report.selected_count == 6
+    assert len({case.corpus_id for case in report.cases}) == 2
+    assert "reserved_holdout_papers=1" in report.benchmark_source
+
+
+def test_build_biomedical_optimization_benchmark_raises_when_holdout_reserve_exhausts_budget(
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    first = _paper(11, title="First covered biomedical benchmark paper")
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: [first],
+    )
+
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match="cannot reserve 1 disjoint holdout papers",
+    ):
+        build_biomedical_optimization_benchmark(
+            graph_release_id="current",
+            paper_sample_size=12,
+            reserve_holdout_papers=1,
+            connect=lambda: None,
+        )
+
+
+def test_build_biomedical_holdout_benchmark_raises_when_no_nonoverlap_population(
+    tmp_path: Path,
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    covered_paper = _paper(
+        11,
+        title="Covered biomedical benchmark paper",
+    )
+    covered_paper.primary_source_system = "biocxml"
+
+    optimize_report = RagRuntimeEvalBenchmarkReport(
+        benchmark_key="biomedical_optimization_v3",
+        graph_release_id="current",
+        graph_run_id="run-1",
+        bundle_checksum="checksum",
+        graph_name="Current Graph",
+        chunk_version_key="default-structural-v1",
+        benchmark_source="unit test",
+        max_cases=3,
+        min_failure_count=0,
+        min_max_rank=0,
+        high_recurrence_count=0,
+        deep_miss_rank=0,
+        selected_count=1,
+        cases=[
+            RuntimeEvalBenchmarkCase(
+                corpus_id=11,
+                title=covered_paper.title,
+                primary_source_system="biocxml",
+                query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+                query=covered_paper.title,
+                stratum_key="benchmark:biomedical_optimization_v3|family:title_global|biocxml",
+                benchmark_key="biomedical_optimization_v3",
+                benchmark_labels=["biomedical_optimization"],
+            )
+        ],
+    )
+    optimize_path = tmp_path / "biomedical_optimization_v3.json"
+    optimize_path.write_text(optimize_report.model_dump_json(indent=2))
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: [covered_paper],
+    )
+
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match="biomedical_holdout_v1 produced 0 eligible papers after overlap exclusion",
+    ):
+        build_biomedical_holdout_benchmark(
+            graph_release_id="current",
+            optimize_benchmark_path=optimize_path,
+            connect=lambda: None,
+        )
+
+
+def test_build_biomedical_holdout_benchmark_unions_caller_and_optimize_exclusions(
+    tmp_path: Path,
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    optimize_paper = _paper(11, title="Optimize title")
+    caller_excluded = _paper(22, title="Caller excluded title")
+    holdout_paper = _paper(33, title="Held-out biomedical benchmark paper")
+    for paper in (optimize_paper, caller_excluded, holdout_paper):
+        paper.primary_source_system = "biocxml"
+
+    optimize_report = RagRuntimeEvalBenchmarkReport(
+        benchmark_key="biomedical_optimization_v3",
+        graph_release_id="current",
+        graph_run_id="run-1",
+        bundle_checksum="checksum",
+        graph_name="Current Graph",
+        chunk_version_key="default-structural-v1",
+        benchmark_source="unit test",
+        max_cases=3,
+        min_failure_count=0,
+        min_max_rank=0,
+        high_recurrence_count=0,
+        deep_miss_rank=0,
+        selected_count=1,
+        cases=[
+            RuntimeEvalBenchmarkCase(
+                corpus_id=11,
+                title=optimize_paper.title,
+                primary_source_system="biocxml",
+                query_family=RuntimeEvalQueryFamily.TITLE_GLOBAL,
+                query=optimize_paper.title,
+                stratum_key="benchmark:biomedical_optimization_v3|family:title_global|biocxml",
+                benchmark_key="biomedical_optimization_v3",
+                benchmark_labels=["biomedical_optimization"],
+            )
+        ],
+    )
+    optimize_path = tmp_path / "biomedical_optimization_v3.json"
+    optimize_path.write_text(optimize_report.model_dump_json(indent=2))
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: [optimize_paper, caller_excluded, holdout_paper],
+    )
+
+    report = build_biomedical_holdout_benchmark(
+        graph_release_id="current",
+        optimize_benchmark_path=optimize_path,
+        exclude_corpus_ids={22},
+        query_families=[RuntimeEvalQueryFamily.SENTENCE_GLOBAL],
+        connect=lambda: None,
+    )
+
+    assert report.selected_count == 1
+    assert {case.corpus_id for case in report.cases} == {33}
+
+
+def test_build_biomedical_holdout_benchmark_rotates_to_supported_family(
+    tmp_path: Path,
+    monkeypatch,
+):
+    class FakeRepository:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def resolve_graph_release(self, graph_release_id: str):
+            assert graph_release_id == "current"
+            return SimpleNamespace(
+                graph_release_id="current",
+                graph_run_id="run-1",
+                bundle_checksum="checksum",
+                graph_name="Current Graph",
+            )
+
+    sentence_only_paper = _paper(44, title="Outcome heading")
+    sentence_only_paper.primary_source_system = "biocxml"
+
+    optimize_report = RagRuntimeEvalBenchmarkReport(
+        benchmark_key="biomedical_optimization_v3",
+        graph_release_id="current",
+        graph_run_id="run-1",
+        bundle_checksum="checksum",
+        graph_name="Current Graph",
+        chunk_version_key="default-structural-v1",
+        benchmark_source="unit test",
+        max_cases=0,
+        min_failure_count=0,
+        min_max_rank=0,
+        high_recurrence_count=0,
+        deep_miss_rank=0,
+        selected_count=0,
+        cases=[],
+    )
+    optimize_path = tmp_path / "biomedical_optimization_v3.json"
+    optimize_path.write_text(optimize_report.model_dump_json(indent=2))
+
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.PostgresRagRepository",
+        FakeRepository,
+    )
+    monkeypatch.setattr(
+        "app.rag_ingest.runtime_eval_benchmarks.fetch_runtime_eval_population",
+        lambda **kwargs: [sentence_only_paper],
+    )
+
+    report = build_biomedical_holdout_benchmark(
+        graph_release_id="current",
+        optimize_benchmark_path=optimize_path,
+        paper_sample_size=4,
+        query_families=[
+            RuntimeEvalQueryFamily.TITLE_GLOBAL,
+            RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+        ],
+        connect=lambda: None,
+    )
+
+    assert report.selected_count == 1
+    assert report.cases[0].query_family == RuntimeEvalQueryFamily.SENTENCE_GLOBAL
+
+
 def test_load_runtime_eval_benchmark_cases_preserves_explicit_queries(tmp_path: Path):
     benchmark_report = RagRuntimeEvalBenchmarkReport(
         benchmark_key="sentence_hard_v1",
@@ -414,12 +948,13 @@ def test_run_rag_runtime_case_evaluation_uses_explicit_cases(monkeypatch):
 
 
 def test_benchmark_paper_disjointness():
-    """Verify no corpus_id appears in multiple benchmark files (overfit guard).
+    """Verify required benchmarks remain paper-disjoint (overfit guard).
 
     Legacy benchmarks (sentence_hard_v1, clinical_actionable_v1, evidence_intent_v1) were
     built independently from the same graph corpus before the disjointness policy. Their
-    overlaps are documented. New benchmarks (title_global, adversarial_router, neuropsych_safety,
-    title_selected) MUST be disjoint from all others.
+    overlaps are documented. The required acceptance suites must remain disjoint from one
+    another, with the explicit exception that citation-context is intentionally derived
+    from holdout. Specialist guardrail/shadow suites are allowed to reuse covered papers.
     """
     benchmark_dir = Path(__file__).resolve().parents[1] / "data" / "runtime_eval_benchmarks"
     benchmark_paths = sorted(benchmark_dir.glob("*.json"))
@@ -431,9 +966,8 @@ def test_benchmark_paper_disjointness():
         "clinical_actionable_v1",
         "evidence_intent_v1",
     })
-    _REPLACEMENT_OVERLAP_ALLOWED = frozenset({
+    _DEPRECATED_BENCHMARKS = frozenset({
         "biomedical_optimization_v2",
-        "biomedical_optimization_v3",
     })
 
     corpus_to_benchmarks: dict[int, list[str]] = {}
@@ -443,21 +977,43 @@ def test_benchmark_paper_disjointness():
         for corpus_id in report_keys:
             corpus_to_benchmarks.setdefault(corpus_id, []).append(report.benchmark_key)
 
-    # Filter: only flag overlaps that involve at least one non-legacy benchmark
+    _DERIVED_OVERLAP_ALLOWED = frozenset(
+        {
+            "biomedical_holdout_v1",
+            "biomedical_citation_context_v1",
+        }
+    )
+
+    required_keys = {
+        spec.benchmark_key
+        for spec in (
+            get_benchmark_suite_spec(path.stem)
+            for path in benchmark_paths
+        )
+        if spec is not None and spec.gate_mode == BenchmarkSuiteGateMode.REQUIRED
+    }
+
     violations = {}
     for cid, keys in corpus_to_benchmarks.items():
         if len(keys) <= 1:
             continue
-        key_set = set(keys)
+        key_set = set(keys) - _DEPRECATED_BENCHMARKS
+        if len(key_set) <= 1:
+            continue
+        required_overlap = key_set & required_keys
+        if len(required_overlap) <= 1:
+            continue
         if key_set <= _LEGACY_OVERLAP_ALLOWED:
             continue  # All-legacy overlap is documented, not a violation
-        if key_set <= _REPLACEMENT_OVERLAP_ALLOWED:
-            continue  # v3 intentionally supersedes the invalid v2 benchmark
-        violations[cid] = keys
+        if key_set <= _DERIVED_OVERLAP_ALLOWED:
+            continue  # Citation-context is intentionally derived from holdout.
+        if required_overlap <= _DERIVED_OVERLAP_ALLOWED:
+            continue
+        violations[cid] = sorted(required_overlap)
 
     assert not violations, (
-        f"Paper-disjointness violated: {len(violations)} corpus_ids appear in multiple benchmarks "
-        f"(including non-legacy): "
+        "Paper-disjointness violated: "
+        f"{len(violations)} corpus_ids appear in multiple required benchmarks: "
         + ", ".join(
             f"{cid} in [{', '.join(keys)}]" for cid, keys in sorted(violations.items())
         )

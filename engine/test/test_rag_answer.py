@@ -4,7 +4,7 @@ from app.rag.answer import (
     build_baseline_answer_payload,
     select_answer_grounding_bundles,
 )
-from app.rag.models import EvidenceBundle, PaperEvidenceHit
+from app.rag.models import EvidenceBundle, PaperAuthorRecord, PaperEvidenceHit
 from app.rag.types import QueryRetrievalProfile, RetrievalChannel
 
 
@@ -19,6 +19,7 @@ def _bundle(
     title_similarity: float = 0.0,
     chunk_lexical_score: float = 0.0,
     snippet_channel: RetrievalChannel | None = None,
+    author_names: tuple[str, ...] = (),
 ) -> EvidenceBundle:
     return EvidenceBundle(
         paper=PaperEvidenceHit(
@@ -45,6 +46,15 @@ def _bundle(
         rank=rank,
         snippet=snippet,
         snippet_channel=snippet_channel,
+        authors=[
+            PaperAuthorRecord(
+                corpus_id=corpus_id,
+                author_position=index,
+                author_id=f"author-{corpus_id}-{index}",
+                name=name,
+            )
+            for index, name in enumerate(author_names, start=1)
+        ],
     )
 
 
@@ -123,6 +133,27 @@ def test_build_baseline_answer_payload_keeps_exact_title_anchor_bundle_in_answer
     assert payload.segment_corpus_ids == (None, 253024255, 5496257)
     assert payload.grounding_corpus_ids == (253024255, 5496257)
     assert query_title in payload.text
+
+
+def test_build_baseline_answer_payload_includes_author_and_journal_citation_label():
+    bundles = [
+        _bundle(
+            corpus_id=101,
+            title="Melatonin for postoperative delirium",
+            score=0.92,
+            rank=1,
+            snippet="Melatonin reduced postoperative delirium incidence.",
+            author_names=("Jane Doe", "John Smith"),
+        )
+    ]
+
+    payload = build_baseline_answer_payload(bundles, max_items=1)
+
+    assert payload.text is not None
+    assert (
+        "Doe et al. | Example Journal | 2024 | Melatonin for postoperative delirium"
+        in payload.text
+    )
 
 
 def test_select_answer_grounding_bundles_prefers_chunk_supported_bundle_for_passage_queries():

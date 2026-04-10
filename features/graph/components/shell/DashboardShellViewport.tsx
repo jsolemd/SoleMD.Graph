@@ -66,6 +66,10 @@ const AboutPanel = dynamic(
   () => import("../panels/AboutPanel").then((mod) => mod.AboutPanel),
   { loading: () => null },
 );
+const WikiPanel = dynamic(
+  () => import("@/features/wiki/components/WikiPanel").then((mod) => mod.WikiPanel),
+  { loading: () => null },
+);
 const TimelineBar = dynamic(
   () => import("../chrome/TimelineBar").then((mod) => mod.TimelineBar),
   { loading: () => null },
@@ -162,6 +166,9 @@ export function DashboardShellViewport(state: DashboardShellController) {
                   bundle={bundle}
                   runReadOnlyQuery={queries.runReadOnlyQuery}
                 />
+              )}
+              {!uiHidden && panelsVisible && activePanel === "wiki" && (
+                <WikiPanel key="wiki" bundle={bundle} />
               )}
             </AnimatePresence>
 

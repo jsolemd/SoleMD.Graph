@@ -36,6 +36,7 @@ SELECT
 FROM pubtator.entity_annotations,
      unnest(string_to_array(mentions, '|')) AS mention
 WHERE concept_id != ''
+  AND concept_id != '-'
   AND mentions != ''
 GROUP BY entity_type, concept_id
 ON CONFLICT (concept_id, entity_type) DO UPDATE SET
@@ -53,6 +54,7 @@ WHERE e.concept_id = er.concept_id
 """
 
 _COUNT_SQL = "SELECT COUNT(*) AS cnt FROM solemd.entities"
+_COUNT_ENTITY_ALIASES_SQL = "SELECT COUNT(*) AS cnt FROM solemd.entity_aliases"
 
 _DRY_RUN_SQL = """
 SELECT
@@ -64,6 +66,165 @@ WHERE concept_id != ''
 GROUP BY entity_type
 ORDER BY concept_count DESC
 """
+
+_DRY_RUN_ENTITY_ALIASES_SQL = """
+WITH alias_candidates AS (
+    SELECT
+        e.concept_id,
+        e.entity_type,
+        lower(regexp_replace(trim(e.canonical_name), '\s+', ' ', 'g')) AS alias_key
+    FROM solemd.entities e
+    WHERE e.concept_id != '-'
+      AND NULLIF(trim(e.canonical_name), '') IS NOT NULL
+    UNION ALL
+    SELECT
+        e.concept_id,
+        e.entity_type,
+        lower(regexp_replace(trim(synonym), '\s+', ' ', 'g')) AS alias_key
+    FROM solemd.entities e
+    CROSS JOIN LATERAL unnest(COALESCE(e.synonyms, ARRAY[]::text[])) AS synonym
+    WHERE e.concept_id != '-'
+      AND NULLIF(trim(synonym), '') IS NOT NULL
+),
+ranked_aliases AS (
+    SELECT
+        concept_id,
+        entity_type,
+        alias_key,
+        ROW_NUMBER() OVER (
+            PARTITION BY concept_id, entity_type, alias_key
+            ORDER BY alias_key
+        ) AS alias_rank
+    FROM alias_candidates
+)
+SELECT COUNT(*) AS cnt
+FROM ranked_aliases
+WHERE alias_rank = 1
+"""
+
+_TRUNCATE_ENTITY_ALIASES_SQL = "TRUNCATE TABLE solemd.entity_aliases"
+
+_INSERT_ENTITY_ALIASES_SQL = """
+WITH alias_candidates AS (
+    SELECT
+        e.concept_id,
+        e.entity_type,
+        regexp_replace(trim(e.canonical_name), '\s+', ' ', 'g') AS alias_text,
+        lower(regexp_replace(trim(e.canonical_name), '\s+', ' ', 'g')) AS alias_key,
+        TRUE AS is_canonical,
+        'canonical_name'::TEXT AS alias_source,
+        COALESCE(NULLIF(trim(e.canonical_name), ''), e.concept_id) AS entity_canonical_name,
+        COALESCE(e.paper_count, 0) AS entity_paper_count
+    FROM solemd.entities e
+    WHERE e.concept_id != '-'
+      AND NULLIF(trim(e.canonical_name), '') IS NOT NULL
+    UNION ALL
+    SELECT
+        e.concept_id,
+        e.entity_type,
+        regexp_replace(trim(synonym), '\s+', ' ', 'g') AS alias_text,
+        lower(regexp_replace(trim(synonym), '\s+', ' ', 'g')) AS alias_key,
+        FALSE AS is_canonical,
+        'synonym'::TEXT AS alias_source,
+        COALESCE(NULLIF(trim(e.canonical_name), ''), e.concept_id) AS entity_canonical_name,
+        COALESCE(e.paper_count, 0) AS entity_paper_count
+    FROM solemd.entities e
+    CROSS JOIN LATERAL unnest(COALESCE(e.synonyms, ARRAY[]::TEXT[])) AS synonym
+    WHERE e.concept_id != '-'
+      AND NULLIF(trim(synonym), '') IS NOT NULL
+),
+ranked_aliases AS (
+    SELECT
+        concept_id,
+        entity_type,
+        alias_text,
+        alias_key,
+        is_canonical,
+        alias_source,
+        entity_canonical_name,
+        entity_paper_count,
+        ROW_NUMBER() OVER (
+            PARTITION BY concept_id, entity_type, alias_key
+            ORDER BY is_canonical DESC, alias_text
+        ) AS alias_rank
+    FROM alias_candidates
+)
+INSERT INTO solemd.entity_aliases (
+    concept_id,
+    entity_type,
+    alias_text,
+    alias_key,
+    is_canonical,
+    alias_source,
+    canonical_name,
+    paper_count
+)
+SELECT
+    concept_id,
+    entity_type,
+    alias_text,
+    alias_key,
+    is_canonical,
+    alias_source,
+    COALESCE(NULLIF(trim(entity_canonical_name), ''), alias_text),
+    entity_paper_count
+FROM ranked_aliases
+WHERE alias_rank = 1
+"""
+
+
+def _refresh_entity_aliases(cur) -> tuple[int, int]:
+    logger.info("Refreshing solemd.entity_aliases from solemd.entities ...")
+    cur.execute(_TRUNCATE_ENTITY_ALIASES_SQL)
+    cur.execute(_INSERT_ENTITY_ALIASES_SQL)
+    inserted = cur.rowcount
+    cur.execute(_COUNT_ENTITY_ALIASES_SQL)
+    total = cur.fetchone()["cnt"]
+    logger.info("Loaded %d entity aliases", total)
+    return inserted, total
+
+
+def build_entity_aliases_table(*, dry_run: bool = False) -> dict:
+    """Rebuild the derived entity alias catalog from ``solemd.entities``."""
+
+    t_start = time.monotonic()
+
+    if dry_run:
+        with db.connect() as conn, conn.cursor() as cur:
+            cur.execute(_DRY_RUN_ENTITY_ALIASES_SQL)
+            total_aliases = cur.fetchone()["cnt"]
+            logger.info("Dry run — entity alias candidates: %d", total_aliases)
+            return {"dry_run": True, "total_aliases": total_aliases}
+
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            inserted, total = _refresh_entity_aliases(cur)
+        conn.commit()
+        log_etl_run(
+            conn,
+            operation="build_entity_aliases",
+            source="solemd.entities",
+            rows_processed=inserted,
+            rows_loaded=total,
+            status="completed",
+            metadata={
+                "inserted": inserted,
+                "total_aliases": total,
+            },
+        )
+
+    elapsed = time.monotonic() - t_start
+    logger.info(
+        "Entity alias refresh complete: %d aliases in %.1fs (%.1f min)",
+        total,
+        elapsed,
+        elapsed / 60,
+    )
+    return {
+        "inserted": inserted,
+        "total_aliases": total,
+        "elapsed_seconds": round(elapsed, 1),
+    }
 
 
 def build_entities_table(*, dry_run: bool = False) -> dict:
@@ -109,6 +270,8 @@ def build_entities_table(*, dry_run: bool = False) -> dict:
             cur.execute(_COUNT_SQL)
             total = cur.fetchone()["cnt"]
 
+            alias_rows_inserted, total_aliases = _refresh_entity_aliases(cur)
+
         conn.commit()
 
         # Log to ETL history
@@ -123,6 +286,8 @@ def build_entities_table(*, dry_run: bool = False) -> dict:
                 "upserted": upserted,
                 "reconciled_from_entity_rule": reconciled,
                 "total_entities": total,
+                "entity_aliases_inserted": alias_rows_inserted,
+                "total_entity_aliases": total_aliases,
             },
         )
 
@@ -138,6 +303,8 @@ def build_entities_table(*, dry_run: bool = False) -> dict:
         "upserted": upserted,
         "reconciled_from_entity_rule": reconciled,
         "total_entities": total,
+        "entity_aliases_inserted": alias_rows_inserted,
+        "total_entity_aliases": total_aliases,
         "elapsed_seconds": round(elapsed, 1),
     }
 
@@ -147,12 +314,21 @@ def main() -> None:
         description="Aggregate PubTator entities into solemd.entities",
     )
     parser.add_argument("--dry-run", action="store_true", help="Report counts only")
+    parser.add_argument(
+        "--aliases-only",
+        action="store_true",
+        help="Refresh only the derived entity alias catalog from solemd.entities",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     )
+
+    if args.aliases_only:
+        build_entity_aliases_table(dry_run=args.dry_run)
+        return
 
     build_entities_table(dry_run=args.dry_run)
 

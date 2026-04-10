@@ -64,12 +64,12 @@ describe("evidence-assist", () => {
       resolvePromptInteractionTriggerMatch({
         providers: [EVIDENCE_ASSIST_PROVIDER],
         textBeforeCursor: "This claim suggests ",
-        insertedText: "@",
+        insertedText: "/evidence",
       }),
     ).toMatchObject({
       provider: EVIDENCE_ASSIST_PROVIDER,
       trigger: {
-        pattern: "@",
+        pattern: "/evidence",
         defaultCommandId: "support",
       },
       deletePrefixChars: 0,
@@ -81,7 +81,7 @@ describe("evidence-assist", () => {
       resolvePromptInteractionTriggerMatch({
         providers: [EVIDENCE_ASSIST_PROVIDER],
         textBeforeCursor: "email",
-        insertedText: "@",
+        insertedText: "/evidence",
       }),
     ).toBeNull();
   });

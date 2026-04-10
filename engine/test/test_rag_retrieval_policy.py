@@ -2,21 +2,31 @@ from __future__ import annotations
 
 from app.rag.models import PaperEvidenceHit, PaperRetrievalQuery
 from app.rag.query_enrichment import normalize_query_text
+from app.rag.query_metadata import QueryMetadataHints
 from app.rag.retrieval_policy import (
+    biomedical_rerank_decision,
     chunk_search_queries,
     citation_context_candidate_ids,
+    dense_query_decision,
+    direct_passage_support_corpus_ids,
     entity_relation_candidate_ids,
     has_direct_retrieval_support,
     has_precise_title_resolution,
     has_selected_direct_anchor,
+    has_stable_direct_passage_frontier,
+    has_stable_direct_passage_leader,
     has_strong_lexical_title_anchor,
     has_weak_passage_anchor,
     passage_direct_support_tier,
+    should_expand_citation_frontier,
+    should_fetch_missing_citation_contexts,
     should_fetch_semantic_neighbors,
+    should_prefetch_citation_contexts,
     should_run_biomedical_reranker,
     should_run_dense_query,
     should_run_paper_lexical_fallback,
     should_run_seeded_channel_search,
+    should_run_title_chunk_rescue,
     should_skip_runtime_entity_enrichment,
 )
 from app.rag.search_plan import build_search_plan
@@ -31,6 +41,7 @@ def _paper_hit(
     chunk_lexical_score: float = 0.0,
     passage_alignment_score: float = 0.0,
     selected_context_score: float = 0.0,
+    cited_context_score: float = 0.0,
     entity_score: float = 0.0,
     relation_score: float = 0.0,
 ) -> PaperEvidenceHit:
@@ -52,6 +63,7 @@ def _paper_hit(
         chunk_lexical_score=chunk_lexical_score,
         passage_alignment_score=passage_alignment_score,
         selected_context_score=selected_context_score,
+        cited_context_score=cited_context_score,
         entity_score=entity_score,
         relation_score=relation_score,
     )
@@ -63,6 +75,7 @@ def _query(
     retrieval_profile: QueryRetrievalProfile,
     selected_node_id: str | None = None,
     clinical_intent: ClinicalQueryIntent = ClinicalQueryIntent.GENERAL,
+    metadata_hints: QueryMetadataHints | None = None,
 ) -> PaperRetrievalQuery:
     return PaperRetrievalQuery(
         graph_release_id="current",
@@ -72,6 +85,7 @@ def _query(
         retrieval_profile=retrieval_profile,
         clinical_intent=clinical_intent,
         scope_mode=RetrievalScope.GLOBAL,
+        metadata_hints=metadata_hints or QueryMetadataHints(),
     )
 
 
@@ -123,6 +137,75 @@ def test_should_run_dense_query_runs_for_title_lookup_without_selected_anchor():
     )
 
     assert should_run_dense_query(query=query)
+
+
+def test_should_skip_runtime_entity_enrichment_for_metadata_queries():
+    query = _query(
+        "Neurology 2018 score that predicts 1-year functional status",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        metadata_hints=QueryMetadataHints(
+            topic_query="score that predicts 1-year functional status",
+            year_hint=2018,
+            author_hint="Neurology",
+            journal_hint="Neurology",
+            matched_cues=("author", "journal", "year"),
+        ),
+    )
+
+    assert should_skip_runtime_entity_enrichment(query=query)
+
+
+def test_should_run_seeded_channel_search_skips_metadata_queries_once_lexical_hits_land():
+    query = _query(
+        "Neurology 2018 score that predicts 1-year functional status",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        metadata_hints=QueryMetadataHints(
+            topic_query="score that predicts 1-year functional status",
+            year_hint=2018,
+            author_hint="Neurology",
+            journal_hint="Neurology",
+            matched_cues=("author", "journal", "year"),
+        ),
+    )
+
+    assert not should_run_seeded_channel_search(
+        query=query,
+        lexical_hits=[_paper_hit(58630431, lexical_score=0.55)],
+    )
+
+
+def test_dense_query_decision_skips_metadata_queries_after_lexical_candidate_lands():
+    query = _query(
+        "Revista de Sa de 2020 covid-19 pandemic fear reflections mental health",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        metadata_hints=QueryMetadataHints(
+            topic_query="covid-19 pandemic fear reflections mental health",
+            year_hint=2020,
+            journal_hint="Revista de Sa de",
+            matched_cues=("journal", "year"),
+        ),
+    )
+
+    assert dense_query_decision(
+        query=query,
+        lexical_hits=[_paper_hit(218674987, lexical_score=0.45)],
+    ) == (False, "metadata_lexical_leader")
+
+
+def test_dense_query_decision_skips_title_lookup_after_stable_chunk_rescue():
+    query = _query(
+        (
+            "Transgenic mice overexpressing the 695-amino acid isoform of human "
+            "Alzheimer beta-amyloid precursor protein"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert dense_query_decision(
+        query=query,
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(32419070, chunk_lexical_score=0.48)],
+    ) == (False, "stable_direct_passage_leader")
 
 
 def test_should_run_dense_query_runs_for_strong_title_prefix_without_selected_anchor():
@@ -180,6 +263,125 @@ def test_should_run_seeded_channel_search_skips_precise_title_resolution():
     )
 
 
+def test_should_run_seeded_channel_search_skips_stable_title_chunk_rescue_frontier():
+    query = _query(
+        (
+            "Transgenic mice overexpressing the 695-amino acid isoform of human "
+            "Alzheimer beta-amyloid precursor protein"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_run_seeded_channel_search(
+        query=query,
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(32419070, chunk_lexical_score=0.48)],
+    )
+
+
+def test_should_fetch_missing_citation_contexts_skips_precise_title_hits_with_preview_text():
+    hit = _paper_hit(11, title="Selected paper title")
+    hit.abstract = "Abstract preview"
+
+    assert not should_fetch_missing_citation_contexts(
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        precise_title_resolution=True,
+        top_hits=[hit],
+    )
+
+
+def test_should_fetch_missing_citation_contexts_skips_single_direct_chunk_hit_even_for_title_lookup(
+):
+    hit = _paper_hit(32419070, chunk_lexical_score=0.48)
+    hit.chunk_snippet = "Recovered chunk snippet"
+
+    assert not should_fetch_missing_citation_contexts(
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        precise_title_resolution=False,
+        top_hits=[hit],
+    )
+
+
+def test_should_fetch_missing_citation_contexts_keeps_precise_title_hits_without_preview_text():
+    hit = _paper_hit(11, title="Selected paper title")
+    hit.abstract = None
+    hit.tldr = None
+    hit.chunk_snippet = None
+
+    assert should_fetch_missing_citation_contexts(
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        precise_title_resolution=True,
+        top_hits=[hit],
+    )
+
+
+def test_should_fetch_missing_citation_contexts_keeps_ambiguous_title_hits():
+    assert should_fetch_missing_citation_contexts(
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        precise_title_resolution=False,
+        top_hits=[_paper_hit(11, title="Selected paper title")],
+    )
+
+
+def test_should_prefetch_citation_contexts_skips_single_strong_chunk_anchor():
+    query = _query(
+        "Representative claim sentence about sleep quality outcomes.",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert not should_prefetch_citation_contexts(
+        query=query,
+        lexical_hits=[],
+        chunk_lexical_hits=[
+            _paper_hit(
+                11,
+                title="Representative title",
+                chunk_lexical_score=0.02,
+            )
+        ],
+    )
+
+
+def test_should_prefetch_citation_contexts_skips_title_lookup_after_chunk_rescue():
+    query = _query(
+        (
+            "Transgenic mice overexpressing the 695-amino acid isoform of human "
+            "Alzheimer beta-amyloid precursor protein"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_prefetch_citation_contexts(
+        query=query,
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(32419070, chunk_lexical_score=0.48)],
+    )
+
+
+def test_should_prefetch_citation_contexts_keeps_multi_candidate_passage_queries():
+    query = _query(
+        "Representative claim sentence about sleep quality outcomes.",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert should_prefetch_citation_contexts(
+        query=query,
+        lexical_hits=[],
+        chunk_lexical_hits=[
+            _paper_hit(11, title="Title 11", chunk_lexical_score=0.02),
+            _paper_hit(22, title="Title 22", chunk_lexical_score=0.018),
+        ],
+    )
+
+
+def test_should_fetch_missing_citation_contexts_skips_single_strong_passage_anchor():
+    assert not should_fetch_missing_citation_contexts(
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        precise_title_resolution=False,
+        top_hits=[_paper_hit(11, chunk_lexical_score=0.02)],
+    )
+
+
 def test_should_run_seeded_channel_search_skips_duplicate_title_anchor_set():
     query = _query(
         "Selected paper title.",
@@ -218,6 +420,98 @@ def test_should_run_dense_query_skips_selected_direct_anchor_when_precision_is_p
         query=query,
         selected_direct_anchor=True,
     )
+
+
+def test_direct_passage_support_corpus_ids_deduplicate_same_paper_support():
+    assert direct_passage_support_corpus_ids(
+        [
+            _paper_hit(11, lexical_score=0.02),
+            _paper_hit(11, chunk_lexical_score=0.03),
+            _paper_hit(22, passage_alignment_score=0.8),
+        ]
+    ) == [11]
+
+
+def test_dense_query_decision_skips_stable_direct_passage_frontier():
+    query = _query(
+        "Actigraphy monitoring was recorded at one-minute intervals.",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    should_run, reason = dense_query_decision(
+        query=query,
+        lexical_hits=[_paper_hit(11, lexical_score=0.02)],
+        chunk_lexical_hits=[_paper_hit(11, chunk_lexical_score=0.03)],
+    )
+
+    assert has_stable_direct_passage_frontier(
+        [
+            _paper_hit(11, lexical_score=0.02),
+            _paper_hit(11, chunk_lexical_score=0.03),
+        ]
+    )
+    assert not should_run
+    assert reason == "stable_direct_passage_leader"
+
+
+def test_should_run_title_chunk_rescue_only_after_failed_long_title_lookup():
+    query = _query(
+        (
+            "Transgenic mice overexpressing the 695-amino acid isoform of human "
+            "Alzheimer beta-amyloid precursor protein containing a Lys670 Asn variant"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+    query.use_title_similarity = False
+    query.use_title_candidate_lookup = True
+
+    assert should_run_title_chunk_rescue(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[],
+    )
+
+
+def test_should_run_title_chunk_rescue_skips_once_title_lane_found_a_paper():
+    query = _query(
+        (
+            "Effects of prenatal ethanol exposure on physical growths, sensory "
+            "reflex maturation and brain development in the rat"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+    query.use_title_similarity = False
+    query.use_title_candidate_lookup = True
+
+    assert not should_run_title_chunk_rescue(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[_paper_hit(11, title="Effects of prenatal ethanol exposure")],
+    )
+
+
+def test_dense_query_decision_keeps_ambiguous_direct_passage_frontier():
+    query = _query(
+        "Representative claim sentence about sleep quality outcomes.",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    should_run, reason = dense_query_decision(
+        query=query,
+        chunk_lexical_hits=[
+            _paper_hit(11, chunk_lexical_score=0.03),
+            _paper_hit(22, chunk_lexical_score=0.025),
+        ],
+    )
+
+    assert not has_stable_direct_passage_frontier(
+        [
+            _paper_hit(11, chunk_lexical_score=0.03),
+            _paper_hit(22, chunk_lexical_score=0.025),
+        ]
+    )
+    assert should_run
+    assert reason == "candidate_recovery"
 
 
 def test_chunk_search_queries_preserve_raw_statistical_passage_before_normalized_fallbacks():
@@ -271,6 +565,25 @@ def test_should_fetch_semantic_neighbors_skips_selected_title_when_exact_anchor_
         search_plan=search_plan,
         selected_corpus_id=11,
         lexical_hits=lexical_hits,
+    )
+
+
+def test_should_fetch_semantic_neighbors_skips_title_lookup_after_chunk_rescue():
+    query = _query(
+        (
+            "Transgenic mice overexpressing the 695-amino acid isoform of human "
+            "Alzheimer beta-amyloid precursor protein"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+    search_plan = build_search_plan(query)
+
+    assert not should_fetch_semantic_neighbors(
+        query=query,
+        search_plan=search_plan,
+        selected_corpus_id=32419070,
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(32419070, chunk_lexical_score=0.48)],
     )
 
 
@@ -414,6 +727,65 @@ def test_should_run_biomedical_reranker_runs_for_general_profile_queries():
     )
 
 
+def test_has_stable_direct_passage_leader_requires_competing_direct_support():
+    assert has_stable_direct_passage_leader(
+        [
+            _paper_hit(11, chunk_lexical_score=0.9),
+            _paper_hit(22, passage_alignment_score=0.7),
+            _paper_hit(33),
+        ]
+    )
+    assert not has_stable_direct_passage_leader(
+        [
+            _paper_hit(11, chunk_lexical_score=0.9),
+            _paper_hit(22, chunk_lexical_score=0.7),
+            _paper_hit(33),
+        ]
+    )
+
+
+def test_should_run_biomedical_reranker_skips_stable_direct_passage_leader():
+    query = _query(
+        "Actigraphy monitoring was recorded at one-minute intervals.",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    should_run, reason = biomedical_rerank_decision(
+        query=query,
+        selected_corpus_id=None,
+        ranked_papers=[
+            _paper_hit(11, chunk_lexical_score=0.9),
+            _paper_hit(22, passage_alignment_score=0.7),
+            _paper_hit(33),
+        ],
+        enabled=True,
+    )
+
+    assert not should_run
+    assert reason == "stable_direct_passage_leader"
+
+
+def test_should_run_biomedical_reranker_keeps_ambiguous_direct_passage_candidates():
+    query = _query(
+        "Representative claim sentence about sleep quality outcomes.",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    should_run, reason = biomedical_rerank_decision(
+        query=query,
+        selected_corpus_id=None,
+        ranked_papers=[
+            _paper_hit(11, chunk_lexical_score=0.9),
+            _paper_hit(22, chunk_lexical_score=0.7),
+            _paper_hit(33),
+        ],
+        enabled=True,
+    )
+
+    assert should_run
+    assert reason == "candidate_ambiguity"
+
+
 def test_should_run_biomedical_reranker_skips_title_lookup_queries():
     query = _query(
         "COMT Val158Met polymorphism and psychosis risk",
@@ -473,6 +845,19 @@ def test_citation_context_candidate_ids_only_include_direct_passage_support():
     ) == [11]
 
 
+def test_citation_context_candidate_ids_bounds_unanchored_title_lookup_frontier():
+    paper_hits = [_paper_hit(corpus_id) for corpus_id in range(1, 9)]
+
+    assert citation_context_candidate_ids(
+        paper_hits=paper_hits,
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        rerank_topn=3,
+        query_text="Long biomedical query without a lexical title anchor",
+        lexical_hits=[],
+        selected_direct_anchor=False,
+    ) == [1, 2, 3, 4, 5]
+
+
 def test_entity_relation_candidate_ids_bounds_passage_enrichment_to_direct_candidates():
     ranked = [
         _paper_hit(11, chunk_lexical_score=0.95),
@@ -503,6 +888,19 @@ def test_entity_relation_candidate_ids_keeps_full_rank_order_for_non_passage_que
         k=1,
         rerank_topn=3,
     ) == [11, 22, 33]
+
+
+def test_entity_relation_candidate_ids_bounds_unanchored_title_lookup_to_shortlist():
+    ranked = [_paper_hit(corpus_id) for corpus_id in range(1, 9)]
+
+    assert entity_relation_candidate_ids(
+        ranked_papers=ranked,
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        k=3,
+        rerank_topn=3,
+        query_text="Long biomedical query without a lexical title anchor",
+        lexical_hits=[],
+    ) == [1, 2, 3, 4, 5]
 
 
 def test_entity_relation_candidate_ids_limits_precise_title_resolution_to_top_candidate():
@@ -542,6 +940,13 @@ def test_entity_relation_candidate_ids_limits_duplicate_title_anchors_to_anchor_
 def test_has_direct_retrieval_support_uses_selected_context_for_title_queries():
     assert has_direct_retrieval_support(
         paper=_paper_hit(11, selected_context_score=1.0),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+
+def test_has_direct_retrieval_support_does_not_treat_cited_context_as_title_proof():
+    assert not has_direct_retrieval_support(
+        paper=_paper_hit(11, cited_context_score=1.0),
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
     )
 
@@ -602,6 +1007,22 @@ def test_has_selected_direct_anchor_matches_selected_hit_with_direct_support():
     )
 
 
+def test_should_expand_citation_frontier_skips_title_lookup_even_without_anchor():
+    query = _query(
+        (
+            "Transgenic mice overexpressing the 695-amino acid isoform of human "
+            "Alzheimer beta-amyloid precursor protein"
+        ),
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_expand_citation_frontier(
+        query_text=query.query,
+        lexical_hits=[],
+        search_plan=build_search_plan(query),
+    )
+
+
 def test_chunk_search_queries_adds_bounded_phrase_fallbacks_for_passages():
     query = _query(
         "This representative discussion sentence should use chunk lexical retrieval.",
@@ -618,6 +1039,67 @@ def test_chunk_search_queries_adds_bounded_phrase_fallbacks_for_passages():
     assert all(len(candidate.split()) >= 3 for candidate in candidates[1:])
 
 
+def test_chunk_search_queries_prioritizes_specific_phrase_before_full_query_for_long_passages():
+    query = _query(
+        (
+            "The maturity of secretory and target cells determines, in part, the "
+            "ability of a factor to influence glial proliferation, activation, or "
+            "differentiation."
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    candidates = chunk_search_queries(query)
+
+    assert candidates[0] == "influence glial proliferation activation"
+    assert candidates[1] == (
+        "the maturity of secretory and target cells determines in part the "
+        "ability of a factor to influence glial proliferation activation or "
+        "differentiation"
+    )
+    assert "glial proliferation activation" in candidates[2:]
+
+
+def test_chunk_search_queries_demotes_discourse_heavy_lead_in_phrases():
+    query = _query(
+        (
+            "These results suggest that the plateau amplitude in TEA reflects the "
+            "activation of the entire population of synaptic NMDARs and hence the "
+            "maximal gain of NMDAR-mediated synaptic transmission."
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    candidates = chunk_search_queries(query)
+
+    assert candidates[0] == "amplitude in tea reflects"
+    assert candidates[1] == (
+        "these results suggest that the plateau amplitude in tea reflects the "
+        "activation of the entire population of synaptic nmdars and hence the "
+        "maximal gain of nmdar-mediated synaptic transmission"
+    )
+    assert "these results suggest that" not in candidates[:3]
+
+
+def test_chunk_search_queries_skip_fragmented_acronym_fallback_shards():
+    query = _query(
+        (
+            "The authors describe the development of the M.I.N.I. and its family "
+            "of interviews: the M.I.N.I.-Screen, the M.I.N.I.-Plus, and the "
+            "M.I.N.I.-Kid."
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    candidates = chunk_search_queries(query)
+
+    assert candidates[0] == (
+        "the authors describe the development of the m i n i and its family of "
+        "interviews: the m i n i -screen the m i n i -plus and the m i n i -kid"
+    )
+    assert "m i n i" not in candidates[1:]
+
+
 def test_chunk_search_queries_prioritizes_specific_clinical_comparator_phrases():
     query = _query(
         (
@@ -629,13 +1111,13 @@ def test_chunk_search_queries_prioritizes_specific_clinical_comparator_phrases()
 
     candidates = chunk_search_queries(query)
 
-    assert candidates[0] == (
+    assert candidates[0] == "sarilumab monotherapy more effective"
+    assert candidates[1] == (
         "in adults with active rheumatoid arthritis is sarilumab monotherapy more "
         "effective and safe than adalimumab monotherapy"
     )
-    assert "sarilumab monotherapy more effective" in candidates
     assert any(
-        "rheumatoid arthritis" in candidate or "sarilumab monotherapy" in candidate
-        for candidate in candidates[1:4]
+        "rheumatoid arthritis" in candidate or "adalimumab monotherapy" in candidate
+        for candidate in candidates[2:5]
     )
-    assert "in adults with active" not in candidates[1:]
+    assert "in adults with active" not in candidates[2:]

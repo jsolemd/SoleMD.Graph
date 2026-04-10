@@ -45,6 +45,18 @@ class _SqlSpec:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class ResolvedEntityConcept:
+    """Canonical exact entity resolution used across seeded search and finalize."""
+
+    raw_term: str
+    resolved_term: str
+    entity_type: str
+    concept_namespace: str | None
+    concept_id: str
+    rule_confidence: str | None = None
+
+
 def _normalize_json_strings(raw_values: Any) -> list[str]:
     if raw_values is None:
         return []
@@ -83,3 +95,43 @@ def _unique_int_ids(values: Sequence[int]) -> list[int]:
 
 def _unique_stripped(values: Sequence[str]) -> list[str]:
     return list(dict.fromkeys(value.strip() for value in values if value and value.strip()))
+
+
+def _unique_resolved_entity_concepts(
+    values: Sequence[ResolvedEntityConcept],
+) -> list[ResolvedEntityConcept]:
+    unique: list[ResolvedEntityConcept] = []
+    seen: set[tuple[str, str, str | None, str]] = set()
+    for value in values:
+        key = (
+            value.raw_term.lower(),
+            value.entity_type,
+            value.concept_namespace,
+            value.concept_id,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(value)
+    return unique
+
+
+def _resolved_entity_concept_arrays(
+    values: Sequence[ResolvedEntityConcept],
+) -> tuple[list[str], list[str], list[str | None], list[str]]:
+    unique = _unique_resolved_entity_concepts(values)
+    raw_terms: list[str] = []
+    entity_types: list[str] = []
+    concept_namespaces: list[str | None] = []
+    concept_ids: list[str] = []
+    for value in unique:
+        raw_terms.append(value.raw_term)
+        entity_types.append(value.entity_type)
+        concept_namespaces.append(value.concept_namespace)
+        concept_ids.append(value.concept_id)
+    return (
+        raw_terms,
+        entity_types,
+        concept_namespaces,
+        concept_ids,
+    )

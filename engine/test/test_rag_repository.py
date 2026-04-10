@@ -8,11 +8,13 @@ from app.pgvector_utils import format_vector_literal
 from app.rag import queries
 from app.rag.models import PaperEvidenceHit
 from app.rag.query_enrichment import normalize_title_key
+from app.rag.query_metadata import QueryMetadataHints
 from app.rag.repository import (
     ENTITY_FUZZY_SIMILARITY_THRESHOLD,
     ENTITY_TOP_CONCEPTS_PER_TERM,
     PostgresRagRepository,
 )
+from app.rag.repository_support import ResolvedEntityConcept
 from app.rag.title_anchor import prefix_range_upper_bound
 
 
@@ -352,6 +354,424 @@ def test_search_papers_returns_phrase_title_candidates_before_global_fts_only(mo
     ]
 
 
+def test_paper_metadata_search_sql_includes_graph_input_cte():
+    assert "graph_input AS NOT MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+
+
+def test_paper_metadata_search_current_map_sql_uses_current_map_scope():
+    assert "is_in_current_map IS TRUE" in queries.PAPER_METADATA_SEARCH_CURRENT_MAP_SQL
+    assert "graph_input AS NOT MATERIALIZED" not in queries.PAPER_METADATA_SEARCH_CURRENT_MAP_SQL
+
+
+def test_paper_metadata_search_sql_materializes_metadata_and_topic_candidates():
+    assert "author_matches AS MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "journal_matches AS MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "publication_type_matches AS MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "filter_candidate_corpus_ids AS MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "topic_candidates AS MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "topic_matches AS MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "topic_year_matches AS MATERIALIZED" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "lower(pa.name) = query_input.author_query" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "to_tsvector('simple', COALESCE(pa.name, '')) @@ query_input.author_ts_query" in (
+        queries.PAPER_METADATA_SEARCH_SQL
+    )
+    assert "normalized_topic_ts_query" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "solemd.normalize_title_key(COALESCE(p.title, ''))" in queries.PAPER_METADATA_SEARCH_SQL
+    assert "query_input.journal_query <> ''" in queries.PAPER_METADATA_SEARCH_SQL
+
+
+def test_search_papers_uses_author_year_route_and_skips_title_probe(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._is_current_graph_run = MagicMock(return_value=False)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[])
+    hints = QueryMetadataHints(
+        topic_query="different permeability potassium salts across blood-brain",
+        year_hint=2013,
+        author_hint="Breschi",
+        matched_cues=("author", "year"),
+    )
+
+    route_name = repo.describe_paper_search_route(
+        graph_run_id="run-1",
+        query="different permeability potassium salts across blood-brain",
+        limit=5,
+        query_metadata_hints=hints,
+    )
+    repo.search_papers(
+        "run-1",
+        "different permeability potassium salts across blood-brain",
+        limit=5,
+        query_metadata_hints=hints,
+    )
+
+    assert route_name == "paper_search_author_year_global"
+    repo._search_title_lookup_candidate_papers.assert_not_called()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_AUTHOR_YEAR_SEARCH_SQL,
+        (
+            "different permeability potassium salts across blood-brain",
+            "different permeability potassium salts across blood-brain",
+            "different permeability potassium salts across blood-brain",
+            normalize_title_key(
+                "different permeability potassium salts across blood-brain"
+            ),
+            normalize_title_key(
+                "different permeability potassium salts across blood-brain"
+            ),
+            normalize_title_key(
+                "different permeability potassium salts across blood-brain"
+            ),
+            "Breschi",
+            "Breschi",
+            "Breschi",
+            "",
+            "",
+            "",
+            2013,
+            [],
+            "run-1",
+            120,
+            120,
+            120,
+            120,
+            5,
+        ),
+    )
+
+
+def test_search_papers_uses_publication_type_route_in_selection(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[])
+    hints = QueryMetadataHints(
+        topic_query="risk factors incident delirium among older",
+        requested_publication_types=("MetaAnalysis", "SystematicReview"),
+        matched_cues=("meta-analysis_evidence",),
+    )
+
+    route_name = repo.describe_paper_search_route(
+        graph_run_id="run-1",
+        query="risk factors incident delirium among older",
+        limit=5,
+        scope_corpus_ids=[101, 202],
+        query_metadata_hints=hints,
+    )
+    repo.search_papers(
+        "run-1",
+        "risk factors incident delirium among older",
+        limit=5,
+        scope_corpus_ids=[101, 202],
+        query_metadata_hints=hints,
+    )
+
+    assert route_name == "paper_search_publication_type_in_selection"
+    repo._search_title_lookup_candidate_papers.assert_not_called()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_PUBLICATION_TYPE_TOPIC_SEARCH_IN_SELECTION_SQL,
+        (
+            "risk factors incident delirium among older",
+            "risk factors incident delirium among older",
+            "risk factors incident delirium among older",
+            "risk factors incident delirium among older",
+            "risk factors incident delirium among older",
+            "risk factors incident delirium among older",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            None,
+            ["MetaAnalysis", "SystematicReview"],
+            [101, 202],
+            120,
+            5,
+        ),
+    )
+
+
+def test_search_papers_uses_current_map_author_year_route_for_current_graph(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._is_current_graph_run = MagicMock(return_value=True)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[])
+    hints = QueryMetadataHints(
+        topic_query="different permeability potassium salts across blood-brain",
+        year_hint=2013,
+        author_hint="Breschi",
+        matched_cues=("author", "year"),
+    )
+
+    route_name = repo.describe_paper_search_route(
+        graph_run_id="run-current",
+        query="different permeability potassium salts across blood-brain",
+        limit=5,
+        query_metadata_hints=hints,
+    )
+    repo.search_papers(
+        "run-current",
+        "different permeability potassium salts across blood-brain",
+        limit=5,
+        query_metadata_hints=hints,
+    )
+
+    assert route_name == "paper_search_author_year_current_map"
+    repo._search_title_lookup_candidate_papers.assert_not_called()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_AUTHOR_YEAR_SEARCH_CURRENT_MAP_SQL,
+        (
+            "different permeability potassium salts across blood-brain",
+            "different permeability potassium salts across blood-brain",
+            "different permeability potassium salts across blood-brain",
+            normalize_title_key(
+                "different permeability potassium salts across blood-brain"
+            ),
+            normalize_title_key(
+                "different permeability potassium salts across blood-brain"
+            ),
+            normalize_title_key(
+                "different permeability potassium salts across blood-brain"
+            ),
+            "Breschi",
+            "Breschi",
+            "Breschi",
+            "",
+            "",
+            "",
+            2013,
+            [],
+            120,
+            120,
+            120,
+            120,
+            5,
+        ),
+    )
+
+
+def test_search_papers_uses_current_map_publication_type_route(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._is_current_graph_run = MagicMock(return_value=True)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[])
+    hints = QueryMetadataHints(
+        topic_query="predictors treatment response first episode schizophrenia",
+        requested_publication_types=("ClinicalTrial", "RandomizedControlledTrial"),
+        matched_cues=("clinical_trial_evidence",),
+    )
+
+    route_name = repo.describe_paper_search_route(
+        graph_run_id="run-current",
+        query="predictors treatment response first episode schizophrenia",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+    repo.search_papers(
+        "run-current",
+        "predictors treatment response first episode schizophrenia",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+
+    assert route_name == "paper_search_publication_type_current_map"
+    repo._search_title_lookup_candidate_papers.assert_not_called()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_PUBLICATION_TYPE_TOPIC_SEARCH_CURRENT_MAP_SQL,
+        (
+            "predictors treatment response first episode schizophrenia",
+            "predictors treatment response first episode schizophrenia",
+            "predictors treatment response first episode schizophrenia",
+            "predictors treatment response first episode schizophrenia",
+            "predictors treatment response first episode schizophrenia",
+            "predictors treatment response first episode schizophrenia",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            None,
+            ["ClinicalTrial", "RandomizedControlledTrial"],
+            120,
+            5,
+        ),
+    )
+
+
+def test_search_papers_uses_current_map_journal_year_route(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._is_current_graph_run = MagicMock(return_value=True)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[])
+    hints = QueryMetadataHints(
+        topic_query="score that predicts 1-year functional status",
+        year_hint=2018,
+        journal_hint="Neurology",
+        matched_cues=("journal", "year"),
+    )
+
+    route_name = repo.describe_paper_search_route(
+        graph_run_id="run-current",
+        query="Neurology 2018 score that predicts 1-year functional status",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+    repo.search_papers(
+        "run-current",
+        "Neurology 2018 score that predicts 1-year functional status",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+
+    assert route_name == "paper_search_journal_year_current_map"
+    repo._search_title_lookup_candidate_papers.assert_not_called()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_JOURNAL_YEAR_SEARCH_CURRENT_MAP_SQL,
+        (
+            "score that predicts 1-year functional status",
+            "score that predicts 1-year functional status",
+            "score that predicts 1-year functional status",
+            normalize_title_key("score that predicts 1-year functional status"),
+            normalize_title_key("score that predicts 1-year functional status"),
+            normalize_title_key("score that predicts 1-year functional status"),
+            "",
+            "",
+            "",
+            "Neurology",
+            "Neurology",
+            "Neurology",
+            2018,
+            [],
+            120,
+            120,
+            120,
+            5,
+        ),
+    )
+
+
+def test_search_papers_routes_single_token_prefix_queries_through_author_year_path(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._is_current_graph_run = MagicMock(return_value=True)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[])
+    hints = QueryMetadataHints(
+        topic_query="score that predicts 1-year functional status",
+        year_hint=2018,
+        author_hint="Neurology",
+        matched_cues=("author", "year"),
+    )
+
+    route_name = repo.describe_paper_search_route(
+        graph_run_id="run-current",
+        query="Neurology 2018 score that predicts 1-year functional status",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+    repo.search_papers(
+        "run-current",
+        "Neurology 2018 score that predicts 1-year functional status",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+
+    assert route_name == "paper_search_author_year_current_map"
+    repo._search_title_lookup_candidate_papers.assert_not_called()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_AUTHOR_YEAR_SEARCH_CURRENT_MAP_SQL,
+        (
+            "score that predicts 1-year functional status",
+            "score that predicts 1-year functional status",
+            "score that predicts 1-year functional status",
+            normalize_title_key("score that predicts 1-year functional status"),
+            normalize_title_key("score that predicts 1-year functional status"),
+            normalize_title_key("score that predicts 1-year functional status"),
+            "Neurology",
+            "Neurology",
+            "Neurology",
+            "",
+            "",
+            "",
+            2018,
+            [],
+            120,
+            120,
+            120,
+            120,
+            5,
+        ),
+    )
+
+
+def test_search_papers_uses_general_route_for_generic_study_evidence_prompts(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._search_title_lookup_candidate_papers = MagicMock(return_value=[])
+    hints = QueryMetadataHints(
+        topic_query="association dopamine transporter gene parkinson's disease",
+        matched_cues=("study_evidence",),
+    )
+
+    route_name = repo.describe_paper_search_route(
+        graph_run_id="run-1",
+        query="association dopamine transporter gene parkinson's disease",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+    repo.search_papers(
+        "run-1",
+        "association dopamine transporter gene parkinson's disease",
+        limit=5,
+        query_metadata_hints=hints,
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+
+    assert route_name == "paper_search_global_fts_only"
+    repo._search_title_lookup_candidate_papers.assert_not_called()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_SEARCH_SQL_NO_TITLE_SIMILARITY,
+        (
+            "association dopamine transporter gene parkinson's disease",
+            "association dopamine transporter gene parkinson's disease",
+            "association dopamine transporter gene parkinson's disease",
+            normalize_title_key("association dopamine transporter gene parkinson's disease"),
+            "run-1",
+            5,
+            120,
+            5,
+        ),
+    )
+
+
 def test_search_exact_title_papers_maps_rows(mock_conn):
     title = (
         "Abnormalities of mitochondrial dynamics and bioenergetics in neuronal "
@@ -466,6 +886,93 @@ def test_resolve_graph_release_caches_repeated_release_lookup(mock_conn):
     )
 
 
+def test_is_current_graph_run_caches_lazy_current_graph_lookup(mock_conn):
+    conn = mock_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = {"id": "run-current"}
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    assert repo._is_current_graph_run("run-current") is True
+    assert repo._is_current_graph_run("run-other") is False
+
+    assert cur.execute.call_count == 1
+    assert "FROM solemd.graph_runs" in cur.execute.call_args.args[0]
+
+
+def test_graph_run_paper_count_prefers_graph_run_summary(mock_conn):
+    conn = mock_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = {"paper_count": 2452643}
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    count = repo._graph_run_paper_count("run-1")
+
+    assert count == 2452643
+    cur.execute.assert_called_once_with(
+        queries.GRAPH_RELEASE_PAPER_COUNT_SUMMARY_SQL,
+        ("run-1",),
+    )
+
+
+def test_graph_run_paper_count_falls_back_to_current_map_estimate(mock_conn):
+    conn = mock_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.side_effect = [
+        {"paper_count": 0},
+        {"paper_count": 2439428},
+    ]
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._is_current_graph_run = MagicMock(return_value=True)
+
+    count = repo._graph_run_paper_count("run-current")
+
+    assert count == 2439428
+    cur.execute.assert_has_calls(
+        [
+            call(queries.GRAPH_RELEASE_PAPER_COUNT_SUMMARY_SQL, ("run-current",)),
+            call(queries.CURRENT_MAP_PAPER_COUNT_ESTIMATE_SQL),
+        ]
+    )
+
+
+def test_graph_run_paper_count_falls_back_to_stats_estimate(mock_conn):
+    conn = mock_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.side_effect = [
+        {"paper_count": 0},
+        {
+            "total_rows": 4902922.0,
+            "n_distinct": 2.0,
+            "most_common_vals": "{run-other,run-1}",
+            "most_common_freqs": [0.5, 0.5],
+        },
+    ]
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._is_current_graph_run = MagicMock(return_value=False)
+
+    count = repo._graph_run_paper_count("run-1")
+
+    assert count == 2451461
+    cur.execute.assert_has_calls(
+        [
+            call(queries.GRAPH_RELEASE_PAPER_COUNT_SUMMARY_SQL, ("run-1",)),
+            call(queries.GRAPH_POINTS_GRAPH_RUN_ESTIMATE_SQL),
+        ]
+    )
+
+
+def test_embedded_paper_count_uses_embedding_index_estimate(mock_conn):
+    conn = mock_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = {"paper_count": 2489328}
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    count = repo._embedded_paper_count_value()
+
+    assert count == 2489328
+    cur.execute.assert_called_once_with(queries.EMBEDDED_PAPER_COUNT_ESTIMATE_SQL)
+
+
 def test_search_session_reuses_one_connection_across_repository_calls(mock_conn):
     conn = mock_conn(rows=[])
     connect = MagicMock(return_value=conn)
@@ -514,8 +1021,22 @@ def test_search_session_skips_jit_override_when_disabled(mock_conn, monkeypatch)
 def test_resolve_query_entity_terms_maps_exact_canonical_matches(mock_conn):
     conn = mock_conn(
         rows=[
-            {"normalized_term": "melatonin", "rule_confidence": None},
-            {"normalized_term": "delirium", "rule_confidence": None},
+            {
+                "query_term": "melatonin",
+                "normalized_term": "melatonin",
+                "entity_type": "chemical",
+                "concept_namespace": "mesh",
+                "concept_id": "D008550",
+                "rule_confidence": None,
+            },
+            {
+                "query_term": "delirium",
+                "normalized_term": "delirium",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D003693",
+                "rule_confidence": None,
+            },
         ]
     )
     repo = PostgresRagRepository(connect=lambda: conn)
@@ -530,12 +1051,23 @@ def test_resolve_query_entity_terms_maps_exact_canonical_matches(mock_conn):
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.QUERY_ENTITY_TERM_MATCH_SQL,
-        (["melatonin", "delirium", "melatonin delirium"], 5),
+        (["melatonin", "delirium", "melatonin delirium"], 3),
     )
 
 
 def test_resolve_query_entity_terms_preserves_exact_concept_ids(mock_conn):
-    conn = mock_conn(rows=[{"normalized_term": "MESH:D008874", "rule_confidence": "high"}])
+    conn = mock_conn(
+        rows=[
+            {
+                "query_term": "mesh:d008874",
+                "normalized_term": "MESH:D008874",
+                "entity_type": "chemical",
+                "concept_namespace": "mesh",
+                "concept_id": "D008874",
+                "rule_confidence": "high",
+            }
+        ]
+    )
     repo = PostgresRagRepository(connect=lambda: conn)
 
     terms, high_conf = repo.resolve_query_entity_terms(
@@ -548,8 +1080,123 @@ def test_resolve_query_entity_terms_preserves_exact_concept_ids(mock_conn):
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.QUERY_ENTITY_TERM_MATCH_SQL,
-        (["mesh:d008874", "melatonin"], 5),
+        (["mesh:d008874", "melatonin"], 2),
     )
+
+
+def test_resolve_query_entity_terms_dedupes_casefolded_terms(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock(
+        return_value=[
+            ResolvedEntityConcept(
+                raw_term="slc6a4",
+                resolved_term="slc6a4",
+                entity_type="gene",
+                concept_namespace="ncbi_gene",
+                concept_id="101173962",
+            ),
+            ResolvedEntityConcept(
+                raw_term="SLC6A4",
+                resolved_term="SLC6A4",
+                entity_type="gene",
+                concept_namespace="ncbi_gene",
+                concept_id="6532",
+                rule_confidence="high",
+            ),
+            ResolvedEntityConcept(
+                raw_term="Slc6a4",
+                resolved_term="Slc6a4",
+                entity_type="gene",
+                concept_namespace="ncbi_gene",
+                concept_id="15567",
+            ),
+        ]
+    )
+
+    terms, high_conf = repo.resolve_query_entity_terms(
+        query_phrases=["SLC6A4"],
+        limit=5,
+    )
+
+    assert terms == ["slc6a4"]
+    assert high_conf == {"slc6a4"}
+
+
+def test_resolve_query_entity_terms_reuses_request_scoped_cache(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "query_term": "melatonin",
+                "normalized_term": "melatonin",
+                "entity_type": "chemical",
+                "concept_namespace": "mesh",
+                "concept_id": "D008550",
+                "rule_confidence": None,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    with repo.search_session():
+        first_terms, _ = repo.resolve_query_entity_terms(
+            query_phrases=["melatonin"],
+            limit=5,
+        )
+        second_terms, _ = repo.resolve_query_entity_terms(
+            query_phrases=["melatonin"],
+            limit=5,
+        )
+
+    assert first_terms == ["melatonin"]
+    assert second_terms == ["melatonin"]
+    cur = conn.cursor.return_value.__enter__.return_value
+    assert cur.execute.call_args_list == [
+        call("SET LOCAL jit = off"),
+        call(
+            queries.QUERY_ENTITY_TERM_MATCH_SQL,
+            (["melatonin"], 1),
+        ),
+    ]
+
+
+def test_resolve_query_entity_concepts_reuses_request_scoped_cache_for_resolved_terms(
+    mock_conn,
+):
+    conn = mock_conn(
+        rows=[
+            {
+                "query_term": "abeta",
+                "normalized_term": "Alzheimer disease",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D000544",
+                "rule_confidence": "high",
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    with repo.search_session():
+        first = repo._resolve_query_entity_concepts(
+            query_phrases=["abeta"],
+            limit=1,
+        )
+        second = repo._resolve_query_entity_concepts(
+            query_phrases=["Alzheimer disease"],
+            limit=1,
+        )
+
+    assert [concept.concept_id for concept in first] == ["D000544"]
+    assert [concept.concept_id for concept in second] == ["D000544"]
+    cur = conn.cursor.return_value.__enter__.return_value
+    assert cur.execute.call_args_list == [
+        call("SET LOCAL jit = off"),
+        call(
+            queries.QUERY_ENTITY_TERM_MATCH_SQL,
+            (["abeta"], 1),
+        ),
+    ]
 
 
 def test_search_papers_can_scope_to_selected_corpus_ids(mock_conn):
@@ -910,7 +1557,8 @@ def test_search_entity_papers_maps_rows(mock_conn):
         ]
     )
     repo = PostgresRagRepository(connect=lambda: conn)
-    repo.resolve_query_entity_terms = MagicMock(return_value=([], set()))
+    repo._resolve_query_entity_concepts = MagicMock(return_value=[])
+    repo._is_current_graph_run = MagicMock(return_value=False)
 
     hits = repo.search_entity_papers("run-1", entity_terms=["melatonin"], limit=5)
 
@@ -937,7 +1585,7 @@ def test_search_entity_papers_maps_rows(mock_conn):
 def test_search_entity_papers_can_scope_to_selected_corpus_ids(mock_conn):
     conn = mock_conn(rows=[])
     repo = PostgresRagRepository(connect=lambda: conn)
-    repo.resolve_query_entity_terms = MagicMock(return_value=([], set()))
+    repo._resolve_query_entity_concepts = MagicMock(return_value=[])
 
     repo.search_entity_papers(
         "run-1",
@@ -954,6 +1602,30 @@ def test_search_entity_papers_can_scope_to_selected_corpus_ids(mock_conn):
             ENTITY_FUZZY_SIMILARITY_THRESHOLD,
             ENTITY_TOP_CONCEPTS_PER_TERM,
             [101, 202],
+            5,
+        ),
+    )
+
+
+def test_search_entity_papers_uses_current_map_sql_for_current_graph(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock(return_value=[])
+    repo._is_current_graph_run = MagicMock(return_value=True)
+
+    repo.search_entity_papers(
+        "run-current",
+        entity_terms=["melatonin"],
+        limit=5,
+    )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_ENTITY_SEARCH_CURRENT_MAP_SQL,
+        (
+            ["melatonin"],
+            ENTITY_FUZZY_SIMILARITY_THRESHOLD,
+            ENTITY_TOP_CONCEPTS_PER_TERM,
             5,
         ),
     )
@@ -990,9 +1662,19 @@ def test_search_entity_papers_prefers_exact_entity_search_when_all_terms_resolve
     ]
     conn = mock_conn(rows=paper_rows)
     repo = PostgresRagRepository(connect=lambda: conn)
-    repo.resolve_query_entity_terms = MagicMock(
-        return_value=(["GM2 gangliosidosis variant B1"], {"GM2 gangliosidosis variant B1"})
+    repo._resolve_query_entity_concepts = MagicMock(
+        return_value=[
+            ResolvedEntityConcept(
+                raw_term="GM2 gangliosidosis variant B1",
+                resolved_term="GM2 gangliosidosis variant B1",
+                entity_type="disease",
+                concept_namespace="mesh",
+                concept_id="D005776",
+                rule_confidence="high",
+            )
+        ]
     )
+    repo._is_current_graph_run = MagicMock(return_value=False)
 
     hits = repo.search_entity_papers(
         "run-1",
@@ -1006,7 +1688,9 @@ def test_search_entity_papers_prefers_exact_entity_search_when_all_terms_resolve
         queries.PAPER_ENTITY_EXACT_SEARCH_SQL,
         (
             ["GM2 gangliosidosis variant B1"],
-            ENTITY_TOP_CONCEPTS_PER_TERM,
+            ["disease"],
+            ["mesh"],
+            ["D005776"],
             "run-1",
             5,
         ),
@@ -1016,10 +1700,13 @@ def test_search_entity_papers_prefers_exact_entity_search_when_all_terms_resolve
 def test_ranked_entity_and_relation_queries_project_ranked_alias_columns():
     for sql in (
         queries.PAPER_ENTITY_EXACT_SEARCH_SQL,
+        queries.PAPER_ENTITY_EXACT_SEARCH_CURRENT_MAP_SQL,
         queries.PAPER_ENTITY_EXACT_SEARCH_IN_SELECTION_SQL,
         queries.PAPER_ENTITY_SEARCH_SQL,
+        queries.PAPER_ENTITY_SEARCH_CURRENT_MAP_SQL,
         queries.PAPER_ENTITY_SEARCH_IN_SELECTION_SQL,
         queries.PAPER_RELATION_SEARCH_SQL,
+        queries.PAPER_RELATION_SEARCH_CURRENT_MAP_SQL,
         queries.PAPER_RELATION_SEARCH_IN_SELECTION_SQL,
     ):
         assert "FROM ranked_papers rp" in sql
@@ -1059,6 +1746,7 @@ def test_search_relation_papers_maps_rows(mock_conn):
         ]
     )
     repo = PostgresRagRepository(connect=lambda: conn)
+    repo._is_current_graph_run = MagicMock(return_value=False)
 
     hits = repo.search_relation_papers("run-1", relation_terms=["treat"], limit=5)
 
@@ -1091,6 +1779,24 @@ def test_search_relation_papers_can_scope_to_selected_corpus_ids(mock_conn):
     cur.execute.assert_called_once_with(
         queries.PAPER_RELATION_SEARCH_IN_SELECTION_SQL,
         (["positive_correlate"], [101, 202], 5, 5),
+    )
+
+
+def test_search_relation_papers_uses_current_map_sql_for_current_graph(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._is_current_graph_run = MagicMock(return_value=True)
+
+    repo.search_relation_papers(
+        "run-current",
+        relation_terms=["positive_correlate"],
+        limit=5,
+    )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.PAPER_RELATION_SEARCH_CURRENT_MAP_SQL,
+        (["positive_correlate"], 5, 5),
     )
 
 
@@ -1221,6 +1927,18 @@ def test_fetch_entity_matches_normalizes_mentions(mock_conn):
         ]
     )
     repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock(
+        return_value=[
+            ResolvedEntityConcept(
+                raw_term="melatonin",
+                resolved_term="melatonin",
+                entity_type="chemical",
+                concept_namespace="mesh",
+                concept_id="D008874",
+                rule_confidence=None,
+            )
+        ]
+    )
 
     hits = repo.fetch_entity_matches([101], entity_terms=["melatonin"])
 
@@ -1234,7 +1952,15 @@ def test_fetch_entity_matches_normalizes_mentions(mock_conn):
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.ENTITY_MATCH_SQL,
-        (["melatonin"], [101], 5),
+        (
+            ["melatonin"],
+            ["chemical"],
+            ["mesh"],
+            ["D008874"],
+            [101],
+            [101],
+            5,
+        ),
     )
 
 
@@ -1245,15 +1971,92 @@ def test_runtime_entity_queries_use_canonical_entity_mentions():
     assert "\n,\n" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     assert "ranked_papers AS (" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "\n,\n" in queries.PAPER_ENTITY_SEARCH_SQL
-    assert "FROM solemd.paper_entity_mentions pem" in queries.ENTITY_MATCH_SQL
-    assert "lower(COALESCE(pem.entity_type, ''))" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
-    assert (
-        "split_part(COALESCE(pem.concept_id, ''), ':', 2)"
-        in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "FROM top_concepts tc" in queries.ENTITY_MATCH_SQL
+    assert "JOIN solemd.paper_entity_mentions pem" in queries.ENTITY_MATCH_SQL
+    assert "POSITION(" not in queries.ENTITY_MATCH_SQL
+    assert "JOIN solemd.entity_aliases ea" in queries.QUERY_ENTITY_TERM_MATCH_SQL
+    assert "JOIN solemd.entity_aliases ea" in queries.PAPER_ENTITY_SEARCH_SQL
+    assert "JOIN solemd.paper_entity_mentions pem" not in queries.QUERY_ENTITY_TERM_MATCH_SQL
+    assert "lower(e.canonical_name)" not in queries.QUERY_ENTITY_TERM_MATCH_SQL
+    assert "('MESH:' || qt.raw_term)" in queries.QUERY_ENTITY_TERM_MATCH_SQL
+    assert "AS resolved(raw_term, entity_type, concept_namespace, concept_id)" in (
+        queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     )
-    assert "lower(COALESCE(e.entity_type, ''))" in queries.ENTITY_MATCH_SQL
-    assert "split_part(COALESCE(e.concept_id, ''), ':', 2)" in queries.ENTITY_MATCH_SQL
+    assert "JOIN solemd.entities e" not in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "pem.runtime_concept_namespace_key" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "pem.runtime_concept_id_key" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "pem.runtime_entity_type_key" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "concept_namespace IS NOT NULL" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "concept_namespace IS NULL" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "dnamutation" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "pubtator.entity_annotations" not in queries.ENTITY_MATCH_SQL
+
+
+def test_search_entity_papers_keeps_raw_alias_terms_for_exact_fast_path(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 202,
+                "paper_id": "paper-202",
+                "title": "Fluoxetine treatment paper",
+                "abstract": "Abstract text",
+                "tldr": None,
+                "journal_name": "Lancet",
+                "year": 2025,
+                "doi": None,
+                "pmid": 22222,
+                "pmcid": None,
+                "text_availability": "abstract",
+                "is_open_access": False,
+                "citation_count": 4,
+                "influential_citation_count": 1,
+                "reference_count": 9,
+                "publication_types": ["Review"],
+                "fields_of_study": ["Biology"],
+                "has_rule_evidence": False,
+                "has_curated_journal_family": False,
+                "journal_family_type": None,
+                "entity_rule_families": 0,
+                "entity_rule_count": 0,
+                "entity_core_families": 1,
+                "entity_candidate_score": 1.0,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock(
+        return_value=[
+            ResolvedEntityConcept(
+                raw_term="Prozac",
+                resolved_term="fluoxetine",
+                entity_type="chemical",
+                concept_namespace="mesh",
+                concept_id="D005947",
+                rule_confidence=None,
+            )
+        ]
+    )
+    repo._is_current_graph_run = MagicMock(return_value=False)
+
+    hits = repo.search_entity_papers(
+        "run-1",
+        entity_terms=["Prozac"],
+        limit=5,
+    )
+
+    assert [hit.corpus_id for hit in hits] == [202]
+    cur = conn.cursor.return_value.__enter__.return_value
+    assert cur.execute.call_args_list[0] == call(
+        queries.PAPER_ENTITY_EXACT_SEARCH_SQL,
+        (
+            ["Prozac"],
+            ["chemical"],
+            ["mesh"],
+            ["D005947"],
+            "run-1",
+            5,
+        ),
+    )
 
 
 def test_fetch_species_profiles_maps_rows(mock_conn):
@@ -1326,6 +2129,81 @@ def test_fetch_citation_contexts_scores_and_limits_hits_in_sql(mock_conn):
             3,
         ),
     )
+
+
+def test_fetch_citation_contexts_caps_query_terms_to_high_information_subset(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    repo.fetch_citation_contexts(
+        [13035531],
+        query=(
+            'Nineteen individual items generate seven "component" scores: '
+            "subjective sleep quality, sleep latency, sleep duration, habitual "
+            "sleep efficiency, sleep disturbances, use of sleeping medication, "
+            "and daytime dysfunction."
+        ),
+    )
+
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.CITATION_CONTEXT_SQL,
+        (
+            [
+                "nineteen",
+                "individual",
+                "component",
+                "subjective",
+                "efficiency",
+                "disturbances",
+                "medication",
+                "dysfunction",
+            ],
+            [13035531],
+            [13035531],
+            [13035531],
+            [13035531],
+            3,
+        ),
+    )
+
+
+def test_fetch_authors_returns_ordered_top_authors(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 101,
+                "author_position": 1,
+                "author_id": "author-1",
+                "name": "Jane Doe",
+            },
+            {
+                "corpus_id": 101,
+                "author_position": 2,
+                "author_id": "author-2",
+                "name": "John Smith",
+            },
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    authors = repo.fetch_authors([101, 101], limit_per_paper=2)
+
+    assert list(authors) == [101]
+    assert [author.name for author in authors[101]] == ["Jane Doe", "John Smith"]
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.AUTHOR_LOOKUP_SQL,
+        ([101], 2),
+    )
+
+
+def test_runtime_sql_uses_materialized_citation_contexts_and_runtime_entity_keys():
+    assert "FROM solemd.citation_contexts cc" in queries.CITATION_CONTEXT_SQL
+    assert "WHERE\n        AND (" not in queries.CITATION_CONTEXT_SQL
+    assert "pem.runtime_concept_namespace_key" in queries.ENTITY_MATCH_SQL
+    assert "pem.runtime_concept_id_key" in queries.ENTITY_MATCH_SQL
+    assert "pem.runtime_entity_type_key" in queries.PAPER_ENTITY_SEARCH_SQL
 
 
 def test_fetch_relation_matches_scores_matches_in_sql(mock_conn):
@@ -1479,6 +2357,30 @@ def test_fetch_semantic_neighbors_uses_ann_query_when_hnsw_index_ready():
     )
 
 
+def test_describe_dense_query_route_reports_dense_specific_ann_settings():
+    conn = MagicMock()
+    cur = MagicMock()
+    cur.fetchone.return_value = {"index_ready": True}
+    conn.__enter__.return_value = conn
+    conn.__exit__.return_value = False
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._should_use_exact_graph_search = MagicMock(return_value=False)
+    repo._graph_scope_coverages["run-1"] = 1.0
+
+    route = repo.describe_dense_query_route(graph_run_id="run-1", limit=2)
+
+    assert route == {
+        "route": "dense_query_ann_broad_scope",
+        "candidate_limit": 10,
+        "search_mode": "ann",
+        "hnsw_ef_search": 32,
+        "hnsw_max_scan_tuples": 8000,
+    }
+
+
 def test_fetch_semantic_neighbors_falls_back_to_exact_when_index_missing():
     conn = MagicMock()
     cur = MagicMock()
@@ -1542,7 +2444,7 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=False)
     repo._graph_scope_coverages["run-1"] = 1.0
-    repo.fetch_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(404)])
+    repo.fetch_known_scoped_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(404)])
     query_embedding = [0.1, 0.2, 0.3]
     vector_literal = format_vector_literal(query_embedding)
 
@@ -1554,17 +2456,17 @@ def test_search_query_embedding_papers_uses_ann_query_when_hnsw_index_ready():
 
     assert [hit.corpus_id for hit in hits] == [404]
     assert hits[0].dense_score == 0.91
-    repo.fetch_papers_by_corpus_ids.assert_called_once_with("run-1", [404])
+    repo.fetch_known_scoped_papers_by_corpus_ids.assert_called_once_with([404])
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_has_calls(
         [
             call(queries.SEMANTIC_NEIGHBOR_INDEX_LOOKUP_SQL),
             call("SET LOCAL hnsw.iterative_scan = strict_order"),
-            call("SET LOCAL hnsw.ef_search = 60"),
-            call("SET LOCAL hnsw.max_scan_tuples = 20000"),
+            call("SET LOCAL hnsw.ef_search = 32"),
+            call("SET LOCAL hnsw.max_scan_tuples = 8000"),
             call(
                 queries.DENSE_QUERY_SEARCH_ANN_BROAD_SCOPE_SQL,
-                (vector_literal, vector_literal, 20, "run-1", 1),
+                (vector_literal, vector_literal, 10, "run-1", 1),
             ),
         ]
     )
@@ -1627,7 +2529,7 @@ def test_search_query_embedding_papers_uses_exact_query_for_small_graph_scope():
 
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=True)
-    repo.fetch_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(404)])
+    repo.fetch_known_scoped_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(404)])
     query_embedding = [0.1, 0.2, 0.3]
     vector_literal = format_vector_literal(query_embedding)
 
@@ -1639,7 +2541,7 @@ def test_search_query_embedding_papers_uses_exact_query_for_small_graph_scope():
 
     assert [hit.corpus_id for hit in hits] == [404]
     assert hits[0].dense_score == 0.91
-    repo.fetch_papers_by_corpus_ids.assert_called_once_with("run-1", [404])
+    repo.fetch_known_scoped_papers_by_corpus_ids.assert_called_once_with([404])
     repo._should_use_exact_graph_search.assert_called_once_with("run-1")
     cur.execute.assert_has_calls(
         [
@@ -1687,7 +2589,9 @@ def test_search_query_embedding_papers_preserves_rank_order_after_hydration(mock
     )
     repo = PostgresRagRepository(connect=lambda: conn)
     repo._should_use_exact_graph_search = MagicMock(return_value=True)
-    repo.fetch_papers_by_corpus_ids = MagicMock(return_value=[_paper_hit(303), _paper_hit(404)])
+    repo.fetch_known_scoped_papers_by_corpus_ids = MagicMock(
+        return_value=[_paper_hit(303), _paper_hit(404)]
+    )
 
     hits = repo.search_query_embedding_papers(
         graph_run_id="run-1",
@@ -1697,4 +2601,4 @@ def test_search_query_embedding_papers_preserves_rank_order_after_hydration(mock
 
     assert [hit.corpus_id for hit in hits] == [404, 303]
     assert [hit.dense_score for hit in hits] == [0.85, 0.78]
-    repo.fetch_papers_by_corpus_ids.assert_called_once_with("run-1", [404, 303])
+    repo.fetch_known_scoped_papers_by_corpus_ids.assert_called_once_with([404, 303])

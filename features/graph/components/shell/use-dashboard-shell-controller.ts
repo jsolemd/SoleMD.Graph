@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useGraphBundle } from "@/features/graph/hooks/use-graph-bundle";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
@@ -96,8 +96,6 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
   const canvasShifted = isCreate && (promptMode === "maximized" || promptShellFullHeight);
   const isContinuousColor = pointColorStrategy === "continuous";
   const [graphPaintReady, setGraphPaintReady] = useState(false);
-  const primedQueryBundleRef = useRef<string | null>(null);
-
   const handleGraphFirstPaint = useCallback(() => {
     setGraphPaintReady(true);
   }, []);
@@ -124,40 +122,6 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
   useEffect(() => {
     setGraphPaintReady(false);
   }, [bundle.bundleChecksum, canvas?.overlayRevision]);
-
-  useEffect(() => {
-    if (!graphPaintReady || !queries) {
-      return;
-    }
-    if (primedQueryBundleRef.current === bundle.bundleChecksum) {
-      return;
-    }
-
-    primedQueryBundleRef.current = bundle.bundleChecksum;
-    const prime = () => {
-      void Promise.resolve()
-        .then(() => queries.primeInteractiveQueryTables())
-        .catch(() => {
-          // Prime failures should not block rendering or user interaction.
-        });
-    };
-
-    if (typeof window.requestIdleCallback === "function") {
-      const idleId = window.requestIdleCallback(() => {
-        prime();
-      });
-      return () => {
-        if (typeof window.cancelIdleCallback === "function") {
-          window.cancelIdleCallback(idleId);
-        }
-      };
-    }
-
-    const timeoutId = window.setTimeout(prime, 120);
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [bundle.bundleChecksum, graphPaintReady, queries]);
 
   const stats: GraphStats | null = useMemo(() => {
     if (!canvas) {

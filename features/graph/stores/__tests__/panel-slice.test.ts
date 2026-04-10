@@ -168,4 +168,35 @@ describe('panel-slice', () => {
       expect(useDashboardStore.getState().uiHidden).toBe(true)
     })
   })
+
+  describe('wiki panel state', () => {
+    it('wiki is a valid ActivePanel value', () => {
+      resetStore()
+      useDashboardStore.getState().togglePanel('wiki')
+      expect(useDashboardStore.getState().activePanel).toBe('wiki')
+    })
+
+    it('wikiExpanded defaults to false', () => {
+      expect(useDashboardStore.getState().wikiExpanded).toBe(false)
+    })
+
+    it('setWikiExpanded toggles expanded state', () => {
+      useDashboardStore.getState().setWikiExpanded(true)
+      expect(useDashboardStore.getState().wikiExpanded).toBe(true)
+      useDashboardStore.getState().setWikiExpanded(false)
+      expect(useDashboardStore.getState().wikiExpanded).toBe(false)
+    })
+
+    it('setWikiExpandedWidth updates the width', () => {
+      useDashboardStore.getState().setWikiExpandedWidth(700)
+      expect(useDashboardStore.getState().wikiExpandedWidth).toBe(700)
+    })
+
+    it('does not emit when setting wikiExpanded to same value', () => {
+      resetStore({ wikiExpanded: false })
+      const before = useDashboardStore.getState()
+      useDashboardStore.getState().setWikiExpanded(false)
+      expect(useDashboardStore.getState()).toBe(before)
+    })
+  })
 })

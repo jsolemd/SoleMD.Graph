@@ -70,59 +70,27 @@ export function toGraphRagErrorResponse(
 export function buildEngineRagSearchRequest(
   input: GraphEvidenceSearchInput,
 ): EngineRagSearchRequest {
-  const request: EngineRagSearchRequest = {
-    graph_release_id: input.graph_release_id,
-    query: input.query,
-  }
-
-  const selectedGraphPaperRef = normalizeString(
-    input.selected_graph_paper_ref ?? input.selected_paper_id ?? null,
-  )
-  const selectedPaperId = normalizeString(input.selected_paper_id ?? null)
-  const selectedNodeId = normalizeString(input.selected_node_id ?? null)
   const selectionGraphPaperRefs = normalizeStringList(input.selection_graph_paper_refs ?? null)
 
-  if (input.selected_layer_key) {
-    request.selected_layer_key = input.selected_layer_key
+  return {
+    graph_release_id: input.graph_release_id,
+    query: input.query,
+    selected_layer_key: input.selected_layer_key || undefined,
+    selected_node_id: normalizeString(input.selected_node_id ?? null) ?? undefined,
+    selected_graph_paper_ref: normalizeString(
+      input.selected_graph_paper_ref ?? input.selected_paper_id ?? null,
+    ) ?? undefined,
+    selected_paper_id: normalizeString(input.selected_paper_id ?? null) ?? undefined,
+    selection_graph_paper_refs: selectionGraphPaperRefs.length > 0 ? selectionGraphPaperRefs : undefined,
+    selected_cluster_id: typeof input.selected_cluster_id === 'number' ? input.selected_cluster_id : undefined,
+    scope_mode: input.scope_mode === 'selection_only' ? input.scope_mode : undefined,
+    evidence_intent: input.evidence_intent || undefined,
+    k: input.k,
+    rerank_topn: input.rerank_topn,
+    use_lexical: input.use_lexical,
+    generate_answer: input.generate_answer,
+    cited_corpus_ids: input.cited_corpus_ids && input.cited_corpus_ids.length > 0 ? input.cited_corpus_ids : undefined,
   }
-  if (selectedNodeId) {
-    request.selected_node_id = selectedNodeId
-  }
-  if (selectedGraphPaperRef) {
-    request.selected_graph_paper_ref = selectedGraphPaperRef
-  }
-  if (selectedPaperId) {
-    request.selected_paper_id = selectedPaperId
-  }
-  if (selectionGraphPaperRefs.length > 0) {
-    request.selection_graph_paper_refs = selectionGraphPaperRefs
-  }
-  if (typeof input.selected_cluster_id === 'number') {
-    request.selected_cluster_id = input.selected_cluster_id
-  }
-  if (input.scope_mode === 'selection_only') {
-    request.scope_mode = input.scope_mode
-  }
-  if (input.evidence_intent) {
-    request.evidence_intent = input.evidence_intent
-  }
-  if (typeof input.k === 'number') {
-    request.k = input.k
-  }
-  if (typeof input.rerank_topn === 'number') {
-    request.rerank_topn = input.rerank_topn
-  }
-  if (typeof input.use_lexical === 'boolean') {
-    request.use_lexical = input.use_lexical
-  }
-  if (typeof input.generate_answer === 'boolean') {
-    request.generate_answer = input.generate_answer
-  }
-  if (input.cited_corpus_ids && input.cited_corpus_ids.length > 0) {
-    request.cited_corpus_ids = input.cited_corpus_ids
-  }
-
-  return request
 }
 
 function mapEngineRagResponse(
@@ -202,50 +170,21 @@ function mapGroundedAnswer(
   }
 
   return {
+    ...response.grounded_answer,
     segments: response.grounded_answer.segments.map(
-      (segment): GraphAnswerSegment => ({
-        segment_ordinal: segment.segment_ordinal,
-        text: segment.text,
-        citation_anchor_ids: segment.citation_anchor_ids,
-      }),
+      (segment): GraphAnswerSegment => ({ ...segment }),
     ),
     inline_citations: response.grounded_answer.inline_citations.map(
-      (anchor): GraphInlineCitationAnchor => ({
-        anchor_id: anchor.anchor_id,
-        label: anchor.label,
-        cited_span_ids: anchor.cited_span_ids,
-        cited_corpus_ids: anchor.cited_corpus_ids,
-        short_evidence_label: anchor.short_evidence_label,
-      }),
+      (anchor): GraphInlineCitationAnchor => ({ ...anchor }),
     ),
     cited_spans: response.grounded_answer.cited_spans.map(
       (packet): GraphCitedSpanPacket => ({
-        packet_id: packet.packet_id,
-        corpus_id: packet.corpus_id,
-        canonical_section_ordinal: packet.canonical_section_ordinal,
-        canonical_block_ordinal: packet.canonical_block_ordinal,
-        canonical_sentence_ordinal: packet.canonical_sentence_ordinal,
-        section_role: packet.section_role,
-        block_kind: packet.block_kind,
-        span_origin: packet.span_origin,
-        alignment_status: packet.alignment_status,
-        alignment_confidence: packet.alignment_confidence,
-        text: packet.text,
-        quote_text: packet.quote_text,
-        source_citation_keys: packet.source_citation_keys,
-        source_reference_keys: packet.source_reference_keys,
+        ...packet,
         entity_mentions: packet.entity_mentions.map(
-          (entity): GraphCitedEntityPacket => ({
-            entity_type: entity.entity_type,
-            text: entity.text,
-            concept_namespace: entity.concept_namespace,
-            concept_id: entity.concept_id,
-            source_identifier: entity.source_identifier,
-          }),
+          (entity): GraphCitedEntityPacket => ({ ...entity }),
         ),
       }),
     ),
-    answer_linked_corpus_ids: response.grounded_answer.answer_linked_corpus_ids,
   }
 }
 
@@ -285,51 +224,23 @@ function mapEvidenceBundle(bundle: EngineEvidenceBundle): GraphEvidenceBundle {
   const graphPaperRef = toGraphPaperRef(bundle.paper.paper_id, bundle.paper.corpus_id)
 
   return {
+    ...bundle,
     corpus_id: bundle.paper.corpus_id,
     graph_paper_ref: graphPaperRef,
     paper_id: bundle.paper.paper_id,
     paper: {
-      corpus_id: bundle.paper.corpus_id,
+      ...bundle.paper,
       graph_paper_ref: graphPaperRef,
-      paper_id: bundle.paper.paper_id,
       semantic_scholar_paper_id:
         bundle.paper.semantic_scholar_paper_id ?? bundle.paper.paper_id,
-      title: bundle.paper.title,
-      journal_name: bundle.paper.journal_name,
-      year: bundle.paper.year,
-      doi: bundle.paper.doi,
-      pmid: bundle.paper.pmid,
-      pmcid: bundle.paper.pmcid,
-      abstract: bundle.paper.abstract,
-      tldr: bundle.paper.tldr,
-      text_availability: bundle.paper.text_availability,
-      is_open_access: bundle.paper.is_open_access,
     },
-    score: bundle.score,
-    rank: bundle.rank,
-    snippet: bundle.snippet,
-    matched_channels: bundle.matched_channels,
-    match_reasons: bundle.match_reasons,
-    rank_features: bundle.rank_features,
-    citation_contexts: bundle.citation_contexts,
-    entity_hits: bundle.entity_hits,
-    relation_hits: bundle.relation_hits,
-    references: bundle.references,
-    assets: bundle.assets,
   }
 }
 
 function mapGraphSignal(signal: EngineGraphSignal): GraphRagGraphSignal {
   return {
-    corpus_id: signal.corpus_id,
+    ...signal,
     graph_paper_ref: toGraphPaperRef(signal.paper_id, signal.corpus_id),
-    paper_id: signal.paper_id,
-    signal_kind: signal.signal_kind,
-    channel: signal.channel,
-    score: signal.score,
-    rank: signal.rank,
-    reason: signal.reason,
-    matched_terms: signal.matched_terms,
   }
 }
 

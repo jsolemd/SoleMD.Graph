@@ -17,31 +17,28 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
-from dataclasses import dataclass
-from itertools import islice
 import json
 import os
-from pathlib import Path
 import sys
 import tempfile
 import time
+from dataclasses import asdict, dataclass
+from itertools import islice
+from pathlib import Path
 
 import duckdb
 
 from app import db
-from app.corpus._etl import log_etl_run, sql_string_literal
 from app.config import settings
+from app.corpus._etl import log_etl_run, sql_string_literal
 
 try:
-    from data.release_storage import read_release_manifest
-    from data.release_storage import semantic_scholar_manifest_path
+    from data.release_storage import read_release_manifest, semantic_scholar_manifest_path
 except ModuleNotFoundError:
     project_root = Path(__file__).resolve().parents[3]
     if str(project_root) not in sys.path:
         sys.path.append(str(project_root))
-    from data.release_storage import read_release_manifest
-    from data.release_storage import semantic_scholar_manifest_path
+    from data.release_storage import read_release_manifest, semantic_scholar_manifest_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +88,9 @@ def _citations_shards(release_id: str, limit_shards: int = 0) -> list[Path]:
         missing = sorted(expected_files - present_files)
         if missing:
             raise RuntimeError(
-                f"citations release {release_id} is incomplete: missing {len(missing)} verified shards"
+                "citations release "
+                f"{release_id} is incomplete: missing {len(missing)} "
+                "verified shards"
             )
     if limit_shards > 0:
         return shards[:limit_shards]
@@ -191,8 +190,14 @@ def _domain_citations_select(scan_expr: str) -> str:
             MIN(citation_id) AS citation_id,
             citing_corpus_id,
             cited_corpus_id,
-            CAST(to_json(list_sort(list_distinct(flatten(list(contexts))))) AS VARCHAR) AS contexts_json,
-            CAST(to_json(list_sort(list_distinct(flatten(list(intents))))) AS VARCHAR) AS intents_json,
+            CAST(
+                to_json(list_sort(list_distinct(flatten(list(contexts)))))
+                AS VARCHAR
+            ) AS contexts_json,
+            CAST(
+                to_json(list_sort(list_distinct(flatten(list(intents)))))
+                AS VARCHAR
+            ) AS intents_json,
             bool_or(is_influential) AS is_influential,
             array_length(list_distinct(flatten(list(contexts)))) AS context_count
         FROM raw_domain_citations
@@ -342,6 +347,68 @@ def _upsert_bulk_citations(cur, *, release_id: str) -> None:
     )
 
 
+def _refresh_bulk_citation_contexts(cur, *, release_id: str) -> None:
+    cur.execute(
+        """
+        DELETE FROM solemd.citation_contexts cc
+        USING stg_bulk_citations s
+        WHERE cc.citing_corpus_id = s.citing_corpus_id
+          AND cc.cited_corpus_id = s.cited_corpus_id
+        """
+    )
+    cur.execute(
+        """
+        INSERT INTO solemd.citation_contexts (
+            citing_corpus_id,
+            cited_corpus_id,
+            context_ordinal,
+            citation_id,
+            context_text,
+            intents,
+            is_influential,
+            source,
+            source_release_id,
+            updated_at
+        )
+        SELECT
+            s.citing_corpus_id,
+            s.cited_corpus_id,
+            context_items.context_ordinal - 1,
+            s.citation_id,
+            parsed.context_text,
+            COALESCE(s.intents_json, '[]'::jsonb),
+            s.is_influential,
+            'semantic_scholar_citations_bulk',
+            %s,
+            now()
+        FROM stg_bulk_citations s
+        CROSS JOIN LATERAL jsonb_array_elements(s.contexts_json)
+            WITH ORDINALITY AS context_items(context_item, context_ordinal)
+        CROSS JOIN LATERAL (
+            SELECT
+                CASE
+                    WHEN jsonb_typeof(context_items.context_item) = 'string' THEN
+                        trim(both '"' from context_items.context_item::text)
+                    WHEN jsonb_typeof(context_items.context_item) = 'object' THEN
+                        COALESCE(context_items.context_item ->> 'text', '')
+                    ELSE ''
+                END AS context_text
+        ) AS parsed
+        WHERE parsed.context_text <> ''
+        ON CONFLICT (citing_corpus_id, cited_corpus_id, context_ordinal)
+        DO UPDATE
+        SET citation_id = EXCLUDED.citation_id,
+            context_text = EXCLUDED.context_text,
+            intents = EXCLUDED.intents,
+            is_influential = EXCLUDED.is_influential,
+            source = EXCLUDED.source,
+            source_release_id = EXCLUDED.source_release_id,
+            updated_at = now()
+        """,
+        (release_id,),
+    )
+
+
 def _cleanup_stale_bulk_citations(cur, *, release_id: str) -> None:
     cur.execute(
         """
@@ -403,14 +470,23 @@ def _summary_from_completed_batches(
         batches_processed=len(completed_batches),
         shards_per_batch=shards_per_batch,
         total_candidate_edges=total_candidate_edges,
-        total_domain_edges=sum(int(batch["total_domain_edges"]) for batch in completed_batches.values()),
+        total_domain_edges=sum(
+            int(batch["total_domain_edges"])
+            for batch in completed_batches.values()
+        ),
         loaded_edges=sum(int(batch["loaded_edges"]) for batch in completed_batches.values()),
         staging_bytes=sum(int(batch["staging_bytes"]) for batch in completed_batches.values()),
         elapsed_seconds=round(time.monotonic() - started, 1),
     )
 
 
-def _record_batch_started(cur, *, release_id: str, batch_index: int, shard_batch: list[Path]) -> None:
+def _record_batch_started(
+    cur,
+    *,
+    release_id: str,
+    batch_index: int,
+    shard_batch: list[Path],
+) -> None:
     metadata = {
         "shard_names": [path.name for path in shard_batch],
         "shard_paths": [str(path) for path in shard_batch],
@@ -651,7 +727,6 @@ def _ingest_batches(
     loaded_edges = 0
     staging_bytes = 0
     batches_processed = 0
-    failed_batch_index: int | None = None
 
     if not dry_run and reset_release:
         with db.pooled() as conn, conn.cursor() as cur:
@@ -674,7 +749,6 @@ def _ingest_batches(
 
         stage: CitationBatchStage | None = None
         try:
-            failed_batch_index = batch_index
             if not dry_run:
                 with db.pooled() as batch_conn, batch_conn.cursor() as cur:
                     _record_batch_started(
@@ -704,6 +778,7 @@ def _ingest_batches(
                 if stage.total_domain_edges > 0:
                     _copy_stage_csv_into_postgres(cur, stage.csv_path)
                     _upsert_bulk_citations(cur, release_id=release_id)
+                    _refresh_bulk_citation_contexts(cur, release_id=release_id)
                 _record_batch_completed(
                     cur,
                     release_id=release_id,
@@ -713,7 +788,6 @@ def _ingest_batches(
                 )
                 batch_conn.commit()
             loaded_edges += stage.total_domain_edges
-            failed_batch_index = None
         except Exception as exc:
             if not dry_run:
                 _record_batch_failed(
@@ -777,9 +851,19 @@ def run_citation_ingest(
     shard_batches = _chunked_paths(shards, shards_per_batch)
 
     # Fast path: all batches already completed (full checkpoint resume)
-    if not dry_run and not reset_release and len(completed_batches) == len(shard_batches) and shard_batches:
+    if (
+        not dry_run
+        and not reset_release
+        and len(completed_batches) == len(shard_batches)
+        and shard_batches
+    ):
         return _ingest_resumed(
-            release_id, shards, shards_per_batch, completed_batches, shard_batches, started,
+            release_id,
+            shards,
+            shards_per_batch,
+            completed_batches,
+            shard_batches,
+            started,
         )
 
     # Main path: process batches
@@ -848,7 +932,10 @@ def main() -> None:
     parser.add_argument(
         "--reset-release",
         action="store_true",
-        help="Delete existing checkpoint rows and current-release bulk citation rows before loading",
+        help=(
+            "Delete existing checkpoint rows and current-release bulk citation "
+            "rows before loading"
+        ),
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON summary")
     args = parser.parse_args()

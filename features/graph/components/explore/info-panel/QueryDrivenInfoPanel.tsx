@@ -289,25 +289,20 @@ export function QueryDrivenInfoPanel({
             : null,
         };
       })
-      .sort((left, right) =>
-        filteredClustersArr != null
-          ? (right.filteredCount ?? 0) === (left.filteredCount ?? 0)
-            ? (right.selectionCount ?? 0) === (left.selectionCount ?? 0)
-              ? right.totalCount === left.totalCount
-                ? left.label.localeCompare(right.label)
-                : right.totalCount - left.totalCount
-              : (right.selectionCount ?? 0) - (left.selectionCount ?? 0)
-            : (right.filteredCount ?? 0) - (left.filteredCount ?? 0)
-          : selectedClustersArr != null
-            ? (right.selectionCount ?? 0) === (left.selectionCount ?? 0)
-              ? right.totalCount === left.totalCount
-                ? left.label.localeCompare(right.label)
-                : right.totalCount - left.totalCount
-              : (right.selectionCount ?? 0) - (left.selectionCount ?? 0)
-          : right.totalCount === left.totalCount
-            ? left.label.localeCompare(right.label)
-            : right.totalCount - left.totalCount,
-      )
+      .sort((left, right) => {
+        const keys: Array<(row: typeof left) => number | string> = [];
+        if (filteredClustersArr != null) keys.push((r) => -(r.filteredCount ?? 0));
+        if (selectedClustersArr != null) keys.push((r) => -(r.selectionCount ?? 0));
+        keys.push((r) => -r.totalCount, (r) => r.label);
+
+        for (const key of keys) {
+          const a = key(left);
+          const b = key(right);
+          if (a < b) return -1;
+          if (a > b) return 1;
+        }
+        return 0;
+      })
       .slice(
         0,
         Math.max(

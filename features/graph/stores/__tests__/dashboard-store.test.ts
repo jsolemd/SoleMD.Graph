@@ -3,6 +3,7 @@ import {
   selectBottomClearance,
   selectLeftClearance,
   selectRightClearance,
+  resolveWikiPanelWidth,
   useDashboardStore,
 } from '../dashboard-store'
 
@@ -72,10 +73,44 @@ describe('selectLeftClearance', () => {
       ['filters', 300 + 24],
       ['info', 320 + 24],
       ['query', 420 + 24],
+      ['wiki', 420 + 24],
     ]
     for (const [panel, expected] of cases) {
       expect(selectLeftClearance(makeState({ activePanel: panel, panelsVisible: true }))).toBe(expected)
     }
+  })
+
+  it('returns expanded width for wiki when wikiExpanded is true', () => {
+    const state = makeState({
+      activePanel: 'wiki',
+      panelsVisible: true,
+      wikiExpanded: true,
+      wikiExpandedWidth: 650,
+    })
+    expect(selectLeftClearance(state)).toBe(650 + 24)
+  })
+
+  it('returns default wiki width when wikiExpanded is false', () => {
+    const state = makeState({
+      activePanel: 'wiki',
+      panelsVisible: true,
+      wikiExpanded: false,
+    })
+    expect(selectLeftClearance(state)).toBe(420 + 24)
+  })
+})
+
+describe('resolveWikiPanelWidth', () => {
+  it('returns default width when not expanded', () => {
+    expect(resolveWikiPanelWidth(1920, false)).toBe(420)
+  })
+
+  it('returns 65% of viewport when expanded, capped at 700', () => {
+    expect(resolveWikiPanelWidth(1920, true)).toBe(700)
+  })
+
+  it('returns 65% of viewport for smaller screens', () => {
+    expect(resolveWikiPanelWidth(800, true)).toBe(520)
   })
 })
 

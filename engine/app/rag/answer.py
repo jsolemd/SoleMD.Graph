@@ -34,6 +34,34 @@ def _answer_heading(evidence_intent: EvidenceIntent | None) -> str:
     return "Potentially relevant evidence:"
 
 
+def _author_citation_label(bundle: EvidenceBundle) -> str | None:
+    named_authors = [author.name.strip() for author in bundle.authors if author.name]
+    if not named_authors:
+        return None
+    first_author_tokens = named_authors[0].split()
+    if not first_author_tokens:
+        return None
+    lead = first_author_tokens[-1].rstrip(",")
+    if len(named_authors) > 1:
+        return f"{lead} et al."
+    return lead
+
+
+def _bundle_source_label(bundle: EvidenceBundle) -> str:
+    parts: list[str] = []
+    author_label = _author_citation_label(bundle)
+    if author_label:
+        parts.append(author_label)
+    if bundle.paper.journal_name:
+        parts.append(bundle.paper.journal_name)
+    if bundle.paper.year:
+        parts.append(str(bundle.paper.year))
+    title = bundle.paper.title or f"Paper {bundle.paper.corpus_id}"
+    if parts:
+        return f"{' | '.join(parts)} | {title}"
+    return title
+
+
 def generate_baseline_answer(
     bundles: list[EvidenceBundle],
     *,
@@ -81,10 +109,8 @@ def build_baseline_answer_payload(
     lines: list[str] = []
     segment_corpus_ids: list[int | None] = [None]
     for bundle in grounding_bundles:
-        title = bundle.paper.title or f"Paper {bundle.paper.corpus_id}"
-        year = f" ({bundle.paper.year})" if bundle.paper.year else ""
         snippet = _bundle_grounding_snippet(bundle)
-        lines.append(f"{title}{year}: {snippet}")
+        lines.append(f"{_bundle_source_label(bundle)}: {snippet}")
         segment_corpus_ids.append(bundle.paper.corpus_id)
 
     return BaselineAnswerPayload(

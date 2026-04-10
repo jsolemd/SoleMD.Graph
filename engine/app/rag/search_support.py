@@ -9,12 +9,15 @@ from app.rag.clinical_priors import infer_clinical_query_intent
 from app.rag.models import PaperRetrievalQuery
 from app.rag.query_enrichment import (
     determine_query_retrieval_profile,
+    extract_query_metadata_hints,
     normalize_query_text,
     should_use_title_similarity,
 )
 from app.rag.repository import RagRepository
 from app.rag.schemas import RagSearchRequest
 from app.rag.types import QueryRetrievalProfile, RetrievalScope
+
+EVIDENCE_TYPE_RERANK_MIN = 20
 
 
 def _normalize_terms(values: list[str]) -> list[str]:
@@ -84,16 +87,24 @@ def build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
     ):
         selection_graph_paper_refs = [selected_graph_paper_ref]
 
+    metadata_hints = extract_query_metadata_hints(request.query)
+    focused_query = metadata_hints.topic_query or request.query
+    rerank_topn = max(request.k, request.rerank_topn)
+    if metadata_hints.has_evidence_type_filters:
+        rerank_topn = max(rerank_topn, EVIDENCE_TYPE_RERANK_MIN)
     retrieval_profile = determine_query_retrieval_profile(
         request.query,
         allow_terminal_title_punctuation=bool(selected_graph_paper_ref)
         or request.selected_layer_key == "paper",
+        metadata_hints=metadata_hints,
     )
 
     return PaperRetrievalQuery(
         graph_release_id=request.graph_release_id,
         query=request.query,
-        normalized_query=normalize_query_text(request.query),
+        focused_query=focused_query,
+        normalized_query=normalize_query_text(focused_query),
+        metadata_hints=metadata_hints,
         entity_terms=_normalize_terms(request.entity_terms),
         relation_terms=_normalize_relation_terms(request.relation_terms),
         cited_corpus_ids=list(request.cited_corpus_ids),
@@ -105,10 +116,10 @@ def build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         selected_cluster_id=request.selected_cluster_id,
         scope_mode=request.scope_mode,
         retrieval_profile=retrieval_profile,
-        clinical_intent=infer_clinical_query_intent(request.query),
+        clinical_intent=infer_clinical_query_intent(focused_query),
         evidence_intent=request.evidence_intent,
         k=request.k,
-        rerank_topn=max(request.k, request.rerank_topn),
+        rerank_topn=rerank_topn,
         use_lexical=request.use_lexical,
         use_title_candidate_lookup=retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP,
         use_title_similarity=should_use_title_similarity(

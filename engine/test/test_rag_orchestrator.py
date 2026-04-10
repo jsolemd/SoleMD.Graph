@@ -1147,6 +1147,117 @@ def test_run_rag_refresh_skips_low_value_bioc_shell_documents(tmp_path):
     assert report.bioc_fallback_stage.skipped_low_value_corpus_ids == [12345]
 
 
+def test_run_rag_refresh_skip_s2_primary_does_not_preload_metadata_abstracts(tmp_path):
+    class FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [12345]
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=12345,
+                    pmid=12345,
+                    paper_title="Canonical Corpus Title",
+                    paper_abstract=(
+                        "Melatonin reduced delirium incidence in the randomized cohort."
+                    ),
+                    paper_id="S2:paper-12345",
+                    text_availability="fulltext",
+                )
+            ]
+
+    class FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class FakeS2Reader:
+        def shard_paths(self, *, max_shards=None):
+            return [tmp_path / "s2orc_v2-000.jsonl.gz"]
+
+        def iter_rows(self, shard_path):
+            raise AssertionError("skip_s2_primary should avoid S2 shard scans")
+
+    class FakeBioCReader:
+        def archive_paths(self, *, max_archives=None):
+            return [tmp_path / "BioCXML.9.tar.gz"]
+
+        def iter_documents(self, archive_path):
+            yield "12345", _bioc_xml("12345")
+
+    class FakeWriter:
+        def __init__(self):
+            self.calls = []
+
+        def ingest_source_groups(self, source_groups, *, replace_existing=False):
+            self.calls.append(
+                [
+                    {
+                        "corpus_id": group[0].document.corpus_id,
+                        "source_system": group[0].document.source_system,
+                        "replace_existing": replace_existing,
+                    }
+                    for group in source_groups
+                ]
+            )
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=group[0].document.corpus_id,
+                        primary_source_system=group[0].document.source_system,
+                        primary_reason="test",
+                        annotation_source_systems=[],
+                    )
+                    for group in source_groups
+                ],
+                batch_total_rows=len(source_groups) * 3,
+                written_rows=len(source_groups) * 3,
+                deferred_stage_names=[],
+            )
+
+    locator_repository = FakeSourceLocatorRepository()
+    locator_repository.upsert_entries(
+        [
+            {
+                "corpus_id": 12345,
+                "source_system": "biocxml",
+                "source_revision": "2026-03-21",
+                "source_kind": "bioc_archive",
+                "unit_name": "BioCXML.9.tar.gz",
+                "unit_ordinal": 1,
+                "source_document_key": "12345",
+            },
+        ]
+    )
+
+    writer = FakeWriter()
+    report = run_rag_refresh(
+        parser_version="parser-v5",
+        run_id="skip-s2-primary-no-abstract-bootstrap",
+        corpus_ids=[12345],
+        batch_size=8,
+        checkpoint_root=tmp_path,
+        target_loader=FakeTargetLoader(),
+        existing_loader=FakeExistingLoader(),
+        s2_reader=FakeS2Reader(),
+        bioc_reader=FakeBioCReader(),
+        writer=writer,
+        unit_store=FakeUnitStore(),
+        source_locator_repository=locator_repository,
+        skip_s2_primary=True,
+        refresh_existing=True,
+    )
+
+    assert report.s2_stage.ingested_corpus_ids == []
+    assert report.bioc_fallback_stage.ingested_corpus_ids == [12345]
+    assert writer.calls == [
+        [
+            {
+                "corpus_id": 12345,
+                "source_system": "biocxml",
+                "replace_existing": True,
+            }
+        ]
+    ]
+
+
 def test_run_rag_refresh_rejects_stage_row_budget_mismatch_on_resume(tmp_path):
     class FakeTargetLoader:
         def load(self, *, corpus_ids, limit):

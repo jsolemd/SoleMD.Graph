@@ -29,14 +29,19 @@ from app.rag.retrieval_fusion import (
     merge_candidate_papers,
 )
 from app.rag.retrieval_policy import (
+    biomedical_rerank_decision,
     citation_context_candidate_ids,
     entity_relation_candidate_ids,
     should_expand_citation_frontier,
+    should_fetch_missing_citation_contexts,
     should_prefetch_citation_contexts,
-    should_run_biomedical_reranker,
 )
 from app.rag.runtime_trace import RuntimeTraceCollector
-from app.rag.search_retrieval import SearchRetrievalState, apply_selected_context_hits
+from app.rag.search_retrieval import (
+    SearchRetrievalState,
+    apply_cited_context_hits,
+    apply_selected_context_hits,
+)
 from app.rag.search_support import callable_supports_kwarg
 from app.rag.types import (
     DEFAULT_RETRIEVAL_VERSION,
@@ -165,6 +170,7 @@ def finalize_search_result(
     started: float,
 ) -> RagSearchResult:
     query = retrieval.query
+    query_text = query.focused_query or query.query
     release = retrieval.release
     if not retrieval.initial_paper_hits:
         return RagSearchResult(
@@ -188,10 +194,16 @@ def finalize_search_result(
         citation_context_candidate_ids(
             paper_hits=retrieval.initial_paper_hits,
             retrieval_profile=query.retrieval_profile,
+            rerank_topn=query.rerank_topn,
+            query_text=query_text,
+            lexical_hits=retrieval.lexical_hits,
+            cited_corpus_ids=query.cited_corpus_ids,
+            selected_direct_anchor=retrieval.selected_direct_anchor,
         )
         if should_prefetch_citation_contexts(
             query=query,
             lexical_hits=retrieval.lexical_hits,
+            chunk_lexical_hits=retrieval.chunk_lexical_hits,
         )
         else []
     )
@@ -201,7 +213,7 @@ def finalize_search_result(
             "fetch_citation_contexts_initial",
             repository.fetch_citation_contexts,
             citation_context_ids,
-            query=query.query,
+            query=query_text,
         )
         if citation_context_ids
         else {}
@@ -213,7 +225,7 @@ def finalize_search_result(
         else None
     )
     expand_citation_frontier = should_expand_citation_frontier(
-        query_text=query.query,
+        query_text=query_text,
         lexical_hits=retrieval.lexical_hits,
         search_plan=retrieval.search_plan,
     )
@@ -251,6 +263,7 @@ def finalize_search_result(
         lexical_hits=retrieval.lexical_hits,
         chunk_lexical_hits=retrieval.chunk_lexical_hits,
         selected_context_hits=[],
+        cited_context_hits=[],
         dense_query_hits=retrieval.dense_query_hits,
         entity_seed_hits=retrieval.entity_seed_hits,
         relation_seed_hits=retrieval.relation_seed_hits,
@@ -264,6 +277,14 @@ def finalize_search_result(
         repository=repository,
         paper_hits=paper_hits,
         selected_corpus_id=retrieval.selected_corpus_id,
+        search_plan=retrieval.search_plan,
+    )
+    paper_hits = trace.call(
+        "apply_cited_context_final",
+        apply_cited_context_hits,
+        repository=repository,
+        paper_hits=paper_hits,
+        cited_corpus_ids=query.cited_corpus_ids,
         search_plan=retrieval.search_plan,
     )
     trace.record_count("paper_hits", len(paper_hits))
@@ -286,7 +307,8 @@ def finalize_search_result(
         entity_hits={},
         relation_hits={},
         evidence_intent=query.evidence_intent,
-        query_text=query.query,
+        requested_publication_types=query.metadata_hints.requested_publication_types,
+        query_text=query_text,
         retrieval_profile=query.retrieval_profile,
         channel_rankings=channel_rankings,
     )
@@ -299,7 +321,7 @@ def finalize_search_result(
         query.rerank_topn,
         settings.rag_live_biomedical_reranker_topn,
     )
-    biomedical_rerank_requested = should_run_biomedical_reranker(
+    biomedical_rerank_requested, biomedical_rerank_reason = biomedical_rerank_decision(
         query=query,
         selected_corpus_id=retrieval.selected_corpus_id,
         ranked_papers=preliminary_ranked_hits,
@@ -308,6 +330,7 @@ def finalize_search_result(
     trace.record_flags(
         {
             "biomedical_rerank_requested": biomedical_rerank_requested,
+            "biomedical_rerank_reason": biomedical_rerank_reason,
             "biomedical_rerank_topn": biomedical_rerank_window,
             "biomedical_reranker_enabled": biomedical_reranker_status.get(
                 "enabled", False
@@ -323,7 +346,7 @@ def finalize_search_result(
             "biomedical_rerank",
             apply_biomedical_rerank,
             preliminary_ranked_hits,
-            query_text=query.query,
+            query_text=query_text,
             reranker=biomedical_reranker,
             topn=biomedical_rerank_window,
         )
@@ -346,14 +369,15 @@ def finalize_search_result(
             preliminary_ranked_hits = trace.call(
                 "rank_preliminary_hits_biomedical",
                 rank_paper_hits,
-                preliminary_ranked_hits,
-                citation_hits=citation_hits,
-                entity_hits={},
-                relation_hits={},
-                evidence_intent=query.evidence_intent,
-                query_text=query.query,
-                retrieval_profile=query.retrieval_profile,
-                channel_rankings=channel_rankings,
+                    preliminary_ranked_hits,
+                    citation_hits=citation_hits,
+                    entity_hits={},
+                    relation_hits={},
+                    evidence_intent=query.evidence_intent,
+                    requested_publication_types=query.metadata_hints.requested_publication_types,
+                    query_text=query_text,
+                    retrieval_profile=query.retrieval_profile,
+                    channel_rankings=channel_rankings,
             )
 
     enrichment_corpus_ids = entity_relation_candidate_ids(
@@ -361,8 +385,9 @@ def finalize_search_result(
         retrieval_profile=query.retrieval_profile,
         k=query.k,
         rerank_topn=query.rerank_topn,
-        query_text=query.query,
+        query_text=query_text,
         lexical_hits=retrieval.lexical_hits,
+        cited_corpus_ids=query.cited_corpus_ids,
         selected_corpus_id=retrieval.selected_corpus_id,
         selected_direct_anchor=retrieval.selected_direct_anchor,
     )
@@ -383,7 +408,7 @@ def finalize_search_result(
             "fetch_citation_contexts_expanded",
             repository.fetch_citation_contexts,
             [hit.corpus_id for hit in citation_seed_hits],
-            query=query.query,
+            query=query_text,
         )
         if citation_seed_hits
         else {}
@@ -395,7 +420,7 @@ def finalize_search_result(
         "fetch_entity_matches",
         repository.fetch_entity_matches,
         enrichment_corpus_ids,
-        entity_terms=query.entity_terms,
+        entity_terms=retrieval.entity_enrichment_terms,
     )
     relation_hits = trace.call(
         "fetch_relation_matches",
@@ -430,7 +455,8 @@ def finalize_search_result(
         relation_hits=relation_hits,
         species_profiles=species_profiles,
         evidence_intent=query.evidence_intent,
-        query_text=query.query,
+        requested_publication_types=query.metadata_hints.requested_publication_types,
+        query_text=query_text,
         retrieval_profile=query.retrieval_profile,
         clinical_intent=ranking_clinical_intent,
         channel_rankings=channel_rankings,
@@ -440,9 +466,27 @@ def finalize_search_result(
     trace.record_count("ranked_hits", len(ranked_hits))
     trace.record_count("top_hits", len(top_hits))
 
-    missing_citation_context_ids = [
-        corpus_id for corpus_id in top_corpus_ids if corpus_id not in citation_hits
-    ]
+    missing_citation_context_ids = (
+        [
+            corpus_id
+            for corpus_id in citation_context_candidate_ids(
+                paper_hits=top_hits,
+                retrieval_profile=query.retrieval_profile,
+                rerank_topn=query.rerank_topn,
+                query_text=query_text,
+                lexical_hits=retrieval.lexical_hits,
+                cited_corpus_ids=query.cited_corpus_ids,
+                selected_direct_anchor=retrieval.selected_direct_anchor,
+            )
+            if corpus_id not in citation_hits
+        ]
+        if should_fetch_missing_citation_contexts(
+            retrieval_profile=query.retrieval_profile,
+            precise_title_resolution=retrieval.precise_title_resolution,
+            top_hits=top_hits,
+        )
+        else []
+    )
     if missing_citation_context_ids:
         citation_hits = {
             **citation_hits,
@@ -450,13 +494,18 @@ def finalize_search_result(
                 "fetch_citation_contexts_missing_top_hits",
                 repository.fetch_citation_contexts,
                 missing_citation_context_ids,
-                query=query.query,
+                query=query_text,
             ),
         }
 
     references = trace.call(
         "fetch_references",
         repository.fetch_references,
+        top_corpus_ids,
+    )
+    authors = trace.call(
+        "fetch_authors",
+        repository.fetch_authors,
         top_corpus_ids,
     )
     assets = trace.call(
@@ -471,6 +520,7 @@ def finalize_search_result(
         citation_hits=citation_hits,
         entity_hits=entity_hits,
         relation_hits=relation_hits,
+        authors=authors,
         references=references,
         assets=assets,
     )
@@ -570,7 +620,7 @@ def finalize_search_result(
                 entity_seed_hits=retrieval.entity_seed_hits,
                 entity_hits=entity_hits,
                 paper_hits=paper_hits,
-                entity_terms=query.entity_terms,
+                entity_terms=retrieval.entity_enrichment_terms,
             ),
         ),
         _channel_result(

@@ -1,0 +1,30 @@
+{
+  "after_citing_corpus_id": 0,
+  "batch_size": 100,
+  "batches_completed": 2,
+  "citation_edges_processed": 2818,
+  "citing_corpus_ids_processed": 200,
+  "completed": false,
+  "context_rows_written": 2163,
+  "dry_run": false,
+  "last_completed_citing_corpus_id": 3611,
+  "max_citing_corpus_id": null,
+  "recent_batches": [
+    {
+      "batch_index": 1,
+      "citation_edge_count": 1620,
+      "citing_corpus_count": 100,
+      "context_rows_written": 0,
+      "first_citing_corpus_id": 14,
+      "last_citing_corpus_id": 2359
+    },
+    {
+      "batch_index": 2,
+      "citation_edge_count": 1198,
+      "citing_corpus_count": 100,
+      "context_rows_written": 2163,
+      "first_citing_corpus_id": 2367,
+      "last_citing_corpus_id": 3611
+    }
+  ]
+}

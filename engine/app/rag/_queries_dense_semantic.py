@@ -3,9 +3,9 @@ and reference/asset lookup SQL."""
 
 from app.rag._queries_paper_core import (
     ENTITY_MENTION_CONCEPT_KEY_SQL,
+    ENTITY_MENTION_NAMESPACE_KEY_SQL,
     ENTITY_MENTION_TYPE_KEY_SQL,
-    ENTITY_TABLE_CONCEPT_KEY_SQL,
-    ENTITY_TABLE_TYPE_KEY_SQL,
+    ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL,
 )
 
 # ---------------------------------------------------------------------------
@@ -104,54 +104,41 @@ WITH query_terms AS (
     FROM unnest(%s::text[]) AS term
     WHERE length(trim(term)) >= 4
 ),
-scoped_citations AS (
+scoped_contexts AS (
     SELECT
-        c.citing_corpus_id,
-        c.cited_corpus_id,
-        c.citation_id,
-        c.intents,
-        c.is_influential,
-        context_items.context_text,
-        lower(context_items.context_text) AS lowered_context_text
-    FROM solemd.citations c
-    CROSS JOIN LATERAL (
-        SELECT
-            CASE
-                WHEN jsonb_typeof(context_item) = 'string' THEN
-                    trim(both '"' from context_item::text)
-                WHEN jsonb_typeof(context_item) = 'object' THEN
-                    COALESCE(context_item ->> 'text', '')
-                ELSE ''
-            END AS context_text
-        FROM jsonb_array_elements(c.contexts) AS context_item
-    ) AS context_items
+        cc.citing_corpus_id,
+        cc.cited_corpus_id,
+        cc.citation_id,
+        cc.intents,
+        cc.is_influential,
+        cc.context_text,
+        cc.context_text_lower AS lowered_context_text
+    FROM solemd.citation_contexts cc
     WHERE
-        c.context_count > 0
-        AND (
-            c.citing_corpus_id = ANY(%s)
-            OR c.cited_corpus_id = ANY(%s)
+        (
+            cc.citing_corpus_id = ANY(%s)
+            OR cc.cited_corpus_id = ANY(%s)
         )
-        AND context_items.context_text <> ''
 ),
 matched_term_counts AS (
     SELECT
-        sc.citing_corpus_id,
-        sc.cited_corpus_id,
-        sc.citation_id,
-        sc.intents,
-        sc.is_influential,
-        sc.context_text,
+        scx.citing_corpus_id,
+        scx.cited_corpus_id,
+        scx.citation_id,
+        scx.intents,
+        scx.is_influential,
+        scx.context_text,
         COALESCE(COUNT(qt.lowered_term), 0)::float AS matched_term_count
-    FROM scoped_citations sc
+    FROM scoped_contexts scx
     LEFT JOIN query_terms qt
-      ON POSITION(qt.lowered_term IN sc.lowered_context_text) > 0
+      ON POSITION(qt.lowered_term IN scx.lowered_context_text) > 0
     GROUP BY
-        sc.citing_corpus_id,
-        sc.cited_corpus_id,
-        sc.citation_id,
-        sc.intents,
-        sc.is_influential,
-        sc.context_text
+        scx.citing_corpus_id,
+        scx.cited_corpus_id,
+        scx.citation_id,
+        scx.intents,
+        scx.is_influential,
+        scx.context_text
 ),
 scored_contexts AS (
     SELECT
@@ -225,56 +212,71 @@ ORDER BY lc.corpus_id, lc.corpus_rank
 # ---------------------------------------------------------------------------
 
 ENTITY_MATCH_SQL = f"""
-WITH query_terms AS (
-    SELECT DISTINCT
-        trim(term) AS raw_term,
-        lower(trim(term)) AS lowered_term
-    FROM unnest(%s::text[]) AS term
-    WHERE trim(term) <> ''
-),
+WITH {ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL.strip()},
 query_term_stats AS (
-    SELECT GREATEST(COUNT(*), 1) AS term_count
-    FROM query_terms
+    SELECT GREATEST(COUNT(DISTINCT lowered_term), 1) AS term_count
+    FROM top_concepts
 ),
-entity_surfaces AS (
+matched_mentions AS MATERIALIZED (
     SELECT
         pem.corpus_id,
         pem.entity_type,
         pem.concept_id,
-        lower(COALESCE(pem.text, '')) AS mention_surface,
-        lower(COALESCE(e.concept_id, pem.concept_id, '')) AS concept_surface,
-        lower(COALESCE(e.canonical_name, '')) AS canonical_surface,
+        tc.raw_term,
+        tc.lowered_term,
         COALESCE(pb.is_retrieval_default, false) AS is_retrieval_default,
         format(
             '%%s:%%s',
             COALESCE(pem.canonical_block_ordinal, -1),
             COALESCE(pem.canonical_sentence_ordinal, -1)
         ) AS structural_span_key
-    FROM solemd.paper_entity_mentions pem
-    LEFT JOIN solemd.entities e
-      ON {ENTITY_TABLE_TYPE_KEY_SQL} = {ENTITY_MENTION_TYPE_KEY_SQL}
-     AND {ENTITY_TABLE_CONCEPT_KEY_SQL} = {ENTITY_MENTION_CONCEPT_KEY_SQL}
+    FROM top_concepts tc
+    JOIN solemd.paper_entity_mentions pem
+      ON {ENTITY_MENTION_NAMESPACE_KEY_SQL} = tc.concept_namespace
+     AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tc.concept_id
     LEFT JOIN solemd.paper_blocks pb
       ON pb.corpus_id = pem.corpus_id
      AND pb.block_ordinal = pem.canonical_block_ordinal
-    WHERE pem.corpus_id = ANY(%s)
+    WHERE
+        tc.concept_namespace IS NOT NULL
+        AND pem.corpus_id = ANY(%s)
+    UNION ALL
+    SELECT
+        pem.corpus_id,
+        pem.entity_type,
+        pem.concept_id,
+        tc.raw_term,
+        tc.lowered_term,
+        COALESCE(pb.is_retrieval_default, false) AS is_retrieval_default,
+        format(
+            '%%s:%%s',
+            COALESCE(pem.canonical_block_ordinal, -1),
+            COALESCE(pem.canonical_sentence_ordinal, -1)
+        ) AS structural_span_key
+    FROM top_concepts tc
+    JOIN solemd.paper_entity_mentions pem
+      ON pem.runtime_concept_namespace_key IS NULL
+     AND {ENTITY_MENTION_TYPE_KEY_SQL} = tc.entity_type
+     AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tc.concept_id
+    LEFT JOIN solemd.paper_blocks pb
+      ON pb.corpus_id = pem.corpus_id
+     AND pb.block_ordinal = pem.canonical_block_ordinal
+    WHERE
+        tc.concept_namespace IS NULL
+        AND pem.corpus_id = ANY(%s)
 ),
 matched_entities AS (
     SELECT
-        es.corpus_id,
-        es.entity_type,
-        es.concept_id,
-        ARRAY_AGG(DISTINCT qt.raw_term ORDER BY qt.raw_term) AS matched_terms,
-        COUNT(DISTINCT qt.lowered_term) AS matched_term_count,
+        mm.corpus_id,
+        mm.entity_type,
+        mm.concept_id,
+        ARRAY_AGG(DISTINCT mm.raw_term ORDER BY mm.raw_term) AS matched_terms,
+        COUNT(DISTINCT mm.lowered_term) AS matched_term_count,
         COUNT(*) AS mention_count,
-        COUNT(DISTINCT es.structural_span_key) AS structural_span_count,
-        COUNT(*) FILTER (WHERE es.is_retrieval_default) AS retrieval_default_mention_count
-    FROM entity_surfaces es
-    JOIN query_terms qt
-      ON POSITION(qt.lowered_term IN es.concept_surface) > 0
-      OR POSITION(qt.lowered_term IN es.canonical_surface) > 0
-      OR POSITION(qt.lowered_term IN es.mention_surface) > 0
-    GROUP BY es.corpus_id, es.entity_type, es.concept_id
+        COUNT(DISTINCT mm.structural_span_key) AS structural_span_count,
+        COUNT(*) FILTER (WHERE mm.is_retrieval_default) AS retrieval_default_mention_count
+    FROM matched_mentions mm
+    GROUP BY mm.corpus_id, mm.entity_type, mm.concept_id
 ),
 ranked_matches AS (
     SELECT
@@ -442,6 +444,30 @@ SELECT
 FROM solemd.paper_references
 WHERE corpus_id = ANY(%s)
 ORDER BY corpus_id, reference_index
+"""
+
+AUTHOR_LOOKUP_SQL = """
+WITH ranked_authors AS (
+    SELECT
+        pa.corpus_id,
+        pa.author_position,
+        pa.author_id,
+        pa.name,
+        ROW_NUMBER() OVER (
+            PARTITION BY pa.corpus_id
+            ORDER BY pa.author_position
+        ) AS author_rank
+    FROM solemd.paper_authors pa
+    WHERE pa.corpus_id = ANY(%s)
+)
+SELECT
+    corpus_id,
+    author_position,
+    author_id,
+    name
+FROM ranked_authors
+WHERE author_rank <= %s
+ORDER BY corpus_id, author_position
 """
 
 ASSET_LOOKUP_SQL = """

@@ -16,11 +16,13 @@ from app.rag.models import (
     GraphRelease,
     GraphSignal,
     PaperAssetRecord,
+    PaperAuthorRecord,
     PaperEvidenceHit,
     PaperReferenceRecord,
     PaperSpeciesProfile,
     RelationMatchedPaperHit,
 )
+from app.rag.query_metadata import QueryMetadataHints
 from app.rag.repository_evidence_lookup import _EvidenceLookupMixin
 from app.rag.repository_paper_search import _PaperSearchMixin
 from app.rag.repository_seed_search import _SeedSearchMixin
@@ -31,6 +33,7 @@ from app.rag.repository_support import (
     ENTITY_TOP_CONCEPTS_PER_TERM as _ENTITY_TOP_CONCEPTS_PER_TERM,
 )
 from app.rag.repository_support import (
+    ResolvedEntityConcept,
     _dense_score_from_distance,
     _PinnedConnectionContext,
     _unique_stripped,
@@ -83,6 +86,7 @@ class RagRepository(Protocol):
         scope_corpus_ids: Sequence[int] | None = None,
         use_title_similarity: bool = True,
         use_title_candidate_lookup: bool | None = None,
+        query_metadata_hints: QueryMetadataHints | None = None,
     ) -> list[PaperEvidenceHit]: ...
 
     def search_exact_title_papers(
@@ -187,6 +191,13 @@ class RagRepository(Protocol):
         limit_per_paper: int = 3,
     ) -> dict[int, list[PaperReferenceRecord]]: ...
 
+    def fetch_authors(
+        self,
+        corpus_ids: Sequence[int],
+        *,
+        limit_per_paper: int = 3,
+    ) -> dict[int, list[PaperAuthorRecord]]: ...
+
     def fetch_assets(
         self,
         corpus_ids: Sequence[int],
@@ -226,8 +237,16 @@ class PostgresRagRepository(
         self._graph_scope_paper_counts: dict[str, int] = {}
         self._graph_scope_coverages: dict[str, float] = {}
         self._embedded_paper_count: int | None = None
+        self._current_graph_run_id: str | None = None
+        self._current_graph_run_loaded = False
         self._bound_connection: ContextVar[Any | None] = ContextVar(
             f"rag_repository_connection_{id(self)}",
+            default=None,
+        )
+        self._resolved_entity_concepts_by_phrase: ContextVar[
+            dict[str, tuple[ResolvedEntityConcept, ...]] | None
+        ] = ContextVar(
+            f"rag_repository_resolved_entities_{id(self)}",
             default=None,
         )
 
@@ -241,6 +260,40 @@ class PostgresRagRepository(
         if self._disable_session_jit:
             cur.execute("SET LOCAL jit = off")
 
+    def _resolve_current_graph_run_id(self) -> str | None:
+        if self._current_graph_run_loaded:
+            return self._current_graph_run_id
+
+        for release in self._graph_release_cache.values():
+            if release.is_current:
+                self._current_graph_run_id = release.graph_run_id
+                self._current_graph_run_loaded = True
+                return self._current_graph_run_id
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id
+                    FROM solemd.graph_runs
+                    WHERE graph_name = 'cosmograph'
+                      AND node_kind = 'corpus'
+                      AND status = 'completed'
+                      AND is_current = true
+                    ORDER BY completed_at DESC NULLS LAST, updated_at DESC
+                    LIMIT 1
+                    """
+                )
+                row = cur.fetchone()
+
+        self._current_graph_run_id = row["id"] if row else None
+        self._current_graph_run_loaded = True
+        return self._current_graph_run_id
+
+    def _is_current_graph_run(self, graph_run_id: str) -> bool:
+        current_graph_run_id = self._resolve_current_graph_run_id()
+        return bool(current_graph_run_id and graph_run_id == current_graph_run_id)
+
     @contextmanager
     def search_session(self) -> Iterator[None]:
         active_connection = self._bound_connection.get()
@@ -252,9 +305,11 @@ class PostgresRagRepository(
             with conn.cursor() as cur:
                 self._configure_search_session(cur)
             token = self._bound_connection.set(conn)
+            entity_token = self._resolved_entity_concepts_by_phrase.set({})
             try:
                 yield
             finally:
+                self._resolved_entity_concepts_by_phrase.reset(entity_token)
                 self._bound_connection.reset(token)
 
     def _paper_hit_from_row(self, row: dict[str, Any]) -> PaperEvidenceHit:
@@ -287,11 +342,15 @@ class PostgresRagRepository(
             lexical_score=float(row.get("lexical_score") or 0.0),
             chunk_lexical_score=float(row.get("chunk_lexical_score") or 0.0),
             title_similarity=float(row.get("title_similarity") or 0.0),
+            metadata_score=float(row.get("metadata_score") or 0.0),
             entity_score=float(row.get("entity_candidate_score") or 0.0),
             relation_score=float(row.get("relation_candidate_score") or 0.0),
             dense_score=_dense_score_from_distance(row.get("distance")),
             chunk_ordinal=row.get("chunk_ordinal"),
+            chunk_section_role=row.get("chunk_section_role"),
+            chunk_primary_block_kind=row.get("chunk_primary_block_kind"),
             chunk_snippet=row.get("chunk_snippet"),
+            metadata_match_fields=list(row.get("metadata_match_fields") or []),
         )
 
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
@@ -317,6 +376,9 @@ class PostgresRagRepository(
             is_current=bool(row.get("is_current")),
         )
         self._graph_release_cache[release_key] = release
+        if release.is_current:
+            self._current_graph_run_id = release.graph_run_id
+            self._current_graph_run_loaded = True
         return release
 
     def resolve_selected_corpus_id(

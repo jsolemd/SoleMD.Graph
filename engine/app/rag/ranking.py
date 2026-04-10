@@ -19,6 +19,7 @@ from app.rag.ranking_support import (
     _evidence_quality_affinity,
     _intent_affinity,
     _passage_alignment_affinity,
+    _passage_structure_affinity,
     _publication_type_affinity,
     _ranking_profile,
     _rrf_score,
@@ -45,6 +46,7 @@ def rank_paper_hits(
     species_profiles: Mapping[int, PaperSpeciesProfile] | None = None,
     evidence_intent: EvidenceIntent | None = None,
     channel_rankings: Mapping[RetrievalChannel, Mapping[int, int]] | None = None,
+    requested_publication_types: tuple[str, ...] = (),
     query_text: str | None = None,
     retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
     clinical_intent: ClinicalQueryIntent = ClinicalQueryIntent.GENERAL,
@@ -88,8 +90,14 @@ def rank_paper_hits(
         hit.citation_intent_score, matched_citation_intents = _citation_intent_affinity(
             paper_citation_hits
         )
-        hit.publication_type_score, matched_publication_types = _publication_type_affinity(hit)
-        hit.evidence_quality_score, evidence_quality_reasons = _evidence_quality_affinity(hit)
+        hit.publication_type_score, matched_publication_types = _publication_type_affinity(
+            hit,
+            requested_publication_types=requested_publication_types,
+        )
+        hit.evidence_quality_score, evidence_quality_reasons = _evidence_quality_affinity(
+            hit,
+            retrieval_profile=retrieval_profile,
+        )
         hit.clinical_prior_score, clinical_prior_reasons = score_clinical_prior(
             query_intent=clinical_intent,
             paper=hit,
@@ -102,6 +110,10 @@ def rank_paper_hits(
         hit.passage_alignment_score = _passage_alignment_affinity(
             hit,
             query_text=query_text,
+            retrieval_profile=retrieval_profile,
+        )
+        hit.passage_structure_score = _passage_structure_affinity(
+            hit,
             retrieval_profile=retrieval_profile,
         )
 
@@ -157,17 +169,20 @@ def rank_paper_hits(
             + (hit.chunk_lexical_score * score_profile.chunk_lexical_weight)
             + (hit.title_anchor_score * score_profile.title_anchor_weight)
             + (hit.selected_context_score * score_profile.selected_context_weight)
+            + (hit.cited_context_score * score_profile.cited_context_weight)
             + (hit.citation_boost * score_profile.citation_weight)
             + (hit.citation_intent_score * score_profile.citation_intent_weight)
             + (hit.entity_score * score_profile.entity_weight)
             + (hit.relation_score * score_profile.relation_weight)
             + (hit.dense_score * score_profile.dense_weight)
+            + (hit.metadata_score * score_profile.metadata_weight)
             + (hit.publication_type_score * score_profile.publication_type_weight)
             + (hit.evidence_quality_score * score_profile.evidence_quality_weight)
             + (hit.clinical_prior_score * score_profile.clinical_prior_weight)
             + (hit.intent_score * score_profile.intent_weight)
             + (hit.biomedical_rerank_score * score_profile.biomedical_rerank_weight)
             + (hit.passage_alignment_score * score_profile.passage_alignment_weight)
+            + (hit.passage_structure_score * score_profile.passage_structure_weight)
             + _direct_match_adjustment(
                 paper=hit,
                 retrieval_profile=retrieval_profile,
@@ -217,6 +232,7 @@ def _rank_sort_key(
             else 0.0,
             item.title_anchor_score,
             item.selected_context_score,
+            item.cited_context_score,
             item.fused_score,
             item.lexical_score,
             item.title_similarity,
@@ -237,6 +253,7 @@ def _rank_sort_key(
             item.biomedical_rerank_score,
             item.lexical_score,
             item.selected_context_score,
+            item.cited_context_score,
             item.citation_count or 0,
             item.corpus_id,
         )
@@ -251,6 +268,7 @@ def _rank_sort_key(
         item.semantic_score,
         item.lexical_score,
         item.selected_context_score,
+        item.cited_context_score,
         item.citation_count or 0,
         item.corpus_id,
     )

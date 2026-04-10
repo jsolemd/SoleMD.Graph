@@ -7,6 +7,7 @@ import type { GraphBundle } from "@/features/graph/types";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { usePromptBoxController } from "../use-prompt-box-controller";
 import { useRagQuery } from "../use-rag-query";
+import { useReferenceMentionSource } from "../use-reference-mention-source";
 
 jest.mock("@mantine/hooks", () => ({
   useViewportSize: () => ({ width: 1280, height: 720 }),
@@ -46,9 +47,18 @@ jest.mock("../use-rag-query", () => ({
   useRagQuery: jest.fn(),
 }));
 
+jest.mock("../use-reference-mention-source", () => ({
+  useReferenceMentionSource: jest.fn(),
+}));
+
 const mockedUseRagQuery = useRagQuery as jest.MockedFunction<typeof useRagQuery>;
+const mockedUseReferenceMentionSource =
+  useReferenceMentionSource as jest.MockedFunction<typeof useReferenceMentionSource>;
 const clearRag = jest.fn();
 const handleSubmit = jest.fn();
+const referenceMentionSource = {
+  getItems: jest.fn(async () => []),
+};
 
 type PromptControllerArgs = Parameters<typeof useRagQuery>[0];
 
@@ -65,6 +75,7 @@ beforeEach(() => {
   latestRagArgs = null;
   clearRag.mockReset();
   handleSubmit.mockReset();
+  mockedUseReferenceMentionSource.mockReturnValue(referenceMentionSource);
   useGraphStore.setState({
     ...useGraphStore.getInitialState(),
     mode: "ask",

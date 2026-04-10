@@ -2,8 +2,11 @@
 
 from app.rag._queries_paper_core import (
     ENTITY_MENTION_CONCEPT_KEY_SQL,
+    ENTITY_MENTION_NAMESPACE_KEY_SQL,
     ENTITY_MENTION_TYPE_KEY_SQL,
+    ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL,
     ENTITY_TABLE_CONCEPT_KEY_SQL,
+    ENTITY_TABLE_NAMESPACE_KEY_SQL,
     ENTITY_TABLE_TYPE_KEY_SQL,
     PAPER_CORE_JOINS,
     PAPER_SELECT_COLUMNS,
@@ -31,25 +34,76 @@ exact_matches AS MATERIALIZED (
         qt.raw_term,
         qt.lowered_term,
         {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS concept_score
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = qt.raw_term
+    WHERE COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term,
+        qt.lowered_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS concept_score
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = qt.upper_term
+    WHERE qt.upper_term <> qt.raw_term
+      AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term,
+        qt.lowered_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS concept_score
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('MESH:' || qt.raw_term)
+    WHERE qt.raw_term NOT LIKE '%%:%%'
+      AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term,
+        qt.lowered_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS concept_score
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('MESH:' || qt.upper_term)
+    WHERE qt.raw_term NOT LIKE '%%:%%'
+      AND qt.upper_term <> qt.raw_term
+      AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term,
+        qt.lowered_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
         {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
         e.paper_count,
         CASE
-            WHEN {ENTITY_TABLE_CONCEPT_KEY_SQL} = qt.raw_term
-              OR {ENTITY_TABLE_CONCEPT_KEY_SQL} = qt.upper_term
-              OR e.concept_id = qt.raw_term
-              OR e.concept_id = qt.upper_term
-            THEN 1.0
-            ELSE 0.98
+            WHEN ea.is_canonical THEN 0.98
+            ELSE 0.97
         END AS concept_score
     FROM query_terms qt
+    JOIN solemd.entity_aliases ea
+      ON ea.alias_key = qt.lowered_term
     JOIN solemd.entities e
-      ON (
-        {ENTITY_TABLE_CONCEPT_KEY_SQL} = qt.raw_term
-        OR {ENTITY_TABLE_CONCEPT_KEY_SQL} = qt.upper_term
-        OR e.concept_id = qt.raw_term
-        OR e.concept_id = qt.upper_term
-        OR lower(e.canonical_name) = qt.lowered_term
-      )
+      ON e.concept_id = ea.concept_id
+     AND e.entity_type = ea.entity_type
+    WHERE COALESCE(e.concept_id, '') NOT IN ('', '-')
 )
 """
 
@@ -71,6 +125,7 @@ fuzzy_matches AS MATERIALIZED (
         qt.raw_term,
         qt.lowered_term,
         {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
         {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
         e.paper_count,
         GREATEST(
@@ -86,6 +141,7 @@ fuzzy_matches AS MATERIALIZED (
         lower(e.canonical_name) LIKE ('%%' || qt.lowered_term || '%%')
         OR similarity(lower(e.canonical_name), qt.lowered_term) >= %s
       )
+    WHERE COALESCE(e.concept_id, '') NOT IN ('', '-')
 )
 """
 
@@ -164,6 +220,7 @@ top_concepts AS (
         raw_term,
         lowered_term,
         entity_type,
+        concept_namespace,
         concept_id,
         concept_score
     FROM (
@@ -180,65 +237,141 @@ top_concepts AS (
 """
 
 
-def _entity_matched_corpus_scores_cte_sql(*, scoped_to_selection: bool) -> str:
-    scope_sql = "WHERE pem.corpus_id = ANY(%s)"
-    if not scoped_to_selection:
-        scope_sql = """
+def _entity_matched_corpus_scores_cte_sql(*, scope_mode: str) -> str:
+    scope_join_sql = ""
+    scope_filter_sql = ""
+    if scope_mode == "selection":
+        scope_filter_sql = "AND pem.corpus_id = ANY(%s)"
+    elif scope_mode == "current_map":
+        scope_join_sql = """
+    JOIN solemd.corpus scope_corpus
+      ON scope_corpus.corpus_id = pem.corpus_id
+     AND scope_corpus.is_in_current_map IS TRUE
+"""
+    else:
+        scope_join_sql = """
     JOIN graph_scope gs
       ON gs.corpus_id = pem.corpus_id
 """
     return f"""
-matched_corpus_scores AS (
+matched_mentions AS MATERIALIZED (
     SELECT
         pem.corpus_id,
-        {ENTITY_CANDIDATE_SCORE_SQL.strip()} AS entity_candidate_score
+        pem.canonical_block_ordinal,
+        tc.lowered_term,
+        tc.concept_score,
+        COALESCE(pb.is_retrieval_default, false) AS is_retrieval_default
     FROM top_concepts tc
     JOIN solemd.paper_entity_mentions pem
-      ON {ENTITY_MENTION_TYPE_KEY_SQL} = tc.entity_type
+      ON {ENTITY_MENTION_NAMESPACE_KEY_SQL} = tc.concept_namespace
      AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tc.concept_id
+    {scope_join_sql.strip()}
     LEFT JOIN solemd.paper_blocks pb
       ON pb.corpus_id = pem.corpus_id
      AND pb.block_ordinal = pem.canonical_block_ordinal
-    {scope_sql.strip()}
-    GROUP BY pem.corpus_id
+    WHERE tc.concept_namespace IS NOT NULL
+    {scope_filter_sql}
+    UNION ALL
+    SELECT
+        pem.corpus_id,
+        pem.canonical_block_ordinal,
+        tc.lowered_term,
+        tc.concept_score,
+        COALESCE(pb.is_retrieval_default, false) AS is_retrieval_default
+    FROM top_concepts tc
+    JOIN solemd.paper_entity_mentions pem
+      ON pem.runtime_concept_namespace_key IS NULL
+     AND {ENTITY_MENTION_TYPE_KEY_SQL} = tc.entity_type
+     AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tc.concept_id
+    {scope_join_sql.strip()}
+    LEFT JOIN solemd.paper_blocks pb
+      ON pb.corpus_id = pem.corpus_id
+     AND pb.block_ordinal = pem.canonical_block_ordinal
+    WHERE tc.concept_namespace IS NULL
+    {scope_filter_sql}
+),
+matched_corpus_scores AS (
+    SELECT
+        mm.corpus_id,
+        LEAST(
+            1.35,
+            MAX(mm.concept_score)
+            + LEAST(
+                0.18,
+                GREATEST(COUNT(DISTINCT mm.lowered_term) - 1, 0)::DOUBLE PRECISION * 0.09
+            )
+            + LEAST(0.12, LN(COUNT(*) + 1) * 0.05)
+            + LEAST(
+                0.12,
+                LN(
+                    COUNT(
+                        DISTINCT format(
+                            '%%s:%%s',
+                            COALESCE(mm.canonical_block_ordinal, -1),
+                            -1
+                        )
+                    ) + 1
+                ) * 0.06
+            )
+            + LEAST(
+                0.12,
+                COUNT(*) FILTER (
+                    WHERE mm.is_retrieval_default
+                )::DOUBLE PRECISION * 0.04
+            )
+        ) AS entity_candidate_score
+    FROM matched_mentions mm
+    GROUP BY mm.corpus_id
 )
 """
 
 
-def _paper_entity_search_sql(*, exact_only: bool, scoped_to_selection: bool) -> str:
-    ctes: list[str] = [ENTITY_QUERY_TERMS_CTE_SQL, ENTITY_EXACT_MATCHES_CTE_SQL]
-    if not exact_only:
-        ctes.extend(
-            [
-                ENTITY_FUZZY_QUERY_TERMS_CTE_SQL,
-                ENTITY_FUZZY_MATCHES_CTE_SQL,
-                ENTITY_MATCHED_CONCEPTS_CTE_SQL,
-            ]
-        )
-    ctes.append(_entity_top_concepts_cte_sql(exact_only=exact_only))
-    if not scoped_to_selection:
+def _paper_entity_exact_search_sql(*, scope_mode: str) -> str:
+    ctes: list[str] = [ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL]
+    if scope_mode == "graph":
         ctes.append(ENTITY_GRAPH_SCOPE_CTE_SQL)
     ctes.append(
         _entity_matched_corpus_scores_cte_sql(
-            scoped_to_selection=scoped_to_selection,
+            scope_mode=scope_mode,
         )
     )
     return "WITH " + ",\n".join(ctes) + ",\n" + ENTITY_RANKED_PAPERS_SELECT_SQL
 
 
-PAPER_ENTITY_EXACT_SEARCH_SQL = _paper_entity_search_sql(
-    exact_only=True,
-    scoped_to_selection=False,
+def _paper_entity_search_sql(*, scope_mode: str) -> str:
+    ctes: list[str] = [
+        ENTITY_QUERY_TERMS_CTE_SQL,
+        ENTITY_EXACT_MATCHES_CTE_SQL,
+        ENTITY_FUZZY_QUERY_TERMS_CTE_SQL,
+        ENTITY_FUZZY_MATCHES_CTE_SQL,
+        ENTITY_MATCHED_CONCEPTS_CTE_SQL,
+        _entity_top_concepts_cte_sql(exact_only=False),
+    ]
+    if scope_mode == "graph":
+        ctes.append(ENTITY_GRAPH_SCOPE_CTE_SQL)
+    ctes.append(
+        _entity_matched_corpus_scores_cte_sql(
+            scope_mode=scope_mode,
+        )
+    )
+    return "WITH " + ",\n".join(ctes) + ",\n" + ENTITY_RANKED_PAPERS_SELECT_SQL
+
+
+PAPER_ENTITY_EXACT_SEARCH_SQL = _paper_entity_exact_search_sql(
+    scope_mode="graph",
 )
-PAPER_ENTITY_EXACT_SEARCH_IN_SELECTION_SQL = _paper_entity_search_sql(
-    exact_only=True,
-    scoped_to_selection=True,
+PAPER_ENTITY_EXACT_SEARCH_CURRENT_MAP_SQL = _paper_entity_exact_search_sql(
+    scope_mode="current_map",
+)
+PAPER_ENTITY_EXACT_SEARCH_IN_SELECTION_SQL = _paper_entity_exact_search_sql(
+    scope_mode="selection",
 )
 PAPER_ENTITY_SEARCH_SQL = _paper_entity_search_sql(
-    exact_only=False,
-    scoped_to_selection=False,
+    scope_mode="graph",
+)
+PAPER_ENTITY_SEARCH_CURRENT_MAP_SQL = _paper_entity_search_sql(
+    scope_mode="current_map",
 )
 PAPER_ENTITY_SEARCH_IN_SELECTION_SQL = _paper_entity_search_sql(
-    exact_only=False,
-    scoped_to_selection=True,
+    scope_mode="selection",
 )

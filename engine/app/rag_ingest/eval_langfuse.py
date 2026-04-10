@@ -12,7 +12,12 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
-from app.langfuse_config import get_langfuse as _get_langfuse, langfuse_api as _langfuse_api
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+)
+from app.langfuse_config import (
+    langfuse_api as _langfuse_api,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,38 +42,167 @@ def create_langfuse_dataset(
 # Score configs — define quality dimensions for the Langfuse UI
 # ---------------------------------------------------------------------------
 
+
+def _numeric_score_config(
+    name: str,
+    description: str,
+    *,
+    max_value: float | None = None,
+) -> dict[str, Any]:
+    config: dict[str, Any] = {
+        "name": name,
+        "dataType": "NUMERIC",
+        "minValue": 0,
+        "description": description,
+    }
+    if max_value is not None:
+        config["maxValue"] = max_value
+    return config
+
+
+def _category(label: str, value: int) -> dict[str, Any]:
+    return {"label": label, "value": value}
+
+
+def _categorical_score_config(
+    name: str,
+    description: str,
+    *,
+    categories: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "dataType": "CATEGORICAL",
+        "categories": categories,
+        "description": description,
+    }
+
+
 RAG_SCORE_CONFIGS: list[dict[str, Any]] = [
-    {"name": "hit_at_1", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Target paper at rank 1"},
-    {"name": "hit_at_k", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Target paper in top-k"},
-    {"name": "mrr", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Mean reciprocal rank"},
-    {"name": "grounded_answer_rate", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Grounded answer present"},
-    {"name": "target_in_grounded_answer", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Target paper in grounded answer"},
-    {"name": "target_in_answer_corpus", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Target paper in answer corpus"},
-    {"name": "duration_ms", "dataType": "NUMERIC", "minValue": 0, "description": "Service duration in ms"},
-    {"name": "evidence_bundle_count", "dataType": "NUMERIC", "minValue": 0, "description": "Evidence bundles returned"},
-    {"name": "grounded_answer_present", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Grounded answer present (binary)"},
-    {"name": "faithfulness", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Answer faithfulness to retrieved context (managed evaluator or agent review)"},
-    {"name": "retrieval_profile", "dataType": "CATEGORICAL", "categories": [{"label": "title_lookup", "value": 0}, {"label": "question_lookup", "value": 1}, {"label": "passage_lookup", "value": 2}, {"label": "general", "value": 3}], "description": "Query retrieval profile (read via stringValue, not the numeric value field)"},
-    {"name": "warehouse_depth", "dataType": "CATEGORICAL", "categories": [{"label": "fulltext", "value": 0}, {"label": "abstract", "value": 1}, {"label": "none", "value": 2}], "description": "Warehouse content depth for target paper"},
-    {"name": "routing_match", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Actual retrieval_profile matches expected_retrieval_profile on the dataset case"},
+    _numeric_score_config("hit_at_1", "Target paper at rank 1", max_value=1),
+    _numeric_score_config("hit_at_k", "Target paper in top-k", max_value=1),
+    _numeric_score_config("mrr", "Mean reciprocal rank", max_value=1),
+    _numeric_score_config(
+        "grounded_answer_rate",
+        "Grounded answer present",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "target_in_grounded_answer",
+        "Target paper in grounded answer",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "target_in_answer_corpus",
+        "Target paper in answer corpus",
+        max_value=1,
+    ),
+    _numeric_score_config("duration_ms", "Service duration in ms"),
+    _numeric_score_config(
+        "evidence_bundle_count",
+        "Evidence bundles returned",
+    ),
+    _numeric_score_config(
+        "display_author_coverage",
+        "Fraction of displayed evidence bundles carrying author metadata",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "display_journal_coverage",
+        "Fraction of displayed evidence bundles carrying journal metadata",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "display_year_coverage",
+        "Fraction of displayed evidence bundles carrying publication year metadata",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "display_study_metadata_coverage",
+        "Average author/journal/year coverage across displayed evidence bundles",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "grounded_answer_present",
+        "Grounded answer present (binary)",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "faithfulness",
+        "Answer faithfulness to retrieved context (managed evaluator or agent review)",
+        max_value=1,
+    ),
+    _categorical_score_config(
+        "retrieval_profile",
+        "Query retrieval profile (read via stringValue, not the numeric value field)",
+        categories=[
+            _category("title_lookup", 0),
+            _category("question_lookup", 1),
+            _category("passage_lookup", 2),
+            _category("general", 3),
+        ],
+    ),
+    _categorical_score_config(
+        "warehouse_depth",
+        "Warehouse content depth for target paper",
+        categories=[
+            _category("fulltext", 0),
+            _category("abstract", 1),
+            _category("none", 2),
+        ],
+    ),
+    _numeric_score_config(
+        "routing_match",
+        "Actual retrieval_profile matches expected_retrieval_profile on the dataset case",
+        max_value=1,
+    ),
     # Ingest quality scores
-    {"name": "section_count", "dataType": "NUMERIC", "minValue": 0, "description": "Parsed section count"},
-    {"name": "block_count", "dataType": "NUMERIC", "minValue": 0, "description": "Parsed block count"},
-    {"name": "sentence_count", "dataType": "NUMERIC", "minValue": 0, "description": "Parsed sentence count"},
-    {"name": "entity_count", "dataType": "NUMERIC", "minValue": 0, "description": "Entity mention count"},
-    {"name": "has_abstract_section", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Parser detected abstract section role"},
-    {"name": "has_title_section", "dataType": "NUMERIC", "minValue": 0, "maxValue": 1, "description": "Parser detected title/front_matter section"},
-    {"name": "source_availability", "dataType": "CATEGORICAL", "categories": [{"label": "abstract", "value": 0}, {"label": "full_text", "value": 1}], "description": "Warehouse content availability"},
-    {"name": "source_system", "dataType": "CATEGORICAL", "categories": [{"label": "biocxml", "value": 0}, {"label": "s2orc_v2", "value": 1}, {"label": "abstract_only", "value": 2}], "description": "Primary source system"},
+    _numeric_score_config("section_count", "Parsed section count"),
+    _numeric_score_config("block_count", "Parsed block count"),
+    _numeric_score_config("sentence_count", "Parsed sentence count"),
+    _numeric_score_config("entity_count", "Entity mention count"),
+    _numeric_score_config(
+        "has_abstract_section",
+        "Parser detected abstract section role",
+        max_value=1,
+    ),
+    _numeric_score_config(
+        "has_title_section",
+        "Parser detected title/front_matter section",
+        max_value=1,
+    ),
+    _categorical_score_config(
+        "source_availability",
+        "Warehouse content availability",
+        categories=[
+            _category("abstract", 0),
+            _category("full_text", 1),
+        ],
+    ),
+    _categorical_score_config(
+        "source_system",
+        "Primary source system",
+        categories=[
+            _category("biocxml", 0),
+            _category("s2orc_v2", 1),
+            _category("abstract_only", 2),
+        ],
+    ),
     # Graph build metrics
-    {"name": "graph_point_count", "dataType": "NUMERIC", "minValue": 0, "description": "Total graph points in build"},
-    {"name": "graph_cluster_count", "dataType": "NUMERIC", "minValue": 0, "description": "Leiden cluster count"},
-    {"name": "graph_bundle_bytes", "dataType": "NUMERIC", "minValue": 0, "description": "Export bundle total bytes"},
-    {"name": "graph_build_duration_s", "dataType": "NUMERIC", "minValue": 0, "description": "Full graph build wall-clock seconds"},
+    _numeric_score_config("graph_point_count", "Total graph points in build"),
+    _numeric_score_config("graph_cluster_count", "Leiden cluster count"),
+    _numeric_score_config("graph_bundle_bytes", "Export bundle total bytes"),
+    _numeric_score_config(
+        "graph_build_duration_s",
+        "Full graph build wall-clock seconds",
+    ),
     # Graph cluster labeling
-    {"name": "graph_cluster_labeled_count", "dataType": "NUMERIC", "minValue": 0, "description": "Clusters successfully labeled by LLM"},
-    {"name": "graph_cluster_error_count", "dataType": "NUMERIC", "minValue": 0, "description": "Batch labeling errors"},
-    {"name": "graph_cluster_total", "dataType": "NUMERIC", "minValue": 0, "description": "Total clusters in labeling run"},
+    _numeric_score_config(
+        "graph_cluster_labeled_count",
+        "Clusters successfully labeled by LLM",
+    ),
+    _numeric_score_config("graph_cluster_error_count", "Batch labeling errors"),
+    _numeric_score_config("graph_cluster_total", "Total clusters in labeling run"),
 ]
 
 
