@@ -29,7 +29,7 @@ interface WikiPanelProps {
   queries: GraphBundleQueries;
 }
 
-const DEFAULT_SLUG = "entities/melatonin";
+const DEFAULT_SLUG = "index";
 const EMPTY_RESOLVED_LINKS: Record<string, string> = {};
 const EMPTY_PAPER_REFS: Record<number, string> = {};
 

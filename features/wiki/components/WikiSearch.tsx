@@ -18,11 +18,24 @@ interface WikiSearchProps {
 }
 
 /**
- * The backend returns ts_headline with StartSel=**, StopSel=** markers.
- * Strip the markers and render as plain text — never inject as HTML.
+ * Clean FTS headline for display. The backend returns ts_headline snippets
+ * from raw markdown content_md, so they may contain:
+ * - ** markers (StartSel/StopSel from ts_headline)
+ * - [[wikilink]] and [[pmid:NNN]] syntax
+ * - Markdown heading markers (#)
+ * - List markers (- at line start)
+ *
+ * Strip all of these for clean plain-text display.
  */
-function stripHeadlineMarkers(headline: string): string {
-  return headline.replace(/\*\*/g, "");
+function cleanHeadline(headline: string): string {
+  return headline
+    .replace(/\*\*/g, "")
+    .replace(/\[\[pmid:\d+\]\]/gi, "")
+    .replace(/\[\[([^\]|]+?)(?:\|[^\]]+)?\]\]/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 export function WikiSearch({ onNavigate }: WikiSearchProps) {
@@ -157,7 +170,7 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
               <div style={panelTextStyle}>{hit.title}</div>
               {hit.headline && (
                 <div style={panelTextMutedStyle} className="line-clamp-1">
-                  {stripHeadlineMarkers(hit.headline)}
+                  {cleanHeadline(hit.headline)}
                 </div>
               )}
             </button>
