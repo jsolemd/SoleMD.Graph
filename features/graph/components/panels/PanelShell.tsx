@@ -1,13 +1,11 @@
 "use client";
 
 import { type ComponentProps, type ReactNode, useEffect, useRef } from "react";
-import { Loader, Text, ActionIcon, Tooltip, Switch } from "@mantine/core";
+import { Loader, Text, Switch } from "@mantine/core";
 import { motion } from "framer-motion";
-import { X } from "lucide-react";
 import { panelReveal } from "@/lib/motion";
 import { useDashboardStore } from "@/features/graph/stores";
-
-const panelChromeTextClassName = "uppercase tracking-[0.08em]";
+import { PanelChrome } from "./PanelChrome";
 
 /**
  * Panel text style objects — inline styles beat Mantine's class-based font-size.
@@ -298,20 +296,6 @@ export function PanelShell({
   const panelRef = useRef<HTMLDivElement>(null);
   const setPanelBottomY = useDashboardStore((s) => s.setPanelBottomY);
 
-  // Dismiss on Escape — ref avoids re-registering on every onClose identity change
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onCloseRef.current();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
   // Report panel bottom position so PromptBox can check for overlap.
   // Use layout position (PANEL_TOP + height) instead of getBoundingClientRect,
   // which reflects the current framer-motion animated transform (y: -16 on enter).
@@ -356,36 +340,9 @@ export function PanelShell({
         boxShadow: "var(--graph-panel-shadow)",
       }}
     >
-      <div className="flex items-center justify-between px-2.5 py-1.5">
-        <Text
-          fw={600}
-          className={panelChromeTextClassName}
-          style={{ ...panelTextMutedStyle, ...panelChromeStyle }}
-        >
-          {title}
-        </Text>
-        <div className="flex items-center gap-1">
-          {headerActions}
-          <Tooltip
-            label={`Close ${title.toLowerCase()}`}
-            position="bottom"
-            withArrow
-          >
-            <ActionIcon
-              variant="transparent"
-              size={24}
-              radius="xl"
-              className="graph-icon-btn"
-              styles={iconBtnStyles}
-              onClick={onClose}
-              aria-label={`Close ${title.toLowerCase()} panel`}
-            >
-              <X size={12} />
-            </ActionIcon>
-          </Tooltip>
-        </div>
-      </div>
-      {children}
+      <PanelChrome title={title} headerActions={headerActions} onClose={onClose}>
+        {children}
+      </PanelChrome>
     </motion.div>
   );
 }

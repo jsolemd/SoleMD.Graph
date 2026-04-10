@@ -168,7 +168,7 @@ export function DashboardShellViewport(state: DashboardShellController) {
                 />
               )}
               {!uiHidden && panelsVisible && activePanel === "wiki" && (
-                <WikiPanel key="wiki" bundle={bundle} />
+                <WikiPanel key="wiki" bundle={bundle} queries={queries} />
               )}
             </AnimatePresence>
 

@@ -26,6 +26,9 @@ export interface PanelSlice {
   // Write mode
   writeContent: string
 
+  // Keyed registry — any floating element registers by ID
+  floatingObstacles: Record<string, { x: number; y: number; width: number; height: number }>
+
   // Actions
   setActivePanel: (panel: ActivePanel) => void
   togglePanel: (panel: ActivePanel) => void
@@ -49,6 +52,8 @@ export interface PanelSlice {
   setWriteContent: (content: string) => void
   setWikiExpanded: (expanded: boolean) => void
   setWikiExpandedWidth: (width: number) => void
+  setFloatingObstacle: (id: string, rect: { x: number; y: number; width: number; height: number }) => void
+  clearFloatingObstacle: (id: string) => void
 }
 
 export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> = (set) => ({
@@ -64,6 +69,7 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   wikiExpanded: false,
   wikiExpandedWidth: 420,
   writeContent: '',
+  floatingObstacles: {},
 
   setActivePanel: (panel) => set((s) => (
     s.activePanel === panel ? s : { activePanel: panel }
@@ -172,4 +178,15 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   setWikiExpandedWidth: (width) => set((s) => (
     s.wikiExpandedWidth === width ? s : { wikiExpandedWidth: width }
   )),
+  setFloatingObstacle: (id, rect) =>
+    set((s) => ({
+      floatingObstacles: { ...s.floatingObstacles, [id]: rect },
+    })),
+  clearFloatingObstacle: (id) =>
+    set((s) => {
+      if (!(id in s.floatingObstacles)) return s
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
+      const { [id]: _, ...rest } = s.floatingObstacles
+      return { floatingObstacles: rest }
+    }),
 })

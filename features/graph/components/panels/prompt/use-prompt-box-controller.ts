@@ -29,6 +29,7 @@ import type {
 } from "@/features/graph/types";
 import { useTypewriter } from "@/features/graph/hooks/use-typewriter";
 import { getSelectionScopeToggleLabel, isSelectionScopeAvailable, isSelectionScopeEnabled } from "./selection-scope";
+import type { PromptAvoidRect } from "./avoidance";
 import { useFocusedAvoidanceRects } from "./use-focused-avoidance-rects";
 import { usePromptPosition } from "./use-prompt-position";
 import { useRagQuery } from "./use-rag-query";
@@ -37,6 +38,7 @@ import {
   EVIDENCE_ASSIST_PROVIDER,
   isEvidenceAssistRequest,
 } from "./evidence-assist";
+import type { EntityRefSnapshot } from "../editor/use-create-editor-controller";
 import type { PromptInteractionRequest } from "../editor/prompt-interactions";
 import type { ReferenceMentionSource } from "../editor/reference-mention-extension";
 import {
@@ -44,6 +46,7 @@ import {
   dispatchPromptInteraction,
   getPromptInteractionProviders,
 } from "./prompt-interaction-runtime";
+import { useEntityOverlaySync, type EntityOverlaySyncRef } from "@/features/graph/components/entities/use-entity-overlay-sync";
 import { BOTTOM_BASE, MAX_CARD_W, SCOPE_LABELS, VIEWPORT_MARGIN, VW_RATIO, cardWidth } from "./constants";
 
 export interface PromptBoxControllerProps {
@@ -79,6 +82,7 @@ export interface PromptBoxControllerState {
   promptInteractionProviders: ReturnType<typeof getPromptInteractionProviders>;
   referenceMentionSource: ReferenceMentionSource;
   handlePromptInteraction: (request: PromptInteractionRequest) => void;
+  handleEntityRefsChange: (refs: readonly EntityRefSnapshot[]) => void;
   clearRag: ReturnType<typeof useRagQuery>["clearRag"];
   handlePromptContentChange: (markdown: string) => void;
   handlePromptEmptyChange: (empty: boolean) => void;
@@ -127,6 +131,7 @@ export function usePromptBoxController({
   const bottomClearance = useDashboardStore(selectBottomClearance);
   const leftClearance = useDashboardStore(selectLeftClearance);
   const rightClearance = useDashboardStore(selectRightClearance);
+  const floatingObstacles = useDashboardStore((s) => s.floatingObstacles);
   const activeMode = getModeConfig(mode);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-pick on mode change
   const examples = useMemo(() => [...pickRandom(MODE_EXAMPLES[mode], 2), `${activeMode.label} with the knowledge graph...`], [mode]);
@@ -164,6 +169,22 @@ export function usePromptBoxController({
     selectedNode,
     currentPointScopeSql,
     selectionScopeEnabled: selectionOnlyEnabled,
+  });
+
+  const [entityRefs, setEntityRefs] = useState<readonly EntityOverlaySyncRef[]>([]);
+
+  const handleEntityRefsChange = useCallback(
+    (refs: readonly EntityRefSnapshot[]) => {
+      setEntityRefs(refs);
+    },
+    [],
+  );
+
+  useEntityOverlaySync({
+    entityRefs,
+    bundle,
+    queries,
+    enabled: Boolean(queries) && entityRefs.length > 0,
   });
 
   const {
@@ -209,6 +230,22 @@ export function usePromptBoxController({
     labelText: focusedLabelText,
   });
 
+  const floatingObstacleRects: PromptAvoidRect[] = useMemo(() =>
+    Object.values(floatingObstacles).map((r) => ({
+      left: r.x,
+      top: r.y,
+      right: r.x + r.width,
+      bottom: r.y + r.height,
+    })),
+    [floatingObstacles],
+  );
+  const mergedAvoidRects = useMemo(
+    () => floatingObstacleRects.length > 0
+      ? [...avoidRects, ...floatingObstacleRects]
+      : avoidRects,
+    [avoidRects, floatingObstacleRects],
+  );
+
   const {
     isDragging,
     userDragX,
@@ -232,7 +269,7 @@ export function usePromptBoxController({
     rightClearance,
     leftPanelBottom,
     rightPanelBottom,
-    avoidRects,
+    avoidRects: mergedAvoidRects,
     vw,
     vh,
     cardRef,
@@ -450,6 +487,7 @@ export function usePromptBoxController({
     promptInteractionProviders,
     referenceMentionSource,
     handlePromptInteraction,
+    handleEntityRefsChange,
     clearRag,
     handlePromptContentChange,
     handlePromptEmptyChange,

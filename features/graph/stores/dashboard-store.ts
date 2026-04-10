@@ -85,6 +85,8 @@ export function selectLeftClearance(s: DashboardState): number {
   // About panel renders regardless of panelsVisible
   if (s.activePanel === 'about') return PANEL_WIDTHS.about + PANEL_MARGIN;
   if (!s.panelsVisible) return 0;
+  // Floating panel — not docked, no left reservation
+  if (s.activePanel in s.floatingObstacles) return 0;
   if (s.activePanel === 'wiki' && s.wikiExpanded) {
     return (s.wikiExpandedWidth ?? PANEL_WIDTHS.wiki) + PANEL_MARGIN;
   }

@@ -1,7 +1,6 @@
 import type {
   GraphBundleQueries,
   GraphPaperAvailabilityResult,
-  GraphPointRecord,
   OverlayProducerId,
 } from "@/features/graph/types";
 
