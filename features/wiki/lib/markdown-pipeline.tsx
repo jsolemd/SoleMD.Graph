@@ -11,7 +11,6 @@ import remarkGfm from 'remark-gfm'
 import rehypeSlug from 'rehype-slug'
 import type { PluggableList } from 'unified'
 
-import { remarkWikilinks, type RemarkWikilinksOptions } from './remark-wikilinks'
 import { remarkPmidCitations, type RemarkPmidCitationsOptions } from './remark-pmid-citations'
 import { remarkCallouts } from './remark-callouts'
 
@@ -67,12 +66,13 @@ export interface CalloutProps {
 export function createWikiRemarkPlugins(
   data: WikiPipelineData,
 ): PluggableList {
-  const wikilinkOpts: RemarkWikilinksOptions = { resolvedLinks: data.resolvedLinks }
+  // Wikilinks are preprocessed (string replacement) before parsing —
+  // see preprocessWikilinks in remark-wikilinks.ts. Only PMID citations
+  // and callouts need remark-level AST transforms.
   const pmidOpts: RemarkPmidCitationsOptions = { paperGraphRefs: data.paperGraphRefs }
 
   return [
     remarkGfm,
-    [remarkWikilinks, wikilinkOpts],
     [remarkPmidCitations, pmidOpts],
     remarkCallouts,
   ]

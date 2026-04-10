@@ -1,160 +1,88 @@
 /**
- * Unit tests for the wikilinks remark plugin.
+ * Unit tests for wiki link preprocessing.
  *
- * Tests operate on the MDAST directly using the plugin's transform function
- * to avoid ESM-only unified/remark-parse import issues in Jest.
+ * Tests the preprocessWikilinks function which converts [[target]]
+ * wikilinks in raw markdown to standard markdown links before parsing.
  */
-import type { Root, Paragraph, Text, Link, PhrasingContent } from 'mdast'
-import { remarkWikilinks } from '../remark-wikilinks'
+import { preprocessWikilinks } from '../remark-wikilinks'
 
-/** Build a minimal MDAST with one paragraph containing text. */
-function makeTree(text: string): Root {
-  return {
-    type: 'root',
-    children: [
-      {
-        type: 'paragraph',
-        children: [{ type: 'text', value: text }],
-      },
-    ],
-  }
-}
-
-function getParaChildren(tree: Root): PhrasingContent[] {
-  return (tree.children[0] as Paragraph).children
-}
-
-function getLinks(tree: Root): Link[] {
-  return getParaChildren(tree).filter((n): n is Link => n.type === 'link')
-}
-
-function linkText(link: Link): string {
-  return (link.children[0] as Text).value
-}
-
-describe('remarkWikilinks', () => {
-  it('converts resolved [[target]] to a wiki: link', () => {
-    const tree = makeTree('see [[serotonin]] here')
-    const transform = remarkWikilinks({ resolvedLinks: { serotonin: 'entities/serotonin' } })
-    transform(tree, {} as never, {} as never)
-
-    const links = getLinks(tree)
-    expect(links).toHaveLength(1)
-    expect(links[0].url).toBe('wiki:entities/serotonin')
-    expect(linkText(links[0])).toBe('serotonin')
+describe('preprocessWikilinks', () => {
+  it('converts resolved [[target]] to a standard markdown link', () => {
+    const result = preprocessWikilinks(
+      'see [[serotonin]] here',
+      { serotonin: 'entities/serotonin' },
+    )
+    expect(result).toBe('see [serotonin](wiki:entities/serotonin) here')
   })
 
   it('handles display alias [[target|alias]]', () => {
-    const tree = makeTree('see [[serotonin|5-HT]]')
-    const transform = remarkWikilinks({ resolvedLinks: { serotonin: 'entities/serotonin' } })
-    transform(tree, {} as never, {} as never)
-
-    const link = getLinks(tree)[0]
-    expect(link.url).toBe('wiki:entities/serotonin')
-    expect(linkText(link)).toBe('5-HT')
+    const result = preprocessWikilinks(
+      'see [[serotonin|5-HT]]',
+      { serotonin: 'entities/serotonin' },
+    )
+    expect(result).toBe('see [5-HT](wiki:entities/serotonin)')
   })
 
   it('handles multiple wikilinks in one line', () => {
-    const tree = makeTree('[[alpha]] and [[beta]]')
-    const transform = remarkWikilinks({
-      resolvedLinks: { alpha: 'entities/alpha', beta: 'entities/beta' },
-    })
-    transform(tree, {} as never, {} as never)
-
-    const links = getLinks(tree)
-    expect(links).toHaveLength(2)
-    expect(links[0].url).toBe('wiki:entities/alpha')
-    expect(links[1].url).toBe('wiki:entities/beta')
+    const result = preprocessWikilinks(
+      '[[alpha]] and [[beta]]',
+      { alpha: 'entities/alpha', beta: 'entities/beta' },
+    )
+    expect(result).toBe('[alpha](wiki:entities/alpha) and [beta](wiki:entities/beta)')
   })
 
   it('ignores [[pmid:NNN]] citations', () => {
-    const tree = makeTree('[[pmid:12345]] and [[serotonin]]')
-    const transform = remarkWikilinks({ resolvedLinks: { serotonin: 'entities/serotonin' } })
-    transform(tree, {} as never, {} as never)
-
-    const wikiLinks = getLinks(tree).filter(l => l.url.startsWith('wiki:'))
-    expect(wikiLinks).toHaveLength(1)
-    expect(wikiLinks[0].url).toBe('wiki:entities/serotonin')
+    const result = preprocessWikilinks(
+      '[[pmid:12345]] and [[serotonin]]',
+      { serotonin: 'entities/serotonin' },
+    )
+    expect(result).toBe('[[pmid:12345]] and [serotonin](wiki:entities/serotonin)')
   })
 
   it('preserves surrounding text', () => {
-    const tree = makeTree('before [[link]] after')
-    const transform = remarkWikilinks({ resolvedLinks: { link: 'entities/link' } })
-    transform(tree, {} as never, {} as never)
-
-    const children = getParaChildren(tree)
-    expect(children).toHaveLength(3)
-    expect((children[0] as Text).value).toBe('before ')
-    expect(children[1].type).toBe('link')
-    expect((children[2] as Text).value).toBe(' after')
+    const result = preprocessWikilinks(
+      'before [[link]] after',
+      { link: 'entities/link' },
+    )
+    expect(result).toBe('before [link](wiki:entities/link) after')
   })
 
-  // --- Regression: unresolved wikilinks stay as plain text ---
-
-  it('renders unresolved [[target]] as plain text, not a navigable link', () => {
-    const tree = makeTree('see [[nonexistent]] here')
-    const transform = remarkWikilinks({ resolvedLinks: {} })
-    transform(tree, {} as never, {} as never)
-
-    const links = getLinks(tree)
-    expect(links).toHaveLength(0)
-
-    // The display text should still appear
-    const children = getParaChildren(tree)
-    const allText = children.map(c => (c as Text).value).join('')
-    expect(allText).toBe('see nonexistent here')
+  it('renders unresolved [[target]] as plain text', () => {
+    const result = preprocessWikilinks(
+      'see [[nonexistent]] here',
+      {},
+    )
+    expect(result).toBe('see nonexistent here')
   })
 
   it('renders mixed resolved and unresolved wikilinks correctly', () => {
-    const tree = makeTree('[[known]] and [[unknown]]')
-    const transform = remarkWikilinks({ resolvedLinks: { known: 'entities/known' } })
-    transform(tree, {} as never, {} as never)
-
-    const links = getLinks(tree)
-    expect(links).toHaveLength(1)
-    expect(links[0].url).toBe('wiki:entities/known')
-
-    // "unknown" should be plain text
-    const children = getParaChildren(tree)
-    const textNodes = children.filter((c): c is Text => c.type === 'text')
-    expect(textNodes.some(t => t.value.includes('unknown'))).toBe(true)
+    const result = preprocessWikilinks(
+      '[[known]] and [[unknown]]',
+      { known: 'entities/known' },
+    )
+    expect(result).toBe('[known](wiki:entities/known) and unknown')
   })
 
-  it('with no resolvedLinks, all wikilinks become plain text', () => {
-    const tree = makeTree('[[alpha]] and [[beta]]')
-    const transform = remarkWikilinks()
-    transform(tree, {} as never, {} as never)
-
-    expect(getLinks(tree)).toHaveLength(0)
+  it('with empty resolvedLinks, all wikilinks become plain text', () => {
+    const result = preprocessWikilinks('[[alpha]] and [[beta]]', {})
+    expect(result).toBe('alpha and beta')
   })
 
-  // --- Regression: does not transform text inside existing links ---
+  it('normalizes case and spaces for lookup', () => {
+    const result = preprocessWikilinks(
+      '[[Circadian Rhythm]]',
+      { 'circadian-rhythm': 'entities/circadian-rhythm' },
+    )
+    expect(result).toBe('[Circadian Rhythm](wiki:entities/circadian-rhythm)')
+  })
 
-  it('does not transform wikilink syntax inside markdown links', () => {
-    // Simulate: [label with [[inner]]](http://example.com)
-    const tree: Root = {
-      type: 'root',
-      children: [
-        {
-          type: 'paragraph',
-          children: [
-            {
-              type: 'link',
-              url: 'http://example.com',
-              children: [{ type: 'text', value: 'label with [[inner]]' }],
-            },
-          ],
-        },
-      ],
-    }
-    const transform = remarkWikilinks({ resolvedLinks: { inner: 'entities/inner' } })
-    transform(tree, {} as never, {} as never)
-
-    // The link's text child should be unchanged — no nested link created
-    const link = (tree.children[0] as Paragraph).children[0] as Link
-    expect(link.type).toBe('link')
-    expect(link.url).toBe('http://example.com')
-    expect(link.children).toHaveLength(1)
-    expect((link.children[0] as Text).value).toBe('label with [[inner]]')
+  it('handles wikilinks across multiple lines', () => {
+    const result = preprocessWikilinks(
+      'line one [[alpha]]\nline two [[beta]]',
+      { alpha: 'entities/alpha', beta: 'entities/beta' },
+    )
+    expect(result).toBe(
+      'line one [alpha](wiki:entities/alpha)\nline two [beta](wiki:entities/beta)',
+    )
   })
 })

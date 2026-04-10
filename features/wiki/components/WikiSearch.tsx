@@ -136,7 +136,7 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
       />
       {hits.length > 0 && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg"
+          className="absolute right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg p-1 backdrop-blur-xl"
           style={{
             width: 240,
             backgroundColor: "var(--graph-panel-bg)",
@@ -148,7 +148,13 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
             <button
               key={hit.slug}
               type="button"
-              className="w-full px-2.5 py-1.5 text-left hover:bg-[var(--graph-panel-input-bg)]"
+              className="w-full rounded-md px-2 py-1.5 text-left"
+              style={{
+                backgroundColor: "var(--graph-panel-input-bg)",
+                transition: "background-color 0.1s",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--mode-accent-subtle)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--graph-panel-input-bg)"; }}
               onClick={() => handleSelect(hit.slug)}
             >
               <div style={panelTextStyle}>{hit.title}</div>
@@ -163,10 +169,10 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
       )}
       {searching && hits.length === 0 && debouncedQuery.trim().length >= 2 && (
         <div
-          className="absolute right-0 top-full z-50 mt-1 rounded-lg px-2.5 py-1.5"
+          className="absolute right-0 top-full z-50 mt-1 rounded-lg px-2.5 py-1.5 backdrop-blur-xl"
           style={{
             width: 240,
-            backgroundColor: "var(--graph-panel-bg)",
+            backgroundColor: "var(--graph-panel-input-bg)",
             border: "1px solid var(--graph-panel-border)",
           }}
         >

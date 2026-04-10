@@ -9,6 +9,7 @@ import {
   type WikiPipelineData,
   type WikiPipelineCallbacks,
 } from "@/features/wiki/lib/markdown-pipeline";
+import { preprocessWikilinks } from "@/features/wiki/lib/remark-wikilinks";
 import { WikiLink } from "./elements/WikiLink";
 import { PaperCitation } from "./elements/PaperCitation";
 import { Callout } from "./elements/Callout";
@@ -28,9 +29,9 @@ const rehypePlugins = createWikiRehypePlugins();
  * Renders wiki markdown content with interactive wikilinks, PMID citations,
  * and Obsidian-style callouts.
  *
- * This is the only consumer of the markdown pipeline adapter.  Swap the
- * rendering library by changing markdown-pipeline.ts — this component
- * and all downstream elements stay the same.
+ * Wikilinks are preprocessed (string replacement) before parsing because
+ * CommonMark consumes `[[…]]` as nested bracket syntax, making them
+ * unreachable as text nodes in the AST.
  */
 function WikiMarkdownRendererInner({
   contentMd,
@@ -47,6 +48,12 @@ function WikiMarkdownRendererInner({
   const callbacks: WikiPipelineCallbacks = useMemo(
     () => ({ onNavigate, onPaperClick }),
     [onNavigate, onPaperClick],
+  );
+
+  // Preprocess wikilinks before the CommonMark parser sees them
+  const processedMd = useMemo(
+    () => preprocessWikilinks(contentMd, resolvedLinks),
+    [contentMd, resolvedLinks],
   );
 
   const remarkPlugins = useMemo(
@@ -66,7 +73,7 @@ function WikiMarkdownRendererInner({
         rehypePlugins={rehypePlugins}
         components={components}
       >
-        {contentMd}
+        {processedMd}
       </ReactMarkdown>
     </div>
   );
