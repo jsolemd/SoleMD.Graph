@@ -103,6 +103,13 @@ ON CONFLICT (slug) DO UPDATE SET
     updated_at = now()
 """
 
+UPDATE_OUTGOING_LINKS = """\
+UPDATE solemd.wiki_pages
+   SET outgoing_links = %(outgoing_links)s
+ WHERE slug = %(slug)s
+   AND outgoing_links IS DISTINCT FROM %(outgoing_links)s
+"""
+
 DELETE_REMOVED_PAGES = """\
 DELETE FROM solemd.wiki_pages
  WHERE slug != ALL(%(slugs)s)

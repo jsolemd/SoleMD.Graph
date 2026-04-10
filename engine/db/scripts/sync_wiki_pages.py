@@ -100,7 +100,9 @@ def sync(wiki_dir: Path) -> SyncResult:
         existing = conn.execute(queries.GET_EXISTING_CHECKSUMS).fetchall()
     existing_checksums = {r["slug"]: r["checksum"] for r in existing}
 
-    # UPSERT changed/new pages
+    # UPSERT changed/new pages, and re-resolve links for unchanged pages
+    # whose outgoing_links may have changed due to new/removed pages in
+    # the inventory (link resolution depends on the full page set).
     with db.connect() as conn:
         for slug, row in filesystem_pages.items():
             if slug not in existing_checksums:
@@ -110,6 +112,12 @@ def sync(wiki_dir: Path) -> SyncResult:
                 conn.execute(queries.UPSERT_PAGE, row)
                 result.updated.append(slug)
             else:
+                # Content unchanged, but re-resolve outgoing_links in case
+                # the page inventory changed (new targets now resolvable).
+                conn.execute(queries.UPDATE_OUTGOING_LINKS, {
+                    "slug": slug,
+                    "outgoing_links": row["outgoing_links"],
+                })
                 result.unchanged.append(slug)
         conn.commit()
 
