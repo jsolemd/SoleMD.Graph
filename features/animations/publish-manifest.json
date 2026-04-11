@@ -31,9 +31,10 @@
     "features/animations/_templates/route-transition.css": "ef45524b1e6e93d442b34ad0dfeb9c35105d2ff808925574546535f3d20e891a",
     "features/animations/_templates/viz-reveal.tsx": "744d67c311a8dde463f4fce58e506adecb7ce14d72b192ea1e2d9cbe85df61c2",
     "features/animations/_thirdparty/magic-ui/animated-beam/AnimatedBeam.tsx": "0c887ede69137809b760e8b909b398ec26af9a015cf8e9c9b91a8d6084d4f1c1",
+    "features/animations/biology/dopamine-d2-receptor/DopamineD2Binding.tsx": "cfa2822c5b9e11745d2d190ff8bcd6b17adee481c5a78d448226758b4d4c6cb5",
     "features/animations/icons/activity-lucide/ActivityLucide.tsx": "bb85e875c85d636b204b90330fcb40755b057653a3602589076ed59337837bfc",
     "features/animations/icons/phase2e-heart-lottie/Phase2eHeartLottie.tsx": "b40d29a4a5bb1026046dc78039b3f96ae4dee971e768409d158084624fb6ad1b",
-    "features/animations/manifest.json": "4318df0d1380d2aa1131eddda14b2085a580f4d1115467444f1150ae9e14104f",
+    "features/animations/manifest.json": "6aa088cc46b8432ac484a1ecf41e9ffd489c4e166b4d2a907d6d51241be8feaf",
     "public/animations/_assets/glb/ethanol.glb": "d0369cb0b25d59ba4900e1ced6a93f444b7ce0fe09bcdac788593e2cd0031b5f",
     "public/animations/_assets/lottie/demo-heart.json": "588505290c2c0c8f33cb48a84f6c592a4cc5d89ade92765ba3b294fc065f2a45",
     "public/animations/_assets/lottie/phase2e-heart.json": "588505290c2c0c8f33cb48a84f6c592a4cc5d89ade92765ba3b294fc065f2a45",
@@ -42,7 +43,7 @@
   },
   "meta": {
     "make_head": "144797f7398f6128cfe76d99b666235ad7648d40",
-    "make_root": "/home/workbench/SoleMD/SoleMD.Make/.claude/worktrees/agent-a77180e2",
-    "published_at": "2026-04-11T23:40:02.593358+00:00"
+    "make_root": "/home/workbench/SoleMD/SoleMD.Make",
+    "published_at": "2026-04-11T23:45:02.562089+00:00"
   }
 }

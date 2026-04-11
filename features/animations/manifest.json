@@ -118,5 +118,13 @@
     "entity": "smoke",
     "caption": "D18 — real LottieFiles asset via lottie-react",
     "mounts": ["wiki"]
+  },
+  {
+    "name": "dopamine-d2-binding",
+    "format": "framer",
+    "path": "biology/dopamine-d2-receptor/DopamineD2Binding.tsx",
+    "entity": "dopamine-d2-receptor",
+    "caption": "Dopamine D2 receptor binding — rest → approach → dock → Gαᵢ signaling",
+    "mounts": ["wiki", "panel", "graph-attached"]
   }
 ]

@@ -44,6 +44,11 @@ const LottieFilesSmoke = dynamic(
   { ssr: false, loading: () => fallback },
 );
 
+const DopamineD2Binding = dynamic(
+  () => import("@/features/animations/biology/dopamine-d2-receptor/DopamineD2Binding"),
+  { loading: () => fallback },
+);
+
 function Card({ title, format, children }: { title: string; format: string; children: React.ReactNode }) {
   return (
     <section className="overflow-hidden rounded-[1rem] border border-[var(--border-subtle)] bg-[var(--surface)] shadow-[var(--shadow-md)]">
@@ -136,6 +141,15 @@ export default function SmokePage() {
           <LottieFilesSmoke />
         </Card>
       </div>
+
+      <section className="mt-12">
+        <h2 className="mb-4 text-lg font-medium" style={{ color: "var(--text-primary)" }}>
+          Biology
+        </h2>
+        <Card title="Dopamine D2 · rest → binding → Gαᵢ" format="svg + framer state machine">
+          <DopamineD2Binding />
+        </Card>
+      </section>
 
       <section className="mt-12">
         <Card title="D7 · ScrollFade" format="gsap ScrollTrigger">

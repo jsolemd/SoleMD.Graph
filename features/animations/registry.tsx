@@ -81,6 +81,11 @@ const LottieFilesSmoke = dynamic(() => import("./_smoke/lottie-files/LottieFiles
   loading: () => fallback,
 });
 
+const DopamineD2Binding = dynamic(
+  () => import("./biology/dopamine-d2-receptor/DopamineD2Binding"),
+  { loading: () => fallback },
+);
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ANIMATION_COMPONENTS: Record<string, ComponentType<any>> = {
   "smoke-pulse": SmokePulse,
@@ -97,6 +102,7 @@ export const ANIMATION_COMPONENTS: Record<string, ComponentType<any>> = {
   "smoke-scroll-mechanism": ScrollMechanism,
   "smoke-bioicons": BioIconsSmoke,
   "smoke-lottie-files": LottieFilesSmoke,
+  "dopamine-d2-binding": DopamineD2Binding,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
