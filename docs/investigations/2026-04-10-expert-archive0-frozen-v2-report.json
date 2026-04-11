@@ -1,0 +1,77 @@
+{
+  "run_id": "expert-archive0-frozen-v2-2026-04-10",
+  "parser_version": "parser-v1",
+  "archive_name": "BioCXML.0.tar.gz",
+  "requested_corpus_ids": [],
+  "discovery_report_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.0.tar.gz.discovery.json",
+  "seeded_locator_entries": 2,
+  "manifest_skips_marked": 0,
+  "skipped_low_value_corpus_ids": [],
+  "discovery_report": {
+    "archive_name": "BioCXML.0.tar.gz",
+    "start_document_ordinal": 1970455,
+    "resolver_batch_size": 2,
+    "limit": 2,
+    "max_documents": 2,
+    "scanned_documents": 2,
+    "last_document_ordinal_scanned": 2530482,
+    "manifest_entries_used": 2,
+    "manifest_entries_written": 0,
+    "resolved_corpus_ids": [
+      15661883,
+      267226112
+    ],
+    "selected_corpus_ids": [
+      15661883,
+      267226112
+    ],
+    "candidates": [
+      {
+        "corpus_id": 267226112,
+        "document_id": "38328756",
+        "archive_name": "BioCXML.0.tar.gz",
+        "document_ordinal": 1970455,
+        "member_name": "output/BioCXML/3050.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 15661883,
+        "document_id": "26467407",
+        "archive_name": "BioCXML.0.tar.gz",
+        "document_ordinal": 2530482,
+        "member_name": "output/BioCXML/80910.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      }
+    ]
+  },
+  "warehouse_refresh": {
+    "run_id": "expert-archive0-frozen-v2-2026-04-10",
+    "requested_corpus_ids": [
+      267226112,
+      15661883
+    ],
+    "target_corpus_ids": [
+      267226112,
+      15661883
+    ],
+    "source_driven": false,
+    "mode": "direct_archive_member_ingest",
+    "skipped_reason": "all_candidates_already_ingested",
+    "skipped_existing_papers": 2,
+    "skipped_manifest_document_ids": [],
+    "bioc_fallback_stage": {
+      "discovered_papers": 0,
+      "ingested_corpus_ids": [],
+      "skipped_low_value_papers": 0,
+      "skipped_low_value_corpus_ids": [],
+      "batch_total_rows": 0,
+      "written_rows": 0,
+      "deferred_stage_names": []
+    }
+  },
+  "quality_report": null
+}

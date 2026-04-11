@@ -1,5 +1,5 @@
 import type { GraphMode } from '@/features/graph/types'
-import type { ActivePanel, PromptMode } from '@/features/graph/stores'
+import type { PanelId, PromptMode } from '@/features/graph/stores'
 
 /** What chrome/controls each mode makes available in the dashboard. */
 export interface ModeLayout {
@@ -11,8 +11,6 @@ export interface ModeLayout {
   autoShowTable: boolean
   /** Show the bottom timeline strip */
   showTimeline: boolean
-  /** Show the bottom-right stats overlay */
-  showStatsBar: boolean
   /** Show canvas controls (selection tools) */
   showCanvasControls: boolean
   /** Show color/size legends on canvas */
@@ -22,9 +20,9 @@ export interface ModeLayout {
   /** Default prompt size when entering this graph mode */
   defaultPromptMode: PromptMode
   /** Which side panels are available to open */
-  availablePanels: ActivePanel[]
-  /** Optional panel to auto-open when entering this mode. Omit to leave panel state untouched. */
-  defaultPanel?: ActivePanel
+  availablePanels: PanelId[]
+  /** Panels to auto-open when entering this mode. */
+  defaultOpenPanels?: PanelId[]
 }
 
 /** Configuration for a single mode. */
@@ -44,7 +42,7 @@ export interface ModeConfig {
 }
 
 /** All modes share the same panel set — colors adapt via --mode-accent. */
-const SHARED_PANELS: ActivePanel[] = ['config', 'filters', 'info', 'query', 'wiki']
+const SHARED_PANELS: PanelId[] = ['config', 'filters', 'info', 'query', 'wiki']
 
 /**
  * Mode registry — single source of truth for all mode behavior.
@@ -66,7 +64,6 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       autoShowTimeline: false,
       autoShowTable: false,
       showTimeline: true,
-      showStatsBar: true,
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
@@ -85,7 +82,6 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       autoShowTimeline: false,
       autoShowTable: false,
       showTimeline: true,
-      showStatsBar: false,
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
@@ -104,13 +100,12 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       autoShowTimeline: false,
       autoShowTable: false,
       showTimeline: true,
-      showStatsBar: true,
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,
       defaultPromptMode: 'normal',
       availablePanels: SHARED_PANELS,
-      defaultPanel: 'wiki',
+      defaultOpenPanels: ['wiki'],
     },
   },
   create: {
@@ -124,7 +119,6 @@ export const MODES: Record<GraphMode, ModeConfig> = {
       autoShowTimeline: false,
       autoShowTable: false,
       showTimeline: true,
-      showStatsBar: true,
       showCanvasControls: true,
       showLegends: true,
       showDataTable: true,

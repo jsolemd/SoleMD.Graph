@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getWikiBacklinks } from "@/app/actions/wiki";
 import type { WikiPageSummary } from "@/lib/engine/wiki-types";
+import { fetchWikiBacklinksClient } from "@/features/wiki/lib/wiki-client";
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
 
 export function useWikiBacklinks(slug: string | null) {
   const [backlinks, setBacklinks] = useState<WikiPageSummary[]>([]);
@@ -11,27 +15,29 @@ export function useWikiBacklinks(slug: string | null) {
   useEffect(() => {
     if (!slug) {
       setBacklinks([]);
+      setLoading(false);
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
+    setBacklinks([]);
     setLoading(true);
-    getWikiBacklinks(slug)
+    fetchWikiBacklinksClient(slug, { signal: controller.signal })
       .then((result) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setBacklinks(result.backlinks);
           setLoading(false);
         }
       })
-      .catch(() => {
-        if (!cancelled) {
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && !isAbortError(error)) {
           setBacklinks([]);
           setLoading(false);
         }
       });
 
     return () => {
-      cancelled = true;
+      controller.abort();
     };
   }, [slug]);
 

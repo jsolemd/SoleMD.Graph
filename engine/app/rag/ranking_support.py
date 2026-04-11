@@ -12,7 +12,10 @@ from app.rag.models import (
     PaperEvidenceHit,
     RelationMatchedPaperHit,
 )
-from app.rag.retrieval_policy import MIN_DIRECT_PASSAGE_ALIGNMENT
+from app.rag.retrieval_policy import (
+    MIN_DIRECT_PASSAGE_ALIGNMENT,
+    MIN_STRONG_PASSAGE_SURFACE_SCORE,
+)
 from app.rag.text_alignment import score_text_alignment
 from app.rag.types import (
     EvidenceIntent,
@@ -52,6 +55,7 @@ PUBLICATION_TYPE_WEIGHT = 0.06
 EVIDENCE_QUALITY_WEIGHT = 0.08
 CLINICAL_PRIOR_WEIGHT = 0.1
 PASSAGE_ALIGNMENT_REASON_THRESHOLD = MIN_DIRECT_PASSAGE_ALIGNMENT
+MIN_CHILD_CORROBORATION_CHUNK_SCORE = 0.05
 
 SUPPORT_CUES = (
     "reduced",
@@ -202,12 +206,32 @@ PASSAGE_BLOCK_KIND_PRIORS: Mapping[str, float] = {
     "table_footnote": -0.02,
     "table_body_text": -0.015,
 }
+STRUCTURED_MATCH_DECAY_WEIGHTS: tuple[float, ...] = (1.0, 0.35, 0.2, 0.1)
+ENTITY_MULTI_MATCH_BONUS_CAP = 0.35
+RELATION_MULTI_MATCH_BONUS_CAP = 0.22
+GENERAL_DIRECT_SIGNAL_PRIORITY_RERANK_THRESHOLD = 0.8
 
 
 def _rrf_score(rank: int | None, *, weight: float) -> float:
     if rank is None or rank <= 0:
         return 0.0
     return weight / (RRF_K + rank)
+
+
+def _aggregate_structured_match_score(
+    scores: Sequence[float],
+    *,
+    bonus_cap: float,
+) -> float:
+    ordered = sorted((max(score, 0.0) for score in scores), reverse=True)
+    if not ordered:
+        return 0.0
+    base = ordered[0]
+    aggregate = sum(
+        score * weight
+        for score, weight in zip(ordered, STRUCTURED_MATCH_DECAY_WEIGHTS, strict=False)
+    )
+    return min(aggregate, base + bonus_cap)
 
 
 def _normalize_text(text: str | None) -> str:
@@ -370,6 +394,68 @@ def _grounding_readiness_affinity(paper: PaperEvidenceHit) -> tuple[float, list[
     return min(score, 0.04), reasons
 
 
+def _aggregate_entity_match_score(
+    existing_score: float,
+    entity_hits: Sequence[EntityMatchedPaperHit],
+) -> float:
+    """Preserve seed scores while rewarding multi-concept shortlist corroboration."""
+
+    aggregate = _aggregate_structured_match_score(
+        [hit.score for hit in entity_hits],
+        bonus_cap=ENTITY_MULTI_MATCH_BONUS_CAP,
+    )
+    if not entity_hits:
+        return existing_score
+
+    distinct_concepts = len(
+        {
+            _normalize_label(hit.concept_id)
+            for hit in entity_hits
+            if _normalize_label(hit.concept_id)
+        }
+    )
+    retrieval_default_matches = sum(
+        1
+        for hit in entity_hits
+        if hit.retrieval_default_mention_count > 0
+    )
+    diversity_bonus = 0.0
+    if distinct_concepts > 1:
+        diversity_bonus += min(0.08, 0.04 * (distinct_concepts - 1))
+    if retrieval_default_matches > 1:
+        diversity_bonus += min(0.06, 0.03 * (retrieval_default_matches - 1))
+
+    return max(existing_score, aggregate + diversity_bonus)
+
+
+def _aggregate_relation_match_score(
+    existing_score: float,
+    relation_hits: Sequence[RelationMatchedPaperHit],
+) -> float:
+    """Preserve seed scores while rewarding multi-relation shortlist corroboration."""
+
+    aggregate = _aggregate_structured_match_score(
+        [hit.score for hit in relation_hits],
+        bonus_cap=RELATION_MULTI_MATCH_BONUS_CAP,
+    )
+    if not relation_hits:
+        return existing_score
+
+    distinct_relation_types = len(
+        {
+            _normalize_label(hit.relation_type)
+            for hit in relation_hits
+            if _normalize_label(hit.relation_type)
+        }
+    )
+    diversity_bonus = (
+        min(0.06, 0.03 * (distinct_relation_types - 1))
+        if distinct_relation_types > 1
+        else 0.0
+    )
+    return max(existing_score, aggregate + diversity_bonus)
+
+
 def _ranking_profile(
     retrieval_profile: QueryRetrievalProfile,
 ) -> RankingScoreProfile:
@@ -381,6 +467,102 @@ def _ranking_profile(
     ):
         return PASSAGE_RANKING_PROFILE
     return GENERAL_RANKING_PROFILE
+
+
+def _general_direct_signal_priority(paper: PaperEvidenceHit) -> float:
+    """Prefer rerank-confirmed multi-lane evidence over citation-only winners.
+
+    GENERAL retrieval can surface broad review papers through citation-context
+    enrichment even when another candidate is supported by multiple direct
+    retrieval lanes. Keep this helper intentionally narrow: only grant
+    priority when the biomedical reranker has already strongly endorsed the
+    candidate and the paper is corroborated by multiple non-citation retrieval
+    lanes.
+    """
+
+    if paper.biomedical_rerank_score < GENERAL_DIRECT_SIGNAL_PRIORITY_RERANK_THRESHOLD:
+        return 0.0
+
+    direct_lane_count = sum(
+        score > 0
+        for score in (
+            paper.lexical_score,
+            paper.chunk_lexical_score,
+            paper.dense_score,
+            paper.entity_score,
+            paper.relation_score,
+        )
+    )
+    if direct_lane_count < 2:
+        return 0.0
+    return float(direct_lane_count)
+
+
+def _child_evidence_corroboration_affinity(
+    paper: PaperEvidenceHit,
+    *,
+    retrieval_profile: QueryRetrievalProfile,
+    title_anchor_fallback_active: bool = False,
+) -> tuple[float, list[str]]:
+    """Reward papers corroborated by direct child evidence plus structured support.
+
+    Expert biomedical queries often recover the right parent paper through a
+    combination of child text, normalized concepts, and reranking. That signal
+    should help in GENERAL fusion and title-fallback mode, but concept-only or
+    dense-only candidates must not crown themselves without direct evidence.
+    """
+
+    if retrieval_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
+        return 0.0, []
+    if (
+        retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+        and not title_anchor_fallback_active
+    ):
+        return 0.0, []
+
+    has_chunk_child_support = (
+        paper.chunk_lexical_score >= MIN_STRONG_PASSAGE_SURFACE_SCORE
+    )
+    has_alignment_child_support = (
+        paper.passage_alignment_score >= MIN_DIRECT_PASSAGE_ALIGNMENT
+    )
+    if not (has_chunk_child_support or has_alignment_child_support):
+        return 0.0, []
+
+    has_strong_child_support = (
+        paper.chunk_lexical_score >= MIN_CHILD_CORROBORATION_CHUNK_SCORE
+        or has_alignment_child_support
+    )
+    has_structured_support = paper.entity_score > 0 or paper.relation_score > 0
+    has_biomedical_rerank_support = paper.biomedical_rerank_score >= 0.5
+
+    score = 0.0
+    reasons: list[str] = []
+    if has_chunk_child_support:
+        score += min(0.04, paper.chunk_lexical_score * 0.2)
+        reasons.append("child_text_support")
+    elif has_alignment_child_support:
+        score += 0.03
+        reasons.append("child_alignment_support")
+
+    if has_strong_child_support and has_structured_support:
+        score += 0.05
+        reasons.append("structured_corroboration")
+    if has_strong_child_support and has_biomedical_rerank_support:
+        score += 0.04
+        reasons.append("biomedical_rerank_corroboration")
+    if (
+        has_chunk_child_support
+        and has_structured_support
+        and has_biomedical_rerank_support
+    ):
+        score += 0.02
+        reasons.append("multi_signal_child_support")
+
+    return min(score, 0.14), reasons
 
 
 def _direct_match_adjustment(
@@ -493,6 +675,7 @@ def _channel_annotation(
     clinical_prior_reasons: list[str],
     matched_intent_cues: list[str],
     evidence_intent: EvidenceIntent | None,
+    child_evidence_reasons: list[str],
 ) -> tuple[list[RetrievalChannel], list[str]]:
     channels: list[RetrievalChannel] = []
     reasons: list[str] = []
@@ -507,10 +690,28 @@ def _channel_annotation(
         reasons.append("Matched SPECTER2 dense-query similarity")
     if entity_rank is not None or paper_entity_hits:
         channels.append(RetrievalChannel.ENTITY_MATCH)
-        reasons.append("Matched normalized entity concept")
+        if len(
+            {
+                _normalize_label(hit.concept_id)
+                for hit in paper_entity_hits
+                if _normalize_label(hit.concept_id)
+            }
+        ) > 1:
+            reasons.append("Matched multiple normalized entity concepts")
+        else:
+            reasons.append("Matched normalized entity concept")
     if relation_rank is not None or paper_relation_hits:
         channels.append(RetrievalChannel.RELATION_MATCH)
-        reasons.append("Matched normalized relation type")
+        if len(
+            {
+                _normalize_label(hit.relation_type)
+                for hit in paper_relation_hits
+                if _normalize_label(hit.relation_type)
+            }
+        ) > 1:
+            reasons.append("Matched multiple normalized relation types")
+        else:
+            reasons.append("Matched normalized relation type")
     if semantic_rank is not None:
         channels.append(RetrievalChannel.SEMANTIC_NEIGHBOR)
         reasons.append("Semantically close to the selected paper")
@@ -548,6 +749,10 @@ def _channel_annotation(
                 "Matched evidence-bearing section"
                 + f": {hit.chunk_section_role.replace('_', ' ')}"
             )
+    if child_evidence_reasons:
+        reasons.append(
+            "Corroborated by child evidence plus structured support"
+        )
     if hit.selected_context_score > 0:
         reasons.append("Preserved explicitly selected paper context")
     if hit.cited_context_score > 0:

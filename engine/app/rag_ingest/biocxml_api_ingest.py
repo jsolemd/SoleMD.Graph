@@ -33,6 +33,14 @@ from app.rag_ingest.corpus_ids import resolve_corpus_ids, unique_corpus_ids as _
 from app.rag_ingest.ingest_tracing import traced_parse_biocxml
 from app.rag_ingest.pubtator_api import fetch_biocxml_documents
 from app.rag_ingest.source_parsers import BioCXMLDocumentPayload
+from app.rag_ingest.target_corpus import (
+    PostgresTargetCorpusLoader,
+)
+from app.rag_ingest.target_metadata import (
+    apply_target_metadata_to_parsed_source,
+    target_document_keys,
+    target_row_by_corpus_id,
+)
 from app.rag_ingest.warehouse_writer import (
     RagWarehouseBulkIngestResult,
     RagWarehouseWriter,
@@ -63,6 +71,15 @@ class ExistingSourceChecker(Protocol):
     def load_existing_biocxml(self, *, corpus_ids: list[int]) -> set[int]:
         """Return corpus_ids that already have BioCXML warehouse sources."""
         ...
+
+
+class TargetCorpusLoader(Protocol):
+    def load(
+        self,
+        *,
+        corpus_ids: list[int] | None,
+        limit: int | None,
+    ) -> list[object]: ...
 
 
 class PostgresCorpusPmidLoader:
@@ -156,6 +173,7 @@ def run_biocxml_api_ingest(
     replace_existing: bool = False,
     pmid_loader: CorpusPmidLoader | None = None,
     existing_checker: ExistingSourceChecker | None = None,
+    target_loader: TargetCorpusLoader | None = None,
     api_fetcher: BioCXMLApiFetcher | None = None,
     warehouse_writer: BulkWarehouseWriter | None = None,
     chunk_backfill_runner: ChunkBackfillRunner | None = None,
@@ -165,6 +183,7 @@ def run_biocxml_api_ingest(
     effective_source_revision = source_revision or f"pubtator3-api:{settings.pubtator_release_id}"
     active_pmid_loader = pmid_loader or PostgresCorpusPmidLoader()
     active_existing_checker = existing_checker or PostgresExistingSourceChecker()
+    active_target_loader = target_loader or PostgresTargetCorpusLoader()
     active_fetcher = api_fetcher or fetch_biocxml_documents
     active_writer = warehouse_writer or RagWarehouseWriter()
     active_chunk_backfill = chunk_backfill_runner or run_chunk_backfill
@@ -181,19 +200,29 @@ def run_biocxml_api_ingest(
             corpus_ids=candidate_ids
         )
         candidate_ids = [cid for cid in candidate_ids if cid not in skipped_existing_ids]
+    target_rows = active_target_loader.load(corpus_ids=candidate_ids, limit=None)
+    target_rows_by_corpus_id = target_row_by_corpus_id(target_rows)
 
     # Step 3: fetch BioCXML from API
     pmids_to_fetch = [pmid_map[cid] for cid in candidate_ids]
-    pmid_to_corpus: dict[int, int] = {pmid_map[cid]: cid for cid in candidate_ids}
-    # document_id in PubTator BioCXML is the PMID as a string
     fetch_results = active_fetcher(
         pmids_to_fetch,
         batch_size=batch_size,
         rate_limit=rate_limit,
     )
-    fetched_by_document_id: dict[str, BioCXMLDocumentPayload] = {
-        result.document_id: result for result in fetch_results
-    }
+    document_key_to_corpus_id: dict[str, int] = {}
+    for target_row in target_rows:
+        for key in target_document_keys(target_row):
+            document_key_to_corpus_id.setdefault(key, int(target_row.corpus_id))
+    for corpus_id in candidate_ids:
+        document_key_to_corpus_id.setdefault(str(int(pmid_map[corpus_id])), int(corpus_id))
+
+    fetched_by_corpus_id: dict[int, BioCXMLDocumentPayload] = {}
+    for result in fetch_results:
+        corpus_id = document_key_to_corpus_id.get(result.document_id)
+        if corpus_id is None:
+            continue
+        fetched_by_corpus_id.setdefault(int(corpus_id), result)
 
     # Step 4: parse and collect source groups
     source_groups = []
@@ -205,7 +234,7 @@ def run_biocxml_api_ingest(
     for corpus_id in candidate_ids:
         pmid = pmid_map[corpus_id]
         document_id = str(pmid)
-        fetch_result = fetched_by_document_id.get(document_id)
+        fetch_result = fetched_by_corpus_id.get(corpus_id)
 
         if fetch_result is None:
             paper_reports.append(
@@ -224,6 +253,10 @@ def run_biocxml_api_ingest(
             source_revision=effective_source_revision,
             parser_version=parser_version,
             corpus_id=corpus_id,
+        )
+        parsed = apply_target_metadata_to_parsed_source(
+            parsed=parsed,
+            target_row=target_rows_by_corpus_id.get(corpus_id),
         )
 
         if not parsed_source_has_warehouse_value(parsed):

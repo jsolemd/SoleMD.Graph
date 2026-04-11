@@ -27,7 +27,7 @@ Premium quality that never shouts. The word "elegant" is intentionally woven thr
 - **Matte floating cards** -- solid opaque surfaces, NOT glass/frosted/backdrop-blur
 - **Deep multi-layer shadows** create the "hovering" depth feel
 - **Generous rounding** -- `rounded-3xl` on prompt box, `rounded-2xl` on controls, `rounded-xl` on widgets
-- **Spring physics everywhere** -- shared presets in `lib/motion.ts` (`snappy`, `smooth`, `responsive`, `bouncy`, `settle`)
+- **Spring physics everywhere** -- shared presets in `lib/motion.ts` (`crisp`, `smooth`, `responsive`, `bouncy`)
 - **Mode-colored submit** -- pastel bg + dark `#1a1b1e` icon
 - **Gradient dividers** -- brand-accent gradient separators between grouped actions
 - **Muted icons at rest** -- `--graph-prompt-inactive`, colored accent when active at 15% bg tint
@@ -119,7 +119,7 @@ Light mode uses subtle rgba shadows. Dark mode uses deep black shadows.
 ## Motion
 
 - **Framework**: Framer Motion for layout animations, spring physics for panels
-- **Spring presets**: `lib/motion.ts` -- `snappy` (panels), `smooth` (mode shifts), `settle` (icons), `bouncy` (micro-interactions), `responsive` (drag)
+- **Spring presets**: `lib/motion.ts` -- `crisp` (panels, chrome, icons, edge reveals; short-travel default), `smooth` (mode shifts, large layout, drag-release snap), `responsive` (drag safe-bounds tracking), `bouncy` (micro-interactions)
 - **Mode transitions**: `layout` animations via framer-motion. Nothing snaps or jumps.
 - **Graph transitions**: The canvas component never unmounts -- it transforms fluidly
 - **Scroll triggers**: Soft reveal on scroll, not auto-playing
@@ -180,7 +180,7 @@ SPECTER2 positions papers. SapBERT positions entities. MedCPT positions chunks. 
 | `lib/mantine-theme.ts` | Mantine <-> CSS variable bridge |
 | `components/mantine-theme-provider.tsx` | `defaultColorScheme="auto"`, DarkClassSync |
 | `components/graph/PanelShell.tsx` | Shared panel chrome, style exports, `ICON_BTN_STYLES` |
-| `lib/motion.ts` | Spring presets (`snappy`, `smooth`, `settle`, `bouncy`, `responsive`) |
+| `lib/motion.ts` | Spring presets (`crisp`, `smooth`, `responsive`, `bouncy`) |
 | `cosmograph/GraphRenderer.tsx` | `BRAND.light` / `BRAND.dark` WebGL constants |
 
 ---

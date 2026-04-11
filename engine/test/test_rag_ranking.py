@@ -7,6 +7,7 @@ from app.rag.models import (
     EntityMatchedPaperHit,
     PaperEvidenceHit,
     PaperSpeciesProfile,
+    RelationMatchedPaperHit,
 )
 from app.rag.ranking import rank_paper_hits
 from app.rag.types import (
@@ -270,6 +271,126 @@ def test_rank_paper_hits_uses_metadata_score_for_general_queries():
     )
 
 
+def test_rank_paper_hits_prefers_corroborated_child_support_for_general_queries():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Lexical and dense candidate",
+            journal_name="Psychiatry Review",
+            year=2022,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="High-level review candidate with broad lexical overlap.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            dense_score=0.8,
+            metadata_score=0.2,
+            title_similarity=0.4,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Olanzapine-associated weight gain mechanisms",
+            journal_name="Psychopharmacology",
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid="PMC2",
+            abstract="Full-text paper with direct chunk evidence and concept support.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            chunk_lexical_score=0.06,
+            entity_score=0.15,
+            biomedical_rerank_score=0.55,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text="blowing up in weight on olanzapine",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        channel_rankings={
+            RetrievalChannel.LEXICAL: {1: 1, 2: 2},
+            RetrievalChannel.DENSE_QUERY: {1: 1},
+            RetrievalChannel.CHUNK_LEXICAL: {2: 1},
+            RetrievalChannel.ENTITY_MATCH: {2: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [2, 1]
+    assert any(
+        "Corroborated by child evidence plus structured support" in reason
+        for reason in ranked[0].match_reasons
+    )
+
+
+def test_rank_paper_hits_does_not_overpromote_weak_child_noise_in_general_queries():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Lexical and dense candidate",
+            journal_name="Psychiatry Review",
+            year=2022,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="High-level review candidate with broad lexical overlap.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            dense_score=0.8,
+            metadata_score=0.2,
+            title_similarity=0.4,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Noisy chunk rescue candidate",
+            journal_name="Psychopharmacology",
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid="PMC2",
+            abstract="Weak chunk evidence should not dominate ranking.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            chunk_lexical_score=0.02,
+            entity_score=0.15,
+            biomedical_rerank_score=0.55,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={},
+        query_text="blowing up in weight on olanzapine",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        channel_rankings={
+            RetrievalChannel.LEXICAL: {1: 1, 2: 2},
+            RetrievalChannel.DENSE_QUERY: {1: 1},
+            RetrievalChannel.CHUNK_LEXICAL: {2: 1},
+            RetrievalChannel.ENTITY_MATCH: {2: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]
+
+
 def test_rank_paper_hits_prefers_requested_publication_type_matches():
     papers = [
         PaperEvidenceHit(
@@ -504,6 +625,94 @@ def test_rank_paper_hits_uses_entity_support_as_direct_title_evidence():
     assert RetrievalChannel.ENTITY_MATCH in ranked[0].matched_channels
 
 
+def test_rank_paper_hits_aggregates_multiple_entity_concepts_for_expert_queries():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Single-concept candidate",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="Matches one canonical biomedical concept strongly.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=4,
+            reference_count=8,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Multi-concept candidate",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid=None,
+            abstract="Matches multiple canonical biomedical concepts across the paper.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=4,
+            reference_count=8,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={
+            1: [
+                EntityMatchedPaperHit(
+                    corpus_id=1,
+                    entity_type="gene",
+                    concept_id="MESH:D000001",
+                    matched_terms=["BDNF"],
+                    mention_count=2,
+                    structural_span_count=1,
+                    retrieval_default_mention_count=1,
+                    score=1.2,
+                )
+            ],
+            2: [
+                EntityMatchedPaperHit(
+                    corpus_id=2,
+                    entity_type="gene",
+                    concept_id="MESH:D000001",
+                    matched_terms=["BDNF"],
+                    mention_count=2,
+                    structural_span_count=1,
+                    retrieval_default_mention_count=1,
+                    score=0.95,
+                ),
+                EntityMatchedPaperHit(
+                    corpus_id=2,
+                    entity_type="chemical",
+                    concept_id="MESH:D000002",
+                    matched_terms=["ketamine"],
+                    mention_count=3,
+                    structural_span_count=2,
+                    retrieval_default_mention_count=1,
+                    score=0.92,
+                ),
+            ],
+        },
+        relation_hits={},
+        channel_rankings={
+            RetrievalChannel.ENTITY_MATCH: {1: 1, 2: 2},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [2, 1]
+    assert ranked[0].entity_score > ranked[1].entity_score
+    assert "Matched multiple normalized entity concepts" in ranked[0].match_reasons
+
+
 def test_rank_paper_hits_preserves_relation_seed_scores_without_enrichment_hits():
     papers = [
         PaperEvidenceHit(
@@ -559,6 +768,91 @@ def test_rank_paper_hits_preserves_relation_seed_scores_without_enrichment_hits(
     assert ranked[0].corpus_id == 1
     assert ranked[0].relation_score == 1.0
     assert RetrievalChannel.RELATION_MATCH in ranked[0].matched_channels
+
+
+def test_rank_paper_hits_aggregates_multiple_relation_matches_for_expert_queries():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Single-relation candidate",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="Matches one normalized relation strongly.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=4,
+            reference_count=8,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Multi-relation candidate",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid=None,
+            abstract="Matches multiple normalized relation types for the query.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            citation_count=4,
+            reference_count=8,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={},
+        relation_hits={
+            1: [
+                RelationMatchedPaperHit(
+                    corpus_id=1,
+                    relation_type="associated_with",
+                    subject_type="gene",
+                    subject_id="1",
+                    object_type="disease",
+                    object_id="1",
+                    score=1.0,
+                )
+            ],
+            2: [
+                RelationMatchedPaperHit(
+                    corpus_id=2,
+                    relation_type="associated_with",
+                    subject_type="gene",
+                    subject_id="1",
+                    object_type="disease",
+                    object_id="1",
+                    score=0.82,
+                ),
+                RelationMatchedPaperHit(
+                    corpus_id=2,
+                    relation_type="treats",
+                    subject_type="chemical",
+                    subject_id="2",
+                    object_type="disease",
+                    object_id="1",
+                    score=0.79,
+                ),
+            ],
+        },
+        channel_rankings={
+            RetrievalChannel.RELATION_MATCH: {1: 1, 2: 2},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [2, 1]
+    assert ranked[0].relation_score > ranked[1].relation_score
+    assert "Matched multiple normalized relation types" in ranked[0].match_reasons
 
 
 def test_rank_paper_hits_preserves_citation_seed_scores_without_direct_hits():
@@ -1058,7 +1352,75 @@ def test_rank_paper_hits_prefers_strong_title_prefix_anchor_in_title_lookup():
     )
 
     assert [paper.corpus_id for paper in ranked] == [11857184, 22]
-    assert "Strong title-prefix anchor for the query" in ranked[0].match_reasons
+
+
+def test_rank_paper_hits_can_fallback_from_title_bias_without_anchor_candidates():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=11,
+            paper_id="paper-11",
+            semantic_scholar_paper_id="paper-11",
+            title="VMAT2 biology review",
+            journal_name=None,
+            year=2023,
+            doi=None,
+            pmid=11,
+            pmcid=None,
+            abstract="Broad lexical candidate without direct therapeutic evidence.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            lexical_score=0.82,
+            title_similarity=0.72,
+            citation_count=20,
+        ),
+        PaperEvidenceHit(
+            corpus_id=22,
+            paper_id="paper-22",
+            semantic_scholar_paper_id="paper-22",
+            title="Valbenazine for tardive dyskinesia",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=22,
+            pmcid="PMC22",
+            abstract="Direct therapeutic candidate for tardive dyskinesia.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            lexical_score=0.68,
+            title_similarity=0.34,
+            biomedical_rerank_score=0.94,
+            citation_count=12,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={},
+        entity_hits={
+            22: [
+                EntityMatchedPaperHit(
+                    corpus_id=22,
+                    entity_type="chemical",
+                    concept_id="MESH:D000001",
+                    matched_terms=["VMAT2 inhibitor", "tardive dyskinesia"],
+                    score=0.95,
+                )
+            ]
+        },
+        relation_hits={},
+        query_text="VMAT2 inhibitor for tardive dyskinesia",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        title_anchor_fallback_active=True,
+        channel_rankings={
+            RetrievalChannel.LEXICAL: {11: 1, 22: 2},
+            RetrievalChannel.ENTITY_MATCH: {22: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [22, 11]
+    assert "Matched normalized entity concept" in ranked[0].match_reasons
 
 
 def test_rank_paper_hits_prefers_direct_title_support_over_citation_only_neighbors():
@@ -1273,6 +1635,91 @@ def test_rank_paper_hits_prefers_higher_fused_score_between_direct_passage_match
 
     assert ranked[0].corpus_id == 22
     assert ranked[0].fused_score > ranked[1].fused_score
+
+
+def test_rank_paper_hits_prefers_biomedical_reranker_winner_among_direct_question_candidates():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=11,
+            paper_id="paper-11",
+            semantic_scholar_paper_id="paper-11",
+            title="Higher citation candidate",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=11,
+            pmcid=None,
+            abstract="Directly supported review candidate.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            chunk_lexical_score=0.052,
+            entity_score=0.89,
+            citation_boost=2.25,
+            citation_count=22,
+            reference_count=40,
+            biomedical_rerank_score=0.857143,
+        ),
+        PaperEvidenceHit(
+            corpus_id=22,
+            paper_id="paper-22",
+            semantic_scholar_paper_id="paper-22",
+            title="Reranker-preferred candidate",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=22,
+            pmcid=None,
+            abstract="Directly supported target candidate.",
+            tldr=None,
+            text_availability="fulltext",
+            is_open_access=True,
+            chunk_lexical_score=0.058,
+            entity_score=0.89,
+            citation_boost=1.0,
+            citation_count=12,
+            reference_count=28,
+            biomedical_rerank_score=1.0,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={
+            11: [
+                CitationContextHit(
+                    corpus_id=11,
+                    citation_id=901,
+                    neighbor_corpus_id=44,
+                    direction=CitationDirection.INCOMING,
+                    context_text="Stronger citation context for the distractor.",
+                    score=2.25,
+                )
+            ],
+            22: [
+                CitationContextHit(
+                    corpus_id=22,
+                    citation_id=902,
+                    neighbor_corpus_id=55,
+                    direction=CitationDirection.INCOMING,
+                    context_text="Direct target citation context.",
+                    score=1.0,
+                )
+            ],
+        },
+        entity_hits={},
+        relation_hits={},
+        query_text="how often autoimmune encephalitis starts as psych",
+        retrieval_profile=QueryRetrievalProfile.QUESTION_LOOKUP,
+        channel_rankings={
+            RetrievalChannel.CHUNK_LEXICAL: {11: 2, 22: 1},
+            RetrievalChannel.ENTITY_MATCH: {11: 1, 22: 2},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [22, 11]
+    assert ranked[1].fused_score > ranked[0].fused_score
+    assert ranked[0].biomedical_rerank_score > ranked[1].biomedical_rerank_score
 
 
 def test_rank_paper_hits_prefers_chunk_backed_passage_over_alignment_only_dense_review():
@@ -1733,3 +2180,167 @@ def test_rank_paper_hits_applies_clinician_prior_for_treatment_queries():
         reason.startswith("Matched clinician-facing prior")
         for reason in ranked[0].match_reasons
     )
+
+
+
+def test_rank_paper_hits_general_prefers_multilane_reranked_candidate_over_citation_only_winner():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="Broad BDNF review",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="Review paper with indirect ketamine context.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=40,
+            reference_count=50,
+            biomedical_rerank_score=0.71,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="A BDNF Val66Met Polymorphism and Ketamine-induced Rapid Antidepressant Action",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid=None,
+            abstract="Specific ketamine-response paper.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=8,
+            reference_count=12,
+            lexical_score=0.11,
+            dense_score=0.84,
+            biomedical_rerank_score=1.0,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={
+            1: [
+                CitationContextHit(
+                    corpus_id=1,
+                    citation_id=1,
+                    neighbor_corpus_id=2,
+                    direction=CitationDirection.INCOMING,
+                    context_text=(
+                        "Additionally, the presence of the BDNF Val66Met polymorphism "
+                        "may blunt the antidepressant and antisuicidal effects of ketamine."
+                    ),
+                    score=3.0,
+                    intents=["result"],
+                )
+            ]
+        },
+        entity_hits={
+            1: [
+                EntityMatchedPaperHit(
+                    corpus_id=1,
+                    entity_type="gene",
+                    concept_id="BDNF",
+                    matched_terms=["BDNF"],
+                    score=1.21,
+                )
+            ],
+            2: [
+                EntityMatchedPaperHit(
+                    corpus_id=2,
+                    entity_type="gene",
+                    concept_id="BDNF",
+                    matched_terms=["BDNF"],
+                    score=1.32,
+                )
+            ],
+        },
+        relation_hits={},
+        query_text="BDNF Val66Met and ketamine response",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        channel_rankings={
+            RetrievalChannel.LEXICAL: {2: 1},
+            RetrievalChannel.DENSE_QUERY: {2: 1},
+            RetrievalChannel.ENTITY_MATCH: {1: 1, 2: 2},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [2, 1]
+
+
+def test_rank_paper_hits_general_does_not_overpromote_dense_only_candidate():
+    papers = [
+        PaperEvidenceHit(
+            corpus_id=1,
+            paper_id="paper-1",
+            semantic_scholar_paper_id="paper-1",
+            title="D2 occupancy PET study",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=101,
+            pmcid=None,
+            abstract="Paper matching occupancy thresholds through citation context.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=25,
+            reference_count=30,
+            lexical_score=0.002,
+            biomedical_rerank_score=0.71,
+        ),
+        PaperEvidenceHit(
+            corpus_id=2,
+            paper_id="paper-2",
+            semantic_scholar_paper_id="paper-2",
+            title="Specific dopamine supersensitivity psychosis occupancy paper",
+            journal_name=None,
+            year=2024,
+            doi=None,
+            pmid=202,
+            pmcid=None,
+            abstract="Specific occupancy paper recovered only through dense retrieval.",
+            tldr=None,
+            text_availability="abstract",
+            is_open_access=True,
+            citation_count=3,
+            reference_count=8,
+            dense_score=0.88,
+            biomedical_rerank_score=0.57,
+        ),
+    ]
+
+    ranked = rank_paper_hits(
+        papers,
+        citation_hits={
+            1: [
+                CitationContextHit(
+                    corpus_id=1,
+                    citation_id=1,
+                    neighbor_corpus_id=2,
+                    direction=CitationDirection.INCOMING,
+                    context_text="D2 occupancy thresholds associated with clinical response.",
+                    score=3.0,
+                    intents=["background"],
+                )
+            ]
+        },
+        entity_hits={},
+        relation_hits={},
+        query_text="D2 occupancy threshold for antipsychotic response",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+        channel_rankings={
+            RetrievalChannel.LEXICAL: {1: 1},
+            RetrievalChannel.DENSE_QUERY: {2: 1},
+        },
+    )
+
+    assert [paper.corpus_id for paper in ranked] == [1, 2]

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from app.config import settings
 from app.rag.biomedical_reranking import NoopBiomedicalReranker
+from app.rag.biomedical_concept_normalizer import VocabConceptMatch
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
@@ -19,6 +20,7 @@ from app.rag.models import (
     RelationMatchedPaperHit,
 )
 from app.rag.query_embedding import NoopQueryEmbedder, RagQueryEmbedder
+from app.rag.repository_support import ResolvedEntityConcept, ResolvedQueryEntityTerms
 from app.rag.schemas import RagSearchRequest
 from app.rag.service import RagService
 from app.rag.serving_contract import CitedSpanPacket
@@ -31,7 +33,21 @@ from app.rag.types import (
     RetrievalScope,
 )
 
-ResolvedTermsResult = tuple[list[str], set[str]]
+ResolvedTermsResult = ResolvedQueryEntityTerms
+
+
+def resolved_terms_result(
+    terms: list[str] | None = None,
+    high_confidence_terms: set[str] | None = None,
+    resolved_concepts: list[ResolvedEntityConcept] | None = None,
+    vocab_concept_matches: list[VocabConceptMatch] | None = None,
+) -> ResolvedQueryEntityTerms:
+    return ResolvedQueryEntityTerms(
+        all_terms=list(terms or []),
+        high_confidence_terms=set(high_confidence_terms or set()),
+        resolved_concepts=tuple(resolved_concepts or ()),
+        vocab_concept_matches=list(vocab_concept_matches or ()),
+    )
 
 
 class FakeRepository:
@@ -70,7 +86,7 @@ class FakeRepository:
         limit: int = 5,
     ) -> ResolvedTermsResult:
         assert limit == 5
-        return [], set()
+        return resolved_terms_result()
 
     def resolve_selected_corpus_id(
         self,
@@ -399,7 +415,7 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return [], set()
+            return resolved_terms_result()
 
         def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
             return []
@@ -568,7 +584,7 @@ def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypa
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return [], set()
+            return resolved_terms_result()
 
         def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
             return []
@@ -698,6 +714,15 @@ class FakeDenseQueryEmbedder:
     def encode(self, text: str) -> list[float] | None:
         assert text == "melatonin delirium"
         return [0.1, 0.2, 0.3]
+
+
+class CapturingDenseQueryEmbedder:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def encode(self, text: str) -> list[float] | None:
+        self.queries.append(text)
+        return [0.4, 0.5, 0.6]
 
 
 class FakeWarmableQueryEmbedder:
@@ -978,6 +1003,1243 @@ def test_rag_service_search_result_can_include_debug_trace():
     assert result.debug_trace["session_flags"]["paper_search_use_title_candidate_lookup"] is True
 
 
+def test_rag_service_runs_concept_paper_rescue_when_primary_lexical_misses():
+    class ConceptPaperRescueRepository:
+        def __init__(self) -> None:
+            self.paper_queries: list[str] = []
+
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            assert limit == 5
+            return resolved_terms_result(
+                terms=["Systemic Lupus Erythematosus"],
+                high_confidence_terms={"Systemic Lupus Erythematosus"},
+                resolved_concepts=[
+                    ResolvedEntityConcept(
+                        raw_term="lupus",
+                        resolved_term="Systemic Lupus Erythematosus",
+                        entity_type="disease",
+                        concept_namespace="mesh",
+                        concept_id="D008180",
+                        has_entity_rule=True,
+                    )
+                ],
+                vocab_concept_matches=[
+                    VocabConceptMatch(
+                        raw_query_phrase="lupus",
+                        preferred_term="Systemic Lupus Erythematosus",
+                        matched_alias="lupus",
+                        alias_type="entry_term",
+                        quality_score=98,
+                        is_preferred=False,
+                        umls_cui="C0024141",
+                        term_id="term-lupus",
+                        category="disease",
+                        mesh_id="D008180",
+                        entity_type="disease",
+                        source_surface="vocab_alias",
+                        provenance="combined",
+                        confidence="high",
+                    )
+                ],
+            )
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            self.paper_queries.append(query)
+            if query != "Systemic Lupus Erythematosus":
+                return []
+            return [
+                PaperEvidenceHit(
+                    corpus_id=44,
+                    paper_id="paper-44",
+                    semantic_scholar_paper_id="paper-44",
+                    title="Neuropsychiatric systemic lupus erythematosus review",
+                    journal_name="Lancet",
+                    year=2024,
+                    doi=None,
+                    pmid=44,
+                    pmcid=None,
+                    abstract="Systemic lupus erythematosus can present with psychiatric features.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    citation_count=15,
+                    reference_count=20,
+                    lexical_score=0.88,
+                )
+            ]
+
+        def search_chunk_papers(self, *args, **kwargs):
+            return []
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = ConceptPaperRescueRepository()
+    service = _service(repository, query_embedder=NoopQueryEmbedder())
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="lupus hitting the brain",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert repository.paper_queries == [
+        "lupus hitting the brain",
+        "Systemic Lupus Erythematosus lupus hitting the brain",
+        "Systemic Lupus Erythematosus",
+    ]
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [44]
+    assert (
+        result.debug_trace["session_flags"]["concept_paper_rescue_query_text"]
+        == "Systemic Lupus Erythematosus"
+    )
+
+
+def test_rag_service_uses_concept_enriched_dense_query_text():
+    class ConceptDenseRepository:
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result(
+                terms=["Corticosteroid-Induced Psychosis"],
+                high_confidence_terms={"Corticosteroid-Induced Psychosis"},
+                resolved_concepts=[
+                    ResolvedEntityConcept(
+                        raw_term="prednisone",
+                        resolved_term="Corticosteroid-Induced Psychosis",
+                        entity_type="disease",
+                        concept_namespace="mesh",
+                        concept_id="D011618",
+                        has_entity_rule=True,
+                    )
+                ],
+                vocab_concept_matches=[
+                    VocabConceptMatch(
+                        raw_query_phrase="prednisone",
+                        preferred_term="Corticosteroid-Induced Psychosis",
+                        matched_alias="prednisone neuropsychiatric symptoms",
+                        alias_type="entry_term",
+                        quality_score=97,
+                        is_preferred=False,
+                        umls_cui="C0033975",
+                        term_id="term-steroid-psych",
+                        category="disease",
+                        mesh_id="D011618",
+                        entity_type="disease",
+                        source_surface="vocab_alias",
+                        provenance="combined",
+                        confidence="high",
+                    )
+                ],
+            )
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(self, *args, **kwargs):
+            return []
+
+        def search_chunk_papers(self, *args, **kwargs):
+            return []
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    embedder = CapturingDenseQueryEmbedder()
+    service = _service(ConceptDenseRepository(), query_embedder=embedder)
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="prednisone neuropsychiatric symptoms",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=True,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert embedder.queries == [
+        "prednisone neuropsychiatric symptoms; Corticosteroid-Induced Psychosis"
+    ]
+    assert (
+        result.debug_trace["session_flags"]["dense_query_text"]
+        == "prednisone neuropsychiatric symptoms; Corticosteroid-Induced Psychosis"
+    )
+
+
+def test_rag_service_runs_concept_chunk_rescue_for_general_biomedical_queries():
+    class ConceptChunkRescueRepository:
+        def __init__(self) -> None:
+            self.chunk_queries: list[str] = []
+
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result(
+                terms=["Anti-NMDA Receptor Encephalitis"],
+                high_confidence_terms={"Anti-NMDA Receptor Encephalitis"},
+                resolved_concepts=[
+                    ResolvedEntityConcept(
+                        raw_term="anti-NMDAR encephalitis",
+                        resolved_term="Anti-NMDA Receptor Encephalitis",
+                        entity_type="disease",
+                        concept_namespace="mesh",
+                        concept_id="D000077777",
+                        has_entity_rule=True,
+                    )
+                ],
+                vocab_concept_matches=[
+                    VocabConceptMatch(
+                        raw_query_phrase="anti-NMDAR encephalitis",
+                        preferred_term="Anti-NMDA Receptor Encephalitis",
+                        matched_alias="anti-NMDAR encephalitis",
+                        alias_type="entry_term",
+                        quality_score=99,
+                        is_preferred=False,
+                        umls_cui="C5555555",
+                        term_id="term-nmdar",
+                        category="disease",
+                        mesh_id="D000077777",
+                        entity_type="disease",
+                        source_surface="vocab_alias",
+                        provenance="combined",
+                        confidence="high",
+                    )
+                ],
+            )
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(self, *args, **kwargs):
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            self.chunk_queries.append(query)
+            if query != "Anti-NMDA Receptor Encephalitis":
+                return []
+            return [
+                PaperEvidenceHit(
+                    corpus_id=77,
+                    paper_id="paper-77",
+                    semantic_scholar_paper_id="paper-77",
+                    title="First-episode psychosis in anti-NMDA receptor encephalitis",
+                    journal_name="Neurology",
+                    year=2025,
+                    doi=None,
+                    pmid=77,
+                    pmcid=None,
+                    abstract="Psychosis may be an early manifestation of anti-NMDA receptor encephalitis.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    citation_count=12,
+                    reference_count=18,
+                    chunk_lexical_score=0.91,
+                )
+            ]
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = ConceptChunkRescueRepository()
+    service = _service(repository, query_embedder=NoopQueryEmbedder())
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="anti-NMDAR encephalitis psychosis first episode",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert "Anti-NMDA Receptor Encephalitis" in repository.chunk_queries
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [77]
+    assert (
+        result.debug_trace["session_flags"]["concept_chunk_rescue_query_text"]
+        == "Anti-NMDA Receptor Encephalitis"
+    )
+
+
+def test_rag_service_enables_title_similarity_support_for_compact_general_entity_queries():
+    class GeneralTitleSimilarityRepository:
+        def __init__(self) -> None:
+            self.paper_search_calls: list[tuple[str, bool, bool | None]] = []
+
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result()
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity: bool = True,
+            use_title_candidate_lookup: bool | None = None,
+            use_sparse_passage_fallback: bool = False,
+        ) -> list[PaperEvidenceHit]:
+            self.paper_search_calls.append(
+                (query, use_title_similarity, use_title_candidate_lookup)
+            )
+            return []
+
+        def search_chunk_papers(self, *args, **kwargs):
+            return []
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(
+            self,
+            corpus_ids,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit_per_paper: int = 5,
+        ):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = GeneralTitleSimilarityRepository()
+    service = _service(repository, query_embedder=NoopQueryEmbedder())
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="COMT Val158Met and psychosis risk",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert result.query.retrieval_profile == QueryRetrievalProfile.GENERAL
+    assert repository.paper_search_calls == [
+        ("COMT Val158Met and psychosis risk", True, False)
+    ]
+    assert result.debug_trace["session_flags"]["paper_search_use_title_similarity"] is True
+
+
+def test_rag_service_supplements_weak_passage_anchor_with_concept_chunk_rescue():
+    class WeakPassageConceptChunkRepository:
+        def __init__(self) -> None:
+            self.chunk_queries: list[str] = []
+
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result(
+                vocab_concept_matches=[
+                    VocabConceptMatch(
+                        raw_query_phrase="ssri",
+                        preferred_term="Selective Serotonin Reuptake Inhibitor (SSRI)",
+                        matched_alias="SSRI",
+                        alias_type="derived_acronym",
+                        quality_score=100,
+                        is_preferred=True,
+                        umls_cui="C4552594",
+                        term_id="term-ssri",
+                        category="intervention.pharmacologic.class",
+                        mesh_id=None,
+                        entity_type="chemical",
+                        source_surface="vocab_alias",
+                        provenance="vocab_aliases",
+                        confidence="medium",
+                    )
+                ]
+            )
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(self, *args, **kwargs):
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            self.chunk_queries.append(query)
+            if query == "Selective Serotonin Reuptake Inhibitor (SSRI)":
+                return [
+                    PaperEvidenceHit(
+                        corpus_id=77,
+                        paper_id="paper-77",
+                        semantic_scholar_paper_id="paper-77",
+                        title="Hyponatremia Secondary Treatment with SSRI Antidepressants in Adults and Elderly",
+                        journal_name="Consult Pharm",
+                        year=2016,
+                        doi=None,
+                        pmid=77,
+                        pmcid=None,
+                        abstract="Hyponatremia after SSRI exposure in older adults.",
+                        tldr=None,
+                        text_availability="fulltext",
+                        is_open_access=True,
+                        citation_count=3,
+                        reference_count=9,
+                        chunk_lexical_score=0.56,
+                        chunk_snippet="Hyponatremia after SSRI treatment in adults and elderly patients.",
+                    )
+                ]
+            if "ssri" in query.casefold():
+                return [
+                    PaperEvidenceHit(
+                        corpus_id=11,
+                        paper_id="paper-11",
+                        semantic_scholar_paper_id="paper-11",
+                        title="Weak lexical distractor",
+                        journal_name="Example",
+                        year=2020,
+                        doi=None,
+                        pmid=11,
+                        pmcid=None,
+                        abstract="Weak passage overlap only.",
+                        tldr=None,
+                        text_availability="fulltext",
+                        is_open_access=True,
+                        citation_count=20,
+                        reference_count=15,
+                        chunk_lexical_score=0.0008,
+                        chunk_snippet="Started an SSRI and later had sodium issues.",
+                    )
+                ]
+            return []
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = WeakPassageConceptChunkRepository()
+    service = _service(repository, query_embedder=NoopQueryEmbedder())
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="sodium crashed after starting an SSRI",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert "Selective Serotonin Reuptake Inhibitor (SSRI)" in repository.chunk_queries
+    assert [bundle.paper.corpus_id for bundle in result.bundles[:2]] == [77, 11]
+    assert (
+        result.debug_trace["session_flags"]["concept_chunk_rescue_query_text"]
+        == "Selective Serotonin Reuptake Inhibitor (SSRI)"
+    )
+
+
+def test_rag_service_corrects_failed_title_frontier_to_general_after_entity_recovery():
+    class TitleConceptRecoveryRepository:
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result(
+                terms=["Anti-NMDA Receptor Encephalitis"],
+                high_confidence_terms={"Anti-NMDA Receptor Encephalitis"},
+                resolved_concepts=[
+                    ResolvedEntityConcept(
+                        raw_term="anti-NMDAR encephalitis",
+                        resolved_term="Anti-NMDA Receptor Encephalitis",
+                        entity_type="disease",
+                        concept_namespace="mesh",
+                        concept_id="D060426",
+                        has_entity_rule=True,
+                    )
+                ],
+            )
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(self, *args, **kwargs):
+            return []
+
+        def search_chunk_papers(self, *args, **kwargs):
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert entity_terms == ["Anti-NMDA Receptor Encephalitis"]
+            return [
+                PaperEvidenceHit(
+                    corpus_id=77,
+                    paper_id="paper-77",
+                    semantic_scholar_paper_id="paper-77",
+                    title="First-episode psychosis in anti-NMDA receptor encephalitis",
+                    journal_name="Neurology",
+                    year=2025,
+                    doi=None,
+                    pmid=77,
+                    pmcid=None,
+                    abstract="Psychosis may be an early manifestation of anti-NMDA receptor encephalitis.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    entity_score=0.91,
+                )
+            ]
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(
+            self,
+            corpus_ids,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit_per_paper: int = 5,
+        ):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    service = _service(TitleConceptRecoveryRepository(), query_embedder=NoopQueryEmbedder())
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="anti-NMDAR encephalitis psychosis first episode",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert result.query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [77]
+    assert result.debug_trace["session_flags"]["title_anchor_fallback_active"] is True
+    assert "title_concept_lane_correction" not in result.debug_trace["session_flags"]
+
+
+def test_rag_service_keeps_title_profile_for_concept_paper_rescue_without_child_support():
+    class TitleConceptPaperRescueRepository:
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result(
+                vocab_concept_matches=[
+                    VocabConceptMatch(
+                        raw_query_phrase="anti-NMDAR encephalitis",
+                        preferred_term="Anti-NMDA Receptor Encephalitis",
+                        matched_alias="anti-NMDAR encephalitis",
+                        alias_type="entry_term",
+                        quality_score=99,
+                        is_preferred=False,
+                        umls_cui="C5555555",
+                        term_id="term-nmdar",
+                        category="disease",
+                        mesh_id="D000077777",
+                        entity_type="disease",
+                        source_surface="vocab_alias",
+                        provenance="combined",
+                        confidence="high",
+                    )
+                ]
+            )
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity: bool = True,
+            use_title_candidate_lookup: bool = True,
+            use_sparse_passage_fallback: bool = False,
+        ) -> list[PaperEvidenceHit]:
+            if query != "Anti-NMDA Receptor Encephalitis":
+                return []
+            return [
+                PaperEvidenceHit(
+                    corpus_id=77,
+                    paper_id="paper-77",
+                    semantic_scholar_paper_id="paper-77",
+                    title="First-episode psychosis in autoimmune encephalitis",
+                    journal_name="Neurology",
+                    year=2025,
+                    doi=None,
+                    pmid=77,
+                    pmcid=None,
+                    abstract="Autoimmune encephalitis can present with first-episode psychosis.",
+                    tldr=None,
+                    text_availability="fulltext",
+                    is_open_access=True,
+                    lexical_score=0.18,
+                )
+            ]
+
+        def search_chunk_papers(self, *args, **kwargs):
+            return []
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return []
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(
+            self,
+            corpus_ids,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit_per_paper: int = 5,
+        ):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    service = _service(TitleConceptPaperRescueRepository(), query_embedder=NoopQueryEmbedder())
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="anti-NMDAR encephalitis psychosis first episode",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert result.query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [77]
+    assert (
+        result.debug_trace["session_flags"]["concept_paper_rescue_query_text"]
+        == "Anti-NMDA Receptor Encephalitis"
+    )
+    assert "title_concept_lane_correction" not in result.debug_trace["session_flags"]
+
+
+def test_rag_service_keeps_title_profile_but_uses_fallback_ranking_after_chunk_recovery():
+    class TitleChunkCorrectionRepository:
+        def __init__(self) -> None:
+            self.chunk_queries: list[str] = []
+
+        def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
+            return GraphRelease(
+                graph_release_id="bundle-1",
+                graph_run_id="run-1",
+                bundle_checksum="bundle-1",
+                graph_name="living_graph",
+                is_current=True,
+            )
+
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result()
+
+        def resolve_scope_corpus_ids(self, *, graph_run_id: str, graph_paper_refs):
+            return []
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_selected_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_exact_title_papers(self, *args, **kwargs):
+            return []
+
+        def search_papers(self, *args, **kwargs):
+            return []
+
+        def search_chunk_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            self.chunk_queries.append(query)
+            if query != "TNF-alpha neuroinflammation in MDD":
+                return []
+            return [
+                PaperEvidenceHit(
+                    corpus_id=12723295,
+                    paper_id="paper-12723295",
+                    semantic_scholar_paper_id="paper-12723295",
+                    title="Inflammatory cytokines and synaptic plasticity in depression",
+                    journal_name="Int J Neuropsychopharmacol",
+                    year=2009,
+                    doi=None,
+                    pmid=12723295,
+                    pmcid=None,
+                    abstract=(
+                        "Tumor necrosis factor alpha and related cytokines regulate "
+                        "synaptic plasticity in major depressive disorder."
+                    ),
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    citation_count=9,
+                    reference_count=22,
+                    chunk_lexical_score=0.91,
+                    chunk_snippet=(
+                        "Pro-inflammatory cytokines including TNF-alpha regulate "
+                        "synaptic plasticity in major depressive disorder."
+                    ),
+                )
+            ]
+
+        def search_entity_papers(self, *args, **kwargs):
+            return []
+
+        def search_relation_papers(self, *args, **kwargs):
+            return []
+
+        def search_query_embedding_papers(self, *args, **kwargs):
+            return [
+                PaperEvidenceHit(
+                    corpus_id=15686880,
+                    paper_id="paper-15686880",
+                    semantic_scholar_paper_id="paper-15686880",
+                    title="TNF-alpha neuroinflammation in MDD: an overview",
+                    journal_name="Front Psychiatry",
+                    year=2023,
+                    doi=None,
+                    pmid=15686880,
+                    pmcid=None,
+                    abstract="Overview article on chronic stress and neuroinflammation in depression.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    citation_count=31,
+                    reference_count=74,
+                    dense_score=0.44,
+                )
+            ]
+
+        def fetch_semantic_neighbors(self, *args, **kwargs):
+            return []
+
+        def fetch_known_scoped_papers_by_corpus_ids(self, corpus_ids):
+            return []
+
+        def fetch_papers_by_corpus_ids(self, graph_run_id: str, corpus_ids):
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+        def fetch_references(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_authors(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_assets(self, corpus_ids, *, limit_per_paper: int = 3):
+            return {}
+
+    repository = TitleChunkCorrectionRepository()
+    service = _service(repository, query_embedder=NoopQueryEmbedder())
+
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="TNF-alpha neuroinflammation in MDD",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=True,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert repository.chunk_queries
+    assert repository.chunk_queries[0] == "TNF-alpha neuroinflammation in MDD"
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [12723295]
+    assert result.debug_trace["session_flags"]["retrieval_profile"] == "title_lookup"
+    assert result.debug_trace["session_flags"]["title_anchor_fallback_active"] is True
+    assert "title_chunk_lane_correction" not in result.debug_trace["session_flags"]
+
+
 def test_rag_service_returns_exact_title_match_while_skipping_extra_seed_lanes():
     class ExactTitleRepository(FakeRepository):
         def resolve_selected_corpus_id(
@@ -1006,6 +2268,15 @@ def test_rag_service_returns_exact_title_match_while_skipping_extra_seed_lanes()
             limit: int,
             scope_corpus_ids=None,
             use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_exact_title_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            limit: int,
+            scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
             return [
                 PaperEvidenceHit(
@@ -1043,6 +2314,7 @@ def test_rag_service_returns_exact_title_match_while_skipping_extra_seed_lanes()
             graph_run_id: str,
             *,
             entity_terms,
+            resolved_concepts=None,
             limit: int,
             scope_corpus_ids=None,
         ) -> list[PaperEvidenceHit]:
@@ -1366,7 +2638,7 @@ def test_rag_service_filters_runtime_entity_terms_for_duplicate_title_anchors():
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return (
+            return resolved_terms_result(
                 ["Lewy bodies", "dementia", "and", "diagnosis", "with"],
                 {"Lewy bodies", "dementia"},
             )
@@ -1515,7 +2787,7 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return ([], set())
+            return resolved_terms_result()
 
         def search_selected_title_papers(
             self,
@@ -1697,7 +2969,7 @@ def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles(
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return ([], set())
+            return resolved_terms_result()
 
         def search_selected_title_papers(
             self,
@@ -2801,7 +4073,7 @@ def test_rag_service_skips_dense_and_semantic_neighbors_on_selected_direct_chunk
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return [], set()
+            return resolved_terms_result()
 
         def search_entity_papers(
             self,
@@ -2931,7 +4203,7 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return ([], set())
+            return resolved_terms_result()
 
         def search_chunk_papers(
             self,
@@ -4043,7 +5315,10 @@ def test_rag_service_filters_runtime_entity_phrases_for_ambiguous_title_enrichme
             assert "with" not in query_phrases
             assert "management" not in query_phrases
             assert "diagnosis" not in query_phrases
-            return ["Lewy bodies", "dementia", "diagnosis"], {"Lewy bodies", "dementia"}
+            return resolved_terms_result(
+                ["Lewy bodies", "dementia", "diagnosis"],
+                {"Lewy bodies", "dementia"},
+            )
 
         def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
             assert corpus_ids == [3470330, 14354793]
@@ -4412,7 +5687,7 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
             assert "melatonin" in query_phrases
             assert "delirium" in query_phrases
             assert "positive correlate" in query_phrases
-            return ["melatonin", "delirium"], set()
+            return resolved_terms_result(["melatonin", "delirium"])
 
         def search_papers(
             self,
@@ -4567,7 +5842,7 @@ def test_rag_service_skips_auto_relation_seeding_for_long_passage_queries():
             query_phrases,
             limit: int = 5,
         ) -> ResolvedTermsResult:
-            return [], set()
+            return resolved_terms_result()
 
         def search_chunk_papers(
             self,
@@ -4734,7 +6009,7 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
             limit: int = 5,
         ) -> ResolvedTermsResult:
             assert "mesh:d008550" in [phrase.lower() for phrase in query_phrases]
-            return ["MESH:D008550"], set()
+            return resolved_terms_result(["MESH:D008550"])
 
         def resolve_selected_corpus_id(
             self,
@@ -4797,6 +6072,342 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
     assert response.query == "MESH:D008550 delirium"
 
 
+def test_rag_service_preserves_auto_enriched_resolved_concepts_for_seeded_entity_recall():
+    resolved_concept = ResolvedEntityConcept(
+        raw_term="Prozac",
+        resolved_term="fluoxetine",
+        entity_type="chemical",
+        concept_namespace="mesh",
+        concept_id="D005947",
+        source_surface="vocab_alias",
+        vocab_term_id="mesh:D005947",
+        vocab_alias_key="prozac",
+        vocab_alias_type="exact",
+        vocab_mesh_id="D005947",
+    )
+
+    class QueryEnrichmentRepository(FakeRepository):
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            assert "prozac delirium" in [phrase.lower() for phrase in query_phrases]
+            return resolved_terms_result(
+                ["fluoxetine"],
+                high_confidence_terms={"fluoxetine"},
+                resolved_concepts=[resolved_concept],
+            )
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert graph_run_id == "run-1"
+            assert entity_terms == ["fluoxetine"]
+            assert resolved_concepts == (resolved_concept,)
+            assert limit == 6
+            return []
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(self, corpus_ids, *, entity_terms, limit_per_paper: int = 5):
+            assert entity_terms == ["fluoxetine"]
+            return {}
+
+    service = _service(QueryEnrichmentRepository())
+    request = RagSearchRequest(
+        graph_release_id="release-1",
+        query="Prozac delirium",
+        entity_terms=[],
+        relation_terms=[],
+        k=3,
+        rerank_topn=6,
+        generate_answer=False,
+    )
+
+    response = service.search(request)
+
+    assert response.query == "Prozac delirium"
+
+
+def test_rag_service_preserves_auto_enriched_resolved_concepts_for_entity_match_enrichment():
+    resolved_concept = ResolvedEntityConcept(
+        raw_term="Prozac",
+        resolved_term="fluoxetine",
+        entity_type="chemical",
+        concept_namespace="mesh",
+        concept_id="D005947",
+        source_surface="vocab_alias",
+        vocab_term_id="mesh:D005947",
+        vocab_alias_key="prozac",
+        vocab_alias_type="exact",
+        vocab_mesh_id="D005947",
+    )
+
+    class QueryEnrichmentRepository(FakeRepository):
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            assert "prozac delirium" in [phrase.lower() for phrase in query_phrases]
+            return resolved_terms_result(
+                ["fluoxetine"],
+                high_confidence_terms={"fluoxetine"},
+                resolved_concepts=[resolved_concept],
+            )
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            return [
+                PaperEvidenceHit(
+                    corpus_id=11,
+                    paper_id="paper-11",
+                    semantic_scholar_paper_id="paper-11",
+                    title="Fluoxetine-associated delirium",
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=11,
+                    pmcid=None,
+                    abstract="Fluoxetine can contribute to delirium in susceptible patients.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    lexical_score=0.42,
+                    entity_score=0.91,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(
+            self,
+            corpus_ids,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit_per_paper: int = 5,
+        ):
+            assert corpus_ids == [11]
+            assert entity_terms == ["fluoxetine"]
+            assert resolved_concepts == (resolved_concept,)
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [11]
+            assert relation_terms == []
+            return {}
+
+    service = _service(QueryEnrichmentRepository())
+    request = RagSearchRequest(
+        graph_release_id="release-1",
+        query="Prozac delirium",
+        entity_terms=[],
+        relation_terms=[],
+        k=3,
+        rerank_topn=6,
+        generate_answer=False,
+    )
+
+    response = service.search(request)
+
+    assert response.query == "Prozac delirium"
+
+
+def test_rag_service_runs_runtime_entity_enrichment_for_short_title_like_clinical_queries():
+    lorazepam_concept = ResolvedEntityConcept(
+        raw_term="lorazepam",
+        resolved_term="Lorazepam",
+        entity_type="chemical",
+        concept_namespace="mesh",
+        concept_id="D008140",
+        source_surface="vocab_alias",
+        vocab_term_id="mesh:D008140",
+        vocab_alias_key="lorazepam",
+        vocab_alias_type="exact",
+        vocab_mesh_id="D008140",
+    )
+    catatonia_concept = ResolvedEntityConcept(
+        raw_term="catatonia",
+        resolved_term="Catatonia",
+        entity_type="disease",
+        concept_namespace="mesh",
+        concept_id="D002389",
+        source_surface="vocab_alias",
+        vocab_term_id="mesh:D002389",
+        vocab_alias_key="catatonia",
+        vocab_alias_type="exact",
+        vocab_mesh_id="D002389",
+    )
+
+    class QueryEnrichmentRepository(FakeRepository):
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            lowered = {phrase.lower() for phrase in query_phrases}
+            assert "lorazepam" in lowered
+            assert "catatonia" in lowered
+            return resolved_terms_result(
+                ["Lorazepam", "Catatonia"],
+                high_confidence_terms={"Lorazepam", "Catatonia"},
+                resolved_concepts=[lorazepam_concept, catatonia_concept],
+            )
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert entity_terms == ["Lorazepam", "Catatonia"]
+            assert resolved_concepts == (lorazepam_concept, catatonia_concept)
+            return [
+                PaperEvidenceHit(
+                    corpus_id=232327864,
+                    paper_id="paper-232327864",
+                    semantic_scholar_paper_id="paper-232327864",
+                    title="Lorazepam challenge in catatonia",
+                    journal_name="Example Journal",
+                    year=2024,
+                    doi=None,
+                    pmid=232327864,
+                    pmcid=None,
+                    abstract="Lorazepam challenge remains a practical catatonia test.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    entity_score=0.91,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(
+            self,
+            corpus_ids,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit_per_paper: int = 5,
+        ):
+            assert corpus_ids == [232327864]
+            assert entity_terms == ["Lorazepam", "Catatonia"]
+            assert resolved_concepts == (lorazepam_concept, catatonia_concept)
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            assert corpus_ids == [232327864]
+            assert relation_terms == []
+            return {}
+
+    service = _service(QueryEnrichmentRepository(), query_embedder=NoopQueryEmbedder())
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="lorazepam challenge for catatonia",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [232327864]
+    assert result.debug_trace["candidate_counts"]["resolved_entity_terms"] == 2
+    assert result.debug_trace["candidate_counts"]["entity_seed_hits"] == 1
+
+
+
+
 def test_rag_service_uses_high_specificity_auto_enriched_name_terms_for_seeded_entity_recall():
     class QueryEnrichmentRepository(FakeRepository):
         def resolve_query_entity_terms(
@@ -4807,7 +6418,7 @@ def test_rag_service_uses_high_specificity_auto_enriched_name_terms_for_seeded_e
         ) -> ResolvedTermsResult:
             lowered_phrases = [phrase.lower() for phrase in query_phrases]
             assert "decreased perk1/2 levels in" in lowered_phrases
-            return ["pERK1/2"], set()
+            return resolved_terms_result(["pERK1/2"])
 
         def resolve_selected_corpus_id(
             self,
@@ -4867,6 +6478,255 @@ def test_rag_service_uses_high_specificity_auto_enriched_name_terms_for_seeded_e
     response = service.search(request)
 
     assert response.query.startswith("This suggests decreased pERK1/2")
+
+
+def test_rag_service_uses_mesh_backed_vocab_matches_for_seeded_entity_recall():
+    class QueryEnrichmentRepository(FakeRepository):
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result(
+                vocab_concept_matches=[
+                    VocabConceptMatch(
+                        raw_query_phrase="lupus",
+                        preferred_term="Systemic Lupus Erythematosus",
+                        matched_alias="lupus",
+                        alias_type="entry_term",
+                        quality_score=98,
+                        is_preferred=False,
+                        umls_cui="C0024141",
+                        term_id="term-lupus",
+                        category="disease",
+                        mesh_id="D008180",
+                        entity_type="disease",
+                        source_surface="vocab_alias",
+                        provenance="combined",
+                        confidence="high",
+                    )
+                ],
+            )
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert entity_terms == ["Systemic Lupus Erythematosus"]
+            assert resolved_concepts is not None
+            assert len(resolved_concepts) == 1
+            concept = resolved_concepts[0]
+            assert concept.resolved_term == "Systemic Lupus Erythematosus"
+            assert concept.concept_namespace == "mesh"
+            assert concept.concept_id == "D008180"
+            return [
+                PaperEvidenceHit(
+                    corpus_id=44,
+                    paper_id="paper-44",
+                    semantic_scholar_paper_id="paper-44",
+                    title="Neuropsychiatric systemic lupus erythematosus review",
+                    journal_name="Lancet",
+                    year=2024,
+                    doi=None,
+                    pmid=44,
+                    pmcid=None,
+                    abstract="Systemic lupus erythematosus can present with psychiatric features.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    entity_score=0.88,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(
+            self,
+            corpus_ids,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit_per_paper: int = 5,
+        ):
+            assert corpus_ids == [44]
+            assert entity_terms == ["Systemic Lupus Erythematosus"]
+            assert resolved_concepts is not None
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+    service = _service(QueryEnrichmentRepository(), query_embedder=NoopQueryEmbedder())
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="lupus hitting the brain",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [44]
+    assert result.debug_trace["candidate_counts"]["entity_seed_terms"] == 1
+    assert result.debug_trace["candidate_counts"]["entity_seed_concepts"] == 1
+    assert result.debug_trace["candidate_counts"]["entity_seed_hits"] == 1
+
+
+def test_rag_service_runs_entity_recall_from_resolved_concepts_without_seed_terms():
+    class QueryEnrichmentRepository(FakeRepository):
+        def resolve_query_entity_terms(
+            self,
+            *,
+            query_phrases,
+            limit: int = 5,
+        ) -> ResolvedTermsResult:
+            return resolved_terms_result(
+                terms=["major depressive disorder", "neuroinflammation"],
+                resolved_concepts=[
+                    ResolvedEntityConcept(
+                        raw_term="MDD",
+                        resolved_term="Major Depressive Disorder",
+                        entity_type="disease",
+                        concept_namespace="mesh",
+                        concept_id="D003866",
+                    ),
+                    ResolvedEntityConcept(
+                        raw_term="neuroinflammation",
+                        resolved_term="Neuroinflammation",
+                        entity_type="disease",
+                        concept_namespace="mesh",
+                        concept_id="D000086382",
+                    ),
+                ],
+            )
+
+        def resolve_selected_corpus_id(
+            self,
+            *,
+            graph_run_id: str,
+            selected_graph_paper_ref: str | None,
+            selected_paper_id: str | None,
+            selected_node_id: str | None,
+        ) -> int | None:
+            return None
+
+        def search_papers(
+            self,
+            graph_run_id: str,
+            query: str,
+            *,
+            limit: int,
+            scope_corpus_ids=None,
+            use_title_similarity=True,
+        ) -> list[PaperEvidenceHit]:
+            return []
+
+        def search_entity_papers(
+            self,
+            graph_run_id: str,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit: int,
+            scope_corpus_ids=None,
+        ) -> list[PaperEvidenceHit]:
+            assert entity_terms == []
+            assert resolved_concepts is not None
+            assert len(resolved_concepts) == 2
+            assert {concept.concept_id for concept in resolved_concepts} == {
+                "D003866",
+                "D000086382",
+            }
+            return [
+                PaperEvidenceHit(
+                    corpus_id=55,
+                    paper_id="paper-55",
+                    semantic_scholar_paper_id="paper-55",
+                    title="TNF-alpha signaling and neuroinflammation in major depression",
+                    journal_name="Biol Psychiatry",
+                    year=2024,
+                    doi=None,
+                    pmid=55,
+                    pmcid=None,
+                    abstract="Neuroinflammatory pathways are implicated in major depression.",
+                    tldr=None,
+                    text_availability="abstract",
+                    is_open_access=True,
+                    entity_score=0.82,
+                )
+            ]
+
+        def fetch_citation_contexts(self, corpus_ids, *, query: str, limit_per_paper: int = 3):
+            return {}
+
+        def fetch_entity_matches(
+            self,
+            corpus_ids,
+            *,
+            entity_terms,
+            resolved_concepts=None,
+            limit_per_paper: int = 5,
+        ):
+            assert corpus_ids == [55]
+            assert entity_terms == [
+                "major depressive disorder",
+                "neuroinflammation",
+            ]
+            assert resolved_concepts is not None
+            assert len(resolved_concepts) == 2
+            return {}
+
+        def fetch_relation_matches(self, corpus_ids, *, relation_terms, limit_per_paper: int = 5):
+            return {}
+
+    service = _service(QueryEnrichmentRepository(), query_embedder=NoopQueryEmbedder())
+    result = service.search_result(
+        RagSearchRequest(
+            graph_release_id="release-1",
+            query="TNF-alpha neuroinflammation in MDD",
+            k=3,
+            rerank_topn=6,
+            use_dense_query=False,
+            generate_answer=False,
+        ),
+        include_debug_trace=True,
+    )
+
+    assert [bundle.paper.corpus_id for bundle in result.bundles] == [55]
+    assert result.debug_trace["candidate_counts"]["entity_seed_terms"] == 0
+    assert result.debug_trace["candidate_counts"]["entity_seed_concepts"] == 2
+    assert result.debug_trace["candidate_counts"]["entity_seed_hits"] == 1
 
 
 def test_rag_service_can_attach_warehouse_grounded_answer_when_available():

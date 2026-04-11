@@ -10,15 +10,30 @@ const mockLinksSelection = { reset: jest.fn() };
 
 const mockCosmograph = {
   selectPoint: jest.fn(),
+  selectPoints: jest.fn(),
   setFocusedPoint: jest.fn(),
   unselectAllPoints: jest.fn(),
   pointsSelection: mockPointsSelection,
   linksSelection: mockLinksSelection,
   getActiveSelectionSourceId: jest.fn().mockReturnValue("test-source"),
+  getSelectedPointIndices: jest.fn().mockReturnValue([]),
 };
 
 jest.mock("@cosmograph/react", () => ({
   useCosmograph: () => ({ cosmograph: mockCosmograph }),
+}));
+
+jest.mock("@/features/graph/lib/cosmograph-selection", () => ({
+  buildSelectedPointBaselineSelectionClause: jest.fn(
+    (source: { id: string }, count: number) => ({
+      source,
+      value: { kind: "selected-point-baseline", count },
+      predicate: null,
+      meta: { type: "point" },
+    }),
+  ),
+  clearSelectionClause: jest.fn(),
+  createSelectionSource: jest.fn((id: string) => ({ id })),
 }));
 
 import { useGraphSelection } from "../hooks/use-graph-selection";

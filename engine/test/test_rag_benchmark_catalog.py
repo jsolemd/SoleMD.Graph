@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.rag_ingest.benchmark_catalog import (
     BenchmarkSuiteGateMode,
+    benchmark_suite_gate_warehouse_depths,
     benchmark_suite_gate_maps,
     get_benchmark_suite_spec,
 )
@@ -25,3 +26,11 @@ def test_benchmark_suite_gate_maps_split_lower_and_upper_bounds():
     assert lower_bounds["target_cited_context_rate"] == 0.99
     assert lower_bounds["hit_at_1"] == 0.99
     assert upper_bounds["p95_duration_ms"] == 150.0
+
+
+def test_benchmark_suite_gate_warehouse_depths_expert_suite_is_structure_complete_only():
+    warehouse_depths = benchmark_suite_gate_warehouse_depths(
+        "benchmark-biomedical_expert_canonicalization_v1"
+    )
+
+    assert warehouse_depths == {"chunks_entities_sentence"}

@@ -1,5 +1,8 @@
 import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
-import { RAG_ANSWER_SELECTION_SOURCE_ID } from "@/features/graph/lib/overlay-producers";
+import {
+  ENTITY_OVERLAY_SELECTION_SOURCE_ID,
+  RAG_ANSWER_SELECTION_SOURCE_ID,
+} from "@/features/graph/lib/overlay-producers";
 
 export type SelectionScopeSource =
   | "none"
@@ -16,6 +19,10 @@ export function getSelectionScopeSource(args: {
   activeSelectionSourceId?: string | null
 }): SelectionScopeSource {
   if (!args.hasQueries) {
+    return "none";
+  }
+
+  if (args.activeSelectionSourceId === ENTITY_OVERLAY_SELECTION_SOURCE_ID) {
     return "none";
   }
 

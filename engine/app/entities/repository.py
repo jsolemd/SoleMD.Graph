@@ -6,6 +6,10 @@ from collections.abc import Sequence
 from typing import TypedDict
 
 from app import db
+from app.entities.highlight_policy import (
+    HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
+    HIGHLIGHT_MODE_EXACT,
+)
 
 ENTITY_ALIAS_MATCH_SQL = """
 SELECT
@@ -16,10 +20,11 @@ SELECT
     ea.entity_type,
     ea.concept_id AS source_identifier,
     ea.canonical_name,
-    ea.paper_count
+    ea.paper_count,
+    ea.highlight_mode
 FROM solemd.entity_aliases ea
 WHERE ea.alias_key = ANY(%s::text[])
-  AND ea.is_canonical = true
+  AND ea.highlight_mode = ANY(%s::text[])
 """
 
 ENTITY_DETAIL_SQL = """
@@ -56,6 +61,7 @@ class EntityAliasCatalogRow(TypedDict):
     source_identifier: str
     canonical_name: str
     paper_count: int
+    highlight_mode: str
 
 
 class EntityCatalogDetailRow(TypedDict):
@@ -85,7 +91,10 @@ class EntityCatalogRepository:
             return []
 
         query = ENTITY_ALIAS_MATCH_SQL
-        params: list[object] = [normalized_alias_keys]
+        params: list[object] = [
+            normalized_alias_keys,
+            [HIGHLIGHT_MODE_EXACT, HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT],
+        ]
         if entity_types:
             query += " AND ea.entity_type = ANY(%s::text[])"
             params.append(list(dict.fromkeys(entity_types)))

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+
+from app.api.http import run_api
 
 from app.rag.schemas import RagSearchRequest, RagSearchResponse
 from app.rag.service import RagService, get_rag_service
@@ -18,14 +20,9 @@ def search_evidence(
     """Run the baseline evidence search over current PostgreSQL tables."""
     from langfuse import propagate_attributes
 
-    try:
-        with propagate_attributes(
-            user_id="api",
-            session_id=f"release:{request.graph_release_id}",
-            tags=["production"],
-        ):
-            return service.search(request)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with propagate_attributes(
+        user_id="api",
+        session_id=f"release:{request.graph_release_id}",
+        tags=["production"],
+    ):
+        return run_api(lambda: service.search(request))

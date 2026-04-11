@@ -12,9 +12,25 @@ export const RAG_EVIDENCE_ASSIST_REFUTE_OVERLAY_PRODUCER =
   "rag:evidence-assist:refute" satisfies OverlayProducerId;
 export const RAG_EVIDENCE_ASSIST_BOTH_OVERLAY_PRODUCER =
   "rag:evidence-assist:both" satisfies OverlayProducerId;
+export const ENTITY_GRAPH_OVERLAY_PRODUCER =
+  "entity:graph" satisfies OverlayProducerId;
+export const WIKI_PAGE_OVERLAY_PRODUCER =
+  "wiki:page" satisfies OverlayProducerId;
 export const RAG_ANSWER_SELECTION_SOURCE_ID = "rag:answer-selection";
-export const WIKI_ENTITY_OVERLAY_PRODUCER =
-  "wiki:entity" satisfies OverlayProducerId;
+export const ENTITY_OVERLAY_SELECTION_SOURCE_ID = "entity:overlay";
+export const WIKI_PAGE_SELECTION_SOURCE_ID = "wiki:page";
+
+const SELECTED_POINT_BASELINE_SOURCE_IDS = new Set<string>([
+  RAG_ANSWER_SELECTION_SOURCE_ID,
+  ENTITY_OVERLAY_SELECTION_SOURCE_ID,
+  WIKI_PAGE_SELECTION_SOURCE_ID,
+]);
+
+export function isSelectedPointBaselineSelectionSourceId(
+  sourceId: string | null | undefined,
+): boolean {
+  return sourceId != null && SELECTED_POINT_BASELINE_SOURCE_IDS.has(sourceId);
+}
 
 export function getRagOverlayProducerId(args: {
   origin: "ask" | "compose";

@@ -1,22 +1,22 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { AnimatePresence } from "framer-motion";
-import type { CSSProperties } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, type CSSProperties } from "react";
 import { GraphShell } from "@/features/graph/cosmograph";
 import { GraphCanvas } from "../canvas/GraphCanvas";
 import { ModeColorSync } from "./ModeColorSync";
 import { Wordmark } from "../chrome/Wordmark";
-import { StatsBar } from "../chrome/StatsBar";
 import { GraphBundleErrorState, GraphBundleLoadingOverlay } from "./loading";
-import { GraphAttribution, TIMELINE_HEIGHT, BottomToolbar } from "./chrome";
+import { BottomToolbar, useBottomChromeFloat } from "./chrome";
+import { panelSurfaceStyle, promptSurfaceStyle } from "../panels/PanelShell";
+import { preloadChromeChunks } from "./preload-chrome-chunks";
+import { EntityHoverCardProvider } from "@/features/graph/components/entities/EntityHoverCardProvider";
 import type { DashboardShellController } from "./use-dashboard-shell-controller";
 
 const legendStyle: CSSProperties = {
+  ...panelSurfaceStyle,
   borderRadius: 12,
-  border: "1px solid var(--graph-panel-border)",
-  backgroundColor: "var(--graph-panel-bg)",
-  boxShadow: "var(--graph-panel-shadow)",
   padding: 8,
 };
 
@@ -26,8 +26,7 @@ function PromptBoxLoadingPlaceholder() {
       <div
         className="h-14 w-[min(600px,90vw)] rounded-full backdrop-blur-xl animate-pulse"
         style={{
-          backgroundColor: "var(--graph-prompt-bg)",
-          border: "1px solid var(--graph-prompt-border)",
+          ...promptSurfaceStyle,
         }}
       />
     </div>
@@ -95,7 +94,6 @@ const SizeLegend = dynamic(
 
 export function DashboardShellViewport(state: DashboardShellController) {
   const {
-    activePanel,
     bundle,
     canvas,
     canvasShifted,
@@ -103,8 +101,8 @@ export function DashboardShellViewport(state: DashboardShellController) {
     handleGraphFirstPaint,
     isContinuousColor,
     isSelectionLocked,
-    layoutShowStatsBar,
     loading,
+    openPanels,
     panelsVisible,
     progress,
     queries,
@@ -112,11 +110,20 @@ export function DashboardShellViewport(state: DashboardShellController) {
     showLoading,
     showSizeLegend,
     showTimeline,
-    stats,
-    tableHeight,
     tableOpen,
     uiHidden,
   } = state;
+  const legendFloat = useBottomChromeFloat();
+
+  // Prefetch lazy chrome chunks once the canvas is live so the first click on
+  // Timeline/Table (or any panel) is a cache hit — otherwise the toolbar lifts
+  // immediately while the chunk is still being fetched, leaving the content
+  // gap until it arrives.
+  const canvasReady = !loading && canvas != null && queries != null;
+  useEffect(() => {
+    if (!canvasReady) return;
+    preloadChromeChunks();
+  }, [canvasReady]);
 
   if (error) {
     return <GraphBundleErrorState error={error} />;
@@ -124,6 +131,7 @@ export function DashboardShellViewport(state: DashboardShellController) {
 
   return (
     <GraphShell>
+      <EntityHoverCardProvider>
       <ModeColorSync />
       <div
         className="fixed inset-0"
@@ -145,11 +153,13 @@ export function DashboardShellViewport(state: DashboardShellController) {
               />
             </div>
 
-            <AnimatePresence mode="wait">
-              {!uiHidden && panelsVisible && activePanel === "config" && (
+            <AnimatePresence>
+              {!uiHidden && panelsVisible && openPanels.config && (
                 <ConfigPanel key="config" />
               )}
-              {!uiHidden && panelsVisible && activePanel === "filters" && (
+            </AnimatePresence>
+            <AnimatePresence>
+              {!uiHidden && panelsVisible && openPanels.filters && (
                 <FiltersPanel
                   key="filters"
                   queries={queries}
@@ -157,17 +167,22 @@ export function DashboardShellViewport(state: DashboardShellController) {
                   overlayRevision={canvas.overlayRevision}
                 />
               )}
-              {!uiHidden && panelsVisible && activePanel === "info" && (
+            </AnimatePresence>
+            <AnimatePresence>
+              {!uiHidden && panelsVisible && openPanels.info && (
                 <InfoPanel key="info" queries={queries} canvas={canvas} />
               )}
-              {!uiHidden && panelsVisible && activePanel === "query" && (
+            </AnimatePresence>
+            <AnimatePresence>
+              {!uiHidden && panelsVisible && openPanels.query && (
                 <QueryPanel
                   key="query"
-                  bundle={bundle}
                   runReadOnlyQuery={queries.runReadOnlyQuery}
                 />
               )}
-              {!uiHidden && panelsVisible && activePanel === "wiki" && (
+            </AnimatePresence>
+            <AnimatePresence>
+              {!uiHidden && panelsVisible && openPanels.wiki && (
                 <WikiPanel key="wiki" bundle={bundle} queries={queries} />
               )}
             </AnimatePresence>
@@ -177,11 +192,9 @@ export function DashboardShellViewport(state: DashboardShellController) {
             </AnimatePresence>
 
             {!uiHidden && (showColorLegend || showSizeLegend) && (
-              <div
-                className="absolute right-4 z-30 flex flex-col gap-2 transition-[bottom] duration-200"
-                style={{
-                  bottom: 32 + (showTimeline ? TIMELINE_HEIGHT : 0) + (tableOpen ? tableHeight : 0),
-                }}
+              <motion.div
+                className="absolute right-4 z-30 flex flex-col gap-2"
+                {...legendFloat}
               >
                 {showSizeLegend && (
                   <SizeLegend selectOnClick={!isSelectionLocked} style={legendStyle} />
@@ -193,7 +206,7 @@ export function DashboardShellViewport(state: DashboardShellController) {
                     style={legendStyle}
                   />
                 )}
-              </div>
+              </motion.div>
             )}
 
             <AnimatePresence>
@@ -224,18 +237,13 @@ export function DashboardShellViewport(state: DashboardShellController) {
         <Wordmark />
 
         <AnimatePresence>
-          {!uiHidden && activePanel === "about" && <AboutPanel />}
+          {!uiHidden && openPanels.about && <AboutPanel />}
         </AnimatePresence>
 
         {!uiHidden && panelsVisible && <BottomToolbar />}
-        {!uiHidden && <GraphAttribution />}
         {!uiHidden && <PromptBox bundle={bundle} queries={queries ?? null} />}
-        {!uiHidden && layoutShowStatsBar && stats != null && (
-          <div className="absolute right-3 top-[52px] z-40 flex flex-col items-end gap-1.5">
-            <StatsBar stats={stats} />
-          </div>
-        )}
       </div>
+    </EntityHoverCardProvider>
     </GraphShell>
   );
 }

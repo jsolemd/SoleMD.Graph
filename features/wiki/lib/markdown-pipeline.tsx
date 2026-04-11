@@ -13,6 +13,7 @@ import type { PluggableList } from 'unified'
 
 import { remarkPmidCitations, type RemarkPmidCitationsOptions } from './remark-pmid-citations'
 import { remarkCallouts } from './remark-callouts'
+import { remarkAnimationRefs } from './remark-animation-refs'
 
 // ---------------------------------------------------------------------------
 // Pipeline data — passed from page response into the pipeline
@@ -23,6 +24,8 @@ export interface WikiPipelineData {
   resolvedLinks: Record<string, string>
   /** PMID → bundle-compatible graph paper ref. */
   paperGraphRefs: Record<number, string>
+  /** Slug → entity metadata for entity pages (hover cards). */
+  linkedEntities: Record<string, { entity_type: string; concept_id: string }>
 }
 
 // ---------------------------------------------------------------------------
@@ -44,6 +47,8 @@ export interface WikiLinkProps {
   slug: string
   children: ReactNode
   onNavigate: (slug: string) => void
+  entityType: string | null
+  conceptId: string | null
 }
 
 export interface PaperCitationProps {
@@ -57,6 +62,10 @@ export interface CalloutProps {
   type: string
   title: string | null
   children: ReactNode
+}
+
+export interface AnimationEmbedProps {
+  name: string
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +84,7 @@ export function createWikiRemarkPlugins(
     remarkGfm,
     [remarkPmidCitations, pmidOpts],
     remarkCallouts,
+    remarkAnimationRefs,
   ]
 }
 
@@ -96,11 +106,12 @@ export function createWikiComponentMap(
     WikiLink: React.ComponentType<WikiLinkProps>
     PaperCitation: React.ComponentType<PaperCitationProps>
     Callout: React.ComponentType<CalloutProps>
+    AnimationEmbed: React.ComponentType<AnimationEmbedProps>
   },
 ): Record<string, React.ComponentType<ComponentPropsWithoutRef<never>>> {
-  const { paperGraphRefs } = data
+  const { paperGraphRefs, linkedEntities } = data
   const { onNavigate, onPaperClick } = callbacks
-  const { WikiLink, PaperCitation, Callout } = elements
+  const { WikiLink, PaperCitation, Callout, AnimationEmbed } = elements
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   return {
@@ -108,7 +119,17 @@ export function createWikiComponentMap(
       const href: string | undefined = props.href
       if (href?.startsWith('wiki:')) {
         const slug = href.slice(5)
-        return <WikiLink slug={slug} onNavigate={onNavigate}>{props.children}</WikiLink>
+        const linked = linkedEntities[slug] ?? null
+        return (
+          <WikiLink
+            slug={slug}
+            onNavigate={onNavigate}
+            entityType={linked?.entity_type ?? null}
+            conceptId={linked?.concept_id ?? null}
+          >
+            {props.children}
+          </WikiLink>
+        )
       }
       if (href?.startsWith('pmid:')) {
         const pmid = parseInt(href.slice(5), 10)
@@ -118,6 +139,10 @@ export function createWikiComponentMap(
             {props.children}
           </PaperCitation>
         )
+      }
+      if (href?.startsWith('anim:')) {
+        const name = href.slice(5)
+        return <AnimationEmbed name={name} />
       }
       return <a href={href} target="_blank" rel="noopener noreferrer">{props.children}</a>
     },

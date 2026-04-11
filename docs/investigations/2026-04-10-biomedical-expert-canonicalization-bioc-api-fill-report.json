@@ -1,0 +1,273 @@
+{
+  "parser_version": "parser-v1",
+  "source_revision": "pubtator3-api:2026-03-21",
+  "requested_corpus_ids": [
+    244851480,
+    245626287,
+    239468065,
+    245632027,
+    260291534,
+    1933765,
+    258715884,
+    15661883,
+    17872207,
+    227132953,
+    208606347,
+    221070145,
+    578353,
+    251877056,
+    232327864,
+    250973145,
+    46873301,
+    2030354,
+    225135230,
+    216375828,
+    201160821,
+    6134739,
+    31269847,
+    267226112,
+    247412628,
+    256684861,
+    7297305,
+    277771861,
+    206148831,
+    15140931,
+    264286849,
+    12723295
+  ],
+  "resolved_pmids": 32,
+  "skipped_existing": 0,
+  "fetched_documents": 32,
+  "parsed_documents": 0,
+  "skipped_low_value": 2,
+  "skipped_no_fetch": 30,
+  "ingested_corpus_ids": [],
+  "warehouse_result": null,
+  "chunk_backfill_result": null,
+  "papers": [
+    {
+      "corpus_id": 244851480,
+      "pmid": 34887662,
+      "document_id": "34887662",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 245626287,
+      "pmid": 37057711,
+      "document_id": "37057711",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 239468065,
+      "pmid": 34692307,
+      "document_id": "34692307",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 245632027,
+      "pmid": 35141097,
+      "document_id": "35141097",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 260291534,
+      "pmid": 37516868,
+      "document_id": "37516868",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 1933765,
+      "pmid": 22661818,
+      "document_id": "22661818",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 258715884,
+      "pmid": 37191339,
+      "document_id": "37191339",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 15661883,
+      "pmid": 26467407,
+      "document_id": "26467407",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 17872207,
+      "pmid": 23935251,
+      "document_id": "23935251",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 227132953,
+      "pmid": 33536130,
+      "document_id": "33536130",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 208606347,
+      "pmid": 31798919,
+      "document_id": "31798919",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 221070145,
+      "pmid": 32835301,
+      "document_id": "32835301",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 578353,
+      "pmid": 24712889,
+      "document_id": "24712889",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 251877056,
+      "pmid": 36138865,
+      "document_id": "36138865",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 232327864,
+      "pmid": 33841207,
+      "document_id": "33841207",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 250973145,
+      "pmid": 36798530,
+      "document_id": "36798530",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 46873301,
+      "pmid": 29416240,
+      "document_id": "29416240",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 2030354,
+      "pmid": 23596418,
+      "document_id": "23596418",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 225135230,
+      "pmid": 33209514,
+      "document_id": "33209514",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 216375828,
+      "pmid": 32426731,
+      "document_id": "32426731",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 201160821,
+      "pmid": 31467729,
+      "document_id": "31467729",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 6134739,
+      "pmid": 22620986,
+      "document_id": "22620986",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 31269847,
+      "pmid": 21455362,
+      "document_id": "21455362",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 267226112,
+      "pmid": 38328756,
+      "document_id": "38328756",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 247412628,
+      "pmid": 35370821,
+      "document_id": "35370821",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 256684861,
+      "pmid": 35082285,
+      "document_id": "35082285",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 7297305,
+      "pmid": 29201551,
+      "document_id": "29201551",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 277771861,
+      "pmid": 40227662,
+      "document_id": "40227662",
+      "parsed": false,
+      "skipped_reason": "low_value"
+    },
+    {
+      "corpus_id": 206148831,
+      "pmid": 21862951,
+      "document_id": "21862951",
+      "parsed": false,
+      "skipped_reason": "low_value"
+    },
+    {
+      "corpus_id": 15140931,
+      "pmid": 23431323,
+      "document_id": "23431323",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 264286849,
+      "pmid": 37848404,
+      "document_id": "37848404",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    },
+    {
+      "corpus_id": 12723295,
+      "pmid": 25061304,
+      "document_id": "25061304",
+      "parsed": false,
+      "skipped_reason": "not_in_pubtator"
+    }
+  ]
+}

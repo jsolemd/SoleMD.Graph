@@ -13,34 +13,74 @@ beforeEach(() => resetStore())
 
 describe('panel-slice', () => {
   describe('togglePanel', () => {
-    it('opens a panel when none is active', () => {
+    it('opens a panel when closed', () => {
       useDashboardStore.getState().togglePanel('config')
-      expect(useDashboardStore.getState().activePanel).toBe('config')
+      expect(useDashboardStore.getState().openPanels.config).toBe(true)
     })
 
-    it('closes the active panel when toggled again', () => {
-      resetStore({ activePanel: 'config' })
+    it('closes a panel when open', () => {
+      resetStore({ openPanels: { ...useDashboardStore.getState().openPanels, config: true } })
       useDashboardStore.getState().togglePanel('config')
-      expect(useDashboardStore.getState().activePanel).toBeNull()
+      expect(useDashboardStore.getState().openPanels.config).toBe(false)
     })
 
-    it('switches to a different panel', () => {
-      resetStore({ activePanel: 'config' })
+    it('does not close other panels (non-exclusive)', () => {
+      resetStore({ openPanels: { ...useDashboardStore.getState().openPanels, config: true } })
       useDashboardStore.getState().togglePanel('filters')
-      expect(useDashboardStore.getState().activePanel).toBe('filters')
+      expect(useDashboardStore.getState().openPanels.config).toBe(true)
+      expect(useDashboardStore.getState().openPanels.filters).toBe(true)
+    })
+  })
+
+  describe('openPanel / closePanel', () => {
+    it('openPanel opens a specific panel', () => {
+      useDashboardStore.getState().openPanel('wiki')
+      expect(useDashboardStore.getState().openPanels.wiki).toBe(true)
+    })
+
+    it('openPanel is idempotent', () => {
+      resetStore({ openPanels: { ...useDashboardStore.getState().openPanels, wiki: true } })
+      const before = useDashboardStore.getState()
+      useDashboardStore.getState().openPanel('wiki')
+      expect(useDashboardStore.getState()).toBe(before)
+    })
+
+    it('closePanel closes a specific panel', () => {
+      resetStore({ openPanels: { ...useDashboardStore.getState().openPanels, info: true } })
+      useDashboardStore.getState().closePanel('info')
+      expect(useDashboardStore.getState().openPanels.info).toBe(false)
+    })
+
+    it('closePanel is idempotent', () => {
+      const before = useDashboardStore.getState()
+      useDashboardStore.getState().closePanel('info')
+      expect(useDashboardStore.getState()).toBe(before)
+    })
+  })
+
+  describe('closeAllPanels', () => {
+    it('closes all panels', () => {
+      resetStore({ openPanels: { about: true, config: true, filters: true, info: true, query: true, wiki: true } })
+      useDashboardStore.getState().closeAllPanels()
+      const panels = useDashboardStore.getState().openPanels
+      expect(Object.values(panels).every(v => v === false)).toBe(true)
     })
   })
 
   describe('togglePanelsVisible', () => {
-    it('hides panels and clears active panel', () => {
-      resetStore({ panelsVisible: true, activePanel: 'config' })
+    it('hides panels and closes all open panels', () => {
+      resetStore({
+        panelsVisible: true,
+        openPanels: { ...useDashboardStore.getState().openPanels, config: true, wiki: true },
+      })
       useDashboardStore.getState().togglePanelsVisible()
       expect(useDashboardStore.getState().panelsVisible).toBe(false)
-      expect(useDashboardStore.getState().activePanel).toBeNull()
+      expect(useDashboardStore.getState().openPanels.config).toBe(false)
+      expect(useDashboardStore.getState().openPanels.wiki).toBe(false)
     })
 
-    it('shows panels without restoring active panel', () => {
-      resetStore({ panelsVisible: false, activePanel: null })
+    it('shows panels without restoring open panels', () => {
+      resetStore({ panelsVisible: false })
       useDashboardStore.getState().togglePanelsVisible()
       expect(useDashboardStore.getState().panelsVisible).toBe(true)
     })
@@ -148,19 +188,6 @@ describe('panel-slice', () => {
     })
   })
 
-  describe('setActivePanel', () => {
-    it('does not emit when setting the active panel to the same value', () => {
-      resetStore({ activePanel: 'config' })
-      const listener = jest.fn()
-      const unsubscribe = useDashboardStore.subscribe(listener)
-
-      useDashboardStore.getState().setActivePanel('config')
-
-      expect(listener).not.toHaveBeenCalled()
-      unsubscribe()
-    })
-  })
-
   describe('toggleUiHidden', () => {
     it('toggles UI visibility', () => {
       resetStore({ uiHidden: false })
@@ -170,12 +197,6 @@ describe('panel-slice', () => {
   })
 
   describe('wiki panel state', () => {
-    it('wiki is a valid ActivePanel value', () => {
-      resetStore()
-      useDashboardStore.getState().togglePanel('wiki')
-      expect(useDashboardStore.getState().activePanel).toBe('wiki')
-    })
-
     it('wikiExpanded defaults to false', () => {
       expect(useDashboardStore.getState().wikiExpanded).toBe(false)
     })

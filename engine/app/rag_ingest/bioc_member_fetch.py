@@ -211,8 +211,39 @@ def fetch_bioc_archive_members(
     needs_ordinal_scan = any(
         request.member_name is None for request in pending_by_document.values()
     )
+    archive_path = settings.pubtator_biocxml_dir_path / archive_name
+
+    if pending_by_document and pending_member_names and not needs_ordinal_scan:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            for member_name in pending_member_names:
+                try:
+                    extracted = archive.extractfile(member_name)
+                except KeyError:
+                    continue
+                if extracted is None:
+                    continue
+                xml_text = extracted.read().decode("utf-8", errors="replace")
+                archive_reads += 1
+                active_cache.write_member(
+                    source_revision=revision,
+                    archive_name=archive_name,
+                    member_name=member_name,
+                    xml_text=xml_text,
+                )
+                _consume_member_payload(
+                    member_name=member_name,
+                    xml_text=xml_text,
+                    cache_hit=False,
+                )
+
+    pending_member_names = sorted(
+        {
+            str(request.member_name)
+            for request in pending_by_document.values()
+            if request.member_name
+        }
+    )
     if pending_by_document:
-        archive_path = settings.pubtator_biocxml_dir_path / archive_name
         with tarfile.open(archive_path, "r|gz") as archive:
             for member in archive:
                 if not member.isfile():

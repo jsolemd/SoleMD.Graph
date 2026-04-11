@@ -62,6 +62,10 @@ from app.rag_ingest.target_corpus import (
     RagTargetCorpusRow,
     has_paper_abstract,
 )
+from app.rag_ingest.target_metadata import (
+    apply_target_metadata_to_parsed_source,
+    target_row_by_corpus_id,
+)
 from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestResult, RagWarehouseWriter
 from app.rag_ingest.write_batch_builder import (
     estimate_write_batch_bytes_from_grounding_plan,
@@ -191,35 +195,6 @@ class WarehouseQualityCallable(Protocol):
         *,
         corpus_ids: list[int],
     ) -> object: ...
-
-
-def _target_row_by_corpus_id(
-    target_rows: list[RagTargetCorpusRow],
-) -> dict[int, RagTargetCorpusRow]:
-    return {
-        int(target_row.corpus_id): target_row
-        for target_row in target_rows
-    }
-
-
-def _apply_target_metadata_to_parsed_source(
-    *,
-    parsed: ParsedPaperSource,
-    target_row: RagTargetCorpusRow | None,
-) -> ParsedPaperSource:
-    if target_row is None:
-        return parsed
-    metadata_title = (target_row.paper_title or "").strip()
-    if not metadata_title:
-        return parsed
-    current_title = (parsed.document.title or "").strip()
-    if current_title == metadata_title:
-        return parsed
-    if current_title:
-        parsed.document.raw_attrs_json.setdefault("source_selected_title", current_title)
-    parsed.document.raw_attrs_json["corpus_metadata_title"] = metadata_title
-    parsed.document.title = metadata_title
-    return parsed
 
 
 class PostgresExistingDocumentLoader:

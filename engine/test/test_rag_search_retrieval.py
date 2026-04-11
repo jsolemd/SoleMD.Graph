@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from app.rag.biomedical_concept_normalizer import VocabConceptMatch
 from app.rag.models import PaperEvidenceHit
+from app.rag.models import PaperRetrievalQuery
 from app.rag.search_plan import RetrievalSearchPlan
 from app.rag.search_retrieval import apply_cited_context_hits
+from app.rag.search_retrieval_concepts import concept_paper_rescue_queries
 from app.rag.types import QueryRetrievalProfile
 
 
@@ -77,3 +80,35 @@ def test_apply_cited_context_hits_preserves_existing_and_missing_cited_papers():
     assert set(by_corpus_id) == {11, 22}
     assert by_corpus_id[11].cited_context_score == 0.2
     assert by_corpus_id[22].cited_context_score == 0.2
+
+
+def test_concept_paper_rescue_queries_preserve_clinical_context_for_vocab_matches():
+    query = PaperRetrievalQuery(
+        graph_release_id="current",
+        query="rebound panic after stopping SSRIs",
+        normalized_query="rebound panic after stopping ssris",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        vocab_concept_matches=[
+            VocabConceptMatch(
+                raw_query_phrase="ssri",
+                preferred_term="Selective Serotonin Reuptake Inhibitor (SSRI)",
+                matched_alias="SSRI",
+                alias_type="derived_acronym",
+                quality_score=100,
+                is_preferred=True,
+                umls_cui="C4552594",
+                term_id="ab61a6fc-6b40-42de-ae3d-640d6f5500c2",
+                category="intervention.pharmacologic.class",
+                mesh_id=None,
+                entity_type="chemical",
+                source_surface="vocab_alias",
+                provenance="vocab_aliases",
+                confidence="medium",
+            )
+        ],
+    )
+
+    assert concept_paper_rescue_queries(query) == [
+        "Selective Serotonin Reuptake Inhibitor (SSRI) rebound panic after stopping SSRIs",
+        "Selective Serotonin Reuptake Inhibitor (SSRI)",
+    ]

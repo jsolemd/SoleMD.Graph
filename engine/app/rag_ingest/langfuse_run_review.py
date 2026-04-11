@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
+from types import SimpleNamespace
 from typing import Any
 
 from app.langfuse_config import (
@@ -13,6 +14,7 @@ from app.langfuse_config import (
     SCORE_HIT_AT_K,
     SCORE_ROUTING_MATCH,
     SCORE_TARGET_IN_CORPUS,
+    get_langfuse,
     langfuse_api,
 )
 from app.rag.query_enrichment import normalize_title_key
@@ -157,6 +159,17 @@ def _normalized_title_key(expected_output: dict[str, Any]) -> str:
     return normalize_title_key(str(expected_output.get("title") or ""))
 
 
+def _warehouse_depth_for_item(item_result) -> str:
+    item = getattr(item_result, "item", None)
+    expected_output = getattr(item, "expected_output", {}) or {}
+    output = getattr(item_result, "output", {}) or {}
+    return str(
+        expected_output.get("warehouse_depth")
+        or output.get("warehouse_depth")
+        or "unknown"
+    )
+
+
 def _has_target_signal(output: dict[str, Any]) -> bool:
     target_signals = output.get("target_signals") or {}
     lane_count = float(target_signals.get("lane_count") or 0.0)
@@ -200,12 +213,77 @@ def _trace_url(trace_id: str) -> str | None:
     return f"{base_url}{html_path}"
 
 
+def _langfuse_base_url() -> str:
+    return (
+        os.environ.get("LANGFUSE_PUBLIC_BASE_URL")
+        or os.environ.get("LANGFUSE_BASE_URL")
+        or "http://localhost:3100"
+    ).rstrip("/")
+
+
+def _trace_evaluations(trace: dict[str, Any]) -> list[SimpleNamespace]:
+    return [
+        SimpleNamespace(name=score.get("name"), value=score.get("value"))
+        for score in (trace.get("scores") or [])
+        if isinstance(score, dict) and isinstance(score.get("value"), (int, float))
+    ]
+
+
+def load_historical_experiment_result(dataset_name: str, run_name: str):
+    """Reconstruct a benchmark result from a stored Langfuse dataset run.
+
+    The live benchmark path reviews in-memory ``ExperimentResult`` objects.
+    Historical review needs to rebuild the same surface from Langfuse's stored
+    dataset run items plus their trace outputs and scores.
+    """
+
+    client = get_langfuse()
+    if client is None:
+        raise RuntimeError("Langfuse client unavailable")
+
+    dataset = client.get_dataset(dataset_name)
+    run = client.get_dataset_run(dataset_name=dataset_name, run_name=run_name)
+    items_by_id = {item.id: item for item in dataset.items}
+
+    item_results: list[SimpleNamespace] = []
+    project_id: str | None = None
+    for dataset_run_item in run.dataset_run_items:
+        item = items_by_id.get(dataset_run_item.dataset_item_id)
+        if item is None:
+            continue
+        trace = langfuse_api("GET", f"/traces/{dataset_run_item.trace_id}") or {}
+        project_id = project_id or trace.get("projectId")
+        item_results.append(
+            SimpleNamespace(
+                item=item,
+                output=trace.get("output") or {},
+                evaluations=_trace_evaluations(trace),
+                trace_id=dataset_run_item.trace_id,
+            )
+        )
+
+    dataset_run_url = None
+    if project_id:
+        dataset_run_url = (
+            f"{_langfuse_base_url()}/project/{project_id}/datasets/"
+            f"{run.dataset_id}/runs/{run.id}"
+        )
+
+    return SimpleNamespace(
+        dataset_name=dataset_name,
+        run_name=run_name,
+        dataset_run_url=dataset_run_url,
+        item_results=item_results,
+    )
+
+
 def review_experiment_result(
     result,
     *,
     max_miss_examples: int = 10,
     max_slow_examples: int = 10,
     fetch_trace_urls: bool = True,
+    include_warehouse_depths: set[str] | None = None,
 ) -> dict[str, Any]:
     by_family_inputs: dict[str, dict[str, Any]] = {}
     by_focus_inputs: dict[str, dict[str, Any]] = {
@@ -233,7 +311,14 @@ def review_experiment_result(
     global_display_study_metadata_coverage: list[float] = []
     global_duration_ms: list[float] = []
 
-    for item_result in getattr(result, "item_results", []) or []:
+    item_results = list(getattr(result, "item_results", []) or [])
+    raw_cases = len(item_results)
+    excluded_cases = 0
+    for item_result in item_results:
+        warehouse_depth = _warehouse_depth_for_item(item_result)
+        if include_warehouse_depths and warehouse_depth not in include_warehouse_depths:
+            excluded_cases += 1
+            continue
         total_cases += 1
         item = getattr(item_result, "item", None)
         item_input = getattr(item, "input", {}) or {}
@@ -292,9 +377,6 @@ def review_experiment_result(
         )
 
         retrieval_profile = str(output.get("retrieval_profile") or "unknown")
-        warehouse_depth = str(
-            output.get("warehouse_depth") or expected_output.get("warehouse_depth") or "unknown"
-        )
         route_signature = str(output.get("route_signature") or "unknown")
         _append_metric_bucket(
             family_bucket,
@@ -463,7 +545,14 @@ def review_experiment_result(
 
     return {
         "dataset_run_url": getattr(result, "dataset_run_url", None),
+        "raw_cases": raw_cases,
         "cases": total_cases,
+        "excluded_cases": excluded_cases,
+        "scope_filter": (
+            {"warehouse_depths": sorted(include_warehouse_depths)}
+            if include_warehouse_depths
+            else None
+        ),
         "hit_at_1": _mean(global_hit_at_1),
         "hit_at_k": _mean(global_hit_at_k),
         "grounded_answer_rate": _mean(global_grounded),
@@ -538,6 +627,15 @@ def format_experiment_review(review: dict[str, Any]) -> str:
             f"max_cases_per_title={review['max_cases_per_title_key']}"
         ),
     ]
+    scope_filter = review.get("scope_filter") or {}
+    raw_cases = int(review.get("raw_cases") or review["cases"])
+    excluded_cases = int(review.get("excluded_cases") or 0)
+    if scope_filter:
+        lines.append(
+            "  scope="
+            f"warehouse_depth in {scope_filter.get('warehouse_depths', [])} "
+            f"raw_cases={raw_cases} included={review['cases']} excluded={excluded_cases}"
+        )
     if review.get("dataset_run_url"):
         lines.append(f"  dataset_run={review['dataset_run_url']}")
     if review.get("by_partition"):

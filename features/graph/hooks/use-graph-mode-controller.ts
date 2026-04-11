@@ -9,7 +9,7 @@ export function useGraphModeController() {
   const mode = useGraphStore((s) => s.mode);
   const setMode = useGraphStore((s) => s.setMode);
   const applyPromptModeDefault = useDashboardStore((s) => s.applyPromptModeDefault);
-  const setActivePanel = useDashboardStore((s) => s.setActivePanel);
+  const openPanel = useDashboardStore((s) => s.openPanel);
   const setWikiExpanded = useDashboardStore((s) => s.setWikiExpanded);
   const stepPromptDown = useDashboardStore((s) => s.stepPromptDown);
 
@@ -17,14 +17,15 @@ export function useGraphModeController() {
     const config = getModeConfig(nextMode);
     setMode(nextMode);
     applyPromptModeDefault(config.layout.defaultPromptMode);
-    // Only auto-open a panel when the mode explicitly declares one.
-    // null/undefined = leave current panel state untouched.
-    if (config.layout.defaultPanel) {
-      setActivePanel(config.layout.defaultPanel);
+    // Open panels declared by the mode (additive — doesn't close others).
+    if (config.layout.defaultOpenPanels) {
+      for (const panel of config.layout.defaultOpenPanels) {
+        openPanel(panel);
+      }
     }
     // Learn mode auto-expands the wiki panel; other modes collapse it.
     setWikiExpanded(nextMode === 'learn');
-  }, [applyPromptModeDefault, setActivePanel, setMode, setWikiExpanded]);
+  }, [applyPromptModeDefault, openPanel, setMode, setWikiExpanded]);
 
   return {
     mode,

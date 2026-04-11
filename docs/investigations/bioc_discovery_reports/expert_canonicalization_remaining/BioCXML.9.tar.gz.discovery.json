@@ -1,0 +1,77 @@
+{
+  "archive_name": "BioCXML.9.tar.gz",
+  "start_document_ordinal": 1121209,
+  "resolver_batch_size": 5,
+  "limit": 5,
+  "max_documents": 5,
+  "scanned_documents": 5,
+  "last_document_ordinal_scanned": 2379948,
+  "manifest_entries_used": 5,
+  "manifest_entries_written": 0,
+  "resolved_corpus_ids": [
+    2030354,
+    15140931,
+    46873301,
+    245632027,
+    260291534
+  ],
+  "selected_corpus_ids": [
+    2030354,
+    15140931,
+    46873301,
+    245632027,
+    260291534
+  ],
+  "candidates": [
+    {
+      "corpus_id": 260291534,
+      "document_id": "37516868",
+      "archive_name": "BioCXML.9.tar.gz",
+      "document_ordinal": 1121209,
+      "member_name": "output/BioCXML/11109.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 2030354,
+      "document_id": "23596418",
+      "archive_name": "BioCXML.9.tar.gz",
+      "document_ordinal": 2008337,
+      "member_name": "output/BioCXML/33989.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 46873301,
+      "document_id": "29416240",
+      "archive_name": "BioCXML.9.tar.gz",
+      "document_ordinal": 2261544,
+      "member_name": "output/BioCXML/56789.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 15140931,
+      "document_id": "23431323",
+      "archive_name": "BioCXML.9.tar.gz",
+      "document_ordinal": 2356744,
+      "member_name": "output/BioCXML/65349.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 245632027,
+      "document_id": "35141097",
+      "archive_name": "BioCXML.9.tar.gz",
+      "document_ordinal": 2379948,
+      "member_name": "output/BioCXML/67439.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    }
+  ]
+}

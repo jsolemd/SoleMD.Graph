@@ -93,9 +93,10 @@ function DetailPanelComponent({
 
   return (
     <PanelShell
+      id="detail"
       title="Selection"
       side="right"
-      width={380}
+      defaultWidth={380}
       onClose={closePanel}
       headerActions={
         hasSelectionContext ? (

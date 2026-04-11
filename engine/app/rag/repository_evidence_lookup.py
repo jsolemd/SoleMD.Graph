@@ -19,6 +19,7 @@ from app.rag.models import (
 )
 from app.rag.query_enrichment import normalize_query_text
 from app.rag.repository_support import (
+    ResolvedEntityConcept,
     _normalize_json_strings,
     _resolved_entity_concept_arrays,
     _SqlSpec,
@@ -132,17 +133,26 @@ class _EvidenceLookupMixin:
         corpus_ids: Sequence[int],
         *,
         entity_terms: Sequence[str],
+        resolved_concepts: Sequence[ResolvedEntityConcept] | None = None,
         limit_per_paper: int = 5,
     ) -> dict[int, list[EntityMatchedPaperHit]]:
         unique_corpus_ids = _unique_int_ids(corpus_ids)
         normalized_terms = _unique_stripped(entity_terms)
-        if not unique_corpus_ids or not normalized_terms:
+        provided_concepts = tuple(
+            concept
+            for concept in (resolved_concepts or ())
+            if concept.resolved_term.strip() and concept.concept_id.strip()
+        )
+        if not unique_corpus_ids or (not normalized_terms and not provided_concepts):
             return {}
 
-        resolved_concepts = self._resolve_query_entity_concepts(
-            query_phrases=normalized_terms,
-            limit=len(normalized_terms),
-        )
+        if provided_concepts:
+            resolved_concepts = provided_concepts
+        else:
+            resolved_concepts = self._resolve_query_entity_concepts(
+                query_phrases=normalized_terms,
+                limit=len(normalized_terms),
+            )
         (
             raw_terms,
             entity_types,

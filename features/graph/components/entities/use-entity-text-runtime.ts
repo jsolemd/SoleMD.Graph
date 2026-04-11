@@ -21,6 +21,7 @@ import type { EntityHoverTarget, EntityTextScope } from "./entity-text-runtime";
 
 const EMPTY_ENTITY_MATCHES = Object.freeze([]) as readonly GraphEntityTextMatch[];
 const ENTITY_MATCH_DEBOUNCE_MS = 320;
+const ENTITY_HOVER_CARD_CLEAR_DELAY_MS = 120;
 const MIN_ENTITY_MATCH_TEXT_LENGTH = 4;
 const DEFAULT_ENTITY_MATCH_LIMIT = 24;
 const MATCH_CACHE_TTL_MS = 60_000;
@@ -41,6 +42,8 @@ interface UseEntityTextRuntimeState {
   entityHoverCard: EntityHoverCardModel | null;
   handleTextScopeChange: (scope: EntityTextScope | null) => void;
   handleEntityHoverTargetChange: (target: EntityHoverTarget | null) => void;
+  handleHoverCardPointerEnter: () => void;
+  handleHoverCardPointerLeave: () => void;
 }
 
 function normalizeEntityScopeKey(scope: EntityTextScope | null): string {
@@ -80,6 +83,27 @@ export function useEntityTextRuntime({
   const matchSequenceRef = useRef(0);
   const hoverSequenceRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const hoverCardPointerInsideRef = useRef(false);
+  const hoverCardClearTimerRef = useRef<number | null>(null);
+
+  const clearHoverCardClearTimer = useCallback(() => {
+    if (hoverCardClearTimerRef.current) {
+      window.clearTimeout(hoverCardClearTimerRef.current);
+      hoverCardClearTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleEntityHoverCardClear = useCallback(() => {
+    clearHoverCardClearTimer();
+    hoverCardClearTimerRef.current = window.setTimeout(() => {
+      hoverCardClearTimerRef.current = null;
+      if (hoverCardPointerInsideRef.current) {
+        return;
+      }
+      hoverSequenceRef.current += 1;
+      setEntityHoverCard(null);
+    }, ENTITY_HOVER_CARD_CLEAR_DELAY_MS);
+  }, [clearHoverCardClearTimer]);
 
   const handleTextScopeChange = useCallback((nextScope: EntityTextScope | null) => {
     setTextScope((current) => {
@@ -95,12 +119,15 @@ export function useEntityTextRuntime({
 
   const handleEntityHoverTargetChange = useCallback(
     (target: EntityHoverTarget | null) => {
-      hoverSequenceRef.current += 1;
-      const hoverSequence = hoverSequenceRef.current;
       if (!target) {
-        setEntityHoverCard(null);
+        scheduleEntityHoverCardClear();
         return;
       }
+
+      hoverCardPointerInsideRef.current = false;
+      clearHoverCardClearTimer();
+      hoverSequenceRef.current += 1;
+      const hoverSequence = hoverSequenceRef.current;
 
       setEntityHoverCard(buildEntityHoverCardModel(target, null));
       const detailKey = buildEntityDetailCacheKey(target);
@@ -131,8 +158,18 @@ export function useEntityTextRuntime({
           setEntityHoverCard(buildEntityHoverCardModel(target, null));
         });
     },
-    [],
+    [clearHoverCardClearTimer, scheduleEntityHoverCardClear],
   );
+
+  const handleHoverCardPointerEnter = useCallback(() => {
+    hoverCardPointerInsideRef.current = true;
+    clearHoverCardClearTimer();
+  }, [clearHoverCardClearTimer]);
+
+  const handleHoverCardPointerLeave = useCallback(() => {
+    hoverCardPointerInsideRef.current = false;
+    scheduleEntityHoverCardClear();
+  }, [scheduleEntityHoverCardClear]);
 
   const stableScopeKey = normalizeEntityScopeKey(textScope);
 
@@ -209,7 +246,10 @@ export function useEntityTextRuntime({
 
       void entry.promise.then((matches) => {
         if (matchSequenceRef.current !== matchSequence) return;
-        setEntityMatches(Object.freeze(matches));
+        const filtered = matches.filter(
+          (m) => m.matchedText.length >= MIN_ENTITY_MATCH_TEXT_LENGTH,
+        );
+        setEntityMatches(Object.freeze(filtered));
       });
     }, ENTITY_MATCH_DEBOUNCE_MS);
 
@@ -236,11 +276,19 @@ export function useEntityTextRuntime({
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      clearHoverCardClearTimer();
+    };
+  }, [clearHoverCardClearTimer]);
+
   return {
     entityMatches,
     entityHoverCard,
     handleTextScopeChange,
     handleEntityHoverTargetChange,
+    handleHoverCardPointerEnter,
+    handleHoverCardPointerLeave,
   };
 }
 
@@ -255,17 +303,26 @@ function buildEntityHoverCardModel(
   return {
     x: target.x,
     y: target.y,
+    entity: detail
+      ? {
+          entityType: detail.entityType,
+          conceptNamespace: detail.conceptNamespace,
+          conceptId: detail.conceptId,
+          sourceIdentifier: detail.sourceIdentifier,
+          canonicalName: detail.canonicalName,
+        }
+      : target.entity,
     label: detail?.canonicalName ?? target.entity.canonicalName,
     entityType: detail?.entityType ?? target.entity.entityType,
+    conceptId: detail?.conceptId ?? target.entity.conceptId ?? null,
+    conceptNamespace: detail?.conceptNamespace ?? target.entity.conceptNamespace ?? null,
     paperCount: detail?.paperCount ?? target.paperCount,
     aliases:
-      detail?.aliases
-        .filter(
-          (alias) =>
-            alias.aliasText.trim().toLowerCase() !==
-            detail.canonicalName.trim().toLowerCase(),
-        )
-        .map((alias) => alias.aliasText) ?? [],
+      detail?.aliases.filter(
+        (alias) =>
+          alias.aliasText.trim().toLowerCase() !==
+          detail.canonicalName.trim().toLowerCase(),
+      ) ?? [],
     summary: detail?.summary ?? null,
     detailReady: Boolean(detail),
   };

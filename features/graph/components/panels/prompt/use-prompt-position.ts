@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { animate, useDragControls, useMotionValue } from "framer-motion";
 import { smooth } from "@/lib/motion";
 import { useDashboardStore, type PromptMode } from "@/features/graph/stores";
@@ -16,7 +16,6 @@ import type { PromptAvoidRect } from "./avoidance";
 import {
   resolveCollapsedTarget,
   resolveNormalTarget,
-  type LayoutClearances,
 } from "./prompt-layout";
 
 export function usePromptPosition({
@@ -24,10 +23,6 @@ export function usePromptPosition({
   promptMode,
   panelsVisible,
   bottomClearance,
-  leftClearance,
-  rightClearance,
-  leftPanelBottom,
-  rightPanelBottom,
   avoidRects,
   vw,
   vh,
@@ -37,10 +32,6 @@ export function usePromptPosition({
   promptMode: PromptMode;
   panelsVisible: boolean;
   bottomClearance: number;
-  leftClearance: number;
-  rightClearance: number;
-  leftPanelBottom: number;
-  rightPanelBottom: number;
   avoidRects?: PromptAvoidRect[];
   vw: number;
   vh: number;
@@ -72,10 +63,6 @@ export function usePromptPosition({
   const [isOffset, setIsOffset] = useState(false);
 
   const targetY = Math.min(0, BOTTOM_BASE - bottomClearance);
-  const clearances: LayoutClearances = useMemo(
-    () => ({ leftClearance, rightClearance, leftPanelBottom, rightPanelBottom }),
-    [leftClearance, rightClearance, leftPanelBottom, rightPanelBottom],
-  );
 
   const posAnim = useRef<{ x?: ReturnType<typeof animate>; y?: ReturnType<typeof animate>; h?: ReturnType<typeof animate> }>({});
   const fullHeightEnteredRef = useRef(false);
@@ -126,8 +113,8 @@ export function usePromptPosition({
       setPromptShellFullHeight(true);
 
       const targetX = layoutMode === "create"
-        ? 24 + leftClearance + Math.min(MAX_CARD_W, Math.max(MIN_CARD_W_CREATE, vw * 0.5)) / 2 - vw / 2
-        : (leftClearance - rightClearance) / 2;
+        ? 24 + Math.min(MAX_CARD_W, Math.max(MIN_CARD_W_CREATE, vw * 0.5)) / 2 - vw / 2
+        : 0;
       const topClearance = panelsVisible ? WRITE_TOP_CLEARANCE : WRITE_TOP_BASE;
       const targetH = vh - topClearance - Math.max(bottomClearance, 24);
 
@@ -185,9 +172,7 @@ export function usePromptPosition({
     dragY,
     isCreate,
     layoutMode,
-    leftClearance,
     panelsVisible,
-    rightClearance,
     startHeightAnim,
     setPromptShellFullHeight,
     targetY,
@@ -208,7 +193,7 @@ export function usePromptPosition({
     const targetPosition =
       pendingExit.targetMode === "collapsed"
         ? resolveCollapsedTarget(vw, targetY)
-        : resolveNormalTarget(vw, vh, targetY, targetH, clearances, avoidRects);
+        : resolveNormalTarget(vw, vh, targetY, targetH, avoidRects);
 
     cancelAnimations();
     cardHeight.set(pendingExit.fromHeight);
@@ -228,7 +213,6 @@ export function usePromptPosition({
     cancelAnimations,
     cardHeight,
     cardRef,
-    clearances,
     dragX,
     dragY,
     heightOverride,
@@ -254,7 +238,7 @@ export function usePromptPosition({
       posAnim.current.y = animate(dragY, Math.min(userDragY.current || target.y, targetY), smooth);
     } else {
       const cardH = cardRef.current?.offsetHeight ?? cardHeightRef.current;
-      const target = resolveNormalTarget(vw, vh, targetY, cardH, clearances, avoidRects);
+      const target = resolveNormalTarget(vw, vh, targetY, cardH, avoidRects);
 
       if (autoTargetXRef.current !== target.x) {
         userDragX.current = 0;
@@ -283,7 +267,6 @@ export function usePromptPosition({
   }, [
     avoidRects,
     cardRef,
-    clearances,
     dragX,
     dragY,
     isFullHeightMode,

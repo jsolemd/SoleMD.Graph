@@ -277,6 +277,95 @@ get jumped around between interactions.
 
 ---
 
+## Initial camera and starting frame
+
+The initial graph frame has two layers:
+
+```text
+first page load in this tab
+  |
+  +-- sessionStorage["solemd:camera"] exists and is fresh
+  |      |
+  |      +-- restore that saved native Cosmograph transform
+  |
+  +-- no saved session camera
+         |
+         +-- use DEFAULT_INITIAL_CAMERA
+               from features/graph/cosmograph/camera-persistence.ts
+```
+
+The default starting frame is therefore a code constant, while repeat visits in
+the same tab reuse the user's last session frame.
+
+### Canonical files
+
+```text
+docs/map/graph-runtime.md
+  |
+  +-- explains the contract
+  |
+  +-- features/graph/cosmograph/camera-persistence.ts
+  |     DEFAULT_INITIAL_CAMERA
+  |     STORAGE_KEY = "solemd:camera"
+  |
+  +-- features/graph/cosmograph/GraphRenderer.tsx
+        initialCamera = loadCameraState() ?? DEFAULT_INITIAL_CAMERA
+        handleViewportSettled() -> saveCameraState(...)
+        restoreViewport() -> applyViewportCamera(...)
+```
+
+### How to change the standard starting frame
+
+1. Open the graph and move the camera to the exact frame you want as the new
+   default.
+2. Capture the live native transform from the running page.
+3. Copy the three values into `DEFAULT_INITIAL_CAMERA` in
+   `features/graph/cosmograph/camera-persistence.ts`.
+4. Clear `sessionStorage["solemd:camera"]` or use an incognito tab.
+5. Reload and verify the graph opens on the new frame.
+
+### Capture snippet
+
+Use this in the browser console when the graph is already sitting on the target
+frame:
+
+```js
+const root = document.querySelector("[data-graph-canvas]");
+const fiberKey = Object.getOwnPropertyNames(root).find((k) =>
+  k.startsWith("__reactFiber$"),
+);
+const cosmograph = root[fiberKey].return.memoizedState.memoizedState.current;
+const t = cosmograph?._cosmos?.zoomInstance?.eventTransform;
+
+({
+  zoomLevel: t?.k,
+  transformX: t?.x,
+  transformY: t?.y,
+});
+```
+
+### Do not change it this way
+
+```text
+bad
+  fitView padding tweaks
+  guessed zoom-only constants
+  derived center math outside the adapter
+  vendor edits inside @cosmograph/*
+
+good
+  capture native eventTransform from the live graph
+  update DEFAULT_INITIAL_CAMERA
+  keep restore logic inside features/graph/cosmograph/**
+```
+
+The important implementation detail is that the app persists and restores the
+native Cosmograph transform, not an app-defined camera model. That keeps the
+camera logic inside the existing adapter boundary and avoids patching vendor
+code.
+
+---
+
 ## Module map
 
 ```

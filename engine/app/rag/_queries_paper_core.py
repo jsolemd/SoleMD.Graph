@@ -146,6 +146,30 @@ ENTITY_INPUT_NAMESPACE_KEY_SQL = runtime_concept_namespace_key_sql(
 )
 ENTITY_INPUT_CONCEPT_KEY_SQL = runtime_concept_id_key_sql("resolved.concept_id")
 
+_ENTITY_CATALOG_NULL_VOCAB_COLUMNS = """
+        'entity_catalog' AS source_surface,
+        NULL::uuid AS vocab_term_id,
+        NULL::text AS vocab_alias_key,
+        NULL::text AS vocab_alias_type,
+        NULL::integer AS vocab_quality_score,
+        NULL::boolean AS vocab_is_preferred,
+        NULL::text AS vocab_umls_cui,
+        NULL::text AS vocab_mesh_id,
+        NULL::text AS vocab_category
+"""
+
+_ENTITY_ALIAS_NULL_VOCAB_COLUMNS = """
+        'entity_alias' AS source_surface,
+        NULL::uuid AS vocab_term_id,
+        NULL::text AS vocab_alias_key,
+        NULL::text AS vocab_alias_type,
+        NULL::integer AS vocab_quality_score,
+        NULL::boolean AS vocab_is_preferred,
+        NULL::text AS vocab_umls_cui,
+        NULL::text AS vocab_mesh_id,
+        NULL::text AS vocab_category
+"""
+
 QUERY_ENTITY_TERM_MATCH_SQL = f"""
 WITH query_terms AS (
     SELECT DISTINCT
@@ -171,7 +195,9 @@ catalog_exact_matches AS (
             WHEN 'medium' THEN 2
             WHEN 'low' THEN 1
             ELSE 0
-        END AS rule_confidence_rank
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        {_ENTITY_CATALOG_NULL_VOCAB_COLUMNS}
     FROM query_terms qt
     JOIN solemd.entities e
       ON e.concept_id = qt.raw_term
@@ -194,7 +220,9 @@ catalog_exact_matches AS (
             WHEN 'medium' THEN 2
             WHEN 'low' THEN 1
             ELSE 0
-        END AS rule_confidence_rank
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        {_ENTITY_CATALOG_NULL_VOCAB_COLUMNS}
     FROM query_terms qt
     JOIN solemd.entities e
       ON e.concept_id = qt.upper_term
@@ -219,7 +247,9 @@ catalog_exact_matches AS (
             WHEN 'medium' THEN 2
             WHEN 'low' THEN 1
             ELSE 0
-        END AS rule_confidence_rank
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        {_ENTITY_CATALOG_NULL_VOCAB_COLUMNS}
     FROM query_terms qt
     JOIN solemd.entities e
       ON e.concept_id = ('MESH:' || qt.raw_term)
@@ -244,7 +274,9 @@ catalog_exact_matches AS (
             WHEN 'medium' THEN 2
             WHEN 'low' THEN 1
             ELSE 0
-        END AS rule_confidence_rank
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        {_ENTITY_CATALOG_NULL_VOCAB_COLUMNS}
     FROM query_terms qt
     JOIN solemd.entities e
       ON e.concept_id = ('MESH:' || qt.upper_term)
@@ -274,7 +306,9 @@ catalog_alias_exact_matches AS (
             WHEN 'medium' THEN 2
             WHEN 'low' THEN 1
             ELSE 0
-        END AS rule_confidence_rank
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        {_ENTITY_ALIAS_NULL_VOCAB_COLUMNS}
     FROM query_terms qt
     JOIN solemd.entity_aliases ea
       ON ea.alias_key = qt.lowered_term
@@ -286,10 +320,70 @@ catalog_alias_exact_matches AS (
      AND er.concept_id = e.concept_id
     WHERE COALESCE(e.concept_id, '') NOT IN ('', '-')
 ),
+vocab_alias_exact_matches AS (
+    SELECT
+        qt.raw_term AS query_term,
+        qt.token_count,
+        COALESCE(
+            NULLIF(trim(vt.canonical_name), ''),
+            NULLIF(trim(COALESCE(e.canonical_name, '')), ''),
+            vta.alias_text,
+            qt.raw_term
+        ) AS normalized_term,
+        COALESCE(
+            {_entity_join_type_sql("e.entity_type")},
+            {_entity_join_type_sql("vt.pubtator_entity_type")},
+            'disease'
+        ) AS entity_type,
+        'mesh' AS concept_namespace,
+        {runtime_concept_id_key_sql("'MESH:' || vt.mesh_id")} AS concept_id,
+        COALESCE(e.paper_count, 0) AS paper_count,
+        CASE
+            WHEN vta.is_preferred AND COALESCE(vta.quality_score, 0) >= 90 THEN 0.96
+            WHEN vta.is_preferred THEN 0.95
+            WHEN COALESCE(vta.quality_score, 0) >= 90 THEN 0.94
+            WHEN COALESCE(vta.quality_score, 0) >= 70 THEN 0.92
+            ELSE 0.88
+        END AS match_score,
+        CASE
+            WHEN COALESCE(er.confidence, '') = 'high' THEN 3
+            WHEN COALESCE(er.confidence, '') = 'medium' THEN 2
+            WHEN COALESCE(er.confidence, '') = 'low' THEN 1
+            WHEN vta.is_preferred AND COALESCE(vta.quality_score, 0) >= 90 THEN 3
+            WHEN COALESCE(vta.quality_score, 0) >= 70 THEN 2
+            ELSE 1
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        'vocab_alias' AS source_surface,
+        vt.id AS vocab_term_id,
+        vta.alias_key AS vocab_alias_key,
+        vta.alias_type AS vocab_alias_type,
+        vta.quality_score AS vocab_quality_score,
+        vta.is_preferred AS vocab_is_preferred,
+        vta.umls_cui AS vocab_umls_cui,
+        vt.mesh_id AS vocab_mesh_id,
+        vt.category AS vocab_category
+    FROM query_terms qt
+    JOIN solemd.vocab_term_aliases vta
+      ON vta.alias_key = qt.lowered_term
+    JOIN solemd.vocab_terms vt
+      ON vt.id = vta.term_id
+    LEFT JOIN solemd.entities e
+      ON e.concept_id = ('MESH:' || vt.mesh_id)
+    LEFT JOIN solemd.entity_rule er
+      ON e.concept_id IS NOT NULL
+     AND er.entity_type = {_entity_join_type_sql("e.entity_type")}
+     AND er.concept_id = e.concept_id
+    WHERE
+        vt.mesh_id IS NOT NULL
+        AND trim(COALESCE(vt.canonical_name, '')) <> ''
+),
 matched_entities AS (
     SELECT * FROM catalog_exact_matches
     UNION ALL
     SELECT * FROM catalog_alias_exact_matches
+    UNION ALL
+    SELECT * FROM vocab_alias_exact_matches
 ),
 selected_terms AS MATERIALIZED (
     SELECT
@@ -316,24 +410,51 @@ ranked_entities AS (
         me.concept_namespace,
         me.concept_id,
         st.rule_confidence_rank,
+        me.has_entity_rule,
         st.token_count,
         st.match_score,
         st.paper_count,
+        me.source_surface,
+        me.vocab_term_id,
+        me.vocab_alias_key,
+        me.vocab_alias_type,
+        me.vocab_quality_score,
+        me.vocab_is_preferred,
+        me.vocab_umls_cui,
+        me.vocab_mesh_id,
+        me.vocab_category,
         ROW_NUMBER() OVER (
-            PARTITION BY me.query_term, me.normalized_term
+            PARTITION BY me.query_term, me.normalized_term, me.source_surface
             ORDER BY me.match_score DESC, me.paper_count DESC, me.concept_id
         ) AS concept_rank
     FROM (
-        SELECT DISTINCT
+        SELECT DISTINCT ON (
+            query_term, normalized_term, entity_type,
+            concept_namespace, concept_id, source_surface
+        )
             query_term,
             normalized_term,
             entity_type,
             concept_namespace,
             concept_id,
             match_score,
-            paper_count
+            paper_count,
+            has_entity_rule,
+            source_surface,
+            vocab_term_id,
+            vocab_alias_key,
+            vocab_alias_type,
+            vocab_quality_score,
+            vocab_is_preferred,
+            vocab_umls_cui,
+            vocab_mesh_id,
+            vocab_category
         FROM matched_entities
         WHERE normalized_term IS NOT NULL
+        ORDER BY
+            query_term, normalized_term, entity_type,
+            concept_namespace, concept_id, source_surface,
+            match_score DESC, paper_count DESC
     ) me
     JOIN selected_terms st
       ON st.query_term = me.query_term
@@ -349,7 +470,17 @@ SELECT
         WHEN 2 THEN 'medium'
         WHEN 1 THEN 'low'
         ELSE NULL
-    END AS rule_confidence
+    END AS rule_confidence,
+    has_entity_rule,
+    source_surface,
+    vocab_term_id::text AS vocab_term_id,
+    vocab_alias_key,
+    vocab_alias_type,
+    vocab_quality_score,
+    vocab_is_preferred,
+    vocab_umls_cui,
+    vocab_mesh_id,
+    vocab_category
 FROM ranked_entities
 WHERE concept_rank <= 3
 ORDER BY
@@ -359,6 +490,90 @@ ORDER BY
     query_term,
     normalized_term,
     concept_rank
+"""
+
+QUERY_VOCAB_CONCEPT_MATCH_SQL = """
+WITH query_terms AS (
+    SELECT DISTINCT
+        trim(term) AS query_term,
+        lower(trim(term)) AS lowered_term,
+        cardinality(string_to_array(lower(trim(term)), ' ')) AS token_count
+    FROM unnest(%s::text[]) AS term
+    WHERE length(trim(term)) >= 3
+),
+matched_vocab AS (
+    SELECT
+        qt.query_term,
+        qt.token_count,
+        COALESCE(NULLIF(trim(vt.canonical_name), ''), vta.alias_text, qt.query_term) AS preferred_term,
+        vta.alias_text AS matched_alias,
+        vta.alias_key,
+        vta.alias_type,
+        vta.quality_score,
+        vta.is_preferred,
+        vta.umls_cui,
+        vt.id::text AS term_id,
+        vt.category,
+        vt.mesh_id,
+        COALESCE(vt.pubtator_entity_type, 'disease') AS entity_type,
+        CASE
+            WHEN vta.is_preferred AND COALESCE(vta.quality_score, 0) >= 90 THEN 0
+            WHEN COALESCE(vta.quality_score, 0) >= 90 THEN 1
+            WHEN vta.is_preferred THEN 2
+            WHEN COALESCE(vta.quality_score, 0) >= 70 THEN 3
+            ELSE 4
+        END AS match_rank
+    FROM query_terms qt
+    JOIN solemd.vocab_term_aliases vta
+      ON vta.alias_key = qt.lowered_term
+    JOIN solemd.vocab_terms vt
+      ON vt.id = vta.term_id
+    WHERE trim(COALESCE(vt.canonical_name, '')) <> ''
+),
+ranked_vocab AS (
+    SELECT
+        query_term,
+        token_count,
+        preferred_term,
+        matched_alias,
+        alias_key,
+        alias_type,
+        quality_score,
+        is_preferred,
+        umls_cui,
+        term_id,
+        category,
+        mesh_id,
+        entity_type,
+        ROW_NUMBER() OVER (
+            PARTITION BY query_term, term_id
+            ORDER BY match_rank ASC, quality_score DESC NULLS LAST, matched_alias
+        ) AS alias_rank
+    FROM matched_vocab
+)
+SELECT
+    query_term,
+    preferred_term,
+    matched_alias,
+    alias_key,
+    alias_type,
+    quality_score,
+    is_preferred,
+    umls_cui,
+    term_id,
+    category,
+    mesh_id,
+    entity_type,
+    'vocab_alias' AS source_surface
+FROM ranked_vocab
+WHERE alias_rank = 1
+ORDER BY
+    token_count DESC,
+    quality_score DESC NULLS LAST,
+    is_preferred DESC,
+    query_term,
+    preferred_term
+LIMIT %s
 """
 
 ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL = f"""

@@ -48,6 +48,7 @@
   --color-warm-coral: #ffada4;
   --color-soft-pink: #eda8c4;
   --color-soft-lavender: #d8bee9;
+  --color-paper: #d4c5a0;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -81,7 +82,7 @@
 
   /* ── Graph canvas (unique values only — rest reference foundations) ── */
   --graph-canvas-filter: saturate(1.8) brightness(0.85);
-  --graph-bg: #f8f9fa;
+  --graph-bg: #ffffff;
   --graph-panel-bg: var(--graph-bg);
   --graph-panel-border: var(--border-subtle);
   --graph-panel-text: var(--text-primary);
@@ -92,7 +93,25 @@
   --graph-panel-active: var(--interactive-active);
   --graph-panel-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
 
-  /* ── Graph overlays (PromptBox, Wordmark, StatsBar) ── */
+  /* ── Wiki graph (Pixi canvas — semantic-group node colors, see docs/map/wiki-taxonomy.md) ── */
+  --wiki-graph-node-diso: var(--color-warm-coral);
+  --wiki-graph-node-chem: var(--color-fresh-green);
+  --wiki-graph-node-gene: var(--color-soft-pink);
+  --wiki-graph-node-anat: var(--color-golden-yellow);
+  --wiki-graph-node-phys: var(--color-soft-blue);
+  --wiki-graph-node-proc: var(--color-soft-lavender);
+  --wiki-graph-node-section: var(--color-muted-indigo);
+  --wiki-graph-node-paper: var(--color-paper);
+  --wiki-graph-node-default: var(--color-soft-blue);
+  --wiki-graph-link: #cbd5e1;
+  --wiki-graph-label: #1e293b;
+
+  /* ── Entity-type accent (shared by editor highlights, hover cards, wiki — see docs/map/wiki-taxonomy.md).
+       Only --entity-accent is defined here; consumers compute bg/border via color-mix() at use site
+       so the value re-evaluates when [data-entity-type] overrides --entity-accent on a descendant. ── */
+  --entity-accent: var(--brand-accent);
+
+  /* ── Graph overlays (PromptBox, Wordmark) ── */
   --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: var(--border-default);
   --graph-prompt-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 8px 32px rgba(0, 0, 0, 0.08);
@@ -203,6 +222,21 @@ html:root {
 }
 
 /* ═══════════════════════════════════════════════════════════════════
+   ENTITY-TYPE ACCENT — data-entity-type attribute selectors
+   Centralizes entity_type → brand color for all surfaces:
+   editor highlights, hover cards, wiki entity badges.
+   See docs/map/wiki-taxonomy.md for the full taxonomy.
+   ═══════════════════════════════════════════════════════════════════ */
+[data-entity-type="disease"]            { --entity-accent: var(--color-warm-coral); }
+[data-entity-type="chemical"]           { --entity-accent: var(--color-fresh-green); }
+[data-entity-type="gene"]               { --entity-accent: var(--color-soft-pink); }
+[data-entity-type="receptor"]           { --entity-accent: var(--color-soft-pink); }
+[data-entity-type="anatomy"]            { --entity-accent: var(--color-golden-yellow); }
+[data-entity-type="network"]            { --entity-accent: var(--color-soft-blue); }
+[data-entity-type="biological process"] { --entity-accent: var(--color-soft-blue); }
+[data-entity-type="species"]            { --entity-accent: var(--color-soft-lavender); }
+
+/* ═══════════════════════════════════════════════════════════════════
    DARK MODE — Only override foundations + tokens that diverge.
    Downstream tokens using var() update automatically.
    ═══════════════════════════════════════════════════════════════════ */
@@ -217,6 +251,7 @@ html:root {
   --color-warm-coral: #ffada4;
   --color-soft-pink: #b88299;
   --color-soft-lavender: #a899b3;
+  --color-paper: #a89b78;
 
   /* ── Foundations (everything downstream updates via var()) ── */
   --background: #18181b;
@@ -239,14 +274,28 @@ html:root {
   /* ── Graph canvas (only values that diverge from foundations) ── */
   --graph-canvas-filter: none;
   --graph-bg: #111113;
-  --graph-panel-border: rgba(255, 255, 255, 0.04);
-  --graph-panel-input-bg: #19191d;
-  --graph-panel-shadow: 0 6px 22px rgba(0, 0, 0, 0.42);
+  --graph-panel-bg: #1a1b1f;
+  --graph-panel-border: rgba(255, 255, 255, 0.08);
+  --graph-panel-input-bg: #1f2024;
+  --graph-panel-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
+
+  /* ── Wiki graph (dark mode — inherits semantic-group vars from @theme overrides above) ── */
+  --wiki-graph-node-diso: var(--color-warm-coral);
+  --wiki-graph-node-chem: var(--color-fresh-green);
+  --wiki-graph-node-gene: var(--color-soft-pink);
+  --wiki-graph-node-anat: var(--color-golden-yellow);
+  --wiki-graph-node-phys: var(--color-soft-blue);
+  --wiki-graph-node-proc: var(--color-soft-lavender);
+  --wiki-graph-node-section: var(--color-muted-indigo);
+  --wiki-graph-node-paper: var(--color-paper);
+  --wiki-graph-node-default: var(--color-soft-blue);
+  --wiki-graph-link: #475569;
+  --wiki-graph-label: #e2e8f0;
 
   /* ── Graph overlays (matte floating cards) ── */
   --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: transparent;
-  --graph-prompt-shadow: 0 8px 26px rgba(0, 0, 0, 0.46);
+  --graph-prompt-shadow: 0 8px 26px rgba(0, 0, 0, 0.46), inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
   --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
   --graph-prompt-inactive: rgba(255, 255, 255, 0.52);
   --graph-prompt-text: #ffffff;

@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import dynamic from "next/dynamic";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpen,
   BrainCircuit,
-  Database,
   Eye,
   EyeOff,
   Filter,
@@ -19,8 +17,8 @@ import ThemeToggle from "@/features/graph/components/chrome/ThemeToggle";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { iconBtnStyles } from "../panels/PanelShell";
-import { settle, chromeToggle } from "@/lib/motion";
-import type { ActivePanel } from "@/features/graph/stores";
+import { crisp, chromeToggle } from "@/lib/motion";
+import type { PanelId } from "@/features/graph/stores";
 import { useGraphControlContrast } from "./use-graph-control-contrast";
 
 const PANEL_REGISTRY: Record<
@@ -30,21 +28,12 @@ const PANEL_REGISTRY: Record<
   config: { icon: SlidersHorizontal, label: "Configuration" },
   filters: { icon: Filter, label: "Filters" },
   info: { icon: Info, label: "Info" },
-  query: { icon: Database, label: "SQL Explorer" },
   wiki: { icon: BookOpen, label: "Wiki" },
 };
 
-const WordmarkGraphControls = dynamic(
-  () =>
-    import("./WordmarkGraphControls").then(
-      (mod) => mod.WordmarkGraphControls,
-    ),
-  { loading: () => null },
-);
-
 export function Wordmark() {
   const mode = useGraphStore((s) => s.mode);
-  const activePanel = useDashboardStore((s) => s.activePanel);
+  const openPanels = useDashboardStore((s) => s.openPanels);
   const panelsVisible = useDashboardStore((s) => s.panelsVisible);
   const uiHidden = useDashboardStore((s) => s.uiHidden);
   const toggleUiHidden = useDashboardStore((s) => s.toggleUiHidden);
@@ -53,7 +42,7 @@ export function Wordmark() {
   const modeConfig = getModeConfig(mode);
   const modeColor = modeConfig.color;
   const panelItems = modeConfig.layout.availablePanels
-    .filter((p): p is Exclude<ActivePanel, null | 'about'> => p !== null && p in PANEL_REGISTRY)
+    .filter((p): p is Exclude<PanelId, 'about'> => p !== 'about' && p in PANEL_REGISTRY)
     .map((panel) => ({ panel, ...PANEL_REGISTRY[panel] }));
   const [spinCount, setSpinCount] = useState(0);
   const { contrastAttr, contrastBlurClass } = useGraphControlContrast();
@@ -105,7 +94,7 @@ export function Wordmark() {
               {...chromeToggle}
             >
               {panelItems.map(({ panel, icon: Icon, label }) => {
-                const isActive = activePanel === panel;
+                const isActive = openPanels[panel];
                 return (
                   <Tooltip key={panel} label={label} position="bottom" withArrow>
                     <ActionIcon
@@ -123,41 +112,35 @@ export function Wordmark() {
                   </Tooltip>
                 );
               })}
-
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Right: toolbar buttons */}
+      {/* Right: global chrome only (panels, hide-ui, theme) */}
       <div
-        data-wordmark-toolbar
         className={`absolute right-3 top-3 z-40 flex items-center gap-0.5 ${contrastBlurClass}`}
         {...contrastAttr}
       >
         {!uiHidden && (
-          <>
-            <WordmarkGraphControls />
-
-            <Tooltip
-              label={panelsVisible ? "Hide panels" : "Show panels"}
-              position="bottom"
-              withArrow
+          <Tooltip
+            label={panelsVisible ? "Hide panels" : "Show panels"}
+            position="bottom"
+            withArrow
+          >
+            <ActionIcon
+              variant="transparent"
+              size="lg"
+              radius="xl"
+              className="graph-icon-btn"
+              styles={iconBtnStyles}
+              onClick={togglePanelsVisible}
+              aria-pressed={panelsVisible}
+              aria-label={panelsVisible ? "Hide panels" : "Show panels"}
             >
-              <ActionIcon
-                variant="transparent"
-                size="lg"
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={togglePanelsVisible}
-                aria-pressed={panelsVisible}
-                aria-label={panelsVisible ? "Hide panels" : "Show panels"}
-              >
-                <LayoutPanelLeft />
-              </ActionIcon>
-            </Tooltip>
-          </>
+              <LayoutPanelLeft />
+            </ActionIcon>
+          </Tooltip>
         )}
 
         <Tooltip
@@ -180,7 +163,7 @@ export function Wordmark() {
             <motion.div
               className="flex items-center justify-center"
               animate={{ rotate: spinCount * 360 }}
-              transition={settle}
+              transition={crisp}
             >
               {uiHidden ? <Eye /> : <EyeOff />}
             </motion.div>

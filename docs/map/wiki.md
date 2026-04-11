@@ -10,6 +10,7 @@
 > - [database.md](./database.md) -- `solemd.wiki_pages` schema
 > - [graph-runtime.md](./graph-runtime.md) -- DuckDB-WASM and Cosmograph
 > - [rag.md](./rag.md) -- RAG evidence pipeline (shares overlay contract)
+> - [wiki-generation.md](./wiki-generation.md) -- canonical authoring and generation contract
 
 ---
 
@@ -31,17 +32,20 @@
        │    wikilinks [[…]]     │                       │   remark-gfm         │
        │    PMIDs [[pmid:…]]    ▼                       │   rehype-slug        │
        │    callouts > [!…]   FastAPI                    └────┬────────────────┘
-       │    GFM tables          GET /wiki/{slug}              │
-       └─ checksum (SHA-256)    GET /wiki/search         Component dispatch
-                                GET /wiki/{slug}/          wiki: → WikiLink
-                                     backlinks             pmid: → PaperCitation
-                                                           callout → Callout
+       │    GFM tables          GET /api/v1/wiki/pages/{slug} │
+       └─ checksum (SHA-256)    GET /api/v1/wiki/page-context/{slug}
+                                POST /api/v1/wiki/search   Component dispatch
+                                GET /api/v1/wiki/backlinks/{slug}
+                                                          wiki: → WikiLink
+                                                          pmid: → PaperCitation
+                                                          callout → Callout
                                        │
                                        ▼                 WikiSearch (FTS)
-                                  Server Actions         WikiNavigation (←→)
-                                    getWikiPage          WikiBacklinks
-                                    searchWikiPages         │
-                                    getWikiBacklinks        ▼
+                                Next.js route handlers    WikiNavigation (←→)
+                                  /api/wiki/pages/*       WikiBacklinks
+                                  /api/wiki/search           │
+                                  /api/wiki/backlinks/*      ▼
+                                  /api/wiki/graph
                                                       use-wiki-graph-sync
                                                          │
                                                          ├─ resolveWikiOverlay
@@ -70,6 +74,9 @@ title: Melatonin                  # display title
 entity_type: Chemical             # MeSH semantic type (optional)
 concept_id: MESH:D008550          # canonical identifier (optional)
 family_key: neurohormones         # graph family grouping (optional)
+section: sections/core-biology    # editorial placement (optional but preferred)
+page_kind: entity                 # runtime kind (usually derived)
+graph_focus: cited_papers         # primary graph action mode (usually derived)
 tags:                             # freeform tags
   - sleep
   - circadian
@@ -93,12 +100,13 @@ Slugs are the file path relative to the vault root, minus `.md`:
 
 ### Link Resolution
 
-Wikilinks are resolved **at sync time**, not at render time:
+Wikilinks are resolved **into canonical outgoing slugs at sync time**:
 1. `sync_wiki_pages.py` builds an inventory of all slugs in the vault
 2. Bare targets like `[[serotonin]]` are resolved to canonical slugs
    (`entities/serotonin`) by scanning the inventory
-3. The resolved map is stored in `wiki_pages.resolved_links` (JSONB)
-4. The frontend remark plugin looks up the map — no client-side resolution
+3. Canonical resolved slugs are stored in `wiki_pages.outgoing_links`
+4. The page endpoint reconstructs a raw-target → canonical-slug map at read time
+   so the frontend remark pipeline does no client-side inventory resolution
 
 Unresolved wikilinks render as plain text (no broken links).
 
@@ -149,18 +157,25 @@ cd engine && uv run python db/scripts/sync_wiki_pages.py \
 | slug | text PK | Vault-relative path minus .md |
 | title | text | From frontmatter |
 | content_md | text | Raw markdown body |
-| frontmatter | jsonb | Full YAML frontmatter |
+| frontmatter | jsonb | Normalized authored metadata |
 | entity_type | text | MeSH semantic type |
 | concept_id | text | Canonical identifier |
 | family_key | text | Graph family grouping |
 | tags | text[] | Freeform tags |
-| outgoing_links | text[] | Raw wikilink targets |
+| outgoing_links | text[] | Canonical resolved page slugs referenced by the markdown |
 | paper_pmids | integer[] | Extracted PMIDs |
-| resolved_links | jsonb | Wikilink target → canonical slug |
-| content_checksum | text | SHA-256 for change detection |
-| search_vector | tsvector | Full-text search (generated) |
+| checksum | text | SHA-256 for change detection |
+| fts_vector | tsvector | Full-text search (generated) |
+| synced_at | timestamptz | Last successful sync |
 | created_at | timestamptz | First sync |
 | updated_at | timestamptz | Last sync |
+
+Derived runtime fields returned by the page API:
+
+- `page_kind` — `index`, `section`, `entity`, or `topic`
+- `section_slug` — canonical `sections/<slug>` placement when available
+- `graph_focus` — `cited_papers`, `entity_exact`, or `none`
+- `resolved_links` — raw wikilink target → canonical slug map built from `content_md` + `outgoing_links`
 
 **Migration**: `engine/db/migrations/051_wiki_pages.sql`
 
@@ -176,7 +191,7 @@ WikiPanel
 │     └── PanelChrome (title bar, escape, headerActions)
 │
 ├── WikiSearch (headerActions slot)
-│     └── debounced FTS via searchWikiPages server action
+│     └── debounced FTS via shared wiki client → `/api/wiki/search`
 │
 ├── WikiNavigation (back/forward arrows)
 │
@@ -189,6 +204,12 @@ WikiPanel
 │           └── rehype-slug          → heading anchors
 │
 ├── WikiBacklinks (below content, hidden when empty)
+│
+├── wiki-client.ts (shared browser request boundary)
+│     ├── fetchWikiPageClient → `/api/wiki/pages/[...slug]`
+│     ├── fetchWikiBacklinksClient → `/api/wiki/backlinks/[...slug]`
+│     ├── searchWikiPagesClient → `/api/wiki/search`
+│     └── fetchWikiGraphClient → `/api/wiki/graph`
 │
 └── use-wiki-graph-sync (overlay lifecycle)
       └── generation-guarded, mutation-queued
@@ -205,30 +226,46 @@ WikiPanel
 | (callout) | Callout | Styled info/warning/danger block |
 | (other) | `<a>` | External link, new tab |
 
+### Shell vs context serving
+
+Wiki page rendering is intentionally split into two latency classes:
+
+- `GET /api/v1/wiki/pages/{slug}` returns the page shell quickly enough for navigation and markdown render
+- `GET /api/v1/wiki/page-context/{slug}` returns slower backend-enriched entity context in the background
+
+The wiki panel must render the page shell first. Entity-wide counts and top papers are additive context, not a prerequisite for opening the page.
+
 ### Graph Overlay Integration
 
-When a wiki page loads, `use-wiki-graph-sync` highlights referenced
-papers on the Cosmograph canvas:
+Wiki pages do not mutate the graph on load. `use-wiki-graph-sync` is the
+explicit wiki page graph-action adapter:
 
 ```
-  Page loads → extract paper_graph_refs
+  User clicks Show on graph
        │
        ▼
-  resolveWikiOverlay (ensure refs available in DuckDB)
-       │  ← generation check
-       ▼
-  commitWikiOverlay (promote universe papers to overlay)
-       │  ← generation check
-       ▼
-  cacheWikiNodeIndices (map refs → node indices for camera)
+  resolveWikiOverlay (ensure graph refs available in DuckDB)
        │
        ▼
-  onPaperClick: cache hit → fitViewByIndices
-                cache miss → live query fallback
+  commitWikiOverlay (promote missing papers to overlay)
+       │
+       ▼
+  cacheWikiNodeIndices (map refs → node indices for selection + camera)
+       │
+       ├─ commitSelectionState (selected_point_indices baseline)
+       ├─ selectPointsByIndices (native Cosmograph visual selection)
+       └─ fitViewByIndices (camera framing)
+
+  PMID citation click
+       └─ cache hit → fitViewByIndices
+          cache miss → live query fallback
 ```
 
-Overlay mutations are serialized through a queue to prevent stale
-clears from overtaking newer commits during rapid navigation.
+This keeps the page runtime explicit and adapter-based:
+
+- page load renders backend context only
+- page actions drive graph activation explicitly
+- markdown stays portable and free of graph implementation details
 
 ### CSS Architecture
 

@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { motion } from "framer-motion";
 import { useDashboardStore } from "@/features/graph/stores";
-import { smooth } from "@/lib/motion";
+import { crisp, smooth } from "@/lib/motion";
 import { useDragResize } from "@/features/graph/hooks/use-drag-resize";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import { useTableData } from "./use-table-data";
@@ -30,18 +30,20 @@ function DataTableComponent({
     onResize: setTableHeight,
   });
 
+  const bottomOffset = showTimeline ? 44 : 0;
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 40 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 40 }}
+      initial={{ opacity: 0, y: 40, bottom: bottomOffset }}
+      animate={{ opacity: 1, y: 0, bottom: bottomOffset }}
+      exit={{ opacity: 0, y: 40, bottom: bottomOffset }}
       transition={{
         y: smooth,
+        bottom: crisp,
         opacity: { duration: 0.1, ease: "easeOut" },
       }}
       className="absolute left-0 right-0 z-20 flex flex-col rounded-t-xl"
       style={{
-        bottom: showTimeline ? 44 : 0,
         height: tableHeight,
         backgroundColor: "var(--graph-panel-bg)",
         border: "1px solid var(--graph-panel-border)",

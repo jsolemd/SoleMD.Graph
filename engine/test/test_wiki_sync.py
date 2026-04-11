@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from textwrap import dedent
 
@@ -10,6 +11,7 @@ import pytest
 # Import the internal parse function for unit testing
 from db.scripts.sync_wiki_pages import _parse_wiki_file
 
+from app.wiki.content_contract import resolve_wiki_page_contract
 from app.wiki.links import resolve_outgoing_links
 
 
@@ -120,3 +122,139 @@ def test_parse_wiki_file_title_fallback(tmp_path: Path):
     page.write_text("---\n---\n\nSome content.\n")
     row = _parse_wiki_file(page, tmp_path)
     assert row["title"] == "No Title"
+
+
+def test_parse_wiki_file_normalizes_section_frontmatter(tmp_path: Path):
+    page = tmp_path / "entities" / "schizophrenia.md"
+    page.parent.mkdir()
+    page.write_text(
+        dedent("""\
+        ---
+        title: Schizophrenia
+        entity_type: Disease
+        concept_id: MESH:D012559
+        section: disorders
+        graph_focus: cited_papers
+        tags: psychosis
+        ---
+
+        # Schizophrenia
+
+        [[pmid:12345678]]
+        """)
+    )
+
+    row = _parse_wiki_file(page, tmp_path)
+
+    assert json.loads(row["frontmatter"]) == {
+        "entity_type": "Disease",
+        "concept_id": "MESH:D012559",
+        "section": "sections/disorders",
+        "graph_focus": "cited_papers",
+        "tags": ["psychosis"],
+    }
+
+
+def test_entity_page_contract_defaults_to_cited_papers_when_pmids_exist(wiki_dir: Path):
+    row = _parse_wiki_file(wiki_dir / "entities" / "melatonin.md", wiki_dir)
+
+    contract = resolve_wiki_page_contract(
+        slug=row["slug"],
+        frontmatter={},
+        entity_type=row["entity_type"],
+        concept_id=row["concept_id"],
+        family_key=row["family_key"],
+        paper_pmids=row["paper_pmids"],
+    )
+
+    assert contract.page_kind == "entity"
+    assert contract.section_slug is None
+    assert contract.graph_focus == "cited_papers"
+
+
+def test_entity_page_contract_defaults_to_entity_exact_without_pmids(tmp_path: Path):
+    page = tmp_path / "entities" / "tp53.md"
+    page.parent.mkdir()
+    page.write_text(
+        dedent("""\
+        ---
+        title: TP53
+        entity_type: Gene
+        concept_id: GENE:7157
+        ---
+
+        # TP53
+        """)
+    )
+
+    row = _parse_wiki_file(page, tmp_path)
+    contract = resolve_wiki_page_contract(
+        slug=row["slug"],
+        frontmatter={},
+        entity_type=row["entity_type"],
+        concept_id=row["concept_id"],
+        family_key=row["family_key"],
+        paper_pmids=row["paper_pmids"],
+    )
+
+    assert contract.page_kind == "entity"
+    assert contract.graph_focus == "entity_exact"
+
+
+def test_section_page_contract_uses_canonical_section_slug(tmp_path: Path):
+    page = tmp_path / "sections" / "disorders.md"
+    page.parent.mkdir()
+    page.write_text(
+        dedent("""\
+        ---
+        title: Disorders
+        family_key: wiki-sections
+        ---
+
+        # Disorders
+        """)
+    )
+
+    row = _parse_wiki_file(page, tmp_path)
+    contract = resolve_wiki_page_contract(
+        slug=row["slug"],
+        frontmatter={},
+        entity_type=row["entity_type"],
+        concept_id=row["concept_id"],
+        family_key=row["family_key"],
+        paper_pmids=row["paper_pmids"],
+    )
+
+    assert contract.page_kind == "section"
+    assert contract.section_slug == "sections/disorders"
+    assert contract.graph_focus == "none"
+
+
+def test_parse_wiki_file_normalizes_summary_and_featured_pmids(tmp_path: Path):
+    page = tmp_path / "entities" / "schizophrenia.md"
+    page.parent.mkdir()
+    page.write_text(
+        dedent("""\
+        ---
+        title: Schizophrenia
+        entity_type: Disease
+        concept_id: MESH:D012559
+        summary:  A chronic   psychotic disorder  with heterogeneous presentations. 
+        featured_pmids:
+          - 12345678
+          - "12345678"
+          - 23456789
+        ---
+
+        # Schizophrenia
+        """)
+    )
+
+    row = _parse_wiki_file(page, tmp_path)
+
+    assert json.loads(row["frontmatter"]) == {
+        "entity_type": "Disease",
+        "concept_id": "MESH:D012559",
+        "summary": "A chronic psychotic disorder with heterogeneous presentations.",
+        "featured_pmids": [12345678, 23456789],
+    }

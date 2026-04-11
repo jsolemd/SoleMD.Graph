@@ -2,12 +2,18 @@ import {
   selectBottomObstacles,
   selectBottomClearance,
   selectLeftClearance,
+  selectPanelLeftOffset,
+  resolveAdjacentFloatingPanelOffsets,
+  resolveCenteredFloatingPanelOffsets,
+  resolvePanelAnchorRect,
   selectRightClearance,
   resolveWikiPanelWidth,
   useDashboardStore,
 } from '../dashboard-store'
 
 type DashboardState = ReturnType<typeof useDashboardStore.getState>
+
+const CLOSED_PANELS = { about: false, config: false, filters: false, info: false, query: false, wiki: false }
 
 /** Build a partial state merged onto defaults. */
 function makeState(overrides: Partial<DashboardState> = {}): DashboardState {
@@ -52,37 +58,47 @@ describe('selectBottomClearance', () => {
 })
 
 describe('selectLeftClearance', () => {
-  it('returns 0 when no panel active', () => {
-    expect(selectLeftClearance(makeState({ activePanel: null }))).toBe(0)
+  it('returns 0 when no panels are open', () => {
+    expect(selectLeftClearance(makeState({ openPanels: { ...CLOSED_PANELS } }))).toBe(0)
   })
 
   it('returns about panel width regardless of panelsVisible', () => {
     // about: 320 + margin 24 = 344
-    expect(selectLeftClearance(makeState({ activePanel: 'about', panelsVisible: false }))).toBe(344)
-    expect(selectLeftClearance(makeState({ activePanel: 'about', panelsVisible: true }))).toBe(344)
+    const panels = { ...CLOSED_PANELS, about: true }
+    expect(selectLeftClearance(makeState({ openPanels: panels, panelsVisible: false }))).toBe(344)
+    expect(selectLeftClearance(makeState({ openPanels: panels, panelsVisible: true }))).toBe(344)
   })
 
   it('returns 0 for non-about panels when panelsVisible is false', () => {
-    expect(selectLeftClearance(makeState({ activePanel: 'config', panelsVisible: false }))).toBe(0)
-    expect(selectLeftClearance(makeState({ activePanel: 'filters', panelsVisible: false }))).toBe(0)
+    expect(selectLeftClearance(makeState({ openPanels: { ...CLOSED_PANELS, config: true }, panelsVisible: false }))).toBe(0)
+    expect(selectLeftClearance(makeState({ openPanels: { ...CLOSED_PANELS, filters: true }, panelsVisible: false }))).toBe(0)
   })
 
   it('returns width + margin for each panel type', () => {
-    const cases: Array<[NonNullable<DashboardState['activePanel']>, number]> = [
+    const cases: Array<[keyof typeof CLOSED_PANELS, number]> = [
       ['config', 300 + 24],
       ['filters', 300 + 24],
       ['info', 320 + 24],
       ['query', 420 + 24],
-      ['wiki', 420 + 24],
+      ['wiki', 520 + 24],
     ]
     for (const [panel, expected] of cases) {
-      expect(selectLeftClearance(makeState({ activePanel: panel, panelsVisible: true }))).toBe(expected)
+      expect(selectLeftClearance(makeState({ openPanels: { ...CLOSED_PANELS, [panel]: true }, panelsVisible: true }))).toBe(expected)
     }
+  })
+
+  it('sums multiple docked panels', () => {
+    const state = makeState({
+      openPanels: { ...CLOSED_PANELS, filters: true, wiki: true },
+      panelsVisible: true,
+    })
+    // filters (300 + 24) + wiki (520 + 24) = 868
+    expect(selectLeftClearance(state)).toBe((300 + 24) + (520 + 24))
   })
 
   it('returns expanded width for wiki when wikiExpanded is true', () => {
     const state = makeState({
-      activePanel: 'wiki',
+      openPanels: { ...CLOSED_PANELS, wiki: true },
       panelsVisible: true,
       wikiExpanded: true,
       wikiExpandedWidth: 650,
@@ -90,23 +106,121 @@ describe('selectLeftClearance', () => {
     expect(selectLeftClearance(state)).toBe(650 + 24)
   })
 
-  it('returns default wiki width when wikiExpanded is false', () => {
+  it('excludes floating (undocked) panels from clearance', () => {
     const state = makeState({
-      activePanel: 'wiki',
+      openPanels: { ...CLOSED_PANELS, wiki: true },
       panelsVisible: true,
-      wikiExpanded: false,
+      floatingObstacles: { wiki: { x: 100, y: 100, width: 400, height: 600 } },
     })
-    expect(selectLeftClearance(state)).toBe(420 + 24)
+    expect(selectLeftClearance(state)).toBe(0)
+  })
+})
+
+describe('selectPanelLeftOffset', () => {
+  it('returns 0 for the first panel in dock order', () => {
+    const state = makeState({
+      openPanels: { ...CLOSED_PANELS, about: true, config: true },
+      panelsVisible: true,
+    })
+    expect(selectPanelLeftOffset(state, 'about')).toBe(0)
+  })
+
+  it('returns offset from panels before it', () => {
+    const state = makeState({
+      openPanels: { ...CLOSED_PANELS, config: true, wiki: true },
+      panelsVisible: true,
+    })
+    // wiki comes after config in order; config width = 300 + 12 gap
+    expect(selectPanelLeftOffset(state, 'wiki')).toBe(312)
+  })
+
+  it('skips closed panels', () => {
+    const state = makeState({
+      openPanels: { ...CLOSED_PANELS, wiki: true },
+      panelsVisible: true,
+    })
+    expect(selectPanelLeftOffset(state, 'wiki')).toBe(0)
+  })
+})
+
+describe('panel anchor helpers', () => {
+  it('returns a floating panel anchor from floating obstacles', () => {
+    const state = makeState({
+      floatingObstacles: {
+        wiki: { x: 240, y: 180, width: 520, height: 620 },
+      },
+    })
+
+    expect(resolvePanelAnchorRect(state, 'wiki', 116)).toEqual({
+      left: 240,
+      top: 180,
+      width: 520,
+    })
+  })
+
+  it('returns a docked panel anchor from dock layout', () => {
+    const state = makeState({
+      openPanels: { ...CLOSED_PANELS, wiki: true },
+      panelsVisible: true,
+    })
+
+    expect(resolvePanelAnchorRect(state, 'wiki', 116)).toEqual({
+      left: 12,
+      top: 116,
+      width: 520,
+    })
+  })
+
+  it('resolves centered floating offsets within the viewport', () => {
+    const state = makeState({
+      openPanels: { ...CLOSED_PANELS, wiki: true },
+      panelsVisible: true,
+    })
+
+    expect(resolveCenteredFloatingPanelOffsets({
+      state,
+      panelId: 'wiki-global-graph',
+      panelWidth: 960,
+      panelHeight: 720,
+      panelTop: 116,
+      viewportWidth: 1600,
+      viewportHeight: 1000,
+    })).toEqual({
+      x: 308,
+      y: 24,
+    })
+  })
+
+  it('resolves adjacent floating offsets beside the anchor rect', () => {
+    const state = makeState({
+      openPanels: { ...CLOSED_PANELS, wiki: true },
+      panelsVisible: true,
+      floatingObstacles: {
+        wiki: { x: 200, y: 180, width: 520, height: 620 },
+      },
+    })
+
+    expect(resolveAdjacentFloatingPanelOffsets({
+      state,
+      panelId: 'wiki-graph',
+      anchorRect: { left: 200, top: 180, width: 520 },
+      panelWidth: 320,
+      panelTop: 116,
+      viewportWidth: 1600,
+    })).toEqual({
+      x: 720,
+      y: 64,
+    })
   })
 })
 
 describe('resolveWikiPanelWidth', () => {
   it('returns default width when not expanded', () => {
-    expect(resolveWikiPanelWidth(1920, false)).toBe(420)
+    expect(resolveWikiPanelWidth(1920, false)).toBe(520)
   })
 
-  it('returns 65% of viewport when expanded, capped at 700', () => {
-    expect(resolveWikiPanelWidth(1920, true)).toBe(700)
+  it('returns 65% of viewport when expanded, capped at 840', () => {
+    expect(resolveWikiPanelWidth(1920, true)).toBe(840)
   })
 
   it('returns 65% of viewport for smaller screens', () => {

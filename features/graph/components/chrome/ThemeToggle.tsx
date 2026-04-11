@@ -10,7 +10,7 @@ import {
 import { useMounted } from "@mantine/hooks";
 import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
-import { settle } from "@/lib/motion";
+import { crisp } from "@/lib/motion";
 import { iconBtnStyles } from "../panels/PanelShell";
 
 export default function ThemeToggle() {
@@ -39,7 +39,7 @@ export default function ThemeToggle() {
         <motion.div
           className="flex items-center justify-center"
           animate={{ rotate: spinCount * 360 }}
-          transition={settle}
+          transition={crisp}
         >
           {isDark ? (
             <Sun />

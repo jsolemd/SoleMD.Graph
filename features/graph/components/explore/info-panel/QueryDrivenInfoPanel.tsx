@@ -32,7 +32,7 @@ interface QueryDrivenInfoPanelProps {
 interface InfoPanelSnapshot {
   activeLayer: ReturnType<typeof useDashboardStore.getState>["activeLayer"];
   infoWidgets: ReturnType<typeof useDashboardStore.getState>["infoWidgets"];
-  setActivePanel: ReturnType<typeof useDashboardStore.getState>["setActivePanel"];
+  closePanel: ReturnType<typeof useDashboardStore.getState>["closePanel"];
 }
 
 export function QueryDrivenInfoPanel({
@@ -41,12 +41,12 @@ export function QueryDrivenInfoPanel({
   overlayCount,
 }: QueryDrivenInfoPanelProps) {
   const selectionState = useSelectionQueryState();
-  const { activeLayer, infoWidgets, setActivePanel } = useDashboardStore(
+  const { activeLayer, infoWidgets, closePanel } = useDashboardStore(
     useShallow(
       (state): InfoPanelSnapshot => ({
         activeLayer: state.activeLayer,
         infoWidgets: state.infoWidgets,
-        setActivePanel: state.setActivePanel,
+        closePanel: state.closePanel,
       }),
     ),
   );
@@ -315,13 +315,13 @@ export function QueryDrivenInfoPanel({
 
   return (
     <PanelShell
+      id="info"
       title="Info"
-      side="left"
-      width={320}
+      defaultWidth={320}
       headerActions={
         showHeaderLoader ? <PanelInlineLoader /> : null
       }
-      onClose={() => setActivePanel(null)}
+      onClose={() => closePanel("info")}
     >
       <div className={PANEL_BODY_CLASS}>
         <Stack gap="sm">

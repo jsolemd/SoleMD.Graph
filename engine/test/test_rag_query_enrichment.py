@@ -12,6 +12,7 @@ from app.rag.query_enrichment import (
     extract_query_metadata_hints,
     has_query_entity_surface_signal,
     is_title_like_query,
+    should_attempt_runtime_entity_resolution,
     should_enrich_resolved_entity_term,
     should_seed_resolved_entity_term,
     should_use_chunk_lexical_query,
@@ -51,6 +52,16 @@ def test_build_query_entity_resolution_phrases_keeps_anchor_windows_for_acronyms
     assert len(phrases) <= 12
 
 
+def test_build_query_entity_resolution_phrases_singularizes_plural_acronym_surfaces():
+    phrases = build_query_entity_resolution_phrases(
+        "rebound panic after stopping SSRIs"
+    )
+
+    assert "ssri" in phrases
+    assert any("ssris" in phrase.split() for phrase in phrases)
+    assert len(phrases) <= 12
+
+
 def test_build_query_entity_resolution_phrases_skips_non_entity_prose_noise():
     text = (
         "Mean injection pressure was greater in subepineurium compared with muscle, "
@@ -73,6 +84,66 @@ def test_build_runtime_entity_resolution_phrases_skips_noise_only_terms():
     assert "diagnosis" not in phrases
     assert "dementia" in phrases
     assert "lewy bodies" in phrases
+
+
+def test_build_runtime_entity_resolution_phrases_falls_back_for_short_passage_lookups():
+    phrases = build_runtime_entity_resolution_phrases(
+        "can't sit still from antipsychotics",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert phrases
+    assert "antipsychotics" in phrases
+    assert "sit still from antipsychotics" in phrases
+
+
+def test_build_runtime_entity_resolution_phrases_adds_discontinuation_event_composites():
+    phrases = build_runtime_entity_resolution_phrases(
+        "rebound panic after stopping SSRIs",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert "antidepressant discontinuation syndrome" in phrases
+    assert "withdrawal syndrome" in phrases
+    assert "ssri" in phrases
+
+
+def test_build_runtime_entity_resolution_phrases_adds_akathisia_event_composites():
+    phrases = build_runtime_entity_resolution_phrases(
+        "can't sit still from antipsychotics",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert "drug induced akathisia" in phrases
+    assert "akathisia" in phrases
+    assert "antipsychotics" in phrases
+
+
+def test_build_runtime_entity_resolution_phrases_adds_corticosteroid_event_composites():
+    phrases = build_runtime_entity_resolution_phrases(
+        "mania after high-dose dex",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert "corticosteroid psychiatric effects" in phrases
+    assert "steroid psychosis" in phrases
+    assert "dexamethasone psychiatric effects" in phrases
+
+
+def test_build_runtime_entity_resolution_phrases_keeps_statistical_passage_noise_suppressed():
+    text = (
+        "Mean injection pressure was greater in subepineurium compared with muscle, "
+        "geometric ratio 2.29 (1.30 to 4.10), p<0.001; and greater on epineurium "
+        "compared with muscle, geometric ratio 1.73 (1.03"
+    )
+
+    assert (
+        build_runtime_entity_resolution_phrases(
+            text,
+            retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        )
+        == []
+    )
 
 
 def test_should_use_exact_title_precheck_accepts_long_terminal_title_candidates():
@@ -162,11 +233,37 @@ def test_should_enrich_resolved_entity_term_keeps_meaningful_plain_entities_but_
 def test_has_query_entity_surface_signal_detects_high_precision_entity_shapes():
     assert has_query_entity_surface_signal("Neuropeptide Y (NPY) signaling in the cerebellum")
     assert has_query_entity_surface_signal("IL-6 expression after surgery")
+    assert has_query_entity_surface_signal("rebound panic after stopping SSRIs")
     assert has_query_entity_surface_signal(
         "The utility of the Rorschach test in distinguishing patients with head injury"
     )
     assert not has_query_entity_surface_signal(
         "This study aims to compare the prevalence of mental health symptoms"
+    )
+
+
+def test_should_attempt_runtime_entity_resolution_keeps_short_expert_lookup_queries_enabled():
+    assert should_attempt_runtime_entity_resolution(
+        "prednisone neuropsychiatric symptoms",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+    )
+    assert should_attempt_runtime_entity_resolution(
+        "lorazepam challenge for catatonia",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+    assert should_attempt_runtime_entity_resolution(
+        "anti-NMDAR encephalitis psychosis first episode",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+
+def test_should_attempt_runtime_entity_resolution_skips_generic_prose_passages():
+    assert not should_attempt_runtime_entity_resolution(
+        (
+            "This study aims to compare the prevalence of mental health symptoms "
+            "between left-behind and non-left-behind children."
+        ),
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
     )
 
 

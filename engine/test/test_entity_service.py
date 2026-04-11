@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from app.entities.highlight_policy import (
+    HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
+    HIGHLIGHT_MODE_EXACT,
+)
 from app.entities.schemas import EntityDetailRequest, EntityMatchRequest
 from app.entities.service import EntityService
 
@@ -23,6 +27,7 @@ class FakeEntityRepository:
                         "source_identifier": "MESH:D012559",
                         "canonical_name": "Schizophrenia",
                         "paper_count": 1200,
+                        "highlight_mode": HIGHLIGHT_MODE_EXACT,
                     }
                 )
             if alias_key == "schizophrenia spectrum disorder":
@@ -36,6 +41,7 @@ class FakeEntityRepository:
                         "source_identifier": "MESH:D012559",
                         "canonical_name": "Schizophrenia",
                         "paper_count": 1200,
+                        "highlight_mode": HIGHLIGHT_MODE_EXACT,
                     }
                 )
             if alias_key == "dopamine":
@@ -49,6 +55,21 @@ class FakeEntityRepository:
                         "source_identifier": "MESH:D004298",
                         "canonical_name": "Dopamine",
                         "paper_count": 980,
+                        "highlight_mode": HIGHLIGHT_MODE_EXACT,
+                    }
+                )
+            if alias_key == "brca1":
+                rows.append(
+                    {
+                        "alias_key": alias_key,
+                        "alias_text": "BRCA1",
+                        "is_canonical": True,
+                        "alias_source": "canonical_name",
+                        "entity_type": "gene",
+                        "source_identifier": "HGNC:1100",
+                        "canonical_name": "BRCA1",
+                        "paper_count": 1500,
+                        "highlight_mode": HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
                     }
                 )
         return rows
@@ -116,4 +137,29 @@ def test_entity_detail_returns_canonical_identity_and_aliases():
     assert [alias.alias_text for alias in response.entity.aliases] == [
         "Schizophrenia",
         "schizophrenia spectrum disorder",
+    ]
+
+
+def test_entity_match_respects_case_sensitive_highlight_mode():
+    service = EntityService(repository=FakeEntityRepository())
+
+    uppercase_response = service.match_entities(
+        EntityMatchRequest(
+            text="BRCA1 is associated with schizophrenia.",
+            limit=8,
+        )
+    )
+    lowercase_response = service.match_entities(
+        EntityMatchRequest(
+            text="brca1 is associated with schizophrenia.",
+            limit=8,
+        )
+    )
+
+    assert [match.matched_text for match in uppercase_response.matches] == [
+        "BRCA1",
+        "schizophrenia",
+    ]
+    assert [match.matched_text for match in lowercase_response.matches] == [
+        "schizophrenia",
     ]

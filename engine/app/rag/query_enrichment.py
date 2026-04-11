@@ -122,6 +122,7 @@ __all__ = [
     "derive_relation_terms",
     "determine_query_retrieval_profile",
     "is_title_like_query",
+    "should_attempt_runtime_entity_resolution",
     "should_use_chunk_lexical_query",
     "should_use_exact_title_precheck",
     "should_use_title_similarity",
@@ -508,6 +509,47 @@ def determine_query_retrieval_profile(
     if len(tokens) >= MIN_CHUNK_LEXICAL_QUERY_WORDS:
         return QueryRetrievalProfile.PASSAGE_LOOKUP
     return QueryRetrievalProfile.GENERAL
+
+
+def should_attempt_runtime_entity_resolution(
+    text: str | None,
+    *,
+    retrieval_profile: QueryRetrievalProfile,
+) -> bool:
+    """Return True when bounded runtime concept resolution is worth attempting.
+
+    This is broader than ``has_query_entity_surface_signal()`` on purpose.
+    Expert biomedical prompts often arrive as short noun phrases without
+    acronym or symbol cues (for example drug + symptom or diagnostic
+    challenge phrasing). Those queries still benefit from alias / concept
+    normalization as long as they are short and not obvious prose passages.
+    """
+
+    raw_text = text or ""
+    if has_query_entity_surface_signal(raw_text):
+        return True
+
+    normalized = normalize_query_text(raw_text)
+    if not normalized:
+        return False
+    tokens = normalized.split()
+    if not tokens or len(tokens) > MAX_SEMANTIC_LOOKUP_TOKENS:
+        return False
+    if _has_inline_sentence_boundary(raw_text):
+        return False
+    if _has_obvious_sentence_opening(raw_text):
+        return False
+    if _has_fragment_truncation_signal(raw_text):
+        return False
+    if (
+        retrieval_profile in (
+            QueryRetrievalProfile.PASSAGE_LOOKUP,
+            QueryRetrievalProfile.QUESTION_LOOKUP,
+        )
+        and any(token in PASSAGE_VERB_TOKENS for token in tokens)
+    ):
+        return False
+    return True
 
 
 def should_use_exact_title_precheck(

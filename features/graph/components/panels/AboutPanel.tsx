@@ -60,14 +60,14 @@ const TRAINING = [
 ] as const;
 
 export function AboutPanel() {
-  const setActivePanel = useDashboardStore((s) => s.setActivePanel);
+  const closePanel = useDashboardStore((s) => s.closePanel);
 
   return (
     <PanelShell
+      id="about"
       title="About"
-      side="left"
-      width={320}
-      onClose={() => setActivePanel(null)}
+      defaultWidth={320}
+      onClose={() => closePanel("about")}
     >
       <div className={PANEL_BODY_CLASS}>
         <Stack gap="sm">
@@ -194,6 +194,46 @@ export function AboutPanel() {
                   <Mail size={12} style={{ color: "var(--mode-accent)" }} />
                   <Text style={panelTextDimStyle}>jon@solemd.org</Text>
                 </div>
+              </div>,
+
+              /* Credits */
+              <div key="credits">
+                <Text fw={600} mb={4} style={sectionLabelStyle}>
+                  Credits
+                </Text>
+                <Stack gap={2}>
+                  <Text style={panelTextDimStyle}>
+                    Visualized by{" "}
+                    <a
+                      href="https://cosmograph.app/"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "var(--mode-accent)" }}
+                    >
+                      cosmograph.app
+                    </a>
+                  </Text>
+                  <Text style={panelTextDimStyle}>
+                    Powered by{" "}
+                    <a
+                      href="https://www.semanticscholar.org/"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "var(--mode-accent)" }}
+                    >
+                      Semantic Scholar
+                    </a>
+                    {" · "}
+                    <a
+                      href="https://www.ncbi.nlm.nih.gov/research/pubtator3/"
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "var(--mode-accent)" }}
+                    >
+                      PubTator3
+                    </a>
+                  </Text>
+                </Stack>
               </div>,
             ] as React.ReactNode[]
           ).flatMap((section, i) =>

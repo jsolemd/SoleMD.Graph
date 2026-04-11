@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.rag import queries
+from app.rag.biomedical_concept_normalizer import VocabConceptMatch
 
 ENTITY_FUZZY_SIMILARITY_THRESHOLD = queries.ENTITY_FUZZY_SIMILARITY_THRESHOLD
 ENTITY_TOP_CONCEPTS_PER_TERM = queries.ENTITY_TOP_CONCEPTS_PER_TERM
@@ -55,6 +56,26 @@ class ResolvedEntityConcept:
     concept_namespace: str | None
     concept_id: str
     rule_confidence: str | None = None
+    has_entity_rule: bool = False
+    source_surface: str | None = None
+    vocab_term_id: str | None = None
+    vocab_alias_key: str | None = None
+    vocab_alias_type: str | None = None
+    vocab_quality_score: int | None = None
+    vocab_is_preferred: bool | None = None
+    vocab_umls_cui: str | None = None
+    vocab_mesh_id: str | None = None
+    vocab_category: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedQueryEntityTerms:
+    """Resolved query entity terms plus typed vocab concept matches."""
+
+    all_terms: list[str]
+    high_confidence_terms: set[str]
+    resolved_concepts: tuple[ResolvedEntityConcept, ...] = field(default_factory=tuple)
+    vocab_concept_matches: list[VocabConceptMatch] = field(default_factory=list)
 
 
 def _normalize_json_strings(raw_values: Any) -> list[str]:
@@ -101,13 +122,14 @@ def _unique_resolved_entity_concepts(
     values: Sequence[ResolvedEntityConcept],
 ) -> list[ResolvedEntityConcept]:
     unique: list[ResolvedEntityConcept] = []
-    seen: set[tuple[str, str, str | None, str]] = set()
+    seen: set[tuple[str, str, str | None, str, str | None]] = set()
     for value in values:
         key = (
             value.raw_term.lower(),
             value.entity_type,
             value.concept_namespace,
             value.concept_id,
+            value.source_surface,
         )
         if key in seen:
             continue

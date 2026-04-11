@@ -81,6 +81,12 @@
   border-bottom-style: solid;
 }
 
+/* Entity wiki links — colored by type via [data-entity-type] from tokens.css */
+.wiki-link[data-entity-type] {
+  color: var(--entity-accent);
+  border-bottom-color: color-mix(in srgb, var(--entity-accent) 55%, transparent);
+}
+
 /* PMID citations — compact badge pill */
 .wiki-citation {
   all: unset;

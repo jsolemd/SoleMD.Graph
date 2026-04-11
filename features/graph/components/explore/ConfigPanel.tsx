@@ -6,13 +6,13 @@ import { PANEL_BODY_CLASS, PanelShell } from "../panels/PanelShell";
 import { PointsConfig } from "./PointsConfig";
 
 function ConfigPanelComponent() {
-  const setActivePanel = useDashboardStore((s) => s.setActivePanel);
+  const closePanel = useDashboardStore((s) => s.closePanel);
 
   return (
     <PanelShell
+      id="config"
       title="Configuration"
-      side="left"
-      onClose={() => setActivePanel(null)}
+      onClose={() => closePanel("config")}
     >
       <div className={`thin-scrollbar min-h-0 ${PANEL_BODY_CLASS}`}>
         <PointsConfig />

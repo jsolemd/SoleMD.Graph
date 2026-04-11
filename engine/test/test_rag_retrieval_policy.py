@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.rag.models import PaperEvidenceHit, PaperRetrievalQuery
 from app.rag.query_enrichment import normalize_query_text
 from app.rag.query_metadata import QueryMetadataHints
@@ -19,10 +21,14 @@ from app.rag.retrieval_policy import (
     has_weak_passage_anchor,
     passage_direct_support_tier,
     should_expand_citation_frontier,
+    should_enable_general_title_similarity_support,
+    should_correct_failed_title_frontier_to_general,
+    should_correct_failed_title_frontier_to_general_after_concept_recovery,
     should_fetch_missing_citation_contexts,
     should_fetch_semantic_neighbors,
     should_prefetch_citation_contexts,
     should_run_biomedical_reranker,
+    should_run_concept_chunk_rescue,
     should_run_dense_query,
     should_run_paper_lexical_fallback,
     should_run_seeded_channel_search,
@@ -490,6 +496,59 @@ def test_should_run_title_chunk_rescue_skips_once_title_lane_found_a_paper():
     )
 
 
+def test_should_run_title_chunk_rescue_after_failed_short_title_lookup():
+    query = _query(
+        "TNF-alpha neuroinflammation in MDD",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert should_run_title_chunk_rescue(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[],
+    )
+
+
+def test_should_correct_failed_title_frontier_to_general_after_chunk_recovery():
+    query = _query(
+        "blowing up in weight on olanzapine",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert should_correct_failed_title_frontier_to_general(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[],
+        chunk_lexical_hits=[
+            _paper_hit(
+                22,
+                title="Head-to-head comparisons of metabolic side effects of second generation antipsychotics",
+                chunk_lexical_score=0.82,
+            )
+        ],
+    )
+
+
+def test_should_not_correct_failed_title_frontier_when_chunk_hit_is_still_a_title_anchor():
+    query = _query(
+        "The diagnosis of dementia due to Alzheimer's disease",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+
+    assert not should_correct_failed_title_frontier_to_general(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[],
+        chunk_lexical_hits=[
+            _paper_hit(
+                3470330,
+                title="The diagnosis of dementia due to Alzheimer's disease",
+                chunk_lexical_score=0.41,
+            )
+        ],
+    )
+
+
 def test_dense_query_decision_keeps_ambiguous_direct_passage_frontier():
     query = _query(
         "Representative claim sentence about sleep quality outcomes.",
@@ -546,6 +605,24 @@ def test_should_skip_runtime_entity_enrichment_keeps_entity_like_queries_enabled
     query = _query(
         "Neuropeptide Y (NPY) signaling in the cerebellum of Myotis lucifugus",
         retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert not should_skip_runtime_entity_enrichment(query=query)
+
+
+def test_should_skip_runtime_entity_enrichment_keeps_short_expert_general_queries_enabled():
+    query = _query(
+        "prednisone neuropsychiatric symptoms",
+        retrieval_profile=QueryRetrievalProfile.GENERAL,
+    )
+
+    assert not should_skip_runtime_entity_enrichment(query=query)
+
+
+def test_should_skip_runtime_entity_enrichment_keeps_short_title_like_clinical_queries_enabled():
+    query = _query(
+        "lorazepam challenge for catatonia",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
     )
 
     assert not should_skip_runtime_entity_enrichment(query=query)
@@ -622,6 +699,196 @@ def test_has_weak_passage_anchor_skips_lexical_or_stronger_chunk_support():
     assert not has_weak_passage_anchor(
         lexical_hits=[],
         chunk_lexical_hits=[_paper_hit(11, chunk_lexical_score=0.002)],
+    )
+
+
+def test_should_run_concept_chunk_rescue_opens_for_weak_passage_anchor():
+    query = _query(
+        "sodium crashed after starting an SSRI",
+        retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+    )
+
+    assert should_run_concept_chunk_rescue(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(11, chunk_lexical_score=0.0008)],
+        has_concept_rescue_queries=True,
+    )
+
+
+def test_should_run_concept_chunk_rescue_skips_strong_passage_or_title_lanes():
+    assert not should_run_concept_chunk_rescue(
+        query=_query(
+            "direct passage hit",
+            retrieval_profile=QueryRetrievalProfile.PASSAGE_LOOKUP,
+        ),
+        exact_title_hits=[],
+        lexical_hits=[],
+        chunk_lexical_hits=[_paper_hit(11, chunk_lexical_score=0.02)],
+        has_concept_rescue_queries=True,
+    )
+    assert should_run_concept_chunk_rescue(
+        query=_query(
+            "anti-NMDAR encephalitis psychosis first episode",
+            retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        ),
+        lexical_hits=[],
+        chunk_lexical_hits=[],
+        exact_title_hits=[],
+        has_concept_rescue_queries=True,
+    )
+    assert not should_run_concept_chunk_rescue(
+        query=_query(
+            "Exact title surface",
+            retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        ),
+        lexical_hits=[],
+        chunk_lexical_hits=[],
+        exact_title_hits=[_paper_hit(11, lexical_score=1.0)],
+        has_concept_rescue_queries=True,
+    )
+
+
+def test_should_correct_failed_title_frontier_to_general_after_concept_recovery():
+    query = _query(
+        "anti-NMDAR encephalitis psychosis first episode",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+    )
+    concept_rescue_hits = [
+        _paper_hit(
+            77,
+            title="First-episode psychosis in autoimmune encephalitis",
+            lexical_score=0.18,
+        )
+    ]
+
+    assert should_correct_failed_title_frontier_to_general_after_concept_recovery(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[],
+        chunk_lexical_hits=[],
+        concept_chunk_rescue_hits=[],
+        entity_seed_hits=[_paper_hit(77, entity_score=0.8)],
+        relation_seed_hits=[],
+    )
+    assert not should_correct_failed_title_frontier_to_general_after_concept_recovery(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=concept_rescue_hits,
+        chunk_lexical_hits=[],
+        concept_chunk_rescue_hits=[],
+        entity_seed_hits=[],
+        relation_seed_hits=[],
+    )
+    assert should_correct_failed_title_frontier_to_general_after_concept_recovery(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=concept_rescue_hits,
+        chunk_lexical_hits=[],
+        concept_chunk_rescue_hits=[],
+        entity_seed_hits=[_paper_hit(77, entity_score=0.8)],
+        relation_seed_hits=[],
+    )
+    assert should_correct_failed_title_frontier_to_general_after_concept_recovery(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[],
+        chunk_lexical_hits=[
+            _paper_hit(
+                77,
+                title="Relevant child evidence",
+                chunk_lexical_score=0.004,
+            )
+        ],
+        concept_chunk_rescue_hits=[
+            _paper_hit(
+                77,
+                title="Relevant child evidence",
+                chunk_lexical_score=0.004,
+            )
+        ],
+        entity_seed_hits=[],
+        relation_seed_hits=[],
+    )
+    assert not should_correct_failed_title_frontier_to_general_after_concept_recovery(
+        query=query,
+        exact_title_hits=[_paper_hit(11, lexical_score=1.0)],
+        lexical_hits=[],
+        chunk_lexical_hits=[],
+        concept_chunk_rescue_hits=[],
+        entity_seed_hits=[_paper_hit(77, entity_score=0.8)],
+        relation_seed_hits=[],
+    )
+    assert not should_correct_failed_title_frontier_to_general_after_concept_recovery(
+        query=query,
+        exact_title_hits=[],
+        lexical_hits=[
+            _paper_hit(
+                11,
+                title="anti-NMDAR encephalitis psychosis first episode",
+                lexical_score=1.0,
+            )
+        ],
+        chunk_lexical_hits=[],
+        concept_chunk_rescue_hits=[],
+        entity_seed_hits=[],
+        relation_seed_hits=[],
+    )
+
+
+def test_should_enable_general_title_similarity_support_for_compact_entity_queries():
+    query = replace(
+        _query(
+            "COMT Val158Met and psychosis risk",
+            retrieval_profile=QueryRetrievalProfile.GENERAL,
+        ),
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+    search_plan = build_search_plan(query)
+
+    assert should_enable_general_title_similarity_support(
+        query=query,
+        search_plan=search_plan,
+        sparse_passage_paper_fallback=False,
+    )
+
+
+def test_should_enable_general_title_similarity_support_skips_prose_and_metadata_queries():
+    prose_query = replace(
+        _query(
+            "This study aims to compare the prevalence of mental health symptoms",
+            retrieval_profile=QueryRetrievalProfile.GENERAL,
+        ),
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+    metadata_query = replace(
+        _query(
+            "Neurology 2018 score that predicts 1-year functional status",
+            retrieval_profile=QueryRetrievalProfile.GENERAL,
+            metadata_hints=QueryMetadataHints(
+                topic_query="score that predicts 1-year functional status",
+                year_hint=2018,
+                author_hint="Neurology",
+                journal_hint="Neurology",
+                matched_cues=("author", "journal", "year"),
+            ),
+        ),
+        use_title_similarity=False,
+        use_title_candidate_lookup=False,
+    )
+
+    assert not should_enable_general_title_similarity_support(
+        query=prose_query,
+        search_plan=build_search_plan(prose_query),
+        sparse_passage_paper_fallback=False,
+    )
+    assert not should_enable_general_title_similarity_support(
+        query=metadata_query,
+        search_plan=build_search_plan(metadata_query),
+        sparse_passage_paper_fallback=False,
     )
 
 
@@ -788,7 +1055,7 @@ def test_should_run_biomedical_reranker_keeps_ambiguous_direct_passage_candidate
 
 def test_should_run_biomedical_reranker_skips_title_lookup_queries():
     query = _query(
-        "COMT Val158Met polymorphism and psychosis risk",
+        "Delirium in the intensive care unit",
         retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
         clinical_intent=ClinicalQueryIntent.PROGNOSIS,
     )
@@ -797,12 +1064,38 @@ def test_should_run_biomedical_reranker_skips_title_lookup_queries():
         query=query,
         selected_corpus_id=None,
         ranked_papers=[
-            _paper_hit(11, lexical_score=0.8),
-            _paper_hit(22, lexical_score=0.6),
-            _paper_hit(33, lexical_score=0.4),
+            _paper_hit(
+                11,
+                title="Delirium in the intensive care unit",
+                lexical_score=0.8,
+            ),
+            _paper_hit(22, lexical_score=0.6, title="Delirium management in critical care"),
+            _paper_hit(33, lexical_score=0.4, title="ICU delirium overview"),
         ],
         enabled=True,
     )
+
+
+def test_should_run_biomedical_reranker_skips_title_lookup_without_anchor_candidates():
+    query = _query(
+        "semantic expert shorthand query",
+        retrieval_profile=QueryRetrievalProfile.TITLE_LOOKUP,
+        clinical_intent=ClinicalQueryIntent.TREATMENT,
+    )
+
+    should_run, reason = biomedical_rerank_decision(
+        query=query,
+        selected_corpus_id=None,
+        ranked_papers=[
+            _paper_hit(11, lexical_score=0.8, title="Autoimmune encephalitis review"),
+            _paper_hit(22, lexical_score=0.7, title="Movement disorder therapeutics"),
+            _paper_hit(33, lexical_score=0.6, title="Cytokine psychiatry update"),
+        ],
+        enabled=True,
+    )
+
+    assert not should_run
+    assert reason == "title_lookup"
 
 
 def test_should_run_biomedical_reranker_skips_selected_or_non_global_queries():

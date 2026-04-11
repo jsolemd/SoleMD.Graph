@@ -1,131 +1,234 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useGraphCamera } from "@/features/graph/cosmograph";
-import { WIKI_ENTITY_OVERLAY_PRODUCER } from "@/features/graph/lib/overlay-producers";
+import { useGraphCamera, useGraphSelection } from "@/features/graph/cosmograph";
+import { useDashboardStore } from "@/features/graph/stores";
+import {
+  clearOwnedSelectionState,
+  commitSelectionState,
+} from "@/features/graph/lib/graph-selection-state";
+import {
+  WIKI_PAGE_OVERLAY_PRODUCER,
+  WIKI_PAGE_SELECTION_SOURCE_ID,
+} from "@/features/graph/lib/overlay-producers";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import {
-  resolveWikiOverlay,
-  commitWikiOverlay,
   cacheWikiNodeIndices,
   clearWikiGraphOverlay,
+  commitWikiOverlay,
+  resolveWikiOverlay,
 } from "@/features/wiki/lib/wiki-graph-sync";
-
-const PRODUCER_ID = WIKI_ENTITY_OVERLAY_PRODUCER;
 
 interface UseWikiGraphSyncOptions {
   queries: GraphBundleQueries;
-  paperGraphRefs: Record<number, string>;
+  pageGraphRefs: readonly string[];
   currentSlug: string | null;
+}
+
+interface UseWikiGraphSyncResult {
+  onPaperClick: (graphPaperRef: string) => void;
+  showPageOnGraph: () => Promise<void>;
+  clearPageGraph: () => void;
+  canShowPageOnGraph: boolean;
 }
 
 export function useWikiGraphSync({
   queries,
-  paperGraphRefs,
+  pageGraphRefs,
   currentSlug,
-}: UseWikiGraphSyncOptions) {
-  const generationRef = useRef(0);
-  const overlayMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+}: UseWikiGraphSyncOptions): UseWikiGraphSyncResult {
+  const pageFitDuration = 400;
+  const pageFitPadding = 0.15;
+  const paperFocusDuration = 250;
+  const abortRef = useRef<AbortController | null>(null);
   const nodeIndexCacheRef = useRef<Record<string, number>>({});
-  const { fitViewByIndices } = useGraphCamera();
+  const setSelectedPointCount = useDashboardStore(
+    (state) => state.setSelectedPointCount,
+  );
+  const setActiveSelectionSourceId = useDashboardStore(
+    (state) => state.setActiveSelectionSourceId,
+  );
+  const activeSelectionSourceId = useDashboardStore(
+    (state) => state.activeSelectionSourceId,
+  );
+  const activeSelectionSourceIdRef = useRef(activeSelectionSourceId);
+  activeSelectionSourceIdRef.current = activeSelectionSourceId;
 
-  const enqueueOverlayMutation = useCallback(
-    (mutation: () => Promise<void>) => {
-      const run = overlayMutationQueueRef.current.then(mutation, mutation);
-      overlayMutationQueueRef.current = run.catch(() => {});
-      return run;
+  const { fitViewByIndices, zoomToPoint } = useGraphCamera();
+  const { selectPointsByIndices, clearSelectionBySource } = useGraphSelection();
+
+  const focusPointIndices = useCallback(
+    (pointIndices: readonly number[]) => {
+      if (pointIndices.length === 0) {
+        return;
+      }
+
+      if (pointIndices.length === 1) {
+        zoomToPoint(pointIndices[0], paperFocusDuration);
+        return;
+      }
+
+      fitViewByIndices([...pointIndices], pageFitDuration, pageFitPadding);
     },
-    [],
+    [
+      fitViewByIndices,
+      pageFitDuration,
+      pageFitPadding,
+      paperFocusDuration,
+      zoomToPoint,
+    ],
   );
 
-  useEffect(() => {
-    const graphPaperRefs = Object.values(paperGraphRefs);
-    const generation = ++generationRef.current;
+  const focusSinglePoint = useCallback(
+    (pointIndex: number) => {
+      zoomToPoint(pointIndex, paperFocusDuration);
+    },
+    [paperFocusDuration, zoomToPoint],
+  );
+
+  const clearPageGraph = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
     nodeIndexCacheRef.current = {};
-    const isCurrentGeneration = () => generation === generationRef.current;
 
-    async function run() {
-      if (graphPaperRefs.length === 0) {
-        await enqueueOverlayMutation(async () => {
-          if (!isCurrentGeneration()) return;
-          await clearWikiGraphOverlay({ producerId: PRODUCER_ID, queries });
-          if (!isCurrentGeneration()) return;
-          nodeIndexCacheRef.current = {};
-        });
-        return;
-      }
+    void clearWikiGraphOverlay({
+      producerId: WIKI_PAGE_OVERLAY_PRODUCER,
+      queries,
+    });
+    clearSelectionBySource(WIKI_PAGE_SELECTION_SOURCE_ID);
+    void clearOwnedSelectionState({
+      sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
+      activeSelectionSourceId: activeSelectionSourceIdRef.current,
+      queries,
+      setSelectedPointCount,
+      setActiveSelectionSourceId,
+    });
+  }, [
+    clearSelectionBySource,
+    queries,
+    setActiveSelectionSourceId,
+    setSelectedPointCount,
+  ]);
 
-      // Phase 1: RESOLVE (pure reads — no shared mutations)
-      const resolution = await resolveWikiOverlay({ queries, graphPaperRefs });
-      if (!isCurrentGeneration()) return;
-
-      await enqueueOverlayMutation(async () => {
-        if (!isCurrentGeneration()) return;
-
-        // Phase 2: COMMIT (overlay write — serialized + guarded)
-        await commitWikiOverlay({
-          producerId: PRODUCER_ID,
-          queries,
-          pointIds: resolution.pointIds,
-        });
-        if (!isCurrentGeneration()) return;
-
-        // Phase 3: POST-COMMIT CACHE (node lookup — overlay is now materialized)
-        const indexMap = await cacheWikiNodeIndices({ queries, graphPaperRefs });
-        if (!isCurrentGeneration()) return;
-        nodeIndexCacheRef.current = indexMap;
-      });
+  const showPageOnGraph = useCallback(async () => {
+    if (pageGraphRefs.length === 0) {
+      clearPageGraph();
+      return;
     }
 
-    run().catch(() => {
-      if (isCurrentGeneration()) {
-        void enqueueOverlayMutation(async () => {
-          if (!isCurrentGeneration()) return;
-          await clearWikiGraphOverlay({ producerId: PRODUCER_ID, queries });
-          if (!isCurrentGeneration()) return;
-          nodeIndexCacheRef.current = {};
-        });
-      }
-    });
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    return () => {
-      if (isCurrentGeneration()) {
-        void enqueueOverlayMutation(async () => {
-          if (!isCurrentGeneration()) return;
-          await clearWikiGraphOverlay({ producerId: PRODUCER_ID, queries });
-          if (!isCurrentGeneration()) return;
-          nodeIndexCacheRef.current = {};
-        });
-      }
-    };
-  }, [queries, paperGraphRefs, currentSlug, enqueueOverlayMutation]);
-
-  // onPaperClick: fast path from cache, fallback via live query
-  const onPaperClick = useCallback(
-    (graphPaperRef: string) => {
-      // Fast path: read from cache
-      const cachedIndex = nodeIndexCacheRef.current[graphPaperRef];
-      if (cachedIndex != null && Number.isFinite(cachedIndex)) {
-        fitViewByIndices([cachedIndex], 400, 0.15);
+    try {
+      const resolution = await resolveWikiOverlay({
+        queries,
+        graphPaperRefs: [...pageGraphRefs],
+      });
+      if (controller.signal.aborted) {
         return;
       }
 
-      // Fallback: live query
+      await commitWikiOverlay({
+        producerId: WIKI_PAGE_OVERLAY_PRODUCER,
+        queries,
+        pointIds: resolution.pointIds,
+      });
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      const indexMap = await cacheWikiNodeIndices({
+        queries,
+        graphPaperRefs: [...pageGraphRefs],
+      });
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      nodeIndexCacheRef.current = indexMap;
+      const pointIndices = Object.values(indexMap).filter(
+        (index): index is number => Number.isFinite(index),
+      );
+
+      if (pointIndices.length === 0) {
+        clearSelectionBySource(WIKI_PAGE_SELECTION_SOURCE_ID);
+        await clearOwnedSelectionState({
+          sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
+          activeSelectionSourceId: activeSelectionSourceIdRef.current,
+          queries,
+          setSelectedPointCount,
+          setActiveSelectionSourceId,
+        });
+        return;
+      }
+
+      await commitSelectionState({
+        sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
+        queries,
+        pointIndices,
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
+      });
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      selectPointsByIndices({
+        sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
+        pointIndices,
+      });
+      focusPointIndices(pointIndices);
+    } catch {
+      if (!controller.signal.aborted) {
+        clearPageGraph();
+      }
+    }
+  }, [
+    clearPageGraph,
+    clearSelectionBySource,
+    focusPointIndices,
+    pageGraphRefs,
+    queries,
+    selectPointsByIndices,
+    setActiveSelectionSourceId,
+    setSelectedPointCount,
+  ]);
+
+  const onPaperClick = useCallback(
+    (graphPaperRef: string) => {
+      const cachedIndex = nodeIndexCacheRef.current[graphPaperRef];
+      if (cachedIndex != null && Number.isFinite(cachedIndex)) {
+        focusSinglePoint(cachedIndex);
+        return;
+      }
+
       queries
         .ensureGraphPaperRefsAvailable([graphPaperRef])
         .then(() => queries.getPaperNodesByGraphPaperRefs([graphPaperRef]))
         .then((nodes) => {
           const node = nodes[graphPaperRef];
           if (node && Number.isFinite(node.index)) {
-            fitViewByIndices([node.index], 400, 0.15);
+            focusSinglePoint(node.index);
           }
         })
         .catch(() => {
-          // Paper not found on graph — silently ignore
+          // Paper not available on the graph for the current bundle.
         });
     },
-    [queries, fitViewByIndices],
+    [focusSinglePoint, queries],
   );
 
-  return { onPaperClick };
+  useEffect(() => {
+    return () => {
+      clearPageGraph();
+    };
+  }, [clearPageGraph, currentSlug]);
+
+  return {
+    onPaperClick,
+    showPageOnGraph,
+    clearPageGraph,
+    canShowPageOnGraph: pageGraphRefs.length > 0,
+  };
 }

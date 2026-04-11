@@ -256,6 +256,14 @@
 - Verified this slice with focused Jest, engine pytest, `npm run typecheck`, `npm run lint`, and `npm run build`
 - Browser note: after the bundle-hook fix, a hard reload on `http://localhost:3000` dropped the duplicate DuckDB bootstrap in dev from two worker/wasm/parquet-extension/base-parquet fetches to one each; with the engine down, prompt typing no longer throws uncaught entity-match promise errors, though the visible-browser text-injection path still needs a cleaner manual smoke before claiming live entity highlighting end to end
 
+### Batch 21
+
+- Restored the canonical upstream entity-ref adapter path by making `features/graph/components/panels/editor/use-editor-entity-runtime.ts` emit deduplicated canonical entity refs alongside transient highlights and hover state
+- Threaded `onEntityRefsChange` through `features/graph/components/panels/editor/use-create-editor-controller.ts`, `features/graph/components/panels/CreateEditor.tsx`, and `features/graph/components/panels/prompt/PromptBoxSurface.tsx` so the editor subtree stays the only place that understands TipTap text-window entity matching
+- Centralized lightweight overlay ref typing and keying in `features/graph/types/entity-service.ts` and `features/graph/lib/entity-overlay-refs.ts`, then reused that helper in `use-entity-overlay-sync.ts` and `use-prompt-box-controller.ts` to avoid prompt-shell-local dedupe/key logic drift
+- Re-codified the contract in `docs/map/frontend-performance.md`: prompt surfaces may pass entity-ref callbacks through, but they must not derive overlay refs locally or bypass the shared entity overlay/native selection runtime
+- Added focused regressions in `features/graph/components/panels/editor/__tests__/use-editor-entity-runtime.test.ts`, `features/graph/components/panels/editor/__tests__/CreateEditor.test.tsx`, and `features/graph/components/panels/prompt/__tests__/PromptBoxSurface.test.tsx`
+
 ## Blockers
 
 - No blocking correctness issues remain.
@@ -277,3 +285,110 @@
 2. Evaluate an idle-time post-paint prewarm of `base_points_query_runtime` only if the trace shows remaining first-interaction jank.
 3. Continue replacing local trim/scope checks with the shared selection-query resolver where any duplication still exists.
 4. If desired, remove the remaining `DashboardShellClient` test console warning with an explicit async-load test harness.
+
+### Batch 22
+
+- Re-reviewed the typed-entity overlay architecture after the reverted-editor concern and confirmed the canonical upstream path is restored: `useEditorEntityRuntime` derives canonical entity refs from entity matches, `use-create-editor-controller.ts` emits them via `onEntityRefsChange`, `PromptBoxSurface.tsx` threads that callback into `CreateEditor`, and `use-prompt-box-controller.ts` remains the sole owner of entity-overlay sync plus native Cosmograph selection
+- Kept entity-ref identity centralized in `features/graph/lib/entity-overlay-refs.ts` so the editor runtime, prompt controller, and entity overlay hook share one dedupe/key/equality contract instead of recomputing that logic in multiple places
+- Refreshed focused regressions in `features/graph/components/panels/editor/__tests__/use-editor-entity-runtime.test.ts`, `features/graph/components/panels/editor/__tests__/CreateEditor.test.tsx`, `features/graph/components/panels/prompt/__tests__/PromptBoxSurface.test.tsx`, and `features/graph/components/panels/prompt/__tests__/use-prompt-box-controller.test.ts`
+- Verified the restored architecture with focused Jest, a scoped lint pass on the touched files, and `npm run build`; repo-wide `npm run lint` still flags pre-existing `.tmp/` smoke artifacts outside this change set, while `npm run lint -- --ignore-pattern '.tmp/**'` passes
+
+### Batch 23
+
+- Investigated the low schizophrenia overlay count and confirmed the live `55` result is not a frontend/native-selection bug: it matches the current `solemd.paper_entity_mentions` warehouse subset exactly
+- Verified the warehouse boundary in the live DB: `paper_entity_mentions` covers `469` corpus ids, while `graph_points` covers `2,452,643`; `paper_documents`/`paper_blocks`/`paper_sentences` sit on the same small warehouse subset
+- Verified that broad entity coverage already exists in `pubtator.entity_annotations` (`318,061,200` rows / `13,848,062` PMIDs) and that schizophrenia (`MESH:D012559`) maps to `157,402` graph papers via `pubtator.entity_annotations -> solemd.corpus -> solemd.graph_points`
+- Confirmed the architectural cause in code: `paper_entity_mentions` is produced by the RAG warehouse/BioCXML parse-and-write path (`rag_ingest/source_parsers.py`, `rag_ingest/write_repository.py`) and is therefore the wrong source for graph-scale entity overlay
+- Codified the canonical rule in `docs/map/frontend-performance.md`: graph-scale entity overlay must use a dedicated projection sourced from broad PubTator coverage, while `paper_entity_mentions` remains the span-grounded RAG/wiki table
+
+### Batch 23
+
+- Audited the live entity-overlay count mismatch against the running warehouse and confirmed the low schizophrenia overlay count is a data-coverage issue, not a frontend/native-selection bug
+- Live DB counts at inspection time:
+  - `solemd.papers`: `14,060,679`
+  - `solemd.graph_points`: `2,452,643` distinct papers
+  - `solemd.paper_documents`: `697` papers
+  - `solemd.paper_entity_mentions`: `95,494` rows across `469` papers
+  - `solemd.entities` schizophrenia catalog row: `paper_count = 250,471`
+  - exact schizophrenia mention coverage in `paper_entity_mentions` for `disease:D012559`: `56` papers, `55` of which are present in `graph_points`
+- Verified that the live `POST /api/entities/overlay` route on `localhost:3000` returns `55` schizophrenia graph refs even with `limit: 500`, so the count is not being truncated by the frontend overlay request
+- Traced the write path and confirmed `paper_entity_mentions` is populated only through warehouse ingest of parsed source groups in `engine/app/rag_ingest/warehouse_writer.py` and `write_batch_builder.py`; the current live mention rows are all `biocxml`-sourced, meaning papers without BioC/PubTator ingest contribute zero exact entity mentions
+- Conclusion: typed entity overlay currently reflects exact warehouse-backed entity mentions for the small parsed-source subset, not corpus-global entity prevalence across the full graph corpus
+
+### Batch 24
+
+- Corrected the entity interaction contract so typed entities no longer mutate the graph automatically: `use-editor-entity-runtime.ts` now stays on highlight + hover detail only, and `use-prompt-box-controller.ts` routes graph mutation exclusively through an explicit `handleShowEntityOnGraph` action
+- Reworked `features/graph/components/entities/use-entity-overlay-sync.ts` into an imperative shared overlay controller that explicit entity actions call on demand; the old typing-driven effect path was removed instead of being left alongside the new contract
+- Added a dedicated `ENTITY_GRAPH_OVERLAY_PRODUCER` in `features/graph/lib/overlay-producers.ts` so explicit entity graph actions do not piggyback on the wiki producer identity
+- Made the hover card actionable and interaction-safe: `use-entity-text-runtime.ts` now keeps hover detail alive across pointer travel into the overlay surface, `EntityHoverCard.tsx` renders an explicit `Show on graph` action, and the editor overlay surface forwards that action back through the shared prompt/runtime path
+- Updated the canonical requirements in `docs/map/frontend-performance.md` to encode the new rule: typed entities stay local to highlight/hover detail until an explicit entity action requests graph projection, and answer responses remain the canonical Enter-driven selection path
+- Updated `features/graph/components/panels/prompt/use-prompt-box-controller.ts` so ask-mode submit clears any explicit entity overlay selection before delegating to the canonical RAG response-selection path; Enter-driven graph selection remains owned by response graph signals rather than typed-entity matches
+- Refreshed focused regression coverage in `features/graph/components/entities/__tests__/EntityHoverCard.test.tsx`, `features/graph/components/entities/__tests__/use-entity-text-runtime.test.ts`, `features/graph/components/panels/editor/__tests__/use-editor-entity-runtime.test.ts`, `features/graph/components/panels/editor/__tests__/CreateEditor.test.tsx`, `features/graph/components/panels/prompt/__tests__/PromptBoxSurface.test.tsx`, `features/graph/components/panels/prompt/__tests__/use-prompt-box-controller.test.ts`, and `features/graph/lib/__tests__/entity-overlay-refs.test.ts`
+- Verified the pass with focused Jest, `npm run build`, scoped eslint on touched runtime files, and `npm run lint -- --ignore-pattern '.tmp/**'`
+
+### Batch 25
+
+- Converted the entity hover surface into a reusable floating overlay primitive in `features/graph/components/overlay/FloatingHoverCard.tsx` and kept `EntityHoverCard.tsx` focused on entity content only, so future wiki/graph hover surfaces can reuse one interactive shell instead of duplicating overlay behavior
+- Re-styled the entity hover content to follow panel standards by reusing `PanelShell` typography, chrome, pill, and accent-card tokens rather than inventing a tooltip-specific visual language
+- Added explicit adapter-backed actions to the hover card: `Show on graph` stays on the shared graph-selection path, while `Open wiki` now routes through the prompt controller into `setWikiOpen(true)` plus `useWikiStore().navigateToPage(...)`; the editor layer does not mutate graph/wiki state directly
+- Added `features/wiki/lib/entity-wiki-route.ts` as the single frontend entity-to-wiki slug resolver so entity hover actions do not bake route formatting into panel/editor code
+- Cleaned the prompt/wiki integration to match the actual shell model: wiki remains independent of `activePanel`, and hover-driven wiki navigation opens the wiki panel through the existing `wikiOpen` state instead of forcing `activePanel = "wiki"`
+- Verified this pass with focused Jest (`EntityHoverCard`, `CreateEditor`, `PromptBoxSurface`, `use-prompt-box-controller`, and wiki route tests), `npm run build`, `npm run lint -- --ignore-pattern '.tmp/**'`, and a live `curl` check confirming `localhost:3000` responds with `HTTP/1.1 200 OK`
+
+### Batch 26
+
+- Seeded the wiki runtime from the local `wiki/` content root with a broader concept spread: disorders (`schizophrenia`, `dementia`, `delirium`, `major-depressive-disorder`, `bipolar-disorder`), medications (`clozapine`, `olanzapine`, `haloperidol`, `ketamine`, `lithium`), regions (`prefrontal-cortex`, `hippocampus`, `amygdala`), networks (`default-mode-network`, `salience-network`, `executive-control-network`), and receptors (`dopamine-d2-receptor`, `serotonin-2a-receptor`, `nmda-receptor`, `gaba-a-receptor`)
+- Kept the new pages intentionally concise and grounded in representative PMIDs already present in the backend corpus so they function as seed pages for a future RAG-backed wiki pipeline rather than as a disconnected hand-authored parallel system
+- Reconstructed the existing live wiki seed pages (`circadian-rhythm`, `melatonin`, `scn`, `serotonin`, and `index`) in the same content root and added cross-links from the original circadian pages into the new disorder and receptor pages so the wiki graph has immediate structural depth rather than isolated leaves
+- Synced the seed corpus into `solemd.wiki_pages` with `cd engine && uv run python db/scripts/sync_wiki_pages.py --wiki-dir ../wiki`, resulting in `20` added pages, `5` updated pages, `0` deleted pages, and a live wiki inventory of `25` pages
+- Verified the runtime by checking the FastAPI surface directly: `GET /api/v1/wiki/pages` now returns `25`, and `GET /api/v1/wiki/pages/entities/schizophrenia?graph_release_id=current` resolves with the expected title, tags, concept id, and PMID list
+- Important operator note: in this environment `wiki/` is a symlinked content root, so the seed markdown lives behind that link rather than as ordinary tracked files inside the Graph git tree; the runtime behavior is correct, but future versioning decisions should make the content source explicit
+
+### Batch 27
+
+- Added explicit wiki section hubs on top of the canonical entity pages: `sections/core-biology`, `sections/disorders`, `sections/psychotropics`, `sections/brain-regions`, `sections/brain-networks`, and `sections/receptors`
+- Reworked `index.md` into a true table-of-contents page that points first to section hubs, then to a compact direct-jump list, so the wiki now has a browsable high-level structure instead of a flat page inventory
+- Kept canonical entity pages stable at `entities/<slug>` so the entity-hover `Open wiki` adapter and future entity-to-page contracts do not need to change; the section pages are organizational hubs, not replacements for canonical concept slugs
+- Synced the new section pages with `cd engine && uv run python db/scripts/sync_wiki_pages.py --wiki-dir ../wiki`, resulting in `6` added pages and `1` updated page, and verified the live runtime now serves `31` wiki pages total
+- Verified the structural pages directly through the API: `GET /api/v1/wiki/pages/sections/disorders?graph_release_id=current` resolves correctly, and `GET /api/v1/wiki/pages` now includes the `sections/*` slugs alongside the canonical entity pages
+
+### Batch 28
+
+- Added `engine/app/wiki/content_contract.py` as the canonical wiki page contract layer so authored/generated markdown pages resolve one shared runtime shape: `page_kind`, `section_slug`, and `graph_focus`
+- Updated `engine/db/scripts/sync_wiki_pages.py` to normalize wiki frontmatter through the shared contract before sync, which gives future generators one place to target for `section`, `page_kind`, `graph_focus`, and tag normalization instead of duplicating markdown rules
+- Extended the wiki runtime models and API payloads so page responses now expose the derived contract explicitly; this keeps future wiki-to-graph and wiki-to-prompt actions on typed runtime fields instead of raw markdown conventions
+- Added contract regression coverage in `engine/test/test_wiki_sync.py` and `engine/test/test_wiki_api.py` for section normalization plus `cited_papers` / `entity_exact` default behavior
+- Added `docs/map/wiki-generation.md` as the canonical authoring/generation spec for static wiki pages and corrected `docs/map/wiki.md` to match the live schema/runtime instead of the older `resolved_links`-column description
+- Updated `docs/map/frontend-performance.md` so page-level wiki graph actions are explicitly required to consume the canonical wiki runtime contract through adapters rather than reparsing markdown in the browser
+
+
+### Batch 29
+
+- Added `engine/app/api/http.py` as the canonical FastAPI error boundary so request-path routers now share one `run_api()` translation path for `ValueError` → 400 and `LookupError` / `KeyError` / missing results → 404 instead of each endpoint hand-rolling slightly different exception handling
+- Updated all four live API families (`entities`, `graph`, `evidence`, `wiki`) to use the shared router helper; routers stay thin and service/repository ownership is now more explicit
+- Moved the wiki repository onto pooled request-path connections (`db.pooled()`) to match the existing entity and graph attachment hot paths and eliminate per-call connection setup from the wiki surface
+- Applied `engine/db/migrations/058_add_pubtator_entity_context_lookup_index.sql` to the live dev database, adding `pubtator.idx_pt_entity_type_concept_pmid_lookup` on `(entity_type, concept_id, pmid)` for entity-context lookups
+- Rejected a slower materialized-CTE rewrite for wiki entity context after measuring it live; kept the specialized count and top-paper SQL separate and instead parallelized them in `engine/app/wiki/repository.py` via a small pooled read executor so independent DB work is concurrent instead of serialized
+- Live warm measurements after restart for `entities/major-depressive-disorder`:
+  - FastAPI wiki shell: ~22ms (`/api/v1/wiki/pages/...`)
+  - Next wiki shell route: ~135ms (`/api/wiki/pages/...`)
+  - Next wiki context route: ~1.07s (`/api/wiki/context/...`)
+- The context route is materially improved from the earlier ~1.57s path but still too expensive for the long-term end state; the next structural backend step is a reusable entity-to-corpus serving projection so wiki/entity overlay consumers stop recomputing large PubTator joins on demand
+- Added canonical API docs in `docs/map/api.md` and updated `docs/map/map.md` + `docs/map/wiki.md` so future agents inherit the shell/context split, pooled request-path rule, shared router error contract, and “index for predicate / project for repeated scans” serving guidance
+
+### Batch 30
+
+- Replaced wiki-local text loading states with the shared `PanelInlineLoader` so wiki page load, wiki graph load, and entity-context pending states now use the canonical panel spinner rather than one-off `Loading...` strings
+- Kept the wiki shell/context split intact: page content renders immediately, while `WikiPageHeader` now shows the shared loader inside stats/cards while backend context fills in asynchronously
+- Hardened `WikiPageHeader` against partial payloads by normalizing `featured_pmids` / `paper_pmids` locally before computing evidence counts, preventing brittle `.length` access on incomplete page data
+- Fixed the wiki top-paper focus behavior in `use-wiki-graph-sync.ts` by centralizing camera rules: multi-paper page activation still uses `fitViewByIndices`, while single-paper focus now uses the native `zoomToPoint` path instead of overfitting the viewport with `fitViewByIndices([index])`
+- Preserved native graph-selection ownership: the wiki page action still commits overlay + selection through the existing adapter/state path; only the camera behavior changed for the single-paper case
+- Refreshed focused wiki regressions in `features/wiki/hooks/__tests__/use-wiki-graph-sync.test.ts`, `features/wiki/components/__tests__/WikiGraphView.test.tsx`, and `features/wiki/components/__tests__/WikiPanel.test.tsx` to lock the multi-paper fit rule, single-paper bounded focus rule, and async wiki shell rendering contract
+- Verified the pass with focused Jest (13 tests passed) and source-file eslint on the touched wiki runtime files; `npm run build` is currently blocked by an unrelated pre-existing `app/template.tsx` import of `unstable_ViewTransition` from `react`, not by the wiki changes
+
+### Batch 31
+
+- Removed the unsupported route-transition wrapper from `app/template.tsx`; the installed stable `react@19.2.4` runtime does not export either `ViewTransition` or `unstable_ViewTransition`, so the previous template could never compile or run correctly
+- Removed the dead `experimental.viewTransition` flag from `next.config.ts` so build-time configuration now matches the actual supported frontend runtime instead of advertising a dormant canary-only feature
+- Removed the unused route-transition CSS import from `app/globals.css` and deleted `app/styles/animations.css`; keeping transition CSS for a non-existent wrapper was dead surface area rather than a live feature
+- Verified the cleanup with `npm run build` and targeted eslint on `next.config.ts` plus `app/globals.css`

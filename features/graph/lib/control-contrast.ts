@@ -30,18 +30,14 @@ export function resolveGraphControlContrastLevel({
   graphContentContrastLevel,
   hasFocusedPoint,
   hasSelection,
-}: GraphControlContrastInput): 0 | 1 | 2 {
-  if (hasFocusedPoint) {
-    return 2;
-  }
-
-  if (graphContentContrastLevel >= 2) {
+}: GraphControlContrastInput): 1 | 2 {
+  if (hasFocusedPoint || graphContentContrastLevel >= 2) {
     return 2;
   }
 
   if (hasSelection || graphContentContrastLevel >= 1) {
-    return 1;
+    return 2;
   }
 
-  return 0;
+  return 1;
 }

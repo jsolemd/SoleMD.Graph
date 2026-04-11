@@ -44,7 +44,13 @@ from app.rag_ingest.orchestrator import (
 )
 from app.rag_ingest.source_locator import SidecarRagSourceLocatorRepository
 from app.rag_ingest.ingest_tracing import traced_parse_biocxml
-from app.rag_ingest.source_parsers import parse_biocxml_document
+from app.rag_ingest.target_corpus import (
+    PostgresTargetCorpusLoader,
+)
+from app.rag_ingest.target_metadata import (
+    apply_target_metadata_to_parsed_source,
+    target_row_by_corpus_id,
+)
 from app.rag_ingest.warehouse_quality import inspect_rag_warehouse_quality
 from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestResult, RagWarehouseWriter
 
@@ -136,6 +142,15 @@ class ChunkBackfillRunner(Protocol):
     def __call__(self, **kwargs) -> object: ...
 
 
+class TargetCorpusLoader(Protocol):
+    def load(
+        self,
+        *,
+        corpus_ids: list[int] | None,
+        limit: int | None,
+    ) -> list[object]: ...
+
+
 def _source_revision_keys() -> list[str]:
     return [
         f"s2orc_v2:{settings.s2_release_id}",
@@ -166,6 +181,7 @@ def _run_direct_bioc_archive_ingest(
     checkpoint_root: Path | None,
     reset_run: bool,
     manifest_repository: ManifestRepository,
+    target_loader: TargetCorpusLoader | None,
     existing_loader: ExistingDocumentLoader | None,
     archive_member_fetcher: ArchiveMemberFetcher | None,
     warehouse_writer: BulkWarehouseWriter | None,
@@ -173,6 +189,7 @@ def _run_direct_bioc_archive_ingest(
     chunk_backfill_runner: ChunkBackfillRunner | None,
 ) -> dict[str, object]:
     active_existing_loader = existing_loader or PostgresExistingDocumentLoader()
+    active_target_loader = target_loader or PostgresTargetCorpusLoader()
     active_archive_member_fetcher = archive_member_fetcher or fetch_bioc_archive_members
     active_writer = warehouse_writer or RagWarehouseWriter()
     active_chunk_seeder = chunk_seeder or RagChunkSeeder()
@@ -195,6 +212,8 @@ def _run_direct_bioc_archive_ingest(
         if candidate.document_id not in skipped_manifest_document_ids
     ]
     existing_ids = active_existing_loader.load_existing(corpus_ids=selected_corpus_ids)
+    target_rows = active_target_loader.load(corpus_ids=selected_corpus_ids, limit=None)
+    target_rows_by_corpus_id = target_row_by_corpus_id(target_rows)
     candidates_to_fetch = [
         candidate for candidate in candidates if candidate.corpus_id not in existing_ids
     ]
@@ -248,6 +267,10 @@ def _run_direct_bioc_archive_ingest(
             source_revision=settings.pubtator_release_id,
             parser_version=parser_version,
             corpus_id=candidate.corpus_id,
+        )
+        parsed = apply_target_metadata_to_parsed_source(
+            parsed=parsed,
+            target_row=target_rows_by_corpus_id.get(candidate.corpus_id),
         )
         if not parsed_source_has_warehouse_value(parsed):
             skipped_low_value_corpus_ids.append(candidate.corpus_id)
@@ -334,6 +357,7 @@ def run_bioc_archive_ingest(
     refresh_runner: WarehouseRefreshRunner | None = None,
     quality_inspector: WarehouseQualityInspector | None = None,
     existing_loader: ExistingDocumentLoader | None = None,
+    target_loader: TargetCorpusLoader | None = None,
     archive_member_fetcher: ArchiveMemberFetcher | None = None,
     warehouse_writer: BulkWarehouseWriter | None = None,
     chunk_seeder: ChunkSeeder | None = None,
@@ -391,6 +415,7 @@ def run_bioc_archive_ingest(
             checkpoint_root=checkpoint_root,
             reset_run=reset_run,
             manifest_repository=active_manifest_repository,
+            target_loader=target_loader,
             existing_loader=existing_loader,
             archive_member_fetcher=archive_member_fetcher,
             warehouse_writer=warehouse_writer,

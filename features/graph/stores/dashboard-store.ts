@@ -6,6 +6,7 @@ import { createSelectionSlice } from './slices/selection-slice'
 import { createTimelineSlice } from './slices/timeline-slice'
 import { createLinksSlice } from './slices/links-slice'
 import { createVisibilitySlice } from './slices/visibility-slice'
+import { createSqlExplorerSlice } from './slices/sql-explorer-slice'
 
 import type { PanelSlice } from './slices/panel-slice'
 import type { ConfigSlice } from './slices/config-slice'
@@ -13,10 +14,11 @@ import type { SelectionSlice } from './slices/selection-slice'
 import type { TimelineSlice } from './slices/timeline-slice'
 import type { LinksSlice } from './slices/links-slice'
 import type { VisibilitySlice } from './slices/visibility-slice'
+import type { SqlExplorerSlice } from './slices/sql-explorer-slice'
 
 /* ───── Convenience re-exports ───── */
 
-export type { ActivePanel, PromptMode } from './slices/panel-slice'
+export type { ActivePanel, PanelId, PromptMode } from './slices/panel-slice'
 export type { TableView } from './slices/config-slice'
 
 /* ───── Composite state type ───── */
@@ -27,7 +29,8 @@ export type DashboardState =
   SelectionSlice &
   TimelineSlice &
   LinksSlice &
-  VisibilitySlice
+  VisibilitySlice &
+  SqlExplorerSlice
 
 /* ───── Clearance selectors ─────
  * Single source of truth for bottom/left space occupied by docked elements.
@@ -64,33 +67,168 @@ export function selectBottomClearance(s: DashboardState): number {
 }
 
 /** Width of each left-side panel — must match PanelShell `width` props. */
-const PANEL_WIDTHS: Record<string, number> = {
+export const PANEL_WIDTHS: Record<string, number> = {
   about: 320,
   config: 300,
   filters: 300,
   info: 320,
   query: 420,
-  wiki: 420,
+  wiki: 520,
 };
+export const PANEL_EDGE_MARGIN = 12;
+export const PANEL_GAP = 12;
 const PANEL_MARGIN = 24; // panel left (12) + gap (12)
+
+/**
+ * Fixed dock order — determines stacking when multiple panels are docked.
+ * Panels earlier in the list sit closer to the left edge.
+ */
+export const PANEL_DOCK_ORDER: readonly string[] = ['about', 'config', 'filters', 'info', 'query', 'wiki'];
 
 /** Pure wiki width computation — reusable in selector and components. */
 export function resolveWikiPanelWidth(viewportWidth: number, expanded: boolean): number {
-  return expanded ? Math.min(700, Math.floor(viewportWidth * 0.65)) : PANEL_WIDTHS.wiki;
+  return expanded ? Math.min(840, Math.floor(viewportWidth * 0.65)) : PANEL_WIDTHS.wiki;
 }
 
-/** Total px of left-edge space occupied by an open panel. */
-export function selectLeftClearance(s: DashboardState): number {
-  if (!s.activePanel) return 0;
-  // About panel renders regardless of panelsVisible
-  if (s.activePanel === 'about') return PANEL_WIDTHS.about + PANEL_MARGIN;
-  if (!s.panelsVisible) return 0;
-  // Floating panel — not docked, no left reservation
-  if (s.activePanel in s.floatingObstacles) return 0;
-  if (s.activePanel === 'wiki' && s.wikiExpanded) {
-    return (s.wikiExpandedWidth ?? PANEL_WIDTHS.wiki) + PANEL_MARGIN;
+/** Resolve the effective width of a panel given current state. */
+function resolvePanelWidth(panelId: string, s: DashboardState): number {
+  if (panelId === 'wiki' && s.wikiExpanded) {
+    return s.wikiExpandedWidth ?? PANEL_WIDTHS.wiki;
   }
-  return (PANEL_WIDTHS[s.activePanel] ?? 300) + PANEL_MARGIN;
+  return PANEL_WIDTHS[panelId] ?? 300;
+}
+
+/** Is a panel docked (open, visible, not dragged away)? */
+function isPanelDocked(panelId: string, s: DashboardState): boolean {
+  if (!s.openPanels[panelId as keyof typeof s.openPanels]) return false;
+  // About panel renders regardless of panelsVisible
+  if (panelId !== 'about' && !s.panelsVisible) return false;
+  // Floating (dragged away) panels don't reserve dock space
+  if (panelId in s.floatingObstacles) return false;
+  return true;
+}
+
+/** Total px of left-edge space occupied by all docked left panels. */
+export function selectLeftClearance(s: DashboardState): number {
+  let total = 0;
+  for (const panelId of PANEL_DOCK_ORDER) {
+    if (isPanelDocked(panelId, s)) {
+      total += resolvePanelWidth(panelId, s) + PANEL_MARGIN;
+    }
+  }
+  return total;
+}
+
+/**
+ * Left offset for a specific panel — sum of all docked panels before it in dock order.
+ * Used by FloatingPanelShell to position panels beside each other.
+ */
+export function selectPanelLeftOffset(s: DashboardState, panelId: string): number {
+  if (!PANEL_DOCK_ORDER.includes(panelId)) {
+    return 0;
+  }
+
+  let offset = 0;
+  for (const id of PANEL_DOCK_ORDER) {
+    if (id === panelId) break;
+    if (isPanelDocked(id, s)) {
+      offset += resolvePanelWidth(id, s) + PANEL_GAP;
+    }
+  }
+  return offset;
+}
+
+export interface PanelAnchorRect {
+  left: number;
+  top: number;
+  width: number;
+}
+
+export function resolvePanelAnchorRect(
+  s: DashboardState,
+  panelId: string,
+  panelTop: number,
+): PanelAnchorRect | null {
+  const floating = s.floatingObstacles[panelId];
+  if (floating) {
+    return {
+      left: floating.x,
+      top: floating.y,
+      width: floating.width,
+    };
+  }
+
+  if (!isPanelDocked(panelId, s)) {
+    return null;
+  }
+
+  return {
+    left: PANEL_EDGE_MARGIN + selectPanelLeftOffset(s, panelId),
+    top: panelTop,
+    width: s.panelPositions[panelId]?.width ?? resolvePanelWidth(panelId, s),
+  };
+}
+
+export function resolveCenteredFloatingPanelOffsets(args: {
+  state: DashboardState;
+  panelId: string;
+  panelWidth: number;
+  panelHeight: number;
+  panelTop: number;
+  viewportWidth: number;
+  viewportHeight: number;
+}): { x: number; y: number } {
+  const {
+    state,
+    panelId,
+    panelWidth,
+    panelHeight,
+    panelTop,
+    viewportWidth,
+    viewportHeight,
+  } = args;
+
+  const dockLeft = PANEL_EDGE_MARGIN + selectPanelLeftOffset(state, panelId);
+  const desiredLeft = Math.max(
+    PANEL_EDGE_MARGIN,
+    Math.round((viewportWidth - panelWidth) / 2),
+  );
+  const desiredTop = Math.max(
+    panelTop,
+    Math.round((viewportHeight - panelHeight) / 2),
+  );
+
+  return {
+    x: desiredLeft - dockLeft,
+    y: Math.max(0, desiredTop - panelTop),
+  };
+}
+
+export function resolveAdjacentFloatingPanelOffsets(args: {
+  state: DashboardState;
+  panelId: string;
+  anchorRect: PanelAnchorRect;
+  panelWidth: number;
+  panelTop: number;
+  viewportWidth: number;
+}): { x: number; y: number } {
+  const {
+    state,
+    panelId,
+    anchorRect,
+    panelWidth,
+    panelTop,
+    viewportWidth,
+  } = args;
+
+  const dockLeft = PANEL_EDGE_MARGIN + selectPanelLeftOffset(state, panelId);
+  const maxLeft = Math.max(PANEL_EDGE_MARGIN, viewportWidth - panelWidth - PANEL_EDGE_MARGIN);
+  const desiredLeft = Math.min(anchorRect.left + anchorRect.width + PANEL_GAP, maxLeft);
+
+  return {
+    x: Math.max(PANEL_EDGE_MARGIN, desiredLeft) - dockLeft,
+    y: Math.max(0, anchorRect.top - panelTop),
+  };
 }
 
 /** Right-side detail panel: width (380) + margin (12 + 12). */
@@ -113,4 +251,5 @@ export const useDashboardStore = create<DashboardState>((...a) => ({
   ...createTimelineSlice(...a),
   ...createLinksSlice(...a),
   ...createVisibilitySlice(...a),
+  ...createSqlExplorerSlice(...a),
 }))

@@ -170,7 +170,7 @@ describe("computed value stability", () => {
   it("pointIncludeColumns stays stable when an unrelated panel opens", async () => {
     const { result } = renderHookWithCount(useConfig);
     await expectStableReferences(result, ["pointIncludeColumns"], () => {
-      useDashboardStore.setState({ activePanel: "query" });
+      useDashboardStore.getState().openPanel("query");
     });
   });
 
@@ -186,7 +186,7 @@ describe("computed value stability", () => {
     const before = result.current.pointIncludeColumns;
 
     await act(() => {
-      useDashboardStore.setState({ activePanel: "filters" });
+      useDashboardStore.getState().openPanel("filters");
     });
 
     expect(before).toEqual([]);
@@ -270,7 +270,7 @@ describe("render count isolation", () => {
     const hook = renderHookWithCount(useConfig);
     hook.resetCount();
     await act(() => {
-      useDashboardStore.setState({ activePanel: "query" });
+      useDashboardStore.getState().openPanel("query");
     });
     expect(hook.renderCount()).toBe(0);
   });
@@ -279,7 +279,7 @@ describe("render count isolation", () => {
     const hook = renderHookWithCount(useConfig);
     hook.resetCount();
     await act(() => {
-      useDashboardStore.setState({ activePanel: "filters" });
+      useDashboardStore.getState().openPanel("filters");
     });
     expect(hook.renderCount()).toBe(1);
   });

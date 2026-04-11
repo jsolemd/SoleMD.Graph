@@ -13,16 +13,18 @@ import { preprocessWikilinks } from "@/features/wiki/lib/remark-wikilinks";
 import { WikiLink } from "./elements/WikiLink";
 import { PaperCitation } from "./elements/PaperCitation";
 import { Callout } from "./elements/Callout";
+import { AnimationEmbed } from "./elements/AnimationEmbed";
 
 interface WikiMarkdownRendererProps {
   contentMd: string
   resolvedLinks: Record<string, string>
   paperGraphRefs: Record<number, string>
+  linkedEntities: Record<string, { entity_type: string; concept_id: string }>
   onNavigate: (slug: string) => void
   onPaperClick?: (graphPaperRef: string) => void
 }
 
-const ELEMENTS = { WikiLink, PaperCitation, Callout } as const;
+const ELEMENTS = { WikiLink, PaperCitation, Callout, AnimationEmbed } as const;
 const rehypePlugins = createWikiRehypePlugins();
 
 /**
@@ -30,7 +32,7 @@ const rehypePlugins = createWikiRehypePlugins();
  * React-markdown's default sanitizer strips non-standard schemes.
  */
 function wikiUrlTransform(url: string): string {
-  if (url.startsWith('wiki:') || url.startsWith('pmid:')) return url;
+  if (url.startsWith('wiki:') || url.startsWith('pmid:') || url.startsWith('anim:')) return url;
   // Fall back to default sanitization for all other URLs
   const decoded = decodeURIComponent(url);
   if (decoded.startsWith('javascript:') || decoded.startsWith('vbscript:') || decoded.startsWith('data:')) return '';
@@ -45,16 +47,19 @@ function wikiUrlTransform(url: string): string {
  * CommonMark consumes `[[…]]` as nested bracket syntax, making them
  * unreachable as text nodes in the AST.
  */
+const EMPTY_LINKED_ENTITIES: Record<string, { entity_type: string; concept_id: string }> = {};
+
 function WikiMarkdownRendererInner({
   contentMd,
   resolvedLinks,
   paperGraphRefs,
+  linkedEntities,
   onNavigate,
   onPaperClick,
 }: WikiMarkdownRendererProps) {
   const data: WikiPipelineData = useMemo(
-    () => ({ resolvedLinks, paperGraphRefs }),
-    [resolvedLinks, paperGraphRefs],
+    () => ({ resolvedLinks, paperGraphRefs, linkedEntities: linkedEntities ?? EMPTY_LINKED_ENTITIES }),
+    [resolvedLinks, paperGraphRefs, linkedEntities],
   );
 
   const callbacks: WikiPipelineCallbacks = useMemo(

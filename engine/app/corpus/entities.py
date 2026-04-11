@@ -21,6 +21,13 @@ import time
 
 from app import db
 from app.corpus._etl import log_etl_run
+from app.entities.highlight_policy import (
+    AMBIGUOUS_CANONICAL_ALIAS_KEYS,
+    HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
+    HIGHLIGHT_MODE_DISABLED,
+    HIGHLIGHT_MODE_EXACT,
+    HIGHLIGHT_MODE_SEARCH_ONLY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -173,11 +180,36 @@ WHERE alias_rank = 1
 """
 
 
+_APPLY_HIGHLIGHT_POLICY_SQL = """
+UPDATE solemd.entity_aliases ea
+SET highlight_mode = CASE
+    WHEN NOT ea.is_canonical THEN %s
+    WHEN ea.alias_key = ANY(%s::text[]) THEN %s
+    WHEN ea.alias_text = upper(ea.alias_text) AND length(ea.alias_text) <= 6 THEN %s
+    ELSE %s
+END
+"""
+
+
 def _refresh_entity_aliases(cur) -> tuple[int, int]:
     logger.info("Refreshing solemd.entity_aliases from solemd.entities ...")
     cur.execute(_TRUNCATE_ENTITY_ALIASES_SQL)
     cur.execute(_INSERT_ENTITY_ALIASES_SQL)
     inserted = cur.rowcount
+
+    cur.execute(
+        _APPLY_HIGHLIGHT_POLICY_SQL,
+        (
+            HIGHLIGHT_MODE_SEARCH_ONLY,
+            sorted(AMBIGUOUS_CANONICAL_ALIAS_KEYS),
+            HIGHLIGHT_MODE_DISABLED,
+            HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
+            HIGHLIGHT_MODE_EXACT,
+        ),
+    )
+    policy_updated = cur.rowcount
+    logger.info("Applied highlight policy to %d aliases", policy_updated)
+
     cur.execute(_COUNT_ENTITY_ALIASES_SQL)
     total = cur.fetchone()["cnt"]
     logger.info("Loaded %d entity aliases", total)

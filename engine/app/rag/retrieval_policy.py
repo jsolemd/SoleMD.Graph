@@ -6,11 +6,13 @@ from collections.abc import Sequence
 
 from app.rag.models import PaperEvidenceHit, PaperRetrievalQuery
 from app.rag.query_enrichment import (
+    MAX_SEMANTIC_LOOKUP_TOKENS,
     MIN_CHUNK_LEXICAL_QUERY_WORDS,
     build_query_phrases,
     has_query_entity_surface_signal,
     has_statistical_surface_signal,
     normalize_query_text,
+    should_attempt_runtime_entity_resolution,
     should_use_exact_title_precheck,
 )
 from app.rag.search_plan import RetrievalSearchPlan
@@ -352,8 +354,9 @@ def should_skip_runtime_entity_enrichment(
     """Decide whether runtime entity enrichment should be skipped.
 
     Entity enrichment runs alongside lexical retrieval whenever the query
-    has entity surface signal or explicit relation terms. We no longer
-    gate it behind the "strong lexical title anchor" check — lexical-first
+    has entity surface signal, explicit relation terms, or a bounded
+    expert-language lookup shape worth canonicalizing. We no longer gate
+    it behind the "strong lexical title anchor" check — lexical-first
     ranking was burying entity-rich candidates even when they carried
     direct surface signal worth pursuing.
     """
@@ -363,7 +366,10 @@ def should_skip_runtime_entity_enrichment(
         return False
     if query.metadata_hints.has_searchable_metadata_filters:
         return True
-    return not has_query_entity_surface_signal(query.focused_query or query.query)
+    return not should_attempt_runtime_entity_resolution(
+        query.focused_query or query.query,
+        retrieval_profile=query.retrieval_profile,
+    )
 
 
 def should_run_seeded_channel_search(
@@ -534,22 +540,84 @@ def should_run_title_chunk_rescue(
     exact_title_hits: Sequence[PaperEvidenceHit],
     lexical_hits: Sequence[PaperEvidenceHit],
 ) -> bool:
-    """Retry failed long title lookups with bounded chunk lexical search.
+    """Retry failed title-lane lookups with bounded chunk lexical search.
 
-    This is a lane-correction guard, not a title classifier rewrite. It only
-    fires after title-paper retrieval has already failed and only for the
-    long-title regime where broad title similarity was intentionally disabled.
+    This is a lane-correction guard, not a title classifier rewrite. Once the
+    title lane has failed to recover a paper, a bounded child-evidence probe is
+    the cleanest parent/child fallback regardless of whether the query was a
+    long literal title or a short title-shaped semantic prompt.
     """
 
     if query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
         return False
     if not query.use_lexical:
         return False
-    if query.use_title_similarity or not query.use_title_candidate_lookup:
-        return False
     if exact_title_hits or lexical_hits:
         return False
     return len(normalize_query_text(query.query).split()) >= MIN_CHUNK_LEXICAL_QUERY_WORDS
+
+
+def should_correct_failed_title_frontier_to_general(
+    *,
+    query: PaperRetrievalQuery,
+    exact_title_hits: Sequence[PaperEvidenceHit],
+    lexical_hits: Sequence[PaperEvidenceHit],
+    chunk_lexical_hits: Sequence[PaperEvidenceHit],
+) -> bool:
+    """Return True when a failed title lookup recovered only via child evidence.
+
+    Once the title lane misses and the frontier is recovered exclusively through
+    chunk evidence, the query is behaving like a semantic evidence lookup rather
+    than a title browse. Correcting it to GENERAL prevents title-anchor sort
+    bias from overriding the child evidence that actually recovered the parent
+    paper.
+    """
+
+    if query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
+        return False
+    if exact_title_hits or lexical_hits or not chunk_lexical_hits:
+        return False
+    return not title_anchor_candidate_ids(
+        query_text=query.focused_query or query.query,
+        lexical_hits=chunk_lexical_hits,
+    )
+
+
+def should_correct_failed_title_frontier_to_general_after_concept_recovery(
+    *,
+    query: PaperRetrievalQuery,
+    exact_title_hits: Sequence[PaperEvidenceHit],
+    lexical_hits: Sequence[PaperEvidenceHit],
+    chunk_lexical_hits: Sequence[PaperEvidenceHit],
+    concept_chunk_rescue_hits: Sequence[PaperEvidenceHit],
+    entity_seed_hits: Sequence[PaperEvidenceHit],
+    relation_seed_hits: Sequence[PaperEvidenceHit],
+    selected_direct_anchor: bool = False,
+) -> bool:
+    """Demote failed title lookups once concept-backed recovery takes over.
+
+    Expert biomedical noun phrases often enter the title lane because they are
+    compact and noun-heavy. If title/paper lexical resolution misses and the
+    shortlist is instead being recovered through entity/relation channels, the
+    query is behaving like a semantic evidence lookup and should rank under the
+    GENERAL profile rather than the title-anchor-biased profile. Weak lexical
+    near-matches are not enough to keep the query in TITLE_LOOKUP; only a true
+    title anchor should block the demotion.
+    """
+
+    if query.retrieval_profile != QueryRetrievalProfile.TITLE_LOOKUP:
+        return False
+    if selected_direct_anchor or exact_title_hits:
+        return False
+    has_seeded_structural_recovery = bool(entity_seed_hits or relation_seed_hits)
+    if not (concept_chunk_rescue_hits or has_seeded_structural_recovery):
+        return False
+    if lexical_hits and not has_seeded_structural_recovery:
+        return False
+    return not title_anchor_candidate_ids(
+        query_text=query.focused_query or query.query,
+        lexical_hits=[*lexical_hits, *chunk_lexical_hits],
+    )
 
 
 def has_weak_passage_anchor(
@@ -567,6 +635,41 @@ def has_weak_passage_anchor(
         hit.chunk_lexical_score for hit in chunk_lexical_hits
     )
     return strongest_chunk_score < MAX_WEAK_PASSAGE_TOP_CHUNK_SCORE
+
+
+def should_run_concept_chunk_rescue(
+    *,
+    query: PaperRetrievalQuery,
+    exact_title_hits: Sequence[PaperEvidenceHit],
+    lexical_hits: Sequence[PaperEvidenceHit],
+    chunk_lexical_hits: Sequence[PaperEvidenceHit],
+    has_concept_rescue_queries: bool,
+) -> bool:
+    """Open concept-conditioned child-evidence rescue when the frontier is weak.
+
+    Expert-language canonicalization is only useful if recovered concepts can
+    still reach the child-evidence lane. A weak raw chunk hit should not block
+    a second bounded chunk probe driven by the recovered canonical concept.
+    """
+
+    if not has_concept_rescue_queries or not query.use_lexical:
+        return False
+    if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
+        if exact_title_hits or lexical_hits:
+            return False
+        return not chunk_lexical_hits or has_weak_passage_anchor(
+            lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
+        )
+    if query.retrieval_profile in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
+        return not chunk_lexical_hits or has_weak_passage_anchor(
+            lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
+        )
+    return not chunk_lexical_hits
 
 
 def should_run_paper_lexical_fallback(
@@ -603,6 +706,44 @@ def should_run_paper_lexical_fallback(
     return (
         query.clinical_intent != ClinicalQueryIntent.GENERAL
         or has_statistical_surface_signal(query.query)
+    )
+
+
+def should_enable_general_title_similarity_support(
+    *,
+    query: PaperRetrievalQuery,
+    search_plan: RetrievalSearchPlan,
+    sparse_passage_paper_fallback: bool,
+) -> bool:
+    """Use title similarity as a supporting lexical signal for compact expert queries.
+
+    Keep the retrieval profile in GENERAL. This only widens the paper lexical
+    channel so compact biomedical concept queries can benefit from title
+    metadata without inheriting TITLE_LOOKUP's anchor-biased rank order.
+    """
+
+    if sparse_passage_paper_fallback:
+        return False
+    if search_plan.retrieval_profile != QueryRetrievalProfile.GENERAL:
+        return False
+    if not query.use_lexical or not search_plan.use_paper_lexical:
+        return False
+    if query.use_title_similarity or query.use_title_candidate_lookup:
+        return False
+    if query.metadata_hints.has_structured_signal:
+        return False
+
+    query_text = query.focused_query or query.query
+    normalized_tokens = normalize_query_text(query_text).split()
+    if not normalized_tokens or len(normalized_tokens) > MAX_SEMANTIC_LOOKUP_TOKENS:
+        return False
+    if has_statistical_surface_signal(query_text):
+        return False
+
+    return bool(
+        query.resolved_entity_concepts
+        or query.vocab_concept_matches
+        or has_query_entity_surface_signal(query_text)
     )
 
 
@@ -752,10 +893,10 @@ def biomedical_rerank_decision(
         return False, "selected_anchor"
     if query.scope_mode != RetrievalScope.GLOBAL:
         return False, "non_global_scope"
-    if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
-        return False, "title_lookup"
     if len(ranked_papers) < MIN_BIOMEDICAL_RERANK_CANDIDATES:
         return False, "insufficient_candidates"
+    if query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
+        return False, "title_lookup"
     if query.retrieval_profile in (
         QueryRetrievalProfile.PASSAGE_LOOKUP,
         QueryRetrievalProfile.QUESTION_LOOKUP,

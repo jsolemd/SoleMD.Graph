@@ -35,6 +35,7 @@ from app.rag.retrieval_policy import (
     should_expand_citation_frontier,
     should_fetch_missing_citation_contexts,
     should_prefetch_citation_contexts,
+    title_anchor_candidate_ids,
 )
 from app.rag.runtime_trace import RuntimeTraceCollector
 from app.rag.search_retrieval import (
@@ -47,6 +48,7 @@ from app.rag.types import (
     DEFAULT_RETRIEVAL_VERSION,
     RETRIEVAL_CHANNEL_ORDER,
     ClinicalQueryIntent,
+    QueryRetrievalProfile,
     RetrievalChannel,
     RetrievalScope,
 )
@@ -299,6 +301,14 @@ def finalize_search_result(
         relation_seed_hits=retrieval.relation_seed_hits,
         semantic_neighbors=retrieval.semantic_neighbors,
     )
+    title_anchor_fallback_active = (
+        query.retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP
+        and not title_anchor_candidate_ids(
+            query_text=query_text,
+            lexical_hits=paper_hits,
+        )
+    )
+    trace.record_flag("title_anchor_fallback_active", title_anchor_fallback_active)
     preliminary_ranked_hits = trace.call(
         "rank_preliminary_hits",
         rank_paper_hits,
@@ -310,6 +320,7 @@ def finalize_search_result(
         requested_publication_types=query.metadata_hints.requested_publication_types,
         query_text=query_text,
         retrieval_profile=query.retrieval_profile,
+        title_anchor_fallback_active=title_anchor_fallback_active,
         channel_rankings=channel_rankings,
     )
     biomedical_reranker_status = getattr(
@@ -369,15 +380,16 @@ def finalize_search_result(
             preliminary_ranked_hits = trace.call(
                 "rank_preliminary_hits_biomedical",
                 rank_paper_hits,
-                    preliminary_ranked_hits,
-                    citation_hits=citation_hits,
-                    entity_hits={},
-                    relation_hits={},
-                    evidence_intent=query.evidence_intent,
-                    requested_publication_types=query.metadata_hints.requested_publication_types,
-                    query_text=query_text,
-                    retrieval_profile=query.retrieval_profile,
-                    channel_rankings=channel_rankings,
+                preliminary_ranked_hits,
+                citation_hits=citation_hits,
+                entity_hits={},
+                relation_hits={},
+                evidence_intent=query.evidence_intent,
+                requested_publication_types=query.metadata_hints.requested_publication_types,
+                query_text=query_text,
+                retrieval_profile=query.retrieval_profile,
+                title_anchor_fallback_active=title_anchor_fallback_active,
+                channel_rankings=channel_rankings,
             )
 
     enrichment_corpus_ids = entity_relation_candidate_ids(
@@ -416,11 +428,19 @@ def finalize_search_result(
     if expanded_citation_hits:
         citation_hits = {**citation_hits, **expanded_citation_hits}
 
+    entity_match_kwargs = {
+        "entity_terms": retrieval.entity_enrichment_terms,
+    }
+    if retrieval.entity_enrichment_concepts and callable_supports_kwarg(
+        repository.fetch_entity_matches,
+        "resolved_concepts",
+    ):
+        entity_match_kwargs["resolved_concepts"] = retrieval.entity_enrichment_concepts
     entity_hits = trace.call(
         "fetch_entity_matches",
         repository.fetch_entity_matches,
         enrichment_corpus_ids,
-        entity_terms=retrieval.entity_enrichment_terms,
+        **entity_match_kwargs,
     )
     relation_hits = trace.call(
         "fetch_relation_matches",
@@ -458,6 +478,7 @@ def finalize_search_result(
         requested_publication_types=query.metadata_hints.requested_publication_types,
         query_text=query_text,
         retrieval_profile=query.retrieval_profile,
+        title_anchor_fallback_active=title_anchor_fallback_active,
         clinical_intent=ranking_clinical_intent,
         channel_rankings=channel_rankings,
     )

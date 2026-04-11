@@ -695,6 +695,7 @@ ALL_BENCHMARK_DATASETS = [
     "benchmark-biomedical_holdout_v1",
     "benchmark-biomedical_citation_context_v1",
     "benchmark-biomedical_narrative_v1",
+    "benchmark-biomedical_expert_canonicalization_v1",
     "benchmark-biomedical_metadata_retrieval_v1",
     "benchmark-biomedical_evidence_type_v1",
     "benchmark-title_retrieval_v2",

@@ -11,11 +11,10 @@ from app.rag.query_embedding import RagQueryEmbedder
 from app.rag.query_enrichment import (
     build_runtime_entity_resolution_phrases,
     derive_relation_terms,
-    should_enrich_resolved_entity_term,
-    should_seed_resolved_entity_term,
     should_use_exact_title_precheck,
 )
 from app.rag.repository import RagRepository
+from app.rag.repository_support import ResolvedEntityConcept
 from app.rag.retrieval_fusion import merge_candidate_papers
 from app.rag.retrieval_policy import (
     chunk_search_queries,
@@ -23,7 +22,9 @@ from app.rag.retrieval_policy import (
     has_precise_title_resolution,
     has_selected_direct_anchor,
     has_strong_lexical_title_anchor,
+    should_enable_general_title_similarity_support,
     should_fetch_semantic_neighbors,
+    should_run_concept_chunk_rescue,
     should_run_paper_lexical_fallback,
     should_run_seeded_channel_search,
     should_run_title_chunk_rescue,
@@ -33,6 +34,15 @@ from app.rag.retrieval_policy import (
 from app.rag.runtime_trace import RuntimeTraceCollector
 from app.rag.schemas import RagSearchRequest
 from app.rag.search_plan import RetrievalSearchPlan, build_search_plan
+from app.rag.search_retrieval_concepts import (
+    concept_paper_rescue_queries,
+    concept_query_expansion_terms,
+    dense_query_text,
+    entity_concepts_for_enrichment,
+    entity_seed_concepts_for_recall,
+    entity_seed_terms_for_recall,
+    entity_terms_for_enrichment,
+)
 from app.rag.search_support import build_query, callable_supports_kwarg
 from app.rag.types import QueryRetrievalProfile, RetrievalScope
 
@@ -47,6 +57,7 @@ class SearchRetrievalState:
     selected_direct_anchor: bool
     precise_title_resolution: bool
     entity_enrichment_terms: list[str]
+    entity_enrichment_concepts: tuple[ResolvedEntityConcept, ...]
     lexical_hits: list[PaperEvidenceHit]
     chunk_lexical_hits: list[PaperEvidenceHit]
     entity_seed_hits: list[PaperEvidenceHit]
@@ -61,6 +72,7 @@ def _apply_query_enrichment(
     *,
     repository: RagRepository,
     query: PaperRetrievalQuery,
+    trace: RuntimeTraceCollector | None = None,
 ) -> PaperRetrievalQuery:
     if query.entity_terms:
         return query
@@ -73,12 +85,30 @@ def _apply_query_enrichment(
     if not query_phrases:
         return _apply_relation_enrichment(query)
 
-    terms, high_confidence = repository.resolve_query_entity_terms(
+    resolved = repository.resolve_query_entity_terms(
         query_phrases=query_phrases,
         limit=5,
     )
-    query.entity_terms = terms
-    query.high_confidence_entity_terms = high_confidence
+    query.entity_terms = resolved.all_terms
+    query.high_confidence_entity_terms = resolved.high_confidence_terms
+    query.resolved_entity_concepts = resolved.resolved_concepts
+    query.vocab_concept_matches = resolved.vocab_concept_matches
+    if trace is not None and trace.enabled:
+        trace.record_count("resolved_entity_concepts", len(resolved.resolved_concepts))
+        trace.record_count("vocab_concept_matches", len(resolved.vocab_concept_matches))
+        trace.record_flag(
+            "vocab_concept_match_summary",
+            [
+                {
+                    "raw_query_phrase": match.raw_query_phrase,
+                    "preferred_term": match.preferred_term,
+                    "mesh_id": match.mesh_id,
+                    "provenance": match.provenance,
+                    "confidence": match.confidence,
+                }
+                for match in resolved.vocab_concept_matches[:10]
+            ],
+        )
     return _apply_relation_enrichment(query)
 
 
@@ -116,6 +146,7 @@ def _run_chunk_search(
     limit: int,
     scope_corpus_ids: list[int] | None,
     trace_key_prefix: str = "chunk_search",
+    collect_all_hits: bool = False,
 ) -> tuple[list[PaperEvidenceHit], int]:
     chunk_lexical_hits: list[PaperEvidenceHit] = []
     chunk_attempts_executed = 0
@@ -139,7 +170,7 @@ def _run_chunk_search(
                     scope_corpus_ids=resolved_scope_corpus_ids,
                 ),
             )
-        chunk_lexical_hits = trace.call(
+        current_chunk_hits = trace.call(
             "search_chunk_papers",
             repository.search_chunk_papers,
             graph_run_id,
@@ -147,7 +178,14 @@ def _run_chunk_search(
             limit=limit,
             scope_corpus_ids=resolved_scope_corpus_ids,
         )
-        if chunk_lexical_hits:
+        if current_chunk_hits:
+            if collect_all_hits:
+                chunk_lexical_hits = _merge_chunk_hit_lists(
+                    existing_hits=chunk_lexical_hits,
+                    supplemental_hits=current_chunk_hits,
+                )
+                continue
+            chunk_lexical_hits = current_chunk_hits
             break
 
     trace.record_count(
@@ -157,42 +195,27 @@ def _run_chunk_search(
     return chunk_lexical_hits, chunk_attempts_executed
 
 
-def _entity_seed_terms_for_recall(
+def _merge_chunk_hit_lists(
     *,
-    explicit_entity_terms: list[str],
-    resolved_entity_terms: list[str],
-    high_confidence_entity_terms: set[str] | None = None,
-) -> list[str]:
-    if explicit_entity_terms:
-        return explicit_entity_terms
-    high_conf = high_confidence_entity_terms or set()
-    return [
-        term
-        for term in resolved_entity_terms
-        if should_seed_resolved_entity_term(
-            term,
-            entity_confidence="high" if term in high_conf else None,
-        )
-    ]
-
-
-def _entity_terms_for_enrichment(
-    *,
-    explicit_entity_terms: list[str],
-    resolved_entity_terms: list[str],
-    high_confidence_entity_terms: set[str] | None = None,
-) -> list[str]:
-    if explicit_entity_terms:
-        return explicit_entity_terms
-    high_conf = high_confidence_entity_terms or set()
-    return [
-        term
-        for term in resolved_entity_terms
-        if should_enrich_resolved_entity_term(
-            term,
-            entity_confidence="high" if term in high_conf else None,
-        )
-    ]
+    existing_hits: list[PaperEvidenceHit],
+    supplemental_hits: list[PaperEvidenceHit],
+) -> list[PaperEvidenceHit]:
+    if not existing_hits:
+        return list(supplemental_hits)
+    if not supplemental_hits:
+        return list(existing_hits)
+    return merge_candidate_papers(
+        lexical_hits=[],
+        chunk_lexical_hits=[*existing_hits, *supplemental_hits],
+        selected_context_hits=[],
+        cited_context_hits=[],
+        dense_query_hits=[],
+        entity_seed_hits=[],
+        relation_seed_hits=[],
+        citation_seed_hits=[],
+        semantic_seed_hits=[],
+        semantic_neighbors=[],
+    )
 
 
 def apply_selected_context_hits(
@@ -412,8 +435,13 @@ def retrieve_search_state(
             query,
             passage_fallback=sparse_passage_paper_fallback,
         )
-        paper_search_use_title_similarity = (
-            False if sparse_passage_paper_fallback else query.use_title_similarity
+        paper_search_use_title_similarity = False if sparse_passage_paper_fallback else (
+            query.use_title_similarity
+            or should_enable_general_title_similarity_support(
+                query=query,
+                search_plan=search_plan,
+                sparse_passage_paper_fallback=sparse_passage_paper_fallback,
+            )
         )
         paper_search_use_title_candidate_lookup = (
             False
@@ -489,6 +517,48 @@ def retrieve_search_state(
             **paper_search_kwargs,
         )
     if (
+        not exact_title_hits
+        and not lexical_hits
+        and not chunk_lexical_hits
+        and not selection_only_without_matches
+        and not query.metadata_hints.has_searchable_metadata_filters
+    ):
+        query = trace.call(
+            "query_entity_enrichment_recovery",
+            _apply_query_enrichment,
+            repository=repository,
+            query=query,
+            trace=trace,
+        )
+    concept_expansion_terms = concept_query_expansion_terms(query)
+    concept_rescue_queries = concept_paper_rescue_queries(query)
+    trace.record_flag("concept_query_expansion_terms", concept_expansion_terms)
+    trace.record_count("concept_rescue_query_candidates", len(concept_rescue_queries))
+    concept_paper_rescue_hits: list[PaperEvidenceHit] = []
+    concept_chunk_rescue_hits: list[PaperEvidenceHit] = []
+    if (
+        not lexical_hits
+        and concept_rescue_queries
+        and not exact_title_hits
+        and not selection_only_without_matches
+    ):
+        trace.record_flag("concept_paper_rescue_queries", concept_rescue_queries)
+        for concept_query in concept_rescue_queries:
+            concept_paper_rescue_hits = trace.call(
+                "search_papers_concept_rescue",
+                repository.search_papers,
+                release.graph_run_id,
+                concept_query,
+                limit=query.rerank_topn,
+                scope_corpus_ids=scope_corpus_ids or None,
+                use_title_similarity=False,
+            )
+            if concept_paper_rescue_hits:
+                trace.record_flag("concept_paper_rescue_query_text", concept_query)
+                break
+        lexical_hits = concept_paper_rescue_hits
+    trace.record_count("concept_paper_rescue_hits", len(concept_paper_rescue_hits))
+    if (
         not chunk_lexical_hits
         and not selection_only_without_matches
         and should_run_title_chunk_rescue(
@@ -523,6 +593,39 @@ def retrieve_search_state(
     else:
         trace.record_count("title_chunk_rescue_attempt_candidates", 0)
         trace.record_count("title_chunk_rescue_attempts_executed", 0)
+    concept_chunk_rescue_attempted = False
+    if (
+        not selection_only_without_matches
+        and should_run_concept_chunk_rescue(
+            query=query,
+            exact_title_hits=exact_title_hits,
+            lexical_hits=lexical_hits,
+            chunk_lexical_hits=chunk_lexical_hits,
+            has_concept_rescue_queries=bool(concept_rescue_queries),
+        )
+    ):
+        concept_chunk_rescue_attempted = True
+        concept_chunk_hits, _concept_chunk_attempts = _run_chunk_search(
+            repository=repository,
+            trace=trace,
+            graph_run_id=release.graph_run_id,
+            chunk_queries=concept_rescue_queries,
+            limit=query.rerank_topn,
+            scope_corpus_ids=scope_corpus_ids,
+            trace_key_prefix="concept_chunk_rescue",
+            collect_all_hits=True,
+        )
+        concept_chunk_rescue_hits = _merge_chunk_hit_lists(
+            existing_hits=concept_chunk_rescue_hits,
+            supplemental_hits=concept_chunk_hits,
+        )
+        chunk_lexical_hits = _merge_chunk_hit_lists(
+            existing_hits=chunk_lexical_hits,
+            supplemental_hits=concept_chunk_hits,
+        )
+    else:
+        trace.record_count("concept_chunk_rescue_attempt_candidates", 0)
+        trace.record_count("concept_chunk_rescue_attempts_executed", 0)
     trace.record_count("chunk_lexical_hits", len(chunk_lexical_hits))
     direct_support_hits = [*lexical_hits, *chunk_lexical_hits]
     if (
@@ -580,33 +683,102 @@ def retrieve_search_state(
             _apply_query_enrichment,
             repository=repository,
             query=query,
+            trace=trace,
         )
-    entity_seed_terms = _entity_seed_terms_for_recall(
+    if not concept_chunk_rescue_attempted and not concept_rescue_queries:
+        concept_expansion_terms = concept_query_expansion_terms(query)
+        concept_rescue_queries = concept_paper_rescue_queries(query)
+        trace.record_flag(
+            "concept_query_expansion_terms_post_enrichment",
+            concept_expansion_terms,
+        )
+        trace.record_count(
+            "concept_rescue_query_candidates_post_enrichment",
+            len(concept_rescue_queries),
+        )
+        if (
+            not selection_only_without_matches
+            and should_run_concept_chunk_rescue(
+                query=query,
+                exact_title_hits=exact_title_hits,
+                lexical_hits=lexical_hits,
+                chunk_lexical_hits=chunk_lexical_hits,
+                has_concept_rescue_queries=bool(concept_rescue_queries),
+            )
+        ):
+            concept_chunk_rescue_attempted = True
+            concept_chunk_hits, _concept_chunk_attempts = _run_chunk_search(
+                repository=repository,
+                trace=trace,
+                graph_run_id=release.graph_run_id,
+                chunk_queries=concept_rescue_queries,
+                limit=query.rerank_topn,
+                scope_corpus_ids=scope_corpus_ids,
+                trace_key_prefix="concept_chunk_rescue",
+                collect_all_hits=True,
+            )
+            concept_chunk_rescue_hits = _merge_chunk_hit_lists(
+                existing_hits=concept_chunk_rescue_hits,
+                supplemental_hits=concept_chunk_hits,
+            )
+            chunk_lexical_hits = _merge_chunk_hit_lists(
+                existing_hits=chunk_lexical_hits,
+                supplemental_hits=concept_chunk_hits,
+            )
+            trace.record_count("chunk_lexical_hits", len(chunk_lexical_hits))
+    trace.record_count("concept_chunk_rescue_hits", len(concept_chunk_rescue_hits))
+    entity_seed_terms = entity_seed_terms_for_recall(
         explicit_entity_terms=explicit_entity_terms,
         resolved_entity_terms=query.entity_terms,
         high_confidence_entity_terms=query.high_confidence_entity_terms,
+        vocab_concept_matches=query.vocab_concept_matches,
     )
-    entity_enrichment_terms = _entity_terms_for_enrichment(
+    entity_seed_concepts = entity_seed_concepts_for_recall(
+        explicit_entity_terms=explicit_entity_terms,
+        resolved_entity_terms=entity_seed_terms,
+        resolved_entity_concepts=query.resolved_entity_concepts,
+        vocab_concept_matches=query.vocab_concept_matches,
+    )
+    entity_enrichment_terms = entity_terms_for_enrichment(
         explicit_entity_terms=explicit_entity_terms,
         resolved_entity_terms=query.entity_terms,
         high_confidence_entity_terms=query.high_confidence_entity_terms,
+        vocab_concept_matches=query.vocab_concept_matches,
+    )
+    entity_enrichment_concepts = entity_concepts_for_enrichment(
+        explicit_entity_terms=explicit_entity_terms,
+        resolved_entity_concepts=query.resolved_entity_concepts,
+        vocab_concept_matches=query.vocab_concept_matches,
     )
     trace.record_count("resolved_entity_terms", len(query.entity_terms))
     trace.record_count("entity_enrichment_terms", len(entity_enrichment_terms))
+    trace.record_count("entity_enrichment_concepts", len(entity_enrichment_concepts))
     trace.record_count("entity_seed_terms", len(entity_seed_terms))
+    trace.record_count("entity_seed_concepts", len(entity_seed_concepts))
     trace.record_flag("entity_enrichment_terms", entity_enrichment_terms)
+    entity_search_kwargs = {
+        "entity_terms": entity_seed_terms,
+        "limit": query.rerank_topn,
+        "scope_corpus_ids": scope_corpus_ids or None,
+    }
+    if entity_seed_concepts and callable_supports_kwarg(
+        repository.search_entity_papers,
+        "resolved_concepts",
+    ):
+        entity_search_kwargs["resolved_concepts"] = entity_seed_concepts
+    has_entity_seed_recall = bool(entity_seed_terms) or bool(
+        entity_search_kwargs.get("resolved_concepts")
+    )
     entity_seed_hits = (
         trace.call(
             "search_entity_papers",
             repository.search_entity_papers,
             release.graph_run_id,
-            entity_terms=entity_seed_terms,
-            limit=query.rerank_topn,
-            scope_corpus_ids=scope_corpus_ids or None,
+            **entity_search_kwargs,
         )
         if (
             seeded_channel_search
-            and entity_seed_terms
+            and has_entity_seed_recall
             and not selection_only_without_matches
         )
         else []
@@ -641,11 +813,13 @@ def retrieve_search_state(
             "dense_query_reason": dense_query_reason,
         }
     )
+    dense_query_value = dense_query_text(query)
+    trace.record_flag("dense_query_text", dense_query_value)
     dense_query_embedding = (
         trace.call(
             "encode_dense_query",
             query_embedder.encode,
-            query.focused_query or query.query,
+            dense_query_value,
         )
         if not selection_only_without_matches
         and dense_query_requested
@@ -786,6 +960,7 @@ def retrieve_search_state(
         selected_direct_anchor=selected_direct_anchor,
         precise_title_resolution=precise_title_resolution,
         entity_enrichment_terms=entity_enrichment_terms,
+        entity_enrichment_concepts=entity_enrichment_concepts,
         lexical_hits=lexical_hits,
         chunk_lexical_hits=chunk_lexical_hits,
         entity_seed_hits=entity_seed_hits,

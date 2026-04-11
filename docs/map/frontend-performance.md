@@ -12,6 +12,9 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Use DuckDB SQL and DuckDB-Wasm configuration directly before adding JS-side workarounds.
 - Use Next.js lazy loading, route conventions, and client/server boundaries directly.
 - Keep Cosmograph usage behind `features/graph/cosmograph/**` adapters.
+- Initial graph camera changes must stay in the Cosmograph adapter boundary and
+  must restore the native saved transform rather than introducing a parallel
+  app-defined camera model.
 - Keep Tiptap/ProseMirror usage behind `features/graph/tiptap/**` adapters instead of importing `@tiptap/*` directly in feature code.
 
 2. One canonical query/state path
@@ -20,6 +23,9 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Do not rebuild selection/scope resolution independently in multiple panels.
 - If a query needs scope-aware behavior, extend the shared resolver instead of adding a new local branch.
 - Prompt, entity-hover, and future `@` mention interactions must resolve graph projection through one shared prompt/runtime path instead of separate PromptBox-local branches.
+- Typed entities stay local to editor highlight + hover detail until an explicit entity action requests graph projection. The prompt controller owns overlay sync and native Cosmograph selection; editor/Tiptap surfaces must not call graph overlay or selection APIs directly.
+- Editor entity matching must expose explicit entity actions through the `CreateEditor` adapter boundary into the shared prompt/runtime path. Prompt surfaces may pass callbacks through, but they must not derive graph refs locally or bypass the shared entity overlay/native selection runtime.
+- Ask-mode Enter/submit remains the canonical response-selection path: response-linked graph selection comes from the RAG answer runtime, not from the typed-entity matcher.
 
 3. Zero redundant DuckDB work
 
@@ -62,6 +68,11 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Canonical entity recognition and hover detail must resolve through one shared entity runtime and one dedicated entity API boundary. Do not embed entity matching logic in PromptBox controllers, editor components, or graph panels.
 - Client-side entity services must use explicit HTTP route handlers (`/api/entities/**`) instead of Next server actions so text-window matching behaves like an ordinary frontend request path, remains observable in DevTools, and does not replay hidden form-action work on every editor update.
 - Entity highlights carry canonical identity plus editor ranges only. Hover cards fetch reusable entity detail from the shared entity service; do not bake wiki/detail strings into decoration payloads.
+- Hover cards are interactive UI, not read-only tooltips. They must stay alive long enough for pointer travel from the highlighted span into the overlay surface, and explicit actions such as `Show on graph` must be routed back through the shared prompt/runtime entity overlay controller rather than mutating the graph from the editor layer.
+- Hover cards follow one shared floating hover-card shell and panel-token styling contract. Entity/wiki-specific cards provide content only; routing actions such as `Show on graph` and `Open wiki` must flow through prompt/wiki adapters instead of coupling the editor layer directly to Cosmograph or wiki stores.
+- Wiki page content stays static and evidence-grounded. Page-level graph actions must consume the canonical wiki page runtime contract (`featured_graph_refs`, `paper_graph_refs`, `graph_focus`, canonical entity identity) through wiki graph-sync / graph-selection adapters instead of reparsing markdown or inventing page-local graph heuristics in the browser.
+- Wiki pages must not mutate graph overlay or selection on load. Graph activation happens only through explicit page actions such as `Show on graph`, while page-load richness comes from backend context (`total_*_paper_count`, `top_graph_papers`) rather than implicit graph side effects.
+- Wiki client reads must use explicit `/api/wiki/**` route handlers plus one shared client service. Do not import `app/actions/wiki` into `"use client"` hooks, components, or stores.
 - Reserve `@` for persisted reference mentions. Command-style affordances such as evidence assist must use explicit command triggers instead of competing for the mention character.
 - `@` suggestion search must derive from the local sentence-window context plus the shared prompt scope resolver, then call the canonical prompt/runtime evidence adapter. Do not bolt on editor-local lexical search or a second mention-specific request path.
 - Floating editor UI belongs in one external overlay surface anchored to the editor frame. Mention menus and transient entity hover cards render there, never as React subtrees inside `EditorContent`.
@@ -94,10 +105,12 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Every new match request must abort the previous in-flight request via `AbortController`. Only the latest request's results commit to state. Sequence numbers remain as a secondary guard against stale responses from cached promises.
 - Match results carry a 60-second TTL with on-access staleness checks. Expired cache entries are evicted on next access and by a periodic background sweep. Detail results are cached for session lifetime since entity metadata rarely changes within a session.
 - The four-contract API split must remain: match (hot, debounced, abortable), detail (cold, hover-triggered), search (future, prefix/fuzzy for explicit entity pickers), overlay (future, canonical ID resolution to graph points). Do not merge match and detail into a single request.
+- Graph-scale entity overlay must not read from `solemd.paper_entity_mentions`. That table belongs to the RAG warehouse text-spine/BioCXML path and only covers the warehouse-ingested subset. Use a dedicated graph-scale projection sourced from broad entity coverage (`pubtator.entity_annotations` joined onto `solemd.corpus` / `solemd.graph_points`) for live graph overlay counts and point activation, while keeping `paper_entity_mentions` for span-grounded RAG/wiki detail.
 - The match query path must be a single-table read from `entity_aliases` with no JOIN to `entities`. Entity type filters must use bare equality (`ea.entity_type = ANY(...)`) without `lower()` wrapping since inputs are pre-normalized by the request schema. This preserves btree index coverage.
 - Runtime metrics (requests per minute, abort rate, cache hit rate, p50/p95 latency) are tracked via `window.__entityMatchMetrics` in development only. Metrics must not affect render timing or be persisted to React state.
 - Fuzzy/prefix search belongs to a future dedicated search contract only. The inline match path uses exact normalized matching.
 - The inline match query currently filters to `is_canonical = true` as an interim precision guardrail. PubTator synonym aliases (11.6M rows, 72% of catalog) are designed for recall-maximizing bulk NER and contain common English words ("for", "has", "both", "text") mapped to high-paper-count entities. The full synonym catalog stays in `entity_aliases` for the future `entities/search` contract. The structural end-state replaces the provenance filter with an explicit eligibility field (`highlight_eligible`) so that promoted synonyms can be opted into inline matching and ambiguous canonicals (TEXT, SET, short all-caps) can be downgraded to case-sensitive-only or disabled.
+- Entity refs for overlay/selection must be normalized and deduplicated in one shared utility. Hover-card actions project canonical entity identity into explicit graph refs, and the shared entity overlay controller consumes that canonical ref list. Do not re-derive or re-key entity refs independently in multiple surfaces.
 
 ## Anti-Patterns
 
@@ -114,6 +127,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - JOINing `entity_aliases` to `entities` on the hot match path.
 - Wrapping indexed columns in `lower()` when inputs are already normalized by the schema.
 - Using PubTator synonym aliases for inline entity highlighting without a quality gate.
+- Mutating graph overlay or selection just because a typed entity was matched, before the user triggered an explicit entity action or an answer response selected papers canonically.
 
 ## Review Checklist
 

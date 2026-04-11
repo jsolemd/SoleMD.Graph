@@ -1,9 +1,10 @@
-"""Shared target-corpus metadata loading for RAG ingest workflows."""
+"""Shared target-corpus metadata loading and parsed-source metadata application."""
 
 from __future__ import annotations
 
 from app import db
 from app.rag.parse_contract import ParseContractModel
+from app.rag_ingest.source_parsers import ParsedPaperSource
 
 
 class RagTargetCorpusRow(ParseContractModel):
@@ -65,3 +66,32 @@ class PostgresTargetCorpusLoader:
 
 def has_paper_abstract(target_row: RagTargetCorpusRow | None) -> bool:
     return bool((target_row.paper_abstract or "").strip())
+
+
+def target_row_by_corpus_id(
+    target_rows: list[RagTargetCorpusRow],
+) -> dict[int, RagTargetCorpusRow]:
+    return {
+        int(target_row.corpus_id): target_row
+        for target_row in target_rows
+    }
+
+
+def apply_target_metadata_to_parsed_source(
+    *,
+    parsed: ParsedPaperSource,
+    target_row: RagTargetCorpusRow | None,
+) -> ParsedPaperSource:
+    if target_row is None:
+        return parsed
+    metadata_title = (target_row.paper_title or "").strip()
+    if not metadata_title:
+        return parsed
+    current_title = (parsed.document.title or "").strip()
+    if current_title == metadata_title:
+        return parsed
+    if current_title:
+        parsed.document.raw_attrs_json.setdefault("source_selected_title", current_title)
+    parsed.document.raw_attrs_json["corpus_metadata_title"] = metadata_title
+    parsed.document.title = metadata_title
+    return parsed

@@ -1,16 +1,14 @@
 "use client";
 
 import type { KeyboardEvent, RefObject } from "react";
-import { EntityHoverCard } from "@/features/graph/components/entities/EntityHoverCard";
 import type { PromptInteractionMenuState } from "./prompt-interaction-extension";
 import type { ReferenceMentionMenuState } from "./reference-mention-extension";
-import type { EntityHoverCardModel } from "@/features/graph/components/entities/entity-hover-card";
+import { promptSurfaceStyle } from "@/features/graph/components/panels/PanelShell";
 
 interface EditorOverlaySurfaceProps {
   promptInteractionMenuRef: RefObject<HTMLDivElement | null>;
   promptInteractionMenu: PromptInteractionMenuState | null;
   referenceMentionMenu: ReferenceMentionMenuState | null;
-  entityHoverCard: EntityHoverCardModel | null;
   handlePromptInteractionMenuHover: (index: number) => void;
   handlePromptInteractionMenuKeyDown: (
     event: KeyboardEvent<HTMLDivElement>,
@@ -22,13 +20,20 @@ export function EditorOverlaySurface({
   promptInteractionMenuRef,
   promptInteractionMenu,
   referenceMentionMenu,
-  entityHoverCard,
   handlePromptInteractionMenuHover,
   handlePromptInteractionMenuKeyDown,
   submitPromptInteractionCommand,
 }: EditorOverlaySurfaceProps) {
   return (
-    <>
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        overflow: "visible",
+        pointerEvents: "none",
+        zIndex: 12,
+      }}
+    >
       {promptInteractionMenu && (
         <div
           ref={promptInteractionMenuRef}
@@ -118,9 +123,7 @@ export function EditorOverlaySurface({
           )}
         </div>
       )}
-
-      {entityHoverCard && <EntityHoverCard card={entityHoverCard} />}
-    </>
+    </div>
   );
 }
 
@@ -141,10 +144,9 @@ function floatingMenuStyle({
     left: x,
     minWidth,
     maxWidth,
-    zIndex: 5,
-    backgroundColor: "var(--graph-prompt-bg)",
-    border: "1px solid var(--graph-prompt-border)",
-    boxShadow: "var(--graph-prompt-shadow)",
+    zIndex: 1,
+    pointerEvents: "auto" as const,
+    ...promptSurfaceStyle,
   };
 }
 

@@ -1,5 +1,3 @@
-"use client";
-
 import type { CalloutProps } from "@/features/wiki/lib/markdown-pipeline";
 
 /** Callout type → icon character for compact display. */

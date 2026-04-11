@@ -5,10 +5,10 @@ import { render, screen, waitFor, act, fireEvent } from "@testing-library/react"
 import "@testing-library/jest-dom";
 import { MantineProvider } from "@mantine/core";
 
-// Mock server actions
-const mockSearchWikiPages = jest.fn().mockResolvedValue({ hits: [], total: 0 });
-jest.mock("@/app/actions/wiki", () => ({
-  searchWikiPages: (...args: unknown[]) => mockSearchWikiPages(...args),
+// Mock wiki client
+const mockSearchWikiPagesClient = jest.fn().mockResolvedValue({ hits: [], total: 0 });
+jest.mock("@/features/wiki/lib/wiki-client", () => ({
+  searchWikiPagesClient: (...args: unknown[]) => mockSearchWikiPagesClient(...args),
 }));
 
 // Mock framer-motion
@@ -56,7 +56,7 @@ describe("WikiSearch", () => {
   });
 
   it("calls searchWikiPages after debounce", async () => {
-    mockSearchWikiPages.mockResolvedValue({
+    mockSearchWikiPagesClient.mockResolvedValue({
       hits: [{ slug: "entities/test", title: "Test Page", headline: "A test", rank: 1, entity_type: null, family_key: null, tags: [] }],
       total: 1,
     });
@@ -70,13 +70,13 @@ describe("WikiSearch", () => {
     act(() => { jest.advanceTimersByTime(350); });
 
     await waitFor(() => {
-      expect(mockSearchWikiPages).toHaveBeenCalledWith("test query");
+      expect(mockSearchWikiPagesClient).toHaveBeenCalledWith("test query", 20, expect.any(Object));
     });
   });
 
   it("clicking a result navigates and closes", async () => {
     const onNavigate = jest.fn();
-    mockSearchWikiPages.mockResolvedValue({
+    mockSearchWikiPagesClient.mockResolvedValue({
       hits: [{ slug: "entities/test", title: "Test Page", headline: "", rank: 1, entity_type: null, family_key: null, tags: [] }],
       total: 1,
     });

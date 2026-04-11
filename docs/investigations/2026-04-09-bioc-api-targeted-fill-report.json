@@ -1,0 +1,106 @@
+{
+  "parser_version": "parser-v5",
+  "source_revision": "pubtator3-api:2026-03-21",
+  "requested_corpus_ids": [
+    32736596,
+    35677096
+  ],
+  "resolved_pmids": 2,
+  "skipped_existing": 0,
+  "fetched_documents": 2,
+  "parsed_documents": 2,
+  "skipped_low_value": 0,
+  "skipped_no_fetch": 0,
+  "ingested_corpus_ids": [
+    32736596,
+    35677096
+  ],
+  "warehouse_result": {
+    "papers": [
+      {
+        "corpus_id": 32736596,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      },
+      {
+        "corpus_id": 35677096,
+        "primary_source_system": "biocxml",
+        "primary_reason": "fallback_structural_best",
+        "annotation_source_systems": []
+      }
+    ],
+    "batch_total_rows": 11,
+    "written_rows": 11,
+    "deferred_stage_names": []
+  },
+  "chunk_backfill_result": {
+    "chunk_version_key": "default-structural-v1",
+    "source_revision_keys": [
+      "biocxml:2026-03-21",
+      "s2orc_v2:2026-03-10"
+    ],
+    "parser_version": "parser-v5",
+    "corpus_ids": [
+      32736596,
+      35677096
+    ],
+    "papers": [
+      {
+        "corpus_id": 32736596,
+        "block_rows": 0,
+        "sentence_rows": 0,
+        "chunk_rows": 0,
+        "chunk_member_rows": 0,
+        "batch_total_rows": 0,
+        "written_rows": 0,
+        "deferred_stage_names": [],
+        "executed": false,
+        "skipped_reason": "no_block_rows"
+      },
+      {
+        "corpus_id": 35677096,
+        "block_rows": 0,
+        "sentence_rows": 0,
+        "chunk_rows": 0,
+        "chunk_member_rows": 0,
+        "batch_total_rows": 0,
+        "written_rows": 0,
+        "deferred_stage_names": [],
+        "executed": false,
+        "skipped_reason": "no_block_rows"
+      }
+    ],
+    "total_block_rows": 0,
+    "total_sentence_rows": 0,
+    "total_chunk_rows": 0,
+    "total_chunk_member_rows": 0,
+    "total_batch_rows": 0,
+    "total_written_rows": 0,
+    "deferred_stage_names": [],
+    "missing_corpus_ids": [
+      32736596,
+      35677096
+    ],
+    "executed": false,
+    "checkpoint_run_id": null,
+    "checkpoint_dir": null,
+    "resumed_from_checkpoint": false
+  },
+  "papers": [
+    {
+      "corpus_id": 32736596,
+      "pmid": 6121550,
+      "document_id": "6121550",
+      "parsed": true,
+      "skipped_reason": null
+    },
+    {
+      "corpus_id": 35677096,
+      "pmid": 19047564,
+      "document_id": "19047564",
+      "parsed": true,
+      "skipped_reason": null
+    }
+  ]
+}

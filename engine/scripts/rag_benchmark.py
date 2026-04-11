@@ -130,6 +130,31 @@ def _check_quality_gates(
     return failures
 
 
+def _print_review_delta(current: dict, baseline: dict, *, baseline_run: str) -> None:
+    metric_keys = (
+        "hit_at_1",
+        "hit_at_k",
+        "grounded_answer_rate",
+        "target_in_answer_corpus",
+        "p50_duration_ms",
+        "p95_duration_ms",
+    )
+    print(f"\nComparison vs {baseline_run}")
+    print("-" * 60)
+    for key in metric_keys:
+        current_value = current.get(key)
+        baseline_value = baseline.get(key)
+        if not isinstance(current_value, (int, float)) or not isinstance(
+            baseline_value, (int, float)
+        ):
+            continue
+        delta = current_value - baseline_value
+        print(
+            f"  {key}: current={current_value:.3f} "
+            f"baseline={baseline_value:.3f} delta={delta:+.3f}"
+        )
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Run RAG benchmarks via Langfuse datasets."
@@ -185,6 +210,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Print a live Langfuse-backed family breakdown and miss taxonomy.",
     )
     parser.add_argument(
+        "--review-existing-run",
+        action="store_true",
+        help="Review a stored Langfuse dataset run instead of executing a new run.",
+    )
+    parser.add_argument(
+        "--compare-run",
+        help=(
+            "Optional baseline run name to compare against when using "
+            "--review-existing-run."
+        ),
+    )
+    parser.add_argument(
         "--review-max-misses",
         type=int,
         default=10,
@@ -206,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
     from app.langfuse_config import flush as _langfuse_flush
     from app.rag_ingest.benchmark_catalog import (
         BenchmarkSuiteGateMode,
+        benchmark_suite_gate_warehouse_depths,
         benchmark_suite_gate_maps,
         get_benchmark_suite_spec,
     )
@@ -218,14 +256,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     from app.rag_ingest.langfuse_run_review import (
         format_experiment_review,
+        load_historical_experiment_result,
         review_experiment_result,
     )
 
     args = _parse_args(argv)
+    if args.review_existing_run and args.all_benchmarks:
+        print("--review-existing-run requires --dataset, not --all-benchmarks")
+        return 2
+
     gates = _parse_quality_gates(args.quality_gate)
 
     ensure_score_configs()
-    db.get_pool(max_size=args.max_concurrency + 2)
+    pool_open = False
+    if not args.review_existing_run:
+        db.get_pool(max_size=args.max_concurrency + 2)
+        pool_open = True
 
     common_kwargs = dict(
         graph_release_id=args.graph_release_id,
@@ -262,8 +308,50 @@ def main(argv: list[str] | None = None) -> int:
                     upper_bounds[key] = value
         return lower_bounds, set(upper_bounds)
 
+    def _review_filter(dataset_name: str) -> set[str] | None:
+        if not args.use_suite_gates:
+            return None
+        return benchmark_suite_gate_warehouse_depths(dataset_name)
+
     try:
-        if args.all_benchmarks:
+        if args.review_existing_run:
+            result = load_historical_experiment_result(
+                dataset_name=args.dataset,
+                run_name=args.run_name,
+            )
+            review = review_experiment_result(
+                result,
+                max_miss_examples=args.review_max_misses,
+                include_warehouse_depths=_review_filter(args.dataset or ""),
+            )
+            print(format_experiment_review(review))
+            if args.compare_run:
+                baseline_result = load_historical_experiment_result(
+                    dataset_name=args.dataset,
+                    run_name=args.compare_run,
+                )
+                baseline_review = review_experiment_result(
+                    baseline_result,
+                    max_miss_examples=args.review_max_misses,
+                    include_warehouse_depths=_review_filter(args.dataset or ""),
+                )
+                _print_review_delta(
+                    review,
+                    baseline_review,
+                    baseline_run=args.compare_run,
+                )
+            effective_gates, upper_bound_gates = _resolved_gates(args.dataset or "")
+            if effective_gates:
+                gate_failures.extend(
+                    _check_quality_gates(
+                        result,
+                        effective_gates,
+                        args.dataset or "",
+                        review=review,
+                        upper_bound_gates=upper_bound_gates,
+                    )
+                )
+        elif args.all_benchmarks:
             completed = 0
             for name, result in iter_all_benchmarks(
                 run_name=args.run_name, **common_kwargs,
@@ -280,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
                     review = review_experiment_result(
                         result,
                         max_miss_examples=args.review_max_misses,
+                        include_warehouse_depths=_review_filter(name),
                     )
                 if args.review_live and review is not None:
                     print(
@@ -323,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
                 review = review_experiment_result(
                     result,
                     max_miss_examples=args.review_max_misses,
+                    include_warehouse_depths=_review_filter(args.dataset or ""),
                 )
             if args.review_live and review is not None:
                 print(f"\n{'=' * 60}")
@@ -346,7 +436,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
     finally:
         _langfuse_flush()
-        db.close_pool()
+        if pool_open:
+            db.close_pool()
 
     if gate_failures:
         print(f"\n{'=' * 60}")

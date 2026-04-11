@@ -6,6 +6,8 @@ import type {
   GraphEntityErrorResponsePayload,
   GraphEntityMatchRequestPayload,
   GraphEntityMatchResponsePayload,
+  GraphEntityOverlayRequestPayload,
+  GraphEntityOverlayResponsePayload,
 } from '@/features/graph/types/entity-service'
 
 export class GraphEntityRequestError extends Error {
@@ -80,4 +82,14 @@ export async function fetchGraphEntityDetail(
     GraphEntityDetailRequestPayload,
     GraphEntityDetailResponsePayload
   >('/api/entities/detail', input, options)
+}
+
+export async function fetchGraphEntityOverlay(
+  input: GraphEntityOverlayRequestPayload,
+  options?: { signal?: AbortSignal },
+): Promise<GraphEntityOverlayResponsePayload> {
+  return postGraphEntityJson<
+    GraphEntityOverlayRequestPayload,
+    GraphEntityOverlayResponsePayload
+  >('/api/entities/overlay', input, options)
 }

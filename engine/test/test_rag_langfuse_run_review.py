@@ -214,3 +214,77 @@ def test_review_experiment_result_scales_to_200_items_within_budget():
     assert review["distinct_corpus_ids"] == 200
     assert len(review["miss_examples"]) <= 10
     assert len(review["slow_examples"]) <= 10
+
+
+def test_review_experiment_result_can_filter_to_structure_complete_scope():
+    result = SimpleNamespace(
+        dataset_run_url="http://localhost/run",
+        item_results=[
+            _item_result(
+                query_family="sentence_global",
+                corpus_id=11,
+                title="Paper 11",
+                query="query 11",
+                hit_at_1=1.0,
+                hit_at_k=1.0,
+                grounded_answer_rate=1.0,
+                target_in_answer_corpus=1.0,
+                routing_match=1.0,
+                output={
+                    "duration_ms": 100.0,
+                    "retrieval_profile": "passage_lookup",
+                    "warehouse_depth": "fulltext",
+                    "route_signature": "sig-a",
+                    "display_author_coverage": 1.0,
+                    "display_journal_coverage": 1.0,
+                    "display_year_coverage": 1.0,
+                    "display_study_metadata_coverage": 1.0,
+                    "top_corpus_ids": [11],
+                    "hit_rank": 1,
+                    "target_signals": {"lane_count": 2.0, "cited_context_score": 0.2},
+                },
+                trace_id="trace-11",
+            ),
+            _item_result(
+                query_family="sentence_global",
+                corpus_id=22,
+                title="Paper 22",
+                query="query 22",
+                hit_at_1=0.0,
+                hit_at_k=0.0,
+                grounded_answer_rate=0.0,
+                target_in_answer_corpus=0.0,
+                routing_match=1.0,
+                output={
+                    "duration_ms": 150.0,
+                    "retrieval_profile": "passage_lookup",
+                    "warehouse_depth": "none",
+                    "route_signature": "sig-b",
+                    "display_author_coverage": 0.0,
+                    "display_journal_coverage": 0.0,
+                    "display_year_coverage": 0.0,
+                    "display_study_metadata_coverage": 0.0,
+                    "top_corpus_ids": [99],
+                    "hit_rank": None,
+                    "target_signals": {"lane_count": 0.0, "cited_context_score": 0.0},
+                },
+                trace_id="trace-22",
+            ),
+        ],
+    )
+
+    review = review_experiment_result(
+        result,
+        max_miss_examples=5,
+        fetch_trace_urls=False,
+        include_warehouse_depths={"chunks_entities_sentence"},
+    )
+
+    assert review["raw_cases"] == 2
+    assert review["cases"] == 2
+    assert review["excluded_cases"] == 0
+    assert review["scope_filter"] == {
+        "warehouse_depths": ["chunks_entities_sentence"]
+    }
+    assert review["hit_at_1"] == 0.5
+    assert review["by_family"]["sentence_global"]["cases"] == 2

@@ -66,6 +66,10 @@ Pick a question, follow the arrow.
 
       [graph-runtime.md]  bundle -> DuckDB-WASM -> Cosmograph
 
+   HOW DOES THE API BOUNDARY WORK?
+
+      [api.md]         FastAPI endpoint rules, latency classes, request-path patterns
+
    HOW DOES EVIDENCE RETRIEVAL WORK?
 
       [rag.md]         retrieval channels, ranking, grounding
@@ -90,9 +94,11 @@ Pick a question, follow the arrow.
 | [database.md](database.md) | What tables exist? | PostgreSQL schema, migrations, indexes, rebuild strategy |
 | [ingest.md](ingest.md) | Where does data come from? | PubTator3 + S2 pipelines, RAG warehouse ingest, BioCXML overlays, operator CLIs |
 | [graph-build.md](graph-build.md) | How is the bundle built? | UMAP/Leiden/base-admission pipeline, CLI flags, checkpoint + recovery |
-| [graph-runtime.md](graph-runtime.md) | How does the browser render it? | Bundle contract, three nested layers, DuckDB-WASM rules, crossfilter cost |
+| [graph-runtime.md](graph-runtime.md) | How does the browser render it? | Bundle contract, three nested layers, DuckDB-WASM rules, crossfilter cost, initial camera / starting frame |
+| [api.md](api.md) | How do the backend endpoints behave? | FastAPI endpoint families, error mapping, pooling, shell/context split, serving-index rules |
 | [rag.md](rag.md) | How does evidence retrieval work? | RAG runtime, retrieval channels, grounding, answer assembly |
 | [benchmark.md](benchmark.md) | How do I measure RAG quality? | Langfuse benchmark pipeline, v2 suites, baseline interpretation |
+| [wiki-taxonomy.md](wiki-taxonomy.md) | How are wiki entities categorized and colored? | Two-axis model (semantic group + editorial section), color map, scaling rules |
 | [ideas.md](ideas.md) | (placeholder) | Future brainstorming |
 | [../design/vision.md](../design/vision.md) | What is this trying to be? | Product direction, capabilities, clinical grounding, roadmap |
 | [../design/brand.md](../design/brand.md) | How should it feel? | Colors, typography, motion, graph visual language |

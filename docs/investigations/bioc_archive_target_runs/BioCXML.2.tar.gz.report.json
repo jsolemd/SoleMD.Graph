@@ -1,0 +1,241 @@
+{
+  "run_id": "expert-BioCXML.2.tar.gz-frozen-v2-2026-04-10",
+  "parser_version": "parser-v1",
+  "archive_name": "BioCXML.2.tar.gz",
+  "requested_corpus_ids": [],
+  "discovery_report_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.2.tar.gz.discovery.json",
+  "seeded_locator_entries": 6,
+  "manifest_skips_marked": 1,
+  "skipped_low_value_corpus_ids": [
+    277771861
+  ],
+  "discovery_report": {
+    "archive_name": "BioCXML.2.tar.gz",
+    "start_document_ordinal": 1785234,
+    "resolver_batch_size": 6,
+    "limit": 6,
+    "max_documents": 6,
+    "scanned_documents": 6,
+    "last_document_ordinal_scanned": 2780366,
+    "manifest_entries_used": 6,
+    "manifest_entries_written": 0,
+    "resolved_corpus_ids": [
+      12723295,
+      201160821,
+      216375828,
+      251877056,
+      264286849,
+      277771861
+    ],
+    "selected_corpus_ids": [
+      12723295,
+      201160821,
+      216375828,
+      251877056,
+      264286849,
+      277771861
+    ],
+    "candidates": [
+      {
+        "corpus_id": 264286849,
+        "document_id": "37848404",
+        "archive_name": "BioCXML.2.tar.gz",
+        "document_ordinal": 1785234,
+        "member_name": "output/BioCXML/13882.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 216375828,
+        "document_id": "32426731",
+        "archive_name": "BioCXML.2.tar.gz",
+        "document_ordinal": 2010010,
+        "member_name": "output/BioCXML/34112.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 251877056,
+        "document_id": "36138865",
+        "archive_name": "BioCXML.2.tar.gz",
+        "document_ordinal": 2048647,
+        "member_name": "output/BioCXML/37582.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 201160821,
+        "document_id": "31467729",
+        "archive_name": "BioCXML.2.tar.gz",
+        "document_ordinal": 2321560,
+        "member_name": "output/BioCXML/62142.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 12723295,
+        "document_id": "25061304",
+        "archive_name": "BioCXML.2.tar.gz",
+        "document_ordinal": 2340861,
+        "member_name": "output/BioCXML/63882.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 277771861,
+        "document_id": "40227662",
+        "archive_name": "BioCXML.2.tar.gz",
+        "document_ordinal": 2780366,
+        "member_name": "output/BioCXML/87182.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      }
+    ]
+  },
+  "warehouse_refresh": {
+    "run_id": "expert-BioCXML.2.tar.gz-frozen-v2-2026-04-10",
+    "requested_corpus_ids": [
+      264286849,
+      216375828,
+      251877056,
+      201160821,
+      12723295,
+      277771861
+    ],
+    "target_corpus_ids": [
+      264286849,
+      216375828,
+      251877056,
+      201160821,
+      12723295,
+      277771861
+    ],
+    "source_driven": false,
+    "mode": "direct_archive_member_ingest",
+    "skipped_existing_papers": 0,
+    "skipped_manifest_document_ids": [],
+    "member_fetch": {
+      "archive_name": "BioCXML.2.tar.gz",
+      "requested_members": 6,
+      "fetched_members": 6,
+      "cache_hits": 0,
+      "archive_reads": 6,
+      "missing_document_ids": []
+    },
+    "bioc_fallback_stage": {
+      "discovered_papers": 6,
+      "ingested_corpus_ids": [
+        264286849,
+        216375828,
+        251877056,
+        201160821,
+        12723295
+      ],
+      "skipped_low_value_papers": 1,
+      "skipped_low_value_corpus_ids": [
+        277771861
+      ],
+      "missing_document_ids": [],
+      "batch_total_rows": 3334,
+      "written_rows": 3334,
+      "deferred_stage_names": []
+    },
+    "chunk_seed": null,
+    "chunk_backfill": {
+      "chunk_version_key": "default-structural-v1",
+      "source_revision_keys": [
+        "biocxml:2026-03-21",
+        "s2orc_v2:2026-03-10"
+      ],
+      "parser_version": "parser-v1",
+      "corpus_ids": [
+        264286849,
+        216375828,
+        251877056,
+        201160821,
+        12723295
+      ],
+      "papers": [
+        {
+          "corpus_id": 264286849,
+          "block_rows": 55,
+          "sentence_rows": 186,
+          "chunk_rows": 49,
+          "chunk_member_rows": 181,
+          "batch_total_rows": 230,
+          "written_rows": 230,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 216375828,
+          "block_rows": 43,
+          "sentence_rows": 187,
+          "chunk_rows": 41,
+          "chunk_member_rows": 187,
+          "batch_total_rows": 228,
+          "written_rows": 228,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 251877056,
+          "block_rows": 53,
+          "sentence_rows": 176,
+          "chunk_rows": 47,
+          "chunk_member_rows": 159,
+          "batch_total_rows": 206,
+          "written_rows": 206,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 201160821,
+          "block_rows": 58,
+          "sentence_rows": 145,
+          "chunk_rows": 22,
+          "chunk_member_rows": 107,
+          "batch_total_rows": 129,
+          "written_rows": 129,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 12723295,
+          "block_rows": 36,
+          "sentence_rows": 129,
+          "chunk_rows": 31,
+          "chunk_member_rows": 124,
+          "batch_total_rows": 155,
+          "written_rows": 155,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        }
+      ],
+      "total_block_rows": 245,
+      "total_sentence_rows": 823,
+      "total_chunk_rows": 190,
+      "total_chunk_member_rows": 758,
+      "total_batch_rows": 948,
+      "total_written_rows": 948,
+      "deferred_stage_names": [],
+      "missing_corpus_ids": [],
+      "executed": true,
+      "checkpoint_run_id": "expert-BioCXML.2.tar.gz-frozen-v2-2026-04-10-chunk-backfill",
+      "checkpoint_dir": "/mnt/solemd-graph/tmp/rag_chunk_backfill/expert-BioCXML.2.tar.gz-frozen-v2-2026-04-10-chunk-backfill",
+      "resumed_from_checkpoint": false
+    }
+  },
+  "quality_report": null
+}

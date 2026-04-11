@@ -6,6 +6,11 @@ export interface GraphEntityRef {
   canonicalName: string
 }
 
+export interface GraphEntityOverlayRef {
+  entityType: string
+  sourceIdentifier: string
+}
+
 export interface GraphEntityTextMatch extends GraphEntityRef {
   matchId: string
   matchedText: string
@@ -47,6 +52,17 @@ export interface GraphEntityDetailRequestPayload {
 }
 
 export type GraphEntityDetailResponsePayload = GraphEntityDetail
+
+export interface GraphEntityOverlayRequestPayload {
+  entityRefs: GraphEntityOverlayRef[]
+  graphReleaseId: string
+  limit?: number
+}
+
+export interface GraphEntityOverlayResponsePayload {
+  graphPaperRefs: string[]
+  entityGraphPaperCounts: Record<string, number>
+}
 
 export interface GraphEntityErrorResponsePayload {
   errorCode:

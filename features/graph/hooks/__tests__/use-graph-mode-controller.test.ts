@@ -88,39 +88,29 @@ describe("useGraphModeController", () => {
       result.current.applyMode("learn");
     });
     expect(useGraphStore.getState().mode).toBe("learn");
-    expect(useDashboardStore.getState().activePanel).toBe("wiki");
+    expect(useDashboardStore.getState().openPanels.wiki).toBe(true);
     expect(useDashboardStore.getState().wikiExpanded).toBe(true);
   });
 
-  it("ask mode does not change active panel and collapses wiki", () => {
-    useDashboardStore.setState({ activePanel: "config", wikiExpanded: true });
+  it("non-learn modes collapse wiki expansion", () => {
+    useDashboardStore.setState({ wikiExpanded: true });
     const { result } = renderHook(() => useGraphModeController());
 
     act(() => {
       result.current.applyMode("ask");
     });
-    expect(useDashboardStore.getState().activePanel).toBe("config");
     expect(useDashboardStore.getState().wikiExpanded).toBe(false);
   });
 
-  it("explore mode does not change active panel and collapses wiki", () => {
-    useDashboardStore.setState({ activePanel: "filters", wikiExpanded: true });
+  it("mode switch does not close other open panels", () => {
+    useDashboardStore.getState().openPanel("config");
     const { result } = renderHook(() => useGraphModeController());
 
     act(() => {
-      result.current.applyMode("explore");
+      result.current.applyMode("learn");
     });
-    expect(useDashboardStore.getState().activePanel).toBe("filters");
-    expect(useDashboardStore.getState().wikiExpanded).toBe(false);
-  });
-
-  it("create mode does not change active panel", () => {
-    useDashboardStore.setState({ activePanel: "info" });
-    const { result } = renderHook(() => useGraphModeController());
-
-    act(() => {
-      result.current.applyMode("create");
-    });
-    expect(useDashboardStore.getState().activePanel).toBe("info");
+    // config stays open, wiki also opens
+    expect(useDashboardStore.getState().openPanels.config).toBe(true);
+    expect(useDashboardStore.getState().openPanels.wiki).toBe(true);
   });
 });

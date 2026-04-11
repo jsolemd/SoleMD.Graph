@@ -46,6 +46,7 @@ from app.rag_ingest.benchmark_catalog import (
     benchmark_suite_gate_maps,
     get_benchmark_suite_spec,
 )
+from app.rag_ingest.benchmark_case_metadata import load_live_benchmark_case_coverage
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag_ingest.runtime_eval_benchmarks import (
     build_biomedical_holdout_benchmark,
@@ -1020,6 +1021,294 @@ BIOMEDICAL_NARRATIVE_SEEDS: list[dict[str, object]] = [
     ],
 ]
 
+EXPERT_CANONICALIZATION_BUCKET_SEEDS: dict[str, list[dict[str, object]]] = {
+    "hurried_adverse_effect": [
+        {
+            "query": "can't sit still from antipsychotics",
+            "search_terms": "akathisia antipsychotic",
+        },
+        {
+            "query": "tongue and jaw movements after years on antipsychotics",
+            "search_terms": "tardive dyskinesia",
+        },
+        {
+            "query": "psych meds wrecking the liver",
+            "search_terms": "hepatotoxicity psychotropic",
+        },
+        {
+            "query": "shaky hands and confusion from too much lithium",
+            "search_terms": "lithium toxicity tremor",
+        },
+        {
+            "query": "sodium crashed after starting an SSRI",
+            "search_terms": "hyponatremia SSRI elderly",
+        },
+        {
+            "query": "chest pain after starting clozapine",
+            "search_terms": "clozapine myocarditis cardiomyopathy",
+        },
+        {
+            "query": "blowing up in weight on olanzapine",
+            "search_terms": "antipsychotic metabolic side effect comparison",
+        },
+        {
+            "query": "valproate messing up cycles and ovaries",
+            "search_terms": "valproate polycystic ovary syndrome",
+        },
+    ],
+    "steroid_psychiatric": [
+        {
+            "query": "prednisone neuropsychiatric symptoms",
+            "corpus_id": 22223484,
+        },
+        {
+            "query": "steroid psychosis",
+            "corpus_id": 4796980,
+        },
+        {
+            "query": "mania after high-dose dex",
+            "search_terms": "dexamethasone psychiatric adverse effects",
+        },
+        {
+            "query": "glucocorticoids causing agitation and insomnia",
+            "search_terms": "glucocorticoid insomnia agitation",
+        },
+        {
+            "query": "delirious after starting steroids",
+            "corpus_id": 42693220,
+        },
+        {
+            "query": "cognitive slowing after long steroid exposure",
+            "corpus_id": 31227842,
+        },
+        {
+            "query": "acute psychosis on low-dose prednisone",
+            "corpus_id": 245632027,
+        },
+        {
+            "query": "depressed after chronic steroids",
+            "search_terms": "corticosteroid induced depression",
+        },
+    ],
+    "post_infectious_neuroinflammation": [
+        {
+            "query": "brain inflammation after COVID infection",
+            "search_terms": "neuroinflammation SARS-CoV-2",
+        },
+        {
+            "query": "new psych symptoms after HSV encephalitis",
+            "search_terms": "autoimmune encephalitis herpes simplex",
+        },
+        {
+            "query": "lupus hitting the brain",
+            "search_terms": "neuropsychiatric lupus erythematosus manifestations",
+        },
+        {
+            "query": "HIV brain fog and executive dysfunction",
+            "search_terms": "HIV neurocognitive disorder cognitive domains",
+        },
+        {
+            "query": "cytokine-driven depression",
+            "corpus_id": 15661883,
+        },
+        {
+            "query": "inflammation biology in Parkinson disease",
+            "search_terms": "neuroinflammation Parkinson pathogenesis",
+        },
+        {
+            "query": "psychosis from autoimmune brain inflammation",
+            "search_terms": "autoimmune encephalitis psychosis",
+        },
+        {
+            "query": "NMDA antibodies in new psychosis",
+            "search_terms": "NMDA receptor antibody psychosis",
+        },
+    ],
+    "autoimmune_encephalitis_fep": [
+        {
+            "query": "anti-NMDAR encephalitis psychosis first episode",
+            "search_terms": "anti-NMDA receptor encephalitis psychiatric",
+        },
+        {
+            "query": "anti-NMDAR encephalitis treatment with rituximab",
+            "search_terms": "anti-NMDA receptor encephalitis rituximab",
+        },
+        {
+            "query": "first-break psychosis but maybe autoimmune",
+            "search_terms": "autoimmune encephalitis psychosis",
+        },
+        {
+            "query": "seizure psychosis dyskinesia teratoma pattern",
+            "search_terms": "anti-NMDA receptor encephalitis neuropsychiatric",
+        },
+        {
+            "query": "when to send neuronal antibody testing in FEP",
+            "search_terms": "NMDA receptor antibody psychosis",
+        },
+        {
+            "query": "EEG in autoimmune encephalitis vs viral",
+            "search_terms": "autoimmune encephalitis EEG",
+        },
+        {
+            "query": "paraneoplastic psychosis workup",
+            "search_terms": "psychiatric symptoms cancer paraneoplastic",
+        },
+        {
+            "query": "how often autoimmune encephalitis starts as psych",
+            "search_terms": "autoimmune encephalitis psychiatric presentation prevalence",
+        },
+    ],
+    "delirium_agitation_catatonia": [
+        {
+            "query": "delirium or primary psychosis on the ward",
+            "search_terms": "delirium psychosis differential",
+        },
+        {
+            "query": "workup for possible catatonia on psych",
+            "search_terms": "catatonia workup psychiatric",
+        },
+        {
+            "query": "lorazepam challenge for catatonia",
+            "search_terms": "lorazepam catatonia diagnosis",
+        },
+        {
+            "query": "why benzos are first-line for catatonia",
+            "search_terms": "benzodiazepine catatonia first-line",
+        },
+        {
+            "query": "confused older adult right after surgery",
+            "search_terms": "postoperative delirium elderly",
+        },
+        {
+            "query": "delirium vs dementia on EEG",
+            "search_terms": "delirium dementia EEG differentiation",
+        },
+        {
+            "query": "does psych consult actually help ICU delirium",
+            "corpus_id": 46873301,
+        },
+        {
+            "query": "capacity assessment in a delirious patient",
+            "search_terms": "capacity assessment delirium",
+        },
+    ],
+    "withdrawal_discontinuation": [
+        {
+            "query": "brain zaps after stopping antidepressants",
+            "search_terms": "SSRI discontinuation syndrome",
+        },
+        {
+            "query": "coming off venlafaxine feels electric",
+            "search_terms": "antidepressant discontinuation syndrome",
+        },
+        {
+            "query": "benzo withdrawal seizures",
+            "search_terms": "benzodiazepine withdrawal seizure",
+        },
+        {
+            "query": "managing benzo withdrawal in the ICU",
+            "corpus_id": 216375828,
+        },
+        {
+            "query": "rebound panic after stopping SSRIs",
+            "search_terms": "SSRI discontinuation syndrome",
+        },
+        {
+            "query": "dizzy flu-like symptoms after stopping an antidepressant",
+            "search_terms": "antidepressant discontinuation syndrome",
+        },
+        {
+            "query": "bad withdrawal in the ICU despite benzos",
+            "corpus_id": 6134739,
+        },
+        {
+            "query": "autonomic surge after sedative withdrawal",
+            "search_terms": "benzodiazepine withdrawal syndrome",
+        },
+    ],
+    "movement_disorder_eps": [
+        {
+            "query": "EPS or akathisia from antipsychotics",
+            "search_terms": "akathisia antipsychotic",
+        },
+        {
+            "query": "acute dystonic reaction after haldol",
+            "search_terms": "acute dystonic reaction antipsychotic treatment",
+        },
+        {
+            "query": "D2 occupancy threshold for antipsychotic response",
+            "search_terms": "dopamine D2 receptor occupancy antipsychotic",
+        },
+        {
+            "query": "VMAT2 inhibitor for tardive dyskinesia",
+            "search_terms": "tardive dyskinesia VMAT2 inhibitor",
+        },
+        {
+            "query": "DBS circuit effects in dystonia",
+            "search_terms": "deep brain stimulation dystonia basal ganglia",
+        },
+        {
+            "query": "neuroleptic sensitivity in Lewy body disease",
+            "search_terms": "neuroleptic sensitivity Lewy body",
+        },
+        {
+            "query": "restless legs getting worse on psych meds",
+            "corpus_id": 247412628,
+        },
+        {
+            "query": "visual hallucinations in PD psychosis",
+            "search_terms": "Parkinson disease psychosis visual hallucinations",
+        },
+    ],
+    "abbreviation_heavy_specialist": [
+        {
+            "query": "COMT Val158Met and psychosis risk",
+            "search_terms": "COMT Val158Met psychosis",
+        },
+        {
+            "query": "CYP2D6 PM status on haldol",
+            "search_terms": "CYP2D6 haloperidol metabolism",
+        },
+        {
+            "query": "HLA-B*15:02 and carbamazepine SJS",
+            "search_terms": "HLA-B*15:02 carbamazepine Stevens-Johnson",
+        },
+        {
+            "query": "APOE4 risk biology in AD",
+            "search_terms": "APOE4 Alzheimer risk",
+        },
+        {
+            "query": "SLC6A4 and depression susceptibility",
+            "search_terms": "SLC6A4 serotonin transporter depression",
+        },
+        {
+            "query": "BDNF Val66Met and ketamine response",
+            "search_terms": "BDNF Val66Met ketamine",
+        },
+        {
+            "query": "GABA interneuron dysfunction in schizophrenia",
+            "search_terms": "GABA interneuron schizophrenia",
+        },
+        {
+            "query": "TNF-alpha neuroinflammation in MDD",
+            "corpus_id": 12723295,
+        },
+    ],
+}
+
+BIOMEDICAL_EXPERT_CANONICALIZATION_SEEDS: list[dict[str, object]] = [
+    {
+        **seed,
+        "labels": [
+            "expert_canonicalization",
+            bucket,
+            *list(seed.get("labels", [])),
+        ],
+    }
+    for bucket, bucket_seeds in EXPERT_CANONICALIZATION_BUCKET_SEEDS.items()
+    for seed in bucket_seeds
+]
+
 
 def _dataset_item_id(
     report: RagRuntimeEvalBenchmarkReport,
@@ -1303,54 +1592,74 @@ def _fetch_title_edge_cases(
 
 
 _PAPER_FOR_QUERY_WAREHOUSE_SQL = """
+WITH resolved_query AS (
+    SELECT websearch_to_tsquery('english', %s) AS tsq
+)
 SELECT p.corpus_id, p.title,
-       COALESCE(pd.primary_source_system, 's2orc_v2') AS source_system
-FROM solemd.graph_points grp
+       COALESCE(pd.primary_source_system, 's2orc_v2') AS source_system,
+       ts_rank_cd(p.fts_vector, resolved_query.tsq) AS fts_rank
+FROM resolved_query
+JOIN solemd.graph_points grp ON TRUE
 JOIN solemd.papers p ON p.corpus_id = grp.corpus_id
 JOIN solemd.paper_documents pd ON pd.corpus_id = p.corpus_id
 WHERE grp.graph_run_id = %s
   AND p.corpus_id != ALL(%s::BIGINT[])
   AND p.title IS NOT NULL
-  AND (
-    p.fts_vector
-  ) @@ websearch_to_tsquery('english', %s)
-ORDER BY p.citation_count DESC NULLS LAST
+  AND p.fts_vector @@ resolved_query.tsq
+ORDER BY fts_rank DESC, p.citation_count DESC NULLS LAST
 LIMIT 1
 """
 
 _PAPER_FOR_QUERY_WAREHOUSE_WITH_CHUNKS_SQL = """
+WITH resolved_query AS (
+    SELECT websearch_to_tsquery('english', %s) AS tsq
+)
 SELECT p.corpus_id, p.title,
-       COALESCE(pd.primary_source_system, 's2orc_v2') AS source_system
-FROM solemd.graph_points grp
+       COALESCE(pd.primary_source_system, 's2orc_v2') AS source_system,
+       ts_rank_cd(p.fts_vector, resolved_query.tsq) AS fts_rank
+FROM resolved_query
+JOIN solemd.graph_points grp ON TRUE
 JOIN solemd.papers p ON p.corpus_id = grp.corpus_id
 JOIN solemd.paper_documents pd ON pd.corpus_id = p.corpus_id
 WHERE grp.graph_run_id = %s
   AND p.corpus_id != ALL(%s::BIGINT[])
   AND p.title IS NOT NULL
-  AND (
-    p.fts_vector
-  ) @@ websearch_to_tsquery('english', %s)
+  AND p.fts_vector @@ resolved_query.tsq
   AND EXISTS (
     SELECT 1 FROM solemd.paper_chunks pc
     WHERE pc.corpus_id = p.corpus_id
   )
-ORDER BY p.citation_count DESC NULLS LAST
+ORDER BY fts_rank DESC, p.citation_count DESC NULLS LAST
 LIMIT 1
 """
 
 _PAPER_FOR_QUERY_ANY_SQL = """
+WITH resolved_query AS (
+    SELECT websearch_to_tsquery('english', %s) AS tsq
+)
+SELECT p.corpus_id, p.title,
+       COALESCE(pd.primary_source_system, 's2orc_v2') AS source_system,
+       ts_rank_cd(p.fts_vector, resolved_query.tsq) AS fts_rank
+FROM resolved_query
+JOIN solemd.graph_points grp ON TRUE
+JOIN solemd.papers p ON p.corpus_id = grp.corpus_id
+LEFT JOIN solemd.paper_documents pd ON pd.corpus_id = p.corpus_id
+WHERE grp.graph_run_id = %s
+  AND p.corpus_id != ALL(%s::BIGINT[])
+  AND p.title IS NOT NULL
+  AND p.fts_vector @@ resolved_query.tsq
+ORDER BY fts_rank DESC, p.citation_count DESC NULLS LAST
+LIMIT 1
+"""
+
+_PAPER_BY_CORPUS_ID_SQL = """
 SELECT p.corpus_id, p.title,
        COALESCE(pd.primary_source_system, 's2orc_v2') AS source_system
 FROM solemd.graph_points grp
 JOIN solemd.papers p ON p.corpus_id = grp.corpus_id
 LEFT JOIN solemd.paper_documents pd ON pd.corpus_id = p.corpus_id
 WHERE grp.graph_run_id = %s
-  AND p.corpus_id != ALL(%s::BIGINT[])
-  AND p.title IS NOT NULL
-  AND (
-    p.fts_vector
-  ) @@ websearch_to_tsquery('english', %s)
-ORDER BY p.citation_count DESC NULLS LAST
+  AND p.corpus_id = %s
 LIMIT 1
 """
 
@@ -1388,7 +1697,7 @@ def _resolve_paper_for_query(
     if require_chunks:
         cursor.execute(
             _PAPER_FOR_QUERY_WAREHOUSE_WITH_CHUNKS_SQL,
-            (graph_run_id, list(exclude_corpus_ids), query),
+            (query, graph_run_id, list(exclude_corpus_ids)),
         )
         row = cursor.fetchone()
         if row is None:
@@ -1405,7 +1714,7 @@ def _resolve_paper_for_query(
     if require_warehouse:
         cursor.execute(
             _PAPER_FOR_QUERY_WAREHOUSE_SQL,
-            (graph_run_id, list(exclude_corpus_ids), query),
+            (query, graph_run_id, list(exclude_corpus_ids)),
         )
         row = cursor.fetchone()
         if row is None:
@@ -1422,7 +1731,7 @@ def _resolve_paper_for_query(
     # Default: full corpus resolution (abstract-first)
     cursor.execute(
         _PAPER_FOR_QUERY_ANY_SQL,
-        (graph_run_id, list(exclude_corpus_ids), query),
+        (query, graph_run_id, list(exclude_corpus_ids)),
     )
     row = cursor.fetchone()
     if row is None:
@@ -1444,6 +1753,42 @@ def _resolve_paper_for_query(
     }
 
 
+def _resolve_paper_for_corpus_id(
+    *,
+    cursor,
+    graph_run_id: str,
+    corpus_id: int,
+    require_warehouse: bool = False,
+    require_chunks: bool = False,
+    exclude_warehouse: bool = False,
+) -> dict[str, object] | None:
+    cursor.execute(
+        _PAPER_BY_CORPUS_ID_SQL,
+        (graph_run_id, corpus_id),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return None
+
+    has_warehouse = row["source_system"] is not None and row["source_system"] != "s2orc_v2"
+    has_chunks = _check_has_chunks(cursor, corpus_id)
+
+    if require_chunks and not has_chunks:
+        return None
+    if require_warehouse and not has_warehouse:
+        return None
+    if exclude_warehouse and has_warehouse:
+        return None
+
+    return {
+        "corpus_id": corpus_id,
+        "title": row["title"],
+        "primary_source_system": str(row["source_system"]),
+        "has_warehouse": has_warehouse,
+        "has_chunks": has_chunks,
+    }
+
+
 def _build_curated_benchmark(
     *,
     benchmark_key: str,
@@ -1451,9 +1796,34 @@ def _build_curated_benchmark(
     release,
     chunk_version_key: str,
     cases: list[RuntimeEvalBenchmarkCase],
+    connect=None,
 ) -> RagRuntimeEvalBenchmarkReport:
+    connect_fn = connect or db.pooled
+    coverage_by_corpus_id = load_live_benchmark_case_coverage(
+        corpus_ids=[case.corpus_id for case in cases],
+        chunk_version_key=chunk_version_key,
+        connect=connect_fn,
+    )
+    hydrated_cases: list[RuntimeEvalBenchmarkCase] = []
     label_counts: Counter[str] = Counter()
     for case in cases:
+        coverage = coverage_by_corpus_id.get(case.corpus_id)
+        if coverage is None:
+            hydrated_case = case
+        else:
+            update_payload = {
+                "normalized_title_key": coverage.normalized_title_key,
+                "has_chunks": coverage.has_chunks,
+                "has_entities": coverage.has_entities,
+                "has_sentence_seed": coverage.has_sentence_seed,
+                "coverage_bucket": coverage.coverage_bucket,
+                "warehouse_depth": coverage.warehouse_depth,
+            }
+            if coverage.primary_source_system:
+                update_payload["primary_source_system"] = coverage.primary_source_system
+            hydrated_case = case.model_copy(update=update_payload)
+        hydrated_cases.append(hydrated_case)
+    for case in hydrated_cases:
         label_counts.update(case.benchmark_labels)
     return RagRuntimeEvalBenchmarkReport(
         benchmark_key=benchmark_key,
@@ -1468,9 +1838,9 @@ def _build_curated_benchmark(
         min_max_rank=0,
         high_recurrence_count=0,
         deep_miss_rank=0,
-        selected_count=len(cases),
+        selected_count=len(hydrated_cases),
         selected_by_label=dict(sorted(label_counts.items())),
-        cases=cases,
+        cases=hydrated_cases,
     )
 
 
@@ -2162,16 +2532,30 @@ def _resolve_seed_item(
 ) -> RuntimeEvalBenchmarkCase | None:
     """Resolve a single seed dict into a benchmark case, or None if unresolvable."""
     query = str(seed["query"]) if "query" in seed else ""
-    search_terms = str(seed.get("search_terms", query))
-
-    paper = _resolve_paper_for_query(
-        cursor=cursor,
-        graph_run_id=graph_run_id,
-        query=search_terms,
-        exclude_corpus_ids=excluded,
-        require_chunks=require_chunks,
-        exclude_warehouse=exclude_warehouse,
-    )
+    paper: dict[str, object] | None
+    seed_corpus_id = seed.get("corpus_id")
+    if seed_corpus_id is not None:
+        corpus_id = int(seed_corpus_id)
+        if corpus_id in excluded:
+            return None
+        paper = _resolve_paper_for_corpus_id(
+            cursor=cursor,
+            graph_run_id=graph_run_id,
+            corpus_id=corpus_id,
+            require_warehouse=not exclude_warehouse and require_chunks,
+            require_chunks=require_chunks,
+            exclude_warehouse=exclude_warehouse,
+        )
+    else:
+        search_terms = str(seed.get("search_terms", query))
+        paper = _resolve_paper_for_query(
+            cursor=cursor,
+            graph_run_id=graph_run_id,
+            query=search_terms,
+            exclude_corpus_ids=excluded,
+            require_chunks=require_chunks,
+            exclude_warehouse=exclude_warehouse,
+        )
     if paper is None:
         return None
 
@@ -2414,6 +2798,64 @@ def build_biomedical_narrative_v1(
         benchmark_source=(
             "General biomedical narrative QA benchmark combining clinician-style "
             "questions, management prompts, and neuropsychiatric safety prompts"
+        ),
+        release=release,
+        chunk_version_key=chunk_version_key,
+        cases=cases,
+    )
+
+
+def build_biomedical_expert_canonicalization_v1(
+    *,
+    graph_release_id: str = "current",
+    chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+    exclude_corpus_ids: set[int] | None = None,
+    connect=None,
+) -> RagRuntimeEvalBenchmarkReport:
+    """Expert shorthand, synonym, and abbreviation stress tests."""
+    connect_fn = connect or db.pooled
+    repository = PostgresRagRepository(
+        connect=connect_fn, chunk_version_key=chunk_version_key
+    )
+    release = repository.resolve_graph_release(graph_release_id)
+    excluded = set(exclude_corpus_ids or set())
+
+    cases = []
+    with connect_fn() as conn, conn.cursor() as cur:
+        for seed in BIOMEDICAL_EXPERT_CANONICALIZATION_SEEDS:
+            query = str(seed.get("query", ""))
+            expected_profile = (
+                "question_lookup" if query.strip().endswith("?") else "general"
+            )
+            case = _resolve_seed_item(
+                cursor=cur,
+                graph_run_id=release.graph_run_id,
+                seed=seed,
+                excluded=excluded,
+                benchmark_key="biomedical_expert_canonicalization_v1",
+                query_family=RuntimeEvalQueryFamily.SENTENCE_GLOBAL,
+                expected_retrieval_profile=expected_profile,
+            )
+            if case is None:
+                print(f"  SKIP (no match): {query[:60]}")
+                continue
+            cases.append(case)
+            excluded.add(case.corpus_id)
+
+    expected_case_count = len(BIOMEDICAL_EXPERT_CANONICALIZATION_SEEDS)
+    if len(cases) != expected_case_count:
+        raise ValueError(
+            "biomedical_expert_canonicalization_v1 produced "
+            f"{len(cases)} cases; expected {expected_case_count}"
+        )
+
+    return _build_curated_benchmark(
+        benchmark_key="biomedical_expert_canonicalization_v1",
+        benchmark_source=(
+            "Expert-language canonicalization benchmark covering hurried adverse "
+            "effect phrasing, neuroimmune shorthand, autoimmune encephalitis / "
+            "FEP prompts, withdrawal language, movement-disorder shorthand, and "
+            "abbreviation-heavy specialist queries"
         ),
         release=release,
         chunk_version_key=chunk_version_key,
@@ -2778,6 +3220,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "biomedical_holdout_v1",
             "biomedical_citation_context_v1",
             "biomedical_narrative_v1",
+            "biomedical_expert_canonicalization_v1",
             "biomedical_metadata_retrieval_v1",
             "biomedical_evidence_type_v1",
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
@@ -2790,6 +3233,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "biomedical_holdout_v1",
             "biomedical_citation_context_v1",
             "biomedical_narrative_v1",
+            "biomedical_expert_canonicalization_v1",
             "biomedical_metadata_retrieval_v1",
             "biomedical_evidence_type_v1",
             "title_retrieval_v2", "clinical_evidence_v2", "passage_retrieval_v2",
@@ -2892,6 +3336,10 @@ def main(argv: list[str] | None = None) -> int:
             build_biomedical_narrative_v1,
             "biomedical_narrative_v1.json",
         ),
+        "biomedical_expert_canonicalization_v1": (
+            build_biomedical_expert_canonicalization_v1,
+            "biomedical_expert_canonicalization_v1.json",
+        ),
         "biomedical_metadata_retrieval_v1": (
             build_biomedical_metadata_retrieval_benchmark,
             "biomedical_metadata_retrieval_v1.json",
@@ -2927,6 +3375,7 @@ def main(argv: list[str] | None = None) -> int:
         "biomedical_holdout_v1",
         "biomedical_citation_context_v1",
         "biomedical_narrative_v1",
+        "biomedical_expert_canonicalization_v1",
         "biomedical_metadata_retrieval_v1",
         "biomedical_evidence_type_v1",
     }

@@ -300,4 +300,70 @@ describe("useEntityTextRuntime", () => {
       expect.objectContaining({ sourceIdentifier: "MESH:D012559" }),
     );
   });
+
+  it("keeps the hover card interactive long enough to click explicit actions", async () => {
+    mockedFetchGraphEntityMatches.mockResolvedValue({
+      matches: [SCHIZOPHRENIA_MATCH],
+    });
+    mockedFetchGraphEntityDetail.mockResolvedValue(SCHIZOPHRENIA_DETAIL);
+
+    const { result } = renderHook(() =>
+      useEntityTextRuntime({
+        enabled: true,
+      }),
+    );
+
+    act(() => {
+      result.current.handleTextScopeChange({
+        text: "Dopamine dysfunction is implicated in schizophrenia.",
+        textFrom: 5,
+        cursorOffset: 52,
+      });
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(350);
+      await Promise.resolve();
+    });
+
+    act(() => {
+      result.current.handleEntityHoverTargetChange({
+        entity: {
+          entityType: "disease",
+          conceptNamespace: "mesh",
+          conceptId: "D012559",
+          sourceIdentifier: "MESH:D012559",
+          canonicalName: "Schizophrenia",
+        },
+        paperCount: 1200,
+        x: 24,
+        y: 48,
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.entityHoverCard).not.toBeNull();
+    });
+
+    act(() => {
+      result.current.handleEntityHoverTargetChange(null);
+      result.current.handleHoverCardPointerEnter();
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(150);
+    });
+
+    expect(result.current.entityHoverCard).not.toBeNull();
+
+    act(() => {
+      result.current.handleHoverCardPointerLeave();
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(150);
+    });
+
+    expect(result.current.entityHoverCard).toBeNull();
+  });
 });

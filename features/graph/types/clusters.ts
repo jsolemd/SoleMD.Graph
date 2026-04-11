@@ -28,11 +28,3 @@ export interface ClusterExemplar {
   isRepresentative: boolean
   preview: string | null
 }
-
-export interface GraphStats {
-  points: number
-  pointLabel: string
-  papers: number
-  clusters: number
-  noise: number
-}

@@ -31,15 +31,24 @@ const nextConfig: NextConfig = {
     ]
   },
   experimental: {
-    viewTransition: true,
     optimizePackageImports: [
       '@mantine/core',
       '@mantine/hooks',
       'lucide-react',
       'framer-motion',
       'zustand',
+      'three',
+      '@react-three/fiber',
+      '@react-three/drei',
+      'framer-motion-3d',
+      'gsap',
+      'lottie-react',
+      '@google/model-viewer',
     ],
   },
+  // @google/model-viewer ships as a web component; transpile so SSR and
+  // Next's module resolver agree on a single CJS/ESM entry.
+  transpilePackages: ['@google/model-viewer'],
   turbopack: {
     resolveAlias: {
       // DuckDB-WASM ships browser and Node entries. Force the browser entry in

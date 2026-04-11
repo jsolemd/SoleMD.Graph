@@ -1,0 +1,41 @@
+{
+  "archive_name": "BioCXML.7.tar.gz",
+  "start_document_ordinal": 2371788,
+  "resolver_batch_size": 2,
+  "limit": 2,
+  "max_documents": 2,
+  "scanned_documents": 2,
+  "last_document_ordinal_scanned": 2401242,
+  "manifest_entries_used": 2,
+  "manifest_entries_written": 0,
+  "resolved_corpus_ids": [
+    7297305,
+    208606347
+  ],
+  "selected_corpus_ids": [
+    7297305,
+    208606347
+  ],
+  "candidates": [
+    {
+      "corpus_id": 208606347,
+      "document_id": "31798919",
+      "archive_name": "BioCXML.7.tar.gz",
+      "document_ordinal": 2371788,
+      "member_name": "output/BioCXML/66697.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 7297305,
+      "document_id": "29201551",
+      "archive_name": "BioCXML.7.tar.gz",
+      "document_ordinal": 2401242,
+      "member_name": "output/BioCXML/69347.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    }
+  ]
+}

@@ -43,7 +43,7 @@ export function PanelChrome({
   return (
     <>
       <div
-        className="flex items-center justify-between px-2.5 py-1.5"
+        className="flex items-center justify-between px-2.5 py-1"
       >
         <div
           className="min-w-0 flex-1"

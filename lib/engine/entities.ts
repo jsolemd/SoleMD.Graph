@@ -6,6 +6,8 @@ import type {
   GraphEntityErrorResponsePayload,
   GraphEntityMatchRequestPayload,
   GraphEntityMatchResponsePayload,
+  GraphEntityOverlayRequestPayload,
+  GraphEntityOverlayResponsePayload,
 } from '@/features/graph/types/entity-service'
 import { EngineApiError, postEngineJson } from './client'
 
@@ -130,6 +132,45 @@ export async function fetchGraphEntityDetail(
       aliasSource: alias.alias_source,
     })),
     summary: response.entity.summary,
+  }
+}
+
+interface EngineEntityOverlayRequest {
+  entity_refs: Array<{ entity_type: string; source_identifier: string }>
+  graph_release_id: string
+  limit?: number
+}
+
+interface EngineEntityOverlayResponse {
+  graph_paper_refs: string[]
+  entity_graph_paper_counts: Record<string, number>
+}
+
+export async function overlayGraphEntities(
+  input: GraphEntityOverlayRequestPayload,
+  options?: {
+    signal?: AbortSignal
+  },
+): Promise<GraphEntityOverlayResponsePayload> {
+  const response = await postEngineJson<
+    EngineEntityOverlayRequest,
+    EngineEntityOverlayResponse
+  >(
+    '/api/v1/entities/overlay',
+    {
+      entity_refs: input.entityRefs.map((ref) => ({
+        entity_type: ref.entityType,
+        source_identifier: ref.sourceIdentifier,
+      })),
+      graph_release_id: input.graphReleaseId,
+      limit: input.limit,
+    },
+    options,
+  )
+
+  return {
+    graphPaperRefs: response.graph_paper_refs,
+    entityGraphPaperCounts: response.entity_graph_paper_counts,
   }
 }
 

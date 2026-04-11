@@ -5,9 +5,11 @@ import { act, renderHook } from "@testing-library/react";
 import { motionValue } from "framer-motion";
 import type { GraphBundle } from "@/features/graph/types";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
+import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { usePromptBoxController } from "../use-prompt-box-controller";
 import { useRagQuery } from "../use-rag-query";
 import { useReferenceMentionSource } from "../use-reference-mention-source";
+import { useEntityOverlaySync } from "@/features/graph/components/entities/use-entity-overlay-sync";
 
 jest.mock("@mantine/hooks", () => ({
   useViewportSize: () => ({ width: 1280, height: 720 }),
@@ -15,6 +17,10 @@ jest.mock("@mantine/hooks", () => ({
 
 jest.mock("@/features/graph/cosmograph", () => ({
   useGraphInstance: () => null,
+  useGraphSelection: () => ({
+    selectPointsByIndices: jest.fn(),
+    clearSelectionBySource: jest.fn(),
+  }),
 }));
 
 jest.mock("@/features/graph/hooks/use-typewriter", () => ({
@@ -51,11 +57,19 @@ jest.mock("../use-reference-mention-source", () => ({
   useReferenceMentionSource: jest.fn(),
 }));
 
+jest.mock("@/features/graph/components/entities/use-entity-overlay-sync", () => ({
+  useEntityOverlaySync: jest.fn(),
+}));
+
 const mockedUseRagQuery = useRagQuery as jest.MockedFunction<typeof useRagQuery>;
 const mockedUseReferenceMentionSource =
   useReferenceMentionSource as jest.MockedFunction<typeof useReferenceMentionSource>;
+const mockedUseEntityOverlaySync =
+  useEntityOverlaySync as jest.MockedFunction<typeof useEntityOverlaySync>;
 const clearRag = jest.fn();
 const handleSubmit = jest.fn();
+const syncEntityOverlayRefs = jest.fn();
+const clearEntityOverlaySelection = jest.fn();
 const referenceMentionSource = {
   getItems: jest.fn(async () => []),
 };
@@ -75,7 +89,13 @@ beforeEach(() => {
   latestRagArgs = null;
   clearRag.mockReset();
   handleSubmit.mockReset();
+  syncEntityOverlayRefs.mockReset();
+  clearEntityOverlaySelection.mockReset();
   mockedUseReferenceMentionSource.mockReturnValue(referenceMentionSource);
+  mockedUseEntityOverlaySync.mockReturnValue({
+    syncEntityOverlayRefs,
+    clearEntityOverlaySelection,
+  });
   useGraphStore.setState({
     ...useGraphStore.getInitialState(),
     mode: "ask",
@@ -85,6 +105,7 @@ beforeEach(() => {
     promptMode: "normal",
     writeContent: "",
   });
+  useWikiStore.getState().reset();
   mockedUseRagQuery.mockImplementation((args) => {
     latestRagArgs = args;
     return {
@@ -152,5 +173,71 @@ describe("usePromptBoxController", () => {
     expect(result.current.activePromptValue).toBe(
       "fingerprint the cited sources",
     );
+  });
+
+  it("keeps typing-driven entity highlights off the graph until an explicit action requests overlay", () => {
+    const { result } = renderHook(() =>
+      usePromptBoxController({
+        bundle: createBundle(),
+        queries: null,
+      }),
+    );
+
+    act(() => {
+      result.current.handlePromptContentChange("dopamine and schizophrenia");
+      result.current.handleShowEntityOnGraph({
+        entityType: "disease",
+        sourceIdentifier: "MESH:D012559",
+      });
+    });
+
+    expect(syncEntityOverlayRefs).toHaveBeenCalledWith([
+      {
+        entityType: "disease",
+        sourceIdentifier: "MESH:D012559",
+      },
+    ]);
+  });
+
+  it("clears explicit entity graph selection before delegating Enter-driven ask selection", () => {
+    const { result } = renderHook(() =>
+      usePromptBoxController({
+        bundle: createBundle(),
+        queries: null,
+      }),
+    );
+
+    act(() => {
+      result.current.handleSubmit();
+    });
+
+    expect(clearEntityOverlaySelection).toHaveBeenCalledTimes(1);
+    expect(handleSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the wiki panel and routes the wiki store from an explicit entity action", () => {
+    const { result } = renderHook(() =>
+      usePromptBoxController({
+        bundle: createBundle(),
+        queries: null,
+      }),
+    );
+
+    act(() => {
+      result.current.handleOpenEntityInWiki({
+        entityType: "disease",
+        conceptNamespace: "mesh",
+        conceptId: "D012559",
+        sourceIdentifier: "MESH:D012559",
+        canonicalName: "Schizophrenia",
+      });
+    });
+
+    expect(useDashboardStore.getState().panelsVisible).toBe(true);
+    expect(useDashboardStore.getState().wikiOpen).toBe(true);
+    expect(useWikiStore.getState().currentRoute).toEqual({
+      kind: "page",
+      slug: "entities/schizophrenia",
+    });
   });
 });

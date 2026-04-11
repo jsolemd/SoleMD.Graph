@@ -23,6 +23,7 @@ import frontmatter  # noqa: E402
 
 from app import db  # noqa: E402
 from app.wiki import queries  # noqa: E402
+from app.wiki.content_contract import normalize_wiki_frontmatter  # noqa: E402
 from app.wiki.links import (  # noqa: E402
     compute_file_slug,
     extract_pmids,
@@ -53,7 +54,7 @@ def _parse_wiki_file(md_path: Path, wiki_root: Path) -> dict:
     checksum = hashlib.sha256(raw_bytes).hexdigest()
     post = frontmatter.loads(raw_bytes.decode("utf-8"))
 
-    fm = dict(post.metadata)
+    fm = normalize_wiki_frontmatter(dict(post.metadata))
     title = fm.pop("title", slug.rsplit("/", 1)[-1].replace("-", " ").title())
     content_md = post.content
 

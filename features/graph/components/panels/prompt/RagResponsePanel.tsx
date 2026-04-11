@@ -11,6 +11,7 @@ import {
   panelAccentCardStyle,
   panelTextDimStyle,
   panelTextStyle,
+  promptSurfaceStyle,
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import type {
@@ -77,11 +78,7 @@ export function RagResponsePanel({
   return (
     <div
       className="rounded-3xl p-4"
-      style={{
-        backgroundColor: "var(--graph-prompt-bg)",
-        border: "1px solid var(--graph-prompt-border)",
-        boxShadow: "var(--graph-prompt-shadow)",
-      }}
+      style={promptSurfaceStyle}
     >
       <Stack gap="sm">
         <Group align="flex-start" justify="space-between" wrap="nowrap">

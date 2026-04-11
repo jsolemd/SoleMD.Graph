@@ -1,10 +1,10 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MantineProvider } from "@mantine/core";
+import { useDashboardStore } from "@/features/graph/stores";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 
 // Mock framer-motion (used by Mantine Tooltip)
@@ -30,38 +30,86 @@ function renderNav() {
 describe("WikiNavigation", () => {
   beforeEach(() => {
     useWikiStore.getState().reset();
+    useDashboardStore.setState({
+      openPanels: { about: false, config: false, filters: false, info: false, query: false, wiki: true },
+      panelsVisible: true,
+      panelPositions: {},
+      floatingObstacles: {},
+    });
   });
 
-  it("disables both buttons when no history", () => {
+  it("disables back and forward buttons when on graph home", () => {
     renderNav();
     expect(screen.getByLabelText("Go back")).toBeDisabled();
     expect(screen.getByLabelText("Go forward")).toBeDisabled();
   });
 
-  it("enables back after navigating to a second page", () => {
-    const { navigateTo } = useWikiStore.getState();
-    navigateTo("page-a");
-    navigateTo("page-b");
+  it("disables graph home button when already on graph", () => {
+    renderNav();
+    expect(screen.getByLabelText("Graph home")).toBeDisabled();
+  });
+
+  it("enables back and graph home after navigating to a page", () => {
+    useWikiStore.getState().navigateToPage("page-a");
     renderNav();
     expect(screen.getByLabelText("Go back")).not.toBeDisabled();
     expect(screen.getByLabelText("Go forward")).toBeDisabled();
+    expect(screen.getByLabelText("Graph home")).not.toBeDisabled();
   });
 
   it("enables forward after going back", () => {
-    const { navigateTo, goBack } = useWikiStore.getState();
-    navigateTo("page-a");
-    navigateTo("page-b");
+    const { navigateToPage, goBack } = useWikiStore.getState();
+    navigateToPage("page-a");
+    navigateToPage("page-b");
     goBack();
     renderNav();
-    expect(screen.getByLabelText("Go back")).toBeDisabled();
+    expect(screen.getByLabelText("Go back")).not.toBeDisabled();
     expect(screen.getByLabelText("Go forward")).not.toBeDisabled();
   });
 
-  it("navigateTo is idempotent for current slug", () => {
-    const { navigateTo } = useWikiStore.getState();
-    navigateTo("page-a");
-    navigateTo("page-a"); // should not create duplicate
-    expect(useWikiStore.getState().slugHistory).toEqual(["page-a"]);
+  it("navigateToPage is idempotent for current slug", () => {
+    const { navigateToPage } = useWikiStore.getState();
+    navigateToPage("page-a");
+    navigateToPage("page-a"); // no-op
+    expect(useWikiStore.getState().routeHistory).toHaveLength(2); // graph + page-a
+    expect(useWikiStore.getState().historyIndex).toBe(1);
+  });
+
+  it("navigateToGraph is idempotent when on graph", () => {
+    useWikiStore.getState().navigateToGraph();
+    expect(useWikiStore.getState().routeHistory).toHaveLength(1);
     expect(useWikiStore.getState().historyIndex).toBe(0);
+  });
+
+  it("reset returns to graph home and clears history", () => {
+    const { navigateToPage, reset } = useWikiStore.getState();
+    navigateToPage("page-a");
+    navigateToPage("page-b");
+    reset();
+    const state = useWikiStore.getState();
+    expect(state.currentRoute).toEqual({ kind: "graph" });
+    expect(state.routeHistory).toEqual([{ kind: "graph" }]);
+    expect(state.historyIndex).toBe(0);
+  });
+
+  it("opens the graph popout beside the floating wiki panel", () => {
+    useWikiStore.getState().navigateToPage("page-a");
+    useDashboardStore.getState().setFloatingObstacle("wiki", {
+      x: 200,
+      y: 180,
+      width: 520,
+      height: 620,
+    });
+
+    renderNav();
+    fireEvent.click(screen.getByLabelText("Pop out graph"));
+
+    expect(useWikiStore.getState().localGraphPopped).toBe(true);
+    expect(useDashboardStore.getState().panelPositions["wiki-graph"]).toMatchObject({
+      x: 680,
+      y: 64,
+      width: 320,
+      docked: false,
+    });
   });
 });

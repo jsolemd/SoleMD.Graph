@@ -154,7 +154,7 @@ describe('createSessionQueryController', () => {
     expect(queryCorpusTablePageMock).toHaveBeenCalledTimes(2)
   })
 
-  it('bypasses cache for non-page-1 and selection table queries', async () => {
+  it('deduplicates concurrent non-page-1 and selection table queries without keeping a settled cache', async () => {
     queryCorpusTablePageMock.mockResolvedValue({ rows: [], totalCount: 0 } as never)
 
     const controller = createSessionQueryController({
@@ -163,7 +163,7 @@ describe('createSessionQueryController', () => {
       ensureOptionalBundleTables: jest.fn(async () => undefined),
     })
 
-    // Page 2 — should not cache
+    // Page 2 — concurrent callers should share the same in-flight promise
     const page2Args = {
       layer: 'corpus' as const,
       view: 'current' as const,
@@ -173,9 +173,9 @@ describe('createSessionQueryController', () => {
     }
     const p1 = controller.getTablePage(page2Args)
     const p2 = controller.getTablePage(page2Args)
-    expect(p1).not.toBe(p2)
+    expect(p1).toBe(p2)
 
-    // Selection view — should not cache
+    // Selection view — same in-flight dedupe behavior
     const selectionArgs = {
       layer: 'corpus' as const,
       view: 'selected' as const,
@@ -185,9 +185,13 @@ describe('createSessionQueryController', () => {
     }
     const p3 = controller.getTablePage(selectionArgs)
     const p4 = controller.getTablePage(selectionArgs)
-    expect(p3).not.toBe(p4)
+    expect(p3).toBe(p4)
 
     await Promise.all([p1, p2, p3, p4])
+    expect(queryCorpusTablePageMock).toHaveBeenCalledTimes(2)
+
+    await controller.getTablePage(page2Args)
+    await controller.getTablePage(selectionArgs)
     expect(queryCorpusTablePageMock).toHaveBeenCalledTimes(4)
   })
 

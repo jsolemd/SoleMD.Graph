@@ -1,0 +1,223 @@
+{
+  "run_id": "expert-BioCXML.9.tar.gz-frozen-v2-2026-04-10",
+  "parser_version": "parser-v1",
+  "archive_name": "BioCXML.9.tar.gz",
+  "requested_corpus_ids": [],
+  "discovery_report_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.9.tar.gz.discovery.json",
+  "seeded_locator_entries": 5,
+  "manifest_skips_marked": 0,
+  "skipped_low_value_corpus_ids": [],
+  "discovery_report": {
+    "archive_name": "BioCXML.9.tar.gz",
+    "start_document_ordinal": 1121209,
+    "resolver_batch_size": 5,
+    "limit": 5,
+    "max_documents": 5,
+    "scanned_documents": 5,
+    "last_document_ordinal_scanned": 2379948,
+    "manifest_entries_used": 5,
+    "manifest_entries_written": 0,
+    "resolved_corpus_ids": [
+      2030354,
+      15140931,
+      46873301,
+      245632027,
+      260291534
+    ],
+    "selected_corpus_ids": [
+      2030354,
+      15140931,
+      46873301,
+      245632027,
+      260291534
+    ],
+    "candidates": [
+      {
+        "corpus_id": 260291534,
+        "document_id": "37516868",
+        "archive_name": "BioCXML.9.tar.gz",
+        "document_ordinal": 1121209,
+        "member_name": "output/BioCXML/11109.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 2030354,
+        "document_id": "23596418",
+        "archive_name": "BioCXML.9.tar.gz",
+        "document_ordinal": 2008337,
+        "member_name": "output/BioCXML/33989.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 46873301,
+        "document_id": "29416240",
+        "archive_name": "BioCXML.9.tar.gz",
+        "document_ordinal": 2261544,
+        "member_name": "output/BioCXML/56789.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 15140931,
+        "document_id": "23431323",
+        "archive_name": "BioCXML.9.tar.gz",
+        "document_ordinal": 2356744,
+        "member_name": "output/BioCXML/65349.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      },
+      {
+        "corpus_id": 245632027,
+        "document_id": "35141097",
+        "archive_name": "BioCXML.9.tar.gz",
+        "document_ordinal": 2379948,
+        "member_name": "output/BioCXML/67439.BioC.XML",
+        "existing_document": false,
+        "existing_s2_source": false,
+        "existing_bioc_source": false
+      }
+    ]
+  },
+  "warehouse_refresh": {
+    "run_id": "expert-BioCXML.9.tar.gz-frozen-v2-2026-04-10",
+    "requested_corpus_ids": [
+      260291534,
+      2030354,
+      46873301,
+      15140931,
+      245632027
+    ],
+    "target_corpus_ids": [
+      260291534,
+      2030354,
+      46873301,
+      15140931,
+      245632027
+    ],
+    "source_driven": false,
+    "mode": "direct_archive_member_ingest",
+    "skipped_existing_papers": 0,
+    "skipped_manifest_document_ids": [],
+    "member_fetch": {
+      "archive_name": "BioCXML.9.tar.gz",
+      "requested_members": 5,
+      "fetched_members": 5,
+      "cache_hits": 0,
+      "archive_reads": 5,
+      "missing_document_ids": []
+    },
+    "bioc_fallback_stage": {
+      "discovered_papers": 5,
+      "ingested_corpus_ids": [
+        260291534,
+        2030354,
+        46873301,
+        15140931,
+        245632027
+      ],
+      "skipped_low_value_papers": 0,
+      "skipped_low_value_corpus_ids": [],
+      "missing_document_ids": [],
+      "batch_total_rows": 2762,
+      "written_rows": 2762,
+      "deferred_stage_names": []
+    },
+    "chunk_seed": null,
+    "chunk_backfill": {
+      "chunk_version_key": "default-structural-v1",
+      "source_revision_keys": [
+        "biocxml:2026-03-21",
+        "s2orc_v2:2026-03-10"
+      ],
+      "parser_version": "parser-v1",
+      "corpus_ids": [
+        260291534,
+        2030354,
+        46873301,
+        15140931,
+        245632027
+      ],
+      "papers": [
+        {
+          "corpus_id": 260291534,
+          "block_rows": 88,
+          "sentence_rows": 293,
+          "chunk_rows": 50,
+          "chunk_member_rows": 241,
+          "batch_total_rows": 291,
+          "written_rows": 291,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 2030354,
+          "block_rows": 25,
+          "sentence_rows": 156,
+          "chunk_rows": 35,
+          "chunk_member_rows": 160,
+          "batch_total_rows": 195,
+          "written_rows": 195,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 46873301,
+          "block_rows": 41,
+          "sentence_rows": 140,
+          "chunk_rows": 38,
+          "chunk_member_rows": 138,
+          "batch_total_rows": 176,
+          "written_rows": 176,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 15140931,
+          "block_rows": 5,
+          "sentence_rows": 24,
+          "chunk_rows": 5,
+          "chunk_member_rows": 24,
+          "batch_total_rows": 29,
+          "written_rows": 29,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        },
+        {
+          "corpus_id": 245632027,
+          "block_rows": 23,
+          "sentence_rows": 107,
+          "chunk_rows": 17,
+          "chunk_member_rows": 107,
+          "batch_total_rows": 124,
+          "written_rows": 124,
+          "deferred_stage_names": [],
+          "executed": true,
+          "skipped_reason": null
+        }
+      ],
+      "total_block_rows": 182,
+      "total_sentence_rows": 720,
+      "total_chunk_rows": 145,
+      "total_chunk_member_rows": 670,
+      "total_batch_rows": 815,
+      "total_written_rows": 815,
+      "deferred_stage_names": [],
+      "missing_corpus_ids": [],
+      "executed": true,
+      "checkpoint_run_id": "expert-BioCXML.9.tar.gz-frozen-v2-2026-04-10-chunk-backfill",
+      "checkpoint_dir": "/mnt/solemd-graph/tmp/rag_chunk_backfill/expert-BioCXML.9.tar.gz-frozen-v2-2026-04-10-chunk-backfill",
+      "resumed_from_checkpoint": false
+    }
+  },
+  "quality_report": null
+}

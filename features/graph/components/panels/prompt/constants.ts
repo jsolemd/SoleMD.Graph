@@ -11,10 +11,6 @@ export const MAX_CARD_W = 560;
 export const MIN_CARD_W_CREATE = 530;
 /** Viewport ratio for normal-mode width (90vw cap). */
 export const VW_RATIO = 0.9;
-/** Floor width when side panels squeeze available space. */
-export const MIN_AVAILABLE_W = 300;
-/** Horizontal gap between card edges and panel edges. */
-export const PANEL_GAP = 48;
 /** Collapsed pill height target. */
 export const PILL_H = 48;
 /** Collapsed pill left-edge offset from viewport left. */
@@ -40,11 +36,7 @@ export const SCOPE_LABELS: Record<string, string> = {
   relation_assertion: "relation",
 };
 
-/** Compute card width for normal mode, respecting panel clearance. */
-export function cardWidth(vw: number, leftCl: number, rightCl: number): number {
-  if (leftCl > 0 || rightCl > 0) {
-    const avail = Math.max(MIN_AVAILABLE_W, vw - leftCl - rightCl - PANEL_GAP);
-    return Math.round(Math.min(MAX_CARD_W, vw * VW_RATIO, avail));
-  }
+/** Compute card width for normal mode. */
+export function cardWidth(vw: number): number {
   return Math.round(Math.min(MAX_CARD_W, vw * VW_RATIO));
 }

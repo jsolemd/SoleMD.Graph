@@ -34,12 +34,22 @@ describe("control-contrast", () => {
     ).toBe(2);
   });
 
-  it("uses selection as a medium contrast bump when the graph is otherwise calm", () => {
+  it("uses selection as a boost to high contrast", () => {
     expect(
       resolveGraphControlContrastLevel({
         graphContentContrastLevel: 0,
         hasFocusedPoint: false,
         hasSelection: true,
+      }),
+    ).toBe(2);
+  });
+
+  it("never drops below contrast level 1", () => {
+    expect(
+      resolveGraphControlContrastLevel({
+        graphContentContrastLevel: 0,
+        hasFocusedPoint: false,
+        hasSelection: false,
       }),
     ).toBe(1);
   });

@@ -120,8 +120,8 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   pointSizeColumn: 'paperReferenceCount',
   pointSizeRange: [1.5, 5],
   pointLabelColumn: 'clusterLabel',
-  showPointLabels: true,
-  showDynamicLabels: true,
+  showPointLabels: false,
+  showDynamicLabels: false,
   positionXColumn: 'x',
   positionYColumn: 'y',
 

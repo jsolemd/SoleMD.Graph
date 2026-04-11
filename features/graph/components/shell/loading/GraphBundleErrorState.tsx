@@ -1,7 +1,7 @@
 "use client";
 
 import { Button, Stack, Text } from "@mantine/core";
-import { panelTextStyle, panelTextDimStyle } from "../../panels/PanelShell";
+import { panelSurfaceStyle, panelTextStyle, panelTextDimStyle } from "../../panels/PanelShell";
 
 export function GraphBundleErrorState({ error }: { error: Error }) {
   return (
@@ -11,11 +11,7 @@ export function GraphBundleErrorState({ error }: { error: Error }) {
     >
       <div
         className="w-[min(520px,92vw)] rounded-3xl px-6 py-7"
-        style={{
-          backgroundColor: "var(--graph-panel-bg)",
-          border: "1px solid var(--graph-panel-border)",
-          boxShadow: "var(--graph-panel-shadow)",
-        }}
+        style={panelSurfaceStyle}
       >
         <Stack gap="md">
           <div>

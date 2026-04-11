@@ -1,0 +1,124 @@
+[
+  {
+    "archive_name": "BioCXML.0.tar.gz",
+    "case_count": 2,
+    "start_document_ordinal": 1970455,
+    "last_document_ordinal_scanned": 2530482,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.0.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.0.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      15661883,
+      267226112
+    ]
+  },
+  {
+    "archive_name": "BioCXML.1.tar.gz",
+    "case_count": 5,
+    "start_document_ordinal": 2100542,
+    "last_document_ordinal_scanned": 2539683,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.1.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.1.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      225135230,
+      227132953,
+      239468065,
+      245626287,
+      247412628
+    ]
+  },
+  {
+    "archive_name": "BioCXML.2.tar.gz",
+    "case_count": 6,
+    "start_document_ordinal": 1785234,
+    "last_document_ordinal_scanned": 2780366,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.2.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.2.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      12723295,
+      201160821,
+      216375828,
+      251877056,
+      264286849,
+      277771861
+    ]
+  },
+  {
+    "archive_name": "BioCXML.3.tar.gz",
+    "case_count": 5,
+    "start_document_ordinal": 206957,
+    "last_document_ordinal_scanned": 2484918,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.3.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.3.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      1933765,
+      6134739,
+      17872207,
+      31269847,
+      206148831
+    ]
+  },
+  {
+    "archive_name": "BioCXML.4.tar.gz",
+    "case_count": 3,
+    "start_document_ordinal": 1822556,
+    "last_document_ordinal_scanned": 2514803,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.4.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.4.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      244851480,
+      250973145,
+      258715884
+    ]
+  },
+  {
+    "archive_name": "BioCXML.5.tar.gz",
+    "case_count": 2,
+    "start_document_ordinal": 2013290,
+    "last_document_ordinal_scanned": 2477274,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.5.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.5.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      232327864,
+      256684861
+    ]
+  },
+  {
+    "archive_name": "BioCXML.7.tar.gz",
+    "case_count": 2,
+    "start_document_ordinal": 2371788,
+    "last_document_ordinal_scanned": 2401242,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.7.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.7.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      7297305,
+      208606347
+    ]
+  },
+  {
+    "archive_name": "BioCXML.8.tar.gz",
+    "case_count": 2,
+    "start_document_ordinal": 2238123,
+    "last_document_ordinal_scanned": 2278059,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.8.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.8.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      578353,
+      221070145
+    ]
+  },
+  {
+    "archive_name": "BioCXML.9.tar.gz",
+    "case_count": 5,
+    "start_document_ordinal": 1121209,
+    "last_document_ordinal_scanned": 2379948,
+    "output_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.9.tar.gz.discovery.json",
+    "corpus_ids_path": "../docs/investigations/bioc_discovery_reports/expert_canonicalization_remaining/BioCXML.9.tar.gz.corpus_ids.txt",
+    "corpus_ids": [
+      2030354,
+      15140931,
+      46873301,
+      245632027,
+      260291534
+    ]
+  }
+]

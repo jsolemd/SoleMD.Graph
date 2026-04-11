@@ -13,10 +13,14 @@ from app.rag.models import (
     RelationMatchedPaperHit,
 )
 from app.rag.ranking_support import (
+    _aggregate_entity_match_score,
+    _aggregate_relation_match_score,
     _channel_annotation,
+    _child_evidence_corroboration_affinity,
     _citation_intent_affinity,
     _direct_match_adjustment,
     _evidence_quality_affinity,
+    _general_direct_signal_priority,
     _intent_affinity,
     _passage_alignment_affinity,
     _passage_structure_affinity,
@@ -49,6 +53,7 @@ def rank_paper_hits(
     requested_publication_types: tuple[str, ...] = (),
     query_text: str | None = None,
     retrieval_profile: QueryRetrievalProfile = QueryRetrievalProfile.GENERAL,
+    title_anchor_fallback_active: bool = False,
     clinical_intent: ClinicalQueryIntent = ClinicalQueryIntent.GENERAL,
 ) -> list[PaperEvidenceHit]:
     """Fuse baseline channel signals into a final paper rank."""
@@ -68,19 +73,13 @@ def rank_paper_hits(
                 default=0.0,
             ),
         )
-        hit.entity_score = max(
+        hit.entity_score = _aggregate_entity_match_score(
             hit.entity_score,
-            max(
-                (item.score for item in paper_entity_hits),
-                default=0.0,
-            ),
+            paper_entity_hits,
         )
-        hit.relation_score = max(
+        hit.relation_score = _aggregate_relation_match_score(
             hit.relation_score,
-            max(
-                (item.score for item in paper_relation_hits),
-                default=0.0,
-            ),
+            paper_relation_hits,
         )
         hit.intent_score, matched_intent_cues = _intent_affinity(
             evidence_intent=evidence_intent,
@@ -115,6 +114,13 @@ def rank_paper_hits(
         hit.passage_structure_score = _passage_structure_affinity(
             hit,
             retrieval_profile=retrieval_profile,
+        )
+        child_evidence_score, child_evidence_reasons = (
+            _child_evidence_corroboration_affinity(
+                hit,
+                retrieval_profile=retrieval_profile,
+                title_anchor_fallback_active=title_anchor_fallback_active,
+            )
         )
 
         lexical_rank = channel_rankings.get(RetrievalChannel.LEXICAL, {}).get(hit.corpus_id)
@@ -183,6 +189,7 @@ def rank_paper_hits(
             + (hit.biomedical_rerank_score * score_profile.biomedical_rerank_weight)
             + (hit.passage_alignment_score * score_profile.passage_alignment_weight)
             + (hit.passage_structure_score * score_profile.passage_structure_weight)
+            + child_evidence_score
             + _direct_match_adjustment(
                 paper=hit,
                 retrieval_profile=retrieval_profile,
@@ -209,10 +216,18 @@ def rank_paper_hits(
             clinical_prior_reasons=clinical_prior_reasons,
             matched_intent_cues=matched_intent_cues,
             evidence_intent=evidence_intent,
+            child_evidence_reasons=child_evidence_reasons,
         )
         ranked.append(hit)
 
-    ranked.sort(key=lambda item: _rank_sort_key(item, retrieval_profile), reverse=True)
+    ranked.sort(
+        key=lambda item: _rank_sort_key(
+            item,
+            retrieval_profile,
+            title_anchor_fallback_active=title_anchor_fallback_active,
+        ),
+        reverse=True,
+    )
     for index, hit in enumerate(ranked, start=1):
         hit.rank = index
     return ranked
@@ -221,8 +236,30 @@ def rank_paper_hits(
 def _rank_sort_key(
     item: PaperEvidenceHit,
     retrieval_profile: QueryRetrievalProfile,
+    *,
+    title_anchor_fallback_active: bool = False,
 ) -> tuple[float, ...]:
     if retrieval_profile == QueryRetrievalProfile.TITLE_LOOKUP:
+        if title_anchor_fallback_active:
+            return (
+                1.0
+                if has_direct_retrieval_support(
+                    paper=item,
+                    retrieval_profile=retrieval_profile,
+                )
+                else 0.0,
+                item.fused_score,
+                item.biomedical_rerank_score,
+                item.entity_score,
+                item.chunk_lexical_score,
+                item.passage_alignment_score,
+                item.lexical_score,
+                item.selected_context_score,
+                item.cited_context_score,
+                item.title_similarity,
+                item.citation_count or 0,
+                item.corpus_id,
+            )
         return (
             1.0
             if has_direct_retrieval_support(
@@ -246,6 +283,10 @@ def _rank_sort_key(
         return (
             item.title_anchor_score,
             float(passage_direct_support_tier(item)),
+            _biomedical_direct_support_priority(
+                item,
+                retrieval_profile=retrieval_profile,
+            ),
             item.fused_score,
             item.passage_alignment_score,
             item.chunk_lexical_score,
@@ -257,11 +298,11 @@ def _rank_sort_key(
             item.citation_count or 0,
             item.corpus_id,
         )
-    # GENERAL profile: cross-encoder rerank score breaks ties after
-    # fused_score. Title lane is unaffected — its sort key does not use
-    # ``biomedical_rerank_score`` and adding TITLE reranker influence is
-    # deferred pending GENERAL observability data.
+    # GENERAL profile: preserve fused ordering, but let rerank-confirmed
+    # multi-lane direct evidence outrank citation-context-only winners. This
+    # is intentionally narrow and leaves title/passage lanes untouched.
     return (
+        _general_direct_signal_priority(item),
         item.fused_score,
         item.biomedical_rerank_score,
         item.chunk_lexical_score,
@@ -272,3 +313,26 @@ def _rank_sort_key(
         item.citation_count or 0,
         item.corpus_id,
     )
+
+
+def _biomedical_direct_support_priority(
+    item: PaperEvidenceHit,
+    *,
+    retrieval_profile: QueryRetrievalProfile,
+) -> float:
+    """Let the cross-encoder arbitrate among already-direct passage candidates.
+
+    Passage/question expert queries often surface several direct-support papers
+    that are all plausible after lexical/entity/citation fusion. When MedCPT has
+    already scored that shortlist, use its preference ahead of citation/context
+    priors instead of leaving the winner trapped at rank 2 or 3.
+    """
+
+    if retrieval_profile not in (
+        QueryRetrievalProfile.PASSAGE_LOOKUP,
+        QueryRetrievalProfile.QUESTION_LOOKUP,
+    ):
+        return 0.0
+    if passage_direct_support_tier(item) <= 0:
+        return 0.0
+    return item.biomedical_rerank_score

@@ -13,6 +13,7 @@ from app.entities.repository import (
     EntityAliasDetailRow,
     EntityCatalogRepository,
 )
+from app.entities.highlight_policy import HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
 from app.entities.schemas import (
     EntityAlias,
     EntityDetail,
@@ -183,6 +184,15 @@ def resolve_text_matches(
     scored_matches: list[tuple[tuple[int, int, int, int], EntityTextMatch]] = []
     for candidate in candidates:
         candidate_rows = rows_by_alias_key.get(candidate.alias_key)
+        if not candidate_rows:
+            continue
+
+        candidate_rows = [
+            row
+            for row in candidate_rows
+            if row["highlight_mode"] != HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
+            or candidate.matched_text.strip() == row["alias_text"].strip()
+        ]
         if not candidate_rows:
             continue
 

@@ -34,6 +34,7 @@ from app.rag.repository_support import (
 )
 from app.rag.repository_support import (
     ResolvedEntityConcept,
+    ResolvedQueryEntityTerms,
     _dense_score_from_distance,
     _PinnedConnectionContext,
     _unique_stripped,
@@ -59,7 +60,7 @@ class RagRepository(Protocol):
         *,
         query_phrases: Sequence[str],
         limit: int = 5,
-    ) -> tuple[list[str], set[str]]: ...
+    ) -> ResolvedQueryEntityTerms: ...
 
     def resolve_selected_corpus_id(
         self,
@@ -122,6 +123,7 @@ class RagRepository(Protocol):
         graph_run_id: str,
         *,
         entity_terms: Sequence[str],
+        resolved_concepts: Sequence[ResolvedEntityConcept] | None = None,
         limit: int,
         scope_corpus_ids: Sequence[int] | None = None,
     ) -> list[PaperEvidenceHit]: ...
@@ -168,6 +170,7 @@ class RagRepository(Protocol):
         corpus_ids: Sequence[int],
         *,
         entity_terms: Sequence[str],
+        resolved_concepts: Sequence[ResolvedEntityConcept] | None = None,
         limit_per_paper: int = 5,
     ) -> dict[int, list[EntityMatchedPaperHit]]: ...
 

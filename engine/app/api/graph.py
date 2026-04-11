@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 
+from app.api.http import run_api
 from app.graph.attachment import (
     GRAPH_POINT_ATTACHMENT_MEDIA_TYPE,
     GraphPointAttachmentRequest,
@@ -32,12 +33,7 @@ def attach_graph_points(
 ) -> Response:
     """Return narrow graph point rows for local browser-side attachment."""
 
-    try:
-        payload = service.attach_points(request)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload = run_api(lambda: service.attach_points(request))
 
     return Response(
         content=payload,

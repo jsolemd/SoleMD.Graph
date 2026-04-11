@@ -21,7 +21,6 @@ import {
   type Editor,
 } from "@/features/graph/tiptap";
 import { EMPTY_TOOLBAR_STATE } from "./EditorToolbar";
-import type { EntityHoverCardModel } from "@/features/graph/components/entities/entity-hover-card";
 import {
   clearEntityHighlights,
   createEntityHighlightExtension,
@@ -40,6 +39,7 @@ import {
   type ReferenceMentionMenuState,
   type ReferenceMentionSource,
 } from "./reference-mention-extension";
+import type { GraphEntityOverlayRef, GraphEntityRef } from "@/features/graph/types/entity-service";
 import { readEditorTextContext } from "./editor-text-context";
 import { useEditorEntityRuntime } from "./use-editor-entity-runtime";
 
@@ -47,6 +47,8 @@ export interface CreateEditorControllerProps {
   content: string;
   onContentChange: (md: string) => void;
   onEmptyChange: (empty: boolean) => void;
+  onShowEntityOnGraph?: (entityRef: GraphEntityOverlayRef) => void;
+  onOpenEntityInWiki?: (entity: GraphEntityRef) => void;
   onSubmit?: () => void;
   onPromptInteraction?: (request: PromptInteractionRequest) => void;
   promptInteractionProviders?: readonly PromptInteractionProvider<PromptInteractionRequest>[];
@@ -66,7 +68,6 @@ export interface CreateEditorControllerState {
   promptInteractionMenuRef: RefObject<HTMLDivElement | null>;
   promptInteractionMenu: PromptInteractionMenuState | null;
   referenceMentionMenu: ReferenceMentionMenuState | null;
-  entityHoverCard: EntityHoverCardModel | null;
   closePromptInteractionMenu: () => void;
   handlePromptInteractionMenuHover: (index: number) => void;
   handlePromptInteractionMenuKeyDown: (
@@ -82,6 +83,8 @@ export function useCreateEditorController({
   content,
   onContentChange,
   onEmptyChange,
+  onShowEntityOnGraph,
+  onOpenEntityInWiki,
   onSubmit,
   onPromptInteraction,
   promptInteractionProviders,
@@ -96,6 +99,10 @@ export function useCreateEditorController({
   onEmptyChangeRef.current = onEmptyChange;
   const onContentChangeRef = useRef(onContentChange);
   onContentChangeRef.current = onContentChange;
+  const onShowEntityOnGraphRef = useRef(onShowEntityOnGraph);
+  onShowEntityOnGraphRef.current = onShowEntityOnGraph;
+  const onOpenEntityInWikiRef = useRef(onOpenEntityInWiki);
+  onOpenEntityInWikiRef.current = onOpenEntityInWiki;
   const onPromptInteractionRef = useRef(onPromptInteraction);
   onPromptInteractionRef.current = onPromptInteraction;
   const promptInteractionProvidersRef = useRef(promptInteractionProviders);
@@ -270,7 +277,6 @@ export function useCreateEditorController({
 
   const {
     entityHighlights,
-    entityHoverCard,
     handleEntityHoverChange,
     handleTextContextChange,
   } = useEditorEntityRuntime({
@@ -517,7 +523,6 @@ export function useCreateEditorController({
     promptInteractionMenuRef,
     promptInteractionMenu,
     referenceMentionMenu,
-    entityHoverCard,
     closePromptInteractionMenu,
     handlePromptInteractionMenuHover,
     handlePromptInteractionMenuKeyDown,

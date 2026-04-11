@@ -26,6 +26,16 @@
   transition: color 0.3s ease;
 }
 
+/* SQL Explorer text links — sample queries, reset, show/hide sql toggle.
+   Base color comes from panelTextDimStyle; this class adds the accent hover. */
+.sql-sample-link {
+  transition: color 120ms ease;
+}
+
+.sql-sample-link:hover {
+  color: var(--mode-accent) !important;
+}
+
 /* Graph icon buttons — unified mode-aware hover/active.
    Handles hover and pressed backgrounds for Mantine ActionIcons and
    Cosmograph selection-tool wrappers. Icon color for Mantine buttons
@@ -214,4 +224,24 @@ html:not(.dark) .graph-filter-bars-widget .unselected > .info > .count {
 @keyframes pill-activate {
   0% { opacity: 0.6; }
   100% { opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ENTITY ACCENT PILL — shared across hover cards, wiki badges.
+   Uses color-mix() at element level so [data-entity-type] overrides
+   of --entity-accent cascade correctly. See docs/map/wiki-taxonomy.md.
+   ═══════════════════════════════════════════════════════════════════ */
+.entity-accent-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 8px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+  text-transform: capitalize;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--entity-accent) 25%, transparent);
+  color: var(--graph-panel-text);
+  border: 1px solid color-mix(in srgb, var(--entity-accent) 55%, transparent);
 }

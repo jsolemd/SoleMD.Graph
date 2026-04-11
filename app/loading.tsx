@@ -1,3 +1,7 @@
+"use client";
+
+import { motion } from "framer-motion";
+
 export default function GraphLoading() {
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-[var(--graph-bg)]">
@@ -38,9 +42,11 @@ export default function GraphLoading() {
 
       {/* Center loading pulse */}
       <div className="flex flex-col items-center gap-4">
-        <div
-          className="h-3 w-3 rounded-full animate-pulse"
+        <motion.div
+          className="h-3 w-3 rounded-full"
           style={{ backgroundColor: "var(--graph-wordmark-accent)" }}
+          animate={{ opacity: [0.45, 1, 0.45], scale: [1, 1.12, 1] }}
+          transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
         />
         <span
           className="text-sm"
@@ -52,12 +58,14 @@ export default function GraphLoading() {
 
       {/* PromptBox shell placeholder */}
       <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2">
-        <div
-          className="h-14 w-[min(600px,90vw)] rounded-full backdrop-blur-xl animate-pulse"
+        <motion.div
+          className="h-14 w-[min(600px,90vw)] rounded-full backdrop-blur-xl"
           style={{
             backgroundColor: "var(--graph-prompt-bg)",
             border: "1px solid var(--graph-prompt-border)",
           }}
+          animate={{ opacity: [0.55, 0.95, 0.55] }}
+          transition={{ duration: 2.0, repeat: Infinity, ease: "easeInOut" }}
         />
       </div>
     </div>

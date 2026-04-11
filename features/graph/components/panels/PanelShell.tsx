@@ -5,7 +5,9 @@ import { Loader, Text, Switch } from "@mantine/core";
 import { motion } from "framer-motion";
 import { panelReveal } from "@/lib/motion";
 import { useDashboardStore } from "@/features/graph/stores";
+import { selectPanelLeftOffset } from "@/features/graph/stores/dashboard-store";
 import { PanelChrome } from "./PanelChrome";
+import { useFloatingPanel } from "./use-floating-panel";
 
 /**
  * Panel text style objects — inline styles beat Mantine's class-based font-size.
@@ -20,6 +22,20 @@ export const panelChromeStyle: React.CSSProperties = { fontSize: 9, lineHeight: 
 
 /** Stat value text — slightly bolder than body. */
 export const panelStatValueStyle: React.CSSProperties = { fontSize: 11, lineHeight: "14px" };
+
+/** Panel surface triple — bg + border + shadow from CSS tokens. */
+export const panelSurfaceStyle: React.CSSProperties = {
+  backgroundColor: "var(--graph-panel-bg)",
+  border: "1px solid var(--graph-panel-border)",
+  boxShadow: "var(--graph-panel-shadow)",
+};
+
+/** Prompt/overlay surface triple — uses prompt-specific tokens. */
+export const promptSurfaceStyle: React.CSSProperties = {
+  backgroundColor: "var(--graph-prompt-bg)",
+  border: "1px solid var(--graph-prompt-border)",
+  boxShadow: "var(--graph-prompt-shadow)",
+};
 
 export const panelCardClassName = "rounded-lg px-2 py-1.5";
 export const panelCardStyle: React.CSSProperties = {
@@ -158,9 +174,17 @@ export function PanelInlineLoader({ label }: { label?: string }) {
 
 interface PanelShellProps {
   children: ReactNode;
+  /** Panel identifier — used for auto-stacking offset and floating obstacle tracking. */
+  id: string;
   title: string;
-  side: "left" | "right";
-  width?: number;
+  side?: "left" | "right";
+  /** Default docked width (overridden by resize). */
+  defaultWidth?: number;
+  minWidth?: number;
+  maxWidth?: number;
+  defaultHeight?: number;
+  minHeight?: number;
+  maxHeight?: number;
   headerActions?: ReactNode;
   onClose: () => void;
 }
@@ -168,7 +192,7 @@ interface PanelShellProps {
 /** Centralized body padding class — replaces ad-hoc px/pb in each panel body div. */
 export const PANEL_BODY_CLASS = "flex-1 overflow-y-auto px-2.5 pb-2.5";
 
-/** Top offset so panels float below the Wordmark + panel icon row + stats/layer bar. */
+/** Top offset so panels float below the Wordmark + panel icon row. */
 export const PANEL_TOP = 116;
 
 /** Mode-aware accent for Mantine `color` props inside panels. */
@@ -286,22 +310,54 @@ export function GatedSwitch({
 
 export function PanelShell({
   children,
+  id,
   title,
-  side,
-  width = 300,
+  side = "left",
+  defaultWidth = 300,
+  minWidth,
+  maxWidth,
+  defaultHeight,
+  minHeight,
+  maxHeight,
   headerActions,
   onClose,
 }: PanelShellProps) {
-  const reveal = panelReveal[side];
-  const panelRef = useRef<HTMLDivElement>(null);
-  const setPanelBottomY = useDashboardStore((s) => s.setPanelBottomY);
+  const {
+    panelRef,
+    dragControls,
+    dragX,
+    dragY,
+    width,
+    height,
+    isDocked,
+    onTitlePointerDown,
+    onTitleDoubleClick,
+    onDragEnd,
+    onResizeMouseDown,
+    onResizeVerticalMouseDown,
+    onResizeCornerMouseDown,
+  } = useFloatingPanel({
+    id,
+    side,
+    defaultWidth,
+    minWidth,
+    maxWidth,
+    defaultHeight,
+    minHeight,
+    maxHeight,
+  });
 
-  // Report panel bottom position so PromptBox can check for overlap.
-  // Use layout position (PANEL_TOP + height) instead of getBoundingClientRect,
-  // which reflects the current framer-motion animated transform (y: -16 on enter).
+  // Auto-stacking offset from panels docked before this one
+  const leftOffset = useDashboardStore((s) => selectPanelLeftOffset(s, id));
+
+  // Report panelBottomY when docked so the prompt position system knows the panel's height.
+  const setPanelBottomY = useDashboardStore((s) => s.setPanelBottomY);
   useEffect(() => {
     const el = panelRef.current;
-    if (!el) return;
+    if (!el || !isDocked) {
+      setPanelBottomY(side, 0);
+      return;
+    }
 
     let raf = 0;
     const report = () => {
@@ -319,7 +375,9 @@ export function PanelShell({
       ro.disconnect();
       setPanelBottomY(side, 0);
     };
-  }, [side, setPanelBottomY]);
+  }, [side, setPanelBottomY, isDocked, panelRef]);
+
+  const reveal = panelReveal[side];
 
   return (
     <motion.div
@@ -328,21 +386,52 @@ export function PanelShell({
       animate={reveal.animate}
       exit={reveal.exit}
       transition={reveal.transition}
-      className="absolute z-30 flex flex-col overflow-hidden rounded-xl"
+      drag
+      dragControls={dragControls}
+      dragListener={false}
+      dragMomentum={false}
+      dragElastic={0}
+      onDragEnd={onDragEnd}
       style={{
         ...reveal.style,
+        x: dragX,
+        y: dragY,
         top: PANEL_TOP,
-        ...(side === "left" ? { left: 12 } : { right: 12 }),
+        ...(side === "left" ? { left: 12 + leftOffset } : { right: 12 }),
         width,
-        maxHeight: `calc(100vh - ${PANEL_TOP + 100}px)`,
-        backgroundColor: "var(--graph-panel-bg)",
-        border: "1px solid var(--graph-panel-border)",
-        boxShadow: "var(--graph-panel-shadow)",
+        height: height ?? undefined,
+        maxHeight: height ? undefined : `calc(100vh - ${PANEL_TOP + 100}px)`,
+        ...panelSurfaceStyle,
       }}
+      className="absolute z-30 flex flex-col overflow-hidden rounded-xl"
     >
-      <PanelChrome title={title} headerActions={headerActions} onClose={onClose}>
+      <PanelChrome
+        title={title}
+        headerActions={headerActions}
+        onClose={onClose}
+        onTitlePointerDown={onTitlePointerDown}
+        onTitleDoubleClick={onTitleDoubleClick}
+      >
         {children}
       </PanelChrome>
+
+      {/* Horizontal resize handle */}
+      <div
+        className="absolute top-0 h-full w-2 cursor-col-resize"
+        style={{ [side === "left" ? "right" : "left"]: 0 }}
+        onMouseDown={onResizeMouseDown}
+      />
+      {/* Vertical resize handle */}
+      <div
+        className="absolute bottom-0 left-0 h-2 w-full cursor-row-resize"
+        onMouseDown={onResizeVerticalMouseDown}
+      />
+      {/* Corner resize handle */}
+      <div
+        className="absolute bottom-0 z-10 h-4 w-4 cursor-nwse-resize"
+        style={{ [side === "left" ? "right" : "left"]: 0 }}
+        onMouseDown={onResizeCornerMouseDown}
+      />
     </motion.div>
   );
 }

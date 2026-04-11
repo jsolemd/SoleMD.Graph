@@ -18,7 +18,7 @@ import { iconBtnStyles } from "../panels/PanelShell";
 import { pop } from "@/lib/motion";
 
 /**
- * Selection tools portaled into the Wordmark toolbar.
+ * Selection tools portaled into the bottom-left viewport toolbar.
  *
  * ## Highlight state machine
  *
@@ -44,12 +44,16 @@ function usePortalTarget(selector: string) {
   useEffect(() => {
     let wrapper: HTMLDivElement | null = null;
 
-    const native = document.querySelector<HTMLElement>(selector);
-    if (native) {
+    const attach = (native: HTMLElement) => {
       wrapper = document.createElement("div");
       wrapper.style.display = "contents";
-      native.insertBefore(wrapper, native.firstChild);
+      native.appendChild(wrapper);
       setTarget(wrapper);
+    };
+
+    const native = document.querySelector<HTMLElement>(selector);
+    if (native) {
+      attach(native);
       return () => { wrapper?.remove(); };
     }
 
@@ -57,10 +61,7 @@ function usePortalTarget(selector: string) {
       const found = document.querySelector<HTMLElement>(selector);
       if (found) {
         observer.disconnect();
-        wrapper = document.createElement("div");
-        wrapper.style.display = "contents";
-        found.insertBefore(wrapper, found.firstChild);
-        setTarget(wrapper);
+        attach(found);
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
@@ -76,7 +77,7 @@ function usePortalTarget(selector: string) {
 /* ── Component ─────────────────────────────────────────────────── */
 
 function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
-  const portalTarget = usePortalTarget("[data-wordmark-toolbar]");
+  const portalTarget = usePortalTarget("[data-bottom-viewport-toolbar]");
   const toolbarRef = useRef<SelectionToolbarHandle>(null);
   const toolActivatedRef = useRef(false);
   const hasSelection = useDashboardStore((s) => s.selectedPointCount > 0);
@@ -220,15 +221,52 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
 
   if (!portalTarget) return null;
 
+  const showLockButton = canLockSelection || isLocked;
+
   return createPortal(
     <>
+      <div
+        className="mx-2 h-5 w-px"
+        style={{ backgroundColor: "var(--graph-panel-border)" }}
+      />
+      <SelectionToolbar
+        ref={toolbarRef}
+        isLocked={isLocked}
+        activeSourceId={activeSourceId}
+        hasSelection={hasSelection}
+        onActivate={handleToolActivate}
+        onClear={handleStoreClear}
+      />
+      <AnimatePresence>
+        {showLockButton && (
+          <motion.div key="lock-selection" {...pop}>
+            <Tooltip
+              label={isLocked ? "Unlock selection" : "Lock selection"}
+              position="top"
+              withArrow
+            >
+              <ActionIcon
+                variant="transparent"
+                size="lg"
+                radius="xl"
+                className="graph-icon-btn"
+                styles={iconBtnStyles}
+                onClick={() =>
+                  void (isLocked ? handleUnlockSelection() : handleLockSelection())
+                }
+                aria-label={isLocked ? "Unlock selection" : "Lock selection"}
+                aria-pressed={isLocked}
+              >
+                {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+              </ActionIcon>
+            </Tooltip>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {hasResettableScope && (
-          <motion.div
-            key="clear-selection"
-            {...pop}
-          >
-            <Tooltip label="Clear selection and filters" position="bottom" withArrow>
+          <motion.div key="clear-selection" {...pop}>
+            <Tooltip label="Clear selection and filters" position="top" withArrow>
               <ActionIcon
                 variant="transparent"
                 size="lg"
@@ -244,33 +282,6 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
           </motion.div>
         )}
       </AnimatePresence>
-      <SelectionToolbar
-        ref={toolbarRef}
-        isLocked={isLocked}
-        activeSourceId={activeSourceId}
-        hasSelection={hasSelection}
-        onActivate={handleToolActivate}
-        onClear={handleStoreClear}
-      />
-      <Tooltip label={isLocked ? "Unlock selection" : "Lock selection"} position="bottom" withArrow>
-        <ActionIcon
-          variant="transparent"
-          size="lg"
-          radius="xl"
-          className="graph-icon-btn"
-          styles={iconBtnStyles}
-          onClick={() => void (isLocked ? handleUnlockSelection() : handleLockSelection())}
-          style={!canLockSelection && !isLocked ? { opacity: 0.35, pointerEvents: "none" } : undefined}
-          aria-label={isLocked ? "Unlock selection" : "Lock selection"}
-          aria-pressed={isLocked}
-        >
-          {isLocked ? <Lock size={14} /> : <Unlock size={14} />}
-        </ActionIcon>
-      </Tooltip>
-      <div
-        className="mx-1 h-5 w-px"
-        style={{ backgroundColor: "var(--border-subtle)" }}
-      />
     </>,
     portalTarget
   );

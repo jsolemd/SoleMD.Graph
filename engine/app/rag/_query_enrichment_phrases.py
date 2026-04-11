@@ -20,6 +20,125 @@ from app.rag._query_enrichment_const import (
 from app.rag.types import QueryRetrievalProfile
 
 
+_DISCONTINUATION_CUE_PHRASES: tuple[str, ...] = (
+    "after stopping",
+    "coming off",
+    "came off",
+    "stopping",
+    "stopped",
+    "discontinuation",
+    "withdrawal",
+    "withdraw",
+    "withdrawn",
+)
+_ANTIDEPRESSANT_CUE_PHRASES: tuple[str, ...] = (
+    "antidepressant",
+    "antidepressants",
+    "ssri",
+    "ssris",
+    "snri",
+    "snris",
+)
+_ANTIPSYCHOTIC_CUE_PHRASES: tuple[str, ...] = (
+    "antipsychotic",
+    "antipsychotics",
+    "neuroleptic",
+    "neuroleptics",
+)
+_RESTLESSNESS_CUE_PHRASES: tuple[str, ...] = (
+    "sit still",
+    "restless",
+    "restlessness",
+    "urge to move",
+    "inner restlessness",
+)
+_CORTICOSTEROID_CUE_PHRASES: tuple[str, ...] = (
+    "steroid",
+    "steroids",
+    "corticosteroid",
+    "corticosteroids",
+    "dexamethasone",
+    "prednisone",
+    "prednisolone",
+    "methylprednisolone",
+    "dex",
+)
+_NEUROPSYCH_CUE_PHRASES: tuple[str, ...] = (
+    "mania",
+    "manic",
+    "psychosis",
+    "psychotic",
+    "psychiatric",
+    "neuropsychiatric",
+)
+
+
+def _contains_any_phrase(text: str, phrases: tuple[str, ...]) -> bool:
+    return any(phrase in text for phrase in phrases)
+
+
+def _merge_unique_resolution_phrases(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for phrase in group:
+            normalized = normalize_entity_query_text(phrase)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            merged.append(normalized)
+            if len(merged) >= MAX_ENTITY_RESOLUTION_PHRASES:
+                return merged
+    return merged
+
+
+def _composite_entity_resolution_phrases(
+    text: str,
+    *,
+    normalized_query: str | None = None,
+) -> list[str]:
+    normalized = normalize_query_text(normalized_query or text)
+    if not normalized:
+        return []
+
+    derived: list[str] = []
+
+    has_discontinuation_cue = _contains_any_phrase(normalized, _DISCONTINUATION_CUE_PHRASES)
+    has_antidepressant_cue = _contains_any_phrase(normalized, _ANTIDEPRESSANT_CUE_PHRASES)
+    if has_discontinuation_cue and has_antidepressant_cue:
+        derived.extend(
+            [
+                "antidepressant discontinuation syndrome",
+                "withdrawal syndrome",
+            ]
+        )
+
+    has_antipsychotic_cue = _contains_any_phrase(normalized, _ANTIPSYCHOTIC_CUE_PHRASES)
+    has_restlessness_cue = _contains_any_phrase(normalized, _RESTLESSNESS_CUE_PHRASES)
+    if has_antipsychotic_cue and has_restlessness_cue:
+        derived.extend(
+            [
+                "drug induced akathisia",
+                "akathisia",
+                "antipsychotics",
+            ]
+        )
+
+    has_corticosteroid_cue = _contains_any_phrase(normalized, _CORTICOSTEROID_CUE_PHRASES)
+    has_neuropsych_cue = _contains_any_phrase(normalized, _NEUROPSYCH_CUE_PHRASES)
+    if has_corticosteroid_cue and has_neuropsych_cue:
+        derived.extend(
+            [
+                "corticosteroid psychiatric effects",
+                "steroid psychosis",
+            ]
+        )
+        if "dexamethasone" in normalized or " dex" in f" {normalized} ":
+            derived.append("dexamethasone psychiatric effects")
+
+    return _merge_unique_resolution_phrases(derived)
+
+
 def _normalize_query_text_with_symbols(
     text: str,
     *,
@@ -94,6 +213,10 @@ def _surface_tokens(text: str) -> list[str]:
 
 
 def _is_short_upper_acronym(token: str) -> bool:
+    return bool(_acronym_surface_tokens(token))
+
+
+def _is_canonical_short_upper_acronym(token: str) -> bool:
     stripped = token.strip()
     return (
         2 <= len(stripped) <= MAX_ENTITY_ACRONYM_TOKEN_CHARS
@@ -101,6 +224,21 @@ def _is_short_upper_acronym(token: str) -> bool:
         and any(char.isalpha() for char in stripped)
         and all(char.isalnum() or char in "/+-" for char in stripped)
     )
+
+
+def _acronym_surface_tokens(token: str) -> tuple[str, ...]:
+    stripped = token.strip()
+    variants: list[str] = []
+    if _is_canonical_short_upper_acronym(stripped):
+        variants.append(normalize_entity_query_text(stripped))
+
+    if stripped.endswith("s") and len(stripped) >= 3:
+        singular = stripped[:-1]
+        if stripped[:-1].isupper() and _is_canonical_short_upper_acronym(singular):
+            variants.append(normalize_entity_query_text(stripped))
+            variants.append(normalize_entity_query_text(singular))
+
+    return tuple(dict.fromkeys(variant for variant in variants if variant))
 
 
 def _has_mid_sentence_proper_noun(tokens: list[str]) -> bool:
@@ -211,12 +349,16 @@ def _entity_surface_anchor_tokens(text: str) -> list[str]:
     anchors: list[str] = []
     seen: set[str] = set()
     for token in _surface_tokens(text):
+        acronym_variants = _acronym_surface_tokens(token)
+        if acronym_variants:
+            for variant in acronym_variants:
+                if variant in seen:
+                    continue
+                seen.add(variant)
+                anchors.append(variant)
+            continue
         normalized = normalize_entity_query_text(token)
         if not normalized or normalized in seen:
-            continue
-        if _is_short_upper_acronym(token):
-            seen.add(normalized)
-            anchors.append(normalized)
             continue
         if _has_specific_entity_surface_token(token, normalized):
             seen.add(normalized)
@@ -256,6 +398,16 @@ def build_query_entity_resolution_phrases(text: str) -> list[str]:
 
     filtered: list[str] = []
     seen: set[str] = set()
+    for anchor in anchors:
+        if anchor in seen or len(anchor) < 3:
+            continue
+        if _is_runtime_entity_noise_phrase(anchor):
+            continue
+        seen.add(anchor)
+        filtered.append(anchor)
+        if len(filtered) >= MAX_ENTITY_RESOLUTION_PHRASES:
+            return filtered
+
     for phrase in build_entity_query_phrases(text):
         if phrase in seen:
             continue
@@ -269,6 +421,33 @@ def build_query_entity_resolution_phrases(text: str) -> list[str]:
     return filtered
 
 
+def _bounded_entity_resolution_phrase_inventory(
+    text: str,
+    *,
+    normalized_query: str | None = None,
+) -> list[str]:
+    phrases: list[str] = []
+    seen: set[str] = set()
+    for phrase in dict.fromkeys(
+        [
+            *build_entity_query_phrases(text),
+            *build_query_phrases(normalized_query or text),
+        ]
+    ):
+        if phrase in seen or _is_runtime_entity_noise_phrase(phrase):
+            continue
+        phrase_tokens = [token for token in phrase.split() if token]
+        if len(phrase_tokens) == 1:
+            token = phrase_tokens[0]
+            if token in PROSE_CLAUSE_TOKENS:
+                continue
+            if len(token) < 4 and not _has_specific_entity_token(token):
+                continue
+        seen.add(phrase)
+        phrases.append(phrase)
+    return phrases
+
+
 def build_runtime_entity_resolution_phrases(
     text: str,
     *,
@@ -278,23 +457,50 @@ def build_runtime_entity_resolution_phrases(
     """Build query phrases for runtime entity resolution without widening passage noise.
 
     Title/general/question lookups keep the broader phrase inventory so generic
-    biomedical queries can still resolve missing entity terms. Passage lookups stay
-    on the compact anchor-aware lane to avoid spending time on statistical prose.
+    biomedical queries can still resolve missing entity terms. Passage lookups prefer
+    the compact anchor-aware lane, but short expert prompts fall back to the same
+    bounded inventory when no anchor phrases survive and the surface does not look
+    like statistical prose.
+
+    Composite clinical-event phrases are prepended when the query surface carries a
+    strong medication/class + effect/discontinuation schema. Those phrases still flow
+    through the existing ontology-backed resolver rather than bypassing it.
     """
 
-    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
-        return build_query_entity_resolution_phrases(text)
+    composite_phrases = _composite_entity_resolution_phrases(
+        text,
+        normalized_query=normalized_query,
+    )
 
-    return [
-        phrase
-        for phrase in dict.fromkeys(
-            [
-                *build_entity_query_phrases(text),
-                *build_query_phrases(normalized_query or text),
-            ]
+    if retrieval_profile == QueryRetrievalProfile.PASSAGE_LOOKUP:
+        anchored_phrases = build_query_entity_resolution_phrases(text)
+        if anchored_phrases:
+            if not composite_phrases:
+                return anchored_phrases
+            return _merge_unique_resolution_phrases(composite_phrases, anchored_phrases)
+        if has_statistical_surface_signal(text):
+            return composite_phrases
+        bounded_inventory = _bounded_entity_resolution_phrase_inventory(
+            text,
+            normalized_query=normalized_query,
         )
-        if not _is_runtime_entity_noise_phrase(phrase)
-    ]
+        if not composite_phrases:
+            return bounded_inventory
+        return _merge_unique_resolution_phrases(
+            composite_phrases,
+            bounded_inventory,
+        )
+
+    bounded_inventory = _bounded_entity_resolution_phrase_inventory(
+        text,
+        normalized_query=normalized_query,
+    )
+    if not composite_phrases:
+        return bounded_inventory
+    return _merge_unique_resolution_phrases(
+        composite_phrases,
+        bounded_inventory,
+    )
 
 
 def has_query_entity_surface_signal(text: str) -> bool:

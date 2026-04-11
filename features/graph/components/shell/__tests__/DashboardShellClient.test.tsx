@@ -21,10 +21,18 @@ jest.mock("../ModeColorSync", () => ({
   ModeColorSync: () => null,
 }));
 
+jest.mock("../preload-chrome-chunks", () => ({
+  preloadChromeChunks: jest.fn(),
+}));
+
 jest.mock("../chrome", () => ({
-  GraphAttribution: () => null,
   TIMELINE_HEIGHT: 44,
   BottomToolbar: () => null,
+  useBottomChromeFloat: () => ({
+    initial: { bottom: 12 },
+    animate: { bottom: 12 },
+    transition: { bottom: {} },
+  }),
 }));
 
 jest.mock("../loading", () => ({
@@ -50,10 +58,6 @@ jest.mock("../../panels/PromptBox", () => ({
 
 jest.mock("../../chrome/TimelineBar", () => ({
   TimelineBar: () => null,
-}));
-
-jest.mock("../../chrome/StatsBar", () => ({
-  StatsBar: () => null,
 }));
 
 jest.mock("../../explore/CanvasControls", () => ({
@@ -176,7 +180,7 @@ describe("DashboardShellClient", () => {
   });
 
   it("does not re-render ConfigPanel, DetailPanel, or CanvasControls when unrelated shell chrome changes", async () => {
-    useDashboardStore.setState({ activePanel: "config" });
+    useDashboardStore.getState().openPanel("config");
 
     await act(async () => {
       render(<DashboardShellClient bundle={BUNDLE_STUB} />);
@@ -198,7 +202,7 @@ describe("DashboardShellClient", () => {
   });
 
   it("does not re-render QueryPanel when unrelated shell chrome changes", async () => {
-    useDashboardStore.setState({ activePanel: "query" });
+    useDashboardStore.getState().openPanel("query");
 
     await act(async () => {
       render(<DashboardShellClient bundle={BUNDLE_STUB} />);

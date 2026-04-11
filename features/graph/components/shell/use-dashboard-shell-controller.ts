@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useGraphBundle } from "@/features/graph/hooks/use-graph-bundle";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { useShallow } from "zustand/react/shallow";
-import type { GraphBundle, GraphStats } from "@/features/graph/types";
+import type { PanelId } from "@/features/graph/stores";
+import type { GraphBundle } from "@/features/graph/types";
 
 export interface DashboardShellController {
-  activePanel: ReturnType<typeof useDashboardStore.getState>["activePanel"];
   bundle: GraphBundle;
   canvas: ReturnType<typeof useGraphBundle>["canvas"];
   canvasShifted: boolean;
@@ -16,8 +16,8 @@ export interface DashboardShellController {
   handleGraphFirstPaint: () => void;
   isContinuousColor: boolean;
   isSelectionLocked: boolean;
-  layoutShowStatsBar: boolean;
   loading: boolean;
+  openPanels: Record<PanelId, boolean>;
   panelsVisible: boolean;
   progress: ReturnType<typeof useGraphBundle>["progress"];
   queries: ReturnType<typeof useGraphBundle>["queries"];
@@ -25,14 +25,13 @@ export interface DashboardShellController {
   showLoading: boolean;
   showSizeLegend: boolean;
   showTimeline: boolean;
-  stats: GraphStats | null;
   tableHeight: number;
   tableOpen: boolean;
   uiHidden: boolean;
 }
 
 interface DashboardShellSnapshot {
-  activePanel: ReturnType<typeof useDashboardStore.getState>["activePanel"];
+  openPanels: Record<PanelId, boolean>;
   panelsVisible: boolean;
   pointColorStrategy: ReturnType<
     typeof useDashboardStore.getState
@@ -54,7 +53,7 @@ interface DashboardShellSnapshot {
 export function useDashboardShellController(bundle: GraphBundle): DashboardShellController {
   const mode = useGraphStore((state) => state.mode);
   const {
-    activePanel,
+    openPanels,
     panelsVisible,
     pointColorStrategy,
     promptMode,
@@ -72,7 +71,7 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
   } = useDashboardStore(
     useShallow(
       (state): DashboardShellSnapshot => ({
-        activePanel: state.activePanel,
+        openPanels: state.openPanels,
         panelsVisible: state.panelsVisible,
         pointColorStrategy: state.pointColorStrategy,
         promptMode: state.promptMode,
@@ -123,31 +122,10 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
     setGraphPaintReady(false);
   }, [bundle.bundleChecksum, canvas?.overlayRevision]);
 
-  const stats: GraphStats | null = useMemo(() => {
-    if (!canvas) {
-      return null;
-    }
-
-    return {
-      points: canvas.pointCounts.corpus,
-      pointLabel: "points",
-      papers: 0,
-      clusters:
-        typeof bundle.qaSummary?.["cluster_count"] === "number"
-          ? (bundle.qaSummary["cluster_count"] as number)
-          : 0,
-      noise:
-        typeof bundle.qaSummary?.["noise_count"] === "number"
-          ? (bundle.qaSummary["noise_count"] as number)
-          : 0,
-    };
-  }, [bundle.qaSummary, canvas]);
-
   const isReady = !loading && canvas != null && queries != null;
   const showLoading = !isReady || !graphPaintReady;
 
   return {
-    activePanel,
     bundle,
     canvas,
     canvasShifted,
@@ -155,8 +133,8 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
     handleGraphFirstPaint,
     isContinuousColor,
     isSelectionLocked: selectionLocked,
-    layoutShowStatsBar: layout.showStatsBar,
     loading,
+    openPanels,
     panelsVisible,
     progress,
     queries,
@@ -164,7 +142,6 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
     showLoading,
     showSizeLegend,
     showTimeline,
-    stats,
     tableHeight,
     tableOpen,
     uiHidden,

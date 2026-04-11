@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import tarfile
 from pathlib import Path
+from unittest.mock import patch
 
 from app.rag_ingest.bioc_member_fetch import (
     RagBioCArchiveMemberRequest,
@@ -172,3 +173,53 @@ def test_fetch_bioc_archive_members_can_return_multiple_documents_from_one_cache
     assert second_report.archive_reads == 0
     assert second_report.cache_hits == 2
     assert all(result.cache_hit is True for result in second_results)
+
+
+def test_fetch_bioc_archive_members_prefers_direct_member_lookup_when_names_known(
+    monkeypatch,
+    tmp_path: Path,
+):
+    archive_root = tmp_path / "pubtator" / "releases" / "2026-03-21" / "biocxml"
+    _write_bioc_archive(
+        archive_root / "BioCXML.4.tar.gz",
+        {
+            "output/BioCXML/001.BioC.XML": "<document><id>100</id></document>",
+            "output/BioCXML/999.BioC.XML": "<document><id>999</id></document>",
+        },
+    )
+
+    class _FakeSettings:
+        pubtator_release_id = "2026-03-21"
+        pubtator_biocxml_dir_path = archive_root
+
+        def pubtator_release_path(self, release_id: str | None = None) -> Path:
+            assert release_id in {None, "2026-03-21"}
+            return tmp_path / "pubtator" / "releases" / "2026-03-21"
+
+    monkeypatch.setattr("app.rag_ingest.bioc_member_fetch.settings", _FakeSettings())
+
+    original_open = tarfile.open
+
+    def _guarded_open(name, mode="r", *args, **kwargs):
+        if mode == "r|gz":
+            raise AssertionError("streaming fallback should not run when member names are known")
+        return original_open(name, mode, *args, **kwargs)
+
+    with patch("app.rag_ingest.bioc_member_fetch.tarfile.open", side_effect=_guarded_open):
+        results, report = fetch_bioc_archive_members(
+            archive_name="BioCXML.4.tar.gz",
+            requests=[
+                RagBioCArchiveMemberRequest(
+                    archive_name="BioCXML.4.tar.gz",
+                    document_id="999",
+                    document_ordinal=2,
+                    member_name="output/BioCXML/999.BioC.XML",
+                )
+            ],
+            source_revision="2026-03-21",
+        )
+
+    assert [result.document_id for result in results] == ["999"]
+    assert report.archive_reads == 1
+    assert report.cache_hits == 0
+    assert report.missing_document_ids == []

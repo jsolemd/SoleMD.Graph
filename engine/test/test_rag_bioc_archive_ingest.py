@@ -5,6 +5,7 @@ from pathlib import Path
 from app.rag_ingest.chunk_backfill_runtime import ChunkBackfillExecutionReport
 from app.rag_ingest.chunk_seed import ChunkSeedResult
 from app.rag_ingest.bioc_archive_ingest import run_bioc_archive_ingest
+from app.rag_ingest.target_corpus import RagTargetCorpusRow
 from app.rag_ingest.warehouse_writer import RagWarehouseBulkIngestPaperResult, RagWarehouseBulkIngestResult
 
 
@@ -423,6 +424,21 @@ def test_bioc_archive_ingest_uses_direct_archive_member_path_by_default():
             assert corpus_ids == [101, 202]
             return {202}
 
+    class _FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [101, 202]
+            assert limit is None
+
+            class _Row:
+                def __init__(self, corpus_id, paper_title):
+                    self.corpus_id = corpus_id
+                    self.paper_title = paper_title
+
+            return [
+                _Row(101, "Canonical Archive Title"),
+                _Row(202, "Ignored Existing Title"),
+            ]
+
     def _archive_member_fetcher(**kwargs):
         requests = kwargs["requests"]
 
@@ -549,6 +565,7 @@ def test_bioc_archive_ingest_uses_direct_archive_member_path_by_default():
         manifest_repository=_FakeManifestRepository(),
         quality_inspector=_quality_inspector,
         existing_loader=_FakeExistingLoader(),
+        target_loader=_FakeTargetLoader(),
         archive_member_fetcher=_archive_member_fetcher,
         warehouse_writer=writer,
         chunk_seeder=_FakeChunkSeeder(),
@@ -567,6 +584,137 @@ def test_bioc_archive_ingest_uses_direct_archive_member_path_by_default():
     assert report.warehouse_refresh["chunk_backfill"]["total_chunk_rows"] == 2
     assert captured_quality_ids == [101]
     assert len(writer.source_groups) == 1
+    assert writer.source_groups[0][0].document.title == "Canonical Archive Title"
+
+
+def test_bioc_archive_ingest_direct_path_applies_canonical_target_title():
+    def _archive_target_discoverer(**kwargs):
+        class _Candidate:
+            def __init__(self, corpus_id, document_id, ordinal, member_name):
+                self.corpus_id = corpus_id
+                self.document_id = document_id
+                self.archive_name = kwargs["archive_name"]
+                self.document_ordinal = ordinal
+                self.member_name = member_name
+
+        class _Result:
+            @property
+            def selected_corpus_ids(self):
+                return [101]
+
+            @property
+            def candidates(self):
+                return [
+                    _Candidate(101, "doc-101", 4, "output/BioCXML/101.BioC.XML"),
+                ]
+
+            def model_dump(self, mode="python"):
+                return {
+                    "archive_name": kwargs["archive_name"],
+                    "selected_corpus_ids": [101],
+                }
+
+        return _Result()
+
+    class _FakeLocatorRepository:
+        def upsert_entries(self, entries):
+            return len(entries)
+
+    class _FakeManifestRepository:
+        def mark_skipped(self, entries):
+            return len(entries)
+
+        def fetch_skipped_document_ids(self, *, source_revision, archive_name, document_ids):
+            return set()
+
+    class _FakeExistingLoader:
+        def load_existing(self, *, corpus_ids):
+            return set()
+
+    class _FakeTargetLoader:
+        def load(self, *, corpus_ids, limit):
+            assert corpus_ids == [101]
+            assert limit is None
+            return [
+                RagTargetCorpusRow(
+                    corpus_id=101,
+                    pmid=11111,
+                    paper_title="Canonical paper title",
+                )
+            ]
+
+    def _archive_member_fetcher(**kwargs):
+        class _Result:
+            archive_name = kwargs["archive_name"]
+            document_id = "doc-101"
+            document_ordinal = 4
+            member_name = "output/BioCXML/101.BioC.XML"
+            xml_text = """
+            <collection><document><id>doc-101</id>
+            <passage><infon key=\"type\">title</infon><offset>0</offset><text>Case presentation</text></passage>
+            <passage><infon key=\"type\">paragraph</infon><offset>18</offset>
+            <text>Resolved through direct member ingest.</text></passage>
+            </document></collection>
+            """
+            cache_hit = False
+
+        class _Report:
+            def model_dump(self, mode="python"):
+                return {
+                    "archive_name": kwargs["archive_name"],
+                    "requested_members": 1,
+                    "fetched_members": 1,
+                    "cache_hits": 0,
+                    "archive_reads": 1,
+                    "missing_document_ids": [],
+                }
+
+            @property
+            def missing_document_ids(self):
+                return []
+
+        return ([_Result()], _Report())
+
+    class _FakeWriter:
+        def __init__(self):
+            self.source_groups = []
+
+        def ingest_source_groups(self, source_groups, *, source_citation_keys_by_corpus=None, chunk_version=None, replace_existing=False):
+            self.source_groups.extend(source_groups)
+            return RagWarehouseBulkIngestResult(
+                papers=[
+                    RagWarehouseBulkIngestPaperResult(
+                        corpus_id=101,
+                        primary_source_system="biocxml",
+                        primary_reason="fallback_structural_best",
+                        annotation_source_systems=[],
+                    )
+                ],
+                batch_total_rows=5,
+                written_rows=5,
+                deferred_stage_names=[],
+            )
+
+    writer = _FakeWriter()
+    report = run_bioc_archive_ingest(
+        run_id="bioc-archive-title-override",
+        parser_version="parser-v2",
+        archive_name="BioCXML.4.tar.gz",
+        archive_target_discoverer=_archive_target_discoverer,
+        locator_repository=_FakeLocatorRepository(),
+        manifest_repository=_FakeManifestRepository(),
+        existing_loader=_FakeExistingLoader(),
+        target_loader=_FakeTargetLoader(),
+        archive_member_fetcher=_archive_member_fetcher,
+        warehouse_writer=writer,
+    )
+
+    assert report.warehouse_refresh["bioc_fallback_stage"]["ingested_corpus_ids"] == [101]
+    assert writer.source_groups[0][0].document.title == "Canonical paper title"
+    assert writer.source_groups[0][0].document.raw_attrs_json == {
+        "source_selected_title": "Case presentation",
+        "corpus_metadata_title": "Canonical paper title",
+    }
 
 
 def test_bioc_archive_ingest_enriches_precomputed_report_with_member_names(tmp_path: Path):

@@ -12,6 +12,7 @@ import {
   isBudgetScopeSelectionSourceId,
   isVisibilitySelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
+import { isSelectedPointBaselineSelectionSourceId } from "@/features/graph/lib/overlay-producers";
 import type { GraphBundleQueries, GraphVisibilityBudget, MapLayer } from "@/features/graph/types";
 import type { VisibilityFocus } from "@/features/graph/stores/slices/visibility-slice";
 
@@ -172,6 +173,14 @@ export function usePointsFiltered(deps: {
       if (shouldRefreshVisibilityBudget) {
         void refreshVisibilityBudget();
       }
+      return;
+    }
+
+    // Programmatic sources that already own selected_point_indices should not
+    // round-trip their callback indices back into DuckDB/store. They use the
+    // baseline table as the canonical selection contract and the native clause
+    // only for graph-side highlighting.
+    if (isSelectedPointBaselineSelectionSourceId(sourceId)) {
       return;
     }
 

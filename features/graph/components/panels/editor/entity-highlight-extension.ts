@@ -76,6 +76,14 @@ export function createEntityHighlightExtension({
                 DecorationSet.empty;
             },
             handleDOMEvents: {
+              mouseover: (view, event) => {
+                syncEntityHighlightHover({
+                  view,
+                  event,
+                  setEntityHighlightHover,
+                });
+                return false;
+              },
               mousemove: (view, event) => {
                 syncEntityHighlightHover({
                   view,
@@ -141,6 +149,7 @@ function buildEntityHighlightState(
         {
           class: "tiptap-entity-highlight",
           "data-entity-highlight-id": highlight.id,
+          "data-entity-type": highlight.entity.entityType.toLowerCase(),
         },
         { entityHighlight: highlight },
       ),
@@ -164,10 +173,7 @@ function syncEntityHighlightHover({
   event: MouseEvent;
   setEntityHighlightHover: (hover: EntityHighlightHoverState | null) => void;
 }) {
-  const target =
-    event.target instanceof HTMLElement
-      ? event.target.closest<HTMLElement>("[data-entity-highlight-id]")
-      : null;
+  const target = resolveEntityHighlightElement(event.target);
   if (!target) {
     setEntityHighlightHover(null);
     return;
@@ -191,6 +197,15 @@ function syncEntityHighlightHover({
   setEntityHighlightHover({
     highlight,
     x: targetBounds.left - frameBounds.left,
-    y: targetBounds.bottom - frameBounds.top + ENTITY_HOVER_OFFSET_Y,
+    y: targetBounds.top - frameBounds.top - ENTITY_HOVER_OFFSET_Y,
   });
+}
+
+export function resolveEntityHighlightElement(target: EventTarget | null) {
+  const node = target instanceof Node ? target : null;
+  const element =
+    node instanceof HTMLElement
+      ? node
+      : node?.parentElement ?? null;
+  return element?.closest<HTMLElement>("[data-entity-highlight-id]") ?? null;
 }

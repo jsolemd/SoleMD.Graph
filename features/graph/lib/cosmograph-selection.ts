@@ -117,6 +117,26 @@ export function clearSelectionClause(
   })
 }
 
+export interface SelectedPointBaselineSelectionValue {
+  kind: 'selected-point-baseline'
+  count: number
+}
+
+export function buildSelectedPointBaselineSelectionClause(
+  source: ClauseSource,
+  selectedPointCount: number,
+): SelectionClause {
+  return {
+    source,
+    value: {
+      kind: 'selected-point-baseline',
+      count: selectedPointCount,
+    } satisfies SelectedPointBaselineSelectionValue,
+    predicate: sql`${sqlColumn('index')} IN (SELECT index FROM selected_point_indices)`,
+    meta: { type: 'point' },
+  }
+}
+
 export function buildVisibilityFocusClause(
   source: ClauseSource,
   focus: VisibilityFocus,

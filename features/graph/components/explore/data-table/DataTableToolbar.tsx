@@ -1,7 +1,7 @@
 "use client";
 
 import { ActionIcon, Group, Pagination, SegmentedControl, Text, Tooltip } from "@mantine/core";
-import { Download } from "lucide-react";
+import { Database, Download } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, MapLayer } from "@/features/graph/types";
 import { panelTextDimStyle, iconBtnStyles, PANEL_ACCENT, PanelInlineLoader } from "../../panels/PanelShell";
@@ -36,6 +36,8 @@ export function DataTableToolbar({
 }: DataTableToolbarProps) {
   const setTablePage = useDashboardStore((s) => s.setTablePage);
   const setTableView = useDashboardStore((s) => s.setTableView);
+  const togglePanel = useDashboardStore((s) => s.togglePanel);
+  const queryPanelOpen = useDashboardStore((s) => s.openPanels.query);
 
   const handleExport = async () => {
     const csv = await queries.exportTableCsv({
@@ -104,6 +106,24 @@ export function DataTableToolbar({
       </Group>
       <Group gap={4}>
         {(pageLoading || pageRefreshing) && <PanelInlineLoader />}
+        <Tooltip
+          label={queryPanelOpen ? "Close SQL Explorer" : "Open SQL Explorer"}
+          position="bottom"
+          withArrow
+        >
+          <ActionIcon
+            variant="transparent"
+            size={18}
+            radius="xl"
+            onClick={() => togglePanel("query")}
+            aria-label={queryPanelOpen ? "Close SQL Explorer" : "Open SQL Explorer"}
+            aria-pressed={queryPanelOpen}
+            className="graph-icon-btn"
+            styles={iconBtnStyles}
+          >
+            <Database size={11} />
+          </ActionIcon>
+        </Tooltip>
         <Tooltip label="Export CSV" position="bottom" withArrow>
           <ActionIcon
             variant="transparent"

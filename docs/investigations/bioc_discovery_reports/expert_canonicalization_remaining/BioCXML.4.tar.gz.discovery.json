@@ -1,0 +1,53 @@
+{
+  "archive_name": "BioCXML.4.tar.gz",
+  "start_document_ordinal": 1822556,
+  "resolver_batch_size": 3,
+  "limit": 3,
+  "max_documents": 3,
+  "scanned_documents": 3,
+  "last_document_ordinal_scanned": 2514803,
+  "manifest_entries_used": 3,
+  "manifest_entries_written": 0,
+  "resolved_corpus_ids": [
+    244851480,
+    250973145,
+    258715884
+  ],
+  "selected_corpus_ids": [
+    244851480,
+    250973145,
+    258715884
+  ],
+  "candidates": [
+    {
+      "corpus_id": 258715884,
+      "document_id": "37191339",
+      "archive_name": "BioCXML.4.tar.gz",
+      "document_ordinal": 1822556,
+      "member_name": "output/BioCXML/17244.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 250973145,
+      "document_id": "36798530",
+      "archive_name": "BioCXML.4.tar.gz",
+      "document_ordinal": 2220843,
+      "member_name": "output/BioCXML/53094.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 244851480,
+      "document_id": "34887662",
+      "archive_name": "BioCXML.4.tar.gz",
+      "document_ordinal": 2514803,
+      "member_name": "output/BioCXML/79544.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    }
+  ]
+}

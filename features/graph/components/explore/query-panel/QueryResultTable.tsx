@@ -2,7 +2,7 @@
 
 import { Table, Text } from "@mantine/core";
 import { formatCellValue } from "@/features/graph/lib/helpers";
-import { panelTableHeaderStyle, panelTextDimStyle } from "../../panels/PanelShell";
+import { panelTextDimStyle } from "../../panels/PanelShell";
 import type { GraphQueryResult } from "@/features/graph/types";
 
 export function QueryResultTable({ result }: { result: GraphQueryResult }) {
@@ -19,49 +19,61 @@ export function QueryResultTable({ result }: { result: GraphQueryResult }) {
       minWidth={200}
       style={{
         border: "1px solid var(--graph-panel-border)",
-        borderRadius: 12,
-        maxHeight: 320,
+        borderRadius: 8,
+        maxHeight: 280,
         overflow: "auto",
       }}
     >
       <Table
         stickyHeader
-        style={{ fontSize: "0.75rem" }}
         styles={{
           table: { borderColor: "transparent" },
           thead: { backgroundColor: "var(--graph-panel-bg)" },
           th: {
             backgroundColor: "var(--graph-panel-bg)",
             borderColor: "var(--graph-panel-border)",
+            fontSize: 9,
+            fontWeight: 500,
+            textTransform: "none",
+            letterSpacing: 0,
+            color: "var(--graph-panel-text-dim)",
+            fontFamily: "var(--font-mono)",
+            padding: "4px 8px",
+            lineHeight: "13px",
+            whiteSpace: "nowrap",
           },
-          td: { borderColor: "var(--graph-panel-border)" },
+          td: {
+            borderColor: "var(--graph-panel-border)",
+            fontSize: 10,
+            padding: "4px 8px",
+            lineHeight: "14px",
+            color: "var(--graph-panel-text)",
+            maxWidth: 220,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          },
           tr: { backgroundColor: "transparent" },
         }}
       >
         <Table.Thead>
           <Table.Tr>
             {result.columns.map((column) => (
-              <Table.Th key={column} style={panelTableHeaderStyle}>
-                {column}
-              </Table.Th>
+              <Table.Th key={column}>{column}</Table.Th>
             ))}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {result.rows.map((row, index) => (
             <Table.Tr key={index}>
-              {result.columns.map((column) => (
-                <Table.Td
-                  key={`${index}:${column}`}
-                  style={{
-                    ...panelTextDimStyle,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {formatCellValue(row[column], { nullLabel: "NULL" })}
-                </Table.Td>
-              ))}
+              {result.columns.map((column) => {
+                const rendered = formatCellValue(row[column], { nullLabel: "NULL" });
+                return (
+                  <Table.Td key={`${index}:${column}`} title={rendered}>
+                    {rendered}
+                  </Table.Td>
+                );
+              })}
             </Table.Tr>
           ))}
         </Table.Tbody>

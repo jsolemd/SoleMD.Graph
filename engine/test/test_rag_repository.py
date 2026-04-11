@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, call
 from app.pgvector_utils import format_vector_literal
 from app.rag import queries
 from app.rag.models import PaperEvidenceHit
+from app.rag.biomedical_concept_normalizer import _VocabConceptRow
 from app.rag.query_enrichment import normalize_title_key
 from app.rag.query_metadata import QueryMetadataHints
 from app.rag.repository import (
@@ -1041,13 +1042,13 @@ def test_resolve_query_entity_terms_maps_exact_canonical_matches(mock_conn):
     )
     repo = PostgresRagRepository(connect=lambda: conn)
 
-    terms, high_conf = repo.resolve_query_entity_terms(
+    resolved = repo.resolve_query_entity_terms(
         query_phrases=["melatonin", "delirium", "melatonin delirium"],
         limit=5,
     )
 
-    assert terms == ["melatonin", "delirium"]
-    assert high_conf == set()
+    assert resolved.all_terms == ["melatonin", "delirium"]
+    assert resolved.high_confidence_terms == set()
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.QUERY_ENTITY_TERM_MATCH_SQL,
@@ -1070,13 +1071,13 @@ def test_resolve_query_entity_terms_preserves_exact_concept_ids(mock_conn):
     )
     repo = PostgresRagRepository(connect=lambda: conn)
 
-    terms, high_conf = repo.resolve_query_entity_terms(
+    resolved = repo.resolve_query_entity_terms(
         query_phrases=["mesh:d008874", "melatonin"],
         limit=5,
     )
 
-    assert terms == ["MESH:D008874"]
-    assert high_conf == {"MESH:D008874"}
+    assert resolved.all_terms == ["MESH:D008874"]
+    assert resolved.high_confidence_terms == {"MESH:D008874"}
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
         queries.QUERY_ENTITY_TERM_MATCH_SQL,
@@ -1114,13 +1115,309 @@ def test_resolve_query_entity_terms_dedupes_casefolded_terms(mock_conn):
         ]
     )
 
-    terms, high_conf = repo.resolve_query_entity_terms(
+    resolved = repo.resolve_query_entity_terms(
         query_phrases=["SLC6A4"],
         limit=5,
     )
 
-    assert terms == ["slc6a4"]
-    assert high_conf == {"slc6a4"}
+    assert resolved.all_terms == ["slc6a4"]
+    assert resolved.high_confidence_terms == {"slc6a4"}
+
+
+def test_resolve_query_entity_terms_adds_supplemental_vocab_matches_for_uncovered_composite_phrases(
+    mock_conn,
+):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock(
+        return_value=[
+            ResolvedEntityConcept(
+                raw_term="steroid psychosis",
+                resolved_term="psychosis",
+                entity_type="disease",
+                concept_namespace="mesh",
+                concept_id="D011618",
+                rule_confidence="high",
+                has_entity_rule=True,
+                source_surface="entity_alias",
+            )
+        ]
+    )
+    repo._resolve_vocab_concept_rows = MagicMock(
+        return_value=[
+            _VocabConceptRow(
+                alias_key="steroid psychosis",
+                preferred_term="Steroid Psychosis",
+                matched_alias="steroid psychosis",
+                alias_type="exact",
+                quality_score=100,
+                is_preferred=True,
+                umls_cui="C0038454",
+                term_id="term-1",
+                category="disease",
+                mesh_id=None,
+                entity_type="disease",
+                source_surface="vocab_alias",
+            )
+        ]
+    )
+
+    resolved = repo.resolve_query_entity_terms(
+        query_phrases=["steroid psychosis", "mania after high-dose dex"],
+        limit=5,
+    )
+
+    assert resolved.all_terms == ["psychosis"]
+    assert [match.preferred_term for match in resolved.vocab_concept_matches] == [
+        "Steroid Psychosis"
+    ]
+    repo._resolve_vocab_concept_rows.assert_called_once_with(
+        query_phrases=["steroid psychosis", "mania after high-dose dex"],
+        limit=5,
+    )
+
+
+def test_resolve_query_entity_terms_skips_supplemental_vocab_lookup_when_vocab_alias_is_already_present(
+    mock_conn,
+):
+    conn = mock_conn(rows=[])
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock(
+        return_value=[
+            ResolvedEntityConcept(
+                raw_term="akathisia",
+                resolved_term="Akathisia",
+                entity_type="disease",
+                concept_namespace="mesh",
+                concept_id="D011595",
+                rule_confidence="high",
+                has_entity_rule=True,
+                source_surface="vocab_alias",
+                vocab_term_id="term-2",
+                vocab_alias_key="akathisia",
+                vocab_alias_type="exact",
+                vocab_quality_score=100,
+                vocab_is_preferred=True,
+                vocab_umls_cui="C0002063",
+                vocab_mesh_id="D011595",
+                vocab_category="disease",
+            )
+        ]
+    )
+    repo._resolve_vocab_concept_rows = MagicMock(return_value=[])
+
+    resolved = repo.resolve_query_entity_terms(
+        query_phrases=["akathisia"],
+        limit=5,
+    )
+
+    assert resolved.all_terms == ["Akathisia"]
+    assert [match.preferred_term for match in resolved.vocab_concept_matches] == [
+        "Akathisia"
+    ]
+    repo._resolve_vocab_concept_rows.assert_not_called()
+
+
+def test_resolve_query_entity_terms_filters_untrusted_single_token_alias_expansions(mock_conn):
+    conn = mock_conn()
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.side_effect = [
+        [
+            {
+                "query_term": "ssri",
+                "normalized_term": "Serotonin syndrome",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D020230",
+                "rule_confidence": "high",
+                "has_entity_rule": True,
+                "source_surface": "entity_alias",
+            }
+        ],
+        [
+            {
+                "query_term": "ssri",
+                "preferred_term": "Selective Serotonin Reuptake Inhibitor (SSRI)",
+                "matched_alias": "SSRI",
+                "alias_key": "ssri",
+                "alias_type": "derived_acronym",
+                "quality_score": 100,
+                "is_preferred": True,
+                "umls_cui": "C4552594",
+                "term_id": "ab61a6fc-6b40-42de-ae3d-640d6f5500c2",
+                "category": "intervention.pharmacologic.class",
+                "mesh_id": None,
+                "entity_type": "chemical",
+                "source_surface": "vocab_alias",
+            }
+        ],
+    ]
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    resolved = repo.resolve_query_entity_terms(
+        query_phrases=["ssri"],
+        limit=5,
+    )
+
+    assert resolved.all_terms == []
+    assert resolved.high_confidence_terms == set()
+    assert resolved.resolved_concepts == ()
+    assert len(resolved.vocab_concept_matches) == 1
+    assert resolved.vocab_concept_matches[0].preferred_term == (
+        "Selective Serotonin Reuptake Inhibitor (SSRI)"
+    )
+    assert resolved.vocab_concept_matches[0].confidence == "medium"
+    assert cur.execute.call_args_list == [
+        call(
+            queries.QUERY_ENTITY_TERM_MATCH_SQL,
+            (["ssri"], 1),
+        ),
+        call(
+            queries.QUERY_VOCAB_CONCEPT_MATCH_SQL,
+            (["ssri"], 5),
+        ),
+    ]
+
+
+def test_resolve_query_entity_terms_keeps_rule_backed_multi_token_alias_expansions(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "query_term": "parkinson disease",
+                "normalized_term": "Parkinson's disease",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D010300",
+                "rule_confidence": "high",
+                "has_entity_rule": True,
+                "source_surface": "entity_alias",
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    resolved = repo.resolve_query_entity_terms(
+        query_phrases=["parkinson disease"],
+        limit=5,
+    )
+
+    assert resolved.all_terms == ["Parkinson's disease"]
+    assert resolved.high_confidence_terms == {"Parkinson's disease"}
+    assert [concept.concept_id for concept in resolved.resolved_concepts] == ["D010300"]
+
+
+def test_resolve_query_entity_terms_prefers_overlap_preserving_alias_concepts_for_same_raw_phrase(
+    mock_conn,
+):
+    conn = mock_conn(
+        rows=[
+            {
+                "query_term": "chest pain",
+                "normalized_term": "chest pain",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D002637",
+                "rule_confidence": "high",
+                "has_entity_rule": True,
+                "source_surface": "entity_alias",
+            },
+            {
+                "query_term": "chest pain",
+                "normalized_term": "chronic obstructive pulmonary disease",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D029424",
+                "rule_confidence": "high",
+                "has_entity_rule": True,
+                "source_surface": "entity_alias",
+            },
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    resolved = repo.resolve_query_entity_terms(
+        query_phrases=["chest pain"],
+        limit=5,
+    )
+
+    assert resolved.all_terms == ["chest pain"]
+    assert [concept.concept_id for concept in resolved.resolved_concepts] == ["D002637"]
+
+
+def test_resolve_query_entity_terms_keeps_zero_overlap_alias_when_no_better_match_exists(
+    mock_conn,
+):
+    conn = mock_conn(
+        rows=[
+            {
+                "query_term": "brain fog",
+                "normalized_term": "Cognitive impairment",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D003072",
+                "rule_confidence": "high",
+                "has_entity_rule": True,
+                "source_surface": "entity_alias",
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    resolved = repo.resolve_query_entity_terms(
+        query_phrases=["brain fog"],
+        limit=5,
+    )
+
+    assert resolved.all_terms == ["Cognitive impairment"]
+    assert [concept.concept_id for concept in resolved.resolved_concepts] == ["D003072"]
+
+
+def test_resolve_query_entity_terms_prunes_shorter_contained_alias_phrases(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "query_term": "in parkinson disease",
+                "normalized_term": "Parkinson's disease",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D010300",
+                "rule_confidence": "high",
+                "has_entity_rule": True,
+                "source_surface": "entity_alias",
+            },
+            {
+                "query_term": "parkinson disease",
+                "normalized_term": "Parkinson's disease",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D010300",
+                "rule_confidence": "high",
+                "has_entity_rule": True,
+                "source_surface": "entity_alias",
+            },
+            {
+                "query_term": "disease",
+                "normalized_term": "disease",
+                "entity_type": "disease",
+                "concept_namespace": "mesh",
+                "concept_id": "D004194",
+                "rule_confidence": "high",
+                "has_entity_rule": False,
+                "source_surface": "entity_alias",
+            },
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+
+    resolved = repo.resolve_query_entity_terms(
+        query_phrases=["in parkinson disease", "parkinson disease", "disease"],
+        limit=5,
+    )
+
+    assert resolved.all_terms == ["Parkinson's disease"]
+    assert [concept.raw_term for concept in resolved.resolved_concepts] == [
+        "parkinson disease",
+    ]
 
 
 def test_resolve_query_entity_terms_reuses_request_scoped_cache(mock_conn):
@@ -1139,14 +1436,14 @@ def test_resolve_query_entity_terms_reuses_request_scoped_cache(mock_conn):
     repo = PostgresRagRepository(connect=lambda: conn)
 
     with repo.search_session():
-        first_terms, _ = repo.resolve_query_entity_terms(
+        first_terms = repo.resolve_query_entity_terms(
             query_phrases=["melatonin"],
             limit=5,
-        )
-        second_terms, _ = repo.resolve_query_entity_terms(
+        ).all_terms
+        second_terms = repo.resolve_query_entity_terms(
             query_phrases=["melatonin"],
             limit=5,
-        )
+        ).all_terms
 
     assert first_terms == ["melatonin"]
     assert second_terms == ["melatonin"]
@@ -1971,6 +2268,56 @@ def test_runtime_entity_queries_use_canonical_entity_mentions():
     assert "\n,\n" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     assert "ranked_papers AS (" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "\n,\n" in queries.PAPER_ENTITY_SEARCH_SQL
+
+
+def test_fetch_entity_matches_uses_provided_resolved_concepts_without_reresolving_terms():
+    conn = MagicMock()
+    conn.__enter__.return_value = conn
+    conn.cursor.return_value.__enter__.return_value.fetchall.return_value = [
+        {
+            "corpus_id": 101,
+            "entity_type": "chemical",
+            "concept_id": "MESH:D005947",
+            "matched_terms": ["fluoxetine"],
+            "mention_count": 2,
+            "structural_span_count": 1,
+            "retrieval_default_mention_count": 1,
+            "score": 0.61,
+        }
+    ]
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock(
+        side_effect=AssertionError("resolved concepts should be forwarded directly")
+    )
+    resolved_concept = ResolvedEntityConcept(
+        raw_term="Prozac",
+        resolved_term="fluoxetine",
+        entity_type="chemical",
+        concept_namespace="mesh",
+        concept_id="D005947",
+    )
+
+    hits = repo.fetch_entity_matches(
+        [101],
+        entity_terms=["fluoxetine"],
+        resolved_concepts=[resolved_concept],
+    )
+
+    assert 101 in hits
+    assert hits[101][0].concept_id == "MESH:D005947"
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.execute.assert_called_once_with(
+        queries.ENTITY_MATCH_SQL,
+        (
+            ["Prozac"],
+            ["chemical"],
+            ["mesh"],
+            ["D005947"],
+            [101],
+            [101],
+            5,
+        ),
+    )
     assert "FROM top_concepts tc" in queries.ENTITY_MATCH_SQL
     assert "JOIN solemd.paper_entity_mentions pem" in queries.ENTITY_MATCH_SQL
     assert "POSITION(" not in queries.ENTITY_MATCH_SQL
@@ -2045,6 +2392,74 @@ def test_search_entity_papers_keeps_raw_alias_terms_for_exact_fast_path(mock_con
     )
 
     assert [hit.corpus_id for hit in hits] == [202]
+    cur = conn.cursor.return_value.__enter__.return_value
+    assert cur.execute.call_args_list[0] == call(
+        queries.PAPER_ENTITY_EXACT_SEARCH_SQL,
+        (
+            ["Prozac"],
+            ["chemical"],
+            ["mesh"],
+            ["D005947"],
+            "run-1",
+            5,
+        ),
+    )
+
+
+def test_search_entity_papers_uses_provided_resolved_concepts_for_exact_fast_path(mock_conn):
+    conn = mock_conn(
+        rows=[
+            {
+                "corpus_id": 202,
+                "paper_id": "paper-202",
+                "title": "Fluoxetine treatment paper",
+                "abstract": "Abstract text",
+                "tldr": None,
+                "journal_name": "Lancet",
+                "year": 2025,
+                "doi": None,
+                "pmid": 22222,
+                "pmcid": None,
+                "text_availability": "abstract",
+                "is_open_access": False,
+                "citation_count": 4,
+                "influential_citation_count": 1,
+                "reference_count": 9,
+                "publication_types": ["Review"],
+                "fields_of_study": ["Biology"],
+                "has_rule_evidence": False,
+                "has_curated_journal_family": False,
+                "journal_family_type": None,
+                "entity_rule_families": 0,
+                "entity_rule_count": 0,
+                "entity_core_families": 1,
+                "entity_candidate_score": 1.0,
+            }
+        ]
+    )
+    repo = PostgresRagRepository(connect=lambda: conn)
+    repo._resolve_query_entity_concepts = MagicMock()
+    repo._is_current_graph_run = MagicMock(return_value=False)
+
+    hits = repo.search_entity_papers(
+        "run-1",
+        entity_terms=["fluoxetine"],
+        resolved_concepts=[
+            ResolvedEntityConcept(
+                raw_term="Prozac",
+                resolved_term="fluoxetine",
+                entity_type="chemical",
+                concept_namespace="mesh",
+                concept_id="D005947",
+                rule_confidence="high",
+                source_surface="vocab_alias",
+            )
+        ],
+        limit=5,
+    )
+
+    assert [hit.corpus_id for hit in hits] == [202]
+    repo._resolve_query_entity_concepts.assert_not_called()
     cur = conn.cursor.return_value.__enter__.return_value
     assert cur.execute.call_args_list[0] == call(
         queries.PAPER_ENTITY_EXACT_SEARCH_SQL,

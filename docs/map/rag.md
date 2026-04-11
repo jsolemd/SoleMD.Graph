@@ -33,6 +33,7 @@
 | Dense retrieval | SPECTER2 ad-hoc query encoding against `solemd.papers.embedding`. |
 | Optional reranking | Bounded MedCPT reranking exists for clinician-intent passage queries, but the live runtime keeps it default-off (`rag_live_biomedical_reranker_enabled = false`). |
 | Chunk retrieval | Live only as **chunk lexical** search over `solemd.paper_chunks`; dense chunk ANN is not in the live request path. |
+| Expert canonicalization | Postgres-backed vocab alias enrichment is live and Langfuse traces now carry `vocab_concept_matches`, but the current bridge is not yet producing meaningful rank gains on the expert-language suite. |
 | Frontend boundary | The backend returns typed evidence and graph signals; DuckDB resolves graph refs locally for Cosmograph. |
 
 ---
@@ -41,46 +42,143 @@
 
 These numbers matter because the repo currently has two truths at once:
 
-- the broad current-release sampled cohort is healthy on the latest code
-- the frozen targeted benchmarks still define the remaining weak classes
+- the broad current-release sampled cohort is still fast and stable
+- the Langfuse benchmark surface now pinpoints the remaining retrieval gaps much
+  more precisely than the older v2-only snapshot
 
 | Artifact | What it says now | Why it matters |
 |------|-------------------|----------------|
-| [`.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`](/home/workbench/SoleMD/SoleMD.Graph/.tmp/rag-runtime-eval-current-all-families-v30-recheck.json) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The live current-release runtime floor is fast, grounded, and stable on the broad sampled cohort. |
+| [`.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`](/home/workbench/SoleMD/SoleMD.Graph/.tmp/rag-runtime-eval-current-all-families-v30-recheck.json) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The broad current-release runtime floor remains fast, grounded, and operationally healthy. |
+| `canonicalization-v1-2026-04-10` Langfuse benchmark run | `16` suites / `672` cases completed; only suite-gate failure was `biomedical_evidence_type_v1` latency (`p95_duration_ms = 294.319 > 250`) | The serving path is stable enough to benchmark end to end, and the remaining work is now a retrieval-quality problem rather than an evaluation-blindness problem. |
 
-V2 consolidated benchmarks (abstract-first, signal-complete, 2026-04-05):
+Current benchmark posture (selected suites):
 
-| Benchmark | Items | hit@1 | hit@k | grounded | p50 ms | Status |
-|-----------|-------|-------|-------|----------|--------|--------|
-| title_retrieval_v2 | 12 | 1.00 | 1.00 | 0.50 | 277 | green |
-| clinical_evidence_v2 | 51 | 0.08 | 0.18 | 0.63 | 295 | real retrieval gap, all signals |
-| passage_retrieval_v2 | 3 | 0.33 | 0.33 | 0.33 | 51,984 | thin (only 287 papers have chunks) |
-| adversarial_routing_v2 | 12 | -- | -- | -- | -- | SDK flush timeout |
-| keyword_search_v2 | 12 | 0.00 | 0.17 | 0.00 | 180 | real signal, broad corpus |
-| abstract_stratum_v2 | 12 | -- | -- | -- | -- | SDK flush timeout |
+| Benchmark | Cases | hit@1 | hit@k | target_in_answer | p95 ms | Interpretation |
+|-----------|------:|------:|------:|-----------------:|-------:|----------------|
+| `biomedical_optimization_v3` | 297 | 1.000 | 1.000 | 1.000 | 72.7 | required regression floor remains green |
+| `biomedical_holdout_v1` | 48 | 1.000 | 1.000 | 1.000 | 52.8 | required held-out biomedical guard remains green |
+| `biomedical_citation_context_v1` | 24 | 1.000 | 1.000 | 1.000 | 119.3 | cited-study preservation remains green |
+| `passage_retrieval_v2` | 13 | 0.692 | 0.923 | 0.769 | 230.4 | accuracy held flat while p95 improved from `444.0 -> 230.4 ms` |
+| `semantic_recall_v2` | 12 | 0.083 | 0.167 | 0.083 | 137.4 | accuracy held flat while p95 improved from `402.0 -> 137.4 ms` |
+| `entity_relation_v2` | 12 | 0.500 | 0.667 | 0.667 | 301.6 | accuracy held flat while p95 improved from `580.1 -> 301.6 ms` |
+| `biomedical_narrative_v1` | 36 | 0.167 | 0.361 | 0.278 | 362.8 | grounded narrative retrieval remains weak |
+| `biomedical_expert_canonicalization_v1` | 64 | 0.016 | 0.062 | 0.031 | 1040.4 | expert-language retrieval is the clearest current gap |
 
-Design principles:
-- **Abstract-first**: seeds resolve against full 2.4M corpus, not the 347
-  warehouse papers. Chunks are additive depth, not a gating requirement.
-- **Signal-complete**: each item emits 16 per-signal Langfuse scores
-  (`target_lexical_score`, `target_entity_score`, `target_dense_score`, etc.)
-  enabling weight suboptimization via Langfuse run comparison.
-- **Generation-ready**: when LLM generation goes live, faithfulness/citation
-  evaluators attach to existing suites -- no structural changes needed.
+Coverage note on 2026-04-11:
 
-Interpretation:
-- **title_retrieval_v2** is the regression guard -- 100% hit@1 confirms title
-  routing and exact matching work correctly.
-- **clinical_evidence_v2** (merged neuropsych_safety + clinical_actionable +
-  question_lookup + evidence_intent) is the core quality signal. 8% hit@1
-  reflects a real retrieval gap: FTS AND-conjunction is too strict for
-  natural-language clinical questions, and dense search (SPECTER2 title+abstract)
-  is semantically distant from interrogative queries.
-- **keyword_search_v2** now tests the full 2.4M corpus (was 1 item before).
-  0% hit@1 at a specific target but 17% hit@k shows the system finds related
-  papers, just not the exact seeded target.
-- **passage_retrieval_v2** is thin (3 items) because only 287 papers have chunks.
-  Will grow as BioCXML ingest progresses.
+- the score row above is still the pre-backfill evaluation snapshot
+- the live warehouse now gives `biomedical_expert_canonicalization_v1`
+  `61` structure-complete, `63` grounding-ready, `2` entity-thin, `1` sparse
+- before any targeted recovery work the suite was effectively `5 covered / 59 sparse`
+- the only truly sparse residual is `206148831`; PubMed `21862951` has no
+  abstract, and there is no manifest-resolved local BioC target
+- the other two residuals (`31269847`, `277771861`) are already
+  chunk/sentence-backed and are better understood as entity-thin than sparse
+- the recovered-paper title-fidelity debt has been cleared; the recovered-set
+  quality audit now has `flagged_corpus_ids = []`
+- interpret the current expert-suite score as a mix of real retrieval weakness,
+  one remaining source-bound sparse case, and two entity-thin partials, not as
+  a pure ranking signal
+
+Trace review on `biomedical_expert_canonicalization_v1` shows:
+
+- `vocab_concept_matches` metadata is present on the expert-suite traces
+- `17 / 64` cases produced non-empty vocab concept matches
+- `0 / 17` matched cases reached `hit@1`
+
+That means the canonicalization substrate is live, but the present concept
+bridge is not yet strong enough to move winning-paper rank on the new
+expert-language surface.
+
+Coverage audit on April 10, 2026 changed the interpretation of that result:
+
+- only `5 / 64` expert-suite targets initially had full child-evidence coverage
+- `59 / 64` targets were present in `graph_points` but absent from
+  `paper_documents`, chunks, entity mentions, and sentence seeds
+- all `59 / 59` sparse targets were PubTator-addressable and manifest-resolved
+  in the local BioC archive
+- a first bounded BioC backfill increased covered targets from `5 -> 32`
+  before the outer operator surface stopped yielding reliable end-of-run reports
+- frozen archive-scoped discovery reports plus direct `member_name` fetch then
+  completed the overnight archive-target campaign and moved the live expert
+  suite to `61` structure-complete / `63` grounding-ready / `1` sparse
+
+So the next clean backend step is coverage-and-quality-first:
+
+- decide whether expert-suite reruns should gate on `grounding_ready` (`63`) or
+  `structure_complete` (`61`)
+- resolve or explicitly exempt the last source-bound sparse target `206148831`
+- decide whether the `2` entity-thin grounding-ready cases need entity repair
+  before the next expert rerun
+- then rerun `biomedical_expert_canonicalization_v1`
+- only after that continue deeper ranking/query-rewrite evaluation on the
+  expert suite
+
+Update on 2026-04-11:
+
+- the operational decision is now to use the `61` structure-complete cases for
+  expert-suite review
+- `rag_benchmark.py --use-suite-gates` already enforces that via
+  `gate_warehouse_depths=("chunks_entities_sentence",)` from the benchmark
+  catalog
+- after refreshing the dataset metadata and fixing review filtering, the
+  baseline structure-complete expert surface was:
+  - `hit@1 = 0.131`
+  - `hit@k = 0.262`
+  - `grounded_answer_rate = 0.934`
+  - `target_in_answer_corpus = 0.164`
+  - `p95_duration_ms = 383.6`
+- the current accepted ranking mainline on the `61`-case surface is:
+  - run `expert-structure61-general-direct-priority-2026-04-11`
+  - `hit@1 = 0.164`
+  - `hit@k = 0.279`
+  - `grounded_answer_rate = 0.951`
+  - `target_in_answer_corpus = 0.230`
+  - `p50_duration_ms = 153.0`
+  - `p95_duration_ms = 298.6`
+- the current live canonicalization pass is:
+  - run `expert-structure61-composite-ontology-phrases-underresolved-2026-04-11`
+  - `hit@1 = 0.164`
+  - `hit@k = 0.279`
+  - `grounded_answer_rate = 1.000`
+  - `target_in_answer_corpus = 0.230`
+  - `p50_duration_ms = 153.3`
+  - `p95_duration_ms = 324.4`
+- delta vs the prior accepted ranking mainline:
+  - `hit@1: flat`
+  - `hit@k: flat`
+  - `grounded_answer_rate: +0.049`
+  - `target_in_answer_corpus: flat`
+  - `p50_duration_ms: +0.322 ms`
+  - `p95_duration_ms: +25.779 ms`
+- the current failure mix is:
+  - `0` no-target-signal misses
+  - `7` target-visible-not-top1 misses
+  - `44` top1 misses
+- the miss surface is now cleaner even though top-line retrieval is flat:
+  - upstream composite event phrases plus under-resolved vocab rescue removed the
+    no-target-signal bucket by mapping expert shorthand into ontology-backed
+    vocab concepts before retrieval
+  - `target_visible_not_top1` remains the cleanest ranking-only bucket
+  - `top1_miss` is now even more explicitly the dominant frontier and needs
+    stronger parent-child evidence promotion after recall
+- the live policy decision is now explicit:
+  - concept and chunk recovery stay enabled for recall
+  - title-profile demotion after fallback recovery remains parked in the hot path
+  - ranking, not mid-retrieval route mutation, is the accepted arbitration surface
+  - live graph traversal remains deferred; the hot path should keep exploiting
+    cheap precomputed entity, relation, citation, and semantic-neighbor signals first
+
+Graph note:
+
+- query-time graph retrieval is still deferred
+- the live hot path already consumes cheap precomputed structure through entity,
+  relation, citation, and graph-signal surfaces
+- the latest gain came from letting exact resolved concepts open the existing
+  entity-match lane, not from adding a new graph traversal step
+- until graph traversal can be expressed as a bounded precomputed signal, it is
+  more likely to add latency/complexity than to solve the current expert-suite
+  miss buckets
 
 ---
 
@@ -95,26 +193,21 @@ runs through the Langfuse SDK/API -- not a separate dashboard or log parser.
 |-----------|-------|
 | Langfuse server | v3.158.0, self-hosted at `localhost:3100` |
 | Python SDK | v4 (observation-centric model) |
-| Score configs | 22 dimensions registered via `ensure_score_configs()` |
+| Score configs | benchmark metrics plus runtime observability dimensions registered via `ensure_score_configs()` |
 | Environment | `development` for experiments, `production` for live API |
 | Annotation queue | `rag-failure-review` for domain expert triage of hit@1=0 |
 
-### Benchmark Datasets (6 v2 suites)
+### Benchmark Datasets (16 live suites)
 
 Benchmarks are Langfuse Datasets (source of truth). JSON snapshots are opt-in
 via `--snapshot` for git-tracked freezes.
 
-| Dataset | Cases | Clinical use case | Channels tested |
-|---------|-------|-------------------|-----------------|
-| title_retrieval_v2 | 12 | "Show me Smith 2023" | LEXICAL, title_anchor |
-| clinical_evidence_v2 | 51 | "How should I manage serotonin syndrome?" | All 7 channels + intent/quality |
-| passage_retrieval_v2 | 3 | Passage drill-down (chunk-gated) | CHUNK_LEXICAL, passage_alignment |
-| adversarial_routing_v2 | 12 | Edge cases that break router | All (routing correctness) |
-| keyword_search_v2 | 12 | "delirium" / "tardive dyskinesia" | LEXICAL, ENTITY, CITATION, DENSE |
-| abstract_stratum_v2 | 12 | Queries targeting unchunked papers | LEXICAL, DENSE, ENTITY |
-
-V1 suites are preserved for backward compatibility but no longer in
-`ALL_BENCHMARK_DATASETS`. Run with `--suites title_global ...` to access.
+| Dataset group | Current suites | Purpose |
+|---------|-------------------|---------|
+| Required biomedical guards | `biomedical_optimization_v3`, `biomedical_holdout_v1`, `biomedical_citation_context_v1` | keep the broad biomedical floor green |
+| Specialist guardrails | `biomedical_metadata_retrieval_v1`, `biomedical_evidence_type_v1` | prevent regressions on metadata and evidence-design retrieval |
+| OpenEvidence-style frontier | `biomedical_narrative_v1`, `biomedical_expert_canonicalization_v1` | grounded narrative retrieval and expert-language canonicalization |
+| Legacy v2 routing/retrieval suites | `title_retrieval_v2`, `clinical_evidence_v2`, `passage_retrieval_v2`, `adversarial_routing_v2`, `keyword_search_v2`, `abstract_stratum_v2`, `question_evidence_v2`, `semantic_recall_v2`, `entity_relation_v2` | route-specific and channel-specific regression detection |
 
 ### Score Dimensions
 
@@ -154,10 +247,11 @@ rag.search                     # Top-level (GENERATION)
 | Scenario | Command |
 |----------|---------|
 | Generate benchmarks | `uv run python -m scripts.prepare_rag_curated_benchmarks` |
-| Run all baselines | `uv run python scripts/rag_benchmark.py --all-benchmarks --run baseline-YYYY-MM-DD --diagnose` |
+| Run all baselines | `uv run python scripts/rag_benchmark.py --all-benchmarks --run baseline-YYYY-MM-DD --use-suite-gates --diagnose` |
 | Enqueue failures | Add `--enqueue-failures` to any run |
 | Quality gate | Add `--quality-gate avg_hit_at_1=0.9,error_rate=0` |
-| Compare runs | Langfuse UI -> Datasets -> select dataset -> compare runs |
+| Review stored run | `uv run python scripts/rag_benchmark.py --dataset <dataset> --run <run-name> --review-existing-run` |
+| Compare runs | `uv run python scripts/rag_benchmark.py --dataset <dataset> --run <post-run> --review-existing-run --compare-run <baseline-run>` |
 
 ---
 
@@ -546,7 +640,7 @@ system.
 | `engine/app/api/rag.py` | FastAPI route boundary |
 | `engine/app/rag/service.py` | Runtime service entrypoint and warmup |
 | `engine/app/rag/search_support.py` | Query normalization and request-to-model conversion |
-| `engine/app/rag/query_enrichment.py` | Query-shape classification, title demotion, and question detection |
+| `engine/app/rag/query_enrichment.py` | Query-shape classification, title-like detection, and question detection |
 | `engine/app/rag/search_plan.py` | Query-shape execution planning |
 | `engine/app/rag/retrieval_policy.py` | Centralized route gating, exact-title rescue, fallback policy, reranker gating |
 | `engine/app/rag/search_retrieval.py` | Initial retrieval stage |

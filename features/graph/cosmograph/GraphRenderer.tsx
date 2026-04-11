@@ -23,6 +23,81 @@ import {
 } from "./label-appearance";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
 import { resolveGraphContentContrastLevel } from "@/features/graph/lib/control-contrast";
+import {
+  DEFAULT_INITIAL_CAMERA,
+  type CameraSnapshot,
+  loadCameraState,
+  saveCameraState,
+} from "./camera-persistence";
+
+interface ZoomTransformLike {
+  constructor: new (k: number, x: number, y: number) => ZoomTransformLike;
+  k: number;
+  x: number;
+  y: number;
+}
+
+interface CosmographInternalHandle {
+  _cosmos?: {
+    canvasD3Selection?: unknown;
+    zoomInstance?: {
+      behavior?: {
+        transform?: (selection: unknown, transform: ZoomTransformLike) => void;
+      };
+      eventTransform?: ZoomTransformLike;
+    };
+  };
+}
+
+function getViewportTransform(
+  cosmograph: CosmographRef | undefined,
+): CameraSnapshot | null {
+  const internal = cosmograph as unknown as CosmographInternalHandle;
+  const transform = internal._cosmos?.zoomInstance?.eventTransform;
+  if (!transform) {
+    return null;
+  }
+
+  if (
+    !isFinite(transform.k) ||
+    !isFinite(transform.x) ||
+    !isFinite(transform.y)
+  ) {
+    return null;
+  }
+
+  return {
+    zoomLevel: transform.k,
+    transformX: transform.x,
+    transformY: transform.y,
+  };
+}
+
+function applyViewportCamera(
+  cosmograph: CosmographRef | undefined,
+  camera: CameraSnapshot,
+): boolean {
+  if (!cosmograph) {
+    return false;
+  }
+
+  const internal = cosmograph as unknown as CosmographInternalHandle;
+  const zoomInstance = internal._cosmos?.zoomInstance;
+  const selection = internal._cosmos?.canvasD3Selection;
+  const transformFn = zoomInstance?.behavior?.transform;
+  const Transform = zoomInstance?.eventTransform?.constructor;
+  if (!selection || !transformFn || !Transform) {
+    return false;
+  }
+
+  const transform = new Transform(
+    camera.zoomLevel,
+    camera.transformX,
+    camera.transformY,
+  );
+  transformFn.call(zoomInstance.behavior, selection, transform);
+  return true;
+}
 
 export default function CosmographRenderer({
   canvas,
@@ -35,6 +110,8 @@ export default function CosmographRenderer({
 }) {
   const cosmographRef = useRef<CosmographRef>(undefined);
   const hasFittedView = useRef(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const initialCamera = useRef<CameraSnapshot>(loadCameraState() ?? DEFAULT_INITIAL_CAMERA);
   const selectionRequestId = useRef(0);
   const budgetFocusSource = useMemo(
     () => createSelectionSource(BUDGET_FOCUS_SOURCE_ID),
@@ -81,6 +158,12 @@ export default function CosmographRenderer({
 
   const handleViewportSettled = useCallback(() => {
     syncZoomState();
+
+    const cosmograph = cosmographRef.current;
+    const transform = getViewportTransform(cosmograph);
+    if (transform) {
+      saveCameraState(transform);
+    }
 
     if (focusedPointIndex != null) {
       markCameraSettled();
@@ -134,6 +217,27 @@ export default function CosmographRenderer({
     });
   }, [onFirstPaint]);
 
+  const restoreViewport = useCallback(
+    (layer: typeof activeLayer, camera: CameraSnapshot) => {
+      const cosmograph = cosmographRef.current;
+      if (!cosmograph) {
+        return;
+      }
+
+      // Cosmograph does not expose a public "set camera center" API, so the
+      // boundary adapter restores the native D3 zoom transform directly.
+      const restored = applyViewportCamera(cosmograph, camera);
+      if (!restored) {
+        cosmograph.fitView(0, fitViewPadding);
+      }
+      hasFittedView.current = true;
+      lastFittedLayer.current = layer;
+      syncZoomState();
+      signalFirstPaint();
+    },
+    [fitViewPadding, signalFirstPaint, syncZoomState],
+  );
+
   const fitViewport = useCallback(
     (layer: typeof activeLayer) => {
       cosmographRef.current?.fitView(0, fitViewPadding);
@@ -151,10 +255,11 @@ export default function CosmographRenderer({
 
     if (!isFirstFit && !isLayerChange) return;
 
-    // Native fitViewOnInit can reveal Cosmograph's default zoom for a frame
-    // before the fitted transform lands. Apply the fit explicitly so the
-    // loading overlay drops only after the correct camera state is in place.
-    fitViewport(activeLayer);
+    if (isFirstFit) {
+      restoreViewport(activeLayer, initialCamera.current);
+    } else {
+      fitViewport(activeLayer);
+    }
     clearVisibilityFocus();
     setFocusedPointIndex(null);
     setCurrentPointScopeSql(null);
@@ -164,6 +269,7 @@ export default function CosmographRenderer({
     activeLayer,
     clearVisibilityFocus,
     fitViewport,
+    restoreViewport,
     setFocusedPointIndex,
     setActiveSelectionSourceId,
     setCurrentPointScopeSql,
@@ -280,17 +386,16 @@ export default function CosmographRenderer({
         if (hasFittedView.current) {
           return;
         }
-        fitViewport(activeLayer);
+        restoreViewport(activeLayer, initialCamera.current);
       });
     };
     document.addEventListener("visibilitychange", handler);
     return () => document.removeEventListener("visibilitychange", handler);
-  }, [activeLayer, fitViewport]);
+  }, [activeLayer, restoreViewport]);
 
   // The CSS filter on [data-graph-canvas] canvas creates a stacking context
   // that paints the WebGL canvas above the d3-brush SVG overlay, blocking
   // rect/poly selection.  Elevate the brush SVG so it stacks on top.
-  const wrapperRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const container = wrapperRef.current;
     if (!container) return;
@@ -322,6 +427,7 @@ export default function CosmographRenderer({
     <Cosmograph
       ref={cosmographRef}
       duckDBConnection={canvas.duckDBConnection}
+      initialZoomLevel={initialCamera.current.zoomLevel}
       points={config.layerConfig.pointsTable}
       links={config.layerConfig.linksTable}
       pointIdBy="id"

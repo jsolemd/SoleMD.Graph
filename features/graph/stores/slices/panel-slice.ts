@@ -1,13 +1,25 @@
 import type { StateCreator } from 'zustand'
 import type { DashboardState } from '../dashboard-store'
 
-export type ActivePanel = 'about' | 'config' | 'filters' | 'info' | 'query' | 'wiki' | null
+export type PanelId = 'about' | 'config' | 'filters' | 'info' | 'query' | 'wiki'
+/** @deprecated Use PanelId instead — kept for backward-compat in type exports. */
+export type ActivePanel = PanelId | null
 export type PromptMode = 'collapsed' | 'normal' | 'maximized'
 type ExpandedPromptMode = Exclude<PromptMode, 'collapsed'>
 
+/** Initial state for openPanels — all closed. */
+const CLOSED_PANELS: Record<PanelId, boolean> = {
+  about: false,
+  config: false,
+  filters: false,
+  info: false,
+  query: false,
+  wiki: false,
+}
+
 export interface PanelSlice {
   // Panel visibility
-  activePanel: ActivePanel
+  openPanels: Record<PanelId, boolean>
   panelsVisible: boolean
   panelBottomY: { left: number; right: number }
   tableOpen: boolean
@@ -26,12 +38,17 @@ export interface PanelSlice {
   // Write mode
   writeContent: string
 
+  // Remembered panel positions — survives close/reopen within a session
+  panelPositions: Record<string, { x: number; y: number; width: number; height?: number; docked: boolean }>
+
   // Keyed registry — any floating element registers by ID
   floatingObstacles: Record<string, { x: number; y: number; width: number; height: number }>
 
   // Actions
-  setActivePanel: (panel: ActivePanel) => void
-  togglePanel: (panel: ActivePanel) => void
+  togglePanel: (panel: PanelId) => void
+  openPanel: (panel: PanelId) => void
+  closePanel: (panel: PanelId) => void
+  closeAllPanels: () => void
   setPanelsVisible: (visible: boolean) => void
   setPanelBottomY: (side: 'left' | 'right', y: number) => void
   togglePanelsVisible: () => void
@@ -52,12 +69,13 @@ export interface PanelSlice {
   setWriteContent: (content: string) => void
   setWikiExpanded: (expanded: boolean) => void
   setWikiExpandedWidth: (width: number) => void
+  savePanelPosition: (id: string, pos: { x: number; y: number; width: number; height?: number; docked: boolean }) => void
   setFloatingObstacle: (id: string, rect: { x: number; y: number; width: number; height: number }) => void
   clearFloatingObstacle: (id: string) => void
 }
 
 export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> = (set) => ({
-  activePanel: null,
+  openPanels: { ...CLOSED_PANELS },
   panelsVisible: true,
   panelBottomY: { left: 0, right: 0 },
   tableOpen: false,
@@ -69,13 +87,17 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   wikiExpanded: false,
   wikiExpandedWidth: 420,
   writeContent: '',
+  panelPositions: {},
   floatingObstacles: {},
 
-  setActivePanel: (panel) => set((s) => (
-    s.activePanel === panel ? s : { activePanel: panel }
-  )),
   togglePanel: (panel) =>
-    set((s) => ({ activePanel: s.activePanel === panel ? null : panel })),
+    set((s) => ({ openPanels: { ...s.openPanels, [panel]: !s.openPanels[panel] } })),
+  openPanel: (panel) =>
+    set((s) => (s.openPanels[panel] ? s : { openPanels: { ...s.openPanels, [panel]: true } })),
+  closePanel: (panel) =>
+    set((s) => (!s.openPanels[panel] ? s : { openPanels: { ...s.openPanels, [panel]: false } })),
+  closeAllPanels: () =>
+    set({ openPanels: { ...CLOSED_PANELS } }),
   setPanelsVisible: (visible) => set((s) => (
     s.panelsVisible === visible ? s : { panelsVisible: visible }
   )),
@@ -84,7 +106,7 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   togglePanelsVisible: () =>
     set((s) => {
       const next = !s.panelsVisible
-      return { panelsVisible: next, ...(next ? {} : { activePanel: null }) }
+      return { panelsVisible: next, ...(next ? {} : { openPanels: { ...CLOSED_PANELS } }) }
     }),
   setTableOpen: (open) => set((s) => (
     s.tableOpen === open ? s : { tableOpen: open }
@@ -178,6 +200,10 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   setWikiExpandedWidth: (width) => set((s) => (
     s.wikiExpandedWidth === width ? s : { wikiExpandedWidth: width }
   )),
+  savePanelPosition: (id, pos) =>
+    set((s) => ({
+      panelPositions: { ...s.panelPositions, [id]: pos },
+    })),
   setFloatingObstacle: (id, rect) =>
     set((s) => ({
       floatingObstacles: { ...s.floatingObstacles, [id]: rect },

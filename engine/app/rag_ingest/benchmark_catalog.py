@@ -32,6 +32,7 @@ class BenchmarkSuiteSpec(ParseContractModel):
     suite_family: str
     target_case_count: int
     gate_mode: BenchmarkSuiteGateMode = BenchmarkSuiteGateMode.REQUIRED
+    gate_warehouse_depths: tuple[str, ...] = Field(default_factory=tuple)
     acceptance_focus: str
     description: str
     gates: list[BenchmarkQualityGate] = Field(default_factory=list)
@@ -195,6 +196,35 @@ _BENCHMARK_SUITE_SPECS = {
             ),
         ],
     ),
+    "biomedical_expert_canonicalization_v1": BenchmarkSuiteSpec(
+        benchmark_key="biomedical_expert_canonicalization_v1",
+        suite_family="expert_canonicalization",
+        target_case_count=64,
+        gate_mode=BenchmarkSuiteGateMode.SHADOW,
+        gate_warehouse_depths=("chunks_entities_sentence",),
+        acceptance_focus=(
+            "Expert-language canonicalization without title overfitting. "
+            "Verifies that expert shorthand, clinical synonyms, and "
+            "abbreviation-heavy queries resolve to correct biomedical "
+            "concepts and retrieve relevant papers."
+        ),
+        description=(
+            "Expert canonicalization benchmark with 8 cases per bucket across "
+            "8 clinical shorthand categories. Shadow until vocab alias "
+            "coverage and concept-recovery ranking are mature."
+        ),
+        gates=[
+            BenchmarkQualityGate(metric="hit_at_1", threshold=0.5),
+            BenchmarkQualityGate(metric="hit_at_k", threshold=0.7),
+            BenchmarkQualityGate(metric="grounded_answer_rate", threshold=0.9),
+            BenchmarkQualityGate(metric="target_in_answer_corpus", threshold=0.6),
+            BenchmarkQualityGate(
+                metric="p95_duration_ms",
+                threshold=250.0,
+                direction=BenchmarkGateDirection.MAX,
+            ),
+        ],
+    ),
 }
 
 
@@ -221,3 +251,12 @@ def benchmark_suite_gate_maps(
         else:
             lower_bounds[gate.metric] = gate.threshold
     return lower_bounds, upper_bounds
+
+
+def benchmark_suite_gate_warehouse_depths(
+    dataset_name_or_key: str,
+) -> set[str] | None:
+    spec = get_benchmark_suite_spec(dataset_name_or_key)
+    if spec is None or not spec.gate_warehouse_depths:
+        return None
+    return set(spec.gate_warehouse_depths)

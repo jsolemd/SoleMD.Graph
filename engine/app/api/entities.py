@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
+
+from app.api.http import run_api
 
 from app.entities.schemas import (
     EntityDetailRequest,
@@ -20,10 +22,7 @@ def match_entities(
     request: EntityMatchRequest,
     service: EntityService = Depends(get_entity_service),
 ) -> EntityMatchResponse:
-    try:
-        return service.match_entities(request)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_api(lambda: service.match_entities(request))
 
 
 @router.post("/detail", response_model=EntityDetailResponse)
@@ -31,9 +30,4 @@ def get_entity_detail(
     request: EntityDetailRequest,
     service: EntityService = Depends(get_entity_service),
 ) -> EntityDetailResponse:
-    try:
-        return service.get_entity_detail(request)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return run_api(lambda: service.get_entity_detail(request))

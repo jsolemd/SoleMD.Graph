@@ -1,0 +1,89 @@
+{
+  "archive_name": "BioCXML.2.tar.gz",
+  "start_document_ordinal": 1785234,
+  "resolver_batch_size": 6,
+  "limit": 6,
+  "max_documents": 6,
+  "scanned_documents": 6,
+  "last_document_ordinal_scanned": 2780366,
+  "manifest_entries_used": 6,
+  "manifest_entries_written": 0,
+  "resolved_corpus_ids": [
+    12723295,
+    201160821,
+    216375828,
+    251877056,
+    264286849,
+    277771861
+  ],
+  "selected_corpus_ids": [
+    12723295,
+    201160821,
+    216375828,
+    251877056,
+    264286849,
+    277771861
+  ],
+  "candidates": [
+    {
+      "corpus_id": 264286849,
+      "document_id": "37848404",
+      "archive_name": "BioCXML.2.tar.gz",
+      "document_ordinal": 1785234,
+      "member_name": "output/BioCXML/13882.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 216375828,
+      "document_id": "32426731",
+      "archive_name": "BioCXML.2.tar.gz",
+      "document_ordinal": 2010010,
+      "member_name": "output/BioCXML/34112.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 251877056,
+      "document_id": "36138865",
+      "archive_name": "BioCXML.2.tar.gz",
+      "document_ordinal": 2048647,
+      "member_name": "output/BioCXML/37582.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 201160821,
+      "document_id": "31467729",
+      "archive_name": "BioCXML.2.tar.gz",
+      "document_ordinal": 2321560,
+      "member_name": "output/BioCXML/62142.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 12723295,
+      "document_id": "25061304",
+      "archive_name": "BioCXML.2.tar.gz",
+      "document_ordinal": 2340861,
+      "member_name": "output/BioCXML/63882.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    },
+    {
+      "corpus_id": 277771861,
+      "document_id": "40227662",
+      "archive_name": "BioCXML.2.tar.gz",
+      "document_ordinal": 2780366,
+      "member_name": "output/BioCXML/87182.BioC.XML",
+      "existing_document": false,
+      "existing_s2_source": false,
+      "existing_bioc_source": false
+    }
+  ]
+}

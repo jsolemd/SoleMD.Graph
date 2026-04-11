@@ -18,6 +18,7 @@ import {
   MAX_CARD_W,
   MIN_CARD_W_CREATE,
 } from "./constants";
+import { promptSurfaceStyle } from "../PanelShell";
 import type { PromptBoxControllerState } from "./use-prompt-box-controller";
 
 interface PromptBoxSurfaceProps extends PromptBoxControllerState {
@@ -49,6 +50,8 @@ export function PromptBoxSurface({
   promptInteractionProviders,
   referenceMentionSource,
   handlePromptInteraction,
+  handleShowEntityOnGraph,
+  handleOpenEntityInWiki,
   clearRag,
   handlePromptContentChange,
   handlePromptEmptyChange,
@@ -106,9 +109,7 @@ export function PromptBoxSurface({
             position: "relative",
             pointerEvents: "auto",
             padding: isCollapsed ? "8px 12px" : "12px 12px 8px",
-            backgroundColor: "var(--graph-prompt-bg)",
-            border: "1px solid var(--graph-prompt-border)",
-            boxShadow: "var(--graph-prompt-shadow)",
+            ...promptSurfaceStyle,
             height: heightOverride ? cardHeight : "auto",
             overflow: heightOverride ? "hidden" : "visible",
             cursor: isFullHeightMode ? "default" : "grab",
@@ -170,7 +171,13 @@ export function PromptBoxSurface({
                 "grid-template-rows 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease",
             }}
           >
-            <div style={{ overflow: "hidden", minHeight: 0, height: isFullHeightMode ? "100%" : undefined }}>
+            <div
+              style={{
+                overflow: isCollapsed ? "hidden" : "visible",
+                minHeight: 0,
+                height: isFullHeightMode ? "100%" : undefined,
+              }}
+            >
               <CreateEditor
                 ref={editorRef}
                 content={activePromptValue}
@@ -180,6 +187,8 @@ export function PromptBoxSurface({
                 onPromptInteraction={isCreate ? handlePromptInteraction : undefined}
                 promptInteractionProviders={isCreate ? promptInteractionProviders : undefined}
                 referenceMentionSource={referenceMentionSource}
+                onShowEntityOnGraph={handleShowEntityOnGraph}
+                onOpenEntityInWiki={handleOpenEntityInWiki}
                 ariaLabel={`${activeMode.label} prompt`}
                 debounceMs={isCreate ? 300 : 0}
                 compact={!isFullHeightMode}

@@ -1,48 +1,57 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { getWikiPage } from '@/app/actions/wiki'
 import type { WikiPageResponse } from '@/lib/engine/wiki-types'
+import { fetchWikiPageClient } from '@/features/wiki/lib/wiki-client'
 
-interface UseWikiPageResult {
+interface WikiPageState {
   page: WikiPageResponse | null
   loading: boolean
   error: string | null
-  refetch: () => void
+}
+
+const IDLE: WikiPageState = { page: null, loading: false, error: null }
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError'
 }
 
 export function useWikiPage(
   slug: string | null,
   graphReleaseId?: string,
-): UseWikiPageResult {
-  const [page, setPage] = useState<WikiPageResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+) {
+  const [state, setState] = useState<WikiPageState>(IDLE)
 
-  const fetchPage = useCallback(async () => {
+  const fetchPage = useCallback(async (signal?: AbortSignal) => {
     if (!slug) {
-      setPage(null)
-      setLoading(false)
-      setError(null)
+      setState(IDLE)
       return
     }
 
-    setLoading(true)
-    setError(null)
+    setState((s) => (s.loading ? s : { ...s, loading: true, error: null }))
     try {
-      const result = await getWikiPage(slug, graphReleaseId)
-      setPage(result)
+      const result = await fetchWikiPageClient(slug, graphReleaseId, { signal })
+      setState({ page: result, loading: false, error: null })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load wiki page')
-      setPage(null)
-    } finally {
-      setLoading(false)
+      if (isAbortError(err)) {
+        return
+      }
+      setState({
+        page: null,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Failed to load wiki page',
+      })
     }
   }, [slug, graphReleaseId])
 
   useEffect(() => {
-    fetchPage()
+    const controller = new AbortController()
+    void fetchPage(controller.signal)
+    return () => controller.abort()
   }, [fetchPage])
 
-  return { page, loading, error, refetch: fetchPage }
+  return {
+    ...state,
+    refetch: () => fetchPage(),
+  }
 }

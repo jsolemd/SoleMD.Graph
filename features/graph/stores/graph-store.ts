@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { GraphMode, GraphPointRecord } from '@/features/graph/types'
 
+export type AnimationPhase = 'idle' | 'repositioning' | 'focusing'
+
 interface GraphUIStore {
   selectedNode: GraphPointRecord | null
   focusedPointIndex: number | null
@@ -9,12 +11,16 @@ interface GraphUIStore {
   graphContentContrastLevel: 0 | 1 | 2
   zoomedIn: boolean
   mode: GraphMode
+  animationPhase: AnimationPhase
+  isRepositioningNodes: boolean
   selectNode: (node: GraphPointRecord | null) => void
   setFocusedPointIndex: (index: number | null) => void
   markCameraSettled: () => void
   setGraphContentContrastLevel: (level: 0 | 1 | 2) => void
   setZoomedIn: (zoomedIn: boolean) => void
   setMode: (mode: GraphMode) => void
+  setAnimationPhase: (phase: AnimationPhase) => void
+  setRepositioningNodes: (value: boolean) => void
 }
 
 function isSameNode(
@@ -34,6 +40,8 @@ export const useGraphStore = create<GraphUIStore>((set) => ({
   graphContentContrastLevel: 0,
   zoomedIn: false,
   mode: 'ask',
+  animationPhase: 'idle',
+  isRepositioningNodes: false,
   selectNode: (node) => set((state) => (
     isSameNode(state.selectedNode, node)
       ? state
@@ -60,5 +68,11 @@ export const useGraphStore = create<GraphUIStore>((set) => ({
   )),
   setMode: (mode) => set((state) => (
     state.mode === mode ? state : { mode }
+  )),
+  setAnimationPhase: (phase) => set((state) => (
+    state.animationPhase === phase ? state : { animationPhase: phase }
+  )),
+  setRepositioningNodes: (value) => set((state) => (
+    state.isRepositioningNodes === value ? state : { isRepositioningNodes: value }
   )),
 }))

@@ -1,25 +1,19 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { Text } from "@mantine/core";
+import { createPortal } from "react-dom";
+import { ActionIcon } from "@mantine/core";
+import { X } from "lucide-react";
 import { useViewportSize } from "@mantine/hooks";
 import { useDashboardStore } from "@/features/graph/stores";
 import { resolveWikiPanelWidth } from "@/features/graph/stores/dashboard-store";
-import {
-  PANEL_BODY_CLASS,
-  panelTextStyle,
-  panelTextMutedStyle,
-  panelAccentCardClassName,
-  panelAccentCardStyle,
-} from "@/features/graph/components/panels/PanelShell";
-import { FloatingPanelShell } from "@/features/graph/components/panels/FloatingPanelShell";
-import { WikiMarkdownRenderer } from "@/features/wiki/components/WikiMarkdownRenderer";
-import { WikiNavigation } from "@/features/wiki/components/WikiNavigation";
+import { PanelShell } from "@/features/graph/components/panels/PanelShell";
+import { WikiGraphView } from "@/features/wiki/components/WikiGraphView";
+import { WikiPageView } from "@/features/wiki/components/WikiPageView";
+import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiSearch } from "@/features/wiki/components/WikiSearch";
-import { WikiBacklinks } from "@/features/wiki/components/WikiBacklinks";
-import { useWikiPage } from "@/features/wiki/hooks/use-wiki-page";
-import { useWikiBacklinks } from "@/features/wiki/hooks/use-wiki-backlinks";
-import { useWikiGraphSync } from "@/features/wiki/hooks/use-wiki-graph-sync";
+import { WikiNavigation } from "@/features/wiki/components/WikiNavigation";
+import { AnimationEmbed } from "@/features/wiki/components/elements/AnimationEmbed";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
 import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
@@ -29,141 +23,188 @@ interface WikiPanelProps {
   queries: GraphBundleQueries;
 }
 
-const DEFAULT_SLUG = "index";
-const EMPTY_RESOLVED_LINKS: Record<string, string> = {};
-const EMPTY_PAPER_REFS: Record<number, string> = {};
-
 export function WikiPanel({ bundle, queries }: WikiPanelProps) {
-  const togglePanel = useDashboardStore((s) => s.togglePanel);
+  const closePanel = useDashboardStore((s) => s.closePanel);
   const wikiExpanded = useDashboardStore((s) => s.wikiExpanded);
   const setWikiExpandedWidth = useDashboardStore((s) => s.setWikiExpandedWidth);
-  const currentSlug = useWikiStore((s) => s.currentSlug);
-  const navigateTo = useWikiStore((s) => s.navigateTo);
-  const slug = currentSlug ?? DEFAULT_SLUG;
+
+  const currentRoute = useWikiStore((s) => s.currentRoute);
+  const navigateToPage = useWikiStore((s) => s.navigateToPage);
+  const fetchGraphData = useWikiStore((s) => s.fetchGraphData);
 
   const graphReleaseId = resolveGraphReleaseId(bundle);
-  const { page, loading, error } = useWikiPage(slug, graphReleaseId);
 
   // Track viewport for expanded width calculation
   const { width: viewportWidth } = useViewportSize();
   const panelWidth = resolveWikiPanelWidth(viewportWidth || 1920, wikiExpanded);
 
-  // Sync expanded width to store so selectLeftClearance stays pure
   useEffect(() => {
     if (wikiExpanded) {
       setWikiExpandedWidth(panelWidth);
     }
   }, [wikiExpanded, panelWidth, setWikiExpandedWidth]);
 
-  // Navigate to default page on first open — must be in an effect, not during render
+  // Fetch graph data on mount
   useEffect(() => {
-    if (!currentSlug) {
-      navigateTo(DEFAULT_SLUG);
+    void fetchGraphData(graphReleaseId);
+  }, [fetchGraphData, graphReleaseId]);
+
+  const globalGraphOpen = useWikiStore((s) => s.globalGraphOpen);
+  const setGlobalGraphOpen = useWikiStore((s) => s.setGlobalGraphOpen);
+  const localGraphPopped = useWikiStore((s) => s.localGraphPopped);
+  const setLocalGraphPopped = useWikiStore((s) => s.setLocalGraphPopped);
+  const fullscreenAnim = useWikiStore((s) => s.fullscreenAnim);
+  const setFullscreenAnim = useWikiStore((s) => s.setFullscreenAnim);
+
+  const handleOpenPage = useCallback(
+    (slug: string) => navigateToPage(slug),
+    [navigateToPage],
+  );
+
+  const handleClose = useCallback(() => {
+    useWikiStore.getState().reset();
+    closePanel("wiki");
+  }, [closePanel]);
+
+  const handleCloseOverlay = useCallback(() => {
+    setGlobalGraphOpen(false);
+  }, [setGlobalGraphOpen]);
+
+  // Escape to close global graph overlay
+  useEffect(() => {
+    if (!globalGraphOpen) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setGlobalGraphOpen(false);
+      }
     }
-  }, [currentSlug, navigateTo]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [globalGraphOpen, setGlobalGraphOpen]);
 
-  const handleNavigate = useCallback(
-    (targetSlug: string) => navigateTo(targetSlug),
-    [navigateTo],
-  );
+  // Escape to close fullscreen animation overlay
+  useEffect(() => {
+    if (!fullscreenAnim) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        setFullscreenAnim(null);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [fullscreenAnim, setFullscreenAnim]);
 
-  // Graph overlay sync — highlight referenced papers on the canvas
-  const paperGraphRefs = page?.paper_graph_refs ?? EMPTY_PAPER_REFS;
-  const { onPaperClick } = useWikiGraphSync({
-    queries,
-    paperGraphRefs,
-    currentSlug,
-  });
-
-  // Backlinks for current page
-  const { backlinks } = useWikiBacklinks(currentSlug);
-
-  const contentBlock = (
-    <>
-      {loading && (
-        <Text style={panelTextMutedStyle}>Loading...</Text>
-      )}
-      {error && (
-        <Text style={{ ...panelTextStyle, color: "var(--error-text)" }}>
-          {error}
-        </Text>
-      )}
-      {page && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <WikiNavigation />
-            <h2
-              className="m-0 text-base font-semibold"
-              style={{ color: "var(--graph-panel-text)" }}
-            >
-              {page.title}
-            </h2>
-          </div>
-
-          {page.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {page.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className={panelAccentCardClassName}
-                  style={{
-                    ...panelAccentCardStyle,
-                    padding: "1px 6px",
-                    fontSize: 9,
-                    borderRadius: 4,
-                  }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-
-          <WikiMarkdownRenderer
-            contentMd={page.content_md}
-            resolvedLinks={page.resolved_links ?? EMPTY_RESOLVED_LINKS}
-            paperGraphRefs={page.paper_graph_refs ?? EMPTY_PAPER_REFS}
-            onNavigate={handleNavigate}
-            onPaperClick={onPaperClick}
-          />
-        </div>
-      )}
-      {!loading && !error && !page && (
-        <Text style={panelTextMutedStyle}>
-          No wiki page found for &ldquo;{slug}&rdquo;
-        </Text>
-      )}
-    </>
-  );
-
-  const backlinksBlock = backlinks.length > 0 ? (
-    <WikiBacklinks backlinks={backlinks} onNavigate={handleNavigate} />
-  ) : null;
+  const bodyClassName =
+    currentRoute.kind === "graph"
+      ? "flex min-h-0 flex-1 flex-col overflow-hidden px-2.5 pb-2.5"
+      : "flex min-h-0 flex-1 flex-col"; // Page view handles its own scroll
 
   return (
-    <FloatingPanelShell
+    <>
+    <PanelShell
       id="wiki"
       title="Wiki"
-      side="left"
       defaultWidth={panelWidth}
-      headerActions={<WikiSearch onNavigate={handleNavigate} />}
-      onClose={() => togglePanel("wiki")}
+      headerActions={
+        <div className="flex items-center gap-1">
+          <WikiNavigation />
+          <WikiSearch onNavigate={handleOpenPage} />
+        </div>
+      }
+      onClose={handleClose}
     >
-      <div className={PANEL_BODY_CLASS}>
-        {wikiExpanded ? (
-          <div className="flex gap-4">
-            <div className="min-w-0 flex-[7]">{contentBlock}</div>
-            {backlinksBlock && (
-              <div className="flex-[3]">{backlinksBlock}</div>
-            )}
-          </div>
+      <div className={bodyClassName}>
+        {currentRoute.kind === "graph" ? (
+          <WikiGraphView
+            graphReleaseId={graphReleaseId}
+            onOpenPage={handleOpenPage}
+          />
         ) : (
-          <>
-            {contentBlock}
-            {backlinksBlock}
-          </>
+          <WikiPageView
+            slug={currentRoute.slug}
+            graphReleaseId={graphReleaseId}
+            queries={queries}
+            onNavigate={handleOpenPage}
+          />
         )}
       </div>
-    </FloatingPanelShell>
+    </PanelShell>
+
+    {/* Popped-out local graph — its own floating panel */}
+    {localGraphPopped && currentRoute.kind === "page" && (
+      <PanelShell
+        id="wiki-graph"
+        title="Wiki Graph"
+        defaultWidth={320}
+        onClose={() => setLocalGraphPopped(false)}
+      >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+          <WikiLocalGraph
+            slug={currentRoute.slug}
+            onNavigate={handleOpenPage}
+          />
+        </div>
+      </PanelShell>
+    )}
+
+    {globalGraphOpen && (
+      <PanelShell
+        id="wiki-global-graph"
+        title="Wiki Graph"
+        defaultWidth={960}
+        minWidth={640}
+        maxWidth={1280}
+        defaultHeight={720}
+        minHeight={420}
+        maxHeight={900}
+        onClose={handleCloseOverlay}
+      >
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+          <WikiGraphView
+            graphReleaseId={graphReleaseId}
+            onOpenPage={handleOpenPage}
+          />
+        </div>
+      </PanelShell>
+    )}
+
+    {/* Fullscreen animation overlay — portaled to body to escape panel transforms */}
+    {fullscreenAnim &&
+      typeof document !== "undefined" &&
+      createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          onClick={() => setFullscreenAnim(null)}
+        >
+          <div
+            className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
+            style={{
+              width: "80vw",
+              height: "80vh",
+              border: "1px solid var(--border-default)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute right-3 top-3 z-10">
+              <ActionIcon
+                variant="subtle"
+                size={28}
+                radius="xl"
+                onClick={() => setFullscreenAnim(null)}
+                aria-label="Close animation"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                <X size={14} />
+              </ActionIcon>
+            </div>
+            <AnimationEmbed name={fullscreenAnim} />
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }

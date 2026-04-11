@@ -10,8 +10,8 @@ import {
   panelTextStyle,
   panelTextMutedStyle,
 } from "@/features/graph/components/panels/PanelShell";
-import { searchWikiPages } from "@/app/actions/wiki";
 import type { WikiSearchHitResponse } from "@/lib/engine/wiki-types";
+import { searchWikiPagesClient } from "@/features/wiki/lib/wiki-client";
 
 interface WikiSearchProps {
   onNavigate: (slug: string) => void;
@@ -47,31 +47,42 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
   const requestIdRef = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const isAbortError = useCallback(
+    (error: unknown) => error instanceof Error && error.name === "AbortError",
+    [],
+  );
+
   // Fetch on debounced query change — request-id guards stale responses.
   // Always bump requestIdRef on every effect run so that close/clear
   // invalidates in-flight requests.
   useEffect(() => {
     const requestId = ++requestIdRef.current;
+    const controller = new AbortController();
 
     if (!open || debouncedQuery.trim().length < 2) {
       setHits([]);
       setSearching(false);
-      return;
+      return () => controller.abort();
     }
 
     setSearching(true);
-    searchWikiPages(debouncedQuery)
+    searchWikiPagesClient(debouncedQuery, 20, { signal: controller.signal })
       .then((result) => {
         if (requestId !== requestIdRef.current) return;
         setHits(result.hits);
         setSearching(false);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        if (isAbortError(error)) return;
         if (requestId !== requestIdRef.current) return;
         setHits([]);
         setSearching(false);
       });
-  }, [debouncedQuery, open]);
+
+    return () => {
+      controller.abort();
+    };
+  }, [debouncedQuery, isAbortError, open]);
 
   const handleToggle = useCallback(() => {
     setOpen((prev) => {

@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from app import db
 from app.wiki import queries
-from app.wiki.models import WikiPage, WikiSearchHit
+from app.wiki.content_contract import resolve_wiki_page_contract
+from app.wiki.models import (
+    WikiPage,
+    WikiPageContextData,
+    WikiPagePaperData,
+    WikiSearchHit,
+)
+
+
+_WIKI_CONTEXT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wiki-context")
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +30,31 @@ class WikiPageSummaryRow:
     entity_type: str | None = None
     family_key: str | None = None
     tags: list[str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WikiGraphPageRow:
+    """Page data needed for graph construction."""
+
+    slug: str
+    title: str
+    entity_type: str | None = None
+    concept_id: str | None = None
+    family_key: str | None = None
+    tags: list[str] = field(default_factory=list)
+    outgoing_links: list[str] = field(default_factory=list)
+    paper_pmids: list[int] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class WikiGraphPaperRow:
+    """Paper data resolved against a graph release."""
+
+    pmid: int
+    graph_paper_ref: str
+    paper_title: str | None = None
+    year: int | None = None
+    venue: str | None = None
 
 
 class WikiRepository(Protocol):
@@ -41,27 +77,57 @@ class WikiRepository(Protocol):
         graph_run_id: str,
     ) -> dict[int, str]: ...
 
+    def resolve_linked_entity_metadata(
+        self,
+        *,
+        slugs: list[str],
+    ) -> dict[str, tuple[str, str]]: ...
+
+    def get_entity_page_context(
+        self,
+        *,
+        concept_id: str,
+        entity_type: str,
+        graph_run_id: str,
+        limit: int = 8,
+    ) -> WikiPageContextData: ...
+
+    def get_all_pages_for_graph(self) -> list[WikiGraphPageRow]: ...
+
+    def resolve_paper_nodes_for_graph(
+        self,
+        *,
+        pmids: list[int],
+        graph_run_id: str,
+    ) -> list[WikiGraphPaperRow]: ...
+
 
 class PostgresWikiRepository:
     """PostgreSQL implementation of the wiki repository."""
 
+    def _fetchone(self, query: str, params: dict | None = None):
+        with db.pooled() as conn:
+            return conn.execute(query, params).fetchone()
+
+    def _fetchall(self, query: str, params: dict | None = None):
+        with db.pooled() as conn:
+            return conn.execute(query, params).fetchall()
+
     def get_page(self, *, slug: str) -> WikiPage | None:
-        with db.connect() as conn:
-            row = conn.execute(queries.GET_PAGE_BY_SLUG, {"slug": slug}).fetchone()
+        row = self._fetchone(queries.GET_PAGE_BY_SLUG, {"slug": slug})
         if row is None:
             return None
         return _row_to_page(row)
 
     def list_page_summaries(self) -> list[WikiPageSummaryRow]:
-        with db.connect() as conn:
-            rows = conn.execute(queries.LIST_PAGE_SUMMARIES).fetchall()
+        rows = self._fetchall(queries.LIST_PAGE_SUMMARIES)
         return [_row_to_summary(r) for r in rows]
 
     def search(self, *, query: str, limit: int = 20) -> list[WikiSearchHit]:
-        with db.connect() as conn:
-            rows = conn.execute(
-                queries.SEARCH_PAGES, {"query": query, "limit": limit}
-            ).fetchall()
+        rows = self._fetchall(
+            queries.SEARCH_PAGES,
+            {"query": query, "limit": limit},
+        )
         return [
             WikiSearchHit(
                 slug=r["slug"],
@@ -76,19 +142,17 @@ class PostgresWikiRepository:
         ]
 
     def get_backlink_summaries(self, *, slug: str) -> list[WikiPageSummaryRow]:
-        with db.connect() as conn:
-            rows = conn.execute(
-                queries.GET_BACKLINK_SUMMARIES,
-                {"slug": slug},
-            ).fetchall()
+        rows = self._fetchall(
+            queries.GET_BACKLINK_SUMMARIES,
+            {"slug": slug},
+        )
         return [_row_to_summary(r) for r in rows]
 
     def resolve_graph_run_id(self, *, graph_release_id: str) -> str | None:
-        with db.connect() as conn:
-            row = conn.execute(
-                queries.RESOLVE_GRAPH_RUN_ID,
-                {"release_id": graph_release_id},
-            ).fetchone()
+        row = self._fetchone(
+            queries.RESOLVE_GRAPH_RUN_ID,
+            {"release_id": graph_release_id},
+        )
         if row is None:
             return None
         return row["graph_run_id"]
@@ -101,26 +165,136 @@ class PostgresWikiRepository:
     ) -> dict[int, str]:
         if not pmids:
             return {}
-        with db.connect() as conn:
-            rows = conn.execute(
-                queries.RESOLVE_PAPER_GRAPH_REFS,
-                {"pmids": pmids, "graph_run_id": graph_run_id},
-            ).fetchall()
+        rows = self._fetchall(
+            queries.RESOLVE_PAPER_GRAPH_REFS,
+            {"pmids": pmids, "graph_run_id": graph_run_id},
+        )
         return {r["pmid"]: r["graph_paper_ref"] for r in rows}
+
+    def resolve_linked_entity_metadata(
+        self,
+        *,
+        slugs: list[str],
+    ) -> dict[str, tuple[str, str]]:
+        if not slugs:
+            return {}
+        rows = self._fetchall(
+            queries.RESOLVE_LINKED_ENTITY_METADATA,
+            {"slugs": slugs},
+        )
+        return {r["slug"]: (r["entity_type"], r["concept_id"]) for r in rows}
+
+    def get_entity_page_context(
+        self,
+        *,
+        concept_id: str,
+        entity_type: str,
+        graph_run_id: str,
+        limit: int = 8,
+    ) -> WikiPageContextData:
+        params = {
+            "concept_id": concept_id,
+            "entity_type": entity_type,
+            "graph_run_id": graph_run_id,
+        }
+        counts_future = _WIKI_CONTEXT_EXECUTOR.submit(
+            self._fetchone,
+            queries.GET_ENTITY_PAGE_CONTEXT_COUNTS,
+            params,
+        )
+        papers_future = _WIKI_CONTEXT_EXECUTOR.submit(
+            self._fetchall,
+            queries.GET_ENTITY_PAGE_CONTEXT_TOP_PAPERS,
+            {**params, "limit": limit},
+        )
+        counts_row = counts_future.result()
+        paper_rows = papers_future.result()
+
+        top_graph_papers = [
+            WikiPagePaperData(
+                pmid=r["pmid"],
+                graph_paper_ref=r.get("graph_paper_ref"),
+                title=r.get("paper_title") or "",
+                year=r.get("year"),
+                venue=r.get("venue"),
+                citation_count=r.get("citation_count"),
+            )
+            for r in paper_rows
+        ]
+
+        return WikiPageContextData(
+            total_corpus_paper_count=(counts_row or {}).get("total_corpus_paper_count"),
+            total_graph_paper_count=(counts_row or {}).get("total_graph_paper_count"),
+            top_graph_papers=top_graph_papers,
+        )
+
+    def get_all_pages_for_graph(self) -> list[WikiGraphPageRow]:
+        rows = self._fetchall(queries.GET_ALL_PAGES_FOR_GRAPH)
+        return [
+            WikiGraphPageRow(
+                slug=r["slug"],
+                title=r["title"],
+                entity_type=r.get("entity_type"),
+                concept_id=r.get("concept_id"),
+                family_key=r.get("family_key"),
+                tags=r.get("tags") or [],
+                outgoing_links=r.get("outgoing_links") or [],
+                paper_pmids=r.get("paper_pmids") or [],
+            )
+            for r in rows
+        ]
+
+    def resolve_paper_nodes_for_graph(
+        self,
+        *,
+        pmids: list[int],
+        graph_run_id: str,
+    ) -> list[WikiGraphPaperRow]:
+        if not pmids:
+            return []
+        rows = self._fetchall(
+            queries.RESOLVE_PAPER_NODES_FOR_GRAPH,
+            {"pmids": pmids, "graph_run_id": graph_run_id},
+        )
+        return [
+            WikiGraphPaperRow(
+                pmid=r["pmid"],
+                graph_paper_ref=r["graph_paper_ref"],
+                paper_title=r.get("paper_title"),
+                year=r.get("year"),
+                venue=r.get("venue"),
+            )
+            for r in rows
+        ]
 
 
 def _row_to_page(row: dict) -> WikiPage:
+    frontmatter = row.get("frontmatter") or {}
+    paper_pmids = row.get("paper_pmids") or []
+    contract = resolve_wiki_page_contract(
+        slug=row["slug"],
+        frontmatter=frontmatter,
+        entity_type=row.get("entity_type"),
+        concept_id=row.get("concept_id"),
+        family_key=row.get("family_key"),
+        paper_pmids=paper_pmids,
+    )
     return WikiPage(
         slug=row["slug"],
         title=row["title"],
         content_md=row["content_md"],
-        frontmatter=row.get("frontmatter") or {},
+        frontmatter=frontmatter,
         entity_type=row.get("entity_type"),
         concept_id=row.get("concept_id"),
         family_key=row.get("family_key"),
         tags=row.get("tags") or [],
         outgoing_links=row.get("outgoing_links") or [],
-        paper_pmids=row.get("paper_pmids") or [],
+        paper_pmids=paper_pmids,
+        page_kind=contract.page_kind,
+        section_slug=contract.section_slug,
+        graph_focus=contract.graph_focus,
+        summary=contract.summary,
+        featured_pmids=contract.featured_pmids,
         checksum=row.get("checksum", ""),
         synced_at=row.get("synced_at"),
         created_at=row.get("created_at"),

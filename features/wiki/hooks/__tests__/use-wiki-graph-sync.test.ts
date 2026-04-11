@@ -1,29 +1,56 @@
 /**
  * @jest-environment jsdom
  */
-import { renderHook, act } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 
-// Mock cosmograph camera
 const mockFitViewByIndices = jest.fn();
+const mockZoomToPoint = jest.fn();
+const mockSelectPointsByIndices = jest.fn();
+const mockClearSelectionBySource = jest.fn();
+const mockCommitSelectionState = jest.fn().mockResolvedValue(undefined);
+const mockClearOwnedSelectionState = jest.fn().mockResolvedValue(undefined);
+
+const dashboardState = {
+  activeSelectionSourceId: null as string | null,
+  setSelectedPointCount: jest.fn(),
+  setActiveSelectionSourceId: jest.fn(),
+};
+
 jest.mock("@/features/graph/cosmograph", () => ({
-  useGraphCamera: () => ({ fitViewByIndices: mockFitViewByIndices }),
+  useGraphCamera: () => ({
+    fitViewByIndices: mockFitViewByIndices,
+    zoomToPoint: mockZoomToPoint,
+  }),
+  useGraphSelection: () => ({
+    selectPointsByIndices: mockSelectPointsByIndices,
+    clearSelectionBySource: mockClearSelectionBySource,
+  }),
 }));
 
-// Mock overlay producers
-jest.mock("@/features/graph/lib/overlay-producers", () => ({
-  WIKI_ENTITY_OVERLAY_PRODUCER: "wiki:entity",
+jest.mock("@/features/graph/stores", () => ({
+  useDashboardStore: (selector: (state: typeof dashboardState) => unknown) =>
+    selector(dashboardState),
 }));
 
-// Mock the pure sync functions
+jest.mock("@/features/graph/lib/graph-selection-state", () => ({
+  commitSelectionState: (...args: unknown[]) =>
+    mockCommitSelectionState(...args),
+  clearOwnedSelectionState: (...args: unknown[]) =>
+    mockClearOwnedSelectionState(...args),
+}));
+
 const mockResolveWikiOverlay = jest.fn();
 const mockCommitWikiOverlay = jest.fn();
 const mockCacheWikiNodeIndices = jest.fn();
 const mockClearWikiGraphOverlay = jest.fn();
+
 jest.mock("@/features/wiki/lib/wiki-graph-sync", () => ({
   resolveWikiOverlay: (...args: unknown[]) => mockResolveWikiOverlay(...args),
   commitWikiOverlay: (...args: unknown[]) => mockCommitWikiOverlay(...args),
-  cacheWikiNodeIndices: (...args: unknown[]) => mockCacheWikiNodeIndices(...args),
-  clearWikiGraphOverlay: (...args: unknown[]) => mockClearWikiGraphOverlay(...args),
+  cacheWikiNodeIndices: (...args: unknown[]) =>
+    mockCacheWikiNodeIndices(...args),
+  clearWikiGraphOverlay: (...args: unknown[]) =>
+    mockClearWikiGraphOverlay(...args),
 }));
 
 import { useWikiGraphSync } from "../use-wiki-graph-sync";
@@ -37,165 +64,140 @@ function createMockQueries(): GraphBundleQueries {
       unresolvedGraphPaperRefs: [],
     }),
     getPaperNodesByGraphPaperRefs: jest.fn().mockResolvedValue({}),
-    setOverlayProducerPointIds: jest.fn().mockResolvedValue({ overlayCount: 0 }),
+    setOverlayProducerPointIds: jest
+      .fn()
+      .mockResolvedValue({ overlayCount: 0 }),
     clearOverlayProducer: jest.fn().mockResolvedValue({ overlayCount: 0 }),
+    setSelectedPointIndices: jest.fn().mockResolvedValue(undefined),
   } as unknown as GraphBundleQueries;
 }
 
 describe("useWikiGraphSync", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockResolveWikiOverlay.mockResolvedValue({ availability: {}, pointIds: ["p1"] });
+    dashboardState.activeSelectionSourceId = null;
+    mockResolveWikiOverlay.mockResolvedValue({
+      availability: {},
+      pointIds: ["point-1"],
+    });
     mockCommitWikiOverlay.mockResolvedValue(undefined);
     mockCacheWikiNodeIndices.mockResolvedValue({ "ref-1": 42 });
     mockClearWikiGraphOverlay.mockResolvedValue(undefined);
   });
 
-  it("runs resolve → commit → cache on mount with paper refs", async () => {
-    const queries = createMockQueries();
-    const paperGraphRefs = { 12345: "ref-1" };
-
-    renderHook(() =>
-      useWikiGraphSync({ queries, paperGraphRefs, currentSlug: "entities/test" }),
-    );
-
-    // Let all microtasks flush
-    await act(async () => {});
-
-    expect(mockResolveWikiOverlay).toHaveBeenCalledWith({
-      queries,
-      graphPaperRefs: ["ref-1"],
-    });
-    expect(mockCommitWikiOverlay).toHaveBeenCalledWith({
-      producerId: "wiki:entity",
-      queries,
-      pointIds: ["p1"],
-    });
-    expect(mockCacheWikiNodeIndices).toHaveBeenCalledWith({
-      queries,
-      graphPaperRefs: ["ref-1"],
-    });
-  });
-
-  it("clears overlay when paperGraphRefs is empty", async () => {
+  it("does not mutate overlay on mount", async () => {
     const queries = createMockQueries();
 
     renderHook(() =>
-      useWikiGraphSync({ queries, paperGraphRefs: {}, currentSlug: "entities/test" }),
-    );
-
-    await act(async () => {});
-
-    expect(mockClearWikiGraphOverlay).toHaveBeenCalled();
-    expect(mockResolveWikiOverlay).not.toHaveBeenCalled();
-  });
-
-  it("clears overlay on unmount", async () => {
-    const queries = createMockQueries();
-    const { unmount } = renderHook(() =>
       useWikiGraphSync({
         queries,
-        paperGraphRefs: { 1: "ref-1" },
+        pageGraphRefs: ["ref-1"],
         currentSlug: "entities/test",
       }),
     );
 
     await act(async () => {});
-    mockClearWikiGraphOverlay.mockClear();
 
-    unmount();
-    await act(async () => {});
-    expect(mockClearWikiGraphOverlay).toHaveBeenCalledWith({
-      producerId: "wiki:entity",
-      queries,
-    });
+    expect(mockResolveWikiOverlay).not.toHaveBeenCalled();
+    expect(mockCommitWikiOverlay).not.toHaveBeenCalled();
+    expect(mockCommitSelectionState).not.toHaveBeenCalled();
   });
 
-  it("onPaperClick uses cached index for fitViewByIndices", async () => {
+  it("shows page evidence on graph explicitly and fits multi-paper results", async () => {
+    const queries = createMockQueries();
+    mockCacheWikiNodeIndices.mockResolvedValue({ "ref-1": 42, "ref-2": 84 });
+
+    const { result } = renderHook(() =>
+      useWikiGraphSync({
+        queries,
+        pageGraphRefs: ["ref-1", "ref-2"],
+        currentSlug: "entities/test",
+      }),
+    );
+
+    await act(async () => {
+      await result.current.showPageOnGraph();
+    });
+
+    expect(mockResolveWikiOverlay).toHaveBeenCalledWith({
+      queries,
+      graphPaperRefs: ["ref-1", "ref-2"],
+    });
+    expect(mockCommitWikiOverlay).toHaveBeenCalledWith({
+      producerId: "wiki:page",
+      queries,
+      pointIds: ["point-1"],
+    });
+    expect(mockCacheWikiNodeIndices).toHaveBeenCalledWith({
+      queries,
+      graphPaperRefs: ["ref-1", "ref-2"],
+    });
+    expect(mockCommitSelectionState).toHaveBeenCalledWith({
+      sourceId: "wiki:page",
+      queries,
+      pointIndices: [42, 84],
+      setSelectedPointCount: dashboardState.setSelectedPointCount,
+      setActiveSelectionSourceId: dashboardState.setActiveSelectionSourceId,
+    });
+    expect(mockSelectPointsByIndices).toHaveBeenCalledWith({
+      sourceId: "wiki:page",
+      pointIndices: [42, 84],
+    });
+    expect(mockFitViewByIndices).toHaveBeenCalledWith([42, 84], 400, 0.15);
+    expect(mockZoomToPoint).not.toHaveBeenCalled();
+  });
+
+  it("reuses cached indices for single-paper focus without overfitting the viewport", async () => {
     const queries = createMockQueries();
     const { result } = renderHook(() =>
       useWikiGraphSync({
         queries,
-        paperGraphRefs: { 1: "ref-1" },
+        pageGraphRefs: ["ref-1"],
         currentSlug: "entities/test",
       }),
     );
 
-    await act(async () => {});
+    await act(async () => {
+      await result.current.showPageOnGraph();
+    });
+    mockFitViewByIndices.mockClear();
+    mockZoomToPoint.mockClear();
 
     act(() => {
       result.current.onPaperClick("ref-1");
     });
 
-    expect(mockFitViewByIndices).toHaveBeenCalledWith([42], 400, 0.15);
+    expect(mockZoomToPoint).toHaveBeenCalledWith(42, 250);
+    expect(mockFitViewByIndices).not.toHaveBeenCalled();
   });
 
-  it("onPaperClick falls back to live query when cache misses", async () => {
+  it("clears owned overlay and selection state explicitly", async () => {
     const queries = createMockQueries();
-    (queries.getPaperNodesByGraphPaperRefs as jest.Mock).mockResolvedValue({
-      "ref-2": { index: 99 },
-    });
+    dashboardState.activeSelectionSourceId = "wiki:page";
 
     const { result } = renderHook(() =>
       useWikiGraphSync({
         queries,
-        paperGraphRefs: { 1: "ref-1" },
+        pageGraphRefs: ["ref-1"],
         currentSlug: "entities/test",
       }),
     );
 
-    await act(async () => {});
-
-    await act(async () => {
-      result.current.onPaperClick("ref-2");
+    act(() => {
+      result.current.clearPageGraph();
     });
 
-    expect(queries.ensureGraphPaperRefsAvailable).toHaveBeenCalledWith(["ref-2"]);
-    expect(queries.getPaperNodesByGraphPaperRefs).toHaveBeenCalledWith(["ref-2"]);
-    expect(mockFitViewByIndices).toHaveBeenCalledWith([99], 400, 0.15);
-  });
-
-  it("serializes stale clear before the next generation commits overlay", async () => {
-    const queries = createMockQueries();
-    let resolveClear: (() => void) | null = null;
-
-    mockClearWikiGraphOverlay.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveClear = resolve;
-        }),
-    );
-
-    const { rerender } = renderHook(
-      ({ paperGraphRefs, currentSlug }) =>
-        useWikiGraphSync({ queries, paperGraphRefs, currentSlug }),
-      {
-        initialProps: {
-          paperGraphRefs: {} as Record<number, string>,
-          currentSlug: "entities/empty",
-        },
-      },
-    );
-
-    await act(async () => {});
-    expect(mockClearWikiGraphOverlay).toHaveBeenCalledTimes(1);
-
-    rerender({
-      paperGraphRefs: { 1: "ref-1" },
-      currentSlug: "entities/test",
-    });
-
-    await act(async () => {});
-    expect(mockCommitWikiOverlay).not.toHaveBeenCalled();
-
-    await act(async () => {
-      resolveClear?.();
-    });
-
-    expect(mockCommitWikiOverlay).toHaveBeenCalledWith({
-      producerId: "wiki:entity",
+    expect(mockClearWikiGraphOverlay).toHaveBeenCalledWith({
+      producerId: "wiki:page",
       queries,
-      pointIds: ["p1"],
+    });
+    expect(mockClearSelectionBySource).toHaveBeenCalledWith("wiki:page");
+    expect(mockClearOwnedSelectionState).toHaveBeenCalledWith({
+      sourceId: "wiki:page",
+      activeSelectionSourceId: "wiki:page",
+      queries,
+      setSelectedPointCount: dashboardState.setSelectedPointCount,
+      setActiveSelectionSourceId: dashboardState.setActiveSelectionSourceId,
     });
   });
 });

@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from app.rag.biomedical_concept_normalizer import VocabConceptMatch
 from app.rag.query_metadata import QueryMetadataHints
+from app.rag.repository_support import ResolvedEntityConcept
 from app.rag.serving_contract import GroundedAnswerRecord
 from app.rag.types import (
     CitationDirection,
@@ -30,6 +32,10 @@ class PaperRetrievalQuery:
     metadata_hints: QueryMetadataHints = field(default_factory=QueryMetadataHints)
     entity_terms: list[str] = field(default_factory=list)
     high_confidence_entity_terms: set[str] = field(default_factory=set)
+    resolved_entity_concepts: tuple[ResolvedEntityConcept, ...] = field(
+        default_factory=tuple
+    )
+    vocab_concept_matches: list[VocabConceptMatch] = field(default_factory=list)
     relation_terms: list[str] = field(default_factory=list)
     cited_corpus_ids: list[int] = field(default_factory=list)
     selected_layer_key: NodeLayer | None = None

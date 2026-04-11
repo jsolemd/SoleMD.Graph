@@ -31,7 +31,6 @@ describe('modes registry', () => {
     expect(typeof layout.autoShowTimeline).toBe('boolean')
     expect(typeof layout.autoShowTable).toBe('boolean')
     expect(typeof layout.showTimeline).toBe('boolean')
-    expect(typeof layout.showStatsBar).toBe('boolean')
     expect(typeof layout.showCanvasControls).toBe('boolean')
     expect(typeof layout.showLegends).toBe('boolean')
     expect(typeof layout.showDataTable).toBe('boolean')
@@ -53,22 +52,20 @@ describe('modes registry', () => {
     expect(MODES.learn.layout.defaultPromptMode).toBe('normal')
   })
 
-  it('all modes share the same panel set including wiki', () => {
-    const panels = MODES.ask.layout.availablePanels
-    expect(panels).toContain('wiki')
+  it('all modes include wiki in availablePanels', () => {
     for (const key of Object.keys(MODES) as GraphMode[]) {
-      expect(MODES[key].layout.availablePanels).toEqual(panels)
+      expect(MODES[key].layout.availablePanels).toContain('wiki')
     }
   })
 
-  it('learn mode has defaultPanel set to wiki', () => {
-    expect(MODES.learn.layout.defaultPanel).toBe('wiki')
+  it('learn mode has defaultOpenPanels including wiki', () => {
+    expect(MODES.learn.layout.defaultOpenPanels).toEqual(['wiki'])
   })
 
-  it('other modes do not have a defaultPanel', () => {
-    expect(MODES.ask.layout.defaultPanel).toBeUndefined()
-    expect(MODES.explore.layout.defaultPanel).toBeUndefined()
-    expect(MODES.create.layout.defaultPanel).toBeUndefined()
+  it('other modes do not have defaultOpenPanels', () => {
+    expect(MODES.ask.layout.defaultOpenPanels).toBeUndefined()
+    expect(MODES.explore.layout.defaultOpenPanels).toBeUndefined()
+    expect(MODES.create.layout.defaultOpenPanels).toBeUndefined()
   })
 })
 

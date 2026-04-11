@@ -17,7 +17,7 @@ import { resolveGraphControlContrastLevel } from "@/features/graph/lib/control-c
  * Using the `[&_.graph-icon-btn]:` arbitrary variant targets child buttons
  * from the contrast container — keeping the single-source hook pattern.
  */
-const BLUR_CLASS: Record<0 | 1 | 2, string> = {
+const BLUR_CLASS: Record<number, string> = {
   0: "",
   1: "[&_.graph-icon-btn]:backdrop-blur-sm",
   2: "[&_.graph-icon-btn]:backdrop-blur-md",

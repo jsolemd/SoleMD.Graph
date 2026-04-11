@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import type { EntityHoverCardModel } from "@/features/graph/components/entities/entity-hover-card";
 import type { EntityTextScope } from "@/features/graph/components/entities/entity-text-runtime";
 import { useEntityTextRuntime } from "@/features/graph/components/entities/use-entity-text-runtime";
+import { useEntityHover } from "@/features/graph/components/entities/use-entity-hover";
 import type { GraphEntityTextMatch } from "@/features/graph/types/entity-service";
 import type {
   EntityHighlight,
@@ -17,7 +17,6 @@ interface UseEditorEntityRuntimeArgs {
 
 interface UseEditorEntityRuntimeState {
   entityHighlights: readonly EntityHighlight[];
-  entityHoverCard: EntityHoverCardModel | null;
   handleTextContextChange: (context: EntityTextScope | null) => void;
   handleEntityHoverChange: (hover: EntityHighlightHoverState | null) => void;
 }
@@ -27,11 +26,10 @@ export function useEditorEntityRuntime({
   matchLimit = 24,
 }: UseEditorEntityRuntimeArgs): UseEditorEntityRuntimeState {
   const [textScope, setTextScope] = useState<EntityTextScope | null>(null);
+  const { show, hide } = useEntityHover();
   const {
     entityMatches,
-    entityHoverCard,
     handleTextScopeChange,
-    handleEntityHoverTargetChange,
   } = useEntityTextRuntime({
     enabled,
     matchLimit,
@@ -58,23 +56,22 @@ export function useEditorEntityRuntime({
   const handleEntityHoverChange = useCallback(
     (hover: EntityHighlightHoverState | null) => {
       if (!hover) {
-        handleEntityHoverTargetChange(null);
+        hide();
         return;
       }
 
-      handleEntityHoverTargetChange({
+      show({
         entity: hover.highlight.entity,
         paperCount: hover.highlight.paperCount,
         x: hover.x,
         y: hover.y,
       });
     },
-    [handleEntityHoverTargetChange],
+    [show, hide],
   );
 
   return {
     entityHighlights,
-    entityHoverCard,
     handleTextContextChange,
     handleEntityHoverChange,
   };

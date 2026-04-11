@@ -6,7 +6,7 @@ from app.rag_ingest.warehouse_quality import inspect_rag_warehouse_quality
 
 class _FakeLoader:
     def load_quality_rows(self, *, corpus_ids, chunk_version_key=None):
-        assert corpus_ids == [1, 2, 3, 4]
+        assert corpus_ids == [1, 2, 3, 4, 5]
         assert chunk_version_key == "preview-stanza-hybrid-v1"
         return [
             {
@@ -93,19 +93,40 @@ class _FakeLoader:
                 "chunk_member_count": 24,
                 "max_repeated_nonstructural_section_label_count": 6,
             },
+            {
+                "corpus_id": 5,
+                "document_count": 1,
+                "title": "Publisher's note",
+                "section_count": 6,
+                "block_count": 8,
+                "retrieval_default_block_count": 7,
+                "front_matter_block_count": 1,
+                "reference_block_count": 1,
+                "caption_or_table_block_count": 0,
+                "narrative_block_count": 6,
+                "sentence_count": 22,
+                "reference_count": 6,
+                "chunk_count": 4,
+                "oversize_chunk_count": 0,
+                "oversize_table_chunk_count": 0,
+                "tiny_narrative_chunk_count": 0,
+                "low_value_narrative_chunk_count": 0,
+                "chunk_member_count": 14,
+                "max_repeated_nonstructural_section_label_count": 0,
+            },
         ]
 
 
 def test_inspect_rag_warehouse_quality_flags_structural_anomalies():
     report = inspect_rag_warehouse_quality(
-        corpus_ids=[1, 2, 3, 4],
+        corpus_ids=[1, 2, 3, 4, 5],
         chunk_version_key="preview-stanza-hybrid-v1",
         loader=_FakeLoader(),
     )
 
-    assert report.requested_corpus_ids == [1, 2, 3, 4]
+    assert report.requested_corpus_ids == [1, 2, 3, 4, 5]
     assert report.chunk_version_key == "preview-stanza-hybrid-v1"
-    assert report.flagged_corpus_ids == [2, 3, 4]
+    assert report.flagged_corpus_ids == [2, 3, 4, 5]
     assert report.papers[0].flags == []
     assert report.papers[1].flags == [
         "no_sentences",
@@ -126,6 +147,9 @@ def test_inspect_rag_warehouse_quality_flags_structural_anomalies():
         "tiny_narrative_chunks",
         "low_value_narrative_chunks",
         "repeated_nonstructural_section_labels",
+    ]
+    assert report.papers[4].flags == [
+        "suspicious_boilerplate_title",
     ]
 
 

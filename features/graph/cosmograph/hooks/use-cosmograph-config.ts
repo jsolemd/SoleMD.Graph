@@ -26,7 +26,7 @@ export function useCosmographConfig(canvas: GraphCanvasSource) {
       filterColumns: s.filterColumns,
       showTimeline: s.showTimeline,
       timelineColumn: s.timelineColumn,
-      filtersPanelOpen: s.activePanel === "filters",
+      filtersPanelOpen: s.openPanels.filters,
     })),
   );
 

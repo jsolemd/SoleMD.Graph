@@ -57,6 +57,10 @@ function createControllerState(): CreateEditorControllerState {
     promptInteractionMenu: null,
     referenceMentionMenu: null,
     entityHoverCard: null,
+    handleShowHoveredEntityOnGraph: jest.fn(),
+    handleOpenHoveredEntityInWiki: jest.fn(),
+    handleEntityHoverCardPointerEnter: jest.fn(),
+    handleEntityHoverCardPointerLeave: jest.fn(),
     closePromptInteractionMenu: jest.fn(),
     handlePromptInteractionMenuHover: jest.fn(),
     handlePromptInteractionMenuKeyDown: jest.fn(),
@@ -108,5 +112,23 @@ describe("CreateEditor", () => {
 
     expect(mockedUseCreateEditorController).toHaveBeenCalledTimes(2);
     expect(mockedCreateEditorSurface).toHaveBeenCalledTimes(2);
+  });
+
+  it("forwards explicit entity graph actions through the editor adapter boundary", () => {
+    const onShowEntityOnGraph = jest.fn();
+    const onOpenEntityInWiki = jest.fn();
+
+    render(
+      <CreateEditor
+        {...createProps({ onShowEntityOnGraph, onOpenEntityInWiki })}
+      />,
+    );
+
+    expect(mockedUseCreateEditorController).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onShowEntityOnGraph,
+        onOpenEntityInWiki,
+      }),
+    );
   });
 });

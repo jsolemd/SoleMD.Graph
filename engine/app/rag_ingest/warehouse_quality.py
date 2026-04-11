@@ -26,7 +26,28 @@ from app.rag_ingest.corpus_ids import (
 )
 from app.rag_ingest.section_context import (
     looks_like_structural_heading,
+    normalize_heading_label,
     repeated_nonstructural_section_label_counts,
+)
+
+_BOILERPLATE_EXTRACTED_TITLES = frozenset(
+    {
+        "author contribution",
+        "author contributions",
+        "authors contribution",
+        "authors contributions",
+        "case presentation",
+        "case report",
+        "case reports",
+        "declaration of interest",
+        "declaration",
+        "declarations",
+        "publisher s note",
+        "publisher note",
+        "publishers note",
+        "source data",
+        "to the editor",
+    }
 )
 
 _WAREHOUSE_QUALITY_SQL = """
@@ -395,6 +416,7 @@ class PostgresWarehouseQualityLoader:
 def _derive_flags(row: dict[str, object]) -> list[str]:
     flags: list[str] = []
     title = (row.get("title") or "").strip()
+    normalized_title = normalize_heading_label(title)
     if int(row["document_count"]) == 0:
         flags.append("missing_document")
     if int(row["document_count"]) > 0 and not title:
@@ -433,6 +455,8 @@ def _derive_flags(row: dict[str, object]) -> list[str]:
         flags.append("repeated_nonstructural_section_labels")
     if title and looks_like_structural_heading(title):
         flags.append("suspicious_structural_title")
+    if normalized_title and normalized_title in _BOILERPLATE_EXTRACTED_TITLES:
+        flags.append("suspicious_boilerplate_title")
     return flags
 
 

@@ -78,8 +78,10 @@ jest.mock("../../../chrome/ModeToggleBar", () => ({
   ModeToggleBar: () => <div data-testid="mode-toggle-bar" />,
 }));
 
+const mockedCreateEditor = jest.fn(() => <div data-testid="create-editor" />);
+
 jest.mock("../../CreateEditor", () => ({
-  CreateEditor: () => <div data-testid="create-editor" />,
+  CreateEditor: (props: unknown) => mockedCreateEditor(props),
 }));
 
 function createProps(
@@ -116,6 +118,8 @@ function createProps(
       getItems: jest.fn(async () => []),
     },
     handlePromptInteraction: jest.fn(),
+    handleShowEntityOnGraph: jest.fn(),
+    handleOpenEntityInWiki: jest.fn(),
     clearRag: jest.fn(),
     handlePromptContentChange: jest.fn(),
     handlePromptEmptyChange: jest.fn(),
@@ -148,6 +152,10 @@ function createProps(
 }
 
 describe("PromptBoxSurface", () => {
+  beforeEach(() => {
+    mockedCreateEditor.mockClear();
+  });
+
   it("enables submit from the canonical hasInput signal even when markdown mirroring is empty", () => {
     render(<PromptBoxSurface {...createProps({ hasInput: true, activePromptValue: "" })} />);
 
@@ -169,5 +177,32 @@ describe("PromptBoxSurface", () => {
     const submitButton = screen.getByRole("button", { name: "Submit prompt" });
 
     expect((submitButton as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("threads explicit entity graph actions through CreateEditor instead of deriving refs locally", () => {
+    const handleShowEntityOnGraph = jest.fn();
+    const handleOpenEntityInWiki = jest.fn();
+
+    render(
+      <PromptBoxSurface
+        {...createProps({ handleShowEntityOnGraph, handleOpenEntityInWiki })}
+      />,
+    );
+
+    expect(mockedCreateEditor).toHaveBeenCalledWith(
+      expect.objectContaining({
+        onShowEntityOnGraph: handleShowEntityOnGraph,
+        onOpenEntityInWiki: handleOpenEntityInWiki,
+      }),
+    );
+  });
+
+  it("keeps the expanded editor wrapper overflow-visible so hover and mention overlays are not clipped", () => {
+    render(<PromptBoxSurface {...createProps({ isCollapsed: false })} />);
+
+    const editorShell = screen.getByTestId("create-editor").parentElement;
+
+    expect(editorShell).not.toBeNull();
+    expect((editorShell as HTMLDivElement).style.overflow).toBe("visible");
   });
 });

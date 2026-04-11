@@ -145,6 +145,32 @@ def _update_langfuse_observation(request, result, trace):
                 "retrieval_profile": str(query.retrieval_profile),
                 "clinical_intent": str(query.clinical_intent),
                 "entity_terms": query.entity_terms[:10],
+                "resolved_entity_concepts": [
+                    {
+                        "raw_term": concept.raw_term,
+                        "resolved_term": concept.resolved_term,
+                        "entity_type": concept.entity_type,
+                        "concept_namespace": concept.concept_namespace,
+                        "concept_id": concept.concept_id,
+                        "source_surface": concept.source_surface,
+                    }
+                    for concept in query.resolved_entity_concepts[:10]
+                ],
+                "vocab_concept_matches": [
+                    {
+                        "raw_query_phrase": match.raw_query_phrase,
+                        "preferred_term": match.preferred_term,
+                        "matched_alias": match.matched_alias,
+                        "alias_type": match.alias_type,
+                        "quality_score": match.quality_score,
+                        "umls_cui": match.umls_cui,
+                        "mesh_id": match.mesh_id,
+                        "entity_type": match.entity_type,
+                        "provenance": match.provenance,
+                        "confidence": match.confidence,
+                    }
+                    for match in query.vocab_concept_matches[:10]
+                ],
                 "entity_enrichment_terms": (
                     list(
                         debug.get("session_flags", {}).get(

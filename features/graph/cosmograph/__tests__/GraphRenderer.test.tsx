@@ -4,6 +4,7 @@
 import { act, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { forwardRef, type ForwardedRef, useImperativeHandle } from "react";
+import { DEFAULT_INITIAL_CAMERA, saveCameraState } from "../camera-persistence";
 
 jest.mock("@mantine/core", () => ({
   useComputedColorScheme: () => "dark",
@@ -20,8 +21,18 @@ const mockZoomLabelsState = {
 const mockSyncZoomState = jest.fn();
 const mockHandleZoom = jest.fn();
 const mockFitView = jest.fn();
+const mockApplyViewportTransform = jest.fn();
 const mockPointsSelectionUpdate = jest.fn();
 const mockUnselectAllPoints = jest.fn();
+const mockCanvasSelection = {};
+
+class MockZoomTransform {
+  constructor(
+    public k: number,
+    public x: number,
+    public y: number,
+  ) {}
+}
 
 jest.mock("../hooks/use-zoom-labels", () => ({
   useZoomLabels: () => ({
@@ -53,6 +64,15 @@ jest.mock("@cosmograph/react", () => {
     ) {
       useImperativeHandle(ref, () => ({
         fitView: mockFitView,
+        _cosmos: {
+          canvasD3Selection: mockCanvasSelection,
+          zoomInstance: {
+            behavior: {
+              transform: mockApplyViewportTransform,
+            },
+            eventTransform: new MockZoomTransform(1, 0, 0),
+          },
+        },
         pointsSelection: {
           clauses: [],
           update: mockPointsSelectionUpdate,
@@ -126,6 +146,7 @@ function renderRenderer() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  sessionStorage.clear();
   mockZoomLabelsState.zoomedIn = false;
   useDashboardStore.setState(useDashboardStore.getInitialState());
   useGraphStore.setState(useGraphStore.getInitialState());
@@ -133,6 +154,10 @@ beforeEach(() => {
 
 describe("GraphRenderer", () => {
   it("wires native cluster label selection in overview mode", () => {
+    act(() => {
+      useDashboardStore.setState({ showPointLabels: true });
+    });
+
     renderRenderer();
 
     const props = mockCosmographRender.mock.lastCall?.[0] as
@@ -186,7 +211,7 @@ describe("GraphRenderer", () => {
     expect(styleTag?.textContent).toContain(":empty");
   });
 
-  it("fits the initial viewport explicitly before signaling first paint", () => {
+  it("restores the default initial camera before signaling first paint", () => {
     const onFirstPaint = jest.fn();
     const rafCallbacks: FrameRequestCallback[] = [];
     const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
@@ -223,7 +248,15 @@ describe("GraphRenderer", () => {
         });
       });
 
-      expect(mockFitView).toHaveBeenCalledWith(0, 0.1);
+      expect(mockApplyViewportTransform).toHaveBeenCalledWith(
+        mockCanvasSelection,
+        expect.objectContaining({
+          k: DEFAULT_INITIAL_CAMERA.zoomLevel,
+          x: DEFAULT_INITIAL_CAMERA.transformX,
+          y: DEFAULT_INITIAL_CAMERA.transformY,
+        }),
+      );
+      expect(mockFitView).not.toHaveBeenCalled();
       expect(mockSyncZoomState).toHaveBeenCalledTimes(1);
       expect(onFirstPaint).not.toHaveBeenCalled();
       expect(rafCallbacks).toHaveLength(1);
@@ -237,6 +270,37 @@ describe("GraphRenderer", () => {
     } finally {
       globalThis.requestAnimationFrame = originalRequestAnimationFrame;
     }
+  });
+
+  it("prefers the saved session camera over the default initial camera", () => {
+    saveCameraState({
+      zoomLevel: 0.61,
+      transformX: 42,
+      transformY: -17,
+    });
+
+    renderRenderer();
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    act(() => {
+      (props?.onGraphRebuilt as ((stats: unknown) => void) | undefined)?.({
+        pointsCount: 120,
+        linksCount: 0,
+      });
+    });
+
+    expect(props?.initialZoomLevel).toBe(0.61);
+    expect(mockApplyViewportTransform).toHaveBeenCalledWith(
+      mockCanvasSelection,
+      expect.objectContaining({
+        k: 0.61,
+        x: 42,
+        y: -17,
+      }),
+    );
   });
 
   it("keeps zoomed point and hover labels on Cosmograph's native style path", () => {
@@ -301,6 +365,10 @@ describe("GraphRenderer", () => {
   });
 
   it("defers label-mode selection changes behind useDeferredValue", () => {
+    act(() => {
+      useDashboardStore.setState({ showPointLabels: true });
+    });
+
     renderRenderer();
 
     // Before selection: cluster labels visible, dynamic labels off

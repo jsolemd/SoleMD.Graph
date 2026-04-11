@@ -42,7 +42,7 @@ export function FilterPanelShell({
   const filterColumns = useDashboardStore((s) => s.filterColumns);
   const addFilter = useDashboardStore((s) => s.addFilter);
   const removeFilter = useDashboardStore((s) => s.removeFilter);
-  const setActivePanel = useDashboardStore((s) => s.setActivePanel);
+  const closePanel = useDashboardStore((s) => s.closePanel);
   const activeLayer = useDashboardStore((s) => s.activeLayer);
   const clearVisibilityFocus = useDashboardStore((s) => s.clearVisibilityFocus);
   const selectNode = useGraphStore((s) => s.selectNode);
@@ -99,8 +99,8 @@ export function FilterPanelShell({
 
   return (
     <PanelShell
+      id="filters"
       title="Filters"
-      side="left"
       headerActions={(
         <Button
           size="compact-xs"
@@ -111,7 +111,7 @@ export function FilterPanelShell({
           Reset All
         </Button>
       )}
-      onClose={() => setActivePanel(null)}
+      onClose={() => closePanel("filters")}
     >
       <div className={PANEL_BODY_CLASS}>
         <Stack gap="sm">

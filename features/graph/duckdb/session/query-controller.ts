@@ -51,6 +51,26 @@ export function createSessionQueryController({
   >()
   const scopeCoordinatesCache = createBoundedCache<string, Promise<number[] | null>>()
   const tablePage1Cache = createBoundedCache<string, Promise<import('@/features/graph/types').GraphTablePageResult>>()
+  const tablePageInFlightCache = createBoundedCache<
+    string,
+    Promise<import('@/features/graph/types').GraphTablePageResult>
+  >()
+
+  const getDedupedTablePage = (
+    args: Parameters<SessionQueryController['getTablePage']>[0]
+  ) =>
+    cachedQuery(
+      tablePageInFlightCache,
+      {
+        layer: args.layer,
+        view: args.view,
+        page: args.page,
+        pageSize: args.pageSize,
+        currentPointScopeSql: args.currentPointScopeSql,
+      },
+      () => queryCorpusTablePage(conn, args),
+      { evictWhen: () => true }
+    )
 
   const getCachedScopeCoordinates = (args: {
     layer: Parameters<typeof queryScopeCoordinates>[1]['layer']
@@ -106,6 +126,7 @@ export function createSessionQueryController({
       visibilityBudgetCache.clear()
       scopeCoordinatesCache.clear()
       tablePage1Cache.clear()
+      tablePageInFlightCache.clear()
     },
     runReadOnlyQuery(sql: string) {
       return executeReadOnlyQuery(conn, sql)
@@ -221,7 +242,7 @@ export function createSessionQueryController({
           () => queryCorpusTablePage(conn, args),
         )
       }
-      return queryCorpusTablePage(conn, args)
+      return getDedupedTablePage(args)
     },
     exportTableCsv(args) {
       return exportCorpusTableCsv(conn, args)

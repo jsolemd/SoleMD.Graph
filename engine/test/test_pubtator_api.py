@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.rag_ingest.biocxml_api_ingest import run_biocxml_api_ingest
+from app.rag_ingest.target_corpus import RagTargetCorpusRow
 from app.rag_ingest.source_parsers import (
     BioCXMLDocumentPayload,
     split_biocxml_collection,
@@ -85,6 +86,29 @@ class FakeWarehouseWriter:
             batch_total_rows=len(source_groups) * 5,
             written_rows=len(source_groups) * 5,
         )
+
+
+class FakeTargetLoader:
+    def __init__(self, rows: dict[int, object]):
+        self._rows = rows
+
+    def load(self, *, corpus_ids, limit):
+        assert limit is None
+        loaded = []
+        for corpus_id in corpus_ids:
+            row = self._rows.get(corpus_id)
+            if row is None:
+                continue
+            if isinstance(row, RagTargetCorpusRow):
+                loaded.append(row)
+                continue
+            loaded.append(
+                RagTargetCorpusRow(
+                    corpus_id=corpus_id,
+                    paper_title=str(row),
+                )
+            )
+        return loaded
 
 
 def test_api_ingest_end_to_end():
@@ -182,3 +206,84 @@ def test_api_ingest_handles_not_in_pubtator():
     not_found = [p for p in report.papers if p.skipped_reason == "not_in_pubtator"]
     assert len(not_found) == 1
     assert not_found[0].corpus_id == 200
+
+
+def test_api_ingest_applies_canonical_target_title():
+    pmid_loader = FakePmidLoader({100: 11111})
+    fetcher = FakeApiFetcher(
+        {
+            11111: _make_collection_xml(
+                11111,
+                "TO THE EDITOR",
+                "Abstract text for the paper.",
+            )
+        }
+    )
+    writer = FakeWarehouseWriter()
+
+    report = run_biocxml_api_ingest(
+        corpus_ids=[100],
+        parser_version="parser-v4",
+        pmid_loader=pmid_loader,
+        existing_checker=FakeExistingChecker(),
+        target_loader=FakeTargetLoader({100: "Canonical paper title"}),
+        api_fetcher=fetcher,
+        warehouse_writer=writer,
+    )
+
+    assert report.parsed_documents == 1
+    assert writer.source_groups[0][0].document.title == "Canonical paper title"
+    assert writer.source_groups[0][0].document.raw_attrs_json == {
+        "source_selected_title": "TO THE EDITOR",
+        "corpus_metadata_title": "Canonical paper title",
+    }
+
+
+def test_api_ingest_matches_pmcid_document_id_to_requested_corpus():
+    pmid_loader = FakePmidLoader({100: 11111})
+    fetcher = FakeApiFetcher(
+        {
+            11111: """
+            <collection>
+              <document>
+                <id>2962292</id>
+                <passage>
+                  <infon key="type">title</infon>
+                  <offset>0</offset>
+                  <text>Case Report</text>
+                </passage>
+                <passage>
+                  <infon key="type">abstract</infon>
+                  <offset>12</offset>
+                  <text>PubTator returned a PMCID-shaped document identifier.</text>
+                </passage>
+              </document>
+            </collection>
+            """
+        }
+    )
+    writer = FakeWarehouseWriter()
+
+    report = run_biocxml_api_ingest(
+        corpus_ids=[100],
+        parser_version="parser-v4",
+        pmid_loader=pmid_loader,
+        existing_checker=FakeExistingChecker(),
+        target_loader=FakeTargetLoader(
+            {
+                100: RagTargetCorpusRow(
+                    corpus_id=100,
+                    pmid=11111,
+                    pmc_id="PMC2962292",
+                    paper_title="Canonical PMCID-backed Title",
+                )
+            }
+        ),
+        api_fetcher=fetcher,
+        warehouse_writer=writer,
+    )
+
+    assert report.parsed_documents == 1
+    assert report.skipped_no_fetch == 0
+    assert report.ingested_corpus_ids == [100]
+    assert writer.source_groups[0][0].document.title == "Canonical PMCID-backed Title"

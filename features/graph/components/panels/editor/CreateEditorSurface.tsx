@@ -24,7 +24,6 @@ export function CreateEditorSurface({
   promptInteractionMenuRef,
   promptInteractionMenu,
   referenceMentionMenu,
-  entityHoverCard,
   handlePromptInteractionMenuHover,
   handlePromptInteractionMenuKeyDown,
   handleSourceTextChange,
@@ -56,7 +55,6 @@ export function CreateEditorSurface({
           promptInteractionMenuRef={promptInteractionMenuRef}
           promptInteractionMenu={promptInteractionMenu}
           referenceMentionMenu={referenceMentionMenu}
-          entityHoverCard={entityHoverCard}
           handlePromptInteractionMenuHover={handlePromptInteractionMenuHover}
           handlePromptInteractionMenuKeyDown={handlePromptInteractionMenuKeyDown}
           submitPromptInteractionCommand={submitPromptInteractionCommand}

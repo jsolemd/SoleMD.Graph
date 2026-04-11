@@ -1,21 +1,107 @@
 "use client";
 
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { ArrowLeft, ArrowRight } from "lucide-react";
-import { iconBtnStyles } from "@/features/graph/components/panels/PanelShell";
+import { ArrowLeft, ArrowRight, Home, Maximize2, List, ExternalLink } from "lucide-react";
+import { PANEL_TOP, iconBtnStyles } from "@/features/graph/components/panels/PanelShell";
+import { useDashboardStore } from "@/features/graph/stores";
+import {
+  resolveAdjacentFloatingPanelOffsets,
+  resolveCenteredFloatingPanelOffsets,
+  resolvePanelAnchorRect,
+} from "@/features/graph/stores/dashboard-store";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 
 export function WikiNavigation() {
   const historyIndex = useWikiStore((s) => s.historyIndex);
-  const slugHistory = useWikiStore((s) => s.slugHistory);
+  const routeHistory = useWikiStore((s) => s.routeHistory);
+  const currentRoute = useWikiStore((s) => s.currentRoute);
   const goBack = useWikiStore((s) => s.goBack);
   const goForward = useWikiStore((s) => s.goForward);
+  const navigateToGraph = useWikiStore((s) => s.navigateToGraph);
+  const setGlobalGraphOpen = useWikiStore((s) => s.setGlobalGraphOpen);
+  const tocOpen = useWikiStore((s) => s.tocOpen);
+  const setTocOpen = useWikiStore((s) => s.setTocOpen);
+  const localGraphPopped = useWikiStore((s) => s.localGraphPopped);
+  const setLocalGraphPopped = useWikiStore((s) => s.setLocalGraphPopped);
+  const savePanelPosition = useDashboardStore((s) => s.savePanelPosition);
 
   const canGoBack = historyIndex > 0;
-  const canGoForward = historyIndex < slugHistory.length - 1;
+  const canGoForward = historyIndex < routeHistory.length - 1;
+  const isOnGraph = currentRoute.kind === "graph";
+  const isOnPage = currentRoute.kind === "page";
+
+  const handleOpenGlobalGraph = () => {
+    const dashboardState = useDashboardStore.getState();
+    const panelWidth = dashboardState.panelPositions["wiki-global-graph"]?.width ?? 960;
+    const panelHeight = dashboardState.panelPositions["wiki-global-graph"]?.height ?? 720;
+    const { x, y } = resolveCenteredFloatingPanelOffsets({
+      state: dashboardState,
+      panelId: "wiki-global-graph",
+      panelWidth,
+      panelHeight,
+      panelTop: PANEL_TOP,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+
+    savePanelPosition("wiki-global-graph", {
+      x,
+      y,
+      width: panelWidth,
+      height: panelHeight,
+      docked: false,
+    });
+    setGlobalGraphOpen(true);
+  };
+
+  const handleToggleLocalGraph = () => {
+    if (localGraphPopped) {
+      setLocalGraphPopped(false);
+      return;
+    }
+
+    const dashboardState = useDashboardStore.getState();
+    const anchorRect = resolvePanelAnchorRect(dashboardState, "wiki", PANEL_TOP);
+    const panelWidth = dashboardState.panelPositions["wiki-graph"]?.width ?? 320;
+    const panelHeight = dashboardState.panelPositions["wiki-graph"]?.height;
+
+    if (anchorRect) {
+      const { x, y } = resolveAdjacentFloatingPanelOffsets({
+        state: dashboardState,
+        panelId: "wiki-graph",
+        anchorRect,
+        panelWidth,
+        panelTop: PANEL_TOP,
+        viewportWidth: window.innerWidth,
+      });
+      savePanelPosition("wiki-graph", {
+        x,
+        y,
+        width: panelWidth,
+        height: panelHeight,
+        docked: false,
+      });
+    }
+
+    setLocalGraphPopped(true);
+  };
 
   return (
     <div className="flex items-center gap-0.5">
+      <Tooltip label="Graph home" position="bottom" withArrow>
+        <ActionIcon
+          variant="transparent"
+          size={24}
+          radius="xl"
+          className="graph-icon-btn"
+          styles={iconBtnStyles}
+          onClick={navigateToGraph}
+          disabled={isOnGraph}
+          aria-label="Graph home"
+        >
+          <Home size={12} />
+        </ActionIcon>
+      </Tooltip>
       <Tooltip label="Back" position="bottom" withArrow>
         <ActionIcon
           variant="transparent"
@@ -44,6 +130,54 @@ export function WikiNavigation() {
           <ArrowRight size={12} />
         </ActionIcon>
       </Tooltip>
+      <Tooltip label="Global Graph" position="bottom" withArrow>
+        <ActionIcon
+          variant="transparent"
+          size={24}
+          radius="xl"
+          className="graph-icon-btn"
+          styles={iconBtnStyles}
+          onClick={handleOpenGlobalGraph}
+          aria-label="Global Graph"
+        >
+          <Maximize2 size={12} />
+        </ActionIcon>
+      </Tooltip>
+      {isOnPage && (
+        <>
+          <Tooltip label="Table of Contents" position="bottom" withArrow>
+            <ActionIcon
+              variant="transparent"
+              size={24}
+              radius="xl"
+              className="graph-icon-btn"
+              styles={iconBtnStyles}
+              onClick={() => setTocOpen(!tocOpen)}
+              aria-label="Table of Contents"
+              aria-pressed={tocOpen}
+            >
+              <List size={12} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip
+            label={localGraphPopped ? "Dock graph" : "Pop out graph"}
+            position="bottom"
+            withArrow
+          >
+            <ActionIcon
+              variant="transparent"
+              size={24}
+              radius="xl"
+              className="graph-icon-btn"
+              styles={iconBtnStyles}
+              onClick={handleToggleLocalGraph}
+              aria-label={localGraphPopped ? "Dock graph" : "Pop out graph"}
+            >
+              <ExternalLink size={12} />
+            </ActionIcon>
+          </Tooltip>
+        </>
+      )}
     </div>
   );
 }
