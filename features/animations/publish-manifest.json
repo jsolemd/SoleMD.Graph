@@ -1,4 +1,28 @@
 {
-  "files": {},
-  "meta": {}
+  "files": {
+    "features/animations/_smoke/README.md": "61b04febdcbcc6b1a4ccf1c1b09a5ec8ec5fdb7a937ec0d9d27e4eb82079a97a",
+    "features/animations/_smoke/chart-reveal/ChartReveal.tsx": "ebadc2bf88b5054259c6e7f5097a9f31372da7f46423666a6a2462f620e34ebd",
+    "features/animations/_smoke/gsap-draw-morph/DrawMorph.tsx": "301985f3d819c08b208bf149b5f9ad9a9bacb8ab45b69128f072797c38cae269",
+    "features/animations/_smoke/model-viewer-demo/ModelViewerDemo.tsx": "97da2919c8f10da7248ff7a0080015efdf7d274179a3b14e33f83060cb8ce40d",
+    "features/animations/_smoke/node-focus/useNodeFocusSpring.ts": "870c15c35e635f3f20a59c9b89f9ef50c4d3ea3ddfc715085945a9a70d1ebb30",
+    "features/animations/_smoke/pulse/SmokePulse.tsx": "867a7fe3cd697b87147fa6aa334dd06082404675f411b2790dab2cf1e2157830",
+    "features/animations/_smoke/rotating-cube/RotatingCube.tsx": "0789c06c13ea250fc241a6c169a18166dccbe34aefc8e1b8906d8e17776cdcf9",
+    "features/animations/_smoke/scroll-fade/ScrollFade.tsx": "33b3431007f74ab72f0620ba1c22d46dda39f322fdc6fa7e134d35aa012dddce",
+    "features/animations/_templates/biology-mechanism.tsx": "b696bae311e12efd08622b6025d0e06040aa6f95a49798f631bc1962173263fc",
+    "features/animations/_templates/canvas-hook.ts": "5a545943774e31e67a2cac656c79d9b3af08e013dd8cf8d5e1a3ad99af74adaf",
+    "features/animations/_templates/icon-hand-crafted.tsx": "10c75602c6d4f73029d495ba6d204029545a7bcabf87346cda2b4d3e6e19160a",
+    "features/animations/_templates/icon-lottie-wrapper.tsx": "2fc2a9b5286fc56cf89351b847a7f4927fc2b99d7a940c03a9011c1afae886e9",
+    "features/animations/_templates/manim-scene.py": "44cbb78544bece1893dfc22da8a8b6bbfb06cdfc3cf9361bf2d3776c48e3e673",
+    "features/animations/_templates/marketing-hero.tsx": "eecad026ed3b2b3bd7c97e22ce4fcf34112b0532602d8e8ef05ad76c111606b5",
+    "features/animations/_templates/model-viewer-wrapper.tsx": "cb84fd61de80dab96278c254f9d0f194bee0184c1d2e5ec337121ee4740677e2",
+    "features/animations/_templates/r3f-scene.tsx": "1ba83a3a6dfaf0221e9d484d9a1d28b3670a08439e9337a76ef4fa509f9d1943",
+    "features/animations/_templates/route-transition.css": "ef45524b1e6e93d442b34ad0dfeb9c35105d2ff808925574546535f3d20e891a",
+    "features/animations/_templates/viz-reveal.tsx": "744d67c311a8dde463f4fce58e506adecb7ce14d72b192ea1e2d9cbe85df61c2",
+    "features/animations/manifest.json": "1627df42ff57c103664d01acf9694cf3e44877926d4aa35808ebbeaa4b813d2c"
+  },
+  "meta": {
+    "make_head": "9e028b68251d5a014fe9e6e8002467db298e05e4",
+    "make_root": "/home/workbench/SoleMD/SoleMD.Make",
+    "published_at": "2026-04-11T19:26:37.962700+00:00"
+  }
 }

@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "name": "smoke-pulse",
+    "format": "framer",
+    "path": "_smoke/pulse/SmokePulse.tsx",
+    "entity": "index",
+    "caption": "Smoke test — Framer Motion SVG pulse",
+    "mounts": ["wiki"]
+  }
+]

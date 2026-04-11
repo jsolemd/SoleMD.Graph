@@ -392,3 +392,9 @@
 - Removed the dead `experimental.viewTransition` flag from `next.config.ts` so build-time configuration now matches the actual supported frontend runtime instead of advertising a dormant canary-only feature
 - Removed the unused route-transition CSS import from `app/globals.css` and deleted `app/styles/animations.css`; keeping transition CSS for a non-existent wrapper was dead surface area rather than a live feature
 - Verified the cleanup with `npm run build` and targeted eslint on `next.config.ts` plus `app/globals.css`
+
+### Batch 32
+
+- Fixed the wiki animation runtime boundary by routing `AnimationEmbed` through the explicit static animation registry instead of directory-wide string-based `import()` calls into `features/animations`
+- This keeps Turbopack off non-code template assets under `features/animations/_smoke` and `features/animations/_templates`, eliminating the `Unknown module type` crash on `/` while preserving the authored animation manifest/registry contract
+- Verified the repair with targeted eslint on `features/wiki/components/elements/AnimationEmbed.tsx` plus `features/animations/registry.tsx`, a full `npm run build`, and a live `curl -I http://localhost:3000` returning `200 OK`

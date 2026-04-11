@@ -1,0 +1,64 @@
+"use client";
+/**
+ * Animation component registry.
+ *
+ * Maps manifest `name` → React component for framer/r3f/interactive
+ * formats. This replaces dynamic string-based imports because
+ * webpack/turbopack cannot statically enumerate arbitrary template
+ * literals in `import()` calls — a registry is both simpler and
+ * tree-shake friendly.
+ *
+ * When adding a new animation authored on the SoleMD.Make side:
+ *   1. `make graph publish <category>/<name>`
+ *   2. Add a `name → component` entry here
+ *   3. Commit in SoleMD.Graph
+ *
+ * r3f/interactive components should be `dynamic(..., { ssr: false })`
+ * so three.js stays out of the server bundle.
+ */
+import dynamic from "next/dynamic";
+import type { ComponentType } from "react";
+import { Skeleton } from "@mantine/core";
+
+const fallback = <Skeleton height={280} radius="lg" />;
+
+const SmokePulse = dynamic(() => import("./_smoke/pulse/SmokePulse"), {
+  loading: () => fallback,
+});
+
+const RotatingCube = dynamic(() => import("./_smoke/rotating-cube/RotatingCube"), {
+  ssr: false,
+  loading: () => fallback,
+});
+
+const ChartReveal = dynamic(() => import("./_smoke/chart-reveal/ChartReveal"), {
+  loading: () => fallback,
+});
+
+const ScrollFade = dynamic(() => import("./_smoke/scroll-fade/ScrollFade"), {
+  loading: () => fallback,
+});
+
+const DrawMorph = dynamic(() => import("./_smoke/gsap-draw-morph/DrawMorph"), {
+  loading: () => fallback,
+});
+
+const ModelViewerDemo = dynamic(() => import("./_smoke/model-viewer-demo/ModelViewerDemo"), {
+  ssr: false,
+  loading: () => fallback,
+});
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ANIMATION_COMPONENTS: Record<string, ComponentType<any>> = {
+  "smoke-pulse": SmokePulse,
+  "smoke-rotating-cube": RotatingCube,
+  "smoke-chart-reveal": ChartReveal,
+  "smoke-scroll-fade": ScrollFade,
+  "smoke-draw-morph": DrawMorph,
+  "smoke-model-viewer": ModelViewerDemo,
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function getAnimationComponent(name: string): ComponentType<any> | undefined {
+  return ANIMATION_COMPONENTS[name];
+}

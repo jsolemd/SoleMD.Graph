@@ -7,12 +7,12 @@
  * fullscreen overlay on the wiki panel.
  *
  * Modes:
- *   framer | r3f | interactive → React component (dynamic-imported for r3f/interactive)
+ *   framer | r3f | interactive → React component from the static registry
  *   model-viewer                → <model-viewer> wrapper
  *   lottie                      → lottie-react JSON playback
  *   manim                       → <video> element
  */
-import { memo, useMemo } from "react";
+import { createElement, memo } from "react";
 import dynamic from "next/dynamic";
 import { ActionIcon, Skeleton } from "@mantine/core";
 import { Maximize2 } from "lucide-react";
@@ -21,6 +21,7 @@ import {
   getAnimationRef,
   type AnimationRef,
 } from "@/features/animations/manifest";
+import { ANIMATION_COMPONENTS } from "@/features/animations/registry";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { canvasReveal } from "@/lib/motion";
 
@@ -79,30 +80,10 @@ export const AnimationEmbed = memo(AnimationEmbedInner);
 // ---------------------------------------------------------------------------
 
 function AnimationBody({ refData }: { refData: AnimationRef }) {
-  // Each branch returns a stable element tree per format. r3f and
-  // interactive formats are dynamic-imported with ssr: false to keep
-  // three.js out of the server bundle.
   const format = refData.format;
 
-  const Loaded = useMemo(() => {
-    if (format === "r3f" || format === "interactive") {
-      return dynamic(
-        () => import(`@/features/animations/${refData.path}`),
-        { ssr: false, loading: () => fallback },
-      );
-    }
-    if (format === "framer") {
-      return dynamic(
-        () => import(`@/features/animations/${refData.path}`),
-        { loading: () => fallback },
-      );
-    }
-    return null;
-  }, [format, refData.path]);
-
   if (format === "lottie") {
-    const jsonUrl = `/animations/${refData.path}`;
-    return <LottiePlayer src={jsonUrl} />;
+    return <LottiePlayer src={`/animations/${refData.path}`} />;
   }
 
   if (format === "manim") {
@@ -119,11 +100,17 @@ function AnimationBody({ refData }: { refData: AnimationRef }) {
   }
 
   if (format === "model-viewer") {
-    return <ModelViewerPlayer src={`/animations/${refData.path}`} alt={refData.caption ?? refData.name} />;
+    return (
+      <ModelViewerPlayer
+        src={`/animations/${refData.path}`}
+        alt={refData.caption ?? refData.name}
+      />
+    );
   }
 
-  if (Loaded) return <Loaded />;
-  return fallback;
+  const animationComponent = ANIMATION_COMPONENTS[refData.name];
+  if (!animationComponent) return fallback;
+  return createElement(animationComponent);
 }
 
 const LottiePlayer = dynamic(
