@@ -18,6 +18,9 @@ import DrawMorph from "@/features/animations/_smoke/gsap-draw-morph/DrawMorph";
 import LottieDemo from "@/features/animations/_smoke/lottie-demo/LottieDemo";
 import NotoBrain from "@/features/animations/_smoke/noto-brain/NotoBrain";
 import TextReveal from "@/features/animations/_smoke/text-reveal/TextReveal";
+import NodeFocusDemo from "@/features/animations/_smoke/node-focus-demo/NodeFocusDemo";
+import AnimatedBeamDemo from "@/features/animations/_smoke/animated-beam/AnimatedBeamDemo";
+import BioIconsSmoke from "@/features/animations/_smoke/bioicons/BioIconsSmoke";
 
 const fallback = <Skeleton height={360} radius="lg" />;
 
@@ -28,6 +31,16 @@ const RotatingCube = dynamic(
 
 const ModelViewerDemo = dynamic(
   () => import("@/features/animations/_smoke/model-viewer-demo/ModelViewerDemo"),
+  { ssr: false, loading: () => fallback },
+);
+
+const ScrollMechanism = dynamic(
+  () => import("@/features/animations/_smoke/scroll-mechanism/ScrollMechanism"),
+  { loading: () => fallback },
+);
+
+const LottieFilesSmoke = dynamic(
+  () => import("@/features/animations/_smoke/lottie-files/LottieFilesSmoke"),
   { ssr: false, loading: () => fallback },
 );
 
@@ -106,6 +119,22 @@ export default function SmokePage() {
         <Card title="D13 · TextReveal" format="framer stagger variants">
           <TextReveal />
         </Card>
+
+        <Card title="D14 · NodeFocusDemo" format="framer spring bridge">
+          <NodeFocusDemo />
+        </Card>
+
+        <Card title="D15 · AnimatedBeam" format="magic ui · ref-linked svg">
+          <AnimatedBeamDemo />
+        </Card>
+
+        <Card title="D17 · BioIcons · Ca channel" format="svg + cc0 library">
+          <BioIconsSmoke />
+        </Card>
+
+        <Card title="D18 · LottieFiles · pulse" format="lottie-react">
+          <LottieFilesSmoke />
+        </Card>
       </div>
 
       <section className="mt-12">
@@ -114,7 +143,13 @@ export default function SmokePage() {
         </Card>
       </section>
 
-      {/* Extra scroll height so D7 actually has something to scroll over */}
+      <section className="mt-12">
+        <Card title="D16 · ScrollMechanism" format="gsap ScrollTrigger · pinned 4-step">
+          <ScrollMechanism />
+        </Card>
+      </section>
+
+      {/* Extra scroll height so the pinned sections have room to scrub through */}
       <div className="h-[60vh]" />
     </main>
   );

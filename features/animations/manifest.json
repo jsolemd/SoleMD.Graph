@@ -78,5 +78,45 @@
     "entity": "smoke",
     "caption": "D13 — Framer Motion stagger text reveal",
     "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-node-focus",
+    "format": "framer",
+    "path": "_smoke/node-focus-demo/NodeFocusDemo.tsx",
+    "entity": "smoke",
+    "caption": "D14 — useNodeFocusSpring demo (D3 → Framer Motion bridge)",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-animated-beam",
+    "format": "framer",
+    "path": "_smoke/animated-beam/AnimatedBeamDemo.tsx",
+    "entity": "smoke",
+    "caption": "D15 — Animated Beam (Magic UI, Make → Graph anchors)",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-scroll-mechanism",
+    "format": "framer",
+    "path": "_smoke/scroll-mechanism/ScrollMechanism.tsx",
+    "entity": "smoke",
+    "caption": "D16 — GSAP ScrollTrigger pinned 4-step mechanism",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-bioicons",
+    "format": "framer",
+    "path": "_smoke/bioicons/BioIconsSmoke.tsx",
+    "entity": "smoke",
+    "caption": "D17 — BioIcons calcium channel (CC0, brand-remapped)",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-lottie-files",
+    "format": "framer",
+    "path": "_smoke/lottie-files/LottieFilesSmoke.tsx",
+    "entity": "smoke",
+    "caption": "D18 — real LottieFiles asset via lottie-react",
+    "mounts": ["wiki"]
   }
 ]

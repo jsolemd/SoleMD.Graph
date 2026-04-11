@@ -60,6 +60,27 @@ const TextReveal = dynamic(() => import("./_smoke/text-reveal/TextReveal"), {
   loading: () => fallback,
 });
 
+const NodeFocusDemo = dynamic(() => import("./_smoke/node-focus-demo/NodeFocusDemo"), {
+  loading: () => fallback,
+});
+
+const AnimatedBeamDemo = dynamic(() => import("./_smoke/animated-beam/AnimatedBeamDemo"), {
+  loading: () => fallback,
+});
+
+const ScrollMechanism = dynamic(() => import("./_smoke/scroll-mechanism/ScrollMechanism"), {
+  loading: () => fallback,
+});
+
+const BioIconsSmoke = dynamic(() => import("./_smoke/bioicons/BioIconsSmoke"), {
+  loading: () => fallback,
+});
+
+const LottieFilesSmoke = dynamic(() => import("./_smoke/lottie-files/LottieFilesSmoke"), {
+  ssr: false,
+  loading: () => fallback,
+});
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ANIMATION_COMPONENTS: Record<string, ComponentType<any>> = {
   "smoke-pulse": SmokePulse,
@@ -71,6 +92,11 @@ export const ANIMATION_COMPONENTS: Record<string, ComponentType<any>> = {
   "smoke-twemoji-brain": LottieDemo,
   "smoke-noto-brain": NotoBrain,
   "smoke-text-reveal": TextReveal,
+  "smoke-node-focus": NodeFocusDemo,
+  "smoke-animated-beam": AnimatedBeamDemo,
+  "smoke-scroll-mechanism": ScrollMechanism,
+  "smoke-bioicons": BioIconsSmoke,
+  "smoke-lottie-files": LottieFilesSmoke,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
