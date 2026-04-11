@@ -13,6 +13,7 @@ jest.mock('react-markdown', () => ({
 
 import {
   createWikiComponentMap,
+  type AnimationEmbedProps,
   type CalloutProps,
   type PaperCitationProps,
   type WikiLinkProps,
@@ -34,6 +35,10 @@ function Callout({ children }: CalloutProps) {
   return <div>{children}</div>
 }
 
+function AnimationEmbed({ name }: AnimationEmbedProps) {
+  return <div data-animation={name}>{name}</div>
+}
+
 describe('createWikiComponentMap', () => {
   const onNavigate = jest.fn()
 
@@ -46,9 +51,10 @@ describe('createWikiComponentMap', () => {
       {
         resolvedLinks: { serotonin: 'entities/serotonin' },
         paperGraphRefs: {},
+        linkedEntities: {},
       },
       { onNavigate },
-      { WikiLink, PaperCitation, Callout },
+      { WikiLink, PaperCitation, Callout, AnimationEmbed },
     )
     const Link = components.a as ComponentType<{ href?: string; children?: ReactNode }>
     render(<Link href={href}>Serotonin</Link>)
