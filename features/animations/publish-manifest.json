@@ -1,13 +1,17 @@
 {
   "files": {
     "features/animations/_smoke/README.md": "61b04febdcbcc6b1a4ccf1c1b09a5ec8ec5fdb7a937ec0d9d27e4eb82079a97a",
-    "features/animations/_smoke/chart-reveal/ChartReveal.tsx": "ebadc2bf88b5054259c6e7f5097a9f31372da7f46423666a6a2462f620e34ebd",
-    "features/animations/_smoke/gsap-draw-morph/DrawMorph.tsx": "301985f3d819c08b208bf149b5f9ad9a9bacb8ab45b69128f072797c38cae269",
-    "features/animations/_smoke/model-viewer-demo/ModelViewerDemo.tsx": "97da2919c8f10da7248ff7a0080015efdf7d274179a3b14e33f83060cb8ce40d",
+    "features/animations/_smoke/chart-reveal/ChartReveal.tsx": "6f9548577b6e12630e2ab58c09336f4bd4565c0f09fbed564331df274328c699",
+    "features/animations/_smoke/gsap-draw-morph/DrawMorph.tsx": "4d2af5eaeed83e3f261b468ec0ba06bcd7c34935ffd35123540d66b2c3aad308",
+    "features/animations/_smoke/lottie-demo/LottieDemo.tsx": "d68aa1eecaa70fbffedf745447dbe290c5459df5c938a162eae0df4dba6a1c74",
+    "features/animations/_smoke/manim/trivial_scene.py": "b8b699e42ca77b639a4a2633f7a0051bb01bc2022f595442e441993ee3268a86",
+    "features/animations/_smoke/model-viewer-demo/ModelViewerDemo.tsx": "1ab77f96fbcbcd216f7190f9ccb50ac90acb514de3d5d99f7878c865dca38e09",
     "features/animations/_smoke/node-focus/useNodeFocusSpring.ts": "870c15c35e635f3f20a59c9b89f9ef50c4d3ea3ddfc715085945a9a70d1ebb30",
-    "features/animations/_smoke/pulse/SmokePulse.tsx": "867a7fe3cd697b87147fa6aa334dd06082404675f411b2790dab2cf1e2157830",
-    "features/animations/_smoke/rotating-cube/RotatingCube.tsx": "0789c06c13ea250fc241a6c169a18166dccbe34aefc8e1b8906d8e17776cdcf9",
-    "features/animations/_smoke/scroll-fade/ScrollFade.tsx": "33b3431007f74ab72f0620ba1c22d46dda39f322fdc6fa7e134d35aa012dddce",
+    "features/animations/_smoke/noto-brain/NotoBrain.tsx": "67399d6c5925afcc31805fd073a2f8a3b0db0370d45033b942af423d0f72cb79",
+    "features/animations/_smoke/pulse/SmokePulse.tsx": "8758f786704d90f9b137895a0a4142a5afd7451fd4bbf65a0741e89f68a2996b",
+    "features/animations/_smoke/rotating-cube/RotatingCube.tsx": "442df5ebe955652dc6e9c7bced8c9bc06cb24c4338eb56ff8b7033a096eeb2d3",
+    "features/animations/_smoke/scroll-fade/ScrollFade.tsx": "265da3ca484e9df148efd5c19a9b447c356c0e4b81ec3d9598a56cb08205a488",
+    "features/animations/_smoke/text-reveal/TextReveal.tsx": "9489a345cd0f8adde50bea82e583751fbc17939a6bb7c531a596f77432c066c4",
     "features/animations/_templates/biology-mechanism.tsx": "b696bae311e12efd08622b6025d0e06040aa6f95a49798f631bc1962173263fc",
     "features/animations/_templates/canvas-hook.ts": "5a545943774e31e67a2cac656c79d9b3af08e013dd8cf8d5e1a3ad99af74adaf",
     "features/animations/_templates/icon-hand-crafted.tsx": "10c75602c6d4f73029d495ba6d204029545a7bcabf87346cda2b4d3e6e19160a",
@@ -18,11 +22,13 @@
     "features/animations/_templates/r3f-scene.tsx": "1ba83a3a6dfaf0221e9d484d9a1d28b3670a08439e9337a76ef4fa509f9d1943",
     "features/animations/_templates/route-transition.css": "ef45524b1e6e93d442b34ad0dfeb9c35105d2ff808925574546535f3d20e891a",
     "features/animations/_templates/viz-reveal.tsx": "744d67c311a8dde463f4fce58e506adecb7ce14d72b192ea1e2d9cbe85df61c2",
-    "features/animations/manifest.json": "1627df42ff57c103664d01acf9694cf3e44877926d4aa35808ebbeaa4b813d2c"
+    "features/animations/manifest.json": "c0c80615477b908deb5d6953b64c9b16847d4291feff81e8dd06a497a5e9efe0",
+    "public/animations/_assets/glb/ethanol.glb": "d0369cb0b25d59ba4900e1ced6a93f444b7ce0fe09bcdac788593e2cd0031b5f",
+    "public/animations/_smoke/manim/SmokeScene.mp4": "90f9f2bccfd84a095d423d2df8109906b95253733142b4b24a27aac05d8cdbea"
   },
   "meta": {
-    "make_head": "9e028b68251d5a014fe9e6e8002467db298e05e4",
+    "make_head": "85d74d2ba4454c0c79d17da043a7a3e1690a3eab",
     "make_root": "/home/workbench/SoleMD/SoleMD.Make",
-    "published_at": "2026-04-11T19:26:37.962700+00:00"
+    "published_at": "2026-04-11T23:18:22.361588+00:00"
   }
 }

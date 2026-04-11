@@ -5,11 +5,24 @@
  * Proves the Framer Motion + SVG authoring path + publish flow + wiki
  * embed works end-to-end. Referenced by `[[anim:smoke-pulse]]` in the
  * wiki index page.
+ *
+ * Uses a duration-based tween (not a spring) because Framer Motion's
+ * spring solver only supports two keyframes. Honors `useReducedMotion`:
+ * when users opt out, the SVG renders at its mid-keyframe without
+ * animating.
  */
-import { motion } from "framer-motion";
-import { canvasReveal, smooth } from "@/lib/motion";
+import { motion, useReducedMotion } from "framer-motion";
+import { canvasReveal } from "@/lib/motion";
 
 export default function SmokePulse() {
+  const reduced = useReducedMotion();
+
+  const outerAnimate = reduced
+    ? { scale: 1, opacity: 0.95 }
+    : { scale: [0.9, 1.05, 0.9], opacity: [0.55, 0.95, 0.55] };
+
+  const innerAnimate = reduced ? { opacity: 0.75 } : { opacity: [0.4, 0.9, 0.4] };
+
   return (
     <motion.div
       {...canvasReveal}
@@ -21,15 +34,18 @@ export default function SmokePulse() {
           cy="100"
           r="50"
           fill="var(--color-soft-blue)"
-          initial={{ scale: 0.8, opacity: 0 }}
-          animate={{ scale: [0.8, 1.05, 1], opacity: [0, 0.9, 1] }}
-          transition={{
-            scale: smooth,
-            opacity: { duration: 0.1, ease: "easeOut" },
-            repeat: Infinity,
-            repeatType: "reverse",
-            duration: 2.4,
-          }}
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={outerAnimate}
+          transition={
+            reduced
+              ? { duration: 0.3, ease: "easeOut" }
+              : {
+                  duration: 2.4,
+                  ease: "easeInOut",
+                  repeat: Infinity,
+                  repeatType: "loop",
+                }
+          }
         />
         <motion.circle
           cx="100"
@@ -37,8 +53,12 @@ export default function SmokePulse() {
           r="30"
           fill="var(--color-muted-indigo)"
           initial={{ opacity: 0 }}
-          animate={{ opacity: [0.4, 0.9, 0.4] }}
-          transition={{ duration: 2.0, repeat: Infinity, ease: "easeInOut" }}
+          animate={innerAnimate}
+          transition={
+            reduced
+              ? { duration: 0.3, ease: "easeOut" }
+              : { duration: 2.0, repeat: Infinity, ease: "easeInOut" }
+          }
         />
       </svg>
     </motion.div>

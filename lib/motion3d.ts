@@ -1,36 +1,40 @@
 /**
- * Motion 3D presets for React Three Fiber + framer-motion-3d.
+ * Motion 3D presets for React Three Fiber.
+ *
+ * NOT framer-motion-3d — that package is deprecated on R3F 9 / React 19
+ * and incompatible with our stack. Use plain refs + `useFrame` with
+ * these lerp-factor constants for frame-rate-independent interpolation,
+ * or GSAP timelines mutating three.js object properties directly.
  *
  * All timings tuned to feel consistent with lib/motion.ts — same
- * "calm, precise" motion brand, adapted to three.js rotations,
- * camera tracks, and orbit behavior.
+ * "calm, precise" motion brand, adapted to three.js rotation rates
+ * and camera tracks.
  */
-type SpringTransition = {
-  type: "spring";
-  stiffness: number;
-  damping: number;
-};
 
-/** Slow, deliberate rotation — molecular displays, hero 3D. */
-export const slowRotation: SpringTransition = {
-  type: "spring",
-  stiffness: 40,
-  damping: 18,
-};
+/**
+ * Frame-rate-independent lerp factor.
+ *
+ *   current += (target - current) * lerpFactor(dt, k)
+ *
+ * `k` is the decay rate (higher = snappier). For a smooth hover or
+ * camera settle, `k = 6` gives a ~300ms response. For a quick snap,
+ * `k = 18` gives ~120ms. Mathematically correct replacement for naive
+ * `current += (target - current) * 0.1` which breaks on high-refresh
+ * displays and under React Compiler's varying frame rates.
+ */
+export function lerpFactor(dt: number, k: number): number {
+  return 1 - Math.exp(-dt * k);
+}
 
-/** Orbit feel — loose, forgiving for camera choreography. */
-export const orbit: SpringTransition = {
-  type: "spring",
-  stiffness: 60,
-  damping: 22,
-};
-
-/** Camera track — stiffer, for deliberate cinematic movements. */
-export const cameraTrack: SpringTransition = {
-  type: "spring",
-  stiffness: 90,
-  damping: 26,
-};
+/** Decay constants (k in `lerpFactor`) tuned to the motion tiers. */
+export const DECAY = {
+  /** ~120ms settle — micro interaction, hover, button press */
+  micro: 18,
+  /** ~300ms settle — standard transitions, camera lerp, mode shifts */
+  standard: 6,
+  /** ~500ms settle — emphasis, cinematic camera tracks */
+  emphasis: 3.2,
+} as const;
 
 /**
  * Default orbit rate for auto-rotating 3D objects (rad/s).

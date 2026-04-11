@@ -3,8 +3,80 @@
     "name": "smoke-pulse",
     "format": "framer",
     "path": "_smoke/pulse/SmokePulse.tsx",
-    "entity": "index",
-    "caption": "Smoke test — Framer Motion SVG pulse",
+    "entity": "smoke",
+    "caption": "D1 — Framer Motion SVG pulse",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-rotating-cube",
+    "format": "r3f",
+    "path": "_smoke/rotating-cube/RotatingCube.tsx",
+    "entity": "smoke",
+    "caption": "D2 — React Three Fiber rotating cube",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-model-viewer",
+    "format": "model-viewer",
+    "path": "_assets/glb/ethanol.glb",
+    "entity": "smoke",
+    "caption": "D3 — <model-viewer> with RDKit-generated ethanol",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-chart-reveal",
+    "format": "framer",
+    "path": "_smoke/chart-reveal/ChartReveal.tsx",
+    "entity": "smoke",
+    "caption": "D6 — animated bar reveal with gradient fills",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-scroll-fade",
+    "format": "framer",
+    "path": "_smoke/scroll-fade/ScrollFade.tsx",
+    "entity": "smoke",
+    "caption": "D7 — GSAP ScrollTrigger fade",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-draw-morph",
+    "format": "framer",
+    "path": "_smoke/gsap-draw-morph/DrawMorph.tsx",
+    "entity": "smoke",
+    "caption": "D8 — GSAP DrawSVG morph",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-twemoji-brain",
+    "format": "framer",
+    "path": "_smoke/lottie-demo/LottieDemo.tsx",
+    "entity": "smoke",
+    "caption": "D10 — pastel brain (Twemoji path data, brand-remapped)",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-noto-brain",
+    "format": "framer",
+    "path": "_smoke/noto-brain/NotoBrain.tsx",
+    "entity": "smoke",
+    "caption": "D11 — pastel brain (Noto Emoji, brand-remapped)",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-manim-scene",
+    "format": "manim",
+    "path": "_smoke/manim/SmokeScene.mp4",
+    "entity": "smoke",
+    "caption": "D12 — Manim CE trivial scene",
+    "mounts": ["wiki"]
+  },
+  {
+    "name": "smoke-text-reveal",
+    "format": "framer",
+    "path": "_smoke/text-reveal/TextReveal.tsx",
+    "entity": "smoke",
+    "caption": "D13 — Framer Motion stagger text reveal",
     "mounts": ["wiki"]
   }
 ]

@@ -1,39 +1,55 @@
 "use client";
 /**
- * D7 smoke test — GSAP ScrollTrigger fade. Proves GSAP + Framer
- * Motion coexistence + lazy plugin import.
+ * D7 smoke test — GSAP ScrollTrigger fade via the official useGSAP hook.
+ *
+ * Uses `@gsap/react`'s useGSAP for StrictMode-safe cleanup and
+ * dependency-based re-run semantics. Lazy-registers ScrollTrigger
+ * inside the hook body so the plugin tree-shakes out of code paths
+ * that never mount this component.
+ *
+ * Honors `gsap.matchMedia()` + `(prefers-reduced-motion: reduce)`
+ * per the motion aesthetic — when users opt out, the animation is
+ * skipped entirely (element is visible at rest) rather than shortened.
  */
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
+import { useGSAP } from "@gsap/react";
+import { getGsap } from "@/lib/gsap";
 
 export default function ScrollFade() {
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    let ctx: { revert: () => void } | undefined;
-    let cancelled = false;
-
-    (async () => {
-      const gsap = (await import("@/lib/gsap")).getGsap();
+  useGSAP(
+    async () => {
+      const gsap = getGsap();
       const { ScrollTrigger } = await import("gsap/ScrollTrigger");
-      gsap.registerPlugin(ScrollTrigger);
+      gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-      if (cancelled || !ref.current) return;
-      ctx = gsap.context(() => {
-        gsap.from(ref.current, {
-          opacity: 0,
-          y: 32,
-          duration: 0.6,
-          ease: "power2.out",
-          scrollTrigger: { trigger: ref.current, start: "top 80%" },
-        });
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-      ctx?.revert();
-    };
-  }, []);
+      const mm = gsap.matchMedia();
+      mm.add(
+        {
+          isMotion: "(prefers-reduced-motion: no-preference)",
+          isReduced: "(prefers-reduced-motion: reduce)",
+        },
+        (ctx) => {
+          const { isMotion } = (ctx.conditions ?? {}) as { isMotion: boolean };
+          if (!isMotion || !ref.current) return;
+          gsap.from(ref.current, {
+            opacity: 0,
+            y: 32,
+            duration: 0.6,
+            ease: "power2.out",
+            scrollTrigger: {
+              trigger: ref.current,
+              start: "top 80%",
+              toggleActions: "play none none reverse",
+            },
+          });
+        },
+      );
+      return () => mm.revert();
+    },
+    { scope: ref },
+  );
 
   return (
     <div

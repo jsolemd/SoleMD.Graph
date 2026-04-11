@@ -1,43 +1,61 @@
 "use client";
-/**
- * D6 smoke test — Recharts bar chart wrapped in Framer Motion
- * `whileInView` stagger. Proves Recharts + Framer Motion interop.
- */
-import { motion } from "framer-motion";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { dataReveal } from "@/lib/motion";
 
 const DATA = [
-  { label: "A", value: 24 },
-  { label: "B", value: 36 },
-  { label: "C", value: 18 },
-  { label: "D", value: 42 },
+  { label: "A", value: 24, from: "var(--color-soft-pink)",    to: "var(--color-soft-lavender)" },
+  { label: "B", value: 36, from: "var(--color-soft-blue)",    to: "var(--color-muted-indigo)" },
+  { label: "C", value: 18, from: "var(--color-fresh-green)",  to: "var(--color-soft-blue)" },
+  { label: "D", value: 42, from: "var(--color-golden-yellow)", to: "var(--color-warm-coral)" },
 ];
 
-export default function ChartReveal() {
-  const maxValue = Math.max(...DATA.map((d) => d.value));
+const MAX = Math.max(...DATA.map((d) => d.value));
+const BARS = DATA.map((d) => ({ ...d, pct: ((d.value / MAX) * 100).toFixed(4) }));
 
+const bar: Variants = {
+  hidden: { scaleY: 0, opacity: 0 },
+  visible: {
+    scaleY: 1,
+    opacity: 1,
+    transition: {
+      scaleY: { duration: 0.6, ease: [0.2, 0.8, 0.2, 1] },
+      opacity: { duration: 0.1, ease: "easeOut" },
+    },
+  },
+};
+
+export default function ChartReveal() {
+  const reduced = useReducedMotion();
   return (
     <motion.div
       variants={dataReveal}
-      initial="hidden"
+      initial={reduced ? "visible" : "hidden"}
       whileInView="visible"
       viewport={{ once: true, amount: 0.3 }}
-      className="flex h-[280px] w-full items-end gap-4 p-6"
+      className="flex h-[280px] w-full items-end gap-4 px-6 pb-6 pt-4"
     >
-      {DATA.map((d) => (
-        <motion.div
-          key={d.label}
-          variants={{
-            hidden: { opacity: 0, height: 0 },
-            visible: { opacity: 1, height: `${(d.value / maxValue) * 100}%` },
-          }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="flex w-12 items-end justify-center rounded-t bg-[var(--color-fresh-green)]"
-        >
-          <span className="pb-1 text-xs font-medium text-[var(--text-primary)]">
-            {d.value}
+      {BARS.map((d) => (
+        <div key={d.label} className="flex h-full flex-1 flex-col items-center gap-2">
+          <div className="flex min-h-0 w-full flex-1 items-end">
+            <motion.div
+              className="flex w-full items-end justify-center rounded-t-lg"
+              style={{
+                height: `${d.pct}%`,
+                transformOrigin: "bottom",
+                backgroundImage: `linear-gradient(to top, ${d.from}, ${d.to})`,
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.28)",
+              }}
+              variants={bar}
+            >
+              <span className="pb-1 text-xs font-medium tabular-nums" style={{ color: "var(--text-primary)" }}>
+                {d.value}
+              </span>
+            </motion.div>
+          </div>
+          <span className="text-xs font-mono" style={{ color: "var(--text-secondary)" }}>
+            {d.label}
           </span>
-        </motion.div>
+        </div>
       ))}
     </motion.div>
   );

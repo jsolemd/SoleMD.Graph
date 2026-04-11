@@ -48,6 +48,18 @@ const ModelViewerDemo = dynamic(() => import("./_smoke/model-viewer-demo/ModelVi
   loading: () => fallback,
 });
 
+const LottieDemo = dynamic(() => import("./_smoke/lottie-demo/LottieDemo"), {
+  loading: () => fallback,
+});
+
+const NotoBrain = dynamic(() => import("./_smoke/noto-brain/NotoBrain"), {
+  loading: () => fallback,
+});
+
+const TextReveal = dynamic(() => import("./_smoke/text-reveal/TextReveal"), {
+  loading: () => fallback,
+});
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const ANIMATION_COMPONENTS: Record<string, ComponentType<any>> = {
   "smoke-pulse": SmokePulse,
@@ -56,6 +68,9 @@ export const ANIMATION_COMPONENTS: Record<string, ComponentType<any>> = {
   "smoke-scroll-fade": ScrollFade,
   "smoke-draw-morph": DrawMorph,
   "smoke-model-viewer": ModelViewerDemo,
+  "smoke-twemoji-brain": LottieDemo,
+  "smoke-noto-brain": NotoBrain,
+  "smoke-text-reveal": TextReveal,
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
