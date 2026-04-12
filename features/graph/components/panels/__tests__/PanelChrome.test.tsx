@@ -54,6 +54,21 @@ describe("PanelChrome", () => {
     expect(screen.getByTestId("action")).toBeInTheDocument();
   });
 
+  it("renders headerNavigation", () => {
+    render(
+      <MantineProvider>
+        <PanelChrome
+          title="Test"
+          onClose={jest.fn()}
+          headerNavigation={<span data-testid="nav">nav</span>}
+        >
+          <div>content</div>
+        </PanelChrome>
+      </MantineProvider>,
+    );
+    expect(screen.getByTestId("nav")).toBeInTheDocument();
+  });
+
   it("calls onClose on Escape", () => {
     const onClose = jest.fn();
     render(
@@ -82,12 +97,13 @@ describe("PanelChrome", () => {
 
   it("only starts drag from the title handle, not header controls", () => {
     const onTitlePointerDown = jest.fn();
-    render(
+    const { container } = render(
       <MantineProvider>
         <PanelChrome
           title="Test"
           onClose={jest.fn()}
           onTitlePointerDown={onTitlePointerDown}
+          headerNavigation={<button type="button">Back</button>}
           headerActions={<button type="button">Search</button>}
         >
           <div>content</div>
@@ -95,28 +111,36 @@ describe("PanelChrome", () => {
       </MantineProvider>,
     );
 
-    fireEvent.pointerDown(screen.getByText("Test"));
+    const dragHandle = container.querySelector('[data-panel-drag-handle="true"]');
+
+    fireEvent.pointerDown(dragHandle as HTMLElement);
     expect(onTitlePointerDown).toHaveBeenCalledTimes(1);
 
+    fireEvent.pointerDown(screen.getByText("Test"));
+    expect(onTitlePointerDown).toHaveBeenCalledTimes(2);
+
+    fireEvent.pointerDown(screen.getByText("Back"));
     fireEvent.pointerDown(screen.getByText("Search"));
     fireEvent.pointerDown(screen.getByLabelText("Close test panel"));
-    expect(onTitlePointerDown).toHaveBeenCalledTimes(1);
+    expect(onTitlePointerDown).toHaveBeenCalledTimes(2);
   });
 
   it("renders and calls panel zoom controls", () => {
-    const onZoomIn = jest.fn();
-    const onZoomOut = jest.fn();
+    const onIncreaseScale = jest.fn();
+    const onDecreaseScale = jest.fn();
+    const onResetScale = jest.fn();
 
     render(
       <MantineProvider>
         <PanelChrome
           title="Test"
           onClose={jest.fn()}
-          panelZoom={1.2}
-          canZoomIn
-          canZoomOut
-          onZoomIn={onZoomIn}
-          onZoomOut={onZoomOut}
+          panelScale={1.2}
+          canIncreaseScale
+          canDecreaseScale
+          onIncreaseScale={onIncreaseScale}
+          onDecreaseScale={onDecreaseScale}
+          onResetScale={onResetScale}
         >
           <div>content</div>
         </PanelChrome>
@@ -124,9 +148,11 @@ describe("PanelChrome", () => {
     );
 
     expect(screen.getByText("120%")).toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("Zoom in panel content"));
-    fireEvent.click(screen.getByLabelText("Zoom out panel content"));
-    expect(onZoomIn).toHaveBeenCalledTimes(1);
-    expect(onZoomOut).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByLabelText("Increase panel text size"));
+    fireEvent.click(screen.getByLabelText("Decrease panel text size"));
+    fireEvent.click(screen.getByLabelText("Reset panel text size"));
+    expect(onIncreaseScale).toHaveBeenCalledTimes(1);
+    expect(onDecreaseScale).toHaveBeenCalledTimes(1);
+    expect(onResetScale).toHaveBeenCalledTimes(1);
   });
 });

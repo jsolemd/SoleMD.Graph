@@ -39,15 +39,15 @@
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 1px;
+  gap: calc(1px * var(--app-density));
 }
 
 /* Faint separator between groups (not around them) */
 .tiptap-toolbar-group + .tiptap-toolbar-group::before {
   content: "";
   display: block;
-  width: 1px;
-  height: 14px;
+  width: calc(1px * var(--app-density));
+  height: calc(14px * var(--app-density));
   margin-right: 0.3rem;
   background: var(--graph-prompt-divider);
   opacity: 0.6;
@@ -63,7 +63,7 @@
   height: 1.65rem;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--app-density));
   background: transparent;
   color: var(--graph-prompt-inactive);
   cursor: pointer;
@@ -90,7 +90,7 @@
   overflow-y: auto;
   outline: none;
   padding: 0.25rem 0.5rem;
-  font-size: 11px;
+  font-size: calc(11px * var(--app-density));
   line-height: 1.5;
   color: var(--graph-prompt-text);
   caret-color: var(--mode-accent);
@@ -118,9 +118,12 @@
    Cannot add .thin-scrollbar class to Tiptap's auto-rendered element,
    so these rules mirror the .thin-scrollbar pattern with a custom thumb. */
 .tiptap-create .tiptap { scrollbar-gutter: stable; }
-.tiptap-create .tiptap::-webkit-scrollbar { width: 4px; }
+.tiptap-create .tiptap::-webkit-scrollbar { width: calc(4px * var(--app-density)); }
 .tiptap-create .tiptap::-webkit-scrollbar-track { background: transparent; }
-.tiptap-create .tiptap::-webkit-scrollbar-thumb { background: var(--graph-prompt-divider); border-radius: 2px; }
+.tiptap-create .tiptap::-webkit-scrollbar-thumb {
+  background: var(--graph-prompt-divider);
+  border-radius: calc(2px * var(--app-density));
+}
 
 /* ── Prose formatting — minimal, inherits PromptBox text tokens ── */
 .tiptap-create .tiptap h1 {
@@ -145,7 +148,7 @@
 .tiptap-create .tiptap > *:first-child { margin-top: 0; }
 
 .tiptap-create .tiptap blockquote {
-  border-left: 3px solid var(--mode-accent);
+  border-left: calc(3px * var(--app-density)) solid var(--mode-accent);
   padding-left: 0.75rem;
   margin: 0.5rem 0;
   color: var(--graph-prompt-inactive);
@@ -156,7 +159,7 @@
   font-size: 0.85em;
   background: var(--mode-accent-subtle);
   padding: 0.15em 0.35em;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--app-density));
 }
 
 .tiptap-create .tiptap pre {
@@ -164,7 +167,7 @@
   font-size: 0.85em;
   background: var(--mode-accent-subtle);
   padding: 0.75rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--app-density));
   margin: 0.5rem 0;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -178,7 +181,7 @@
 
 .tiptap-create .tiptap hr {
   border: none;
-  border-top: 1px solid var(--graph-prompt-divider);
+  border-top: calc(1px * var(--app-density)) solid var(--graph-prompt-divider);
   margin: 0.75rem 0;
 }
 
@@ -206,7 +209,7 @@
   background: transparent;
   padding: 0.25rem 0.5rem;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-density));
   line-height: 1.6;
   color: var(--graph-prompt-text);
   caret-color: var(--mode-accent);
@@ -216,9 +219,12 @@
   scrollbar-gutter: stable;
 }
 
-.tiptap-source::-webkit-scrollbar { width: 4px; }
+.tiptap-source::-webkit-scrollbar { width: calc(4px * var(--app-density)); }
 .tiptap-source::-webkit-scrollbar-track { background: transparent; }
-.tiptap-source::-webkit-scrollbar-thumb { background: var(--graph-prompt-divider); border-radius: 2px; }
+.tiptap-source::-webkit-scrollbar-thumb {
+  background: var(--graph-prompt-divider);
+  border-radius: calc(2px * var(--app-density));
+}
 
 .tiptap-source::selection {
   background: var(--mode-accent-subtle);

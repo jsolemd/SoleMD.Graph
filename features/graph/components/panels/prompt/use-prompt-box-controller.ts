@@ -44,7 +44,14 @@ import {
   getPromptInteractionProviders,
 } from "./prompt-interaction-runtime";
 import { useEntityOverlaySync } from "@/features/graph/components/entities/use-entity-overlay-sync";
-import { BOTTOM_BASE, MAX_CARD_W, VIEWPORT_MARGIN, VW_RATIO, cardWidth } from "./constants";
+import { densityCssPx } from "@/lib/density";
+import {
+  BOTTOM_BASE,
+  PROMPT_FALLBACK_NORMAL_HEIGHT,
+  VIEWPORT_MARGIN,
+  VW_RATIO,
+  cardWidth,
+} from "./constants";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { getEntityWikiSlug } from "@/features/wiki/lib/entity-wiki-route";
 import type { GraphEntityRef } from "@/features/graph/types/entity-service";
@@ -328,7 +335,7 @@ export function usePromptBoxController({
     const nextVh = window.innerHeight;
     const el = cardRef.current;
     const boxW = el ? el.offsetWidth : cardWidth(viewportW);
-    const boxH = el ? el.offsetHeight : 120;
+    const boxH = el ? el.offsetHeight : PROMPT_FALLBACK_NORMAL_HEIGHT;
     const curX = dragX.get();
     const curY = dragY.get();
     const minX = isCollapsed
@@ -437,7 +444,9 @@ export function usePromptBoxController({
   }, [clearEntityOverlaySelection, submitRagQuery]);
 
   const normalCardWidth = cardWidth(vw);
-  const normalWidth = vw === 0 ? `min(${MAX_CARD_W}px, ${VW_RATIO * 100}vw)` : `${normalCardWidth}px`;
+  const normalWidth = vw === 0
+    ? `min(${densityCssPx(560)}, ${VW_RATIO * 100}vw)`
+    : `${normalCardWidth}px`;
 
   return {
     mode,

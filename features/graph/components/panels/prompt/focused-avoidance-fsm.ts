@@ -8,6 +8,7 @@
 import type { PromptAvoidRect } from "./avoidance";
 import { unionPromptAvoidRects } from "./avoidance";
 import {
+  FOCUSED_LABEL_FALLBACK_MIN_WIDTH,
   FOCUSED_LABEL_ESTIMATED_CHAR_WIDTH,
   FOCUSED_LABEL_HEIGHT,
   FOCUSED_LABEL_MAX_WIDTH,
@@ -22,8 +23,6 @@ const FOCUSED_MOTION_IDLE_MS = 72;
 const FOCUSED_MOTION_DETECTION_MS = 180;
 const FOCUSED_LABEL_QUIET_MS = 96;
 const FOCUSED_LABEL_SETTLE_TIMEOUT_MS = 260;
-const FOCUSED_LABEL_FALLBACK_MIN_WIDTH = 220;
-
 interface CosmographLike {
   getPointPositionByIndex(index: number): [number, number] | undefined;
   spaceToScreenPosition(position: [number, number]): [number, number] | undefined;

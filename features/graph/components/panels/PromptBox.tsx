@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { densityCssPx } from "@/lib/density";
 import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
 import { usePromptBoxController } from "./prompt/use-prompt-box-controller";
 import { PromptBoxSurface } from "./prompt/PromptBoxSurface";
@@ -26,7 +27,7 @@ function PromptBoxComponent({
               inset: 0,
               pointerEvents: "none",
               padding: "0.25rem 0.5rem",
-              fontSize: "10pt",
+              fontSize: densityCssPx(10),
               lineHeight: 1.5,
               overflow: "hidden",
               color: "var(--graph-prompt-placeholder)",

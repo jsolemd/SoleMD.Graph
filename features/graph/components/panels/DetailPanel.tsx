@@ -1,17 +1,18 @@
 "use client";
 
 import { memo, useCallback } from "react";
-import { ActionIcon, Stack, Tooltip } from "@mantine/core";
+import { Stack } from "@mantine/core";
 import { ArrowLeft } from "lucide-react";
 import { useGraphSelection, useGraphCamera } from "@/features/graph/cosmograph";
 import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
 import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
+import { APP_CHROME_PX } from "@/lib/density";
 import type {
   GraphBundle,
   GraphBundleQueries,
 } from "@/features/graph/types";
-import { iconBtnStyles, PanelBody, PanelDivider, PanelShell } from "./PanelShell";
+import { PanelBody, PanelDivider, PanelHeaderActions, PanelIconAction, PanelShell } from "./PanelShell";
 import {
   buildPaperNoteMarkdown,
 } from "./detail/helpers";
@@ -96,27 +97,22 @@ function DetailPanelComponent({
       id="detail"
       title="Selection"
       side="right"
-      defaultWidth={380}
+      defaultWidth={APP_CHROME_PX.detailPanelWidth}
       onClose={closePanel}
-      headerActions={
+      headerNavigation={
         hasSelectionContext ? (
-          <Tooltip label="Back to selection" position="bottom" withArrow>
-            <ActionIcon
-              variant="transparent"
-              size={24}
-              radius="xl"
-              className="graph-icon-btn"
-              styles={iconBtnStyles}
+          <PanelHeaderActions>
+            <PanelIconAction
+              label="Back to selection"
+              icon={<ArrowLeft size={12} />}
               onClick={handleBackToSelection}
               aria-label="Back to selection"
-            >
-              <ArrowLeft size={12} />
-            </ActionIcon>
-          </Tooltip>
+            />
+          </PanelHeaderActions>
         ) : null
       }
     >
-      <PanelBody panelId="detail">
+      <PanelBody>
         <Stack gap="sm">
           <DetailHeader node={selectedNode} paper={detail?.paper ?? null} />
 

@@ -2,6 +2,7 @@
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
 import { CheckCircle } from "lucide-react";
+import { PANEL_DOCK_WIDTH_PX } from "@/lib/density";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
   badgeAccentStyles,
@@ -254,11 +255,11 @@ export function RagResponsePanel() {
       id="rag-response"
       title={title}
       side="right"
-      defaultWidth={420}
+      defaultWidth={PANEL_DOCK_WIDTH_PX.query}
       headerActions={headerActions}
       onClose={clearRagStore}
     >
-      <PanelBody panelId="rag-response">
+      <PanelBody>
         <Stack gap={8}>
           {/* Query context */}
           {(ragSession?.queryPreview || selectedNode || statParts.length > 0) && (

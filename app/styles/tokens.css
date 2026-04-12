@@ -51,6 +51,17 @@
   --color-paper: #d4c5a0;
   --color-teal: #7ecfb0;
 
+  /* Semantic category pastels — wiki graph + entity accents */
+  --color-semantic-disorder: #f6b39b;
+  --color-semantic-chemical: #aedc93;
+  --color-semantic-gene: #d79ece;
+  --color-semantic-anatomy: #e5c799;
+  --color-semantic-physiology: #9fcfe8;
+  --color-semantic-procedure: #d8bee9;
+  --color-semantic-section: #746fc0;
+  --color-semantic-paper: #d4c5a0;
+  --color-semantic-module: #7ecfb0;
+
   /* Extended pastels — DotToc rainbow cycle beyond the 8 brand accents */
   --color-seafoam: #8ed4c6;
   --color-amber: #f5c26b;
@@ -64,6 +75,8 @@
   --color-sage: #a8d8b8;
   --color-plum: #d4a0c8;
   --color-pear: #c8d8a0;
+  --color-feedback-warning: #f59e0b;
+  --color-feedback-danger: #e53e3e;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -76,6 +89,9 @@
    All downstream tokens reference these via var().
    ═══════════════════════════════════════════════════════════════════ */
 :root {
+  /* ── Density — single source of truth (JS counterpart: lib/density.ts) ── */
+  --app-density: 0.8;
+
   /* WebGL mirror: lib/graph/brand-colors.ts — keep in sync */
   /* ── Foundations ── */
   --background: #fafafa;
@@ -87,9 +103,9 @@
   --text-tertiary: #9ca3af;
   --border-default: #eaedf0;
   --border-subtle: rgba(0, 0, 0, 0.06);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 calc(1px * var(--app-density)) calc(3px * var(--app-density)) rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 calc(4px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 calc(8px * var(--app-density)) calc(24px * var(--app-density)) rgba(0, 0, 0, 0.08);
   --brand-accent: #747caa;
   --brand-accent-alt: #a8c5e9;
   --interactive-hover: rgba(116, 124, 170, 0.06);
@@ -106,19 +122,23 @@
   --graph-panel-input-bg: var(--surface-alt);
   --graph-panel-hover: var(--interactive-hover);
   --graph-panel-active: var(--interactive-active);
-  --graph-panel-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  --graph-panel-shadow:
+    0 calc(2px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.08),
+    0 0 0 calc(1px * var(--app-density)) rgba(0, 0, 0, 0.04);
+  --graph-panel-scale: 1;
+  --graph-panel-reading-scale: calc(var(--app-density) * var(--graph-panel-scale));
 
   /* ── Wiki graph (Pixi canvas — semantic-group node colors, see docs/map/wiki-taxonomy.md) ── */
-  --wiki-graph-node-diso: var(--color-warm-coral);
-  --wiki-graph-node-chem: var(--color-fresh-green);
-  --wiki-graph-node-gene: var(--color-soft-pink);
-  --wiki-graph-node-anat: var(--color-golden-yellow);
-  --wiki-graph-node-phys: var(--color-soft-blue);
-  --wiki-graph-node-proc: var(--color-soft-lavender);
-  --wiki-graph-node-section: var(--color-muted-indigo);
-  --wiki-graph-node-paper: var(--color-paper);
-  --wiki-graph-node-default: var(--color-soft-blue);
-  --wiki-graph-node-module: var(--color-teal);
+  --wiki-graph-node-diso: var(--color-semantic-disorder);
+  --wiki-graph-node-chem: var(--color-semantic-chemical);
+  --wiki-graph-node-gene: var(--color-semantic-gene);
+  --wiki-graph-node-anat: var(--color-semantic-anatomy);
+  --wiki-graph-node-phys: var(--color-semantic-physiology);
+  --wiki-graph-node-proc: var(--color-semantic-procedure);
+  --wiki-graph-node-section: var(--color-semantic-section);
+  --wiki-graph-node-paper: var(--color-semantic-paper);
+  --wiki-graph-node-default: var(--color-semantic-physiology);
+  --wiki-graph-node-module: var(--color-semantic-module);
   --wiki-graph-link: #cbd5e1;
   --wiki-graph-label: #1e293b;
 
@@ -131,7 +151,9 @@
   /* ── Graph overlays (PromptBox, Wordmark) ── */
   --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: var(--border-default);
-  --graph-prompt-shadow: 0 2px 8px rgba(0, 0, 0, 0.04), 0 8px 32px rgba(0, 0, 0, 0.08);
+  --graph-prompt-shadow:
+    0 calc(2px * var(--app-density)) calc(8px * var(--app-density)) rgba(0, 0, 0, 0.04),
+    0 calc(8px * var(--app-density)) calc(32px * var(--app-density)) rgba(0, 0, 0, 0.08);
   --graph-prompt-text: #000000;
   --graph-prompt-placeholder: rgba(0, 0, 0, 0.28);
   --graph-prompt-inactive: rgba(0, 0, 0, 0.48);
@@ -141,9 +163,9 @@
   --graph-stats-text: rgba(0, 0, 0, 0.32);
   --graph-label-bg: var(--graph-panel-bg);
   --graph-label-border: rgba(17, 17, 19, 0.03);
-  --graph-label-shadow: 0 2px 10px rgba(17, 17, 19, 0.04);
-  --graph-label-text-shadow: 0 0 0.25px rgba(17, 17, 19, 0.14);
-  --graph-label-text-stroke: 0.15px rgba(17, 17, 19, 0.1);
+  --graph-label-shadow: 0 calc(2px * var(--app-density)) calc(10px * var(--app-density)) rgba(17, 17, 19, 0.04);
+  --graph-label-text-shadow: 0 0 calc(0.25px * var(--app-density)) rgba(17, 17, 19, 0.14);
+  --graph-label-text-stroke: calc(0.15px * var(--app-density)) rgba(17, 17, 19, 0.1);
   --graph-greyout-opacity: 0.25;
 
   /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
@@ -156,10 +178,11 @@
   --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, white);
   --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, white);
   --mode-accent-border: color-mix(in srgb, var(--mode-accent) 50%, white);
+  --module-accent-default: var(--color-soft-blue);
 
   /* ── Toolbar icons (single source of truth for lucide + Cosmograph) ── */
-  --icon-size: 16px;
-  --icon-stroke-width: 1.5;
+  --icon-size: calc(16px * var(--app-density));
+  --icon-stroke-width: calc(1.5 * var(--app-density));
   --graph-control-icon-color: var(--graph-panel-text-dim);
   --graph-control-idle-bg: transparent;
   --graph-control-idle-border: transparent;
@@ -167,9 +190,15 @@
   --graph-control-pressed-bg: var(--mode-accent-subtle);
   --graph-control-active-bg: var(--mode-accent-hover);
 
-  /* ── Error states ── */
-  --error-bg: rgba(255, 107, 107, 0.08);
-  --error-border: rgba(255, 107, 107, 0.24);
+  /* ── Feedback states ── */
+  --feedback-warning-accent: var(--color-feedback-warning);
+  --feedback-warning-bg: color-mix(in srgb, var(--surface-alt) 85%, var(--feedback-warning-accent) 15%);
+  --feedback-warning-border: color-mix(in srgb, var(--border-default) 70%, var(--feedback-warning-accent) 30%);
+  --feedback-warning-text: var(--feedback-warning-accent);
+  --feedback-danger-accent: var(--color-feedback-danger);
+  --feedback-danger-bg: color-mix(in srgb, var(--surface) 88%, var(--feedback-danger-accent) 12%);
+  --feedback-danger-border: color-mix(in srgb, var(--border-default) 75%, var(--feedback-danger-accent) 25%);
+  --feedback-danger-text: var(--feedback-danger-accent);
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -193,13 +222,13 @@ html:root {
   --cosmograph-ui-highlighted-element-color: var(--brand-accent);
   --cosmograph-ui-selection-control-color: var(--mode-accent);
   --cosmograph-ui-font-family: var(--font-sans);
-  --cosmograph-ui-font-size: 11px;
-  --cosmograph-ui-tick-font-size: 10px;
+  --cosmograph-ui-font-size: calc(11px * var(--app-density));
+  --cosmograph-ui-tick-font-size: calc(10px * var(--app-density));
 
   /* ── Widget-specific divergences only ── */
   /* Timeline: custom bar colors from brand palette */
   --cosmograph-timeline-bar-color: var(--brand-accent-alt);
-  --cosmograph-timeline-font-size: 10px;
+  --cosmograph-timeline-font-size: calc(10px * var(--app-density));
 
   /* Search: opaque backgrounds instead of transparent/dark defaults */
   --cosmograph-search-background: var(--surface-alt);
@@ -208,10 +237,10 @@ html:root {
   --cosmograph-search-accessors-background: var(--surface-alt);
   --cosmograph-search-select-all-background: var(--surface-alt);
   --cosmograph-search-select-all-hover-background: var(--interactive-hover);
-  --cosmograph-search-font-size: 12px;
+  --cosmograph-search-font-size: calc(12px * var(--app-density));
 
   /* Legend: custom sizes + muted others color */
-  --cosmograph-color-legend-type-font-size: 11px;
+  --cosmograph-color-legend-type-font-size: calc(11px * var(--app-density));
   --cosmograph-color-legend-type-font-color: var(--text-secondary);
   --cosmograph-color-legend-type-hover-color: var(--mode-accent);
   --cosmograph-color-legend-type-others-color: var(--text-tertiary);
@@ -219,7 +248,7 @@ html:root {
 
   /* Buttons: surface bg instead of element-color default */
   --cosmograph-button-background: var(--surface);
-  --cosmograph-button-border-radius: 8px;
+  --cosmograph-button-border-radius: calc(8px * var(--app-density));
 
   /* Histogram: custom bar color + axis color */
   --cosmograph-histogram-bar-color: var(--mode-accent);
@@ -232,7 +261,7 @@ html:root {
 
   /* Popup: pre-defined for upcoming CosmographPopup widget */
   --cosmograph-popup-background: var(--graph-panel-bg);
-  --cosmograph-popup-border-radius: 12px;
+  --cosmograph-popup-border-radius: calc(12px * var(--app-density));
   --cosmograph-popup-shadow: var(--graph-panel-shadow);
 
   --cosmograph-scrollbar-background: rgba(0, 0, 0, 0.08);
@@ -240,19 +269,19 @@ html:root {
 
 /* ═══════════════════════════════════════════════════════════════════
    ENTITY-TYPE ACCENT — data-entity-type attribute selectors
-   Centralizes entity_type → brand color for all surfaces:
+   Centralizes entity_type → semantic color for all surfaces:
    editor highlights, hover cards, wiki entity badges.
    See docs/map/wiki-taxonomy.md for the full taxonomy.
    ═══════════════════════════════════════════════════════════════════ */
-[data-entity-type="disease"]            { --entity-accent: var(--color-warm-coral); }
-[data-entity-type="chemical"]           { --entity-accent: var(--color-fresh-green); }
-[data-entity-type="gene"]               { --entity-accent: var(--color-soft-pink); }
-[data-entity-type="receptor"]           { --entity-accent: var(--color-soft-pink); }
-[data-entity-type="anatomy"]            { --entity-accent: var(--color-golden-yellow); }
-[data-entity-type="network"]            { --entity-accent: var(--color-soft-blue); }
-[data-entity-type="biological process"] { --entity-accent: var(--color-soft-blue); }
-[data-entity-type="species"]            { --entity-accent: var(--color-soft-lavender); }
-[data-entity-type="module"]            { --entity-accent: var(--color-teal); }
+[data-entity-type="disease"]            { --entity-accent: var(--color-semantic-disorder); }
+[data-entity-type="chemical"]           { --entity-accent: var(--color-semantic-chemical); }
+[data-entity-type="gene"]               { --entity-accent: var(--color-semantic-gene); }
+[data-entity-type="receptor"]           { --entity-accent: var(--color-semantic-gene); }
+[data-entity-type="anatomy"]            { --entity-accent: var(--color-semantic-anatomy); }
+[data-entity-type="network"]            { --entity-accent: var(--color-semantic-physiology); }
+[data-entity-type="biological process"] { --entity-accent: var(--color-semantic-physiology); }
+[data-entity-type="species"]            { --entity-accent: var(--color-semantic-procedure); }
+[data-entity-type="module"]             { --entity-accent: var(--color-semantic-module); }
 
 /* ═══════════════════════════════════════════════════════════════════
    DARK MODE — Only override foundations + tokens that diverge.
@@ -270,6 +299,17 @@ html:root {
   --color-soft-pink: #b085a8;
   --color-soft-lavender: #a899b3;
   --color-paper: #a89b78;
+  --color-feedback-warning: #f59e0b;
+  --color-feedback-danger: #e53e3e;
+  --color-semantic-disorder: #c48b7d;
+  --color-semantic-chemical: #8aad7a;
+  --color-semantic-gene: #a97ea4;
+  --color-semantic-anatomy: #b69d77;
+  --color-semantic-physiology: #7faec7;
+  --color-semantic-procedure: #a899b3;
+  --color-semantic-section: #8d85d7;
+  --color-semantic-paper: #a89b78;
+  --color-semantic-module: #6ea48d;
 
   /* ── Foundations (everything downstream updates via var()) ── */
   --background: #18181b;
@@ -281,9 +321,9 @@ html:root {
   --text-tertiary: #71717a;
   --border-default: #2a2c31;
   --border-subtle: rgba(255, 255, 255, 0.06);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 calc(1px * var(--app-density)) calc(3px * var(--app-density)) rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 calc(4px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 calc(8px * var(--app-density)) calc(24px * var(--app-density)) rgba(0, 0, 0, 0.5);
   --brand-accent: #a8c5e9;
   --brand-accent-alt: #89a3bf;
   --interactive-hover: rgba(168, 197, 233, 0.08);
@@ -295,26 +335,32 @@ html:root {
   --graph-panel-bg: #1a1b1f;
   --graph-panel-border: rgba(255, 255, 255, 0.08);
   --graph-panel-input-bg: #1f2024;
-  --graph-panel-shadow: 0 6px 22px rgba(0, 0, 0, 0.42), inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
+  --graph-panel-shadow:
+    0 calc(6px * var(--app-density)) calc(22px * var(--app-density)) rgba(0, 0, 0, 0.42),
+    inset 0 calc(0.5px * var(--app-density)) 0 rgba(255, 255, 255, 0.06);
+  --graph-panel-scale: 1;
+  --graph-panel-reading-scale: calc(var(--app-density) * var(--graph-panel-scale));
 
-  /* ── Wiki graph (dark mode — inherits semantic-group vars from @theme overrides above) ── */
-  --wiki-graph-node-diso: var(--color-warm-coral);
-  --wiki-graph-node-chem: var(--color-fresh-green);
-  --wiki-graph-node-gene: var(--color-soft-pink);
-  --wiki-graph-node-anat: var(--color-golden-yellow);
-  --wiki-graph-node-phys: var(--color-soft-blue);
-  --wiki-graph-node-proc: var(--color-soft-lavender);
-  --wiki-graph-node-section: var(--color-muted-indigo);
-  --wiki-graph-node-paper: var(--color-paper);
-  --wiki-graph-node-default: var(--color-soft-blue);
-  --wiki-graph-node-module: var(--color-teal);
+  /* ── Wiki graph (dark mode — semantic palette overrides above feed these vars) ── */
+  --wiki-graph-node-diso: var(--color-semantic-disorder);
+  --wiki-graph-node-chem: var(--color-semantic-chemical);
+  --wiki-graph-node-gene: var(--color-semantic-gene);
+  --wiki-graph-node-anat: var(--color-semantic-anatomy);
+  --wiki-graph-node-phys: var(--color-semantic-physiology);
+  --wiki-graph-node-proc: var(--color-semantic-procedure);
+  --wiki-graph-node-section: var(--color-semantic-section);
+  --wiki-graph-node-paper: var(--color-semantic-paper);
+  --wiki-graph-node-default: var(--color-semantic-physiology);
+  --wiki-graph-node-module: var(--color-semantic-module);
   --wiki-graph-link: #475569;
   --wiki-graph-label: #e2e8f0;
 
   /* ── Graph overlays (matte floating cards) ── */
   --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: transparent;
-  --graph-prompt-shadow: 0 8px 26px rgba(0, 0, 0, 0.46), inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
+  --graph-prompt-shadow:
+    0 calc(8px * var(--app-density)) calc(26px * var(--app-density)) rgba(0, 0, 0, 0.46),
+    inset 0 calc(0.5px * var(--app-density)) 0 rgba(255, 255, 255, 0.06);
   --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
   --graph-prompt-inactive: rgba(255, 255, 255, 0.52);
   --graph-prompt-text: #ffffff;
@@ -337,10 +383,17 @@ html:root {
   --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, transparent);
   --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, transparent);
   --mode-accent-border: color-mix(in srgb, var(--mode-accent) 45%, transparent);
+  --module-accent-default: var(--color-soft-blue);
 
-  /* ── Error states ── */
-  --error-bg: rgba(255, 107, 107, 0.10);
-  --error-border: rgba(255, 107, 107, 0.20);
+  /* ── Feedback states ── */
+  --feedback-warning-accent: var(--color-feedback-warning);
+  --feedback-warning-bg: color-mix(in srgb, var(--surface-alt) 85%, var(--feedback-warning-accent) 15%);
+  --feedback-warning-border: color-mix(in srgb, var(--border-default) 70%, var(--feedback-warning-accent) 30%);
+  --feedback-warning-text: var(--feedback-warning-accent);
+  --feedback-danger-accent: var(--color-feedback-danger);
+  --feedback-danger-bg: color-mix(in srgb, var(--surface) 88%, var(--feedback-danger-accent) 12%);
+  --feedback-danger-border: color-mix(in srgb, var(--border-default) 75%, var(--feedback-danger-accent) 25%);
+  --feedback-danger-text: var(--feedback-danger-accent);
 }
 
 /* Cosmograph dark — only widget-specific divergences from base vars */

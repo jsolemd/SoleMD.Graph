@@ -17,9 +17,9 @@
 }
 
 .mantine-Tooltip-tooltip {
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  font-size: calc(11px * var(--app-density));
+  padding: calc(4px * var(--app-density)) calc(8px * var(--app-density));
+  border-radius: calc(6px * var(--app-density));
 }
 
 /* CosmographSearch accessor — fade instead of lateral slide on focus */

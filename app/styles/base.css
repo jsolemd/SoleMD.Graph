@@ -7,9 +7,7 @@
   }
 
   html {
-    /* scroll-behavior: smooth is fine for this SPA-style graph app.
-       For page-navigation-heavy apps, Next.js 16 recommends CSS-only
-       scroll-behavior with View Transitions instead. */
+    font-size: calc(100% * var(--app-density, 0.8));
     scroll-behavior: smooth;
   }
 
@@ -20,6 +18,7 @@
     color: var(--foreground);
     background-color: var(--background);
   }
+
 
   h1,
   h2,
@@ -39,9 +38,12 @@
    Apply `.thin-scrollbar` and optionally set `--scrollbar-thumb`.
    ═══════════════════════════════════════════════════════════════════ */
 .thin-scrollbar { scrollbar-gutter: stable; }
-.thin-scrollbar::-webkit-scrollbar { width: 4px; }
+.thin-scrollbar::-webkit-scrollbar { width: calc(4px * var(--app-density)); }
 .thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.thin-scrollbar::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb, var(--graph-panel-border)); border-radius: 2px; }
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, var(--graph-panel-border));
+  border-radius: calc(2px * var(--app-density));
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    GLOBAL SCROLLBAR — invisible by default, still scrollable.

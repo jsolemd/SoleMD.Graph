@@ -9,6 +9,7 @@ import {
   Mail,
   Stethoscope,
 } from "lucide-react";
+import { PANEL_DOCK_WIDTH_PX } from "@/lib/density";
 import { useDashboardStore } from "@/features/graph/stores";
 import {
   PanelBody,
@@ -19,6 +20,7 @@ import {
   panelTextDimStyle,
   panelStatValueStyle,
   panelCardStyle,
+  panelScaledPx,
   sectionLabelStyle,
   badgeAccentStyles,
 } from "./PanelShell";
@@ -66,10 +68,10 @@ export function AboutPanel() {
     <PanelShell
       id="about"
       title="About"
-      defaultWidth={320}
+      defaultWidth={PANEL_DOCK_WIDTH_PX.about}
       onClose={() => closePanel("about")}
     >
-      <PanelBody panelId="about">
+      <PanelBody>
         <Stack gap="sm">
           {(
             [
@@ -81,10 +83,10 @@ export function AboutPanel() {
                   height={48}
                   alt="Jon Sole"
                   className="rounded-full object-cover"
-                  style={{ width: 48, height: 48 }}
+                  style={{ width: panelScaledPx(48), height: panelScaledPx(48) }}
                 />
                 <div>
-                  <Text fw={600} style={{ ...panelTextStyle, fontSize: 13 }}>
+                  <Text fw={600} style={{ ...panelTextStyle, fontSize: panelScaledPx(13) }}>
                     Jon Sole, MD
                   </Text>
                   <Group gap={6} mt={4}>
@@ -111,7 +113,7 @@ export function AboutPanel() {
                 <Text fw={600} mb={4} style={sectionLabelStyle}>
                   About
                 </Text>
-                <Text style={{ ...panelTextStyle, lineHeight: "18px" }}>
+                <Text style={{ ...panelTextStyle, lineHeight: panelScaledPx(18) }}>
                   Psychiatry carries real morbidity and mortality, and its empirical
                   foundation is still evolving. On the path toward evidence-based
                   care, SoleMD maps the connections between what evidence we do
@@ -146,7 +148,7 @@ export function AboutPanel() {
                       <Text
                         style={{
                           ...panelTextMutedStyle,
-                          fontSize: 9,
+                          fontSize: panelScaledPx(9),
                           textAlign: "center",
                         }}
                       >

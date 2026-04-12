@@ -10,6 +10,7 @@ import {
   resolveWikiPanelWidth,
   useDashboardStore,
 } from '../dashboard-store'
+import { APP_CHROME_PX, PANEL_DOCK_WIDTH_PX, WIKI_PANEL_PX } from '@/lib/density'
 
 type DashboardState = ReturnType<typeof useDashboardStore.getState>
 
@@ -26,7 +27,7 @@ describe('selectBottomObstacles', () => {
   })
 
   it('adds 44 for timeline', () => {
-    expect(selectBottomObstacles(makeState({ showTimeline: true, tableOpen: false }))).toBe(44)
+    expect(selectBottomObstacles(makeState({ showTimeline: true, tableOpen: false }))).toBe(APP_CHROME_PX.timelineHeight)
   })
 
   it('adds tableHeight for open table', () => {
@@ -34,26 +35,30 @@ describe('selectBottomObstacles', () => {
   })
 
   it('combines timeline and table', () => {
-    expect(selectBottomObstacles(makeState({ showTimeline: true, tableOpen: true, tableHeight: 200 }))).toBe(244)
+    expect(selectBottomObstacles(makeState({ showTimeline: true, tableOpen: true, tableHeight: 200 }))).toBe(
+      APP_CHROME_PX.timelineHeight + 200,
+    )
   })
 })
 
 describe('selectBottomClearance', () => {
   it('adds toolbar clearance when panels visible', () => {
-    // toolbarBase(12) + toolbarIcon(34) + gap(8) = 54
     const state = makeState({ showTimeline: false, tableOpen: false, panelsVisible: true })
-    expect(selectBottomClearance(state)).toBe(54)
+    expect(selectBottomClearance(state)).toBe(
+      APP_CHROME_PX.toolbarBase + APP_CHROME_PX.toolbarIcon + APP_CHROME_PX.toolbarGap,
+    )
   })
 
   it('returns obstacles only when panels hidden', () => {
     const state = makeState({ showTimeline: true, tableOpen: false, panelsVisible: false })
-    expect(selectBottomClearance(state)).toBe(44)
+    expect(selectBottomClearance(state)).toBe(APP_CHROME_PX.timelineHeight)
   })
 
   it('combines obstacles and toolbar', () => {
     const state = makeState({ showTimeline: true, tableOpen: true, tableHeight: 200, panelsVisible: true })
-    // obstacles: 44 + 200 = 244, toolbar: 54 → total 298
-    expect(selectBottomClearance(state)).toBe(298)
+    expect(selectBottomClearance(state)).toBe(
+      APP_CHROME_PX.timelineHeight + 200 + APP_CHROME_PX.toolbarBase + APP_CHROME_PX.toolbarIcon + APP_CHROME_PX.toolbarGap,
+    )
   })
 })
 
@@ -63,10 +68,13 @@ describe('selectLeftClearance', () => {
   })
 
   it('returns about panel width regardless of panelsVisible', () => {
-    // about: 320 + margin 24 = 344
     const panels = { ...CLOSED_PANELS, about: true }
-    expect(selectLeftClearance(makeState({ openPanels: panels, panelsVisible: false }))).toBe(344)
-    expect(selectLeftClearance(makeState({ openPanels: panels, panelsVisible: true }))).toBe(344)
+    expect(selectLeftClearance(makeState({ openPanels: panels, panelsVisible: false }))).toBe(
+      PANEL_DOCK_WIDTH_PX.about + APP_CHROME_PX.panelMargin,
+    )
+    expect(selectLeftClearance(makeState({ openPanels: panels, panelsVisible: true }))).toBe(
+      PANEL_DOCK_WIDTH_PX.about + APP_CHROME_PX.panelMargin,
+    )
   })
 
   it('returns 0 for non-about panels when panelsVisible is false', () => {
@@ -76,11 +84,11 @@ describe('selectLeftClearance', () => {
 
   it('returns width + margin for each panel type', () => {
     const cases: Array<[keyof typeof CLOSED_PANELS, number]> = [
-      ['config', 300 + 24],
-      ['filters', 300 + 24],
-      ['info', 320 + 24],
-      ['query', 420 + 24],
-      ['wiki', 520 + 24],
+      ['config', PANEL_DOCK_WIDTH_PX.config + APP_CHROME_PX.panelMargin],
+      ['filters', PANEL_DOCK_WIDTH_PX.filters + APP_CHROME_PX.panelMargin],
+      ['info', PANEL_DOCK_WIDTH_PX.info + APP_CHROME_PX.panelMargin],
+      ['query', PANEL_DOCK_WIDTH_PX.query + APP_CHROME_PX.panelMargin],
+      ['wiki', PANEL_DOCK_WIDTH_PX.wiki + APP_CHROME_PX.panelMargin],
     ]
     for (const [panel, expected] of cases) {
       expect(selectLeftClearance(makeState({ openPanels: { ...CLOSED_PANELS, [panel]: true }, panelsVisible: true }))).toBe(expected)
@@ -92,8 +100,10 @@ describe('selectLeftClearance', () => {
       openPanels: { ...CLOSED_PANELS, filters: true, wiki: true },
       panelsVisible: true,
     })
-    // filters (300 + 24) + wiki (520 + 24) = 868
-    expect(selectLeftClearance(state)).toBe((300 + 24) + (520 + 24))
+    expect(selectLeftClearance(state)).toBe(
+      (PANEL_DOCK_WIDTH_PX.filters + APP_CHROME_PX.panelMargin)
+      + (PANEL_DOCK_WIDTH_PX.wiki + APP_CHROME_PX.panelMargin),
+    )
   })
 
   it('returns expanded width for wiki when wikiExpanded is true', () => {
@@ -103,7 +113,7 @@ describe('selectLeftClearance', () => {
       wikiExpanded: true,
       wikiExpandedWidth: 650,
     })
-    expect(selectLeftClearance(state)).toBe(650 + 24)
+    expect(selectLeftClearance(state)).toBe(650 + APP_CHROME_PX.panelMargin)
   })
 
   it('excludes floating (undocked) panels from clearance', () => {
@@ -130,8 +140,7 @@ describe('selectPanelLeftOffset', () => {
       openPanels: { ...CLOSED_PANELS, config: true, wiki: true },
       panelsVisible: true,
     })
-    // wiki comes after config in order; config width = 300 + 12 gap
-    expect(selectPanelLeftOffset(state, 'wiki')).toBe(312)
+    expect(selectPanelLeftOffset(state, 'wiki')).toBe(PANEL_DOCK_WIDTH_PX.config + APP_CHROME_PX.panelGap)
   })
 
   it('skips closed panels', () => {
@@ -165,9 +174,9 @@ describe('panel anchor helpers', () => {
     })
 
     expect(resolvePanelAnchorRect(state, 'wiki', 116)).toEqual({
-      left: 12,
+      left: APP_CHROME_PX.edgeMargin,
       top: 116,
-      width: 520,
+      width: PANEL_DOCK_WIDTH_PX.wiki,
     })
   })
 
@@ -186,7 +195,7 @@ describe('panel anchor helpers', () => {
       viewportWidth: 1600,
       viewportHeight: 1000,
     })).toEqual({
-      x: 308,
+      x: 320 - APP_CHROME_PX.edgeMargin,
       y: 24,
     })
   })
@@ -216,15 +225,15 @@ describe('panel anchor helpers', () => {
 
 describe('resolveWikiPanelWidth', () => {
   it('returns default width when not expanded', () => {
-    expect(resolveWikiPanelWidth(1920, false)).toBe(520)
+    expect(resolveWikiPanelWidth(1920, false)).toBe(PANEL_DOCK_WIDTH_PX.wiki)
   })
 
-  it('returns 65% of viewport when expanded, capped at 840', () => {
-    expect(resolveWikiPanelWidth(1920, true)).toBe(840)
+  it('returns 70% of viewport when expanded, capped at the density-scaled max', () => {
+    expect(resolveWikiPanelWidth(1920, true)).toBe(WIKI_PANEL_PX.expandedWidthMax)
   })
 
-  it('returns 65% of viewport for smaller screens', () => {
-    expect(resolveWikiPanelWidth(800, true)).toBe(520)
+  it('returns the dock width floor once the viewport ratio drops below it', () => {
+    expect(resolveWikiPanelWidth(700, true)).toBe(PANEL_DOCK_WIDTH_PX.wiki)
   })
 })
 
@@ -233,8 +242,10 @@ describe('selectRightClearance', () => {
     expect(selectRightClearance(makeState({ panelBottomY: { left: 0, right: 0 } }))).toBe(0)
   })
 
-  it('returns detail panel clearance (380 + 24) when panelBottomY.right > 0', () => {
-    expect(selectRightClearance(makeState({ panelBottomY: { left: 0, right: 100 } }))).toBe(404)
+  it('returns detail panel clearance when panelBottomY.right > 0', () => {
+    expect(selectRightClearance(makeState({ panelBottomY: { left: 0, right: 100 } }))).toBe(
+      APP_CHROME_PX.detailPanelWidth + APP_CHROME_PX.panelMargin,
+    )
   })
 })
 

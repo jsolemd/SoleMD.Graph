@@ -64,7 +64,7 @@ beforeAll(() => {
 
 describe("PanelShell", () => {
   beforeEach(() => {
-    useDashboardStore.setState({ floatingObstacles: {}, panelZooms: {} });
+    useDashboardStore.setState({ floatingObstacles: {}, panelScales: {} });
   });
 
   it("renders chrome with title", () => {
@@ -156,7 +156,7 @@ describe("PanelShell", () => {
     const { container } = render(
       <MantineProvider>
         <PanelShell id="wiki" title="Wiki" onClose={jest.fn()}>
-          <PanelBody panelId="wiki">
+          <PanelBody>
             <div data-testid="child">content</div>
           </PanelBody>
         </PanelShell>
@@ -164,20 +164,20 @@ describe("PanelShell", () => {
     );
 
     const panel = container.querySelector(".absolute");
-    const zoomWrapper = screen.getByTestId("child").parentElement;
+    const shell = panel as HTMLElement;
 
     expect(panel).toBeTruthy();
-    expect((zoomWrapper as HTMLElement).style.zoom).toBe("1");
+    expect(shell.style.getPropertyValue("--graph-panel-scale")).toBe("1");
 
     fireEvent.keyDown(panel as HTMLElement, { key: "=", ctrlKey: true });
 
-    expect(useDashboardStore.getState().panelZooms.wiki).toBe(1.1);
-    expect((zoomWrapper as HTMLElement).style.zoom).toBe("1.1");
+    expect(useDashboardStore.getState().panelScales.wiki).toBe(1.1);
+    expect(shell.style.getPropertyValue("--graph-panel-scale")).toBe("1.1");
 
     fireEvent.keyDown(panel as HTMLElement, { key: "0", ctrlKey: true });
 
-    expect(useDashboardStore.getState().panelZooms.wiki).toBeUndefined();
-    expect((zoomWrapper as HTMLElement).style.zoom).toBe("1");
+    expect(useDashboardStore.getState().panelScales.wiki).toBeUndefined();
+    expect(shell.style.getPropertyValue("--graph-panel-scale")).toBe("1");
   });
 
   it("zooms panel content from the chrome controls", () => {
@@ -189,10 +189,31 @@ describe("PanelShell", () => {
       </MantineProvider>,
     );
 
-    fireEvent.click(screen.getByLabelText("Zoom in panel content"));
-    expect(useDashboardStore.getState().panelZooms.wiki).toBe(1.1);
+    fireEvent.click(screen.getByLabelText("Increase panel text size"));
+    expect(useDashboardStore.getState().panelScales.wiki).toBe(1.1);
 
-    fireEvent.click(screen.getByLabelText("Zoom out panel content"));
-    expect(useDashboardStore.getState().panelZooms.wiki).toBeUndefined();
+    fireEvent.click(screen.getByLabelText("Decrease panel text size"));
+    expect(useDashboardStore.getState().panelScales.wiki).toBeUndefined();
+  });
+
+  it("disables content scaling for spatial panels", () => {
+    const { container } = render(
+      <MantineProvider>
+        <PanelShell id="wiki-graph" title="Wiki Graph" contentScaleMode="none" onClose={jest.fn()}>
+          <PanelBody>
+            <div>content</div>
+          </PanelBody>
+        </PanelShell>
+      </MantineProvider>,
+    );
+
+    const panel = container.querySelector(".absolute") as HTMLElement;
+
+    expect(screen.queryByLabelText("Increase panel text size")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(panel, { key: "=", ctrlKey: true });
+
+    expect(useDashboardStore.getState().panelScales["wiki-graph"]).toBeUndefined();
+    expect(panel.style.getPropertyValue("--graph-panel-scale")).toBe("1");
   });
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { animate, useDragControls, useMotionValue } from "framer-motion";
+import { APP_CHROME_PX, densityPx } from "@/lib/density";
 import { smooth } from "@/lib/motion";
 import { useDashboardStore } from "@/features/graph/stores";
 
@@ -26,10 +27,10 @@ export function useFloatingPanel({
   id,
   side,
   defaultWidth,
-  minWidth = 280,
-  maxWidth = 800,
+  minWidth = densityPx(280),
+  maxWidth = densityPx(800),
   defaultHeight,
-  minHeight = 200,
+  minHeight = densityPx(200),
   maxHeight: maxHeightOpt,
   anchorXOffset,
   anchorYOffset,
@@ -242,8 +243,12 @@ export function useFloatingPanel({
       const startY = e.clientY;
       const el = panelRef.current;
       const startHeight = height ?? el?.offsetHeight ?? 400;
-      const dockedMax = window.innerHeight - 116 - bottomClearance - 12;
-      const maxH = maxHeightOpt ?? (isDocked ? dockedMax : window.innerHeight - 120);
+      const dockedMax = window.innerHeight - APP_CHROME_PX.panelTop - bottomClearance - APP_CHROME_PX.edgeMargin;
+      const maxH = maxHeightOpt ?? (
+        isDocked
+          ? dockedMax
+          : window.innerHeight - APP_CHROME_PX.floatingHeightInset
+      );
 
       const handleMove = (ev: MouseEvent) => {
         const delta = ev.clientY - startY;
@@ -275,8 +280,12 @@ export function useFloatingPanel({
       const startWidth = width;
       const el = panelRef.current;
       const startHeight = height ?? el?.offsetHeight ?? 400;
-      const dockedMaxH = window.innerHeight - 116 - bottomClearance - 12;
-      const maxH = maxHeightOpt ?? (isDocked ? dockedMaxH : window.innerHeight - 120);
+      const dockedMaxH = window.innerHeight - APP_CHROME_PX.panelTop - bottomClearance - APP_CHROME_PX.edgeMargin;
+      const maxH = maxHeightOpt ?? (
+        isDocked
+          ? dockedMaxH
+          : window.innerHeight - APP_CHROME_PX.floatingHeightInset
+      );
 
       const handleMove = (ev: MouseEvent) => {
         const dx = side === "left" ? ev.clientX - startX : startX - ev.clientX;
@@ -353,8 +362,12 @@ export function useFloatingPanel({
       const startDragX = dragX.get();
       const el = panelRef.current;
       const startHeight = height ?? el?.offsetHeight ?? 400;
-      const dockedMaxH = window.innerHeight - 116 - bottomClearance - 12;
-      const maxH = maxHeightOpt ?? (isDocked ? dockedMaxH : window.innerHeight - 120);
+      const dockedMaxH = window.innerHeight - APP_CHROME_PX.panelTop - bottomClearance - APP_CHROME_PX.edgeMargin;
+      const maxH = maxHeightOpt ?? (
+        isDocked
+          ? dockedMaxH
+          : window.innerHeight - APP_CHROME_PX.floatingHeightInset
+      );
 
       const handleMove = (ev: MouseEvent) => {
         const dx = startX - ev.clientX;

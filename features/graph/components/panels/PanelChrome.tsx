@@ -1,15 +1,32 @@
 "use client";
 
-import { type ReactNode, useEffect, useRef } from "react";
-import { Text, ActionIcon, Tooltip } from "@mantine/core";
-import { Minus, Pin, PinOff, Plus, X } from "lucide-react";
-import { iconBtnStyles, panelTextMutedStyle, panelChromeStyle } from "./PanelShell";
+import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import { Text } from "@mantine/core";
+import {
+  PanelHeaderDivider,
+  PanelScaleControl,
+  PanelWindowActions,
+} from "./PanelShell/panel-header-actions";
+import { panelChromeStyle, panelTextMutedStyle } from "./PanelShell/panel-styles";
 
 const panelChromeTextClassName = "uppercase tracking-[0.08em]";
+
+const INTERACTIVE_SELECTOR = 'button, input, textarea, select, a[href], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Check if the event target is an interactive element WITHIN the given container.
+ * Prevents `closest()` from matching ancestors above the container (e.g. a
+ * parent panel with tabIndex={0}).
+ */
+function isInteractiveDescendant(target: Element, container: Element): boolean {
+  const interactive = target.closest(INTERACTIVE_SELECTOR);
+  return !!interactive && container.contains(interactive);
+}
 
 interface PanelChromeProps {
   children: ReactNode;
   title: string;
+  headerNavigation?: ReactNode;
   headerActions?: ReactNode;
   onClose: () => void;
   /** Make title bar draggable via framer-motion dragControls */
@@ -20,27 +37,30 @@ interface PanelChromeProps {
   isPinned?: boolean;
   /** Toggle pin state. */
   onTogglePin?: () => void;
-  panelZoom?: number;
-  canZoomIn?: boolean;
-  canZoomOut?: boolean;
-  onZoomIn?: () => void;
-  onZoomOut?: () => void;
+  panelScale?: number;
+  canIncreaseScale?: boolean;
+  canDecreaseScale?: boolean;
+  onIncreaseScale?: () => void;
+  onDecreaseScale?: () => void;
+  onResetScale?: () => void;
 }
 
 export function PanelChrome({
   children,
   title,
+  headerNavigation,
   headerActions,
   onClose,
   onTitlePointerDown,
   onTitleDoubleClick,
   isPinned,
   onTogglePin,
-  panelZoom,
-  canZoomIn,
-  canZoomOut,
-  onZoomIn,
-  onZoomOut,
+  panelScale,
+  canIncreaseScale,
+  canDecreaseScale,
+  onIncreaseScale,
+  onDecreaseScale,
+  onResetScale,
 }: PanelChromeProps) {
   // Dismiss on Escape — ref avoids re-registering on every onClose identity change
   const onCloseRef = useRef(onClose);
@@ -56,111 +76,109 @@ export function PanelChrome({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const handleHeaderPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      onTitlePointerDown?.(event);
+      return;
+    }
+
+    if (isInteractiveDescendant(target, event.currentTarget)) {
+      return;
+    }
+
+    onTitlePointerDown?.(event);
+  }, [onTitlePointerDown]);
+
+  const handleHeaderDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+      onTitleDoubleClick?.();
+      return;
+    }
+
+    if (isInteractiveDescendant(target, event.currentTarget)) {
+      return;
+    }
+
+    onTitleDoubleClick?.();
+  }, [onTitleDoubleClick]);
+
+  const headerSections = useMemo(
+    () =>
+      [
+        headerActions,
+        typeof panelScale === "number" && onIncreaseScale && onDecreaseScale ? (
+          <PanelScaleControl
+            key="scale"
+            panelScale={panelScale}
+            canIncreaseScale={canIncreaseScale}
+            canDecreaseScale={canDecreaseScale}
+            onIncreaseScale={onIncreaseScale}
+            onDecreaseScale={onDecreaseScale}
+            onResetScale={onResetScale}
+          />
+        ) : null,
+        <PanelWindowActions
+          key="window"
+          title={title}
+          onClose={onClose}
+          isPinned={isPinned}
+          onTogglePin={onTogglePin}
+        />,
+      ].filter((section): section is ReactNode => section != null),
+    [
+      canDecreaseScale,
+      canIncreaseScale,
+      headerActions,
+      isPinned,
+      onClose,
+      onDecreaseScale,
+      onIncreaseScale,
+      onResetScale,
+      onTogglePin,
+      panelScale,
+      title,
+    ],
+  );
+
   return (
     <>
       <div
         className="flex items-center justify-between px-2.5 py-1"
       >
         <div
-          className="min-w-0 flex-1"
-          onPointerDown={onTitlePointerDown}
-          onDoubleClick={onTitleDoubleClick}
+          className="min-w-0 flex flex-1 touch-none select-none items-center gap-1"
+          data-panel-drag-handle="true"
+          onPointerDown={handleHeaderPointerDown}
+          onDoubleClick={handleHeaderDoubleClick}
           style={onTitlePointerDown ? { cursor: isPinned ? "default" : "grab" } : undefined}
         >
-          <Text
-            fw={600}
-            className={panelChromeTextClassName}
-            style={{ ...panelTextMutedStyle, ...panelChromeStyle }}
+          <div
+            className="min-w-0"
           >
-            {title}
-          </Text>
+            <Text
+              fw={600}
+              className={panelChromeTextClassName}
+              style={{ ...panelTextMutedStyle, ...panelChromeStyle }}
+            >
+              {title}
+            </Text>
+          </div>
+          {headerNavigation && (
+            <>
+              <PanelHeaderDivider />
+              {headerNavigation}
+            </>
+          )}
         </div>
-        <div className="ml-2 flex items-center gap-1">
-          {headerActions}
-          {typeof panelZoom === "number" && onZoomIn && onZoomOut && (
-            <div className="flex items-center gap-0.5">
-              <Tooltip
-                label="Zoom out panel content (Ctrl+-)"
-                position="bottom"
-                withArrow
-              >
-                <ActionIcon
-                  variant="transparent"
-                  size={24}
-                  radius="xl"
-                  className="graph-icon-btn"
-                  styles={iconBtnStyles}
-                  onClick={onZoomOut}
-                  aria-label="Zoom out panel content"
-                  disabled={!canZoomOut}
-                >
-                  <Minus size={12} />
-                </ActionIcon>
-              </Tooltip>
-              <Text
-                component="span"
-                className="min-w-[2.8rem] text-center tabular-nums"
-                style={{ ...panelTextMutedStyle, ...panelChromeStyle }}
-              >
-                {Math.round(panelZoom * 100)}%
-              </Text>
-              <Tooltip
-                label="Zoom in panel content (Ctrl+=)"
-                position="bottom"
-                withArrow
-              >
-                <ActionIcon
-                  variant="transparent"
-                  size={24}
-                  radius="xl"
-                  className="graph-icon-btn"
-                  styles={iconBtnStyles}
-                  onClick={onZoomIn}
-                  aria-label="Zoom in panel content"
-                  disabled={!canZoomIn}
-                >
-                  <Plus size={12} />
-                </ActionIcon>
-              </Tooltip>
-            </div>
-          )}
-          {onTogglePin && (
-            <Tooltip
-              label={isPinned ? "Unpin panel" : "Pin panel"}
-              position="bottom"
-              withArrow
-            >
-              <ActionIcon
-                variant="transparent"
-                size={24}
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
-                onClick={onTogglePin}
-                aria-label={isPinned ? "Unpin panel" : "Pin panel"}
-                aria-pressed={isPinned}
-              >
-                {isPinned ? <PinOff size={12} /> : <Pin size={12} />}
-              </ActionIcon>
-            </Tooltip>
-          )}
-          <Tooltip
-            label={`Close ${title.toLowerCase()}`}
-            position="bottom"
-            withArrow
-          >
-            <ActionIcon
-              variant="transparent"
-              size={24}
-              radius="xl"
-              className="graph-icon-btn"
-              styles={iconBtnStyles}
-              onClick={onClose}
-              aria-label={`Close ${title.toLowerCase()} panel`}
-            >
-              <X size={12} />
-            </ActionIcon>
-          </Tooltip>
+        <div className="inline-flex items-center">
+          {headerSections.map((section, index) => (
+            <Fragment key={`section-${index}`}>
+              {index > 0 && <PanelHeaderDivider />}
+              {section}
+            </Fragment>
+          ))}
         </div>
       </div>
       {children}

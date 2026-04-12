@@ -1,3 +1,5 @@
+import { densityCssPx } from "@/lib/density";
+
 /**
  * Cosmograph widget theme overrides.
  *
@@ -12,8 +14,8 @@
 export const queryWidgetThemeVars: React.CSSProperties = {
   "--cosmograph-ui-background": "transparent",
   "--cosmograph-ui-text": "var(--graph-panel-text)",
-  "--cosmograph-ui-tick-font-size": "9px",
-  "--cosmograph-ui-font-size": "10px",
+  "--cosmograph-ui-tick-font-size": densityCssPx(9),
+  "--cosmograph-ui-font-size": densityCssPx(10),
   "--cosmograph-ui-font-family": "inherit",
   "--cosmograph-ui-element-color": "var(--filter-bar-base)",
   "--cosmograph-ui-highlighted-element-color": "var(--filter-bar-active)",
@@ -29,10 +31,10 @@ export const queryWidgetThemeVars: React.CSSProperties = {
   "--cosmograph-bars-background": "var(--filter-bar-base)",
   "--cosmograph-bars-highlighted-color": "var(--filter-bar-active)",
   "--cosmograph-bars-font-color": "var(--graph-panel-text)",
-  "--cosmograph-bars-font-size": "8px",
-  "--cosmograph-bars-bar-height": "12px",
-  "--cosmograph-bars-bar-bottom-margin": "1px",
-  "--cosmograph-bars-ui-font-size": "8px",
+  "--cosmograph-bars-font-size": densityCssPx(8),
+  "--cosmograph-bars-bar-height": densityCssPx(12),
+  "--cosmograph-bars-bar-bottom-margin": densityCssPx(1),
+  "--cosmograph-bars-ui-font-size": densityCssPx(8),
 } as React.CSSProperties;
 
 /**
@@ -45,8 +47,8 @@ export const queryWidgetThemeVars: React.CSSProperties = {
 export const timelineWidgetThemeVars: React.CSSProperties = {
   "--cosmograph-ui-background": "transparent",
   "--cosmograph-ui-text": "var(--text-tertiary)",
-  "--cosmograph-ui-tick-font-size": "10px",
-  "--cosmograph-ui-font-size": "10px",
+  "--cosmograph-ui-tick-font-size": densityCssPx(10),
+  "--cosmograph-ui-font-size": densityCssPx(10),
   "--cosmograph-ui-element-color": "var(--filter-bar-base)",
   "--cosmograph-ui-highlighted-element-color": "var(--mode-accent)",
   "--cosmograph-ui-selection-control-color":

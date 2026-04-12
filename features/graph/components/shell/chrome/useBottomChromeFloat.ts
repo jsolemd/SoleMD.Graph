@@ -1,4 +1,5 @@
 import { selectBottomObstacles, useDashboardStore } from "@/features/graph/stores";
+import { APP_CHROME_PX } from "@/lib/density";
 import { crisp } from "@/lib/motion";
 
 /**
@@ -17,7 +18,7 @@ import { crisp } from "@/lib/motion";
  * Obstacle math (timeline height + table height) lives in
  * `selectBottomObstacles` — do not duplicate here.
  */
-export function useBottomChromeFloat(base: number = 12) {
+export function useBottomChromeFloat(base: number = APP_CHROME_PX.edgeMargin) {
   const obstacles = useDashboardStore(selectBottomObstacles);
   const bottom = base + obstacles;
 

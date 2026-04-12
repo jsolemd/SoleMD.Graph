@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { PANEL_DOCK_WIDTH_PX } from "@/lib/density";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import { PanelBody, PanelShell } from "../../panels/PanelShell";
@@ -17,10 +18,10 @@ function QueryPanelComponent({ runReadOnlyQuery }: QueryPanelProps) {
     <PanelShell
       id="query"
       title="SQL Explorer"
-      defaultWidth={420}
+      defaultWidth={PANEL_DOCK_WIDTH_PX.query}
       onClose={() => closePanel("query")}
     >
-      <PanelBody panelId="query">
+      <PanelBody>
         <SqlExplorerContent runReadOnlyQuery={runReadOnlyQuery} />
       </PanelBody>
     </PanelShell>

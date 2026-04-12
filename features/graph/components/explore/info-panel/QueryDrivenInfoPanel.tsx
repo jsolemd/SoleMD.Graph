@@ -2,6 +2,7 @@
 
 import { type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Stack, Text } from "@mantine/core";
+import { PANEL_DOCK_WIDTH_PX } from "@/lib/density";
 import { getGraphClusterColor } from "@/features/graph/lib/colors";
 import { useSelectionQueryState } from "@/features/graph/hooks/use-selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
@@ -317,13 +318,13 @@ export function QueryDrivenInfoPanel({
     <PanelShell
       id="info"
       title="Info"
-      defaultWidth={320}
+      defaultWidth={PANEL_DOCK_WIDTH_PX.info}
       headerActions={
         showHeaderLoader ? <PanelInlineLoader /> : null
       }
       onClose={() => closePanel("info")}
     >
-      <PanelBody panelId="info">
+      <PanelBody>
         <Stack gap="sm">
           {loading ? (
             <Text size="sm" style={panelTextDimStyle}>

@@ -17,6 +17,14 @@ import type { LinksSlice } from './slices/links-slice'
 import type { VisibilitySlice } from './slices/visibility-slice'
 import type { SqlExplorerSlice } from './slices/sql-explorer-slice'
 import type { RagSlice } from './slices/rag-slice'
+import {
+  APP_CHROME_PX,
+  DEFAULT_PANEL_WIDTH_PX,
+  densityViewportWidth,
+  PANEL_DOCK_WIDTH_BASE_PX,
+  PANEL_DOCK_WIDTH_PX,
+  WIKI_PANEL_BASE_PX,
+} from '@/lib/density'
 
 /* ───── Convenience re-exports ───── */
 
@@ -42,10 +50,10 @@ export type DashboardState =
 
 /** Height constants for bottom-docked elements. */
 const BOTTOM_DOCK = {
-  timeline: 44,
-  toolbarIcon: 34,
-  toolbarBase: 12,
-  gap: 8,
+  timeline: APP_CHROME_PX.timelineHeight,
+  toolbarIcon: APP_CHROME_PX.toolbarIcon,
+  toolbarBase: APP_CHROME_PX.toolbarBase,
+  gap: APP_CHROME_PX.toolbarGap,
 } as const;
 
 /**
@@ -70,17 +78,10 @@ export function selectBottomClearance(s: DashboardState): number {
 }
 
 /** Width of each left-side panel — must match PanelShell `width` props. */
-export const PANEL_WIDTHS: Record<string, number> = {
-  about: 320,
-  config: 300,
-  filters: 300,
-  info: 320,
-  query: 420,
-  wiki: 680,
-};
-export const PANEL_EDGE_MARGIN = 12;
-export const PANEL_GAP = 12;
-const PANEL_MARGIN = 24; // panel left (12) + gap (12)
+export const PANEL_WIDTHS: Record<string, number> = PANEL_DOCK_WIDTH_PX;
+export const PANEL_EDGE_MARGIN = APP_CHROME_PX.edgeMargin;
+export const PANEL_GAP = APP_CHROME_PX.panelGap;
+const PANEL_MARGIN = APP_CHROME_PX.panelMargin;
 
 /**
  * Fixed dock order — determines stacking when multiple panels are docked.
@@ -90,7 +91,12 @@ export const PANEL_DOCK_ORDER: readonly string[] = ['about', 'config', 'filters'
 
 /** Pure wiki width computation — reusable in selector and components. */
 export function resolveWikiPanelWidth(viewportWidth: number, expanded: boolean): number {
-  return expanded ? Math.min(1080, Math.floor(viewportWidth * 0.70)) : PANEL_WIDTHS.wiki;
+  return expanded
+    ? densityViewportWidth(viewportWidth, 0.70, {
+        minBase: PANEL_DOCK_WIDTH_BASE_PX.wiki,
+        maxBase: WIKI_PANEL_BASE_PX.expandedWidthMax,
+      })
+    : PANEL_WIDTHS.wiki;
 }
 
 /** Resolve the effective width of a panel given current state. */
@@ -98,7 +104,7 @@ function resolvePanelWidth(panelId: string, s: DashboardState): number {
   if (panelId === 'wiki' && s.wikiExpanded) {
     return s.wikiExpandedWidth ?? PANEL_WIDTHS.wiki;
   }
-  return PANEL_WIDTHS[panelId] ?? 300;
+  return PANEL_WIDTHS[panelId] ?? DEFAULT_PANEL_WIDTH_PX;
 }
 
 /** Is a panel docked (open, visible, not dragged away)? */
@@ -234,8 +240,8 @@ export function resolveAdjacentFloatingPanelOffsets(args: {
   };
 }
 
-/** Right-side detail panel: width (380) + margin (12 + 12). */
-const DETAIL_PANEL_CLEARANCE = 380 + PANEL_MARGIN;
+/** Right-side detail panel: scaled width + scaled dock margin. */
+const DETAIL_PANEL_CLEARANCE = APP_CHROME_PX.detailPanelWidth + PANEL_MARGIN;
 
 /** Total px of right-edge space occupied by the detail panel. */
 export function selectRightClearance(s: DashboardState): number {

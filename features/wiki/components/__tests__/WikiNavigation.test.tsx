@@ -4,7 +4,10 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MantineProvider } from "@mantine/core";
+import { WIKI_PANEL_PX } from "@/lib/density";
+import { PANEL_TOP } from "@/features/graph/components/panels/PanelShell";
 import { useDashboardStore } from "@/features/graph/stores";
+import { resolveAdjacentFloatingPanelOffsets } from "@/features/graph/stores/dashboard-store";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 
 // Mock framer-motion (used by Mantine Tooltip)
@@ -17,12 +20,20 @@ jest.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
 
-import { WikiNavigation } from "../WikiNavigation";
+import { WikiContextActions, WikiNavigation } from "../WikiNavigation";
 
 function renderNav() {
   return render(
     <MantineProvider>
       <WikiNavigation />
+    </MantineProvider>,
+  );
+}
+
+function renderContextActions() {
+  return render(
+    <MantineProvider>
+      <WikiContextActions />
     </MantineProvider>,
   );
 }
@@ -100,15 +111,22 @@ describe("WikiNavigation", () => {
       width: 520,
       height: 620,
     });
+    const expectedOffsets = resolveAdjacentFloatingPanelOffsets({
+      state: useDashboardStore.getState(),
+      panelId: "wiki-graph",
+      anchorRect: { left: 200, top: 180, width: 520 },
+      panelWidth: WIKI_PANEL_PX.localGraphWidth,
+      panelTop: PANEL_TOP,
+      viewportWidth: window.innerWidth,
+    });
 
-    renderNav();
+    renderContextActions();
     fireEvent.click(screen.getByLabelText("Pop out graph"));
 
     expect(useWikiStore.getState().localGraphPopped).toBe(true);
     expect(useDashboardStore.getState().panelPositions["wiki-graph"]).toMatchObject({
-      x: 680,
-      y: 64,
-      width: 320,
+      ...expectedOffsets,
+      width: WIKI_PANEL_PX.localGraphWidth,
       docked: false,
     });
   });

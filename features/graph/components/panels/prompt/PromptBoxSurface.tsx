@@ -14,11 +14,11 @@ import { ModeToggleBar } from "../../chrome/ModeToggleBar";
 import { PromptIconBtn } from "./PromptIconBtn";
 import {
   BOTTOM_BASE,
-  MAX_CARD_W,
-  MIN_CARD_W_CREATE,
+  CREATE_CARD_RATIO,
 } from "./constants";
 import { promptSurfaceStyle } from "../PanelShell";
 import type { PromptBoxControllerState } from "./use-prompt-box-controller";
+import { densityCssClamp, densityCssSpace, densityPx } from "@/lib/density";
 
 interface PromptBoxSurfaceProps extends PromptBoxControllerState {
   placeholder: ReactNode;
@@ -94,12 +94,18 @@ export function PromptBoxSurface({
             width: isCollapsed
               ? undefined
               : isCreateMaximized
-                ? `clamp(${MIN_CARD_W_CREATE}px, 50vw, ${MAX_CARD_W}px)`
+                ? densityCssClamp(530, `${CREATE_CARD_RATIO * 100}vw`, 560)
                 : normalWidth,
             transform: isCollapsed ? "none" : "translateX(-50%)",
             position: "relative",
             pointerEvents: "auto",
-            padding: isCollapsed ? "8px 12px" : "12px 12px 8px",
+            padding: isCollapsed
+              ? densityCssSpace(8, 12)
+              : densityCssSpace(
+                  12,
+                  12,
+                  8,
+                ),
             ...promptSurfaceStyle,
             height: heightOverride ? cardHeight : "auto",
             overflow: heightOverride ? "hidden" : "visible",
@@ -165,7 +171,7 @@ export function PromptBoxSurface({
               userSelect: "none",
               cursor: "default",
               justifyContent: isCollapsed ? "center" : "space-between",
-              paddingTop: isCollapsed ? 0 : 6,
+              paddingTop: isCollapsed ? 0 : densityPx(6),
             }}
           >
             <div
@@ -228,10 +234,10 @@ export function PromptBoxSurface({
             }}
             style={{
               position: "absolute",
-              bottom: isCollapsed ? -6 : 0,
+              bottom: isCollapsed ? -densityPx(6) : 0,
               left: "50%",
               transform: "translateX(-50%)",
-              padding: "12px 8px",
+              padding: densityCssSpace(12, 8),
               cursor: isOffset ? "pointer" : "default",
             }}
           >

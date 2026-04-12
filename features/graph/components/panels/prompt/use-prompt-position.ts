@@ -2,15 +2,18 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { animate, useDragControls, useMotionValue } from "framer-motion";
+import { densityViewportWidth } from "@/lib/density";
 import { smooth } from "@/lib/motion";
 import { useDashboardStore, type PromptMode } from "@/features/graph/stores";
 import {
   BOTTOM_BASE,
+  CREATE_CARD_RATIO,
   WRITE_TOP_CLEARANCE,
   WRITE_TOP_BASE,
-  MAX_CARD_W,
-  MIN_CARD_W_CREATE,
   PILL_H,
+  PROMPT_CREATE_SIDE_INSET,
+  PROMPT_FALLBACK_NORMAL_HEIGHT,
+  PROMPT_MIN_BOTTOM_CLEARANCE,
 } from "./constants";
 import type { PromptAvoidRect } from "./avoidance";
 import {
@@ -113,10 +116,12 @@ export function usePromptPosition({
       setPromptShellFullHeight(true);
 
       const targetX = layoutMode === "create"
-        ? 24 + Math.min(MAX_CARD_W, Math.max(MIN_CARD_W_CREATE, vw * 0.5)) / 2 - vw / 2
+        ? PROMPT_CREATE_SIDE_INSET
+          + densityViewportWidth(vw, CREATE_CARD_RATIO, { minBase: 530, maxBase: 560 }) / 2
+          - vw / 2
         : 0;
       const topClearance = panelsVisible ? WRITE_TOP_CLEARANCE : WRITE_TOP_BASE;
-      const targetH = vh - topClearance - Math.max(bottomClearance, 24);
+      const targetH = vh - topClearance - Math.max(bottomClearance, PROMPT_MIN_BOTTOM_CLEARANCE);
 
       if (!fullHeightEnteredRef.current) {
         cardHeight.set(cardRef.current?.offsetHeight ?? 60);
@@ -189,7 +194,11 @@ export function usePromptPosition({
 
     const measuredH = cardRef.current?.offsetHeight;
     if (measuredH != null) cardHeightRef.current = measuredH;
-    const targetH = measuredH ?? (pendingExit.targetMode === "collapsed" ? PILL_H : 100);
+    const targetH = measuredH ?? (
+      pendingExit.targetMode === "collapsed"
+        ? PILL_H
+        : PROMPT_FALLBACK_NORMAL_HEIGHT
+    );
     const targetPosition =
       pendingExit.targetMode === "collapsed"
         ? resolveCollapsedTarget(vw, targetY)

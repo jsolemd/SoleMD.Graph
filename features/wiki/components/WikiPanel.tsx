@@ -5,17 +5,35 @@ import { createPortal } from "react-dom";
 import { ActionIcon } from "@mantine/core";
 import { List, X } from "lucide-react";
 import { useViewportSize } from "@mantine/hooks";
+import {
+  APP_CHROME_BASE_PX,
+  APP_CHROME_PX,
+  densityCssPx,
+  densityCssViewportInset,
+  densityPx,
+  densityViewportHeight,
+  densityViewportWidth,
+  WIKI_PANEL_BASE_PX,
+  WIKI_PANEL_PX,
+} from "@/lib/density";
 import { useDashboardStore } from "@/features/graph/stores";
 import { resolveWikiPanelWidth, PANEL_EDGE_MARGIN, selectPanelLeftOffset } from "@/features/graph/stores/dashboard-store";
-import { PANEL_TOP, PanelBody, PanelShell, iconBtnStyles } from "@/features/graph/components/panels/PanelShell";
+import {
+  PANEL_TOP,
+  PanelBody,
+  PanelHeaderActions,
+  PanelHeaderDivider,
+  PanelIconAction,
+  PanelShell,
+} from "@/features/graph/components/panels/PanelShell";
 import { WikiGraphView } from "@/features/wiki/components/WikiGraphView";
-import { WikiModuleContent, resolveModule } from "@/features/wiki/components/WikiModuleContent";
+import { WikiModuleContent, getWikiModule } from "@/features/wiki/components/WikiModuleContent";
 import { DotToc, entriesFromModuleSections } from "@/features/wiki/components/DotToc";
 import { WikiModuleSearch } from "@/features/wiki/components/WikiModuleSearch";
 import { WikiPageView } from "@/features/wiki/components/WikiPageView";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiSearch } from "@/features/wiki/components/WikiSearch";
-import { WikiNavigation } from "@/features/wiki/components/WikiNavigation";
+import { WikiContextActions, WikiNavigation } from "@/features/wiki/components/WikiNavigation";
 import { AnimationEmbed } from "@/features/wiki/components/elements/AnimationEmbed";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
@@ -41,12 +59,18 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
   // Track viewport for expanded width + height calculation
   const { width: viewportWidth, height: viewportHeight } = useViewportSize();
   const panelHeight = isGraphRoute
-    ? 720
+    ? WIKI_PANEL_PX.routeGraphHeight
     : wikiExpanded
-      ? Math.max(400, (viewportHeight || 900) - 48) // 24px top + 24px bottom
-      : Math.max(400, (viewportHeight || 900) - PANEL_TOP * 2);
+      ? densityViewportHeight(viewportHeight || 900, {
+          subtractBase: APP_CHROME_BASE_PX.wikiExpandedViewportInset,
+          minBase: WIKI_PANEL_BASE_PX.contentMinHeight,
+        })
+      : densityViewportHeight(viewportHeight || 900, {
+          subtractBase: APP_CHROME_BASE_PX.panelTop * 2,
+          minBase: WIKI_PANEL_BASE_PX.contentMinHeight,
+        });
   const panelWidth = isGraphRoute
-    ? Math.min(820, Math.floor((viewportWidth || 1920) * 0.58))
+    ? densityViewportWidth(viewportWidth || 1920, 0.58, { maxBase: WIKI_PANEL_BASE_PX.routeGraphWidthMax })
     : resolveWikiPanelWidth(viewportWidth || 1920, wikiExpanded);
 
   // Center expanded wiki panel above prompt box
@@ -61,7 +85,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
   // When expanded, shift panel up so it abuts 24px from top of viewport
   const anchorYOffset = useMemo(() => {
     if (!wikiExpanded) return undefined;
-    return -(PANEL_TOP - 24); // shift up from 116px to 24px
+    return -(PANEL_TOP - APP_CHROME_PX.wikiExpandedTopInset);
   }, [wikiExpanded]);
 
   useEffect(() => {
@@ -86,10 +110,11 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
   const setTocOpen = useWikiStore((s) => s.setTocOpen);
   const fullscreenAnim = useWikiStore((s) => s.fullscreenAnim);
   const setFullscreenAnim = useWikiStore((s) => s.setFullscreenAnim);
+  const wikiPageViewportRef = useRef<HTMLDivElement>(null);
   const modulePanelScrollRef = useRef<HTMLDivElement>(null);
   const moduleTocEntries = useMemo(() => {
     if (!modulePopped || !modulePoppedSlug) return undefined;
-    const sections = resolveModule(modulePoppedSlug)?.manifest.sections;
+    const sections = getWikiModule(modulePoppedSlug)?.manifest.sections;
     return sections ? entriesFromModuleSections(sections) : undefined;
   }, [modulePopped, modulePoppedSlug]);
 
@@ -150,24 +175,28 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
         id="wiki"
         title="Wiki"
         defaultWidth={panelWidth}
-        maxWidth={1200}
+        maxWidth={WIKI_PANEL_PX.maxWidth}
         defaultHeight={panelHeight}
-        minHeight={isGraphRoute ? 520 : 400}
-        maxHeight={isGraphRoute ? 960 : undefined}
+        minHeight={isGraphRoute ? WIKI_PANEL_PX.routeGraphMinHeight : WIKI_PANEL_PX.contentMinHeight}
+        maxHeight={isGraphRoute ? WIKI_PANEL_PX.routeGraphMaxHeight : undefined}
         anchorXOffset={anchorXOffset}
         anchorYOffset={anchorYOffset}
+        headerNavigation={<WikiNavigation />}
         headerActions={
-          <div className="flex items-center gap-1">
-            <WikiNavigation />
+          <PanelHeaderActions>
             <WikiSearch onNavigate={handleOpenPage} />
-          </div>
+            <PanelHeaderDivider />
+            <WikiContextActions />
+          </PanelHeaderActions>
         }
+        contentScaleMode={currentRoute.kind === "graph" ? "none" : "reading"}
         onClose={handleClose}
       >
         <PanelBody
-          panelId="wiki"
-          viewportClassName="overflow-hidden"
-          innerClassName={currentRoute.kind === "graph" ? undefined : "px-0 pb-0"}
+          viewportRef={currentRoute.kind === "graph" ? undefined : wikiPageViewportRef}
+          innerScroll={currentRoute.kind !== "graph"}
+          paddingX={currentRoute.kind === "graph" ? 10 : 0}
+          paddingBottom={currentRoute.kind === "graph" ? 10 : 0}
         >
           {currentRoute.kind === "graph" ? (
             globalGraphOpen ? null : (
@@ -182,6 +211,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
               graphReleaseId={graphReleaseId}
               queries={queries}
               onNavigate={handleOpenPage}
+              tocAnchorRef={wikiPageViewportRef}
             />
           )}
         </PanelBody>
@@ -192,13 +222,15 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
         <PanelShell
           id="wiki-graph"
           title="Wiki Graph"
-          defaultWidth={320}
+          defaultWidth={WIKI_PANEL_PX.localGraphWidth}
+          contentScaleMode="none"
           onClose={() => setLocalGraphPopped(false)}
         >
           <PanelBody
-            panelId="wiki-graph"
-            viewportClassName="overflow-hidden"
-            innerClassName="p-2"
+            innerScroll
+            paddingX={8}
+            paddingTop={8}
+            paddingBottom={8}
           >
             <WikiLocalGraph
               slug={currentRoute.slug}
@@ -213,30 +245,27 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
         <PanelShell
           id="wiki-module"
           title="Module"
-          defaultWidth={900}
+          defaultWidth={WIKI_PANEL_PX.moduleWidth}
+          contentScaleMode="reading"
           onClose={() => setModulePopped(false)}
           headerActions={
-            <div className="flex items-center gap-1">
+            <PanelHeaderActions>
               <WikiModuleSearch scrollRef={modulePanelScrollRef} />
-              <ActionIcon
-                variant="transparent"
-                size={24}
-                radius="xl"
-                className="graph-icon-btn"
-                styles={iconBtnStyles}
+              <PanelIconAction
+                label="Table of Contents"
+                icon={<List size={12} />}
                 onClick={() => setTocOpen(!tocOpen)}
                 aria-label="Table of Contents"
                 aria-pressed={tocOpen}
-              >
-                <List size={12} />
-              </ActionIcon>
-            </div>
+              />
+            </PanelHeaderActions>
           }
         >
           <PanelBody
-            panelId="wiki-module"
             viewportRef={modulePanelScrollRef}
-            innerClassName="p-3"
+            paddingX={12}
+            paddingTop={12}
+            paddingBottom={12}
           >
             <WikiModuleContent slug={modulePoppedSlug} withShell />
           </PanelBody>
@@ -253,16 +282,16 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
             className="fixed inset-0 z-[9998] flex items-center justify-center"
             style={{
               backgroundColor: "rgba(0,0,0,0.35)",
-              backdropFilter: "blur(24px)",
-              WebkitBackdropFilter: "blur(24px)",
+              backdropFilter: `blur(${densityCssPx(APP_CHROME_BASE_PX.overlayBlur)})`,
+              WebkitBackdropFilter: `blur(${densityCssPx(APP_CHROME_BASE_PX.overlayBlur)})`,
             }}
             onClick={handleCloseOverlay}
           >
             <div
               className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
               style={{
-                width: "calc(100vw - 80px)",
-                height: "calc(100vh - 80px)",
+                width: densityCssViewportInset("vw", APP_CHROME_BASE_PX.wikiOverlayInset),
+                height: densityCssViewportInset("vh", APP_CHROME_BASE_PX.wikiOverlayInset),
                 border: "1px solid var(--border-default)",
               }}
               onClick={(e) => e.stopPropagation()}
@@ -270,13 +299,13 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
               <div className="absolute right-3 top-3 z-10">
                 <ActionIcon
                   variant="subtle"
-                  size={28}
+                  size={APP_CHROME_PX.toolbarIcon}
                   radius="xl"
                   onClick={handleCloseOverlay}
                   aria-label="Close graph"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  <X size={14} />
+                  <X size={densityPx(14)} />
                 </ActionIcon>
               </div>
               <div className="flex h-full w-full flex-col overflow-hidden p-3">
@@ -311,13 +340,13 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
               <div className="absolute right-3 top-3 z-10">
                 <ActionIcon
                   variant="subtle"
-                  size={28}
+                  size={APP_CHROME_PX.toolbarIcon}
                   radius="xl"
                   onClick={() => setFullscreenAnim(null)}
                   aria-label="Close animation"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  <X size={14} />
+                  <X size={densityPx(14)} />
                 </ActionIcon>
               </div>
               <AnimationEmbed name={fullscreenAnim} />
