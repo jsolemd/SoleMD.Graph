@@ -13,6 +13,7 @@ export type SemanticColorKey =
   | "proc"
   | "section"
   | "paper"
+  | "module"
   | "default"
 
 export interface WikiGraphPalette {
@@ -36,6 +37,7 @@ const DEFAULT_PALETTE: WikiGraphPalette = {
     proc: 0xd8bee9,
     section: 0x747caa,
     paper: 0xd4c5a0,
+    module: 0x7ecfb0,
     default: 0xa8c5e9,
   },
   linkColor: 0x475569,
@@ -71,6 +73,7 @@ const NODE_CSS_VARS: Record<SemanticColorKey, string> = {
   proc: "--wiki-graph-node-proc",
   section: "--wiki-graph-node-section",
   paper: "--wiki-graph-node-paper",
+  module: "--wiki-graph-node-module",
   default: "--wiki-graph-node-default",
 }
 
@@ -106,6 +109,31 @@ export function resolvePalette(container: HTMLElement): WikiGraphPalette {
 }
 
 // ---------------------------------------------------------------------------
+// Exported label + CSS var maps — consumed by WikiGraphLegend overlay
+// ---------------------------------------------------------------------------
+
+export const SEMANTIC_GROUP_LABELS: Record<SemanticColorKey, string> = {
+  diso: "Disorders",
+  chem: "Chemicals",
+  gene: "Genes",
+  anat: "Anatomy",
+  phys: "Physiology",
+  proc: "Procedures",
+  section: "Sections",
+  paper: "Papers",
+  module: "Modules",
+  default: "Other",
+}
+
+/** CSS variable expression for each group — resolves via tokens.css, single source of truth. */
+export const SEMANTIC_GROUP_CSS_COLOR: Record<SemanticColorKey, string> = Object.fromEntries(
+  Object.entries(NODE_CSS_VARS).map(([key, varName]) => {
+    const fallback = "#" + DEFAULT_PALETTE.node[key as SemanticColorKey].toString(16).padStart(6, "0")
+    return [key, `var(${varName}, ${fallback})`]
+  }),
+) as Record<SemanticColorKey, string>
+
+// ---------------------------------------------------------------------------
 // Node color resolution — maps SimNode data to a palette color key
 // ---------------------------------------------------------------------------
 
@@ -126,6 +154,7 @@ export function resolveNodeColorKey(node: {
   entityType?: string | null
 }): SemanticColorKey {
   if (node.kind === "paper") return "paper"
+  if (node.tags.includes("module")) return "module"
   if (node.tags.includes("section")) return "section"
 
   if (node.semanticGroup) {

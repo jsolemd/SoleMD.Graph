@@ -12,7 +12,7 @@ from app.rag.service import RagService, get_rag_service
 router = APIRouter(prefix="/api/v1/evidence", tags=["evidence"])
 
 
-@router.post("/search", response_model=RagSearchResponse)
+@router.post("/search")
 def search_evidence(
     request: RagSearchRequest,
     service: RagService = Depends(get_rag_service),

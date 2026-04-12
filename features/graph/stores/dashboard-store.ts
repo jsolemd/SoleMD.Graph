@@ -7,6 +7,7 @@ import { createTimelineSlice } from './slices/timeline-slice'
 import { createLinksSlice } from './slices/links-slice'
 import { createVisibilitySlice } from './slices/visibility-slice'
 import { createSqlExplorerSlice } from './slices/sql-explorer-slice'
+import { createRagSlice } from './slices/rag-slice'
 
 import type { PanelSlice } from './slices/panel-slice'
 import type { ConfigSlice } from './slices/config-slice'
@@ -15,6 +16,7 @@ import type { TimelineSlice } from './slices/timeline-slice'
 import type { LinksSlice } from './slices/links-slice'
 import type { VisibilitySlice } from './slices/visibility-slice'
 import type { SqlExplorerSlice } from './slices/sql-explorer-slice'
+import type { RagSlice } from './slices/rag-slice'
 
 /* ───── Convenience re-exports ───── */
 
@@ -30,7 +32,8 @@ export type DashboardState =
   TimelineSlice &
   LinksSlice &
   VisibilitySlice &
-  SqlExplorerSlice
+  SqlExplorerSlice &
+  RagSlice
 
 /* ───── Clearance selectors ─────
  * Single source of truth for bottom/left space occupied by docked elements.
@@ -73,7 +76,7 @@ export const PANEL_WIDTHS: Record<string, number> = {
   filters: 300,
   info: 320,
   query: 420,
-  wiki: 520,
+  wiki: 680,
 };
 export const PANEL_EDGE_MARGIN = 12;
 export const PANEL_GAP = 12;
@@ -87,7 +90,7 @@ export const PANEL_DOCK_ORDER: readonly string[] = ['about', 'config', 'filters'
 
 /** Pure wiki width computation — reusable in selector and components. */
 export function resolveWikiPanelWidth(viewportWidth: number, expanded: boolean): number {
-  return expanded ? Math.min(840, Math.floor(viewportWidth * 0.65)) : PANEL_WIDTHS.wiki;
+  return expanded ? Math.min(1080, Math.floor(viewportWidth * 0.70)) : PANEL_WIDTHS.wiki;
 }
 
 /** Resolve the effective width of a panel given current state. */
@@ -252,4 +255,5 @@ export const useDashboardStore = create<DashboardState>((...a) => ({
   ...createLinksSlice(...a),
   ...createVisibilitySlice(...a),
   ...createSqlExplorerSlice(...a),
+  ...createRagSlice(...a),
 }))

@@ -203,7 +203,15 @@ ranked_aliases AS (
         entity_paper_count,
         ROW_NUMBER() OVER (
             PARTITION BY concept_id, entity_type, alias_key
-            ORDER BY is_canonical DESC, alias_text
+            ORDER BY is_canonical DESC,
+                     CASE alias_source
+                         WHEN 'canonical_name' THEN 0
+                         WHEN 'umls' THEN 1
+                         WHEN 'umls_tradename' THEN 2
+                         WHEN 'vocab' THEN 3
+                         ELSE 4
+                     END,
+                     alias_text
         ) AS alias_rank
     FROM alias_candidates
 )

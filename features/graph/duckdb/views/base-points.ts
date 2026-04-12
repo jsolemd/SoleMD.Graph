@@ -5,7 +5,6 @@ import type { GraphBundle } from '@/features/graph/types'
 import { requireBundleTable, validateTableName } from '../utils'
 
 export const BASE_POINT_CANONICAL_SOURCE_TABLE = 'base_points'
-export const BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE = 'base_points_query_runtime'
 
 export const LOCAL_POINT_RUNTIME_COLUMNS = [
   'point_index',
@@ -161,7 +160,7 @@ export async function registerBasePointQueryViews(
   }
 ) {
   const pointTable = validateTableName(
-    args.sourceTable ?? BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE
+    args.sourceTable ?? BASE_POINT_CANONICAL_SOURCE_TABLE
   )
 
   await conn.query(

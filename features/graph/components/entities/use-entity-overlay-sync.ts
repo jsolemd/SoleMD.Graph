@@ -14,6 +14,7 @@ import {
   clearOwnedSelectionState,
   commitSelectionState,
 } from "@/features/graph/lib/graph-selection-state";
+import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
 import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
 import type { GraphEntityOverlayRef } from "@/features/graph/types/entity-service";
 import { clearEntityOverlay, syncEntityOverlay } from "./entity-overlay-sync";
@@ -44,7 +45,7 @@ export function useEntityOverlaySync({
   activeSelectionSourceIdRef.current = activeSelectionSourceId;
 
   const { selectPointsByIndices, clearSelectionBySource } = useGraphSelection();
-  const graphReleaseId = bundle.bundleChecksum || bundle.runId || "current";
+  const graphReleaseId = resolveGraphReleaseId(bundle);
 
   const clearEntityOverlaySelection = useCallback(() => {
     abortRef.current?.abort();

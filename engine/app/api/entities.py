@@ -18,7 +18,7 @@ from app.entities.service import EntityService, get_entity_service
 router = APIRouter(prefix="/api/v1/entities", tags=["entities"])
 
 
-@router.post("/match", response_model=EntityMatchResponse)
+@router.post("/match")
 def match_entities(
     request: EntityMatchRequest,
     service: EntityService = Depends(get_entity_service),
@@ -26,7 +26,7 @@ def match_entities(
     return run_api(lambda: service.match_entities(request))
 
 
-@router.post("/detail", response_model=EntityDetailResponse)
+@router.post("/detail")
 def get_entity_detail(
     request: EntityDetailRequest,
     service: EntityService = Depends(get_entity_service),
@@ -34,7 +34,7 @@ def get_entity_detail(
     return run_api(lambda: service.get_entity_detail(request))
 
 
-@router.post("/overlay", response_model=EntityOverlayResponse)
+@router.post("/overlay")
 def get_entity_overlay(
     request: EntityOverlayRequest,
     service: EntityService = Depends(get_entity_service),

@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import Field
 
 from app import db
+from app.graph.repository import PostgresGraphRepository
 from app.rag.biomedical_models import (
     get_medcpt_article_encoder,
     get_medcpt_query_encoder,
@@ -25,7 +26,6 @@ from app.rag.biomedical_text import (
 )
 from app.rag.parse_contract import ParseContractModel
 from app.rag.query_embedding import get_query_embedder
-from app.rag.repository import PostgresRagRepository
 from app.rag_ingest.chunk_policy import DEFAULT_CHUNK_VERSION_KEY
 from app.rag_ingest.runtime_eval_models import RuntimeEvalQueryCase, RuntimeEvalQueryFamily
 from app.rag_ingest.runtime_eval_population import (
@@ -370,11 +370,8 @@ def run_dense_contract_audit(
     import torch
 
     connect_fn = connect or db.pooled
-    repository = PostgresRagRepository(
-        connect=connect_fn,
-        chunk_version_key=chunk_version_key,
-    )
-    release = repository.resolve_graph_release(graph_release_id)
+    graph_repository = PostgresGraphRepository(connect=connect_fn)
+    release = graph_repository.resolve_graph_release(graph_release_id)
     if cases is not None:
         case_list = [
             case

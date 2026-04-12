@@ -1,56 +1,39 @@
-import {
-  createEnsurePrimaryQueryTables,
-  type SessionViewState,
-} from '../views/register-all'
+import { LOCAL_POINT_RUNTIME_COLUMNS } from '../views/base-points'
+import { registerInitialSessionViews } from '../views/register-all'
 
-describe('createEnsurePrimaryQueryTables', () => {
-  it('materializes the interactive runtime from local canonical tables instead of parquet', async () => {
+jest.mock('../views/relations', () => ({
+  resolveBundleRelations: jest.fn(async () => undefined),
+}))
+
+describe('registerInitialSessionViews', () => {
+  it('keeps query views bound to the canonical local tables without duplicating runtime copies', async () => {
     const query = jest.fn(async () => undefined)
-    const ensurePrimaryQueryTables = createEnsurePrimaryQueryTables(
+
+    await registerInitialSessionViews(
+      { query } as never,
       {
-        query,
+        bundleManifest: {
+          contract: {
+            artifactSets: {
+              base: ['base_points', 'base_clusters'],
+            },
+          },
+          tables: {
+            base_points: {
+              rowCount: 1,
+              columns: LOCAL_POINT_RUNTIME_COLUMNS.map((name) => name.toUpperCase()),
+            },
+            base_clusters: { rowCount: 1 },
+          },
+        },
       } as never,
-      {} as never,
-      {
-        attachedTableSet: new Set(['base_points', 'base_clusters']),
-        availableLayers: ['corpus'],
-        basePointCount: 1,
-        buildPointCanvasProjectionSql: jest.fn(),
-        buildPointQueryProjectionSql: jest.fn(
-          (sourceTable: string) => `SELECT point_index AS index FROM ${sourceTable}`
-        ),
-      } satisfies SessionViewState
+      ['base_points', 'base_clusters']
     )
 
-    await ensurePrimaryQueryTables()
-
-    expect(query).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining(
-        'CREATE TEMP TABLE IF NOT EXISTS base_points_query_runtime AS'
-      )
-    )
-    expect(query).toHaveBeenNthCalledWith(
-      1,
-      expect.stringContaining('FROM base_points')
-    )
-    expect(query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining(
-        'CREATE TEMP TABLE IF NOT EXISTS base_clusters_runtime AS'
-      )
-    )
-    expect(query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining('FROM base_clusters')
-    )
-    expect(query).toHaveBeenNthCalledWith(
-      3,
-      expect.stringContaining('FROM base_points_query_runtime')
-    )
-    expect(query).toHaveBeenNthCalledWith(
-      5,
-      expect.stringContaining('FROM base_clusters_runtime')
-    )
+    const executedSql = query.mock.calls.map(([sql]) => String(sql))
+    expect(executedSql.some((sql) => sql.includes('base_points_query_runtime'))).toBe(false)
+    expect(executedSql.some((sql) => sql.includes('base_clusters_runtime'))).toBe(false)
+    expect(executedSql.some((sql) => sql.includes('FROM base_points'))).toBe(true)
+    expect(executedSql.some((sql) => sql.includes('FROM base_clusters'))).toBe(true)
   })
 })

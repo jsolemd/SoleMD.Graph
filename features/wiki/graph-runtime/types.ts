@@ -124,4 +124,6 @@ export interface MountWikiGraphOptions {
   links: SimLink[]
   signature: string
   intents: WikiGraphIntents
+  /** When set, nodes in this set stay at full opacity; all others dim. */
+  highlightNodeIds?: Set<string>
 }

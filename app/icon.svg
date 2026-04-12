@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <!-- SoleMD logomark. Brain path data copied verbatim from lucide-react@0.454.0
        (brain.js, ISC license). CSS vars don't resolve in standalone favicons,
-       so colors are hardcoded: tile = --color-soft-pink (#eda8c4), stroke = --surface (#ffffff). -->
-  <rect width="64" height="64" rx="16" fill="#eda8c4"/>
+       so colors are hardcoded: tile = --color-soft-pink (#e0aed8), stroke = --surface (#ffffff). -->
+  <rect width="64" height="64" rx="16" fill="#e0aed8"/>
   <g transform="translate(12, 12) scale(1.667)" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
     <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/>
     <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/>

@@ -3,20 +3,16 @@
  */
 import { act, renderHook, waitFor } from "@testing-library/react";
 import {
-  fetchGraphEntityDetail,
   fetchGraphEntityMatches,
 } from "@/features/graph/lib/entity-service";
 import { useEntityTextRuntime } from "../use-entity-text-runtime";
 
 jest.mock("@/features/graph/lib/entity-service", () => ({
   fetchGraphEntityMatches: jest.fn(),
-  fetchGraphEntityDetail: jest.fn(),
 }));
 
 const mockedFetchGraphEntityMatches =
   fetchGraphEntityMatches as jest.MockedFunction<typeof fetchGraphEntityMatches>;
-const mockedFetchGraphEntityDetail =
-  fetchGraphEntityDetail as jest.MockedFunction<typeof fetchGraphEntityDetail>;
 
 const SCHIZOPHRENIA_MATCH = {
   matchId: "disease:MESH:D012559:38:52",
@@ -35,32 +31,10 @@ const SCHIZOPHRENIA_MATCH = {
   score: 1,
 };
 
-const SCHIZOPHRENIA_DETAIL = {
-  entityType: "disease",
-  conceptNamespace: "mesh",
-  conceptId: "D012559",
-  sourceIdentifier: "MESH:D012559",
-  canonicalName: "Schizophrenia",
-  aliases: [
-    {
-      aliasText: "Schizophrenia",
-      isCanonical: true,
-      aliasSource: "canonical_name",
-    },
-    {
-      aliasText: "schizophrenia spectrum disorder",
-      isCanonical: false,
-      aliasSource: "synonym",
-    },
-  ],
-  paperCount: 1200,
-};
-
 describe("useEntityTextRuntime", () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockedFetchGraphEntityMatches.mockReset();
-    mockedFetchGraphEntityDetail.mockReset();
   });
 
   afterEach(() => {
@@ -68,11 +42,10 @@ describe("useEntityTextRuntime", () => {
     jest.useRealTimers();
   });
 
-  it("matches canonical entities for a text scope and resolves reusable hover detail", async () => {
+  it("matches canonical entities for a text scope", async () => {
     mockedFetchGraphEntityMatches.mockResolvedValue({
       matches: [SCHIZOPHRENIA_MATCH],
     });
-    mockedFetchGraphEntityDetail.mockResolvedValue(SCHIZOPHRENIA_DETAIL);
 
     const { result } = renderHook(() =>
       useEntityTextRuntime({
@@ -105,39 +78,6 @@ describe("useEntityTextRuntime", () => {
         sourceIdentifier: "MESH:D012559",
       }),
     );
-
-    act(() => {
-      result.current.handleEntityHoverTargetChange({
-        entity: {
-          entityType: "disease",
-          conceptNamespace: "mesh",
-          conceptId: "D012559",
-          sourceIdentifier: "MESH:D012559",
-          canonicalName: "Schizophrenia",
-        },
-        paperCount: 1200,
-        x: 24,
-        y: 48,
-      });
-    });
-
-    await waitFor(() => {
-      expect(result.current.entityHoverCard).toEqual(
-        expect.objectContaining({
-          x: 24,
-          y: 48,
-          label: "Schizophrenia",
-          entityType: "disease",
-          paperCount: 1200,
-          aliases: expect.arrayContaining([
-            expect.objectContaining({
-              aliasText: "schizophrenia spectrum disorder",
-            }),
-          ]),
-          detailReady: true,
-        }),
-      );
-    });
   });
 
   it("does not re-fetch when only cursorOffset changes within the same paragraph", async () => {
@@ -302,71 +242,5 @@ describe("useEntityTextRuntime", () => {
     expect(result.current.entityMatches[0]).toEqual(
       expect.objectContaining({ sourceIdentifier: "MESH:D012559" }),
     );
-  });
-
-  it("keeps the hover card interactive long enough to click explicit actions", async () => {
-    mockedFetchGraphEntityMatches.mockResolvedValue({
-      matches: [SCHIZOPHRENIA_MATCH],
-    });
-    mockedFetchGraphEntityDetail.mockResolvedValue(SCHIZOPHRENIA_DETAIL);
-
-    const { result } = renderHook(() =>
-      useEntityTextRuntime({
-        enabled: true,
-      }),
-    );
-
-    act(() => {
-      result.current.handleTextScopeChange({
-        text: "Dopamine dysfunction is implicated in schizophrenia.",
-        textFrom: 5,
-        cursorOffset: 52,
-      });
-    });
-
-    await act(async () => {
-      jest.advanceTimersByTime(350);
-      await Promise.resolve();
-    });
-
-    act(() => {
-      result.current.handleEntityHoverTargetChange({
-        entity: {
-          entityType: "disease",
-          conceptNamespace: "mesh",
-          conceptId: "D012559",
-          sourceIdentifier: "MESH:D012559",
-          canonicalName: "Schizophrenia",
-        },
-        paperCount: 1200,
-        x: 24,
-        y: 48,
-      });
-    });
-
-    await waitFor(() => {
-      expect(result.current.entityHoverCard).not.toBeNull();
-    });
-
-    act(() => {
-      result.current.handleEntityHoverTargetChange(null);
-      result.current.handleHoverCardPointerEnter();
-    });
-
-    await act(async () => {
-      jest.advanceTimersByTime(150);
-    });
-
-    expect(result.current.entityHoverCard).not.toBeNull();
-
-    act(() => {
-      result.current.handleHoverCardPointerLeave();
-    });
-
-    await act(async () => {
-      jest.advanceTimersByTime(150);
-    });
-
-    expect(result.current.entityHoverCard).toBeNull();
   });
 });

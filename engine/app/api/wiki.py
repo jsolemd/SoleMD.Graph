@@ -8,6 +8,7 @@ from app.api.http import run_api
 from app.wiki.schemas import (
     WikiBacklinksResponse,
     WikiGraphResponse,
+    WikiPageBundleResponse,
     WikiPageContextResponse,
     WikiPageResponse,
     WikiPageSummary,
@@ -18,7 +19,7 @@ from app.wiki.service import WikiService, get_wiki_service
 router = APIRouter(prefix="/api/v1/wiki", tags=["wiki"])
 
 
-@router.get("/pages", response_model=list[WikiPageSummary])
+@router.get("/pages")
 def list_wiki_pages(
     service: WikiService = Depends(get_wiki_service),
 ) -> list[WikiPageSummary]:
@@ -26,7 +27,7 @@ def list_wiki_pages(
     return service.list_pages()
 
 
-@router.get("/search", response_model=WikiSearchResponse)
+@router.get("/search")
 def search_wiki(
     query: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
@@ -36,7 +37,7 @@ def search_wiki(
     return service.search(query=query, limit=limit)
 
 
-@router.get("/backlinks/{slug:path}", response_model=WikiBacklinksResponse)
+@router.get("/backlinks/{slug:path}")
 def get_wiki_backlinks(
     slug: str,
     service: WikiService = Depends(get_wiki_service),
@@ -45,7 +46,7 @@ def get_wiki_backlinks(
     return service.get_backlinks(slug)
 
 
-@router.get("/graph", response_model=WikiGraphResponse)
+@router.get("/graph")
 def get_wiki_graph(
     graph_release_id: str = Query(...),
     service: WikiService = Depends(get_wiki_service),
@@ -54,7 +55,23 @@ def get_wiki_graph(
     return service.get_graph(graph_release_id)
 
 
-@router.get("/page-context/{slug:path}", response_model=WikiPageContextResponse | None)
+@router.get("/page-bundle/{slug:path}")
+def get_wiki_page_bundle(
+    slug: str,
+    graph_release_id: str | None = Query(default=None),
+    service: WikiService = Depends(get_wiki_service),
+) -> WikiPageBundleResponse:
+    """Combined page + backlinks + context in one request."""
+    return run_api(
+        lambda: service.get_page_bundle(
+            slug,
+            graph_release_id=graph_release_id,
+        ),
+        not_found_detail=f"Wiki page not found: {slug}",
+    )
+
+
+@router.get("/page-context/{slug:path}")
 def get_wiki_page_context(
     slug: str,
     graph_release_id: str | None = Query(default=None),
@@ -70,7 +87,7 @@ def get_wiki_page_context(
     )
 
 
-@router.get("/pages/{slug:path}", response_model=WikiPageResponse)
+@router.get("/pages/{slug:path}")
 def get_wiki_page(
     slug: str,
     graph_release_id: str | None = Query(default=None),

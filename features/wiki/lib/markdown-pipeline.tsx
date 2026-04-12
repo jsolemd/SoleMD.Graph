@@ -11,7 +11,9 @@ import remarkGfm from 'remark-gfm'
 import rehypeSlug from 'rehype-slug'
 import type { PluggableList } from 'unified'
 
+import type { WikiBodyEntityMatch } from '@/lib/engine/wiki-types'
 import { remarkPmidCitations, type RemarkPmidCitationsOptions } from './remark-pmid-citations'
+import { remarkEntityMentions, type RemarkEntityMentionsOptions } from './remark-entity-mentions'
 import { remarkCallouts } from './remark-callouts'
 import { remarkAnimationRefs } from './remark-animation-refs'
 
@@ -26,6 +28,8 @@ export interface WikiPipelineData {
   paperGraphRefs: Record<number, string>
   /** Slug → entity metadata for entity pages (hover cards). */
   linkedEntities: Record<string, { entity_type: string; concept_id: string }>
+  /** Precomputed entity mentions in body text for inline highlighting. */
+  bodyEntityMatches: readonly WikiBodyEntityMatch[]
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +68,11 @@ export interface CalloutProps {
   children: ReactNode
 }
 
+export interface EntityMentionProps {
+  entityMatch: WikiBodyEntityMatch
+  children: ReactNode
+}
+
 export interface AnimationEmbedProps {
   name: string
 }
@@ -79,10 +88,12 @@ export function createWikiRemarkPlugins(
   // see preprocessWikilinks in remark-wikilinks.ts. Only PMID citations
   // and callouts need remark-level AST transforms.
   const pmidOpts: RemarkPmidCitationsOptions = { paperGraphRefs: data.paperGraphRefs }
+  const entityOpts: RemarkEntityMentionsOptions = { bodyEntityMatches: data.bodyEntityMatches }
 
   return [
     remarkGfm,
     [remarkPmidCitations, pmidOpts],
+    [remarkEntityMentions, entityOpts],
     remarkCallouts,
     remarkAnimationRefs,
   ]
@@ -107,11 +118,18 @@ export function createWikiComponentMap(
     PaperCitation: React.ComponentType<PaperCitationProps>
     Callout: React.ComponentType<CalloutProps>
     AnimationEmbed: React.ComponentType<AnimationEmbedProps>
+    EntityMention: React.ComponentType<EntityMentionProps>
   },
 ): Record<string, React.ComponentType<ComponentPropsWithoutRef<never>>> {
-  const { paperGraphRefs, linkedEntities } = data
+  const { paperGraphRefs, linkedEntities, bodyEntityMatches } = data
   const { onNavigate, onPaperClick } = callbacks
-  const { WikiLink, PaperCitation, Callout, AnimationEmbed } = elements
+  const { WikiLink, PaperCitation, Callout, AnimationEmbed, EntityMention } = elements
+
+  // Index body entity matches by identity key for O(1) dispatch
+  const entityMatchIndex = new Map<string, WikiBodyEntityMatch>()
+  for (const m of bodyEntityMatches) {
+    entityMatchIndex.set(`${encodeURIComponent(m.entity_type)}:${encodeURIComponent(m.source_identifier)}`, m)
+  }
 
   /* eslint-disable @typescript-eslint/no-explicit-any */
   return {
@@ -130,6 +148,18 @@ export function createWikiComponentMap(
             {props.children}
           </WikiLink>
         )
+      }
+      if (href?.startsWith('entity:')) {
+        const key = href.slice(7)
+        const entityMatch = entityMatchIndex.get(key)
+        if (entityMatch) {
+          return (
+            <EntityMention entityMatch={entityMatch}>
+              {props.children}
+            </EntityMention>
+          )
+        }
+        return <>{props.children}</>
       }
       if (href?.startsWith('pmid:')) {
         const pmid = parseInt(href.slice(5), 10)

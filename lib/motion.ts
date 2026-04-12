@@ -203,3 +203,17 @@ export const routeTransition = {
   exit: { opacity: 0 },
   transition: { duration: 0.18, ease: "easeOut" as const },
 } as const;
+
+/** Loading breathe — gentle opacity + micro-scale cycle for inline loaders.
+ *  Canonical source for PanelInlineLoader and the route loading page. */
+export const loadingBreathe = {
+  animate: {
+    opacity: [0.35, 1, 0.35] as number[],
+    scale: [0.96, 1, 0.96] as number[],
+  },
+  transition: {
+    duration: 2,
+    repeat: Infinity,
+    ease: "easeInOut" as const,
+  },
+} as const;

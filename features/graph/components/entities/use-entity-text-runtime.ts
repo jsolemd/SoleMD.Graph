@@ -2,14 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  fetchGraphEntityDetail,
   fetchGraphEntityMatches,
 } from "@/features/graph/lib/entity-service";
 import type {
-  GraphEntityDetailResponsePayload,
   GraphEntityTextMatch,
 } from "@/features/graph/types/entity-service";
-import type { EntityHoverCardModel } from "./entity-hover-card";
 import {
   recordMatchAbort,
   recordMatchCacheHit,
@@ -17,12 +14,12 @@ import {
   recordMatchLatency,
   recordMatchRequest,
 } from "./entity-match-metrics";
-import type { EntityHoverTarget, EntityTextScope } from "./entity-text-runtime";
+import type { EntityTextScope } from "./entity-text-runtime";
 
 const EMPTY_ENTITY_MATCHES = Object.freeze([]) as readonly GraphEntityTextMatch[];
 const ENTITY_MATCH_DEBOUNCE_MS = 320;
-const ENTITY_HOVER_CARD_CLEAR_DELAY_MS = 120;
-const MIN_ENTITY_MATCH_TEXT_LENGTH = 4;
+const MIN_ENTITY_MATCH_TEXT_LENGTH = 2;
+const CURATED_ALIAS_SOURCES = new Set(["umls", "umls_tradename", "vocab", "canonical_name"]);
 const DEFAULT_ENTITY_MATCH_LIMIT = 24;
 const MATCH_CACHE_TTL_MS = 60_000;
 const MULTISPACE_RE = /\s+/g;
@@ -39,11 +36,7 @@ interface UseEntityTextRuntimeArgs {
 
 interface UseEntityTextRuntimeState {
   entityMatches: readonly GraphEntityTextMatch[];
-  entityHoverCard: EntityHoverCardModel | null;
   handleTextScopeChange: (scope: EntityTextScope | null) => void;
-  handleEntityHoverTargetChange: (target: EntityHoverTarget | null) => void;
-  handleHoverCardPointerEnter: () => void;
-  handleHoverCardPointerLeave: () => void;
 }
 
 function normalizeEntityScopeKey(scope: EntityTextScope | null): string {
@@ -66,6 +59,12 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+/**
+ * Runtime entity text matching — debounced API calls with TTL-based caching.
+ *
+ * Hover card display is handled by the shared EntityHoverCardProvider
+ * (via useEntityHover context). This hook only manages match resolution.
+ */
 export function useEntityTextRuntime({
   enabled,
   matchLimit = DEFAULT_ENTITY_MATCH_LIMIT,
@@ -73,37 +72,10 @@ export function useEntityTextRuntime({
   const [textScope, setTextScope] = useState<EntityTextScope | null>(null);
   const [entityMatches, setEntityMatches] =
     useState<readonly GraphEntityTextMatch[]>(EMPTY_ENTITY_MATCHES);
-  const [entityHoverCard, setEntityHoverCard] =
-    useState<EntityHoverCardModel | null>(null);
 
   const matchCacheRef = useRef(new Map<string, MatchCacheEntry>());
-  const detailCacheRef = useRef(
-    new Map<string, Promise<GraphEntityDetailResponsePayload>>(),
-  );
   const matchSequenceRef = useRef(0);
-  const hoverSequenceRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const hoverCardPointerInsideRef = useRef(false);
-  const hoverCardClearTimerRef = useRef<number | null>(null);
-
-  const clearHoverCardClearTimer = useCallback(() => {
-    if (hoverCardClearTimerRef.current) {
-      window.clearTimeout(hoverCardClearTimerRef.current);
-      hoverCardClearTimerRef.current = null;
-    }
-  }, []);
-
-  const scheduleEntityHoverCardClear = useCallback(() => {
-    clearHoverCardClearTimer();
-    hoverCardClearTimerRef.current = window.setTimeout(() => {
-      hoverCardClearTimerRef.current = null;
-      if (hoverCardPointerInsideRef.current) {
-        return;
-      }
-      hoverSequenceRef.current += 1;
-      setEntityHoverCard(null);
-    }, ENTITY_HOVER_CARD_CLEAR_DELAY_MS);
-  }, [clearHoverCardClearTimer]);
 
   const handleTextScopeChange = useCallback((nextScope: EntityTextScope | null) => {
     setTextScope((current) => {
@@ -116,60 +88,6 @@ export function useEntityTextRuntime({
       return nextScope;
     });
   }, []);
-
-  const handleEntityHoverTargetChange = useCallback(
-    (target: EntityHoverTarget | null) => {
-      if (!target) {
-        scheduleEntityHoverCardClear();
-        return;
-      }
-
-      hoverCardPointerInsideRef.current = false;
-      clearHoverCardClearTimer();
-      hoverSequenceRef.current += 1;
-      const hoverSequence = hoverSequenceRef.current;
-
-      setEntityHoverCard(buildEntityHoverCardModel(target, null));
-      const detailKey = buildEntityDetailCacheKey(target);
-      const detailRequest =
-        detailCacheRef.current.get(detailKey) ??
-        fetchGraphEntityDetail({
-          entityType: target.entity.entityType,
-          sourceIdentifier: target.entity.sourceIdentifier,
-        }).catch((error) => {
-          detailCacheRef.current.delete(detailKey);
-          throw error;
-        });
-      detailCacheRef.current.set(detailKey, detailRequest);
-
-      void detailRequest
-        .then((detail) => {
-          if (hoverSequenceRef.current !== hoverSequence) {
-            return;
-          }
-
-          setEntityHoverCard(buildEntityHoverCardModel(target, detail));
-        })
-        .catch(() => {
-          if (hoverSequenceRef.current !== hoverSequence) {
-            return;
-          }
-
-          setEntityHoverCard(buildEntityHoverCardModel(target, null));
-        });
-    },
-    [clearHoverCardClearTimer, scheduleEntityHoverCardClear],
-  );
-
-  const handleHoverCardPointerEnter = useCallback(() => {
-    hoverCardPointerInsideRef.current = true;
-    clearHoverCardClearTimer();
-  }, [clearHoverCardClearTimer]);
-
-  const handleHoverCardPointerLeave = useCallback(() => {
-    hoverCardPointerInsideRef.current = false;
-    scheduleEntityHoverCardClear();
-  }, [scheduleEntityHoverCardClear]);
 
   const stableScopeKey = normalizeEntityScopeKey(textScope);
 
@@ -247,7 +165,9 @@ export function useEntityTextRuntime({
       void entry.promise.then((matches) => {
         if (matchSequenceRef.current !== matchSequence) return;
         const filtered = matches.filter(
-          (m) => m.matchedText.length >= MIN_ENTITY_MATCH_TEXT_LENGTH,
+          (m) =>
+            m.matchedText.length >= MIN_ENTITY_MATCH_TEXT_LENGTH ||
+            CURATED_ALIAS_SOURCES.has(m.aliasSource),
         );
         setEntityMatches(Object.freeze(filtered));
       });
@@ -276,53 +196,8 @@ export function useEntityTextRuntime({
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      clearHoverCardClearTimer();
-    };
-  }, [clearHoverCardClearTimer]);
-
   return {
     entityMatches,
-    entityHoverCard,
     handleTextScopeChange,
-    handleEntityHoverTargetChange,
-    handleHoverCardPointerEnter,
-    handleHoverCardPointerLeave,
-  };
-}
-
-function buildEntityDetailCacheKey(target: EntityHoverTarget) {
-  return `${target.entity.entityType}:${target.entity.sourceIdentifier}`;
-}
-
-function buildEntityHoverCardModel(
-  target: EntityHoverTarget,
-  detail: GraphEntityDetailResponsePayload | null,
-): EntityHoverCardModel {
-  return {
-    x: target.x,
-    y: target.y,
-    entity: detail
-      ? {
-          entityType: detail.entityType,
-          conceptNamespace: detail.conceptNamespace,
-          conceptId: detail.conceptId,
-          sourceIdentifier: detail.sourceIdentifier,
-          canonicalName: detail.canonicalName,
-        }
-      : target.entity,
-    label: detail?.canonicalName ?? target.entity.canonicalName,
-    entityType: detail?.entityType ?? target.entity.entityType,
-    conceptId: detail?.conceptId ?? target.entity.conceptId ?? null,
-    conceptNamespace: detail?.conceptNamespace ?? target.entity.conceptNamespace ?? null,
-    paperCount: detail?.paperCount ?? target.paperCount,
-    aliases:
-      detail?.aliases.filter(
-        (alias) =>
-          alias.aliasText.trim().toLowerCase() !==
-          detail.canonicalName.trim().toLowerCase(),
-      ) ?? [],
-    detailReady: Boolean(detail),
   };
 }

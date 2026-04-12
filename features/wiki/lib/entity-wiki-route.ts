@@ -14,6 +14,11 @@ export function normalizeWikiSlug(raw: string): string {
   return slug;
 }
 
+export function isEntityWikiSlug(raw: string): boolean {
+  const slug = normalizeWikiSlug(raw);
+  return slug.startsWith("entities/") && slug.length > "entities/".length;
+}
+
 export function getEntityWikiSlug(entity: GraphEntityRef): string {
   return `entities/${normalizeWikiSlug(entity.canonicalName)}`;
 }

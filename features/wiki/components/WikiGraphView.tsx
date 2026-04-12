@@ -7,6 +7,7 @@ import {
   panelTextMutedStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import { WikiGraph } from "@/features/wiki/components/WikiGraph";
+import { WikiGraphLegend } from "@/features/wiki/components/WikiGraphLegend";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import type { WikiGraphIntents } from "@/features/wiki/graph-runtime";
 
@@ -76,7 +77,7 @@ export function WikiGraphView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div
-        className="min-h-[460px] flex-1 overflow-hidden rounded-md"
+        className="relative min-h-[460px] flex-1 overflow-hidden rounded-md"
         data-testid="wiki-graph-surface"
         style={{
           border: "1px solid var(--graph-panel-border, rgba(255,255,255,0.08))",
@@ -84,6 +85,7 @@ export function WikiGraphView({
         }}
       >
         <WikiGraph intents={intents} />
+        <WikiGraphLegend graphData={graphData} />
       </div>
     </div>
   );

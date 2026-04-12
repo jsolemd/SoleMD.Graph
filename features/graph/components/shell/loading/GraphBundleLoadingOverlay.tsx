@@ -1,11 +1,12 @@
 "use client";
 
-import { Loader, Text } from "@mantine/core";
+import { Text } from "@mantine/core";
 import { motion } from "framer-motion";
 import { BrainCircuit } from "lucide-react";
 import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
 import ThemeToggle from "@/features/graph/components/chrome/ThemeToggle";
 import { panelSurfaceStyle } from "@/features/graph/components/panels/PanelShell";
+import { LottiePulseLoader } from "@/features/animations/lottie/LottiePulseLoader";
 import ConnectomeLoader from "@/features/animations/canvas/connectome-loader/ConnectomeLoader";
 
 function getUserFriendlyMessage(
@@ -135,7 +136,7 @@ export function GraphBundleLoadingOverlay({
             />
           </div>
           <div className="flex items-center gap-2">
-            <Loader size={12} color="var(--text-tertiary)" />
+            <LottiePulseLoader size={24} />
             <Text size="xs" style={{ color: "var(--text-tertiary)" }}>
               {getUserFriendlyMessage(progress?.stage, canvasReady)}
             </Text>

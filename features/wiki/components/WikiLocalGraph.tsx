@@ -7,7 +7,7 @@ import {
   toSimNode,
   toSimLink,
 } from "@/features/wiki/graph-runtime";
-import type { WikiGraphIntents } from "@/features/wiki/graph-runtime";
+import type { WikiGraphHandle, WikiGraphIntents } from "@/features/wiki/graph-runtime";
 import type { WikiGraphNode, WikiGraphEdge } from "@/lib/engine/wiki-types";
 
 interface WikiLocalGraphProps {
@@ -70,7 +70,7 @@ export function WikiLocalGraph({ slug, onNavigate }: WikiLocalGraphProps) {
     const links = localGraph.edges.map(toSimLink);
 
     let cancelled = false;
-    let cleanup: (() => void) | null = null;
+    let handle: WikiGraphHandle | null = null;
 
     mountWikiGraph({
       container: el,
@@ -78,17 +78,17 @@ export function WikiLocalGraph({ slug, onNavigate }: WikiLocalGraphProps) {
       links,
       signature: localGraph.signature,
       intents,
-    }).then((fn) => {
+    }).then((h) => {
       if (cancelled) {
-        fn();
+        h.destroy();
       } else {
-        cleanup = fn;
+        handle = h;
       }
     });
 
     return () => {
       cancelled = true;
-      cleanup?.();
+      handle?.destroy();
     };
   }, [localGraph, intents]);
 

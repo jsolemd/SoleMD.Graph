@@ -42,7 +42,11 @@ def build_runtime_service(
         connect=connect_fn,
         chunk_version_key=chunk_version_key,
     )
-    return RagService(repository=repository, warehouse_grounder=warehouse_grounder)
+    return RagService(
+        repository=repository,
+        graph_repository=repository.graph_repository,
+        warehouse_grounder=warehouse_grounder,
+    )
 
 
 def build_runtime_eval_request(

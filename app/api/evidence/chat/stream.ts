@@ -24,7 +24,6 @@ const GraphAskChatRequestSchema = z.object({
   selected_layer_key: z.enum(['paper', 'chunk']).nullable().optional(),
   selected_node_id: z.string().nullable().optional(),
   selected_graph_paper_ref: z.string().nullable().optional(),
-  selected_paper_id: z.string().nullable().optional(),
   selection_graph_paper_refs: z.array(z.string()).nullable().optional(),
   selected_cluster_id: z.number().int().nullable().optional(),
   scope_mode: z.enum(['global', 'selection_only']).nullable().optional(),
@@ -99,9 +98,7 @@ export function createGraphAskMessageStream({
             query,
             selected_layer_key: request.selected_layer_key ?? null,
             selected_node_id: request.selected_node_id ?? null,
-            selected_graph_paper_ref:
-              request.selected_graph_paper_ref ?? request.selected_paper_id ?? null,
-            selected_paper_id: request.selected_paper_id ?? null,
+            selected_graph_paper_ref: request.selected_graph_paper_ref ?? null,
             selection_graph_paper_refs: request.selection_graph_paper_refs ?? null,
             selected_cluster_id: request.selected_cluster_id ?? null,
             scope_mode: request.scope_mode ?? null,

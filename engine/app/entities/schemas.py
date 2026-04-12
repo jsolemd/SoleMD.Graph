@@ -6,12 +6,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class EntitySchema(BaseModel):
-    """Shared schema configuration for entity runtime APIs."""
+    """Shared schema configuration for entity runtime APIs.
 
-    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+    Response models use extra="ignore" to skip per-field unknown-key
+    checks on outbound serialization.  Inbound request schemas override
+    to extra="forbid".
+    """
+
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
 
 class EntityMatchRequest(EntitySchema):
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+
     text: str
     entity_types: list[str] = Field(default_factory=list)
     limit: int = Field(default=24, ge=1, le=64)
@@ -68,6 +75,8 @@ class EntityMatchResponse(EntitySchema):
 
 
 class EntityDetailRequest(EntitySchema):
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+
     entity_type: str
     source_identifier: str
 
@@ -109,6 +118,8 @@ class EntityDetailResponse(EntitySchema):
 
 
 class EntityOverlayRef(EntitySchema):
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+
     entity_type: str
     source_identifier: str
 
@@ -130,6 +141,8 @@ class EntityOverlayRef(EntitySchema):
 
 
 class EntityOverlayRequest(EntitySchema):
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+
     entity_refs: list[EntityOverlayRef] = Field(default_factory=list)
     graph_release_id: str
     limit: int = Field(default=500, ge=1, le=2000)

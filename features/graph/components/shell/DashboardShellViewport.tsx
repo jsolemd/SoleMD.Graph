@@ -2,8 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, type CSSProperties } from "react";
-import { GraphShell } from "@/features/graph/cosmograph";
+import { useCallback, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { GraphShell, useGraphSelection } from "@/features/graph/cosmograph";
 import { GraphCanvas } from "../canvas/GraphCanvas";
 import { ModeColorSync } from "./ModeColorSync";
 import { Wordmark } from "../chrome/Wordmark";
@@ -12,6 +12,15 @@ import { BottomToolbar, useBottomChromeFloat } from "./chrome";
 import { panelSurfaceStyle, promptSurfaceStyle } from "../panels/PanelShell";
 import { preloadChromeChunks } from "./preload-chrome-chunks";
 import { EntityHoverCardProvider } from "@/features/graph/components/entities/EntityHoverCardProvider";
+import { syncEntityOverlay } from "@/features/graph/components/entities/entity-overlay-sync";
+import { commitSelectionState } from "@/features/graph/lib/graph-selection-state";
+import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
+import { ENTITY_OVERLAY_SELECTION_SOURCE_ID } from "@/features/graph/lib/overlay-producers";
+import { useDashboardStore } from "@/features/graph/stores";
+import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
+import { getEntityWikiSlug } from "@/features/wiki/lib/entity-wiki-route";
+import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import type { DashboardShellController } from "./use-dashboard-shell-controller";
 
 const legendStyle: CSSProperties = {
@@ -61,6 +70,10 @@ const DetailPanel = dynamic(
   () => import("../panels/DetailPanel").then((mod) => mod.DetailPanel),
   { loading: () => null },
 );
+const RagResponsePanel = dynamic(
+  () => import("../panels/prompt/RagResponsePanel").then((mod) => mod.RagResponsePanel),
+  { loading: () => null },
+);
 const AboutPanel = dynamic(
   () => import("../panels/AboutPanel").then((mod) => mod.AboutPanel),
   { loading: () => null },
@@ -92,6 +105,101 @@ const SizeLegend = dynamic(
   { loading: () => null },
 );
 
+/**
+ * Wires entity hover card actions inside the Cosmograph context.
+ *
+ * "Show on graph" uses native-selection-only (no canvas rebuild) — it
+ * highlights papers already in the base graph via Cosmograph.selectPoints().
+ * This avoids the overlay producer path which rebuilds the DuckDB canvas
+ * source (creating new object references that cause Cosmograph to reinit).
+ *
+ * Must be rendered inside GraphShell for CosmographProvider access.
+ */
+function EntityHoverActionProvider({
+  bundle,
+  queries,
+  children,
+}: {
+  bundle: GraphBundle;
+  queries: GraphBundleQueries | null;
+  children: ReactNode;
+}) {
+  const setPanelsVisible = useDashboardStore((s) => s.setPanelsVisible);
+  const openPanel = useDashboardStore((s) => s.openPanel);
+  const setSelectedPointCount = useDashboardStore((s) => s.setSelectedPointCount);
+  const setActiveSelectionSourceId = useDashboardStore(
+    (s) => s.setActiveSelectionSourceId,
+  );
+  const { selectPointsByIndices } = useGraphSelection();
+  const graphReleaseId = resolveGraphReleaseId(bundle);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const handleShowOnGraph = useCallback(
+    (entity: GraphEntityRef) => {
+      if (!queries) return;
+
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      void syncEntityOverlay({
+        queries,
+        entityRefs: [
+          { entityType: entity.entityType, sourceIdentifier: entity.sourceIdentifier },
+        ],
+        graphReleaseId,
+        signal: controller.signal,
+        useNativeSelectionOnly: true,
+      })
+        .then(async (result) => {
+          if (controller.signal.aborted) return;
+          if (result.selectedPointIndices.length === 0) return;
+
+          await commitSelectionState({
+            sourceId: ENTITY_OVERLAY_SELECTION_SOURCE_ID,
+            queries,
+            pointIndices: result.selectedPointIndices,
+            setSelectedPointCount,
+            setActiveSelectionSourceId,
+          });
+
+          if (controller.signal.aborted) return;
+
+          selectPointsByIndices({
+            sourceId: ENTITY_OVERLAY_SELECTION_SOURCE_ID,
+            pointIndices: result.selectedPointIndices,
+          });
+        })
+        .catch(() => {});
+    },
+    [
+      graphReleaseId,
+      queries,
+      selectPointsByIndices,
+      setActiveSelectionSourceId,
+      setSelectedPointCount,
+    ],
+  );
+
+  const handleOpenWiki = useCallback(
+    (entity: GraphEntityRef) => {
+      setPanelsVisible(true);
+      openPanel("wiki");
+      useWikiStore.getState().navigateToPage(getEntityWikiSlug(entity));
+    },
+    [setPanelsVisible, openPanel],
+  );
+
+  return (
+    <EntityHoverCardProvider
+      onShowOnGraph={handleShowOnGraph}
+      onOpenWiki={handleOpenWiki}
+    >
+      {children}
+    </EntityHoverCardProvider>
+  );
+}
+
 export function DashboardShellViewport(state: DashboardShellController) {
   const {
     bundle,
@@ -114,6 +222,7 @@ export function DashboardShellViewport(state: DashboardShellController) {
     uiHidden,
   } = state;
   const legendFloat = useBottomChromeFloat();
+  const ragPanelOpen = useDashboardStore((s) => s.ragPanelOpen);
 
   // Prefetch lazy chrome chunks once the canvas is live so the first click on
   // Timeline/Table (or any panel) is a cache hit — otherwise the toolbar lifts
@@ -131,7 +240,7 @@ export function DashboardShellViewport(state: DashboardShellController) {
 
   return (
     <GraphShell>
-      <EntityHoverCardProvider>
+      <EntityHoverActionProvider bundle={bundle} queries={queries}>
       <ModeColorSync />
       <div
         className="fixed inset-0"
@@ -191,6 +300,10 @@ export function DashboardShellViewport(state: DashboardShellController) {
               {!uiHidden && <DetailPanel bundle={bundle} queries={queries} />}
             </AnimatePresence>
 
+            <AnimatePresence>
+              {!uiHidden && ragPanelOpen && <RagResponsePanel key="rag-response" />}
+            </AnimatePresence>
+
             {!uiHidden && (showColorLegend || showSizeLegend) && (
               <motion.div
                 className="absolute right-4 z-30 flex flex-col gap-2"
@@ -243,7 +356,7 @@ export function DashboardShellViewport(state: DashboardShellController) {
         {!uiHidden && panelsVisible && <BottomToolbar />}
         {!uiHidden && <PromptBox bundle={bundle} queries={queries ?? null} />}
       </div>
-    </EntityHoverCardProvider>
+    </EntityHoverActionProvider>
     </GraphShell>
   );
 }

@@ -3,7 +3,6 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 import { validateTableName } from '../utils'
 
 export const BASE_CLUSTER_CANONICAL_SOURCE_TABLE = 'base_clusters'
-export const BASE_CLUSTER_RUNTIME_SOURCE_TABLE = 'base_clusters_runtime'
 
 export const LOCAL_CLUSTER_RUNTIME_COLUMNS = [
   'cluster_id',
@@ -24,7 +23,7 @@ export const LOCAL_CLUSTER_RUNTIME_COLUMNS = [
 
 export async function registerClusterViews(
   conn: AsyncDuckDBConnection,
-  sourceTable = BASE_CLUSTER_RUNTIME_SOURCE_TABLE
+  sourceTable = BASE_CLUSTER_CANONICAL_SOURCE_TABLE
 ) {
   const clusterTable = validateTableName(sourceTable)
 

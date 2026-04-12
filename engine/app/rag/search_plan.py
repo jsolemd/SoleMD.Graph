@@ -28,7 +28,7 @@ def build_search_plan(query: PaperRetrievalQuery) -> RetrievalSearchPlan:
     """Build a centralized runtime retrieval plan from the normalized query."""
 
     has_selected_context = bool(
-        query.selected_graph_paper_ref or query.selected_paper_id or query.selected_node_id
+        query.selected_graph_paper_ref or query.selected_node_id
     )
     has_cited_context = bool(query.cited_corpus_ids)
     has_metadata_filters = query.metadata_hints.has_searchable_metadata_filters

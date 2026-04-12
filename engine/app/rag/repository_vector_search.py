@@ -136,28 +136,6 @@ class _VectorSearchMixin:
     def _semantic_neighbor_limit(self, limit: int) -> int:
         return max(int(limit), SEMANTIC_NEIGHBOR_MIN_LIMIT)
 
-    def _graph_run_paper_count(self, graph_run_id: str) -> int:
-        cached = self._graph_scope_paper_counts.get(graph_run_id)
-        if cached is not None:
-            return cached
-
-        paper_count = self._graph_run_paper_count_from_summary(graph_run_id)
-        if paper_count <= 0 and self._is_current_graph_run(graph_run_id):
-            paper_count = self._current_map_paper_count_estimate()
-        if paper_count <= 0:
-            paper_count = self._graph_run_paper_count_from_stats(graph_run_id)
-
-        self._graph_scope_paper_counts[graph_run_id] = paper_count
-        return paper_count
-
-    def _graph_run_paper_count_from_summary(self, graph_run_id: str) -> int:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(queries.GRAPH_RELEASE_PAPER_COUNT_SUMMARY_SQL, (graph_run_id,))
-                row = cur.fetchone()
-
-        return int((row or {}).get("paper_count") or 0)
-
     def _embedded_paper_count_value(self) -> int:
         if self._embedded_paper_count is not None:
             return self._embedded_paper_count
@@ -170,91 +148,6 @@ class _VectorSearchMixin:
         self._embedded_paper_count = int((row or {}).get("paper_count") or 0)
         return self._embedded_paper_count
 
-    def _current_map_paper_count_estimate(self) -> int:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(queries.CURRENT_MAP_PAPER_COUNT_ESTIMATE_SQL)
-                row = cur.fetchone()
-
-        return int((row or {}).get("paper_count") or 0)
-
-    def _graph_run_paper_count_from_stats(self, graph_run_id: str) -> int:
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(queries.GRAPH_POINTS_GRAPH_RUN_ESTIMATE_SQL)
-                row = cur.fetchone()
-
-        if not row:
-            return 0
-
-        total_rows = float(row.get("total_rows") or 0.0)
-        if total_rows <= 0:
-            return 0
-
-        estimate = self._estimate_graph_run_rows_from_stats(
-            graph_run_id=graph_run_id,
-            total_rows=total_rows,
-            most_common_vals=row.get("most_common_vals"),
-            most_common_freqs=row.get("most_common_freqs"),
-            n_distinct=row.get("n_distinct"),
-        )
-        return max(int(round(estimate)), 0)
-
-    def _estimate_graph_run_rows_from_stats(
-        self,
-        *,
-        graph_run_id: str,
-        total_rows: float,
-        most_common_vals: Any,
-        most_common_freqs: Any,
-        n_distinct: Any,
-    ) -> float:
-        mcv_values = self._graph_run_stat_values(most_common_vals)
-        mcv_freqs = self._graph_run_stat_frequencies(most_common_freqs)
-        for value, freq in zip(mcv_values, mcv_freqs, strict=False):
-            if value == graph_run_id and freq > 0:
-                return total_rows * freq
-
-        try:
-            distinct_value = float(n_distinct or 0.0)
-        except (TypeError, ValueError):
-            distinct_value = 0.0
-
-        if distinct_value < 0:
-            distinct_count = abs(distinct_value) * total_rows
-        else:
-            distinct_count = distinct_value
-        if distinct_count <= 0:
-            return 0.0
-        return total_rows / distinct_count
-
-    def _graph_run_stat_values(self, raw_values: Any) -> list[str]:
-        if raw_values is None:
-            return []
-        if isinstance(raw_values, str):
-            stripped = raw_values.strip()
-            if stripped.startswith("{") and stripped.endswith("}"):
-                stripped = stripped[1:-1]
-            if not stripped:
-                return []
-            return [part.strip().strip('"') for part in stripped.split(",") if part.strip()]
-        if isinstance(raw_values, Sequence) and not isinstance(raw_values, (bytes, bytearray)):
-            return [str(value).strip() for value in raw_values if str(value).strip()]
-        return []
-
-    def _graph_run_stat_frequencies(self, raw_freqs: Any) -> list[float]:
-        if raw_freqs is None:
-            return []
-        if isinstance(raw_freqs, Sequence) and not isinstance(raw_freqs, (str, bytes, bytearray)):
-            values: list[float] = []
-            for value in raw_freqs:
-                try:
-                    values.append(float(value))
-                except (TypeError, ValueError):
-                    continue
-            return values
-        return []
-
     def _graph_scope_coverage(self, graph_run_id: str) -> float:
         cached = self._graph_scope_coverages.get(graph_run_id)
         if cached is not None:
@@ -266,7 +159,8 @@ class _VectorSearchMixin:
         else:
             coverage = min(
                 1.0,
-                self._graph_run_paper_count(graph_run_id) / embedded_paper_count,
+                self._graph_repository.estimate_graph_run_paper_count(graph_run_id)
+                / embedded_paper_count,
             )
         self._graph_scope_coverages[graph_run_id] = coverage
         return coverage
@@ -311,7 +205,7 @@ class _VectorSearchMixin:
 
     def _should_use_exact_graph_search(self, graph_run_id: str) -> bool:
         return (
-            self._graph_run_paper_count(graph_run_id)
+            self._graph_repository.estimate_graph_run_paper_count(graph_run_id)
             <= settings.rag_runtime_exact_graph_search_max_papers
         )
 

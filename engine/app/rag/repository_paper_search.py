@@ -259,8 +259,11 @@ class _PaperSearchMixin:
             and not author_hint
             and not journal_hint
         )
-        if scope_corpus_ids:
-            unique_scope_ids = _unique_int_ids(scope_corpus_ids)
+        graph_scope_route, unique_scope_ids = self._graph_repository.resolve_query_scope(
+            graph_run_id=graph_run_id,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        if graph_scope_route == "selection":
             if author_year_only_query:
                 candidate_limit = max(limit * 24, 120)
                 return _SqlSpec(
@@ -369,7 +372,7 @@ class _PaperSearchMixin:
                     limit,
                 ),
             )
-        if self._is_current_graph_run(graph_run_id):
+        if graph_scope_route == "current_map":
             candidate_limit = max(limit * 24, 120)
             if author_year_only_query:
                 return _SqlSpec(

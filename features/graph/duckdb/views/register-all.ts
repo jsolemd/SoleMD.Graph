@@ -7,17 +7,12 @@ import { validateTableName, requireBundleTable } from '../utils'
 import { registerActivePointViews } from './active-points'
 import {
   BASE_POINT_CANONICAL_SOURCE_TABLE,
-  BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
-  LOCAL_POINT_RUNTIME_COLUMNS,
-  registerBasePointQueryViews,
   registerBasePointsView,
 } from './base-points'
 import {
   BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
-  BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
-  LOCAL_CLUSTER_RUNTIME_COLUMNS,
   registerClusterViews,
 } from './clusters'
 import { registerClusterExemplarView } from './details'
@@ -44,29 +39,6 @@ async function runBootstrapStep<T>(label: string, operation: () => Promise<T>) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Graph bundle bootstrap failed at ${label}: ${message}`)
-  }
-}
-
-async function materializeLocalRuntimeTables(
-  conn: AsyncDuckDBConnection,
-  tables: ReadonlyArray<{
-    runtimeTableName: string
-    selectedColumns: readonly string[]
-    sourceTable: string
-  }>
-) {
-  for (const { runtimeTableName, selectedColumns, sourceTable } of tables) {
-    const safeRuntimeTableName = validateTableName(runtimeTableName)
-    const safeSourceTable = validateTableName(sourceTable)
-    const selectList = selectedColumns
-      .map((column) => validateTableName(column))
-      .join(', ')
-
-    await conn.query(
-      `CREATE TEMP TABLE IF NOT EXISTS ${safeRuntimeTableName} AS
-       SELECT ${selectList}
-       FROM ${safeSourceTable}`
-    )
   }
 }
 
@@ -137,59 +109,6 @@ export async function registerInitialSessionViews(
     basePointCount,
     buildPointCanvasProjectionSql,
     buildPointQueryProjectionSql,
-  }
-}
-
-export function createEnsurePrimaryQueryTables(
-  conn: AsyncDuckDBConnection,
-  _bundle: GraphBundle,
-  state: SessionViewState
-) {
-  let ensurePromise: Promise<void> | null = null
-  let materialized = false
-
-  return async () => {
-    if (materialized) {
-      return
-    }
-
-    if (ensurePromise) {
-      await ensurePromise
-      return
-    }
-
-    ensurePromise = (async () => {
-      await runBootstrapStep('interactive query runtime materialization', () =>
-        materializeLocalRuntimeTables(conn, [
-          {
-            runtimeTableName: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
-            selectedColumns: LOCAL_POINT_RUNTIME_COLUMNS,
-            sourceTable: BASE_POINT_CANONICAL_SOURCE_TABLE,
-          },
-          {
-            runtimeTableName: BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
-            selectedColumns: LOCAL_CLUSTER_RUNTIME_COLUMNS,
-            sourceTable: BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
-          },
-        ])
-      )
-
-      await runBootstrapStep('interactive point query views', () =>
-        registerBasePointQueryViews(conn, {
-          sourceTable: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
-          buildPointQueryProjectionSql: state.buildPointQueryProjectionSql,
-        })
-      )
-      await runBootstrapStep('interactive cluster query views', () =>
-        registerClusterViews(conn, BASE_CLUSTER_RUNTIME_SOURCE_TABLE)
-      )
-
-      materialized = true
-    })().finally(() => {
-      ensurePromise = null
-    })
-
-    await ensurePromise
   }
 }
 

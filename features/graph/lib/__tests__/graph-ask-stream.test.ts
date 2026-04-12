@@ -48,7 +48,6 @@ function createResponse() {
     selected_layer_key: 'paper',
     selected_node_id: 'paper-7',
     selected_graph_paper_ref: 'paper-7',
-    selected_paper_id: null,
     selection_graph_paper_refs: ['paper-7', 'paper-9'],
     selected_cluster_id: null,
     scope_mode: 'selection_only',

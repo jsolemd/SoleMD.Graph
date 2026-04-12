@@ -39,7 +39,6 @@ def serialize_search_result(result: RagSearchResult) -> RagSearchResponse:
                 selected_layer_key=result.query.selected_layer_key,
                 selected_node_id=result.query.selected_node_id,
                 selected_graph_paper_ref=result.query.selected_graph_paper_ref,
-                selected_paper_id=result.query.selected_paper_id,
                 selection_graph_paper_refs=result.query.selection_graph_paper_refs,
                 cited_corpus_ids=result.query.cited_corpus_ids,
                 selected_cluster_id=result.query.selected_cluster_id,

@@ -1,3 +1,5 @@
+const WIKI_ENGINE_PREFIX = "/api/v1/wiki"
+
 export function encodeWikiSlug(slug: string): string {
   return slug
     .split("/")
@@ -25,7 +27,16 @@ export function buildWikiPageEnginePath(
     graphReleaseId?: string
   } = {},
 ): string {
-  return `/api/v1/wiki/pages/${slug}${buildWikiEngineQuery(options)}`
+  return `${WIKI_ENGINE_PREFIX}/pages/${slug}${buildWikiEngineQuery(options)}`
+}
+
+export function buildWikiPageBundleEnginePath(
+  slug: string,
+  options: {
+    graphReleaseId?: string
+  } = {},
+): string {
+  return `${WIKI_ENGINE_PREFIX}/page-bundle/${slug}${buildWikiEngineQuery(options)}`
 }
 
 export function buildWikiPageContextEnginePath(
@@ -34,7 +45,27 @@ export function buildWikiPageContextEnginePath(
     graphReleaseId?: string
   } = {},
 ): string {
-  return `/api/v1/wiki/page-context/${slug}${buildWikiEngineQuery(options)}`
+  return `${WIKI_ENGINE_PREFIX}/page-context/${slug}${buildWikiEngineQuery(options)}`
+}
+
+export function buildWikiPagesEnginePath(): string {
+  return `${WIKI_ENGINE_PREFIX}/pages`
+}
+
+export function buildWikiSearchEnginePath(query: string, limit: number): string {
+  const params = new URLSearchParams({
+    query,
+    limit: String(limit),
+  })
+  return `${WIKI_ENGINE_PREFIX}/search?${params.toString()}`
+}
+
+export function buildWikiBacklinksEnginePath(slug: string): string {
+  return `${WIKI_ENGINE_PREFIX}/backlinks/${slug}`
+}
+
+export function buildWikiGraphEnginePath(graphReleaseId: string): string {
+  return `${WIKI_ENGINE_PREFIX}/graph${buildWikiEngineQuery({ graphReleaseId })}`
 }
 
 export function buildWikiPageClientPath(
@@ -44,6 +75,15 @@ export function buildWikiPageClientPath(
   } = {},
 ): string {
   return `/api/wiki/pages/${encodeWikiSlug(slug)}${buildWikiEngineQuery(options)}`
+}
+
+export function buildWikiPageBundleClientPath(
+  slug: string,
+  options: {
+    graphReleaseId?: string
+  } = {},
+): string {
+  return `/api/wiki/page-bundle/${encodeWikiSlug(slug)}${buildWikiEngineQuery(options)}`
 }
 
 export function buildWikiPageContextClientPath(

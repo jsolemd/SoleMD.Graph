@@ -9,11 +9,10 @@ from typing import Any, Protocol
 
 from app import db
 from app.config import settings
-from app.graph.repository import PostgresGraphRepository
+from app.graph.repository import GraphRuntimeResolver, PostgresGraphRepository
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
-    GraphRelease,
     GraphSignal,
     PaperAssetRecord,
     PaperAuthorRecord,
@@ -52,30 +51,12 @@ _SqlSpec = _RepositorySqlSpec
 class RagRepository(Protocol):
     """Read-only repository contract used by the service."""
 
-    def resolve_graph_release(self, graph_release_id: str) -> GraphRelease: ...
-
     def resolve_query_entity_terms(
         self,
         *,
         query_phrases: Sequence[str],
         limit: int = 5,
     ) -> ResolvedQueryEntityTerms: ...
-
-    def resolve_selected_corpus_id(
-        self,
-        *,
-        graph_run_id: str,
-        selected_graph_paper_ref: str | None,
-        selected_paper_id: str | None,
-        selected_node_id: str | None,
-    ) -> int | None: ...
-
-    def resolve_scope_corpus_ids(
-        self,
-        *,
-        graph_run_id: str,
-        graph_paper_refs: Sequence[str],
-    ) -> list[int]: ...
 
     def search_papers(
         self,
@@ -237,7 +218,6 @@ class PostgresRagRepository(
         self._disable_session_jit = settings.rag_runtime_disable_jit
         self._graph_repository = graph_repository
         self._semantic_neighbor_index_ready: bool | None = None
-        self._graph_scope_paper_counts: dict[str, int] = {}
         self._graph_scope_coverages: dict[str, float] = {}
         self._embedded_paper_count: int | None = None
         self._bound_connection: ContextVar[Any | None] = ContextVar(
@@ -259,15 +239,13 @@ class PostgresRagRepository(
             return _PinnedConnectionContext(active_connection)
         return self._connect_factory()
 
+    @property
+    def graph_repository(self) -> GraphRuntimeResolver:
+        return self._graph_repository
+
     def _configure_search_session(self, cur: Any) -> None:
         if self._disable_session_jit:
             cur.execute("SET LOCAL jit = off")
-
-    def _resolve_current_graph_run_id(self) -> str | None:
-        return self._graph_repository.resolve_current_graph_run_id()
-
-    def _is_current_graph_run(self, graph_run_id: str) -> bool:
-        return self._graph_repository.is_current_graph_run(graph_run_id)
 
     @contextmanager
     def search_session(self) -> Iterator[None]:
@@ -326,42 +304,4 @@ class PostgresRagRepository(
             chunk_primary_block_kind=row.get("chunk_primary_block_kind"),
             chunk_snippet=row.get("chunk_snippet"),
             metadata_match_fields=list(row.get("metadata_match_fields") or []),
-        )
-
-    def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
-        return self._graph_repository.resolve_graph_release(graph_release_id)
-
-    def resolve_selected_corpus_id(
-        self,
-        *,
-        graph_run_id: str,
-        selected_graph_paper_ref: str | None,
-        selected_paper_id: str | None,
-        selected_node_id: str | None,
-    ) -> int | None:
-        candidate_refs: list[str] = []
-        selected_lookup_ref = selected_graph_paper_ref or selected_paper_id
-        if selected_lookup_ref:
-            candidate_refs.append(selected_lookup_ref)
-        if selected_node_id:
-            candidate_refs.append(selected_node_id)
-        if not candidate_refs:
-            return None
-
-        return self._graph_repository.resolve_selected_corpus_id(
-            graph_run_id=graph_run_id,
-            selected_graph_paper_ref=selected_graph_paper_ref,
-            selected_paper_id=selected_paper_id,
-            selected_node_id=selected_node_id,
-        )
-
-    def resolve_scope_corpus_ids(
-        self,
-        *,
-        graph_run_id: str,
-        graph_paper_refs: Sequence[str],
-    ) -> list[int]:
-        return self._graph_repository.resolve_scope_corpus_ids(
-            graph_run_id=graph_run_id,
-            graph_paper_refs=graph_paper_refs,
         )

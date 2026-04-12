@@ -20,7 +20,6 @@ export {
   replaceSelectedPointIndicesFromScopeSql,
 } from './selection'
 export {
-  createEnsurePrimaryQueryTables,
   registerInitialSessionViews,
   createEnsureOptionalBundleTables,
   type SessionViewState,

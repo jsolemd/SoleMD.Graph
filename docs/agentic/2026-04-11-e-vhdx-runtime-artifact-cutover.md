@@ -29,6 +29,13 @@
 - Windows admin shell available.
 - WSL Store build that supports `wsl --mount --vhd`.
 - Docker Desktop and any graph build jobs stopped before the final mount swap.
+- Working Windows interop from the active WSL shell, or an out-of-band Windows terminal:
+  - in the current session, `powershell.exe` is on `PATH` but actual commands fail with `UtilAcceptVsock ... failed 110`
+  - `lsblk -f` currently shows no attached `solemd-graph` disk, so the VHD is not mounted in WSL today
+- Verified user environment:
+  - `WSL version: 2.6.3.0`
+  - `Kernel version: 6.6.87.2-1`
+  - this should be new enough for `wsl --mount --vhd`; the current blocker is command execution context, not feature support
 
 Official references:
 - Microsoft Learn, `wsl --mount` / `--vhd`: https://learn.microsoft.com/en-us/windows/wsl/basic-commands
@@ -42,6 +49,7 @@ Official references:
   - `docker compose stop graph`
   - stop any manual `uv run python -m app.graph.build ...` or `app.corpus.entities ...` jobs
 - Run `wsl --shutdown` from Windows before touching the VHD.
+  - This is required for the resize/attach workflow, not optional.
 
 ### 2. Expand the VHDX on Windows
 Use an elevated Windows shell.

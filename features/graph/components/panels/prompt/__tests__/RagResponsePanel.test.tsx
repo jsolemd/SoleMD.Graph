@@ -2,21 +2,42 @@
  * @jest-environment jsdom
  */
 import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom";
 import { MantineProvider } from "@mantine/core";
-import type { GraphPointRecord, GraphRagQueryResponsePayload } from "@/features/graph/types";
+import type { GraphRagQueryResponsePayload } from "@/features/graph/types";
+import { useDashboardStore } from "@/features/graph/stores";
+
+// Mock framer-motion (PanelShell uses motion.div)
+jest.mock("framer-motion", () => ({
+  motion: {
+    div: ({
+      children,
+      style,
+      className,
+    }: React.PropsWithChildren<Record<string, unknown>>) => (
+      <div style={style as React.CSSProperties} className={className as string}>
+        {children}
+      </div>
+    ),
+  },
+  useDragControls: () => ({ start: jest.fn() }),
+  useMotionValue: (initial: number) => ({
+    get: () => initial,
+    set: jest.fn(),
+  }),
+  animate: jest.fn(),
+  AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
+}));
+
+jest.mock("@/lib/motion", () => ({
+  panelReveal: {
+    left: { initial: {}, animate: {}, exit: {}, transition: {}, style: {} },
+    right: { initial: {}, animate: {}, exit: {}, transition: {}, style: {} },
+  },
+  smooth: {},
+}));
+
 import { RagResponsePanel } from "../RagResponsePanel";
-
-jest.mock("@mantine/core", () => {
-  const actual = jest.requireActual("@mantine/core");
-
-  return {
-    ...actual,
-    ScrollArea: {
-      ...actual.ScrollArea,
-      Autosize: ({ children }: { children: unknown }) => <div>{children}</div>,
-    },
-  };
-});
 
 function createGroundedResponse(): GraphRagQueryResponsePayload {
   return {
@@ -44,7 +65,6 @@ function createGroundedResponse(): GraphRagQueryResponsePayload {
     selected_layer_key: null,
     selected_node_id: null,
     selected_graph_paper_ref: null,
-    selected_paper_id: null,
     selection_graph_paper_refs: [],
     selected_cluster_id: null,
     scope_mode: "global",
@@ -101,25 +121,32 @@ function createGroundedResponse(): GraphRagQueryResponsePayload {
 }
 
 describe("RagResponsePanel", () => {
+  beforeEach(() => {
+    useDashboardStore.setState({
+      ragPanelOpen: false,
+      ragResponse: null,
+      streamedAskAnswer: null,
+      ragError: null,
+      ragSession: null,
+      ragGraphAvailability: null,
+      isRagSubmitting: false,
+    });
+  });
+
   it("renders structured grounded answer segments and cited evidence packets", () => {
+    useDashboardStore.setState({
+      ragResponse: createGroundedResponse(),
+      ragSession: {
+        origin: "ask",
+        evidenceIntent: null,
+        queryPreview: null,
+      },
+      isRagSubmitting: false,
+    });
+
     render(
       <MantineProvider>
-        <RagResponsePanel
-          ragResponse={createGroundedResponse()}
-          streamedAnswer={null}
-          ragError={null}
-          ragSession={{
-            origin: "ask",
-            evidenceIntent: null,
-            queryPreview: null,
-          }}
-          ragGraphAvailability={null}
-          isSubmitting={false}
-          isFullHeightMode={false}
-          selectedNode={null as GraphPointRecord | null}
-          selectedScopeLabel={null}
-          onDismiss={() => {}}
-        />
+        <RagResponsePanel />
       </MantineProvider>,
     );
 

@@ -38,13 +38,11 @@ describe('createSessionInfoQueries', () => {
     } as never)
   })
 
-  it('keeps dataset summaries on canonical views without materializing the interactive runtime', async () => {
-    const ensurePrimaryQueryTables = jest.fn(async () => undefined)
+  it('keeps dataset summaries on the canonical local tables', async () => {
     const controller = createSessionInfoQueries({
       conn: {} as never,
       getDatasetTotalCount: () => 10,
       getOverlayRevision: () => 0,
-      ensurePrimaryQueryTables,
     })
 
     await controller.getInfoSummary({
@@ -54,16 +52,13 @@ describe('createSessionInfoQueries', () => {
     })
 
     expect(queryInfoSummaryMock).toHaveBeenCalledTimes(1)
-    expect(ensurePrimaryQueryTables).not.toHaveBeenCalled()
   })
 
-  it('keeps dataset facet bars on canonical views without materializing the interactive runtime', async () => {
-    const ensurePrimaryQueryTables = jest.fn(async () => undefined)
+  it('keeps dataset facet bars on the canonical local tables', async () => {
     const controller = createSessionInfoQueries({
       conn: {} as never,
       getDatasetTotalCount: () => 10,
       getOverlayRevision: () => 0,
-      ensurePrimaryQueryTables,
     })
 
     await controller.getInfoBars({
@@ -75,16 +70,13 @@ describe('createSessionInfoQueries', () => {
     })
 
     expect(queryInfoBarsBatchMock).toHaveBeenCalledTimes(1)
-    expect(ensurePrimaryQueryTables).not.toHaveBeenCalled()
   })
 
-  it('promotes scoped summaries through the interactive runtime', async () => {
-    const ensurePrimaryQueryTables = jest.fn(async () => undefined)
+  it('runs scoped summaries directly against the canonical local tables', async () => {
     const controller = createSessionInfoQueries({
       conn: {} as never,
       getDatasetTotalCount: () => 10,
       getOverlayRevision: () => 0,
-      ensurePrimaryQueryTables,
     })
 
     await controller.getInfoSummary({
@@ -94,6 +86,14 @@ describe('createSessionInfoQueries', () => {
     })
 
     expect(queryInfoSummaryMock).toHaveBeenCalledTimes(1)
-    expect(ensurePrimaryQueryTables).toHaveBeenCalledTimes(1)
+    expect(queryInfoSummaryMock).toHaveBeenCalledWith(
+      {} as never,
+      expect.objectContaining({
+        layer: 'corpus',
+        scope: 'selected',
+        currentPointScopeSql: null,
+        datasetTotalCount: 10,
+      }),
+    )
   })
 })

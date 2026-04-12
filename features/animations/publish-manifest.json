@@ -34,8 +34,14 @@
     "features/animations/_templates/viz-reveal.tsx": "744d67c311a8dde463f4fce58e506adecb7ce14d72b192ea1e2d9cbe85df61c2",
     "features/animations/_thirdparty/magic-ui/animated-beam/AnimatedBeam.tsx": "acbbc934043bc9c5cbf947027852042d2c0bb203ba26074d55d1710e1d18a5f9",
     "features/animations/biology/dopamine-d2-receptor/DopamineD2Binding.tsx": "1fc91266740056e5c705556c27d50acf0d5e1a0d1d1925cf59b719b1a7b20099",
+    "features/animations/brand/ClaudeCandidates.tsx": "6ee8049674db2d3602d35b511b4b6510d072af1f6fd030aef17a2a3a117d7198",
+    "features/animations/brand/DistilledSnapshots.tsx": "7ec9b4158d0d4e34dfd120651b24e5113fffaeebf909b515558bf513bfa86492",
+    "features/animations/brand/LogomarkCompare.tsx": "32833d6d26cda566d93d68ce862278ed7a3634c9bee40eff012dfeb80c7d916d",
     "features/animations/brand/SoleMDLogo.tsx": "dd195caf076c103dbf928dce029fe7a23044d56c2ec38ac9db83770b91d3e91d",
     "features/animations/brand/SoleMDLogoMark.tsx": "16d449f9b4188e9ee51db41302512e825e5a273af3add45d4cd271d7f5e1bca9",
+    "features/animations/brand/snapshots/snapshot-12.svg": "1d0c2d82f04d99d66cc8c898fd4be79cfc3fd394b0c890db02734fd60acc20f2",
+    "features/animations/brand/snapshots/snapshot-30.svg": "6f85f0a9f70f091f1345756e11cc945e069f2be40fc625b7073a715bd58f04d1",
+    "features/animations/brand/snapshots/snapshot-70.svg": "a17c431188a5f2634b809ab03220cdad1e4c064462814917d2aa97f8ebec0499",
     "features/animations/icons/activity-lucide/ActivityLucide.tsx": "bb85e875c85d636b204b90330fcb40755b057653a3602589076ed59337837bfc",
     "features/animations/icons/phase2e-heart-lottie/Phase2eHeartLottie.tsx": "b40d29a4a5bb1026046dc78039b3f96ae4dee971e768409d158084624fb6ad1b",
     "features/animations/lottie/NotoLottie.tsx": "e83ddd840d16bd48f8997ed221061986730cadf31b08f8a0a96f83b361699a34",
@@ -114,6 +120,6 @@
   "meta": {
     "make_head": "41933028ad6b0c76847653bd25c25f64f4cd7599",
     "make_root": "/home/workbench/SoleMD/SoleMD.Make",
-    "published_at": "2026-04-12T03:40:57.322418+00:00"
+    "published_at": "2026-04-12T04:12:11.620172+00:00"
   }
 }

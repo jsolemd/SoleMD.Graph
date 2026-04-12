@@ -234,7 +234,7 @@ describe("usePromptBoxController", () => {
     });
 
     expect(useDashboardStore.getState().panelsVisible).toBe(true);
-    expect(useDashboardStore.getState().wikiOpen).toBe(true);
+    expect(useDashboardStore.getState().openPanels.wiki).toBe(true);
     expect(useWikiStore.getState().currentRoute).toEqual({
       kind: "page",
       slug: "entities/schizophrenia",

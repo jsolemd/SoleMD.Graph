@@ -71,7 +71,6 @@ def test_resolve_selected_corpus_id_prefers_graph_membership_for_corpus_ref(mock
     corpus_id = repo.resolve_selected_corpus_id(
         graph_run_id="run-1",
         selected_graph_paper_ref="paper:22",
-        selected_paper_id=None,
         selected_node_id=None,
     )
 
@@ -91,7 +90,6 @@ def test_resolve_selected_corpus_id_maps_prefixed_graph_lookup_ref(mock_conn):
     corpus_id = repo.resolve_selected_corpus_id(
         graph_run_id="run-1",
         selected_graph_paper_ref="paper:paper-11",
-        selected_paper_id=None,
         selected_node_id=None,
     )
 
@@ -130,6 +128,30 @@ def test_resolve_current_graph_run_id_falls_back_to_current_run_query(mock_conn)
 
     assert repo.resolve_current_graph_run_id() == "run-2"
     cur.execute.assert_called_once_with(CURRENT_GRAPH_RUN_ID_SQL)
+
+
+def test_resolve_query_scope_prefers_explicit_selection_ids(mock_conn):
+    conn = mock_conn(rows=[])
+    repo = PostgresGraphRepository(connect=lambda: conn)
+
+    route, scope_ids = repo.resolve_query_scope(
+        graph_run_id="run-1",
+        scope_corpus_ids=[22, 11, 22],
+    )
+
+    assert (route, scope_ids) == ("selection", [22, 11])
+
+
+def test_resolve_query_scope_uses_current_map_for_current_graph(mock_conn):
+    conn = mock_conn(rows=[])
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = {"graph_run_id": "run-current"}
+    repo = PostgresGraphRepository(connect=lambda: conn)
+
+    assert repo.resolve_query_scope(graph_run_id="run-current") == ("current_map", [])
+    assert repo.resolve_query_scope(graph_run_id="run-other") == ("graph_run", [])
+    assert cur.execute.call_count == 1
+    cur.execute.assert_called_with(CURRENT_GRAPH_RUN_ID_SQL)
 
 
 def test_resolve_paper_graph_refs_reads_graph_paper_summary(mock_conn):

@@ -8,9 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class WikiSchema(BaseModel):
-    """Shared Pydantic configuration for wiki schemas."""
+    """Shared Pydantic configuration for wiki schemas.
 
-    model_config = ConfigDict(extra="forbid")
+    Response models use extra="ignore" to skip the per-field
+    unknown-key check on outbound serialization.  Inbound request
+    schemas should override to extra="forbid".
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class WikiPagePaperResponse(WikiSchema):
@@ -43,7 +48,7 @@ class WikiPageResponse(WikiSchema):
     concept_id: str | None = None
     family_key: str | None = None
     semantic_group: str | None = None
-    page_kind: Literal["index", "section", "entity", "topic"] = "topic"
+    page_kind: Literal["index", "section", "entity", "topic", "module"] = "topic"
     section_slug: str | None = None
     graph_focus: Literal["cited_papers", "entity_exact", "none"] = "none"
     summary: str | None = None
@@ -73,6 +78,10 @@ class WikiPageResponse(WikiSchema):
         default_factory=dict,
         description="Maps outgoing-link slug → entity metadata for hover cards (entity pages only)",
     )
+    body_entity_matches: list[WikiBodyEntityMatch] = Field(
+        default_factory=list,
+        description="Precomputed entity mentions in body text for inline highlighting",
+    )
 
 
 class WikiLinkedEntity(WikiSchema):
@@ -80,6 +89,18 @@ class WikiLinkedEntity(WikiSchema):
 
     entity_type: str
     concept_id: str
+
+
+class WikiBodyEntityMatch(WikiSchema):
+    """Precomputed entity mention found in wiki page body text."""
+
+    entity_type: str
+    concept_namespace: str | None = None
+    concept_id: str
+    source_identifier: str
+    canonical_name: str
+    matched_text: str
+    paper_count: int = 0
 
 
 class WikiPageSummary(WikiSchema):
@@ -94,6 +115,8 @@ class WikiPageSummary(WikiSchema):
 
 class WikiSearchRequest(WikiSchema):
     """Full-text search request."""
+
+    model_config = ConfigDict(extra="forbid")
 
     query: str = Field(..., min_length=1)
     limit: int = Field(default=20, ge=1, le=100)
@@ -123,6 +146,14 @@ class WikiBacklinksResponse(WikiSchema):
 
     slug: str
     backlinks: list[WikiPageSummary] = Field(default_factory=list)
+
+
+class WikiPageBundleResponse(WikiSchema):
+    """Combined page + backlinks + context in a single response."""
+
+    page: WikiPageResponse
+    backlinks: list[WikiPageSummary] = Field(default_factory=list)
+    context: WikiPageContextResponse | None = None
 
 
 class WikiGraphNode(WikiSchema):

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { isEntityWikiSlug } from '@/features/wiki/lib/entity-wiki-route'
 import { fetchWikiPageContextClient } from '@/features/wiki/lib/wiki-client'
 import type { WikiPageContextResponse, WikiPageResponse } from '@/lib/engine/wiki-types'
 
@@ -26,9 +27,11 @@ export function useWikiPageContext(
   graphReleaseId?: string,
 ) {
   const [state, setState] = useState<WikiPageContextState>(IDLE)
+  const shouldFetchContext =
+    !!slug && (pageKind === 'entity' || (pageKind == null && isEntityWikiSlug(slug)))
 
   const fetchContext = useCallback(async (signal?: AbortSignal) => {
-    if (!slug || pageKind !== 'entity') {
+    if (!slug || !shouldFetchContext) {
       setState(IDLE)
       return
     }
@@ -47,7 +50,7 @@ export function useWikiPageContext(
         error: error instanceof Error ? error.message : 'Failed to load wiki page context',
       })
     }
-  }, [graphReleaseId, pageKind, slug])
+  }, [graphReleaseId, shouldFetchContext, slug])
 
   useEffect(() => {
     const controller = new AbortController()

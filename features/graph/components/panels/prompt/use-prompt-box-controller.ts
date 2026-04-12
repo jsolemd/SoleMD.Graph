@@ -44,7 +44,7 @@ import {
   getPromptInteractionProviders,
 } from "./prompt-interaction-runtime";
 import { useEntityOverlaySync } from "@/features/graph/components/entities/use-entity-overlay-sync";
-import { BOTTOM_BASE, MAX_CARD_W, SCOPE_LABELS, VIEWPORT_MARGIN, VW_RATIO, cardWidth } from "./constants";
+import { BOTTOM_BASE, MAX_CARD_W, VIEWPORT_MARGIN, VW_RATIO, cardWidth } from "./constants";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { getEntityWikiSlug } from "@/features/wiki/lib/entity-wiki-route";
 import type { GraphEntityRef } from "@/features/graph/types/entity-service";
@@ -69,14 +69,8 @@ export interface PromptBoxControllerState {
   selectionOnlyEnabled: boolean;
   selectionScopeToggleLabel: string;
   selectedNode: GraphPointRecord | null;
-  selectedScopeLabel: string | null;
   typewriterText: string;
   typewriterIsLast: boolean;
-  ragResponse: ReturnType<typeof useRagQuery>["ragResponse"];
-  streamedAskAnswer: ReturnType<typeof useRagQuery>["streamedAskAnswer"];
-  ragError: string | null;
-  ragSession: ReturnType<typeof useRagQuery>["ragSession"];
-  ragGraphAvailability: ReturnType<typeof useRagQuery>["ragGraphAvailability"];
   isSubmitting: boolean;
   handleSubmit: ReturnType<typeof useRagQuery>["handleSubmit"];
   promptInteractionProviders: ReturnType<typeof getPromptInteractionProviders>;
@@ -199,11 +193,6 @@ export function usePromptBoxController({
   );
 
   const {
-    ragResponse,
-    streamedAskAnswer,
-    ragError,
-    ragSession,
-    ragGraphAvailability,
     isSubmitting,
     handleSubmit: submitRagQuery,
     runEvidenceAssistQuery,
@@ -264,9 +253,6 @@ export function usePromptBoxController({
     cardRef,
   });
 
-  const selectedScopeLabel = selectedNode
-    ? (SCOPE_LABELS[selectedNode.nodeKind] ?? "node")
-    : null;
   const selectionScopeToggleLabel = getSelectionScopeToggleLabel({
     hasQueries: Boolean(queries),
     currentPointScopeSql,
@@ -468,14 +454,8 @@ export function usePromptBoxController({
     selectionOnlyEnabled,
     selectionScopeToggleLabel,
     selectedNode,
-    selectedScopeLabel,
     typewriterText,
     typewriterIsLast,
-    ragResponse,
-    streamedAskAnswer,
-    ragError,
-    ragSession,
-    ragGraphAvailability,
     isSubmitting,
     handleSubmit,
     promptInteractionProviders,

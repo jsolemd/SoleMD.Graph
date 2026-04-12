@@ -66,11 +66,13 @@ ENTITY_GRAPH_PAPER_REFS_SQL = (
     JOIN solemd.entity_corpus_presence ecp
       ON ecp.entity_type = requested_entities.entity_type
      AND ecp.concept_id = requested_entities.concept_id
-    JOIN solemd.graph_points gp
-      ON gp.corpus_id = ecp.corpus_id
-     AND gp.graph_run_id = %s
-    LEFT JOIN solemd.graph_paper_summary gps
+    JOIN solemd.graph_paper_summary gps
       ON gps.corpus_id = ecp.corpus_id
+    WHERE EXISTS (
+        SELECT 1 FROM solemd.graph_points gp
+         WHERE gp.graph_run_id = %s
+           AND gp.corpus_id = ecp.corpus_id
+    )
 )
 SELECT graph_paper_ref
 FROM matched_graph_papers
@@ -80,36 +82,41 @@ LIMIT %s
 """
 )
 
-ENTITY_PAGE_CONTEXT_COUNTS_SQL = """
-SELECT
-    COUNT(*)::INTEGER AS total_corpus_paper_count,
-    COUNT(gp.corpus_id)::INTEGER AS total_graph_paper_count
-FROM solemd.entity_corpus_presence ecp
-LEFT JOIN solemd.graph_points gp
-  ON gp.corpus_id = ecp.corpus_id
- AND gp.graph_run_id = %s
-WHERE ecp.entity_type = %s
-  AND ecp.concept_id = %s
-"""
-
 ENTITY_PAGE_CONTEXT_TOP_PAPERS_SQL = """
 SELECT
-    ecp.pmid,
-    COALESCE(gps.graph_paper_ref, 'corpus:' || ecp.corpus_id::TEXT) AS graph_paper_ref,
+    (SELECT COUNT(*)::int
+       FROM solemd.entity_corpus_presence
+      WHERE entity_type = %s AND concept_id = %s
+    ) AS total_corpus_paper_count,
+    gps.pmid,
+    gps.graph_paper_ref,
     gps.title AS paper_title,
     gps.year,
     NULLIF(gps.journal_name, '') AS venue,
     gps.citation_count
 FROM solemd.entity_corpus_presence ecp
-JOIN solemd.graph_points gp
-  ON gp.corpus_id = ecp.corpus_id
- AND gp.graph_run_id = %s
-LEFT JOIN solemd.graph_paper_summary gps
-  ON gps.corpus_id = ecp.corpus_id
+JOIN solemd.graph_paper_summary gps ON gps.corpus_id = ecp.corpus_id
 WHERE ecp.entity_type = %s
   AND ecp.concept_id = %s
-ORDER BY gps.citation_count DESC NULLS LAST, ecp.pmid DESC
+  AND EXISTS (
+      SELECT 1 FROM solemd.graph_points gp
+       WHERE gp.graph_run_id = %s
+         AND gp.corpus_id = ecp.corpus_id
+  )
+ORDER BY gps.citation_count DESC NULLS LAST, gps.pmid DESC
 LIMIT %s
+"""
+
+ENTITY_GRAPH_PAPER_COUNT_SQL = """
+SELECT COUNT(*)::int AS total_graph_paper_count
+FROM solemd.entity_corpus_presence ecp
+WHERE ecp.entity_type = %s
+  AND ecp.concept_id = %s
+  AND EXISTS (
+      SELECT 1 FROM solemd.graph_points gp
+       WHERE gp.graph_run_id = %s
+         AND gp.corpus_id = ecp.corpus_id
+  )
 """
 
 
@@ -142,11 +149,6 @@ class EntityGraphPaperRefRow(TypedDict):
     graph_paper_ref: str
 
 
-class EntityPageContextCountRow(TypedDict):
-    total_corpus_paper_count: int
-    total_graph_paper_count: int
-
-
 class EntityPageContextPaperRow(TypedDict):
     pmid: int
     graph_paper_ref: str | None
@@ -154,6 +156,23 @@ class EntityPageContextPaperRow(TypedDict):
     year: int | None
     venue: str | None
     citation_count: int | None
+
+
+class EntityPageContextRow(TypedDict):
+    total_corpus_paper_count: int
+    total_graph_paper_count: int
+    pmid: int | None
+    graph_paper_ref: str | None
+    paper_title: str | None
+    year: int | None
+    venue: str | None
+    citation_count: int | None
+
+
+class EntityPageContextResult(TypedDict):
+    total_corpus_paper_count: int
+    total_graph_paper_count: int
+    top_graph_papers: list[EntityPageContextPaperRow]
 
 
 class EntityCatalogRepository:
@@ -250,38 +269,85 @@ class EntityGraphProjectionRepository:
                 rows = cur.fetchall()
         return [str(row["graph_paper_ref"]) for row in rows if row.get("graph_paper_ref")]
 
-    def fetch_page_context_counts(
-        self,
-        *,
-        entity_type: str,
-        source_identifier: str,
-        graph_run_id: str,
-    ) -> EntityPageContextCountRow:
-        with db.pooled() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    ENTITY_PAGE_CONTEXT_COUNTS_SQL,
-                    (graph_run_id, entity_type, source_identifier),
-                )
-                row = cur.fetchone()
-        return dict(row or {})
-
-    def fetch_page_context_top_papers(
+    def fetch_page_context(
         self,
         *,
         entity_type: str,
         source_identifier: str,
         graph_run_id: str,
         limit: int = 8,
-    ) -> list[EntityPageContextPaperRow]:
+        include_graph_count: bool = True,
+    ) -> EntityPageContextResult:
         with db.pooled() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     ENTITY_PAGE_CONTEXT_TOP_PAPERS_SQL,
-                    (graph_run_id, entity_type, source_identifier, limit),
+                    (
+                        entity_type, source_identifier,              # corpus count
+                        entity_type, source_identifier, graph_run_id,  # main query
+                        limit,
+                    ),
                 )
                 rows = cur.fetchall()
-        return [dict(row) for row in rows]
+
+                graph_count: int | None = None
+                if include_graph_count:
+                    cur.execute(
+                        ENTITY_GRAPH_PAPER_COUNT_SQL,
+                        (entity_type, source_identifier, graph_run_id),
+                    )
+                    count_row = cur.fetchone()
+                    graph_count = int(
+                        (count_row or {}).get("total_graph_paper_count") or 0
+                    )
+
+        context_rows = [dict(row) for row in rows]
+        if not context_rows:
+            return {
+                "total_corpus_paper_count": 0,
+                "total_graph_paper_count": graph_count if graph_count is not None else 0,
+                "top_graph_papers": [],
+            }
+
+        first_row = context_rows[0]
+        top_graph_papers: list[EntityPageContextPaperRow] = []
+        for row in context_rows:
+            if row.get("pmid") is None:
+                continue
+            top_graph_papers.append(
+                {
+                    "pmid": int(row["pmid"]),
+                    "graph_paper_ref": (
+                        str(row["graph_paper_ref"])
+                        if row.get("graph_paper_ref") is not None
+                        else None
+                    ),
+                    "paper_title": (
+                        str(row["paper_title"])
+                        if row.get("paper_title") is not None
+                        else None
+                    ),
+                    "year": int(row["year"]) if row.get("year") is not None else None,
+                    "venue": (
+                        str(row["venue"])
+                        if row.get("venue") is not None
+                        else None
+                    ),
+                    "citation_count": (
+                        int(row["citation_count"])
+                        if row.get("citation_count") is not None
+                        else None
+                    ),
+                }
+            )
+
+        return {
+            "total_corpus_paper_count": int(
+                first_row.get("total_corpus_paper_count") or 0
+            ),
+            "total_graph_paper_count": graph_count if graph_count is not None else 0,
+            "top_graph_papers": top_graph_papers,
+        }
 
 
 def _normalize_entity_refs(entity_refs: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:

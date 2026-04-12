@@ -13,39 +13,58 @@
 -- ============================================================================
 
 -- ---------------------------------------------------------------------------
--- 1. MeSH → CUI crosswalk
+-- 1. MeSH → CUI crosswalk (primary CUI only)
 --    PubTator diseases/chemicals use MeSH descriptor IDs (e.g. D006220).
 --    This view maps them to UMLS CUIs for alias resolution.
+--
+--    IMPORTANT: Uses tty = 'MH' (Main Heading) to select exactly one CUI per
+--    MeSH descriptor.  Without this filter the view returns ~62K rows because
+--    multiple CUIs reference the same descriptor via non-MH atoms, causing
+--    alias pollution (clinically distinct concepts get merged).
 -- ---------------------------------------------------------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS umls.mesh_to_cui AS
-SELECT DISTINCT
+SELECT DISTINCT ON (sdui)
     sdui AS mesh_id,
     cui
 FROM umls.mrconso
 WHERE sab = 'MSH'
   AND sdui LIKE 'D%'
   AND lat = 'ENG'
-  AND suppress = 'N';
+  AND suppress = 'N'
+  AND tty = 'MH'
+ORDER BY sdui, cui;
 
-CREATE INDEX IF NOT EXISTS idx_mesh_to_cui_mesh
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mesh_to_cui_mesh
     ON umls.mesh_to_cui (mesh_id);
 CREATE INDEX IF NOT EXISTS idx_mesh_to_cui_cui
     ON umls.mesh_to_cui (cui);
 
 -- ---------------------------------------------------------------------------
--- 2. NCBI Gene → CUI crosswalk
+-- 2. Gene → CUI crosswalk (via HGNC approved symbols)
 --    PubTator genes use NCBI Gene IDs (numeric, e.g. 3356 for HTR2A).
+--    We match the PubTator canonical gene symbol against HGNC approved
+--    symbols (tty='ACR') in UMLS.
+--
+--    WARNING: Do NOT use sab='NCBI' — that is NCBI Taxonomy (organisms),
+--    not NCBI Gene.  Using it maps gene IDs to organism CUIs (e.g. p53
+--    would get aliases like "mosquito").
 -- ---------------------------------------------------------------------------
 CREATE MATERIALIZED VIEW IF NOT EXISTS umls.gene_to_cui AS
-SELECT DISTINCT
-    code AS gene_id,
-    cui
-FROM umls.mrconso
-WHERE sab = 'NCBI'
-  AND lat = 'ENG'
-  AND suppress = 'N';
+SELECT DISTINCT ON (e.concept_id)
+    e.concept_id AS gene_id,
+    h.cui
+FROM solemd.entities e
+JOIN umls.mrconso h ON lower(h.str) = lower(e.canonical_name)
+    AND h.sab = 'HGNC'
+    AND h.tty IN ('ACR', 'SYN')
+    AND h.suppress = 'N'
+    AND h.lat = 'ENG'
+WHERE e.entity_type = 'gene'
+ORDER BY e.concept_id,
+    CASE h.tty WHEN 'ACR' THEN 0 ELSE 1 END,
+    h.cui;
 
-CREATE INDEX IF NOT EXISTS idx_gene_to_cui_gene
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gene_to_cui_gene
     ON umls.gene_to_cui (gene_id);
 CREATE INDEX IF NOT EXISTS idx_gene_to_cui_cui
     ON umls.gene_to_cui (cui);

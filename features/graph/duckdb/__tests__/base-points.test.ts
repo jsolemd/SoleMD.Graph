@@ -2,7 +2,7 @@ import type { GraphBundle } from '@/features/graph/types'
 
 import { getRegisteredBundleTableFileName } from '../bundle-files'
 import {
-  BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+  BASE_POINT_CANONICAL_SOURCE_TABLE,
   LOCAL_POINT_RUNTIME_COLUMNS,
   createPointCanvasProjectionSql,
   createPointQueryProjectionSql,
@@ -10,7 +10,7 @@ import {
   registerBasePointsView,
 } from '../views/base-points'
 import {
-  BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
+  BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
   LOCAL_CLUSTER_RUNTIME_COLUMNS,
 } from '../views/clusters'
 import { materializeBundleParquetTables } from '../views/relations'
@@ -158,7 +158,7 @@ describe('base point projections', () => {
     )
   })
 
-  it('can switch the query views to the local interactive runtime table', async () => {
+  it('keeps query views pinned to the canonical local base table', async () => {
     const query = jest.fn(async () => undefined)
 
     await registerBasePointQueryViews(
@@ -166,7 +166,6 @@ describe('base point projections', () => {
         query,
       } as never,
       {
-        sourceTable: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
         buildPointQueryProjectionSql: (sourceTable, indexSql) =>
           `SELECT ${indexSql} AS index FROM ${sourceTable}`,
       }
@@ -174,11 +173,11 @@ describe('base point projections', () => {
 
     expect(query).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining(`FROM ${BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE}`)
+      expect.stringContaining(`FROM ${BASE_POINT_CANONICAL_SOURCE_TABLE}`)
     )
   })
 
-  it('materializes the interactive base parquet sources into local temp tables once per session', async () => {
+  it('materializes the canonical base parquet sources into local temp tables once per session', async () => {
     const query = jest.fn(async () => undefined)
 
     await materializeBundleParquetTables(
@@ -189,12 +188,12 @@ describe('base point projections', () => {
       [
         {
           tableName: 'base_points',
-          runtimeTableName: BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE,
+          runtimeTableName: BASE_POINT_CANONICAL_SOURCE_TABLE,
           selectedColumns: LOCAL_POINT_RUNTIME_COLUMNS,
         },
         {
           tableName: 'base_clusters',
-          runtimeTableName: BASE_CLUSTER_RUNTIME_SOURCE_TABLE,
+          runtimeTableName: BASE_CLUSTER_CANONICAL_SOURCE_TABLE,
           selectedColumns: LOCAL_CLUSTER_RUNTIME_COLUMNS,
         },
       ]
@@ -202,7 +201,7 @@ describe('base point projections', () => {
 
     expect(query).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_POINT_QUERY_RUNTIME_SOURCE_TABLE} AS`)
+      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_POINT_CANONICAL_SOURCE_TABLE} AS`)
     )
     expect(query).toHaveBeenNthCalledWith(
       1,
@@ -218,7 +217,7 @@ describe('base point projections', () => {
     )
     expect(query).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_CLUSTER_RUNTIME_SOURCE_TABLE} AS`)
+      expect.stringContaining(`CREATE TEMP TABLE IF NOT EXISTS ${BASE_CLUSTER_CANONICAL_SOURCE_TABLE} AS`)
     )
     expect(query).toHaveBeenNthCalledWith(
       2,

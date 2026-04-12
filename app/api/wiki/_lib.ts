@@ -28,6 +28,19 @@ export function readWikiGraphReleaseId(request: NextRequest): string | undefined
   return request.nextUrl.searchParams.get("graph_release_id") ?? undefined;
 }
 
+export function resolveRequiredWikiGraphReleaseId(
+  request: NextRequest,
+): string | NextResponse {
+  const graphReleaseId = readWikiGraphReleaseId(request)?.trim() ?? "";
+  if (graphReleaseId.length === 0) {
+    return NextResponse.json(
+      { error: "graph_release_id is required" },
+      { status: 400 },
+    );
+  }
+  return graphReleaseId;
+}
+
 export function toWikiErrorResponse(
   error: unknown,
   fallbackMessage: string,

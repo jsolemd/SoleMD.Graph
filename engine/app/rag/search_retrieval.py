@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from app.graph.repository import GraphRuntimeResolver
 from app.langfuse_config import SPAN_RAG_RETRIEVE, observe
 from app.langfuse_config import get_langfuse as _get_langfuse
 from app.rag.models import GraphRelease, GraphSignal, PaperEvidenceHit, PaperRetrievalQuery
@@ -310,12 +311,13 @@ def retrieve_search_state(
     *,
     request: RagSearchRequest,
     repository: RagRepository,
+    graph_repository: GraphRuntimeResolver,
     query_embedder: RagQueryEmbedder,
     trace: RuntimeTraceCollector,
 ) -> SearchRetrievalState:
     release = trace.call(
         "resolve_graph_release",
-        repository.resolve_graph_release,
+        graph_repository.resolve_graph_release,
         request.graph_release_id,
     )
     query = trace.call("build_query", build_query, request)
@@ -325,7 +327,7 @@ def retrieve_search_state(
     scope_corpus_ids = (
         trace.call(
             "resolve_scope_corpus_ids",
-            repository.resolve_scope_corpus_ids,
+            graph_repository.resolve_scope_corpus_ids,
             graph_run_id=release.graph_run_id,
             graph_paper_refs=query.selection_graph_paper_refs,
         )
@@ -338,10 +340,9 @@ def retrieve_search_state(
     )
     selected_corpus_id = trace.call(
         "resolve_selected_corpus_id",
-        repository.resolve_selected_corpus_id,
+        graph_repository.resolve_selected_corpus_id,
         graph_run_id=release.graph_run_id,
         selected_graph_paper_ref=query.selected_graph_paper_ref,
-        selected_paper_id=query.selected_paper_id,
         selected_node_id=query.selected_node_id,
     )
     selected_title_hits = (

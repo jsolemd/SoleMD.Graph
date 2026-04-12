@@ -25,6 +25,7 @@ describe('normalizeWikiPageResponse', () => {
       entity_type: 'Disease',
       concept_id: 'MESH:D012559',
       family_key: 'psychosis',
+      semantic_group: null,
       page_kind: 'topic',
       section_slug: null,
       graph_focus: 'none',
@@ -37,6 +38,7 @@ describe('normalizeWikiPageResponse', () => {
       featured_graph_refs: {},
       resolved_links: { clozapine: 'entities/clozapine' },
       linked_entities: {},
+      body_entity_matches: [],
     })
   })
 

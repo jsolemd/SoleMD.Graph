@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from app.rag import queries
 from app.entities.alias_keys import normalize_alias_key
+from app.rag import queries
 from app.rag._query_enrichment_const import RUNTIME_ENTITY_NOISE_TOKENS
 from app.rag.biomedical_concept_normalizer import (
     _VocabConceptRow,
@@ -19,7 +19,6 @@ from app.rag.repository_support import (
     ResolvedEntityConcept,
     ResolvedQueryEntityTerms,
     _resolved_entity_concept_arrays,
-    _unique_int_ids,
     _unique_resolved_entity_concepts,
     _unique_stripped,
 )
@@ -235,7 +234,10 @@ class _SeedSearchMixin:
                 continue
             vocab_rows.append(
                 _VocabConceptRow(
-                    alias_key=concept.vocab_alias_key or normalize_entity_query_text(concept.raw_term),
+                    alias_key=(
+                        concept.vocab_alias_key
+                        or normalize_entity_query_text(concept.raw_term)
+                    ),
                     preferred_term=concept.resolved_term,
                     matched_alias=concept.vocab_alias_key or concept.raw_term,
                     alias_type=concept.vocab_alias_type,
@@ -594,15 +596,19 @@ class _SeedSearchMixin:
         if not normalized_terms:
             return []
 
-        if scope_corpus_ids:
+        graph_scope_route, unique_scope_ids = self._graph_repository.resolve_query_scope(
+            graph_run_id=graph_run_id,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        if graph_scope_route == "selection":
             sql = queries.PAPER_RELATION_SEARCH_IN_SELECTION_SQL
             params = (
                 normalized_terms,
-                _unique_int_ids(scope_corpus_ids),
+                unique_scope_ids,
                 limit,
                 limit,
             )
-        elif self._is_current_graph_run(graph_run_id):
+        elif graph_scope_route == "current_map":
             sql = queries.PAPER_RELATION_SEARCH_CURRENT_MAP_SQL
             params = (normalized_terms, limit, limit)
         else:
@@ -665,16 +671,20 @@ class _SeedSearchMixin:
                 if exact_hits:
                     return exact_hits
 
-        if scope_corpus_ids:
+        graph_scope_route, unique_scope_ids = self._graph_repository.resolve_query_scope(
+            graph_run_id=graph_run_id,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        if graph_scope_route == "selection":
             sql = queries.PAPER_ENTITY_SEARCH_IN_SELECTION_SQL
             params = (
                 normalized_terms,
                 ENTITY_FUZZY_SIMILARITY_THRESHOLD,
                 ENTITY_TOP_CONCEPTS_PER_TERM,
-                _unique_int_ids(scope_corpus_ids),
+                unique_scope_ids,
                 limit,
             )
-        elif self._is_current_graph_run(graph_run_id):
+        elif graph_scope_route == "current_map":
             sql = queries.PAPER_ENTITY_SEARCH_CURRENT_MAP_SQL
             params = (
                 normalized_terms,
@@ -716,17 +726,21 @@ class _SeedSearchMixin:
         if not raw_terms:
             return []
 
-        if scope_corpus_ids:
+        graph_scope_route, unique_scope_ids = self._graph_repository.resolve_query_scope(
+            graph_run_id=graph_run_id,
+            scope_corpus_ids=scope_corpus_ids,
+        )
+        if graph_scope_route == "selection":
             sql = queries.PAPER_ENTITY_EXACT_SEARCH_IN_SELECTION_SQL
             params = (
                 raw_terms,
                 entity_types,
                 concept_namespaces,
                 concept_ids,
-                _unique_int_ids(scope_corpus_ids),
+                unique_scope_ids,
                 limit,
             )
-        elif self._is_current_graph_run(graph_run_id):
+        elif graph_scope_route == "current_map":
             sql = queries.PAPER_ENTITY_EXACT_SEARCH_CURRENT_MAP_SQL
             params = (
                 raw_terms,

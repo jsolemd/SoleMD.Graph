@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Text } from "@mantine/core";
 import {
   PanelInlineLoader,
@@ -11,12 +11,13 @@ import type { GraphBundleQueries } from "@/features/graph/types";
 import { WikiBacklinks } from "@/features/wiki/components/WikiBacklinks";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiMarkdownRenderer } from "@/features/wiki/components/WikiMarkdownRenderer";
+import { WikiModuleContent, resolveModule } from "@/features/wiki/components/WikiModuleContent";
+import { DotToc, entriesFromModuleSections, entriesFromHeadings } from "@/features/wiki/components/DotToc";
+import type { DotTocEntry } from "@/features/wiki/components/DotToc";
 import { WikiPageHeader } from "@/features/wiki/components/WikiPageHeader";
 import { WikiToc } from "@/features/wiki/components/WikiToc";
-import { useWikiBacklinks } from "@/features/wiki/hooks/use-wiki-backlinks";
 import { useWikiGraphSync } from "@/features/wiki/hooks/use-wiki-graph-sync";
-import { useWikiPage } from "@/features/wiki/hooks/use-wiki-page";
-import { useWikiPageContext } from "@/features/wiki/hooks/use-wiki-page-context";
+import { useWikiPageBundle } from "@/features/wiki/hooks/use-wiki-page-bundle";
 import { resolveWikiPageGraphRefs } from "@/features/wiki/lib/wiki-page-graph";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 
@@ -33,6 +34,7 @@ const EMPTY_LINKED_ENTITIES: Record<
   string,
   { entity_type: string; concept_id: string }
 > = {};
+const EMPTY_BODY_ENTITY_MATCHES: [] = [];
 
 export function WikiPageView({
   slug,
@@ -42,18 +44,18 @@ export function WikiPageView({
 }: WikiPageViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const localGraphPopped = useWikiStore((state) => state.localGraphPopped);
+  const modulePopped = useWikiStore((state) => state.modulePopped);
+  const setCurrentPageKind = useWikiStore((state) => state.setCurrentPageKind);
   const setGlobalGraphOpen = useWikiStore((state) => state.setGlobalGraphOpen);
-  const { page, loading, error } = useWikiPage(slug, graphReleaseId);
-  const { backlinks } = useWikiBacklinks(slug);
   const {
+    page,
+    backlinks,
     context: pageContext,
-    loading: pageContextLoading,
-    error: pageContextError,
-  } = useWikiPageContext(
-    page?.slug ?? null,
-    page?.page_kind ?? null,
-    graphReleaseId,
-  );
+    loading,
+    contextLoading: pageContextLoading,
+    error,
+    contextError: pageContextError,
+  } = useWikiPageBundle(slug, graphReleaseId);
 
   const pageGraphRefs = useMemo(() => resolveWikiPageGraphRefs(page), [page]);
   const { onPaperClick, showPageOnGraph, canShowPageOnGraph } =
@@ -62,6 +64,43 @@ export function WikiPageView({
       pageGraphRefs,
       currentSlug: slug,
     });
+
+  const isModulePage = page?.page_kind === "module";
+
+  // Dot TOC entries: module sections (manifest-driven) or wiki headings (DOM-scanned)
+  const moduleTocEntries = useMemo(() => {
+    if (!isModulePage) return undefined;
+    const sections = resolveModule(slug)?.manifest.sections;
+    return sections ? entriesFromModuleSections(sections) : undefined;
+  }, [isModulePage, slug]);
+
+  const [headingEntries, setHeadingEntries] = useState<DotTocEntry[]>([]);
+
+  // Scan headings after content renders and re-scan on DOM mutations
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || isModulePage) { setHeadingEntries([]); return; }
+
+    function scan() {
+      setHeadingEntries(entriesFromHeadings(el!));
+    }
+
+    const raf = requestAnimationFrame(scan);
+    const mo = new MutationObserver(scan);
+    mo.observe(el, { childList: true, subtree: true });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      mo.disconnect();
+    };
+  }, [isModulePage, page?.content_md]);
+
+  const dotEntries = moduleTocEntries ?? (headingEntries.length > 1 ? headingEntries : undefined);
+
+  useEffect(() => {
+    setCurrentPageKind(page?.page_kind ?? null);
+    return () => setCurrentPageKind(null);
+  }, [page?.page_kind, setCurrentPageKind]);
 
   if (loading) {
     return (
@@ -129,13 +168,28 @@ export function WikiPageView({
             resolvedLinks={page.resolved_links ?? EMPTY_RESOLVED_LINKS}
             paperGraphRefs={page.paper_graph_refs ?? EMPTY_PAPER_REFS}
             linkedEntities={page.linked_entities ?? EMPTY_LINKED_ENTITIES}
+            bodyEntityMatches={page.body_entity_matches ?? EMPTY_BODY_ENTITY_MATCHES}
             onNavigate={onNavigate}
             onPaperClick={onPaperClick}
           />
         </div>
 
+        {/* Inline module content — renders below wiki header when not popped */}
+        {isModulePage && !modulePopped && (
+          <div
+            id="wiki-module-inline"
+            className="wiki-module-inline mt-4"
+          >
+            <WikiModuleContent slug={slug} />
+          </div>
+        )}
+
         {backlinksBlock}
       </div>
+
+      {dotEntries && (
+        <DotToc entries={dotEntries} scrollRef={scrollRef} />
+      )}
     </div>
   );
 }

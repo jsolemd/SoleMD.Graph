@@ -6,8 +6,8 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock
 
 from app.config import settings
-from app.rag.biomedical_reranking import NoopBiomedicalReranker
 from app.rag.biomedical_concept_normalizer import VocabConceptMatch
+from app.rag.biomedical_reranking import NoopBiomedicalReranker
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
@@ -93,12 +93,10 @@ class FakeRepository:
         *,
         graph_run_id: str,
         selected_graph_paper_ref: str | None,
-        selected_paper_id: str | None,
         selected_node_id: str | None,
     ) -> int | None:
         assert graph_run_id == "run-1"
         assert selected_graph_paper_ref == "seed-paper"
-        assert selected_paper_id is None
         assert selected_node_id == "seed-paper"
         return 11
 
@@ -425,7 +423,6 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -539,6 +536,7 @@ def test_passage_lookup_bounds_entity_relation_enrichment_to_ranked_shortlist():
     repository = PassageRepository()
     service = RagService(
         repository=repository,
+        graph_repository=repository,
         warehouse_grounder=None,
         query_embedder=NoopQueryEmbedder(),
         biomedical_reranker=NoopBiomedicalReranker(),
@@ -594,7 +592,6 @@ def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypa
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -681,6 +678,7 @@ def test_rag_service_skips_clinical_prior_enrichment_when_flag_disabled(monkeypa
     repository = ClinicalPriorRepository()
     service = RagService(
         repository=repository,
+        graph_repository=repository,
         warehouse_grounder=None,
         query_embedder=NoopQueryEmbedder(),
         biomedical_reranker=NoopBiomedicalReranker(),
@@ -781,6 +779,7 @@ def _service(
 ) -> RagService:
     return RagService(
         repository=repository,
+        graph_repository=repository,
         query_embedder=query_embedder or NoopQueryEmbedder(),
         biomedical_reranker=biomedical_reranker or NoopBiomedicalReranker(),
     )
@@ -793,7 +792,6 @@ def test_rag_service_applies_biomedical_reranker_to_global_passage_candidates():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -1065,7 +1063,6 @@ def test_rag_service_runs_concept_paper_rescue_when_primary_lexical_misses():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -1233,7 +1230,6 @@ def test_rag_service_uses_concept_enriched_dense_query_text():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -1371,7 +1367,6 @@ def test_rag_service_runs_concept_chunk_rescue_for_general_biomedical_queries():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -1407,7 +1402,10 @@ def test_rag_service_runs_concept_chunk_rescue_for_general_biomedical_queries():
                     doi=None,
                     pmid=77,
                     pmcid=None,
-                    abstract="Psychosis may be an early manifestation of anti-NMDA receptor encephalitis.",
+                    abstract=(
+                        "Psychosis may be an early manifestation of anti-NMDA "
+                        "receptor encephalitis."
+                    ),
                     tldr=None,
                     text_availability="fulltext",
                     is_open_access=True,
@@ -1506,7 +1504,6 @@ def test_rag_service_enables_title_similarity_support_for_compact_general_entity
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -1649,7 +1646,6 @@ def test_rag_service_supplements_weak_passage_anchor_with_concept_chunk_rescue()
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -1678,7 +1674,10 @@ def test_rag_service_supplements_weak_passage_anchor_with_concept_chunk_rescue()
                         corpus_id=77,
                         paper_id="paper-77",
                         semantic_scholar_paper_id="paper-77",
-                        title="Hyponatremia Secondary Treatment with SSRI Antidepressants in Adults and Elderly",
+                        title=(
+                            "Hyponatremia Secondary Treatment with SSRI "
+                            "Antidepressants in Adults and Elderly"
+                        ),
                         journal_name="Consult Pharm",
                         year=2016,
                         doi=None,
@@ -1691,7 +1690,10 @@ def test_rag_service_supplements_weak_passage_anchor_with_concept_chunk_rescue()
                         citation_count=3,
                         reference_count=9,
                         chunk_lexical_score=0.56,
-                        chunk_snippet="Hyponatremia after SSRI treatment in adults and elderly patients.",
+                        chunk_snippet=(
+                            "Hyponatremia after SSRI treatment in adults and "
+                            "elderly patients."
+                        ),
                     )
                 ]
             if "ssri" in query.casefold():
@@ -1817,7 +1819,6 @@ def test_rag_service_corrects_failed_title_frontier_to_general_after_entity_reco
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -1855,7 +1856,10 @@ def test_rag_service_corrects_failed_title_frontier_to_general_after_entity_reco
                     doi=None,
                     pmid=77,
                     pmcid=None,
-                    abstract="Psychosis may be an early manifestation of anti-NMDA receptor encephalitis.",
+                    abstract=(
+                        "Psychosis may be an early manifestation of anti-NMDA "
+                        "receptor encephalitis."
+                    ),
                     tldr=None,
                     text_availability="fulltext",
                     is_open_access=True,
@@ -1968,7 +1972,6 @@ def test_rag_service_keeps_title_profile_for_concept_paper_rescue_without_child_
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -2109,7 +2112,6 @@ def test_rag_service_keeps_title_profile_but_uses_fallback_ranking_after_chunk_r
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -2180,7 +2182,10 @@ def test_rag_service_keeps_title_profile_but_uses_fallback_ranking_after_chunk_r
                     doi=None,
                     pmid=15686880,
                     pmcid=None,
-                    abstract="Overview article on chronic stress and neuroinflammation in depression.",
+                    abstract=(
+                        "Overview article on chronic stress and "
+                        "neuroinflammation in depression."
+                    ),
                     tldr=None,
                     text_availability="abstract",
                     is_open_access=True,
@@ -2247,7 +2252,6 @@ def test_rag_service_returns_exact_title_match_while_skipping_extra_seed_lanes()
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -2388,7 +2392,6 @@ def test_rag_service_returns_strong_title_prefix_match_without_dense_lane():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -2511,7 +2514,6 @@ def test_rag_service_limits_title_entity_enrichment_to_top_candidate():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -2627,7 +2629,6 @@ def test_rag_service_filters_runtime_entity_terms_for_duplicate_title_anchors():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -2772,12 +2773,10 @@ def test_rag_service_prefers_selected_title_anchor_before_broad_lookup():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             assert graph_run_id == "run-1"
             assert selected_graph_paper_ref == "paper:11857184"
-            assert selected_paper_id is None
             assert selected_node_id == "paper:11857184"
             return 11857184
 
@@ -2954,12 +2953,10 @@ def test_rag_service_selected_title_anchor_can_promote_overlong_selected_titles(
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             assert graph_run_id == "run-1"
             assert selected_graph_paper_ref == "paper:4443808"
-            assert selected_paper_id is None
             assert selected_node_id == "paper:4443808"
             return 4443808
 
@@ -3138,7 +3135,6 @@ def test_rag_service_disables_title_similarity_for_sentence_queries():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -3182,7 +3178,6 @@ def test_rag_service_keeps_title_candidate_lookup_for_long_title_queries():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -3260,7 +3255,6 @@ def test_rag_service_uses_chunk_rescue_for_failed_long_title_lookup():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -3404,7 +3398,6 @@ def test_rag_service_does_not_expand_citation_frontier_for_passage_queries():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -3550,7 +3543,6 @@ def test_rag_service_uses_phrase_fallback_when_full_sentence_chunk_search_misses
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -3848,7 +3840,6 @@ def test_rag_service_allows_terminal_punctuation_for_selected_title_queries():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return 20333404
@@ -3910,7 +3901,6 @@ def test_rag_service_treats_question_subtitle_titles_as_title_lookups():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -4182,7 +4172,6 @@ def test_rag_service_promotes_exact_title_hits_before_passage_lookup():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -4325,7 +4314,6 @@ def test_rag_service_promotes_chunk_title_anchor_before_passage_lookup():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -4488,7 +4476,6 @@ def test_rag_service_uses_exact_title_precheck_for_long_passage_shaped_titles():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -4634,7 +4621,6 @@ def test_rag_service_skips_citation_frontier_expansion_for_passage_queries():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -4725,7 +4711,6 @@ def test_rag_service_skips_initial_citation_prefetch_for_single_strong_chunk_anc
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -4833,7 +4818,6 @@ def test_rag_service_returns_bundles_graph_signals_and_answer():
     assert response.graph_context.graph_run_id == "run-1"
     assert response.graph_context.bundle_checksum == "bundle-1"
     assert response.graph_context.selected_graph_paper_ref == "seed-paper"
-    assert response.graph_context.selected_paper_id is None
     assert response.answer_model == "baseline-extractive-v1"
     assert response.answer is not None
     assert response.answer.startswith("Potentially supporting evidence:")
@@ -4981,12 +4965,10 @@ def test_rag_service_skips_semantic_candidate_expansion_without_selected_paper()
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             assert graph_run_id == "run-1"
             assert selected_graph_paper_ref is None
-            assert selected_paper_id is None
             assert selected_node_id is None
             return None
 
@@ -5041,7 +5023,6 @@ def test_rag_service_skips_semantic_candidate_expansion_without_selected_paper()
 
     assert len(response.evidence_bundles) == 2
     assert response.graph_context.selected_graph_paper_ref is None
-    assert response.graph_context.selected_paper_id is None
 
 
 def test_rag_service_returns_early_when_no_candidates_are_found():
@@ -5051,7 +5032,6 @@ def test_rag_service_returns_early_when_no_candidates_are_found():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -5125,7 +5105,6 @@ def test_rag_service_can_seed_candidates_from_entity_normalization():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -5241,7 +5220,6 @@ def test_rag_service_filters_runtime_entity_phrases_for_ambiguous_title_enrichme
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -5368,7 +5346,6 @@ def test_rag_service_can_seed_candidates_from_relation_normalization():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -5493,7 +5470,6 @@ def test_rag_service_can_expand_candidates_from_citation_neighbors():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -5668,12 +5644,10 @@ def test_rag_service_can_enrich_missing_entity_and_relation_terms_from_query_tex
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             assert graph_run_id == "run-1"
             assert selected_graph_paper_ref is None
-            assert selected_paper_id is None
             assert selected_node_id is None
             return None
 
@@ -5831,7 +5805,6 @@ def test_rag_service_skips_auto_relation_seeding_for_long_passage_queries():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -5920,7 +5893,6 @@ def test_rag_service_skips_runtime_entity_enrichment_without_entity_surface_sign
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -6016,12 +5988,10 @@ def test_rag_service_uses_auto_enriched_concept_ids_for_seeded_entity_recall():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             assert graph_run_id == "run-1"
             assert selected_graph_paper_ref is None
-            assert selected_paper_id is None
             assert selected_node_id is None
             return None
 
@@ -6105,7 +6075,6 @@ def test_rag_service_preserves_auto_enriched_resolved_concepts_for_seeded_entity
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -6192,7 +6161,6 @@ def test_rag_service_preserves_auto_enriched_resolved_concepts_for_entity_match_
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -6321,7 +6289,6 @@ def test_rag_service_runs_runtime_entity_enrichment_for_short_title_like_clinica
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -6425,7 +6392,6 @@ def test_rag_service_uses_high_specificity_auto_enriched_name_terms_for_seeded_e
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -6514,7 +6480,6 @@ def test_rag_service_uses_mesh_backed_vocab_matches_for_seeded_entity_recall():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -6636,7 +6601,6 @@ def test_rag_service_runs_entity_recall_from_resolved_concepts_without_seed_term
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -6762,8 +6726,10 @@ def test_rag_service_can_attach_warehouse_grounded_answer_when_available():
         )
         return grounded
 
+    repository = FakeRepository()
     service = RagService(
-        repository=FakeRepository(),
+        repository=repository,
+        graph_repository=repository,
         warehouse_grounder=fake_grounder,
         query_embedder=NoopQueryEmbedder(),
         biomedical_reranker=NoopBiomedicalReranker(),
@@ -6815,8 +6781,10 @@ def test_rag_service_passes_runtime_trace_into_grounder_when_supported():
             ],
         )
 
+    repository = FakeRepository()
     service = RagService(
-        repository=FakeRepository(),
+        repository=repository,
+        graph_repository=repository,
         warehouse_grounder=fake_grounder,
         query_embedder=NoopQueryEmbedder(),
         biomedical_reranker=NoopBiomedicalReranker(),
@@ -6865,8 +6833,10 @@ def test_rag_service_preserves_answer_corpus_ids_when_grounding_links_subset():
             ],
         )
 
+    repository = FakeRepository()
     service = RagService(
-        repository=FakeRepository(),
+        repository=repository,
+        graph_repository=repository,
         warehouse_grounder=fake_grounder,
         query_embedder=NoopQueryEmbedder(),
         biomedical_reranker=NoopBiomedicalReranker(),
@@ -6898,7 +6868,6 @@ def test_rag_service_preserves_dense_query_candidates_in_final_bundle_pool():
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             return None
@@ -7052,7 +7021,6 @@ def test_rag_service_skips_entity_resolution_for_passage_noise_without_resolutio
             *,
             graph_run_id: str,
             selected_graph_paper_ref: str | None,
-            selected_paper_id: str | None,
             selected_node_id: str | None,
         ) -> int | None:
             assert graph_run_id == "run-1"

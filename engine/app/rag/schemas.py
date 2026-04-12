@@ -26,9 +26,14 @@ from app.rag.types import (
 
 
 class RagSchema(BaseModel):
-    """Shared Pydantic configuration."""
+    """Shared Pydantic configuration.
 
-    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+    Response models use extra="ignore" to skip per-field unknown-key
+    checks on outbound serialization.  Inbound request schemas override
+    to extra="forbid".
+    """
+
+    model_config = ConfigDict(extra="ignore", use_enum_values=True)
 
 
 class ResponseMeta(RagSchema):
@@ -48,7 +53,6 @@ class GraphContext(RagSchema):
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
     selected_graph_paper_ref: str | None = None
-    selected_paper_id: str | None = None
     selection_graph_paper_refs: list[str] = Field(default_factory=list)
     cited_corpus_ids: list[int] = Field(default_factory=list)
     selected_cluster_id: int | None = None
@@ -56,8 +60,6 @@ class GraphContext(RagSchema):
 
 
 class PaperEvidenceHit(RagSchema):
-    model_config = ConfigDict(extra="ignore", use_enum_values=True)
-
     corpus_id: int
     paper_id: str | None = None
     semantic_scholar_paper_id: str | None = None
@@ -83,8 +85,6 @@ class PaperEvidenceHit(RagSchema):
 
 
 class CitationContextHit(RagSchema):
-    model_config = ConfigDict(extra="ignore", use_enum_values=True)
-
     corpus_id: int
     citation_id: int | None = None
     direction: CitationDirection
@@ -194,12 +194,13 @@ class GroundedAnswer(RagSchema):
 
 
 class RagSearchRequest(RagSchema):
+    model_config = ConfigDict(extra="forbid", use_enum_values=True)
+
     graph_release_id: str
     query: str
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
     selected_graph_paper_ref: str | None = None
-    selected_paper_id: str | None = None
     selection_graph_paper_refs: list[str] = Field(default_factory=list)
     selected_cluster_id: int | None = None
     scope_mode: RetrievalScope = RetrievalScope.GLOBAL

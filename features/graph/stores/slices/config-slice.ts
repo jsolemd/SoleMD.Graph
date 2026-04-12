@@ -133,7 +133,7 @@ export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice
   tableView: 'dataset',
 
   colorScheme: 'vibrant',
-  showColorLegend: true,
+  showColorLegend: false,
 
   pointSizeStrategy: 'auto',
   scalePointsOnZoom: true,

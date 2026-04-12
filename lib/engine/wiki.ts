@@ -2,12 +2,18 @@ import 'server-only'
 
 import { EngineApiError, getEngineJson } from './client'
 import {
+  buildWikiBacklinksEnginePath,
+  buildWikiGraphEnginePath,
+  buildWikiPageBundleEnginePath,
   buildWikiPageContextEnginePath,
   buildWikiPageEnginePath,
+  buildWikiPagesEnginePath,
+  buildWikiSearchEnginePath,
 } from './wiki-paths'
-import { normalizeWikiPageContextResponse, normalizeWikiPageResponse } from './wiki-normalize'
+import { normalizeWikiPageBundleResponse, normalizeWikiPageContextResponse, normalizeWikiPageResponse } from './wiki-normalize'
 import type {
   WikiPageResponse,
+  WikiPageBundleResponse,
   WikiPageSummary,
   WikiSearchResponse,
   WikiBacklinksResponse,
@@ -17,14 +23,13 @@ import type {
 
 export type {
   WikiPageResponse,
+  WikiPageBundleResponse,
   WikiPageSummary,
   WikiSearchResponse,
   WikiBacklinksResponse,
   WikiGraphResponse,
   WikiPageContextResponse,
 }
-
-const WIKI_API_PREFIX = '/api/v1/wiki'
 
 export async function fetchWikiPage(
   slug: string,
@@ -35,6 +40,24 @@ export async function fetchWikiPage(
   try {
     return normalizeWikiPageResponse(
       await getEngineJson<WikiPageResponse>(path),
+    )
+  } catch (error) {
+    if (error && typeof error === 'object' && 'status' in error && (error as { status: number }).status === 404) {
+      return null
+    }
+    throw error
+  }
+}
+
+export async function fetchWikiPageBundle(
+  slug: string,
+  graphReleaseId?: string,
+): Promise<WikiPageBundleResponse | null> {
+  const path = buildWikiPageBundleEnginePath(slug, { graphReleaseId })
+
+  try {
+    return normalizeWikiPageBundleResponse(
+      await getEngineJson<WikiPageBundleResponse>(path),
     )
   } catch (error) {
     if (error && typeof error === 'object' && 'status' in error && (error as { status: number }).status === 404) {
@@ -63,36 +86,27 @@ export async function fetchWikiPageContext(
 }
 
 export async function fetchWikiPages(): Promise<WikiPageSummary[]> {
-  return getEngineJson<WikiPageSummary[]>(`${WIKI_API_PREFIX}/pages`)
+  return getEngineJson<WikiPageSummary[]>(buildWikiPagesEnginePath())
 }
 
 export async function searchWiki(
   query: string,
   limit = 20,
 ): Promise<WikiSearchResponse> {
-  const params = new URLSearchParams({
-    query,
-    limit: String(limit),
-  })
-  return getEngineJson<WikiSearchResponse>(`${WIKI_API_PREFIX}/search?${params.toString()}`)
+  return getEngineJson<WikiSearchResponse>(buildWikiSearchEnginePath(query, limit))
 }
 
 export async function fetchWikiBacklinks(
   slug: string,
 ): Promise<WikiBacklinksResponse> {
-  return getEngineJson<WikiBacklinksResponse>(
-    `${WIKI_API_PREFIX}/backlinks/${slug}`,
-  )
+  return getEngineJson<WikiBacklinksResponse>(buildWikiBacklinksEnginePath(slug))
 }
 
 export async function fetchWikiGraph(
   graphReleaseId: string,
 ): Promise<WikiGraphResponse> {
-  const params = new URLSearchParams({ graph_release_id: graphReleaseId })
   try {
-    return await getEngineJson<WikiGraphResponse>(
-      `${WIKI_API_PREFIX}/graph?${params.toString()}`,
-    )
+    return await getEngineJson<WikiGraphResponse>(buildWikiGraphEnginePath(graphReleaseId))
   } catch (error) {
     if (error instanceof EngineApiError && error.status === 404) {
       throw new Error(

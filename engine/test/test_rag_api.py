@@ -27,7 +27,6 @@ class FakeService:
                 selected_layer_key=request.selected_layer_key,
                 selected_node_id=request.selected_node_id,
                 selected_graph_paper_ref=request.selected_graph_paper_ref,
-                selected_paper_id=request.selected_paper_id,
                 selected_cluster_id=request.selected_cluster_id,
             ),
             query=request.query,

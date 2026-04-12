@@ -72,9 +72,12 @@ function updateHoverInfo(
 }
 
 function renderHoverNodes(scene: WikiGraphScene, hoveredId: string | null) {
+  const hl = scene.highlightNodeIds;
   const group = new TweenGroup();
   for (const n of scene.nodeRenderData) {
-    const targetAlpha = hoveredId !== null ? (n.active ? 1 : 0.2) : 1;
+    // Rest alpha respects legend/search highlight
+    const restAlpha = hl ? (hl.has(n.simulationData.id) ? 1 : 0.15) : 1;
+    const targetAlpha = hoveredId !== null ? (n.active ? 1 : Math.min(0.2, restAlpha)) : restAlpha;
     group.add(new Tween(n.gfx, group).to({ alpha: targetAlpha }, 200));
   }
   setTween("hover", group);
@@ -85,10 +88,17 @@ function renderHoverLinks(
   hoveredId: string | null,
   palette: WikiGraphPalette,
 ) {
+  const hl = scene.highlightNodeIds;
   const group = new TweenGroup();
   for (const l of scene.linkRenderData) {
+    const srcId = (l.simulationData.source as unknown as SimNode).id ?? l.simulationData.sourceId;
+    const tgtId = (l.simulationData.target as unknown as SimNode).id ?? l.simulationData.targetId;
+    // Rest alpha respects legend/search highlight
+    const restAlpha = hl
+      ? (hl.has(srcId) && hl.has(tgtId) ? 0.6 : 0.05)
+      : palette.linkAlpha;
     const targetAlpha =
-      hoveredId !== null ? (l.active ? 0.8 : 0.05) : palette.linkAlpha;
+      hoveredId !== null ? (l.active ? 0.8 : 0.05) : restAlpha;
     group.add(new Tween(l, group).to({ alpha: targetAlpha }, 200));
   }
   setTween("link", group);

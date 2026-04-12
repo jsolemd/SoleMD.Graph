@@ -12,10 +12,10 @@ from typing import Literal, Mapping, cast
 
 from app.wiki.links import normalize_slug
 
-WikiPageKind = Literal["index", "section", "entity", "topic"]
+WikiPageKind = Literal["index", "section", "entity", "topic", "module"]
 WikiGraphFocus = Literal["cited_papers", "entity_exact", "none"]
 
-_VALID_PAGE_KINDS = frozenset({"index", "section", "entity", "topic"})
+_VALID_PAGE_KINDS = frozenset({"index", "section", "entity", "topic", "module"})
 _VALID_GRAPH_FOCUS = frozenset({"cited_papers", "entity_exact", "none"})
 
 

@@ -28,7 +28,7 @@ Static. 8 entries. This table does not grow.
 |---|---|---|---|---|---|
 | `DISO` | Disorders | `--color-warm-coral` | `#ffada4` | `#c48e88` | Clinical warmth/urgency |
 | `CHEM` | Chemicals & Drugs | `--color-fresh-green` | `#aedc93` | `#8aad7a` | Therapeutic/treatment |
-| `GENE` | Genes & Proteins | `--color-soft-pink` | `#eda8c4` | `#b88299` | Molecular/mechanistic |
+| `GENE` | Genes & Proteins | `--color-soft-pink` | `#e0aed8` | `#b085a8` | Molecular/mechanistic |
 | `ANAT` | Anatomy | `--color-golden-yellow` | `#e5c799` | `#b69d77` | Structural landmarks |
 | `PHYS` | Physiology | `--color-soft-blue` | `#a8c5e9` | `#89a3bf` | Systems/processes |
 | `PROC` | Procedures | `--color-soft-lavender` | `#d8bee9` | `#a899b3` | Methods/procedures |
@@ -233,7 +233,7 @@ from the same tokens:
 
 1. If it maps to an existing semantic group — done. No changes.
 2. If it's a new PubTator type:
-   - Add to `_ENTITY_TYPE_SEMANTIC_GROUP` in `engine/app/wiki/service.py`
+   - Add to `_ENTITY_TYPE_TO_SEMANTIC_GROUP` in `engine/app/wiki/semantic_groups.py`
    - Add to `resolveNodeColorKey` fallback in `features/wiki/graph-runtime/theme.ts`
    - Add `[data-entity-type="..."]` rule in `app/styles/editor.css`
 
@@ -249,8 +249,8 @@ from the same tokens:
 - [x] Update hover/active rings to use `--brand-accent` / `--brand-accent-alt`
 - [x] Widen wiki panel defaults (520 docked / 840 expanded)
 - [x] Per-entity-type editor highlights via `data-entity-type` + CSS `color-mix()`
-- [ ] Add `semantic_group` column to `wiki_pages` table (migration)
-- [ ] Populate `semantic_group` from vocab_terms on page creation/sync
+- [x] Add `semantic_group` column to `wiki_pages` table (migration)
+- [x] Populate `semantic_group` from vocab_terms on page creation/sync
 
 ---
 

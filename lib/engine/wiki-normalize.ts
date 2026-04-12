@@ -1,8 +1,11 @@
 import type {
+  WikiBodyEntityMatch,
   WikiLinkedEntity,
+  WikiPageBundleResponse,
   WikiPageContextResponse,
   WikiPagePaperResponse,
   WikiPageResponse,
+  WikiPageSummary,
 } from './wiki-types'
 
 type WikiPagePayload = Partial<WikiPageResponse> & {
@@ -16,6 +19,7 @@ const WIKI_PAGE_KINDS = new Set<WikiPageResponse['page_kind']>([
   'section',
   'entity',
   'topic',
+  'module',
 ])
 
 const WIKI_GRAPH_FOCUS_VALUES = new Set<WikiPageResponse['graph_focus']>([
@@ -69,6 +73,7 @@ export function normalizeWikiPageResponse(
     featured_graph_refs: featuredGraphRefs,
     resolved_links: normalizeStringRecord(page.resolved_links),
     linked_entities: normalizeLinkedEntities(page.linked_entities),
+    body_entity_matches: normalizeBodyEntityMatches(page.body_entity_matches),
   }
 }
 
@@ -89,6 +94,43 @@ export function normalizeWikiPageContextResponse(value: unknown): WikiPageContex
     total_graph_paper_count: normalizeNullableNumber(value.total_graph_paper_count),
     top_graph_papers: normalizeTopGraphPapers(value.top_graph_papers),
   }
+}
+
+export function normalizeWikiPageBundleResponse(
+  value: unknown,
+): WikiPageBundleResponse | null {
+  if (!isPlainObject(value)) {
+    return null
+  }
+  const page = normalizeWikiPageResponse(value.page as WikiPageResponse | null)
+  if (!page) {
+    return null
+  }
+  return {
+    page,
+    backlinks: normalizePageSummaryArray(value.backlinks),
+    context: normalizeWikiPageContextResponse(value.context),
+  }
+}
+
+function normalizePageSummaryArray(value: unknown): WikiPageSummary[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.flatMap((item) => {
+    if (!isPlainObject(item) || typeof item.slug !== 'string' || typeof item.title !== 'string') {
+      return []
+    }
+    return [
+      {
+        slug: item.slug,
+        title: item.title,
+        entity_type: typeof item.entity_type === 'string' ? item.entity_type : null,
+        family_key: typeof item.family_key === 'string' ? item.family_key : null,
+        tags: normalizeStringArray(item.tags),
+      },
+    ]
+  })
 }
 
 function normalizeTopGraphPapers(value: unknown): WikiPagePaperResponse[] {
@@ -135,6 +177,37 @@ function normalizeLinkedEntities(value: unknown): Record<string, WikiLinkedEntit
       return [[slug, { entity_type: entity.entity_type, concept_id: entity.concept_id }]]
     }),
   )
+}
+
+function normalizeBodyEntityMatches(value: unknown): WikiBodyEntityMatch[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value.flatMap((item) => {
+    if (!isPlainObject(item)) {
+      return []
+    }
+    if (
+      typeof item.entity_type !== 'string'
+      || typeof item.concept_id !== 'string'
+      || typeof item.source_identifier !== 'string'
+      || typeof item.canonical_name !== 'string'
+      || typeof item.matched_text !== 'string'
+    ) {
+      return []
+    }
+    return [
+      {
+        entity_type: item.entity_type,
+        concept_namespace: typeof item.concept_namespace === 'string' ? item.concept_namespace : null,
+        concept_id: item.concept_id,
+        source_identifier: item.source_identifier,
+        canonical_name: item.canonical_name,
+        matched_text: item.matched_text,
+        paper_count: typeof item.paper_count === 'number' ? item.paper_count : 0,
+      },
+    ]
+  })
 }
 
 function normalizePaperGraphRefs(value: unknown): Record<number, string> {

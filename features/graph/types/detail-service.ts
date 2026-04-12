@@ -219,7 +219,6 @@ export interface GraphRagQueryRequestPayload {
   selected_layer_key: GraphApiLayerKey | null
   selected_node_id: string | null
   selected_graph_paper_ref?: string | null
-  selected_paper_id?: string | null
   selection_graph_paper_refs?: string[] | null
   selected_cluster_id: number | null
   scope_mode?: 'global' | 'selection_only' | null
@@ -269,7 +268,6 @@ export interface GraphRagQueryResponsePayload {
   selected_layer_key: GraphApiLayerKey | null
   selected_node_id: string | null
   selected_graph_paper_ref: string | null
-  selected_paper_id: string | null
   selection_graph_paper_refs: string[]
   selected_cluster_id: number | null
   scope_mode: 'global' | 'selection_only'

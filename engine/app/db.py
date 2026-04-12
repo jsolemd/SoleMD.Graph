@@ -47,7 +47,7 @@ def connect_autocommit(**kwargs) -> psycopg.Connection:
     return connect(autocommit=True, **kwargs)
 
 
-def get_pool(*, min_size: int = 1, max_size: int = 4) -> ConnectionPool:
+def get_pool(*, min_size: int = 2, max_size: int = 10) -> ConnectionPool:
     """Return a lazily-created module-level connection pool.
 
     Requires psycopg_pool (install via ``pip install psycopg[pool]``

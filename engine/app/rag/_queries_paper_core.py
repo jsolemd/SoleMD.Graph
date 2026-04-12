@@ -10,67 +10,6 @@ from app.rag.entity_runtime_keys import (
     runtime_entity_type_key_sql,
 )
 
-# ---------------------------------------------------------------------------
-# Graph / release meta
-# ---------------------------------------------------------------------------
-
-GRAPH_RELEASE_LOOKUP_SQL = """
-SELECT
-    id::TEXT AS graph_run_id,
-    graph_name,
-    is_current,
-    NULLIF(bundle_checksum, '') AS bundle_checksum
-FROM solemd.graph_runs
-WHERE
-    status = 'completed'
-    AND graph_name = 'cosmograph'
-    AND node_kind = 'corpus'
-    AND (
-        %s = 'current'
-        AND is_current = true
-        OR id::TEXT = %s
-        OR bundle_checksum = %s
-    )
-ORDER BY is_current DESC, created_at DESC
-LIMIT 1
-"""
-
-GRAPH_RELEASE_PAPER_COUNT_SUMMARY_SQL = """
-SELECT COALESCE(NULLIF(qa_summary->>'point_count', '')::BIGINT, 0) AS paper_count
-FROM solemd.graph_runs
-WHERE id = %s
-LIMIT 1
-"""
-
-CURRENT_MAP_PAPER_COUNT_ESTIMATE_SQL = """
-SELECT COALESCE(c.reltuples::BIGINT, 0) AS paper_count
-FROM pg_class c
-WHERE c.oid = to_regclass('solemd.idx_corpus_current_map')
-"""
-
-GRAPH_POINTS_GRAPH_RUN_ESTIMATE_SQL = """
-SELECT
-    (
-        SELECT reltuples::DOUBLE PRECISION
-        FROM pg_class c
-        JOIN pg_namespace n
-          ON n.oid = c.relnamespace
-        WHERE
-            n.nspname = 'solemd'
-            AND c.relname = 'graph_points'
-        LIMIT 1
-    ) AS total_rows,
-    s.n_distinct::DOUBLE PRECISION AS n_distinct,
-    s.most_common_vals::TEXT AS most_common_vals,
-    s.most_common_freqs
-FROM pg_stats s
-WHERE
-    s.schemaname = 'solemd'
-    AND s.tablename = 'graph_points'
-    AND s.attname = 'graph_run_id'
-LIMIT 1
-"""
-
 EMBEDDED_PAPER_COUNT_ESTIMATE_SQL = """
 SELECT COALESCE(c.reltuples::BIGINT, 0) AS paper_count
 FROM pg_class c

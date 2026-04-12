@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-
+from app.graph.repository import GraphRuntimeResolver
 from app.langfuse_config import SPAN_RAG_EXECUTE, observe
 from app.rag.biomedical_reranking import RagBiomedicalReranker
 from app.rag.query_embedding import RagQueryEmbedder
@@ -18,6 +18,7 @@ def execute_search(
     *,
     request: RagSearchRequest,
     repository: RagRepository,
+    graph_repository: GraphRuntimeResolver,
     query_embedder: RagQueryEmbedder,
     biomedical_reranker: RagBiomedicalReranker,
     warehouse_grounder: object | None,
@@ -29,6 +30,7 @@ def execute_search(
         retrieve_search_state,
         request=request,
         repository=repository,
+        graph_repository=graph_repository,
         query_embedder=query_embedder,
         trace=trace,
     )

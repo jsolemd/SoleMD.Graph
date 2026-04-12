@@ -83,7 +83,6 @@ describe('parseGraphAskChatRequest', () => {
         selected_layer_key: 'paper',
         selected_node_id: 'node-1',
         selected_graph_paper_ref: 'paper:123',
-        selected_paper_id: 'abc123',
         selection_graph_paper_refs: ['paper:1', 'paper:2'],
         selected_cluster_id: 7,
         scope_mode: 'selection_only',

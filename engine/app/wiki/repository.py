@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
+
+import psycopg
 
 from app import db
 from app.entities.repository import EntityGraphProjectionRepository
@@ -17,8 +19,6 @@ from app.wiki.models import (
     WikiPagePaperData,
     WikiSearchHit,
 )
-
-_WIKI_CONTEXT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wiki-context")
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +60,8 @@ class WikiGraphPaperRow:
 
 class WikiRepository(Protocol):
     """Read-only repository contract for wiki pages."""
+
+    def connection(self) -> Any: ...
 
     def get_page(self, *, slug: str) -> WikiPage | None: ...
 
@@ -114,12 +116,32 @@ class PostgresWikiRepository:
     ) -> None:
         self._entity_graph_repository = entity_graph_repository or EntityGraphProjectionRepository()
         self._graph_repository = graph_repository or PostgresGraphRepository()
+        self._conn: psycopg.Connection | None = None
+
+    @contextmanager
+    def connection(self):
+        """Pin a single pooled connection for the duration of a block.
+
+        All ``_fetchone`` / ``_fetchall`` calls inside the block reuse
+        the same connection, eliminating per-query pool checkout overhead.
+        """
+        with db.pooled() as conn:
+            prev = self._conn
+            self._conn = conn
+            try:
+                yield conn
+            finally:
+                self._conn = prev
 
     def _fetchone(self, query: str, params: dict | None = None):
+        if self._conn is not None:
+            return self._conn.execute(query, params).fetchone()
         with db.pooled() as conn:
             return conn.execute(query, params).fetchone()
 
     def _fetchall(self, query: str, params: dict | None = None):
+        if self._conn is not None:
+            return self._conn.execute(query, params).fetchall()
         with db.pooled() as conn:
             return conn.execute(query, params).fetchall()
 
@@ -197,21 +219,12 @@ class PostgresWikiRepository:
         graph_run_id: str,
         limit: int = 8,
     ) -> WikiPageContextData:
-        counts_future = _WIKI_CONTEXT_EXECUTOR.submit(
-            self._entity_graph_repository.fetch_page_context_counts,
-            entity_type=entity_type,
-            source_identifier=concept_id,
-            graph_run_id=graph_run_id,
-        )
-        papers_future = _WIKI_CONTEXT_EXECUTOR.submit(
-            self._entity_graph_repository.fetch_page_context_top_papers,
+        context = self._entity_graph_repository.fetch_page_context(
             entity_type=entity_type,
             source_identifier=concept_id,
             graph_run_id=graph_run_id,
             limit=limit,
         )
-        counts_row = counts_future.result()
-        paper_rows = papers_future.result()
 
         top_graph_papers = [
             WikiPagePaperData(
@@ -222,12 +235,12 @@ class PostgresWikiRepository:
                 venue=r.get("venue"),
                 citation_count=r.get("citation_count"),
             )
-            for r in paper_rows
+            for r in context["top_graph_papers"]
         ]
 
         return WikiPageContextData(
-            total_corpus_paper_count=(counts_row or {}).get("total_corpus_paper_count"),
-            total_graph_paper_count=(counts_row or {}).get("total_graph_paper_count"),
+            total_corpus_paper_count=context.get("total_corpus_paper_count"),
+            total_graph_paper_count=context.get("total_graph_paper_count"),
             top_graph_papers=top_graph_papers,
         )
 

@@ -39,7 +39,7 @@ export interface PanelSlice {
   writeContent: string
 
   // Remembered panel positions — survives close/reopen within a session
-  panelPositions: Record<string, { x: number; y: number; width: number; height?: number; docked: boolean }>
+  panelPositions: Record<string, { x: number; y: number; width: number; height?: number; docked: boolean; pinned?: boolean }>
 
   // Keyed registry — any floating element registers by ID
   floatingObstacles: Record<string, { x: number; y: number; width: number; height: number }>
@@ -69,7 +69,8 @@ export interface PanelSlice {
   setWriteContent: (content: string) => void
   setWikiExpanded: (expanded: boolean) => void
   setWikiExpandedWidth: (width: number) => void
-  savePanelPosition: (id: string, pos: { x: number; y: number; width: number; height?: number; docked: boolean }) => void
+  savePanelPosition: (id: string, pos: { x: number; y: number; width: number; height?: number; docked: boolean; pinned?: boolean }) => void
+  togglePanelPinned: (id: string) => void
   setFloatingObstacle: (id: string, rect: { x: number; y: number; width: number; height: number }) => void
   clearFloatingObstacle: (id: string) => void
 }
@@ -214,5 +215,16 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
       const { [id]: _, ...rest } = s.floatingObstacles
       return { floatingObstacles: rest }
+    }),
+  togglePanelPinned: (id) =>
+    set((s) => {
+      const current = s.panelPositions[id]
+      if (!current) return s
+      return {
+        panelPositions: {
+          ...s.panelPositions,
+          [id]: { ...current, pinned: !current.pinned },
+        },
+      }
     }),
 })

@@ -1,11 +1,12 @@
 "use client";
 
-import { type ComponentProps, type ReactNode, useEffect, useRef } from "react";
-import { Loader, Text, Switch } from "@mantine/core";
+import { type ComponentProps, type ReactNode, useCallback, useEffect, useRef } from "react";
+import { Text, Switch } from "@mantine/core";
 import { motion } from "framer-motion";
 import { panelReveal } from "@/lib/motion";
+import { LottiePulseLoader } from "@/features/animations/lottie/LottiePulseLoader";
 import { useDashboardStore } from "@/features/graph/stores";
-import { selectPanelLeftOffset } from "@/features/graph/stores/dashboard-store";
+import { selectPanelLeftOffset, selectBottomClearance } from "@/features/graph/stores/dashboard-store";
 import { PanelChrome } from "./PanelChrome";
 import { useFloatingPanel } from "./use-floating-panel";
 
@@ -159,9 +160,9 @@ export function PanelDivider() {
 }
 
 /**
- * Shared inline loading indicator — mode-accent spinner with optional dim label.
- * Single source of truth for every circular loader in the app; tint follows
- * the active mode via `--mode-accent`.
+ * Shared inline loading indicator — mode-accent Lottie spinner at any size.
+ * Single source of truth for every loader in the app. Delegates to
+ * LottiePulseLoader (which handles recolor, reduced-motion, fallback).
  */
 export function PanelInlineLoader({
   label,
@@ -172,8 +173,14 @@ export function PanelInlineLoader({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Loader size={size} color="var(--mode-accent)" />
-      {label && <Text component="span" style={panelTextDimStyle}>{label}</Text>}
+      <span className="shrink-0 leading-none overflow-hidden" style={{ width: size, height: size }}>
+        <LottiePulseLoader size={size} />
+      </span>
+      {label && (
+        <Text component="span" style={panelTextDimStyle}>
+          {label}
+        </Text>
+      )}
     </span>
   );
 }
@@ -192,6 +199,10 @@ interface PanelShellProps {
   minHeight?: number;
   maxHeight?: number;
   headerActions?: ReactNode;
+  /** Docked-mode X offset — animates panel away from dock position (centering). */
+  anchorXOffset?: number;
+  /** Docked-mode Y offset — animates panel vertically (expanded positioning). */
+  anchorYOffset?: number;
   onClose: () => void;
 }
 
@@ -326,8 +337,13 @@ export function PanelShell({
   minHeight,
   maxHeight,
   headerActions,
+  anchorXOffset,
+  anchorYOffset,
   onClose,
 }: PanelShellProps) {
+  // Bottom clearance so docked panels don't overlap bottom toolbar/timeline/table
+  const bottomClearance = useDashboardStore(selectBottomClearance);
+
   const {
     panelRef,
     dragControls,
@@ -336,6 +352,7 @@ export function PanelShell({
     width,
     height,
     isDocked,
+    isPinned,
     onTitlePointerDown,
     onTitleDoubleClick,
     onDragEnd,
@@ -351,7 +368,15 @@ export function PanelShell({
     defaultHeight,
     minHeight,
     maxHeight,
+    anchorXOffset,
+    anchorYOffset,
+    bottomClearance,
   });
+
+  const togglePanelPinned = useDashboardStore((s) => s.togglePanelPinned);
+  const handleTogglePin = useCallback(() => {
+    togglePanelPinned(id);
+  }, [togglePanelPinned, id]);
 
   // Auto-stacking offset from panels docked before this one
   const leftOffset = useDashboardStore((s) => selectPanelLeftOffset(s, id));
@@ -406,7 +431,11 @@ export function PanelShell({
         ...(side === "left" ? { left: 12 + leftOffset } : { right: 12 }),
         width,
         height: height ?? undefined,
-        maxHeight: height ? undefined : `calc(100vh - ${PANEL_TOP + 100}px)`,
+        maxHeight: height
+          ? undefined
+          : isDocked
+            ? `calc(100vh - ${PANEL_TOP + bottomClearance + 12}px)`
+            : `calc(100vh - ${PANEL_TOP + 24}px)`,
         ...panelSurfaceStyle,
       }}
       className="absolute z-30 flex flex-col overflow-hidden rounded-xl"
@@ -417,6 +446,8 @@ export function PanelShell({
         onClose={onClose}
         onTitlePointerDown={onTitlePointerDown}
         onTitleDoubleClick={onTitleDoubleClick}
+        isPinned={isPinned}
+        onTogglePin={handleTogglePin}
       >
         {children}
       </PanelChrome>

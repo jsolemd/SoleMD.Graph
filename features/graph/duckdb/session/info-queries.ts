@@ -29,16 +29,12 @@ import {
   mergeFacetSummaryRows,
   partitionFacetColumns,
 } from './session-helpers'
-import type {
-  EnsurePrimaryQueryTables,
-  SessionInfoController,
-} from './session-types'
+import type { SessionInfoController } from './session-types'
 
 interface SessionInfoQueriesArgs {
   conn: AsyncDuckDBConnection
   getDatasetTotalCount: (layer: Parameters<typeof queryInfoSummary>[1]['layer']) => number
   getOverlayRevision: () => number
-  ensurePrimaryQueryTables: EnsurePrimaryQueryTables
 }
 
 export type SessionInfoQueries = SessionInfoController
@@ -47,13 +43,10 @@ export function createSessionInfoQueries({
   conn,
   getDatasetTotalCount,
   getOverlayRevision,
-  ensurePrimaryQueryTables,
 }: SessionInfoQueriesArgs): SessionInfoQueries {
-  // Dataset reads can stay on canonical attached views. Scoped/selection-heavy
-  // queries promote into the shared interactive runtime once needed.
-  const withInteractiveQueryTables = <T>(task: () => Promise<T>) =>
-    ensurePrimaryQueryTables().then(task)
-  const withCanonicalQueryTables = <T>(task: () => Promise<T>) => task()
+  // Base graph tables are already materialized into local DuckDB temp tables
+  // during session bootstrap. Reuse that canonical local state directly; do
+  // not duplicate it into a second "interactive" runtime copy.
 
   const facetDatasetCache = createBoundedCache<
     string,
@@ -84,43 +77,42 @@ export function createSessionInfoQueries({
         maxItems: args.maxItems,
         overlayRevision: getOverlayRevision(),
       },
-      () =>
-        withCanonicalQueryTables(async () => {
-          const { simpleColumns, multiValueColumns } = partitionFacetColumns(
-            args.layer,
-            args.columns
-          )
+      async () => {
+        const { simpleColumns, multiValueColumns } = partitionFacetColumns(
+          args.layer,
+          args.columns
+        )
 
-          const [simpleResults, multiValueResults] = await Promise.all([
-            simpleColumns.length > 0
-              ? queryInfoBarsBatch(conn, {
-                  layer: args.layer,
-                  scope: 'dataset',
-                  columns: simpleColumns,
-                  maxItems: args.maxItems,
-                  currentPointScopeSql: null,
-                })
-              : Promise.resolve({} as Record<string, Array<{ value: string; count: number }>>),
-            multiValueColumns.length > 0
-              ? queryFacetSummaries(conn, {
-                  layer: args.layer,
-                  scope: 'dataset',
-                  columns: multiValueColumns,
-                  maxItems: args.maxItems,
-                  currentPointScopeSql: null,
-                })
-              : Promise.resolve({} as Record<string, GraphInfoFacetRow[]>),
-          ])
+        const [simpleResults, multiValueResults] = await Promise.all([
+          simpleColumns.length > 0
+            ? queryInfoBarsBatch(conn, {
+                layer: args.layer,
+                scope: 'dataset',
+                columns: simpleColumns,
+                maxItems: args.maxItems,
+                currentPointScopeSql: null,
+              })
+            : Promise.resolve({} as Record<string, Array<{ value: string; count: number }>>),
+          multiValueColumns.length > 0
+            ? queryFacetSummaries(conn, {
+                layer: args.layer,
+                scope: 'dataset',
+                columns: multiValueColumns,
+                maxItems: args.maxItems,
+                currentPointScopeSql: null,
+              })
+            : Promise.resolve({} as Record<string, GraphInfoFacetRow[]>),
+        ])
 
-          const result: Record<string, GraphInfoFacetRow[]> = {}
-          for (const column of simpleColumns) {
-            result[column] = mapBarsToFacetRows(simpleResults[column] ?? [])
-          }
-          for (const column of multiValueColumns) {
-            result[column] = multiValueResults[column] ?? []
-          }
-          return result
-        }),
+        const result: Record<string, GraphInfoFacetRow[]> = {}
+        for (const column of simpleColumns) {
+          result[column] = mapBarsToFacetRows(simpleResults[column] ?? [])
+        }
+        for (const column of multiValueColumns) {
+          result[column] = multiValueResults[column] ?? []
+        }
+        return result
+      },
       {
         evictWhen: (result) =>
           !Object.values(result).some((rows) => rows.length > 0),
@@ -133,10 +125,7 @@ export function createSessionInfoQueries({
     cachedQuery(
       summaryDatasetCache,
       { layer, overlayRevision: getOverlayRevision() },
-      () =>
-        withCanonicalQueryTables(() =>
-          queryInfoSummary(conn, { layer, scope: 'dataset', currentPointScopeSql: null })
-        ),
+      () => queryInfoSummary(conn, { layer, scope: 'dataset', currentPointScopeSql: null }),
     )
 
   const getCachedDatasetInfoHistograms = (args: {
@@ -155,16 +144,14 @@ export function createSessionInfoQueries({
         overlayRevision: getOverlayRevision(),
       },
       () =>
-        withCanonicalQueryTables(() =>
-          queryInfoHistogramsBatch(conn, {
-            layer: args.layer,
-            scope: 'dataset',
-            columns: args.columns,
-            bins: args.bins,
-            useQuantiles: args.useQuantiles === true,
-            currentPointScopeSql: null,
-          })
-        ),
+        queryInfoHistogramsBatch(conn, {
+          layer: args.layer,
+          scope: 'dataset',
+          columns: args.columns,
+          bins: args.bins,
+          useQuantiles: args.useQuantiles === true,
+          currentPointScopeSql: null,
+        }),
       {
         evictWhen: (result) =>
           !Object.values(result).some((entry) => entry.totalCount > 0 || entry.bins.length > 0),
@@ -183,14 +170,12 @@ export function createSessionInfoQueries({
         overlayRevision: getOverlayRevision(),
       },
       () =>
-        withCanonicalQueryTables(() =>
-          queryNumericStatsBatch(conn, {
-            layer: args.layer,
-            scope: 'dataset',
-            columns: args.columns,
-            currentPointScopeSql: null,
-          })
-        ),
+        queryNumericStatsBatch(conn, {
+          layer: args.layer,
+          scope: 'dataset',
+          columns: args.columns,
+          currentPointScopeSql: null,
+        }),
       { evictWhen: (result) => Object.keys(result).length === 0 },
     )
 
@@ -202,14 +187,12 @@ export function createSessionInfoQueries({
       categoricalValueDatasetCache,
       { layer: args.layer, column: args.column, overlayRevision: getOverlayRevision() },
       () =>
-        withCanonicalQueryTables(() =>
-          queryCategoricalValues(conn, {
-            layer: args.layer,
-            scope: 'dataset',
-            column: args.column,
-            currentPointScopeSql: null,
-          })
-        ),
+        queryCategoricalValues(conn, {
+          layer: args.layer,
+          scope: 'dataset',
+          column: args.column,
+          currentPointScopeSql: null,
+        }),
       { evictWhen: (values) => values.length === 0 },
     )
 
@@ -221,14 +204,12 @@ export function createSessionInfoQueries({
       numericValueDatasetCache,
       { layer: args.layer, column: args.column, overlayRevision: getOverlayRevision() },
       () =>
-        withCanonicalQueryTables(() =>
-          queryNumericValues(conn, {
-            layer: args.layer,
-            scope: 'dataset',
-            column: args.column,
-            currentPointScopeSql: null,
-          })
-        ),
+        queryNumericValues(conn, {
+          layer: args.layer,
+          scope: 'dataset',
+          column: args.column,
+          currentPointScopeSql: null,
+        }),
       { evictWhen: (values) => values.length === 0 },
     )
 
@@ -246,12 +227,10 @@ export function createSessionInfoQueries({
         return getCachedDatasetInfoSummary(args.layer)
       }
 
-      return withInteractiveQueryTables(() =>
-        queryInfoSummary(conn, {
-          ...args,
-          datasetTotalCount: getDatasetTotalCount(args.layer),
-        })
-      )
+      return queryInfoSummary(conn, {
+        ...args,
+        datasetTotalCount: getDatasetTotalCount(args.layer),
+      })
     },
     getCategoricalValues(args) {
       if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
@@ -261,7 +240,7 @@ export function createSessionInfoQueries({
         })
       }
 
-      return withInteractiveQueryTables(() => queryCategoricalValues(conn, args))
+      return queryCategoricalValues(conn, args)
     },
     getNumericValues(args) {
       if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
@@ -271,7 +250,7 @@ export function createSessionInfoQueries({
         })
       }
 
-      return withInteractiveQueryTables(() => queryNumericValues(conn, args))
+      return queryNumericValues(conn, args)
     },
     getInfoBars(args) {
       const safeMaxItems = args.maxItems ?? 8
@@ -291,23 +270,19 @@ export function createSessionInfoQueries({
       }
 
       if (getColumnMetaForLayer(args.column, args.layer)?.isMultiValue) {
-        return withInteractiveQueryTables(() =>
-          getScopedFacetBarCounts(conn, {
-            layer: args.layer,
-            scope: scopedScope,
-            columns: [args.column],
-            maxItems: safeMaxItems,
-            currentPointScopeSql: args.currentPointScopeSql,
-          })
-        ).then(
+        return getScopedFacetBarCounts(conn, {
+          layer: args.layer,
+          scope: scopedScope,
+          columns: [args.column],
+          maxItems: safeMaxItems,
+          currentPointScopeSql: args.currentPointScopeSql,
+        }).then(
           (result: Record<string, Array<{ value: string; count: number }>>) =>
             result[args.column] ?? []
         )
       }
 
-      return withInteractiveQueryTables(() =>
-        queryInfoBars(conn, { ...args, maxItems: safeMaxItems })
-      )
+      return queryInfoBars(conn, { ...args, maxItems: safeMaxItems })
     },
     getInfoBarsBatch(args) {
       const safeMaxItems = args.maxItems ?? 8
@@ -331,15 +306,13 @@ export function createSessionInfoQueries({
         )
       }
 
-      return withInteractiveQueryTables(() =>
-        getScopedFacetBarCounts(conn, {
-          layer: args.layer,
-          scope: scopedScope,
-          columns: args.columns,
-          maxItems: safeMaxItems,
-          currentPointScopeSql: args.currentPointScopeSql,
-        })
-      )
+      return getScopedFacetBarCounts(conn, {
+        layer: args.layer,
+        scope: scopedScope,
+        columns: args.columns,
+        maxItems: safeMaxItems,
+        currentPointScopeSql: args.currentPointScopeSql,
+      })
     },
     getInfoHistogram(args) {
       const safeBins = args.bins ?? 16
@@ -357,9 +330,7 @@ export function createSessionInfoQueries({
         }).then((result) => result[args.column] ?? { bins: [], totalCount: 0 })
       }
 
-      return withInteractiveQueryTables(() =>
-        queryInfoHistogram(conn, { ...args, bins: safeBins })
-      )
+      return queryInfoHistogram(conn, { ...args, bins: safeBins })
     },
     getInfoHistogramsBatch(args) {
       const safeBins = args.bins ?? 16
@@ -381,9 +352,7 @@ export function createSessionInfoQueries({
         })
       }
 
-      return withInteractiveQueryTables(() =>
-        queryInfoHistogramsBatch(conn, { ...args, bins: safeBins })
-      )
+      return queryInfoHistogramsBatch(conn, { ...args, bins: safeBins })
     },
     getNumericStatsBatch(args) {
       if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
@@ -393,7 +362,7 @@ export function createSessionInfoQueries({
         })
       }
 
-      return withInteractiveQueryTables(() => queryNumericStatsBatch(conn, args))
+      return queryNumericStatsBatch(conn, args)
     },
     getFacetSummary(args) {
       const safeMaxItems = args.maxItems ?? 6
@@ -408,13 +377,11 @@ export function createSessionInfoQueries({
       }
 
       if (getColumnMetaForLayer(args.column, args.layer)?.isMultiValue) {
-        return withInteractiveQueryTables(() =>
-          queryFacetSummary(conn, {
-            ...args,
-            scope: scopedScope,
-            maxItems: safeMaxItems,
-          })
-        )
+        return queryFacetSummary(conn, {
+          ...args,
+          scope: scopedScope,
+          maxItems: safeMaxItems,
+        })
       }
 
       const mergeDepth = Math.max(safeMaxItems, 24)
@@ -424,15 +391,13 @@ export function createSessionInfoQueries({
           columns: [args.column],
           maxItems: mergeDepth,
         }),
-        withInteractiveQueryTables(() =>
-          getScopedFacetBarCounts(conn, {
-            layer: args.layer,
-            scope: scopedScope,
-            columns: [args.column],
-            maxItems: mergeDepth,
-            currentPointScopeSql: args.currentPointScopeSql,
-          })
-        ),
+        getScopedFacetBarCounts(conn, {
+          layer: args.layer,
+          scope: scopedScope,
+          columns: [args.column],
+          maxItems: mergeDepth,
+          currentPointScopeSql: args.currentPointScopeSql,
+        }),
       ]).then(([datasetSummaries, scopedBars]) =>
         mergeFacetSummaryRows({
           datasetRows: datasetSummaries[args.column] ?? [],
@@ -460,15 +425,13 @@ export function createSessionInfoQueries({
           columns: args.columns,
           maxItems: mergeDepth,
         }),
-        withInteractiveQueryTables(() =>
-          getScopedFacetBarCounts(conn, {
-            layer: args.layer,
-            scope: scopedScope,
-            columns: args.columns,
-            maxItems: mergeDepth,
-            currentPointScopeSql: args.currentPointScopeSql,
-          })
-        ),
+        getScopedFacetBarCounts(conn, {
+          layer: args.layer,
+          scope: scopedScope,
+          columns: args.columns,
+          maxItems: mergeDepth,
+          currentPointScopeSql: args.currentPointScopeSql,
+        }),
       ]).then(([datasetSummaries, scopedBars]) =>
         Object.fromEntries(
           args.columns.map((column) => [

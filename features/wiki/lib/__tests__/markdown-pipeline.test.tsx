@@ -15,6 +15,7 @@ import {
   createWikiComponentMap,
   type AnimationEmbedProps,
   type CalloutProps,
+  type EntityMentionProps,
   type PaperCitationProps,
   type WikiLinkProps,
 } from '../markdown-pipeline'
@@ -39,6 +40,10 @@ function AnimationEmbed({ name }: AnimationEmbedProps) {
   return <div data-animation={name}>{name}</div>
 }
 
+function EntityMention({ children }: EntityMentionProps) {
+  return <span>{children}</span>
+}
+
 describe('createWikiComponentMap', () => {
   const onNavigate = jest.fn()
 
@@ -52,9 +57,10 @@ describe('createWikiComponentMap', () => {
         resolvedLinks: { serotonin: 'entities/serotonin' },
         paperGraphRefs: {},
         linkedEntities: {},
+        bodyEntityMatches: [],
       },
       { onNavigate },
-      { WikiLink, PaperCitation, Callout, AnimationEmbed },
+      { WikiLink, PaperCitation, Callout, AnimationEmbed, EntityMention },
     )
     const Link = components.a as ComponentType<{ href?: string; children?: ReactNode }>
     render(<Link href={href}>Serotonin</Link>)

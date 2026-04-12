@@ -72,3 +72,7 @@ document before editing code.
 | RAG benchmark | `docs/map/benchmark.md` |
 | Product vision + roadmap | `docs/design/vision.md` |
 | Brand + visual identity | `docs/design/brand.md` |
+
+## Learn Modules
+
+Interactive animated lectures at `/learn/[slug]`, built from a shared library in `features/learn/`. Each module is a TSX mini-app composed from centralized shell chrome (`shell/`), primitives (`primitives/`), and parameterized section templates (`sections/`). Module-specific code lives in `features/learn/modules/{slug}/` — manifest, data, page composition, and any bespoke sections. Assets default to shared locations (`features/learn/assets/`, `public/learn/`) unless provably module-specific. Each module has a wiki stub with `page_kind: module` in `wiki/modules/` that renders an "Open the module" CTA via `OpenModuleCTA` in `WikiPageHeader`. Motion presets imported from `features/learn/motion.ts` (re-exports `lib/motion.ts`), never inlined. 600 LOC hard cap per file.

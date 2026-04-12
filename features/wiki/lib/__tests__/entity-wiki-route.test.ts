@@ -1,5 +1,6 @@
 import {
   getEntityWikiSlug,
+  isEntityWikiSlug,
   normalizeWikiSlug,
 } from "../entity-wiki-route";
 
@@ -20,5 +21,12 @@ describe("entity-wiki-route", () => {
         canonicalName: "Schizophrenia Spectrum Disorder",
       }),
     ).toBe("entities/schizophrenia-spectrum-disorder");
+  });
+
+  it("detects canonical entity wiki slugs", () => {
+    expect(isEntityWikiSlug("entities/schizophrenia")).toBe(true);
+    expect(isEntityWikiSlug("/entities/Melatonin.md/")).toBe(true);
+    expect(isEntityWikiSlug("sections/core-biology")).toBe(false);
+    expect(isEntityWikiSlug("entities")).toBe(false);
   });
 });

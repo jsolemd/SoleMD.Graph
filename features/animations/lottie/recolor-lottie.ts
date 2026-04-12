@@ -1,0 +1,123 @@
+/**
+ * Lottie JSON color walker — replaces static fill/stroke colors with a
+ * target RGBA tuple. Handles precomp assets and nested shape groups.
+ * Only touches static colors (c.a !== 1); animated color keyframes are left
+ * untouched since they'd need per-keyframe rewriting.
+ *
+ * `darkOnly` mode (default true): only replaces colors where all RGB
+ * channels are below a threshold (0.1) — dark/black shapes become the
+ * accent while light shapes (white highlights, contrast details) stay.
+ */
+
+type LottieRgba = [number, number, number, number];
+
+interface LottieColorProp {
+  a?: number;
+  k?: number[];
+}
+
+interface LottieShape {
+  ty: string;
+  c?: LottieColorProp;
+  it?: LottieShape[];
+}
+
+interface LottieLayer {
+  ty: number;
+  shapes?: LottieShape[];
+}
+
+interface LottieAsset {
+  layers?: LottieLayer[];
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type LottieData = Record<string, any>;
+
+function isDark(k: number[], threshold = 0.1): boolean {
+  return k[0] < threshold && k[1] < threshold && k[2] < threshold;
+}
+
+function walkShapes(
+  shapes: LottieShape[],
+  color: LottieRgba,
+  darkOnly: boolean,
+) {
+  for (const shape of shapes) {
+    if (
+      (shape.ty === "st" || shape.ty === "fl") &&
+      shape.c &&
+      shape.c.a !== 1 &&
+      shape.c.k
+    ) {
+      if (!darkOnly || isDark(shape.c.k)) {
+        shape.c.k = [...color];
+      }
+    } else if (shape.ty === "gr" && shape.it) {
+      walkShapes(shape.it, color, darkOnly);
+    }
+  }
+}
+
+interface RecolorOptions {
+  /** Only replace dark/black colors, preserve light ones. Default true. */
+  darkOnly?: boolean;
+  /** Strip the glow layer (pulse.json layer 1). */
+  matte?: boolean;
+  /** Glow layer opacity (0–100). Only used with matte. */
+  glowOpacity?: number;
+}
+
+export function recolorLottie(
+  data: LottieData,
+  rgba: LottieRgba,
+  opts: RecolorOptions = {},
+): LottieData {
+  const darkOnly = opts.darkOnly ?? true;
+  const clone = structuredClone(data) as LottieData;
+  for (const asset of (clone.assets ?? []) as LottieAsset[]) {
+    for (const layer of asset.layers ?? []) {
+      if (layer.ty === 4) walkShapes(layer.shapes ?? [], rgba, darkOnly);
+    }
+  }
+  for (const layer of (clone.layers ?? []) as LottieLayer[]) {
+    if (layer.ty === 4) walkShapes(layer.shapes ?? [], rgba, darkOnly);
+  }
+
+  if (opts.matte && clone.layers?.length > 1) {
+    const glowLayer = clone.layers[1] as LottieData;
+    if (glowLayer.ks?.o) {
+      glowLayer.ks.o.k = opts.glowOpacity ?? 0;
+    }
+  }
+
+  return clone;
+}
+
+/**
+ * Resolve the current computed value of `--mode-accent` as a Lottie RGBA
+ * tuple (each channel 0-1). Uses a throwaway element so the browser
+ * resolves any nested `var()` references for us.
+ */
+const FALLBACK_ACCENT: LottieRgba = [0.4, 0.6, 1, 1];
+
+export function resolveAccentColor(): LottieRgba {
+  if (typeof document === "undefined") return FALLBACK_ACCENT;
+  try {
+    const el = document.createElement("div");
+    el.style.color = "var(--mode-accent)";
+    document.body.appendChild(el);
+    const rgb = getComputedStyle(el).color;
+    el.remove();
+    const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!m) return FALLBACK_ACCENT;
+    return [
+      parseInt(m[1]) / 255,
+      parseInt(m[2]) / 255,
+      parseInt(m[3]) / 255,
+      1,
+    ];
+  } catch {
+    return FALLBACK_ACCENT;
+  }
+}

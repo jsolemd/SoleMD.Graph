@@ -12,7 +12,6 @@ import {
 import { CreateEditor } from "../CreateEditor";
 import { ModeToggleBar } from "../../chrome/ModeToggleBar";
 import { PromptIconBtn } from "./PromptIconBtn";
-import { RagResponsePanel } from "./RagResponsePanel";
 import {
   BOTTOM_BASE,
   MAX_CARD_W,
@@ -38,13 +37,6 @@ export function PromptBoxSurface({
   selectionScopeAvailable,
   selectionOnlyEnabled,
   selectionScopeToggleLabel,
-  selectedNode,
-  selectedScopeLabel,
-  ragResponse,
-  streamedAskAnswer,
-  ragError,
-  ragSession,
-  ragGraphAvailability,
   isSubmitting,
   handleSubmit,
   promptInteractionProviders,
@@ -52,7 +44,6 @@ export function PromptBoxSurface({
   handlePromptInteraction,
   handleShowEntityOnGraph,
   handleOpenEntityInWiki,
-  clearRag,
   handlePromptContentChange,
   handlePromptEmptyChange,
   handleToggleFormattingTools,
@@ -127,36 +118,6 @@ export function PromptBoxSurface({
               }
             : {})}
         >
-          {!isCollapsed && (ragResponse || ragError || isSubmitting) && (
-            <div
-              onClick={(event) => event.stopPropagation()}
-              onPointerDown={(event) => event.stopPropagation()}
-              style={{
-                position: "absolute",
-                bottom: "calc(100% + 12px)",
-                left: "50%",
-                transform: "translateX(-50%)",
-                width: `min(${isCreate ? 520 : 460}px, calc(100vw - 32px))`,
-                maxWidth: "100%",
-                zIndex: 2,
-                pointerEvents: "auto",
-              }}
-            >
-              <RagResponsePanel
-                ragResponse={ragResponse}
-                streamedAnswer={streamedAskAnswer}
-                ragError={ragError}
-                ragSession={ragSession}
-                ragGraphAvailability={ragGraphAvailability}
-                isSubmitting={isSubmitting}
-                isFullHeightMode={isFullHeightMode}
-                selectedNode={selectedNode}
-                selectedScopeLabel={selectedScopeLabel}
-                onDismiss={() => clearRag()}
-              />
-            </div>
-          )}
-
           <div
             onPointerDown={(event) => event.stopPropagation()}
             aria-hidden={isCollapsed}

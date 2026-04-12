@@ -1,14 +1,17 @@
 "use client";
 
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { ActionIcon } from "@mantine/core";
-import { X } from "lucide-react";
+import { List, X } from "lucide-react";
 import { useViewportSize } from "@mantine/hooks";
 import { useDashboardStore } from "@/features/graph/stores";
-import { resolveWikiPanelWidth } from "@/features/graph/stores/dashboard-store";
-import { PanelShell } from "@/features/graph/components/panels/PanelShell";
+import { resolveWikiPanelWidth, PANEL_EDGE_MARGIN, selectPanelLeftOffset } from "@/features/graph/stores/dashboard-store";
+import { PANEL_TOP, PanelShell, iconBtnStyles } from "@/features/graph/components/panels/PanelShell";
 import { WikiGraphView } from "@/features/wiki/components/WikiGraphView";
+import { WikiModuleContent, resolveModule } from "@/features/wiki/components/WikiModuleContent";
+import { DotToc, entriesFromModuleSections } from "@/features/wiki/components/DotToc";
+import { WikiModuleSearch } from "@/features/wiki/components/WikiModuleSearch";
 import { WikiPageView } from "@/features/wiki/components/WikiPageView";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiSearch } from "@/features/wiki/components/WikiSearch";
@@ -35,11 +38,31 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
   const graphReleaseId = resolveGraphReleaseId(bundle);
   const isGraphRoute = currentRoute.kind === "graph";
 
-  // Track viewport for expanded width calculation
-  const { width: viewportWidth } = useViewportSize();
+  // Track viewport for expanded width + height calculation
+  const { width: viewportWidth, height: viewportHeight } = useViewportSize();
+  const panelHeight = isGraphRoute
+    ? 720
+    : wikiExpanded
+      ? Math.max(400, (viewportHeight || 900) - 48) // 24px top + 24px bottom
+      : Math.max(400, (viewportHeight || 900) - PANEL_TOP * 2);
   const panelWidth = isGraphRoute
-    ? Math.min(760, Math.floor((viewportWidth || 1920) * 0.58))
+    ? Math.min(820, Math.floor((viewportWidth || 1920) * 0.58))
     : resolveWikiPanelWidth(viewportWidth || 1920, wikiExpanded);
+
+  // Center expanded wiki panel above prompt box
+  const leftOffset = useDashboardStore((s) => selectPanelLeftOffset(s, "wiki"));
+  const anchorXOffset = useMemo(() => {
+    if (!wikiExpanded || !viewportWidth) return undefined;
+    const dockLeft = PANEL_EDGE_MARGIN + leftOffset;
+    const centerLeft = Math.round((viewportWidth - panelWidth) / 2);
+    return Math.max(0, centerLeft - dockLeft);
+  }, [wikiExpanded, viewportWidth, panelWidth, leftOffset]);
+
+  // When expanded, shift panel up so it abuts 24px from top of viewport
+  const anchorYOffset = useMemo(() => {
+    if (!wikiExpanded) return undefined;
+    return -(PANEL_TOP - 24); // shift up from 116px to 24px
+  }, [wikiExpanded]);
 
   useEffect(() => {
     if (wikiExpanded) {
@@ -56,12 +79,35 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
   const setGlobalGraphOpen = useWikiStore((s) => s.setGlobalGraphOpen);
   const localGraphPopped = useWikiStore((s) => s.localGraphPopped);
   const setLocalGraphPopped = useWikiStore((s) => s.setLocalGraphPopped);
+  const modulePopped = useWikiStore((s) => s.modulePopped);
+  const modulePoppedSlug = useWikiStore((s) => s.modulePoppedSlug);
+  const setModulePopped = useWikiStore((s) => s.setModulePopped);
+  const currentPageKind = useWikiStore((s) => s.currentPageKind);
+  const tocOpen = useWikiStore((s) => s.tocOpen);
+  const setTocOpen = useWikiStore((s) => s.setTocOpen);
   const fullscreenAnim = useWikiStore((s) => s.fullscreenAnim);
   const setFullscreenAnim = useWikiStore((s) => s.setFullscreenAnim);
+  const modulePanelScrollRef = useRef<HTMLDivElement>(null);
+  const moduleTocEntries = useMemo(() => {
+    if (!modulePopped || !modulePoppedSlug) return undefined;
+    const sections = resolveModule(modulePoppedSlug)?.manifest.sections;
+    return sections ? entriesFromModuleSections(sections) : undefined;
+  }, [modulePopped, modulePoppedSlug]);
 
   const handleOpenPage = useCallback(
     (slug: string) => navigateToPage(slug),
     [navigateToPage],
+  );
+
+  // Global graph: navigate to page AND close the overlay.
+  // Closing first avoids the dual-instance Pixi texture issue where
+  // the main panel's WikiGraph unmount destroys shared textures.
+  const handleGlobalGraphOpenPage = useCallback(
+    (slug: string) => {
+      setGlobalGraphOpen(false);
+      navigateToPage(slug);
+    },
+    [setGlobalGraphOpen, navigateToPage],
   );
 
   const handleClose = useCallback(() => {
@@ -110,9 +156,12 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
         id="wiki"
         title="Wiki"
         defaultWidth={panelWidth}
-        defaultHeight={isGraphRoute ? 640 : undefined}
-        minHeight={isGraphRoute ? 520 : undefined}
-        maxHeight={isGraphRoute ? 860 : undefined}
+        maxWidth={1200}
+        defaultHeight={panelHeight}
+        minHeight={isGraphRoute ? 520 : 400}
+        maxHeight={isGraphRoute ? 960 : undefined}
+        anchorXOffset={anchorXOffset}
+        anchorYOffset={anchorYOffset}
         headerActions={
           <div className="flex items-center gap-1">
             <WikiNavigation />
@@ -155,26 +204,83 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
         </PanelShell>
       )}
 
-      {globalGraphOpen && (
+      {/* Popped-out module — its own floating panel, persists across navigation */}
+      {modulePopped && modulePoppedSlug && (
         <PanelShell
-          id="wiki-global-graph"
-          title="Wiki Graph"
-          defaultWidth={1120}
-          minWidth={760}
-          maxWidth={1440}
-          defaultHeight={800}
-          minHeight={520}
-          maxHeight={980}
-          onClose={handleCloseOverlay}
+          id="wiki-module"
+          title="Module"
+          defaultWidth={680}
+          onClose={() => setModulePopped(false)}
+          headerActions={
+            <div className="flex items-center gap-1">
+              <WikiModuleSearch scrollRef={modulePanelScrollRef} />
+              <ActionIcon
+                variant="transparent"
+                size={24}
+                radius="xl"
+                className="graph-icon-btn"
+                styles={iconBtnStyles}
+                onClick={() => setTocOpen(!tocOpen)}
+                aria-label="Table of Contents"
+                aria-pressed={tocOpen}
+              >
+                <List size={12} />
+              </ActionIcon>
+            </div>
+          }
         >
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
-            <WikiGraphView
-              graphReleaseId={graphReleaseId}
-              onOpenPage={handleOpenPage}
-            />
+          <div ref={modulePanelScrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
+            <WikiModuleContent slug={modulePoppedSlug} withShell />
           </div>
+          {moduleTocEntries && (
+            <DotToc entries={moduleTocEntries} scrollRef={modulePanelScrollRef} />
+          )}
         </PanelShell>
       )}
+
+      {globalGraphOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9998] flex items-center justify-center"
+            style={{
+              backgroundColor: "rgba(0,0,0,0.35)",
+              backdropFilter: "blur(24px)",
+              WebkitBackdropFilter: "blur(24px)",
+            }}
+            onClick={handleCloseOverlay}
+          >
+            <div
+              className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
+              style={{
+                width: "calc(100vw - 80px)",
+                height: "calc(100vh - 80px)",
+                border: "1px solid var(--border-default)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute right-3 top-3 z-10">
+                <ActionIcon
+                  variant="subtle"
+                  size={28}
+                  radius="xl"
+                  onClick={handleCloseOverlay}
+                  aria-label="Close graph"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  <X size={14} />
+                </ActionIcon>
+              </div>
+              <div className="flex h-full w-full flex-col overflow-hidden p-3">
+                <WikiGraphView
+                  graphReleaseId={graphReleaseId}
+                  onOpenPage={handleGlobalGraphOpenPage}
+                />
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* Fullscreen animation overlay — portaled to body to escape panel transforms */}
       {fullscreenAnim &&

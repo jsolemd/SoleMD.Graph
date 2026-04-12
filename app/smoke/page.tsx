@@ -16,13 +16,14 @@ const TextReveal = dynamic(() => import("@/features/animations/_smoke/text-revea
 const NodeFocusDemo = dynamic(() => import("@/features/animations/_smoke/node-focus-demo/NodeFocusDemo"), { ssr: false, loading: fallback });
 const AnimatedBeamDemo = dynamic(() => import("@/features/animations/_smoke/animated-beam/AnimatedBeamDemo"), { ssr: false, loading: fallback });
 const BioIconsSmoke = dynamic(() => import("@/features/animations/_smoke/bioicons/BioIconsSmoke"), { ssr: false, loading: fallback });
-const LottieFilesSmoke = dynamic(() => import("@/features/animations/_smoke/lottie-files/LottieFilesSmoke"), { ssr: false, loading: fallback });
 const ScrollFade = dynamic(() => import("@/features/animations/_smoke/scroll-fade/ScrollFade"), { ssr: false, loading: fallback });
 const ScrollMechanism = dynamic(() => import("@/features/animations/_smoke/scroll-mechanism/ScrollMechanism"), { ssr: false, loading: fallback });
 const NotoLibrary = dynamic(() => import("@/features/animations/_smoke/noto-library/NotoLibrary"), { ssr: false, loading: fallback });
 const SoleMDLogo = dynamic(() => import("@/features/animations/brand/SoleMDLogo"), { ssr: false, loading: fallback });
-const SoleMDLogoMark = dynamic(() => import("@/features/animations/brand/SoleMDLogoMark"), { ssr: false, loading: fallback });
 const DopamineD2Binding = dynamic(() => import("@/features/animations/biology/dopamine-d2-receptor/DopamineD2Binding"), { ssr: false, loading: fallback });
+
+import { PanelInlineLoader } from "@/features/graph/components/panels/PanelShell";
+import { LottiePulseLoader } from "@/features/animations/lottie/LottiePulseLoader";
 
 function Card({ title, format, children }: { title: string; format: string; children: React.ReactNode }) {
   return (
@@ -113,8 +114,33 @@ export default function SmokePage() {
           <BioIconsSmoke />
         </Card>
 
-        <Card title="D18 · LottieFiles · pulse" format="lottie-react">
-          <LottieFilesSmoke />
+        <Card title="D21 · PanelInlineLoader" format="framer breathe · mode-accent">
+          <div className="flex h-[280px] w-full flex-col items-center justify-center gap-8">
+            <div className="flex items-center gap-6">
+              {[8, 10, 14, 20, 32].map((s) => (
+                <div key={s} className="flex flex-col items-center gap-3">
+                  <PanelInlineLoader size={s} />
+                  <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>{s}px</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col items-center gap-3">
+              <PanelInlineLoader size={10} label="Loading rows…" />
+              <PanelInlineLoader size={10} label="Searching DuckDB…" />
+              <PanelInlineLoader size={8} />
+            </div>
+          </div>
+        </Card>
+
+        <Card title="D22 · LottiePulseLoader" format="lottie-react · mode-accent recolor">
+          <div className="flex h-[280px] w-full items-end justify-around pb-8">
+            {[12, 20, 32, 48, 80, 160].map((s) => (
+              <div key={s} className="flex flex-col items-center gap-3">
+                <LottiePulseLoader size={s} />
+                <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>{s}px</span>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
 
@@ -162,31 +188,6 @@ export default function SmokePage() {
             <div className="flex flex-col items-center gap-2">
               <SoleMDLogo size={220} />
               <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>220</span>
-            </div>
-          </div>
-        </Card>
-      </section>
-
-      <section className="mt-12">
-        <Card title="D21 · SoleMD logomark — scalable glyph" format="lucide + chip">
-          <div className="flex h-[240px] w-full flex-col items-center justify-around gap-4">
-            <div className="flex items-end gap-6">
-              {[16, 24, 32, 48, 96].map((s) => (
-                <div key={s} className="flex flex-col items-center gap-1">
-                  <SoleMDLogoMark size={s} />
-                  <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>{s}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-8">
-              <div className="flex items-center gap-2 rounded-lg bg-white px-4 py-2">
-                <SoleMDLogoMark variant="plain" size={28} className="text-neutral-900" />
-                <span className="text-sm text-neutral-900">plain · dark-on-light</span>
-              </div>
-              <div className="flex items-center gap-2 rounded-lg bg-neutral-950 px-4 py-2">
-                <SoleMDLogoMark variant="plain" size={28} className="text-white" />
-                <span className="text-sm text-white">plain · white-on-dark</span>
-              </div>
             </div>
           </div>
         </Card>

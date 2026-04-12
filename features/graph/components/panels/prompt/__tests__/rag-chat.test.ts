@@ -32,7 +32,6 @@ function createResponse(query: string): GraphRagQueryResponsePayload {
     selected_layer_key: null,
     selected_node_id: null,
     selected_graph_paper_ref: null,
-    selected_paper_id: null,
     selection_graph_paper_refs: [],
     selected_cluster_id: null,
     scope_mode: "global",

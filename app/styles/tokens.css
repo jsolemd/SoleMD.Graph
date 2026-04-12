@@ -46,9 +46,10 @@
   --color-golden-yellow: #e5c799;
   --color-fresh-green: #aedc93;
   --color-warm-coral: #ffada4;
-  --color-soft-pink: #eda8c4;
+  --color-soft-pink: #e0aed8;
   --color-soft-lavender: #d8bee9;
   --color-paper: #d4c5a0;
+  --color-teal: #7ecfb0;
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -103,6 +104,7 @@
   --wiki-graph-node-section: var(--color-muted-indigo);
   --wiki-graph-node-paper: var(--color-paper);
   --wiki-graph-node-default: var(--color-soft-blue);
+  --wiki-graph-node-module: var(--color-teal);
   --wiki-graph-link: #cbd5e1;
   --wiki-graph-label: #1e293b;
 
@@ -235,6 +237,7 @@ html:root {
 [data-entity-type="network"]            { --entity-accent: var(--color-soft-blue); }
 [data-entity-type="biological process"] { --entity-accent: var(--color-soft-blue); }
 [data-entity-type="species"]            { --entity-accent: var(--color-soft-lavender); }
+[data-entity-type="module"]            { --entity-accent: var(--color-teal); }
 
 /* ═══════════════════════════════════════════════════════════════════
    DARK MODE — Only override foundations + tokens that diverge.
@@ -248,8 +251,8 @@ html:root {
   --color-muted-indigo: #8b8fbf;
   --color-golden-yellow: #e5c799;
   --color-fresh-green: #aedc93;
-  --color-warm-coral: #ffada4;
-  --color-soft-pink: #b88299;
+  --color-warm-coral: #c48e88;
+  --color-soft-pink: #b085a8;
   --color-soft-lavender: #a899b3;
   --color-paper: #a89b78;
 
@@ -289,6 +292,7 @@ html:root {
   --wiki-graph-node-section: var(--color-muted-indigo);
   --wiki-graph-node-paper: var(--color-paper);
   --wiki-graph-node-default: var(--color-soft-blue);
+  --wiki-graph-node-module: var(--color-teal);
   --wiki-graph-link: #475569;
   --wiki-graph-label: #e2e8f0;
 

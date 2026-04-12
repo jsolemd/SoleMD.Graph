@@ -1,8 +1,10 @@
 import {
+  normalizeWikiPageBundleResponse,
   normalizeWikiPageContextResponse,
   normalizeWikiPageResponse,
 } from "@/lib/engine/wiki-normalize";
 import {
+  buildWikiPageBundleClientPath,
   buildWikiPageClientPath,
   buildWikiPageContextClientPath,
   encodeWikiSlug,
@@ -10,6 +12,7 @@ import {
 import type {
   WikiBacklinksResponse,
   WikiGraphResponse,
+  WikiPageBundleResponse,
   WikiPageContextResponse,
   WikiPageResponse,
   WikiSearchResponse,
@@ -88,6 +91,29 @@ async function requestWikiJson<TResponse>(
   }
 
   return payload as TResponse;
+}
+
+export async function fetchWikiPageBundleClient(
+  slug: string,
+  graphReleaseId?: string,
+  options?: { signal?: AbortSignal },
+): Promise<WikiPageBundleResponse | null> {
+  const path = buildWikiPageBundleClientPath(slug, { graphReleaseId });
+
+  try {
+    return normalizeWikiPageBundleResponse(
+      await requestWikiJson<WikiPageBundleResponse>(
+        path,
+        { method: "GET", signal: options?.signal },
+        "Failed to load wiki page bundle",
+      ),
+    );
+  } catch (error) {
+    if (error instanceof WikiRequestError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function fetchWikiPageClient(

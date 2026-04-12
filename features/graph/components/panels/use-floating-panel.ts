@@ -14,6 +14,12 @@ interface UseFloatingPanelOptions {
   defaultHeight?: number;
   minHeight?: number;
   maxHeight?: number;
+  /** When set, animate dragX to this value while docked (used for centering). */
+  anchorXOffset?: number;
+  /** When set, animate dragY to this value while docked (used for expanded panel positioning). */
+  anchorYOffset?: number;
+  /** Bottom clearance in px — used as resize ceiling when docked. */
+  bottomClearance?: number;
 }
 
 export function useFloatingPanel({
@@ -25,6 +31,9 @@ export function useFloatingPanel({
   defaultHeight,
   minHeight = 200,
   maxHeight: maxHeightOpt,
+  anchorXOffset,
+  anchorYOffset,
+  bottomClearance = 0,
 }: UseFloatingPanelOptions) {
   // Restore remembered position if available
   const savedPosition = useDashboardStore((s) => s.panelPositions[id]);
@@ -44,15 +53,44 @@ export function useFloatingPanel({
   const resizeFrameRef = useRef<number | null>(null);
   const pendingWidthRef = useRef<number | null>(null);
   const pendingHeightRef = useRef<number | null>(null);
+  const isPinned = savedPosition?.pinned ?? false;
   const setFloatingObstacle = useDashboardStore((s) => s.setFloatingObstacle);
   const clearFloatingObstacle = useDashboardStore((s) => s.clearFloatingObstacle);
 
   useEffect(() => {
-    if (!isDocked) return;
+    if (!isDocked || isPinned) return;
     setWidth((currentWidth) => (
       currentWidth === defaultWidth ? currentWidth : defaultWidth
     ));
-  }, [defaultWidth, isDocked]);
+  }, [defaultWidth, isDocked, isPinned]);
+
+  useEffect(() => {
+    if (!isDocked || isPinned || defaultHeight === undefined) return;
+    setHeight((currentHeight) => (
+      currentHeight === defaultHeight ? currentHeight : defaultHeight
+    ));
+  }, [defaultHeight, isDocked, isPinned]);
+
+  // Animate to anchor offset when docked (e.g. centering expanded wiki panel)
+  const prevAnchorXRef = useRef(anchorXOffset);
+  const prevAnchorYRef = useRef(anchorYOffset);
+  useEffect(() => {
+    const prevX = prevAnchorXRef.current;
+    const prevY = prevAnchorYRef.current;
+    prevAnchorXRef.current = anchorXOffset;
+    prevAnchorYRef.current = anchorYOffset;
+    if (!isDocked || isPinned) return;
+    if (anchorXOffset !== undefined) {
+      animate(dragX, anchorXOffset, smooth);
+    } else if (prevX !== undefined) {
+      animate(dragX, 0, smooth);
+    }
+    if (anchorYOffset !== undefined) {
+      animate(dragY, anchorYOffset, smooth);
+    } else if (prevY !== undefined) {
+      animate(dragY, 0, smooth);
+    }
+  }, [anchorXOffset, anchorYOffset, isDocked, isPinned, dragX, dragY]);
 
   const flushPendingSize = useCallback(() => {
     if (resizeFrameRef.current !== null) {
@@ -148,10 +186,11 @@ export function useFloatingPanel({
 
   const onTitlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (isPinned) return;
       dragControls.start(e);
       setIsDocked(false);
     },
-    [dragControls],
+    [dragControls, isPinned],
   );
 
   const onDragEnd = useCallback(() => {
@@ -160,12 +199,13 @@ export function useFloatingPanel({
   }, [reportRect, persistPosition]);
 
   const onTitleDoubleClick = useCallback(() => {
+    if (isPinned) return;
     animate(dragX, 0, smooth);
     animate(dragY, 0, smooth);
     setIsDocked(true);
     clearFloatingObstacle(id);
     savePanelPosition(id, { x: 0, y: 0, width, height, docked: true });
-  }, [dragX, dragY, id, clearFloatingObstacle, savePanelPosition, width, height]);
+  }, [dragX, dragY, id, clearFloatingObstacle, savePanelPosition, width, height, isPinned]);
 
   // Horizontal resize via mouse events
   const onResizeMouseDown = useCallback(
@@ -202,7 +242,8 @@ export function useFloatingPanel({
       const startY = e.clientY;
       const el = panelRef.current;
       const startHeight = height ?? el?.offsetHeight ?? 400;
-      const maxH = maxHeightOpt ?? window.innerHeight - 120;
+      const dockedMax = window.innerHeight - 116 - bottomClearance - 12;
+      const maxH = maxHeightOpt ?? (isDocked ? dockedMax : window.innerHeight - 120);
 
       const handleMove = (ev: MouseEvent) => {
         const delta = ev.clientY - startY;
@@ -222,7 +263,7 @@ export function useFloatingPanel({
       document.addEventListener("mousemove", handleMove);
       document.addEventListener("mouseup", handleUp);
     },
-    [height, minHeight, maxHeightOpt, reportRect, persistPosition, scheduleSizeUpdate, flushPendingSize],
+    [height, minHeight, maxHeightOpt, isDocked, bottomClearance, reportRect, persistPosition, scheduleSizeUpdate, flushPendingSize],
   );
 
   // Corner resize (both dimensions)
@@ -234,7 +275,8 @@ export function useFloatingPanel({
       const startWidth = width;
       const el = panelRef.current;
       const startHeight = height ?? el?.offsetHeight ?? 400;
-      const maxH = maxHeightOpt ?? window.innerHeight - 120;
+      const dockedMaxH = window.innerHeight - 116 - bottomClearance - 12;
+      const maxH = maxHeightOpt ?? (isDocked ? dockedMaxH : window.innerHeight - 120);
 
       const handleMove = (ev: MouseEvent) => {
         const dx = side === "left" ? ev.clientX - startX : startX - ev.clientX;
@@ -263,6 +305,8 @@ export function useFloatingPanel({
       maxWidth,
       minHeight,
       maxHeightOpt,
+      isDocked,
+      bottomClearance,
       reportRect,
       persistPosition,
       scheduleSizeUpdate,
@@ -278,6 +322,7 @@ export function useFloatingPanel({
     width,
     height,
     isDocked,
+    isPinned,
     onTitlePointerDown,
     onTitleDoubleClick,
     onDragEnd,

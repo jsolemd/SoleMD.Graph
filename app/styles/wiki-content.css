@@ -87,6 +87,23 @@
   border-bottom-color: color-mix(in srgb, var(--entity-accent) 55%, transparent);
 }
 
+/* Entity body mentions — subtle accent underline, no font-weight change.
+   Visually lighter than wiki links: inherits text color, dotted accent border.
+   background/color resets override <mark> UA defaults (yellow background)
+   when EntityHighlightZone uses <mark> elements for DOM-level annotation. */
+.wiki-entity-mention[data-entity-type] {
+  background: transparent;
+  color: inherit;
+  border-bottom: 1px dotted color-mix(in srgb, var(--entity-accent) 50%, transparent);
+  cursor: default;
+  transition: border-color 0.15s;
+}
+
+.wiki-entity-mention[data-entity-type]:hover {
+  border-bottom-style: solid;
+  border-bottom-color: var(--entity-accent);
+}
+
 /* PMID citations — compact badge pill */
 .wiki-citation {
   all: unset;
@@ -244,4 +261,66 @@
 .wiki-content strong {
   font-weight: 600;
   color: var(--graph-panel-text);
+}
+
+/* ── Inline module content — compact overrides for learn sections inside wiki panel ──
+   SceneSection uses Tailwind py-16/py-24; !important needed to override utilities.
+   Inner div uses max-w-5xl px-6; we remove those to fill the panel width. */
+
+.wiki-module-inline section {
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+.wiki-module-inline section > div {
+  max-width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Scale headings to wiki panel size */
+.wiki-module-inline h1,
+.wiki-module-inline h2 {
+  font-size: 13px !important;
+  margin-bottom: 0.25rem;
+}
+
+.wiki-module-inline h3 {
+  font-size: 12px !important;
+}
+
+.wiki-module-inline h4 {
+  font-size: 11px !important;
+}
+
+/* Tighten Mantine card padding inside module */
+.wiki-module-inline .mantine-Card-root {
+  padding: 0.75rem !important;
+}
+
+.wiki-module-inline .mantine-SimpleGrid-root {
+  gap: 0.5rem !important;
+}
+
+/* Reduce subtitle spacing */
+.wiki-module-inline .mantine-Text-root.mb-8 {
+  margin-bottom: 0.5rem !important;
+}
+
+/* Tighten Mantine Stack gap */
+.wiki-module-inline .mantine-Stack-root {
+  gap: 0.5rem !important;
+}
+
+/* Module in-content search highlights */
+.wiki-module-search-mark {
+  background: color-mix(in srgb, var(--mode-accent) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.wiki-module-search-mark-active {
+  background: color-mix(in srgb, var(--mode-accent) 60%, transparent);
+  outline: 1px solid var(--mode-accent);
 }

@@ -13,6 +13,7 @@ import {
   panelTextMutedStyle,
   panelTextStyle,
 } from "@/features/graph/components/panels/PanelShell";
+import { OpenModuleCTA } from "./elements/OpenModuleCTA";
 import { countWikiPageGraphRefs } from "@/features/wiki/lib/wiki-page-graph";
 import type {
   WikiPageContextResponse,
@@ -49,6 +50,7 @@ export function WikiPageHeader({
   const sectionLabel =
     page.section_slug?.split("/").pop()?.replace(/-/g, " ") ?? null;
   const isEntityPage = page.page_kind === "entity";
+  const isModulePage = page.page_kind === "module";
   const topGraphPapers = pageContext?.top_graph_papers ?? [];
   const corpusPaperCount = formatContextCount(
     pageContext?.total_corpus_paper_count,
@@ -144,6 +146,10 @@ export function WikiPageHeader({
           footnote="wiki relationships"
         />
       </div>
+
+      {isModulePage && (
+        <OpenModuleCTA moduleSlug={page.slug} />
+      )}
 
       {isEntityPage && pageContextLoading && (
         <div className={panelCardClassName} style={panelCardStyle}>

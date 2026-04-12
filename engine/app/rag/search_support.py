@@ -74,8 +74,6 @@ def callable_supports_kwarg(func: object, kwarg: str) -> bool:
 
 def build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
     selected_graph_paper_ref = request.selected_graph_paper_ref
-    if selected_graph_paper_ref is None:
-        selected_graph_paper_ref = request.selected_paper_id
     if selected_graph_paper_ref is None and request.selected_layer_key == "paper":
         selected_graph_paper_ref = request.selected_node_id
 
@@ -111,7 +109,6 @@ def build_query(request: RagSearchRequest) -> PaperRetrievalQuery:
         selected_layer_key=request.selected_layer_key,
         selected_node_id=request.selected_node_id,
         selected_graph_paper_ref=selected_graph_paper_ref,
-        selected_paper_id=request.selected_paper_id,
         selection_graph_paper_refs=selection_graph_paper_refs,
         selected_cluster_id=request.selected_cluster_id,
         scope_mode=request.scope_mode,

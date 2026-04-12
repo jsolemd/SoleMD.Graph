@@ -10,12 +10,16 @@ from functools import lru_cache
 from app.wiki.links import build_link_resolution_map
 from app.wiki.models import WikiPage
 from app.wiki.repository import PostgresWikiRepository, WikiRepository
+from app.entities.schemas import EntityMatchRequest
+from app.entities.service import EntityService, get_entity_service
 from app.wiki.schemas import (
     WikiBacklinksResponse,
+    WikiBodyEntityMatch,
     WikiGraphEdge,
     WikiGraphNode,
     WikiGraphResponse,
     WikiLinkedEntity,
+    WikiPageBundleResponse,
     WikiPageContextResponse,
     WikiPagePaperResponse,
     WikiPageResponse,
@@ -70,12 +74,85 @@ class WikiService:
         linked_entity_meta = self._repository.resolve_linked_entity_metadata(
             slugs=page.outgoing_links,
         )
+
         return _page_to_response(
             page,
             paper_graph_refs,
             resolved_links,
             linked_entity_meta=linked_entity_meta,
             featured_graph_refs=featured_graph_refs,
+        )
+
+    def get_page_bundle(
+        self,
+        slug: str,
+        *,
+        graph_release_id: str | None = None,
+    ) -> WikiPageBundleResponse | None:
+        """Return page + backlinks + context in one response."""
+        page = self._repository.get_page(slug=slug)
+        if page is None:
+            return None
+
+        resolved_run_id = _resolve_requested_graph_run_id(
+            repository=self._repository,
+            graph_release_id=graph_release_id,
+        )
+
+        paper_graph_refs: dict[int, str] = {}
+        featured_graph_refs: dict[int, str] = {}
+        if resolved_run_id:
+            resolved_pmid_graph_refs = self._repository.resolve_paper_graph_refs(
+                pmids=_unique_ints([*page.paper_pmids, *page.featured_pmids]),
+                graph_run_id=resolved_run_id,
+            )
+            paper_graph_refs = {
+                pmid: ref
+                for pmid in page.paper_pmids
+                if (ref := resolved_pmid_graph_refs.get(pmid)) is not None
+            }
+            featured_graph_refs = {
+                pmid: ref
+                for pmid in page.featured_pmids
+                if (ref := resolved_pmid_graph_refs.get(pmid)) is not None
+            }
+
+        resolved_links = build_link_resolution_map(page.content_md, page.outgoing_links)
+        linked_entity_meta = self._repository.resolve_linked_entity_metadata(
+            slugs=page.outgoing_links,
+        )
+
+        backlink_rows = self._repository.get_backlink_summaries(slug=slug)
+
+        page_context = _resolve_page_context(
+            repository=self._repository,
+            page=page,
+            graph_run_id=resolved_run_id,
+        )
+
+        page_response = _page_to_response(
+            page,
+            paper_graph_refs,
+            resolved_links,
+            linked_entity_meta=linked_entity_meta,
+            featured_graph_refs=featured_graph_refs,
+        )
+
+        backlinks = [
+            WikiPageSummary(
+                slug=s.slug,
+                title=s.title,
+                entity_type=s.entity_type,
+                family_key=s.family_key,
+                tags=s.tags or [],
+            )
+            for s in backlink_rows
+        ]
+
+        return WikiPageBundleResponse(
+            page=page_response,
+            backlinks=backlinks,
+            context=page_context,
         )
 
     def get_page_context(
@@ -147,23 +224,25 @@ class WikiService:
 
     def get_graph(self, graph_release_id: str) -> WikiGraphResponse:
         """Build the full wiki content graph for the given release."""
-        graph_run_id = self._repository.resolve_graph_run_id(
-            graph_release_id=graph_release_id,
-        )
-
-        pages = self._repository.get_all_pages_for_graph()
-
-        all_pmids: list[int] = []
-        for p in pages:
-            all_pmids.extend(p.paper_pmids)
-        unique_pmids = sorted(set(all_pmids))
-
-        paper_rows = []
-        if graph_run_id and unique_pmids:
-            paper_rows = self._repository.resolve_paper_nodes_for_graph(
-                pmids=unique_pmids,
-                graph_run_id=graph_run_id,
+        repo = self._repository
+        with repo.connection():
+            graph_run_id = repo.resolve_graph_run_id(
+                graph_release_id=graph_release_id,
             )
+
+            pages = repo.get_all_pages_for_graph()
+
+            all_pmids: list[int] = []
+            for p in pages:
+                all_pmids.extend(p.paper_pmids)
+            unique_pmids = sorted(set(all_pmids))
+
+            paper_rows = []
+            if graph_run_id and unique_pmids:
+                paper_rows = repo.resolve_paper_nodes_for_graph(
+                    pmids=unique_pmids,
+                    graph_run_id=graph_run_id,
+                )
 
         page_slugs = {p.slug for p in pages}
         pmid_to_ref: dict[int, str] = {}
@@ -246,6 +325,8 @@ def _page_to_response(
                 concept_id=concept_id,
             )
 
+    body_entity_matches = _resolve_body_entity_matches(page.content_md)
+
     return WikiPageResponse(
         slug=page.slug,
         title=page.title,
@@ -267,6 +348,7 @@ def _page_to_response(
         featured_graph_refs=featured_graph_refs or {},
         resolved_links=resolved_links,
         linked_entities=linked_entities,
+        body_entity_matches=body_entity_matches,
     )
 
 
@@ -314,6 +396,64 @@ def _resolve_page_context(
             for paper in context.top_graph_papers
         ],
     )
+
+
+_WIKI_BODY_ENTITY_MATCH_LIMIT = 16
+_BODY_ENTITY_MATCH_CACHE_SIZE = 256
+
+
+@lru_cache(maxsize=_BODY_ENTITY_MATCH_CACHE_SIZE)
+def _resolve_body_entity_matches_cached(
+    content_hash: str,
+    text: str,
+) -> tuple[WikiBodyEntityMatch, ...]:
+    """Cache-backed entity matching keyed by content hash.
+
+    Returns a tuple (hashable for LRU) of deduplicated entity matches.
+    The entity catalog changes only when the entity pipeline runs (rare),
+    so matches for the same text are stable within a server lifecycle.
+    """
+    try:
+        entity_service = get_entity_service()
+        response = entity_service.match_entities(
+            EntityMatchRequest(text=text, limit=_WIKI_BODY_ENTITY_MATCH_LIMIT),
+        )
+    except Exception:
+        logger.warning("Failed to resolve body entity matches", exc_info=True)
+        return ()
+
+    # Deduplicate by matched_text (case-insensitive) — keep highest-paper-count
+    seen_texts: dict[str, WikiBodyEntityMatch] = {}
+    for match in response.matches:
+        key = match.matched_text.strip().lower()
+        existing = seen_texts.get(key)
+        if existing is None or match.paper_count > existing.paper_count:
+            seen_texts[key] = WikiBodyEntityMatch(
+                entity_type=match.entity_type,
+                concept_namespace=match.concept_namespace,
+                concept_id=match.concept_id,
+                source_identifier=match.source_identifier,
+                canonical_name=match.canonical_name,
+                matched_text=match.matched_text,
+                paper_count=match.paper_count,
+            )
+
+    return tuple(seen_texts.values())
+
+
+def _resolve_body_entity_matches(content_md: str) -> list[WikiBodyEntityMatch]:
+    """Run entity matching against wiki page body text.
+
+    Returns precomputed matches for frontend inline highlighting.
+    Results are cached by content hash — repeated loads of the same
+    page skip the entity matching entirely.
+    """
+    text = content_md.strip()
+    if not text:
+        return []
+
+    content_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
+    return list(_resolve_body_entity_matches_cached(content_hash, text))
 
 
 def _unique_ints(values: list[int]) -> list[int]:

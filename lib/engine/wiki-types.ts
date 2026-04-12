@@ -5,6 +5,16 @@ export interface WikiLinkedEntity {
   concept_id: string
 }
 
+export interface WikiBodyEntityMatch {
+  entity_type: string
+  concept_namespace: string | null
+  concept_id: string
+  source_identifier: string
+  canonical_name: string
+  matched_text: string
+  paper_count: number
+}
+
 export interface WikiPagePaperResponse {
   pmid: number
   graph_paper_ref: string | null
@@ -29,7 +39,7 @@ export interface WikiPageResponse {
   concept_id: string | null
   family_key: string | null
   semantic_group: string | null
-  page_kind: "index" | "section" | "entity" | "topic"
+  page_kind: "index" | "section" | "entity" | "topic" | "module"
   section_slug: string | null
   graph_focus: "cited_papers" | "entity_exact" | "none"
   summary: string | null
@@ -41,6 +51,7 @@ export interface WikiPageResponse {
   featured_graph_refs: Record<number, string>
   resolved_links: Record<string, string>
   linked_entities: Record<string, WikiLinkedEntity>
+  body_entity_matches: WikiBodyEntityMatch[]
 }
 
 export interface WikiPageSummary {
@@ -69,6 +80,12 @@ export interface WikiSearchResponse {
 export interface WikiBacklinksResponse {
   slug: string
   backlinks: WikiPageSummary[]
+}
+
+export interface WikiPageBundleResponse {
+  page: WikiPageResponse
+  backlinks: WikiPageSummary[]
+  context: WikiPageContextResponse | null
 }
 
 // ---------------------------------------------------------------------------

@@ -8,7 +8,14 @@ from app.rag.search_execution import execute_search
 
 
 def test_execute_search_refreshes_debug_trace_after_finalize(monkeypatch):
-    def fake_retrieve_search_state(*, request, repository, query_embedder, trace):
+    def fake_retrieve_search_state(
+        *,
+        request,
+        repository,
+        graph_repository,
+        query_embedder,
+        trace,
+    ):
         trace.record_count("scope_corpus_ids", 0)
         return SimpleNamespace()
 
@@ -35,6 +42,7 @@ def test_execute_search_refreshes_debug_trace_after_finalize(monkeypatch):
     result = execute_search(
         request=RagSearchRequest(graph_release_id="current", query="melatonin delirium"),
         repository=SimpleNamespace(),
+        graph_repository=SimpleNamespace(),
         query_embedder=SimpleNamespace(),
         biomedical_reranker=SimpleNamespace(),
         warehouse_grounder=None,

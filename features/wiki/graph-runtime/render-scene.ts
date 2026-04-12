@@ -33,6 +33,8 @@ export interface WikiGraphScene {
   pendingHeight: number | null
   resizeCommitTimeout: number | null
   hoveredNodeId: string | null
+  /** Current legend/search highlight — hover logic reads this to compute rest alpha. */
+  highlightNodeIds: Set<string> | undefined
   labelsDirty: boolean
   lastLabelLayoutAt: number
 }
@@ -85,6 +87,7 @@ export async function createScene(
     pendingHeight: null,
     resizeCommitTimeout: null,
     hoveredNodeId: null,
+    highlightNodeIds: undefined,
     labelsDirty: true,
     lastLabelLayoutAt: 0,
   }
@@ -265,5 +268,8 @@ export function destroyScene(scene: WikiGraphScene): void {
     clearTimeout(scene.resizeCommitTimeout)
     scene.resizeCommitTimeout = null
   }
-  scene.app.destroy(true, { children: true, texture: true })
+  // Don't destroy textures — Pixi caches font/bitmap textures globally across
+  // Application instances. Destroying them here would corrupt any other live
+  // WikiGraph canvas sharing the same TextStyle cache.
+  scene.app.destroy(true, { children: true, texture: false })
 }

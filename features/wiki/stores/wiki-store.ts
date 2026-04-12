@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { WikiGraphResponse } from '@/lib/engine/wiki-types'
+import type { WikiGraphResponse, WikiPageResponse } from '@/lib/engine/wiki-types'
 import { fetchWikiGraphClient } from '@/features/wiki/lib/wiki-client'
+import type { SemanticColorKey } from '@/features/wiki/graph-runtime/theme'
 
 // ---------------------------------------------------------------------------
 // Route model
@@ -26,7 +27,14 @@ interface WikiState {
   globalGraphOpen: boolean
   tocOpen: boolean
   localGraphPopped: boolean
+  modulePopped: boolean
+  modulePoppedSlug: string | null
+  currentPageKind: WikiPageResponse['page_kind'] | null
   fullscreenAnim: string | null
+
+  /** null = no highlight (all visible); non-null Set = only these groups highlighted */
+  graphHighlightGroups: Set<SemanticColorKey> | null
+  graphSearchQuery: string
 
   navigateToPage: (slug: string) => void
   navigateToGraph: () => void
@@ -36,7 +44,12 @@ interface WikiState {
   setGlobalGraphOpen: (open: boolean) => void
   setTocOpen: (open: boolean) => void
   setLocalGraphPopped: (popped: boolean) => void
+  setModulePopped: (popped: boolean, slug?: string) => void
+  setCurrentPageKind: (kind: WikiPageResponse['page_kind'] | null) => void
   setFullscreenAnim: (name: string | null) => void
+  setGraphHighlightGroups: (groups: Set<SemanticColorKey> | null) => void
+  toggleGraphHighlightGroup: (group: SemanticColorKey) => void
+  setGraphSearchQuery: (query: string) => void
   reset: () => void
 }
 
@@ -64,7 +77,12 @@ export const useWikiStore = create<WikiState>((set, get) => ({
   globalGraphOpen: false,
   tocOpen: false,
   localGraphPopped: false,
+  modulePopped: false,
+  modulePoppedSlug: null,
+  currentPageKind: null,
   fullscreenAnim: null,
+  graphHighlightGroups: null,
+  graphSearchQuery: "",
 
   navigateToPage: (slug) =>
     set((s) => {
@@ -131,7 +149,32 @@ export const useWikiStore = create<WikiState>((set, get) => ({
   setGlobalGraphOpen: (open) => set({ globalGraphOpen: open }),
   setTocOpen: (open) => set({ tocOpen: open }),
   setLocalGraphPopped: (popped) => set({ localGraphPopped: popped }),
+  setModulePopped: (popped, slug) =>
+    set((s) => ({
+      modulePopped: popped,
+      modulePoppedSlug: popped
+        ? (slug ?? (s.currentRoute.kind === "page" ? s.currentRoute.slug : s.modulePoppedSlug))
+        : null,
+    })),
+  setCurrentPageKind: (kind) => set({ currentPageKind: kind }),
   setFullscreenAnim: (name) => set({ fullscreenAnim: name }),
+
+  setGraphHighlightGroups: (groups) => set({ graphHighlightGroups: groups }),
+  toggleGraphHighlightGroup: (group) =>
+    set((s) => {
+      const current = s.graphHighlightGroups
+      if (current === null) {
+        return { graphHighlightGroups: new Set([group]) }
+      }
+      const next = new Set(current)
+      if (next.has(group)) {
+        next.delete(group)
+        return { graphHighlightGroups: next.size === 0 ? null : next }
+      }
+      next.add(group)
+      return { graphHighlightGroups: next }
+    }),
+  setGraphSearchQuery: (query) => set({ graphSearchQuery: query }),
 
   reset: () =>
     set({
@@ -141,7 +184,12 @@ export const useWikiStore = create<WikiState>((set, get) => ({
       globalGraphOpen: false,
       tocOpen: false,
       localGraphPopped: false,
+      modulePopped: false,
+      modulePoppedSlug: null,
+      currentPageKind: null,
       fullscreenAnim: null,
+      graphHighlightGroups: null,
+      graphSearchQuery: "",
       // graphData is intentionally preserved across resets
     }),
 }))

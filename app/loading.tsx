@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
+import { LottiePulseLoader } from "@/features/animations/lottie/LottiePulseLoader";
 
 const ConnectomeLoader = dynamic(
   () =>
@@ -51,14 +52,9 @@ export default function GraphLoading() {
         </span>
       </div>
 
-      {/* Center loading pulse */}
+      {/* Center loading spinner */}
       <div className="relative z-10 flex flex-col items-center gap-4">
-        <motion.div
-          className="h-3 w-3 rounded-full"
-          style={{ backgroundColor: "var(--graph-wordmark-accent)" }}
-          animate={{ opacity: [0.45, 1, 0.45], scale: [1, 1.12, 1] }}
-          transition={{ duration: 1.6, repeat: Infinity, ease: "easeInOut" }}
-        />
+        <LottiePulseLoader size={24} />
         <span
           className="text-sm"
           style={{ color: "var(--graph-stats-text)" }}

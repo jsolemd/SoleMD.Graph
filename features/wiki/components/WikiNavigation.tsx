@@ -1,7 +1,7 @@
 "use client";
 
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { ArrowLeft, ArrowRight, Home, Maximize2, List, ExternalLink } from "lucide-react";
+import { ArrowLeft, ArrowRight, Home, Maximize2, List, ExternalLink, BookOpen } from "lucide-react";
 import { PANEL_TOP, iconBtnStyles } from "@/features/graph/components/panels/PanelShell";
 import { useDashboardStore } from "@/features/graph/stores";
 import {
@@ -23,12 +23,16 @@ export function WikiNavigation() {
   const setTocOpen = useWikiStore((s) => s.setTocOpen);
   const localGraphPopped = useWikiStore((s) => s.localGraphPopped);
   const setLocalGraphPopped = useWikiStore((s) => s.setLocalGraphPopped);
+  const modulePopped = useWikiStore((s) => s.modulePopped);
+  const setModulePopped = useWikiStore((s) => s.setModulePopped);
+  const currentPageKind = useWikiStore((s) => s.currentPageKind);
   const savePanelPosition = useDashboardStore((s) => s.savePanelPosition);
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < routeHistory.length - 1;
   const isOnGraph = currentRoute.kind === "graph";
   const isOnPage = currentRoute.kind === "page";
+  const isModulePage = currentPageKind === "module";
 
   const handleOpenGlobalGraph = () => {
     const dashboardState = useDashboardStore.getState();
@@ -84,6 +88,38 @@ export function WikiNavigation() {
     }
 
     setLocalGraphPopped(true);
+  };
+
+  const handleToggleModule = () => {
+    if (modulePopped) {
+      setModulePopped(false);
+      return;
+    }
+
+    const dashboardState = useDashboardStore.getState();
+    const anchorRect = resolvePanelAnchorRect(dashboardState, "wiki", PANEL_TOP);
+    const panelWidth = dashboardState.panelPositions["wiki-module"]?.width ?? 680;
+    const panelHeight = dashboardState.panelPositions["wiki-module"]?.height;
+
+    if (anchorRect) {
+      const { x, y } = resolveAdjacentFloatingPanelOffsets({
+        state: dashboardState,
+        panelId: "wiki-module",
+        anchorRect,
+        panelWidth,
+        panelTop: PANEL_TOP,
+        viewportWidth: window.innerWidth,
+      });
+      savePanelPosition("wiki-module", {
+        x,
+        y,
+        width: panelWidth,
+        height: panelHeight,
+        docked: false,
+      });
+    }
+
+    setModulePopped(true);
   };
 
   return (
@@ -177,6 +213,25 @@ export function WikiNavigation() {
             </ActionIcon>
           </Tooltip>
         </>
+      )}
+      {isOnPage && isModulePage && (
+        <Tooltip
+          label={modulePopped ? "Dock module" : "Pop out module"}
+          position="bottom"
+          withArrow
+        >
+          <ActionIcon
+            variant="transparent"
+            size={24}
+            radius="xl"
+            className="graph-icon-btn"
+            styles={iconBtnStyles}
+            onClick={handleToggleModule}
+            aria-label={modulePopped ? "Dock module" : "Pop out module"}
+          >
+            <BookOpen size={12} />
+          </ActionIcon>
+        </Tooltip>
       )}
     </div>
   );

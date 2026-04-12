@@ -105,8 +105,8 @@ def test_fetch_entity_detail_uses_serving_alias_projection(monkeypatch):
     assert "lower(entity_type)" not in executed[1][0]
 
 
-def test_fetch_page_context_top_papers_uses_entity_corpus_presence_projection(monkeypatch):
-    executed: dict[str, object] = {}
+def test_fetch_page_context_uses_combined_serving_projections(monkeypatch):
+    queries_executed: list[tuple[str, object]] = []
 
     class FakeCursor:
         def __enter__(self):
@@ -116,12 +116,12 @@ def test_fetch_page_context_top_papers_uses_entity_corpus_presence_projection(mo
             return False
 
         def execute(self, query, params):
-            executed["query"] = str(query)
-            executed["params"] = params
+            queries_executed.append((str(query), params))
 
         def fetchall(self):
             return [
                 {
+                    "total_corpus_paper_count": 42,
                     "pmid": 123,
                     "graph_paper_ref": "paper:123",
                     "paper_title": "Paper 123",
@@ -130,6 +130,9 @@ def test_fetch_page_context_top_papers_uses_entity_corpus_presence_projection(mo
                     "citation_count": 55,
                 }
             ]
+
+        def fetchone(self):
+            return {"total_graph_paper_count": 12}
 
     class FakeConnection:
         def __enter__(self):
@@ -144,14 +147,16 @@ def test_fetch_page_context_top_papers_uses_entity_corpus_presence_projection(mo
     monkeypatch.setattr("app.entities.repository.db.pooled", lambda: FakeConnection())
 
     repository = EntityGraphProjectionRepository()
-    rows = repository.fetch_page_context_top_papers(
+    context = repository.fetch_page_context(
         entity_type="disease",
         source_identifier="MESH:D003693",
         graph_run_id="run-1",
         limit=5,
     )
 
-    assert rows == [
+    assert context["total_corpus_paper_count"] == 42
+    assert context["total_graph_paper_count"] == 12
+    assert context["top_graph_papers"] == [
         {
             "pmid": 123,
             "graph_paper_ref": "paper:123",
@@ -161,8 +166,22 @@ def test_fetch_page_context_top_papers_uses_entity_corpus_presence_projection(mo
             "citation_count": 55,
         }
     ]
-    assert "FROM solemd.entity_corpus_presence ecp" in executed["query"]
-    assert "LEFT JOIN solemd.graph_paper_summary gps" in executed["query"]
-    assert "LEFT JOIN solemd.papers p" not in executed["query"]
-    assert "FROM pubtator.entity_annotations" not in executed["query"]
-    assert executed["params"] == ("run-1", "disease", "MESH:D003693", 5)
+
+    # Two queries: top papers + graph count
+    assert len(queries_executed) == 2
+
+    top_papers_query, top_papers_params = queries_executed[0]
+    assert "FROM solemd.entity_corpus_presence ecp" in top_papers_query
+    assert "JOIN solemd.graph_paper_summary gps" in top_papers_query
+    assert "EXISTS" in top_papers_query
+    assert "LEFT JOIN solemd.papers p" not in top_papers_query
+    assert "FROM pubtator.entity_annotations" not in top_papers_query
+    assert top_papers_params == (
+        "disease", "MESH:D003693",           # corpus count subquery
+        "disease", "MESH:D003693", "run-1",  # main query + EXISTS
+        5,                                    # LIMIT
+    )
+
+    graph_count_query, graph_count_params = queries_executed[1]
+    assert "COUNT(*)::int" in graph_count_query
+    assert graph_count_params == ("disease", "MESH:D003693", "run-1")

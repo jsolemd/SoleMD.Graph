@@ -954,6 +954,103 @@ This updated order is more realistic than jumping directly to graph or agentic o
 
 ---
 
+## Synthesis Of The Recent Agent Review
+
+Another agent proposed a more aggressive retrieval plan centered on dense child retrieval, concept packages, citation-aware hard negatives, and bounded late-interaction reranking. After checking the cited literature and comparing it to the current SoleMD.Graph miss surface, the direction is mostly correct. The most important point is that it aligns with the current benchmark reality:
+
+- `no_target_signal = 0`
+- `target_visible_not_top1 = 7`
+- `top1_miss = 44`
+- accepted ranking mainline on the 61-case gate is still only `hit@1 = 0.164`
+
+That means the bottleneck has already moved. More phrase rescue by itself is unlikely to move the curve much further. Even a perfect reranker on the visible-but-not-top1 bucket would only move `hit@1` toward the current `hit@k` ceiling. The larger gain has to come from stronger shortlist formation and stronger child-to-parent promotion.
+
+### What I Agree With
+
+1. **Dense child retrieval should move ahead of more paper-level score surgery.**
+   This is the strongest recommendation in the review, and it fits both the code and the benchmark. The live runtime still lacks dense chunk ANN while the dominant miss bucket is now `top1_miss`. That mismatch is hard to justify for an evidence-grounded biomedical RAG system.
+
+2. **Concept recovery should become a structured package, not a bag of expanded strings.**
+   The proposed `ConceptPackage` direction is right. The current phrase and vocab rescue layer already behaves like a weak version of that design. The next step is to preserve slots such as exposure, phenotype, temporality, polarity, dose intensity, population, canonical ids, and article-type intent instead of collapsing everything back into one string.
+
+3. **Publication-type priors should become intent-dependent.**
+   This is a strong suggestion. For adverse-effect and withdrawal questions, case reports and case series should get more credit than they do now. For management questions, reviews, trials, and guidelines should rise. For mechanism questions, translational studies and reviews can lead. A static publication-type prior is too blunt for the evidence forms we care about.
+
+4. **Citation graph and trace data should be used offline, not as a live graph walk.**
+   This matches the current architecture direction exactly. Use citation neighborhoods, semantic neighbors, and benchmark traces to build priors and hard negatives. Do not put runtime graph traversal into the default hot path yet.
+
+5. **Lexical protection for polarity, temporality, dose, and contradiction should stay.**
+   This is especially important for our query surface: `after stopping`, `high-dose`, `steroid-induced`, `first episode`, `rule out`, `versus`, and similar phrases are clinically decisive. Dense retrieval should not be allowed to blur them away.
+
+6. **Citation-quality metrics should be measured separately from retrieval and grounding.**
+   This is a good recommendation. Right now `grounded_answer_rate` is high while `target_in_answer_corpus` remains much lower. That means we need separate metrics for citation precision, citation contamination, and direct-evidence usage, not just a single grounded/not-grounded scalar.
+
+### What I Would Tighten Or Reorder
+
+1. **Do not over-read MIRAGE.**
+   MIRAGE and MedRAG are useful and relevant, especially the BM25 + MedCPT fusion result, but they are still medical QA benchmarks, not direct evidence-grounding benchmarks on our exact parent-child retrieval problem. They are supportive guidance, not a reason to blindly port another retrieval stack.
+
+2. **Late interaction reranking is promising, but it is not the next immediate step.**
+   ColBERT-style reranking is worth testing later, especially if trained on our own hard negatives, but it should come after dense child retrieval and better child-to-parent aggregation. Otherwise we risk spending time on a second-stage model before the candidate set is good enough for it to matter.
+
+3. **ConceptPackage should stay minimal and operational.**
+   It should not become a giant ontology object or another abstraction layer that is hard to inspect. The design should be intentionally small and retrieval-facing. The purpose is to preserve clinically important structure through retrieval lanes, not to model all biomedical semantics exhaustively.
+
+4. **Dynamic article-type priors should be learned or benchmark-tuned, not manually over-weighted.**
+   The logic is correct, but the weights should come from benchmark behavior and trace review. Otherwise it will be easy to over-favor reviews or case reports depending on query class.
+
+### Literature-Backed Points That Hold Up
+
+The following claims from the review are well supported by the current literature review:
+
+- **MedCPT remains a strong biomedical retriever and reranker.** Its original paper reports SOTA or near-SOTA biomedical IR performance and explicitly couples retriever and reranker training.
+  <https://academic.oup.com/bioinformatics/article/39/11/btad651/7335842>
+
+- **BM25 + MedCPT fusion is a strong biomedical retrieval recipe.** MIRAGE / MEDRAG reports that on PubMed, an RRF-2 retriever combining BM25 and MedCPT is a good selection.
+  <https://aclanthology.org/2024.findings-acl.372.pdf>
+
+- **LitSense 2.0 is directly relevant to our child-level problem.** LitSense 2.0 retrieves at sentence and paragraph level and uses lexical candidate generation followed by MedCPT-backed re-ranking of those granular units.
+  <https://academic.oup.com/nar/article/53/W1/W361/8133630>
+
+- **Unconstrained generative query expansion should stay bounded.** The April 1, 2026 JAMIA paper reports that query expansion primarily affects article ranking more than screening, and can degrade case-report retrieval while helping review articles.
+  <https://academic.oup.com/jamia/advance-article-abstract/doi/10.1093/jamia/ocag037/8571780>
+
+### Updated Implementation Priority After This Review
+
+The refined order is now:
+
+1. **Add dense child ANN retrieval.**
+   - lexical child retrieval stays
+   - dense child retrieval is added in parallel
+   - keep rescue lanes bounded
+
+2. **Replace loose phrase rescue with a small `ConceptPackage`.**
+   - preserve exposure, phenotype, temporality, polarity, dose, article-type intent, and canonical ids
+   - feed those slots into retrieval and ranking instead of flattening them away
+
+3. **Re-anchor paper ranking on child evidence.**
+   - child-first aggregation
+   - stronger parent-child promotion
+   - review overbreadth penalty where direct child evidence exists elsewhere
+
+4. **Train or tune with citation-aware hard negatives.**
+   - citation neighbors
+   - semantic neighbors
+   - same-concept wrong-phenotype papers
+   - overly broad review articles that currently steal rank
+
+5. **Expand reranking carefully.**
+   - broader bounded MedCPT reranking first
+   - late-interaction reranking later, if the candidate set improves enough to justify it
+
+6. **Keep graph support offline and precomputed.**
+   - graph priors, candidate expansion, rerank support
+   - no default live graph traversal
+
+This is the cleanest synthesis of the recent agent review with the current codebase and benchmark status.
+
+---
+
 ## What the Next Agent Should Assume
 
 Assume all of the following are already true:
@@ -1081,15 +1178,15 @@ Langfuse local URLs seen in recent work:
 ## Recommended External Reading For The Next Agent
 
 These are the papers or projects that informed the current architecture decisions:
-- MedCPT: domain-specialized biomedical retrieval and reranking  
+- MedCPT: domain-specialized biomedical retrieval and reranking
   <https://academic.oup.com/bioinformatics/article/39/11/btad651/7335842>
-- RAGChecker: failure-taxonomy-driven diagnosis rather than relying on one scalar metric  
+- RAGChecker: failure-taxonomy-driven diagnosis rather than relying on one scalar metric
   <https://arxiv.org/pdf/2408.08067>
-- LightRAG: useful as a conceptual reference for graph-supported dual-level retrieval, not as a wholesale replacement target here  
+- LightRAG: useful as a conceptual reference for graph-supported dual-level retrieval, not as a wholesale replacement target here
   <https://aclanthology.org/2025.findings-emnlp.568.pdf>
-- Microsoft GraphRAG: useful as an indexing pattern reference, but too heavy and redundant as a full replacement given the existing structured biomedical substrate  
+- Microsoft GraphRAG: useful as an indexing pattern reference, but too heavy and redundant as a full replacement given the existing structured biomedical substrate
   <https://microsoft.github.io/graphrag/index/overview/>
-- recent caution on LLM-based query expansion: unconstrained expansion can fail on ambiguous or unfamiliar queries  
+- recent caution on LLM-based query expansion: unconstrained expansion can fail on ambiguous or unfamiliar queries
   <https://arxiv.org/abs/2505.12694>
 
 The practical reading takeaway is:

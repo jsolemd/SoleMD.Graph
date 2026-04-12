@@ -41,7 +41,6 @@ class PaperRetrievalQuery:
     selected_layer_key: NodeLayer | None = None
     selected_node_id: str | None = None
     selected_graph_paper_ref: str | None = None
-    selected_paper_id: str | None = None
     selection_graph_paper_refs: list[str] = field(default_factory=list)
     selected_cluster_id: int | None = None
     scope_mode: RetrievalScope = RetrievalScope.GLOBAL

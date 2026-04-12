@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { fetchGraphRagQuery } from "@/features/graph/lib/detail-service";
+import {
+  buildGraphRagRequestContext,
+  fetchGraphRagQuery,
+} from "@/features/graph/lib/detail-service";
 import {
   GRAPH_ASK_ENGINE_ERROR_DATA_PART,
   extractLatestEvidencePayload,
@@ -13,6 +16,7 @@ import {
   getRagOverlayProducerId,
   RAG_ANSWER_SELECTION_SOURCE_ID,
 } from "@/features/graph/lib/overlay-producers";
+import { useDashboardStore } from "@/features/graph/stores";
 import type {
   GraphBundle,
   GraphBundleQueries,
@@ -62,12 +66,22 @@ export function useRagQuery({
   setSelectedPointCount: (count: number) => void;
   setActiveSelectionSourceId: (sourceId: string | null) => void;
 }) {
-  const [ragResponse, setRagResponse] = useState<GraphRagQueryResponsePayload | null>(null);
-  const [ragError, setRagError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [ragSession, setRagSession] = useState<RagResponseSession | null>(null);
-  const [ragGraphAvailability, setRagGraphAvailability] =
-    useState<RagGraphAvailabilitySummary | null>(null);
+  const ragResponse = useDashboardStore((s) => s.ragResponse);
+  const ragError = useDashboardStore((s) => s.ragError);
+  const isSubmitting = useDashboardStore((s) => s.isRagSubmitting);
+  const ragSession = useDashboardStore((s) => s.ragSession);
+  const ragGraphAvailability = useDashboardStore((s) => s.ragGraphAvailability);
+
+  const {
+    setRagResponse,
+    setRagError,
+    setIsRagSubmitting: setIsSubmitting,
+    setRagSession,
+    setRagGraphAvailability,
+    setRagPanelOpen,
+    setStreamedAskAnswer,
+  } = useDashboardStore.getState();
+
   const activeRequestIdRef = useRef(0);
   const activeOverlayProducerIdRef = useRef<OverlayProducerId | null>(null);
   const appliedRagResponseRequestIdRef = useRef<string | null>(null);
@@ -181,6 +195,11 @@ export function useRagQuery({
   });
   const streamedAskAnswer = getLatestAssistantText(askChat.messages);
 
+  // Sync streamed answer text to store so RagResponsePanel (mounted outside prompt) can read it.
+  useEffect(() => {
+    setStreamedAskAnswer(streamedAskAnswer);
+  }, [streamedAskAnswer, setStreamedAskAnswer]);
+
   // Resolve graph signals into active point indices, promoting missing papers through overlay first.
   useEffect(() => {
     if (!ragResponse || !queries) {
@@ -249,9 +268,10 @@ export function useRagQuery({
     setRagError(null);
     setRagGraphAvailability(null);
     setRagSession(session);
+    setRagPanelOpen(true);
 
     return { requestId, scopeRequest, producerId };
-  }, [clearAnswerSelection, clearOwnedOverlay, clearRagResponse, resolveSelectionScopeRequest]);
+  }, [clearAnswerSelection, clearOwnedOverlay, clearRagResponse, resolveSelectionScopeRequest, setRagPanelOpen]);
 
   const handleRagError = useCallback((error: unknown, requestId: number, producerId?: OverlayProducerId | null) => {
     if (activeRequestIdRef.current !== requestId) {
@@ -335,16 +355,13 @@ export function useRagQuery({
         { text: query },
         {
           body: {
-            graph_release_id: bundle.bundleChecksum || bundle.runId || "current",
-            selected_layer_key: selectedNode ? "paper" : null,
-            selected_node_id: selectedNode?.id ?? null,
-            selected_graph_paper_ref: selectedNode?.paperId ?? selectedNode?.id ?? null,
-            selected_paper_id: null,
-            selection_graph_paper_refs: scopeRequest.selectionGraphPaperRefs,
-            selected_cluster_id: null,
-            scope_mode: scopeRequest.scopeMode,
+            ...buildGraphRagRequestContext({
+              bundle,
+              selectedNode,
+              selectionGraphPaperRefs: scopeRequest.selectionGraphPaperRefs,
+              scopeMode: scopeRequest.scopeMode,
+            }),
             client_request_id: requestId,
-            evidence_intent: null,
             k: 6,
             rerank_topn: 18,
             use_lexical: true,
@@ -355,8 +372,7 @@ export function useRagQuery({
     })();
   }, [
     askChat,
-    bundle.bundleChecksum,
-    bundle.runId,
+    bundle,
     getPromptText,
     handleRagError,
     isAsk,
@@ -386,10 +402,12 @@ export function useRagQuery({
       clearRagResponse();
       setRagGraphAvailability(null);
       setRagSession(null);
+      setStreamedAskAnswer(null);
+      setRagPanelOpen(false);
       clearOwnedOverlay();
       clearAnswerSelection();
     }
-  }, [askChat, clearAnswerSelection, clearOwnedOverlay, clearRagResponse]);
+  }, [askChat, clearAnswerSelection, clearOwnedOverlay, clearRagResponse, setRagPanelOpen, setStreamedAskAnswer]);
 
   return {
     ragResponse,

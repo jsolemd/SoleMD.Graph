@@ -17,14 +17,22 @@
  * at a time; on unmount+remount the new Canvas reads the same arrays
  * and drift continues without a visible snap.
  *
- * Rendering: `<points>` + drei `<PointMaterial>` (which fragment-
- * discards non-circular pixels so dots read as crisp circles rather
- * than squares at any DPR). Additive blending on a black background
- * lets dense regions glow without a custom shader.
+ * Rendering: `<points>` + stock `<pointsMaterial>` with a 64×64
+ * CanvasTexture circle as `map` + `alphaTest` so non-circle pixels
+ * are discarded. Normal blending + `depthWrite` gives crisp opaque
+ * dots that read true entity color. The backdrop is the wrapper
+ * div's `var(--graph-bg)`, so the connectome tracks light/dark
+ * theme via CSS (Canvas is alpha-transparent).
  *
- * Performance: 6000 nodes × per-frame drift ≈ 120k scalar ops, ~1 ms
- * on a modern laptop. No edge pass means the frame budget is almost
- * entirely drift + one draw call.
+ * Motion: double-LPF cascade — a slow random walk on `goalVel`
+ * drives `driftVel` which drives `vel` which integrates into `pos`.
+ * Each stage is an exponential ease (~1.3 s / ~2.1 s tau), so
+ * trajectories are smooth curves with no per-frame direction flips.
+ * All velocity layers start seeded at random-walk equilibrium so
+ * motion is at full steady-state speed from frame 1.
+ *
+ * Performance: 6000 nodes × cascade + integrate + boundary ≈ 200k
+ * scalar ops, well under 2 ms/frame. One draw call, no edge pass.
  */
 import { useMemo, useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -36,25 +44,29 @@ import {
   type Points as PointsImpl,
 } from "three";
 
-const NODE_COUNT = 6000;
+export const NODE_COUNT = 6000;
 const BOUNDARY_RADIUS = 6;
-const BOUNDARY_PULL = 1.2;
+const BOUNDARY_PULL = 1.0;
 // Double-LPF cascade — the only source of noise is the goalVel random
 // walk; two eased layers smooth everything else into continuous curves.
 //   goalVel  : bounded random walk (where the node "wants" to go)
-//   driftVel : eases toward goalVel  (first smoothing, ~0.7 s tau)
-//   vel      : eases toward driftVel (second smoothing, ~1.1 s tau)
+//   driftVel : eases toward goalVel  (first smoothing, ~2.8 s tau)
+//   vel      : eases toward driftVel (second smoothing, ~4.2 s tau)
 //   pos      : integrates vel
-// End-to-end response ≈ 1.5–2 s from a random kick to actual motion,
-// so trajectories are smooth curves — no per-frame direction flips.
-const GOAL_KICK = 0.035; // per-frame random walk on goalVel
-const GOAL_DAMPING = 0.997; // keeps goalVel bounded
-const DRIFT_EASE = 0.025; // driftVel chases goalVel  (first LPF)
-const VEL_EASE = 0.015; // vel chases driftVel        (second LPF)
+// End-to-end response ≈ 7 s from a random kick to actual motion,
+// so trajectories are ultra-smooth curves — glacial, breathing drift.
+const GOAL_KICK = 0.008;
+const GOAL_DAMPING = 0.999;
+const DRIFT_EASE = 0.006; // driftVel chases goalVel  (first LPF, ~2.8 s tau)
+const VEL_EASE = 0.004; // vel chases driftVel        (second LPF, ~4.2 s tau)
+
+// Equilibrium uniform(-a, a) half-width for goalVel's random walk, so
+// all three velocity layers start at steady-state amplitude instead of
+// ramping up from zero. Derived from var = K² / (12·(1−D²)).
+const INITIAL_VEL_SPREAD =
+  (2 * GOAL_KICK) / Math.sqrt(12 * (1 - GOAL_DAMPING * GOAL_DAMPING));
 const POINT_SIZE = 0.05;
 const PALETTE_SATURATION_BOOST = 1.3;
-
-const RNG_SEED = 0xc0ffee;
 
 // Entity-highlight token names — see app/styles/tokens.css
 const ENTITY_TOKENS = [
@@ -69,22 +81,11 @@ const ENTITY_TOKENS = [
 const FALLBACK_PALETTE = [
   "#ffada4",
   "#aedc93",
-  "#eda8c4",
+  "#e0aed8",
   "#e5c799",
   "#a8c5e9",
   "#d8bee9",
 ] as const;
-
-function mulberry32(seed: number): () => number {
-  let s = seed >>> 0;
-  return function () {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 function readCssColor(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
@@ -121,7 +122,7 @@ function getCircleTexture(): CanvasTexture {
 
 type Theme = "light" | "dark";
 
-type SimState = {
+export type SimState = {
   pos: Float32Array;
   vel: Float32Array;
   driftVel: Float32Array;
@@ -141,7 +142,6 @@ function inferTheme(bgColor: string): Theme {
 
 function getOrCreateSimState(theme: Theme): SimState {
   if (sharedSimState && sharedSimTheme === theme) return sharedSimState;
-  const rand = mulberry32(RNG_SEED);
   const hsl = { h: 0, s: 0, l: 0 };
   const palette = ENTITY_TOKENS.map((name, i) => {
     const c = new Color(readCssColor(name, FALLBACK_PALETTE[i]));
@@ -160,29 +160,98 @@ function getOrCreateSimState(theme: Theme): SimState {
   });
   const pos = new Float32Array(NODE_COUNT * 3);
   const vel = new Float32Array(NODE_COUNT * 3);
-  const targetVel = new Float32Array(NODE_COUNT * 3);
+  const driftVel = new Float32Array(NODE_COUNT * 3);
+  const goalVel = new Float32Array(NODE_COUNT * 3);
   const col = new Float32Array(NODE_COUNT * 3);
   for (let i = 0; i < NODE_COUNT; i++) {
     // Uniform inside a sphere of radius BOUNDARY_RADIUS.
-    const theta = rand() * Math.PI * 2;
-    const phi = Math.acos(2 * rand() - 1);
-    const r = Math.cbrt(rand()) * BOUNDARY_RADIUS;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = Math.cbrt(Math.random()) * BOUNDARY_RADIUS;
     const sinPhi = Math.sin(phi);
     pos[i * 3] = r * sinPhi * Math.cos(theta);
     pos[i * 3 + 1] = r * sinPhi * Math.sin(theta);
     pos[i * 3 + 2] = r * Math.cos(phi);
 
-    // vel and targetVel both start at zero; the random walk seeds
-    // targetVel within ~1 s and vel eases into it.
+    // Seed all three velocity layers at the goalVel random-walk
+    // equilibrium amplitude (aligned), so drift starts at steady-state
+    // speed on frame 1 instead of ramping up from zero.
+    const svx = (Math.random() - 0.5) * INITIAL_VEL_SPREAD;
+    const svy = (Math.random() - 0.5) * INITIAL_VEL_SPREAD;
+    const svz = (Math.random() - 0.5) * INITIAL_VEL_SPREAD;
+    goalVel[i * 3] = svx;
+    goalVel[i * 3 + 1] = svy;
+    goalVel[i * 3 + 2] = svz;
+    driftVel[i * 3] = svx;
+    driftVel[i * 3 + 1] = svy;
+    driftVel[i * 3 + 2] = svz;
+    vel[i * 3] = svx;
+    vel[i * 3 + 1] = svy;
+    vel[i * 3 + 2] = svz;
 
     const c = palette[i % palette.length];
     col[i * 3] = c.r;
     col[i * 3 + 1] = c.g;
     col[i * 3 + 2] = c.b;
   }
-  sharedSimState = { pos, vel, targetVel, col };
+  sharedSimState = { pos, vel, driftVel, goalVel, col };
   sharedSimTheme = theme;
   return sharedSimState;
+}
+
+export function stepSimulation(sim: SimState, dt: number): void {
+  const { pos, vel, driftVel, goalVel } = sim;
+  const boundaryR2 = BOUNDARY_RADIUS * BOUNDARY_RADIUS;
+
+  for (let i = 0; i < NODE_COUNT; i++) {
+    const b = i * 3;
+
+    // 1. Goal velocity: slow bounded random walk (only source of noise).
+    goalVel[b] =
+      (goalVel[b] + (Math.random() - 0.5) * GOAL_KICK) * GOAL_DAMPING;
+    goalVel[b + 1] =
+      (goalVel[b + 1] + (Math.random() - 0.5) * GOAL_KICK) * GOAL_DAMPING;
+    goalVel[b + 2] =
+      (goalVel[b + 2] + (Math.random() - 0.5) * GOAL_KICK) * GOAL_DAMPING;
+
+    // 2. Drift velocity: first LPF — smooths goalVel's per-frame jitter.
+    driftVel[b] += (goalVel[b] - driftVel[b]) * DRIFT_EASE;
+    driftVel[b + 1] += (goalVel[b + 1] - driftVel[b + 1]) * DRIFT_EASE;
+    driftVel[b + 2] += (goalVel[b + 2] - driftVel[b + 2]) * DRIFT_EASE;
+
+    // 3. Actual velocity: second LPF — further smooths into a curve.
+    vel[b] += (driftVel[b] - vel[b]) * VEL_EASE;
+    vel[b + 1] += (driftVel[b + 1] - vel[b + 1]) * VEL_EASE;
+    vel[b + 2] += (driftVel[b + 2] - vel[b + 2]) * VEL_EASE;
+
+    // 4. Integrate position.
+    pos[b] += vel[b] * dt;
+    pos[b + 1] += vel[b + 1] * dt;
+    pos[b + 2] += vel[b + 2] * dt;
+
+    // Soft spherical boundary — steer the GOAL (outermost driver)
+    // inward so the cascade propagates the redirect smoothly.
+    const x = pos[b];
+    const y = pos[b + 1];
+    const z = pos[b + 2];
+    const d2 = x * x + y * y + z * z;
+    if (d2 > boundaryR2) {
+      const d = Math.sqrt(d2);
+      const over = d - BOUNDARY_RADIUS;
+      const pull = over * BOUNDARY_PULL * dt;
+      const inv = 1 / d;
+      pos[b] -= x * inv * pull;
+      pos[b + 1] -= y * inv * pull;
+      pos[b + 2] -= z * inv * pull;
+      const vrDot =
+        (goalVel[b] * x + goalVel[b + 1] * y + goalVel[b + 2] * z) * inv;
+      if (vrDot > 0) {
+        goalVel[b] -= x * inv * vrDot * 0.5;
+        goalVel[b + 1] -= y * inv * vrDot * 0.5;
+        goalVel[b + 2] -= z * inv * vrDot * 0.5;
+      }
+    }
+  }
 }
 
 function ConnectomeField({ theme }: { theme: Theme }) {
@@ -191,66 +260,7 @@ function ConnectomeField({ theme }: { theme: Theme }) {
   const circleTexture = useMemo(() => getCircleTexture(), []);
 
   useFrame((_, delta) => {
-    const dt = Math.min(delta, 0.05);
-    const { pos, vel, targetVel } = sim;
-
-    // Target-velocity low-pass filter for smooth, streaming drift.
-    // Structure:
-    //   targetVel = slow random walk (bounded, small kicks)
-    //   vel       = eases toward targetVel each frame
-    //   pos       = integrates vel over dt
-    // The vel ease (~0.03/frame = ~0.5 s time constant) ensures short-
-    // term jitter in targetVel is smoothed out before it reaches pos.
-    for (let i = 0; i < NODE_COUNT; i++) {
-      const b = i * 3;
-
-      // Target velocity: slow bounded random walk.
-      targetVel[b] =
-        (targetVel[b] + (Math.random() - 0.5) * TARGET_KICK) * TARGET_DAMPING;
-      targetVel[b + 1] =
-        (targetVel[b + 1] + (Math.random() - 0.5) * TARGET_KICK) *
-        TARGET_DAMPING;
-      targetVel[b + 2] =
-        (targetVel[b + 2] + (Math.random() - 0.5) * TARGET_KICK) *
-        TARGET_DAMPING;
-
-      // Ease actual velocity toward target (exponential approach).
-      vel[b] += (targetVel[b] - vel[b]) * VEL_EASE;
-      vel[b + 1] += (targetVel[b + 1] - vel[b + 1]) * VEL_EASE;
-      vel[b + 2] += (targetVel[b + 2] - vel[b + 2]) * VEL_EASE;
-
-      // Integrate position.
-      pos[b] += vel[b] * dt;
-      pos[b + 1] += vel[b + 1] * dt;
-      pos[b + 2] += vel[b + 2] * dt;
-
-      // Soft spherical boundary — pull targetVel inward so the node
-      // re-directs organically rather than bouncing off the wall.
-      const x = pos[b];
-      const y = pos[b + 1];
-      const z = pos[b + 2];
-      const d2 = x * x + y * y + z * z;
-      if (d2 > BOUNDARY_RADIUS * BOUNDARY_RADIUS) {
-        const d = Math.sqrt(d2);
-        const over = d - BOUNDARY_RADIUS;
-        const pull = over * BOUNDARY_PULL * dt;
-        const inv = 1 / d;
-        pos[b] -= x * inv * pull;
-        pos[b + 1] -= y * inv * pull;
-        pos[b + 2] -= z * inv * pull;
-        // Steer target velocity inward by subtracting the outward
-        // radial component. Keeps flow smooth, no hard bounces.
-        const vrDot =
-          (targetVel[b] * x + targetVel[b + 1] * y + targetVel[b + 2] * z) *
-          inv;
-        if (vrDot > 0) {
-          targetVel[b] -= x * inv * vrDot * 0.5;
-          targetVel[b + 1] -= y * inv * vrDot * 0.5;
-          targetVel[b + 2] -= z * inv * vrDot * 0.5;
-        }
-      }
-    }
-
+    stepSimulation(sim, Math.min(delta, 0.05));
     const points = pointsRef.current;
     if (points) {
       const pa = points.geometry.attributes.position as BufferAttribute;
@@ -293,10 +303,7 @@ export default function ConnectomeLoader() {
   }, []);
 
   return (
-    <div
-      className="pointer-events-none absolute inset-0 z-0"
-      style={{ backgroundColor: "var(--graph-bg)" }}
-    >
+    <div className="pointer-events-none absolute inset-0 z-0 bg-[var(--graph-bg)]">
       <Canvas
         camera={{ position: [0, 0, 7], fov: 60 }}
         dpr={[1, 2]}

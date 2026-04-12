@@ -6,6 +6,7 @@ import logging
 from functools import lru_cache
 from time import perf_counter
 
+from app.graph.repository import GraphRuntimeResolver
 from app.langfuse_config import (
     SCORE_DURATION_MS,
     SCORE_EVIDENCE_BUNDLE_COUNT,
@@ -52,7 +53,6 @@ def _update_langfuse_observation(request, result, trace):
                 "use_lexical": request.use_lexical,
                 "use_dense_query": request.use_dense_query,
                 "generate_answer": request.generate_answer,
-                "selected_paper_id": request.selected_paper_id,
                 "evidence_intent": (
                     str(request.evidence_intent)
                     if request.evidence_intent
@@ -242,11 +242,20 @@ class RagService:
     def __init__(
         self,
         repository: RagRepository | None = None,
+        graph_repository: GraphRuntimeResolver | None = None,
         warehouse_grounder=None,
         query_embedder: RagQueryEmbedder | None = None,
         biomedical_reranker: RagBiomedicalReranker | None = None,
     ):
         self._repository = repository or PostgresRagRepository()
+        if graph_repository is not None:
+            self._graph_repository = graph_repository
+        elif isinstance(self._repository, PostgresRagRepository):
+            self._graph_repository = self._repository.graph_repository
+        else:
+            raise TypeError(
+                "RagService requires an explicit graph_repository when using a custom repository"
+            )
         self._query_embedder = query_embedder or get_query_embedder()
         self._biomedical_reranker = (
             biomedical_reranker or get_runtime_biomedical_reranker()
@@ -322,6 +331,7 @@ class RagService:
             result = execute_search(
                 request=request,
                 repository=self._repository,
+                graph_repository=self._graph_repository,
                 query_embedder=self._query_embedder,
                 biomedical_reranker=self._biomedical_reranker,
                 warehouse_grounder=self._warehouse_grounder,

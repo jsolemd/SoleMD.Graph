@@ -64,7 +64,7 @@ Headings: `font-weight: 500`, `line-height: 1.25`. Body: `font-weight: 400`, `li
 | `--color-golden-yellow` | `#e5c799` | `#b69d77` | Innovation / explore |
 | `--color-fresh-green` | `#aedc93` | `#8aad7a` | Education / learn |
 | `--color-warm-coral` | `#ffada4` | `#c48e88` | Action / write |
-| `--color-soft-pink` | `#eda8c4` | `#b88299` | Contact |
+| `--color-soft-pink` | `#e0aed8` | `#b085a8` | Contact |
 | `--color-soft-lavender` | `#d8bee9` | `#a899b3` | Extended accent |
 
 ### Extended Accent Colors

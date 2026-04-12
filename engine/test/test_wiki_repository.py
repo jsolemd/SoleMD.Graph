@@ -192,23 +192,9 @@ def test_resolve_paper_nodes_for_graph_uses_graph_repository():
 def test_get_entity_page_context_uses_shared_entity_graph_projection_repository():
     class FakeEntityGraphRepository:
         def __init__(self) -> None:
-            self.count_requests: list[tuple[str, str, str]] = []
-            self.top_paper_requests: list[tuple[str, str, str, int]] = []
+            self.context_requests: list[tuple[str, str, str, int]] = []
 
-        def fetch_page_context_counts(
-            self,
-            *,
-            entity_type: str,
-            source_identifier: str,
-            graph_run_id: str,
-        ):
-            self.count_requests.append((entity_type, source_identifier, graph_run_id))
-            return {
-                "total_corpus_paper_count": 120,
-                "total_graph_paper_count": 48,
-            }
-
-        def fetch_page_context_top_papers(
+        def fetch_page_context(
             self,
             *,
             entity_type: str,
@@ -216,8 +202,13 @@ def test_get_entity_page_context_uses_shared_entity_graph_projection_repository(
             graph_run_id: str,
             limit: int = 8,
         ):
-            self.top_paper_requests.append((entity_type, source_identifier, graph_run_id, limit))
-            return [
+            self.context_requests.append(
+                (entity_type, source_identifier, graph_run_id, limit)
+            )
+            return {
+                "total_corpus_paper_count": 120,
+                "total_graph_paper_count": 48,
+                "top_graph_papers": [
                 {
                     "pmid": 28847293,
                     "graph_paper_ref": "paper:1",
@@ -226,7 +217,8 @@ def test_get_entity_page_context_uses_shared_entity_graph_projection_repository(
                     "venue": "Nature",
                     "citation_count": 77,
                 }
-            ]
+                ],
+            }
 
     entity_graph_repository = FakeEntityGraphRepository()
     repo = PostgresWikiRepository(entity_graph_repository=entity_graph_repository)
@@ -238,8 +230,9 @@ def test_get_entity_page_context_uses_shared_entity_graph_projection_repository(
         limit=5,
     )
 
-    assert entity_graph_repository.count_requests == [("chemical", "MESH:D008550", "run-1")]
-    assert entity_graph_repository.top_paper_requests == [("chemical", "MESH:D008550", "run-1", 5)]
+    assert entity_graph_repository.context_requests == [
+        ("chemical", "MESH:D008550", "run-1", 5)
+    ]
     assert context.total_corpus_paper_count == 120
     assert context.total_graph_paper_count == 48
     assert context.top_graph_papers == [

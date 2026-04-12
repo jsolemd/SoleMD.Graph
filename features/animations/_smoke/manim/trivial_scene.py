@@ -25,7 +25,7 @@ from manim import (
 config.background_color = "#fafafa"
 config.frame_rate = 30
 
-SOFT_PINK = "#eda8c4"
+SOFT_PINK = "#e0aed8"
 SOFT_LAVENDER = "#d8bee9"
 MUTED_INDIGO = "#747caa"
 DARK = "#1a1b1e"

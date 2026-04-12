@@ -77,10 +77,8 @@ export function buildEngineRagSearchRequest(
     query: input.query,
     selected_layer_key: input.selected_layer_key || undefined,
     selected_node_id: normalizeString(input.selected_node_id ?? null) ?? undefined,
-    selected_graph_paper_ref: normalizeString(
-      input.selected_graph_paper_ref ?? input.selected_paper_id ?? null,
-    ) ?? undefined,
-    selected_paper_id: normalizeString(input.selected_paper_id ?? null) ?? undefined,
+    selected_graph_paper_ref:
+      normalizeString(input.selected_graph_paper_ref ?? null) ?? undefined,
     selection_graph_paper_refs: selectionGraphPaperRefs.length > 0 ? selectionGraphPaperRefs : undefined,
     selected_cluster_id: typeof input.selected_cluster_id === 'number' ? input.selected_cluster_id : undefined,
     scope_mode: input.scope_mode === 'selection_only' ? input.scope_mode : undefined,
@@ -117,7 +115,6 @@ function mapEngineRagResponse(
     selected_layer_key: response.graph_context.selected_layer_key,
     selected_node_id: response.graph_context.selected_node_id,
     selected_graph_paper_ref: response.graph_context.selected_graph_paper_ref,
-    selected_paper_id: response.graph_context.selected_paper_id,
     selection_graph_paper_refs: response.graph_context.selection_graph_paper_refs,
     selected_cluster_id: response.graph_context.selected_cluster_id,
     scope_mode: response.graph_context.scope_mode,

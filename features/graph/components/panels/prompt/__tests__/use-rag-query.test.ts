@@ -24,11 +24,16 @@ import {
   syncRagGraphSignals,
 } from "../rag-graph-sync";
 import { fetchGraphRagQuery } from "../../../../lib/detail-service";
+import { useDashboardStore } from "@/features/graph/stores";
 import { useRagQuery } from "../use-rag-query";
 
-jest.mock("../../../../lib/detail-service", () => ({
-  fetchGraphRagQuery: jest.fn(),
-}));
+jest.mock("../../../../lib/detail-service", () => {
+  const actual = jest.requireActual("../../../../lib/detail-service");
+  return {
+    ...actual,
+    fetchGraphRagQuery: jest.fn(),
+  };
+});
 
 jest.mock("ai", () => ({
   DefaultChatTransport: class DefaultChatTransport {
@@ -156,7 +161,6 @@ function createResponse(query: string): GraphRagQueryResponsePayload {
     selected_layer_key: null,
     selected_node_id: null,
     selected_graph_paper_ref: null,
-    selected_paper_id: null,
     selection_graph_paper_refs: [],
     selected_cluster_id: null,
     scope_mode: "global",
@@ -170,6 +174,15 @@ function createResponse(query: string): GraphRagQueryResponsePayload {
 describe("useRagQuery", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    useDashboardStore.setState({
+      ragPanelOpen: false,
+      ragResponse: null,
+      streamedAskAnswer: null,
+      ragError: null,
+      ragSession: null,
+      ragGraphAvailability: null,
+      isRagSubmitting: false,
+    });
     chatMock = createChatMock();
     chatOptions = undefined;
     mockedUseChat.mockImplementation((options) => {
@@ -291,7 +304,6 @@ describe("useRagQuery", () => {
           selected_layer_key: "paper",
           selected_node_id: "paper-7",
           selected_graph_paper_ref: "paper-7",
-          selected_paper_id: null,
           selection_graph_paper_refs: null,
           selected_cluster_id: null,
           scope_mode: null,
