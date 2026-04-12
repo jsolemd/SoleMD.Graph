@@ -10,6 +10,5 @@ export interface EntityHoverCardModel {
   conceptNamespace: string | null
   paperCount: number | null
   aliases: readonly GraphEntityAlias[]
-  summary: string | null
   detailReady: boolean
 }

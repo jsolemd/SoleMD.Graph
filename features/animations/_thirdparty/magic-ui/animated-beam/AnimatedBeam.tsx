@@ -10,7 +10,7 @@
  *   - Observes container + both anchor rects for responsive re-layout.
  */
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
 
 export interface AnimatedBeamProps {
   containerRef: RefObject<HTMLElement | null>;

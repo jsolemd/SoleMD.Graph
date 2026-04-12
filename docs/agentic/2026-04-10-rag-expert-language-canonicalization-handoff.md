@@ -1065,3 +1065,74 @@ Interpretation:
 - the next major work item is therefore not more phrase growth, but using these
   recovered concepts more effectively in shortlist formation and evidence
   promotion
+
+## Integrated Next Steps
+
+Objective:
+
+- keep the current hybrid parent/child RAG backbone
+- keep ontology-backed expert canonicalization upstream of retrieval
+- add graph only as a precomputed retrieval-support substrate, not as live
+  query-time graph traversal
+- accept changes only when the `61`-case gated expert surface or a more
+  appropriate suite improves without unacceptable latency regression
+
+Execution order:
+
+1. Canonical concept package propagation
+   - carry the recovered composite vocab concepts into shortlist formation more
+     explicitly instead of letting them stop at trace/debug metadata
+   - target files:
+     - `engine/app/rag/search_retrieval_concepts.py`
+     - `engine/app/rag/search_retrieval.py`
+   - success condition:
+     - `target_visible_not_top1` decreases on the gated expert suite without
+       widening the retrieval fanout indiscriminately
+
+2. Parent-child evidence promotion
+   - use the recovered concepts to improve child evidence recall and let strong
+     child support promote the correct parent paper earlier
+   - keep this in the existing retrieval/ranking stack rather than introducing
+     live graph walks
+   - success condition:
+     - `hit@1` rises on `biomedical_expert_canonicalization_v1`
+     - `top1_miss` decreases on the same denominator
+
+3. Precomputed graph read-model
+   - build a graph support layer from assets already in the warehouse:
+     - PubTator entities
+     - PubTator relations
+     - MeSH/UMLS/vocab aliases
+     - citations
+     - semantic-neighbor links
+     - paper -> chunk -> sentence hierarchy
+   - use it for:
+     - candidate expansion
+     - shortlist priors
+     - rerank support
+   - do not put free graph traversal in the default hot path
+   - graph should remain an offline/index-time and precomputed-online support
+     surface unless a later benchmark proves live traversal is worth the cost
+
+4. Bounded generative AI role
+   - allow LLMs to propose candidate concept packages or relation expansions only
+     if they ground back to local ontology ids or alias rows
+   - do not allow unconstrained runtime query rewriting to become the retrieval
+     authority
+   - use Langfuse miss review to decide where proposal-only LLM assistance adds
+     value
+
+5. Benchmark expansion
+   - keep the current `61` structure-complete expert gate for continuity
+   - add more structure-complete expert/narrative cases until the acceptance
+     surface is larger than this one suite
+   - use relation-heavy / narrative suites to judge whether the future graph
+     read-model is helping where it should help
+
+Architecture decision:
+
+- do not swap the system to LightRAG/GraphRAG wholesale
+- reuse the existing structured biomedical substrate and add only the parts of a
+  graph retrieval stack that improve retrieval support economically
+- graph belongs in the system as a precomputed signal layer, not as a default
+  live traversal engine

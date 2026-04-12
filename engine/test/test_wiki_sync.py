@@ -8,11 +8,9 @@ from textwrap import dedent
 
 import pytest
 
-# Import the internal parse function for unit testing
-from db.scripts.sync_wiki_pages import _parse_wiki_file
-
 from app.wiki.content_contract import resolve_wiki_page_contract
 from app.wiki.links import resolve_outgoing_links
+from db.scripts.sync_wiki_pages import _parse_wiki_file
 
 
 @pytest.fixture

@@ -28,6 +28,7 @@ export interface WikiPageResponse {
   entity_type: string | null
   concept_id: string | null
   family_key: string | null
+  semantic_group: string | null
   page_kind: "index" | "section" | "entity" | "topic"
   section_slug: string | null
   graph_focus: "cited_papers" | "entity_exact" | "none"
@@ -40,7 +41,6 @@ export interface WikiPageResponse {
   featured_graph_refs: Record<number, string>
   resolved_links: Record<string, string>
   linked_entities: Record<string, WikiLinkedEntity>
-  context: WikiPageContextResponse | null
 }
 
 export interface WikiPageSummary {

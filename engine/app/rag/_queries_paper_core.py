@@ -289,6 +289,10 @@ catalog_exact_matches AS (
         AND COALESCE(e.concept_id, '') NOT IN ('', '-')
 ),
 catalog_alias_exact_matches AS (
+    -- Broad exact-query alias resolution deliberately uses entity_aliases rather
+    -- than entity_runtime_aliases. The runtime table is the highlight/matcher
+    -- subset; the query-serving alias projection carries the fuller UMLS/vocab
+    -- exact-match surface used by RAG concept normalization.
     SELECT
         qt.raw_term AS query_term,
         qt.token_count,
@@ -505,7 +509,11 @@ matched_vocab AS (
     SELECT
         qt.query_term,
         qt.token_count,
-        COALESCE(NULLIF(trim(vt.canonical_name), ''), vta.alias_text, qt.query_term) AS preferred_term,
+        COALESCE(
+            NULLIF(trim(vt.canonical_name), ''),
+            vta.alias_text,
+            qt.query_term
+        ) AS preferred_term,
         vta.alias_text AS matched_alias,
         vta.alias_key,
         vta.alias_type,

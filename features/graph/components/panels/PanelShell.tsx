@@ -159,14 +159,20 @@ export function PanelDivider() {
 }
 
 /**
- * Shared inline loading indicator — 12px spinner with optional dim label.
- * Use in panel headers, toolbars, and section footers. Single source of
- * truth so loading style can be updated once for the whole app.
+ * Shared inline loading indicator — mode-accent spinner with optional dim label.
+ * Single source of truth for every circular loader in the app; tint follows
+ * the active mode via `--mode-accent`.
  */
-export function PanelInlineLoader({ label }: { label?: string }) {
+export function PanelInlineLoader({
+  label,
+  size = 10,
+}: {
+  label?: string;
+  size?: number;
+}) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <Loader size={10} color="var(--graph-panel-text-dim)" />
+      <Loader size={size} color="var(--mode-accent)" />
       {label && <Text component="span" style={panelTextDimStyle}>{label}</Text>}
     </span>
   );

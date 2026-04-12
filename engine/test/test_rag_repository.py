@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, call
 
+from app.graph.repository import (
+    GRAPH_RELEASE_LOOKUP_SQL,
+    SCOPE_CORPUS_LOOKUP_BY_CORPUS_ID_SQL,
+    SCOPE_CORPUS_LOOKUP_BY_GRAPH_LOOKUP_REF_SQL,
+    PostgresGraphRepository,
+)
 from app.pgvector_utils import format_vector_literal
 from app.rag import queries
-from app.rag.models import PaperEvidenceHit
 from app.rag.biomedical_concept_normalizer import _VocabConceptRow
+from app.rag.models import GraphRelease, PaperEvidenceHit
 from app.rag.query_enrichment import normalize_title_key
 from app.rag.query_metadata import QueryMetadataHints
 from app.rag.repository import (
@@ -882,7 +888,7 @@ def test_resolve_graph_release_caches_repeated_release_lookup(mock_conn):
     assert first == second
     cur = conn.cursor.return_value.__enter__.return_value
     cur.execute.assert_called_once_with(
-        queries.GRAPH_RELEASE_LOOKUP_SQL,
+        GRAPH_RELEASE_LOOKUP_SQL,
         ("current", "current", "current"),
     )
 
@@ -890,7 +896,7 @@ def test_resolve_graph_release_caches_repeated_release_lookup(mock_conn):
 def test_is_current_graph_run_caches_lazy_current_graph_lookup(mock_conn):
     conn = mock_conn()
     cur = conn.cursor.return_value.__enter__.return_value
-    cur.fetchone.return_value = {"id": "run-current"}
+    cur.fetchone.return_value = {"graph_run_id": "run-current"}
     repo = PostgresRagRepository(connect=lambda: conn)
 
     assert repo._is_current_graph_run("run-current") is True
@@ -978,6 +984,8 @@ def test_search_session_reuses_one_connection_across_repository_calls(mock_conn)
     conn = mock_conn(rows=[])
     connect = MagicMock(return_value=conn)
     repo = PostgresRagRepository(connect=connect)
+    cur = conn.cursor.return_value.__enter__.return_value
+    cur.fetchall.side_effect = [[{"corpus_id": 22}], [{"corpus_id": 11}], []]
 
     with repo.search_session():
         repo.resolve_scope_corpus_ids(
@@ -987,17 +995,20 @@ def test_search_session_reuses_one_connection_across_repository_calls(mock_conn)
         repo.fetch_known_scoped_papers_by_corpus_ids([101, 202])
 
     assert connect.call_count == 1
-    cur = conn.cursor.return_value.__enter__.return_value
     assert cur.execute.call_args_list == [
         call("SET LOCAL jit = off"),
         call(
-            queries.SCOPE_CORPUS_LOOKUP_SQL,
+            SCOPE_CORPUS_LOOKUP_BY_CORPUS_ID_SQL,
             (
                 "run-1",
-                ["paper-11", "paper:22"],
-                ["paper-11", "paper:22"],
-                ["paper-11", "paper:22"],
-                ["paper-11", "paper:22"],
+                [22],
+            ),
+        ),
+        call(
+            SCOPE_CORPUS_LOOKUP_BY_GRAPH_LOOKUP_REF_SQL,
+            (
+                "run-1",
+                ["paper-11"],
             ),
         ),
         call(queries.PAPER_LOOKUP_DIRECT_SQL, ([101, 202],)),
@@ -1177,7 +1188,7 @@ def test_resolve_query_entity_terms_adds_supplemental_vocab_matches_for_uncovere
     )
 
 
-def test_resolve_query_entity_terms_skips_supplemental_vocab_lookup_when_vocab_alias_is_already_present(
+def test_resolve_query_entity_terms_skips_vocab_lookup_when_alias_is_already_present(
     mock_conn,
 ):
     conn = mock_conn(rows=[])
@@ -2163,8 +2174,9 @@ def test_fetch_known_scoped_papers_by_corpus_ids_maps_rows(mock_conn):
 
 
 def test_resolve_scope_corpus_ids_maps_graph_refs(mock_conn):
-    conn = mock_conn(rows=[{"corpus_id": 11}, {"corpus_id": 22}])
-    repo = PostgresRagRepository(connect=lambda: conn)
+    graph_repository = MagicMock(spec=PostgresGraphRepository)
+    graph_repository.resolve_scope_corpus_ids.return_value = [11, 22]
+    repo = PostgresRagRepository(graph_repository=graph_repository)
 
     corpus_ids = repo.resolve_scope_corpus_ids(
         graph_run_id="run-1",
@@ -2172,38 +2184,69 @@ def test_resolve_scope_corpus_ids_maps_graph_refs(mock_conn):
     )
 
     assert corpus_ids == [11, 22]
-    cur = conn.cursor.return_value.__enter__.return_value
-    cur.execute.assert_called_once_with(
-        queries.SCOPE_CORPUS_LOOKUP_SQL,
-        (
-            "run-1",
-            ["paper-11", "paper:22"],
-            ["paper-11", "paper:22"],
-            ["paper-11", "paper:22"],
-            ["paper-11", "paper:22"],
-        ),
+    graph_repository.resolve_scope_corpus_ids.assert_called_once_with(
+        graph_run_id="run-1",
+        graph_paper_refs=["paper-11", "paper:22", "paper-11"],
+    )
+
+
+def test_resolve_selected_corpus_id_uses_graph_membership_for_corpus_ref(mock_conn):
+    graph_repository = MagicMock(spec=PostgresGraphRepository)
+    graph_repository.resolve_selected_corpus_id.return_value = 22
+    repo = PostgresRagRepository(graph_repository=graph_repository)
+
+    corpus_id = repo.resolve_selected_corpus_id(
+        graph_run_id="run-1",
+        selected_graph_paper_ref="paper:22",
+        selected_paper_id=None,
+        selected_node_id=None,
+    )
+
+    assert corpus_id == 22
+    graph_repository.resolve_selected_corpus_id.assert_called_once_with(
+        graph_run_id="run-1",
+        selected_graph_paper_ref="paper:22",
+        selected_paper_id=None,
+        selected_node_id=None,
+    )
+
+
+def test_resolve_selected_corpus_id_maps_prefixed_paper_id(mock_conn):
+    graph_repository = MagicMock(spec=PostgresGraphRepository)
+    graph_repository.resolve_selected_corpus_id.return_value = 11
+    repo = PostgresRagRepository(graph_repository=graph_repository)
+
+    corpus_id = repo.resolve_selected_corpus_id(
+        graph_run_id="run-1",
+        selected_graph_paper_ref="paper:paper-11",
+        selected_paper_id=None,
+        selected_node_id=None,
+    )
+
+    assert corpus_id == 11
+    graph_repository.resolve_selected_corpus_id.assert_called_once_with(
+        graph_run_id="run-1",
+        selected_graph_paper_ref="paper:paper-11",
+        selected_paper_id=None,
+        selected_node_id=None,
     )
 
 
 def test_resolve_graph_release_targets_current_cosmograph_corpus_run(mock_conn):
-    conn = mock_conn()
-    cur = conn.cursor.return_value.__enter__.return_value
-    cur.fetchone.return_value = {
-        "graph_run_id": "run-1",
-        "graph_name": "cosmograph",
-        "is_current": True,
-        "bundle_checksum": "bundle-1",
-    }
-    repo = PostgresRagRepository(connect=lambda: conn)
+    graph_repository = MagicMock(spec=PostgresGraphRepository)
+    expected_release = GraphRelease(
+        graph_release_id="bundle-1",
+        graph_run_id="run-1",
+        bundle_checksum="bundle-1",
+        graph_name="cosmograph",
+        is_current=True,
+    )
+    graph_repository.resolve_graph_release.return_value = expected_release
+    repo = PostgresRagRepository(graph_repository=graph_repository)
 
     release = repo.resolve_graph_release("bundle-1")
 
-    assert "graph_name = 'cosmograph'" in queries.GRAPH_RELEASE_LOOKUP_SQL
-    assert "node_kind = 'corpus'" in queries.GRAPH_RELEASE_LOOKUP_SQL
-    cur.execute.assert_called_once_with(
-        queries.GRAPH_RELEASE_LOOKUP_SQL,
-        ("bundle-1", "bundle-1", "bundle-1"),
-    )
+    graph_repository.resolve_graph_release.assert_called_once_with("bundle-1")
     assert release.graph_release_id == "bundle-1"
     assert release.graph_run_id == "run-1"
 

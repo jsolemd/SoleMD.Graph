@@ -45,12 +45,8 @@ export function normalizeWikiPageResponse(
   const paperPmids = normalizeNumberArray(page.paper_pmids)
   const featuredPmids = normalizeNumberArray(page.featured_pmids)
   const paperGraphRefs = normalizePaperGraphRefs(page.paper_graph_refs)
-  const featuredGraphRefs = mergeFeaturedGraphRefs({
-    featuredPmids,
-    paperGraphRefs,
-    featuredGraphRefs: normalizePaperGraphRefs(page.featured_graph_refs),
-  })
-  const pageKind = normalizeWikiPageKind(page)
+  const featuredGraphRefs = normalizePaperGraphRefs(page.featured_graph_refs)
+  const pageKind = normalizeWikiPageKind(page.page_kind)
 
   return {
     slug: page.slug,
@@ -60,13 +56,10 @@ export function normalizeWikiPageResponse(
     entity_type: typeof page.entity_type === 'string' ? page.entity_type : null,
     concept_id: typeof page.concept_id === 'string' ? page.concept_id : null,
     family_key: typeof page.family_key === 'string' ? page.family_key : null,
+    semantic_group: typeof page.semantic_group === 'string' ? page.semantic_group : null,
     page_kind: pageKind,
     section_slug: typeof page.section_slug === 'string' ? page.section_slug : null,
-    graph_focus: normalizeWikiGraphFocus(page.graph_focus, {
-      pageKind,
-      paperPmids,
-      featuredPmids,
-    }),
+    graph_focus: normalizeWikiGraphFocus(page.graph_focus),
     summary: typeof page.summary === 'string' ? page.summary : null,
     tags: normalizeStringArray(page.tags),
     outgoing_links: normalizeStringArray(page.outgoing_links),
@@ -76,52 +69,15 @@ export function normalizeWikiPageResponse(
     featured_graph_refs: featuredGraphRefs,
     resolved_links: normalizeStringRecord(page.resolved_links),
     linked_entities: normalizeLinkedEntities(page.linked_entities),
-    context: normalizeWikiPageContextResponse(page.context),
   }
 }
 
-function normalizeWikiPageKind(page: WikiPagePayload): WikiPageResponse['page_kind'] {
-  if (isWikiPageKind(page.page_kind)) {
-    return page.page_kind
-  }
-  if (page.slug === 'index') {
-    return 'index'
-  }
-  if (page.slug.startsWith('sections/')) {
-    return 'section'
-  }
-  if (
-    page.slug.startsWith('entities/')
-    || typeof page.entity_type === 'string'
-    || typeof page.concept_id === 'string'
-  ) {
-    return 'entity'
-  }
-  return 'topic'
+function normalizeWikiPageKind(value: unknown): WikiPageResponse['page_kind'] {
+  return isWikiPageKind(value) ? value : 'topic'
 }
 
-function normalizeWikiGraphFocus(
-  value: unknown,
-  {
-    pageKind,
-    paperPmids,
-    featuredPmids,
-  }: {
-    pageKind: WikiPageResponse['page_kind']
-    paperPmids: number[]
-    featuredPmids: number[]
-  },
-): WikiPageResponse['graph_focus'] {
-  if (isWikiGraphFocus(value)) {
-    return value
-  }
-  if (featuredPmids.length > 0 || paperPmids.length > 0) {
-    return 'cited_papers'
-  }
-  if (pageKind === 'entity') {
-    return 'entity_exact'
-  }
-  return 'none'
+function normalizeWikiGraphFocus(value: unknown): WikiPageResponse['graph_focus'] {
+  return isWikiGraphFocus(value) ? value : 'none'
 }
 
 export function normalizeWikiPageContextResponse(value: unknown): WikiPageContextResponse | null {
@@ -177,26 +133,6 @@ function normalizeLinkedEntities(value: unknown): Record<string, WikiLinkedEntit
         return []
       }
       return [[slug, { entity_type: entity.entity_type, concept_id: entity.concept_id }]]
-    }),
-  )
-}
-
-function mergeFeaturedGraphRefs({
-  featuredPmids,
-  paperGraphRefs,
-  featuredGraphRefs,
-}: {
-  featuredPmids: number[]
-  paperGraphRefs: Record<number, string>
-  featuredGraphRefs: Record<number, string>
-}): Record<number, string> {
-  if (Object.keys(featuredGraphRefs).length > 0) {
-    return featuredGraphRefs
-  }
-  return Object.fromEntries(
-    featuredPmids.flatMap((pmid) => {
-      const graphRef = paperGraphRefs[pmid]
-      return graphRef ? [[pmid, graphRef]] : []
     }),
   )
 }

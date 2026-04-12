@@ -67,9 +67,6 @@ describe('entity-overlay-sync', () => {
     } as never)
     fetchGraphEntityOverlayMock.mockResolvedValue({
       graphPaperRefs: ['paper:1', 'paper:2'],
-      entityGraphPaperCounts: {
-        'disease:schizophrenia': 2,
-      },
     })
 
     await expect(
@@ -86,9 +83,6 @@ describe('entity-overlay-sync', () => {
     ).resolves.toEqual({
       response: {
         graphPaperRefs: ['paper:1', 'paper:2'],
-        entityGraphPaperCounts: {
-          'disease:schizophrenia': 2,
-        },
       },
       overlayPointIds: ['overlay-1', 'overlay-2'],
       selectedPointIndices: [7, 11],

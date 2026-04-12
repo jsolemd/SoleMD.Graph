@@ -11,8 +11,6 @@ import {
 } from "@/features/graph/tiptap";
 import type { GraphEntityRef } from "@/features/graph/types/entity-service";
 
-const ENTITY_HOVER_OFFSET_Y = 8;
-
 export interface EntityHighlight {
   id: string;
   from: number;
@@ -192,12 +190,11 @@ function syncEntityHighlightHover({
     return;
   }
 
-  const frameBounds = view.dom.getBoundingClientRect();
   const targetBounds = target.getBoundingClientRect();
   setEntityHighlightHover({
     highlight,
-    x: targetBounds.left - frameBounds.left,
-    y: targetBounds.top - frameBounds.top - ENTITY_HOVER_OFFSET_Y,
+    x: targetBounds.left,
+    y: targetBounds.top,
   });
 }
 

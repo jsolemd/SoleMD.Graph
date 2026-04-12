@@ -1,4 +1,10 @@
-"""Entity-based paper search SQL — exact/fuzzy entity matching + graph-scoped retrieval."""
+"""Entity-based paper search SQL — exact/fuzzy entity matching + graph-scoped retrieval.
+
+Exact alias matching intentionally reads from ``solemd.entity_aliases`` because that
+table is the broad exact-query serving projection rebuilt from the canonical entity
+catalog plus UMLS/vocab alias expansion. The narrower ``entity_runtime_aliases``
+subset is reserved for text highlighting and hover/matcher hot paths.
+"""
 
 from app.rag._queries_paper_core import (
     ENTITY_MENTION_CONCEPT_KEY_SQL,

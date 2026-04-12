@@ -1,0 +1,649 @@
+{
+  "source": "Google Noto Animated Emoji",
+  "cdn_pattern": "https://fonts.gstatic.com/s/e/notoemoji/latest/{codepoint}/lottie.json",
+  "license": "SIL Open Font License 1.1",
+  "license_file": "LICENSE.txt",
+  "entries": [
+    {
+      "codepoint": "1f9e0",
+      "emoji": "🧠",
+      "slug": "brain",
+      "tier": "core",
+      "note": "Centerpiece for neuroscience content",
+      "file": "1f9e0-brain.json",
+      "bytes": 115765,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f9e0/lottie.json"
+    },
+    {
+      "codepoint": "1fac0",
+      "emoji": "🫀",
+      "slug": "anatomical-heart",
+      "tier": "core",
+      "note": "Organ visual, distinct from mood hearts",
+      "file": "1fac0-anatomical-heart.json",
+      "bytes": 67731,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1fac0/lottie.json"
+    },
+    {
+      "codepoint": "1fa7a",
+      "emoji": "🩺",
+      "slug": "stethoscope",
+      "tier": "core",
+      "note": "Clinical exam, 'medical' signifier",
+      "file": "1fa7a-stethoscope.json",
+      "bytes": 65472,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1fa7a/lottie.json"
+    },
+    {
+      "codepoint": "1fa78",
+      "emoji": "🩸",
+      "slug": "drop-of-blood",
+      "tier": "core",
+      "note": "Labs / phlebotomy stand-in",
+      "file": "1fa78-drop-of-blood.json",
+      "bytes": 13119,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1fa78/lottie.json"
+    },
+    {
+      "codepoint": "1f9a0",
+      "emoji": "🦠",
+      "slug": "microbe",
+      "tier": "core",
+      "note": "Infection / microbiology",
+      "file": "1f9a0-microbe.json",
+      "bytes": 65924,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f9a0/lottie.json"
+    },
+    {
+      "codepoint": "1f9b4",
+      "emoji": "🦴",
+      "slug": "bone",
+      "tier": "core",
+      "note": "Anatomy / ortho",
+      "file": "1f9b4-bone.json",
+      "bytes": 110027,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f9b4/lottie.json"
+    },
+    {
+      "codepoint": "1f441_fe0f",
+      "emoji": "👁️",
+      "slug": "eye",
+      "tier": "core",
+      "note": "Exam / perception / hallucinations",
+      "file": "1f441_fe0f-eye.json",
+      "bytes": 44364,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f441_fe0f/lottie.json"
+    },
+    {
+      "codepoint": "1f9bb",
+      "emoji": "👂",
+      "slug": "ear",
+      "tier": "core",
+      "note": "Auditory / hallucinations",
+      "file": "1f9bb-ear.json",
+      "bytes": 60097,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f9bb/lottie.json"
+    },
+    {
+      "codepoint": "1f321_fe0f",
+      "emoji": "🌡️",
+      "slug": "thermometer",
+      "tier": "core",
+      "note": "Fever / vitals",
+      "file": "1f321_fe0f-thermometer.json",
+      "bytes": 18155,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f321_fe0f/lottie.json"
+    },
+    {
+      "codepoint": "1f912",
+      "emoji": "🤒",
+      "slug": "face-with-thermometer",
+      "tier": "core",
+      "note": "Sick patient",
+      "file": "1f912-face-with-thermometer.json",
+      "bytes": 35011,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f912/lottie.json"
+    },
+    {
+      "codepoint": "1f915",
+      "emoji": "🤕",
+      "slug": "face-with-bandage",
+      "tier": "core",
+      "note": "Injury / recovery",
+      "file": "1f915-face-with-bandage.json",
+      "bytes": 24897,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f915/lottie.json"
+    },
+    {
+      "codepoint": "2764_fe0f_200d_1fa79",
+      "emoji": "❤️‍🩹",
+      "slug": "mending-heart",
+      "tier": "core",
+      "note": "Healing metaphor",
+      "file": "2764_fe0f_200d_1fa79-mending-heart.json",
+      "bytes": 100250,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/2764_fe0f_200d_1fa79/lottie.json"
+    },
+    {
+      "codepoint": "1f634",
+      "emoji": "😴",
+      "slug": "sleeping-face",
+      "tier": "relevant",
+      "note": "Sleep disorders / sedation",
+      "file": "1f634-sleeping-face.json",
+      "bytes": 24420,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f634/lottie.json"
+    },
+    {
+      "codepoint": "1f62a",
+      "emoji": "😪",
+      "slug": "sleepy-face",
+      "tier": "relevant",
+      "note": "Fatigue / post-call",
+      "file": "1f62a-sleepy-face.json",
+      "bytes": 33013,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f62a/lottie.json"
+    },
+    {
+      "codepoint": "1fae9",
+      "emoji": "🫩",
+      "slug": "face-with-bags-under-eyes",
+      "tier": "relevant",
+      "note": "Burnout / exhaustion",
+      "file": "1fae9-face-with-bags-under-eyes.json",
+      "bytes": 23831,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1fae9/lottie.json"
+    },
+    {
+      "codepoint": "1f629",
+      "emoji": "😩",
+      "slug": "weary-face",
+      "tier": "relevant",
+      "note": "Overwhelmed / depression",
+      "file": "1f629-weary-face.json",
+      "bytes": 43145,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f629/lottie.json"
+    },
+    {
+      "codepoint": "1f630",
+      "emoji": "😰",
+      "slug": "anxious-face-with-sweat",
+      "tier": "relevant",
+      "note": "Canonical anxiety visual",
+      "file": "1f630-anxious-face-with-sweat.json",
+      "bytes": 31920,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f630/lottie.json"
+    },
+    {
+      "codepoint": "1f631",
+      "emoji": "😱",
+      "slug": "screaming-face",
+      "tier": "relevant",
+      "note": "Panic / acute fear",
+      "file": "1f631-screaming-face.json",
+      "bytes": 90226,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f631/lottie.json"
+    },
+    {
+      "codepoint": "1f627",
+      "emoji": "😧",
+      "slug": "anguished-face",
+      "tier": "relevant",
+      "note": "Distress",
+      "file": "1f627-anguished-face.json",
+      "bytes": 22195,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f627/lottie.json"
+    },
+    {
+      "codepoint": "1f61f",
+      "emoji": "😟",
+      "slug": "worried-face",
+      "tier": "relevant",
+      "note": "Mild anxiety",
+      "file": "1f61f-worried-face.json",
+      "bytes": 19906,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f61f/lottie.json"
+    },
+    {
+      "codepoint": "1f614",
+      "emoji": "😔",
+      "slug": "pensive-face",
+      "tier": "relevant",
+      "note": "Depressive rumination",
+      "file": "1f614-pensive-face.json",
+      "bytes": 18003,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f614/lottie.json"
+    },
+    {
+      "codepoint": "1f61e",
+      "emoji": "😞",
+      "slug": "disappointed-face",
+      "tier": "relevant",
+      "note": "Low mood",
+      "file": "1f61e-disappointed-face.json",
+      "bytes": 30944,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f61e/lottie.json"
+    },
+    {
+      "codepoint": "1f622",
+      "emoji": "😢",
+      "slug": "crying-face",
+      "tier": "relevant",
+      "note": "Tearfulness",
+      "file": "1f622-crying-face.json",
+      "bytes": 47018,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f622/lottie.json"
+    },
+    {
+      "codepoint": "1f62d",
+      "emoji": "😭",
+      "slug": "loudly-crying-face",
+      "tier": "relevant",
+      "note": "Grief",
+      "file": "1f62d-loudly-crying-face.json",
+      "bytes": 119550,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f62d/lottie.json"
+    },
+    {
+      "codepoint": "1f979",
+      "emoji": "🥹",
+      "slug": "holding-back-tears",
+      "tier": "relevant",
+      "note": "Emotional suppression",
+      "file": "1f979-holding-back-tears.json",
+      "bytes": 75974,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f979/lottie.json"
+    },
+    {
+      "codepoint": "1f60c",
+      "emoji": "😌",
+      "slug": "relieved-face",
+      "tier": "relevant",
+      "note": "Symptom resolution",
+      "file": "1f60c-relieved-face.json",
+      "bytes": 21131,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f60c/lottie.json"
+    },
+    {
+      "codepoint": "1f635_200d_1f4ab",
+      "emoji": "😵‍💫",
+      "slug": "dizzy-face",
+      "tier": "relevant",
+      "note": "Delirium / vertigo / disorientation",
+      "file": "1f635_200d_1f4ab-dizzy-face.json",
+      "bytes": 37987,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f635_200d_1f4ab/lottie.json"
+    },
+    {
+      "codepoint": "1f974",
+      "emoji": "🥴",
+      "slug": "woozy-face",
+      "tier": "relevant",
+      "note": "Intoxication / syncope",
+      "file": "1f974-woozy-face.json",
+      "bytes": 32633,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f974/lottie.json"
+    },
+    {
+      "codepoint": "1f922",
+      "emoji": "🤢",
+      "slug": "nauseated-face",
+      "tier": "relevant",
+      "note": "GI side effect",
+      "file": "1f922-nauseated-face.json",
+      "bytes": 32940,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f922/lottie.json"
+    },
+    {
+      "codepoint": "1f92e",
+      "emoji": "🤮",
+      "slug": "vomiting-face",
+      "tier": "relevant",
+      "note": "GI side effect",
+      "file": "1f92e-vomiting-face.json",
+      "bytes": 113083,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f92e/lottie.json"
+    },
+    {
+      "codepoint": "1f92f",
+      "emoji": "🤯",
+      "slug": "mind-blown",
+      "tier": "relevant",
+      "note": "Psychosis / insight / epiphany",
+      "file": "1f92f-mind-blown.json",
+      "bytes": 143616,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f92f/lottie.json"
+    },
+    {
+      "codepoint": "1fae0",
+      "emoji": "🫠",
+      "slug": "melting-face",
+      "tier": "relevant",
+      "note": "Dissociation / depersonalization",
+      "file": "1fae0-melting-face.json",
+      "bytes": 135911,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1fae0/lottie.json"
+    },
+    {
+      "codepoint": "1f637",
+      "emoji": "😷",
+      "slug": "face-with-medical-mask",
+      "tier": "relevant",
+      "note": "Infection control",
+      "file": "1f637-face-with-medical-mask.json",
+      "bytes": 26028,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f637/lottie.json"
+    },
+    {
+      "codepoint": "1f910",
+      "emoji": "🤐",
+      "slug": "zipper-mouth-face",
+      "tier": "relevant",
+      "note": "Mutism / alogia",
+      "file": "1f910-zipper-mouth-face.json",
+      "bytes": 79614,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f910/lottie.json"
+    },
+    {
+      "codepoint": "1f62c",
+      "emoji": "😬",
+      "slug": "grimacing-face",
+      "tier": "relevant",
+      "note": "Discomfort / pain",
+      "file": "1f62c-grimacing-face.json",
+      "bytes": 60270,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f62c/lottie.json"
+    },
+    {
+      "codepoint": "1f975",
+      "emoji": "🥵",
+      "slug": "hot-face",
+      "tier": "relevant",
+      "note": "Fever / NMS / hyperthermia",
+      "file": "1f975-hot-face.json",
+      "bytes": 66152,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f975/lottie.json"
+    },
+    {
+      "codepoint": "1f976",
+      "emoji": "🥶",
+      "slug": "cold-face",
+      "tier": "relevant",
+      "note": "Hypothermia / withdrawal",
+      "file": "1f976-cold-face.json",
+      "bytes": 52397,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f976/lottie.json"
+    },
+    {
+      "codepoint": "1f4a1",
+      "emoji": "💡",
+      "slug": "light-bulb",
+      "tier": "relevant",
+      "note": "Insight / cognition",
+      "file": "1f4a1-light-bulb.json",
+      "bytes": 23436,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4a1/lottie.json"
+    },
+    {
+      "codepoint": "1f4ac",
+      "emoji": "💬",
+      "slug": "speech-balloon",
+      "tier": "relevant",
+      "note": "Dialogue / therapy",
+      "file": "1f4ac-speech-balloon.json",
+      "bytes": 9379,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4ac/lottie.json"
+    },
+    {
+      "codepoint": "1f52e",
+      "emoji": "🔮",
+      "slug": "crystal-ball",
+      "tier": "relevant",
+      "note": "Prognosis / future",
+      "file": "1f52e-crystal-ball.json",
+      "bytes": 45414,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f52e/lottie.json"
+    },
+    {
+      "codepoint": "1f393",
+      "emoji": "🎓",
+      "slug": "graduation-cap",
+      "tier": "relevant",
+      "note": "Teaching / didactics",
+      "file": "1f393-graduation-cap.json",
+      "bytes": 229903,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f393/lottie.json"
+    },
+    {
+      "codepoint": "1f4da",
+      "emoji": "📚",
+      "slug": "books",
+      "tier": "relevant",
+      "note": "Literature / evidence",
+      "file": "1f4da-books.json",
+      "bytes": 127896,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4da/lottie.json"
+    },
+    {
+      "codepoint": "2696_fe0f",
+      "emoji": "⚖️",
+      "slug": "balance-scale",
+      "tier": "relevant",
+      "note": "Risk-benefit / ethics",
+      "file": "2696_fe0f-balance-scale.json",
+      "bytes": 27950,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/2696_fe0f/lottie.json"
+    },
+    {
+      "codepoint": "262e_fe0f",
+      "emoji": "☮️",
+      "slug": "peace-symbol",
+      "tier": "relevant",
+      "note": "Calm / resolution",
+      "file": "262e_fe0f-peace-symbol.json",
+      "bytes": 16575,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/262e_fe0f/lottie.json"
+    },
+    {
+      "codepoint": "262f_fe0f",
+      "emoji": "☯️",
+      "slug": "yin-yang",
+      "tier": "relevant",
+      "note": "Balance / integration",
+      "file": "262f_fe0f-yin-yang.json",
+      "bytes": 17230,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/262f_fe0f/lottie.json"
+    },
+    {
+      "codepoint": "1f64f",
+      "emoji": "🙏",
+      "slug": "folded-hands",
+      "tier": "relevant",
+      "note": "Prayer / mindfulness / gratitude",
+      "file": "1f64f-folded-hands.json",
+      "bytes": 63630,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f64f/lottie.json"
+    },
+    {
+      "codepoint": "2764_fe0f",
+      "emoji": "❤️",
+      "slug": "red-heart",
+      "tier": "relevant",
+      "note": "Care / empathy",
+      "file": "2764_fe0f-red-heart.json",
+      "bytes": 8439,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/2764_fe0f/lottie.json"
+    },
+    {
+      "codepoint": "1f493",
+      "emoji": "💓",
+      "slug": "beating-heart",
+      "tier": "relevant",
+      "note": "Vital signs / affection",
+      "file": "1f493-beating-heart.json",
+      "bytes": 26352,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f493/lottie.json"
+    },
+    {
+      "codepoint": "1f494",
+      "emoji": "💔",
+      "slug": "broken-heart",
+      "tier": "relevant",
+      "note": "Grief / loss",
+      "file": "1f494-broken-heart.json",
+      "bytes": 87260,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f494/lottie.json"
+    },
+    {
+      "codepoint": "2764_fe0f_200d_1f525",
+      "emoji": "❤️‍🔥",
+      "slug": "heart-on-fire",
+      "tier": "relevant",
+      "note": "Passion / intensity",
+      "file": "2764_fe0f_200d_1f525-heart-on-fire.json",
+      "bytes": 64140,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/2764_fe0f_200d_1f525/lottie.json"
+    },
+    {
+      "codepoint": "1f4a5",
+      "emoji": "💥",
+      "slug": "collision",
+      "tier": "relevant",
+      "note": "Acute event / crisis",
+      "file": "1f4a5-collision.json",
+      "bytes": 87831,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4a5/lottie.json"
+    },
+    {
+      "codepoint": "23f0",
+      "emoji": "⏰",
+      "slug": "alarm-clock",
+      "tier": "relevant",
+      "note": "Circadian / scheduled med",
+      "file": "23f0-alarm-clock.json",
+      "bytes": 36409,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/23f0/lottie.json"
+    },
+    {
+      "codepoint": "231b",
+      "emoji": "⌛",
+      "slug": "hourglass-done",
+      "tier": "relevant",
+      "note": "Time-limited / chronic",
+      "file": "231b-hourglass-done.json",
+      "bytes": 113495,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/231b/lottie.json"
+    },
+    {
+      "codepoint": "23f3",
+      "emoji": "⏳",
+      "slug": "hourglass-flowing",
+      "tier": "relevant",
+      "note": "Process / intervention",
+      "file": "23f3-hourglass-flowing.json",
+      "bytes": 30043,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/23f3/lottie.json"
+    },
+    {
+      "codepoint": "1f4c8",
+      "emoji": "📈",
+      "slug": "chart-increasing",
+      "tier": "relevant",
+      "note": "Upward trend / recovery",
+      "file": "1f4c8-chart-increasing.json",
+      "bytes": 12551,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4c8/lottie.json"
+    },
+    {
+      "codepoint": "1f4c9",
+      "emoji": "📉",
+      "slug": "chart-decreasing",
+      "tier": "relevant",
+      "note": "Downward trend / decline",
+      "file": "1f4c9-chart-decreasing.json",
+      "bytes": 12553,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f4c9/lottie.json"
+    },
+    {
+      "codepoint": "1f604",
+      "emoji": "😄",
+      "slug": "grinning-face-open-eyes",
+      "tier": "relevant",
+      "note": "Positive affect baseline",
+      "file": "1f604-grinning-face-open-eyes.json",
+      "bytes": 48154,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f604/lottie.json"
+    },
+    {
+      "codepoint": "1f600",
+      "emoji": "😀",
+      "slug": "grinning-face",
+      "tier": "relevant",
+      "note": "Positive affect baseline",
+      "file": "1f600-grinning-face.json",
+      "bytes": 37328,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f600/lottie.json"
+    },
+    {
+      "codepoint": "1f60a",
+      "emoji": "😊",
+      "slug": "smiling-face-blush",
+      "tier": "relevant",
+      "note": "Positive affect, warmth",
+      "file": "1f60a-smiling-face-blush.json",
+      "bytes": 30013,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f60a/lottie.json"
+    },
+    {
+      "codepoint": "1f925",
+      "emoji": "🤥",
+      "slug": "lying-face",
+      "tier": "relevant",
+      "note": "Malingering / factitious",
+      "file": "1f925-lying-face.json",
+      "bytes": 110222,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f925/lottie.json"
+    },
+    {
+      "codepoint": "1f913",
+      "emoji": "🤓",
+      "slug": "nerd-face",
+      "tier": "tangential",
+      "note": "Over-intellectualization / academic",
+      "file": "1f913-nerd-face.json",
+      "bytes": 34888,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f913/lottie.json"
+    },
+    {
+      "codepoint": "1f9d0",
+      "emoji": "🧐",
+      "slug": "monocle-face",
+      "tier": "tangential",
+      "note": "Scrutiny / inspection",
+      "file": "1f9d0-monocle-face.json",
+      "bytes": 67304,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f9d0/lottie.json"
+    },
+    {
+      "codepoint": "1f92b",
+      "emoji": "🤫",
+      "slug": "shushing-face",
+      "tier": "tangential",
+      "note": "Quiet / restraint",
+      "file": "1f92b-shushing-face.json",
+      "bytes": 60687,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f92b/lottie.json"
+    },
+    {
+      "codepoint": "1f911",
+      "emoji": "🤑",
+      "slug": "money-mouth-face",
+      "tier": "tangential",
+      "note": "Reward / addiction motif",
+      "file": "1f911-money-mouth-face.json",
+      "bytes": 62491,
+      "source_url": "https://fonts.gstatic.com/s/e/notoemoji/latest/1f911/lottie.json"
+    }
+  ],
+  "failed": []
+}

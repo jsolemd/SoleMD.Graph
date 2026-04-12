@@ -35,7 +35,7 @@ services:
       -c log_min_duration_statement=1000
       -c random_page_cost=1.1
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ${GRAPH_POSTGRES_HOST_ROOT:-pgdata}:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     security_opt:
       - no-new-privileges:true
@@ -104,8 +104,8 @@ services:
     volumes:
       - ..:/workspaces/SoleMD.Graph
       - graph-venv:/workspaces/SoleMD.Graph/engine/.venv
-      - /mnt/e/SoleMD.Graph/data:/mnt/e/SoleMD.Graph/data:ro
-      - /mnt/solemd-graph:/mnt/solemd-graph
+      - ${GRAPH_WAREHOUSE_HOST_ROOT:-/mnt/e/SoleMD.Graph/data}:/srv/solemd-warehouse:ro
+      - ${GRAPH_STORAGE_HOST_ROOT:-/mnt/solemd-graph}:/mnt/solemd-graph
     environment:
       # Docker-network-specific overrides (everything else from env_file)
       DATABASE_URL: postgresql://solemd:solemd_local@db:5432/solemd_graph
@@ -114,9 +114,9 @@ services:
       GRAPH_LAYOUT_BACKEND: gpu
       GRAPH_CLUSTER_BACKEND: gpu
       # CUDA_PATH / CUDA_HOME are set in Dockerfile (authoritative source)
-      # Data paths: override .env.local defaults for container volume mounts
-      SEMANTIC_SCHOLAR_DIR: /mnt/e/SoleMD.Graph/data/semantic-scholar
-      PUBTATOR_DIR: /mnt/e/SoleMD.Graph/data/pubtator
+      # Warehouse paths should point at a Linux-backed ext4 mount, not /mnt/e.
+      SEMANTIC_SCHOLAR_DIR: /srv/solemd-warehouse/semantic-scholar
+      PUBTATOR_DIR: /srv/solemd-warehouse/pubtator
     depends_on:
       db:
         condition: service_healthy

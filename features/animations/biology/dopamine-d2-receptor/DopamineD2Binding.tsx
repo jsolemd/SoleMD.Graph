@@ -18,7 +18,7 @@
  * motion shows the `bound` state statically with a caption.
  */
 import { useEffect, useRef, useState } from "react";
-import { motion, useReducedMotion, useInView, type Variants } from "framer-motion";
+import { motion, useReducedMotionConfig as useReducedMotion, useInView, type Variants } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
 type State = "rest" | "approach" | "bound" | "signaling";
@@ -195,6 +195,8 @@ export default function DopamineD2Binding() {
 
           {/* Dopamine ligand */}
           <motion.circle
+            cx={74}
+            cy={24}
             r="6.5"
             fill="var(--color-soft-pink)"
             stroke="var(--text-primary)"

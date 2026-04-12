@@ -43,15 +43,7 @@ WHERE is_canonical = true
     'name', 'time', 'data', 'well'
   );
 
--- 5. Replacement indexes (CONCURRENTLY for production safety)
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entity_aliases_alias_key_highlight
-    ON solemd.entity_aliases (alias_key)
-    WHERE highlight_mode IN ('exact', 'case_sensitive_exact');
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entity_aliases_alias_key_type_highlight
-    ON solemd.entity_aliases (alias_key, entity_type)
-    WHERE highlight_mode IN ('exact', 'case_sensitive_exact');
-
+-- 5. Warehouse lookup index for broader entity search.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entity_aliases_alias_key_all
     ON solemd.entity_aliases (alias_key);
 

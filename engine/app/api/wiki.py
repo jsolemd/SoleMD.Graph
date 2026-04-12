@@ -5,14 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from app.api.http import run_api
-
 from app.wiki.schemas import (
     WikiBacklinksResponse,
     WikiGraphResponse,
     WikiPageContextResponse,
     WikiPageResponse,
     WikiPageSummary,
-    WikiSearchRequest,
     WikiSearchResponse,
 )
 from app.wiki.service import WikiService, get_wiki_service
@@ -28,13 +26,14 @@ def list_wiki_pages(
     return service.list_pages()
 
 
-@router.post("/search", response_model=WikiSearchResponse)
+@router.get("/search", response_model=WikiSearchResponse)
 def search_wiki(
-    request: WikiSearchRequest,
+    query: str = Query(..., min_length=1),
+    limit: int = Query(default=20, ge=1, le=100),
     service: WikiService = Depends(get_wiki_service),
 ) -> WikiSearchResponse:
     """Full-text search over wiki pages."""
-    return service.search(request)
+    return service.search(query=query, limit=limit)
 
 
 @router.get("/backlinks/{slug:path}", response_model=WikiBacklinksResponse)
@@ -59,7 +58,6 @@ def get_wiki_graph(
 def get_wiki_page_context(
     slug: str,
     graph_release_id: str | None = Query(default=None),
-    graph_run_id: str | None = Query(default=None),
     service: WikiService = Depends(get_wiki_service),
 ) -> WikiPageContextResponse | None:
     """Fetch dynamic backend-enriched context for a wiki page."""
@@ -67,7 +65,6 @@ def get_wiki_page_context(
         lambda: service.get_page_context(
             slug,
             graph_release_id=graph_release_id,
-            graph_run_id=graph_run_id,
         ),
         not_found_detail=f"Wiki page not found: {slug}",
     )
@@ -77,7 +74,6 @@ def get_wiki_page_context(
 def get_wiki_page(
     slug: str,
     graph_release_id: str | None = Query(default=None),
-    graph_run_id: str | None = Query(default=None),
     service: WikiService = Depends(get_wiki_service),
 ) -> WikiPageResponse:
     """Fetch a single wiki page by slug with optional PMID → graph ref resolution."""
@@ -85,7 +81,6 @@ def get_wiki_page(
         lambda: service.get_page(
             slug,
             graph_release_id=graph_release_id,
-            graph_run_id=graph_run_id,
         ),
         not_found_detail=f"Wiki page not found: {slug}",
     )

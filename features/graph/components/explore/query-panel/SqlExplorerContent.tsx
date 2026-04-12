@@ -5,7 +5,6 @@ import {
   ActionIcon,
   Button,
   Group,
-  Loader,
   SimpleGrid,
   Stack,
   Text,
@@ -212,7 +211,7 @@ LIMIT 10`;
         <Button
           size="xs"
           color={PANEL_ACCENT}
-          leftSection={running ? <Loader size={12} /> : <Play size={12} />}
+          leftSection={<Play size={12} />}
           onClick={handleRun}
           loading={running}
           styles={{ section: { marginInlineEnd: 4 } }}

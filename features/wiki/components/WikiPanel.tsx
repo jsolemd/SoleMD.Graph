@@ -33,10 +33,13 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
   const fetchGraphData = useWikiStore((s) => s.fetchGraphData);
 
   const graphReleaseId = resolveGraphReleaseId(bundle);
+  const isGraphRoute = currentRoute.kind === "graph";
 
   // Track viewport for expanded width calculation
   const { width: viewportWidth } = useViewportSize();
-  const panelWidth = resolveWikiPanelWidth(viewportWidth || 1920, wikiExpanded);
+  const panelWidth = isGraphRoute
+    ? Math.min(760, Math.floor((viewportWidth || 1920) * 0.58))
+    : resolveWikiPanelWidth(viewportWidth || 1920, wikiExpanded);
 
   useEffect(() => {
     if (wikiExpanded) {
@@ -103,108 +106,111 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
 
   return (
     <>
-    <PanelShell
-      id="wiki"
-      title="Wiki"
-      defaultWidth={panelWidth}
-      headerActions={
-        <div className="flex items-center gap-1">
-          <WikiNavigation />
-          <WikiSearch onNavigate={handleOpenPage} />
-        </div>
-      }
-      onClose={handleClose}
-    >
-      <div className={bodyClassName}>
-        {currentRoute.kind === "graph" ? (
-          <WikiGraphView
-            graphReleaseId={graphReleaseId}
-            onOpenPage={handleOpenPage}
-          />
-        ) : (
-          <WikiPageView
-            slug={currentRoute.slug}
-            graphReleaseId={graphReleaseId}
-            queries={queries}
-            onNavigate={handleOpenPage}
-          />
-        )}
-      </div>
-    </PanelShell>
-
-    {/* Popped-out local graph — its own floating panel */}
-    {localGraphPopped && currentRoute.kind === "page" && (
       <PanelShell
-        id="wiki-graph"
-        title="Wiki Graph"
-        defaultWidth={320}
-        onClose={() => setLocalGraphPopped(false)}
-      >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
-          <WikiLocalGraph
-            slug={currentRoute.slug}
-            onNavigate={handleOpenPage}
-          />
-        </div>
-      </PanelShell>
-    )}
-
-    {globalGraphOpen && (
-      <PanelShell
-        id="wiki-global-graph"
-        title="Wiki Graph"
-        defaultWidth={960}
-        minWidth={640}
-        maxWidth={1280}
-        defaultHeight={720}
-        minHeight={420}
-        maxHeight={900}
-        onClose={handleCloseOverlay}
-      >
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
-          <WikiGraphView
-            graphReleaseId={graphReleaseId}
-            onOpenPage={handleOpenPage}
-          />
-        </div>
-      </PanelShell>
-    )}
-
-    {/* Fullscreen animation overlay — portaled to body to escape panel transforms */}
-    {fullscreenAnim &&
-      typeof document !== "undefined" &&
-      createPortal(
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center"
-          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
-          onClick={() => setFullscreenAnim(null)}
-        >
-          <div
-            className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
-            style={{
-              width: "80vw",
-              height: "80vh",
-              border: "1px solid var(--border-default)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="absolute right-3 top-3 z-10">
-              <ActionIcon
-                variant="subtle"
-                size={28}
-                radius="xl"
-                onClick={() => setFullscreenAnim(null)}
-                aria-label="Close animation"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                <X size={14} />
-              </ActionIcon>
-            </div>
-            <AnimationEmbed name={fullscreenAnim} />
+        id="wiki"
+        title="Wiki"
+        defaultWidth={panelWidth}
+        defaultHeight={isGraphRoute ? 640 : undefined}
+        minHeight={isGraphRoute ? 520 : undefined}
+        maxHeight={isGraphRoute ? 860 : undefined}
+        headerActions={
+          <div className="flex items-center gap-1">
+            <WikiNavigation />
+            <WikiSearch onNavigate={handleOpenPage} />
           </div>
-        </div>,
-        document.body,
+        }
+        onClose={handleClose}
+      >
+        <div className={bodyClassName}>
+          {currentRoute.kind === "graph" ? (
+            <WikiGraphView
+              graphReleaseId={graphReleaseId}
+              onOpenPage={handleOpenPage}
+            />
+          ) : (
+            <WikiPageView
+              slug={currentRoute.slug}
+              graphReleaseId={graphReleaseId}
+              queries={queries}
+              onNavigate={handleOpenPage}
+            />
+          )}
+        </div>
+      </PanelShell>
+
+      {/* Popped-out local graph — its own floating panel */}
+      {localGraphPopped && currentRoute.kind === "page" && (
+        <PanelShell
+          id="wiki-graph"
+          title="Wiki Graph"
+          defaultWidth={320}
+          onClose={() => setLocalGraphPopped(false)}
+        >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+            <WikiLocalGraph
+              slug={currentRoute.slug}
+              onNavigate={handleOpenPage}
+            />
+          </div>
+        </PanelShell>
       )}
+
+      {globalGraphOpen && (
+        <PanelShell
+          id="wiki-global-graph"
+          title="Wiki Graph"
+          defaultWidth={1120}
+          minWidth={760}
+          maxWidth={1440}
+          defaultHeight={800}
+          minHeight={520}
+          maxHeight={980}
+          onClose={handleCloseOverlay}
+        >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+            <WikiGraphView
+              graphReleaseId={graphReleaseId}
+              onOpenPage={handleOpenPage}
+            />
+          </div>
+        </PanelShell>
+      )}
+
+      {/* Fullscreen animation overlay — portaled to body to escape panel transforms */}
+      {fullscreenAnim &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center"
+            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+            onClick={() => setFullscreenAnim(null)}
+          >
+            <div
+              className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
+              style={{
+                width: "80vw",
+                height: "80vh",
+                border: "1px solid var(--border-default)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute right-3 top-3 z-10">
+                <ActionIcon
+                  variant="subtle"
+                  size={28}
+                  radius="xl"
+                  onClick={() => setFullscreenAnim(null)}
+                  aria-label="Close animation"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  <X size={14} />
+                </ActionIcon>
+              </div>
+              <AnimationEmbed name={fullscreenAnim} />
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

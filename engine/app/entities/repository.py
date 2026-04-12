@@ -1,4 +1,4 @@
-"""Canonical catalog access for live entity matching and detail lookup."""
+"""Canonical serving-surface access for live entity matching and detail lookup."""
 
 from __future__ import annotations
 
@@ -6,48 +6,109 @@ from collections.abc import Sequence
 from typing import TypedDict
 
 from app import db
-from app.entities.highlight_policy import (
-    HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
-    HIGHLIGHT_MODE_EXACT,
-)
 
-ENTITY_ALIAS_MATCH_SQL = """
+ENTITY_RUNTIME_ALIAS_MATCH_SQL = """
 SELECT
-    ea.alias_key,
-    ea.alias_text,
-    ea.is_canonical,
-    ea.alias_source,
-    ea.entity_type,
-    ea.concept_id AS source_identifier,
-    ea.canonical_name,
-    ea.paper_count,
-    ea.highlight_mode
-FROM solemd.entity_aliases ea
-WHERE ea.alias_key = ANY(%s::text[])
-  AND ea.highlight_mode = ANY(%s::text[])
+    era.alias_key,
+    era.alias_text,
+    era.is_canonical,
+    era.alias_source,
+    era.entity_type,
+    era.concept_id AS source_identifier,
+    era.canonical_name,
+    era.paper_count,
+    era.highlight_mode
+FROM solemd.entity_runtime_aliases era
+WHERE era.alias_key = ANY(%s::text[])
 """
 
 ENTITY_DETAIL_SQL = """
 SELECT
-    lower(e.entity_type) AS entity_type,
+    e.entity_type AS entity_type,
     e.concept_id AS source_identifier,
     COALESCE(NULLIF(trim(e.canonical_name), ''), e.concept_id) AS canonical_name,
     COALESCE(e.paper_count, 0)::INTEGER AS paper_count
 FROM solemd.entities e
-WHERE lower(e.entity_type) = %s
+WHERE e.entity_type = %s
   AND e.concept_id = %s
 LIMIT 1
 """
 
-ENTITY_ALIASES_SQL = """
+ENTITY_RUNTIME_DETAIL_ALIASES_SQL = """
 SELECT
     alias_text,
     is_canonical,
     alias_source
-FROM solemd.entity_aliases
-WHERE lower(entity_type) = %s
+FROM solemd.entity_runtime_aliases
+WHERE entity_type = %s
   AND concept_id = %s
 ORDER BY is_canonical DESC, length(alias_text) DESC, alias_text
+LIMIT %s
+"""
+
+_ENTITY_GRAPH_REQUESTED_REFS_CTE = """
+WITH requested_entities AS (
+    SELECT DISTINCT entity_type, concept_id
+    FROM unnest(%s::text[], %s::text[]) AS refs(entity_type, concept_id)
+)
+"""
+
+ENTITY_GRAPH_PAPER_REFS_SQL = (
+    _ENTITY_GRAPH_REQUESTED_REFS_CTE
+    + """
+, matched_graph_papers AS (
+    SELECT
+        ecp.corpus_id,
+        ecp.pmid,
+        COALESCE(gps.graph_paper_ref, 'corpus:' || ecp.corpus_id::TEXT) AS graph_paper_ref,
+        COALESCE(gps.citation_count, 0) AS citation_count
+    FROM requested_entities
+    JOIN solemd.entity_corpus_presence ecp
+      ON ecp.entity_type = requested_entities.entity_type
+     AND ecp.concept_id = requested_entities.concept_id
+    JOIN solemd.graph_points gp
+      ON gp.corpus_id = ecp.corpus_id
+     AND gp.graph_run_id = %s
+    LEFT JOIN solemd.graph_paper_summary gps
+      ON gps.corpus_id = ecp.corpus_id
+)
+SELECT graph_paper_ref
+FROM matched_graph_papers
+GROUP BY graph_paper_ref
+ORDER BY MAX(citation_count) DESC, MAX(pmid) DESC, graph_paper_ref
+LIMIT %s
+"""
+)
+
+ENTITY_PAGE_CONTEXT_COUNTS_SQL = """
+SELECT
+    COUNT(*)::INTEGER AS total_corpus_paper_count,
+    COUNT(gp.corpus_id)::INTEGER AS total_graph_paper_count
+FROM solemd.entity_corpus_presence ecp
+LEFT JOIN solemd.graph_points gp
+  ON gp.corpus_id = ecp.corpus_id
+ AND gp.graph_run_id = %s
+WHERE ecp.entity_type = %s
+  AND ecp.concept_id = %s
+"""
+
+ENTITY_PAGE_CONTEXT_TOP_PAPERS_SQL = """
+SELECT
+    ecp.pmid,
+    COALESCE(gps.graph_paper_ref, 'corpus:' || ecp.corpus_id::TEXT) AS graph_paper_ref,
+    gps.title AS paper_title,
+    gps.year,
+    NULLIF(gps.journal_name, '') AS venue,
+    gps.citation_count
+FROM solemd.entity_corpus_presence ecp
+JOIN solemd.graph_points gp
+  ON gp.corpus_id = ecp.corpus_id
+ AND gp.graph_run_id = %s
+LEFT JOIN solemd.graph_paper_summary gps
+  ON gps.corpus_id = ecp.corpus_id
+WHERE ecp.entity_type = %s
+  AND ecp.concept_id = %s
+ORDER BY gps.citation_count DESC NULLS LAST, ecp.pmid DESC
 LIMIT %s
 """
 
@@ -77,8 +138,26 @@ class EntityAliasDetailRow(TypedDict):
     alias_source: str | None
 
 
+class EntityGraphPaperRefRow(TypedDict):
+    graph_paper_ref: str
+
+
+class EntityPageContextCountRow(TypedDict):
+    total_corpus_paper_count: int
+    total_graph_paper_count: int
+
+
+class EntityPageContextPaperRow(TypedDict):
+    pmid: int
+    graph_paper_ref: str | None
+    paper_title: str | None
+    year: int | None
+    venue: str | None
+    citation_count: int | None
+
+
 class EntityCatalogRepository:
-    """Repository for the canonical runtime entity catalog."""
+    """Repository for frontend-facing entity serving paths."""
 
     def fetch_alias_matches(
         self,
@@ -90,16 +169,13 @@ class EntityCatalogRepository:
         if not normalized_alias_keys:
             return []
 
-        query = ENTITY_ALIAS_MATCH_SQL
-        params: list[object] = [
-            normalized_alias_keys,
-            [HIGHLIGHT_MODE_EXACT, HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT],
-        ]
+        query = ENTITY_RUNTIME_ALIAS_MATCH_SQL
+        params: list[object] = [normalized_alias_keys]
         if entity_types:
-            query += " AND ea.entity_type = ANY(%s::text[])"
+            query += " AND era.entity_type = ANY(%s::text[])"
             params.append(list(dict.fromkeys(entity_types)))
         query += """
- ORDER BY length(ea.alias_key) DESC, ea.is_canonical DESC, ea.paper_count DESC, ea.concept_id
+ ORDER BY length(era.alias_key) DESC, era.is_canonical DESC, era.paper_count DESC, era.concept_id
 """
 
         with db.pooled() as conn:
@@ -123,7 +199,7 @@ class EntityCatalogRepository:
                     return None, []
 
                 cur.execute(
-                    ENTITY_ALIASES_SQL,
+                    ENTITY_RUNTIME_DETAIL_ALIASES_SQL,
                     (entity_type, source_identifier, alias_limit),
                 )
                 alias_rows = cur.fetchall()
@@ -148,3 +224,86 @@ class EntityCatalogRepository:
             )
 
         return dict(detail_row), aliases
+
+
+class EntityGraphProjectionRepository:
+    """Repository for graph-scale entity overlay and wiki context reads."""
+
+    def fetch_graph_paper_refs(
+        self,
+        *,
+        graph_run_id: str,
+        entity_refs: Sequence[tuple[str, str]],
+        limit: int,
+    ) -> list[str]:
+        normalized_refs = _normalize_entity_refs(entity_refs)
+        if not normalized_refs:
+            return []
+
+        entity_types, source_identifiers = _split_entity_refs(normalized_refs)
+        with db.pooled() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    ENTITY_GRAPH_PAPER_REFS_SQL,
+                    (entity_types, source_identifiers, graph_run_id, limit),
+                )
+                rows = cur.fetchall()
+        return [str(row["graph_paper_ref"]) for row in rows if row.get("graph_paper_ref")]
+
+    def fetch_page_context_counts(
+        self,
+        *,
+        entity_type: str,
+        source_identifier: str,
+        graph_run_id: str,
+    ) -> EntityPageContextCountRow:
+        with db.pooled() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    ENTITY_PAGE_CONTEXT_COUNTS_SQL,
+                    (graph_run_id, entity_type, source_identifier),
+                )
+                row = cur.fetchone()
+        return dict(row or {})
+
+    def fetch_page_context_top_papers(
+        self,
+        *,
+        entity_type: str,
+        source_identifier: str,
+        graph_run_id: str,
+        limit: int = 8,
+    ) -> list[EntityPageContextPaperRow]:
+        with db.pooled() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    ENTITY_PAGE_CONTEXT_TOP_PAPERS_SQL,
+                    (graph_run_id, entity_type, source_identifier, limit),
+                )
+                rows = cur.fetchall()
+        return [dict(row) for row in rows]
+
+
+def _normalize_entity_refs(entity_refs: Sequence[tuple[str, str]]) -> list[tuple[str, str]]:
+    normalized_refs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for entity_type, source_identifier in entity_refs:
+        normalized_entity_type = entity_type.strip().lower()
+        normalized_source_identifier = source_identifier.strip()
+        if not normalized_entity_type or not normalized_source_identifier:
+            continue
+        key = (normalized_entity_type, normalized_source_identifier)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_refs.append(key)
+    return normalized_refs
+
+
+def _split_entity_refs(entity_refs: Sequence[tuple[str, str]]) -> tuple[list[str], list[str]]:
+    entity_types: list[str] = []
+    source_identifiers: list[str] = []
+    for entity_type, source_identifier in entity_refs:
+        entity_types.append(entity_type)
+        source_identifiers.append(source_identifier)
+    return entity_types, source_identifiers

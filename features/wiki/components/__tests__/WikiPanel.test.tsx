@@ -177,7 +177,6 @@ describe("WikiPanel", () => {
       featured_graph_refs: {},
       resolved_links: {},
       linked_entities: {},
-      context: null,
     });
 
     render(
@@ -218,7 +217,6 @@ describe("WikiPanel", () => {
       featured_graph_refs: {},
       resolved_links: {},
       linked_entities: {},
-      context: null,
     });
     fetchWikiPageContextClient.mockImplementation(
       () => new Promise(() => undefined),

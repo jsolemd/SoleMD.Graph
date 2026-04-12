@@ -30,6 +30,7 @@ from app.wiki.links import (  # noqa: E402
     extract_raw_wikilinks,
     resolve_outgoing_links,
 )
+from app.wiki.semantic_groups import fallback_semantic_group_for_entity_type  # noqa: E402
 
 
 @dataclass(slots=True)
@@ -69,11 +70,29 @@ def _parse_wiki_file(md_path: Path, wiki_root: Path) -> dict:
         "entity_type": fm.get("entity_type"),
         "concept_id": fm.get("concept_id"),
         "family_key": fm.get("family_key"),
+        "semantic_group": None,
         "tags": fm.get("tags") or [],
         "raw_links": raw_links,  # resolved to full slugs in sync()
         "outgoing_links": [],    # placeholder — filled after all pages collected
         "paper_pmids": paper_pmids,
         "checksum": checksum,
+    }
+
+
+def _load_page_semantic_groups(concept_ids: set[str]) -> dict[str, str]:
+    if not concept_ids:
+        return {}
+
+    with db.connect() as conn:
+        rows = conn.execute(
+            queries.RESOLVE_PAGE_SEMANTIC_GROUPS,
+            {"concept_ids": sorted(concept_ids)},
+        ).fetchall()
+
+    return {
+        row["concept_id"]: row["semantic_group"]
+        for row in rows
+        if row.get("concept_id") and row.get("semantic_group")
     }
 
 
@@ -96,6 +115,18 @@ def sync(wiki_dir: Path) -> SyncResult:
     for row in filesystem_pages.values():
         row["outgoing_links"] = resolve_outgoing_links(row.pop("raw_links"), known_slugs)
 
+    semantic_groups = _load_page_semantic_groups(
+        {
+            concept_id
+            for row in filesystem_pages.values()
+            if (concept_id := row.get("concept_id"))
+        }
+    )
+    for row in filesystem_pages.values():
+        row["semantic_group"] = semantic_groups.get(row.get("concept_id")) or (
+            fallback_semantic_group_for_entity_type(row.get("entity_type"))
+        )
+
     # Fetch existing checksums from DB
     with db.connect() as conn:
         existing = conn.execute(queries.GET_EXISTING_CHECKSUMS).fetchall()
@@ -115,9 +146,10 @@ def sync(wiki_dir: Path) -> SyncResult:
             else:
                 # Content unchanged, but re-resolve outgoing_links in case
                 # the page inventory changed (new targets now resolvable).
-                conn.execute(queries.UPDATE_OUTGOING_LINKS, {
+                conn.execute(queries.UPDATE_PAGE_RUNTIME_FIELDS, {
                     "slug": slug,
                     "outgoing_links": row["outgoing_links"],
+                    "semantic_group": row["semantic_group"],
                 })
                 result.unchanged.append(slug)
         conn.commit()

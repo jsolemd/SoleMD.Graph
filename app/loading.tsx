@@ -1,10 +1,21 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
+
+const ConnectomeLoader = dynamic(
+  () =>
+    import(
+      "@/features/animations/canvas/connectome-loader/ConnectomeLoader"
+    ),
+  { ssr: false },
+);
 
 export default function GraphLoading() {
   return (
     <div className="fixed inset-0 flex items-center justify-center bg-[var(--graph-bg)]">
+      <ConnectomeLoader />
+
       {/* Wordmark placeholder */}
       <div className="fixed top-3 left-3 z-50 flex items-center gap-2">
         <div
@@ -41,7 +52,7 @@ export default function GraphLoading() {
       </div>
 
       {/* Center loading pulse */}
-      <div className="flex flex-col items-center gap-4">
+      <div className="relative z-10 flex flex-col items-center gap-4">
         <motion.div
           className="h-3 w-3 rounded-full"
           style={{ backgroundColor: "var(--graph-wordmark-accent)" }}

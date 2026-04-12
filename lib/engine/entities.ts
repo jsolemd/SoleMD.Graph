@@ -9,57 +9,15 @@ import type {
   GraphEntityOverlayRequestPayload,
   GraphEntityOverlayResponsePayload,
 } from '@/features/graph/types/entity-service'
+import type {
+  EngineEntityDetailRequest,
+  EngineEntityDetailResponse,
+  EngineEntityMatchRequest,
+  EngineEntityMatchResponse,
+  EngineEntityOverlayRequest,
+  EngineEntityOverlayResponse,
+} from './entity-wire'
 import { EngineApiError, postEngineJson } from './client'
-
-interface EngineEntityMatchRequest {
-  text: string
-  entity_types?: string[]
-  limit?: number
-  max_tokens_per_alias?: number
-}
-
-interface EngineEntityMatchHit {
-  match_id: string
-  entity_type: string
-  concept_namespace: string | null
-  concept_id: string
-  source_identifier: string
-  canonical_name: string
-  matched_text: string
-  alias_text: string
-  alias_source: string
-  start: number
-  end: number
-  paper_count: number
-  is_canonical_alias: boolean
-  score: number
-}
-
-interface EngineEntityMatchResponse {
-  matches: EngineEntityMatchHit[]
-}
-
-interface EngineEntityDetailRequest {
-  entity_type: string
-  source_identifier: string
-}
-
-interface EngineEntityDetailResponse {
-  entity: {
-    entity_type: string
-    concept_namespace: string | null
-    concept_id: string
-    source_identifier: string
-    canonical_name: string
-    paper_count: number
-    aliases: Array<{
-      alias_text: string
-      is_canonical: boolean
-      alias_source: string | null
-    }>
-    summary: string | null
-  }
-}
 
 export async function matchGraphEntities(
   input: GraphEntityMatchRequestPayload,
@@ -131,19 +89,7 @@ export async function fetchGraphEntityDetail(
       isCanonical: alias.is_canonical,
       aliasSource: alias.alias_source,
     })),
-    summary: response.entity.summary,
   }
-}
-
-interface EngineEntityOverlayRequest {
-  entity_refs: Array<{ entity_type: string; source_identifier: string }>
-  graph_release_id: string
-  limit?: number
-}
-
-interface EngineEntityOverlayResponse {
-  graph_paper_refs: string[]
-  entity_graph_paper_counts: Record<string, number>
 }
 
 export async function overlayGraphEntities(
@@ -170,7 +116,6 @@ export async function overlayGraphEntities(
 
   return {
     graphPaperRefs: response.graph_paper_refs,
-    entityGraphPaperCounts: response.entity_graph_paper_counts,
   }
 }
 

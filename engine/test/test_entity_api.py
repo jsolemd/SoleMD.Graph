@@ -68,7 +68,38 @@ def test_entity_detail_endpoint_maps_missing_entity_to_404():
     app.dependency_overrides.clear()
 
     assert response.status_code == 404
-    assert (
-        response.json()["detail"]
-        == "Unknown entity detail target: disease:MESH:missing"
+    assert response.json()["detail"] == "Unknown entity detail target: disease:MESH:missing"
+
+
+def test_entity_overlay_endpoint_returns_graph_refs():
+    class OverlayEntityService:
+        def get_entity_overlay(self, request):
+            del request
+            from app.entities.schemas import EntityOverlayResponse
+
+            return EntityOverlayResponse(
+                graph_paper_refs=["paper:1", "corpus:2"],
+            )
+
+    app.dependency_overrides[get_entity_service] = lambda: OverlayEntityService()
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/entities/overlay",
+        json={
+            "entity_refs": [
+                {
+                    "entity_type": "disease",
+                    "source_identifier": "MESH:D012559",
+                }
+            ],
+            "graph_release_id": "current",
+        },
     )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "graph_paper_refs": ["paper:1", "corpus:2"],
+    }

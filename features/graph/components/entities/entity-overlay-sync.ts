@@ -37,7 +37,7 @@ export async function syncEntityOverlay({
       await queries.clearOverlayProducer(producerId);
     }
     return {
-      response: { graphPaperRefs: [], entityGraphPaperCounts: {} },
+      response: { graphPaperRefs: [] },
       overlayPointIds: [],
       selectedPointIndices: [],
     };

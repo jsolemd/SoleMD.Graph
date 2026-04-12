@@ -1,0 +1,25 @@
+Google Noto Animated Emoji
+==========================
+
+These Lottie files are derived from Google's Noto emoji project, distributed
+via the Google Fonts static CDN at:
+
+    https://fonts.gstatic.com/s/e/notoemoji/latest/{codepoint}/lottie.json
+
+Noto emoji artwork and data are licensed under the SIL Open Font License,
+Version 1.1. A copy of the full license is available at:
+
+    https://scripts.sil.org/OFL
+    https://github.com/googlefonts/noto-emoji/blob/main/fonts/LICENSE
+
+Summary (not a substitute for the full license):
+
+    * Free to use, modify, and redistribute, including commercially.
+    * Bundled files must preserve this license notice.
+    * The names "Noto" and "Google" may not be used to promote derivatives
+      without written permission.
+    * Derivatives may not be sold standalone; they may be sold as part of
+      a larger work.
+
+No individual per-file attribution is required when these files are used as
+in-page assets in a website or application.

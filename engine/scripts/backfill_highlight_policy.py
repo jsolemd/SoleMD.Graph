@@ -26,8 +26,13 @@ logger = logging.getLogger(__name__)
 _UPDATE_SQL = """
 UPDATE solemd.entity_aliases ea
 SET highlight_mode = CASE
-    WHEN NOT ea.is_canonical THEN %s
     WHEN ea.alias_key = ANY(%s::text[]) THEN %s
+    WHEN ea.alias_source = 'vocab' THEN
+        CASE
+            WHEN ea.alias_text = upper(ea.alias_text) AND length(ea.alias_text) <= 6 THEN %s
+            ELSE %s
+        END
+    WHEN NOT ea.is_canonical THEN %s
     WHEN ea.alias_text = upper(ea.alias_text) AND length(ea.alias_text) <= 6 THEN %s
     ELSE %s
 END
@@ -63,9 +68,11 @@ def main() -> None:
         cur.execute(
             _UPDATE_SQL,
             (
-                HIGHLIGHT_MODE_SEARCH_ONLY,
                 sorted(AMBIGUOUS_CANONICAL_ALIAS_KEYS),
                 HIGHLIGHT_MODE_DISABLED,
+                HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
+                HIGHLIGHT_MODE_EXACT,
+                HIGHLIGHT_MODE_SEARCH_ONLY,
                 HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
                 HIGHLIGHT_MODE_EXACT,
             ),

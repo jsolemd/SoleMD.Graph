@@ -12,7 +12,7 @@
  * palette uses 5 shades of red/pink; we collapse them to three tiers
  * (body / mid / deep) all derived from --color-soft-pink via color-mix.
  */
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
 const FILL_BODY = "var(--color-soft-pink)";

@@ -15,8 +15,8 @@ import pyarrow.parquet as pq
 
 from app import db
 from app.config import settings
+from app.graph.build_settings import apply_build_session_settings
 from app.graph.export import bundle_contract, validate_bundle_manifest_contract
-from app.graph.paper_evidence import apply_build_session_settings
 from app.graph.point_projection import POINTS_SCHEMA, build_point_projection_select_sql
 from app.graph.render_policy import renderable_point_predicate_sql
 from app.langfuse_config import SPAN_EXPORT_BUNDLE, SPAN_EXPORT_VIEWS, observe

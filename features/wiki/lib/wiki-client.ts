@@ -2,6 +2,11 @@ import {
   normalizeWikiPageContextResponse,
   normalizeWikiPageResponse,
 } from "@/lib/engine/wiki-normalize";
+import {
+  buildWikiPageClientPath,
+  buildWikiPageContextClientPath,
+  encodeWikiSlug,
+} from "@/lib/engine/wiki-paths";
 import type {
   WikiBacklinksResponse,
   WikiGraphResponse,
@@ -25,14 +30,6 @@ export class WikiRequestError extends Error {
     this.name = "WikiRequestError";
     this.status = status;
   }
-}
-
-function encodeWikiSlug(slug: string): string {
-  return slug
-    .split("/")
-    .filter((segment) => segment.length > 0)
-    .map((segment) => encodeURIComponent(segment))
-    .join("/");
 }
 
 function resolveWikiErrorMessage(
@@ -98,13 +95,9 @@ export async function fetchWikiPageClient(
   graphReleaseId?: string,
   options?: { signal?: AbortSignal },
 ): Promise<WikiPageResponse | null> {
-  const params = new URLSearchParams();
-  if (graphReleaseId) {
-    params.set("graph_release_id", graphReleaseId);
-  }
-
-  const query = params.toString();
-  const path = `/api/wiki/pages/${encodeWikiSlug(slug)}${query ? `?${query}` : ""}`;
+  const path = buildWikiPageClientPath(slug, {
+    graphReleaseId,
+  });
 
   try {
     return normalizeWikiPageResponse(
@@ -127,13 +120,9 @@ export async function fetchWikiPageContextClient(
   graphReleaseId?: string,
   options?: { signal?: AbortSignal },
 ): Promise<WikiPageContextResponse | null> {
-  const params = new URLSearchParams();
-  if (graphReleaseId) {
-    params.set("graph_release_id", graphReleaseId);
-  }
-
-  const query = params.toString();
-  const path = `/api/wiki/context/${encodeWikiSlug(slug)}${query ? `?${query}` : ""}`;
+  const path = buildWikiPageContextClientPath(slug, {
+    graphReleaseId,
+  });
 
   try {
     return normalizeWikiPageContextResponse(

@@ -145,27 +145,10 @@ def test_wiki_graph_node_shapes():
     assert page_node["slug"] == "entities/melatonin"
     assert page_node["concept_id"] == "MESH:D008550"
     assert page_node["entity_type"] == "Chemical"
-    assert page_node["semantic_group"] is None  # fake bypasses mapping
+    assert page_node["semantic_group"] is None
 
     paper_node = next(n for n in payload["nodes"] if n["kind"] == "paper")
     assert paper_node["paper_id"] == "S2:abc123"
     assert paper_node["year"] == 2020
     assert paper_node["venue"] == "Sleep Medicine"
-    assert paper_node["semantic_group"] is None  # papers have no semantic group
-
-
-def test_entity_type_to_semantic_group_mapping():
-    """Verify the entity_type → semantic_group interim bridge."""
-    from app.wiki.service import _entity_type_to_semantic_group
-
-    assert _entity_type_to_semantic_group("Disease") == "DISO"
-    assert _entity_type_to_semantic_group("Chemical") == "CHEM"
-    assert _entity_type_to_semantic_group("Gene") == "GENE"
-    assert _entity_type_to_semantic_group("Receptor") == "GENE"
-    assert _entity_type_to_semantic_group("Anatomy") == "ANAT"
-    assert _entity_type_to_semantic_group("Network") == "PHYS"
-    assert _entity_type_to_semantic_group("Biological Process") == "PHYS"
-    assert _entity_type_to_semantic_group("disease") == "DISO"
-    assert _entity_type_to_semantic_group("chemical") == "CHEM"
-    assert _entity_type_to_semantic_group(None) is None
-    assert _entity_type_to_semantic_group("UnknownType") is None
+    assert paper_node["semantic_group"] is None

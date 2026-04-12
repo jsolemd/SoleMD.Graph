@@ -1,7 +1,7 @@
 import { normalizeWikiPageResponse } from '@/lib/engine/wiki-normalize'
 
 describe('normalizeWikiPageResponse', () => {
-  it('fills missing wiki page collections and inferred metadata for legacy payloads', () => {
+  it('fills missing wiki page collections and uses conservative defaults for invalid legacy payloads', () => {
     const page = normalizeWikiPageResponse({
       slug: 'entities/schizophrenia',
       title: 'Schizophrenia',
@@ -25,9 +25,9 @@ describe('normalizeWikiPageResponse', () => {
       entity_type: 'Disease',
       concept_id: 'MESH:D012559',
       family_key: 'psychosis',
-      page_kind: 'entity',
+      page_kind: 'topic',
       section_slug: null,
-      graph_focus: 'cited_papers',
+      graph_focus: 'none',
       summary: null,
       tags: ['psychosis'],
       outgoing_links: ['entities/clozapine'],
@@ -37,11 +37,10 @@ describe('normalizeWikiPageResponse', () => {
       featured_graph_refs: {},
       resolved_links: { clozapine: 'entities/clozapine' },
       linked_entities: {},
-      context: null,
     })
   })
 
-  it('derives featured graph refs from featured pmids when the backend omits the dedicated map', () => {
+  it('does not re-derive featured graph refs when the backend omits the dedicated map', () => {
     const page = normalizeWikiPageResponse({
       slug: 'entities/schizophrenia',
       title: 'Schizophrenia',
@@ -54,6 +53,6 @@ describe('normalizeWikiPageResponse', () => {
       },
     })
 
-    expect(page?.featured_graph_refs).toEqual({ 9090331: 'paper-9090331' })
+    expect(page?.featured_graph_refs).toEqual({})
   })
 })

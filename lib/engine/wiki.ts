@@ -1,6 +1,10 @@
 import 'server-only'
 
-import { EngineApiError, getEngineJson, postEngineJson } from './client'
+import { EngineApiError, getEngineJson } from './client'
+import {
+  buildWikiPageContextEnginePath,
+  buildWikiPageEnginePath,
+} from './wiki-paths'
 import { normalizeWikiPageContextResponse, normalizeWikiPageResponse } from './wiki-normalize'
 import type {
   WikiPageResponse,
@@ -26,12 +30,7 @@ export async function fetchWikiPage(
   slug: string,
   graphReleaseId?: string,
 ): Promise<WikiPageResponse | null> {
-  const params = new URLSearchParams()
-  if (graphReleaseId) {
-    params.set('graph_release_id', graphReleaseId)
-  }
-  const qs = params.toString()
-  const path = `${WIKI_API_PREFIX}/pages/${slug}${qs ? `?${qs}` : ''}`
+  const path = buildWikiPageEnginePath(slug, { graphReleaseId })
 
   try {
     return normalizeWikiPageResponse(
@@ -49,12 +48,7 @@ export async function fetchWikiPageContext(
   slug: string,
   graphReleaseId?: string,
 ): Promise<WikiPageContextResponse | null> {
-  const params = new URLSearchParams()
-  if (graphReleaseId) {
-    params.set('graph_release_id', graphReleaseId)
-  }
-  const qs = params.toString()
-  const path = `${WIKI_API_PREFIX}/page-context/${slug}${qs ? `?${qs}` : ''}`
+  const path = buildWikiPageContextEnginePath(slug, { graphReleaseId })
 
   try {
     return normalizeWikiPageContextResponse(
@@ -76,10 +70,11 @@ export async function searchWiki(
   query: string,
   limit = 20,
 ): Promise<WikiSearchResponse> {
-  return postEngineJson<{ query: string; limit: number }, WikiSearchResponse>(
-    `${WIKI_API_PREFIX}/search`,
-    { query, limit },
-  )
+  const params = new URLSearchParams({
+    query,
+    limit: String(limit),
+  })
+  return getEngineJson<WikiSearchResponse>(`${WIKI_API_PREFIX}/search?${params.toString()}`)
 }
 
 export async function fetchWikiBacklinks(

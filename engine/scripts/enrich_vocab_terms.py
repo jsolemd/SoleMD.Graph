@@ -42,13 +42,32 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)-7s %(name)s  %(message)s",
 )
 logger = logging.getLogger("enrich_vocab_terms")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 UMLS_API_BASE = "https://uts-ws.nlm.nih.gov/rest"
-UMLS_API_KEY = os.environ.get("UMLS_API_KEY", "")
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env.local"
+
+
+def _load_umls_api_key() -> str:
+    env_value = os.environ.get("UMLS_API_KEY", "").strip()
+    if env_value:
+        return env_value
+
+    if not ENV_FILE.exists():
+        return ""
+
+    for line in ENV_FILE.read_text().splitlines():
+        if not line.startswith("UMLS_API_KEY="):
+            continue
+        return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return ""
+
+
+UMLS_API_KEY = _load_umls_api_key()
 CACHE_PATH = Path(settings.data_dir).resolve()
 if not CACHE_PATH.is_absolute():
     CACHE_PATH = settings.project_root_path / settings.data_dir
@@ -72,12 +91,12 @@ CATEGORY_TO_ENTITY_TYPE: dict[str, str] = {
     "biology.biomarker": "chemical",
     "biology.gene": "gene",
     "neuroscience.receptor": "gene",
+    "neuroscience.structure": "anatomy",
+    "neuroscience.network": "anatomy",
 }
 
 # Categories we skip (PubTator lacks anatomy/network types)
 SKIP_CATEGORIES = {
-    "neuroscience.structure",
-    "neuroscience.network",
     "neuroscience.circuit",
     "methods.assessment_instrument",
     "methods.neuroimaging",
@@ -131,6 +150,12 @@ def assign_family(category: str, organ_systems: list[str] | None) -> str | None:
 
     if category == "biology.biomarker":
         return "biomarker"
+
+    if category == "neuroscience.structure":
+        return "brain_region"
+
+    if category == "neuroscience.network":
+        return "neural_network"
 
     return None
 
@@ -509,7 +534,8 @@ def print_report() -> None:
             """
             SELECT entity_rule_family, COUNT(*) AS cnt,
                    COUNT(mesh_id) AS with_mesh,
-                   COUNT(pubtator_paper_count) FILTER (WHERE pubtator_paper_count > 0) AS with_papers
+                   COUNT(pubtator_paper_count)
+                       FILTER (WHERE pubtator_paper_count > 0) AS with_papers
             FROM solemd.vocab_terms
             WHERE entity_rule_family IS NOT NULL
             GROUP BY entity_rule_family

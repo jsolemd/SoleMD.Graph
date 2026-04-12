@@ -2,30 +2,61 @@
 
 from __future__ import annotations
 
-
 from app import db
-from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_GRAPH_EVIDENCE, observe
-
-BUILD_WORK_MEM = "512MB"
-BUILD_MAX_PARALLEL_WORKERS_PER_GATHER = 6
-BUILD_EFFECTIVE_IO_CONCURRENCY = 200
-BUILD_RANDOM_PAGE_COST = "1.1"
+from app.graph.build_settings import apply_build_session_settings
+from app.graph.paper_summary import refresh_graph_paper_summary
+from app.langfuse_config import (
+    SPAN_GRAPH_EVIDENCE,
+    observe,
+)
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+)
 
 PAPER_EVIDENCE_STAGES = ("source", "entity", "relation", "journal", "finalize")
+PAPER_EVIDENCE_SUMMARY_TABLE = "solemd.paper_evidence_summary"
+_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE = "solemd.paper_evidence_summary_next"
+_PAPER_EVIDENCE_SUMMARY_OLD_TABLE = "solemd.paper_evidence_summary_old"
+_PAPER_EVIDENCE_SUMMARY_PKEY = "paper_evidence_summary_pkey"
+_PAPER_EVIDENCE_SUMMARY_OLD_PKEY = "paper_evidence_summary_old_pkey"
+_PAPER_EVIDENCE_SUMMARY_CORPUS_FKEY = "paper_evidence_summary_corpus_id_fkey"
+_PAPER_EVIDENCE_SUMMARY_OLD_CORPUS_FKEY = "paper_evidence_summary_old_corpus_id_fkey"
+_PAPER_EVIDENCE_SUMMARY_PMID_INDEX = "idx_paper_evidence_summary_pmid"
+_PAPER_EVIDENCE_SUMMARY_OLD_PMID_INDEX = "idx_paper_evidence_summary_old_pmid"
+_PAPER_EVIDENCE_SUMMARY_RULE_EVIDENCE_INDEX = "idx_paper_evidence_summary_rule_evidence"
+_PAPER_EVIDENCE_SUMMARY_OLD_RULE_EVIDENCE_INDEX = (
+    "idx_paper_evidence_summary_old_rule_evidence"
+)
+_PAPER_EVIDENCE_SUMMARY_JOURNAL_FAMILY_INDEX = (
+    "idx_paper_evidence_summary_journal_family"
+)
+_PAPER_EVIDENCE_SUMMARY_OLD_JOURNAL_FAMILY_INDEX = (
+    "idx_paper_evidence_summary_old_journal_family"
+)
+PAPER_RELATION_EVIDENCE_TABLE = "solemd.paper_relation_evidence"
+_PAPER_RELATION_EVIDENCE_STAGE_TABLE = "solemd.paper_relation_evidence_next"
+_PAPER_RELATION_EVIDENCE_OLD_TABLE = "solemd.paper_relation_evidence_old"
+_PAPER_RELATION_EVIDENCE_PKEY = "paper_relation_evidence_pkey"
+_PAPER_RELATION_EVIDENCE_OLD_PKEY = "paper_relation_evidence_old_pkey"
+_PAPER_RELATION_EVIDENCE_CORPUS_FKEY = "paper_relation_evidence_corpus_id_fkey"
+_PAPER_RELATION_EVIDENCE_OLD_CORPUS_FKEY = "paper_relation_evidence_old_corpus_id_fkey"
+_PAPER_RELATION_EVIDENCE_TYPE_COUNT_INDEX = "idx_paper_relation_evidence_type_count"
+_PAPER_RELATION_EVIDENCE_OLD_TYPE_COUNT_INDEX = (
+    "idx_paper_relation_evidence_old_type_count"
+)
 
-
-def apply_build_session_settings(cur) -> None:
-    cur.execute("SET LOCAL jit = off")
-    cur.execute(f"SET LOCAL work_mem = '{BUILD_WORK_MEM}'")
-    cur.execute(
-        "SET LOCAL max_parallel_workers_per_gather = "
-        f"{BUILD_MAX_PARALLEL_WORKERS_PER_GATHER}"
-    )
-    cur.execute(
-        "SET LOCAL effective_io_concurrency = "
-        f"{BUILD_EFFECTIVE_IO_CONCURRENCY}"
-    )
-    cur.execute(f"SET LOCAL random_page_cost = {BUILD_RANDOM_PAGE_COST}")
+_DROP_PAPER_EVIDENCE_SUMMARY_STAGE_SQL = (
+    f"DROP TABLE IF EXISTS {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE}"
+)
+_DROP_PAPER_EVIDENCE_SUMMARY_OLD_SQL = (
+    f"DROP TABLE IF EXISTS {_PAPER_EVIDENCE_SUMMARY_OLD_TABLE}"
+)
+_DROP_PAPER_RELATION_EVIDENCE_STAGE_SQL = (
+    f"DROP TABLE IF EXISTS {_PAPER_RELATION_EVIDENCE_STAGE_TABLE}"
+)
+_DROP_PAPER_RELATION_EVIDENCE_OLD_SQL = (
+    f"DROP TABLE IF EXISTS {_PAPER_RELATION_EVIDENCE_OLD_TABLE}"
+)
 
 
 def mapped_paper_predicate_sql(
@@ -78,13 +109,295 @@ def _load_paper_evidence_counts(cur) -> dict[str, int]:
     }
 
 
+def _create_paper_evidence_summary_stage_sql(target_table: str) -> str:
+    return f"""
+CREATE TABLE {target_table} AS
+SELECT * FROM stg_paper_evidence
+"""
+
+
+def _create_paper_relation_evidence_stage_sql(target_table: str) -> str:
+    return f"""
+CREATE TABLE {target_table} AS
+SELECT * FROM stg_paper_relation_evidence
+"""
+
+
+def _finalize_paper_evidence_summary_stage(cur) -> None:
+    cur.execute(_create_paper_evidence_summary_stage_sql(_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE))
+    cur.execute(
+        f"""
+        ALTER TABLE {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE}
+            ALTER COLUMN corpus_id SET NOT NULL,
+            ALTER COLUMN admission_reason SET NOT NULL,
+            ALTER COLUMN citation_count SET NOT NULL,
+            ALTER COLUMN citation_count SET DEFAULT 0,
+            ALTER COLUMN venue_normalized SET NOT NULL,
+            ALTER COLUMN venue_normalized SET DEFAULT '',
+            ALTER COLUMN has_vocab_match SET NOT NULL,
+            ALTER COLUMN has_vocab_match SET DEFAULT false,
+            ALTER COLUMN paper_entity_count SET NOT NULL,
+            ALTER COLUMN paper_entity_count SET DEFAULT 0,
+            ALTER COLUMN has_entity_rule_hit SET NOT NULL,
+            ALTER COLUMN has_entity_rule_hit SET DEFAULT false,
+            ALTER COLUMN paper_relation_count SET NOT NULL,
+            ALTER COLUMN paper_relation_count SET DEFAULT 0,
+            ALTER COLUMN relation_categories_csv DROP NOT NULL,
+            ALTER COLUMN has_relation_rule_hit SET NOT NULL,
+            ALTER COLUMN has_relation_rule_hit SET DEFAULT false,
+            ALTER COLUMN has_rule_evidence SET NOT NULL,
+            ALTER COLUMN has_rule_evidence SET DEFAULT false,
+            ALTER COLUMN has_curated_journal_family SET NOT NULL,
+            ALTER COLUMN has_curated_journal_family SET DEFAULT false,
+            ALTER COLUMN entity_rule_families SET NOT NULL,
+            ALTER COLUMN entity_rule_families SET DEFAULT 0,
+            ALTER COLUMN entity_rule_count SET NOT NULL,
+            ALTER COLUMN entity_rule_count SET DEFAULT 0,
+            ALTER COLUMN entity_core_families SET NOT NULL,
+            ALTER COLUMN entity_core_families SET DEFAULT 0,
+            ALTER COLUMN journal_score_multiplier SET NOT NULL,
+            ALTER COLUMN journal_score_multiplier SET DEFAULT 1.0,
+            ALTER COLUMN created_at SET NOT NULL,
+            ALTER COLUMN created_at SET DEFAULT now(),
+            ALTER COLUMN updated_at SET NOT NULL,
+            ALTER COLUMN updated_at SET DEFAULT now()
+        """
+    )
+    cur.execute(
+        f"""
+        COMMENT ON TABLE {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE} IS
+            'Durable per-paper evidence summary used to admit mapped papers '
+            'into base_points without rescanning raw PubTator evidence on '
+            'every publish.'
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE}
+            ADD CONSTRAINT paper_evidence_summary_next_corpus_id_fkey
+            FOREIGN KEY (corpus_id) REFERENCES solemd.corpus (corpus_id)
+            ON DELETE CASCADE
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE}
+            ADD CONSTRAINT paper_evidence_summary_next_pkey
+            PRIMARY KEY (corpus_id)
+        """
+    )
+    cur.execute(
+        f"""
+        CREATE INDEX idx_paper_evidence_summary_next_pmid
+            ON {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE} (pmid)
+            WHERE pmid IS NOT NULL
+        """
+    )
+    cur.execute(
+        f"""
+        CREATE INDEX idx_paper_evidence_summary_next_rule_evidence
+            ON {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE} (has_rule_evidence)
+        """
+    )
+    cur.execute(
+        f"""
+        CREATE INDEX idx_paper_evidence_summary_next_journal_family
+            ON {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE} (journal_family_key)
+            WHERE journal_family_key IS NOT NULL
+        """
+    )
+
+
+def _finalize_paper_relation_evidence_stage(cur) -> None:
+    cur.execute(_create_paper_relation_evidence_stage_sql(_PAPER_RELATION_EVIDENCE_STAGE_TABLE))
+    cur.execute(
+        f"""
+        ALTER TABLE {_PAPER_RELATION_EVIDENCE_STAGE_TABLE}
+            ALTER COLUMN corpus_id SET NOT NULL,
+            ALTER COLUMN relation_type SET NOT NULL,
+            ALTER COLUMN relation_count SET NOT NULL,
+            ALTER COLUMN relation_count SET DEFAULT 0,
+            ALTER COLUMN created_at SET NOT NULL,
+            ALTER COLUMN created_at SET DEFAULT now(),
+            ALTER COLUMN updated_at SET NOT NULL,
+            ALTER COLUMN updated_at SET DEFAULT now()
+        """
+    )
+    cur.execute(
+        f"""
+        COMMENT ON TABLE {_PAPER_RELATION_EVIDENCE_STAGE_TABLE} IS
+            'Durable per-paper relation-type counts used by runtime relation '
+            'recall so the service does not rescan raw PubTator relation rows '
+            'on every request.'
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {_PAPER_RELATION_EVIDENCE_STAGE_TABLE}
+            ADD CONSTRAINT paper_relation_evidence_next_corpus_id_fkey
+            FOREIGN KEY (corpus_id) REFERENCES solemd.corpus (corpus_id)
+            ON DELETE CASCADE
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {_PAPER_RELATION_EVIDENCE_STAGE_TABLE}
+            ADD CONSTRAINT paper_relation_evidence_next_pkey
+            PRIMARY KEY (corpus_id, relation_type)
+        """
+    )
+    cur.execute(
+        f"""
+        CREATE INDEX idx_paper_relation_evidence_next_type_count
+            ON {_PAPER_RELATION_EVIDENCE_STAGE_TABLE}
+            (relation_type, relation_count DESC, corpus_id)
+        """
+    )
+
+
+def _swap_paper_evidence_summary_stage(cur) -> None:
+    cur.execute("SET LOCAL lock_timeout = '10s'")
+    cur.execute(_DROP_PAPER_EVIDENCE_SUMMARY_OLD_SQL)
+    cur.execute(
+        f"ALTER TABLE IF EXISTS {PAPER_EVIDENCE_SUMMARY_TABLE} "
+        f"RENAME TO {_PAPER_EVIDENCE_SUMMARY_OLD_TABLE.split('.')[-1]}"
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE IF EXISTS {_PAPER_EVIDENCE_SUMMARY_OLD_TABLE}
+            RENAME CONSTRAINT {_PAPER_EVIDENCE_SUMMARY_CORPUS_FKEY}
+            TO {_PAPER_EVIDENCE_SUMMARY_OLD_CORPUS_FKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE IF EXISTS {_PAPER_EVIDENCE_SUMMARY_OLD_TABLE}
+            RENAME CONSTRAINT {_PAPER_EVIDENCE_SUMMARY_PKEY}
+            TO {_PAPER_EVIDENCE_SUMMARY_OLD_PKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX IF EXISTS solemd.{_PAPER_EVIDENCE_SUMMARY_PMID_INDEX}
+            RENAME TO {_PAPER_EVIDENCE_SUMMARY_OLD_PMID_INDEX}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX IF EXISTS solemd.{_PAPER_EVIDENCE_SUMMARY_RULE_EVIDENCE_INDEX}
+            RENAME TO {_PAPER_EVIDENCE_SUMMARY_OLD_RULE_EVIDENCE_INDEX}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX IF EXISTS solemd.{_PAPER_EVIDENCE_SUMMARY_JOURNAL_FAMILY_INDEX}
+            RENAME TO {_PAPER_EVIDENCE_SUMMARY_OLD_JOURNAL_FAMILY_INDEX}
+        """
+    )
+    cur.execute(
+        f"ALTER TABLE {_PAPER_EVIDENCE_SUMMARY_STAGE_TABLE} "
+        f"RENAME TO {PAPER_EVIDENCE_SUMMARY_TABLE.split('.')[-1]}"
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {PAPER_EVIDENCE_SUMMARY_TABLE}
+            RENAME CONSTRAINT paper_evidence_summary_next_corpus_id_fkey
+            TO {_PAPER_EVIDENCE_SUMMARY_CORPUS_FKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {PAPER_EVIDENCE_SUMMARY_TABLE}
+            RENAME CONSTRAINT paper_evidence_summary_next_pkey
+            TO {_PAPER_EVIDENCE_SUMMARY_PKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX solemd.idx_paper_evidence_summary_next_pmid
+            RENAME TO {_PAPER_EVIDENCE_SUMMARY_PMID_INDEX}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX solemd.idx_paper_evidence_summary_next_rule_evidence
+            RENAME TO {_PAPER_EVIDENCE_SUMMARY_RULE_EVIDENCE_INDEX}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX solemd.idx_paper_evidence_summary_next_journal_family
+            RENAME TO {_PAPER_EVIDENCE_SUMMARY_JOURNAL_FAMILY_INDEX}
+        """
+    )
+    cur.execute(_DROP_PAPER_EVIDENCE_SUMMARY_OLD_SQL)
+
+
+def _swap_paper_relation_evidence_stage(cur) -> None:
+    cur.execute("SET LOCAL lock_timeout = '10s'")
+    cur.execute(_DROP_PAPER_RELATION_EVIDENCE_OLD_SQL)
+    cur.execute(
+        f"ALTER TABLE IF EXISTS {PAPER_RELATION_EVIDENCE_TABLE} "
+        f"RENAME TO {_PAPER_RELATION_EVIDENCE_OLD_TABLE.split('.')[-1]}"
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE IF EXISTS {_PAPER_RELATION_EVIDENCE_OLD_TABLE}
+            RENAME CONSTRAINT {_PAPER_RELATION_EVIDENCE_CORPUS_FKEY}
+            TO {_PAPER_RELATION_EVIDENCE_OLD_CORPUS_FKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE IF EXISTS {_PAPER_RELATION_EVIDENCE_OLD_TABLE}
+            RENAME CONSTRAINT {_PAPER_RELATION_EVIDENCE_PKEY}
+            TO {_PAPER_RELATION_EVIDENCE_OLD_PKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX IF EXISTS solemd.{_PAPER_RELATION_EVIDENCE_TYPE_COUNT_INDEX}
+            RENAME TO {_PAPER_RELATION_EVIDENCE_OLD_TYPE_COUNT_INDEX}
+        """
+    )
+    cur.execute(
+        f"ALTER TABLE {_PAPER_RELATION_EVIDENCE_STAGE_TABLE} "
+        f"RENAME TO {PAPER_RELATION_EVIDENCE_TABLE.split('.')[-1]}"
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {PAPER_RELATION_EVIDENCE_TABLE}
+            RENAME CONSTRAINT paper_relation_evidence_next_corpus_id_fkey
+            TO {_PAPER_RELATION_EVIDENCE_CORPUS_FKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {PAPER_RELATION_EVIDENCE_TABLE}
+            RENAME CONSTRAINT paper_relation_evidence_next_pkey
+            TO {_PAPER_RELATION_EVIDENCE_PKEY}
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER INDEX solemd.idx_paper_relation_evidence_next_type_count
+            RENAME TO {_PAPER_RELATION_EVIDENCE_TYPE_COUNT_INDEX}
+        """
+    )
+    cur.execute(_DROP_PAPER_RELATION_EVIDENCE_OLD_SQL)
+
+
 @observe(name=SPAN_GRAPH_EVIDENCE)
 def refresh_paper_evidence_summary() -> dict[str, int]:
-    """Refresh paper evidence tables in one transaction from a shared source stage."""
+    """Refresh paper evidence serving tables with a stage/swap cutover."""
     mapped_predicate = mapped_paper_predicate_sql("c", "p")
 
     with db.pooled() as conn, conn.cursor() as cur:
         apply_build_session_settings(cur)
+        cur.execute(_DROP_PAPER_EVIDENCE_SUMMARY_STAGE_SQL)
+        cur.execute(_DROP_PAPER_EVIDENCE_SUMMARY_OLD_SQL)
+        cur.execute(_DROP_PAPER_RELATION_EVIDENCE_STAGE_SQL)
+        cur.execute(_DROP_PAPER_RELATION_EVIDENCE_OLD_SQL)
 
         cur.execute(
             f"""
@@ -144,6 +457,10 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                 SELECT
                     src.corpus_id,
                     COUNT(ea.*)::INTEGER AS paper_entity_count,
+                    string_agg(
+                        DISTINCT ea.entity_type,
+                        ', ' ORDER BY ea.entity_type
+                    ) FILTER (WHERE COALESCE(ea.entity_type, '') <> '') AS semantic_groups_csv,
                     COALESCE(BOOL_OR(
                         er.entity_type IS NOT NULL
                         AND (er.confidence != 'requires_second_gate' OR src.citation_count >= 100)
@@ -175,10 +492,22 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
             ),
             relation_count_agg AS (
                 SELECT
-                    rel.corpus_id,
-                    COALESCE(SUM(rel.relation_count), 0)::INTEGER AS paper_relation_count
-                FROM stg_paper_relation_evidence rel
-                GROUP BY rel.corpus_id
+                    ranked.corpus_id,
+                    COALESCE(SUM(ranked.relation_count), 0)::INTEGER AS paper_relation_count,
+                    string_agg(
+                        ranked.relation_type,
+                        ', ' ORDER BY ranked.relation_count DESC, ranked.relation_type
+                    ) FILTER (WHERE ranked.rank <= 5) AS relation_categories_csv
+                FROM (
+                    SELECT
+                        rel.*,
+                        row_number() OVER (
+                            PARTITION BY rel.corpus_id
+                            ORDER BY rel.relation_count DESC, rel.relation_type
+                        ) AS rank
+                    FROM stg_paper_relation_evidence rel
+                ) ranked
+                GROUP BY ranked.corpus_id
             ),
             relation_rule_agg AS (
                 SELECT
@@ -230,8 +559,10 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                     src.admission_reason IN ('journal_and_vocab', 'vocab_entity_match')
                 ) AS has_vocab_match,
                 COALESCE(ea.paper_entity_count, 0) AS paper_entity_count,
+                ea.semantic_groups_csv,
                 COALESCE(ea.has_entity_rule_hit, false) AS has_entity_rule_hit,
                 COALESCE(rca.paper_relation_count, 0) AS paper_relation_count,
+                rca.relation_categories_csv,
                 COALESCE(rra.has_relation_rule_hit, false) AS has_relation_rule_hit,
                 (
                     COALESCE(ea.has_entity_rule_hit, false)
@@ -249,25 +580,25 @@ def refresh_paper_evidence_summary() -> dict[str, int]:
                 COALESCE(jm.journal_score_multiplier, 1.0) AS journal_score_multiplier
             FROM stg_paper_evidence_source src
             LEFT JOIN entity_agg ea ON ea.corpus_id = src.corpus_id
-            LEFT JOIN relation_count_agg rca ON rca.corpus_id = src.corpus_id
-            LEFT JOIN relation_rule_agg rra ON rra.corpus_id = src.corpus_id
-            LEFT JOIN journal_match jm ON jm.corpus_id = src.corpus_id
+                LEFT JOIN relation_count_agg rca ON rca.corpus_id = src.corpus_id
+                LEFT JOIN relation_rule_agg rra ON rra.corpus_id = src.corpus_id
+                LEFT JOIN journal_match jm ON jm.corpus_id = src.corpus_id
             """
         )
 
-        cur.execute("TRUNCATE solemd.paper_relation_evidence, solemd.paper_evidence_summary")
-        cur.execute(
-            "INSERT INTO solemd.paper_evidence_summary SELECT * FROM stg_paper_evidence"
-        )
-        cur.execute(
-            "INSERT INTO solemd.paper_relation_evidence SELECT * FROM stg_paper_relation_evidence"
-        )
+        _finalize_paper_evidence_summary_stage(cur)
+        _finalize_paper_relation_evidence_stage(cur)
+
+        _swap_paper_evidence_summary_stage(cur)
+        _swap_paper_relation_evidence_stage(cur)
         counts = _load_paper_evidence_counts(cur)
         conn.commit()
 
     with db.connect_autocommit() as conn, conn.cursor() as cur:
-        cur.execute("ANALYZE solemd.paper_evidence_summary")
-        cur.execute("ANALYZE solemd.paper_relation_evidence")
+        cur.execute(f"ANALYZE {PAPER_EVIDENCE_SUMMARY_TABLE}")
+        cur.execute(f"ANALYZE {PAPER_RELATION_EVIDENCE_TABLE}")
+
+    refresh_graph_paper_summary()
 
     try:
         client = _get_langfuse()

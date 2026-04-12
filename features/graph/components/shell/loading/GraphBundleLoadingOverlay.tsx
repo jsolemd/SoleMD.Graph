@@ -5,6 +5,8 @@ import { motion } from "framer-motion";
 import { BrainCircuit } from "lucide-react";
 import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
 import ThemeToggle from "@/features/graph/components/chrome/ThemeToggle";
+import { panelSurfaceStyle } from "@/features/graph/components/panels/PanelShell";
+import ConnectomeLoader from "@/features/animations/canvas/connectome-loader/ConnectomeLoader";
 
 function getUserFriendlyMessage(
   stage: GraphBundleLoadProgress["stage"] | undefined,
@@ -53,8 +55,11 @@ export function GraphBundleLoadingOverlay({
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: "easeInOut" }}
     >
+      {/* Connectome particle field — entity-colored nodes drifting in fog */}
+      <ConnectomeLoader />
+
       {/* Wordmark — same position as post-load Wordmark (top-left) */}
-      <div className="absolute left-3 top-3 flex items-center gap-2">
+      <div className="absolute left-3 top-3 z-10 flex items-center gap-2">
         <div
           className="flex h-8 w-8 items-center justify-center rounded-full"
           style={{ backgroundColor: "var(--mode-accent)" }}
@@ -72,59 +77,69 @@ export function GraphBundleLoadingOverlay({
 
       {/* Theme toggle — top-right corner */}
       <div
-        className="absolute right-3 top-3"
+        className="absolute right-3 top-3 z-10"
         data-graph-control-contrast="1"
       >
         <ThemeToggle />
       </div>
 
-      {/* Branding + graph name */}
-      <div className="flex flex-col items-center gap-1">
-        <Text
-          size="xs"
-          fw={600}
-          style={{
-            color: "var(--text-tertiary)",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-          }}
-        >
-          SoleMD
-        </Text>
-        <Text size="md" fw={500} style={{ color: "var(--text-primary)" }}>
-          {bundle.graphName}
-        </Text>
-        <Text
-          size="10px"
-          style={{
-            color: "var(--text-tertiary)",
-            letterSpacing: "0.04em",
-          }}
-        >
-          Powered by Semantic Scholar
-        </Text>
-      </div>
-
-      {/* Progress bar + status */}
-      <div className="flex w-[min(280px,70vw)] flex-col items-center gap-3">
-        <div
-          className="w-full overflow-hidden rounded-full"
-          style={{ backgroundColor: "var(--graph-panel-border)", height: 4 }}
-        >
-          <div
+      {/* Floating panel card — shared surface tokens with the rest of the
+          app's panels (see panelSurfaceStyle in PanelShell.tsx). */}
+      <div
+        className="relative z-10 flex w-[min(340px,85vw)] flex-col items-center gap-5 rounded-2xl px-8 py-7"
+        style={panelSurfaceStyle}
+      >
+        {/* Branding + graph name */}
+        <div className="flex flex-col items-center gap-1">
+          <Text
+            size="xs"
+            fw={600}
             style={{
-              width: `${percent}%`,
-              height: "100%",
-              backgroundColor: "var(--mode-accent)",
-              transition: "width 300ms ease",
+              color: "var(--text-tertiary)",
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
             }}
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Loader size={12} color="var(--text-tertiary)" />
-          <Text size="xs" style={{ color: "var(--text-tertiary)" }}>
-            {getUserFriendlyMessage(progress?.stage, canvasReady)}
+          >
+            SoleMD
           </Text>
+          <Text size="md" fw={500} style={{ color: "var(--text-primary)" }}>
+            {bundle.graphName}
+          </Text>
+          <Text
+            size="10px"
+            style={{
+              color: "var(--text-tertiary)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            Powered by Semantic Scholar
+          </Text>
+        </div>
+
+        {/* Progress bar + status */}
+        <div className="flex w-full flex-col items-center gap-3">
+          <div
+            className="w-full overflow-hidden rounded-full"
+            style={{
+              backgroundColor: "var(--graph-panel-border)",
+              height: 4,
+            }}
+          >
+            <div
+              style={{
+                width: `${percent}%`,
+                height: "100%",
+                backgroundColor: "var(--mode-accent)",
+                transition: "width 300ms ease",
+              }}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Loader size={12} color="var(--text-tertiary)" />
+            <Text size="xs" style={{ color: "var(--text-tertiary)" }}>
+              {getUserFriendlyMessage(progress?.stage, canvasReady)}
+            </Text>
+          </div>
         </div>
       </div>
     </motion.div>

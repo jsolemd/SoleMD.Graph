@@ -21,7 +21,6 @@ from app.wiki.schemas import (
     WikiPageResponse,
     WikiPageSummary,
     WikiSearchHitResponse,
-    WikiSearchRequest,
     WikiSearchResponse,
 )
 
@@ -39,7 +38,6 @@ class WikiService:
         slug: str,
         *,
         graph_release_id: str | None = None,
-        graph_run_id: str | None = None,
     ) -> WikiPageResponse | None:
         page = self._repository.get_page(slug=slug)
         if page is None:
@@ -48,7 +46,6 @@ class WikiService:
         resolved_run_id = _resolve_requested_graph_run_id(
             repository=self._repository,
             graph_release_id=graph_release_id,
-            graph_run_id=graph_run_id,
         )
 
         paper_graph_refs: dict[int, str] = {}
@@ -86,7 +83,6 @@ class WikiService:
         slug: str,
         *,
         graph_release_id: str | None = None,
-        graph_run_id: str | None = None,
     ) -> WikiPageContextResponse | None:
         page = self._repository.get_page(slug=slug)
         if page is None:
@@ -95,7 +91,6 @@ class WikiService:
         resolved_run_id = _resolve_requested_graph_run_id(
             repository=self._repository,
             graph_release_id=graph_release_id,
-            graph_run_id=graph_run_id,
         )
         return _resolve_page_context(
             repository=self._repository,
@@ -116,8 +111,8 @@ class WikiService:
             for s in summaries
         ]
 
-    def search(self, request: WikiSearchRequest) -> WikiSearchResponse:
-        hits = self._repository.search(query=request.query, limit=request.limit)
+    def search(self, *, query: str, limit: int) -> WikiSearchResponse:
+        hits = self._repository.search(query=query, limit=limit)
         return WikiSearchResponse(
             hits=[
                 WikiSearchHitResponse(
@@ -185,7 +180,7 @@ class WikiService:
                     slug=p.slug,
                     concept_id=p.concept_id,
                     entity_type=p.entity_type,
-                    semantic_group=_entity_type_to_semantic_group(p.entity_type),
+                    semantic_group=p.semantic_group,
                     tags=p.tags,
                 )
             )
@@ -242,7 +237,6 @@ def _page_to_response(
     resolved_links: dict[str, str],
     linked_entity_meta: dict[str, tuple[str, str]] | None = None,
     featured_graph_refs: dict[int, str] | None = None,
-    context: WikiPageContextResponse | None = None,
 ) -> WikiPageResponse:
     linked_entities: dict[str, WikiLinkedEntity] = {}
     if linked_entity_meta:
@@ -260,6 +254,7 @@ def _page_to_response(
         entity_type=page.entity_type,
         concept_id=page.concept_id,
         family_key=page.family_key,
+        semantic_group=page.semantic_group,
         page_kind=page.page_kind,
         section_slug=page.section_slug,
         graph_focus=page.graph_focus,
@@ -272,7 +267,6 @@ def _page_to_response(
         featured_graph_refs=featured_graph_refs or {},
         resolved_links=resolved_links,
         linked_entities=linked_entities,
-        context=context,
     )
 
 
@@ -280,10 +274,7 @@ def _resolve_requested_graph_run_id(
     *,
     repository: WikiRepository,
     graph_release_id: str | None,
-    graph_run_id: str | None,
 ) -> str | None:
-    if graph_run_id is not None:
-        return graph_run_id
     if graph_release_id is None:
         return None
     return repository.resolve_graph_run_id(graph_release_id=graph_release_id)
@@ -334,39 +325,6 @@ def _unique_ints(values: list[int]) -> list[int]:
         seen.add(value)
         ordered.append(value)
     return ordered
-
-
-_ENTITY_TYPE_SEMANTIC_GROUP: dict[str, str] = {
-    # Wiki page entity types (title-cased domain terms)
-    "Disease": "DISO",
-    "Chemical": "CHEM",
-    "Gene": "GENE",
-    "Receptor": "GENE",
-    "Anatomy": "ANAT",
-    "Network": "PHYS",
-    "Biological Process": "PHYS",
-    # PubTator entity types (title + lower variants)
-    "Species": "LIVB",
-    "Mutation": "GENE",
-    "DNAMutation": "GENE",
-    "ProteinMutation": "GENE",
-    "SNP": "GENE",
-    "CellLine": "ANAT",
-    "disease": "DISO",
-    "chemical": "CHEM",
-    "gene": "GENE",
-}
-
-
-def _entity_type_to_semantic_group(entity_type: str | None) -> str | None:
-    """Map PubTator entity_type to UMLS semantic group.
-
-    Interim bridge until wiki_pages carries semantic_group directly
-    from vocab_terms. See docs/map/wiki-taxonomy.md for the full model.
-    """
-    if entity_type is None:
-        return None
-    return _ENTITY_TYPE_SEMANTIC_GROUP.get(entity_type)
 
 
 @lru_cache(maxsize=1)

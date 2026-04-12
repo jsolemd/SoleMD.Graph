@@ -9,7 +9,7 @@ from typing import Any, Protocol
 
 from app import db
 from app.config import settings
-from app.rag import queries
+from app.graph.repository import PostgresGraphRepository
 from app.rag.models import (
     CitationContextHit,
     EntityMatchedPaperHit,
@@ -37,7 +37,6 @@ from app.rag.repository_support import (
     ResolvedQueryEntityTerms,
     _dense_score_from_distance,
     _PinnedConnectionContext,
-    _unique_stripped,
 )
 from app.rag.repository_support import (
     _SqlSpec as _RepositorySqlSpec,
@@ -231,17 +230,16 @@ class PostgresRagRepository(
         connect: Callable[..., object] | None = None,
         *,
         chunk_version_key: str = DEFAULT_CHUNK_VERSION_KEY,
+        graph_repository: PostgresGraphRepository | None = None,
     ):
         self._connect_factory = connect or db.pooled
         self._chunk_version_key = chunk_version_key
         self._disable_session_jit = settings.rag_runtime_disable_jit
-        self._graph_release_cache: dict[str, GraphRelease] = {}
+        self._graph_repository = graph_repository
         self._semantic_neighbor_index_ready: bool | None = None
         self._graph_scope_paper_counts: dict[str, int] = {}
         self._graph_scope_coverages: dict[str, float] = {}
         self._embedded_paper_count: int | None = None
-        self._current_graph_run_id: str | None = None
-        self._current_graph_run_loaded = False
         self._bound_connection: ContextVar[Any | None] = ContextVar(
             f"rag_repository_connection_{id(self)}",
             default=None,
@@ -252,6 +250,8 @@ class PostgresRagRepository(
             f"rag_repository_resolved_entities_{id(self)}",
             default=None,
         )
+        if self._graph_repository is None:
+            self._graph_repository = PostgresGraphRepository(connect=self._connect)
 
     def _connect(self):
         active_connection = self._bound_connection.get()
@@ -264,38 +264,10 @@ class PostgresRagRepository(
             cur.execute("SET LOCAL jit = off")
 
     def _resolve_current_graph_run_id(self) -> str | None:
-        if self._current_graph_run_loaded:
-            return self._current_graph_run_id
-
-        for release in self._graph_release_cache.values():
-            if release.is_current:
-                self._current_graph_run_id = release.graph_run_id
-                self._current_graph_run_loaded = True
-                return self._current_graph_run_id
-
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id
-                    FROM solemd.graph_runs
-                    WHERE graph_name = 'cosmograph'
-                      AND node_kind = 'corpus'
-                      AND status = 'completed'
-                      AND is_current = true
-                    ORDER BY completed_at DESC NULLS LAST, updated_at DESC
-                    LIMIT 1
-                    """
-                )
-                row = cur.fetchone()
-
-        self._current_graph_run_id = row["id"] if row else None
-        self._current_graph_run_loaded = True
-        return self._current_graph_run_id
+        return self._graph_repository.resolve_current_graph_run_id()
 
     def _is_current_graph_run(self, graph_run_id: str) -> bool:
-        current_graph_run_id = self._resolve_current_graph_run_id()
-        return bool(current_graph_run_id and graph_run_id == current_graph_run_id)
+        return self._graph_repository.is_current_graph_run(graph_run_id)
 
     @contextmanager
     def search_session(self) -> Iterator[None]:
@@ -357,32 +329,7 @@ class PostgresRagRepository(
         )
 
     def resolve_graph_release(self, graph_release_id: str) -> GraphRelease:
-        release_key = graph_release_id.strip()
-        cached = self._graph_release_cache.get(release_key)
-        if cached is not None:
-            return cached
-        params = (release_key, release_key, release_key)
-
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(queries.GRAPH_RELEASE_LOOKUP_SQL, params)
-                row = cur.fetchone()
-
-        if not row:
-            raise LookupError(f"Unknown graph release: {graph_release_id}")
-
-        release = GraphRelease(
-            graph_release_id=row.get("bundle_checksum") or row["graph_run_id"],
-            graph_run_id=row["graph_run_id"],
-            bundle_checksum=row.get("bundle_checksum"),
-            graph_name=row["graph_name"],
-            is_current=bool(row.get("is_current")),
-        )
-        self._graph_release_cache[release_key] = release
-        if release.is_current:
-            self._current_graph_run_id = release.graph_run_id
-            self._current_graph_run_loaded = True
-        return release
+        return self._graph_repository.resolve_graph_release(graph_release_id)
 
     def resolve_selected_corpus_id(
         self,
@@ -392,43 +339,21 @@ class PostgresRagRepository(
         selected_paper_id: str | None,
         selected_node_id: str | None,
     ) -> int | None:
+        candidate_refs: list[str] = []
         selected_lookup_ref = selected_graph_paper_ref or selected_paper_id
-
         if selected_lookup_ref:
-            for prefix in ("paper:", "corpus:"):
-                if selected_lookup_ref.startswith(prefix):
-                    suffix = selected_lookup_ref.split(":", 1)[1]
-                    if suffix.isdigit():
-                        return int(suffix)
-
+            candidate_refs.append(selected_lookup_ref)
         if selected_node_id:
-            for prefix in ("paper:", "corpus:"):
-                if selected_node_id.startswith(prefix):
-                    suffix = selected_node_id.split(":", 1)[1]
-                    if suffix.isdigit():
-                        return int(suffix)
-
-            if selected_node_id.isdigit():
-                return int(selected_node_id)
-
-        if not selected_lookup_ref:
+            candidate_refs.append(selected_node_id)
+        if not candidate_refs:
             return None
 
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    queries.SELECTED_CORPUS_LOOKUP_SQL,
-                    (
-                        graph_run_id,
-                        selected_lookup_ref,
-                        selected_lookup_ref,
-                        selected_lookup_ref,
-                        selected_lookup_ref,
-                    ),
-                )
-                row = cur.fetchone()
-
-        return int(row["corpus_id"]) if row else None
+        return self._graph_repository.resolve_selected_corpus_id(
+            graph_run_id=graph_run_id,
+            selected_graph_paper_ref=selected_graph_paper_ref,
+            selected_paper_id=selected_paper_id,
+            selected_node_id=selected_node_id,
+        )
 
     def resolve_scope_corpus_ids(
         self,
@@ -436,22 +361,7 @@ class PostgresRagRepository(
         graph_run_id: str,
         graph_paper_refs: Sequence[str],
     ) -> list[int]:
-        normalized_refs = _unique_stripped(graph_paper_refs)
-        if not normalized_refs:
-            return []
-
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    queries.SCOPE_CORPUS_LOOKUP_SQL,
-                    (
-                        graph_run_id,
-                        normalized_refs,
-                        normalized_refs,
-                        normalized_refs,
-                        normalized_refs,
-                    ),
-                )
-                rows = cur.fetchall()
-
-        return [int(row["corpus_id"]) for row in rows]
+        return self._graph_repository.resolve_scope_corpus_ids(
+            graph_run_id=graph_run_id,
+            graph_paper_refs=graph_paper_refs,
+        )

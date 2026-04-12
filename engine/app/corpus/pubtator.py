@@ -26,6 +26,8 @@ import argparse
 import gzip
 import logging
 import time
+from collections.abc import Callable
+from typing import Any
 
 import psycopg
 
@@ -41,14 +43,24 @@ RELATION_FILE = "relation2pubtator3.gz"
 PROGRESS_INTERVAL = 1_000_000  # Log every 1M lines
 
 # Known PubTator3 entity types (lowercased for comparison)
-_KNOWN_ENTITY_TYPES = frozenset({
-    "gene", "disease", "chemical", "species", "mutation",
-    "cellline", "dnamutation", "proteinmutation", "snp",
-})
+_KNOWN_ENTITY_TYPES = frozenset(
+    {
+        "gene",
+        "disease",
+        "chemical",
+        "species",
+        "mutation",
+        "cellline",
+        "dnamutation",
+        "proteinmutation",
+        "snp",
+    }
+)
 _warned_entity_types: set[str] = set()
 
 
 # ─── Entity parsing ─────────────────────────────────────────
+
 
 def _parse_entity_line(line: str) -> tuple[int, str, str, str, str] | None:
     """Parse entity annotation line.
@@ -107,15 +119,16 @@ def _parse_relation_line(line: str) -> tuple[int, str, str, str, str, str] | Non
             pmid,
             relation_type,
             e1_parts[0].lower(),  # subject_type
-            e1_parts[1],          # subject_id
+            e1_parts[1],  # subject_id
             e2_parts[0].lower(),  # object_type
-            e2_parts[1],          # object_id
+            e2_parts[1],  # object_id
         )
     except (ValueError, IndexError):
         return None
 
 
 # ─── Corpus PMID set ────────────────────────────────────────
+
 
 def _load_corpus_pmids(conn: psycopg.Connection) -> set[int]:
     """Load all PMIDs from solemd.corpus into a set for filtering."""
@@ -132,14 +145,12 @@ def _load_corpus_pmids(conn: psycopg.Connection) -> set[int]:
 
 # ─── Bulk loaders ───────────────────────────────────────────
 
-from collections.abc import Callable
-from typing import Any
-
-
-_ALLOWED_TABLES = frozenset({
-    "pubtator.entity_annotations",
-    "pubtator.relations",
-})
+_ALLOWED_TABLES = frozenset(
+    {
+        "pubtator.entity_annotations",
+        "pubtator.relations",
+    }
+)
 
 
 def _stream_load(
@@ -188,7 +199,10 @@ def _stream_load(
                         rate = lines / elapsed if elapsed > 0 else 0
                         logger.info(
                             "  %dM lines | %d loaded | %d skipped | %.0f lines/sec",
-                            lines // 1_000_000, loaded, skipped, rate,
+                            lines // 1_000_000,
+                            loaded,
+                            skipped,
+                            rate,
                         )
 
                     parsed = parser(line)
@@ -212,7 +226,10 @@ def _stream_load(
         except Exception as exc:
             # A COPY-level failure aborts the whole batch; log clearly
             logger.error(
-                "%s COPY aborted after %d rows: %s", label, loaded, exc,
+                "%s COPY aborted after %d rows: %s",
+                label,
+                loaded,
+                exc,
             )
             conn.rollback()
             # Re-commit the TRUNCATE so the table is clean for retry
@@ -239,7 +256,12 @@ def _stream_load(
     }
     logger.info(
         "%s load complete: %d loaded, %d skipped, %d errors in %.1fs (%d rows/sec)",
-        label, loaded, skipped, errors, elapsed, stats["rate"],
+        label,
+        loaded,
+        skipped,
+        errors,
+        elapsed,
+        stats["rate"],
     )
     return stats
 
@@ -294,26 +316,10 @@ INDEXES = [
         "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_entity_pmid_type "
         "ON pubtator.entity_annotations(pmid, entity_type)",
     ),
-    (
-        "idx_pt_entity_disease",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_entity_disease "
-        "ON pubtator.entity_annotations(pmid, concept_id) WHERE entity_type = 'disease'",
-    ),
-    (
-        "idx_pt_entity_chemical",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_entity_chemical "
-        "ON pubtator.entity_annotations(pmid, concept_id) WHERE entity_type = 'chemical'",
-    ),
-    (
-        "idx_pt_entity_gene",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_entity_gene "
-        "ON pubtator.entity_annotations(pmid, concept_id) WHERE entity_type = 'gene'",
-    ),
     # Relation indexes
     (
         "idx_pt_relation_pmid",
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_relation_pmid "
-        "ON pubtator.relations(pmid)",
+        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_pt_relation_pmid ON pubtator.relations(pmid)",
     ),
     (
         "idx_pt_relation_subject",
@@ -367,19 +373,18 @@ def analyze_tables(conn: psycopg.Connection) -> None:
 
 # ─── Log to load_history ────────────────────────────────────
 
+
 def _log_history(
     conn: psycopg.Connection,
     entity_stats: dict | None,
     relation_stats: dict | None,
 ) -> None:
     """Record PubTator3 load in solemd.load_history."""
-    total_loaded = (
-        (entity_stats.get("loaded", 0) if entity_stats else 0)
-        + (relation_stats.get("loaded", 0) if relation_stats else 0)
+    total_loaded = (entity_stats.get("loaded", 0) if entity_stats else 0) + (
+        relation_stats.get("loaded", 0) if relation_stats else 0
     )
-    total_processed = (
-        (entity_stats.get("lines", 0) if entity_stats else 0)
-        + (relation_stats.get("lines", 0) if relation_stats else 0)
+    total_processed = (entity_stats.get("lines", 0) if entity_stats else 0) + (
+        relation_stats.get("lines", 0) if relation_stats else 0
     )
 
     metadata = {}
@@ -400,6 +405,7 @@ def _log_history(
 
 
 # ─── Main ───────────────────────────────────────────────────
+
 
 def run_pubtator(
     *,

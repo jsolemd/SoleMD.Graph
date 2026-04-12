@@ -5,6 +5,7 @@ from io import BytesIO
 import pyarrow.ipc as pa_ipc
 
 from app.graph.attachment import (
+    GRAPH_POINT_ATTACHMENT_SQL,
     GraphPointAttachmentRequest,
     GraphPointAttachmentService,
 )
@@ -128,3 +129,10 @@ def test_graph_point_attachment_service_returns_empty_stream_when_nothing_resolv
 
     table = pa_ipc.open_stream(BytesIO(payload)).read_all()
     assert table.num_rows == 0
+
+
+def test_graph_point_attachment_sql_uses_graph_paper_summary_not_internal_evidence_table():
+    assert "JOIN solemd.graph_paper_summary gps" in GRAPH_POINT_ATTACHMENT_SQL
+    assert "paper_evidence_summary" not in GRAPH_POINT_ATTACHMENT_SQL
+    assert "JOIN pubtator.entity_annotations" not in GRAPH_POINT_ATTACHMENT_SQL
+    assert "JOIN pubtator.relations" not in GRAPH_POINT_ATTACHMENT_SQL

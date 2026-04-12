@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchWikiPage } from "@/lib/engine/wiki";
-import { resolveWikiSlug, toWikiErrorResponse } from "../../_lib";
+import {
+  readWikiGraphReleaseId,
+  resolveWikiSlugFromContext,
+  toWikiErrorResponse,
+  type WikiSlugRouteContext,
+} from "../../_lib";
 
-type RouteContext = {
-  params: Promise<{
-    slug: string[];
-  }>;
-};
-
-export async function GET(request: NextRequest, context: RouteContext) {
-  const { slug: slugParts } = await context.params;
-  const slug = resolveWikiSlug(slugParts);
-  if (!slug) {
-    return NextResponse.json({ error: "Wiki slug is required" }, { status: 400 });
+export async function GET(request: NextRequest, context: WikiSlugRouteContext) {
+  const slug = await resolveWikiSlugFromContext(context);
+  if (slug instanceof NextResponse) {
+    return slug;
   }
-
-  const graphReleaseId =
-    request.nextUrl.searchParams.get("graph_release_id") ?? undefined;
+  const graphReleaseId = readWikiGraphReleaseId(request);
 
   try {
     const page = await fetchWikiPage(slug, graphReleaseId);

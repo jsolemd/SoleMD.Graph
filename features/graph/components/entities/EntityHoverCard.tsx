@@ -3,6 +3,7 @@
 import {
   iconBtnStyles,
   PanelDivider,
+  PanelInlineLoader,
   panelTextDimStyle,
   panelTextMutedStyle,
   panelTextStyle,
@@ -10,7 +11,7 @@ import {
 import { FloatingHoverCard } from "@/features/graph/components/overlay/FloatingHoverCard";
 import type { GraphEntityRef } from "@/features/graph/types/entity-service";
 import type { EntityHoverCardModel } from "./entity-hover-card";
-import { ActionIcon, Loader, Tooltip } from "@mantine/core";
+import { ActionIcon, Tooltip } from "@mantine/core";
 import { BookOpenText, FileText, Orbit, Tag } from "lucide-react";
 
 interface EntityHoverCardProps {
@@ -203,18 +204,8 @@ export function EntityHoverCard({
                   </span>
                 </span>
               )}
-              {!card.detailReady && (
-                <Loader size={8} color="var(--graph-panel-text-dim)" />
-              )}
+              {!card.detailReady && <PanelInlineLoader size={8} />}
             </div>
-          </>
-        )}
-
-        {/* ── Summary ── */}
-        {card.summary && (
-          <>
-            <PanelDivider />
-            <div style={summaryStyle}>{card.summary}</div>
           </>
         )}
 
@@ -249,9 +240,3 @@ export function EntityHoverCard({
     </FloatingHoverCard>
   );
 }
-
-const summaryStyle: React.CSSProperties = {
-  fontSize: 10,
-  lineHeight: 1.45,
-  color: "var(--graph-panel-text-muted)",
-};

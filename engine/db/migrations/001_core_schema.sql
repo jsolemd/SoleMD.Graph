@@ -26,7 +26,6 @@ CREATE TABLE solemd.corpus (
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_corpus_pmid ON solemd.corpus (pmid) WHERE pmid IS NOT NULL;
 CREATE INDEX idx_corpus_admission_reason ON solemd.corpus (admission_reason);
 
 -- ─── solemd.papers ──────────────────────────────────────────

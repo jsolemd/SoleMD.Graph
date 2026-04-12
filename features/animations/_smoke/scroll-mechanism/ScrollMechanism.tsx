@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { useReducedMotion } from "framer-motion";
+import { useReducedMotionConfig as useReducedMotion } from "framer-motion";
 
 const STEPS = [
   { label: "Rest",          note: "Receptor closed. No ligand bound." },
@@ -30,45 +30,35 @@ export default function ScrollMechanism() {
       const { ScrollTrigger } = await import("gsap/ScrollTrigger");
       gsap.registerPlugin(ScrollTrigger);
 
-      const mm = gsap.matchMedia();
-      mm.add("(prefers-reduced-motion: no-preference)", () => {
-        const tl = gsap.timeline({
-          scrollTrigger: {
-            trigger: section,
-            start: "top top",
-            end: "+=1800",
-            scrub: 1,
-            pin: true,
-          },
-        });
-
-        tl.to(ligand, { cx: 200, duration: 1, ease: "none" })           // approach
-          .to(ligand, { cx: 180, cy: 140, duration: 0.4, ease: "none" }, ">") // dock
-          .to(receptor, { fill: "var(--color-fresh-green)", duration: 0.6, ease: "none" }, ">") // state change
-          .to(ligand, { scale: 1.08, duration: 0.3, ease: "none", transformOrigin: "center" }, "<");
-
-        stepRefs.current.forEach((el, i) => {
-          if (!el) return;
-          gsap.fromTo(
-            el,
-            { opacity: 0, y: 12 },
-            {
-              opacity: 1,
-              y: 0,
-              duration: 0.5,
-              scrollTrigger: {
-                trigger: section,
-                start: `top+=${i * 450} top`,
-                end: `top+=${i * 450 + 400} top`,
-                scrub: true,
-              },
-            },
-          );
-        });
+      // Scroll-scrubbed without pinning. The card scrolls through the
+      // viewport normally; the timeline progress follows its position.
+      // Range spans "card enters from bottom" → "card exits the top"
+      // so the full animation plays across one screenful of scroll.
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: section,
+          start: "top bottom",
+          end: "bottom top",
+          scrub: 0.6,
+        },
       });
 
+      tl.fromTo(ligand, { attr: { cx: 60, cy: 80 } }, { attr: { cx: 200, cy: 80 }, duration: 1, ease: "none" })
+        .to(ligand, { attr: { cx: 180, cy: 140 }, duration: 0.4, ease: "none" }, ">")
+        .to(receptor, { fill: "var(--color-fresh-green)", duration: 0.6, ease: "none" }, ">")
+        .to(ligand, { scale: 1.08, duration: 0.3, ease: "none", transformOrigin: "center" }, "<");
+
+      const validSteps = stepRefs.current.filter((el): el is HTMLDivElement => !!el);
+      if (validSteps.length) {
+        tl.fromTo(
+          validSteps,
+          { opacity: 0, y: 12 },
+          { opacity: 1, y: 0, duration: 0.8, stagger: 0.25, ease: "none" },
+          0,
+        );
+      }
+
       cleanup = () => {
-        mm.revert();
         ScrollTrigger.getAll().forEach((st) => {
           if (st.vars.trigger === section) st.kill();
         });

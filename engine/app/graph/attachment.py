@@ -9,12 +9,17 @@ import pyarrow as pa
 import pyarrow.ipc as pa_ipc
 from pydantic import ConfigDict, Field, field_validator
 
-
 from app import db
-from app.langfuse_config import get_langfuse as _get_langfuse, SPAN_GRAPH_ATTACHMENT, observe
 from app.graph.point_projection import POINTS_SCHEMA, build_point_projection_select_sql
+from app.graph.repository import PostgresGraphRepository
+from app.langfuse_config import (
+    SPAN_GRAPH_ATTACHMENT,
+    observe,
+)
+from app.langfuse_config import (
+    get_langfuse as _get_langfuse,
+)
 from app.rag.parse_contract import ParseContractModel
-from app.rag.repository import PostgresRagRepository, RagRepository
 
 GRAPH_POINT_ATTACHMENT_MEDIA_TYPE = "application/vnd.apache.arrow.stream"
 GRAPH_POINT_ATTACHMENT_SQL = (
@@ -44,62 +49,6 @@ requested_points AS (
      AND gc.cluster_id = g.cluster_id
     WHERE g.graph_run_id = %s
 ),
-corpus_base AS (
-    SELECT
-        c.corpus_id,
-        c.pmid
-    FROM solemd.corpus c
-    JOIN requested_corpus rc
-      ON rc.corpus_id = c.corpus_id
-),
-author_rollup AS (
-    SELECT
-        pa.corpus_id,
-        count(*)::INTEGER AS author_count
-    FROM solemd.paper_authors pa
-    JOIN requested_corpus rc
-      ON rc.corpus_id = pa.corpus_id
-    GROUP BY pa.corpus_id
-),
-entity_rollup AS (
-    SELECT
-        ranked.corpus_id,
-        sum(ranked.hit_count)::INTEGER AS entity_count,
-        string_agg(DISTINCT ranked.entity_type, ', ' ORDER BY ranked.entity_type) AS semantic_groups_csv
-    FROM (
-        SELECT
-            cb.corpus_id,
-            ea.entity_type,
-            count(*)::INTEGER AS hit_count
-        FROM corpus_base cb
-        JOIN pubtator.entity_annotations ea
-          ON ea.pmid = cb.pmid
-        GROUP BY cb.corpus_id, ea.entity_type
-    ) AS ranked
-    GROUP BY ranked.corpus_id
-),
-relation_rollup AS (
-    SELECT
-        ranked.corpus_id,
-        sum(ranked.hit_count)::INTEGER AS relation_count,
-        string_agg(ranked.relation_type, ', ' ORDER BY ranked.hit_count DESC, ranked.relation_type)
-            FILTER (WHERE ranked.rank <= 5) AS relation_categories_csv
-    FROM (
-        SELECT
-            cb.corpus_id,
-            r.relation_type,
-            count(*)::INTEGER AS hit_count,
-            row_number() OVER (
-                PARTITION BY cb.corpus_id
-                ORDER BY count(*) DESC, r.relation_type
-            ) AS rank
-        FROM corpus_base cb
-        JOIN pubtator.relations r
-          ON r.pmid = cb.pmid
-        GROUP BY cb.corpus_id, r.relation_type
-    ) AS ranked
-    GROUP BY ranked.corpus_id
-),
 point_base AS (
     SELECT
         rp.point_index,
@@ -111,26 +60,20 @@ point_base AS (
         rp.cluster_probability,
         rp.is_in_base,
         rp.base_rank,
-        p.paper_id,
-        p.title,
-        COALESCE(p.journal_name, p.venue) AS journal_name,
-        p.year,
-        p.text_availability,
-        COALESCE(ar.author_count, 0) AS author_count,
-        COALESCE(p.reference_count, 0) AS reference_count,
-        COALESCE(er.entity_count, 0) AS entity_count,
-        er.semantic_groups_csv,
-        COALESCE(rr.relation_count, 0) AS relation_count,
-        rr.relation_categories_csv
+        gps.paper_id,
+        gps.title,
+        gps.journal_name,
+        gps.year,
+        gps.text_availability,
+        gps.author_count,
+        gps.reference_count,
+        gps.entity_count,
+        gps.semantic_groups_csv,
+        gps.relation_count,
+        gps.relation_categories_csv
     FROM requested_points rp
-    JOIN solemd.papers p
-      ON p.corpus_id = rp.corpus_id
-    LEFT JOIN author_rollup ar
-      ON ar.corpus_id = rp.corpus_id
-    LEFT JOIN entity_rollup er
-      ON er.corpus_id = rp.corpus_id
-    LEFT JOIN relation_rollup rr
-      ON rr.corpus_id = rp.corpus_id
+    JOIN solemd.graph_paper_summary gps
+      ON gps.corpus_id = rp.corpus_id
 )
 """
     + build_point_projection_select_sql(
@@ -190,7 +133,7 @@ class GraphPointAttachmentService:
         *,
         repository: GraphPointAttachmentRepository | None = None,
     ) -> None:
-        self._repository = repository or PostgresRagRepository()
+        self._repository = repository or PostgresGraphRepository()
 
     @observe(name=SPAN_GRAPH_ATTACHMENT)
     def attach_points(self, request: GraphPointAttachmentRequest) -> bytes:

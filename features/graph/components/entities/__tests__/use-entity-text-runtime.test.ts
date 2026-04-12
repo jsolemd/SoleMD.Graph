@@ -54,7 +54,6 @@ const SCHIZOPHRENIA_DETAIL = {
     },
   ],
   paperCount: 1200,
-  summary: null,
 };
 
 describe("useEntityTextRuntime", () => {
@@ -130,7 +129,11 @@ describe("useEntityTextRuntime", () => {
           label: "Schizophrenia",
           entityType: "disease",
           paperCount: 1200,
-          aliases: ["schizophrenia spectrum disorder"],
+          aliases: expect.arrayContaining([
+            expect.objectContaining({
+              aliasText: "schizophrenia spectrum disorder",
+            }),
+          ]),
           detailReady: true,
         }),
       );

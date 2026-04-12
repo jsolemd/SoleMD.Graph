@@ -1,13 +1,6 @@
--- Migration 052: Runtime exact author lookup index
+-- Migration 052: reserved no-op
 --
--- Purpose:
---   Support exact author matching for citation-style metadata retrieval without
---   falling back to a full paper_authors scan.
---
--- Notes:
---   - Do not wrap this migration in a transaction. CREATE INDEX CONCURRENTLY is required
---     for this live runtime lookup index on a large serving table.
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_paper_authors_name_lower
-    ON solemd.paper_authors ((lower(name)), corpus_id, author_position)
-    WHERE COALESCE(name, ''::text) <> '';
+-- The runtime author exact-lookup index was canonically introduced in
+-- 051_add_runtime_author_exact_lookup_index.sql. This file is intentionally a
+-- no-op to preserve migration numbering without recreating the same index a
+-- second time under a duplicate migration name.

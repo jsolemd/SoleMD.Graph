@@ -13,6 +13,15 @@ HIGHLIGHT_MODE_EXACT = "exact"
 HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT = "case_sensitive_exact"
 HIGHLIGHT_MODE_SEARCH_ONLY = "search_only"
 HIGHLIGHT_MODE_DISABLED = "disabled"
+HIGHLIGHT_RUNTIME_MODES: tuple[str, ...] = (
+    HIGHLIGHT_MODE_EXACT,
+    HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
+)
+HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES: tuple[str, ...] = (
+    "umls",
+    "umls_tradename",
+    "vocab",
+)
 
 # ---------------------------------------------------------------------------
 # English stopwords and short ambiguous words that should never be highlighted
@@ -106,12 +115,22 @@ AMBIGUOUS_CANONICAL_ALIAS_KEYS: frozenset[str] = frozenset({
 
 def resolve_highlight_mode(
     *, alias_text: str, alias_key: str, is_canonical: bool,
+    alias_source: str = "",
 ) -> str:
-    """Determine the highlight_mode for an entity alias row."""
-    if not is_canonical:
-        return HIGHLIGHT_MODE_SEARCH_ONLY
+    """Determine the highlight_mode for an entity alias row.
+
+    Vocab-sourced aliases (UMLS brand names, preferred synonyms) are promoted
+    to highlight-eligible even when not canonical, because they are curated
+    and clinically recognizable (e.g. "Haldol" for haloperidol).
+    """
     if alias_key in AMBIGUOUS_CANONICAL_ALIAS_KEYS:
         return HIGHLIGHT_MODE_DISABLED
+    if alias_source in HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES:
+        if alias_text == alias_text.upper() and len(alias_text) <= 6:
+            return HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
+        return HIGHLIGHT_MODE_EXACT
+    if not is_canonical:
+        return HIGHLIGHT_MODE_SEARCH_ONLY
     if alias_text == alias_text.upper() and len(alias_text) <= 6:
         return HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
     return HIGHLIGHT_MODE_EXACT

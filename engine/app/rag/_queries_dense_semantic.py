@@ -62,35 +62,44 @@ LIMIT %s
 # Corpus / scope resolution
 # ---------------------------------------------------------------------------
 
-SELECTED_CORPUS_LOOKUP_SQL = """
-SELECT gp.corpus_id
-FROM solemd.graph_points gp
-LEFT JOIN solemd.papers p
-  ON p.corpus_id = gp.corpus_id
-WHERE
-    gp.graph_run_id = %s
-    AND (
-        p.paper_id = %s
-        OR ('paper:' || gp.corpus_id::TEXT) = %s
-        OR ('corpus:' || gp.corpus_id::TEXT) = %s
-        OR gp.corpus_id::TEXT = %s
-    )
+SELECTED_CORPUS_LOOKUP_BY_CORPUS_ID_SQL = """
+SELECT candidate.corpus_id
+FROM unnest(%s::bigint[]) WITH ORDINALITY AS candidate(corpus_id, ordinal)
+JOIN solemd.graph_points gp
+  ON gp.graph_run_id = %s
+ AND gp.corpus_id = candidate.corpus_id
+ORDER BY candidate.ordinal
 LIMIT 1
 """
 
-SCOPE_CORPUS_LOOKUP_SQL = """
-SELECT DISTINCT gp.corpus_id
+SELECTED_CORPUS_LOOKUP_BY_PAPER_ID_SQL = """
+SELECT gp.corpus_id
+FROM unnest(%s::text[]) WITH ORDINALITY AS candidate(paper_id, ordinal)
+JOIN solemd.papers p
+  ON p.paper_id = candidate.paper_id
+JOIN solemd.graph_points gp
+  ON gp.graph_run_id = %s
+ AND gp.corpus_id = p.corpus_id
+ORDER BY candidate.ordinal
+LIMIT 1
+"""
+
+SCOPE_CORPUS_LOOKUP_BY_CORPUS_ID_SQL = """
+SELECT gp.corpus_id
 FROM solemd.graph_points gp
-LEFT JOIN solemd.papers p
-  ON p.corpus_id = gp.corpus_id
 WHERE
     gp.graph_run_id = %s
-    AND (
-        p.paper_id = ANY(%s)
-        OR ('paper:' || gp.corpus_id::TEXT) = ANY(%s)
-        OR ('corpus:' || gp.corpus_id::TEXT) = ANY(%s)
-        OR gp.corpus_id::TEXT = ANY(%s)
-    )
+    AND gp.corpus_id = ANY(%s::bigint[])
+ORDER BY gp.corpus_id
+"""
+
+SCOPE_CORPUS_LOOKUP_BY_PAPER_ID_SQL = """
+SELECT gp.corpus_id
+FROM solemd.papers p
+JOIN solemd.graph_points gp
+  ON gp.graph_run_id = %s
+ AND gp.corpus_id = p.corpus_id
+WHERE p.paper_id = ANY(%s::text[])
 ORDER BY gp.corpus_id
 """
 

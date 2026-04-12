@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS solemd.entity_aliases (
 );
 
 COMMENT ON TABLE solemd.entity_aliases IS
-    'Catalog-backed exact alias surface for runtime entity resolution, derived from solemd.entities canonical names and synonyms.';
+    'Warehouse-backed entity alias catalog for detail lookup and broader entity search, derived from solemd.entities canonical names and synonyms.';
 
 COMMENT ON COLUMN solemd.entity_aliases.alias_key IS
     'Lowercased normalized alias key used for exact runtime lookup.';

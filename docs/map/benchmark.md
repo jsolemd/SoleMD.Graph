@@ -181,6 +181,11 @@ Operational note:
   6. for passage/question expert prompts, let bounded biomedical reranking
      arbitrate earlier among already-direct candidates instead of leaving the
      reranker winner trapped behind citation/context priors
+- next expert-suite acceptance order is now:
+  1. upstream ontology-backed canonicalization
+  2. shortlist / parent-child promotion using recovered concepts
+  3. precomputed graph-support features for relation-heavy and narrative cases
+  4. no default live graph traversal unless it wins on benchmarked suites
 
 ## Channel Coverage Matrix
 

@@ -398,3 +398,13 @@
 - Fixed the wiki animation runtime boundary by routing `AnimationEmbed` through the explicit static animation registry instead of directory-wide string-based `import()` calls into `features/animations`
 - This keeps Turbopack off non-code template assets under `features/animations/_smoke` and `features/animations/_templates`, eliminating the `Unknown module type` crash on `/` while preserving the authored animation manifest/registry contract
 - Verified the repair with targeted eslint on `features/wiki/components/elements/AnimationEmbed.tsx` plus `features/animations/registry.tsx`, a full `npm run build`, and a live `curl -I http://localhost:3000` returning `200 OK`
+
+### Batch 33
+
+- Tuned the custom wiki graph runtime toward an Obsidian/Quartz-style drag feel by moving drag reheating into one canonical simulation-controls module instead of sprinkling `simulation.alpha(0.1).restart()` directly through pointer handlers
+- Added `features/wiki/graph-runtime/simulation-controls.ts` as the single source of truth for wiki graph force defaults (`linkDistance`, `chargeStrength`, `centerStrength`, `velocityDecay`) and drag lifecycle thresholds (`alphaTarget`, drag floor, release floor)
+- Updated `features/wiki/graph-runtime/build-simulation.ts` to consume the shared simulation defaults so layout tuning is centralized and future runtime tweaks do not fork the force configuration across files
+- Updated `features/wiki/graph-runtime/interactions.ts` so node drag now uses a true start / sustain / release interaction contract: drag start raises `alphaTarget`, pointer moves keep the simulation warm without resetting the whole interaction model, and release drops back to `alphaTarget(0)` for a natural settle rather than a rigid stop
+- Added `pointercancel` handling and switched click suppression from a time heuristic to an actual `didDrag` flag so short drags do not accidentally open wiki pages or papers on release
+- Added regression coverage in `features/wiki/graph-runtime/__tests__/simulation-controls.test.ts` to lock the drag reheating semantics, and re-ran the existing render-scene resize regression to confirm the runtime surface still behaves correctly
+- Verified the pass with targeted Jest (`simulation-controls` + `render-scene`) and a full `npm run build`

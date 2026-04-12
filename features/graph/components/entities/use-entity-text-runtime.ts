@@ -323,7 +323,6 @@ function buildEntityHoverCardModel(
           alias.aliasText.trim().toLowerCase() !==
           detail.canonicalName.trim().toLowerCase(),
       ) ?? [],
-    summary: detail?.summary ?? null,
     detailReady: Boolean(detail),
   };
 }

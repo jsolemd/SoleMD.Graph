@@ -42,6 +42,7 @@ class WikiPageResponse(WikiSchema):
     entity_type: str | None = None
     concept_id: str | None = None
     family_key: str | None = None
+    semantic_group: str | None = None
     page_kind: Literal["index", "section", "entity", "topic"] = "topic"
     section_slug: str | None = None
     graph_focus: Literal["cited_papers", "entity_exact", "none"] = "none"
@@ -52,11 +53,17 @@ class WikiPageResponse(WikiSchema):
     featured_pmids: list[int] = Field(default_factory=list)
     paper_graph_refs: dict[int, str] = Field(
         default_factory=dict,
-        description="Maps cited PMID → bundle-compatible paperId (COALESCE(paper_id, 'corpus:' || corpus_id))",
+        description=(
+            "Maps cited PMID → bundle-compatible paperId "
+            "(COALESCE(paper_id, 'corpus:' || corpus_id))"
+        ),
     )
     featured_graph_refs: dict[int, str] = Field(
         default_factory=dict,
-        description="Maps curated featured PMID → bundle-compatible paperId for page-level graph actions.",
+        description=(
+            "Maps curated featured PMID → bundle-compatible paperId "
+            "for page-level graph actions."
+        ),
     )
     resolved_links: dict[str, str] = Field(
         default_factory=dict,
@@ -66,7 +73,6 @@ class WikiPageResponse(WikiSchema):
         default_factory=dict,
         description="Maps outgoing-link slug → entity metadata for hover cards (entity pages only)",
     )
-    context: WikiPageContextResponse | None = None
 
 
 class WikiLinkedEntity(WikiSchema):

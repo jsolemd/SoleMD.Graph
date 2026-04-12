@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from unittest.mock import MagicMock
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.graph.base_policy import materialize_base_admission
 

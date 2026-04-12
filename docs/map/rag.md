@@ -179,6 +179,10 @@ Graph note:
 - until graph traversal can be expressed as a bounded precomputed signal, it is
   more likely to add latency/complexity than to solve the current expert-suite
   miss buckets
+- next graph step is a precomputed read-model over PubTator relations, aliases,
+  citations, semantic-neighbor links, and the paper/chunk/sentence hierarchy
+- that graph layer should feed candidate expansion, shortlist priors, and
+  rerank support, not replace the current parent/child retrieval stack
 
 ---
 

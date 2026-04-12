@@ -1,59 +1,23 @@
 "use client";
 /**
- * Adapted from BioIcons — Voltage-Gated Calcium Channel.
- * Contributor: Marcel Tisch. License: CC0 (public domain).
- * Source: https://bioicons.com/ (static/icons/cc-0/Receptors_channels/Marcel_Tisch/calcium_channel.svg)
+ * Adapted from Health Icons — Neurology (`body/neurology.svg`).
+ * License: CC0 (public domain). Source: https://healthicons.org/
+ * Raw: https://raw.githubusercontent.com/resolvetosavelives/healthicons/main/public/icons/svg/filled/body/neurology.svg
  *
- * Only the subunit fills in the `<style>` block have been remapped to
- * SoleMD brand tokens. The underlying geometry — α₁/α₂-δ/β/γ subunits,
- * lipid bilayer heads, phosphorylation markers — is unchanged.
+ * The glyph uses `fill="currentColor"` everywhere, so brand tinting is a
+ * single `color` token on the wrapper. The component keeps its original
+ * name so it stays recognizable in the smoke catalog as the "biomedical
+ * library smoke" card, but the source library is now Health Icons rather
+ * than BioIcons — cleaner geometry, one fill, and trivially recolorable
+ * to the SoleMD pastel palette.
  */
-import { motion, useReducedMotion } from "framer-motion";
+import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
 import { canvasReveal } from "@/lib/motion";
 
-const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 106.62 95.78" width="100%" height="100%">
-<defs><style>
-.cls-1{fill:var(--color-golden-yellow);}
-.cls-1,.cls-10,.cls-12,.cls-13,.cls-3,.cls-4,.cls-5,.cls-6,.cls-7,.cls-8,.cls-9{stroke:currentColor;stroke-miterlimit:10;opacity:0.92;}
-.cls-1,.cls-10,.cls-12,.cls-13,.cls-3,.cls-4,.cls-8{stroke-width:0.2px;}
-.cls-14,.cls-2{font-size:7.97px;}
-.cls-2{font-family:CambriaMath, Cambria Math;}
-.cls-3{fill:var(--surface);opacity:0.85;}
-.cls-4{fill:none;opacity:0.55;}
-.cls-5,.cls-6,.cls-7,.cls-8,.cls-9{fill:var(--color-fresh-green);}
-.cls-5{stroke-width:0.25px;}
-.cls-6{stroke-width:0.14px;}
-.cls-7{stroke-width:0.18px;}
-.cls-9{stroke-width:0.18px;}
-.cls-10{fill:var(--color-soft-blue);}
-.cls-11{opacity:0.17;}
-.cls-12{fill:var(--color-golden-yellow);opacity:0.85;}
-.cls-13{fill:var(--color-soft-lavender);}
-.cls-14{font-family:MyriadPro-It, Myriad Pro;font-style:italic;letter-spacing:0em;}
-</style></defs>
-<g>
-<path class="cls-5" d="M39.87,54s12.69-9.15,21.57,0l.83-32.73c0-1.62-1.48-3.1-3.83-3.67-3.44-.84-8.52-1.35-12.62,1.29C38.94,23.35,39.87,54,39.87,54Z"/>
-<ellipse class="cls-6" cx="53.11" cy="18.3" rx="5" ry="2.14"/>
-<ellipse class="cls-7" cx="47" cy="20.11" rx="5.71" ry="3.09" transform="translate(-2.14 6.01) rotate(-7.15)"/>
-<ellipse class="cls-8" cx="44.41" cy="22.85" rx="5.71" ry="3.72" transform="translate(-5.53 23.17) rotate(-27.6)"/>
-<ellipse class="cls-9" cx="59.14" cy="20.05" rx="3.12" ry="5.71" transform="translate(31.86 76.23) rotate(-82.83)"/>
-<path class="cls-10" d="M63.22,22a22.05,22.05,0,0,0-4.17-3.08A8.85,8.85,0,0,1,54.9,9.25C55.42,6.6,56.25,3.51,58.64,2,62-.23,66.58.07,70.42.17a46.4,46.4,0,0,1,13.6,2A25,25,0,0,1,94.55,8.82c1.91,2.08,3.92,4.88,4.16,7.79.34,4.13-3.22,5.17-6.65,5.68a101.38,101.38,0,0,1-14,1.07c-2.46,0-5.2,0-7,1.73-.83.77-1.45,1.89-2.55,2.16a3,3,0,0,1-2.9-1.42c-.66-.93-1-2-1.66-3A6,6,0,0,0,63.22,22Z"/>
-<ellipse class="cls-8" cx="61.75" cy="22.85" rx="3.72" ry="5.71" transform="translate(14.96 69.18) rotate(-65.03)"/>
-<path class="cls-8" d="M73.86,43.4c.62,10.6,19,18.74-4.08,17.71-14.83-.66-13-8.6-13-19.21s-2.24-21.2,1.78-21.2C61.32,20.7,72.84,26.05,73.86,43.4Z"/>
-<path class="cls-11" d="M48.8,37.11c0,10-3.34,13.73-2.28,13.73s6.13-3.68,6.13-13.73.52-17.8-2.88-14.26c-1,1-1.68-.29-2,1.27C47.23,27.28,48.8,30.4,48.8,37.11Z"/>
-<path class="cls-12" d="M27.79,19a8.81,8.81,0,0,0-5.59,2,7.75,7.75,0,0,0-1.94,7.05c.54,3.08,2.39,5.63,3.49,8.5,1,2.67,1.16,5.66,2.51,8.18a2.06,2.06,0,0,0,.54.7,2.23,2.23,0,0,0,1.17.31c2.07.17,5.88.21,5.88-2.74A31.41,31.41,0,0,1,36,31.91c.93-2.42,3.7-5.27,3.27-7.83-.48-2.78-3.87-3.64-6.73-4.49A15.27,15.27,0,0,0,27.79,19Z"/>
-<path class="cls-8" d="M32.22,42.09C31.6,52.68,2.65,59.8,36.29,59.8c4,0,13-8.6,13-19.21s2.35-20.1-1.67-20.1S33.24,24.74,32.22,42.09Z"/>
-<ellipse class="cls-13" cx="71.42" cy="70.5" rx="15.27" ry="9.3"/>
-<circle class="cls-1" cx="29.7" cy="63.03" r="3.98"/>
-<circle class="cls-1" cx="71.77" cy="82.81" r="3.98"/>
-<text class="cls-2" x="26.66" y="29.33" fill="currentColor">γ</text>
-<text class="cls-2" x="70.74" y="13.7" fill="currentColor">α</text>
-<text class="cls-2" x="75.32" y="16.36" font-size="4.62" fill="currentColor">2</text>
-<text class="cls-2" x="77.89" y="13.7" fill="currentColor">δ</text>
-<text class="cls-2" x="37.43" y="36.57" fill="currentColor">α</text>
-<text class="cls-14" x="42.01" y="39.22" font-size="4.62" fill="currentColor">1</text>
-<text class="cls-2" x="69.36" y="73.89" fill="currentColor">β</text>
-</g>
+const SVG = `<svg viewBox="0 0 48 48" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M29.5844 22.8706C30.7438 22.8706 31.8763 22.5549 32.8338 21.9648C33.806 22.5538 34.9534 22.8626 36.1242 22.8503L39.8433 21.6286C40.8913 20.8487 41.6107 19.7675 41.8813 18.5661C42.1518 17.3646 41.9569 16.1157 41.3293 15.0284C40.7017 13.9411 39.6794 13.0813 38.4336 12.5931C38.1491 11.4298 37.4326 10.3894 36.4029 9.64443L32.7725 8.49751H32.3638C31.5563 7.43391 30.344 6.67523 28.9574 6.36571L21.1741 5.9707C19.8803 6.06775 18.6603 6.55488 17.7105 7.35371C17.2617 7.25819 16.8023 7.20868 16.3412 7.20612C15.2247 7.20819 14.1327 7.50194 13.1971 8.05191C12.2615 8.60187 11.5222 9.38455 11.0685 10.3055L8.11115 12.1966C7.37528 13.0966 6.97913 14.1863 6.98108 15.305C6.9738 15.7727 7.04266 16.2389 7.18545 16.6886C6.40957 17.5975 5.99236 18.7143 6.00011 19.8617C5.99826 21.1925 6.56142 22.4733 7.57375 23.4407C7.65545 24.3934 8.02424 25.3079 8.64022 26.085C9.2562 26.8622 10.0959 27.4725 11.0685 27.8499C12.1891 28.4841 13.138 29.337 13.8453 30.3458C14.5527 31.3547 15.0005 32.4939 15.1559 33.6796H17.8743V25.9364L15.2325 23.5882L13.4451 25.3757C13.0545 25.7662 12.4214 25.7662 12.0308 25.3757C11.6403 24.9852 11.6403 24.352 12.0308 23.9615L14.1148 21.8775L13.4797 18.3848L10.6544 16.9721C10.1604 16.7251 9.96018 16.1244 10.2072 15.6304C10.4542 15.1365 11.0548 14.9362 11.5488 15.1832L14.3156 16.5666L17.7773 14.3638L16.7107 11.5197C16.5168 11.0026 16.7788 10.4262 17.2959 10.2322C17.813 10.0383 18.3895 10.3003 18.5834 10.8174L19.721 13.851H21.1199L21.7691 12.5526L20.8188 10.3352C20.6013 9.82758 20.8364 9.2397 21.344 9.02214C21.8517 8.80459 22.4396 9.03974 22.6571 9.54737L23.4829 11.4742L26.7826 12.0741C26.8011 12.0568 26.8204 12.0401 26.8405 12.0241L28.886 10.3877C29.3173 10.0427 29.9466 10.1126 30.2916 10.5439C30.6366 10.9751 30.5666 11.6044 30.1354 11.9494L28.6637 13.1268L30.3929 15.3499L31.0708 13.9941C31.2402 13.6553 31.5865 13.4413 31.9652 13.4413H34.4198C34.9721 13.4413 35.4198 13.889 35.4198 14.4413C35.4198 14.9936 34.9721 15.4413 34.4198 15.4413H32.5833L32.164 16.2799L34.2276 16.7384C34.3074 16.7562 34.3847 16.7836 34.4579 16.8202L36.0942 17.6384C36.5882 17.8854 36.7884 18.486 36.5415 18.98C36.2945 19.474 35.6938 19.6742 35.1998 19.4272L33.6736 18.6641L30.1119 17.8726C29.8848 17.8221 29.6823 17.694 29.5395 17.5104L26.9104 14.1301L23.6471 13.5368C23.5854 13.5943 23.5156 13.6446 23.4385 13.6859L22.7379 15.0871V15.8958H24.1925C24.3478 15.8958 24.5009 15.932 24.6397 16.0014L27.9125 17.6378C28.4064 17.8848 28.6067 18.4854 28.3597 18.9794C28.1127 19.4734 27.512 19.6736 27.018 19.4266L23.9564 17.8958H22.7379V19.7601C22.7379 20.3124 22.2902 20.7601 21.7379 20.7601C21.1856 20.7601 20.7379 20.3124 20.7379 19.7601V15.851H19.1655L15.4784 18.1973L16.1146 21.6964L19.5387 24.7399C19.7521 24.9297 19.8743 25.2017 19.8743 25.4873V33.6796H22.7915V28.145C22.7901 27.1624 23.0938 26.199 23.6682 25.3642C24.2425 24.5295 25.0645 23.8567 26.041 23.4222C26.5901 23.2326 26.7252 22.9773 26.8907 22.6645C27.001 22.456 27.1249 22.222 27.3937 21.9648C27.6273 22.1087 27.8082 22.2364 27.9652 22.347C28.4518 22.6901 28.7077 22.8706 29.5844 22.8706Z" fill="currentColor"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M23 38.0001H15V36.0001H23V38.0001Z" fill="currentColor"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M23 42.0001H15V40.0001H23V42.0001Z" fill="currentColor"/>
 </svg>`;
 
 export default function BioIconsSmoke() {
@@ -62,7 +26,7 @@ export default function BioIconsSmoke() {
     <motion.div
       {...canvasReveal}
       className="flex h-[280px] w-full items-center justify-center"
-      style={{ color: "var(--text-primary)" }}
+      style={{ color: "var(--color-muted-indigo)" }}
     >
       <motion.div
         className="flex h-full w-auto max-h-[240px] items-center justify-center"

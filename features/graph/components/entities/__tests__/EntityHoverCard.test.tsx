@@ -32,7 +32,6 @@ describe("EntityHoverCard", () => {
               { aliasText: "schizophrenic disorder", isCanonical: true, aliasSource: "mesh" },
               { aliasText: "schizophrenia spectrum disorder", isCanonical: false, aliasSource: null },
             ],
-            summary: null,
             detailReady: true,
           }}
           onShowOnGraph={handleShowOnGraph}
@@ -86,7 +85,6 @@ describe("EntityHoverCard", () => {
           conceptNamespace: "mesh",
           paperCount: 1200,
           aliases: [],
-          summary: null,
           detailReady: true,
         }}
       />,

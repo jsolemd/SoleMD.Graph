@@ -11,9 +11,8 @@ citation impact, annotation density, flagship journal membership, and recency.
 from __future__ import annotations
 
 from app import db
-from app.graph.paper_evidence import apply_build_session_settings
+from app.graph.build_settings import apply_build_session_settings
 from app.graph.render_policy import renderable_point_predicate_sql
-
 
 # ── Domain-density score formula ──────────────────────────────────────
 # Weights calibrated to produce ~500K base from 2.6M mapped papers.
@@ -213,8 +212,12 @@ def materialize_base_admission(graph_run_id: str) -> dict[str, object]:
                     WHERE ({renderable_predicate})
                       AND bp.corpus_id IS NULL
                 )::INTEGER AS universe_count,
-                COUNT(*) FILTER (WHERE ({renderable_predicate}))::INTEGER AS renderable_count,
-                COUNT(*) FILTER (WHERE NOT ({renderable_predicate}))::INTEGER AS non_renderable_count
+                COUNT(*) FILTER (
+                    WHERE ({renderable_predicate})
+                )::INTEGER AS renderable_count,
+                COUNT(*) FILTER (
+                    WHERE NOT ({renderable_predicate})
+                )::INTEGER AS non_renderable_count
             FROM solemd.graph_points gp
             LEFT JOIN solemd.graph_base_points bp
               ON bp.graph_run_id = gp.graph_run_id

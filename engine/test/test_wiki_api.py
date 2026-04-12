@@ -17,7 +17,7 @@ from app.wiki.service import get_wiki_service
 
 
 class FakeWikiService:
-    def get_page(self, slug, *, graph_release_id=None, graph_run_id=None):
+    def get_page(self, slug, *, graph_release_id=None):
         if slug == "entities/melatonin":
             return WikiPageResponse(
                 slug="entities/melatonin",
@@ -35,7 +35,7 @@ class FakeWikiService:
             )
         return None
 
-    def get_page_context(self, slug, *, graph_release_id=None, graph_run_id=None):
+    def get_page_context(self, slug, *, graph_release_id=None):
         if slug == "entities/melatonin":
             return WikiPageContextResponse(
                 total_corpus_paper_count=120,
@@ -54,7 +54,7 @@ class FakeWikiService:
             )
         ]
 
-    def search(self, request):
+    def search(self, *, query, limit):
         return WikiSearchResponse(
             hits=[
                 WikiSearchHitResponse(
@@ -94,10 +94,9 @@ def test_get_wiki_page_passes_graph_release_id():
     received_args: dict = {}
 
     class CapturingService(FakeWikiService):
-        def get_page(self, slug, *, graph_release_id=None, graph_run_id=None):
+        def get_page(self, slug, *, graph_release_id=None):
             received_args["graph_release_id"] = graph_release_id
-            received_args["graph_run_id"] = graph_run_id
-            return super().get_page(slug, graph_release_id=graph_release_id, graph_run_id=graph_run_id)
+            return super().get_page(slug, graph_release_id=graph_release_id)
 
     app.dependency_overrides[get_wiki_service] = lambda: CapturingService()
     client = TestClient(app)
@@ -110,6 +109,7 @@ def test_get_wiki_page_passes_graph_release_id():
 
     assert response.status_code == 200
     assert received_args["graph_release_id"] == "bundle-abc"
+    assert "graph_run_id" not in received_args
 
 
 def test_get_wiki_page_context_returns_context():
@@ -130,14 +130,9 @@ def test_get_wiki_page_context_passes_graph_release_id():
     received_args: dict = {}
 
     class CapturingService(FakeWikiService):
-        def get_page_context(self, slug, *, graph_release_id=None, graph_run_id=None):
+        def get_page_context(self, slug, *, graph_release_id=None):
             received_args["graph_release_id"] = graph_release_id
-            received_args["graph_run_id"] = graph_run_id
-            return super().get_page_context(
-                slug,
-                graph_release_id=graph_release_id,
-                graph_run_id=graph_run_id,
-            )
+            return super().get_page_context(slug, graph_release_id=graph_release_id)
 
     app.dependency_overrides[get_wiki_service] = lambda: CapturingService()
     client = TestClient(app)
@@ -150,6 +145,7 @@ def test_get_wiki_page_context_passes_graph_release_id():
 
     assert response.status_code == 200
     assert received_args["graph_release_id"] == "bundle-abc"
+    assert "graph_run_id" not in received_args
 
 
 def test_get_wiki_page_context_returns_404_for_missing():
@@ -192,7 +188,7 @@ def test_search_wiki():
     app.dependency_overrides[get_wiki_service] = lambda: FakeWikiService()
     client = TestClient(app)
 
-    response = client.post("/api/v1/wiki/search", json={"query": "melatonin"})
+    response = client.get("/api/v1/wiki/search?query=melatonin")
 
     app.dependency_overrides.clear()
 

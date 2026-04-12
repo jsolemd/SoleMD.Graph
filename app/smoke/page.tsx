@@ -1,53 +1,28 @@
 "use client";
-/**
- * Dev-only smoke trial page.
- *
- * Standalone route that mounts every Phase 1 animation smoke component
- * directly — no wiki engine, no backend. Used to trial the animation
- * pipeline end-to-end (manifest/registry/embed/view-transition CSS)
- * while the Python wiki engine is down.
- *
- *    http://localhost:3000/smoke
- */
 import dynamic from "next/dynamic";
+import { MotionConfig } from "framer-motion";
 import { Skeleton } from "@mantine/core";
-import SmokePulse from "@/features/animations/_smoke/pulse/SmokePulse";
-import ChartReveal from "@/features/animations/_smoke/chart-reveal/ChartReveal";
-import ScrollFade from "@/features/animations/_smoke/scroll-fade/ScrollFade";
-import DrawMorph from "@/features/animations/_smoke/gsap-draw-morph/DrawMorph";
-import LottieDemo from "@/features/animations/_smoke/lottie-demo/LottieDemo";
-import NotoBrain from "@/features/animations/_smoke/noto-brain/NotoBrain";
-import TextReveal from "@/features/animations/_smoke/text-reveal/TextReveal";
-import NodeFocusDemo from "@/features/animations/_smoke/node-focus-demo/NodeFocusDemo";
-import AnimatedBeamDemo from "@/features/animations/_smoke/animated-beam/AnimatedBeamDemo";
-import BioIconsSmoke from "@/features/animations/_smoke/bioicons/BioIconsSmoke";
 
-const fallback = <Skeleton height={360} radius="lg" />;
+const fallback = () => <Skeleton height={280} radius="lg" />;
 
-const RotatingCube = dynamic(
-  () => import("@/features/animations/_smoke/rotating-cube/RotatingCube"),
-  { ssr: false, loading: () => fallback },
-);
-
-const ModelViewerDemo = dynamic(
-  () => import("@/features/animations/_smoke/model-viewer-demo/ModelViewerDemo"),
-  { ssr: false, loading: () => fallback },
-);
-
-const ScrollMechanism = dynamic(
-  () => import("@/features/animations/_smoke/scroll-mechanism/ScrollMechanism"),
-  { loading: () => fallback },
-);
-
-const LottieFilesSmoke = dynamic(
-  () => import("@/features/animations/_smoke/lottie-files/LottieFilesSmoke"),
-  { ssr: false, loading: () => fallback },
-);
-
-const DopamineD2Binding = dynamic(
-  () => import("@/features/animations/biology/dopamine-d2-receptor/DopamineD2Binding"),
-  { loading: () => fallback },
-);
+const SmokePulse = dynamic(() => import("@/features/animations/_smoke/pulse/SmokePulse"), { ssr: false, loading: fallback });
+const RotatingCube = dynamic(() => import("@/features/animations/_smoke/rotating-cube/RotatingCube"), { ssr: false, loading: fallback });
+const ModelViewerDemo = dynamic(() => import("@/features/animations/_smoke/model-viewer-demo/ModelViewerDemo"), { ssr: false, loading: fallback });
+const ChartReveal = dynamic(() => import("@/features/animations/_smoke/chart-reveal/ChartReveal"), { ssr: false, loading: fallback });
+const DrawMorph = dynamic(() => import("@/features/animations/_smoke/gsap-draw-morph/DrawMorph"), { ssr: false, loading: fallback });
+const LottieDemo = dynamic(() => import("@/features/animations/_smoke/lottie-demo/LottieDemo"), { ssr: false, loading: fallback });
+const NotoBrain = dynamic(() => import("@/features/animations/_smoke/noto-brain/NotoBrain"), { ssr: false, loading: fallback });
+const TextReveal = dynamic(() => import("@/features/animations/_smoke/text-reveal/TextReveal"), { ssr: false, loading: fallback });
+const NodeFocusDemo = dynamic(() => import("@/features/animations/_smoke/node-focus-demo/NodeFocusDemo"), { ssr: false, loading: fallback });
+const AnimatedBeamDemo = dynamic(() => import("@/features/animations/_smoke/animated-beam/AnimatedBeamDemo"), { ssr: false, loading: fallback });
+const BioIconsSmoke = dynamic(() => import("@/features/animations/_smoke/bioicons/BioIconsSmoke"), { ssr: false, loading: fallback });
+const LottieFilesSmoke = dynamic(() => import("@/features/animations/_smoke/lottie-files/LottieFilesSmoke"), { ssr: false, loading: fallback });
+const ScrollFade = dynamic(() => import("@/features/animations/_smoke/scroll-fade/ScrollFade"), { ssr: false, loading: fallback });
+const ScrollMechanism = dynamic(() => import("@/features/animations/_smoke/scroll-mechanism/ScrollMechanism"), { ssr: false, loading: fallback });
+const NotoLibrary = dynamic(() => import("@/features/animations/_smoke/noto-library/NotoLibrary"), { ssr: false, loading: fallback });
+const SoleMDLogo = dynamic(() => import("@/features/animations/brand/SoleMDLogo"), { ssr: false, loading: fallback });
+const SoleMDLogoMark = dynamic(() => import("@/features/animations/brand/SoleMDLogoMark"), { ssr: false, loading: fallback });
+const DopamineD2Binding = dynamic(() => import("@/features/animations/biology/dopamine-d2-receptor/DopamineD2Binding"), { ssr: false, loading: fallback });
 
 function Card({ title, format, children }: { title: string; format: string; children: React.ReactNode }) {
   return (
@@ -67,15 +42,16 @@ function Card({ title, format, children }: { title: string; format: string; chil
 
 export default function SmokePage() {
   return (
+    <MotionConfig reducedMotion="never">
     <main className="mx-auto max-w-5xl p-8">
       <header className="mb-8">
         <h1 className="text-2xl font-medium" style={{ color: "var(--text-primary)" }}>
           Animation Pipeline Smoke
         </h1>
         <p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
-          Phase 1 smoke trial — mounted directly without the wiki engine.
-          Exercises Framer Motion, GSAP ScrollTrigger/DrawSVG, React Three Fiber,
-          and <code>&lt;model-viewer&gt;</code> with an RDKit-generated ethanol GLB.
+          Every smoke card mounted directly, bypassing the wiki engine. The page
+          overrides <code>prefers-reduced-motion</code> via <code>MotionConfig</code> so
+          the full motion palette is visible here even when the OS has reduced-motion set.
         </p>
       </header>
 
@@ -158,13 +134,66 @@ export default function SmokePage() {
       </section>
 
       <section className="mt-12">
-        <Card title="D16 · ScrollMechanism" format="gsap ScrollTrigger · pinned 4-step">
+        <Card title="D16 · ScrollMechanism" format="gsap ScrollTrigger · scrubbed 4-step">
           <ScrollMechanism />
         </Card>
       </section>
 
-      {/* Extra scroll height so the pinned sections have room to scrub through */}
+      <section className="mt-12">
+        <Card title="D19 · Noto Library (64 Lotties)" format="lottie-react · OFL 1.1">
+          <NotoLibrary />
+        </Card>
+      </section>
+
+      <section className="mt-12">
+        <h2 className="mb-4 text-lg font-medium" style={{ color: "var(--text-primary)" }}>
+          Brand
+        </h2>
+        <Card title="D20 · SoleMD logo — brain as graph" format="svg + framer motion">
+          <div className="flex h-[320px] w-full items-center justify-around gap-8">
+            <div className="flex flex-col items-center gap-2">
+              <SoleMDLogo size={48} />
+              <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>48</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <SoleMDLogo size={96} />
+              <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>96</span>
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <SoleMDLogo size={220} />
+              <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>220</span>
+            </div>
+          </div>
+        </Card>
+      </section>
+
+      <section className="mt-12">
+        <Card title="D21 · SoleMD logomark — scalable glyph" format="lucide + chip">
+          <div className="flex h-[240px] w-full flex-col items-center justify-around gap-4">
+            <div className="flex items-end gap-6">
+              {[16, 24, 32, 48, 96].map((s) => (
+                <div key={s} className="flex flex-col items-center gap-1">
+                  <SoleMDLogoMark size={s} />
+                  <span className="font-mono text-[10px]" style={{ color: "var(--text-secondary)" }}>{s}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-8">
+              <div className="flex items-center gap-2 rounded-lg bg-white px-4 py-2">
+                <SoleMDLogoMark variant="plain" size={28} className="text-neutral-900" />
+                <span className="text-sm text-neutral-900">plain · dark-on-light</span>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg bg-neutral-950 px-4 py-2">
+                <SoleMDLogoMark variant="plain" size={28} className="text-white" />
+                <span className="text-sm text-white">plain · white-on-dark</span>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </section>
+
       <div className="h-[60vh]" />
     </main>
+    </MotionConfig>
   );
 }

@@ -32,7 +32,6 @@ export interface GraphEntityAlias {
 export interface GraphEntityDetail extends GraphEntityRef {
   paperCount: number
   aliases: GraphEntityAlias[]
-  summary: string | null
 }
 
 export interface GraphEntityMatchRequestPayload {
@@ -61,7 +60,6 @@ export interface GraphEntityOverlayRequestPayload {
 
 export interface GraphEntityOverlayResponsePayload {
   graphPaperRefs: string[]
-  entityGraphPaperCounts: Record<string, number>
 }
 
 export interface GraphEntityErrorResponsePayload {

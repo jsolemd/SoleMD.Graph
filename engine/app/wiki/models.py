@@ -40,6 +40,7 @@ class WikiPage:
     entity_type: str | None = None
     concept_id: str | None = None
     family_key: str | None = None
+    semantic_group: str | None = None
     tags: list[str] = field(default_factory=list)
     outgoing_links: list[str] = field(default_factory=list)
     paper_pmids: list[int] = field(default_factory=list)

@@ -159,14 +159,7 @@ def _cleanup_stale_build_artifacts(keep_run_ids: set[str] | None = None) -> None
     # --- Database cleanup: delete graph data from old runs ---
     try:
         with db.pooled() as conn, conn.cursor() as cur:
-            # Find the current published run (if any)
-            cur.execute(
-                "SELECT id FROM solemd.graph_runs WHERE status = 'published' "
-                "ORDER BY updated_at DESC LIMIT 1"
-            )
-            row = cur.fetchone()
-            if row:
-                keep_run_ids = keep_run_ids | {row["id"]}
+            keep_run_ids = _load_cleanup_keep_run_ids(cur, keep_run_ids)
 
             if keep_run_ids:
                 placeholders = ",".join(["%s"] * len(keep_run_ids))
@@ -191,29 +184,74 @@ def _cleanup_stale_build_artifacts(keep_run_ids: set[str] | None = None) -> None
     except Exception:
         logger.warning("Failed to clean stale DB runs", exc_info=True)
 
-    # --- Filesystem cleanup: stale checkpoint dirs and embedding files ---
+    _cleanup_unkept_graph_runtime_artifacts(keep_run_ids)
+
+
+def _cleanup_unkept_runtime_directories(root, *, keep_names: set[str]) -> None:
+    if not root.exists():
+        return
+
+    for path in root.iterdir():
+        if not path.is_dir() or path.name in keep_names:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def _cleanup_unkept_graph_runtime_artifacts(keep_run_ids: set[str]) -> None:
+    # Graph build scratch is replayable. Keep only the current published run plus any
+    # explicitly preserved resume target instead of accumulating stale checkpoints.
     build_dir = _graph_temp_dir()
+    if build_dir.exists():
+        for checkpoint in build_dir.glob("graph_embeddings_*.f32"):
+            try:
+                checkpoint.unlink()
+            except OSError:
+                pass
+        _cleanup_unkept_runtime_directories(build_dir, keep_names=keep_run_ids)
 
-    for f in build_dir.glob("graph_embeddings_*.f32"):
-        try:
-            f.unlink()
-        except OSError:
-            pass
+    # Export bundles are also replayable artifacts. The runtime only needs the
+    # published run's bundle plus any explicitly preserved run IDs.
+    _cleanup_unkept_runtime_directories(
+        settings.graph_bundles_root_path,
+        keep_names=keep_run_ids,
+    )
 
-    for d in build_dir.iterdir():
-        if not d.is_dir() or d.name in keep_run_ids:
-            continue
-        meta_path = d / "checkpoint.json"
-        if not meta_path.exists():
-            shutil.rmtree(d, ignore_errors=True)
-            continue
-        try:
-            meta = json.loads(meta_path.read_text())
-            stages = meta.get("stages", {})
-            if not any(stages.values()):
-                shutil.rmtree(d, ignore_errors=True)
-        except (json.JSONDecodeError, OSError):
-            pass
+
+def _load_cleanup_keep_run_ids(cur, keep_run_ids: set[str]) -> set[str]:
+    resolved_keep_run_ids = set(keep_run_ids)
+    cur.execute(
+        """
+        SELECT id
+        FROM solemd.graph_runs
+        WHERE is_current = true
+           OR status = 'published'
+        ORDER BY is_current DESC, updated_at DESC
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    if row:
+        resolved_keep_run_ids.add(str(row["id"]))
+        return resolved_keep_run_ids
+
+    if resolved_keep_run_ids:
+        return resolved_keep_run_ids
+
+    # If current metadata is missing, preserve the newest completed run rather than
+    # deleting every graph artifact on disk.
+    cur.execute(
+        """
+        SELECT id
+        FROM solemd.graph_runs
+        WHERE status = 'completed'
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    if row:
+        resolved_keep_run_ids.add(str(row["id"]))
+    return resolved_keep_run_ids
 
 
 def _load_graph_run_record(graph_run_id: str) -> dict:

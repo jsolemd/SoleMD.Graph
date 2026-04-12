@@ -1,1 +1,0 @@
-/home/workbench/SoleMD/SoleMD.Graph/wiki/sections

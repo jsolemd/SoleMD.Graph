@@ -1,9 +1,31 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { EngineApiError } from "@/lib/engine/client";
+
+export type WikiSlugRouteContext = {
+  params: Promise<{
+    slug: string[];
+  }>;
+};
 
 export function resolveWikiSlug(slugParts: string[] | undefined): string | null {
   const slug = (slugParts ?? []).join("/").trim();
   return slug.length > 0 ? slug : null;
+}
+
+export async function resolveWikiSlugFromContext(
+  context: WikiSlugRouteContext,
+): Promise<string | NextResponse> {
+  const { slug: slugParts } = await context.params;
+  const slug = resolveWikiSlug(slugParts);
+  if (!slug) {
+    return NextResponse.json({ error: "Wiki slug is required" }, { status: 400 });
+  }
+  return slug;
+}
+
+export function readWikiGraphReleaseId(request: NextRequest): string | undefined {
+  return request.nextUrl.searchParams.get("graph_release_id") ?? undefined;
 }
 
 export function toWikiErrorResponse(

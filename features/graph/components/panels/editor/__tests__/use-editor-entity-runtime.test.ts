@@ -6,23 +6,40 @@ import {
   fetchGraphEntityDetail,
   fetchGraphEntityMatches,
 } from "@/features/graph/lib/entity-service";
+import { useEntityHover } from "@/features/graph/components/entities/use-entity-hover";
 import { useEditorEntityRuntime } from "../use-editor-entity-runtime";
 
 jest.mock("@/features/graph/lib/entity-service", () => ({
   fetchGraphEntityMatches: jest.fn(),
   fetchGraphEntityDetail: jest.fn(),
 }));
+jest.mock("@/features/graph/components/entities/use-entity-hover", () => ({
+  useEntityHover: jest.fn(),
+}));
 
 const mockedFetchGraphEntityMatches =
   fetchGraphEntityMatches as jest.MockedFunction<typeof fetchGraphEntityMatches>;
 const mockedFetchGraphEntityDetail =
   fetchGraphEntityDetail as jest.MockedFunction<typeof fetchGraphEntityDetail>;
+const mockedUseEntityHover = useEntityHover as jest.MockedFunction<typeof useEntityHover>;
 
 describe("useEditorEntityRuntime", () => {
+  const hoverContext = {
+    show: jest.fn(),
+    hide: jest.fn(),
+    pointerEnterCard: jest.fn(),
+    pointerLeaveCard: jest.fn(),
+  };
+
   beforeEach(() => {
     jest.useFakeTimers();
     mockedFetchGraphEntityMatches.mockReset();
     mockedFetchGraphEntityDetail.mockReset();
+    hoverContext.show.mockReset();
+    hoverContext.hide.mockReset();
+    hoverContext.pointerEnterCard.mockReset();
+    hoverContext.pointerLeaveCard.mockReset();
+    mockedUseEntityHover.mockReturnValue(hoverContext);
   });
 
   afterEach(() => {
@@ -70,7 +87,6 @@ describe("useEditorEntityRuntime", () => {
         },
       ],
       paperCount: 1200,
-      summary: null,
     });
 
     const { result } = renderHook(() =>
@@ -119,25 +135,17 @@ describe("useEditorEntityRuntime", () => {
       });
     });
 
-    await waitFor(() => {
-        expect(result.current.entityHoverCard).toEqual(
-          expect.objectContaining({
-            x: 24,
-            y: 48,
-            entity: {
-              entityType: "disease",
-              conceptNamespace: "mesh",
-              conceptId: "D012559",
-              sourceIdentifier: "MESH:D012559",
-              canonicalName: "Schizophrenia",
-            },
-            label: "Schizophrenia",
-            entityType: "disease",
-            paperCount: 1200,
-            aliases: ["schizophrenia spectrum disorder"],
-            detailReady: true,
-        }),
-      );
+    expect(hoverContext.show).toHaveBeenCalledWith({
+      entity: {
+        entityType: "disease",
+        conceptNamespace: "mesh",
+        conceptId: "D012559",
+        sourceIdentifier: "MESH:D012559",
+        canonicalName: "Schizophrenia",
+      },
+      paperCount: 1200,
+      x: 24,
+      y: 48,
     });
   });
 
@@ -192,7 +200,6 @@ describe("useEditorEntityRuntime", () => {
         },
       ],
       paperCount: 900,
-      summary: null,
     });
 
     const { result } = renderHook(() =>
@@ -226,23 +233,21 @@ describe("useEditorEntityRuntime", () => {
       });
     });
 
-    await waitFor(() => {
-      expect(result.current.entityHoverCard).toEqual(
-        expect.objectContaining({
-          entity: {
-            entityType: "gene",
-            conceptNamespace: "hgnc",
-            conceptId: "11998",
-            sourceIdentifier: "HGNC:11998",
-            canonicalName: "TP53",
-          },
-          label: "TP53",
-        }),
-      );
+    expect(hoverContext.show).toHaveBeenCalledWith({
+      entity: {
+        entityType: "gene",
+        conceptNamespace: "hgnc",
+        conceptId: "11998",
+        sourceIdentifier: "HGNC:11998",
+        canonicalName: "TP53",
+      },
+      paperCount: 900,
+      x: 12,
+      y: 18,
     });
   });
 
-  it("keeps the hover card open while the pointer moves from the highlight into the card", async () => {
+  it("delegates hover clear to the shared hover controller", async () => {
     mockedFetchGraphEntityMatches.mockResolvedValue({
       matches: [
         {
@@ -277,7 +282,6 @@ describe("useEditorEntityRuntime", () => {
         },
       ],
       paperCount: 1200,
-      summary: null,
     });
 
     const { result } = renderHook(() =>
@@ -311,31 +315,10 @@ describe("useEditorEntityRuntime", () => {
       });
     });
 
-    await waitFor(() => {
-      expect(result.current.entityHoverCard).not.toBeNull();
-    });
-
     act(() => {
       result.current.handleEntityHoverChange(null);
-      result.current.handleEntityHoverCardPointerEnter();
     });
 
-    await act(async () => {
-      jest.advanceTimersByTime(150);
-      await Promise.resolve();
-    });
-
-    expect(result.current.entityHoverCard).not.toBeNull();
-
-    act(() => {
-      result.current.handleEntityHoverCardPointerLeave();
-    });
-
-    await act(async () => {
-      jest.advanceTimersByTime(150);
-      await Promise.resolve();
-    });
-
-    expect(result.current.entityHoverCard).toBeNull();
+    expect(hoverContext.hide).toHaveBeenCalledTimes(1);
   });
 });

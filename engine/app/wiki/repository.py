@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from app import db
+from app.entities.repository import EntityGraphProjectionRepository
+from app.graph.repository import PostgresGraphRepository
 from app.wiki import queries
 from app.wiki.content_contract import resolve_wiki_page_contract
 from app.wiki.models import (
@@ -16,7 +17,6 @@ from app.wiki.models import (
     WikiPagePaperData,
     WikiSearchHit,
 )
-
 
 _WIKI_CONTEXT_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="wiki-context")
 
@@ -41,6 +41,7 @@ class WikiGraphPageRow:
     entity_type: str | None = None
     concept_id: str | None = None
     family_key: str | None = None
+    semantic_group: str | None = None
     tags: list[str] = field(default_factory=list)
     outgoing_links: list[str] = field(default_factory=list)
     paper_pmids: list[int] = field(default_factory=list)
@@ -105,6 +106,15 @@ class WikiRepository(Protocol):
 class PostgresWikiRepository:
     """PostgreSQL implementation of the wiki repository."""
 
+    def __init__(
+        self,
+        *,
+        entity_graph_repository: EntityGraphProjectionRepository | None = None,
+        graph_repository: PostgresGraphRepository | None = None,
+    ) -> None:
+        self._entity_graph_repository = entity_graph_repository or EntityGraphProjectionRepository()
+        self._graph_repository = graph_repository or PostgresGraphRepository()
+
     def _fetchone(self, query: str, params: dict | None = None):
         with db.pooled() as conn:
             return conn.execute(query, params).fetchone()
@@ -149,13 +159,11 @@ class PostgresWikiRepository:
         return [_row_to_summary(r) for r in rows]
 
     def resolve_graph_run_id(self, *, graph_release_id: str) -> str | None:
-        row = self._fetchone(
-            queries.RESOLVE_GRAPH_RUN_ID,
-            {"release_id": graph_release_id},
-        )
-        if row is None:
+        try:
+            release = self._graph_repository.resolve_graph_release(graph_release_id)
+        except LookupError:
             return None
-        return row["graph_run_id"]
+        return release.graph_run_id
 
     def resolve_paper_graph_refs(
         self,
@@ -163,13 +171,10 @@ class PostgresWikiRepository:
         pmids: list[int],
         graph_run_id: str,
     ) -> dict[int, str]:
-        if not pmids:
-            return {}
-        rows = self._fetchall(
-            queries.RESOLVE_PAPER_GRAPH_REFS,
-            {"pmids": pmids, "graph_run_id": graph_run_id},
+        return self._graph_repository.resolve_paper_graph_refs(
+            pmids=pmids,
+            graph_run_id=graph_run_id,
         )
-        return {r["pmid"]: r["graph_paper_ref"] for r in rows}
 
     def resolve_linked_entity_metadata(
         self,
@@ -192,20 +197,18 @@ class PostgresWikiRepository:
         graph_run_id: str,
         limit: int = 8,
     ) -> WikiPageContextData:
-        params = {
-            "concept_id": concept_id,
-            "entity_type": entity_type,
-            "graph_run_id": graph_run_id,
-        }
         counts_future = _WIKI_CONTEXT_EXECUTOR.submit(
-            self._fetchone,
-            queries.GET_ENTITY_PAGE_CONTEXT_COUNTS,
-            params,
+            self._entity_graph_repository.fetch_page_context_counts,
+            entity_type=entity_type,
+            source_identifier=concept_id,
+            graph_run_id=graph_run_id,
         )
         papers_future = _WIKI_CONTEXT_EXECUTOR.submit(
-            self._fetchall,
-            queries.GET_ENTITY_PAGE_CONTEXT_TOP_PAPERS,
-            {**params, "limit": limit},
+            self._entity_graph_repository.fetch_page_context_top_papers,
+            entity_type=entity_type,
+            source_identifier=concept_id,
+            graph_run_id=graph_run_id,
+            limit=limit,
         )
         counts_row = counts_future.result()
         paper_rows = papers_future.result()
@@ -237,6 +240,7 @@ class PostgresWikiRepository:
                 entity_type=r.get("entity_type"),
                 concept_id=r.get("concept_id"),
                 family_key=r.get("family_key"),
+                semantic_group=r.get("semantic_group"),
                 tags=r.get("tags") or [],
                 outgoing_links=r.get("outgoing_links") or [],
                 paper_pmids=r.get("paper_pmids") or [],
@@ -250,11 +254,9 @@ class PostgresWikiRepository:
         pmids: list[int],
         graph_run_id: str,
     ) -> list[WikiGraphPaperRow]:
-        if not pmids:
-            return []
-        rows = self._fetchall(
-            queries.RESOLVE_PAPER_NODES_FOR_GRAPH,
-            {"pmids": pmids, "graph_run_id": graph_run_id},
+        rows = self._graph_repository.resolve_paper_nodes_for_graph(
+            pmids=pmids,
+            graph_run_id=graph_run_id,
         )
         return [
             WikiGraphPaperRow(
@@ -287,6 +289,7 @@ def _row_to_page(row: dict) -> WikiPage:
         entity_type=row.get("entity_type"),
         concept_id=row.get("concept_id"),
         family_key=row.get("family_key"),
+        semantic_group=row.get("semantic_group"),
         tags=row.get("tags") or [],
         outgoing_links=row.get("outgoing_links") or [],
         paper_pmids=paper_pmids,

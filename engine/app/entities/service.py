@@ -8,12 +8,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.entities.highlight_policy import HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
 from app.entities.repository import (
     EntityAliasCatalogRow,
     EntityAliasDetailRow,
     EntityCatalogRepository,
+    EntityGraphProjectionRepository,
 )
-from app.entities.highlight_policy import HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
 from app.entities.schemas import (
     EntityAlias,
     EntityDetail,
@@ -21,12 +22,16 @@ from app.entities.schemas import (
     EntityDetailResponse,
     EntityMatchRequest,
     EntityMatchResponse,
+    EntityOverlayRequest,
+    EntityOverlayResponse,
     EntityTextMatch,
 )
+from app.graph.repository import PostgresGraphRepository
 from app.rag.entity_runtime_keys import (
     infer_catalog_concept_namespace,
     normalize_catalog_concept_id,
 )
+from app.rag.models import GraphRelease
 
 _TOKEN_PATTERN = re.compile(r"\b[\w][\w/-]*\b", re.UNICODE)
 _MULTISPACE_PATTERN = re.compile(r"\s+")
@@ -58,6 +63,20 @@ class EntityServiceRepository(Protocol):
     ) -> tuple[dict[str, object] | None, list[EntityAliasDetailRow]]: ...
 
 
+class EntityGraphServiceRepository(Protocol):
+    def fetch_graph_paper_refs(
+        self,
+        *,
+        graph_run_id: str,
+        entity_refs: Iterable[tuple[str, str]],
+        limit: int,
+    ) -> list[str]: ...
+
+
+class GraphReleaseResolver(Protocol):
+    def resolve_graph_release(self, graph_release_id: str) -> GraphRelease: ...
+
+
 class EntityService:
     """Resolve runtime entities from small text windows and hover identities."""
 
@@ -65,8 +84,12 @@ class EntityService:
         self,
         *,
         repository: EntityServiceRepository | None = None,
+        graph_repository: EntityGraphServiceRepository | None = None,
+        graph_release_resolver: GraphReleaseResolver | None = None,
     ) -> None:
         self._repository = repository or EntityCatalogRepository()
+        self._graph_repository = graph_repository or EntityGraphProjectionRepository()
+        self._graph_release_resolver = graph_release_resolver or PostgresGraphRepository()
 
     def match_entities(self, request: EntityMatchRequest) -> EntityMatchResponse:
         candidates = list(
@@ -99,8 +122,7 @@ class EntityService:
         )
         if detail_row is None:
             raise LookupError(
-                "Unknown entity detail target: "
-                f"{request.entity_type}:{request.source_identifier}"
+                f"Unknown entity detail target: {request.entity_type}:{request.source_identifier}"
             )
 
         entity_type = str(detail_row["entity_type"])
@@ -126,9 +148,28 @@ class EntityService:
                 for alias in aliases
             ],
             paper_count=int(detail_row["paper_count"]),
-            summary=None,
         )
         return EntityDetailResponse(entity=entity)
+
+    def get_entity_overlay(
+        self,
+        request: EntityOverlayRequest,
+    ) -> EntityOverlayResponse:
+        if not request.entity_refs:
+            return EntityOverlayResponse()
+
+        release = self._graph_release_resolver.resolve_graph_release(request.graph_release_id)
+        entity_refs = [(ref.entity_type, ref.source_identifier) for ref in request.entity_refs]
+
+        graph_paper_refs = self._graph_repository.fetch_graph_paper_refs(
+            graph_run_id=release.graph_run_id,
+            entity_refs=entity_refs,
+            limit=request.limit,
+        )
+
+        return EntityOverlayResponse(
+            graph_paper_refs=graph_paper_refs,
+        )
 
 
 def iter_alias_candidates(
