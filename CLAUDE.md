@@ -9,7 +9,7 @@
 >
 > **TRUSTED RELATIONSHIPS** (read-only):
 > - Infra: Shared services (database, MCP servers)
-> - App: Reusable code patterns
+> - Graph: Main graph repo for shared patterns
 >
 > **FORBIDDEN**: Never modify other SoleMD.* project source files.
 > **HAND-OFF**: See `/workspaces/CLAUDE.md` for cross-project protocol.

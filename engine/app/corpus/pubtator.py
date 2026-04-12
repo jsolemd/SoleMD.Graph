@@ -6,7 +6,7 @@ bulk loading into the UNLOGGED pubtator.* tables.
 
 After bulk load, creates indexes and runs ANALYZE.
 
-Reference: SoleMD.App/pipeline/scripts/load/load_pubtator3.py
+Reference: legacy PubTator bulk-load implementation retained from the retired pipeline service
 
 Data format (from NCBI README):
     bioconcepts2pubtator3: PMID<TAB>Type<TAB>Concept_ID<TAB>Mentions<TAB>Resource
