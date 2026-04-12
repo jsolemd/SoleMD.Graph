@@ -11,7 +11,7 @@ import type { GraphBundleQueries } from "@/features/graph/types";
 import { WikiBacklinks } from "@/features/wiki/components/WikiBacklinks";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiMarkdownRenderer } from "@/features/wiki/components/WikiMarkdownRenderer";
-import { WikiModuleContent, resolveModule } from "@/features/wiki/components/WikiModuleContent";
+import { WikiModuleContent, getWikiModule } from "@/features/wiki/components/WikiModuleContent";
 import { DotToc, entriesFromModuleSections, entriesFromHeadings } from "@/features/wiki/components/DotToc";
 import type { DotTocEntry } from "@/features/wiki/components/DotToc";
 import { WikiPageHeader, WikiTopGraphPapers } from "@/features/wiki/components/WikiPageHeader";
@@ -27,6 +27,7 @@ interface WikiPageViewProps {
   graphReleaseId: string;
   queries: GraphBundleQueries;
   onNavigate: (slug: string) => void;
+  tocAnchorRef?: React.RefObject<HTMLElement | null>;
 }
 
 const EMPTY_PAPER_REFS: Record<number, string> = {};
@@ -42,8 +43,10 @@ export function WikiPageView({
   graphReleaseId,
   queries,
   onNavigate,
+  tocAnchorRef,
 }: WikiPageViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const headingSourceRef = useRef<HTMLDivElement>(null);
   const localGraphPopped = useWikiStore((state) => state.localGraphPopped);
   const modulePopped = useWikiStore((state) => state.modulePopped);
   const setCurrentPageKind = useWikiStore((state) => state.setCurrentPageKind);
@@ -71,15 +74,16 @@ export function WikiPageView({
   // Dot TOC entries: module sections (manifest-driven) or wiki headings (DOM-scanned)
   const moduleTocEntries = useMemo(() => {
     if (!isModulePage) return undefined;
-    const sections = resolveModule(slug)?.manifest.sections;
+    const sections = getWikiModule(slug)?.manifest.sections;
     return sections ? entriesFromModuleSections(sections) : undefined;
   }, [isModulePage, slug]);
 
   const [headingEntries, setHeadingEntries] = useState<DotTocEntry[]>([]);
 
-  // Scan headings after content renders and re-scan on DOM mutations
+  // Scan headings from the markdown body only. The TOC should not depend on
+  // unrelated widgets that mount later inside the scroll container.
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = headingSourceRef.current;
     if (!el || isModulePage) { setHeadingEntries([]); return; }
 
     function scan() {
@@ -114,7 +118,7 @@ export function WikiPageView({
   if (error) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Text style={{ ...panelTextStyle, color: "var(--error-text)" }}>
+        <Text style={{ ...panelTextStyle, color: "var(--feedback-danger-text)" }}>
           {error}
         </Text>
       </div>
@@ -185,15 +189,17 @@ export function WikiPageView({
         ref={scrollRef}
         className="min-h-0 flex-1 overflow-y-auto px-3 pb-3"
       >
-        <WikiMarkdownRenderer
-          contentMd={page.content_md}
-          resolvedLinks={page.resolved_links ?? EMPTY_RESOLVED_LINKS}
-          paperGraphRefs={page.paper_graph_refs ?? EMPTY_PAPER_REFS}
-          linkedEntities={page.linked_entities ?? EMPTY_LINKED_ENTITIES}
-          bodyEntityMatches={page.body_entity_matches ?? EMPTY_BODY_ENTITY_MATCHES}
-          onNavigate={onNavigate}
-          onPaperClick={onPaperClick}
-        />
+        <div ref={headingSourceRef}>
+          <WikiMarkdownRenderer
+            contentMd={page.content_md}
+            resolvedLinks={page.resolved_links ?? EMPTY_RESOLVED_LINKS}
+            paperGraphRefs={page.paper_graph_refs ?? EMPTY_PAPER_REFS}
+            linkedEntities={page.linked_entities ?? EMPTY_LINKED_ENTITIES}
+            bodyEntityMatches={page.body_entity_matches ?? EMPTY_BODY_ENTITY_MATCHES}
+            onNavigate={onNavigate}
+            onPaperClick={onPaperClick}
+          />
+        </div>
 
         {isModulePage && !modulePopped && (
           <div
@@ -223,7 +229,7 @@ export function WikiPageView({
       </div>
 
       {dotEntries && (
-        <DotToc entries={dotEntries} scrollRef={scrollRef} />
+        <DotToc entries={dotEntries} scrollRef={scrollRef} anchorRef={tocAnchorRef} />
       )}
     </div>
   );

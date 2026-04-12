@@ -12,7 +12,13 @@ export interface HistogramHighlightValue {
 import type {
   GraphInfoHistogramBin,
 } from "@/features/graph/types";
-import { panelPillStyles, panelTextDimStyle, panelTextStyle, panelTypePillStyles } from "../../panels/PanelShell";
+import {
+  panelPillStyles,
+  panelScaledPx,
+  panelTextDimStyle,
+  panelTextStyle,
+  panelTypePillStyles,
+} from "../../panels/PanelShell";
 import {
   getInfoComparisonColors,
   getInfoComparisonDisplayValue,
@@ -21,10 +27,8 @@ import {
   type InfoComparisonState,
 } from "./comparison-layers";
 
-const INFO_BAR_HEIGHT = 6;
-
 const infoTrackStyle: CSSProperties = {
-  height: INFO_BAR_HEIGHT,
+  height: panelScaledPx(6),
   backgroundColor: "var(--graph-panel-input-bg)",
   borderRadius: 999,
   overflow: "hidden",
@@ -32,7 +36,7 @@ const infoTrackStyle: CSSProperties = {
 
 const getInfoFillStyle = (widthPct: number, color: string, opacity = 1) =>
   ({
-    height: INFO_BAR_HEIGHT,
+    height: panelScaledPx(6),
     width: `${widthPct}%`,
     backgroundColor: color,
     borderRadius: 999,

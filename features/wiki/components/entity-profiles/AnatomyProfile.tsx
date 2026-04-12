@@ -5,9 +5,11 @@ import { Text } from "@mantine/core";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,
+  panelScaledPx,
   panelTextStyle,
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
+import { entityTypeCssColorByType } from "@/lib/theme/pastel-tokens";
 import type { EntityProfileProps } from "./index";
 
 const DISEASE_TYPES = new Set(["disease"]);
@@ -71,11 +73,11 @@ export default function AnatomyProfile({
                 className="rounded-full px-1.5 py-0.5 transition-colors hover:brightness-110"
                 style={{
                   ...panelTextStyle,
-                  fontSize: 9,
+                  fontSize: panelScaledPx(9),
                   backgroundColor:
-                    "color-mix(in srgb, var(--color-warm-coral) 20%, var(--graph-panel-bg))",
+                    `color-mix(in srgb, ${entityTypeCssColorByType.disease} 20%, var(--graph-panel-bg))`,
                   border:
-                    "1px solid color-mix(in srgb, var(--color-warm-coral) 30%, var(--graph-panel-border))",
+                    `1px solid color-mix(in srgb, ${entityTypeCssColorByType.disease} 30%, var(--graph-panel-border))`,
                   cursor: "pointer",
                 }}
                 onClick={() => {
@@ -102,11 +104,11 @@ export default function AnatomyProfile({
                 className="rounded-full px-1.5 py-0.5 transition-colors hover:brightness-110"
                 style={{
                   ...panelTextStyle,
-                  fontSize: 9,
+                  fontSize: panelScaledPx(9),
                   backgroundColor:
-                    "color-mix(in srgb, var(--color-soft-blue) 20%, var(--graph-panel-bg))",
+                    `color-mix(in srgb, ${entityTypeCssColorByType.network} 20%, var(--graph-panel-bg))`,
                   border:
-                    "1px solid color-mix(in srgb, var(--color-soft-blue) 30%, var(--graph-panel-border))",
+                    `1px solid color-mix(in srgb, ${entityTypeCssColorByType.network} 30%, var(--graph-panel-border))`,
                   cursor: "pointer",
                 }}
                 onClick={() => {

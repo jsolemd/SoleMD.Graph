@@ -7,11 +7,13 @@ import { crisp } from "@/lib/motion";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,
+  panelScaledPx,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import { formatNumber } from "@/lib/helpers";
+import { entityTypeCssColorByType } from "@/lib/theme/pastel-tokens";
 import type { EntityProfileProps } from "./index";
 
 const CHEMICAL_TYPES = new Set(["chemical"]);
@@ -85,7 +87,7 @@ export default function DiseaseProfile({
                 <motion.div
                   className="rounded-sm"
                   style={{
-                    height: 6,
+                    height: panelScaledPx(6),
                     backgroundColor: "var(--entity-accent, var(--mode-accent))",
                     opacity: 0.7,
                   }}
@@ -93,7 +95,7 @@ export default function DiseaseProfile({
                   animate={{ width: SCALE_BAR_W }}
                   transition={crisp}
                 />
-                <Text style={{ ...panelTextDimStyle, fontSize: 8 }}>
+                <Text style={{ ...panelTextDimStyle, fontSize: panelScaledPx(8) }}>
                   {formatNumber(corpusCount)} corpus
                 </Text>
               </div>
@@ -101,7 +103,7 @@ export default function DiseaseProfile({
                 <motion.div
                   className="rounded-sm"
                   style={{
-                    height: 6,
+                    height: panelScaledPx(6),
                     backgroundColor: "var(--entity-accent, var(--mode-accent))",
                     opacity: 0.4,
                   }}
@@ -114,7 +116,7 @@ export default function DiseaseProfile({
                   }}
                   transition={crisp}
                 />
-                <Text style={{ ...panelTextDimStyle, fontSize: 8 }}>
+                <Text style={{ ...panelTextDimStyle, fontSize: panelScaledPx(8) }}>
                   {formatNumber(graphCount)} in graph
                 </Text>
               </div>
@@ -135,11 +137,11 @@ export default function DiseaseProfile({
                 className="rounded-full px-1.5 py-0.5 transition-colors hover:brightness-110"
                 style={{
                   ...panelTextStyle,
-                  fontSize: 9,
+                  fontSize: panelScaledPx(9),
                   backgroundColor:
-                    "color-mix(in srgb, var(--color-fresh-green) 20%, var(--graph-panel-bg))",
+                    `color-mix(in srgb, ${entityTypeCssColorByType.chemical} 20%, var(--graph-panel-bg))`,
                   border:
-                    "1px solid color-mix(in srgb, var(--color-fresh-green) 30%, var(--graph-panel-border))",
+                    `1px solid color-mix(in srgb, ${entityTypeCssColorByType.chemical} 30%, var(--graph-panel-border))`,
                   cursor: "pointer",
                 }}
                 onClick={() => {
@@ -166,11 +168,11 @@ export default function DiseaseProfile({
                 className="rounded-full px-1.5 py-0.5 transition-colors hover:brightness-110"
                 style={{
                   ...panelTextStyle,
-                  fontSize: 9,
+                  fontSize: panelScaledPx(9),
                   backgroundColor:
-                    "color-mix(in srgb, var(--color-soft-pink) 20%, var(--graph-panel-bg))",
+                    `color-mix(in srgb, ${entityTypeCssColorByType.gene} 20%, var(--graph-panel-bg))`,
                   border:
-                    "1px solid color-mix(in srgb, var(--color-soft-pink) 30%, var(--graph-panel-border))",
+                    `1px solid color-mix(in srgb, ${entityTypeCssColorByType.gene} 30%, var(--graph-panel-border))`,
                   cursor: "pointer",
                 }}
                 onClick={() => {

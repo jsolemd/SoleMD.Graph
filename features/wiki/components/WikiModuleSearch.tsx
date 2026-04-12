@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActionIcon, TextInput, Tooltip } from "@mantine/core";
+import { TextInput } from "@mantine/core";
 import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import {
-  iconBtnStyles,
+  PanelIconAction,
   panelSelectStyles,
   panelTextMutedStyle,
 } from "@/features/graph/components/panels/PanelShell";
@@ -142,19 +142,12 @@ export function WikiModuleSearch({ scrollRef }: WikiModuleSearchProps) {
 
   if (!open) {
     return (
-      <Tooltip label="Search in module" position="bottom" withArrow>
-        <ActionIcon
-          variant="transparent"
-          size={24}
-          radius="xl"
-          className="graph-icon-btn"
-          styles={iconBtnStyles}
-          onClick={handleToggle}
-          aria-label="Search in module"
-        >
-          <Search size={12} />
-        </ActionIcon>
-      </Tooltip>
+      <PanelIconAction
+        label="Search in module"
+        icon={<Search size={12} />}
+        onClick={handleToggle}
+        aria-label="Search in module"
+      />
     );
   }
 
@@ -169,15 +162,14 @@ export function WikiModuleSearch({ scrollRef }: WikiModuleSearchProps) {
         size="xs"
         styles={panelSelectStyles}
         rightSection={
-          <ActionIcon
-            variant="transparent"
-            size={16}
+          <PanelIconAction
+            label="Close search"
+            icon={<X size={10} />}
             onClick={handleToggle}
-            styles={iconBtnStyles}
+            size={16}
+            tooltipDisabled
             aria-label="Close search"
-          >
-            <X size={10} />
-          </ActionIcon>
+          />
         }
         style={{ width: 130 }}
         aria-label="Search in module"
@@ -187,24 +179,22 @@ export function WikiModuleSearch({ scrollRef }: WikiModuleSearchProps) {
           <span style={{ ...panelTextMutedStyle, whiteSpace: "nowrap" }}>
             {activeIndex + 1}/{matchCount}
           </span>
-          <ActionIcon
-            variant="transparent"
-            size={18}
-            styles={iconBtnStyles}
+          <PanelIconAction
+            label="Previous match"
+            icon={<ChevronUp size={10} />}
             onClick={() => goToMatch(activeIndex - 1)}
-            aria-label="Previous match"
-          >
-            <ChevronUp size={10} />
-          </ActionIcon>
-          <ActionIcon
-            variant="transparent"
             size={18}
-            styles={iconBtnStyles}
+            tooltipDisabled
+            aria-label="Previous match"
+          />
+          <PanelIconAction
+            label="Next match"
+            icon={<ChevronDown size={10} />}
             onClick={() => goToMatch(activeIndex + 1)}
+            size={18}
+            tooltipDisabled
             aria-label="Next match"
-          >
-            <ChevronDown size={10} />
-          </ActionIcon>
+          />
         </>
       )}
     </div>

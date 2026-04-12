@@ -10,6 +10,7 @@ import { formatNumber } from "@/lib/helpers";
 import {
   iconBtnStyles,
   panelPillStyles,
+  panelScaledPx,
   panelTextDimStyle,
   panelTextStyle,
   panelTypePillStyles,
@@ -80,11 +81,11 @@ function NumericStatsRow({
 
 const insightTagStyle = {
   ...panelTextDimStyle,
-  fontSize: 8,
+  fontSize: panelScaledPx(8),
   opacity: 0.8,
   backgroundColor: "var(--graph-panel-input-bg)",
   borderRadius: 3,
-  padding: "1px 4px",
+  padding: `${panelScaledPx(1)} ${panelScaledPx(4)}`,
 } as const;
 
 function InsightAnnotations({ insights }: { insights: ColumnInsight }) {

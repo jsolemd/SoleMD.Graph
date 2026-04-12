@@ -1,20 +1,15 @@
+import {
+  entityTypeSemanticColorKeyByType,
+  semanticColorFallbackHexByKey,
+} from "@/lib/theme/pastel-tokens"
+import type { SemanticColorKey } from "@/lib/theme/pastel-tokens"
+
+export type { SemanticColorKey } from "@/lib/theme/pastel-tokens"
+
 // ---------------------------------------------------------------------------
 // Theme palette — semantic-group node colors from CSS tokens
 // See docs/map/wiki-taxonomy.md for the two-axis model.
 // ---------------------------------------------------------------------------
-
-/** Semantic groups that map to distinct node colors. */
-export type SemanticColorKey =
-  | "diso"
-  | "chem"
-  | "gene"
-  | "anat"
-  | "phys"
-  | "proc"
-  | "section"
-  | "paper"
-  | "module"
-  | "default"
 
 export interface WikiGraphPalette {
   background: string
@@ -26,20 +21,16 @@ export interface WikiGraphPalette {
   activeRing: number
 }
 
+const defaultNodeColors = Object.fromEntries(
+  Object.entries(semanticColorFallbackHexByKey).map(([key, hex]) => [
+    key,
+    hexToNumber(hex) ?? 0,
+  ]),
+) as Record<SemanticColorKey, number>
+
 const DEFAULT_PALETTE: WikiGraphPalette = {
   background: "#1a1a2e",
-  node: {
-    diso: 0xffada4,
-    chem: 0xaedc93,
-    gene: 0xeda8c4,
-    anat: 0xe5c799,
-    phys: 0xa8c5e9,
-    proc: 0xd8bee9,
-    section: 0x747caa,
-    paper: 0xd4c5a0,
-    module: 0x7ecfb0,
-    default: 0xa8c5e9,
-  },
+  node: defaultNodeColors,
   linkColor: 0x475569,
   linkAlpha: 0.3,
   labelColor: 0xe2e8f0,
@@ -47,11 +38,26 @@ const DEFAULT_PALETTE: WikiGraphPalette = {
   activeRing: 0xa8c5e9,
 }
 
-let cachedPalette: WikiGraphPalette = { ...DEFAULT_PALETTE, node: { ...DEFAULT_PALETTE.node } }
+let cachedPalette: WikiGraphPalette = { ...DEFAULT_PALETTE, node: { ...defaultNodeColors } }
 let cacheValid = false
 
 function cssVar(el: Element, name: string): string {
   return getComputedStyle(el).getPropertyValue(name).trim()
+}
+
+function resolveCssVar(el: Element, name: string, seen = new Set<string>()): string {
+  const value = cssVar(el, name)
+  if (!value) return ""
+
+  const match = value.match(/^var\((--[^,\s)]+)(?:,\s*(.+))?\)$/)
+  if (!match) return value
+
+  const nestedName = match[1]
+  const fallback = match[2]?.trim() ?? ""
+  if (seen.has(nestedName)) return fallback
+
+  seen.add(nestedName)
+  return resolveCssVar(el, nestedName, seen) || fallback
 }
 
 function hexToNumber(hex: string): number | null {
@@ -80,15 +86,15 @@ const NODE_CSS_VARS: Record<SemanticColorKey, string> = {
 export function resolvePalette(container: HTMLElement): WikiGraphPalette {
   if (cacheValid) return cachedPalette
 
-  const bg = cssVar(container, "--graph-panel-bg") || cssVar(container, "--mantine-color-body")
-  const link = cssVar(container, "--wiki-graph-link") || "#475569"
-  const label = cssVar(container, "--wiki-graph-label") || "#e2e8f0"
-  const hoverRing = cssVar(container, "--brand-accent") || "#747caa"
-  const activeRing = cssVar(container, "--brand-accent-alt") || "#a8c5e9"
+  const bg = resolveCssVar(container, "--graph-panel-bg") || resolveCssVar(container, "--background")
+  const link = resolveCssVar(container, "--wiki-graph-link") || "#475569"
+  const label = resolveCssVar(container, "--wiki-graph-label") || "#e2e8f0"
+  const hoverRing = resolveCssVar(container, "--brand-accent") || "#747caa"
+  const activeRing = resolveCssVar(container, "--brand-accent-alt") || "#a8c5e9"
 
   const node = { ...DEFAULT_PALETTE.node }
   for (const [key, varName] of Object.entries(NODE_CSS_VARS)) {
-    const val = cssVar(container, varName)
+    const val = resolveCssVar(container, varName)
     if (val) {
       const n = hexToNumber(val)
       if (n != null) node[key as SemanticColorKey] = n
@@ -128,7 +134,7 @@ export const SEMANTIC_GROUP_LABELS: Record<SemanticColorKey, string> = {
 /** CSS variable expression for each group — resolves via tokens.css, single source of truth. */
 export const SEMANTIC_GROUP_CSS_COLOR: Record<SemanticColorKey, string> = Object.fromEntries(
   Object.entries(NODE_CSS_VARS).map(([key, varName]) => {
-    const fallback = "#" + DEFAULT_PALETTE.node[key as SemanticColorKey].toString(16).padStart(6, "0")
+    const fallback = semanticColorFallbackHexByKey[key as SemanticColorKey]
     return [key, `var(${varName}, ${fallback})`]
   }),
 ) as Record<SemanticColorKey, string>
@@ -164,12 +170,8 @@ export function resolveNodeColorKey(node: {
 
   // Fallback: entity_type → semantic group (wiki page + PubTator types)
   if (node.entityType) {
-    const et = node.entityType.toLowerCase()
-    if (et === "disease") return "diso"
-    if (et === "chemical") return "chem"
-    if (et === "gene" || et === "receptor") return "gene"
-    if (et === "anatomy") return "anat"
-    if (et === "network" || et === "biological process") return "phys"
+    const colorKey = entityTypeSemanticColorKeyByType[node.entityType.toLowerCase()]
+    if (colorKey) return colorKey
   }
 
   return "default"

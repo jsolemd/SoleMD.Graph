@@ -113,7 +113,7 @@ export function FilterPanelShell({
       )}
       onClose={() => closePanel("filters")}
     >
-      <PanelBody panelId="filters">
+      <PanelBody>
         <Stack gap="sm">
           {visibleFilters.flatMap((filter, i) => {
             const meta = getColumnMeta(filter.column);

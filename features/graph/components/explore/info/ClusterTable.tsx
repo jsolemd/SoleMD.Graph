@@ -6,6 +6,7 @@ import { formatNumber } from "@/lib/helpers";
 import { DEFAULT_INFO_ROWS } from "@/features/graph/lib/info-widgets";
 import {
   panelPillStyles,
+  panelScaledPx,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
@@ -82,8 +83,10 @@ export function ClusterTable({
               <Group justify="space-between" mb={2} gap={8}>
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span
-                    className="graph-render-color-preview inline-block h-2 w-2 flex-shrink-0 rounded-full"
+                    className="graph-render-color-preview inline-block flex-shrink-0 rounded-full"
                     style={{
+                      width: panelScaledPx(8),
+                      height: panelScaledPx(8),
                       backgroundColor:
                         clusterColors[cluster.clusterId] ??
                         "var(--graph-panel-text-dim)",
@@ -116,7 +119,7 @@ export function ClusterTable({
               <div
                 className="relative overflow-hidden rounded-full"
                 style={{
-                  height: 6,
+                  height: panelScaledPx(6),
                   backgroundColor: "var(--graph-panel-input-bg)",
                 }}
               >

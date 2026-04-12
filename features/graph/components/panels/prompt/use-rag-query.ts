@@ -17,6 +17,7 @@ import {
   RAG_ANSWER_SELECTION_SOURCE_ID,
 } from "@/features/graph/lib/overlay-producers";
 import { useDashboardStore } from "@/features/graph/stores";
+import { useShallow } from "zustand/react/shallow";
 import type {
   GraphBundle,
   GraphBundleQueries,
@@ -66,21 +67,35 @@ export function useRagQuery({
   setSelectedPointCount: (count: number) => void;
   setActiveSelectionSourceId: (sourceId: string | null) => void;
 }) {
-  const ragResponse = useDashboardStore((s) => s.ragResponse);
-  const ragError = useDashboardStore((s) => s.ragError);
-  const isSubmitting = useDashboardStore((s) => s.isRagSubmitting);
-  const ragSession = useDashboardStore((s) => s.ragSession);
-  const ragGraphAvailability = useDashboardStore((s) => s.ragGraphAvailability);
-
   const {
+    ragResponse,
+    ragError,
+    isSubmitting,
+    ragSession,
+    ragGraphAvailability,
     setRagResponse,
     setRagError,
-    setIsRagSubmitting: setIsSubmitting,
+    setIsSubmitting,
     setRagSession,
     setRagGraphAvailability,
     setRagPanelOpen,
     setStreamedAskAnswer,
-  } = useDashboardStore.getState();
+  } = useDashboardStore(
+    useShallow((state) => ({
+      ragResponse: state.ragResponse,
+      ragError: state.ragError,
+      isSubmitting: state.isRagSubmitting,
+      ragSession: state.ragSession,
+      ragGraphAvailability: state.ragGraphAvailability,
+      setRagResponse: state.setRagResponse,
+      setRagError: state.setRagError,
+      setIsSubmitting: state.setIsRagSubmitting,
+      setRagSession: state.setRagSession,
+      setRagGraphAvailability: state.setRagGraphAvailability,
+      setRagPanelOpen: state.setRagPanelOpen,
+      setStreamedAskAnswer: state.setStreamedAskAnswer,
+    })),
+  );
 
   const activeRequestIdRef = useRef(0);
   const activeOverlayProducerIdRef = useRef<OverlayProducerId | null>(null);
@@ -120,7 +135,7 @@ export function useRagQuery({
   const clearRagResponse = useCallback(() => {
     appliedRagResponseRequestIdRef.current = null;
     setRagResponse(null);
-  }, []);
+  }, [setRagResponse]);
 
   const applyRagResponse = useCallback((response: GraphRagQueryResponsePayload) => {
     if (appliedRagResponseRequestIdRef.current === response.meta.request_id) {
@@ -129,7 +144,7 @@ export function useRagQuery({
 
     appliedRagResponseRequestIdRef.current = response.meta.request_id;
     setRagResponse(response);
-  }, []);
+  }, [setRagResponse]);
 
   const askTransport = useMemo(
     () => new DefaultChatTransport<GraphAskChatMessage>({ api: "/api/evidence/chat" }),
@@ -247,6 +262,7 @@ export function useRagQuery({
     clearOwnedOverlay,
     queries,
     ragResponse,
+    setRagGraphAvailability,
     setActiveSelectionSourceId,
     setSelectedPointCount,
   ]);
@@ -271,7 +287,17 @@ export function useRagQuery({
     setRagPanelOpen(true);
 
     return { requestId, scopeRequest, producerId };
-  }, [clearAnswerSelection, clearOwnedOverlay, clearRagResponse, resolveSelectionScopeRequest, setRagPanelOpen]);
+  }, [
+    clearAnswerSelection,
+    clearOwnedOverlay,
+    clearRagResponse,
+    resolveSelectionScopeRequest,
+    setIsSubmitting,
+    setRagError,
+    setRagGraphAvailability,
+    setRagPanelOpen,
+    setRagSession,
+  ]);
 
   const handleRagError = useCallback((error: unknown, requestId: number, producerId?: OverlayProducerId | null) => {
     if (activeRequestIdRef.current !== requestId) {
@@ -283,7 +309,14 @@ export function useRagQuery({
     setRagGraphAvailability(null);
     clearOwnedOverlay(producerId);
     clearAnswerSelection();
-  }, [clearAnswerSelection, clearOwnedOverlay, clearRagResponse]);
+  }, [
+    clearAnswerSelection,
+    clearOwnedOverlay,
+    clearRagResponse,
+    setIsSubmitting,
+    setRagError,
+    setRagGraphAvailability,
+  ]);
 
   const runQuery = useCallback(async ({
     query,
@@ -332,7 +365,15 @@ export function useRagQuery({
           setIsSubmitting(false);
         }
       });
-  }, [applyRagResponse, bundle, handleRagError, prepareRagRequest, selectedNode]);
+  }, [
+    applyRagResponse,
+    bundle,
+    handleRagError,
+    prepareRagRequest,
+    selectedNode,
+    setIsSubmitting,
+    setRagError,
+  ]);
 
   const handleSubmit = useCallback(() => {
     const query = getPromptText().trim();
@@ -379,6 +420,7 @@ export function useRagQuery({
     isSubmitting,
     prepareRagRequest,
     selectedNode,
+    setRagError,
   ]);
 
   const runEvidenceAssistQuery = useCallback((request: EvidenceAssistRequest) => {
@@ -407,7 +449,18 @@ export function useRagQuery({
       clearOwnedOverlay();
       clearAnswerSelection();
     }
-  }, [askChat, clearAnswerSelection, clearOwnedOverlay, clearRagResponse, setRagPanelOpen, setStreamedAskAnswer]);
+  }, [
+    askChat,
+    clearAnswerSelection,
+    clearOwnedOverlay,
+    clearRagResponse,
+    setIsSubmitting,
+    setRagError,
+    setRagGraphAvailability,
+    setRagPanelOpen,
+    setRagSession,
+    setStreamedAskAnswer,
+  ]);
 
   return {
     ragResponse,

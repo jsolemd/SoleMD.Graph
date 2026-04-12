@@ -18,9 +18,9 @@
  * and drift continues without a visible snap.
  *
  * Rendering: `<points>` + stock `<pointsMaterial>` with a 64×64
- * CanvasTexture circle as `map` + `alphaTest` so non-circle pixels
- * are discarded. Normal blending + `depthWrite` gives crisp opaque
- * dots that read true entity color. The backdrop is the wrapper
+ * CanvasTexture soft disk as `map`, so the ambient field stays a bit
+ * defocused behind the interactive foreground constellations without
+ * paying for a fullscreen CSS blur. The backdrop is the wrapper
  * div's `var(--graph-bg)`, so the connectome tracks light/dark
  * theme via CSS (Canvas is alpha-transparent).
  *
@@ -43,6 +43,10 @@ import {
   DynamicDrawUsage,
   type Points as PointsImpl,
 } from "three";
+import {
+  brandPastelFallbackHexByKey,
+  brandPastelVarNameByKey,
+} from "@/lib/theme/pastel-tokens";
 
 export const NODE_COUNT = 6000;
 const BOUNDARY_RADIUS = 6;
@@ -65,27 +69,26 @@ const VEL_EASE = 0.004; // vel chases driftVel        (second LPF, ~4.2 s tau)
 // ramping up from zero. Derived from var = K² / (12·(1−D²)).
 const INITIAL_VEL_SPREAD =
   (2 * GOAL_KICK) / Math.sqrt(12 * (1 - GOAL_DAMPING * GOAL_DAMPING));
-const POINT_SIZE = 0.05;
+const POINT_SIZE = 0.068;
 const PALETTE_SATURATION_BOOST = 1.3;
 
-// Entity-highlight token names — see app/styles/tokens.css
-const ENTITY_TOKENS = [
-  "--color-warm-coral", // disease
-  "--color-fresh-green", // chemical
-  "--color-soft-pink", // gene, receptor
-  "--color-golden-yellow", // anatomy
-  "--color-soft-blue", // network, biological process
-  "--color-soft-lavender", // species
+const CONNECTOME_PALETTE_KEYS = [
+  "warm-coral",
+  "fresh-green",
+  "soft-pink",
+  "golden-yellow",
+  "soft-blue",
+  "soft-lavender",
 ] as const;
 
-const FALLBACK_PALETTE = [
-  "#ffada4",
-  "#aedc93",
-  "#e0aed8",
-  "#e5c799",
-  "#a8c5e9",
-  "#d8bee9",
-] as const;
+// Entity-highlight token names — see app/styles/tokens.css
+const ENTITY_TOKENS = CONNECTOME_PALETTE_KEYS.map(
+  (key) => brandPastelVarNameByKey[key],
+);
+
+const FALLBACK_PALETTE = CONNECTOME_PALETTE_KEYS.map(
+  (key) => brandPastelFallbackHexByKey[key],
+);
 
 function readCssColor(name: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
@@ -97,10 +100,9 @@ function readCssColor(name: string, fallback: string): string {
 
 let circleTextureCache: CanvasTexture | null = null;
 
-// 64×64 anti-aliased white circle on transparent background. Used as
-// the `map` on pointsMaterial with alphaTest so non-circle pixels are
-// discarded — guaranteed crisp circles regardless of blending mode,
-// no fragment-shader monkey-patching required.
+// 64×64 soft disk on transparent background. Used as the `map` on
+// pointsMaterial so the ambient field reads slightly blurred and pushed
+// back behind the foreground semantic layer.
 function getCircleTexture(): CanvasTexture {
   if (circleTextureCache) return circleTextureCache;
   const size = 64;
@@ -109,11 +111,15 @@ function getCircleTexture(): CanvasTexture {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("2D canvas context unavailable");
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 1.5, 0, Math.PI * 2);
-  ctx.closePath();
-  ctx.fillStyle = "#ffffff";
-  ctx.fill();
+  const center = size / 2;
+  const radius = size / 2 - 1.5;
+  const gradient = ctx.createRadialGradient(center, center, 0, center, center, radius);
+  gradient.addColorStop(0, "rgba(255,255,255,0.92)");
+  gradient.addColorStop(0.48, "rgba(255,255,255,0.68)");
+  gradient.addColorStop(0.78, "rgba(255,255,255,0.22)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
   const tex = new CanvasTexture(canvas);
   tex.needsUpdate = true;
   circleTextureCache = tex;
@@ -121,6 +127,9 @@ function getCircleTexture(): CanvasTexture {
 }
 
 type Theme = "light" | "dark";
+interface ConnectomeLoaderProps {
+  paused?: boolean;
+}
 
 export type SimState = {
   pos: Float32Array;
@@ -144,7 +153,9 @@ function getOrCreateSimState(theme: Theme): SimState {
   if (sharedSimState && sharedSimTheme === theme) return sharedSimState;
   const hsl = { h: 0, s: 0, l: 0 };
   const palette = ENTITY_TOKENS.map((name, i) => {
-    const c = new Color(readCssColor(name, FALLBACK_PALETTE[i]));
+    const c = new Color(
+      readCssColor(name, FALLBACK_PALETTE[i] ?? brandPastelFallbackHexByKey["soft-blue"]),
+    );
     c.getHSL(hsl);
     if (theme === "light") {
       // On a white surface, native pastels (~80% lightness) nearly
@@ -254,12 +265,13 @@ export function stepSimulation(sim: SimState, dt: number): void {
   }
 }
 
-function ConnectomeField({ theme }: { theme: Theme }) {
+function ConnectomeField({ theme, paused }: { theme: Theme; paused: boolean }) {
   const pointsRef = useRef<PointsImpl>(null);
   const sim = useMemo(() => getOrCreateSimState(theme), [theme]);
   const circleTexture = useMemo(() => getCircleTexture(), []);
 
   useFrame((_, delta) => {
+    if (paused) return;
     stepSimulation(sim, Math.min(delta, 0.05));
     const points = pointsRef.current;
     if (points) {
@@ -283,16 +295,19 @@ function ConnectomeField({ theme }: { theme: Theme }) {
         sizeAttenuation
         vertexColors
         map={circleTexture}
-        alphaTest={0.5}
-        transparent={false}
-        depthWrite
+        alphaTest={0.02}
+        transparent
+        opacity={0.72}
+        depthWrite={false}
         toneMapped={false}
       />
     </points>
   );
 }
 
-export default function ConnectomeLoader() {
+export default function ConnectomeLoader({
+  paused = false,
+}: ConnectomeLoaderProps) {
   // bgColor is only used for the fog (three.js Color can't parse
   // `var(...)`) so a one-shot read at mount is fine; the wrapper div
   // itself uses the raw CSS var so the backdrop tracks theme changes
@@ -307,10 +322,11 @@ export default function ConnectomeLoader() {
       <Canvas
         camera={{ position: [0, 0, 7], fov: 60 }}
         dpr={[1, 2]}
+        frameloop={paused ? "never" : "always"}
         gl={{ antialias: true, alpha: true }}
       >
         <fog attach="fog" args={[bgColor, 4, 12]} />
-        <ConnectomeField theme={theme} />
+        <ConnectomeField theme={theme} paused={paused} />
       </Canvas>
     </div>
   );

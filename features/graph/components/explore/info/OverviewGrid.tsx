@@ -4,6 +4,7 @@ import { Group, Stack, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
 import type { GraphInfoSummary } from "@/features/graph/types";
 import {
+  panelScaledPx,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
@@ -81,7 +82,7 @@ function SummaryRow({
       <div
         className="relative overflow-hidden rounded-full"
         style={{
-          height: 6,
+          height: panelScaledPx(6),
           backgroundColor: "var(--graph-panel-input-bg)",
         }}
         >

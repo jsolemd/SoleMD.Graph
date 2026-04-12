@@ -1,5 +1,9 @@
 import type { GraphMode } from '@/features/graph/types'
 import type { PanelId, PromptMode } from '@/features/graph/stores'
+import {
+  brandPastelFallbackHexByKey,
+  brandPastelVarNameByKey,
+} from '@/lib/theme/pastel-tokens'
 
 /** What chrome/controls each mode makes available in the dashboard. */
 export interface ModeLayout {
@@ -56,8 +60,8 @@ export const MODES: Record<GraphMode, ModeConfig> = {
   ask: {
     key: 'ask',
     label: 'Ask',
-    color: '#a8c5e9', // soft-blue
-    colorVar: '--color-soft-blue',
+    color: brandPastelFallbackHexByKey['soft-blue'],
+    colorVar: brandPastelVarNameByKey['soft-blue'],
     placeholder: 'Ask the knowledge graph...',
     layout: {
       autoShowPanels: false,
@@ -74,8 +78,8 @@ export const MODES: Record<GraphMode, ModeConfig> = {
   explore: {
     key: 'explore',
     label: 'Explore',
-    color: '#e5c799', // golden-yellow
-    colorVar: '--color-golden-yellow',
+    color: brandPastelFallbackHexByKey['golden-yellow'],
+    colorVar: brandPastelVarNameByKey['golden-yellow'],
     placeholder: 'Explore the knowledge graph...',
     layout: {
       autoShowPanels: true,
@@ -92,8 +96,8 @@ export const MODES: Record<GraphMode, ModeConfig> = {
   learn: {
     key: 'learn',
     label: 'Learn',
-    color: '#aedc93', // fresh-green
-    colorVar: '--color-fresh-green',
+    color: brandPastelFallbackHexByKey['fresh-green'],
+    colorVar: brandPastelVarNameByKey['fresh-green'],
     placeholder: 'Learn from the knowledge graph...',
     layout: {
       autoShowPanels: false,
@@ -111,8 +115,8 @@ export const MODES: Record<GraphMode, ModeConfig> = {
   create: {
     key: 'create',
     label: 'Create',
-    color: '#ffada4', // warm-coral
-    colorVar: '--color-warm-coral',
+    color: brandPastelFallbackHexByKey['warm-coral'],
+    colorVar: brandPastelVarNameByKey['warm-coral'],
     placeholder: 'Create with the knowledge graph...',
     layout: {
       autoShowPanels: false,

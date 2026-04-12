@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { panelTextStyle } from "@/features/graph/components/panels/PanelShell";
+import { panelScaledPx, panelTextStyle } from "@/features/graph/components/panels/PanelShell";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 
 interface TocEntry {
@@ -101,15 +101,15 @@ export function WikiToc({ scrollRef }: WikiTocProps) {
             all: "unset",
             display: "block",
             width: "100%",
-            padding: "2px 6px",
-            paddingLeft: `${(entry.depth - minDepth) * 10 + 6}px`,
+            padding: `${panelScaledPx(2)} ${panelScaledPx(6)}`,
+            paddingLeft: `calc(${(entry.depth - minDepth) * 10 + 6}px * var(--graph-panel-reading-scale, 1))`,
             borderRadius: 4,
             cursor: "pointer",
             boxSizing: "border-box" as const,
             transition: "opacity 150ms, background-color 150ms",
             opacity: inView.has(entry.slug) ? 1 : 0.75,
             ...panelTextStyle,
-            fontSize: 10,
+            fontSize: panelScaledPx(10),
             lineHeight: "1.6",
           }}
         >

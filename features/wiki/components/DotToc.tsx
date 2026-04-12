@@ -11,9 +11,9 @@ import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { Tooltip } from "@mantine/core";
 import { crisp } from "@/lib/motion";
+import { dotTocPastelColorSequence } from "@/lib/theme/pastel-tokens";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
-import type { ModuleSection } from "@/features/learn/types";
-import { accentCssVar } from "@/features/learn/tokens";
+import type { ModuleSection } from "@/features/wiki/module-runtime/types";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -31,6 +31,55 @@ export interface DotTocEntry {
 interface DotTocProps {
   entries: DotTocEntry[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  anchorRef?: React.RefObject<HTMLElement | null>;
+}
+
+function areNumberArraysEqual(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (Math.abs(a[i] - b[i]) > 0.5) return false;
+  }
+  return true;
+}
+
+function resolveRailProgress(scrollTop: number, sectionStarts: number[]): number {
+  if (sectionStarts.length <= 1) return 0;
+
+  const clampedScrollTop = Math.max(0, scrollTop);
+  if (clampedScrollTop <= sectionStarts[0]) return 0;
+
+  for (let i = 0; i < sectionStarts.length - 1; i++) {
+    const start = sectionStarts[i];
+    const end = sectionStarts[i + 1];
+    if (clampedScrollTop <= end) {
+      const span = Math.max(1, end - start);
+      return i + (clampedScrollTop - start) / span;
+    }
+  }
+
+  return sectionStarts.length - 1;
+}
+
+function measureSectionStarts(
+  container: HTMLElement,
+  targets: HTMLElement[],
+): number[] {
+  if (targets.length === 0) return [];
+
+  const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+  const activationOffset = container.clientHeight * 0.2;
+  const containerRect = container.getBoundingClientRect();
+  let previous = 0;
+
+  return targets.map((target) => {
+    const rawStart = target.getBoundingClientRect().top
+      - containerRect.top
+      + container.scrollTop
+      - activationOffset;
+    const start = Math.min(maxScroll, Math.max(previous, rawStart));
+    previous = start;
+    return start;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -39,82 +88,33 @@ interface DotTocProps {
 
 /** Build DotTocEntry[] from a module manifest's sections. */
 export function entriesFromModuleSections(sections: ModuleSection[]): DotTocEntry[] {
-  const raw = sections.map((s) => ({
-    id: `section-${s.id}`,
-    title: s.title,
-    color: s.accent ? accentCssVar(s.accent) : undefined,
-  }));
-  return ensureAdjacentUnique(raw);
+  return applyDotTocRainbow(
+    sections.map((section) => ({
+      id: `section-${section.id}`,
+      title: section.title,
+    })),
+  );
 }
 
-/**
- * Extended pastel palette — 20 distinct hues spanning the full rainbow.
- * Token accents first, then supplementary pastels for pages with many headings.
- * Ordered so adjacent entries always contrast visually.
- */
-const RAINBOW: string[] = [
-  accentCssVar("soft-blue"),       // blue
-  accentCssVar("golden-yellow"),   // gold
-  accentCssVar("fresh-green"),     // green
-  accentCssVar("warm-coral"),      // coral
-  accentCssVar("muted-indigo"),    // indigo
-  accentCssVar("soft-pink"),       // pink
-  "var(--color-seafoam)",          // seafoam
-  accentCssVar("paper"),           // paper
-  accentCssVar("soft-lavender"),   // lavender
-  "var(--color-amber)",            // amber
-  "var(--color-sky)",              // sky
-  "var(--color-rose)",             // rose
-  "var(--color-mint)",             // mint
-  "var(--color-orchid)",           // orchid
-  "var(--color-maize)",            // maize
-  "var(--color-powder)",           // powder
-  "var(--color-peach)",            // peach
-  "var(--color-sage)",             // sage
-  "var(--color-plum)",             // plum
-  "var(--color-pear)",             // pear
-];
-
-/**
- * Post-process entries so no two adjacent dots share the same color.
- * Respects existing colors when possible; replaces only on collision.
- */
-function ensureAdjacentUnique(entries: DotTocEntry[]): DotTocEntry[] {
-  if (entries.length === 0) return entries;
-  let cycleIdx = 0;
-  let prevColor: string | undefined;
-
-  return entries.map((entry) => {
-    let color = entry.color ?? RAINBOW[cycleIdx++ % RAINBOW.length];
-
-    if (color === prevColor) {
-      for (let attempt = 0; attempt < RAINBOW.length; attempt++) {
-        const candidate = RAINBOW[cycleIdx++ % RAINBOW.length];
-        if (candidate !== prevColor) {
-          color = candidate;
-          break;
-        }
-      }
-    }
-
-    prevColor = color;
-    return color === entry.color ? entry : { ...entry, color };
-  });
+/** DotToc owns a full non-repeating pastel sweep before cycling back. */
+function applyDotTocRainbow(
+  entries: Array<Omit<DotTocEntry, "color">>,
+): DotTocEntry[] {
+  return entries.map((entry, index) => ({
+    ...entry,
+    color: dotTocPastelColorSequence[index % dotTocPastelColorSequence.length],
+  }));
 }
 
 /** Scan a container for h1-h3[id] headings and return DotTocEntry[] with rainbow colors. */
 export function entriesFromHeadings(container: HTMLElement): DotTocEntry[] {
   const headings = container.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id]");
-  const raw: DotTocEntry[] = [];
-  for (let i = 0; i < headings.length; i++) {
-    const h = headings[i];
-    raw.push({
+  return applyDotTocRainbow(
+    Array.from(headings, (h) => ({
       id: h.id,
       title: h.textContent?.trim() ?? "",
-      color: RAINBOW[i % RAINBOW.length],
-    });
-  }
-  return ensureAdjacentUnique(raw);
+    })),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ export function entriesFromHeadings(container: HTMLElement): DotTocEntry[] {
 
 const DOT_GAP_MAX = 26;
 const DOT_SIZE = 9;
-const DOT_SIZE_ACTIVE = 20;
+const DOT_SIZE_ACTIVE = 19;
 const HIT_SIZE = 32;
 const RAIL_BACKPLATE_WIDTH = 18;
 const DEFAULT_COLOR = "var(--mode-accent)";
@@ -142,16 +142,17 @@ const DEFAULT_COLOR = "var(--mode-accent)";
  * Reusable across wiki pages and module views - pass any set of
  * entries with DOM IDs and the scroll container ref.
  */
-export function DotToc({ entries, scrollRef }: DotTocProps) {
+export function DotToc({ entries, scrollRef, anchorRef }: DotTocProps) {
   const tocOpen = useWikiStore((s) => s.tocOpen);
   const [inView, setInView] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState<{
-    scrollTop: number;
-    scrollHeight: number;
-    panelHeight: number;
+    anchorTop: number;
+    anchorHeight: number;
   } | null>(null);
+  const [fillProgress, setFillProgress] = useState(0);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
+  const sectionStartsRef = useRef<number[]>([]);
 
   // Stable key for the entries array to avoid effect churn
   const entriesKey = useMemo(
@@ -161,26 +162,26 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
 
   // Resolve the portal target (PanelShell's outer motion.div)
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    panelRef.current = el.closest<HTMLElement>(".z-30");
-  }, [scrollRef]);
+    const anchorEl = anchorRef?.current ?? scrollRef.current;
+    if (!anchorEl) return;
+    panelRef.current = anchorEl.closest<HTMLElement>(".z-30");
+  }, [anchorRef, scrollRef]);
 
-  // Track scroll container + panel layout for positioning
+  // Track the caller-defined anchor box for rail placement. The rail can
+  // follow one element's scroll state while centering against another.
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = anchorRef?.current ?? scrollRef.current;
     const panel = panelRef.current;
     if (!el || !panel || entries.length === 0) return;
 
     function updateLayout() {
-      const scrollRect = el!.getBoundingClientRect();
+      const anchorRect = el!.getBoundingClientRect();
       const panelRect = panel!.getBoundingClientRect();
       setLayout((prev) => {
-        const scrollTop = scrollRect.top - panelRect.top;
-        const scrollHeight = scrollRect.height;
-        const panelHeight = panelRect.height;
-        if (prev && prev.scrollTop === scrollTop && prev.scrollHeight === scrollHeight && prev.panelHeight === panelHeight) return prev;
-        return { scrollTop, scrollHeight, panelHeight };
+        const anchorTop = anchorRect.top - panelRect.top;
+        const anchorHeight = anchorRect.height;
+        if (prev && prev.anchorTop === anchorTop && prev.anchorHeight === anchorHeight) return prev;
+        return { anchorTop, anchorHeight };
       });
     }
 
@@ -198,49 +199,94 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
       ro.disconnect();
       panelMo.disconnect();
     };
-  }, [scrollRef, entries.length]);
+  }, [anchorRef, scrollRef, entries.length]);
 
-  // IntersectionObserver + MutationObserver for active section tracking
+  // Track both the active section and the continuous rail progress against the
+  // same heading targets so the fill line moves with scroll instead of jumping
+  // only when the active heading flips.
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || entries.length === 0) return;
+    const maybeScrollEl = scrollRef.current;
+    if (!maybeScrollEl || entries.length === 0) return;
+    const scrollEl = maybeScrollEl;
 
     const entryIds = new Set(entries.map((e) => e.id));
+    let targets: HTMLElement[] = [];
+    let resizeObserver: ResizeObserver | null = null;
+    let setupRaf = 0;
+
+    function syncFillProgress() {
+      const next = resolveRailProgress(scrollEl.scrollTop, sectionStartsRef.current);
+      setFillProgress((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
+    }
 
     function setupObserver() {
       observerRef.current?.disconnect();
+      resizeObserver?.disconnect();
 
-      const targets: HTMLElement[] = [];
+      targets = [];
       for (const id of entryIds) {
-        const target = el!.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+        const target = scrollEl.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
         if (target) targets.push(target);
       }
-      if (targets.length === 0) return;
+      if (targets.length === 0) {
+        sectionStartsRef.current = [];
+        setFillProgress(0);
+        setInView((prev) => (prev.size === 0 ? prev : new Set()));
+        return;
+      }
 
       const observer = new IntersectionObserver(
         (observed) => {
           setInView((prev) => {
             const next = new Set(prev);
+            let changed = false;
             for (const entry of observed) {
-              if (entry.isIntersecting) next.add(entry.target.id);
-              else next.delete(entry.target.id);
+              if (entry.isIntersecting) {
+                if (!next.has(entry.target.id)) {
+                  next.add(entry.target.id);
+                  changed = true;
+                }
+              } else if (next.delete(entry.target.id)) {
+                changed = true;
+              }
             }
-            return next;
+            return changed ? next : prev;
           });
         },
-        { root: el, rootMargin: "0px 0px -80% 0px" },
+        { root: scrollEl, rootMargin: "0px 0px -80% 0px" },
       );
       observerRef.current = observer;
       for (const t of targets) observer.observe(t);
+
+      const nextSectionStarts = measureSectionStarts(scrollEl, targets);
+      sectionStartsRef.current = nextSectionStarts;
+      syncFillProgress();
+
+      resizeObserver = new ResizeObserver(() => {
+        const measuredStarts = measureSectionStarts(scrollEl, targets);
+        if (!areNumberArraysEqual(sectionStartsRef.current, measuredStarts)) {
+          sectionStartsRef.current = measuredStarts;
+        }
+        syncFillProgress();
+      });
+      resizeObserver.observe(scrollEl);
+      for (const t of targets) resizeObserver.observe(t);
     }
 
-    const raf = requestAnimationFrame(setupObserver);
-    const mutationObserver = new MutationObserver(() => setupObserver());
-    mutationObserver.observe(el, { childList: true, subtree: true });
+    setupRaf = requestAnimationFrame(setupObserver);
+    scrollEl.addEventListener("scroll", syncFillProgress, { passive: true });
+
+    const mutationObserver = new MutationObserver(() => {
+      cancelAnimationFrame(setupRaf);
+      setupRaf = requestAnimationFrame(setupObserver);
+    });
+    mutationObserver.observe(scrollEl, { childList: true, subtree: true });
 
     return () => {
-      cancelAnimationFrame(raf);
+      cancelAnimationFrame(setupRaf);
+      scrollEl.removeEventListener("scroll", syncFillProgress);
       observerRef.current?.disconnect();
+      resizeObserver?.disconnect();
       mutationObserver.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- entriesKey is the stable proxy for entries
@@ -266,18 +312,71 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
   const portalTarget = panelRef.current;
   if (!tocOpen || entries.length === 0 || !layout || !portalTarget || typeof document === "undefined") return null;
 
-  // Responsive gap: shrink if entries don't fit in panel
-  const maxRailHeight = layout.panelHeight - HIT_SIZE * 2;
+  // Responsive gap: size the rail against the actual scroll viewport, not the
+  // full panel chrome, so the dots stay aligned with what the user is reading.
+  const maxRailHeight = layout.anchorHeight - HIT_SIZE * 2;
   const dotGap = entries.length > 1
     ? Math.min(DOT_GAP_MAX, Math.max(8, maxRailHeight / (entries.length - 1)))
     : DOT_GAP_MAX;
 
   const railHeight = (entries.length - 1) * dotGap;
-  const fillHeight = activeIndex * dotGap;
+  const fillHeight = fillProgress * dotGap;
   const navHeight = Math.max(entries.length * Math.min(dotGap, HIT_SIZE), railHeight + HIT_SIZE);
 
-  // Center the rail within the panel, panel-relative coords
-  const navTop = layout.panelHeight / 2;
+  // Center the rail within the scroll viewport, panel-relative coords.
+  const navTop = layout.anchorTop + layout.anchorHeight / 2;
+
+  const renderedDots = entries.map((entry, i) => {
+    const isActive = i === activeIndex;
+    const dotColor = entry.color ?? DEFAULT_COLOR;
+    const matteDotColor = isActive
+      ? dotColor
+      : `color-mix(in srgb, ${dotColor} 52%, var(--graph-panel-bg))`;
+
+    return (
+      <Tooltip
+        key={entry.id}
+        label={entry.title}
+        position="left"
+        withArrow
+        openDelay={200}
+      >
+        <motion.button
+          type="button"
+          aria-label={`Jump to ${entry.title}`}
+          aria-current={isActive ? "step" : undefined}
+          onClick={() => handleClick(entry.id)}
+          style={{
+            all: "unset",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: HIT_SIZE,
+            height: dotGap < HIT_SIZE ? dotGap : HIT_SIZE,
+            cursor: "pointer",
+            boxSizing: "border-box" as const,
+          }}
+          whileHover={{ scale: 1.2 }}
+        >
+          <motion.div
+            animate={{
+              width: isActive ? DOT_SIZE_ACTIVE : DOT_SIZE,
+              height: isActive ? DOT_SIZE_ACTIVE : DOT_SIZE,
+              opacity: 1,
+              backgroundColor: matteDotColor,
+              boxShadow: "none",
+            }}
+            transition={crisp}
+            style={{
+              borderRadius: "50%",
+              flexShrink: 0,
+              zIndex: 1,
+            }}
+          />
+        </motion.button>
+      </Tooltip>
+    );
+  });
 
   return createPortal(
     <nav
@@ -332,6 +431,7 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
       <motion.div
         animate={{ height: fillHeight }}
         transition={crisp}
+        data-testid="dot-toc-fill"
         style={{
           position: "absolute",
           top: HIT_SIZE / 2,
@@ -345,57 +445,7 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
       />
 
       {/* Dots */}
-      {entries.map((entry, i) => {
-        const isActive = i === activeIndex;
-        const dotColor = entry.color ?? DEFAULT_COLOR;
-        const matteDotColor = isActive
-          ? dotColor
-          : `color-mix(in srgb, ${dotColor} 52%, var(--graph-panel-bg))`;
-
-        return (
-          <Tooltip
-            key={entry.id}
-            label={entry.title}
-            position="left"
-            withArrow
-            openDelay={200}
-          >
-            <motion.button
-              type="button"
-              aria-label={`Jump to ${entry.title}`}
-              aria-current={isActive ? "step" : undefined}
-              onClick={() => handleClick(entry.id)}
-              style={{
-                all: "unset",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: HIT_SIZE,
-                height: dotGap < HIT_SIZE ? dotGap : HIT_SIZE,
-                cursor: "pointer",
-                boxSizing: "border-box" as const,
-              }}
-              whileHover={{ scale: 1.2 }}
-            >
-              <motion.div
-                animate={{
-                  width: isActive ? DOT_SIZE_ACTIVE : DOT_SIZE,
-                  height: isActive ? DOT_SIZE_ACTIVE : DOT_SIZE,
-                  opacity: 1,
-                  backgroundColor: matteDotColor,
-                  boxShadow: "none",
-                }}
-                transition={crisp}
-                style={{
-                  borderRadius: "50%",
-                  flexShrink: 0,
-                  zIndex: 1,
-                }}
-              />
-            </motion.button>
-          </Tooltip>
-        );
-      })}
+      {renderedDots}
     </nav>,
     portalTarget,
   );

@@ -96,6 +96,9 @@ jest.mock("../../../cosmograph", () => ({
   GraphShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   ColorLegends: () => null,
   SizeLegend: () => null,
+  useGraphSelection: () => ({
+    selectPointsByIndices: jest.fn(),
+  }),
 }));
 
 const { useGraphBundle } = jest.requireMock("../../../hooks/use-graph-bundle") as {

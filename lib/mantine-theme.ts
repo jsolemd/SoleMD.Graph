@@ -4,41 +4,19 @@
  * All runtime theming is handled by CSS custom properties in globals.css.
  */
 
-import { createTheme, MantineColorsTuple } from "@mantine/core";
-
-const brand: MantineColorsTuple = [
-  "#eef3f9",
-  "#dce7f4",
-  "#c9dcef",
-  "#a8c5e9", // [3] Primary — soft blue
-  "#92b3d7",
-  "#7c9fc5",
-  "#668bb3",
-  "#5077a1",
-  "#3a638f",
-  "#244f7d",
-];
-
-const neutral: MantineColorsTuple = [
-  "#fafafa",
-  "#f5f5f5",
-  "#eaedf0",
-  "#d1d5db",
-  "#9ca3af",
-  "#6b7280",
-  "#5c5f66",
-  "#4b5563",
-  "#374151",
-  "#1f2937",
-];
-
+import { createTheme } from "@mantine/core";
+import {
+  mantineBrandColorsTuple,
+  mantineNeutralColorsTuple,
+  themeSurfaceFallbackHexByKey,
+} from "@/lib/theme/pastel-tokens";
 export const theme = createTheme({
   primaryColor: "brand",
   primaryShade: { light: 3, dark: 3 },
 
   colors: {
-    brand,
-    gray: neutral,
+    brand: mantineBrandColorsTuple,
+    gray: mantineNeutralColorsTuple,
   },
 
   fontFamily: "var(--font-sans)",
@@ -92,6 +70,6 @@ export const theme = createTheme({
     },
   },
 
-  white: "#ffffff",
-  black: "#1a1b1e",
+  white: themeSurfaceFallbackHexByKey.white,
+  black: themeSurfaceFallbackHexByKey.black,
 });

@@ -4,12 +4,12 @@ import { Text } from "@mantine/core";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,
+  panelScaledPx,
   panelTextStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 
 interface OpenModuleCTAProps {
-  moduleSlug: string;
   accent?: string;
 }
 
@@ -38,7 +38,7 @@ export function OpenModuleCTA({ accent }: OpenModuleCTAProps) {
         style={{
           ...panelAccentCardStyle,
           cursor: "pointer",
-          padding: "6px 14px",
+          padding: `${panelScaledPx(6)} ${panelScaledPx(14)}`,
           ...(accent ? { borderColor: accent } : {}),
         }}
         onClick={handleClick}

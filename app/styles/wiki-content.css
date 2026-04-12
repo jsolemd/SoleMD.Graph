@@ -3,7 +3,7 @@
 
 .wiki-content {
   color: var(--graph-panel-text);
-  font-size: 11px;
+  font-size: calc(11px * var(--graph-panel-reading-scale, 1));
   line-height: 1.55;
 }
 
@@ -17,13 +17,13 @@
 }
 
 .wiki-content h1 {
-  font-size: 15px;
+  font-size: calc(15px * var(--graph-panel-reading-scale, 1));
   font-weight: 700;
   margin: 0.8em 0 0.3em;
 }
 
 .wiki-content h2 {
-  font-size: 13px;
+  font-size: calc(13px * var(--graph-panel-reading-scale, 1));
   font-weight: 600;
   margin: 1.2em 0 0.4em;
   padding-top: 0.6em;
@@ -31,13 +31,13 @@
 }
 
 .wiki-content h3 {
-  font-size: 12px;
+  font-size: calc(12px * var(--graph-panel-reading-scale, 1));
   font-weight: 600;
   margin: 0.9em 0 0.3em;
 }
 
 .wiki-content h4 {
-  font-size: 11px;
+  font-size: calc(11px * var(--graph-panel-reading-scale, 1));
   font-weight: 600;
   margin: 0.7em 0 0.3em;
 }
@@ -86,12 +86,12 @@
   all: unset;
   display: inline;
   color: var(--mode-accent);
-  font-size: 9px;
+  font-size: calc(9px * var(--graph-panel-reading-scale, 1));
   font-weight: 600;
   cursor: pointer;
   vertical-align: super;
   line-height: 1;
-  padding: 1px 3px;
+  padding: calc(1px * var(--graph-panel-reading-scale, 1)) calc(3px * var(--graph-panel-reading-scale, 1));
   border-radius: 3px;
   background-color: var(--mode-accent-subtle);
   transition: opacity 0.15s;
@@ -109,7 +109,7 @@
 /* Callouts */
 .wiki-callout {
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: calc(8px * var(--graph-panel-reading-scale, 1)) calc(10px * var(--graph-panel-reading-scale, 1));
   margin: 0.5em 0;
   background-color: var(--mode-accent-subtle);
   border: 1px solid var(--mode-accent-border);
@@ -123,19 +123,19 @@
 }
 
 .wiki-callout-icon {
-  font-size: 11px;
+  font-size: calc(11px * var(--graph-panel-reading-scale, 1));
   line-height: 1;
 }
 
 .wiki-callout-title {
-  font-size: 10px;
+  font-size: calc(10px * var(--graph-panel-reading-scale, 1));
   font-weight: 600;
   color: var(--mode-accent);
   text-transform: capitalize;
 }
 
 .wiki-callout-body {
-  font-size: 10px;
+  font-size: calc(10px * var(--graph-panel-reading-scale, 1));
   line-height: 1.45;
   color: var(--graph-panel-text);
 }
@@ -150,32 +150,32 @@
 
 .wiki-callout--warning,
 .wiki-callout--caution {
-  background-color: color-mix(in srgb, var(--graph-panel-input-bg) 85%, #f59e0b 15%);
-  border-color: color-mix(in srgb, var(--graph-panel-border) 70%, #f59e0b 30%);
+  background-color: var(--feedback-warning-bg);
+  border-color: var(--feedback-warning-border);
 }
 
 .wiki-callout--danger {
-  background-color: color-mix(in srgb, var(--graph-panel-input-bg) 85%, #ef4444 15%);
-  border-color: color-mix(in srgb, var(--graph-panel-border) 70%, #ef4444 30%);
+  background-color: var(--feedback-danger-bg);
+  border-color: var(--feedback-danger-border);
 }
 
 /* Tables */
 .wiki-content table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 10px;
+  font-size: calc(10px * var(--graph-panel-reading-scale, 1));
   margin: 0.5em 0;
 }
 
 .wiki-content th,
 .wiki-content td {
-  padding: 4px 8px;
+  padding: calc(4px * var(--graph-panel-reading-scale, 1)) calc(8px * var(--graph-panel-reading-scale, 1));
   border: 1px solid var(--graph-panel-border);
   text-align: left;
 }
 
 .wiki-content th {
-  font-size: 9px;
+  font-size: calc(9px * var(--graph-panel-reading-scale, 1));
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -185,8 +185,8 @@
 
 /* Code */
 .wiki-content code {
-  font-size: 10px;
-  padding: 1px 4px;
+  font-size: calc(10px * var(--graph-panel-reading-scale, 1));
+  padding: calc(1px * var(--graph-panel-reading-scale, 1)) calc(4px * var(--graph-panel-reading-scale, 1));
   border-radius: 3px;
   background-color: var(--graph-panel-input-bg);
   border: 1px solid var(--graph-panel-border);
@@ -195,7 +195,7 @@
 
 .wiki-content pre {
   margin: 0.5em 0;
-  padding: 8px;
+  padding: calc(8px * var(--graph-panel-reading-scale, 1));
   border-radius: 6px;
   background-color: var(--graph-panel-input-bg);
   border: 1px solid var(--graph-panel-border);
@@ -222,7 +222,7 @@
 /* Blockquotes (non-callout) */
 .wiki-content blockquote {
   margin: 0.5em 0;
-  padding: 4px 10px;
+  padding: calc(4px * var(--graph-panel-reading-scale, 1)) calc(10px * var(--graph-panel-reading-scale, 1));
   border-left: 2px solid var(--mode-accent-border);
   color: var(--graph-panel-text-muted);
 }
@@ -238,66 +238,4 @@
 .wiki-content strong {
   font-weight: 600;
   color: var(--graph-panel-text);
-}
-
-/* ── Inline module content — compact overrides for learn sections inside wiki panel ──
-   SceneSection uses Tailwind py-16/py-24; !important needed to override utilities.
-   Inner div uses max-w-5xl px-6; we remove those to fill the panel width. */
-
-.wiki-module-inline section {
-  padding-top: 1rem !important;
-  padding-bottom: 1rem !important;
-}
-
-.wiki-module-inline section > div {
-  max-width: 100% !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-/* Scale headings to wiki panel size */
-.wiki-module-inline h1,
-.wiki-module-inline h2 {
-  font-size: 13px !important;
-  margin-bottom: 0.25rem;
-}
-
-.wiki-module-inline h3 {
-  font-size: 12px !important;
-}
-
-.wiki-module-inline h4 {
-  font-size: 11px !important;
-}
-
-/* Tighten Mantine card padding inside module */
-.wiki-module-inline .mantine-Card-root {
-  padding: 0.75rem !important;
-}
-
-.wiki-module-inline .mantine-SimpleGrid-root {
-  gap: 0.5rem !important;
-}
-
-/* Reduce subtitle spacing */
-.wiki-module-inline .mantine-Text-root.mb-8 {
-  margin-bottom: 0.5rem !important;
-}
-
-/* Tighten Mantine Stack gap */
-.wiki-module-inline .mantine-Stack-root {
-  gap: 0.5rem !important;
-}
-
-/* Module in-content search highlights */
-.wiki-module-search-mark {
-  background: color-mix(in srgb, var(--mode-accent) 30%, transparent);
-  color: inherit;
-  border-radius: 2px;
-  padding: 0 1px;
-}
-
-.wiki-module-search-mark-active {
-  background: color-mix(in srgb, var(--mode-accent) 60%, transparent);
-  outline: 1px solid var(--mode-accent);
 }

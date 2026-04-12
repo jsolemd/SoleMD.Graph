@@ -347,10 +347,10 @@ export function DashboardShellViewport(state: DashboardShellController) {
           )}
         </AnimatePresence>
 
-        <Wordmark />
+        {!showLoading && <Wordmark />}
 
         <AnimatePresence>
-          {!uiHidden && openPanels.about && <AboutPanel />}
+          {!showLoading && !uiHidden && openPanels.about && <AboutPanel />}
         </AnimatePresence>
 
         {!uiHidden && panelsVisible && <BottomToolbar />}

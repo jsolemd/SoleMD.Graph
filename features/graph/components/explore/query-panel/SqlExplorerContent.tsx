@@ -19,6 +19,7 @@ import {
   PANEL_ACCENT,
   PanelDivider,
   panelErrorStyle,
+  panelScaledPx,
   panelTextStyle,
 } from "../../panels/PanelShell";
 import { QueryResult } from "./QueryResult";
@@ -154,7 +155,7 @@ LIMIT 10`;
               backgroundColor: "var(--graph-panel-input-bg)",
               borderColor: "var(--graph-panel-border)",
               color: "var(--graph-panel-text)",
-              fontSize: 10,
+              fontSize: panelScaledPx(10),
             },
             section: { color: "var(--mode-accent)" },
           }}
@@ -181,7 +182,7 @@ LIMIT 10`;
             color={PANEL_ACCENT}
             onClick={() => setSql(sample.sql)}
             fullWidth
-            styles={{ label: { fontWeight: 400, fontSize: 10 } }}
+            styles={{ label: { fontWeight: 400, fontSize: panelScaledPx(10) } }}
           >
             {sample.label}
           </Button>
@@ -200,9 +201,9 @@ LIMIT 10`;
             borderColor: "var(--graph-panel-border)",
             color: "var(--graph-panel-text)",
             fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            lineHeight: "14px",
-            padding: "6px 8px",
+            fontSize: panelScaledPx(10),
+            lineHeight: panelScaledPx(14),
+            padding: `${panelScaledPx(6)} ${panelScaledPx(8)}`,
           },
         }}
       />

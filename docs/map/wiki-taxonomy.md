@@ -20,20 +20,20 @@ the same entity, not contradictions.
 
 ---
 
-## Color map (semantic group to brand palette)
+## Color map (semantic group to semantic palette)
 
 Static. 8 entries. This table does not grow.
 
-| Semantic Group | Canonical Label | Brand Token | Light | Dark | Rationale |
+| Semantic Group | Canonical Label | Semantic Token | Light | Dark | Rationale |
 |---|---|---|---|---|---|
-| `DISO` | Disorders | `--color-warm-coral` | `#ffada4` | `#c48e88` | Clinical warmth/urgency |
-| `CHEM` | Chemicals & Drugs | `--color-fresh-green` | `#aedc93` | `#8aad7a` | Therapeutic/treatment |
-| `GENE` | Genes & Proteins | `--color-soft-pink` | `#e0aed8` | `#b085a8` | Molecular/mechanistic |
-| `ANAT` | Anatomy | `--color-golden-yellow` | `#e5c799` | `#b69d77` | Structural landmarks |
-| `PHYS` | Physiology | `--color-soft-blue` | `#a8c5e9` | `#89a3bf` | Systems/processes |
-| `PROC` | Procedures | `--color-soft-lavender` | `#d8bee9` | `#a899b3` | Methods/procedures |
-| — | Section hubs | `--color-muted-indigo` | `#747caa` | `#8b8fbf` | Structural/navigational |
-| — | Papers | `--color-paper` | `#d4c5a0` | `#a89b78` | Evidence backbone (warm parchment) |
+| `DISO` | Disorders | `--color-semantic-disorder` | `#f6b39b` | `#c48b7d` | Clinical warmth/urgency |
+| `CHEM` | Chemicals & Drugs | `--color-semantic-chemical` | `#aedc93` | `#8aad7a` | Therapeutic/treatment |
+| `GENE` | Genes & Proteins | `--color-semantic-gene` | `#d79ece` | `#a97ea4` | Molecular/mechanistic |
+| `ANAT` | Anatomy | `--color-semantic-anatomy` | `#e5c799` | `#b69d77` | Structural landmarks |
+| `PHYS` | Physiology | `--color-semantic-physiology` | `#9fcfe8` | `#7faec7` | Systems/processes |
+| `PROC` | Procedures | `--color-semantic-procedure` | `#d8bee9` | `#a899b3` | Methods/procedures |
+| — | Section hubs | `--color-semantic-section` | `#746fc0` | `#8d85d7` | Structural/navigational |
+| — | Papers | `--color-semantic-paper` | `#d4c5a0` | `#a89b78` | Evidence backbone (warm parchment) |
 
 ### Paper color rationale
 
@@ -47,12 +47,18 @@ generated from papers. They get a dedicated warm parchment tone that:
 ### CSS architecture
 
 ```css
+/* tokens.css @theme — canonical semantic palette */
+--color-semantic-disorder: #f6b39b;
+--color-semantic-gene: #d79ece;
+--color-semantic-physiology: #9fcfe8;
+--color-semantic-section: #746fc0;
+
 /* tokens.css :root — base accent (fallback for unknown types) */
 --entity-accent: var(--brand-accent);
 
 /* tokens.css — attribute selectors override --entity-accent per type */
-[data-entity-type="disease"]  { --entity-accent: var(--color-warm-coral); }
-[data-entity-type="chemical"] { --entity-accent: var(--color-fresh-green); }
+[data-entity-type="disease"]  { --entity-accent: var(--color-semantic-disorder); }
+[data-entity-type="chemical"] { --entity-accent: var(--color-semantic-chemical); }
 /* ... (one line per type) */
 
 /* Consumers use color-mix() at element level (NOT via intermediate custom property,
@@ -65,9 +71,9 @@ generated from papers. They get a dedicated warm parchment tone that:
   border: 1px solid color-mix(in srgb, var(--entity-accent) 40%, transparent);
 }
 
-/* Wiki graph Pixi — explicit per-group vars (Pixi reads hex, not color-mix) */
---wiki-graph-node-diso: var(--color-warm-coral);
---wiki-graph-node-chem: var(--color-fresh-green);
+/* Wiki graph Pixi — explicit per-group vars (Pixi reads semantic node tokens) */
+--wiki-graph-node-diso: var(--color-semantic-disorder);
+--wiki-graph-node-chem: var(--color-semantic-chemical);
 /* ... */
 ```
 

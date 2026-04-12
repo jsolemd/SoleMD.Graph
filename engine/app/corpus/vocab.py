@@ -1,6 +1,6 @@
 """Vocabulary alias loading and PubTator3 streaming match.
 
-Loads curated vocab aliases from TSV (exported from SoleMD.App) and
+Loads curated vocab aliases from the shared TSV export and
 streams the PubTator3 entity dump to find PMIDs whose entities mention
 any domain-relevant term. This produces the "vocab signal" used by
 filter.py alongside the venue signal.

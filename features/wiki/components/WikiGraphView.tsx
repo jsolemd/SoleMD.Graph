@@ -44,7 +44,7 @@ export function WikiGraphView({
   if (graphError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2">
-        <Text style={{ ...panelTextMutedStyle, color: "var(--error-text)" }}>
+        <Text style={{ ...panelTextMutedStyle, color: "var(--feedback-danger-text)" }}>
           {graphError}
         </Text>
         <Button

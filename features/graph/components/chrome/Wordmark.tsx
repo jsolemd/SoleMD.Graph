@@ -5,7 +5,6 @@ import { ActionIcon, Tooltip } from "@mantine/core";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   BookOpen,
-  BrainCircuit,
   Eye,
   EyeOff,
   Filter,
@@ -20,6 +19,7 @@ import { iconBtnStyles } from "../panels/PanelShell";
 import { crisp, chromeToggle } from "@/lib/motion";
 import type { PanelId } from "@/features/graph/stores";
 import { useGraphControlContrast } from "./use-graph-control-contrast";
+import { BrandWordmarkButton } from "./BrandWordmarkButton";
 
 const PANEL_REGISTRY: Record<
   string,
@@ -56,34 +56,10 @@ export function Wordmark() {
       >
         <div className="flex items-center gap-3">
           {!uiHidden && (
-            <Tooltip label="About SoleMD" position="right" withArrow>
-              <button
-                type="button"
-                className="graph-icon-btn flex cursor-pointer items-center gap-2 rounded-2xl border-0 px-3 py-1.5 transition-[background-color,box-shadow,opacity] hover:opacity-80"
-                style={{ backgroundColor: "var(--graph-control-idle-bg, transparent)", boxShadow: "inset 0 0 0 1px var(--graph-control-idle-border, transparent)" }}
-                onClick={() => togglePanel("about")}
-                aria-label="About SoleMD"
-              >
-                <div
-                  className="flex h-7 w-7 items-center justify-center rounded-full transition-colors duration-300"
-                  style={{ backgroundColor: modeColor }}
-                >
-                  <BrainCircuit size={15} color="white" />
-                </div>
-                <span
-                  className="text-lg font-semibold select-none"
-                  style={{ color: "var(--graph-wordmark-text)" }}
-                >
-                  Sole
-                  <span
-                    className="transition-colors duration-300"
-                    style={{ color: modeColor }}
-                  >
-                    MD
-                  </span>
-                </span>
-              </button>
-            </Tooltip>
+            <BrandWordmarkButton
+              accentColor={modeColor}
+              onClick={() => togglePanel("about")}
+            />
           )}
         </div>
 

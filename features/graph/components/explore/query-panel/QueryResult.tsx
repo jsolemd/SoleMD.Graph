@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button, Code, Collapse, Group, Stack, Text } from "@mantine/core";
 import { ChevronDown } from "lucide-react";
-import { PANEL_ACCENT, panelTextDimStyle } from "../../panels/PanelShell";
+import { PANEL_ACCENT, panelScaledPx, panelTextDimStyle } from "../../panels/PanelShell";
 import type { GraphQueryResult } from "@/features/graph/types";
 import { QueryResultTable } from "./QueryResultTable";
 
@@ -44,9 +44,9 @@ export function QueryResult({ result }: { result: GraphQueryResult }) {
             backgroundColor: "var(--graph-panel-input-bg)",
             border: "1px solid var(--graph-panel-border)",
             color: "var(--graph-panel-text-dim)",
-            fontSize: 9,
-            lineHeight: "13px",
-            padding: "4px 6px",
+            fontSize: panelScaledPx(9),
+            lineHeight: panelScaledPx(13),
+            padding: `${panelScaledPx(4)} ${panelScaledPx(6)}`,
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}

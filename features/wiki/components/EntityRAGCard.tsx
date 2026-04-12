@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback } from "react";
-import { ActionIcon, Text, Tooltip } from "@mantine/core";
+import { Text } from "@mantine/core";
 import { MessageSquareText } from "lucide-react";
 import {
-  iconBtnStyles,
+  PanelIconAction,
   panelAccentCardClassName,
   panelAccentCardStyle,
   panelTextDimStyle,
@@ -35,19 +35,14 @@ export function EntityRAGCard({ page }: EntityRAGCardProps) {
             Query the evidence base scoped to {page.title}
           </Text>
         </div>
-        <Tooltip label={`Ask about ${page.title}`} position="left" withArrow>
-          <ActionIcon
-            variant="transparent"
-            size={28}
-            radius="xl"
-            className="graph-icon-btn"
-            styles={iconBtnStyles}
-            onClick={handleAsk}
-            aria-label={`Ask about ${page.title}`}
-          >
-            <MessageSquareText size={14} />
-          </ActionIcon>
-        </Tooltip>
+        <PanelIconAction
+          label={`Ask about ${page.title}`}
+          icon={<MessageSquareText size={14} />}
+          onClick={handleAsk}
+          size={28}
+          tooltipPosition="left"
+          aria-label={`Ask about ${page.title}`}
+        />
       </div>
     </div>
   );

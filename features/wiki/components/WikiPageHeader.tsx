@@ -1,15 +1,16 @@
 "use client";
 
-import { ActionIcon, Text, Tooltip } from "@mantine/core";
+import { Text } from "@mantine/core";
 import { Orbit } from "lucide-react";
 import {
+  PanelIconAction,
   PanelInlineLoader,
-  iconBtnStyles,
   panelAccentCardClassName,
   panelAccentCardStyle,
   panelCardClassName,
   panelCardStyle,
   panelChromeStyle,
+  panelScaledPx,
   panelTextDimStyle,
   panelTextMutedStyle,
   panelTextStyle,
@@ -86,8 +87,11 @@ export function WikiPageHeader({
             {sectionLabel && <MetaPill label={toTitleCase(sectionLabel)} />}
           </div>
           <h2
-            className="mt-1 text-[15px] font-semibold leading-snug"
-            style={{ color: "var(--graph-panel-text)" }}
+            className="mt-1 font-semibold leading-snug"
+            style={{
+              color: "var(--graph-panel-text)",
+              fontSize: panelScaledPx(15),
+            }}
           >
             {page.title}
           </h2>
@@ -99,19 +103,13 @@ export function WikiPageHeader({
         </div>
 
         {canShowPageOnGraph && (
-          <Tooltip label={`Show ${formatNumber(evidencePaperCount)} on graph`} position="bottom" withArrow>
-            <ActionIcon
-              variant="transparent"
-              size={24}
-              radius="xl"
-              className="graph-icon-btn shrink-0"
-              styles={iconBtnStyles}
-              onClick={onShowPageOnGraph}
-              aria-label="Show on graph"
-            >
-              <Orbit size={12} />
-            </ActionIcon>
-          </Tooltip>
+          <PanelIconAction
+            label={`Show ${formatNumber(evidencePaperCount)} on graph`}
+            icon={<Orbit size={12} />}
+            onClick={onShowPageOnGraph}
+            className="graph-icon-btn shrink-0"
+            aria-label="Show on graph"
+          />
         )}
       </div>
 
@@ -123,8 +121,8 @@ export function WikiPageHeader({
               className={panelAccentCardClassName}
               style={{
                 ...panelAccentCardStyle,
-                padding: "1px 6px",
-                fontSize: 9,
+                padding: `${panelScaledPx(1)} ${panelScaledPx(6)}`,
+                fontSize: panelScaledPx(9),
                 borderRadius: 999,
               }}
             >
@@ -147,7 +145,7 @@ export function WikiPageHeader({
       )}
 
       {isModulePage && (
-        <OpenModuleCTA moduleSlug={page.slug} />
+        <OpenModuleCTA />
       )}
 
       {showTopGraphPapers && (
@@ -238,8 +236,8 @@ function MetaPill({ label, entityType }: { label: string; entityType?: string | 
               color: "var(--graph-panel-text)",
             }
           : panelCardStyle),
-        padding: "1px 6px",
-        fontSize: 9,
+        padding: `${panelScaledPx(1)} ${panelScaledPx(6)}`,
+        fontSize: panelScaledPx(9),
         borderRadius: 999,
       }}
     >

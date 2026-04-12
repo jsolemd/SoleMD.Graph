@@ -7,33 +7,33 @@ export type ActivePanel = PanelId | null
 export type PromptMode = 'collapsed' | 'normal' | 'maximized'
 type ExpandedPromptMode = Exclude<PromptMode, 'collapsed'>
 
-export const PANEL_ZOOM_DEFAULT = 1
-export const PANEL_ZOOM_MIN = 0.75
-export const PANEL_ZOOM_MAX = 1.5
-export const PANEL_ZOOM_STEP = 0.1
+export const PANEL_SCALE_DEFAULT = 1
+export const PANEL_SCALE_MIN = 0.8
+export const PANEL_SCALE_MAX = 1.6
+export const PANEL_SCALE_STEP = 0.1
 
-function clampPanelZoom(zoom: number): number {
-  return Math.min(PANEL_ZOOM_MAX, Math.max(PANEL_ZOOM_MIN, Math.round(zoom * 100) / 100))
+function clampPanelScale(scale: number): number {
+  return Math.min(PANEL_SCALE_MAX, Math.max(PANEL_SCALE_MIN, Math.round(scale * 100) / 100))
 }
 
-function resolveNextPanelZooms(panelZooms: Record<string, number>, id: string, zoom: number): Record<string, number> {
-  const nextZoom = clampPanelZoom(zoom)
-  const currentZoom = panelZooms[id] ?? PANEL_ZOOM_DEFAULT
+function resolveNextPanelScales(panelScales: Record<string, number>, id: string, scale: number): Record<string, number> {
+  const nextScale = clampPanelScale(scale)
+  const currentScale = panelScales[id] ?? PANEL_SCALE_DEFAULT
 
-  if (currentZoom === nextZoom) {
-    return panelZooms
+  if (currentScale === nextScale) {
+    return panelScales
   }
 
-  if (nextZoom === PANEL_ZOOM_DEFAULT) {
-    if (!(id in panelZooms)) {
-      return panelZooms
+  if (nextScale === PANEL_SCALE_DEFAULT) {
+    if (!(id in panelScales)) {
+      return panelScales
     }
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
-    const { [id]: _, ...rest } = panelZooms
+    const { [id]: _, ...rest } = panelScales
     return rest
   }
 
-  return { ...panelZooms, [id]: nextZoom }
+  return { ...panelScales, [id]: nextScale }
 }
 
 /** Initial state for openPanels — all closed. */
@@ -69,7 +69,7 @@ export interface PanelSlice {
 
   // Remembered panel positions — survives close/reopen within a session
   panelPositions: Record<string, { x: number; y: number; width: number; height?: number; docked: boolean; pinned?: boolean }>
-  panelZooms: Record<string, number>
+  panelScales: Record<string, number>
 
   // Keyed registry — any floating element registers by ID
   floatingObstacles: Record<string, { x: number; y: number; width: number; height: number }>
@@ -100,9 +100,9 @@ export interface PanelSlice {
   setWikiExpanded: (expanded: boolean) => void
   setWikiExpandedWidth: (width: number) => void
   savePanelPosition: (id: string, pos: { x: number; y: number; width: number; height?: number; docked: boolean; pinned?: boolean }) => void
-  setPanelZoom: (id: string, zoom: number) => void
-  stepPanelZoom: (id: string, delta: number) => void
-  resetPanelZoom: (id: string) => void
+  setPanelScale: (id: string, scale: number) => void
+  stepPanelScale: (id: string, delta: number) => void
+  resetPanelScale: (id: string) => void
   togglePanelPinned: (id: string) => void
   setFloatingObstacle: (id: string, rect: { x: number; y: number; width: number; height: number }) => void
   clearFloatingObstacle: (id: string) => void
@@ -122,7 +122,7 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   wikiExpandedWidth: 420,
   writeContent: '',
   panelPositions: {},
-  panelZooms: {},
+  panelScales: {},
   floatingObstacles: {},
 
   togglePanel: (panel) =>
@@ -239,24 +239,24 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
     set((s) => ({
       panelPositions: { ...s.panelPositions, [id]: pos },
     })),
-  setPanelZoom: (id, zoom) =>
+  setPanelScale: (id, scale) =>
     set((s) => {
-      const panelZooms = resolveNextPanelZooms(s.panelZooms, id, zoom)
-      return panelZooms === s.panelZooms ? s : { panelZooms }
+      const panelScales = resolveNextPanelScales(s.panelScales, id, scale)
+      return panelScales === s.panelScales ? s : { panelScales }
     }),
-  stepPanelZoom: (id, delta) =>
+  stepPanelScale: (id, delta) =>
     set((s) => {
-      const panelZooms = resolveNextPanelZooms(
-        s.panelZooms,
+      const panelScales = resolveNextPanelScales(
+        s.panelScales,
         id,
-        (s.panelZooms[id] ?? PANEL_ZOOM_DEFAULT) + delta,
+        (s.panelScales[id] ?? PANEL_SCALE_DEFAULT) + delta,
       )
-      return panelZooms === s.panelZooms ? s : { panelZooms }
+      return panelScales === s.panelScales ? s : { panelScales }
     }),
-  resetPanelZoom: (id) =>
+  resetPanelScale: (id) =>
     set((s) => {
-      const panelZooms = resolveNextPanelZooms(s.panelZooms, id, PANEL_ZOOM_DEFAULT)
-      return panelZooms === s.panelZooms ? s : { panelZooms }
+      const panelScales = resolveNextPanelScales(s.panelScales, id, PANEL_SCALE_DEFAULT)
+      return panelScales === s.panelScales ? s : { panelScales }
     }),
   setFloatingObstacle: (id, rect) =>
     set((s) => ({

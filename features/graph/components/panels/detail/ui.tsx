@@ -4,6 +4,7 @@ import { Text } from "@mantine/core";
 import { ExternalLink } from "lucide-react";
 import {
   PanelInlineLoader,
+  panelScaledPx,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
@@ -50,7 +51,7 @@ export function ExtLink({
       target="_blank"
       rel="noreferrer"
       className="inline-flex items-center gap-1"
-      style={{ color: "var(--mode-accent)", fontSize: 11 }}
+      style={{ color: "var(--mode-accent)", fontSize: panelScaledPx(11) }}
     >
       {label}
       <ExternalLink size={11} />
@@ -84,12 +85,12 @@ export const accordionStyles = {
   control: {
     paddingLeft: 0,
     paddingRight: 0,
-    paddingTop: 4,
-    paddingBottom: 4,
+    paddingTop: panelScaledPx(4),
+    paddingBottom: panelScaledPx(4),
     backgroundColor: "transparent",
   },
   label: {
-    fontSize: "0.6rem",
+    fontSize: panelScaledPx(10),
     fontWeight: 600,
     textTransform: "uppercase" as const,
     letterSpacing: "0.04em",
@@ -98,11 +99,11 @@ export const accordionStyles = {
   },
   chevron: {
     color: "var(--graph-panel-text-muted)",
-    width: 14,
-    height: 14,
+    width: panelScaledPx(14),
+    height: panelScaledPx(14),
     transition: "color 150ms ease",
   },
-  content: { paddingLeft: 0, paddingRight: 0, paddingBottom: 8 },
+  content: { paddingLeft: 0, paddingRight: 0, paddingBottom: panelScaledPx(8) },
 } as const;
 
 export { panelTextDimStyle, panelTextStyle, sectionLabelStyle };

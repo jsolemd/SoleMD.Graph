@@ -144,11 +144,11 @@ fingerprint.
 #### Implementation approaches (undecided)
 
 ```
-   OPTION A: Graph Nodes              OPTION B: Wiki Layer
+   OPTION A: Graph Nodes              OPTION B: Integrated Wiki Layer
    ---------------------              --------------------
 
-   Content lives AS nodes on          Content lives in SoleMD.Wiki
-   the Synthesis Map layer.           (Quartz), linked to graph
+   Content lives AS nodes on          Content lives in the Graph wiki
+   the Synthesis Map layer.           runtime, linked to graph
    Click a node -> panel opens        entities by id.
    with knowledge or lecture.
 
@@ -160,7 +160,7 @@ fingerprint.
    - Limited authoring format
 ```
 
-May combine both -- wiki for living knowledge (rich text, auto-updated),
+May combine both -- integrated wiki pages for living knowledge (rich text, auto-updated),
 graph nodes for curated lectures (position = meaning, step-through).
 
 ---

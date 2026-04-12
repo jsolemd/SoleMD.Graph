@@ -5,13 +5,13 @@ import { Skeleton, Stack } from "@mantine/core";
 import { EntityHighlightZone } from "@/features/graph/components/entities/EntityHighlightZone";
 import type { ComponentType, LazyExoticComponent } from "react";
 
-// Side-effect: register all modules so getModule finds them
-import "@/features/learn/modules/ai-for-mds/register";
+// Side-effect: register all inline wiki modules once for the wiki shell.
+import "@/features/wiki/modules/register-all";
 
-import { getModule } from "@/features/learn/registry";
+import { getModuleByWikiPageSlug } from "@/features/wiki/module-runtime/registry";
 
 interface WikiModuleContentProps {
-  /** Wiki slug (e.g. "modules/ai-for-mds") or module slug ("ai-for-mds") */
+  /** Canonical wiki page slug (e.g. "modules/ai-for-mds") */
   slug: string;
   withShell?: boolean;
 }
@@ -34,10 +34,8 @@ function ModuleLoadingSkeleton() {
   );
 }
 
-/** Wiki pages store modules under "modules/{slug}" but the learn registry
- *  uses the bare slug. Try both so callers can pass either form. */
-export function resolveModule(slug: string) {
-  return getModule(slug) ?? getModule(slug.replace(/^modules\//, ""));
+export function getWikiModule(wikiPageSlug: string) {
+  return getModuleByWikiPageSlug(wikiPageSlug);
 }
 
 function getLazyModuleComponent(
@@ -52,7 +50,7 @@ function getLazyModuleComponent(
 }
 
 export function WikiModuleContent({ slug, withShell = false }: WikiModuleContentProps) {
-  const registration = resolveModule(slug);
+  const registration = getWikiModule(slug);
 
   if (!registration) {
     return (
@@ -70,7 +68,7 @@ export function WikiModuleContent({ slug, withShell = false }: WikiModuleContent
   return (
     <Suspense fallback={<ModuleLoadingSkeleton />}>
       <EntityHighlightZone>
-        {moduleContent}
+        <div className={withShell ? "wiki-module-panel" : undefined}>{moduleContent}</div>
       </EntityHighlightZone>
     </Suspense>
   );

@@ -7,10 +7,11 @@ import { crisp } from "@/lib/motion";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,
-  panelTextDimStyle,
+  panelScaledPx,
   panelTextStyle,
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
+import { entityTypeCssColorByType } from "@/lib/theme/pastel-tokens";
 import type { EntityProfileProps } from "./index";
 
 const BAR_H = 14;
@@ -85,7 +86,7 @@ export default function GeneReceptorProfile({
                     x={0}
                     y={y + BAR_H * 0.75}
                     style={{
-                      fontSize: 9,
+                      fontSize: panelScaledPx(9),
                       fill: "var(--graph-panel-text-muted)",
                     }}
                   >
@@ -98,7 +99,7 @@ export default function GeneReceptorProfile({
                     y={y + 1}
                     height={BAR_H - 2}
                     rx={3}
-                    fill="var(--color-fresh-green)"
+                    fill={entityTypeCssColorByType.chemical}
                     opacity={0.6}
                     initial={{ width: 0 }}
                     animate={{
@@ -111,7 +112,7 @@ export default function GeneReceptorProfile({
                     y={y + BAR_H * 0.75}
                     textAnchor="end"
                     style={{
-                      fontSize: 8,
+                      fontSize: panelScaledPx(8),
                       fill: "var(--graph-panel-text-dim)",
                     }}
                   >
@@ -136,11 +137,11 @@ export default function GeneReceptorProfile({
                 className="rounded-full px-1.5 py-0.5 transition-colors hover:brightness-110"
                 style={{
                   ...panelTextStyle,
-                  fontSize: 9,
+                  fontSize: panelScaledPx(9),
                   backgroundColor:
-                    "color-mix(in srgb, var(--color-warm-coral) 20%, var(--graph-panel-bg))",
+                    `color-mix(in srgb, ${entityTypeCssColorByType.disease} 20%, var(--graph-panel-bg))`,
                   border:
-                    "1px solid color-mix(in srgb, var(--color-warm-coral) 30%, var(--graph-panel-border))",
+                    `1px solid color-mix(in srgb, ${entityTypeCssColorByType.disease} 30%, var(--graph-panel-border))`,
                   cursor: "pointer",
                 }}
                 onClick={() => {

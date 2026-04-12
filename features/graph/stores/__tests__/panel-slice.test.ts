@@ -222,25 +222,25 @@ describe('panel-slice', () => {
   })
 
   describe('panel zoom state', () => {
-    it('stores non-default zoom per panel id', () => {
-      useDashboardStore.getState().setPanelZoom('wiki-module', 1.2)
-      expect(useDashboardStore.getState().panelZooms['wiki-module']).toBe(1.2)
+    it('stores non-default scale per panel id', () => {
+      useDashboardStore.getState().setPanelScale('wiki-module', 1.2)
+      expect(useDashboardStore.getState().panelScales['wiki-module']).toBe(1.2)
     })
 
-    it('clamps step updates and clears default zoom state', () => {
-      useDashboardStore.getState().stepPanelZoom('wiki', 10)
-      expect(useDashboardStore.getState().panelZooms.wiki).toBe(1.5)
+    it('clamps step updates and clears default scale state', () => {
+      useDashboardStore.getState().stepPanelScale('wiki', 10)
+      expect(useDashboardStore.getState().panelScales.wiki).toBe(1.6)
 
-      useDashboardStore.getState().stepPanelZoom('wiki', -20)
-      expect(useDashboardStore.getState().panelZooms.wiki).toBe(0.75)
+      useDashboardStore.getState().stepPanelScale('wiki', -20)
+      expect(useDashboardStore.getState().panelScales.wiki).toBe(0.8)
 
-      useDashboardStore.getState().resetPanelZoom('wiki')
-      expect(useDashboardStore.getState().panelZooms.wiki).toBeUndefined()
+      useDashboardStore.getState().resetPanelScale('wiki')
+      expect(useDashboardStore.getState().panelScales.wiki).toBeUndefined()
     })
 
-    it('does not emit when the effective zoom is unchanged', () => {
+    it('does not emit when the effective scale is unchanged', () => {
       const before = useDashboardStore.getState()
-      useDashboardStore.getState().setPanelZoom('wiki', 1)
+      useDashboardStore.getState().setPanelScale('wiki', 1)
       expect(useDashboardStore.getState()).toBe(before)
     })
   })

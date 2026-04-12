@@ -14,7 +14,7 @@ function ConfigPanelComponent() {
       title="Configuration"
       onClose={() => closePanel("config")}
     >
-      <PanelBody panelId="config" viewportClassName="thin-scrollbar">
+      <PanelBody>
         <PointsConfig />
       </PanelBody>
     </PanelShell>

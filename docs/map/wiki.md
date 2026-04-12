@@ -20,7 +20,7 @@
    OBSIDIAN VAULT              ENGINE                      BROWSER
    ──────────────              ──────                      ───────
 
-   /SoleMD.Wiki/             sync_wiki_pages.py           WikiPanel
+   /SoleMD.Graph/wiki/       sync_wiki_pages.py           WikiPanel
      entities/*.md               │                           │
        ┌─ frontmatter            ▼                     FloatingPanelShell
        │    title              PostgreSQL                    │
@@ -143,7 +143,7 @@ Unresolved wikilinks render as plain text (no broken links).
 **Operator command:**
 ```bash
 cd engine && uv run python db/scripts/sync_wiki_pages.py \
-  --wiki-dir /mnt/c/Users/Jon/SoleMD.Wiki
+  --wiki-dir ../wiki
 ```
 
 ---
@@ -286,7 +286,7 @@ Imported via `app/globals.css` alongside other style partials.
 1. Create `entities/<slug>.md` in the Obsidian vault
 2. Add frontmatter (title, entity_type, tags — see schema above)
 3. Write content using wikilinks, PMIDs, callouts, GFM tables
-4. Run sync: `cd engine && uv run python db/scripts/sync_wiki_pages.py --wiki-dir /mnt/c/Users/Jon/SoleMD.Wiki`
+4. Run sync: `cd engine && uv run python db/scripts/sync_wiki_pages.py --wiki-dir ../wiki`
 5. Verify in browser: open wiki panel, search for new page
 
 ### Wikilink Best Practices

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core";
 import { MantineThemeProvider } from "@/components/MantineThemeProvider";
+import { themeViewportColorByScheme } from "@/lib/theme/pastel-tokens";
 
 import "@mantine/core/styles.css";
 import "@/app/globals.css";
@@ -31,8 +32,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f8f9fa" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0f" },
+    { media: "(prefers-color-scheme: light)", color: themeViewportColorByScheme.light },
+    { media: "(prefers-color-scheme: dark)", color: themeViewportColorByScheme.dark },
   ],
   width: "device-width",
   initialScale: 1,

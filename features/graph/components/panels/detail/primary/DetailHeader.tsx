@@ -5,7 +5,7 @@ import type {
   GraphPaperDetail,
   GraphPointRecord,
 } from "@/features/graph/types";
-import { badgeAccentStyles, badgeOutlineStyles } from "@/features/graph/components/panels/PanelShell";
+import { badgeAccentStyles, badgeOutlineStyles, panelScaledPx } from "@/features/graph/components/panels/PanelShell";
 import { panelTextDimStyle, panelTextStyle } from "../ui";
 
 export function DetailHeader({
@@ -38,11 +38,11 @@ export function DetailHeader({
             aria-hidden="true"
             style={{
               display: "inline-block",
-              width: 6,
-              height: 6,
+              width: panelScaledPx(6),
+              height: panelScaledPx(6),
               borderRadius: "50%",
               backgroundColor: nodeColor,
-              marginRight: 5,
+              marginRight: panelScaledPx(5),
               verticalAlign: "middle",
             }}
           />

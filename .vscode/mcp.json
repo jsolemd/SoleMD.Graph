@@ -19,10 +19,15 @@
       "url": "http://localhost:8401/mcp",
       "instructions": "Visible Chrome on Windows host via HTTP proxy. Chrome must be running with --remote-debugging-port=9222. Start Chrome via Start-ChromeDebug.ps1 on Windows."
     },
+    "chrome-devtools-android": {
+      "type": "http",
+      "url": "http://localhost:8402/mcp",
+      "instructions": "Real Android Chrome via HTTP proxy. Requires an Android device with USB or wireless debugging, adb forwarding localabstract:chrome_devtools_remote to localhost:9223, and the chrome-devtools-android Docker service. Start with open-android-review.sh or Start-AndroidChromeDebug.ps1."
+    },
     "codeatlas": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.graph",
-      "instructions": "Primary MCP surface for CodeAtlas navigation in the active project context. It exposes both project code tools and external documentation tools on the same server. Code navigation surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, find_clones, find_patterns, index_status. Docs surface: resolve_library_id, search_docs, search_docs_multi, expand_doc_chunk, list_doc_libraries, read_doc, update_doc_library, add_doc_library, delete_doc_library, export_doc_bundle, import_doc_bundle. Default code exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. For external library docs: resolve_library_id(library_name=...) -> search_docs(library_id=..., query=...) -> read_doc(...) when full context is needed. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Narrow UI traversal with library_tag (for example mantine, framer-motion, tailwind, cosmograph) and ui_primitive (for example ActionIcon, Stack, motion.div). Read matched_on, rank_explain, unresolved call-site telemetry, and CSS-aware metadata such as css_selector_targets, css_var_defs, css_at_rules, and has_css_important before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via explicit aliases: codeatlas-app, codeatlas-graph, codeatlas-make, codeatlas-wiki, and codeatlas-infra."
+      "instructions": "Primary MCP surface for CodeAtlas navigation in the active project context. It exposes both project code tools and external documentation tools on the same server. Code navigation surface: search_code, inspect_symbol, trace_flow, file_context, dependents, analyze_impact, find_bridge_functions, graph_overview, slice_build, slice_view, find_clones, find_patterns, index_status. Docs surface: resolve_library_id, search_docs, search_docs_multi, expand_doc_chunk, list_doc_libraries, read_doc, update_doc_library, add_doc_library, delete_doc_library, export_doc_bundle, import_doc_bundle. Default code exploration flow: search_code(mode=auto, detail=skeleton, prefer_source=true) -> take returned symbol_ref and symbol_uid -> inspect_symbol(symbol_ref=...) -> trace_flow(from_ref=..., to_ref=...) or trace_flow(from_uid=..., to_uid=...) when a path question appears. For external library docs: resolve_library_id(library_name=...) -> search_docs(library_id=..., query=...) -> read_doc(...) when full context is needed. Use detail=card to screen many candidates and detail=full only after the target symbol/file is selected. Narrow UI traversal with library_tag (for example mantine, framer-motion, tailwind, cosmograph) and ui_primitive (for example ActionIcon, Stack, motion.div). Read matched_on, rank_explain, unresolved call-site telemetry, and CSS-aware metadata such as css_selector_targets, css_var_defs, css_at_rules, and has_css_important before broadening search. Use index_status reindex_mode=all|content|graph to target rebuild scope. Cross-project access stays project-scoped via explicit aliases: codeatlas-graph, codeatlas-make, and codeatlas-infra."
     },
     "mantine": {
       "command": "node",
@@ -44,11 +49,6 @@
       },
       "instructions": "Neo4j graph database — direct Cypher queries via official Neo4j MCP server. Use for schema inspection (get-schema), read queries (read-cypher), and write operations (write-cypher). Code-search handles LLM-facing structural workflows via inspect_symbol, trace_flow, and analyze_impact. Use this server for direct ad-hoc Cypher."
     },
-    "codeatlas-app": {
-      "type": "http",
-      "url": "http://localhost:8100/mcp/solemd.app",
-      "instructions": "CodeAtlas for SoleMD.App (Python biomedical NLP pipeline). Use when you need to find or understand App pipeline code, data models, DAL patterns, orchestration, API contracts, or related external library docs through the unified code+docs MCP surface."
-    },
     "codeatlas-graph": {
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.graph",
@@ -58,11 +58,6 @@
       "type": "http",
       "url": "http://localhost:8100/mcp/solemd.make",
       "instructions": "CodeAtlas for SoleMD.Make (markdown-first document generation). Use when you need to find or understand Pandoc, Typst, Carbone, slides, citation/Zotero workflows, filters, templates, document source conventions, or related external library docs through the unified code+docs MCP surface."
-    },
-    "codeatlas-wiki": {
-      "type": "http",
-      "url": "http://localhost:8100/mcp/solemd.wiki",
-      "instructions": "CodeAtlas for SoleMD.Wiki (Quartz knowledge wiki). Use when you need to find or understand wiki content structure, Quartz configuration, plugins, publishing/build behavior, or related external library docs through the unified code+docs MCP surface."
     },
     "codeatlas-infra": {
       "type": "http",

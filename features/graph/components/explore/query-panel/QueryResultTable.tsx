@@ -2,7 +2,7 @@
 
 import { Table, Text } from "@mantine/core";
 import { formatCellValue } from "@/features/graph/lib/helpers";
-import { panelTextDimStyle } from "../../panels/PanelShell";
+import { panelScaledPx, panelTextDimStyle } from "../../panels/PanelShell";
 import type { GraphQueryResult } from "@/features/graph/types";
 
 export function QueryResultTable({ result }: { result: GraphQueryResult }) {
@@ -19,7 +19,7 @@ export function QueryResultTable({ result }: { result: GraphQueryResult }) {
       minWidth={200}
       style={{
         border: "1px solid var(--graph-panel-border)",
-        borderRadius: 8,
+        borderRadius: panelScaledPx(8),
         maxHeight: 280,
         overflow: "auto",
       }}
@@ -32,21 +32,21 @@ export function QueryResultTable({ result }: { result: GraphQueryResult }) {
           th: {
             backgroundColor: "var(--graph-panel-bg)",
             borderColor: "var(--graph-panel-border)",
-            fontSize: 9,
+            fontSize: panelScaledPx(9),
             fontWeight: 500,
             textTransform: "none",
             letterSpacing: 0,
             color: "var(--graph-panel-text-dim)",
             fontFamily: "var(--font-mono)",
-            padding: "4px 8px",
-            lineHeight: "13px",
+            padding: `${panelScaledPx(4)} ${panelScaledPx(8)}`,
+            lineHeight: panelScaledPx(13),
             whiteSpace: "nowrap",
           },
           td: {
             borderColor: "var(--graph-panel-border)",
-            fontSize: 10,
-            padding: "4px 8px",
-            lineHeight: "14px",
+            fontSize: panelScaledPx(10),
+            padding: `${panelScaledPx(4)} ${panelScaledPx(8)}`,
+            lineHeight: panelScaledPx(14),
             color: "var(--graph-panel-text)",
             maxWidth: 220,
             overflow: "hidden",

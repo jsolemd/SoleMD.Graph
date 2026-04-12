@@ -1,0 +1,71 @@
+/* Embedded wiki-module content inside wiki surfaces.
+   Kept separate from wiki markdown typography so module compaction and
+   in-panel search styling can evolve independently. */
+
+/* SceneSection uses Tailwind py-16/py-24; !important is required here to
+   override those utilities when a module is embedded inside a wiki panel. */
+.wiki-module-inline section,
+.wiki-module-panel section {
+  padding-top: 1rem !important;
+  padding-bottom: 1rem !important;
+}
+
+.wiki-module-inline section > div,
+.wiki-module-panel section > div {
+  max-width: 100% !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Scale headings down to wiki panel density. */
+.wiki-module-inline h1,
+.wiki-module-inline h2,
+.wiki-module-panel h1,
+.wiki-module-panel h2 {
+  font-size: calc(13px * var(--graph-panel-reading-scale, 1)) !important;
+  margin-bottom: 0.25rem;
+}
+
+.wiki-module-inline h3,
+.wiki-module-panel h3 {
+  font-size: calc(12px * var(--graph-panel-reading-scale, 1)) !important;
+}
+
+.wiki-module-inline h4,
+.wiki-module-panel h4 {
+  font-size: calc(11px * var(--graph-panel-reading-scale, 1)) !important;
+}
+
+/* Tighten shared Mantine primitives inside embedded modules. */
+.wiki-module-inline .mantine-Card-root,
+.wiki-module-panel .mantine-Card-root {
+  padding: 0.75rem !important;
+}
+
+.wiki-module-inline .mantine-SimpleGrid-root,
+.wiki-module-panel .mantine-SimpleGrid-root {
+  gap: 0.5rem !important;
+}
+
+.wiki-module-inline .mantine-Text-root.mb-8,
+.wiki-module-panel .mantine-Text-root.mb-8 {
+  margin-bottom: 0.5rem !important;
+}
+
+.wiki-module-inline .mantine-Stack-root,
+.wiki-module-panel .mantine-Stack-root {
+  gap: 0.5rem !important;
+}
+
+/* In-content search highlights for embedded modules. */
+.wiki-module-search-mark {
+  background: color-mix(in srgb, var(--mode-accent) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.wiki-module-search-mark-active {
+  background: color-mix(in srgb, var(--mode-accent) 60%, transparent);
+  outline: 1px solid var(--mode-accent);
+}

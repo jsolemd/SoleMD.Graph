@@ -11,5 +11,6 @@
 @import "./styles/vendor-overrides.css";
 @import "./styles/graph-ui.css";
 @import "./styles/wiki-content.css";
+@import "./styles/wiki-module-content.css";
 
 @custom-variant dark (&:where(.dark, .dark *));

@@ -5,9 +5,11 @@ import { Text } from "@mantine/core";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,
+  panelScaledPx,
   panelTextStyle,
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
+import { entityTypeCssColorByType } from "@/lib/theme/pastel-tokens";
 import type { EntityProfileProps } from "./index";
 
 export default function NetworkProfile({
@@ -28,8 +30,6 @@ export default function NetworkProfile({
       .slice(0, 12);
   }, [bodyMatches]);
 
-  if (componentEntities.length === 0) return null;
-
   // Group by entity type for visual clustering
   const grouped = useMemo(() => {
     const groups = new Map<string, typeof componentEntities>();
@@ -42,13 +42,7 @@ export default function NetworkProfile({
     return groups;
   }, [componentEntities]);
 
-  const typeColors: Record<string, string> = {
-    chemical: "var(--color-fresh-green)",
-    disease: "var(--color-warm-coral)",
-    gene: "var(--color-soft-pink)",
-    receptor: "var(--color-soft-pink)",
-    anatomy: "var(--color-golden-yellow)",
-  };
+  if (componentEntities.length === 0) return null;
 
   return (
     <div
@@ -66,13 +60,13 @@ export default function NetworkProfile({
 
       <div className="mt-1.5 flex flex-col gap-1.5">
         {[...grouped.entries()].map(([type, entities]) => {
-          const color = typeColors[type] ?? "var(--mode-accent)";
+          const color = entityTypeCssColorByType[type] ?? "var(--mode-accent)";
           return (
             <div key={type} className="flex flex-wrap items-center gap-1">
               <Text
                 component="span"
                 style={{
-                  fontSize: 8,
+                  fontSize: panelScaledPx(8),
                   color: "var(--graph-panel-text-dim)",
                   textTransform: "uppercase",
                   letterSpacing: "0.05em",
@@ -89,7 +83,7 @@ export default function NetworkProfile({
                   className="rounded-full px-1.5 py-0.5 transition-colors hover:brightness-110"
                   style={{
                     ...panelTextStyle,
-                    fontSize: 9,
+                    fontSize: panelScaledPx(9),
                     backgroundColor: `color-mix(in srgb, ${color} 20%, var(--graph-panel-bg))`,
                     border: `1px solid color-mix(in srgb, ${color} 30%, var(--graph-panel-border))`,
                     cursor: "pointer",

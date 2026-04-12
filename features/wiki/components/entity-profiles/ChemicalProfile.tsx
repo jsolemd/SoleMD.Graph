@@ -7,10 +7,12 @@ import { crisp } from "@/lib/motion";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,
+  panelScaledPx,
   panelTextDimStyle,
   panelTextStyle,
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
+import { entityTypeCssColorByType } from "@/lib/theme/pastel-tokens";
 import type { EntityProfileProps } from "./index";
 
 const RECEPTOR_TYPES = new Set(["gene", "receptor"]);
@@ -87,7 +89,7 @@ export default function ChemicalProfile({
                     y={y + BAR_H * 0.75}
                     style={{
                       ...panelTextDimStyle,
-                      fontSize: 9,
+                      fontSize: panelScaledPx(9),
                       fill: "var(--graph-panel-text-muted)",
                     }}
                   >
@@ -113,7 +115,7 @@ export default function ChemicalProfile({
                     y={y + BAR_H * 0.75}
                     textAnchor="end"
                     style={{
-                      fontSize: 8,
+                      fontSize: panelScaledPx(8),
                       fill: "var(--graph-panel-text-dim)",
                     }}
                   >
@@ -138,11 +140,11 @@ export default function ChemicalProfile({
                 className="rounded-full px-1.5 py-0.5 transition-colors hover:brightness-110"
                 style={{
                   ...panelTextStyle,
-                  fontSize: 9,
+                  fontSize: panelScaledPx(9),
                   backgroundColor:
-                    "color-mix(in srgb, var(--color-warm-coral) 20%, var(--graph-panel-bg))",
+                    `color-mix(in srgb, ${entityTypeCssColorByType.disease} 20%, var(--graph-panel-bg))`,
                   border:
-                    "1px solid color-mix(in srgb, var(--color-warm-coral) 30%, var(--graph-panel-border))",
+                    `1px solid color-mix(in srgb, ${entityTypeCssColorByType.disease} 30%, var(--graph-panel-border))`,
                   cursor: "pointer",
                 }}
                 onClick={() => {

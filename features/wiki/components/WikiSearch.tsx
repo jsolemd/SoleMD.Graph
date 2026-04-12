@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActionIcon, TextInput, Tooltip } from "@mantine/core";
+import { TextInput } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { Search, X } from "lucide-react";
 import {
-  iconBtnStyles,
+  PanelIconAction,
   panelSelectStyles,
   panelTextStyle,
   panelTextMutedStyle,
@@ -118,19 +118,12 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
 
   if (!open) {
     return (
-      <Tooltip label="Search wiki" position="bottom" withArrow>
-        <ActionIcon
-          variant="transparent"
-          size={24}
-          radius="xl"
-          className="graph-icon-btn"
-          styles={iconBtnStyles}
-          onClick={handleToggle}
-          aria-label="Search wiki"
-        >
-          <Search size={12} />
-        </ActionIcon>
-      </Tooltip>
+      <PanelIconAction
+        label="Search wiki"
+        icon={<Search size={12} />}
+        onClick={handleToggle}
+        aria-label="Search wiki"
+      />
     );
   }
 
@@ -145,15 +138,14 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
         size="xs"
         styles={panelSelectStyles}
         rightSection={
-          <ActionIcon
-            variant="transparent"
-            size={16}
+          <PanelIconAction
+            label="Close search"
+            icon={<X size={10} />}
             onClick={handleToggle}
-            styles={iconBtnStyles}
+            size={16}
+            tooltipDisabled
             aria-label="Close search"
-          >
-            <X size={10} />
-          </ActionIcon>
+          />
         }
         style={{ width: 160 }}
         aria-label="Search wiki pages"

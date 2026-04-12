@@ -1,7 +1,9 @@
+import { brandPastelFallbackHexByKey } from '@/lib/theme/pastel-tokens'
+
 /** WebGL needs actual hex values, not CSS vars. Keep in sync with globals.css. */
 export const BRAND = {
-  light: { bg: "#f8f9fa", ring: "#747caa", greyout: 0.25 },
-  dark:  { bg: "#111113", ring: "#a8c5e9", greyout: 0.12 },
+  light: { bg: "#f8f9fa", ring: brandPastelFallbackHexByKey["muted-indigo"], greyout: 0.25 },
+  dark:  { bg: "#111113", ring: brandPastelFallbackHexByKey["soft-blue"], greyout: 0.12 },
 } as const;
 
 /**
@@ -36,4 +38,4 @@ export const NOISE_COLOR = "#555555";
 export const NOISE_COLOR_LIGHT = "#999999";
 
 /** Fallback when cluster-mod lookup has no match. */
-export const DEFAULT_POINT_COLOR = "#a8c5e9";
+export const DEFAULT_POINT_COLOR = brandPastelFallbackHexByKey["soft-blue"];
