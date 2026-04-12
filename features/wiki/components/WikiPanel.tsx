@@ -82,7 +82,6 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
   const modulePopped = useWikiStore((s) => s.modulePopped);
   const modulePoppedSlug = useWikiStore((s) => s.modulePoppedSlug);
   const setModulePopped = useWikiStore((s) => s.setModulePopped);
-  const currentPageKind = useWikiStore((s) => s.currentPageKind);
   const tocOpen = useWikiStore((s) => s.tocOpen);
   const setTocOpen = useWikiStore((s) => s.setTocOpen);
   const fullscreenAnim = useWikiStore((s) => s.fullscreenAnim);
@@ -171,10 +170,12 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
           innerClassName={currentRoute.kind === "graph" ? undefined : "px-0 pb-0"}
         >
           {currentRoute.kind === "graph" ? (
-            <WikiGraphView
-              graphReleaseId={graphReleaseId}
-              onOpenPage={handleOpenPage}
-            />
+            globalGraphOpen ? null : (
+              <WikiGraphView
+                graphReleaseId={graphReleaseId}
+                onOpenPage={handleOpenPage}
+              />
+            )
           ) : (
             <WikiPageView
               slug={currentRoute.slug}

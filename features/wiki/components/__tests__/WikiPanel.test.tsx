@@ -164,6 +164,41 @@ describe("WikiPanel", () => {
     });
   });
 
+  it("mounts a single wiki graph surface when the global graph overlay is open", async () => {
+    useWikiStore.setState({
+      globalGraphOpen: true,
+      graphData: {
+        nodes: [
+          {
+            id: "page:index",
+            kind: "page",
+            label: "Index",
+            slug: "index",
+            paper_id: null,
+            concept_id: null,
+            entity_type: null,
+            semantic_group: null,
+            tags: [],
+            year: null,
+            venue: null,
+          },
+        ],
+        edges: [],
+        signature: "wiki-graph-overlay",
+      },
+    });
+
+    render(
+      <MantineProvider>
+        <WikiPanel bundle={mockBundle} queries={mockQueries} />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("wiki-graph-surface")).toHaveLength(1);
+    });
+  });
+
   it("shows page view when route is page", async () => {
     useWikiStore.getState().navigateToPage("entities/melatonin");
 
@@ -380,7 +415,7 @@ describe("WikiPanel", () => {
 
     await waitFor(() => {
       expect(screen.getByLabelText("Close graph")).toBeInTheDocument();
-      expect(screen.getAllByTestId("wiki-graph-surface")).toHaveLength(2);
+      expect(screen.getAllByTestId("wiki-graph-surface")).toHaveLength(1);
     });
   });
 

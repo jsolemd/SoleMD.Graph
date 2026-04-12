@@ -90,8 +90,9 @@ export function WikiGraph({ intents }: WikiGraphProps) {
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full overflow-hidden"
-      style={{ minHeight: 300 }}
+      data-testid="wiki-graph-canvas-root"
+      // Absolute fill avoids percentage-height collapse inside floating panel bodies.
+      className="absolute inset-0 overflow-hidden"
     />
   );
 }
