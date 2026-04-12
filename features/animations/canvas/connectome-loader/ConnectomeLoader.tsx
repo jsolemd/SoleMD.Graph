@@ -38,15 +38,19 @@ import {
 
 const NODE_COUNT = 6000;
 const BOUNDARY_RADIUS = 6;
-const BOUNDARY_PULL = 1.6;
-// Target-velocity low-pass filter.
-// Each node has a slowly-drifting `targetVel`; actual `vel` eases toward
-// it each frame. This breaks the structural per-frame jitter of straight
-// Brownian kicks — the velocity direction only changes over ~1 s windows,
-// so each dot streams smoothly rather than wiggling.
-const TARGET_KICK = 0.06; // per-frame random walk on targetVel
-const TARGET_DAMPING = 0.996; // keeps targetVel bounded
-const VEL_EASE = 0.03; // how fast vel chases targetVel — lower = smoother
+const BOUNDARY_PULL = 1.2;
+// Double-LPF cascade — the only source of noise is the goalVel random
+// walk; two eased layers smooth everything else into continuous curves.
+//   goalVel  : bounded random walk (where the node "wants" to go)
+//   driftVel : eases toward goalVel  (first smoothing, ~0.7 s tau)
+//   vel      : eases toward driftVel (second smoothing, ~1.1 s tau)
+//   pos      : integrates vel
+// End-to-end response ≈ 1.5–2 s from a random kick to actual motion,
+// so trajectories are smooth curves — no per-frame direction flips.
+const GOAL_KICK = 0.035; // per-frame random walk on goalVel
+const GOAL_DAMPING = 0.997; // keeps goalVel bounded
+const DRIFT_EASE = 0.025; // driftVel chases goalVel  (first LPF)
+const VEL_EASE = 0.015; // vel chases driftVel        (second LPF)
 const POINT_SIZE = 0.05;
 const PALETTE_SATURATION_BOOST = 1.3;
 
@@ -120,7 +124,8 @@ type Theme = "light" | "dark";
 type SimState = {
   pos: Float32Array;
   vel: Float32Array;
-  targetVel: Float32Array;
+  driftVel: Float32Array;
+  goalVel: Float32Array;
   col: Float32Array;
 };
 
