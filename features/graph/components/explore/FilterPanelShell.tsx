@@ -14,7 +14,7 @@ import type { FilterableColumnKey } from "@/features/graph/types";
 import {
   iconBtnStyles,
   PANEL_ACCENT,
-  PANEL_BODY_CLASS,
+  PanelBody,
   PanelDivider,
   PanelShell,
   panelSelectStyles,
@@ -113,7 +113,7 @@ export function FilterPanelShell({
       )}
       onClose={() => closePanel("filters")}
     >
-      <div className={PANEL_BODY_CLASS}>
+      <PanelBody panelId="filters">
         <Stack gap="sm">
           {visibleFilters.flatMap((filter, i) => {
             const meta = getColumnMeta(filter.column);
@@ -206,7 +206,7 @@ export function FilterPanelShell({
             </Button>
           )}
         </Stack>
-      </div>
+      </PanelBody>
     </PanelShell>
   );
 }

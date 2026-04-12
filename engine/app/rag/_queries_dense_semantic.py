@@ -6,6 +6,7 @@ from app.rag._queries_paper_core import (
     ENTITY_MENTION_NAMESPACE_KEY_SQL,
     ENTITY_MENTION_TYPE_KEY_SQL,
     ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL,
+    ENTITY_TOP_CONCEPT_MENTION_TARGETS_CTE_SQL,
 )
 
 # ---------------------------------------------------------------------------
@@ -222,38 +223,39 @@ ORDER BY lc.corpus_id, lc.corpus_rank
 
 ENTITY_MATCH_SQL = f"""
 WITH {ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL.strip()},
+{ENTITY_TOP_CONCEPT_MENTION_TARGETS_CTE_SQL.strip()},
 query_term_stats AS (
     SELECT GREATEST(COUNT(DISTINCT lowered_term), 1) AS term_count
     FROM top_concepts
 ),
 matched_mentions AS MATERIALIZED (
-    SELECT
+    SELECT DISTINCT
         pem.corpus_id,
-        pem.entity_type,
-        pem.concept_id,
-        tc.raw_term,
-        tc.lowered_term,
+        tmt.entity_type,
+        tmt.concept_id,
+        tmt.raw_term,
+        tmt.lowered_term,
         COALESCE(pb.is_retrieval_default, false) AS is_retrieval_default,
         format(
             '%%s:%%s',
             COALESCE(pem.canonical_block_ordinal, -1),
             COALESCE(pem.canonical_sentence_ordinal, -1)
         ) AS structural_span_key
-    FROM top_concepts tc
+    FROM top_concept_mention_targets tmt
     JOIN solemd.paper_entity_mentions pem
-      ON {ENTITY_MENTION_NAMESPACE_KEY_SQL} = tc.concept_namespace
-     AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tc.concept_id
+      ON {ENTITY_MENTION_NAMESPACE_KEY_SQL} = tmt.match_namespace
+     AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tmt.match_concept_id
     LEFT JOIN solemd.paper_blocks pb
       ON pb.corpus_id = pem.corpus_id
      AND pb.block_ordinal = pem.canonical_block_ordinal
     WHERE
-        tc.concept_namespace IS NOT NULL
+        tmt.concept_namespace IS NOT NULL
         AND pem.corpus_id = ANY(%s)
     UNION ALL
-    SELECT
+    SELECT DISTINCT
         pem.corpus_id,
-        pem.entity_type,
-        pem.concept_id,
+        tc.entity_type,
+        tc.concept_id,
         tc.raw_term,
         tc.lowered_term,
         COALESCE(pb.is_retrieval_default, false) AS is_retrieval_default,

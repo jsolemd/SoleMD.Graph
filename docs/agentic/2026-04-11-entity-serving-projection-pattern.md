@@ -65,16 +65,14 @@ For the UMLS-integrated entity rebuild, run work in this order:
 
 1. `cd engine && uv run python scripts/enrich_vocab_terms.py`
 2. `cd engine && uv run python -m app.corpus.entities`
-3. Verify anatomy entities, alias-source distribution, and `/api/entities/match`
+3. Verify anatomy entities, drug normalization, alias-source distribution, and `/api/entities/match`
 4. Drop redundant indexes if they still exist:
    - `solemd.idx_corpus_pmid`
    - `pubtator.idx_pt_entity_disease`
    - `pubtator.idx_pt_entity_chemical`
    - `pubtator.idx_pt_entity_gene`
-5. Delete one-off backfill helpers only after verification:
-   - `engine/scripts/backfill_vocab_aliases.py`
-   - `engine/scripts/backfill_highlight_policy.py`
-   - `engine/data/umls_mesh_cache.json`
+5. The projection rebuild is the canonical refresh path. Do not keep or add
+   one-off alias/highlight backfill scripts beside it.
 
 ## Data Safety
 

@@ -7,7 +7,7 @@ import { List, X } from "lucide-react";
 import { useViewportSize } from "@mantine/hooks";
 import { useDashboardStore } from "@/features/graph/stores";
 import { resolveWikiPanelWidth, PANEL_EDGE_MARGIN, selectPanelLeftOffset } from "@/features/graph/stores/dashboard-store";
-import { PANEL_TOP, PanelShell, iconBtnStyles } from "@/features/graph/components/panels/PanelShell";
+import { PANEL_TOP, PanelBody, PanelShell, iconBtnStyles } from "@/features/graph/components/panels/PanelShell";
 import { WikiGraphView } from "@/features/wiki/components/WikiGraphView";
 import { WikiModuleContent, resolveModule } from "@/features/wiki/components/WikiModuleContent";
 import { DotToc, entriesFromModuleSections } from "@/features/wiki/components/DotToc";
@@ -145,11 +145,6 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [fullscreenAnim, setFullscreenAnim]);
 
-  const bodyClassName =
-    currentRoute.kind === "graph"
-      ? "flex min-h-0 flex-1 flex-col overflow-hidden px-2.5 pb-2.5"
-      : "flex min-h-0 flex-1 flex-col"; // Page view handles its own scroll
-
   return (
     <>
       <PanelShell
@@ -170,7 +165,11 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
         }
         onClose={handleClose}
       >
-        <div className={bodyClassName}>
+        <PanelBody
+          panelId="wiki"
+          viewportClassName="overflow-hidden"
+          innerClassName={currentRoute.kind === "graph" ? undefined : "px-0 pb-0"}
+        >
           {currentRoute.kind === "graph" ? (
             <WikiGraphView
               graphReleaseId={graphReleaseId}
@@ -184,7 +183,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
               onNavigate={handleOpenPage}
             />
           )}
-        </div>
+        </PanelBody>
       </PanelShell>
 
       {/* Popped-out local graph — its own floating panel */}
@@ -195,12 +194,16 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
           defaultWidth={320}
           onClose={() => setLocalGraphPopped(false)}
         >
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+          <PanelBody
+            panelId="wiki-graph"
+            viewportClassName="overflow-hidden"
+            innerClassName="p-2"
+          >
             <WikiLocalGraph
               slug={currentRoute.slug}
               onNavigate={handleOpenPage}
             />
-          </div>
+          </PanelBody>
         </PanelShell>
       )}
 
@@ -209,7 +212,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
         <PanelShell
           id="wiki-module"
           title="Module"
-          defaultWidth={680}
+          defaultWidth={900}
           onClose={() => setModulePopped(false)}
           headerActions={
             <div className="flex items-center gap-1">
@@ -229,9 +232,13 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
             </div>
           }
         >
-          <div ref={modulePanelScrollRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
+          <PanelBody
+            panelId="wiki-module"
+            viewportRef={modulePanelScrollRef}
+            innerClassName="p-3"
+          >
             <WikiModuleContent slug={modulePoppedSlug} withShell />
-          </div>
+          </PanelBody>
           {moduleTocEntries && (
             <DotToc entries={moduleTocEntries} scrollRef={modulePanelScrollRef} />
           )}

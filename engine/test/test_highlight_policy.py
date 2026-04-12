@@ -51,3 +51,15 @@ def test_resolve_highlight_mode_requires_case_sensitive_exact_for_short_upper_al
         )
         == HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
     )
+
+
+def test_resolve_highlight_mode_disables_common_word_curated_aliases() -> None:
+    assert (
+        resolve_highlight_mode(
+            alias_text="today",
+            alias_key="today",
+            is_canonical=False,
+            alias_source="umls_tradename",
+        )
+        == HIGHLIGHT_MODE_DISABLED
+    )

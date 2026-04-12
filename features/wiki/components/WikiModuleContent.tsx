@@ -3,6 +3,7 @@
 import React, { Suspense } from "react";
 import { Skeleton, Stack } from "@mantine/core";
 import { EntityHighlightZone } from "@/features/graph/components/entities/EntityHighlightZone";
+import type { ComponentType, LazyExoticComponent } from "react";
 
 // Side-effect: register all modules so getModule finds them
 import "@/features/learn/modules/ai-for-mds/register";
@@ -14,6 +15,13 @@ interface WikiModuleContentProps {
   slug: string;
   withShell?: boolean;
 }
+
+type ModuleLoader = () => Promise<{ default: ComponentType }>;
+
+const lazyModuleCache = new WeakMap<
+  ModuleLoader,
+  LazyExoticComponent<ComponentType>
+>();
 
 function ModuleLoadingSkeleton() {
   return (
@@ -32,6 +40,17 @@ export function resolveModule(slug: string) {
   return getModule(slug) ?? getModule(slug.replace(/^modules\//, ""));
 }
 
+function getLazyModuleComponent(
+  loader: ModuleLoader,
+): LazyExoticComponent<ComponentType> {
+  const cached = lazyModuleCache.get(loader);
+  if (cached) return cached;
+
+  const component = React.lazy(loader);
+  lazyModuleCache.set(loader, component);
+  return component;
+}
+
 export function WikiModuleContent({ slug, withShell = false }: WikiModuleContentProps) {
   const registration = resolveModule(slug);
 
@@ -46,13 +65,12 @@ export function WikiModuleContent({ slug, withShell = false }: WikiModuleContent
   const loader = withShell
     ? registration.load
     : (registration.loadContent ?? registration.load);
-
-  const ModuleComponent = React.lazy(loader);
+  const moduleContent = React.createElement(getLazyModuleComponent(loader));
 
   return (
     <Suspense fallback={<ModuleLoadingSkeleton />}>
       <EntityHighlightZone>
-        <ModuleComponent />
+        {moduleContent}
       </EntityHighlightZone>
     </Suspense>
   );

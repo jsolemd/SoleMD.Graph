@@ -11,7 +11,7 @@ import type {
   GraphBundle,
   GraphBundleQueries,
 } from "@/features/graph/types";
-import { iconBtnStyles, PANEL_BODY_CLASS, PanelDivider, PanelShell } from "./PanelShell";
+import { iconBtnStyles, PanelBody, PanelDivider, PanelShell } from "./PanelShell";
 import {
   buildPaperNoteMarkdown,
 } from "./detail/helpers";
@@ -116,7 +116,7 @@ function DetailPanelComponent({
         ) : null
       }
     >
-      <div className={PANEL_BODY_CLASS}>
+      <PanelBody panelId="detail">
         <Stack gap="sm">
           <DetailHeader node={selectedNode} paper={detail?.paper ?? null} />
 
@@ -145,7 +145,7 @@ function DetailPanelComponent({
             detail={detail}
           />
         </Stack>
-      </div>
+      </PanelBody>
     </PanelShell>
   );
 }

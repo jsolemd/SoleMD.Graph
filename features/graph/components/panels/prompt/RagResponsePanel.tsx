@@ -5,9 +5,9 @@ import { CheckCircle } from "lucide-react";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
   badgeAccentStyles,
-  PANEL_BODY_CLASS,
   PanelDivider,
   PanelInlineLoader,
+  PanelBody,
   PanelShell,
   panelAccentCardClassName,
   panelAccentCardStyle,
@@ -258,7 +258,7 @@ export function RagResponsePanel() {
       headerActions={headerActions}
       onClose={clearRagStore}
     >
-      <div className={PANEL_BODY_CLASS}>
+      <PanelBody panelId="rag-response">
         <Stack gap={8}>
           {/* Query context */}
           {(ragSession?.queryPreview || selectedNode || statParts.length > 0) && (
@@ -297,7 +297,7 @@ export function RagResponsePanel() {
               : [section],
           )}
         </Stack>
-      </div>
+      </PanelBody>
     </PanelShell>
   );
 }

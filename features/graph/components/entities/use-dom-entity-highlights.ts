@@ -7,18 +7,19 @@ import { useEntityHover } from "./use-entity-hover";
 
 /* ───────── constants ───────── */
 
-/** Selectors whose text nodes we never annotate (already highlighted). */
+/** Selectors whose text we skip during extraction (already highlighted by
+ *  other surfaces). We deliberately exclude `.entity-highlight-zone-mark`
+ *  (our own marks) so that extractText() returns stable text regardless of
+ *  whether our annotations are present — prevents observer→re-annotate loops. */
 const SKIP_SELECTORS = [
-  ".wiki-entity-mention",
+  ".wiki-entity-mention:not(.entity-highlight-zone-mark)",
   ".wiki-link",
   ".tiptap-entity-highlight",
-  ".entity-highlight-zone-mark",
 ].join(",");
 
 const MARK_CLASS = "wiki-entity-mention entity-highlight-zone-mark";
 const CACHE_TTL_MS = 60_000;
 const CACHE_SWEEP_MS = 30_000;
-const DEFAULT_MATCH_LIMIT = 24;
 const DEFAULT_DEBOUNCE_MS = 300;
 
 /* ───────── module-scoped match cache ───────── */
@@ -164,7 +165,7 @@ export function useDomEntityHighlights(
   options?: UseDomEntityHighlightsOptions,
 ): void {
   const enabled = options?.enabled ?? true;
-  const matchLimit = options?.matchLimit ?? DEFAULT_MATCH_LIMIT;
+  const matchLimit = options?.matchLimit;
   const debounceMs = options?.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
   const hoverCtx = useEntityHover();
@@ -205,7 +206,9 @@ export function useDomEntityHighlights(
       const controller = new AbortController();
       abortController = controller;
 
-      const cacheKey = JSON.stringify({ text, matchLimit });
+      const requestPayload: { text: string; limit?: number } = { text };
+      if (matchLimit !== undefined) requestPayload.limit = matchLimit;
+      const cacheKey = JSON.stringify(requestPayload);
       let entry = matchCache.get(cacheKey);
 
       if (!entry || !isFresh(entry)) {
@@ -217,7 +220,7 @@ export function useDomEntityHighlights(
         };
 
         newEntry.promise = fetchGraphEntityMatches(
-          { text, limit: matchLimit },
+          requestPayload,
           { signal: controller.signal },
         )
           .then((res) => {

@@ -10,6 +10,7 @@ from functools import lru_cache
 from app.wiki.links import build_link_resolution_map
 from app.wiki.models import WikiPage
 from app.wiki.repository import PostgresWikiRepository, WikiRepository
+from app.entities.limits import ENTITY_MATCH_DEFAULT_LIMIT
 from app.entities.schemas import EntityMatchRequest
 from app.entities.service import EntityService, get_entity_service
 from app.wiki.schemas import (
@@ -314,7 +315,7 @@ def _page_to_response(
     page: WikiPage,
     paper_graph_refs: dict[int, str],
     resolved_links: dict[str, str],
-    linked_entity_meta: dict[str, tuple[str, str]] | None = None,
+    linked_entity_meta: dict[str, tuple[str, str | None]] | None = None,
     featured_graph_refs: dict[int, str] | None = None,
 ) -> WikiPageResponse:
     linked_entities: dict[str, WikiLinkedEntity] = {}
@@ -398,7 +399,7 @@ def _resolve_page_context(
     )
 
 
-_WIKI_BODY_ENTITY_MATCH_LIMIT = 16
+_WIKI_BODY_ENTITY_MATCH_LIMIT = ENTITY_MATCH_DEFAULT_LIMIT
 _BODY_ENTITY_MATCH_CACHE_SIZE = 256
 
 

@@ -7,7 +7,7 @@ import { useSelectionQueryState } from "@/features/graph/hooks/use-selection-que
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
 import { useShallow } from "zustand/react/shallow";
-import { PANEL_BODY_CLASS, PanelDivider, PanelInlineLoader, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
+import { PanelBody, PanelDivider, PanelInlineLoader, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
 import {
   AddInsightButton,
   ClusterTable,
@@ -323,7 +323,7 @@ export function QueryDrivenInfoPanel({
       }
       onClose={() => closePanel("info")}
     >
-      <div className={PANEL_BODY_CLASS}>
+      <PanelBody panelId="info">
         <Stack gap="sm">
           {loading ? (
             <Text size="sm" style={panelTextDimStyle}>
@@ -407,7 +407,7 @@ export function QueryDrivenInfoPanel({
             </>
           ) : null}
         </Stack>
-      </div>
+      </PanelBody>
     </PanelShell>
   );
 }

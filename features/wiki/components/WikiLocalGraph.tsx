@@ -13,13 +13,20 @@ import type { WikiGraphNode, WikiGraphEdge } from "@/lib/engine/wiki-types";
 interface WikiLocalGraphProps {
   slug: string;
   onNavigate: (slug: string) => void;
+  height?: number;
+  className?: string;
 }
 
 /**
  * Small local graph showing the current page's immediate neighborhood.
  * Rendered in the page view like Quartz's local graph widget.
  */
-export function WikiLocalGraph({ slug, onNavigate }: WikiLocalGraphProps) {
+export function WikiLocalGraph({
+  slug,
+  onNavigate,
+  height,
+  className,
+}: WikiLocalGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const graphData = useWikiStore((s) => s.graphData);
 
@@ -96,9 +103,10 @@ export function WikiLocalGraph({ slug, onNavigate }: WikiLocalGraphProps) {
 
   return (
     <div
-      className="overflow-hidden rounded-md border"
+      className={`overflow-hidden rounded-xl border ${className ?? ""}`.trim()}
+      data-testid="wiki-local-graph"
       style={{
-        height: 180,
+        ...(height != null ? { height } : {}),
         borderColor: "var(--graph-panel-border, rgba(255,255,255,0.08))",
         background: "var(--graph-panel-bg)",
       }}

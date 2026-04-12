@@ -1,10 +1,11 @@
 """Single-source highlight eligibility policy for entity aliases.
 
-The AMBIGUOUS set gates which canonical alias keys are excluded from
-entity highlighting.  Words here are still searchable (mode = disabled
-means 'no highlight', not 'invisible').  The list is derived from
-standard NLP English stopword corpora (sklearn, spaCy, NLTK) plus
-short biomedical-ambiguous words that overlap common English.
+Ambiguous alias keys are excluded from inline highlighting across every alias
+source. Words here are still searchable; ``disabled`` means "never highlight on
+the hot path", not "remove from the broader catalog". The list is derived from
+standard NLP English stopword corpora (sklearn, spaCy, NLTK), short
+biomedical-ambiguous words that overlap common English, and collisions found in
+the live runtime alias audit.
 """
 
 from __future__ import annotations
@@ -24,14 +25,13 @@ HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES: tuple[str, ...] = (
 )
 
 # ---------------------------------------------------------------------------
-# English stopwords and short ambiguous words that should never be highlighted
-# even when they appear as canonical entity names.  Sourced from the union of
-# sklearn.feature_extraction.text.ENGLISH_STOP_WORDS, spaCy en_core_web_sm
-# stop_words, and NLTK english stopwords — filtered to single words ≤12 chars.
-# Domain-ambiguous short words (gene symbols that collide with English) are
-# appended at the end.
+# English stopwords and ambiguous words/phrases that should never be highlighted
+# on the hot path, even when they appear in curated alias sources. Sourced from
+# the union of sklearn.feature_extraction.text.ENGLISH_STOP_WORDS, spaCy
+# en_core_web_sm stop_words, and NLTK english stopwords — filtered to single
+# words ≤12 chars — plus live runtime collisions discovered in wiki/module text.
 # ---------------------------------------------------------------------------
-AMBIGUOUS_CANONICAL_ALIAS_KEYS: frozenset[str] = frozenset({
+AMBIGUOUS_HIGHLIGHT_ALIAS_KEYS: frozenset[str] = frozenset({
     # ── Articles, determiners, pronouns ──
     "a", "an", "the",
     "this", "that", "these", "those",
@@ -88,6 +88,9 @@ AMBIGUOUS_CANONICAL_ALIAS_KEYS: frozenset[str] = frozenset({
     "name", "time", "year", "day", "work", "fact", "thing",
     "use", "need", "set", "act", "key", "map",
     "data", "text", "rest", "fast",
+    "acid", "chat", "damage", "deterministic", "high temperature",
+    "met", "planning", "reasoning", "today", "understanding",
+    "visualization",
     # ── Biomedical-ambiguous short words (gene/protein symbols that ──
     # ── collide with common English; safe to exclude from highlight) ──
     "cell", "gene", "test", "risk", "rate", "loss", "lead",
@@ -123,7 +126,7 @@ def resolve_highlight_mode(
     to highlight-eligible even when not canonical, because they are curated
     and clinically recognizable (e.g. "Haldol" for haloperidol).
     """
-    if alias_key in AMBIGUOUS_CANONICAL_ALIAS_KEYS:
+    if alias_key in AMBIGUOUS_HIGHLIGHT_ALIAS_KEYS:
         return HIGHLIGHT_MODE_DISABLED
     if alias_source in HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES:
         if alias_text == alias_text.upper() and len(alias_text) <= 6:

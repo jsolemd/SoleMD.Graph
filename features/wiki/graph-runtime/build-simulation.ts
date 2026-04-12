@@ -4,6 +4,7 @@ import {
   forceManyBody,
   forceCenter,
   forceCollide,
+  forceRadial,
   type Simulation,
 } from "d3-force";
 import type { SimNode, SimLink } from "./types";
@@ -45,6 +46,12 @@ export function buildSimulation(
     linkCounts.set(l.targetId, (linkCounts.get(l.targetId) ?? 0) + 1);
   }
 
+  // Orphan nodes (no links) get a radial pull toward the cluster periphery
+  // so they stay near the graph instead of flying off into space.
+  const orphanRadius = 100;
+  const orphanStrength = (n: SimNode) =>
+    (linkCounts.get(n.id) ?? 0) === 0 ? 0.1 : 0;
+
   return forceSimulation<SimNode>(nodes)
     .force(
       "link",
@@ -55,9 +62,13 @@ export function buildSimulation(
     .force("charge", forceManyBody<SimNode>().strength(chargeStrength))
     .force("center", forceCenter(centerX, centerY).strength(centerStrength))
     .force(
+      "orphan-gravity",
+      forceRadial<SimNode>(orphanRadius, centerX, centerY).strength(orphanStrength),
+    )
+    .force(
       "collide",
       forceCollide<SimNode>((n) => {
-        const base = n.kind === "page" ? 3 : 2;
+        const base = n.kind === "page" ? 5 : 2;
         return base + Math.sqrt(linkCounts.get(n.id) ?? 0) + 2;
       }).iterations(3),
     )

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import {
-  PANEL_BODY_CLASS,
+  PanelBody,
   PanelDivider,
   PanelShell,
   panelTextStyle,
@@ -69,7 +69,7 @@ export function AboutPanel() {
       defaultWidth={320}
       onClose={() => closePanel("about")}
     >
-      <div className={PANEL_BODY_CLASS}>
+      <PanelBody panelId="about">
         <Stack gap="sm">
           {(
             [
@@ -242,7 +242,7 @@ export function AboutPanel() {
               : [section],
           )}
         </Stack>
-      </div>
+      </PanelBody>
     </PanelShell>
   );
 }

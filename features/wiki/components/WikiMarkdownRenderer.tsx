@@ -21,7 +21,7 @@ interface WikiMarkdownRendererProps {
   contentMd: string
   resolvedLinks: Record<string, string>
   paperGraphRefs: Record<number, string>
-  linkedEntities: Record<string, { entity_type: string; concept_id: string }>
+  linkedEntities: Record<string, { entity_type: string; concept_id: string | null }>
   bodyEntityMatches: readonly WikiBodyEntityMatch[]
   onNavigate: (slug: string) => void
   onPaperClick?: (graphPaperRef: string) => void
@@ -50,7 +50,10 @@ function wikiUrlTransform(url: string): string {
  * CommonMark consumes `[[…]]` as nested bracket syntax, making them
  * unreachable as text nodes in the AST.
  */
-const EMPTY_LINKED_ENTITIES: Record<string, { entity_type: string; concept_id: string }> = {};
+const EMPTY_LINKED_ENTITIES: Record<
+  string,
+  { entity_type: string; concept_id: string | null }
+> = {};
 const EMPTY_BODY_ENTITY_MATCHES: readonly WikiBodyEntityMatch[] = [];
 
 function WikiMarkdownRendererInner({

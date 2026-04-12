@@ -6,6 +6,12 @@ import { motion } from "framer-motion";
 import { panelReveal } from "@/lib/motion";
 import { LottiePulseLoader } from "@/features/animations/lottie/LottiePulseLoader";
 import { useDashboardStore } from "@/features/graph/stores";
+import {
+  PANEL_ZOOM_DEFAULT,
+  PANEL_ZOOM_MAX,
+  PANEL_ZOOM_MIN,
+  PANEL_ZOOM_STEP,
+} from "@/features/graph/stores/slices/panel-slice";
 import { selectPanelLeftOffset, selectBottomClearance } from "@/features/graph/stores/dashboard-store";
 import { PanelChrome } from "./PanelChrome";
 import { useFloatingPanel } from "./use-floating-panel";
@@ -159,6 +165,45 @@ export function PanelDivider() {
   );
 }
 
+interface PanelBodyProps {
+  panelId: string;
+  children: ReactNode;
+  viewportClassName?: string;
+  innerClassName?: string;
+  viewportRef?: React.Ref<HTMLDivElement>;
+}
+
+export const PANEL_BODY_VIEWPORT_CLASS = "flex-1 min-h-0 overflow-y-auto";
+export const PANEL_BODY_INNER_CLASS = "flex min-h-full flex-col px-2.5 pb-2.5";
+
+export function PanelBody({
+  panelId,
+  children,
+  viewportClassName,
+  innerClassName,
+  viewportRef,
+}: PanelBodyProps) {
+  const panelZoom = useDashboardStore((s) => s.panelZooms[panelId] ?? PANEL_ZOOM_DEFAULT);
+
+  return (
+    <div
+      ref={viewportRef}
+      className={[PANEL_BODY_VIEWPORT_CLASS, viewportClassName].filter(Boolean).join(" ")}
+    >
+      <div
+        className={[PANEL_BODY_INNER_CLASS, innerClassName].filter(Boolean).join(" ")}
+        style={{
+          zoom: panelZoom,
+          transformOrigin: "top left",
+          width: `${100 / panelZoom}%`,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Shared inline loading indicator — mode-accent Lottie spinner at any size.
  * Single source of truth for every loader in the app. Delegates to
@@ -205,9 +250,6 @@ interface PanelShellProps {
   anchorYOffset?: number;
   onClose: () => void;
 }
-
-/** Centralized body padding class — replaces ad-hoc px/pb in each panel body div. */
-export const PANEL_BODY_CLASS = "flex-1 overflow-y-auto px-2.5 pb-2.5";
 
 /** Top offset so panels float below the Wordmark + panel icon row. */
 export const PANEL_TOP = 116;
@@ -359,6 +401,8 @@ export function PanelShell({
     onResizeMouseDown,
     onResizeVerticalMouseDown,
     onResizeCornerMouseDown,
+    onResizeLeftMouseDown,
+    onResizeCornerLeftMouseDown,
   } = useFloatingPanel({
     id,
     side,
@@ -377,6 +421,54 @@ export function PanelShell({
   const handleTogglePin = useCallback(() => {
     togglePanelPinned(id);
   }, [togglePanelPinned, id]);
+  const panelZoom = useDashboardStore((s) => s.panelZooms[id] ?? PANEL_ZOOM_DEFAULT);
+  const stepPanelZoom = useDashboardStore((s) => s.stepPanelZoom);
+  const resetPanelZoom = useDashboardStore((s) => s.resetPanelZoom);
+  const canZoomOut = panelZoom > PANEL_ZOOM_MIN;
+  const canZoomIn = panelZoom < PANEL_ZOOM_MAX;
+  const handleZoomOut = useCallback(() => {
+    stepPanelZoom(id, -PANEL_ZOOM_STEP);
+  }, [id, stepPanelZoom]);
+  const handleZoomIn = useCallback(() => {
+    stepPanelZoom(id, PANEL_ZOOM_STEP);
+  }, [id, stepPanelZoom]);
+  const handlePanelKeyDownCapture = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) {
+      return;
+    }
+    if (e.key === "=" || e.key === "+") {
+      e.preventDefault();
+      stepPanelZoom(id, PANEL_ZOOM_STEP);
+      return;
+    }
+    if (e.key === "-") {
+      e.preventDefault();
+      stepPanelZoom(id, -PANEL_ZOOM_STEP);
+      return;
+    }
+    if (e.key === "0") {
+      e.preventDefault();
+      resetPanelZoom(id);
+    }
+  }, [id, resetPanelZoom, stepPanelZoom]);
+  const handlePanelPointerDownCapture = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = panelRef.current;
+    if (!el) {
+      return;
+    }
+
+    const target = e.target;
+    if (!(target instanceof Element)) {
+      el.focus({ preventScroll: true });
+      return;
+    }
+
+    if (target.closest('button, input, textarea, select, a[href], [contenteditable="true"], [tabindex]:not([tabindex="-1"])')) {
+      return;
+    }
+
+    el.focus({ preventScroll: true });
+  }, [panelRef]);
 
   // Auto-stacking offset from panels docked before this one
   const leftOffset = useDashboardStore((s) => selectPanelLeftOffset(s, id));
@@ -422,7 +514,10 @@ export function PanelShell({
       dragListener={false}
       dragMomentum={false}
       dragElastic={0}
+      tabIndex={0}
       onDragEnd={onDragEnd}
+      onKeyDownCapture={handlePanelKeyDownCapture}
+      onPointerDownCapture={handlePanelPointerDownCapture}
       style={{
         ...reveal.style,
         x: dragX,
@@ -438,19 +533,26 @@ export function PanelShell({
             : `calc(100vh - ${PANEL_TOP + 24}px)`,
         ...panelSurfaceStyle,
       }}
-      className="absolute z-30 flex flex-col overflow-hidden rounded-xl"
+      className="absolute z-30 flex flex-col rounded-xl"
     >
-      <PanelChrome
-        title={title}
-        headerActions={headerActions}
-        onClose={onClose}
-        onTitlePointerDown={onTitlePointerDown}
-        onTitleDoubleClick={onTitleDoubleClick}
-        isPinned={isPinned}
-        onTogglePin={handleTogglePin}
-      >
-        {children}
-      </PanelChrome>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
+        <PanelChrome
+          title={title}
+          headerActions={headerActions}
+          onClose={onClose}
+          onTitlePointerDown={onTitlePointerDown}
+          onTitleDoubleClick={onTitleDoubleClick}
+          isPinned={isPinned}
+          onTogglePin={handleTogglePin}
+          panelZoom={panelZoom}
+          canZoomIn={canZoomIn}
+          canZoomOut={canZoomOut}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+        >
+          {children}
+        </PanelChrome>
+      </div>
 
       {/* Horizontal resize handle */}
       <div
@@ -469,6 +571,19 @@ export function PanelShell({
         style={{ [side === "left" ? "right" : "left"]: 0 }}
         onMouseDown={onResizeCornerMouseDown}
       />
+      {/* Left-edge resize handles (left-docked panels only — right-docked already have left handle) */}
+      {side === "left" && (
+        <>
+          <div
+            className="absolute left-0 top-0 h-full w-2 cursor-col-resize"
+            onMouseDown={onResizeLeftMouseDown}
+          />
+          <div
+            className="absolute bottom-0 left-0 z-10 h-4 w-4 cursor-nesw-resize"
+            onMouseDown={onResizeCornerLeftMouseDown}
+          />
+        </>
+      )}
     </motion.div>
   );
 }

@@ -8,3 +8,4 @@ export { AnimationStage } from "./AnimationStage";
 export { ManimPlayer } from "./ManimPlayer";
 export { ModelViewerStage } from "./ModelViewerStage";
 export { CitationFootnote } from "./CitationFootnote";
+export { ChatBubble } from "./ChatBubble";

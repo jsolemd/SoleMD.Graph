@@ -168,13 +168,14 @@ function normalizeLinkedEntities(value: unknown): Record<string, WikiLinkedEntit
       if (!isPlainObject(entity)) {
         return []
       }
-      if (
-        typeof entity.entity_type !== 'string'
-        || typeof entity.concept_id !== 'string'
-      ) {
+      if (typeof entity.entity_type !== 'string') {
         return []
       }
-      return [[slug, { entity_type: entity.entity_type, concept_id: entity.concept_id }]]
+      const conceptId =
+        typeof entity.concept_id === 'string' && entity.concept_id.trim().length > 0
+          ? entity.concept_id
+          : null
+      return [[slug, { entity_type: entity.entity_type, concept_id: conceptId }]]
     }),
   )
 }

@@ -103,3 +103,15 @@ def test_entity_overlay_endpoint_returns_graph_refs():
     assert response.json() == {
         "graph_paper_refs": ["paper:1", "corpus:2"],
     }
+
+
+def test_match_entities_endpoint_rejects_oversized_request_body():
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/entities/match",
+        json={"text": "x" * 70_000},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error_code"] == "bad_request"

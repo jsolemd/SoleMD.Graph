@@ -86,12 +86,12 @@ export function createSessionOverlayController({
     return { overlayCount: canvas.overlayCount }
   }
 
-  let overlayMutationChain: Promise<void> = Promise.resolve()
+  let mutationChain: Promise<void> = Promise.resolve()
 
-  const runOverlayMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
-    const previousMutation = overlayMutationChain
+  const runMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const previousMutation = mutationChain
     let releaseMutation!: () => void
-    overlayMutationChain = new Promise<void>((resolve) => {
+    mutationChain = new Promise<void>((resolve) => {
       releaseMutation = resolve
     })
 
@@ -228,48 +228,52 @@ export function createSessionOverlayController({
       }
     },
     async setSelectedPointIndices(pointIndices: number[]) {
-      const normalized = normalizeSelectedPointIndices(pointIndices)
-      if (
-        (normalized.length === 0 && selectedPointState.kind === 'empty') ||
-        (selectedPointState.kind === 'indices' &&
-          haveSamePointIndices(selectedPointState.pointIndices, normalized))
-      ) {
-        return
-      }
-      await replaceSelectedPointIndices(conn, normalized)
-      selectedPointState =
-        normalized.length > 0
-          ? { kind: 'indices', pointIndices: normalized }
-          : { kind: 'empty' }
+      return runMutation(async () => {
+        const normalized = normalizeSelectedPointIndices(pointIndices)
+        if (
+          (normalized.length === 0 && selectedPointState.kind === 'empty') ||
+          (selectedPointState.kind === 'indices' &&
+            haveSamePointIndices(selectedPointState.pointIndices, normalized))
+        ) {
+          return
+        }
+        await replaceSelectedPointIndices(conn, normalized)
+        selectedPointState =
+          normalized.length > 0
+            ? { kind: 'indices', pointIndices: normalized }
+            : { kind: 'empty' }
+      })
     },
     async setSelectedPointScopeSql(scopeSql: string | null) {
-      const normalizedScopeSql = normalizeSelectedPointScopeSql(scopeSql)
-      if (
-        (!normalizedScopeSql && selectedPointState.kind === 'empty') ||
-        (selectedPointState.kind === 'scope' &&
-          selectedPointState.scopeSql === normalizedScopeSql)
-      ) {
-        return
-      }
-      await replaceSelectedPointIndicesFromScopeSql(conn, normalizedScopeSql)
-      selectedPointState = normalizedScopeSql
-        ? { kind: 'scope', scopeSql: normalizedScopeSql }
-        : { kind: 'empty' }
+      return runMutation(async () => {
+        const normalizedScopeSql = normalizeSelectedPointScopeSql(scopeSql)
+        if (
+          (!normalizedScopeSql && selectedPointState.kind === 'empty') ||
+          (selectedPointState.kind === 'scope' &&
+            selectedPointState.scopeSql === normalizedScopeSql)
+        ) {
+          return
+        }
+        await replaceSelectedPointIndicesFromScopeSql(conn, normalizedScopeSql)
+        selectedPointState = normalizedScopeSql
+          ? { kind: 'scope', scopeSql: normalizedScopeSql }
+          : { kind: 'empty' }
+      })
     },
     getOverlayPointIds() {
       return queryOverlayPointIds(conn)
     },
     async reconcileOverlayPointIds(args) {
-      return runOverlayMutation(async () => reconcileOverlayPointIdsInternal(args))
+      return runMutation(async () => reconcileOverlayPointIdsInternal(args))
     },
     async setOverlayProducerPointIds(args) {
-      return runOverlayMutation(async () => setOverlayProducerPointIdsInternal(args))
+      return runMutation(async () => setOverlayProducerPointIdsInternal(args))
     },
     async clearOverlayProducer(producerId) {
-      return runOverlayMutation(async () => clearOverlayProducerInternal(producerId))
+      return runMutation(async () => clearOverlayProducerInternal(producerId))
     },
     async setOverlayPointIds(pointIds: string[]) {
-      return runOverlayMutation(async () =>
+      return runMutation(async () =>
         setOverlayProducerPointIdsInternal({
           producerId: MANUAL_CLUSTER_NEIGHBORHOOD_OVERLAY_PRODUCER,
           pointIds,
@@ -277,7 +281,7 @@ export function createSessionOverlayController({
       )
     },
     async clearOverlay() {
-      return runOverlayMutation(async () => {
+      return runMutation(async () => {
         if (canvas.overlayCount === 0) {
           return { overlayCount: 0 }
         }
@@ -289,7 +293,7 @@ export function createSessionOverlayController({
       })
     },
     async activateOverlay(args): Promise<OverlayActivationResult> {
-      return runOverlayMutation(async () => {
+      return runMutation(async () => {
         await ensureOptionalBundleTables(['universe_points', 'universe_links'])
         resetOverlayDependentCaches()
         const result =

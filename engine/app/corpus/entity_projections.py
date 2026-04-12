@@ -8,7 +8,7 @@ import time
 from app import db
 from app.corpus._etl import log_etl_run
 from app.entities.highlight_policy import (
-    AMBIGUOUS_CANONICAL_ALIAS_KEYS,
+    AMBIGUOUS_HIGHLIGHT_ALIAS_KEYS,
     HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES,
     HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
     HIGHLIGHT_MODE_DISABLED,
@@ -16,6 +16,7 @@ from app.entities.highlight_policy import (
     HIGHLIGHT_MODE_SEARCH_ONLY,
     HIGHLIGHT_RUNTIME_MODES,
 )
+from app.rag.entity_runtime_keys import catalog_vocab_source_identifier_sql
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +106,65 @@ _DROP_ENTITY_CORPUS_PRESENCE_OLD_SQL = (
     f"DROP TABLE IF EXISTS {_ENTITY_CORPUS_PRESENCE_OLD_TABLE}"
 )
 
-_ENTITY_ALIAS_CANDIDATES_SQL = r"""
-WITH alias_candidates AS (
+
+def _chemical_vocab_normalization_candidates_sql(source_relation: str) -> str:
+    normalized_vocab_concept_id = catalog_vocab_source_identifier_sql(
+        mesh_id_expr="vt.mesh_id",
+        umls_cui_expr="vt.umls_cui",
+    )
+    return f"""
+SELECT DISTINCT ON (src.concept_id, src.entity_type)
+    src.concept_id AS source_concept_id,
+    src.entity_type,
+    {normalized_vocab_concept_id} AS normalized_concept_id,
+    trim(vt.canonical_name) AS normalized_canonical_name
+FROM {source_relation} src
+JOIN umls.mesh_to_cui raw_mesh
+  ON raw_mesh.mesh_id = replace(src.concept_id, 'MESH:', '')
+JOIN umls.chemical_ingredient_bridge cib
+  ON cib.form_cui = raw_mesh.cui
+JOIN solemd.vocab_terms vt
+  ON lower(vt.pubtator_entity_type) = lower(src.entity_type)
+ AND vt.umls_cui = cib.ingredient_cui
+ AND vt.rxnorm_cui IS NOT NULL
+WHERE lower(src.entity_type) = 'chemical'
+  AND src.concept_id LIKE 'MESH:%'
+  AND (
+      lower(regexp_replace(trim(src.canonical_name), '\\s+', ' ', 'g'))
+          = lower(regexp_replace(trim(vt.canonical_name), '\\s+', ' ', 'g'))
+      OR EXISTS (
+          SELECT 1
+          FROM unnest(COALESCE(src.synonyms, ARRAY[]::TEXT[])) AS syn
+          WHERE lower(regexp_replace(trim(syn), '\\s+', ' ', 'g'))
+              = lower(regexp_replace(trim(vt.canonical_name), '\\s+', ' ', 'g'))
+      )
+  )
+ORDER BY
+    src.concept_id,
+    src.entity_type,
+    CASE WHEN vt.mesh_id IS NOT NULL THEN 0 ELSE 1 END,
+    trim(vt.canonical_name)
+""".strip()
+
+_ENTITY_ALIAS_CANDIDATES_SQL = fr"""
+WITH entity_vocab_links AS (
+    SELECT DISTINCT ON (e.concept_id, e.entity_type)
+        e.concept_id,
+        e.entity_type,
+        vt.id AS term_id
+    FROM solemd.entities e
+    JOIN solemd.vocab_terms vt
+      ON lower(vt.pubtator_entity_type) = lower(e.entity_type)
+     AND e.concept_id = {catalog_vocab_source_identifier_sql(mesh_id_expr="vt.mesh_id", umls_cui_expr="vt.umls_cui")}
+    WHERE vt.pubtator_entity_type IS NOT NULL
+      AND (vt.mesh_id IS NOT NULL OR vt.umls_cui IS NOT NULL)
+    ORDER BY
+        e.concept_id,
+        e.entity_type,
+        CASE WHEN vt.mesh_id IS NOT NULL THEN 0 ELSE 1 END,
+        trim(vt.canonical_name)
+),
+alias_candidates AS (
     SELECT
         e.concept_id,
         e.entity_type,
@@ -169,6 +227,20 @@ WITH alias_candidates AS (
         ua.alias_text,
         ua.alias_key,
         FALSE AS is_canonical,
+        'umls_tradename'::TEXT AS alias_source,
+        COALESCE(NULLIF(trim(e.canonical_name), ''), e.concept_id) AS entity_canonical_name,
+        COALESCE(e.paper_count, 0) AS entity_paper_count
+    FROM solemd.entities e
+    JOIN umls.tradename_bridge tb ON tb.ingredient_cui = replace(e.concept_id, 'UMLS:', '')
+    JOIN umls.cui_aliases ua ON ua.cui = tb.tradename_cui
+    WHERE e.concept_id LIKE 'UMLS:%%'
+    UNION ALL
+    SELECT
+        e.concept_id,
+        e.entity_type,
+        ua.alias_text,
+        ua.alias_key,
+        FALSE AS is_canonical,
         'umls'::TEXT AS alias_source,
         COALESCE(NULLIF(trim(e.canonical_name), ''), e.concept_id) AS entity_canonical_name,
         COALESCE(e.paper_count, 0) AS entity_paper_count
@@ -190,6 +262,23 @@ WITH alias_candidates AS (
     JOIN umls.cui_aliases ua ON ua.cui = xw.cui
     WHERE e.entity_type = 'gene'
       AND e.concept_id ~ '^\d+$'
+    UNION ALL
+    SELECT
+        e.concept_id,
+        e.entity_type,
+        regexp_replace(trim(vta.alias_text), '\s+', ' ', 'g') AS alias_text,
+        lower(regexp_replace(trim(vta.alias_text), '\s+', ' ', 'g')) AS alias_key,
+        COALESCE(vta.is_preferred, FALSE) AS is_canonical,
+        'vocab'::TEXT AS alias_source,
+        COALESCE(NULLIF(trim(e.canonical_name), ''), e.concept_id) AS entity_canonical_name,
+        COALESCE(e.paper_count, 0) AS entity_paper_count
+    FROM solemd.entities e
+    JOIN entity_vocab_links evl
+      ON evl.concept_id = e.concept_id
+     AND evl.entity_type = e.entity_type
+    JOIN solemd.vocab_term_aliases vta
+      ON vta.term_id = evl.term_id
+    WHERE NULLIF(trim(vta.alias_text), '') IS NOT NULL
 ),
 ranked_aliases AS (
     SELECT
@@ -206,9 +295,9 @@ ranked_aliases AS (
             ORDER BY is_canonical DESC,
                      CASE alias_source
                          WHEN 'canonical_name' THEN 0
-                         WHEN 'umls' THEN 1
-                         WHEN 'umls_tradename' THEN 2
-                         WHEN 'vocab' THEN 3
+                         WHEN 'vocab' THEN 1
+                         WHEN 'umls' THEN 2
+                         WHEN 'umls_tradename' THEN 3
                          ELSE 4
                      END,
                      alias_text
@@ -217,7 +306,7 @@ ranked_aliases AS (
 )
 """
 
-_ENTITY_STAGE_SELECT_SQL = r"""
+_ENTITY_STAGE_SELECT_SQL = fr"""
 WITH mention_rows AS MATERIALIZED (
     SELECT
         ea.concept_id,
@@ -231,36 +320,129 @@ WITH mention_rows AS MATERIALIZED (
       AND ea.mentions != ''
       AND NULLIF(trim(mention), '') IS NOT NULL
 ),
-aggregated_entities AS MATERIALIZED (
+raw_grouped_mentions AS MATERIALIZED (
+    SELECT
+        ea.pmid,
+        ea.concept_id,
+        ea.entity_type
+    FROM pubtator.entity_annotations ea
+    WHERE ea.concept_id != ''
+      AND ea.concept_id != '-'
+    GROUP BY ea.pmid, ea.concept_id, ea.entity_type
+),
+raw_aggregated_entities AS MATERIALIZED (
     SELECT
         concept_id,
         entity_type,
         mode() WITHIN GROUP (ORDER BY mention) AS canonical_name,
-        array_agg(DISTINCT mention ORDER BY mention) AS synonyms,
-        COUNT(DISTINCT pmid)::INTEGER AS paper_count
+        array_agg(DISTINCT mention ORDER BY mention) AS synonyms
     FROM mention_rows
     GROUP BY concept_id, entity_type
 ),
+chemical_vocab_normalization_candidates AS MATERIALIZED (
+    {_chemical_vocab_normalization_candidates_sql("raw_aggregated_entities")}
+),
+normalized_grouped_mentions AS MATERIALIZED (
+    SELECT
+        rgm.pmid,
+        COALESCE(cvn.normalized_concept_id, rgm.concept_id) AS concept_id,
+        rgm.entity_type
+    FROM raw_grouped_mentions rgm
+    LEFT JOIN chemical_vocab_normalization_candidates cvn
+      ON cvn.source_concept_id = rgm.concept_id
+     AND cvn.entity_type = rgm.entity_type
+),
+normalized_paper_counts AS MATERIALIZED (
+    SELECT
+        concept_id,
+        entity_type,
+        COUNT(*)::INTEGER AS paper_count
+    FROM normalized_grouped_mentions
+    GROUP BY concept_id, entity_type
+),
+normalized_surface_terms AS MATERIALIZED (
+    SELECT
+        COALESCE(cvn.normalized_concept_id, ra.concept_id) AS concept_id,
+        ra.entity_type,
+        surface.term
+    FROM raw_aggregated_entities ra
+    LEFT JOIN chemical_vocab_normalization_candidates cvn
+      ON cvn.source_concept_id = ra.concept_id
+     AND cvn.entity_type = ra.entity_type
+    CROSS JOIN LATERAL unnest(
+        CASE
+            WHEN cvn.normalized_canonical_name IS NOT NULL THEN
+                array_prepend(
+                    cvn.normalized_canonical_name,
+                    array_prepend(
+                        ra.canonical_name,
+                        COALESCE(ra.synonyms, ARRAY[]::TEXT[])
+                    )
+                )
+            ELSE array_prepend(ra.canonical_name, COALESCE(ra.synonyms, ARRAY[]::TEXT[]))
+        END
+    ) AS surface(term)
+),
+normalized_synonyms AS MATERIALIZED (
+    SELECT
+        concept_id,
+        entity_type,
+        array_agg(DISTINCT term ORDER BY term) AS synonyms
+    FROM normalized_surface_terms
+    GROUP BY concept_id, entity_type
+),
+normalized_entity_identities AS MATERIALIZED (
+    SELECT
+        COALESCE(cvn.normalized_concept_id, ra.concept_id) AS concept_id,
+        ra.entity_type,
+        COALESCE(
+            MIN(cvn.normalized_canonical_name)
+                FILTER (WHERE cvn.normalized_canonical_name IS NOT NULL),
+            MIN(ra.canonical_name)
+        ) AS canonical_name
+    FROM raw_aggregated_entities ra
+    LEFT JOIN chemical_vocab_normalization_candidates cvn
+      ON cvn.source_concept_id = ra.concept_id
+     AND cvn.entity_type = ra.entity_type
+    GROUP BY
+        COALESCE(cvn.normalized_concept_id, ra.concept_id),
+        ra.entity_type
+),
+normalized_entities AS MATERIALIZED (
+    SELECT
+        nei.concept_id,
+        nei.entity_type,
+        nei.canonical_name,
+        ns.synonyms,
+        COALESCE(npc.paper_count, 0)::INTEGER AS paper_count
+    FROM normalized_entity_identities nei
+    JOIN normalized_synonyms ns
+      ON ns.concept_id = nei.concept_id
+     AND ns.entity_type = nei.entity_type
+    LEFT JOIN normalized_paper_counts npc
+      ON npc.concept_id = nei.concept_id
+     AND npc.entity_type = nei.entity_type
+),
 reconciled_entities AS (
     SELECT
-        ae.concept_id,
-        ae.entity_type,
-        COALESCE(er.canonical_name, ae.canonical_name) AS canonical_name,
-        ae.synonyms,
+        ne.concept_id,
+        ne.entity_type,
+        COALESCE(er.canonical_name, ne.canonical_name) AS canonical_name,
+        ne.synonyms,
         current_entities.embedding,
-        ae.paper_count,
+        ne.paper_count,
         COALESCE(current_entities.created_at, now()::TIMESTAMPTZ) AS created_at
-    FROM aggregated_entities ae
+    FROM normalized_entities ne
     LEFT JOIN solemd.entity_rule er
-      ON er.concept_id = ae.concept_id
-     AND er.entity_type = ae.entity_type
+      ON er.concept_id = ne.concept_id
+     AND er.entity_type = ne.entity_type
     LEFT JOIN solemd.entities current_entities
-      ON current_entities.concept_id = ae.concept_id
-     AND current_entities.entity_type = ae.entity_type
+      ON current_entities.concept_id = ne.concept_id
+     AND current_entities.entity_type = ne.entity_type
 ),
 raw_vocab_seed_candidates AS (
     SELECT
-        COALESCE('MESH:' || NULLIF(vt.mesh_id, ''), 'UMLS:' || vt.umls_cui) AS concept_id,
+        {catalog_vocab_source_identifier_sql(mesh_id_expr="vt.mesh_id", umls_cui_expr="vt.umls_cui")} AS concept_id,
         lower(vt.pubtator_entity_type) AS entity_type,
         trim(vt.canonical_name) AS candidate_name
     FROM solemd.vocab_terms vt
@@ -295,13 +477,13 @@ vocab_seeded_entities AS (
     LEFT JOIN solemd.entities current_entities
       ON current_entities.concept_id = seeds.concept_id
      AND current_entities.entity_type = seeds.entity_type
-    LEFT JOIN aggregated_entities ae
-      ON ae.concept_id = seeds.concept_id
-     AND ae.entity_type = seeds.entity_type
+    LEFT JOIN normalized_entities ne
+      ON ne.concept_id = seeds.concept_id
+     AND ne.entity_type = seeds.entity_type
     LEFT JOIN solemd.entity_rule er
       ON er.concept_id = seeds.concept_id
      AND er.entity_type = seeds.entity_type
-    WHERE ae.concept_id IS NULL
+    WHERE ne.concept_id IS NULL
 )
 SELECT
     concept_id,
@@ -324,17 +506,47 @@ SELECT
 FROM vocab_seeded_entities
 """
 
-_ENTITY_CORPUS_PRESENCE_SELECT_SQL = """
-WITH grouped_mentions AS MATERIALIZED (
+_ENTITY_CORPUS_PRESENCE_SELECT_SQL = fr"""
+WITH raw_entity_mentions AS MATERIALIZED (
+    SELECT
+        ea.concept_id,
+        ea.entity_type,
+        regexp_replace(trim(mention), '\s+', ' ', 'g') AS mention
+    FROM pubtator.entity_annotations ea
+    CROSS JOIN LATERAL unnest(string_to_array(ea.mentions, '|')) AS mention
+    WHERE ea.concept_id != ''
+      AND ea.concept_id != '-'
+      AND ea.mentions != ''
+      AND NULLIF(trim(mention), '') IS NOT NULL
+),
+raw_entity_surfaces AS MATERIALIZED (
+    SELECT
+        concept_id,
+        entity_type,
+        mode() WITHIN GROUP (ORDER BY mention) AS canonical_name,
+        array_agg(DISTINCT mention ORDER BY mention) AS synonyms
+    FROM raw_entity_mentions
+    GROUP BY concept_id, entity_type
+),
+chemical_vocab_normalization_candidates AS MATERIALIZED (
+    {_chemical_vocab_normalization_candidates_sql("raw_entity_surfaces")}
+),
+grouped_mentions AS MATERIALIZED (
     SELECT
         ea.pmid,
         ea.entity_type,
-        ea.concept_id,
+        COALESCE(cvn.normalized_concept_id, ea.concept_id) AS concept_id,
         COUNT(*)::INTEGER AS mention_count
     FROM pubtator.entity_annotations ea
+    LEFT JOIN chemical_vocab_normalization_candidates cvn
+      ON cvn.source_concept_id = ea.concept_id
+     AND cvn.entity_type = ea.entity_type
     WHERE ea.concept_id != ''
       AND ea.concept_id != '-'
-    GROUP BY ea.pmid, ea.entity_type, ea.concept_id
+    GROUP BY
+        ea.pmid,
+        ea.entity_type,
+        COALESCE(cvn.normalized_concept_id, ea.concept_id)
 )
 SELECT
     gm.entity_type,
@@ -402,7 +614,7 @@ END
 
 
 _HIGHLIGHT_POLICY_SQL_PARAMS = (
-    sorted(AMBIGUOUS_CANONICAL_ALIAS_KEYS),
+    sorted(AMBIGUOUS_HIGHLIGHT_ALIAS_KEYS),
     HIGHLIGHT_MODE_DISABLED,
     list(HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES),
     HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
@@ -1325,6 +1537,25 @@ def build_entity_runtime_aliases_table(
             cur.execute(
                 "ALTER TABLE IF EXISTS "
                 f"{_ENTITY_RUNTIME_ALIASES_TABLE} RENAME TO entity_runtime_aliases_old"
+            )
+            cur.execute(
+                f"""
+                ALTER TABLE IF EXISTS {_ENTITY_RUNTIME_ALIASES_OLD_TABLE}
+                    RENAME CONSTRAINT {_ENTITY_RUNTIME_ALIASES_PKEY}
+                    TO {_ENTITY_RUNTIME_ALIASES_OLD_PKEY}
+                """
+            )
+            cur.execute(
+                f"""
+                ALTER INDEX IF EXISTS solemd.{_ENTITY_RUNTIME_ALIASES_ALIAS_KEY_INDEX}
+                    RENAME TO {_ENTITY_RUNTIME_ALIASES_OLD_ALIAS_KEY_INDEX}
+                """
+            )
+            cur.execute(
+                f"""
+                ALTER INDEX IF EXISTS solemd.{_ENTITY_RUNTIME_ALIASES_ALIAS_KEY_ENTITY_TYPE_INDEX}
+                    RENAME TO {_ENTITY_RUNTIME_ALIASES_OLD_ALIAS_KEY_ENTITY_TYPE_INDEX}
+                """
             )
             cur.execute(
                 "ALTER TABLE "

@@ -6,8 +6,9 @@ Builds the canonical entity lookup table by:
 3. Collecting all unique mention forms as synonyms
 4. Counting distinct PMIDs as paper_count
 5. Overriding canonical_name with hand-curated entity_rule values
-6. Seeding vocab-only anatomy/network entities
-7. Refreshing the broad query alias projection, the runtime alias subset, and
+6. Normalizing safe chemical salt/form entities onto curated clinical ingredients
+7. Seeding vocab-only anatomy/network entities
+8. Refreshing the broad query alias projection, the runtime alias subset, and
    the entity-to-corpus serving projection
 
 Usage:

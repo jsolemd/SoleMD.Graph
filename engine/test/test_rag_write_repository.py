@@ -3,6 +3,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, call
 
 from app.rag.entity_runtime_keys import (
+    catalog_vocab_source_identifier_sql,
     normalize_runtime_concept_id_key,
     normalize_runtime_concept_namespace_key,
     normalize_runtime_entity_type_key,
@@ -234,9 +235,21 @@ def test_runtime_entity_lookup_key_helpers_normalize_lookup_contract():
     assert normalize_runtime_entity_type_key("ProteinMutation") == "mutation"
     assert normalize_runtime_entity_type_key("cellline") == "cellline"
     assert normalize_runtime_concept_namespace_key("MeSH") == "mesh"
+    assert normalize_runtime_concept_namespace_key("UMLS") == "umls"
     assert normalize_runtime_concept_namespace_key(None) is None
     assert normalize_runtime_concept_id_key("MESH:D014406") == "D014406"
+    assert normalize_runtime_concept_id_key("UMLS:C0123091") == "C0123091"
     assert normalize_runtime_concept_id_key("7157") == "7157"
+
+
+def test_catalog_vocab_source_identifier_sql_prefers_mesh_then_umls():
+    assert catalog_vocab_source_identifier_sql(
+        mesh_id_expr="vt.mesh_id",
+        umls_cui_expr="vt.umls_cui",
+    ) == (
+        "COALESCE('MESH:' || NULLIF(vt.mesh_id, ''), "
+        "'UMLS:' || NULLIF(vt.umls_cui, ''))"
+    )
 
 
 def test_runtime_write_stage_support_only_enables_live_physical_tables():

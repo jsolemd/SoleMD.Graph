@@ -7,6 +7,7 @@ const mockFitViewByIndices = jest.fn();
 const mockZoomToPoint = jest.fn();
 const mockSelectPointsByIndices = jest.fn();
 const mockClearSelectionBySource = jest.fn();
+const mockFocusNode = jest.fn().mockReturnValue(true);
 const mockCommitSelectionState = jest.fn().mockResolvedValue(undefined);
 const mockClearOwnedSelectionState = jest.fn().mockResolvedValue(undefined);
 
@@ -20,6 +21,9 @@ jest.mock("@/features/graph/cosmograph", () => ({
   useGraphCamera: () => ({
     fitViewByIndices: mockFitViewByIndices,
     zoomToPoint: mockZoomToPoint,
+  }),
+  useGraphFocus: () => ({
+    focusNode: mockFocusNode,
   }),
   useGraphSelection: () => ({
     selectPointsByIndices: mockSelectPointsByIndices,
@@ -41,14 +45,14 @@ jest.mock("@/features/graph/lib/graph-selection-state", () => ({
 
 const mockResolveWikiOverlay = jest.fn();
 const mockCommitWikiOverlay = jest.fn();
-const mockCacheWikiNodeIndices = jest.fn();
+const mockCacheWikiGraphNodes = jest.fn();
 const mockClearWikiGraphOverlay = jest.fn();
 
 jest.mock("@/features/wiki/lib/wiki-graph-sync", () => ({
   resolveWikiOverlay: (...args: unknown[]) => mockResolveWikiOverlay(...args),
   commitWikiOverlay: (...args: unknown[]) => mockCommitWikiOverlay(...args),
-  cacheWikiNodeIndices: (...args: unknown[]) =>
-    mockCacheWikiNodeIndices(...args),
+  cacheWikiGraphNodes: (...args: unknown[]) =>
+    mockCacheWikiGraphNodes(...args),
   clearWikiGraphOverlay: (...args: unknown[]) =>
     mockClearWikiGraphOverlay(...args),
 }));
@@ -81,7 +85,9 @@ describe("useWikiGraphSync", () => {
       pointIds: ["point-1"],
     });
     mockCommitWikiOverlay.mockResolvedValue(undefined);
-    mockCacheWikiNodeIndices.mockResolvedValue({ "ref-1": 42 });
+    mockCacheWikiGraphNodes.mockResolvedValue({
+      "ref-1": { index: 42, id: "ref-1-node" },
+    });
     mockClearWikiGraphOverlay.mockResolvedValue(undefined);
   });
 
@@ -105,7 +111,10 @@ describe("useWikiGraphSync", () => {
 
   it("shows page evidence on graph explicitly and fits multi-paper results", async () => {
     const queries = createMockQueries();
-    mockCacheWikiNodeIndices.mockResolvedValue({ "ref-1": 42, "ref-2": 84 });
+    mockCacheWikiGraphNodes.mockResolvedValue({
+      "ref-1": { index: 42, id: "ref-1-node" },
+      "ref-2": { index: 84, id: "ref-2-node" },
+    });
 
     const { result } = renderHook(() =>
       useWikiGraphSync({
@@ -128,7 +137,7 @@ describe("useWikiGraphSync", () => {
       queries,
       pointIds: ["point-1"],
     });
-    expect(mockCacheWikiNodeIndices).toHaveBeenCalledWith({
+    expect(mockCacheWikiGraphNodes).toHaveBeenCalledWith({
       queries,
       graphPaperRefs: ["ref-1", "ref-2"],
     });
@@ -147,7 +156,7 @@ describe("useWikiGraphSync", () => {
     expect(mockZoomToPoint).not.toHaveBeenCalled();
   });
 
-  it("reuses cached indices for single-paper focus without overfitting the viewport", async () => {
+  it("reuses cached nodes for single-paper selection without overfitting the viewport", async () => {
     const queries = createMockQueries();
     const { result } = renderHook(() =>
       useWikiGraphSync({
@@ -163,11 +172,26 @@ describe("useWikiGraphSync", () => {
     mockFitViewByIndices.mockClear();
     mockZoomToPoint.mockClear();
 
-    act(() => {
+    await act(async () => {
       result.current.onPaperClick("ref-1");
+      await Promise.resolve();
     });
 
-    expect(mockZoomToPoint).toHaveBeenCalledWith(42, 250);
+    expect(mockCommitSelectionState).toHaveBeenCalledWith({
+      sourceId: "wiki:page",
+      queries,
+      pointIndices: [42],
+      setSelectedPointCount: dashboardState.setSelectedPointCount,
+      setActiveSelectionSourceId: dashboardState.setActiveSelectionSourceId,
+    });
+    expect(mockSelectPointsByIndices).toHaveBeenLastCalledWith({
+      sourceId: "wiki:page",
+      pointIndices: [42],
+    });
+    expect(mockFocusNode).toHaveBeenCalledWith(
+      expect.objectContaining({ index: 42, id: "ref-1-node" }),
+      { zoomDuration: 250, selectPoint: false },
+    );
     expect(mockFitViewByIndices).not.toHaveBeenCalled();
   });
 

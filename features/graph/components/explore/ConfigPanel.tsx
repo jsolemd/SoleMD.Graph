@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import { useDashboardStore } from "@/features/graph/stores";
-import { PANEL_BODY_CLASS, PanelShell } from "../panels/PanelShell";
+import { PanelBody, PanelShell } from "../panels/PanelShell";
 import { PointsConfig } from "./PointsConfig";
 
 function ConfigPanelComponent() {
@@ -14,9 +14,9 @@ function ConfigPanelComponent() {
       title="Configuration"
       onClose={() => closePanel("config")}
     >
-      <div className={`thin-scrollbar min-h-0 ${PANEL_BODY_CLASS}`}>
+      <PanelBody panelId="config" viewportClassName="thin-scrollbar">
         <PointsConfig />
-      </div>
+      </PanelBody>
     </PanelShell>
   );
 }

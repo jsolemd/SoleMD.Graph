@@ -12,7 +12,7 @@ import { motion } from "framer-motion";
 import { Tooltip } from "@mantine/core";
 import { crisp } from "@/lib/motion";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
-import type { ModuleAccent, ModuleSection } from "@/features/learn/types";
+import type { ModuleSection } from "@/features/learn/types";
 import { accentCssVar } from "@/features/learn/tokens";
 
 // ---------------------------------------------------------------------------
@@ -39,39 +39,82 @@ interface DotTocProps {
 
 /** Build DotTocEntry[] from a module manifest's sections. */
 export function entriesFromModuleSections(sections: ModuleSection[]): DotTocEntry[] {
-  return sections.map((s) => ({
+  const raw = sections.map((s) => ({
     id: `section-${s.id}`,
     title: s.title,
     color: s.accent ? accentCssVar(s.accent) : undefined,
   }));
+  return ensureAdjacentUnique(raw);
 }
 
-/** Rainbow cycle of accent CSS vars for non-module pages. */
-const RAINBOW_ACCENTS: ModuleAccent[] = [
-  "soft-blue",
-  "golden-yellow",
-  "fresh-green",
-  "muted-indigo",
-  "warm-coral",
-  "soft-pink",
-  "soft-lavender",
-  "paper",
+/**
+ * Extended pastel palette — 20 distinct hues spanning the full rainbow.
+ * Token accents first, then supplementary pastels for pages with many headings.
+ * Ordered so adjacent entries always contrast visually.
+ */
+const RAINBOW: string[] = [
+  accentCssVar("soft-blue"),       // blue
+  accentCssVar("golden-yellow"),   // gold
+  accentCssVar("fresh-green"),     // green
+  accentCssVar("warm-coral"),      // coral
+  accentCssVar("muted-indigo"),    // indigo
+  accentCssVar("soft-pink"),       // pink
+  "var(--color-seafoam)",          // seafoam
+  accentCssVar("paper"),           // paper
+  accentCssVar("soft-lavender"),   // lavender
+  "var(--color-amber)",            // amber
+  "var(--color-sky)",              // sky
+  "var(--color-rose)",             // rose
+  "var(--color-mint)",             // mint
+  "var(--color-orchid)",           // orchid
+  "var(--color-maize)",            // maize
+  "var(--color-powder)",           // powder
+  "var(--color-peach)",            // peach
+  "var(--color-sage)",             // sage
+  "var(--color-plum)",             // plum
+  "var(--color-pear)",             // pear
 ];
-const RAINBOW = RAINBOW_ACCENTS.map(accentCssVar);
+
+/**
+ * Post-process entries so no two adjacent dots share the same color.
+ * Respects existing colors when possible; replaces only on collision.
+ */
+function ensureAdjacentUnique(entries: DotTocEntry[]): DotTocEntry[] {
+  if (entries.length === 0) return entries;
+  let cycleIdx = 0;
+  let prevColor: string | undefined;
+
+  return entries.map((entry) => {
+    let color = entry.color ?? RAINBOW[cycleIdx++ % RAINBOW.length];
+
+    if (color === prevColor) {
+      for (let attempt = 0; attempt < RAINBOW.length; attempt++) {
+        const candidate = RAINBOW[cycleIdx++ % RAINBOW.length];
+        if (candidate !== prevColor) {
+          color = candidate;
+          break;
+        }
+      }
+    }
+
+    prevColor = color;
+    return color === entry.color ? entry : { ...entry, color };
+  });
+}
 
 /** Scan a container for h1-h3[id] headings and return DotTocEntry[] with rainbow colors. */
 export function entriesFromHeadings(container: HTMLElement): DotTocEntry[] {
   const headings = container.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id]");
-  const entries: DotTocEntry[] = [];
+  const raw: DotTocEntry[] = [];
   for (let i = 0; i < headings.length; i++) {
     const h = headings[i];
-    entries.push({
+    raw.push({
       id: h.id,
       title: h.textContent?.trim() ?? "",
       color: RAINBOW[i % RAINBOW.length],
     });
   }
-  return entries;
+  return ensureAdjacentUnique(raw);
 }
 
 // ---------------------------------------------------------------------------
@@ -79,9 +122,10 @@ export function entriesFromHeadings(container: HTMLElement): DotTocEntry[] {
 // ---------------------------------------------------------------------------
 
 const DOT_GAP_MAX = 26;
-const DOT_SIZE = 14;
-const DOT_SIZE_ACTIVE = 18;
+const DOT_SIZE = 9;
+const DOT_SIZE_ACTIVE = 20;
 const HIT_SIZE = 32;
+const RAIL_BACKPLATE_WIDTH = 18;
 const DEFAULT_COLOR = "var(--mode-accent)";
 
 // ---------------------------------------------------------------------------
@@ -222,17 +266,18 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
   const portalTarget = panelRef.current;
   if (!tocOpen || entries.length === 0 || !layout || !portalTarget || typeof document === "undefined") return null;
 
-  // Responsive gap: shrink if entries don't fit in scroll area
-  const maxRailHeight = layout.scrollHeight - HIT_SIZE * 2;
+  // Responsive gap: shrink if entries don't fit in panel
+  const maxRailHeight = layout.panelHeight - HIT_SIZE * 2;
   const dotGap = entries.length > 1
     ? Math.min(DOT_GAP_MAX, Math.max(8, maxRailHeight / (entries.length - 1)))
     : DOT_GAP_MAX;
 
   const railHeight = (entries.length - 1) * dotGap;
   const fillHeight = activeIndex * dotGap;
+  const navHeight = Math.max(entries.length * Math.min(dotGap, HIT_SIZE), railHeight + HIT_SIZE);
 
-  // Center the rail within the scroll area, panel-relative coords
-  const navTop = layout.scrollTop + layout.scrollHeight / 2;
+  // Center the rail within the panel, panel-relative coords
+  const navTop = layout.panelHeight / 2;
 
   return createPortal(
     <nav
@@ -250,6 +295,24 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
         pointerEvents: "auto",
       }}
     >
+      {/* Outer half-capsule: panel-matched surface only where the rail protrudes past the panel edge */}
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translateY(-50%)",
+          width: RAIL_BACKPLATE_WIDTH,
+          height: navHeight,
+          backgroundColor: "var(--graph-panel-bg)",
+          borderTopRightRadius: RAIL_BACKPLATE_WIDTH,
+          borderBottomRightRadius: RAIL_BACKPLATE_WIDTH,
+          boxShadow: "0 0 0 1px var(--graph-panel-border), var(--graph-panel-shadow)",
+          clipPath: "inset(-40px -40px -40px 0)",
+          pointerEvents: "none",
+        }}
+      />
+
       {/* Track background */}
       <div
         style={{
@@ -284,8 +347,10 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
       {/* Dots */}
       {entries.map((entry, i) => {
         const isActive = i === activeIndex;
-        const isVisited = i <= activeIndex;
         const dotColor = entry.color ?? DEFAULT_COLOR;
+        const matteDotColor = isActive
+          ? dotColor
+          : `color-mix(in srgb, ${dotColor} 52%, var(--graph-panel-bg))`;
 
         return (
           <Tooltip
@@ -316,14 +381,13 @@ export function DotToc({ entries, scrollRef }: DotTocProps) {
                 animate={{
                   width: isActive ? DOT_SIZE_ACTIVE : DOT_SIZE,
                   height: isActive ? DOT_SIZE_ACTIVE : DOT_SIZE,
-                  opacity: isVisited ? 1 : 0.7,
+                  opacity: 1,
+                  backgroundColor: matteDotColor,
                   boxShadow: "none",
                 }}
                 transition={crisp}
                 style={{
                   borderRadius: "50%",
-                  backgroundColor: dotColor,
-                  outline: "0.5px solid var(--graph-panel-bg)",
                   flexShrink: 0,
                   zIndex: 1,
                 }}

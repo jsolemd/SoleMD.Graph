@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useGraphCamera, useGraphSelection } from "@/features/graph/cosmograph";
+import {
+  useGraphCamera,
+  useGraphFocus,
+  useGraphSelection,
+} from "@/features/graph/cosmograph";
 import { useDashboardStore } from "@/features/graph/stores";
 import {
   clearOwnedSelectionState,
@@ -11,9 +15,9 @@ import {
   WIKI_PAGE_OVERLAY_PRODUCER,
   WIKI_PAGE_SELECTION_SOURCE_ID,
 } from "@/features/graph/lib/overlay-producers";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphPointRecord } from "@/features/graph/types";
 import {
-  cacheWikiNodeIndices,
+  cacheWikiGraphNodes,
   clearWikiGraphOverlay,
   commitWikiOverlay,
   resolveWikiOverlay,
@@ -41,7 +45,7 @@ export function useWikiGraphSync({
   const pageFitPadding = 0.15;
   const paperFocusDuration = 250;
   const abortRef = useRef<AbortController | null>(null);
-  const nodeIndexCacheRef = useRef<Record<string, number>>({});
+  const nodeCacheRef = useRef<Record<string, GraphPointRecord>>({});
   const setSelectedPointCount = useDashboardStore(
     (state) => state.setSelectedPointCount,
   );
@@ -56,6 +60,7 @@ export function useWikiGraphSync({
 
   const { fitViewByIndices, zoomToPoint } = useGraphCamera();
   const { selectPointsByIndices, clearSelectionBySource } = useGraphSelection();
+  const { focusNode } = useGraphFocus();
 
   const focusPointIndices = useCallback(
     (pointIndices: readonly number[]) => {
@@ -86,10 +91,45 @@ export function useWikiGraphSync({
     [paperFocusDuration, zoomToPoint],
   );
 
+  const activatePaperNode = useCallback(
+    async (node: GraphPointRecord) => {
+      await commitSelectionState({
+        sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
+        queries,
+        pointIndices: [node.index],
+        setSelectedPointCount,
+        setActiveSelectionSourceId,
+      });
+
+      selectPointsByIndices({
+        sourceId: WIKI_PAGE_SELECTION_SOURCE_ID,
+        pointIndices: [node.index],
+      });
+
+      const changedFocus = focusNode(node, {
+        zoomDuration: paperFocusDuration,
+        selectPoint: false,
+      });
+
+      if (!changedFocus) {
+        focusSinglePoint(node.index);
+      }
+    },
+    [
+      focusNode,
+      focusSinglePoint,
+      paperFocusDuration,
+      queries,
+      selectPointsByIndices,
+      setActiveSelectionSourceId,
+      setSelectedPointCount,
+    ],
+  );
+
   const clearPageGraph = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
-    nodeIndexCacheRef.current = {};
+    nodeCacheRef.current = {};
 
     void clearWikiGraphOverlay({
       producerId: WIKI_PAGE_OVERLAY_PRODUCER,
@@ -138,7 +178,7 @@ export function useWikiGraphSync({
         return;
       }
 
-      const indexMap = await cacheWikiNodeIndices({
+      const nodesByRef = await cacheWikiGraphNodes({
         queries,
         graphPaperRefs: [...pageGraphRefs],
       });
@@ -146,10 +186,10 @@ export function useWikiGraphSync({
         return;
       }
 
-      nodeIndexCacheRef.current = indexMap;
-      const pointIndices = Object.values(indexMap).filter(
-        (index): index is number => Number.isFinite(index),
-      );
+      nodeCacheRef.current = nodesByRef;
+      const pointIndices = Object.values(nodesByRef)
+        .map((node) => node.index)
+        .filter((index): index is number => Number.isFinite(index));
 
       if (pointIndices.length === 0) {
         clearSelectionBySource(WIKI_PAGE_SELECTION_SOURCE_ID);
@@ -197,26 +237,32 @@ export function useWikiGraphSync({
 
   const onPaperClick = useCallback(
     (graphPaperRef: string) => {
-      const cachedIndex = nodeIndexCacheRef.current[graphPaperRef];
-      if (cachedIndex != null && Number.isFinite(cachedIndex)) {
-        focusSinglePoint(cachedIndex);
+      const cachedNode = nodeCacheRef.current[graphPaperRef];
+      if (cachedNode && Number.isFinite(cachedNode.index)) {
+        void activatePaperNode(cachedNode);
         return;
       }
 
-      queries
+      void queries
         .ensureGraphPaperRefsAvailable([graphPaperRef])
-        .then(() => queries.getPaperNodesByGraphPaperRefs([graphPaperRef]))
+        .then(() =>
+          cacheWikiGraphNodes({
+            queries,
+            graphPaperRefs: [graphPaperRef],
+          }),
+        )
         .then((nodes) => {
           const node = nodes[graphPaperRef];
           if (node && Number.isFinite(node.index)) {
-            focusSinglePoint(node.index);
+            nodeCacheRef.current[graphPaperRef] = node;
+            return activatePaperNode(node);
           }
         })
         .catch(() => {
           // Paper not available on the graph for the current bundle.
         });
     },
-    [focusSinglePoint, queries],
+    [activatePaperNode, queries],
   );
 
   useEffect(() => {

@@ -27,7 +27,7 @@ export interface WikiPipelineData {
   /** PMID → bundle-compatible graph paper ref. */
   paperGraphRefs: Record<number, string>
   /** Slug → entity metadata for entity pages (hover cards). */
-  linkedEntities: Record<string, { entity_type: string; concept_id: string }>
+  linkedEntities: Record<string, { entity_type: string; concept_id: string | null }>
   /** Precomputed entity mentions in body text for inline highlighting. */
   bodyEntityMatches: readonly WikiBodyEntityMatch[]
 }

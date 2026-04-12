@@ -196,13 +196,6 @@
   font-weight: 600;
 }
 
-/* ── Entity highlights — color-mix computed at element level so [data-entity-type] cascades ── */
-.tiptap-create .tiptap .tiptap-entity-highlight {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--entity-accent) 25%, transparent);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--entity-accent) 55%, transparent);
-}
-
 /* ── Source mode textarea — monospace raw markdown view ── */
 .tiptap-source {
   flex: 1;

@@ -314,6 +314,70 @@ export function useFloatingPanel({
     ],
   );
 
+  // Left-edge resize: inverted delta, compensates dragX so right edge stays fixed
+  const onResizeLeftMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = width;
+      const startDragX = dragX.get();
+
+      const handleMove = (ev: MouseEvent) => {
+        const delta = startX - ev.clientX;
+        const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + delta));
+        const actualDelta = newWidth - startWidth;
+        scheduleSizeUpdate(newWidth, null);
+        dragX.set(startDragX - actualDelta);
+      };
+
+      const handleUp = () => {
+        document.removeEventListener("mousemove", handleMove);
+        document.removeEventListener("mouseup", handleUp);
+        flushPendingSize();
+        requestAnimationFrame(() => { reportRect(); persistPosition(); });
+      };
+
+      document.addEventListener("mousemove", handleMove);
+      document.addEventListener("mouseup", handleUp);
+    },
+    [width, minWidth, maxWidth, dragX, reportRect, persistPosition, scheduleSizeUpdate, flushPendingSize],
+  );
+
+  // Bottom-left corner resize: left-edge width + vertical height
+  const onResizeCornerLeftMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startWidth = width;
+      const startDragX = dragX.get();
+      const el = panelRef.current;
+      const startHeight = height ?? el?.offsetHeight ?? 400;
+      const dockedMaxH = window.innerHeight - 116 - bottomClearance - 12;
+      const maxH = maxHeightOpt ?? (isDocked ? dockedMaxH : window.innerHeight - 120);
+
+      const handleMove = (ev: MouseEvent) => {
+        const dx = startX - ev.clientX;
+        const dy = ev.clientY - startY;
+        const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth + dx));
+        const actualDx = newWidth - startWidth;
+        scheduleSizeUpdate(newWidth, Math.max(minHeight, Math.min(maxH, startHeight + dy)));
+        dragX.set(startDragX - actualDx);
+      };
+
+      const handleUp = () => {
+        document.removeEventListener("mousemove", handleMove);
+        document.removeEventListener("mouseup", handleUp);
+        flushPendingSize();
+        requestAnimationFrame(() => { reportRect(); persistPosition(); });
+      };
+
+      document.addEventListener("mousemove", handleMove);
+      document.addEventListener("mouseup", handleUp);
+    },
+    [width, height, minWidth, maxWidth, minHeight, maxHeightOpt, isDocked, bottomClearance, dragX, reportRect, persistPosition, scheduleSizeUpdate, flushPendingSize],
+  );
+
   return {
     panelRef,
     dragControls,
@@ -329,5 +393,7 @@ export function useFloatingPanel({
     onResizeMouseDown,
     onResizeVerticalMouseDown,
     onResizeCornerMouseDown,
+    onResizeLeftMouseDown,
+    onResizeCornerLeftMouseDown,
   };
 }

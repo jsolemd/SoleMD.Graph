@@ -57,4 +57,25 @@ describe('normalizeWikiPageResponse', () => {
 
     expect(page?.featured_graph_refs).toEqual({})
   })
+
+  it('preserves entity link metadata even when the concept id is missing', () => {
+    const page = normalizeWikiPageResponse({
+      slug: 'entities/amygdala',
+      title: 'Amygdala',
+      content_md: '[[serotonin]]',
+      linked_entities: {
+        'entities/serotonin': {
+          entity_type: 'Chemical',
+          concept_id: null,
+        },
+      },
+    })
+
+    expect(page?.linked_entities).toEqual({
+      'entities/serotonin': {
+        entity_type: 'Chemical',
+        concept_id: null,
+      },
+    })
+  })
 })

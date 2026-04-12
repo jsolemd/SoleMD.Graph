@@ -169,10 +169,10 @@ describe("DotToc", () => {
     });
 
     await waitFor(() => {
-      expect(getDot("Intro")).toHaveStyle({ opacity: "1", width: "14px", height: "14px" });
-      expect(getDot("Yellow")).toHaveStyle({ opacity: "1", width: "14px", height: "14px" });
-      expect(getDot("Green")).toHaveStyle({ opacity: "1", width: "18px", height: "18px" });
-      expect(getDot("Pink")).toHaveStyle({ opacity: "0.7", width: "14px", height: "14px" });
+      expect(getDot("Intro")).toHaveStyle({ opacity: "1", width: "9px", height: "9px" });
+      expect(getDot("Yellow")).toHaveStyle({ opacity: "1", width: "9px", height: "9px" });
+      expect(getDot("Green")).toHaveStyle({ opacity: "1", width: "20px", height: "20px" });
+      expect(getDot("Pink")).toHaveStyle({ opacity: "1", width: "9px", height: "9px" });
     });
   });
 });

@@ -1,0 +1,46 @@
+/* Shared inline entity highlight contract across wiki markdown, module
+   DOM annotation, and prompt-box/editor text surfaces. */
+
+.wiki-entity-mention[data-entity-type],
+.wiki-link[data-entity-type],
+.tiptap-create .tiptap .tiptap-entity-highlight[data-entity-type] {
+  border-radius: var(--entity-highlight-radius);
+  background: color-mix(in srgb, var(--entity-accent) 14%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  box-shadow: inset 0 -1px 0
+    color-mix(in srgb, var(--entity-accent) 62%, transparent);
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.wiki-entity-mention[data-entity-type] {
+  color: inherit;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--entity-accent) 70%, transparent);
+  cursor: default;
+}
+
+.wiki-link[data-entity-type] {
+  color: var(--entity-accent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--entity-accent) 70%, transparent);
+}
+
+.wiki-entity-mention[data-entity-type]:hover,
+.wiki-link[data-entity-type]:hover,
+.tiptap-create .tiptap .tiptap-entity-highlight[data-entity-type]:hover {
+  background: color-mix(in srgb, var(--entity-accent) 20%, transparent);
+  box-shadow: inset 0 -1px 0 var(--entity-accent);
+}
+
+.wiki-entity-mention[data-entity-type]:hover {
+  border-bottom-color: var(--entity-accent);
+}
+
+.wiki-link[data-entity-type]:hover {
+  opacity: 1;
+  border-bottom-color: var(--entity-accent);
+}

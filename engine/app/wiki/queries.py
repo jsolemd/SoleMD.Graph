@@ -132,7 +132,6 @@ SELECT slug, entity_type, concept_id
   FROM solemd.wiki_pages
  WHERE slug = ANY(%(slugs)s)
    AND entity_type IS NOT NULL
-   AND concept_id IS NOT NULL
 """
 
 # ---------------------------------------------------------------------------

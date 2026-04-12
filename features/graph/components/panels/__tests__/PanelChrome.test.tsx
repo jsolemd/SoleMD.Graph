@@ -102,4 +102,31 @@ describe("PanelChrome", () => {
     fireEvent.pointerDown(screen.getByLabelText("Close test panel"));
     expect(onTitlePointerDown).toHaveBeenCalledTimes(1);
   });
+
+  it("renders and calls panel zoom controls", () => {
+    const onZoomIn = jest.fn();
+    const onZoomOut = jest.fn();
+
+    render(
+      <MantineProvider>
+        <PanelChrome
+          title="Test"
+          onClose={jest.fn()}
+          panelZoom={1.2}
+          canZoomIn
+          canZoomOut
+          onZoomIn={onZoomIn}
+          onZoomOut={onZoomOut}
+        >
+          <div>content</div>
+        </PanelChrome>
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("120%")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Zoom in panel content"));
+    fireEvent.click(screen.getByLabelText("Zoom out panel content"));
+    expect(onZoomIn).toHaveBeenCalledTimes(1);
+    expect(onZoomOut).toHaveBeenCalledTimes(1);
+  });
 });

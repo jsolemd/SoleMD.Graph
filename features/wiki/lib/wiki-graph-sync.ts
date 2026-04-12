@@ -1,6 +1,7 @@
 import type {
   GraphBundleQueries,
   GraphPaperAvailabilityResult,
+  GraphPointRecord,
   OverlayProducerId,
 } from "@/features/graph/types";
 
@@ -70,26 +71,27 @@ export async function commitWikiOverlay({
  * Phase 3: POST-COMMIT NODE CACHE -- reads current_paper_points_web AFTER
  * overlay is materialized.
  *
- * Calls getPaperNodesByGraphPaperRefs to get node indices for camera focus.
- * Returns a map of graphPaperRef -> node index.
+ * Calls getPaperNodesByGraphPaperRefs to get resolved graph nodes after
+ * overlay/state changes have materialized.
+ * Returns a map of graphPaperRef -> resolved graph node.
  */
-export async function cacheWikiNodeIndices({
+export async function cacheWikiGraphNodes({
   queries,
   graphPaperRefs,
 }: {
   queries: GraphBundleQueries;
   graphPaperRefs: string[];
-}): Promise<Record<string, number>> {
+}): Promise<Record<string, GraphPointRecord>> {
   if (graphPaperRefs.length === 0) {
     return {};
   }
 
   const nodesByRef = await queries.getPaperNodesByGraphPaperRefs(graphPaperRefs);
 
-  const result: Record<string, number> = {};
+  const result: Record<string, GraphPointRecord> = {};
   for (const [ref, node] of Object.entries(nodesByRef)) {
     if (Number.isFinite(node.index)) {
-      result[ref] = node.index;
+      result[ref] = node;
     }
   }
 

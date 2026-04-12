@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries } from "@/features/graph/types";
-import { PANEL_BODY_CLASS, PanelShell } from "../../panels/PanelShell";
+import { PanelBody, PanelShell } from "../../panels/PanelShell";
 import { SqlExplorerContent } from "./SqlExplorerContent";
 
 interface QueryPanelProps {
@@ -20,9 +20,9 @@ function QueryPanelComponent({ runReadOnlyQuery }: QueryPanelProps) {
       defaultWidth={420}
       onClose={() => closePanel("query")}
     >
-      <div className={PANEL_BODY_CLASS}>
+      <PanelBody panelId="query">
         <SqlExplorerContent runReadOnlyQuery={runReadOnlyQuery} />
-      </div>
+      </PanelBody>
     </PanelShell>
   );
 }

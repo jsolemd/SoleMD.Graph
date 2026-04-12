@@ -84,7 +84,7 @@ class WikiRepository(Protocol):
         self,
         *,
         slugs: list[str],
-    ) -> dict[str, tuple[str, str]]: ...
+    ) -> dict[str, tuple[str, str | None]]: ...
 
     def get_entity_page_context(
         self,
@@ -202,7 +202,7 @@ class PostgresWikiRepository:
         self,
         *,
         slugs: list[str],
-    ) -> dict[str, tuple[str, str]]:
+    ) -> dict[str, tuple[str, str | None]]:
         if not slugs:
             return {}
         rows = self._fetchall(

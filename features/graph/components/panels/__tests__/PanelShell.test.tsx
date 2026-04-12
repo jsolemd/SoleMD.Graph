@@ -12,9 +12,22 @@ jest.mock("framer-motion", () => ({
       children,
       style,
       className,
+      drag: _drag,
+      dragControls: _dragControls,
+      dragListener: _dragListener,
+      dragMomentum: _dragMomentum,
+      dragElastic: _dragElastic,
+      initial: _initial,
+      animate: _animate,
+      exit: _exit,
+      transition: _transition,
       ...rest
     }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <div style={style as React.CSSProperties} className={className as string}>
+      <div
+        style={style as React.CSSProperties}
+        className={className as string}
+        {...rest}
+      >
         {children}
       </div>
     ),
@@ -36,12 +49,22 @@ jest.mock("@/lib/motion", () => ({
   smooth: {},
 }));
 
-import { PanelShell } from "../PanelShell";
+import { PanelBody, PanelShell } from "../PanelShell";
 import { useDashboardStore } from "@/features/graph/stores";
+
+beforeAll(() => {
+  class ResizeObserverMock {
+    observe() {}
+    disconnect() {}
+    unobserve() {}
+  }
+
+  global.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
+});
 
 describe("PanelShell", () => {
   beforeEach(() => {
-    useDashboardStore.setState({ floatingObstacles: {} });
+    useDashboardStore.setState({ floatingObstacles: {}, panelZooms: {} });
   });
 
   it("renders chrome with title", () => {
@@ -127,5 +150,49 @@ describe("PanelShell", () => {
     );
 
     expect(panel).toHaveStyle({ width: "600px" });
+  });
+
+  it("zooms panel content with panel-scoped keyboard shortcuts", () => {
+    const { container } = render(
+      <MantineProvider>
+        <PanelShell id="wiki" title="Wiki" onClose={jest.fn()}>
+          <PanelBody panelId="wiki">
+            <div data-testid="child">content</div>
+          </PanelBody>
+        </PanelShell>
+      </MantineProvider>,
+    );
+
+    const panel = container.querySelector(".absolute");
+    const zoomWrapper = screen.getByTestId("child").parentElement;
+
+    expect(panel).toBeTruthy();
+    expect((zoomWrapper as HTMLElement).style.zoom).toBe("1");
+
+    fireEvent.keyDown(panel as HTMLElement, { key: "=", ctrlKey: true });
+
+    expect(useDashboardStore.getState().panelZooms.wiki).toBe(1.1);
+    expect((zoomWrapper as HTMLElement).style.zoom).toBe("1.1");
+
+    fireEvent.keyDown(panel as HTMLElement, { key: "0", ctrlKey: true });
+
+    expect(useDashboardStore.getState().panelZooms.wiki).toBeUndefined();
+    expect((zoomWrapper as HTMLElement).style.zoom).toBe("1");
+  });
+
+  it("zooms panel content from the chrome controls", () => {
+    render(
+      <MantineProvider>
+        <PanelShell id="wiki" title="Wiki" onClose={jest.fn()}>
+          <div>content</div>
+        </PanelShell>
+      </MantineProvider>,
+    );
+
+    fireEvent.click(screen.getByLabelText("Zoom in panel content"));
+    expect(useDashboardStore.getState().panelZooms.wiki).toBe(1.1);
+
+    fireEvent.click(screen.getByLabelText("Zoom out panel content"));
+    expect(useDashboardStore.getState().panelZooms.wiki).toBeUndefined();
   });
 });

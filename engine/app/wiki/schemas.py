@@ -88,7 +88,7 @@ class WikiLinkedEntity(WikiSchema):
     """Entity metadata for a linked wiki page (hover card data source)."""
 
     entity_type: str
-    concept_id: str
+    concept_id: str | None = None
 
 
 class WikiBodyEntityMatch(WikiSchema):

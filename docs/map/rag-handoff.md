@@ -743,6 +743,36 @@ The bounded design should be:
 - ontology validates
 - retrieval executes deterministically
 
+### Agentic RAG: The Right Form In This Repo
+
+Agentic RAG should be used here as a **bounded retrieval controller**, not as a freeform rewrite engine.
+
+That means:
+- the first pass stays deterministic and policy-bound
+- the LLM is allowed to infer likely query intent and slot structure when the first pass is weak
+- it can launch only a few structured follow-up retrieval moves
+- every follow-up move must stay grounded in ontology-backed concepts, explicit slots, or retrieval policy
+- the loop must stop early once evidence sufficiency improves or the bounded search budget is exhausted
+
+The intended runtime shape is:
+- first-pass hybrid retrieval
+- sufficiency check on shortlist quality and child evidence coverage
+- if weak: LLM produces a small number of structured follow-up queries or article-type hypotheses
+- retrieval runs again in bounded mode
+- ranking and grounding operate over the expanded but still controlled candidate set
+
+The LLM should therefore help with:
+- query intent inference
+- canonical event interpretation
+- follow-up query planning
+- article-type targeting
+
+It should **not** be allowed to:
+- freely rewrite every query into a long biomedical paragraph
+- invent unsupported concepts
+- create open-ended retrieval loops
+- override ontology or lexical constraints around polarity, temporality, and dose
+
 ---
 
 ## Graph: Where It Helps and Where It Does Not
@@ -1028,22 +1058,27 @@ The refined order is now:
    - preserve exposure, phenotype, temporality, polarity, dose, article-type intent, and canonical ids
    - feed those slots into retrieval and ranking instead of flattening them away
 
-3. **Re-anchor paper ranking on child evidence.**
+3. **Add a bounded agentic retrieval controller for weak first-pass cases.**
+   - let the LLM infer intent and follow-up retrieval moves only when shortlist quality is weak
+   - keep the follow-up budget small
+   - require ontology grounding and lexical safeguards on the follow-up moves
+
+4. **Re-anchor paper ranking on child evidence.**
    - child-first aggregation
    - stronger parent-child promotion
    - review overbreadth penalty where direct child evidence exists elsewhere
 
-4. **Train or tune with citation-aware hard negatives.**
+5. **Train or tune with citation-aware hard negatives.**
    - citation neighbors
    - semantic neighbors
    - same-concept wrong-phenotype papers
    - overly broad review articles that currently steal rank
 
-5. **Expand reranking carefully.**
+6. **Expand reranking carefully.**
    - broader bounded MedCPT reranking first
    - late-interaction reranking later, if the candidate set improves enough to justify it
 
-6. **Keep graph support offline and precomputed.**
+7. **Keep graph support offline and precomputed.**
    - graph priors, candidate expansion, rerank support
    - no default live graph traversal
 
@@ -1066,21 +1101,57 @@ Do **not** restart from the assumption that the current bottleneck is warehouse 
 
 ## Recommended Next Implementation Order
 
-### 1. Propagate Recovered Concepts Into Shortlist Formation
+### 1. Add Dense Child Retrieval
+
+Primary files:
+- `engine/app/rag/search_retrieval.py`
+- child-level repository search paths and ANN support
+
+Goal:
+- raise child evidence recall before doing more paper-level score surgery
+- give the system a better candidate substrate for parent promotion
+
+How to achieve it:
+- add a child ANN lane alongside the existing lexical child lane
+- use precomputed biomedical embeddings, ANN index support, and existing child lexical search as the retrieval tools
+- keep retrieval bounded through the current retrieval policy and Langfuse timing review
+
+### 2. Replace Loose Expansion With A Small `ConceptPackage`
 
 Primary files:
 - `engine/app/rag/search_retrieval_concepts.py`
 - `engine/app/rag/search_retrieval.py`
 
 Goal:
-- turn recovered ontology concepts into better paper candidate formation and rescue behavior
-- specifically reduce `target_visible_not_top1`
+- preserve exposure, phenotype, temporality, polarity, dose, article-type intent, and canonical ids
+- stop flattening intent back into one expanded string
 
-What to look for:
-- concept expansion terms currently generated but not strongly enough reflected in winning paper candidates
-- opportunity to use concept packages to strengthen candidate set quality before rank fusion
+How to achieve it:
+- convert the current phrase-builder and vocab rescue outputs into a small structured package
+- use MeSH/UMLS aliases, PubTator entities, local vocab aliases, and the current canonical phrase rules as the grounding tools
+- feed the package into retrieval lane selection, rescue queries, and article-type priors
 
-### 2. Improve Parent-Child Evidence Promotion
+### 3. Add Bounded Agentic Retrieval For Weak First-Pass Cases
+
+Primary files:
+- retrieval-policy and search orchestration paths
+- likely `engine/app/rag/search_retrieval.py` and `engine/app/rag/search_execution.py`
+
+Goal:
+- let an LLM infer intent and generate a few structured follow-up retrieval moves only when the first-pass shortlist is weak
+- improve canonical interpretation and intent resolution without turning the whole runtime into freeform query rewriting
+
+Constraints:
+- bounded follow-up budget
+- ontology grounding required
+- lexical safeguards for polarity, temporality, and dose remain active
+
+How to achieve it:
+- add a sufficiency check after first-pass retrieval
+- use the LLM only as a retrieval controller that proposes a few follow-up queries or article-type hypotheses
+- validate every follow-up against the `ConceptPackage`, ontology ids, and current retrieval policy before rerunning search
+
+### 4. Improve Parent-Child Evidence Promotion
 
 Primary files:
 - `engine/app/rag/ranking.py`
@@ -1092,7 +1163,40 @@ Goal:
 - reward parents with corroborated child evidence more effectively
 - avoid letting broad citation-rich reviews dominate direct-support papers
 
-### 3. Build a Precomputed Graph Read-Model
+How to achieve it:
+- re-anchor ranking on strongest child evidence rather than paper-level fusion alone
+- use child lexical hits, child dense hits, citation context, biomedical rerank score, and intent-aware publication priors as the ranking tools
+- keep regression checks on the 61-case expert gate before accepting score changes
+
+### 5. Train Or Tune With Citation-Aware Hard Negatives
+
+Primary assets:
+- benchmark traces
+- citation neighbors
+- semantic neighbors
+- wrong-phenotype same-concept papers
+- overbroad review papers
+
+Goal:
+- sharpen candidate separation using the actual miss surface of this system
+
+How to achieve it:
+- mine Langfuse traces and benchmark misses for hard negatives
+- use citation neighborhoods, semantic neighbors, and same-concept wrong-target papers as training or tuning inputs
+- start with lightweight feature tuning first, then move to learned rerankers only if the candidate set improves
+
+### 6. Expand Reranking Carefully
+
+Goal:
+- broaden bounded MedCPT reranking first
+- test late-interaction reranking later only if the candidate set is strong enough to justify it
+
+How to achieve it:
+- widen the bounded MedCPT shortlist in `GENERAL` and concept-recovered cases
+- use MedCPT first, then compare against a later ColBERT-style ablation only after hard-negative tuning
+- keep latency and benchmark review coupled so reranking breadth does not silently degrade service quality
+
+### 7. Keep Graph Support Offline And Precomputed
 
 Primary input assets:
 - PubTator entities
@@ -1110,15 +1214,12 @@ Use it for:
 
 Do **not** default to live graph traversal.
 
-### 4. Add a Bounded AI Proposal Layer
+How to achieve it:
+- build a read-model over concept-paper, relation-paper, and citation-neighbor structure
+- use that read-model to add priors and candidate expansion features into retrieval and ranking
+- keep graph computation offline or precomputed, not query-time exploratory traversal
 
-Goal:
-- use generative AI to propose grounded concept packages or relation expansions
-- keep ontology validation mandatory before proposals affect retrieval
-
-This should support development and selective runtime fallback, not replace deterministic grounding.
-
-### 5. Expand the Benchmark Portfolio
+### 8. Expand The Benchmark Portfolio
 
 Keep:
 - the current 61-case structure-complete expert gate for continuity
@@ -1127,6 +1228,11 @@ Add:
 - more structure-complete expert cases
 - more relation-heavy narrative cases
 - enough structure-complete hard cases that acceptance is not overly dependent on a single 61-case surface
+
+How to achieve it:
+- keep Langfuse as the source of truth for run review
+- add new expert and narrative benchmark cases only when warehouse coverage is sufficient
+- track miss buckets, citation precision, and contamination separately so retrieval changes are diagnosable end to end
 
 ---
 

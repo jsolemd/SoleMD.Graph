@@ -2269,6 +2269,12 @@ def test_fetch_entity_matches_uses_provided_resolved_concepts_without_reresolvin
     assert "JOIN solemd.paper_entity_mentions pem" not in queries.QUERY_ENTITY_TERM_MATCH_SQL
     assert "lower(e.canonical_name)" not in queries.QUERY_ENTITY_TERM_MATCH_SQL
     assert "('MESH:' || qt.raw_term)" in queries.QUERY_ENTITY_TERM_MATCH_SQL
+    assert "('UMLS:' || qt.raw_term)" in queries.QUERY_ENTITY_TERM_MATCH_SQL
+    assert (
+        "COALESCE('MESH:' || NULLIF(vt.mesh_id, ''), "
+        "'UMLS:' || NULLIF(vt.umls_cui, ''))" in queries.QUERY_ENTITY_TERM_MATCH_SQL
+    )
+    assert "('UMLS:' || qt.raw_term)" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "AS resolved(raw_term, entity_type, concept_namespace, concept_id)" in (
         queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     )
@@ -2276,8 +2282,14 @@ def test_fetch_entity_matches_uses_provided_resolved_concepts_without_reresolvin
     assert "pem.runtime_concept_namespace_key" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     assert "pem.runtime_concept_id_key" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     assert "pem.runtime_entity_type_key" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "top_concept_mention_targets AS MATERIALIZED" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "JOIN umls.chemical_ingredient_bridge cib" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "JOIN umls.cui_to_mesh c2m" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     assert "concept_namespace IS NOT NULL" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
     assert "concept_namespace IS NULL" in queries.PAPER_ENTITY_EXACT_SEARCH_SQL
+    assert "top_concept_mention_targets AS MATERIALIZED" in queries.ENTITY_MATCH_SQL
+    assert "JOIN umls.chemical_ingredient_bridge cib" in queries.ENTITY_MATCH_SQL
+    assert "JOIN umls.cui_to_mesh c2m" in queries.ENTITY_MATCH_SQL
     assert "dnamutation" in queries.PAPER_ENTITY_SEARCH_SQL
     assert "pubtator.entity_annotations" not in queries.ENTITY_MATCH_SQL
 

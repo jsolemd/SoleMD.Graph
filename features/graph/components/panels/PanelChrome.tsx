@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useRef } from "react";
 import { Text, ActionIcon, Tooltip } from "@mantine/core";
-import { Pin, PinOff, X } from "lucide-react";
+import { Minus, Pin, PinOff, Plus, X } from "lucide-react";
 import { iconBtnStyles, panelTextMutedStyle, panelChromeStyle } from "./PanelShell";
 
 const panelChromeTextClassName = "uppercase tracking-[0.08em]";
@@ -20,6 +20,11 @@ interface PanelChromeProps {
   isPinned?: boolean;
   /** Toggle pin state. */
   onTogglePin?: () => void;
+  panelZoom?: number;
+  canZoomIn?: boolean;
+  canZoomOut?: boolean;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
 }
 
 export function PanelChrome({
@@ -31,6 +36,11 @@ export function PanelChrome({
   onTitleDoubleClick,
   isPinned,
   onTogglePin,
+  panelZoom,
+  canZoomIn,
+  canZoomOut,
+  onZoomIn,
+  onZoomOut,
 }: PanelChromeProps) {
   // Dismiss on Escape — ref avoids re-registering on every onClose identity change
   const onCloseRef = useRef(onClose);
@@ -67,6 +77,53 @@ export function PanelChrome({
         </div>
         <div className="ml-2 flex items-center gap-1">
           {headerActions}
+          {typeof panelZoom === "number" && onZoomIn && onZoomOut && (
+            <div className="flex items-center gap-0.5">
+              <Tooltip
+                label="Zoom out panel content (Ctrl+-)"
+                position="bottom"
+                withArrow
+              >
+                <ActionIcon
+                  variant="transparent"
+                  size={24}
+                  radius="xl"
+                  className="graph-icon-btn"
+                  styles={iconBtnStyles}
+                  onClick={onZoomOut}
+                  aria-label="Zoom out panel content"
+                  disabled={!canZoomOut}
+                >
+                  <Minus size={12} />
+                </ActionIcon>
+              </Tooltip>
+              <Text
+                component="span"
+                className="min-w-[2.8rem] text-center tabular-nums"
+                style={{ ...panelTextMutedStyle, ...panelChromeStyle }}
+              >
+                {Math.round(panelZoom * 100)}%
+              </Text>
+              <Tooltip
+                label="Zoom in panel content (Ctrl+=)"
+                position="bottom"
+                withArrow
+              >
+                <ActionIcon
+                  variant="transparent"
+                  size={24}
+                  radius="xl"
+                  className="graph-icon-btn"
+                  styles={iconBtnStyles}
+                  onClick={onZoomIn}
+                  aria-label="Zoom in panel content"
+                  disabled={!canZoomIn}
+                >
+                  <Plus size={12} />
+                </ActionIcon>
+              </Tooltip>
+            </div>
+          )}
           {onTogglePin && (
             <Tooltip
               label={isPinned ? "Unpin panel" : "Pin panel"}

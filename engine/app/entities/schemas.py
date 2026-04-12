@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.entities.limits import (
+    ENTITY_MATCH_DEFAULT_LIMIT,
+    ENTITY_MATCH_MAX_LIMIT,
+    ENTITY_MATCH_TEXT_MAX_CHARS,
+)
+
 
 class EntitySchema(BaseModel):
     """Shared schema configuration for entity runtime APIs.
@@ -19,9 +25,9 @@ class EntitySchema(BaseModel):
 class EntityMatchRequest(EntitySchema):
     model_config = ConfigDict(extra="forbid", use_enum_values=True)
 
-    text: str
+    text: str = Field(max_length=ENTITY_MATCH_TEXT_MAX_CHARS)
     entity_types: list[str] = Field(default_factory=list)
-    limit: int = Field(default=24, ge=1, le=64)
+    limit: int = Field(default=ENTITY_MATCH_DEFAULT_LIMIT, ge=1, le=ENTITY_MATCH_MAX_LIMIT)
     max_tokens_per_alias: int = Field(default=8, ge=1, le=12)
 
     @field_validator("text")

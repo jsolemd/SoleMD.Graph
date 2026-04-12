@@ -99,7 +99,7 @@ export function computeLinkCounts(
 }
 
 export function nodeRadius(node: SimNode, linkCount: number): number {
-  const base = node.kind === "page" ? 3 : 2
+  const base = node.kind === "page" ? 5 : 2
   return base + Math.sqrt(linkCount)
 }
 

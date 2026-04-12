@@ -98,7 +98,7 @@ export function WikiNavigation() {
 
     const dashboardState = useDashboardStore.getState();
     const anchorRect = resolvePanelAnchorRect(dashboardState, "wiki", PANEL_TOP);
-    const panelWidth = dashboardState.panelPositions["wiki-module"]?.width ?? 680;
+    const panelWidth = dashboardState.panelPositions["wiki-module"]?.width ?? 900;
     const panelHeight = dashboardState.panelPositions["wiki-module"]?.height;
 
     if (anchorRect) {

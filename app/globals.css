@@ -6,6 +6,7 @@
 
 @import "./styles/tokens.css";
 @import "./styles/base.css";
+@import "./styles/entity-highlights.css";
 @import "./styles/editor.css";
 @import "./styles/vendor-overrides.css";
 @import "./styles/graph-ui.css";

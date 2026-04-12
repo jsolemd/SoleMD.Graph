@@ -73,6 +73,20 @@ class FakeEntityRepository:
                         "highlight_mode": HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
                     }
                 )
+            if alias_key == "quetiapine":
+                rows.append(
+                    {
+                        "alias_key": alias_key,
+                        "alias_text": "Quetiapine",
+                        "is_canonical": True,
+                        "alias_source": "canonical_name",
+                        "entity_type": "chemical",
+                        "source_identifier": "UMLS:C0123091",
+                        "canonical_name": "Quetiapine",
+                        "paper_count": 15830,
+                        "highlight_mode": HIGHLIGHT_MODE_EXACT,
+                    }
+                )
         return rows
 
     def fetch_entity_detail(self, *, entity_type, source_identifier, alias_limit=8):
@@ -189,6 +203,70 @@ def test_entity_match_respects_case_sensitive_highlight_mode():
     assert [match.matched_text for match in lowercase_response.matches] == [
         "schizophrenia",
     ]
+
+
+def test_entity_match_prefers_curated_alias_source_over_higher_paper_count_raw_canonical():
+    class CuratedRankingRepository(FakeEntityRepository):
+        def fetch_alias_matches(self, *, alias_keys, entity_types):
+            rows = super().fetch_alias_matches(alias_keys=alias_keys, entity_types=entity_types)
+            for alias_key in alias_keys:
+                if alias_key != "psychosis":
+                    continue
+                rows.extend(
+                    [
+                        {
+                            "alias_key": alias_key,
+                            "alias_text": "psychosis",
+                            "is_canonical": True,
+                            "alias_source": "canonical_name",
+                            "entity_type": "disease",
+                            "source_identifier": "MESH:RAW",
+                            "canonical_name": "Raw Psychosis Surface",
+                            "paper_count": 999999,
+                            "highlight_mode": HIGHLIGHT_MODE_EXACT,
+                        },
+                        {
+                            "alias_key": alias_key,
+                            "alias_text": "psychosis",
+                            "is_canonical": False,
+                            "alias_source": "umls",
+                            "entity_type": "disease",
+                            "source_identifier": "MESH:D011618",
+                            "canonical_name": "Psychotic Disorders",
+                            "paper_count": 162849,
+                            "highlight_mode": HIGHLIGHT_MODE_EXACT,
+                        },
+                    ]
+                )
+            return rows
+
+    service = EntityService(repository=CuratedRankingRepository())
+
+    response = service.match_entities(
+        EntityMatchRequest(
+            text="Psychosis requires prompt treatment.",
+            limit=8,
+        )
+    )
+
+    assert [match.matched_text for match in response.matches] == ["Psychosis"]
+    assert response.matches[0].source_identifier == "MESH:D011618"
+    assert response.matches[0].alias_source == "umls"
+
+
+def test_entity_match_returns_umls_namespace_for_normalized_drug_entities():
+    service = EntityService(repository=FakeEntityRepository())
+
+    response = service.match_entities(
+        EntityMatchRequest(
+            text="Quetiapine can treat psychosis.",
+            limit=8,
+        )
+    )
+
+    assert [match.matched_text for match in response.matches] == ["Quetiapine"]
+    assert response.matches[0].concept_namespace == "umls"
+    assert response.matches[0].concept_id == "C0123091"
 
 
 def test_entity_overlay_resolves_graph_release_and_projection_refs():

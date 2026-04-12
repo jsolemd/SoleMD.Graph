@@ -2,7 +2,7 @@
 
 export interface WikiLinkedEntity {
   entity_type: string
-  concept_id: string
+  concept_id: string | null
 }
 
 export interface WikiBodyEntityMatch {

@@ -8,7 +8,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.entities.highlight_policy import HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT
+from app.entities.highlight_policy import (
+    HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES,
+    HIGHLIGHT_MODE_CASE_SENSITIVE_EXACT,
+)
 from app.entities.repository import (
     EntityAliasCatalogRow,
     EntityAliasDetailRow,
@@ -222,7 +225,7 @@ def resolve_text_matches(
     for row in alias_rows:
         rows_by_alias_key[row["alias_key"]].append(row)
 
-    scored_matches: list[tuple[tuple[int, int, int, int], EntityTextMatch]] = []
+    scored_matches: list[tuple[tuple[int, int, int, int, int], EntityTextMatch]] = []
     for candidate in candidates:
         candidate_rows = rows_by_alias_key.get(candidate.alias_key)
         if not candidate_rows:
@@ -240,6 +243,7 @@ def resolve_text_matches(
         best_row = max(candidate_rows, key=_row_rank_key)
         entity_type = best_row["entity_type"]
         source_identifier = best_row["source_identifier"]
+        is_curated = best_row["alias_source"] in HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES
         match = EntityTextMatch(
             match_id=build_entity_match_id(
                 entity_type=entity_type,
@@ -270,6 +274,7 @@ def resolve_text_matches(
         scored_matches.append(
             (
                 (
+                    1 if is_curated else 0,
                     candidate.end - candidate.start,
                     candidate.token_count,
                     int(best_row["paper_count"]),
@@ -288,6 +293,7 @@ def resolve_text_matches(
             -entry[0][1],
             -entry[0][2],
             -entry[0][3],
+            -entry[0][4],
             entry[1].start,
         ),
     ):
@@ -320,8 +326,9 @@ def is_overlapping(
     return left_start < right_end and right_start < left_end
 
 
-def _row_rank_key(row: EntityAliasCatalogRow) -> tuple[int, int, int, str]:
+def _row_rank_key(row: EntityAliasCatalogRow) -> tuple[int, int, int, int, str]:
     return (
+        1 if row["alias_source"] in HIGHLIGHT_ELIGIBLE_ALIAS_SOURCES else 0,
         1 if row["is_canonical"] else 0,
         int(row["paper_count"]),
         len(row["canonical_name"]),

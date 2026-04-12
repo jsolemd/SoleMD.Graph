@@ -54,9 +54,15 @@ jest.mock("@/features/wiki/hooks/use-wiki-graph-sync", () => ({
   }),
 }));
 
+jest.mock("@/features/animations/lottie/LottiePulseLoader", () => ({
+  LottiePulseLoader: ({ size = 10 }: { size?: number }) => (
+    <span data-testid="panel-inline-loader" style={{ width: size, height: size }} />
+  ),
+}));
+
 // Mock the wiki graph runtime (depends on pixi.js + canvas)
 jest.mock("@/features/wiki/graph-runtime", () => ({
-  mountWikiGraph: jest.fn().mockResolvedValue(() => {}),
+  mountWikiGraph: jest.fn().mockResolvedValue({ destroy: jest.fn() }),
   toSimNode: jest.fn((n: Record<string, unknown>) => n),
   toSimLink: jest.fn((e: Record<string, unknown>) => e),
 }));
@@ -75,10 +81,15 @@ jest.mock("framer-motion", () => ({
       delete rest.dragElastic;
       return <div {...rest}>{children}</div>;
     },
+    span: ({
+      children,
+      ...rest
+    }: React.PropsWithChildren<Record<string, unknown>>) => <span {...rest}>{children}</span>,
   },
   AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
   useDragControls: () => ({ start: jest.fn() }),
   useMotionValue: (v: number) => ({ get: () => v, set: jest.fn() }),
+  useReducedMotionConfig: jest.fn(() => true),
   animate: jest.fn(),
 }));
 
@@ -234,12 +245,107 @@ describe("WikiPanel", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(
-          "The wiki page content is ready; entity-wide counts and graph papers will appear when the API response arrives.",
-        ),
+        screen.getByText(/1 evidence/),
       ).toBeInTheDocument();
     });
     expect(screen.getByTestId("wiki-markdown")).toBeInTheDocument();
+  });
+
+  it("keeps the local graph mounted below the pinned page header and avoids duplicate top-paper sections", async () => {
+    useWikiStore.getState().navigateToPage("entities/melatonin");
+    useWikiStore.setState({
+      graphData: {
+        nodes: [
+          {
+            id: "page:entities/melatonin",
+            kind: "page",
+            label: "Melatonin",
+            slug: "entities/melatonin",
+            paper_id: null,
+            concept_id: "MESH:D008550",
+            entity_type: "Chemical",
+            semantic_group: "chemicals",
+            tags: [],
+            year: null,
+            venue: null,
+          },
+          {
+            id: "page:entities/circadian-rhythm",
+            kind: "page",
+            label: "Circadian rhythm",
+            slug: "entities/circadian-rhythm",
+            paper_id: null,
+            concept_id: "MESH:D002965",
+            entity_type: "Phenomenon",
+            semantic_group: "physiology",
+            tags: [],
+            year: null,
+            venue: null,
+          },
+        ],
+        edges: [
+          {
+            source: "page:entities/melatonin",
+            target: "page:entities/circadian-rhythm",
+            kind: "wikilink",
+          },
+        ],
+        signature: "test-local-graph",
+      },
+    });
+
+    const {
+      fetchWikiPageClient,
+      fetchWikiPageContextClient,
+    } = require("@/features/wiki/lib/wiki-client");
+    fetchWikiPageClient.mockResolvedValue({
+      slug: "entities/melatonin",
+      title: "Melatonin",
+      content_md: "# Melatonin",
+      frontmatter: {},
+      entity_type: "Chemical",
+      concept_id: "MESH:D008550",
+      family_key: null,
+      page_kind: "entity",
+      section_slug: null,
+      graph_focus: "cited_papers",
+      summary: "A neurohormone.",
+      tags: [],
+      outgoing_links: ["entities/circadian-rhythm"],
+      paper_pmids: [28847293],
+      featured_pmids: [],
+      paper_graph_refs: { 28847293: "corpus:12345" },
+      featured_graph_refs: {},
+      resolved_links: {},
+      linked_entities: {},
+    });
+    fetchWikiPageContextClient.mockResolvedValue({
+      total_corpus_paper_count: 18,
+      total_graph_paper_count: 6,
+      top_graph_papers: [
+        {
+          pmid: 28847293,
+          title: "Melatonin and circadian timing",
+          year: 2023,
+          venue: "Chronobiology International",
+          citation_count: 42,
+          graph_paper_ref: "corpus:12345",
+        },
+      ],
+    });
+
+    render(
+      <MantineProvider>
+        <WikiPanel bundle={mockBundle} queries={mockQueries} />
+      </MantineProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Melatonin")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("wiki-local-graph")).toBeInTheDocument();
+    expect(screen.getAllByText("Top graph papers")).toHaveLength(1);
   });
 
   it("renders the global graph inside a panel shell with a close button", async () => {
@@ -273,10 +379,8 @@ describe("WikiPanel", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Wiki Graph")).toBeInTheDocument();
-      expect(
-        screen.getByLabelText("Close wiki graph panel"),
-      ).toBeInTheDocument();
+      expect(screen.getByLabelText("Close graph")).toBeInTheDocument();
+      expect(screen.getAllByTestId("wiki-graph-surface")).toHaveLength(2);
     });
   });
 

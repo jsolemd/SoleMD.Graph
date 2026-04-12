@@ -158,6 +158,9 @@ function getErrorCode(
   if (status === 400) {
     return 'bad_request'
   }
+  if (status === 413) {
+    return 'bad_request'
+  }
   if (status === 401) {
     return 'unauthorized'
   }

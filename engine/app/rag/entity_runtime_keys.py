@@ -36,7 +36,7 @@ def normalize_runtime_concept_id_key(concept_id: str | None) -> str:
     """Return the canonical runtime concept identifier key."""
 
     normalized = (concept_id or "").strip()
-    if normalized.upper().startswith("MESH:"):
+    if normalized.upper().startswith(("MESH:", "UMLS:")):
         return normalized.split(":", 1)[1]
     return normalized
 
@@ -52,6 +52,8 @@ def infer_catalog_concept_namespace(
 
     if normalized_identifier.upper().startswith("MESH:"):
         return "mesh"
+    if normalized_identifier.upper().startswith("UMLS:"):
+        return "umls"
     if normalized_type == "gene":
         return "ncbi_gene"
     if normalized_type == "species":
@@ -68,11 +70,20 @@ def normalize_catalog_concept_id(
     normalized_identifier = (source_identifier or "").strip()
     normalized_type = normalize_runtime_entity_type_key(entity_type)
 
-    if normalized_identifier.upper().startswith("MESH:"):
+    if normalized_identifier.upper().startswith(("MESH:", "UMLS:")):
         return normalized_identifier.split(":", 1)[1]
     if normalized_type == "cellline":
         return normalized_identifier.replace("_", ":")
     return normalized_identifier
+
+
+def catalog_vocab_source_identifier_sql(*, mesh_id_expr: str, umls_cui_expr: str) -> str:
+    """Return the canonical catalog identifier SQL for a vocab-backed concept."""
+
+    return (
+        f"COALESCE('MESH:' || NULLIF({mesh_id_expr}, ''), "
+        f"'UMLS:' || NULLIF({umls_cui_expr}, ''))"
+    )
 
 
 def runtime_entity_type_key_sql(expr: str) -> str:
@@ -95,6 +106,7 @@ def runtime_concept_id_key_sql(expr: str) -> str:
     return f"""
 CASE
     WHEN upper(COALESCE({expr}, '')) LIKE 'MESH:%%'
+        OR upper(COALESCE({expr}, '')) LIKE 'UMLS:%%'
         THEN split_part(COALESCE({expr}, ''), ':', 2)
     ELSE COALESCE({expr}, '')
 END

@@ -6,7 +6,7 @@ import type {
 import {
   resolveWikiOverlay,
   commitWikiOverlay,
-  cacheWikiNodeIndices,
+  cacheWikiGraphNodes,
   clearWikiGraphOverlay,
 } from "../wiki-graph-sync";
 
@@ -148,28 +148,30 @@ describe("commitWikiOverlay", () => {
   });
 });
 
-describe("cacheWikiNodeIndices", () => {
+describe("cacheWikiGraphNodes", () => {
   it("returns empty map when graphPaperRefs is empty", async () => {
     const queries = makeMockQueries();
-    const result = await cacheWikiNodeIndices({ queries, graphPaperRefs: [] });
+    const result = await cacheWikiGraphNodes({ queries, graphPaperRefs: [] });
 
     expect(result).toEqual({});
     expect(queries.getPaperNodesByGraphPaperRefs).not.toHaveBeenCalled();
   });
 
-  it("maps graphPaperRef to node index", async () => {
+  it("maps graphPaperRef to resolved nodes", async () => {
     const queries = makeMockQueries();
+    const abcNode = makePointRecord({ index: 42, id: "pt-42" });
+    const defNode = makePointRecord({ index: 99, id: "pt-99" });
     (queries.getPaperNodesByGraphPaperRefs as jest.Mock).mockResolvedValue({
-      "s2:abc": makePointRecord({ index: 42 }),
-      "s2:def": makePointRecord({ index: 99 }),
+      "s2:abc": abcNode,
+      "s2:def": defNode,
     });
 
-    const result = await cacheWikiNodeIndices({
+    const result = await cacheWikiGraphNodes({
       queries,
       graphPaperRefs: ["s2:abc", "s2:def"],
     });
 
-    expect(result).toEqual({ "s2:abc": 42, "s2:def": 99 });
+    expect(result).toEqual({ "s2:abc": abcNode, "s2:def": defNode });
   });
 
   it("skips entries with non-finite index", async () => {
@@ -181,12 +183,14 @@ describe("cacheWikiNodeIndices", () => {
       "s2:neg-inf": makePointRecord({ index: -Infinity }),
     });
 
-    const result = await cacheWikiNodeIndices({
+    const result = await cacheWikiGraphNodes({
       queries,
       graphPaperRefs: ["s2:good", "s2:nan", "s2:inf", "s2:neg-inf"],
     });
 
-    expect(result).toEqual({ "s2:good": 7 });
+    expect(result).toEqual({
+      "s2:good": expect.objectContaining({ index: 7 }),
+    });
   });
 });
 

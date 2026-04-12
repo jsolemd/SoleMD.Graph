@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import db
+from app.api.request_limits import RequestBodyLimitMiddleware
 from app.api import api_router
+from app.entities.limits import ENTITY_MATCH_REQUEST_MAX_BODY_BYTES
 from app.rag.query_embedding import get_query_embedder_status
 from app.rag.service import get_rag_service
 
@@ -44,6 +46,11 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+)
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_body_bytes=ENTITY_MATCH_REQUEST_MAX_BODY_BYTES,
+    path_prefixes=("/api/v1/entities/",),
 )
 app.include_router(api_router)
 

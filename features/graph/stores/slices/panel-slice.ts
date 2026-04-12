@@ -7,6 +7,35 @@ export type ActivePanel = PanelId | null
 export type PromptMode = 'collapsed' | 'normal' | 'maximized'
 type ExpandedPromptMode = Exclude<PromptMode, 'collapsed'>
 
+export const PANEL_ZOOM_DEFAULT = 1
+export const PANEL_ZOOM_MIN = 0.75
+export const PANEL_ZOOM_MAX = 1.5
+export const PANEL_ZOOM_STEP = 0.1
+
+function clampPanelZoom(zoom: number): number {
+  return Math.min(PANEL_ZOOM_MAX, Math.max(PANEL_ZOOM_MIN, Math.round(zoom * 100) / 100))
+}
+
+function resolveNextPanelZooms(panelZooms: Record<string, number>, id: string, zoom: number): Record<string, number> {
+  const nextZoom = clampPanelZoom(zoom)
+  const currentZoom = panelZooms[id] ?? PANEL_ZOOM_DEFAULT
+
+  if (currentZoom === nextZoom) {
+    return panelZooms
+  }
+
+  if (nextZoom === PANEL_ZOOM_DEFAULT) {
+    if (!(id in panelZooms)) {
+      return panelZooms
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- destructure to omit key
+    const { [id]: _, ...rest } = panelZooms
+    return rest
+  }
+
+  return { ...panelZooms, [id]: nextZoom }
+}
+
 /** Initial state for openPanels — all closed. */
 const CLOSED_PANELS: Record<PanelId, boolean> = {
   about: false,
@@ -40,6 +69,7 @@ export interface PanelSlice {
 
   // Remembered panel positions — survives close/reopen within a session
   panelPositions: Record<string, { x: number; y: number; width: number; height?: number; docked: boolean; pinned?: boolean }>
+  panelZooms: Record<string, number>
 
   // Keyed registry — any floating element registers by ID
   floatingObstacles: Record<string, { x: number; y: number; width: number; height: number }>
@@ -70,6 +100,9 @@ export interface PanelSlice {
   setWikiExpanded: (expanded: boolean) => void
   setWikiExpandedWidth: (width: number) => void
   savePanelPosition: (id: string, pos: { x: number; y: number; width: number; height?: number; docked: boolean; pinned?: boolean }) => void
+  setPanelZoom: (id: string, zoom: number) => void
+  stepPanelZoom: (id: string, delta: number) => void
+  resetPanelZoom: (id: string) => void
   togglePanelPinned: (id: string) => void
   setFloatingObstacle: (id: string, rect: { x: number; y: number; width: number; height: number }) => void
   clearFloatingObstacle: (id: string) => void
@@ -89,6 +122,7 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   wikiExpandedWidth: 420,
   writeContent: '',
   panelPositions: {},
+  panelZooms: {},
   floatingObstacles: {},
 
   togglePanel: (panel) =>
@@ -205,6 +239,25 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
     set((s) => ({
       panelPositions: { ...s.panelPositions, [id]: pos },
     })),
+  setPanelZoom: (id, zoom) =>
+    set((s) => {
+      const panelZooms = resolveNextPanelZooms(s.panelZooms, id, zoom)
+      return panelZooms === s.panelZooms ? s : { panelZooms }
+    }),
+  stepPanelZoom: (id, delta) =>
+    set((s) => {
+      const panelZooms = resolveNextPanelZooms(
+        s.panelZooms,
+        id,
+        (s.panelZooms[id] ?? PANEL_ZOOM_DEFAULT) + delta,
+      )
+      return panelZooms === s.panelZooms ? s : { panelZooms }
+    }),
+  resetPanelZoom: (id) =>
+    set((s) => {
+      const panelZooms = resolveNextPanelZooms(s.panelZooms, id, PANEL_ZOOM_DEFAULT)
+      return panelZooms === s.panelZooms ? s : { panelZooms }
+    }),
   setFloatingObstacle: (id, rect) =>
     set((s) => ({
       floatingObstacles: { ...s.floatingObstacles, [id]: rect },

@@ -5,6 +5,7 @@ module free of circular imports — it must not import from siblings.
 """
 
 from app.rag.entity_runtime_keys import (
+    catalog_vocab_source_identifier_sql,
     runtime_concept_id_key_sql,
     runtime_concept_namespace_key_sql,
     runtime_entity_type_key_sql,
@@ -42,6 +43,8 @@ def _entity_catalog_namespace_sql(
 CASE
     WHEN upper(COALESCE({concept_id_expr}, '')) LIKE 'MESH:%%'
         THEN 'mesh'
+    WHEN upper(COALESCE({concept_id_expr}, '')) LIKE 'UMLS:%%'
+        THEN 'umls'
     WHEN lower(COALESCE({entity_type_expr}, '')) = 'gene'
         THEN 'ncbi_gene'
     WHEN lower(COALESCE({entity_type_expr}, '')) = 'species'
@@ -59,6 +62,7 @@ def _entity_catalog_mention_concept_id_sql(
     return f"""
 CASE
     WHEN upper(COALESCE({concept_id_expr}, '')) LIKE 'MESH:%%'
+        OR upper(COALESCE({concept_id_expr}, '')) LIKE 'UMLS:%%'
         THEN split_part(COALESCE({concept_id_expr}, ''), ':', 2)
     WHEN lower(COALESCE({entity_type_expr}, '')) = 'cellline'
         THEN replace(COALESCE({concept_id_expr}, ''), '_', ':')
@@ -107,6 +111,51 @@ _ENTITY_ALIAS_NULL_VOCAB_COLUMNS = """
         NULL::text AS vocab_umls_cui,
         NULL::text AS vocab_mesh_id,
         NULL::text AS vocab_category
+"""
+
+_VOCAB_CONCEPT_IDENTIFIER_SQL = catalog_vocab_source_identifier_sql(
+    mesh_id_expr="vt.mesh_id",
+    umls_cui_expr="vt.umls_cui",
+)
+_VOCAB_CONCEPT_NAMESPACE_SQL = _entity_catalog_namespace_sql(
+    concept_id_expr=_VOCAB_CONCEPT_IDENTIFIER_SQL,
+    entity_type_expr="COALESCE(e.entity_type, vt.pubtator_entity_type)",
+)
+_VOCAB_CONCEPT_ID_SQL = runtime_concept_id_key_sql(_VOCAB_CONCEPT_IDENTIFIER_SQL)
+
+ENTITY_TOP_CONCEPT_MENTION_TARGETS_CTE_SQL = """
+top_concept_mention_targets AS MATERIALIZED (
+    SELECT DISTINCT
+        tc.raw_term,
+        tc.lowered_term,
+        tc.entity_type,
+        tc.concept_namespace,
+        tc.concept_id,
+        tc.concept_score,
+        tc.concept_namespace AS match_namespace,
+        tc.concept_id AS match_concept_id
+    FROM top_concepts tc
+    WHERE tc.concept_namespace IS NOT NULL
+    UNION
+    SELECT DISTINCT
+        tc.raw_term,
+        tc.lowered_term,
+        tc.entity_type,
+        tc.concept_namespace,
+        tc.concept_id,
+        tc.concept_score,
+        'mesh' AS match_namespace,
+        c2m.mesh_id AS match_concept_id
+    FROM top_concepts tc
+    JOIN umls.chemical_ingredient_bridge cib
+      ON tc.concept_namespace = 'umls'
+     AND tc.entity_type = 'chemical'
+     AND cib.ingredient_cui = tc.concept_id
+    JOIN umls.cui_to_mesh c2m
+      ON c2m.cui = cib.form_cui
+    WHERE c2m.mesh_id IS NOT NULL
+      AND c2m.mesh_id <> ''
+)
 """
 
 QUERY_ENTITY_TERM_MATCH_SQL = f"""
@@ -226,6 +275,61 @@ catalog_exact_matches AS (
         qt.raw_term NOT LIKE '%%:%%'
         AND qt.upper_term <> qt.raw_term
         AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term AS query_term,
+        qt.token_count,
+        e.concept_id AS normalized_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS match_score,
+        CASE COALESCE(er.confidence, '')
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        {_ENTITY_CATALOG_NULL_VOCAB_COLUMNS}
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('UMLS:' || qt.raw_term)
+    LEFT JOIN solemd.entity_rule er
+      ON er.entity_type = {ENTITY_TABLE_TYPE_KEY_SQL}
+     AND er.concept_id = e.concept_id
+    WHERE
+        qt.raw_term NOT LIKE '%%:%%'
+        AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term AS query_term,
+        qt.token_count,
+        e.concept_id AS normalized_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS match_score,
+        CASE COALESCE(er.confidence, '')
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+        END AS rule_confidence_rank,
+        (COALESCE(er.confidence, '') <> '') AS has_entity_rule,
+        {_ENTITY_CATALOG_NULL_VOCAB_COLUMNS}
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('UMLS:' || qt.upper_term)
+    LEFT JOIN solemd.entity_rule er
+      ON er.entity_type = {ENTITY_TABLE_TYPE_KEY_SQL}
+     AND er.concept_id = e.concept_id
+    WHERE
+        qt.raw_term NOT LIKE '%%:%%'
+        AND qt.upper_term <> qt.raw_term
+        AND COALESCE(e.concept_id, '') NOT IN ('', '-')
 ),
 catalog_alias_exact_matches AS (
     -- Broad exact-query alias resolution deliberately uses entity_aliases rather
@@ -278,8 +382,8 @@ vocab_alias_exact_matches AS (
             {_entity_join_type_sql("vt.pubtator_entity_type")},
             'disease'
         ) AS entity_type,
-        'mesh' AS concept_namespace,
-        {runtime_concept_id_key_sql("'MESH:' || vt.mesh_id")} AS concept_id,
+        {_VOCAB_CONCEPT_NAMESPACE_SQL} AS concept_namespace,
+        {_VOCAB_CONCEPT_ID_SQL} AS concept_id,
         COALESCE(e.paper_count, 0) AS paper_count,
         CASE
             WHEN vta.is_preferred AND COALESCE(vta.quality_score, 0) >= 90 THEN 0.96
@@ -312,13 +416,13 @@ vocab_alias_exact_matches AS (
     JOIN solemd.vocab_terms vt
       ON vt.id = vta.term_id
     LEFT JOIN solemd.entities e
-      ON e.concept_id = ('MESH:' || vt.mesh_id)
+      ON e.concept_id = {_VOCAB_CONCEPT_IDENTIFIER_SQL}
     LEFT JOIN solemd.entity_rule er
       ON e.concept_id IS NOT NULL
      AND er.entity_type = {_entity_join_type_sql("e.entity_type")}
      AND er.concept_id = e.concept_id
     WHERE
-        vt.mesh_id IS NOT NULL
+        {_VOCAB_CONCEPT_IDENTIFIER_SQL} IS NOT NULL
         AND trim(COALESCE(vt.canonical_name, '')) <> ''
 ),
 matched_entities AS (

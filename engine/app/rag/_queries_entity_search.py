@@ -11,6 +11,7 @@ from app.rag._queries_paper_core import (
     ENTITY_MENTION_NAMESPACE_KEY_SQL,
     ENTITY_MENTION_TYPE_KEY_SQL,
     ENTITY_RESOLVED_TOP_CONCEPTS_CTE_SQL,
+    ENTITY_TOP_CONCEPT_MENTION_TARGETS_CTE_SQL,
     ENTITY_TABLE_CONCEPT_KEY_SQL,
     ENTITY_TABLE_NAMESPACE_KEY_SQL,
     ENTITY_TABLE_TYPE_KEY_SQL,
@@ -88,6 +89,35 @@ exact_matches AS MATERIALIZED (
     FROM query_terms qt
     JOIN solemd.entities e
       ON e.concept_id = ('MESH:' || qt.upper_term)
+    WHERE qt.raw_term NOT LIKE '%%:%%'
+      AND qt.upper_term <> qt.raw_term
+      AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term,
+        qt.lowered_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS concept_score
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('UMLS:' || qt.raw_term)
+    WHERE qt.raw_term NOT LIKE '%%:%%'
+      AND COALESCE(e.concept_id, '') NOT IN ('', '-')
+    UNION
+    SELECT
+        qt.raw_term,
+        qt.lowered_term,
+        {ENTITY_TABLE_TYPE_KEY_SQL} AS entity_type,
+        {ENTITY_TABLE_NAMESPACE_KEY_SQL} AS concept_namespace,
+        {ENTITY_TABLE_CONCEPT_KEY_SQL} AS concept_id,
+        e.paper_count,
+        1.0 AS concept_score
+    FROM query_terms qt
+    JOIN solemd.entities e
+      ON e.concept_id = ('UMLS:' || qt.upper_term)
     WHERE qt.raw_term NOT LIKE '%%:%%'
       AND qt.upper_term <> qt.raw_term
       AND COALESCE(e.concept_id, '') NOT IN ('', '-')
@@ -260,25 +290,26 @@ def _entity_matched_corpus_scores_cte_sql(*, scope_mode: str) -> str:
       ON gs.corpus_id = pem.corpus_id
 """
     return f"""
+{ENTITY_TOP_CONCEPT_MENTION_TARGETS_CTE_SQL.strip()},
 matched_mentions AS MATERIALIZED (
-    SELECT
+    SELECT DISTINCT
         pem.corpus_id,
         pem.canonical_block_ordinal,
-        tc.lowered_term,
-        tc.concept_score,
+        tmt.lowered_term,
+        tmt.concept_score,
         COALESCE(pb.is_retrieval_default, false) AS is_retrieval_default
-    FROM top_concepts tc
+    FROM top_concept_mention_targets tmt
     JOIN solemd.paper_entity_mentions pem
-      ON {ENTITY_MENTION_NAMESPACE_KEY_SQL} = tc.concept_namespace
-     AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tc.concept_id
+      ON {ENTITY_MENTION_NAMESPACE_KEY_SQL} = tmt.match_namespace
+     AND {ENTITY_MENTION_CONCEPT_KEY_SQL} = tmt.match_concept_id
     {scope_join_sql.strip()}
     LEFT JOIN solemd.paper_blocks pb
       ON pb.corpus_id = pem.corpus_id
      AND pb.block_ordinal = pem.canonical_block_ordinal
-    WHERE tc.concept_namespace IS NOT NULL
+    WHERE tmt.concept_namespace IS NOT NULL
     {scope_filter_sql}
     UNION ALL
-    SELECT
+    SELECT DISTINCT
         pem.corpus_id,
         pem.canonical_block_ordinal,
         tc.lowered_term,
