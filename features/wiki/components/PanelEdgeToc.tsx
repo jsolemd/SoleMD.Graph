@@ -81,18 +81,6 @@ function measureSectionStarts(
   });
 }
 
-function computeSectionHeights(
-  container: HTMLElement,
-  starts: number[],
-): number[] {
-  if (starts.length === 0) return [];
-  const scrollHeight = Math.max(container.scrollHeight, container.clientHeight);
-  return starts.map((start, i) => {
-    const next = i + 1 < starts.length ? starts[i + 1] : scrollHeight;
-    return Math.max(1, next - start);
-  });
-}
-
 function findRightEdgeResizeHandle(panel: HTMLElement): HTMLElement | null {
   const candidates = panel.querySelectorAll<HTMLElement>(".cursor-col-resize");
   if (candidates.length === 0) return null;
@@ -155,14 +143,15 @@ const DEFAULT_COLOR = "var(--mode-accent)";
 
 /**
  * Inline edge navigation rail. Paints a thin colored strip along the panel's
- * right edge showing each section proportional to its scroll height. The
- * active section brightens with a soft glow; a within-section fill tracks
- * scroll within the current section. Each segment is a button that jumps on
- * click and shows a title tooltip on hover (desktop only — mobile tap jumps
- * immediately). Gesture disambiguation: if the user drags past
- * DRAG_THRESHOLD_PX during pointerdown, the gesture is handed off to the
- * panel's right-edge resize handle via a synthesized mousedown, so a drag on
- * the rail still resizes the panel.
+ * right edge, one equal-height segment per section so the rail stays readable
+ * on pages with uneven or small section content. The active section
+ * brightens with a soft glow; a within-section fill tracks scroll within the
+ * current section. Each segment is a button that jumps on click and shows a
+ * title tooltip on hover (desktop only — mobile tap jumps immediately).
+ * Gesture disambiguation: if the user drags past DRAG_THRESHOLD_PX during
+ * pointerdown, the gesture is handed off to the panel's right-edge resize
+ * handle via a synthesized mousedown, so a drag on the rail still resizes
+ * the panel.
  */
 export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProps) {
   const [inView, setInView] = useState<Set<string>>(new Set());
@@ -172,7 +161,6 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
     panelHeight: number;
     panelRadius: number;
   } | null>(null);
-  const [sectionHeights, setSectionHeights] = useState<number[]>([]);
   const [fillProgress, setFillProgress] = useState(0);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
@@ -247,11 +235,6 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
       setFillProgress((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
     }
 
-    function syncSectionHeights() {
-      const next = computeSectionHeights(scrollEl, sectionStartsRef.current);
-      setSectionHeights((prev) => (areNumberArraysEqual(prev, next) ? prev : next));
-    }
-
     function setupObserver() {
       observerRef.current?.disconnect();
       resizeObserver?.disconnect();
@@ -264,7 +247,6 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
       if (targets.length === 0) {
         sectionStartsRef.current = [];
         setFillProgress(0);
-        setSectionHeights([]);
         setInView((prev) => (prev.size === 0 ? prev : new Set()));
         return;
       }
@@ -294,7 +276,6 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
 
       sectionStartsRef.current = measureSectionStarts(scrollEl, targets);
       syncFillProgress();
-      syncSectionHeights();
 
       resizeObserver = new ResizeObserver(() => {
         const measuredStarts = measureSectionStarts(scrollEl, targets);
@@ -302,7 +283,6 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
           sectionStartsRef.current = measuredStarts;
         }
         syncFillProgress();
-        syncSectionHeights();
       });
       resizeObserver.observe(scrollEl);
       for (const t of targets) resizeObserver.observe(t);
@@ -442,7 +422,6 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
         const isFirst = i === 0;
         const isLast = i === entries.length - 1;
         const color = entry.color ?? DEFAULT_COLOR;
-        const segHeight = sectionHeights[i] ?? 1;
         const idleBg = `color-mix(in srgb, ${color} 38%, var(--graph-panel-bg))`;
         // Active unfilled uses a brighter shade than idle so the active
         // section is visibly distinct at 0% progress; the progress fill
@@ -490,7 +469,7 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
               onPointerDown={handlePointerDown}
               onClick={() => handleClick(entry.id)}
               style={{
-                flexGrow: segHeight,
+                flexGrow: 1,
                 flexShrink: 1,
                 flexBasis: 0,
                 position: "relative",

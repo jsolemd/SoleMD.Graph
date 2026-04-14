@@ -219,6 +219,23 @@ describe("PanelEdgeToc", () => {
     });
   });
 
+  it("gives every section an equal rail segment so pages with uneven content still read as a clear TOC", async () => {
+    render(<Harness />);
+
+    const scrollContainer = screen.getByTestId("scroll-container");
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 1200 });
+
+    // Heading offsets are 80 / 380 / 680 / 980 — wildly different section
+    // content lengths. Every segment should still get flexGrow: 1 so the
+    // rail represents the TOC as navigation, not as a content mini-map.
+    await waitFor(() => {
+      for (const entry of entries) {
+        expect(getSegmentButton(entry.title)).toHaveStyle({ flexGrow: "1" });
+      }
+    });
+  });
+
   it("stretches the first segment's wrapper into the panel header gap so the rail reaches the panel corner", async () => {
     render(<Harness />);
 
