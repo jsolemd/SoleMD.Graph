@@ -54,18 +54,13 @@ export function PromptBoxSurface({
   stepPromptDown,
   handlePillClick,
   handlePillKeyDown,
-  handleDragStart,
-  handleDragEnd,
-  handleRecenter,
   editorRef,
   cardRef,
-  dragControls,
   dragX,
   dragY,
   cardHeight,
   heightOverride,
   isFullHeightMode,
-  isOffset,
   normalWidth,
   placeholder,
 }: PromptBoxSurfaceProps) {
@@ -83,25 +78,7 @@ export function PromptBoxSurface({
       }}
     >
       <motion.div
-        drag={!isMobile}
-        dragControls={dragControls}
-        dragListener={false}
-        dragMomentum={false}
-        dragElastic={0}
         style={isMobile ? undefined : { x: dragX, y: dragY }}
-        onDragStart={() => {
-          if (isMobile) {
-            return;
-          }
-          document.body.style.cursor = "grabbing";
-        }}
-        onDragEnd={() => {
-          if (isMobile) {
-            return;
-          }
-          document.body.style.cursor = "";
-          handleDragEnd();
-        }}
       >
         <motion.div
           ref={cardRef}
@@ -119,15 +96,14 @@ export function PromptBoxSurface({
             pointerEvents: "auto",
             padding: isCollapsed
               ? densityCssSpace(10, isMobile ? 14 : 12)
-              : densityCssSpace(12, isMobile ? 14 : 12, 10),
+              : densityCssSpace(12, isMobile ? 14 : 12, 4),
             ...promptSurfaceStyle,
             height: heightOverride ? cardHeight : "auto",
             overflow: heightOverride ? "hidden" : "visible",
-            cursor: isMobile || isFullHeightMode ? "default" : "grab",
+            cursor: "default",
             touchAction: isMobile ? "auto" : "none",
             transition: "width 0.55s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
-          onPointerDown={isMobile ? undefined : handleDragStart}
           {...(isCollapsed
             ? {
                 onClick: handlePillClick,
@@ -245,36 +221,6 @@ export function PromptBoxSurface({
             )}
           </div>
 
-          {!isMobile && (
-            <div
-              onClick={(event) => {
-                event.stopPropagation();
-                handleRecenter();
-              }}
-              style={{
-                position: "absolute",
-                bottom: isCollapsed ? -densityPx(6) : 0,
-                left: "50%",
-                transform: "translateX(-50%)",
-                padding: densityCssSpace(12, 8),
-                cursor: isOffset ? "pointer" : "default",
-              }}
-            >
-              <motion.div
-                style={{
-                  height: 2,
-                  borderRadius: 1,
-                  backgroundColor: "var(--graph-prompt-divider)",
-                }}
-                initial={false}
-                animate={{
-                  width: isOffset ? 32 : 20,
-                  opacity: isOffset ? 0.7 : 0.4,
-                }}
-                transition={{ duration: 0.2 }}
-              />
-            </div>
-          )}
         </motion.div>
       </motion.div>
     </div>

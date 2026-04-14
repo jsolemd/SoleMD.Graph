@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { animate, useMotionValue } from "framer-motion";
+import { animate, useDragControls, useMotionValue } from "framer-motion";
 import { densityViewportWidth } from "@/lib/density";
 import { smooth } from "@/lib/motion";
 import { type PromptMode } from "@/features/graph/stores";
@@ -42,6 +42,12 @@ export function usePromptPosition({
   vh: number;
   cardRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const isDragging = useRef(false);
+  const userDragX = useRef(0);
+  const userDragY = useRef(0);
+  const autoTargetXRef = useRef(0);
+  const autoTargetYRef = useRef(0);
+  const dragControls = useDragControls();
   const dragX = useMotionValue(0);
   const dragY = useMotionValue(0);
   const cardHeightRef = useRef(100);
@@ -57,6 +63,8 @@ export function usePromptPosition({
         ? (isCreate ? "create" : "maximized")
         : "normal";
   const isFullHeightMode = layoutMode === "create" || layoutMode === "maximized";
+
+  const [isOffset, setIsOffset] = useState(false);
 
   const targetY = Math.min(0, BOTTOM_BASE - bottomClearance);
 
@@ -121,6 +129,11 @@ export function usePromptPosition({
       }
 
       pendingExitRef.current = null;
+      autoTargetXRef.current = targetX;
+      autoTargetYRef.current = targetY;
+      userDragX.current = 0;
+      userDragY.current = targetY;
+      setIsOffset(false);
       posAnim.current.x = animate(dragX, targetX, smooth);
       posAnim.current.y = animate(dragY, targetY, smooth);
       startHeightAnim(targetH, () => {
@@ -138,12 +151,18 @@ export function usePromptPosition({
       fullHeightEnteredRef.current = false;
       setIsShellTransitioning(true);
       setHeightOverride(false);
+      userDragX.current = 0;
+      userDragY.current = 0;
+      setIsOffset(false);
       return;
     }
 
     if (modeChanged) {
       cancelAnimations();
       setHeightOverride(false);
+      userDragX.current = 0;
+      userDragY.current = 0;
+      setIsOffset(false);
       setIsShellTransitioning(false);
     }
   }, [
@@ -184,6 +203,8 @@ export function usePromptPosition({
     cancelAnimations();
     cardHeight.set(pendingExit.fromHeight);
     setHeightOverride(true);
+    autoTargetXRef.current = targetPosition.x;
+    autoTargetYRef.current = targetPosition.y;
     posAnim.current.x = animate(dragX, targetPosition.x, smooth);
     posAnim.current.y = animate(dragY, targetPosition.y, smooth);
     startHeightAnim(targetH, () => {
@@ -199,7 +220,6 @@ export function usePromptPosition({
     dragX,
     dragY,
     heightOverride,
-    normalCardWidth,
     startHeightAnim,
     targetY,
     vh,
@@ -213,19 +233,34 @@ export function usePromptPosition({
     posAnim.current.x?.stop();
     posAnim.current.y?.stop();
 
-    const target = layoutMode === "collapsed"
-      ? resolveCollapsedTarget(vw, targetY)
-      : resolveNormalTarget(
-          vw,
-          vh,
-          targetY,
-          normalCardWidth,
-          cardRef.current?.offsetHeight ?? cardHeightRef.current,
-          avoidRects,
-        );
+    if (layoutMode === "collapsed") {
+      const target = resolveCollapsedTarget(vw, targetY);
+      autoTargetXRef.current = target.x;
+      autoTargetYRef.current = target.y;
+      posAnim.current.x = animate(dragX, userDragX.current || target.x, smooth);
+      posAnim.current.y = animate(dragY, Math.min(userDragY.current || target.y, targetY), smooth);
+    } else {
+      const cardH = cardRef.current?.offsetHeight ?? cardHeightRef.current;
+      const target = resolveNormalTarget(vw, vh, targetY, normalCardWidth, cardH, avoidRects);
 
-    posAnim.current.x = animate(dragX, target.x, smooth);
-    posAnim.current.y = animate(dragY, target.y, smooth);
+      if (autoTargetXRef.current !== target.x) {
+        userDragX.current = 0;
+        setIsOffset(userDragY.current !== 0);
+      }
+      if (autoTargetYRef.current !== target.y) {
+        userDragY.current = 0;
+        setIsOffset(userDragX.current !== 0);
+      }
+
+      autoTargetXRef.current = target.x;
+      autoTargetYRef.current = target.y;
+      posAnim.current.x = animate(dragX, userDragX.current || target.x, smooth);
+      posAnim.current.y = animate(
+        dragY,
+        userDragY.current !== 0 ? Math.min(userDragY.current, targetY) : target.y,
+        smooth,
+      );
+    }
 
     const currentPosAnim = posAnim.current;
     return () => {
@@ -240,17 +275,26 @@ export function usePromptPosition({
     isFullHeightMode,
     isShellTransitioning,
     layoutMode,
-    normalCardWidth,
     targetY,
     vh,
     vw,
+    normalCardWidth,
   ]);
 
   return {
+    isDragging,
+    userDragX,
+    userDragY,
+    autoTargetXRef,
+    autoTargetYRef,
+    dragControls,
     dragX,
     dragY,
     cardHeight,
     heightOverride,
     isFullHeightMode,
+    isOffset,
+    setIsOffset,
+    targetY,
   };
 }
