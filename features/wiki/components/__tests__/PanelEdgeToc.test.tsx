@@ -219,6 +219,44 @@ describe("PanelEdgeToc", () => {
     });
   });
 
+  it("keeps the last section active when scrolled past every heading instead of snapping to section 0", async () => {
+    render(<Harness />);
+
+    const scrollContainer = screen.getByTestId("scroll-container");
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 1200 });
+
+    await waitFor(() => {
+      expect(intersectionObservers).toHaveLength(1);
+      expect(getSegmentButton("Intro")).toBeInTheDocument();
+    });
+
+    const observer = intersectionObservers[0];
+    const headings = entries.map((entry) => {
+      const heading = document.getElementById(entry.id);
+      if (!heading) throw new Error(`Missing heading ${entry.id}`);
+      return heading;
+    });
+
+    // Scroll to the very bottom: all headings have left the top-20%
+    // activation zone, so no IntersectionObserver entry is intersecting.
+    // The rail should stay on the last section, not snap back to section 0.
+    act(() => {
+      scrollContainer.scrollTop = 800;
+      scrollContainer.dispatchEvent(new Event("scroll"));
+      observer.callback(
+        headings.map((heading) => makeIntersectionEntry(heading, false)),
+        observer as unknown as IntersectionObserver,
+      );
+    });
+
+    await waitFor(() => {
+      expect(getSegmentButton("Pink")).toHaveAttribute("data-active", "true");
+    });
+
+    expect(getSegmentButton("Intro")).not.toHaveAttribute("data-active");
+  });
+
   it("gives every section an equal rail segment so pages with uneven content still read as a clear TOC", async () => {
     render(<Harness />);
 

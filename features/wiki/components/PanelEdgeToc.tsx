@@ -308,12 +308,19 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
   }, [scrollRef, entriesKey]);
 
   const activeIndex = useMemo(() => {
-    if (inView.size === 0) return 0;
-    for (let i = 0; i < entries.length; i++) {
-      if (inView.has(entries[i].id)) return i;
+    if (inView.size > 0) {
+      for (let i = 0; i < entries.length; i++) {
+        if (inView.has(entries[i].id)) return i;
+      }
     }
-    return 0;
-  }, [inView, entries]);
+    // No heading sits in the top-20% activation zone — happens between
+    // two headings (dead zone) or when scrolled past the last heading
+    // at the bottom of the page. Fall back to the section that contains
+    // the current scroll position, computed from fillProgress, so the
+    // rail doesn't snap back to section 0.
+    if (entries.length === 0) return 0;
+    return Math.max(0, Math.min(entries.length - 1, Math.floor(fillProgress)));
+  }, [inView, entries, fillProgress]);
 
   const handleJump = useCallback(
     (id: string) => {
