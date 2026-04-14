@@ -52,6 +52,13 @@ Pick a question, follow the arrow.
          browser runtime contract
          single-corpus-layer constraint
 
+   HOW SHOULD LOCAL DEV NETWORKING WORK?
+
+      [local-networking.md]
+         WSL2 mirrored mode
+         dual Tailscale contract
+         canonical local URLs
+
    WHERE DOES THE DATA COME FROM?
 
       [ingest.md]      external sources + warehouse pipeline
@@ -65,6 +72,7 @@ Pick a question, follow the arrow.
    HOW DOES THE BROWSER RENDER IT?
 
       [graph-runtime.md]  bundle -> DuckDB-WASM -> Cosmograph
+         checksum-addressed assets + persistent hot cache
 
    HOW DOES THE API BOUNDARY WORK?
 
@@ -76,6 +84,10 @@ Pick a question, follow the arrow.
          |
          v
       [benchmark.md]   Langfuse-native RAG eval
+
+   HOW HEALTHY IS CODEATLAS ON THIS REPO?
+
+      [codeatlas-quality.md]  repo-owned dogfood benchmark for repo search + docs coverage
 
    WHAT IS THIS TRYING TO BE?
 
@@ -91,13 +103,15 @@ Pick a question, follow the arrow.
 |---|---|---|
 | [map.md](map.md) | Where do I look? | This reader-journey only |
 | [architecture.md](architecture.md) | What boundaries can't I break? | Cosmograph + Langfuse adapters, browser runtime contract, tech stack, layer rule |
+| [local-networking.md](local-networking.md) | Which local URLs and networking assumptions are canonical? | WSL2 mirrored mode, dual Tailscale support, IPv4 loopback contract, remote access rules |
 | [database.md](database.md) | What tables exist? | PostgreSQL schema, migrations, indexes, rebuild strategy |
 | [ingest.md](ingest.md) | Where does data come from? | PubTator3 + S2 pipelines, RAG warehouse ingest, BioCXML overlays, operator CLIs |
 | [graph-build.md](graph-build.md) | How is the bundle built? | UMAP/Leiden/base-admission pipeline, CLI flags, checkpoint + recovery |
-| [graph-runtime.md](graph-runtime.md) | How does the browser render it? | Bundle contract, three nested layers, DuckDB-WASM rules, crossfilter cost, initial camera / starting frame |
+| [graph-runtime.md](graph-runtime.md) | How does the browser render it? | Bundle contract, checksum-addressed asset serving, persistent DuckDB hot-cache rules, three nested layers, crossfilter cost, initial camera / starting frame |
 | [api.md](api.md) | How do the backend endpoints behave? | FastAPI endpoint families, error mapping, pooling, shell/context split, serving-index rules |
 | [rag.md](rag.md) | How does evidence retrieval work? | RAG runtime, retrieval channels, grounding, answer assembly |
 | [benchmark.md](benchmark.md) | How do I measure RAG quality? | Langfuse benchmark pipeline, v2 suites, baseline interpretation |
+| [codeatlas-quality.md](codeatlas-quality.md) | How do I measure CodeAtlas quality on this repo? | Repo-owned dogfood benchmark for repo search, graph context, and docs coverage |
 | [wiki-taxonomy.md](wiki-taxonomy.md) | How are wiki entities categorized and colored? | Two-axis model (semantic group + editorial section), color map, scaling rules |
 | [ideas.md](ideas.md) | (placeholder) | Future brainstorming |
 | [../design/vision.md](../design/vision.md) | What is this trying to be? | Product direction, capabilities, clinical grounding, roadmap |
@@ -137,6 +151,12 @@ The canonical home for this diagram is
 ```bash
 # Frontend
 npm run dev                         # Next.js dev server
+npm run dev:stack                   # interactive tmux supervisor for frontend + engine
+npm run dev:stack:start             # start frontend (:3000) + engine (:8300)
+npm run dev:clean                   # stop the dev stack + prune Codex/Claude session artifacts older than 7 days
+npm run dev:stack:attach            # attach to the tmux dev session
+solemd graph start                  # canonical shared CLI for the Graph dev stack
+solemd graph clean                  # stop stack + prune old Codex/Claude history
 npm run build && npm run lint       # build + lint
 
 # Engine
@@ -152,10 +172,9 @@ See the individual docs for the full CLI reference.
 
 ## Footer
 
-- Docs last verified against code: **2026-04-08**
-- CodeAtlas index: 649 files, 7,451 chunks, fresh (watcher lag < 60s)
+- Docs last verified against code: **2026-04-13**
+- CodeAtlas status: run `cd engine && uv run python scripts/evaluate_codeatlas_quality.py --allow-failures`
 - Project branch: `main`
 - LLM readers: use CodeAtlas -- these docs are for humans. Every file path
-  cited here was verified via CodeAtlas at the date above, but code moves;
-  trust `search_code` / `inspect_symbol` / `file_context` for anything
-  beyond orientation.
+  cited here was verified against the repo at the date above, but code moves;
+  trust live CodeAtlas and the benchmark runner for anything beyond orientation.

@@ -27,8 +27,6 @@ export interface SessionInfoController
   extends Pick<
     GraphBundleSession,
     | 'getInfoSummary'
-    | 'getCategoricalValues'
-    | 'getNumericValues'
     | 'getInfoBars'
     | 'getInfoBarsBatch'
     | 'getInfoHistogram'

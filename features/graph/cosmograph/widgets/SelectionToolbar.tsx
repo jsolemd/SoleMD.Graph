@@ -13,41 +13,20 @@ import {
   useCosmograph,
 } from "@cosmograph/react";
 import { useDashboardStore } from "@/features/graph/stores";
-
-const SELECTION_SIZE = 34;
-
-const wrapperStyle: React.CSSProperties = {
-  width: SELECTION_SIZE,
-  height: SELECTION_SIZE,
-  borderRadius: 9999,
-  overflow: "hidden",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
+import {
+  disabledNativeIconBtnStyle,
+  nativeIconBtnFrameStyle,
+  nativeIconBtnInnerStyle,
+} from "@/features/graph/components/panels/PanelShell";
 
 /**
  * Inner style applied to the Cosmograph-rendered `<div>`.
  * Overrides Cosmograph's default margin (3px), filter (brightness/contrast),
  * and border-radius (8px) so the inner div fills the circular wrapper cleanly.
- * Padding 9px gives a 16x16 render area matching lucide icon sizes.
+ * `boxSizing: "border-box"` plus density-aware padding keeps the inset inside
+ * the density-scaled wrapper so the native SVGs resolve to the same icon area
+ * as the surrounding Lucide controls.
  */
-const innerStyle: React.CSSProperties = {
-  width: "100%",
-  height: "100%",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: 9,
-  margin: 0,
-  background: "transparent",
-  border: "none",
-  borderRadius: "inherit",
-  color: "inherit",
-  cursor: "pointer",
-  filter: "none",
-};
-
 /* ── Component ─────────────────────────────────────────────────── */
 
 export interface SelectionToolbarHandle {
@@ -185,20 +164,22 @@ export const SelectionToolbar = forwardRef<SelectionToolbarHandle, SelectionTool
         <div
           ref={rectRef}
           className="graph-icon-btn"
-          style={isLocked ? { ...wrapperStyle, opacity: 0.35, pointerEvents: "none" } : wrapperStyle}
+          style={isLocked ? { ...nativeIconBtnFrameStyle, ...disabledNativeIconBtnStyle } : nativeIconBtnFrameStyle}
+          aria-label="Rectangular selection"
           aria-pressed={rectOn}
           aria-disabled={isLocked}
         >
-          <CosmographButtonRectangularSelection style={innerStyle} />
+          <CosmographButtonRectangularSelection style={nativeIconBtnInnerStyle} />
         </div>
         <div
           ref={polyRef}
           className="graph-icon-btn"
-          style={isLocked ? { ...wrapperStyle, opacity: 0.35, pointerEvents: "none" } : wrapperStyle}
+          style={isLocked ? { ...nativeIconBtnFrameStyle, ...disabledNativeIconBtnStyle } : nativeIconBtnFrameStyle}
+          aria-label="Lasso selection"
           aria-pressed={polyOn}
           aria-disabled={isLocked}
         >
-          <CosmographButtonPolygonalSelection style={innerStyle} />
+          <CosmographButtonPolygonalSelection style={nativeIconBtnInnerStyle} />
         </div>
       </>
     );

@@ -5,14 +5,19 @@
 - Keep live serving Postgres on the existing Docker named volume.
 - Move runtime artifacts, bundles, checkpoints, and large rebuild scratch off the nearly-full WSL root filesystem.
 
-## Why This Cutover Exists
+## Status
+- Cutover is complete and verified.
 - Current live state from WSL:
-  - `/mnt/solemd-graph` is **not** a separate disk right now. `findmnt -T /mnt/solemd-graph` resolves to `/dev/sdf` on `/`.
-  - `/` and `/mnt/solemd-graph` are both on the same `ext4` root filesystem with about `30G` free on a `1T` volume.
-  - Host `E:` is mounted as `9p` at `/mnt/e`, which is not acceptable for hot Linux runtime/build paths.
-- Current cleaned runtime-artifact footprint:
-  - `/mnt/solemd-graph/bundles`: about `291M`
-  - `/mnt/solemd-graph/tmp`: about `1.4M`
+  - `findmnt -T /mnt/solemd-graph` resolves to `/dev/sdd`
+  - filesystem type is `ext4`
+  - label is `solemd-graph`
+  - verified capacity at cutover check:
+    - `/mnt/solemd-graph`: about `1.1T` total, `878G` used, `150G` free
+    - `/`: about `1007G` total, `65G` used, `892G` free
+  - host `E:` remains mounted separately as `9p` at `/mnt/e`, which is still not acceptable for hot Linux runtime/build paths
+- Current artifact footprint on the restored disk:
+  - `/mnt/solemd-graph/bundles`: about `19G`
+  - `/mnt/solemd-graph/tmp`: about `13G` at initial verification, reduced to about `2.7G` after the first safe stale-temp cleanup pass
 - Postgres is intentionally **not** part of this cutover:
   - serving DB remains on Docker named volume `solemd-graph_pgdata`
   - this cutover is for runtime artifacts and warehouse filesystem content only
@@ -25,23 +30,18 @@
   - graph build scratch and rebuild checkpoints
 - Large local warehouse file trees can move there later without touching serving Postgres.
 
-## External Prerequisites
-- Windows admin shell available.
-- WSL Store build that supports `wsl --mount --vhd`.
-- Docker Desktop and any graph build jobs stopped before the final mount swap.
-- Working Windows interop from the active WSL shell, or an out-of-band Windows terminal:
-  - in the current session, `powershell.exe` is on `PATH` but actual commands fail with `UtilAcceptVsock ... failed 110`
-  - `lsblk -f` currently shows no attached `solemd-graph` disk, so the VHD is not mounted in WSL today
-- Verified user environment:
+## Cutover Notes
+- Verified user environment at cutover time:
   - `WSL version: 2.6.3.0`
   - `Kernel version: 6.6.87.2-1`
-  - this should be new enough for `wsl --mount --vhd`; the current blocker is command execution context, not feature support
+- Windows-side shutdown / resize / attach workflow was required to restore the VHD-backed mount.
+- Remaining operator follow-up is runtime artifact pruning and larger warehouse filesystem moves, not another mount change.
 
 Official references:
 - Microsoft Learn, `wsl --mount` / `--vhd`: https://learn.microsoft.com/en-us/windows/wsl/basic-commands
 - Microsoft Learn, VHD expansion and repair workflow: https://learn.microsoft.com/en-us/windows/wsl/disk-space
 
-## Cutover Steps
+## Cutover Steps Used
 
 ### 1. Stop users of `/mnt/solemd-graph`
 - Finish or stop any active graph/rag rebuilds.
@@ -150,7 +150,7 @@ Then restart the graph service and verify bundle serving:
 
 ```bash
 docker compose start graph
-curl -I http://localhost:3000/api/graph-bundles/<checksum>/base_points.parquet
+curl -I http://localhost:3000/graph-bundles/<checksum>/base_points.parquet
 ```
 
 ### 9. Only after stability, move larger warehouse file trees
@@ -164,15 +164,19 @@ Do **not** move serving Postgres as part of this cutover.
 ## Verification Checklist
 - `findmnt -T /mnt/solemd-graph` shows a dedicated attached Linux disk, not `/dev/sdf`.
 - `df -Th /mnt/solemd-graph` shows the resized ext4 VHD-backed capacity.
-- `/api/graph-bundles/<checksum>/base_points.parquet` returns `200`.
+- `/graph-bundles/<checksum>/base_points.parquet` returns `200`.
 - Graph bundle export and cleanup continue to target `/mnt/solemd-graph/bundles`.
 - Rebuild scratch lands under `/mnt/solemd-graph/tmp`.
 - Docker Postgres still reports the serving data directory on its existing named volume.
 
 ## Follow-On Work After Cutover
+- Prune replayable runtime artifacts under `/mnt/solemd-graph/bundles` and `/mnt/solemd-graph/tmp` after verifying live ownership.
 - Move larger warehouse filesystem trees to `/mnt/solemd-graph`.
 - Keep serving tables/query paths in Postgres lean and projection-backed.
-- Finish live backfills for:
-  - `solemd.graph_paper_summary`
-  - `solemd.entity_corpus_presence`
-- Apply redundant index drops only after those serving projections are verified live.
+- Keep serving Postgres on the Docker named volume; do not move it as part of runtime-artifact cleanup.
+
+## Completed Follow-On So Far
+- Removed stale citation temp CSVs under `/mnt/solemd-graph/tmp/citations`.
+- Removed stale legacy bulk-citation CSVs under `/mnt/solemd-graph/tmp/citations_bulk`.
+- Removed the loose replayable `graph_embeddings_*.f32` scratch blob under `/mnt/solemd-graph/tmp/graph_build`.
+- Reclaimed about `10.2G` on the E-backed runtime-artifact disk without touching serving Postgres or source-of-truth warehouse tables.

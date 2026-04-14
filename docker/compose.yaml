@@ -5,7 +5,10 @@ name: solemd-graph
 
 services:
   db:
-    image: pgvector/pgvector:pg16
+    build:
+      context: .
+      dockerfile: db/Dockerfile
+    image: solemd-graph/db:pg16
     container_name: solemd-graph-db
     restart: unless-stopped
     labels:
@@ -36,7 +39,6 @@ services:
       -c random_page_cost=1.1
     volumes:
       - ${GRAPH_POSTGRES_HOST_ROOT:-pgdata}:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     security_opt:
       - no-new-privileges:true
     logging:
@@ -65,7 +67,7 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     mem_limit: 512m
     ports:
-      - "6380:6379"  # 6380 to avoid conflict with existing Redis
+      - "127.0.0.1:6380:6379"  # localhost-only, 6380 to avoid conflict with existing Redis
     command: ["redis-server", "--requirepass", "local_dev"]
     security_opt:
       - no-new-privileges:true
@@ -87,8 +89,6 @@ services:
       dockerfile: docker/graph/Dockerfile
     container_name: solemd-graph-graph
     profiles: ["gpu"]
-    env_file:
-      - ../.env.local
     shm_size: 1g
     mem_limit: 20g
     ulimits:
@@ -102,21 +102,26 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      - ..:/workspaces/SoleMD.Graph
       - graph-venv:/workspaces/SoleMD.Graph/engine/.venv
-      - ${GRAPH_WAREHOUSE_HOST_ROOT:-/mnt/e/SoleMD.Graph/data}:/srv/solemd-warehouse:ro
       - ${GRAPH_STORAGE_HOST_ROOT:-/mnt/solemd-graph}:/mnt/solemd-graph
     environment:
-      # Docker-network-specific overrides (everything else from env_file)
       DATABASE_URL: postgresql://solemd:solemd_local@db:5432/solemd_graph
       REDIS_URL: redis://:local_dev@redis:6379/0
       LANGFUSE_BASE_URL: http://host.docker.internal:3100
       GRAPH_LAYOUT_BACKEND: gpu
       GRAPH_CLUSTER_BACKEND: gpu
-      # CUDA_PATH / CUDA_HOME are set in Dockerfile (authoritative source)
-      # Warehouse paths should point at a Linux-backed ext4 mount, not /mnt/e.
-      SEMANTIC_SCHOLAR_DIR: /srv/solemd-warehouse/semantic-scholar
-      PUBTATOR_DIR: /srv/solemd-warehouse/pubtator
+      GRAPH_DIR: /mnt/solemd-graph
+      SEMANTIC_SCHOLAR_DIR: /mnt/solemd-graph/data/semantic-scholar
+      PUBTATOR_DIR: /mnt/solemd-graph/data/pubtator
+      S2_RELEASE_ID: "2026-03-10"
+      PUBTATOR_RELEASE_ID: "2026-03-21"
+      S2_API_KEY: ${S2_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_HOST: http://host.docker.internal:3100
+      LANGFUSE_TRACING_ENVIRONMENT: development
+      UMLS_API_KEY: ${UMLS_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

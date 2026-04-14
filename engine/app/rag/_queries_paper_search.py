@@ -153,10 +153,7 @@ SELECT
 FROM matched_papers mp
 JOIN solemd.papers p
   ON p.corpus_id = mp.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     {final_order_sql},
     mp.citation_count DESC,
@@ -258,10 +255,7 @@ SELECT
 FROM matched_papers mp
 JOIN solemd.papers p
   ON p.corpus_id = mp.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     (mp.lexical_score + (mp.title_similarity * 0.15)) DESC,
     mp.citation_count DESC,
@@ -368,10 +362,7 @@ SELECT
 FROM matched_papers mp
 JOIN solemd.papers p
   ON p.corpus_id = mp.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     (mp.lexical_score + (mp.title_similarity * 0.15)) DESC,
     mp.citation_count DESC,

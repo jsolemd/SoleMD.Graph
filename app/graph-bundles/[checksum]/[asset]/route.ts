@@ -1,7 +1,9 @@
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
+
 import { NextRequest, NextResponse } from 'next/server'
-import { resolveGraphBundleAsset } from '@/features/graph/lib/fetch'
+
+import { resolvePublishedGraphBundleAsset } from '@/features/graph/lib/bundle-assets'
 
 type RouteContext = {
   params: Promise<{
@@ -92,7 +94,7 @@ async function serveAsset(
   headOnly: boolean
 ) {
   const { asset, checksum } = await context.params
-  const resolvedAsset = await resolveGraphBundleAsset(checksum, asset)
+  const resolvedAsset = await resolvePublishedGraphBundleAsset(checksum, asset)
   if (!resolvedAsset) {
     return NextResponse.json({ error: 'Bundle asset not found' }, { status: 404 })
   }

@@ -37,6 +37,10 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  /** Shrink the layout viewport when the on-screen keyboard opens so fixed
+   *  top chrome (wordmark + icon pills) stays visible above the keyboard
+   *  instead of scrolling out of view. */
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

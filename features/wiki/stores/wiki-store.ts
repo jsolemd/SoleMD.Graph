@@ -25,6 +25,7 @@ interface WikiState {
   graphLoading: boolean
   graphError: string | null
   globalGraphOpen: boolean
+  browseOpen: boolean
   tocOpen: boolean
   localGraphPopped: boolean
   modulePopped: boolean
@@ -42,6 +43,7 @@ interface WikiState {
   goForward: () => void
   fetchGraphData: (graphReleaseId: string, opts?: { force?: boolean }) => Promise<void>
   setGlobalGraphOpen: (open: boolean) => void
+  setBrowseOpen: (open: boolean) => void
   setTocOpen: (open: boolean) => void
   setLocalGraphPopped: (popped: boolean) => void
   setModulePopped: (popped: boolean, slug?: string) => void
@@ -75,6 +77,7 @@ export const useWikiStore = create<WikiState>((set, get) => ({
   graphLoading: false,
   graphError: null,
   globalGraphOpen: false,
+  browseOpen: false,
   tocOpen: true,
   localGraphPopped: false,
   modulePopped: false,
@@ -147,6 +150,7 @@ export const useWikiStore = create<WikiState>((set, get) => ({
   },
 
   setGlobalGraphOpen: (open) => set({ globalGraphOpen: open }),
+  setBrowseOpen: (open) => set({ browseOpen: open }),
   setTocOpen: (open) => set({ tocOpen: open }),
   setLocalGraphPopped: (popped) => set({ localGraphPopped: popped }),
   setModulePopped: (popped, slug) =>
@@ -182,6 +186,7 @@ export const useWikiStore = create<WikiState>((set, get) => ({
       routeHistory: [GRAPH_HOME],
       historyIndex: 0,
       globalGraphOpen: false,
+      browseOpen: false,
       tocOpen: true,
       localGraphPopped: false,
       modulePopped: false,

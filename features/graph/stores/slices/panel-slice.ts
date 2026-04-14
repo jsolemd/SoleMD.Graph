@@ -49,6 +49,7 @@ const CLOSED_PANELS: Record<PanelId, boolean> = {
 export interface PanelSlice {
   // Panel visibility
   openPanels: Record<PanelId, boolean>
+  lastOpenedPanel: PanelId | null
   panelsVisible: boolean
   panelBottomY: { left: number; right: number }
   tableOpen: boolean
@@ -58,11 +59,15 @@ export interface PanelSlice {
   // Prompt size: collapsed pill / normal / maximized full-height
   promptMode: PromptMode
   lastExpandedPromptMode: ExpandedPromptMode
-  promptShellFullHeight: boolean
 
   // Wiki panel expanded mode
   wikiExpanded: boolean
   wikiExpandedWidth: number
+
+  // Selection detail panel: split from `selectedNode` so mobile can show
+  // the panel on explicit opt-in without clearing the underlying
+  // Cosmograph selection when the user dismisses it.
+  detailPanelOpen: boolean
 
   // Write mode
   writeContent: string
@@ -77,6 +82,7 @@ export interface PanelSlice {
   // Actions
   togglePanel: (panel: PanelId) => void
   openPanel: (panel: PanelId) => void
+  openOnlyPanel: (panel: PanelId) => void
   closePanel: (panel: PanelId) => void
   closeAllPanels: () => void
   setPanelsVisible: (visible: boolean) => void
@@ -88,7 +94,6 @@ export interface PanelSlice {
   setUiHidden: (hidden: boolean) => void
   toggleUiHidden: () => void
   setPromptMode: (mode: PromptMode) => void
-  setPromptShellFullHeight: (fullHeight: boolean) => void
   applyPromptModeDefault: (mode: PromptMode) => void
   collapsePrompt: () => void
   expandPrompt: () => void
@@ -99,6 +104,7 @@ export interface PanelSlice {
   setWriteContent: (content: string) => void
   setWikiExpanded: (expanded: boolean) => void
   setWikiExpandedWidth: (width: number) => void
+  setDetailPanelOpen: (open: boolean) => void
   savePanelPosition: (id: string, pos: { x: number; y: number; width: number; height?: number; docked: boolean; pinned?: boolean }) => void
   setPanelScale: (id: string, scale: number) => void
   stepPanelScale: (id: string, delta: number) => void
@@ -110,6 +116,7 @@ export interface PanelSlice {
 
 export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> = (set) => ({
   openPanels: { ...CLOSED_PANELS },
+  lastOpenedPanel: null,
   panelsVisible: true,
   panelBottomY: { left: 0, right: 0 },
   tableOpen: false,
@@ -117,22 +124,59 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   uiHidden: false,
   promptMode: 'normal',
   lastExpandedPromptMode: 'normal',
-  promptShellFullHeight: false,
   wikiExpanded: false,
   wikiExpandedWidth: 420,
+  detailPanelOpen: false,
   writeContent: '',
   panelPositions: {},
   panelScales: {},
   floatingObstacles: {},
 
   togglePanel: (panel) =>
-    set((s) => ({ openPanels: { ...s.openPanels, [panel]: !s.openPanels[panel] } })),
+    set((s) => {
+      const isOpen = s.openPanels[panel]
+      return {
+        openPanels: { ...s.openPanels, [panel]: !isOpen },
+        lastOpenedPanel: isOpen
+          ? (s.lastOpenedPanel === panel ? null : s.lastOpenedPanel)
+          : panel,
+      }
+    }),
   openPanel: (panel) =>
-    set((s) => (s.openPanels[panel] ? s : { openPanels: { ...s.openPanels, [panel]: true } })),
+    set((s) => (
+      s.openPanels[panel] && s.lastOpenedPanel === panel
+        ? s
+        : {
+            openPanels: s.openPanels[panel]
+              ? s.openPanels
+              : { ...s.openPanels, [panel]: true },
+            lastOpenedPanel: panel,
+          }
+    )),
+  openOnlyPanel: (panel) =>
+    set((s) => {
+      const nextOpenPanels = { ...CLOSED_PANELS, [panel]: true }
+      const alreadyExclusive = s.lastOpenedPanel === panel
+        && Object.entries(s.openPanels).every(([id, open]) => open === nextOpenPanels[id as PanelId])
+
+      return alreadyExclusive
+        ? s
+        : {
+            openPanels: nextOpenPanels,
+            lastOpenedPanel: panel,
+          }
+    }),
   closePanel: (panel) =>
-    set((s) => (!s.openPanels[panel] ? s : { openPanels: { ...s.openPanels, [panel]: false } })),
+    set((s) => (
+      !s.openPanels[panel]
+        ? s
+        : {
+            openPanels: { ...s.openPanels, [panel]: false },
+            lastOpenedPanel: s.lastOpenedPanel === panel ? null : s.lastOpenedPanel,
+          }
+    )),
   closeAllPanels: () =>
-    set({ openPanels: { ...CLOSED_PANELS } }),
+    set({ openPanels: { ...CLOSED_PANELS }, lastOpenedPanel: null }),
   setPanelsVisible: (visible) => set((s) => (
     s.panelsVisible === visible ? s : { panelsVisible: visible }
   )),
@@ -141,7 +185,15 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   togglePanelsVisible: () =>
     set((s) => {
       const next = !s.panelsVisible
-      return { panelsVisible: next, ...(next ? {} : { openPanels: { ...CLOSED_PANELS } }) }
+      return {
+        panelsVisible: next,
+        ...(next
+          ? {}
+          : {
+              openPanels: { ...CLOSED_PANELS },
+              lastOpenedPanel: null,
+            }),
+      }
     }),
   setTableOpen: (open) => set((s) => (
     s.tableOpen === open ? s : { tableOpen: open }
@@ -162,17 +214,11 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
           ? (s.promptMode === 'collapsed' ? s.lastExpandedPromptMode : s.promptMode)
           : promptMode,
     })),
-  setPromptShellFullHeight: (promptShellFullHeight) => set((s) => (
-    s.promptShellFullHeight === promptShellFullHeight
-      ? s
-      : { promptShellFullHeight }
-  )),
   applyPromptModeDefault: (promptMode) =>
     set({
       promptMode,
       lastExpandedPromptMode:
         promptMode === 'collapsed' ? 'normal' : promptMode,
-      promptShellFullHeight: false,
     }),
   collapsePrompt: () =>
     set((s) => ({
@@ -234,6 +280,9 @@ export const createPanelSlice: StateCreator<DashboardState, [], [], PanelSlice> 
   )),
   setWikiExpandedWidth: (width) => set((s) => (
     s.wikiExpandedWidth === width ? s : { wikiExpandedWidth: width }
+  )),
+  setDetailPanelOpen: (open) => set((s) => (
+    s.detailPanelOpen === open ? s : { detailPanelOpen: open }
   )),
   savePanelPosition: (id, pos) =>
     set((s) => ({

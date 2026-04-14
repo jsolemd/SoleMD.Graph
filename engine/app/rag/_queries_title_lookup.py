@@ -12,7 +12,6 @@ from app.rag._queries_paper_core import (
     PAPER_TITLE_TEXT_SQL,
 )
 
-
 PAPER_TITLE_LOOKUP_IN_GRAPH_SQL = f"""
 WITH query_input AS NOT MATERIALIZED (
     SELECT
@@ -148,10 +147,7 @@ SELECT
 FROM matched_papers mp
 JOIN solemd.papers p
   ON p.corpus_id = mp.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     (mp.lexical_score + (mp.title_similarity * 0.15)) DESC,
     mp.citation_count DESC,
@@ -366,10 +362,7 @@ SELECT
 FROM matched_papers mp
 JOIN solemd.papers p
   ON p.corpus_id = mp.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     (mp.lexical_score + (mp.title_similarity * 0.15)) DESC,
     mp.citation_count DESC,

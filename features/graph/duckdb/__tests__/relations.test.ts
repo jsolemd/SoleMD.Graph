@@ -141,7 +141,7 @@ function createBundle(): GraphBundle {
 }
 
 describe('resolveBundleRelations', () => {
-  it('materializes the hot base bundle tables into local temp tables during bootstrap', async () => {
+  it('materializes the hot base bundle tables into persistent local runtime tables during bootstrap', async () => {
     const query = jest.fn(async () => undefined)
 
     await resolveBundleRelations({ query } as never, createBundle(), [
@@ -152,7 +152,7 @@ describe('resolveBundleRelations', () => {
     expect(query).toHaveBeenCalledTimes(2)
     expect(query).toHaveBeenNthCalledWith(
       1,
-      expect.stringContaining('CREATE TEMP TABLE IF NOT EXISTS base_points AS')
+      expect.stringContaining('CREATE TABLE IF NOT EXISTS base_points AS')
     )
     expect(query).toHaveBeenNthCalledWith(
       1,
@@ -162,7 +162,7 @@ describe('resolveBundleRelations', () => {
     )
     expect(query).toHaveBeenNthCalledWith(
       2,
-      expect.stringContaining('CREATE TEMP TABLE IF NOT EXISTS base_clusters AS')
+      expect.stringContaining('CREATE TABLE IF NOT EXISTS base_clusters AS')
     )
     expect(query).toHaveBeenNthCalledWith(
       2,
@@ -172,7 +172,7 @@ describe('resolveBundleRelations', () => {
     )
   })
 
-  it('materializes optional universe points into a local temp table', async () => {
+  it('keeps optional universe points parquet-backed instead of hydrating the full table locally', async () => {
     const query = jest.fn(async () => undefined)
 
     await resolveBundleRelations({ query } as never, createBundle(), [
@@ -182,7 +182,7 @@ describe('resolveBundleRelations', () => {
 
     expect(query).toHaveBeenCalledTimes(1)
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('CREATE TEMP TABLE IF NOT EXISTS universe_points AS')
+      expect.stringContaining('CREATE OR REPLACE VIEW universe_points AS')
     )
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining(

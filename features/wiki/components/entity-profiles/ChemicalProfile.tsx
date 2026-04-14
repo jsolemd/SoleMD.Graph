@@ -5,8 +5,8 @@ import { motion } from "framer-motion";
 import { Text } from "@mantine/core";
 import { crisp } from "@/lib/motion";
 import {
-  panelAccentCardClassName,
-  panelAccentCardStyle,
+  panelAccentCardEntityClassName,
+  panelAccentCardEntityStyle,
   panelScaledPx,
   panelTextDimStyle,
   panelTextStyle,
@@ -59,15 +59,9 @@ export default function ChemicalProfile({
 
   return (
     <div
-      className={panelAccentCardClassName}
+      className={panelAccentCardEntityClassName}
       data-entity-type={page.entity_type?.toLowerCase()}
-      style={{
-        ...panelAccentCardStyle,
-        backgroundColor:
-          "color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 12%, var(--graph-panel-bg))",
-        border:
-          "1px solid color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 20%, var(--graph-panel-border))",
-      }}
+      style={panelAccentCardEntityStyle}
     >
       {/* Receptor affinity bars */}
       {visibleReceptors.length > 0 && (

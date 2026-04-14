@@ -36,61 +36,66 @@
   color: var(--mode-accent) !important;
 }
 
-/* Graph icon buttons — unified mode-aware hover/active.
-   Handles hover and pressed backgrounds for Mantine ActionIcons and
-   Cosmograph selection-tool wrappers. Icon color for Mantine buttons
-   is set via the `styles` prop (inline style beats Mantine's
-   --ai-color system); the color rule here covers non-Mantine elements
-   like Cosmograph wrappers. !important on backgrounds ensures our
-   hover/active overrides beat any Mantine variant styling. */
+/* Graph icon buttons — shared matte control shell for Mantine ActionIcons
+   and native Cosmograph selection wrappers. Icon color for Mantine buttons
+   is set via the `styles` prop (inline style beats Mantine's `--ai-color`
+   system); the color rule here covers non-Mantine elements too.
+   :hover is gated on (hover: hover) so touch devices don't hold the hover
+   tint after a tap — otherwise it reads as a stuck "active" highlight. */
 .graph-icon-btn {
-  color: var(--graph-control-icon-color, var(--graph-panel-text-dim));
+  color: var(--graph-control-icon-color, var(--graph-panel-text));
   cursor: pointer;
-  background-color: var(--graph-control-idle-bg, transparent) !important;
-  box-shadow: inset 0 0 0 calc(1px * var(--app-density)) var(--graph-control-idle-border, transparent);
+  background-color: var(--graph-control-idle-bg, var(--graph-panel-input-bg)) !important;
+  box-shadow: inset 0 0 0 calc(1px * var(--app-density)) var(--graph-control-idle-border, var(--graph-panel-border));
+  -webkit-tap-highlight-color: transparent;
   transition:
     color 150ms ease,
     background-color 150ms ease,
     box-shadow 150ms ease;
 }
 
-.graph-icon-btn:hover {
-  background-color: var(--graph-control-hover-bg, var(--mode-accent-subtle)) !important;
+@media (hover: hover) {
+  .graph-icon-btn:hover {
+    background-color: var(--graph-control-hover-bg, var(--mode-accent-subtle)) !important;
+    color: var(--graph-control-active-icon-color, var(--graph-panel-text));
+  }
 }
 
 .graph-icon-btn[aria-pressed="true"] {
   background-color: var(--graph-control-pressed-bg, var(--mode-accent-subtle)) !important;
+  color: var(--graph-control-active-icon-color, var(--graph-panel-text));
 }
 
 .graph-icon-btn:active {
   background-color: var(--graph-control-active-bg, var(--mode-accent-hover)) !important;
+  color: var(--graph-control-active-icon-color, var(--graph-panel-text));
 }
 
-[data-graph-control-contrast="0"] {
-  --graph-control-icon-color: var(--graph-panel-text-dim);
-  --graph-control-idle-bg: transparent;
-  --graph-control-idle-border: transparent;
-  --graph-control-hover-bg: var(--mode-accent-subtle);
-  --graph-control-pressed-bg: var(--mode-accent-subtle);
-  --graph-control-active-bg: var(--mode-accent-hover);
+/* Panel icon buttons — transparent hit area, icon carries the affordance. */
+.panel-icon-btn {
+  color: var(--graph-panel-text);
+  cursor: pointer;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    color 150ms ease,
+    opacity 150ms ease;
 }
 
-[data-graph-control-contrast="1"] {
-  --graph-control-icon-color: var(--graph-panel-text);
-  --graph-control-idle-bg: color-mix(in srgb, var(--graph-panel-bg) 24%, transparent);
-  --graph-control-idle-border: color-mix(in srgb, var(--graph-panel-border) 55%, transparent);
-  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent-subtle) 72%, var(--graph-control-idle-bg));
-  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent-hover) 50%, var(--graph-control-idle-bg));
-  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent-hover) 72%, var(--graph-control-idle-bg));
+@media (hover: hover) {
+  .panel-icon-btn:hover {
+    color: var(--mode-accent);
+  }
 }
 
-[data-graph-control-contrast="2"] {
-  --graph-control-icon-color: var(--graph-panel-text);
-  --graph-control-idle-bg: color-mix(in srgb, var(--graph-panel-bg) 46%, transparent);
-  --graph-control-idle-border: color-mix(in srgb, var(--graph-panel-border) 82%, transparent);
-  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent-subtle) 78%, var(--graph-control-idle-bg));
-  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent-hover) 58%, var(--graph-control-idle-bg));
-  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent-hover) 82%, var(--graph-control-idle-bg));
+.panel-icon-btn[aria-pressed="true"] {
+  color: var(--mode-accent);
+}
+
+.panel-icon-btn:active {
+  color: var(--mode-accent);
+  opacity: 0.72;
 }
 
 /* Lucide icons inside graph buttons — centralized size + stroke from vars.
@@ -101,6 +106,12 @@
   width: var(--icon-size) !important;
   height: var(--icon-size) !important;
   stroke-width: var(--icon-stroke-width) !important;
+}
+
+.panel-icon-btn svg[class*="lucide"] {
+  width: var(--panel-icon-size, var(--icon-size)) !important;
+  height: var(--panel-icon-size, var(--icon-size)) !important;
+  stroke-width: var(--panel-icon-stroke-width, var(--icon-stroke-width)) !important;
 }
 
 /* Cosmograph buttons inside wrappers — kill their own hover filter so

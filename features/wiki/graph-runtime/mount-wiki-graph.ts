@@ -8,6 +8,7 @@ import {
   resizeScene,
 } from "./render-scene"
 import { wireZoom, wireNodeInteractions, updateTweens } from "./interactions"
+import { createPanLatch } from "@/features/graph/lib/pointer-gesture"
 import { resolvePalette, invalidatePalette } from "./theme"
 import { applyLabelVisibility } from "./label-visibility"
 import { getCachedPositions, setCachedPositions } from "./layout-cache"
@@ -107,13 +108,18 @@ export async function mountWikiGraph(
   // Apply initial highlight if present
   applyHighlight(highlightNodeIds)
 
-  // Wire zoom + node interactions
-  wireZoom(scene)
+  // Wire zoom + node interactions. Shared pan latch lets interactions freeze
+  // hover-driven highlights while d3-zoom is actively panning, and lets the
+  // tap handler branch on "was that a pan?" at pointerup — the same contract
+  // Cosmograph uses via `usePanGuard`.
+  const panLatch = createPanLatch()
+  wireZoom(scene, panLatch)
   const cleanupInteractions = wireNodeInteractions(
     scene,
     simulation,
     intents,
     palette,
+    panLatch,
   )
 
   // Cache positions when simulation settles

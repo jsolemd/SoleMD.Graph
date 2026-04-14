@@ -50,4 +50,4 @@
         8. Manim CE - Math/science video renders
         9. Magic UI / Aceternity UI - Copy-paste animated components
         10. Noto Emoji / BioIcons / Lucide - SVG icons and illustrations
-
+    5. Mobile overhaul 

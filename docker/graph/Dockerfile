@@ -20,6 +20,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 COPY docker/graph/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Bake engine code into image (no bind mount needed)
+COPY engine /workspaces/SoleMD.Graph/engine
+
 # Run as root for GPU access and package management in utility container
 WORKDIR /workspaces/SoleMD.Graph/engine
 

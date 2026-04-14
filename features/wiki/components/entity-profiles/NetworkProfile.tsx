@@ -3,8 +3,8 @@
 import { useMemo } from "react";
 import { Text } from "@mantine/core";
 import {
-  panelAccentCardClassName,
-  panelAccentCardStyle,
+  panelAccentCardEntityClassName,
+  panelAccentCardEntityStyle,
   panelScaledPx,
   panelTextStyle,
   sectionLabelStyle,
@@ -46,15 +46,9 @@ export default function NetworkProfile({
 
   return (
     <div
-      className={panelAccentCardClassName}
+      className={panelAccentCardEntityClassName}
       data-entity-type={page.entity_type?.toLowerCase()}
-      style={{
-        ...panelAccentCardStyle,
-        backgroundColor:
-          "color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 12%, var(--graph-panel-bg))",
-        border:
-          "1px solid color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 20%, var(--graph-panel-border))",
-      }}
+      style={panelAccentCardEntityStyle}
     >
       <Text style={sectionLabelStyle}>Component Entities</Text>
 

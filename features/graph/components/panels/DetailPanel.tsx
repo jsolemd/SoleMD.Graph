@@ -1,12 +1,13 @@
 "use client";
 
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect } from "react";
 import { Stack } from "@mantine/core";
 import { ArrowLeft } from "lucide-react";
 import { useGraphSelection, useGraphCamera } from "@/features/graph/cosmograph";
 import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
 import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
+import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 import { APP_CHROME_PX } from "@/lib/density";
 import type {
   GraphBundle,
@@ -38,16 +39,40 @@ function DetailPanelComponent({
   const { applyMode } = useGraphModeController();
   const currentPointScopeSql = useDashboardStore((state) => state.currentPointScopeSql);
   const selectedPointCount = useDashboardStore((state) => state.selectedPointCount);
+  const detailPanelOpen = useDashboardStore((state) => state.detailPanelOpen);
+  const setDetailPanelOpen = useDashboardStore((state) => state.setDetailPanelOpen);
   const { clearFocusedPoint, getSelectedPointIndices } = useGraphSelection();
   const { fitViewByIndices } = useGraphCamera();
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
 
   const hasSelectionContext =
     hasCurrentPointScopeSql(currentPointScopeSql) || selectedPointCount > 1;
 
+  // Auto-open on desktop when a node becomes selected; clear on deselect.
+  // Mobile opts in via the canvas info button — never auto-open, so the
+  // selection panel doesn't hijack the viewport on tap.
+  const selectedNodeId = selectedNode?.id ?? null;
+  useEffect(() => {
+    if (selectedNodeId == null) {
+      setDetailPanelOpen(false);
+      return;
+    }
+    if (!isMobile) {
+      setDetailPanelOpen(true);
+    }
+  }, [isMobile, selectedNodeId, setDetailPanelOpen]);
+
   const closePanel = useCallback(() => {
+    if (isMobile) {
+      // Mobile dismiss: hide the panel but keep the underlying selection
+      // so the Cosmograph highlight survives. Re-open via the info button.
+      setDetailPanelOpen(false);
+      return;
+    }
     selectNode(null);
     clearFocusedPoint();
-  }, [clearFocusedPoint, selectNode]);
+  }, [clearFocusedPoint, isMobile, selectNode, setDetailPanelOpen]);
 
   const handleBackToSelection = useCallback(() => {
     selectNode(null);
@@ -90,7 +115,7 @@ function DetailPanelComponent({
     }
   }, [detail, selectedNode, setCopied]);
 
-  if (!selectedNode) return null;
+  if (!selectedNode || !detailPanelOpen) return null;
 
   return (
     <PanelShell

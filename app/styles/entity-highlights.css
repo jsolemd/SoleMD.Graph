@@ -14,6 +14,16 @@
     background-color 0.15s,
     border-color 0.15s,
     box-shadow 0.15s;
+
+  /* Touch behavior: the span is an interactive highlight, not selectable text.
+     Without these, long-press raises the OS text-selection callout before
+     `pointerover` can open the hover card. Surrounding prose remains
+     selectable — these only apply to the highlight spans themselves. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .wiki-entity-mention[data-entity-type] {

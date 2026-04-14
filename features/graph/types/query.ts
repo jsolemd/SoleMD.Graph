@@ -156,12 +156,6 @@ export interface GraphBundleQueries {
     currentPointScopeSql: string | null
   }) => Promise<GraphTablePageResult>
   getInfoSummary: (args: GraphScopeQueryArgs) => Promise<GraphInfoSummary>
-  getCategoricalValues: (
-    args: GraphScopeQueryArgs & { column: string }
-  ) => Promise<string[]>
-  getNumericValues: (
-    args: GraphScopeQueryArgs & { column: string }
-  ) => Promise<number[]>
   getInfoBars: (
     args: GraphScopeQueryArgs & { column: string; maxItems?: number }
   ) => Promise<Array<{ value: string; count: number }>>

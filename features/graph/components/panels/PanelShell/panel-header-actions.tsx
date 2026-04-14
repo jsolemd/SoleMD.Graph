@@ -12,7 +12,8 @@ import {
 } from "@mantine/core";
 import { Minus, Pin, PinOff, Plus, X } from "lucide-react";
 import { densityCssPx } from "@/lib/density";
-import { iconBtnStyles, panelChromeStyle, panelTextMutedStyle } from "./panel-styles";
+import { panelChromeStyle, panelIconBtnStyles, panelTextMutedStyle } from "./panel-styles";
+import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 
 interface PanelHeaderActionsProps {
   children: ReactNode;
@@ -64,10 +65,10 @@ export function PanelIconAction({
   onClick,
   disabled,
   type = "button",
-  className = "graph-icon-btn",
+  className = "panel-icon-btn",
   size = 24,
   radius = "xl",
-  styles = iconBtnStyles,
+  styles = panelIconBtnStyles,
   variant = "transparent",
   withArrow = true,
   tooltipDisabled = false,
@@ -75,13 +76,15 @@ export function PanelIconAction({
   "aria-label": ariaLabel,
   "aria-pressed": ariaPressed,
 }: PanelIconActionProps) {
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
   const action = (
     <ActionIcon
       type={type}
       onClick={onClick}
       disabled={disabled}
       variant={variant}
-      size={size}
+      size={typeof size === "number" && isMobile ? Math.max(size, 32) : size}
       radius={radius}
       className={className}
       styles={styles}
@@ -92,7 +95,7 @@ export function PanelIconAction({
     </ActionIcon>
   );
 
-  if (tooltipDisabled) {
+  if (tooltipDisabled || isMobile) {
     return action;
   }
 
@@ -127,7 +130,7 @@ export function PanelScaleControl({
         icon={<Minus size={12} />}
         onClick={onDecreaseScale}
         size={18}
-        className="graph-icon-btn shrink-0"
+        className="panel-icon-btn shrink-0"
         aria-label="Decrease panel text size"
         disabled={!canDecreaseScale}
       />
@@ -149,7 +152,7 @@ export function PanelScaleControl({
         icon={<Plus size={12} />}
         onClick={onIncreaseScale}
         size={18}
-        className="graph-icon-btn shrink-0"
+        className="panel-icon-btn shrink-0"
         aria-label="Increase panel text size"
         disabled={!canIncreaseScale}
       />

@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Home, List, Maximize2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Home, LayoutList, List, Maximize2 } from "lucide-react";
 import { WIKI_PANEL_PX } from "@/lib/density";
 import {
   PANEL_TOP,
@@ -22,6 +22,7 @@ export function WikiNavigation() {
   const goBack = useWikiStore((s) => s.goBack);
   const goForward = useWikiStore((s) => s.goForward);
   const navigateToGraph = useWikiStore((s) => s.navigateToGraph);
+  const setBrowseOpen = useWikiStore((s) => s.setBrowseOpen);
 
   const canGoBack = historyIndex > 0;
   const canGoForward = historyIndex < routeHistory.length - 1;
@@ -49,6 +50,12 @@ export function WikiNavigation() {
         onClick={navigateToGraph}
         disabled={isOnGraph}
         aria-label="Graph home"
+      />
+      <PanelIconAction
+        label="Browse pages"
+        icon={<LayoutList size={12} />}
+        onClick={() => setBrowseOpen(true)}
+        aria-label="Browse pages"
       />
     </PanelHeaderActions>
   );

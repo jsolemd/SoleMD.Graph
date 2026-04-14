@@ -9,13 +9,14 @@
 - FastAPI/Pydantic and Next runtime paths read only canonical serving tables and repositories.
 - Internal evidence/build tables remain internal and rebuildable.
 - Docker and local config use stable Linux mountpoints, with host-path changes centralized behind a small set of variables.
+- WSL/Windows networking stays on mirrored mode without stale NAT-era `netsh interface portproxy` rules colliding with local dev ports.
 
 ## Operating Decision
 - Keep the live serving Postgres where it is now:
   - Docker named volume `solemd-graph_pgdata`
   - Linux-side storage under Docker Desktop / WSL ext4
   - this remains the canonical serving database for FastAPI, Pydantic, and Next/BFF runtime reads
-- Expand and reactivate `E:\\wsl2-solemd-graph.vhdx` as the canonical `/mnt/solemd-graph` disk:
+- Keep `E:\\wsl2-solemd-graph.vhdx` as the canonical `/mnt/solemd-graph` disk:
   - this is the correct home for runtime artifacts, graph bundles, and rebuild scratch/checkpoint paths
   - it is not the right destination for the full live Postgres data directory in the current plan
 - Move large local warehouse filesystem content to E-backed Linux storage and stop using `/mnt/e/...` bind mounts for hot runtime/build paths.
@@ -66,11 +67,11 @@
 - local warehouse file trees such as raw dataset drops, graph export intermediates, and rebuild artifacts
 
 ## Ranked Worklist
-1. Complete `graph_paper_summary` serving projection and switch graph attachment/wiki paper-ref lookups to it.
-2. Collapse wiki graph paper/ref resolution onto one canonical runtime surface.
-3. Split graph release/ref resolution away from `PostgresRagRepository` into graph-owned repositories.
+1. Finish the last graph-owned runtime cleanup under RAG and keep runtime reads on serving repositories only.
+2. Prune stale runtime artifacts from `/mnt/solemd-graph` now that the E-backed cutover is complete and verified.
+3. Move larger warehouse filesystem trees and hot rebuild scratch/checkpoint paths onto `/mnt/solemd-graph`.
 4. Remove remaining wiki/entity request-contract duplication across FastAPI, TS wire types, and feature-layer DTOs.
-5. Finish storage cutover to a Linux-backed E-mounted VHD for warehouse/checkpoints and optionally Postgres.
+5. Keep serving Postgres on the Docker named volume and avoid backsliding into `/mnt/e/...` host-path dependencies.
 
 ## Active TODO
 - [x] Fix the entity projection stage/swap owner so `solemd.entities`, `solemd.entity_aliases`, and `solemd.entity_runtime_aliases` rebuild through one canonical code path.
@@ -99,8 +100,28 @@
   - `060_drop_redundant_corpus_pmid_index.sql`
   - `062_drop_redundant_pubtator_entity_partial_indexes.sql`
 - [ ] Finish remaining runtime contract cleanup:
-  - centralize remaining RAG graph release/ref resolution on the graph-owned adapter
-- [ ] Expand and remount `E:\\wsl2-solemd-graph.vhdx` as the actual `/mnt/solemd-graph`.
+  - centralize any remaining graph-owned release/ref/scope logic on the graph-owned adapter and keep RAG on retrieval/evidence concerns only
+- [ ] Replace the last raw runtime relation scan:
+  - `fetch_relation_matches()` still reads `pubtator.relations` directly for bundle hydration
+  - publish a serving relation-match surface keyed by `corpus_id` and stop reading warehouse relation rows on live requests
+- [ ] Remove remaining direct runtime vocab fallback reads from RAG concept normalization:
+  - fold the remaining `vocab_term_aliases` / `vocab_terms` exact-match fallback into the serving alias/entity projections
+  - keep runtime entity normalization on serving tables only
+- [ ] Prune replayable runtime artifacts on the E-backed disk after verifying live ownership:
+  - old bundle generations not referenced by the current graph release
+  - dead scratch trees under `/mnt/solemd-graph/tmp`
+  - orphaned checkpoint/export artifacts that are not source-of-truth data
+  - partial progress complete:
+    - removed stale `/tmp/citations/*.csv`
+    - removed stale `/tmp/citations_bulk/*.csv`
+    - removed orphaned `graph_embeddings_*.f32`
+    - reclaimed about `10.2G`
+    - remaining root-owned graph-build checkpoint dirs need elevated cleanup if they are confirmed stale
+- [ ] Restore and verify the current published bundle before bundle pruning:
+  - live DB current run `2b96f229-2c48-407a-8d32-d9db15c8bca9` points at `/mnt/solemd-graph/bundles/2b96f229-2c48-407a-8d32-d9db15c8bca9`
+  - that directory was missing at first verification after the E-backed cutover
+  - local `uv run python -m app.graph.build --re-export --local --json` was started to republish the active bundle before deleting legacy bundle dirs
+- [ ] Move larger local warehouse filesystem trees to `/mnt/solemd-graph` and keep hot build paths Linux-native.
 
 ## Done
 - `solemd.entity_runtime_aliases` split from warehouse aliases for the hot matcher path.
@@ -150,20 +171,30 @@
 - Shared `schema` skill updated and synced with Postgres operating rules.
 - Docker/storage audit completed:
   - `/mnt/e` is `9p/drvfs`, not acceptable for Postgres or hot warehouse reads.
-  - `/mnt/solemd-graph` currently resolves to the nearly-full root ext4 filesystem, not a separate data disk.
   - `E:\\wsl2-solemd-graph.vhdx` is a valid VHDX containing a raw ext4 filesystem labeled `solemd-graph`, UUID `2b5c3e6f-18a1-4943-999e-555596cec91a`, last mounted at `/mnt/solemd-graph`.
-  - That ext4 volume is 100 GB total, with roughly 35.6 GB used and 71.7 GB free.
-  - The VHDX root contains `bundles/` and `tmp/`, so it is the dormant runtime-artifact volume for graph bundles/checkpoints, not an empty placeholder.
-  - The visible VHDX is still far too small to be the active backing store for the current 800+ GB warehouse footprint or the 274 GB live Postgres database.
-  - Docker Desktop Postgres volume still has headroom; the root distro is the immediate bottleneck.
+  - `/mnt/solemd-graph` now resolves to the dedicated ext4 disk `/dev/sdd`, not the root filesystem.
+  - Current verified mount state:
+    - `/mnt/solemd-graph` -> `/dev/sdd`
+    - ext4 label `solemd-graph`
+    - about `1.1T` total, `878G` used, `150G` free at verification time
+  - Root WSL ext4 is now separate:
+    - `/` -> `/dev/sde`
+    - about `1007G` total, `65G` used, `892G` free at verification time
+  - Docker Desktop Postgres remains on its named volume; runtime artifacts are no longer sharing the same ext4 mountpoint as the root distro.
 - Graph runtime artifact cleanup is now fixed in code:
   - stale replayable graph checkpoints are removed by run ID rather than only deleting incomplete dirs
   - stale bundle directories are cleaned alongside checkpoint dirs
   - keep-run selection now preserves `is_current = true` graph runs and falls back to the newest completed run if current metadata is missing
   - filesystem keep-run IDs are normalized to strings, so UUID-valued DB rows no longer cause the current bundle/checkpoint dir to be mistaken for stale data
+- E-backed runtime-artifact pruning has started safely:
+  - stale citation temp CSVs under `/mnt/solemd-graph/tmp/citations` are gone
+  - stale legacy bulk-citation CSVs under `/mnt/solemd-graph/tmp/citations_bulk` are gone
+  - the loose replayable `graph_embeddings_*.f32` scratch blob is gone
+  - `/mnt/solemd-graph` free space increased from about `150G` to about `160G`
+  - remaining graph-build checkpoint dirs are intentionally being left in place until live ownership and root-owned cleanup are handled explicitly
 - The current graph bundle has been restored and verified live:
   - `solemd.graph_runs` now contains only the active current run
-  - `/api/graph-bundles/<checksum>/base_points.parquet` returns `200 OK`
+  - `/graph-bundles/<checksum>/base_points.parquet` returns `200 OK`
   - bundle and manifest files exist again under `/mnt/solemd-graph/bundles/<current-run-id>`
 - Live root filesystem headroom improved materially after cleanup:
   - before cleanup: ~`3.3 GB` free on `/dev/sdf`
@@ -177,6 +208,12 @@
   - `solemd.paper_evidence_summary`
   - `solemd.paper_relation_evidence`
   - the active live evidence refresh was restarted under the corrected `graph_paper_summary` swap logic after a verified PostgreSQL rename conflict was found in the old implementation
+- Graph runtime reload path is now materially cleaner:
+  - hot `base_points` / `base_clusters` tables are persisted in a browser-local OPFS DuckDB file when supported, so same-checksum full reloads can reopen the hot cache instead of rebuilding those tables from parquet
+  - immutable bundle assets now serve from `/graph-bundles/<checksum>/...` through checksum-addressed published aliases under `/mnt/solemd-graph/bundles/by-checksum/<checksum>`
+  - published checksum aliases are now created at bundle export/publish time and preserved during runtime artifact cleanup
+  - the old asset route/database-resolution path was removed from the frontend asset server contract
+  - existing completed bundle aliases were backfilled once for the live current checksum so the new serving path is already active on this machine
 - Live schema migration state is now durable and machine-verifiable:
   - `067_schema_migration_ledger.sql` is applied on the live DB
   - the live DB has been explicitly adopted into `solemd.schema_migration_ledger`
@@ -201,9 +238,25 @@
   - prompt-controller coverage now asserts the canonical panel state (`openPanels.wiki`) instead of the dead `wikiOpen` flag
   - graph release/ref resolution is further centralized; RAG still delegates through its public repository contract, but private graph-scope routing is no longer duplicated there
   - graph release/scope/selected-paper resolution no longer lives on the public `RagRepository` contract; `RagService`, `execute_search()`, and `retrieve_search_state()` now depend on an explicit graph-runtime adapter instead of treating the retrieval repository as a graph facade
-  - Local PostgreSQL tooling is now clean enough for file-backed scripted migrations again:
+  - RAG paper-result hydration now uses one shared paper-runtime contract backed by `solemd.graph_paper_summary` for canonical paper-card/runtime metadata:
+    - the shared runtime column/join contract lives in `app.graph.paper_runtime_contract`
+    - primary RAG paper/title/chunk/metadata result queries now join `solemd.graph_paper_summary` through that one contract instead of hand-building paper-card metadata from `solemd.papers` + `solemd.corpus` in each query family
+    - direct paper rehydration paths (`PAPER_LOOKUP_SQL`, `PAPER_LOOKUP_DIRECT_SQL`) now use the same canonical serving join shape
+    - regression coverage now asserts that the major runtime paper-hydration query families all include `JOIN solemd.graph_paper_summary gps`
+- Local PostgreSQL tooling is now clean enough for file-backed scripted migrations again:
   - the local `psql` wrapper now handles host-side `-f` scripts and nested `\\i` includes by expanding them before piping into containerized `psql`
   - URI-style `-d postgresql://...` invocation still resolves cleanly to the local `solemd_graph` container
+  - follow-up: the current shell lost `docker` on `PATH`, so container-backed `psql` verification is temporarily blocked until shell tooling is normalized again
+- WSL/Windows localhost forwarding is cleaner now:
+  - `.wslconfig` is on `networkingMode=mirrored`
+  - stale NAT-era `netsh interface portproxy` rules pointing at old `172.30.*` WSL addresses have been removed for:
+    - `127.0.0.1:3000`
+    - `0.0.0.0:2222`
+  - `localhost:3000` is back to being owned by the Next.js dev server instead of a stale Windows `iphlpsvc` portproxy entry
+  - remaining Windows portproxy entries are intentional local-tool bridges, not WSL NAT leftovers:
+    - `23120 -> 23119` for Zotero/Better BibTeX access from WSL and Docker
+    - `9222` / `9223` for Chrome DevTools access
+    - `27124` retained pending explicit tool-owner cleanup, because it is loopback-targeted rather than a stale WSL address
 
 ## Why This Matters
 - The main bottleneck was not only query shape. It was also that the WSL root filesystem was nearly full while large rebuild jobs were scanning and writing through the same storage pool.

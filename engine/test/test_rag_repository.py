@@ -2622,8 +2622,33 @@ def test_paper_search_queries_search_before_joining_runtime_metadata():
     assert "UNION ALL" in queries.PAPER_SEARCH_SQL
     assert "FROM matched_papers mp" in queries.PAPER_SEARCH_SQL
     assert "JOIN solemd.corpus c" in queries.PAPER_SEARCH_SQL
+    assert "JOIN solemd.graph_paper_summary gps" in queries.PAPER_SEARCH_SQL
     assert "FROM matched_papers mp" in queries.PAPER_SEARCH_IN_SELECTION_SQL
     assert "JOIN solemd.corpus c" in queries.PAPER_SEARCH_IN_SELECTION_SQL
+    assert "JOIN solemd.graph_paper_summary gps" in queries.PAPER_SEARCH_IN_SELECTION_SQL
+
+
+def test_paper_lookup_queries_use_graph_paper_summary_as_runtime_surface():
+    assert "JOIN solemd.graph_paper_summary gps" in queries.PAPER_LOOKUP_SQL
+    assert "JOIN solemd.graph_paper_summary gps" in queries.PAPER_LOOKUP_DIRECT_SQL
+
+
+def test_runtime_paper_hydration_queries_use_graph_paper_summary():
+    runtime_queries = [
+        queries.PAPER_SEARCH_SQL,
+        queries.PAPER_SEARCH_IN_SELECTION_SQL,
+        queries.PAPER_SEARCH_IN_GRAPH_SQL,
+        queries.PAPER_TITLE_LOOKUP_SQL,
+        queries.PAPER_TITLE_LOOKUP_IN_GRAPH_SQL,
+        queries.CHUNK_SEARCH_SQL,
+        queries.CHUNK_SEARCH_IN_SELECTION_SQL,
+        queries.PAPER_METADATA_SEARCH_SQL,
+        queries.PAPER_METADATA_SEARCH_CURRENT_MAP_SQL,
+        queries.PAPER_METADATA_SEARCH_IN_SELECTION_SQL,
+    ]
+
+    for sql in runtime_queries:
+        assert "JOIN solemd.graph_paper_summary gps" in sql
 
 
 def test_exact_title_queries_use_native_index_friendly_lookup_shape():

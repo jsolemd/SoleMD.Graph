@@ -8,6 +8,13 @@ export interface EntityHoverShowArgs {
   paperCount?: number;
   x: number;
   y: number;
+  /**
+   * Sticky mode used for touch input: the card stays open until an
+   * outside-click dismissal. `hide()` is ignored while pinned so leaving
+   * the source element (finger lifts, pointer moves away) doesn't close
+   * the card. Omit (undefined/false) for the fluent desktop hover path.
+   */
+  pinned?: boolean;
 }
 
 export interface EntityHoverContext {

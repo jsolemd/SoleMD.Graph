@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
@@ -159,6 +160,28 @@ def _hash_file(path: Path) -> str:
         while chunk := handle.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _publish_checksum_bundle_alias(bundle_dir: Path | str, bundle_checksum: str) -> Path:
+    published_root = settings.graph_bundles_root_path / "by-checksum"
+    published_root.mkdir(parents=True, exist_ok=True)
+    published_path = published_root / bundle_checksum
+    bundle_dir = Path(bundle_dir).resolve(strict=False)
+    expected_target = Path("..") / bundle_dir.name
+
+    if published_path.is_symlink():
+        current_target = published_path.resolve(strict=False)
+        if current_target == bundle_dir:
+            return published_path
+        published_path.unlink()
+    elif published_path.exists():
+        if published_path.is_dir():
+            shutil.rmtree(published_path)
+        else:
+            published_path.unlink()
+
+    published_path.symlink_to(expected_target, target_is_directory=True)
+    return published_path
 
 
 def _render_points_cte() -> str:
@@ -1106,6 +1129,7 @@ def export_graph_bundle(
     bundle_checksum = _hash_file(manifest_path)
     total_bytes += manifest_path.stat().st_size
     validate_bundle_manifest_contract(manifest_payload, bundle_profile=bundle_profile)
+    published_bundle_dir = _publish_checksum_bundle_alias(bundle_dir, bundle_checksum)
 
     try:
         client = _get_langfuse()
@@ -1128,7 +1152,7 @@ def export_graph_bundle(
 
     return BundleSummary(
         graph_run_id=graph_run_id_text,
-        bundle_dir=str(bundle_dir),
+        bundle_dir=str(published_bundle_dir),
         bundle_checksum=bundle_checksum,
         bundle_bytes=total_bytes,
         bundle_manifest=manifest_payload,

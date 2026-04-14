@@ -10,6 +10,13 @@ import {
   startWikiGraphDragInteraction,
   sustainWikiGraphDragInteraction,
 } from "./simulation-controls";
+import {
+  exceededTapTravel,
+  LONG_PRESS_MAX_TRAVEL_PX,
+  LONG_PRESS_MS,
+  type PanLatch,
+  tapHitRadiusFor,
+} from "@/features/graph/lib/pointer-gesture";
 
 // ---------------------------------------------------------------------------
 // Tween manager — mirrors Quartz's per-channel tween groups
@@ -108,17 +115,27 @@ function renderHoverLinks(
 // Zoom + pan with label coupling
 // ---------------------------------------------------------------------------
 
-export function wireZoom(scene: WikiGraphScene) {
+export function wireZoom(scene: WikiGraphScene, panLatch?: PanLatch) {
   const canvas = scene.app.canvas as HTMLCanvasElement;
 
   const zoomBehavior = d3zoom<HTMLCanvasElement, unknown>()
     .scaleExtent([0.25, 4])
+    .on("start", () => {
+      panLatch?.setPanning(true);
+    })
     .on("zoom", (event: D3ZoomEvent<HTMLCanvasElement, unknown>) => {
       const { x, y, k } = event.transform;
       scene.app.stage.position.set(x, y);
       scene.app.stage.scale.set(k);
       scene.zoomScale = k;
       scene.labelsDirty = true;
+      // Mark a real pan only when the transform actually changes — d3-zoom's
+      // `start` fires for every touchstart including pure taps, which would
+      // otherwise be misread as pans and suppress selection intent.
+      panLatch?.markPanned();
+    })
+    .on("end", () => {
+      panLatch?.setPanning(false);
     });
 
   select(canvas).call(zoomBehavior);
@@ -134,10 +151,24 @@ export function wireNodeInteractions(
   simulation: Simulation<SimNode, SimLink>,
   intents: WikiGraphIntents,
   palette: WikiGraphPalette,
+  panLatch?: PanLatch,
 ): () => void {
   let hoveredNodeId: string | null = null;
   let draggedNode: SimNode | null = null;
   let didDrag = false;
+  let pressStart: { x: number; y: number } | null = null;
+  let pressedNodeId: string | null = null;
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  // True once a long-press has fired its intent, so the subsequent
+  // pointerup no-ops instead of double-committing as a tap.
+  let longPressConsumed = false;
+
+  function cancelLongPress() {
+    if (longPressTimer !== null) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
 
   const canvas = scene.app.canvas as HTMLCanvasElement;
   const nodes = scene.nodeRenderData.map((n) => n.simulationData);
@@ -151,11 +182,15 @@ export function wireNodeInteractions(
     };
   }
 
-  function hitTest(clientX: number, clientY: number): SimNode | null {
+  function hitTest(
+    clientX: number,
+    clientY: number,
+    pointerType: string = "mouse",
+  ): SimNode | null {
     const { sx, sy } = screenToStage(clientX, clientY);
-    const HIT_RADIUS = 12;
+    const stageRadius = tapHitRadiusFor(pointerType) / scene.app.stage.scale.x;
     let closest: SimNode | null = null;
-    let closestDist = HIT_RADIUS * HIT_RADIUS;
+    let closestDist = stageRadius * stageRadius;
     for (const node of nodes) {
       if (node.x == null || node.y == null) continue;
       const dx = node.x + scene.width / 2 - sx;
@@ -180,19 +215,55 @@ export function wireNodeInteractions(
   }
 
   function handlePointerMove(e: PointerEvent) {
+    // Cancel a pending long-press once the pointer drifts beyond a
+    // permissive jitter floor — TAP_MAX_TRAVEL_PX is too tight for a
+    // 400ms finger hold, where micro-movement routinely exceeds 6px.
+    if (pressStart) {
+      const dx = e.clientX - pressStart.x;
+      const dy = e.clientY - pressStart.y;
+      if (
+        dx * dx + dy * dy >
+        LONG_PRESS_MAX_TRAVEL_PX * LONG_PRESS_MAX_TRAVEL_PX
+      ) {
+        cancelLongPress();
+      }
+    }
+
     if (draggedNode) {
       e.preventDefault();
       e.stopImmediatePropagation();
       const { sx, sy } = screenToStage(e.clientX, e.clientY);
       draggedNode.fx = sx - scene.width / 2;
       draggedNode.fy = sy - scene.height / 2;
-      didDrag = true;
+      // Only treat it as a drag once travel exceeds tap-jitter — otherwise
+      // a finger held on a node for long-press trips didDrag via sub-pixel
+      // reported movement and cancels the long-press before it fires.
+      if (
+        !didDrag &&
+        pressStart &&
+        exceededTapTravel({
+          startX: pressStart.x,
+          startY: pressStart.y,
+          endX: e.clientX,
+          endY: e.clientY,
+        })
+      ) {
+        didDrag = true;
+      }
       canvas.style.cursor = "grabbing";
       sustainWikiGraphDragInteraction(simulation);
       return;
     }
 
-    const node = hitTest(e.clientX, e.clientY);
+    // While d3-zoom is panning/zooming the canvas, freeze hover-driven
+    // highlights so the user's "selected" (lit-up neighbors) state survives
+    // the gesture. Hover was already a touch-unfriendly surrogate; letting
+    // pointermove re-run hitTest mid-pan flickers the highlight off.
+    if (panLatch?.isPanning()) {
+      return;
+    }
+
+    const node = hitTest(e.clientX, e.clientY, e.pointerType);
     const newId = node?.id ?? null;
     if (newId !== hoveredNodeId) {
       applyHoverState(newId);
@@ -200,17 +271,34 @@ export function wireNodeInteractions(
   }
 
   function handlePointerDown(e: PointerEvent) {
-    const node = hitTest(e.clientX, e.clientY);
+    const node = hitTest(e.clientX, e.clientY, e.pointerType);
     if (!node) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     draggedNode = node;
     didDrag = false;
+    pressStart = { x: e.clientX, y: e.clientY };
+    pressedNodeId = node.id;
+    longPressConsumed = false;
     node.fx = node.x;
     node.fy = node.y;
     canvas.style.cursor = "grabbing";
     startWikiGraphDragInteraction(simulation);
     canvas.setPointerCapture(e.pointerId);
+
+    // Long-press commit: after LONG_PRESS_MS with no drag and no release,
+    // treat as an explicit "open page" intent so the user can pan around
+    // without accidentally navigating on every graze.
+    if (node.kind === "page" && node.slug) {
+      const targetSlug = node.slug;
+      cancelLongPress();
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        if (didDrag || !pressedNodeId || pressedNodeId !== node.id) return;
+        longPressConsumed = true;
+        intents.onOpenPage(targetSlug);
+      }, LONG_PRESS_MS);
+    }
   }
 
   function releaseDraggedNode(e?: PointerEvent) {
@@ -223,9 +311,60 @@ export function wireNodeInteractions(
       draggedNode = null;
       endWikiGraphDragInteraction(simulation);
     }
+  }
 
-    const hovered = e ? hitTest(e.clientX, e.clientY) : null;
+  /**
+   * Re-evaluate hover based on where the pointer ended. A plain tap on a
+   * node lights it up; tapping empty canvas clears any sticky highlight.
+   * Skipped when the gesture was a pan — otherwise the post-pan release
+   * would clear the user's selection every time.
+   */
+  function syncHoverAfterRelease(e?: PointerEvent) {
+    const hovered = e ? hitTest(e.clientX, e.clientY, e.pointerType) : null;
     applyHoverState(hovered?.id ?? null);
+  }
+
+  /**
+   * Fires node intents (open page / focus paper / select entity) when the
+   * gesture was a tap on the same node pressed at pointerdown.
+   *
+   * Uses pointerup rather than the browser `click` event because
+   * `preventDefault()` on pointerdown suppresses the synthesized `click` on
+   * touch devices. pointerup is the single reliable tap contract across
+   * mouse and touch.
+   */
+  function firePointerUpIntents(e: PointerEvent) {
+    if (longPressConsumed) return;
+    if (!pressedNodeId || !pressStart) return;
+    if (didDrag) return;
+    if (
+      exceededTapTravel({
+        startX: pressStart.x,
+        startY: pressStart.y,
+        endX: e.clientX,
+        endY: e.clientY,
+      })
+    ) {
+      return;
+    }
+    const released = hitTest(e.clientX, e.clientY, e.pointerType);
+    if (!released || released.id !== pressedNodeId) return;
+
+    if (released.kind === "page" && released.slug) {
+      // Touch: tap selects only (hover lights up via syncHoverAfterRelease).
+      // Long-press (LONG_PRESS_MS) commits the navigation. Mouse click has no
+      // long-press equivalent, so it navigates immediately per the desktop
+      // click contract.
+      if (e.pointerType !== "touch") {
+        intents.onOpenPage(released.slug);
+      }
+    } else if (released.kind === "paper" && released.paperId) {
+      intents.onFocusPaper?.(released.paperId);
+      intents.onFlashPapers?.([released.paperId]);
+    }
+    if (released.conceptId) {
+      intents.onSelectEntity?.(released.conceptId);
+    }
   }
 
   function handlePointerUp(e: PointerEvent) {
@@ -233,7 +372,18 @@ export function wireNodeInteractions(
       e.preventDefault();
       e.stopImmediatePropagation();
     }
+    cancelLongPress();
+    const wasPan = panLatch?.consumeJustPan() ?? false;
+    if (!wasPan) {
+      firePointerUpIntents(e);
+    }
     releaseDraggedNode(e);
+    if (!wasPan) {
+      syncHoverAfterRelease(e);
+    }
+    pressStart = null;
+    pressedNodeId = null;
+    longPressConsumed = false;
   }
 
   function handlePointerCancel(e: PointerEvent) {
@@ -241,42 +391,29 @@ export function wireNodeInteractions(
       e.preventDefault();
       e.stopImmediatePropagation();
     }
+    cancelLongPress();
+    const wasPan = panLatch?.consumeJustPan() ?? false;
     releaseDraggedNode(e);
+    if (!wasPan) {
+      syncHoverAfterRelease(e);
+    }
     didDrag = false;
-  }
-
-  function handleClick(e: MouseEvent) {
-    if (didDrag) {
-      didDrag = false;
-      return;
-    }
-
-    const node = hitTest(e.clientX, e.clientY);
-    if (!node) return;
-
-    if (node.kind === "page" && node.slug) {
-      intents.onOpenPage(node.slug);
-    } else if (node.kind === "paper" && node.paperId) {
-      intents.onFocusPaper?.(node.paperId);
-      intents.onFlashPapers?.([node.paperId]);
-    }
-    if (node.conceptId) {
-      intents.onSelectEntity?.(node.conceptId);
-    }
+    pressStart = null;
+    pressedNodeId = null;
+    longPressConsumed = false;
   }
 
   canvas.addEventListener("pointermove", handlePointerMove);
   canvas.addEventListener("pointerdown", handlePointerDown);
   canvas.addEventListener("pointerup", handlePointerUp);
   canvas.addEventListener("pointercancel", handlePointerCancel);
-  canvas.addEventListener("click", handleClick);
 
   return () => {
+    cancelLongPress();
     canvas.removeEventListener("pointermove", handlePointerMove);
     canvas.removeEventListener("pointerdown", handlePointerDown);
     canvas.removeEventListener("pointerup", handlePointerUp);
     canvas.removeEventListener("pointercancel", handlePointerCancel);
-    canvas.removeEventListener("click", handleClick);
     clearTweens();
   };
 }

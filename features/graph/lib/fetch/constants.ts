@@ -5,6 +5,7 @@ export const NODE_KIND = 'corpus'
 export const GRAPH_BUNDLE_ROOT =
   process.env.GRAPH_BUNDLE_ROOT ??
   '/mnt/solemd-graph/bundles'
+export const GRAPH_BUNDLE_PUBLISHED_ROOT = `${GRAPH_BUNDLE_ROOT}/by-checksum`
 
 // Contract taxonomy is not bootstrap policy:
 // - `base` is the only mandatory first-load/autoload set

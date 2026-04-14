@@ -5,6 +5,7 @@ from app.rag._queries_paper_core import (
     CHUNK_EXACT_MATCH_NORMALIZATION_REGEX,
     CHUNK_HEADLINE_OPTIONS,
     CHUNK_SEARCH_VECTOR_SQL,
+    PAPER_CORE_JOINS,
     PAPER_SELECT_COLUMNS,
 )
 
@@ -123,10 +124,7 @@ SELECT
 FROM matched_papers mp
 JOIN solemd.papers p
   ON p.corpus_id = mp.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 CROSS JOIN query_input
 ORDER BY
     mp.chunk_lexical_score DESC,
@@ -244,10 +242,7 @@ SELECT
 FROM matched_chunks mc
 JOIN solemd.papers p
   ON p.corpus_id = mc.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 CROSS JOIN query_input
 ORDER BY
     mc.chunk_lexical_score DESC,

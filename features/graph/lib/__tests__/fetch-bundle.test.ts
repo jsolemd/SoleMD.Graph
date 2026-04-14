@@ -1,8 +1,6 @@
 jest.mock('server-only', () => ({}))
 
 const limitMock = jest.fn()
-const realpathMock = jest.fn()
-const statMock = jest.fn()
 
 jest.mock('@/lib/db', () => ({
   db: {
@@ -35,17 +33,12 @@ jest.mock('drizzle-orm', () => ({
   eq: jest.fn((left, right) => [left, right]),
 }))
 
-jest.mock('node:fs/promises', () => ({
-  realpath: (...args: unknown[]) => realpathMock(...args),
-  stat: (...args: unknown[]) => statMock(...args),
-}))
-
 function createRow() {
   return {
     id: 'run-id',
     graphName: 'cosmograph',
     nodeKind: 'corpus',
-    bundleUri: '/graph-bundles/current',
+    bundleUri: '/mnt/solemd-graph/bundles/by-checksum/bundle-checksum',
     bundleFormat: 'parquet-manifest',
     bundleVersion: '4',
     bundleChecksum: 'bundle-checksum',
@@ -91,39 +84,46 @@ function createRow() {
   }
 }
 
-describe('graph bundle asset catalog caching', () => {
+describe('fetch graph bundle', () => {
   beforeEach(() => {
     jest.resetModules()
     jest.clearAllMocks()
+    delete process.env.GRAPH_BUNDLE_QUERY_TIMEOUT_MS
     limitMock.mockResolvedValue([createRow()])
-    realpathMock.mockImplementation(async (value: string) =>
-      value === '/graph-bundles/current'
-        ? '/mnt/solemd-graph/bundles/current'
-        : '/mnt/solemd-graph/bundles'
-    )
-    statMock.mockImplementation(async (assetPath: string) => ({
-      isFile: () => true,
-      size: assetPath.endsWith('manifest.json') ? 64 : 512,
-    }))
   })
 
-  it('reuses one checksum-scoped asset catalog across repeated lookups', async () => {
-    const { resolveGraphBundleAsset } = await import('../fetch')
+  it('builds checksum-addressed bundle asset URLs for the frontend runtime', async () => {
+    const { fetchActiveGraphBundle } = await import('../fetch')
 
-    const first = await resolveGraphBundleAsset('bundle-checksum', 'base_points.parquet')
-    const second = await resolveGraphBundleAsset('bundle-checksum', 'manifest.json')
+    const bundle = await fetchActiveGraphBundle()
 
-    expect(limitMock).toHaveBeenCalledTimes(1)
-    expect(statMock).toHaveBeenCalledTimes(3)
-    expect(first).toEqual({
-      assetPath: '/mnt/solemd-graph/bundles/current/base_points.parquet',
-      etag: '"bundle-checksum:base_points.parquet:sha-points"',
-      size: 512,
-    })
-    expect(second).toEqual({
-      assetPath: '/mnt/solemd-graph/bundles/current/manifest.json',
-      etag: '"bundle-checksum:manifest.json:64"',
-      size: 64,
-    })
+    expect(bundle.assetBaseUrl).toBe('/graph-bundles/bundle-checksum')
+    expect(bundle.manifestUrl).toBe('/graph-bundles/bundle-checksum/manifest.json')
+    expect(bundle.tableUrls.base_points).toBe(
+      '/graph-bundles/bundle-checksum/base_points.parquet'
+    )
+    expect(bundle.tableUrls.base_clusters).toBe(
+      '/graph-bundles/bundle-checksum/base_clusters.parquet'
+    )
+  })
+
+  it('fails fast when the graph bundle lookup hangs', async () => {
+    jest.useFakeTimers()
+    process.env.GRAPH_BUNDLE_QUERY_TIMEOUT_MS = '25'
+    limitMock.mockImplementation(() => new Promise(() => {}))
+
+    try {
+      const { fetchActiveGraphBundle } = await import('../fetch')
+      const bundlePromise = fetchActiveGraphBundle()
+      const rejection = expect(bundlePromise).rejects.toThrow(
+        'Timed out resolving active graph bundle metadata after 25ms'
+      )
+
+      await jest.advanceTimersByTimeAsync(25)
+
+      await rejection
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })

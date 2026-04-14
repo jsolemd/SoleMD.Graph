@@ -234,7 +234,7 @@ describe("DotToc", () => {
     await waitFor(() => {
       expect(getDot("Intro")).toHaveStyle({ opacity: "1", width: "9px", height: "9px" });
       expect(getDot("Yellow")).toHaveStyle({ opacity: "1", width: "9px", height: "9px" });
-      expect(getDot("Green")).toHaveStyle({ opacity: "1", width: "19px", height: "19px" });
+      expect(getDot("Green")).toHaveStyle({ opacity: "1", width: "15px", height: "15px" });
       expect(getDot("Pink")).toHaveStyle({ opacity: "1", width: "9px", height: "9px" });
     });
   });

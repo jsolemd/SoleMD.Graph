@@ -74,7 +74,15 @@ export const APP_CHROME_BASE_PX = {
   edgeMargin: 12,
   panelGap: 12,
   panelMargin: 24,
-  panelTop: 116,
+  /** BrandWordmarkButton rendered height — Tailwind-sized (text-[1.35rem] + py-1.5),
+   *  so effectively density-unscaled. Kept at the density-1.0 value so the
+   *  density-scaled panelTop below still clears the brand at any density. */
+  brandHeight: 48,
+  /** Top dock position for floating panels — slotted just below the brand wordmark.
+   *  Derived: edgeMargin (top gap) + brandHeight + panelGap (below brand) = 72.
+   *  Previous value (116) accounted for the deprecated panel-icon row that used
+   *  to sit under the brand; those icons now live in the top-right pill. */
+  panelTop: 12 + 48 + 12,
   floatingViewportInset: 24,
   floatingHeightInset: 120,
   toolbarBase: 12,

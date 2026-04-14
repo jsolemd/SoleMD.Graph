@@ -9,6 +9,8 @@ export const WRITE_TOP_CLEARANCE = densityPx(96);
 export const WRITE_TOP_BASE = densityPx(56);
 /** Maximum card width in any mode. */
 export const MAX_CARD_W = densityPx(560);
+/** Minimum card width in normal mode when desktop lanes get tight. */
+export const MIN_CARD_W_NORMAL = densityPx(280);
 /** Minimum card width in create mode (CSS clamp lower bound). */
 export const MIN_CARD_W_CREATE = densityPx(530);
 /** Viewport ratio for normal-mode width (90vw cap). */

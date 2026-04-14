@@ -123,7 +123,7 @@ export function entriesFromHeadings(container: HTMLElement): DotTocEntry[] {
 
 const DOT_GAP_MAX = 26;
 const DOT_SIZE = 9;
-const DOT_SIZE_ACTIVE = 19;
+const DOT_SIZE_ACTIVE = 15;
 const HIT_SIZE = 32;
 const RAIL_BACKPLATE_WIDTH = 18;
 const DEFAULT_COLOR = "var(--mode-accent)";

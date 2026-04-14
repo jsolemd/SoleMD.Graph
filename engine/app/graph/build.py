@@ -87,6 +87,7 @@ from app.langfuse_config import (
 )
 
 logger = _logging.getLogger(__name__)
+GRAPH_BUNDLE_CHECKSUM_DIRNAME = "by-checksum"
 
 
 def _check_memory_pressure() -> None:
@@ -187,14 +188,45 @@ def _cleanup_stale_build_artifacts(keep_run_ids: set[str] | None = None) -> None
     _cleanup_unkept_graph_runtime_artifacts(keep_run_ids)
 
 
-def _cleanup_unkept_runtime_directories(root, *, keep_names: set[str]) -> None:
+def _cleanup_unkept_runtime_directories(
+    root, *, keep_names: set[str], preserve_names: set[str] | None = None
+) -> None:
     if not root.exists():
         return
 
+    preserved = preserve_names or set()
     for path in root.iterdir():
-        if not path.is_dir() or path.name in keep_names:
+        if path.name in keep_names or path.name in preserved:
+            continue
+        if path.is_symlink():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+            continue
+        if not path.is_dir():
             continue
         shutil.rmtree(path, ignore_errors=True)
+
+
+def _cleanup_unkept_graph_bundle_aliases(bundle_root, *, keep_names: set[str]) -> None:
+    alias_root = bundle_root / GRAPH_BUNDLE_CHECKSUM_DIRNAME
+    if not alias_root.exists():
+        return
+
+    for path in alias_root.iterdir():
+        if not path.is_symlink():
+            continue
+        try:
+            target_name = path.resolve(strict=False).name
+        except OSError:
+            target_name = None
+        if target_name in keep_names:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
 
 def _cleanup_unkept_graph_runtime_artifacts(keep_run_ids: set[str]) -> None:
@@ -212,6 +244,11 @@ def _cleanup_unkept_graph_runtime_artifacts(keep_run_ids: set[str]) -> None:
     # Export bundles are also replayable artifacts. The runtime only needs the
     # published run's bundle plus any explicitly preserved run IDs.
     _cleanup_unkept_runtime_directories(
+        settings.graph_bundles_root_path,
+        keep_names=keep_run_ids,
+        preserve_names={GRAPH_BUNDLE_CHECKSUM_DIRNAME},
+    )
+    _cleanup_unkept_graph_bundle_aliases(
         settings.graph_bundles_root_path,
         keep_names=keep_run_ids,
     )

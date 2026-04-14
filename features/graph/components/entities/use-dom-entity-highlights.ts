@@ -344,45 +344,72 @@ export function useDomEntityHighlights(
 
     /* ── Stage 5: event delegation ── */
 
-    function onPointerOver(e: PointerEvent) {
-      const target = (e.target as HTMLElement)?.closest?.(
-        "[data-entity-source-id]",
-      ) as HTMLElement | null;
-      if (!target) return;
+    function resolveEntityTarget(e: Event): HTMLElement | null {
+      return (
+        ((e.target as HTMLElement)?.closest?.(
+          "[data-entity-source-id]",
+        ) as HTMLElement | null) ?? null
+      );
+    }
 
-      const entityType = target.dataset.entityType ?? "";
-      const sourceIdentifier = target.dataset.entitySourceId ?? "";
-      const canonicalName = target.dataset.entityCanonical ?? "";
-      const conceptId = target.dataset.entityConceptId ?? "";
-      const conceptNamespace = target.dataset.entityConceptNs ?? null;
-
-      hoverRef.current.show({
+    function buildShowArgs(target: HTMLElement, x: number, y: number, pinned: boolean) {
+      return {
         entity: {
-          entityType,
-          sourceIdentifier,
-          canonicalName,
-          conceptId,
-          conceptNamespace,
+          entityType: target.dataset.entityType ?? "",
+          sourceIdentifier: target.dataset.entitySourceId ?? "",
+          canonicalName: target.dataset.entityCanonical ?? "",
+          conceptId: target.dataset.entityConceptId ?? "",
+          conceptNamespace: target.dataset.entityConceptNs ?? null,
         },
-        x: e.clientX,
-        y: e.clientY,
-      });
+        x,
+        y,
+        pinned,
+      };
+    }
+
+    function onPointerOver(e: PointerEvent) {
+      // Touch uses click-to-pin; pointerover on touch would flash the card
+      // for the duration of the tap, which is worse than nothing.
+      if (e.pointerType === "touch") return;
+      const target = resolveEntityTarget(e);
+      if (!target) return;
+      hoverRef.current.show(buildShowArgs(target, e.clientX, e.clientY, false));
     }
 
     function onPointerOut(e: PointerEvent) {
+      if (e.pointerType === "touch") return;
       const target = (e.target as HTMLElement)?.closest?.(
         "[data-entity-source-id]",
       );
       if (!target) return;
-
       const related = e.relatedTarget as HTMLElement | null;
       if (related && target.contains(related)) return;
-
       hoverRef.current.hide();
+    }
+
+    // Latch the originating pointerType from pointerdown so the subsequent
+    // click handler can reliably distinguish a finger tap from a mouse
+    // click. Chrome Android does dispatch click as a PointerEvent, but
+    // older WebViews and some synthetic events still deliver a plain
+    // MouseEvent — check once at the source.
+    let lastPointerType: string = "mouse";
+    function onPointerDown(e: PointerEvent) {
+      lastPointerType = e.pointerType || "mouse";
+    }
+
+    function onClick(e: MouseEvent) {
+      // Only the touch flow uses click-to-pin; mouse click would conflict
+      // with text-selection semantics and we already show on hover.
+      if (lastPointerType !== "touch") return;
+      const target = resolveEntityTarget(e);
+      if (!target) return;
+      hoverRef.current.show(buildShowArgs(target, e.clientX, e.clientY, true));
     }
 
     container.addEventListener("pointerover", onPointerOver);
     container.addEventListener("pointerout", onPointerOut);
+    container.addEventListener("pointerdown", onPointerDown);
+    container.addEventListener("click", onClick);
 
     /* ── cleanup ── */
 
@@ -394,6 +421,8 @@ export function useDomEntityHighlights(
       observer = null;
       container.removeEventListener("pointerover", onPointerOver);
       container.removeEventListener("pointerout", onPointerOut);
+      container.removeEventListener("pointerdown", onPointerDown);
+      container.removeEventListener("click", onClick);
       clearMarks(container);
     };
   }, [enabled, matchLimit, debounceMs, containerRef]);

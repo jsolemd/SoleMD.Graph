@@ -15,6 +15,7 @@ import { useViewportSize } from "@mantine/hooks";
 import { useGraphInstance } from "@/features/graph/cosmograph";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
+  selectBottomObstacles,
   selectBottomClearance,
 } from "@/features/graph/stores/dashboard-store";
 import { getModeConfig } from "@/features/graph/lib/modes";
@@ -29,6 +30,7 @@ import type {
 import { useTypewriter } from "@/features/graph/hooks/use-typewriter";
 import { getSelectionScopeToggleLabel, isSelectionScopeAvailable, isSelectionScopeEnabled } from "./selection-scope";
 import { useFocusedAvoidanceRects } from "./use-focused-avoidance-rects";
+import { usePanelAvoidanceRects } from "./use-panel-avoidance-rects";
 import { usePromptPosition } from "./use-prompt-position";
 import { useRagQuery } from "./use-rag-query";
 import { useReferenceMentionSource } from "./use-reference-mention-source";
@@ -52,9 +54,12 @@ import {
   VW_RATIO,
   cardWidth,
 } from "./constants";
+import { resolveNormalCardWidth } from "./prompt-layout";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { getEntityWikiSlug } from "@/features/wiki/lib/entity-wiki-route";
 import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
+import { resolveMobileBottomStack } from "@/features/graph/components/shell/use-mobile-bottom-stack";
 
 export interface PromptBoxControllerProps {
   bundle: GraphBundle;
@@ -113,6 +118,7 @@ export function usePromptBoxController({
   bundle,
   queries,
 }: PromptBoxControllerProps): PromptBoxControllerState {
+  const shellVariant = useShellVariantContext();
   const mode = useGraphStore((s) => s.mode);
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
@@ -130,9 +136,11 @@ export function usePromptBoxController({
   const activeSelectionSourceId = useDashboardStore((s) => s.activeSelectionSourceId);
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
   const openPanel = useDashboardStore((s) => s.openPanel);
+  const openOnlyPanel = useDashboardStore((s) => s.openOnlyPanel);
   const setPanelsVisible = useDashboardStore((s) => s.setPanelsVisible);
   const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
-  const bottomClearance = useDashboardStore(selectBottomClearance);
+  const bottomObstacles = useDashboardStore(selectBottomObstacles);
+  const desktopBottomClearance = useDashboardStore(selectBottomClearance);
   const activeMode = getModeConfig(mode);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-pick on mode change
   const examples = useMemo(() => [...pickRandom(MODE_EXAMPLES[mode], 2), `${activeMode.label} with the knowledge graph...`], [mode]);
@@ -152,6 +160,9 @@ export function usePromptBoxController({
   const isCollapsed = promptMode === "collapsed";
   const isMaximized = promptMode === "maximized";
   const isCreateMaximized = isCreate && isMaximized;
+  const bottomClearance = shellVariant === "mobile"
+    ? resolveMobileBottomStack(bottomObstacles).bottomClearance
+    : desktopBottomClearance;
   const activePromptValue = isCreate ? writeContent : askPromptValueRef.current;
   const selectionScopeAvailable = isSelectionScopeAvailable({
     hasQueries: Boolean(queries),
@@ -193,10 +204,14 @@ export function usePromptBoxController({
   const handleOpenEntityInWiki = useCallback(
     (entity: GraphEntityRef) => {
       setPanelsVisible(true);
-      openPanel("wiki");
+      if (shellVariant === "mobile") {
+        openOnlyPanel("wiki");
+      } else {
+        openPanel("wiki");
+      }
       useWikiStore.getState().navigateToPage(getEntityWikiSlug(entity));
     },
-    [setPanelsVisible, openPanel],
+    [openOnlyPanel, openPanel, setPanelsVisible, shellVariant],
   );
 
   const {
@@ -227,12 +242,26 @@ export function usePromptBoxController({
     selectedNode?.paperTitle ??
     selectedNode?.clusterLabel ??
     null;
-  const avoidRects = useFocusedAvoidanceRects({
+  const focusedAvoidRects = useFocusedAvoidanceRects({
     enabled: Boolean(cosmograph) && focusedPointIndex != null && !isCollapsed && !isMaximized,
     focusedPointIndex,
     focusSessionRevision: focusedPointRevision,
     cameraSettledRevision,
     labelText: focusedLabelText,
+  });
+  const panelAvoidRects = usePanelAvoidanceRects({
+    enabled: shellVariant === "desktop" && panelsVisible && !isCollapsed && !isMaximized,
+  });
+  const avoidRects = useMemo(
+    () => [...panelAvoidRects, ...focusedAvoidRects],
+    [focusedAvoidRects, panelAvoidRects],
+  );
+  const normalCardWidth = resolveNormalCardWidth({
+    vw,
+    vh,
+    cardH: PROMPT_FALLBACK_NORMAL_HEIGHT,
+    desiredWidth: cardWidth(vw),
+    avoidRects: panelAvoidRects,
   });
 
   const {
@@ -251,6 +280,7 @@ export function usePromptBoxController({
     setIsOffset,
   } = usePromptPosition({
     isCreate,
+    normalCardWidth,
     promptMode,
     panelsVisible,
     bottomClearance,
@@ -443,7 +473,6 @@ export function usePromptBoxController({
     submitRagQuery();
   }, [clearEntityOverlaySelection, submitRagQuery]);
 
-  const normalCardWidth = cardWidth(vw);
   const normalWidth = vw === 0
     ? `min(${densityCssPx(560)}, ${VW_RATIO * 100}vw)`
     : `${normalCardWidth}px`;

@@ -3,6 +3,7 @@ import type { GraphBundle } from '@/features/graph/types'
 import { registerBundleTableFiles } from '../bundle-files'
 import { getCanvasPointCounts, registerActiveCanvasAliasViews } from '../canvas'
 import { createConnection, closeConnection } from '../connection'
+import { markHotBundleCacheReady, prepareHotBundleCache } from '../persistent-cache'
 import type { GraphBundleSession, ProgressCallback } from '../types'
 import { getAutoloadBundleTables } from '../utils'
 import {
@@ -37,7 +38,9 @@ export async function createGraphBundleSession(
     })
 
     await registerBundleTableFiles(db, bundle)
+    const hotBundleCache = await prepareHotBundleCache(conn, bundle)
     const viewState = await registerInitialSessionViews(conn, bundle, autoloadTables)
+    await markHotBundleCacheReady(conn, bundle)
     const { availableLayers, basePointCount } = viewState
     const ensureOptionalBundleTables = createEnsureOptionalBundleTables(conn, bundle, viewState)
 
@@ -51,7 +54,9 @@ export async function createGraphBundleSession(
 
     onProgress(bundle.bundleChecksum, {
       stage: 'views',
-      message: 'Canvas tables are ready. Graph rendering can begin immediately.',
+      message: hotBundleCache.reused
+        ? 'Reused browser-local hot graph tables. Graph rendering can begin immediately.'
+        : 'Cached hot graph tables locally. Graph rendering can begin immediately.',
       percent: 12,
       loadedRows: 0,
       totalRows: initialPointCounts.corpus,
@@ -117,8 +122,6 @@ export async function createGraphBundleSession(
       getTablePage: queryController.getTablePage,
       exportTableCsv: queryController.exportTableCsv,
       getInfoSummary: infoQueries.getInfoSummary,
-      getCategoricalValues: infoQueries.getCategoricalValues,
-      getNumericValues: infoQueries.getNumericValues,
       getInfoBars: infoQueries.getInfoBars,
       getInfoBarsBatch: infoQueries.getInfoBarsBatch,
       getInfoHistogram: infoQueries.getInfoHistogram,

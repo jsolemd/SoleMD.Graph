@@ -1080,6 +1080,7 @@ The refined order is now:
 
 7. **Keep graph support offline and precomputed.**
    - graph priors, candidate expansion, rerank support
+   - cluster priors from existing release-scoped graph clusters are a valid bounded experiment
    - no default live graph traversal
 
 This is the cleanest synthesis of the recent agent review with the current codebase and benchmark status.
@@ -1212,11 +1213,21 @@ Use it for:
 - rerank support
 - relation-aware narrative retrieval
 
+Bounded cluster-prior experiment:
+- a recent review of Clustered-Dynamic-RAG was directionally useful, but the useful idea here is the prior, not the live planner
+- reuse existing release-scoped `graph_clusters`, cluster labels/descriptions, and exemplar papers as an offline cluster surface
+- do **not** add a new query-time LLM step that chooses clusters or reallocates retrieval budget inside the live hot path
+- do **not** add a second clustering stack over the corpus; this repo already has the better clustering substrate through SPECTER2 + Leiden
+- treat cluster membership and cluster affinity as additional retrieval/rerank features after initial paper recall, especially for narrative and multi-aspect queries
+- start as a benchmarked ablation on `biomedical_narrative_v1`, `semantic_recall_v2`, and a future multi-aspect `general` cohort rather than as an expert-canonicalization fix
+
 Do **not** default to live graph traversal.
 
 How to achieve it:
 - build a read-model over concept-paper, relation-paper, and citation-neighbor structure
 - use that read-model to add priors and candidate expansion features into retrieval and ranking
+- extend that read-model with release-scoped cluster priors such as `cluster_id`, cluster-level affinity features, and bounded same-cluster or neighbor-cluster candidate promotion
+- keep cluster priors downstream of initial recall and upstream of final rerank so the paper-first contract stays intact
 - keep graph computation offline or precomputed, not query-time exploratory traversal
 
 ### 8. Expand The Benchmark Portfolio

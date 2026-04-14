@@ -1,7 +1,7 @@
 "use client";
 
 import { Tooltip } from "@mantine/core";
-import { BrainCircuit } from "lucide-react";
+import { promptSurfaceStyle } from "../panels/PanelShell";
 
 interface BrandWordmarkButtonProps {
   accentColor: string;
@@ -18,24 +18,14 @@ export function BrandWordmarkButton({
     <Tooltip label={tooltipLabel} position="right" withArrow>
       <button
         type="button"
-        className="graph-icon-btn flex cursor-pointer items-center gap-2 rounded-2xl border-0 px-3 py-1.5 transition-[background-color,box-shadow,opacity] hover:opacity-80"
-        style={{
-          backgroundColor: "var(--graph-control-idle-bg, transparent)",
-          boxShadow:
-            "inset 0 0 0 1px var(--graph-control-idle-border, transparent)",
-        }}
+        className="flex cursor-pointer items-center rounded-full border-0 px-4 py-1.5 transition-[filter] hover:brightness-110"
+        style={promptSurfaceStyle}
         onClick={onClick}
         aria-label={tooltipLabel}
       >
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-full transition-colors duration-300"
-          style={{ backgroundColor: accentColor }}
-        >
-          <BrainCircuit size={15} color="white" />
-        </div>
         <span
-          className="text-lg font-semibold select-none"
-          style={{ color: "var(--graph-wordmark-text)" }}
+          className="text-[1.45rem] font-semibold select-none"
+          style={{ color: "var(--graph-icon-color)" }}
         >
           Sole
           <span

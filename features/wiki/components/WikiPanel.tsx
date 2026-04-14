@@ -33,8 +33,10 @@ import { WikiModuleSearch } from "@/features/wiki/components/WikiModuleSearch";
 import { WikiPageView } from "@/features/wiki/components/WikiPageView";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiSearch } from "@/features/wiki/components/WikiSearch";
+import { WikiBrowseSheet } from "@/features/wiki/components/WikiBrowseSheet";
 import { WikiContextActions, WikiNavigation } from "@/features/wiki/components/WikiNavigation";
 import { AnimationEmbed } from "@/features/wiki/components/elements/AnimationEmbed";
+import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
 import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
@@ -45,6 +47,8 @@ interface WikiPanelProps {
 }
 
 export function WikiPanel({ bundle, queries }: WikiPanelProps) {
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
   const closePanel = useDashboardStore((s) => s.closePanel);
   const wikiExpanded = useDashboardStore((s) => s.wikiExpanded);
   const setWikiExpandedWidth = useDashboardStore((s) => s.setWikiExpandedWidth);
@@ -281,7 +285,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
           <div
             className="fixed inset-0 z-[9998] flex items-center justify-center"
             style={{
-              backgroundColor: "rgba(0,0,0,0.35)",
+              backgroundColor: "var(--graph-overlay-scrim)",
               backdropFilter: `blur(${densityCssPx(APP_CHROME_BASE_PX.overlayBlur)})`,
               WebkitBackdropFilter: `blur(${densityCssPx(APP_CHROME_BASE_PX.overlayBlur)})`,
             }}
@@ -290,9 +294,13 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
             <div
               className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
               style={{
-                width: densityCssViewportInset("vw", APP_CHROME_BASE_PX.wikiOverlayInset),
-                height: densityCssViewportInset("vh", APP_CHROME_BASE_PX.wikiOverlayInset),
-                border: "1px solid var(--border-default)",
+                width: isMobile
+                  ? "100vw"
+                  : densityCssViewportInset("vw", APP_CHROME_BASE_PX.wikiOverlayInset),
+                height: isMobile
+                  ? "100svh"
+                  : densityCssViewportInset("vh", APP_CHROME_BASE_PX.wikiOverlayInset),
+                borderRadius: isMobile ? 0 : "1rem",
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -303,7 +311,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
                   radius="xl"
                   onClick={handleCloseOverlay}
                   aria-label="Close graph"
-                  style={{ color: "var(--text-secondary)" }}
+                  style={{ color: "var(--graph-panel-text-muted)" }}
                 >
                   <X size={densityPx(14)} />
                 </ActionIcon>
@@ -319,13 +327,15 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
           document.body,
         )}
 
+      <WikiBrowseSheet />
+
       {/* Fullscreen animation overlay — portaled to body to escape panel transforms */}
       {fullscreenAnim &&
         typeof document !== "undefined" &&
         createPortal(
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center"
-            style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+            style={{ backgroundColor: "var(--graph-overlay-scrim-strong)" }}
             onClick={() => setFullscreenAnim(null)}
           >
             <div
@@ -344,7 +354,7 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
                   radius="xl"
                   onClick={() => setFullscreenAnim(null)}
                   aria-label="Close animation"
-                  style={{ color: "var(--text-secondary)" }}
+                  style={{ color: "var(--graph-panel-text-muted)" }}
                 >
                   <X size={densityPx(14)} />
                 </ActionIcon>

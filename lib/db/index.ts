@@ -6,8 +6,34 @@ import postgres from 'postgres'
 import * as schema from './schema'
 
 type Db = ReturnType<typeof drizzle<typeof schema>>
+type SqlClient = ReturnType<typeof postgres>
 
-let _db: Db | undefined
+declare global {
+  // Preserve the frontend DB client across Next dev module reloads so we do
+  // not accumulate fresh postgres-js pools on every recompilation.
+  var __solemdGraphDb__: Db | undefined
+  var __solemdGraphSql__: SqlClient | undefined
+}
+
+function getDb(): Db {
+  if (!globalThis.__solemdGraphDb__) {
+    const url = process.env.DATABASE_URL
+    if (!url) {
+      throw new Error('DATABASE_URL environment variable is required')
+    }
+
+    const sql = postgres(url, {
+      max: 10,
+      idle_timeout: 20,
+      connect_timeout: 10,
+    })
+
+    globalThis.__solemdGraphSql__ = sql
+    globalThis.__solemdGraphDb__ = drizzle(sql, { schema })
+  }
+
+  return globalThis.__solemdGraphDb__
+}
 
 /**
  * Lazily-initialized database connection.
@@ -18,13 +44,6 @@ let _db: Db | undefined
  */
 export const db: Db = new Proxy({} as Db, {
   get(_, prop, receiver) {
-    if (!_db) {
-      const url = process.env.DATABASE_URL
-      if (!url) {
-        throw new Error('DATABASE_URL environment variable is required')
-      }
-      _db = drizzle(postgres(url, { max: 10, idle_timeout: 20 }), { schema })
-    }
-    return Reflect.get(_db, prop, receiver)
+    return Reflect.get(getDb(), prop, receiver)
   },
 })

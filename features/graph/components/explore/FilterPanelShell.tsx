@@ -12,14 +12,15 @@ import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { getColumnsForLayer, getColumnMeta } from "@/features/graph/lib/columns";
 import type { FilterableColumnKey } from "@/features/graph/types";
 import {
-  iconBtnStyles,
   PANEL_ACCENT,
   PanelBody,
   PanelDivider,
   PanelShell,
+  panelIconBtnStyles,
   panelSelectStyles,
   panelTextStyle,
 } from "../panels/PanelShell";
+import { useShellVariantContext } from "../shell/ShellVariantContext";
 
 const DEFAULT_VISIBLE_FILTERS = 4;
 
@@ -38,6 +39,8 @@ export function FilterPanelShell({
   filterItemStyle,
   onVisibleFiltersChange,
 }: FilterPanelShellProps) {
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
   const cosmograph = useGraphInstance();
   const filterColumns = useDashboardStore((s) => s.filterColumns);
   const addFilter = useDashboardStore((s) => s.addFilter);
@@ -103,7 +106,7 @@ export function FilterPanelShell({
       title="Filters"
       headerActions={(
         <Button
-          size="compact-xs"
+          size={isMobile ? "sm" : "compact-xs"}
           variant="subtle"
           color={PANEL_ACCENT}
           onClick={handleResetAll}
@@ -127,7 +130,7 @@ export function FilterPanelShell({
                   </Text>
                   <ActionIcon
                     variant="subtle"
-                    size={18}
+                    size={isMobile ? 28 : 18}
                     radius="sm"
                     onClick={() => {
                       clearSelectionClause(
@@ -137,7 +140,8 @@ export function FilterPanelShell({
                       removeFilter(filter.column);
                     }}
                     aria-label={`Remove ${meta.label} filter`}
-                    styles={iconBtnStyles}
+                    className="panel-icon-btn"
+                    styles={panelIconBtnStyles}
                   >
                     <X size={10} />
                   </ActionIcon>
@@ -153,7 +157,7 @@ export function FilterPanelShell({
 
           {hiddenFilterCount > 0 && !showAllFilters && (
             <Button
-              size="xs"
+              size={isMobile ? "sm" : "xs"}
               variant="subtle"
               color={PANEL_ACCENT}
               onClick={() => setShowAllFilters(true)}
@@ -164,7 +168,7 @@ export function FilterPanelShell({
 
           {showAllFilters && filterColumns.length > DEFAULT_VISIBLE_FILTERS && (
             <Button
-              size="xs"
+              size={isMobile ? "sm" : "xs"}
               variant="subtle"
               color={PANEL_ACCENT}
               onClick={() => setShowAllFilters(false)}
@@ -177,7 +181,6 @@ export function FilterPanelShell({
 
           {showAddSelect ? (
             <Select
-              size="xs"
               placeholder="Select column..."
               data={availableColumns}
               onChange={(v) => {
@@ -190,11 +193,12 @@ export function FilterPanelShell({
               onBlur={() => setShowAddSelect(false)}
               autoFocus
               searchable
+              size={isMobile ? "sm" : "xs"}
               styles={panelSelectStyles}
             />
           ) : (
             <Button
-              size="xs"
+              size={isMobile ? "sm" : "xs"}
               variant="subtle"
               color={PANEL_ACCENT}
               leftSection={<Plus size={14} />}

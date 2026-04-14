@@ -39,10 +39,32 @@ describe('panel-slice', () => {
     })
 
     it('openPanel is idempotent', () => {
-      resetStore({ openPanels: { ...useDashboardStore.getState().openPanels, wiki: true } })
+      resetStore({
+        openPanels: { ...useDashboardStore.getState().openPanels, wiki: true },
+        lastOpenedPanel: 'wiki',
+      })
       const before = useDashboardStore.getState()
       useDashboardStore.getState().openPanel('wiki')
       expect(useDashboardStore.getState()).toBe(before)
+    })
+
+    it('openOnlyPanel closes other panels and tracks the active panel', () => {
+      resetStore({
+        openPanels: { ...useDashboardStore.getState().openPanels, config: true, filters: true },
+        lastOpenedPanel: 'filters',
+      })
+
+      useDashboardStore.getState().openOnlyPanel('wiki')
+
+      expect(useDashboardStore.getState().openPanels).toEqual({
+        about: false,
+        config: false,
+        filters: false,
+        info: false,
+        query: false,
+        wiki: true,
+      })
+      expect(useDashboardStore.getState().lastOpenedPanel).toBe('wiki')
     })
 
     it('closePanel closes a specific panel', () => {
@@ -164,12 +186,10 @@ describe('panel-slice', () => {
       expect(useDashboardStore.getState().promptMode).toBe('maximized')
     })
 
-    it('applyPromptModeDefault resets fullHeight', () => {
-      resetStore({ promptShellFullHeight: true })
+    it('applyPromptModeDefault sets promptMode and lastExpandedPromptMode', () => {
       useDashboardStore.getState().applyPromptModeDefault('normal')
       const s = useDashboardStore.getState()
       expect(s.promptMode).toBe('normal')
-      expect(s.promptShellFullHeight).toBe(false)
       expect(s.lastExpandedPromptMode).toBe('normal')
     })
   })

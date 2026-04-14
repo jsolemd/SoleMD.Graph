@@ -272,6 +272,28 @@ describe("GraphRenderer", () => {
     }
   });
 
+  it("does not throw when zoom-end settles after the Cosmograph ref is cleared", () => {
+    const { unmount } = render(
+      <GraphRenderer
+        canvas={CANVAS_STUB}
+        queries={QUERIES_STUB}
+      />,
+    );
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    expect(props).toBeDefined();
+    unmount();
+
+    expect(() => {
+      act(() => {
+        (props?.onZoomEnd as (() => void) | undefined)?.();
+      });
+    }).not.toThrow();
+  });
+
   it("prefers the saved session camera over the default initial camera", () => {
     saveCameraState({
       zoomLevel: 0.61,
@@ -392,6 +414,77 @@ describe("GraphRenderer", () => {
       | undefined;
     expect(propsAfterSelection?.showSelectedLabels).toBe(false);
     expect(propsAfterSelection?.showUnselectedPointLabels).toBe(false);
+  });
+
+  it("preserves selection through a touch pan that ends with onBackgroundClick", () => {
+    useGraphStore.setState({
+      selectedNode: SELECTED_POINT,
+      focusedPointIndex: SELECTED_POINT.index,
+    });
+
+    renderRenderer();
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    // Simulate a real pan gesture: zoom-start, zoom with travel beyond the
+    // tap threshold, zoom-end, then Cosmograph's synthesized background click.
+    act(() => {
+      (
+        props?.onZoomStart as
+          | ((e: unknown, userDriven: boolean) => void)
+          | undefined
+      )?.({ transform: { x: 0, y: 0, k: 1 } }, true);
+      (
+        props?.onZoom as
+          | ((e: unknown, userDriven: boolean) => void)
+          | undefined
+      )?.({ transform: { x: 120, y: 40, k: 1 } }, true);
+      (
+        props?.onZoomEnd as
+          | ((e: unknown, userDriven: boolean) => void)
+          | undefined
+      )?.({ transform: { x: 120, y: 40, k: 1 } }, true);
+      (props?.onBackgroundClick as (() => void) | undefined)?.();
+    });
+
+    expect(useGraphStore.getState().selectedNode).toEqual(SELECTED_POINT);
+    expect(useGraphStore.getState().focusedPointIndex).toBe(
+      SELECTED_POINT.index,
+    );
+    expect(mockUnselectAllPoints).not.toHaveBeenCalled();
+  });
+
+  it("clears selection on a genuine background tap (no pan in between)", () => {
+    useGraphStore.setState({
+      selectedNode: SELECTED_POINT,
+      focusedPointIndex: SELECTED_POINT.index,
+    });
+
+    renderRenderer();
+
+    const props = mockCosmographRender.mock.lastCall?.[0] as
+      | Record<string, unknown>
+      | undefined;
+
+    act(() => {
+      (
+        props?.onZoomStart as
+          | ((e: unknown, userDriven: boolean) => void)
+          | undefined
+      )?.({ transform: { x: 0, y: 0, k: 1 } }, true);
+      (
+        props?.onZoomEnd as
+          | ((e: unknown, userDriven: boolean) => void)
+          | undefined
+      )?.({ transform: { x: 0, y: 0, k: 1 } }, true);
+      (props?.onBackgroundClick as (() => void) | undefined)?.();
+    });
+
+    expect(useGraphStore.getState().selectedNode).toBeNull();
+    expect(useGraphStore.getState().focusedPointIndex).toBeNull();
+    expect(mockUnselectAllPoints).toHaveBeenCalledTimes(1);
   });
 
   it("clears stale point focus and detail when a cluster label is clicked", () => {
