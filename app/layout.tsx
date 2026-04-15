@@ -37,10 +37,9 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
-  /** Shrink the layout viewport when the on-screen keyboard opens so fixed
-   *  top chrome (wordmark + icon pills) stays visible above the keyboard
-   *  instead of scrolling out of view. */
-  interactiveWidget: "resizes-content",
+  /** Keep the layout viewport stable when the Android keyboard opens so
+   *  fixed graph surfaces do not relayout underneath focused panel inputs. */
+  interactiveWidget: "resizes-visual",
 };
 
 export default function RootLayout({
