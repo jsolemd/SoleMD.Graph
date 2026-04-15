@@ -77,7 +77,7 @@ export function WikiGraphView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div
-        className="relative min-h-[460px] flex-1 overflow-hidden rounded-md"
+        className="relative min-h-0 flex-1 overflow-hidden rounded-md"
         data-testid="wiki-graph-surface"
         style={{
           background: "var(--graph-panel-bg)",

@@ -5,6 +5,7 @@ import { Group as TweenGroup, Tween } from "@tweenjs/tween.js";
 import type { SimNode, SimLink, WikiGraphIntents } from "./types";
 import type { WikiGraphScene } from "./render-scene";
 import type { WikiGraphPalette } from "./theme";
+import { computeFitTransform } from "./fit-view";
 import {
   endWikiGraphDragInteraction,
   startWikiGraphDragInteraction,
@@ -115,12 +116,29 @@ function renderHoverLinks(
 // Zoom + pan with label coupling
 // ---------------------------------------------------------------------------
 
-export function wireZoom(scene: WikiGraphScene, panLatch?: PanLatch) {
+/** Camera control exposed by {@link wireZoom}. The mount layer owns
+ *  autofit policy (when to fit, when to stand down); this object hides
+ *  the d3-zoom plumbing and the programmatic/user distinction that
+ *  Quartz's graph view bakes into its `scale` initial-transform pattern. */
+export interface WikiGraphZoomControl {
+  /** Has the user panned or zoomed since mount? Once true, stays true. */
+  hasUserMoved: () => boolean;
+  /** Fit current node extents into the container. No-op if the user has
+   *  already moved the camera, if the container is empty, or if no node
+   *  has coordinates yet (simulation hasn't ticked). */
+  fitToExtents: (nodes: ReadonlyArray<SimNode>, padding?: number) => void;
+}
+
+export function wireZoom(scene: WikiGraphScene, panLatch?: PanLatch): WikiGraphZoomControl {
   const canvas = scene.app.canvas as HTMLCanvasElement;
+  const selection = select(canvas);
+  let userMoved = false;
+  let programmatic = false;
 
   const zoomBehavior = d3zoom<HTMLCanvasElement, unknown>()
     .scaleExtent([0.25, 4])
     .on("start", () => {
+      if (programmatic) return;
       panLatch?.setPanning(true);
     })
     .on("zoom", (event: D3ZoomEvent<HTMLCanvasElement, unknown>) => {
@@ -129,17 +147,34 @@ export function wireZoom(scene: WikiGraphScene, panLatch?: PanLatch) {
       scene.app.stage.scale.set(k);
       scene.zoomScale = k;
       scene.labelsDirty = true;
+      if (programmatic) return;
+      userMoved = true;
       // Mark a real pan only when the transform actually changes — d3-zoom's
       // `start` fires for every touchstart including pure taps, which would
       // otherwise be misread as pans and suppress selection intent.
       panLatch?.markPanned();
     })
     .on("end", () => {
+      if (programmatic) return;
       panLatch?.setPanning(false);
     });
 
-  select(canvas).call(zoomBehavior);
-  return zoomBehavior;
+  selection.call(zoomBehavior);
+
+  return {
+    hasUserMoved: () => userMoved,
+    fitToExtents(nodes, padding) {
+      if (userMoved) return;
+      const transform = computeFitTransform(nodes, scene.width, scene.height, padding);
+      if (!transform) return;
+      programmatic = true;
+      try {
+        zoomBehavior.transform(selection, transform);
+      } finally {
+        programmatic = false;
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

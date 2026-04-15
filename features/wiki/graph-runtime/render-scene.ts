@@ -229,8 +229,17 @@ const RESIZE_SETTLE_MS = 100
  * Defer both the logical scene size and the Pixi renderer resize until the
  * panel resize settles. Updating the scene center on every intermediate drag
  * sample makes the graph jump horizontally while the panel edge moves.
+ *
+ * Callers can pass `onCommit` to run after the final settled resize —
+ * rapid repeat calls drop the intermediate callbacks (clearTimeout), so
+ * `onCommit` fires exactly once per settle window.
  */
-export function resizeScene(scene: WikiGraphScene, width: number, height: number): void {
+export function resizeScene(
+  scene: WikiGraphScene,
+  width: number,
+  height: number,
+  onCommit?: () => void,
+): void {
   scene.pendingWidth = width
   scene.pendingHeight = height
 
@@ -256,6 +265,7 @@ export function resizeScene(scene: WikiGraphScene, width: number, height: number
       scene.app.renderer.resize(nextWidth, nextHeight)
     }
     scene.labelsDirty = true
+    onCommit?.()
   }, RESIZE_SETTLE_MS)
 }
 
