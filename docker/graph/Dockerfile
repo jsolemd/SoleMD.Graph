@@ -1,6 +1,6 @@
 # SoleMD.Graph — GPU Graph Build Container
 #
-# Base: nvidia/cuda:13.0.0-devel-ubuntu22.04 — required by RAPIDS pip wheels
+# Base: nvidia/cuda:13.2.0-devel-ubuntu22.04 — required by RAPIDS pip wheels
 # because Numba's JIT needs NVRTC from the CUDA toolkit (devel flavor has it,
 # runtime/base do not). See https://docs.rapids.ai/install/
 #
@@ -16,7 +16,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: builder — install system deps + Python + pip-installed RAPIDS
 # -----------------------------------------------------------------------------
-FROM nvidia/cuda:13.0.0-devel-ubuntu22.04 AS builder
+FROM nvidia/cuda:13.2.0-devel-ubuntu22.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
 # -----------------------------------------------------------------------------
 # Stage 2: runtime — drop build tools, keep Python + RAPIDS venv
 # -----------------------------------------------------------------------------
-FROM nvidia/cuda:13.0.0-devel-ubuntu22.04 AS runtime
+FROM nvidia/cuda:13.2.0-devel-ubuntu22.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \

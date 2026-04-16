@@ -14,7 +14,7 @@ services:
     build:
       context: .
       dockerfile: db/Dockerfile
-    image: graph/db:pg16
+    image: graph/db:pg18
     container_name: graph-db
     restart: unless-stopped
     profiles: ["db"]  # bring up explicitly (--profile db); not part of default up
@@ -68,7 +68,7 @@ services:
           memory: 2g
 
   opensearch:
-    image: opensearchproject/opensearch:3.1.0
+    image: opensearchproject/opensearch:3.6.0
     container_name: graph-opensearch
     restart: unless-stopped
     labels:
@@ -107,7 +107,7 @@ services:
           memory: 4g
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     container_name: graph-redis
     restart: unless-stopped
     labels:

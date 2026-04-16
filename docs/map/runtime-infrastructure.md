@@ -9,7 +9,7 @@ SoleMD.Infra Langfuse / codeatlas / qdrant / neo4j / TEI / chrome-devtools-mcp /
 etc. — shares this substrate.
 
 For RAG data-plane ownership (canonical PostgreSQL + OpenSearch serving +
-object-storage archive), see [rag-future.md](./rag-future.md) — the single
+object-storage archive), see [rag-future.md](../rag-future.md) — the single
 source of truth. This doc covers the physical substrate; rag-future.md covers
 which plane owns what.
 
