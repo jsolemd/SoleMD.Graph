@@ -1,21 +1,28 @@
 # SoleMD.Graph — Local Development Services
 # Usage: docker compose -f docker/compose.yaml up -d
+#
+# Canonical services (per docs/map/rag-future.md):
+#   graph-db         PostgreSQL 16 warehouse (canonical truth spine)
+#   graph-opensearch Evidence-serving plane (paper_index, evidence_index)
+#   graph-worker     Graph runtime + bundle/serving-package builder
+#   graph-redis      Runtime cache
 
-name: solemd-graph
+name: graph
 
 services:
   db:
     build:
       context: .
       dockerfile: db/Dockerfile
-    image: solemd-graph/db:pg16
-    container_name: solemd-graph-db
+    image: graph/db:pg16
+    container_name: graph-db
     restart: unless-stopped
+    profiles: ["db"]  # bring up explicitly (--profile db); not part of default up
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     shm_size: 8g
     ports:
-      - "5433:5432"  # publish on the local Docker host; required for WSL/devcontainer clients
+      - "5433:5432"
     environment:
       POSTGRES_DB: solemd_graph
       POSTGRES_USER: solemd
@@ -38,7 +45,8 @@ services:
       -c log_min_duration_statement=1000
       -c random_page_cost=1.1
     volumes:
-      - ${GRAPH_POSTGRES_HOST_ROOT:-pgdata}:/var/lib/postgresql/data
+      # Bind to warehouse VHDX per rag-future.md (PG canon on E-backed ext4).
+      - ${GRAPH_POSTGRES_HOST_ROOT:-/mnt/solemd-graph/pg-data}:/var/lib/postgresql/data
     security_opt:
       - no-new-privileges:true
     logging:
@@ -59,15 +67,54 @@ services:
         reservations:
           memory: 2g
 
+  opensearch:
+    image: opensearchproject/opensearch:3.1.0
+    container_name: graph-opensearch
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      - cluster.name=graph
+      - node.name=graph-opensearch
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms4g -Xmx4g
+      - plugins.security.disabled=true  # local dev only; prod uses managed
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-ChangeThis_Local123!}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    ports:
+      - "127.0.0.1:9200:9200"  # localhost-only
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sfu admin:${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-ChangeThis_Local123!} http://localhost:9200/_cluster/health || curl -sf http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 6g
+        reservations:
+          memory: 4g
+
   redis:
     image: redis:7-alpine
-    container_name: solemd-graph-redis
+    container_name: graph-redis
     restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     mem_limit: 512m
     ports:
-      - "127.0.0.1:6380:6379"  # localhost-only, 6380 to avoid conflict with existing Redis
+      - "127.0.0.1:6380:6379"
     command: ["redis-server", "--requirepass", "local_dev"]
     security_opt:
       - no-new-privileges:true
@@ -83,12 +130,12 @@ services:
       retries: 5
       start_period: 10s
 
-  graph:
+  worker:
     build:
       context: ..
       dockerfile: docker/graph/Dockerfile
-    image: solemd-graph/graph:cu13-slim
-    container_name: solemd-graph-graph
+    image: graph/worker:cu13
+    container_name: graph-worker
     profiles: ["gpu"]
     shm_size: 1g
     mem_limit: 20g
@@ -103,11 +150,12 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      - graph-venv:/workspaces/SoleMD.Graph/engine/.venv
+      - worker-venv:/workspaces/SoleMD.Graph/engine/.venv
       - ${GRAPH_STORAGE_HOST_ROOT:-/mnt/solemd-graph}:/mnt/solemd-graph
     environment:
       DATABASE_URL: postgresql://solemd:solemd_local@db:5432/solemd_graph
       REDIS_URL: redis://:local_dev@redis:6379/0
+      OPENSEARCH_URL: http://opensearch:9200
       LANGFUSE_BASE_URL: http://127.0.0.1:3100
       GRAPH_LAYOUT_BACKEND: gpu
       GRAPH_CLUSTER_BACKEND: gpu
@@ -123,11 +171,11 @@ services:
       LANGFUSE_HOST: http://127.0.0.1:3100
       LANGFUSE_TRACING_ENVIRONMENT: development
       UMLS_API_KEY: ${UMLS_API_KEY:-}
+    # Soft deps only (no health-gated). db is optional (profile=db) and
+    # worker should start without it. redis + opensearch are default-up.
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - redis
+      - opensearch
     logging:
       driver: "json-file"
       options:
@@ -136,5 +184,5 @@ services:
     command: sleep infinity
 
 volumes:
-  pgdata:
-  graph-venv:
+  worker-venv:
+  opensearch_data:

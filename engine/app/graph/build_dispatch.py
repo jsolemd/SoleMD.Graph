@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 
-GPU_CONTAINER = "solemd-graph-graph"
+GPU_CONTAINER = "graph-worker"
 GPU_WORKDIR = "/workspaces/SoleMD.Graph/engine"
 GPU_PYTHON = ".venv/bin/python"
 
