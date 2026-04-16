@@ -37,6 +37,9 @@ export const viewport: Viewport = {
   ],
   width: "device-width",
   initialScale: 1,
+  /** Keep the layout viewport stable when the Android keyboard opens so
+   *  fixed graph surfaces do not relayout underneath focused panel inputs. */
+  interactiveWidget: "resizes-visual",
 };
 
 export default function RootLayout({

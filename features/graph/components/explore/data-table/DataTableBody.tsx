@@ -6,7 +6,7 @@ import { useGraphFocus } from "@/features/graph/cosmograph";
 import { useGraphStore } from "@/features/graph/stores";
 import { getTableColumnsForLayer, getColumnMetaForLayer } from "@/features/graph/lib/columns";
 import { formatCellValue } from "@/features/graph/lib/helpers";
-import { panelTableHeaderStyle, panelTextDimStyle, PanelInlineLoader } from "../../panels/PanelShell";
+import { panelScaledPx, panelTableHeaderStyle, panelTextDimStyle, PanelInlineLoader } from "../../panels/PanelShell";
 import type { GraphPointRecord, MapLayer } from "@/features/graph/types";
 
 interface DataTableBodyProps {
@@ -81,7 +81,7 @@ export function DataTableBody({
   return (
     <Table
       stickyHeader
-      style={{ fontSize: 10 }}
+      style={{ fontSize: panelScaledPx(10) }}
       styles={{
         thead: { backgroundColor: "var(--graph-bg)" },
         th: { backgroundColor: "var(--graph-bg)", borderColor: "var(--graph-panel-border)", padding: "4px 6px" },

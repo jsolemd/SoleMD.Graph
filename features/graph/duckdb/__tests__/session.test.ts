@@ -17,6 +17,7 @@ import {
   replaceSelectedPointIndices,
   replaceSelectedPointIndicesFromScopeSql,
 } from '../views'
+import { markHotBundleCacheReady, prepareHotBundleCache } from '../persistent-cache'
 
 jest.mock('../connection', () => ({
   closeConnection: jest.fn(async () => undefined),
@@ -72,6 +73,13 @@ jest.mock('../views', () => {
   }
 })
 
+jest.mock('../persistent-cache', () => ({
+  canUsePersistentGraphDatabase: jest.fn(() => false),
+  getPersistentGraphDatabasePath: jest.fn(() => 'opfs://solemd-graph-runtime.duckdb'),
+  markHotBundleCacheReady: jest.fn(async () => undefined),
+  prepareHotBundleCache: jest.fn(async () => ({ reused: false })),
+}))
+
 const createConnectionMock = jest.mocked(createConnection)
 const registerBundleTableFilesMock = jest.mocked(registerBundleTableFiles)
 const buildCanvasSourceMock = jest.mocked(buildCanvasSource)
@@ -86,6 +94,8 @@ const registerInitialSessionViewsMock = jest.mocked(registerInitialSessionViews)
 const replaceOverlayProducerPointIdsMock = jest.mocked(replaceOverlayProducerPointIds)
 const replaceSelectedPointIndicesMock = jest.mocked(replaceSelectedPointIndices)
 const replaceSelectedPointScopeSqlMock = jest.mocked(replaceSelectedPointIndicesFromScopeSql)
+const markHotBundleCacheReadyMock = jest.mocked(markHotBundleCacheReady)
+const prepareHotBundleCacheMock = jest.mocked(prepareHotBundleCache)
 
 function createBundle() {
   return {
@@ -132,6 +142,8 @@ describe('createGraphBundleSession', () => {
       buildPointCanvasProjectionSql: jest.fn(),
       buildPointQueryProjectionSql: jest.fn(),
     })
+    prepareHotBundleCacheMock.mockResolvedValue({ reused: false })
+    markHotBundleCacheReadyMock.mockResolvedValue(undefined)
     createEnsureOptionalBundleTablesMock.mockReturnValue(ensureOptionalBundleTablesMock)
     initializeSelectedPointTableMock.mockResolvedValue(undefined)
     materializeOverlayPointIdsMock.mockResolvedValue({ overlayCount: 7 })
@@ -170,6 +182,8 @@ describe('createGraphBundleSession', () => {
       db as never,
       createBundle()
     )
+    expect(prepareHotBundleCacheMock).toHaveBeenCalledWith(conn, createBundle())
+    expect(markHotBundleCacheReadyMock).toHaveBeenCalledWith(conn, createBundle())
 
     await session.setSelectedPointIndices([3, 1, 3])
     await session.setSelectedPointIndices([1, 3])

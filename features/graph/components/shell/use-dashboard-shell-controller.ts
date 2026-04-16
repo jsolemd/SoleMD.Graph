@@ -11,7 +11,6 @@ import type { GraphBundle } from "@/features/graph/types";
 export interface DashboardShellController {
   bundle: GraphBundle;
   canvas: ReturnType<typeof useGraphBundle>["canvas"];
-  canvasShifted: boolean;
   error: Error | null;
   handleGraphFirstPaint: () => void;
   isContinuousColor: boolean;
@@ -36,8 +35,6 @@ interface DashboardShellSnapshot {
   pointColorStrategy: ReturnType<
     typeof useDashboardStore.getState
   >["pointColorStrategy"];
-  promptMode: ReturnType<typeof useDashboardStore.getState>["promptMode"];
-  promptShellFullHeight: boolean;
   selectionLocked: boolean;
   setPanelsVisible: ReturnType<typeof useDashboardStore.getState>["setPanelsVisible"];
   setShowTimeline: ReturnType<typeof useDashboardStore.getState>["setShowTimeline"];
@@ -56,8 +53,6 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
     openPanels,
     panelsVisible,
     pointColorStrategy,
-    promptMode,
-    promptShellFullHeight,
     selectionLocked,
     setPanelsVisible,
     setShowTimeline,
@@ -74,8 +69,6 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
         openPanels: state.openPanels,
         panelsVisible: state.panelsVisible,
         pointColorStrategy: state.pointColorStrategy,
-        promptMode: state.promptMode,
-        promptShellFullHeight: state.promptShellFullHeight,
         selectionLocked: state.selectionLocked,
         setPanelsVisible: state.setPanelsVisible,
         setShowTimeline: state.setShowTimeline,
@@ -91,8 +84,6 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
   );
   const { canvas, error, loading, progress, queries } = useGraphBundle(bundle);
   const { layout } = getModeConfig(mode);
-  const isCreate = mode === "create";
-  const canvasShifted = isCreate && (promptMode === "maximized" || promptShellFullHeight);
   const isContinuousColor = pointColorStrategy === "continuous";
   const [graphPaintReady, setGraphPaintReady] = useState(false);
   const handleGraphFirstPaint = useCallback(() => {
@@ -128,7 +119,6 @@ export function useDashboardShellController(bundle: GraphBundle): DashboardShell
   return {
     bundle,
     canvas,
-    canvasShifted,
     error,
     handleGraphFirstPaint,
     isContinuousColor,

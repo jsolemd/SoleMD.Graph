@@ -1,6 +1,13 @@
 "use client";
 
-import { type ReactNode, useCallback, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { fetchGraphEntityDetail } from "@/features/graph/lib/entity-service";
 import type { GraphEntityDetailResponsePayload } from "@/features/graph/types/entity-service";
 import { EntityHoverCard } from "./EntityHoverCard";
@@ -13,6 +20,7 @@ import {
 import type { GraphEntityRef } from "@/features/graph/types/entity-service";
 
 const DISMISS_DELAY_MS = 120;
+const HOVER_CARD_SHELL_ATTR = "data-entity-hover-card";
 
 interface EntityHoverCardProviderProps {
   children: ReactNode;
@@ -26,8 +34,10 @@ export function EntityHoverCardProvider({
   onOpenWiki,
 }: EntityHoverCardProviderProps) {
   const [card, setCard] = useState<EntityHoverCardModel | null>(null);
+  const [pinned, setPinned] = useState(false);
   const sequenceRef = useRef(0);
   const pointerInsideRef = useRef(false);
+  const pinnedRef = useRef(false);
   const clearTimerRef = useRef<number | null>(null);
   const detailCacheRef = useRef(
     new Map<string, Promise<GraphEntityDetailResponsePayload>>(),
@@ -57,6 +67,8 @@ export function EntityHoverCardProvider({
       sequenceRef.current += 1;
       const seq = sequenceRef.current;
 
+      pinnedRef.current = Boolean(args.pinned);
+      setPinned(pinnedRef.current);
       setCard(buildModel(args, null));
 
       const cacheKey = `${args.entity.entityType}:${args.entity.sourceIdentifier}`;
@@ -83,6 +95,9 @@ export function EntityHoverCardProvider({
   );
 
   const hide = useCallback(() => {
+    // Pinned cards (touch flow) are dismissed only by an outside click,
+    // not by the source element losing the pointer.
+    if (pinnedRef.current) return;
     scheduleDismiss();
   }, [scheduleDismiss]);
 
@@ -93,8 +108,28 @@ export function EntityHoverCardProvider({
 
   const pointerLeaveCard = useCallback(() => {
     pointerInsideRef.current = false;
+    if (pinnedRef.current) return;
     scheduleDismiss();
   }, [scheduleDismiss]);
+
+  // Outside-click dismissal for the pinned (touch) path. A tap on another
+  // entity still fires that entity's click handler first, which calls
+  // `show()` again with the new target — the dismissal here is benign
+  // because show() resets card+pinned on the same frame.
+  useEffect(() => {
+    if (!pinned || !card) return;
+    const handler = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest(`[${HOVER_CARD_SHELL_ATTR}]`)) return;
+      if (target?.closest("[data-entity-source-id]")) return;
+      pinnedRef.current = false;
+      setPinned(false);
+      sequenceRef.current += 1;
+      setCard(null);
+    };
+    document.addEventListener("click", handler, true);
+    return () => document.removeEventListener("click", handler, true);
+  }, [pinned, card]);
 
   const ctx: EntityHoverContext = useMemo(
     () => ({ show, hide, pointerEnterCard, pointerLeaveCard }),
@@ -108,6 +143,7 @@ export function EntityHoverCardProvider({
         <div
           className="fixed inset-0 z-50"
           style={{ pointerEvents: "none", overflow: "visible" }}
+          {...{ [HOVER_CARD_SHELL_ATTR]: true }}
         >
           <EntityHoverCard
             card={card}

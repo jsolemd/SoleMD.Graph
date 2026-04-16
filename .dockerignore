@@ -19,6 +19,13 @@ data/
 .vscode/
 .claude/
 
+# Python venv (managed by named volume at runtime)
+engine/.venv/
+**/__pycache__/
+
+# HuggingFace model cache (downloaded at runtime, contains git-lfs symlinks)
+engine/data/
+
 # Documentation and config not needed in build
 docs/
 *.md

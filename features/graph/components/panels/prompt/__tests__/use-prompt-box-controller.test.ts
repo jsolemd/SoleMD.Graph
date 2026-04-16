@@ -33,19 +33,11 @@ jest.mock("../use-focused-avoidance-rects", () => ({
 
 jest.mock("../use-prompt-position", () => ({
   usePromptPosition: () => ({
-    isDragging: { current: false },
-    userDragX: { current: 0 },
-    userDragY: { current: 0 },
-    autoTargetXRef: { current: 0 },
-    autoTargetYRef: { current: 0 },
-    dragControls: { start: jest.fn() },
     dragX: motionValue(0),
     dragY: motionValue(0),
     cardHeight: motionValue(0),
     heightOverride: false,
     isFullHeightMode: false,
-    isOffset: false,
-    setIsOffset: jest.fn(),
   }),
 }));
 

@@ -8,7 +8,6 @@ import type {
 
 import { cachedQuery, createBoundedCache } from '../utils'
 import {
-  queryCategoricalValues,
   queryFacetSummaries,
   queryFacetSummary,
   queryInfoBars,
@@ -17,7 +16,6 @@ import {
   queryInfoHistogramsBatch,
   queryInfoSummary,
   queryNumericStatsBatch,
-  queryNumericValues,
 } from '../queries'
 import type { NumericStatsRow } from '../queries'
 import { getColumnMetaForLayer } from '../sql-helpers'
@@ -61,8 +59,6 @@ export function createSessionInfoQueries({
     Promise<Record<string, NumericStatsRow>>
   >()
   const summaryDatasetCache = createBoundedCache<string, Promise<GraphInfoSummary>>()
-  const categoricalValueDatasetCache = createBoundedCache<string, Promise<string[]>>()
-  const numericValueDatasetCache = createBoundedCache<string, Promise<number[]>>()
 
   const getCachedDatasetFacetSummaries = (args: {
     layer: Parameters<typeof queryFacetSummaries>[1]['layer']
@@ -179,48 +175,12 @@ export function createSessionInfoQueries({
       { evictWhen: (result) => Object.keys(result).length === 0 },
     )
 
-  const getCachedCategoricalValues = (args: {
-    layer: Parameters<typeof queryCategoricalValues>[1]['layer']
-    column: string
-  }) =>
-    cachedQuery(
-      categoricalValueDatasetCache,
-      { layer: args.layer, column: args.column, overlayRevision: getOverlayRevision() },
-      () =>
-        queryCategoricalValues(conn, {
-          layer: args.layer,
-          scope: 'dataset',
-          column: args.column,
-          currentPointScopeSql: null,
-        }),
-      { evictWhen: (values) => values.length === 0 },
-    )
-
-  const getCachedNumericValues = (args: {
-    layer: Parameters<typeof queryNumericValues>[1]['layer']
-    column: string
-  }) =>
-    cachedQuery(
-      numericValueDatasetCache,
-      { layer: args.layer, column: args.column, overlayRevision: getOverlayRevision() },
-      () =>
-        queryNumericValues(conn, {
-          layer: args.layer,
-          scope: 'dataset',
-          column: args.column,
-          currentPointScopeSql: null,
-        }),
-      { evictWhen: (values) => values.length === 0 },
-    )
-
   return {
     reset() {
       facetDatasetCache.clear()
       histogramDatasetCache.clear()
       numericStatsDatasetCache.clear()
       summaryDatasetCache.clear()
-      categoricalValueDatasetCache.clear()
-      numericValueDatasetCache.clear()
     },
     getInfoSummary(args) {
       if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
@@ -231,26 +191,6 @@ export function createSessionInfoQueries({
         ...args,
         datasetTotalCount: getDatasetTotalCount(args.layer),
       })
-    },
-    getCategoricalValues(args) {
-      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
-        return getCachedCategoricalValues({
-          layer: args.layer,
-          column: args.column,
-        })
-      }
-
-      return queryCategoricalValues(conn, args)
-    },
-    getNumericValues(args) {
-      if (isEffectivelyDatasetScope(args.scope, args.currentPointScopeSql)) {
-        return getCachedNumericValues({
-          layer: args.layer,
-          column: args.column,
-        })
-      }
-
-      return queryNumericValues(conn, args)
     },
     getInfoBars(args) {
       const safeMaxItems = args.maxItems ?? 8

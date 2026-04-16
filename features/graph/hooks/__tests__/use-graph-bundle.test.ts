@@ -34,7 +34,7 @@ jest.mock("@/features/graph/stores", () => ({
 }));
 
 const BASE_BUNDLE: GraphBundle = {
-  assetBaseUrl: "/api/graph-bundles/bundle-a",
+  assetBaseUrl: "/graph-bundles/bundle-a",
   bundleBytes: 1024,
   bundleChecksum: "bundle-a",
   bundleFormat: "duckdb",
@@ -67,7 +67,7 @@ const BASE_BUNDLE: GraphBundle = {
   bundleUri: "bundle://bundle-a",
   bundleVersion: "1",
   graphName: "solemd.graph",
-  manifestUrl: "/api/graph-bundles/bundle-a/manifest.json",
+  manifestUrl: "/graph-bundles/bundle-a/manifest.json",
   nodeKind: "paper",
   qaSummary: null,
   runId: "run-a",

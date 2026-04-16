@@ -2,6 +2,7 @@
 
 from app.rag._queries_paper_core import (
     GRAPH_INPUT_CTE_SQL,
+    PAPER_CORE_JOINS,
     PAPER_SEARCH_VECTOR_SQL,
     PAPER_SELECT_COLUMNS,
 )
@@ -321,10 +322,7 @@ SELECT
 FROM candidate_matches
 JOIN solemd.papers p
   ON p.corpus_id = candidate_matches.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     candidate_matches.metadata_score DESC,
     candidate_matches.lexical_score DESC,
@@ -431,10 +429,7 @@ SELECT
 FROM publication_type_topic_matches
 JOIN solemd.papers p
   ON p.corpus_id = publication_type_topic_matches.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     metadata_score DESC,
     publication_type_topic_matches.lexical_score DESC,
@@ -642,10 +637,7 @@ SELECT
 FROM candidate_matches
 JOIN solemd.papers p
   ON p.corpus_id = candidate_matches.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     candidate_matches.metadata_score DESC,
     candidate_matches.lexical_score DESC,
@@ -788,10 +780,7 @@ SELECT
 FROM candidate_matches
 JOIN solemd.papers p
   ON p.corpus_id = candidate_matches.corpus_id
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
+{PAPER_CORE_JOINS}
 ORDER BY
     candidate_matches.metadata_score DESC,
     candidate_matches.lexical_score DESC,

@@ -1,41 +1,4 @@
 /* ═══════════════════════════════════════════════════════════════════
-   REGISTERED PROPERTIES — Graph control contrast system
-   @property tells Lightning CSS these vars are real and mutable at
-   runtime, preventing it from resolving var() fallbacks statically
-   and stripping the [data-graph-control-contrast] override rules.
-   ═══════════════════════════════════════════════════════════════════ */
-@property --graph-control-icon-color {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --graph-control-idle-bg {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --graph-control-idle-border {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --graph-control-hover-bg {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --graph-control-pressed-bg {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-@property --graph-control-active-bg {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: transparent;
-}
-
-/* ═══════════════════════════════════════════════════════════════════
    DESIGN TOKENS — Tailwind v4 utility generation
    ═══════════════════════════════════════════════════════════════════ */
 @theme {
@@ -62,7 +25,7 @@
   --color-semantic-paper: #d4c5a0;
   --color-semantic-module: #7ecfb0;
 
-  /* Extended pastels — DotToc rainbow cycle beyond the 8 brand accents */
+  /* Extended pastels — PanelEdgeToc rainbow cycle beyond the 8 brand accents */
   --color-seafoam: #8ed4c6;
   --color-amber: #f5c26b;
   --color-sky: #7ec8e3;
@@ -107,7 +70,7 @@
   --shadow-md: 0 calc(4px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 calc(8px * var(--app-density)) calc(24px * var(--app-density)) rgba(0, 0, 0, 0.08);
   --brand-accent: #747caa;
-  --brand-accent-alt: #a8c5e9;
+  --brand-accent-alt: var(--color-soft-blue);
   --interactive-hover: rgba(116, 124, 170, 0.06);
   --interactive-active: rgba(116, 124, 170, 0.10);
 
@@ -123,10 +86,9 @@
   --graph-panel-hover: var(--interactive-hover);
   --graph-panel-active: var(--interactive-active);
   --graph-panel-shadow:
-    0 calc(2px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.08),
-    0 0 0 calc(1px * var(--app-density)) rgba(0, 0, 0, 0.04);
+    0 calc(2px * var(--app-density)) calc(10px * var(--app-density)) rgba(0, 0, 0, 0.05),
+    0 calc(10px * var(--app-density)) calc(24px * var(--app-density)) rgba(0, 0, 0, 0.04);
   --graph-panel-scale: 1;
-  --graph-panel-reading-scale: calc(var(--app-density) * var(--graph-panel-scale));
 
   /* ── Wiki graph (Pixi canvas — semantic-group node colors, see docs/map/wiki-taxonomy.md) ── */
   --wiki-graph-node-diso: var(--color-semantic-disorder);
@@ -150,15 +112,15 @@
 
   /* ── Graph overlays (PromptBox, Wordmark) ── */
   --graph-prompt-bg: var(--graph-panel-bg);
-  --graph-prompt-border: var(--border-default);
+  --graph-prompt-border: transparent;
   --graph-prompt-shadow:
     0 calc(2px * var(--app-density)) calc(8px * var(--app-density)) rgba(0, 0, 0, 0.04),
-    0 calc(8px * var(--app-density)) calc(32px * var(--app-density)) rgba(0, 0, 0, 0.08);
+    0 calc(10px * var(--app-density)) calc(28px * var(--app-density)) rgba(0, 0, 0, 0.07);
   --graph-prompt-text: #000000;
   --graph-prompt-placeholder: rgba(0, 0, 0, 0.28);
   --graph-prompt-inactive: rgba(0, 0, 0, 0.48);
   --graph-prompt-divider: rgba(116, 124, 170, 0.25);
-  --graph-wordmark-text: rgba(0, 0, 0, 0.55);
+  --graph-wordmark-text: var(--text-primary);
   --graph-wordmark-accent: var(--brand-accent);
   --graph-stats-text: rgba(0, 0, 0, 0.32);
   --graph-label-bg: var(--graph-panel-bg);
@@ -167,6 +129,8 @@
   --graph-label-text-shadow: 0 0 calc(0.25px * var(--app-density)) rgba(17, 17, 19, 0.14);
   --graph-label-text-stroke: calc(0.15px * var(--app-density)) rgba(17, 17, 19, 0.1);
   --graph-greyout-opacity: 0.25;
+  --graph-overlay-scrim: rgba(0, 0, 0, 0.35);
+  --graph-overlay-scrim-strong: rgba(0, 0, 0, 0.45);
 
   /* ── Filter/timeline bars (faint tint base → logo-color accent on select) ── */
   --filter-bar-base: color-mix(in srgb, var(--mode-accent) 30%, white);
@@ -179,16 +143,28 @@
   --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, white);
   --mode-accent-border: color-mix(in srgb, var(--mode-accent) 50%, white);
   --module-accent-default: var(--color-soft-blue);
+  /* Glyph on the mode-accent affordance (prompt submit). Matches the
+     LLM send-button convention (ChatGPT/Claude/Gemini): white arrow on
+     a colored send circle. */
+  --on-accent: #ffffff;
 
   /* ── Toolbar icons (single source of truth for lucide + Cosmograph) ── */
-  --icon-size: calc(16px * var(--app-density));
-  --icon-stroke-width: calc(1.5 * var(--app-density));
-  --graph-control-icon-color: var(--graph-panel-text-dim);
-  --graph-control-idle-bg: transparent;
+  --icon-size: calc(22px * var(--app-density));
+  --icon-stroke-width: calc(2.25 * var(--app-density));
+  --panel-icon-size: calc(18px * var(--app-density));
+  --panel-icon-stroke-width: calc(1.75 * var(--app-density));
+  /* Shared idle color for ALL graph icons AND the SoleMD wordmark — chrome
+     pills, bottom toolbar, prompt icons, brand "Sole" label. Tuned softer
+     than text-primary so icons don't dominate; hover/pressed snap back to
+     --graph-control-active-icon-color (= text-primary) for contrast. */
+  --graph-icon-color: rgba(26, 27, 30, 0.68);
+  --graph-control-icon-color: var(--graph-icon-color);
+  --graph-control-active-icon-color: var(--graph-panel-text);
+  --graph-control-idle-bg: var(--graph-panel-input-bg);
   --graph-control-idle-border: transparent;
-  --graph-control-hover-bg: var(--mode-accent-subtle);
-  --graph-control-pressed-bg: var(--mode-accent-subtle);
-  --graph-control-active-bg: var(--mode-accent-hover);
+  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent) 16%, var(--graph-panel-input-bg));
+  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent) 24%, var(--graph-panel-input-bg));
+  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent) 32%, var(--graph-panel-input-bg));
 
   /* ── Feedback states ── */
   --feedback-warning-accent: var(--color-feedback-warning);
@@ -324,10 +300,10 @@ html:root {
   --shadow-sm: 0 calc(1px * var(--app-density)) calc(3px * var(--app-density)) rgba(0, 0, 0, 0.3);
   --shadow-md: 0 calc(4px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 calc(8px * var(--app-density)) calc(24px * var(--app-density)) rgba(0, 0, 0, 0.5);
-  --brand-accent: #a8c5e9;
+  --brand-accent: var(--color-soft-blue);
   --brand-accent-alt: #89a3bf;
-  --interactive-hover: rgba(168, 197, 233, 0.08);
-  --interactive-active: rgba(168, 197, 233, 0.12);
+  --interactive-hover: color-mix(in srgb, var(--color-soft-blue) 8%, transparent);
+  --interactive-active: color-mix(in srgb, var(--color-soft-blue) 12%, transparent);
 
   /* ── Graph canvas (only values that diverge from foundations) ── */
   --graph-canvas-filter: none;
@@ -336,10 +312,9 @@ html:root {
   --graph-panel-border: rgba(255, 255, 255, 0.08);
   --graph-panel-input-bg: #1f2024;
   --graph-panel-shadow:
-    0 calc(6px * var(--app-density)) calc(22px * var(--app-density)) rgba(0, 0, 0, 0.42),
-    inset 0 calc(0.5px * var(--app-density)) 0 rgba(255, 255, 255, 0.06);
+    0 calc(6px * var(--app-density)) calc(18px * var(--app-density)) rgba(0, 0, 0, 0.3),
+    0 calc(16px * var(--app-density)) calc(34px * var(--app-density)) rgba(0, 0, 0, 0.24);
   --graph-panel-scale: 1;
-  --graph-panel-reading-scale: calc(var(--app-density) * var(--graph-panel-scale));
 
   /* ── Wiki graph (dark mode — semantic palette overrides above feed these vars) ── */
   --wiki-graph-node-diso: var(--color-semantic-disorder);
@@ -359,13 +334,13 @@ html:root {
   --graph-prompt-bg: var(--graph-panel-bg);
   --graph-prompt-border: transparent;
   --graph-prompt-shadow:
-    0 calc(8px * var(--app-density)) calc(26px * var(--app-density)) rgba(0, 0, 0, 0.46),
-    inset 0 calc(0.5px * var(--app-density)) 0 rgba(255, 255, 255, 0.06);
+    0 calc(8px * var(--app-density)) calc(22px * var(--app-density)) rgba(0, 0, 0, 0.34),
+    0 calc(18px * var(--app-density)) calc(38px * var(--app-density)) rgba(0, 0, 0, 0.26);
   --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
   --graph-prompt-inactive: rgba(255, 255, 255, 0.52);
   --graph-prompt-text: #ffffff;
   --graph-prompt-divider: rgba(168, 197, 233, 0.2);
-  --graph-wordmark-text: rgba(255, 255, 255, 0.6);
+  --graph-wordmark-text: var(--text-primary);
   --graph-stats-text: rgba(255, 255, 255, 0.32);
   --graph-label-bg: var(--graph-panel-bg);
   --graph-label-border: transparent;
@@ -373,6 +348,8 @@ html:root {
   --graph-label-text-shadow: none;
   --graph-label-text-stroke: 0 transparent;
   --graph-greyout-opacity: 0.15;
+  --graph-overlay-scrim: rgba(0, 0, 0, 0.55);
+  --graph-overlay-scrim-strong: rgba(0, 0, 0, 0.65);
 
   /* ── Filter/timeline bars — boost active brightness on dark surfaces ── */
   --filter-bar-base: color-mix(in srgb, var(--mode-accent) 20%, transparent);
@@ -380,9 +357,13 @@ html:root {
   --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 55%, black);
 
   /* ── Mode accent — higher opacity needed against dark surfaces ── */
-  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, transparent);
-  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, transparent);
-  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 45%, transparent);
+  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 28%, var(--graph-panel-input-bg));
+  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 38%, var(--graph-panel-input-bg));
+  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 58%, var(--graph-panel-bg));
+  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent) 24%, var(--graph-panel-input-bg));
+  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent) 44%, var(--graph-panel-input-bg));
+  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent) 56%, var(--graph-panel-input-bg));
+  --graph-icon-color: rgba(237, 237, 240, 0.82);
   --module-accent-default: var(--color-soft-blue);
 
   /* ── Feedback states ── */

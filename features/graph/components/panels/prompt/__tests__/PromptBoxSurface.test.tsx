@@ -4,6 +4,9 @@
 import type { ComponentProps, ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { getModeConfig } from "@/features/graph/lib/modes";
+import { useDashboardStore } from "@/features/graph/stores";
+import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
+import { APP_CHROME_PX } from "@/lib/density";
 import type { PromptBoxControllerState } from "../use-prompt-box-controller";
 import { PromptBoxSurface } from "../PromptBoxSurface";
 
@@ -11,8 +14,43 @@ jest.mock("framer-motion", () => {
   const React = require("react");
 
   const MotionDiv = React.forwardRef(
-    ({ children, ..._props }: { children?: ReactNode }, ref: React.Ref<HTMLDivElement>) => (
-      <div ref={ref}>{children}</div>
+    (
+      {
+        children,
+        className,
+        style,
+        role,
+        tabIndex,
+        onClick,
+        onKeyDown,
+        onPointerDown,
+        "aria-hidden": ariaHidden,
+      }: {
+        children?: ReactNode;
+        className?: string;
+        style?: React.CSSProperties;
+        role?: string;
+        tabIndex?: number;
+        onClick?: () => void;
+        onKeyDown?: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+        onPointerDown?: (event: React.PointerEvent<HTMLDivElement>) => void;
+        "aria-hidden"?: boolean;
+      },
+      ref: React.Ref<HTMLDivElement>,
+    ) => (
+      <div
+        ref={ref}
+        className={className}
+        style={style}
+        role={role}
+        tabIndex={tabIndex}
+        onClick={onClick}
+        onKeyDown={onKeyDown}
+        onPointerDown={onPointerDown}
+        aria-hidden={ariaHidden}
+      >
+        {children}
+      </div>
     ),
   );
   MotionDiv.displayName = "MotionDiv";
@@ -129,18 +167,13 @@ function createProps(
     stepPromptDown: jest.fn(),
     handlePillClick: jest.fn(),
     handlePillKeyDown: jest.fn(),
-    handleDragStart: jest.fn(),
-    handleDragEnd: jest.fn(),
-    handleRecenter: jest.fn(),
     editorRef: { current: null },
     cardRef: { current: null },
-    dragControls: {} as PromptBoxControllerState["dragControls"],
     dragX: motionValue(0),
     dragY: motionValue(0),
     cardHeight: motionValue(320),
     heightOverride: false,
     isFullHeightMode: false,
-    isOffset: false,
     normalWidth: "480px",
     ...overrides,
   };
@@ -154,6 +187,7 @@ function createProps(
 describe("PromptBoxSurface", () => {
   beforeEach(() => {
     mockedCreateEditor.mockClear();
+    useDashboardStore.setState(useDashboardStore.getInitialState());
   });
 
   it("enables submit from the canonical hasInput signal even when markdown mirroring is empty", () => {
@@ -204,5 +238,31 @@ describe("PromptBoxSurface", () => {
 
     expect(editorShell).not.toBeNull();
     expect((editorShell as HTMLDivElement).style.overflow).toBe("visible");
+  });
+
+  it("anchors the mobile prompt at the safe-area bottom edge", () => {
+    const { container } = render(
+      <ShellVariantProvider value="mobile">
+        <PromptBoxSurface {...createProps()} />
+      </ShellVariantProvider>,
+    );
+
+    const shell = container.firstElementChild as HTMLDivElement;
+
+    expect(shell.style.bottom).toContain("safe-area-inset-bottom");
+    expect(shell.style.bottom).toContain(`${APP_CHROME_PX.edgeMargin}px`);
+  });
+
+  it("keeps the mobile prompt on the safe bottom lane in full-height modes", () => {
+    const { container } = render(
+      <ShellVariantProvider value="mobile">
+        <PromptBoxSurface {...createProps({ isFullHeightMode: true })} />
+      </ShellVariantProvider>,
+    );
+
+    const shell = container.firstElementChild as HTMLDivElement;
+
+    expect(shell.style.bottom).toContain("safe-area-inset-bottom");
+    expect(shell.style.bottom).toContain(`${APP_CHROME_PX.edgeMargin}px`);
   });
 });

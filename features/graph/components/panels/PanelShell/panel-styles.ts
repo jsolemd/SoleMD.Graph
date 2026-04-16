@@ -1,15 +1,22 @@
 import type { CSSProperties } from "react";
-import { APP_DENSITY, densityCssPx, densityPx } from "@/lib/density";
+import { densityCssPx, densityPx } from "@/lib/density";
 
 export const PANEL_SCALE_CSS_VAR = "--graph-panel-scale";
-const panelReadingScaleValue = `var(--graph-panel-reading-scale, calc(var(--app-density, ${APP_DENSITY}) * var(${PANEL_SCALE_CSS_VAR}, 1)))`;
+export const PANEL_READING_SCALE_CSS_VAR = "--graph-panel-reading-scale";
 
 export function panelScaledPx(value: number): string {
-  return `calc(${value}px * ${panelReadingScaleValue})`;
+  return `calc(${value}px * var(${PANEL_READING_SCALE_CSS_VAR}, 1))`;
 }
 
+// Sets both --graph-panel-scale and --graph-panel-reading-scale on the panel
+// element. Declaring --graph-panel-reading-scale here (not at :root) forces
+// Chrome to compute the calc against this element's own --app-density and
+// ${scale}, so per-panel scale changes actually flow through to descendants.
 export function createPanelScaleStyle(scale: number): CSSProperties {
-  return { [PANEL_SCALE_CSS_VAR]: String(scale) } as CSSProperties;
+  return {
+    [PANEL_SCALE_CSS_VAR]: String(scale),
+    [PANEL_READING_SCALE_CSS_VAR]: `calc(var(--app-density) * ${scale})`,
+  } as CSSProperties;
 }
 
 const densityBorder = (color: string) => `${densityCssPx(1)} solid ${color}`;
@@ -51,7 +58,7 @@ export const panelStatValueStyle: CSSProperties = {
 /** Panel surface triple — bg + border + shadow from CSS tokens. */
 export const panelSurfaceStyle: CSSProperties = {
   backgroundColor: "var(--graph-panel-bg)",
-  border: densityBorder("var(--graph-panel-border)"),
+  border: densityBorder("transparent"),
   boxShadow: "var(--graph-panel-shadow)",
 };
 
@@ -61,6 +68,17 @@ export const promptSurfaceStyle: CSSProperties = {
   border: densityBorder("var(--graph-prompt-border)"),
   boxShadow: "var(--graph-prompt-shadow)",
 };
+
+/** Floating chrome pill — matches the prompt-box aesthetic.
+ *  CSS-var overrides flatten `.graph-icon-btn` idle chrome so child icons
+ *  render as glyphs inside the pill (no double-chrome); hover/pressed tints
+ *  still activate from the hover/pressed-bg tokens. */
+export const chromePillSurfaceStyle = {
+  ...promptSurfaceStyle,
+  padding: densityCssPx(3),
+  "--graph-control-idle-bg": "transparent",
+  "--graph-control-idle-border": "transparent",
+} as CSSProperties;
 
 export const panelCardClassName = "rounded-lg px-2 py-1.5";
 export const panelCardStyle: CSSProperties = {
@@ -75,6 +93,15 @@ export const panelAccentCardStyle: CSSProperties = {
   border: densityBorder("var(--mode-accent-border)"),
 };
 
+/** Entity-accent tinted card — wiki entity profiles. Reads --entity-accent
+ *  (set by [data-entity-type]) and falls back to --mode-accent. Mixes against
+ *  panel bg/border so the tint stays legible in both light and dark. */
+export const panelAccentCardEntityClassName = "rounded-xl px-3 py-3";
+export const panelAccentCardEntityStyle: CSSProperties = {
+  backgroundColor: "color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 12%, var(--graph-panel-bg))",
+  border: `1px solid color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 20%, var(--graph-panel-border))`,
+};
+
 export const panelErrorStyle: CSSProperties = {
   backgroundColor: "var(--feedback-danger-bg)",
   border: densityBorder("var(--feedback-danger-border)"),
@@ -87,7 +114,57 @@ export const panelErrorStyle: CSSProperties = {
  * Hover/active backgrounds are handled by the `.graph-icon-btn` CSS class.
  */
 export const iconBtnStyles = {
-  root: { color: "var(--graph-control-icon-color, var(--graph-panel-text-dim))" },
+  root: { color: "var(--graph-control-icon-color, var(--graph-panel-text))" },
+} as const;
+
+export const panelIconBtnStyles = {
+  root: { color: "var(--graph-panel-text)" },
+} as const;
+
+const graphControlShellSize = densityCssPx(36);
+
+/** Shared frame for native graph controls that don't use Mantine ActionIcon. */
+export const nativeIconBtnFrameStyle: CSSProperties = {
+  width: graphControlShellSize,
+  height: graphControlShellSize,
+  borderRadius: 9999,
+  overflow: "hidden",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+/** Inner style for native graph controls hosted inside the shared matte shell. */
+export const nativeIconBtnInnerStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: densityCssPx(9),
+  margin: 0,
+  background: "transparent",
+  border: "none",
+  borderRadius: "inherit",
+  color: "inherit",
+  cursor: "pointer",
+  filter: "none",
+};
+
+export const disabledNativeIconBtnStyle: CSSProperties = {
+  opacity: 0.35,
+  pointerEvents: "none",
+};
+
+export const graphControlBtnStyles = {
+  root: {
+    color: "var(--graph-control-icon-color, var(--graph-panel-text))",
+    width: graphControlShellSize,
+    height: graphControlShellSize,
+    minWidth: graphControlShellSize,
+    minHeight: graphControlShellSize,
+  },
 } as const;
 
 /** Badge with mode-accent background — for cluster labels, "Primary" tags. */

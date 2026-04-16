@@ -14,25 +14,35 @@ export function WikiLink({ slug, children, onNavigate, entityType, conceptId }: 
   const { show, hide } = useEntityHover();
   const isEntity = entityType != null && conceptId != null;
 
-  const handlePointerEnter = useCallback(() => {
-    if (!isEntity || !ref.current) return;
-    const rect = ref.current.getBoundingClientRect();
-    show({
-      entity: {
-        entityType: entityType!,
-        conceptNamespace: conceptId!.includes(":") ? conceptId!.split(":")[0] : null,
-        conceptId: conceptId!,
-        sourceIdentifier: conceptId!,
-        canonicalName: ref.current.textContent ?? slug,
-      },
-      x: rect.left,
-      y: rect.top,
-    });
-  }, [isEntity, entityType, conceptId, slug, show]);
+  // Mouse-only hover. On touch the primary action is navigation (onClick);
+  // the entity card would fight that, so we don't surface it for taps.
+  const handlePointerEnter = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.pointerType === "touch") return;
+      if (!isEntity || !ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      show({
+        entity: {
+          entityType: entityType!,
+          conceptNamespace: conceptId!.includes(":") ? conceptId!.split(":")[0] : null,
+          conceptId: conceptId!,
+          sourceIdentifier: conceptId!,
+          canonicalName: ref.current.textContent ?? slug,
+        },
+        x: rect.left,
+        y: rect.top,
+      });
+    },
+    [isEntity, entityType, conceptId, slug, show],
+  );
 
-  const handlePointerLeave = useCallback(() => {
-    if (isEntity) hide();
-  }, [isEntity, hide]);
+  const handlePointerLeave = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      if (e.pointerType === "touch") return;
+      if (isEntity) hide();
+    },
+    [isEntity, hide],
+  );
 
   return (
     <button

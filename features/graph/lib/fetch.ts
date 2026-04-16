@@ -1,15 +1,12 @@
 import 'server-only'
 
-import { realpath, stat } from 'node:fs/promises'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { graphRuns } from '@/lib/db/schema'
 import type { GraphBundle } from '@/features/graph/types'
 
+import { buildGraphBundleAssetUrl } from './bundle-assets'
 import {
-  GRAPH_BUNDLE_ROOT,
   GRAPH_NAME,
   NODE_KIND,
 } from './fetch/constants'
@@ -20,55 +17,90 @@ import {
   normalizeBundleManifest,
 } from './fetch/normalize'
 
-interface GraphBundleAssetDescriptor {
-  assetPath: string
-  etag: string
-  size: number
-}
-
-interface GraphBundleAssetCatalog {
-  assets: Map<string, GraphBundleAssetDescriptor>
-  bundle: GraphBundle
-  bundleDirectory: string
-}
-
 const graphRunByChecksumCache = new Map<string, Promise<GraphRunRow>>()
-const graphBundleAssetCatalogCache = new Map<
-  string,
-  Promise<GraphBundleAssetCatalog>
->()
-let graphBundleRootPromise: Promise<string> | null = null
+const DEFAULT_GRAPH_BUNDLE_QUERY_TIMEOUT_MS = 5000
 
-function buildBundleAssetUrl(bundleChecksum: string, assetPath: string) {
-  const encodedAssetPath = assetPath
-    .split('/')
-    .filter((segment) => segment.length > 0)
-    .map((segment) => encodeURIComponent(segment))
-    .join('/')
+function resolveGraphBundleQueryTimeoutMs() {
+  const rawValue = process.env.GRAPH_BUNDLE_QUERY_TIMEOUT_MS
+  if (!rawValue) {
+    return DEFAULT_GRAPH_BUNDLE_QUERY_TIMEOUT_MS
+  }
 
-  return `/api/graph-bundles/${bundleChecksum}/${encodedAssetPath}`
+  const parsedValue = Number(rawValue)
+  return Number.isFinite(parsedValue) && parsedValue > 0
+    ? parsedValue
+    : DEFAULT_GRAPH_BUNDLE_QUERY_TIMEOUT_MS
 }
 
-function resolveBundleUriPath(bundleUri: string) {
-  if (bundleUri.startsWith('file://')) {
-    return fileURLToPath(bundleUri)
-  }
+async function withGraphBundleTimeout<T>(
+  operation: string,
+  work: Promise<T>
+): Promise<T> {
+  const timeoutMs = resolveGraphBundleQueryTimeoutMs()
 
-  if (path.isAbsolute(bundleUri)) {
-    return bundleUri
-  }
+  return await new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(
+        new Error(
+          `Timed out resolving ${operation} after ${timeoutMs}ms. Check local Postgres reachability and restart next dev if the client is stale.`
+        )
+      )
+    }, timeoutMs)
 
-  throw new Error(`Unsupported graph bundle URI: ${bundleUri}`)
+    void work.then(
+      (value) => {
+        clearTimeout(timeoutId)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timeoutId)
+        reject(error)
+      }
+    )
+  })
+}
+
+function normalizeGraphRunRow(row: {
+  id: string
+  graphName: string
+  nodeKind: string
+  bundleUri: string
+  bundleFormat: string
+  bundleVersion: string
+  bundleChecksum: string
+  bundleBytes: number | null
+  bundleManifest: Record<string, unknown> | null
+  qaSummary: Record<string, unknown> | null
+  createdAt: Date
+}): GraphRunRow {
+  return {
+    id: row.id,
+    graph_name: row.graphName,
+    node_kind: row.nodeKind,
+    bundle_uri: row.bundleUri,
+    bundle_format: row.bundleFormat,
+    bundle_version: row.bundleVersion,
+    bundle_checksum: row.bundleChecksum,
+    bundle_bytes: row.bundleBytes,
+    bundle_manifest: row.bundleManifest,
+    qa_summary: row.qaSummary,
+    created_at: row.createdAt.toISOString(),
+  }
+}
+
+function rememberGraphRun(row: GraphRunRow) {
+  graphRunByChecksumCache.set(row.bundle_checksum, Promise.resolve(row))
+  return row
 }
 
 function buildGraphBundle(row: GraphRunRow): GraphBundle {
   const manifest = normalizeBundleManifest(row)
   assertCanonicalBundleManifest(manifest)
-  const assetBaseUrl = `/api/graph-bundles/${row.bundle_checksum}`
+  const assetBaseUrl = `/graph-bundles/${row.bundle_checksum}`
   const tableUrls = Object.fromEntries(
     Object.entries(manifest.tables).map(([tableName, tableManifest]) => [
       tableName,
-      buildBundleAssetUrl(row.bundle_checksum, tableManifest.parquetFile),
+      buildGraphBundleAssetUrl(row.bundle_checksum, tableManifest.parquetFile),
     ])
   )
 
@@ -81,7 +113,7 @@ function buildGraphBundle(row: GraphRunRow): GraphBundle {
     bundleUri: row.bundle_uri,
     bundleVersion: manifest.bundleVersion,
     graphName: row.graph_name,
-    manifestUrl: buildBundleAssetUrl(row.bundle_checksum, 'manifest.json'),
+    manifestUrl: buildGraphBundleAssetUrl(row.bundle_checksum, 'manifest.json'),
     nodeKind: row.node_kind,
     qaSummary: row.qa_summary,
     runId: row.id,
@@ -109,19 +141,21 @@ async function queryCurrentGraphRun(): Promise<GraphRunRow> {
     throw new Error('No current graph bundle found in solemd.graph_runs')
   }
 
-  return {
-    id: row.id,
-    graph_name: row.graphName,
-    node_kind: row.nodeKind,
-    bundle_uri: row.bundleUri,
-    bundle_format: row.bundleFormat,
-    bundle_version: row.bundleVersion,
-    bundle_checksum: row.bundleChecksum,
-    bundle_bytes: row.bundleBytes,
-    bundle_manifest: row.bundleManifest as Record<string, unknown> | null,
-    qa_summary: row.qaSummary as Record<string, unknown> | null,
-    created_at: row.createdAt.toISOString(),
-  }
+  return rememberGraphRun(
+    normalizeGraphRunRow({
+      id: row.id,
+      graphName: row.graphName,
+      nodeKind: row.nodeKind,
+      bundleUri: row.bundleUri,
+      bundleFormat: row.bundleFormat,
+      bundleVersion: row.bundleVersion,
+      bundleChecksum: row.bundleChecksum,
+      bundleBytes: row.bundleBytes,
+      bundleManifest: row.bundleManifest as Record<string, unknown> | null,
+      qaSummary: row.qaSummary as Record<string, unknown> | null,
+      createdAt: row.createdAt,
+    })
+  )
 }
 
 async function queryGraphRunByChecksum(bundleChecksum: string): Promise<GraphRunRow> {
@@ -144,30 +178,21 @@ async function queryGraphRunByChecksum(bundleChecksum: string): Promise<GraphRun
     throw new Error(`No completed graph bundle found for checksum ${bundleChecksum}`)
   }
 
-  return {
-    id: row.id,
-    graph_name: row.graphName,
-    node_kind: row.nodeKind,
-    bundle_uri: row.bundleUri,
-    bundle_format: row.bundleFormat,
-    bundle_version: row.bundleVersion,
-    bundle_checksum: row.bundleChecksum,
-    bundle_bytes: row.bundleBytes,
-    bundle_manifest: row.bundleManifest as Record<string, unknown> | null,
-    qa_summary: row.qaSummary as Record<string, unknown> | null,
-    created_at: row.createdAt.toISOString(),
-  }
-}
-
-async function getResolvedGraphBundleRoot() {
-  if (!graphBundleRootPromise) {
-    graphBundleRootPromise = realpath(GRAPH_BUNDLE_ROOT).catch((error) => {
-      graphBundleRootPromise = null
-      throw error
+  return rememberGraphRun(
+    normalizeGraphRunRow({
+      id: row.id,
+      graphName: row.graphName,
+      nodeKind: row.nodeKind,
+      bundleUri: row.bundleUri,
+      bundleFormat: row.bundleFormat,
+      bundleVersion: row.bundleVersion,
+      bundleChecksum: row.bundleChecksum,
+      bundleBytes: row.bundleBytes,
+      bundleManifest: row.bundleManifest as Record<string, unknown> | null,
+      qaSummary: row.qaSummary as Record<string, unknown> | null,
+      createdAt: row.createdAt,
     })
-  }
-
-  return graphBundleRootPromise
+  )
 }
 
 async function getCachedGraphRunByChecksum(bundleChecksum: string): Promise<GraphRunRow> {
@@ -184,123 +209,18 @@ async function getCachedGraphRunByChecksum(bundleChecksum: string): Promise<Grap
 }
 
 export async function fetchActiveGraphBundle(): Promise<GraphBundle> {
-  return buildGraphBundle(await queryCurrentGraphRun())
+  return buildGraphBundle(
+    await withGraphBundleTimeout('active graph bundle metadata', queryCurrentGraphRun())
+  )
 }
 
 export async function fetchGraphBundleByChecksum(
   bundleChecksum: string
 ): Promise<GraphBundle> {
-  return buildGraphBundle(await getCachedGraphRunByChecksum(bundleChecksum))
-}
-
-export async function resolveGraphBundleDirectory(bundle: GraphBundle) {
-  const bundleDirectory = resolveBundleUriPath(bundle.bundleUri)
-  const [resolvedRoot, resolvedDirectory] = await Promise.all([
-    getResolvedGraphBundleRoot(),
-    realpath(bundleDirectory),
-  ])
-
-  if (
-    resolvedDirectory !== resolvedRoot &&
-    !resolvedDirectory.startsWith(`${resolvedRoot}${path.sep}`)
-  ) {
-    throw new Error(`Graph bundle path escapes configured root: ${resolvedDirectory}`)
-  }
-
-  return resolvedDirectory
-}
-
-export function getGraphBundleAssetNames(bundle: GraphBundle) {
-  const assetNames = new Set<string>(['manifest.json'])
-
-  for (const table of Object.values(bundle.bundleManifest.tables)) {
-    assetNames.add(table.parquetFile)
-  }
-
-  return assetNames
-}
-
-function buildGraphBundleAssetEtag(args: {
-  asset: string
-  bundleChecksum: string
-  sha256: string | null
-  size: number
-}) {
-  const versionToken = args.sha256 ?? String(args.size)
-  return `"${args.bundleChecksum}:${args.asset}:${versionToken}"`
-}
-
-function resolveBundleAssetPath(bundleDirectory: string, asset: string) {
-  const assetPath = path.resolve(bundleDirectory, asset)
-
-  if (
-    assetPath !== bundleDirectory &&
-    !assetPath.startsWith(`${bundleDirectory}${path.sep}`)
-  ) {
-    throw new Error(`Graph bundle asset path escapes bundle directory: ${asset}`)
-  }
-
-  return assetPath
-}
-
-async function buildGraphBundleAssetCatalog(
-  bundleChecksum: string
-): Promise<GraphBundleAssetCatalog> {
-  const bundle = await fetchGraphBundleByChecksum(bundleChecksum)
-  const bundleDirectory = await resolveGraphBundleDirectory(bundle)
-  const tableManifestByAsset = new Map(
-    Object.values(bundle.bundleManifest.tables).map((tableManifest) => [
-      tableManifest.parquetFile,
-      tableManifest,
-    ])
+  return buildGraphBundle(
+    await withGraphBundleTimeout(
+      `graph bundle metadata for checksum ${bundleChecksum}`,
+      getCachedGraphRunByChecksum(bundleChecksum)
+    )
   )
-  const assetNames = [...getGraphBundleAssetNames(bundle)]
-
-  const descriptors = await Promise.all(
-    assetNames.map(async (asset) => {
-      const assetPath = resolveBundleAssetPath(bundleDirectory, asset)
-      const assetStats = await stat(assetPath)
-      if (!assetStats.isFile()) {
-        throw new Error(`Graph bundle asset is not a file: ${asset}`)
-      }
-
-      const tableManifest = tableManifestByAsset.get(asset) ?? null
-      return [
-        asset,
-        {
-          assetPath,
-          etag: buildGraphBundleAssetEtag({
-            asset,
-            bundleChecksum: bundle.bundleChecksum,
-            sha256: tableManifest?.sha256 ?? null,
-            size: assetStats.size,
-          }),
-          size: assetStats.size,
-        },
-      ] as const
-    })
-  )
-
-  return {
-    assets: new Map(descriptors),
-    bundle,
-    bundleDirectory,
-  }
-}
-
-export async function resolveGraphBundleAsset(
-  bundleChecksum: string,
-  asset: string
-): Promise<GraphBundleAssetDescriptor | null> {
-  let cached = graphBundleAssetCatalogCache.get(bundleChecksum)
-  if (!cached) {
-    cached = buildGraphBundleAssetCatalog(bundleChecksum).catch((error) => {
-      graphBundleAssetCatalogCache.delete(bundleChecksum)
-      throw error
-    })
-    graphBundleAssetCatalogCache.set(bundleChecksum, cached)
-  }
-
-  const catalog = await cached
-  return catalog.assets.get(asset) ?? null
 }

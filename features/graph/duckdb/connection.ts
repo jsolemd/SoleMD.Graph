@@ -4,8 +4,13 @@ import * as duckdb from '@duckdb/duckdb-wasm'
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import { closePreparedStatements } from './queries/core'
+import {
+  canUsePersistentGraphDatabase,
+  getPersistentGraphDatabasePath,
+} from './persistent-cache'
 
 let selectedBundlePromise: Promise<duckdb.DuckDBBundle> | null = null
+const DUCKDB_MEMORY_LIMIT = '1500MB'
 
 const LOCAL_DUCKDB_BUNDLES: duckdb.DuckDBBundles = {
   eh: {
@@ -55,6 +60,39 @@ function resolveBrowserAssetUrl(assetUrl: string | null | undefined) {
   return new URL(assetUrl, window.location.origin).toString()
 }
 
+async function openDuckDb(
+  db: duckdb.AsyncDuckDB,
+  persistentPath: string | null
+) {
+  const baseConfig: duckdb.DuckDBConfig = {
+    accessMode: duckdb.DuckDBAccessMode.READ_WRITE,
+    maximumThreads: 1,
+    filesystem: {
+      // The graph runtime reads app-served Parquet assets repeatedly inside
+      // one live session. Avoid leaning on repeated HEAD probes for file
+      // discovery.
+      reliableHeadRequests: false,
+    },
+  }
+
+  if (!persistentPath) {
+    await db.open(baseConfig)
+    return
+  }
+
+  try {
+    await db.open({
+      ...baseConfig,
+      opfs: {
+        fileHandling: 'auto',
+      },
+      path: persistentPath,
+    })
+  } catch {
+    await db.open(baseConfig)
+  }
+}
+
 export async function createConnection() {
   const bundle = await getSelectedDuckDBBundle()
 
@@ -76,23 +114,37 @@ export async function createConnection() {
   )
   const worker = new Worker(workerUrl)
   const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker)
-  await db.instantiate(mainModuleUrl, pthreadWorkerUrl)
-  URL.revokeObjectURL(workerUrl)
-  await db.open({
-    maximumThreads: 1,
-    filesystem: {
-      // The graph runtime reads app-served Parquet assets repeatedly inside one
-      // live session. Avoid leaning on repeated HEAD probes for file discovery.
-      reliableHeadRequests: false,
-    },
-  })
+  const persistentPath = canUsePersistentGraphDatabase()
+    ? getPersistentGraphDatabasePath()
+    : null
+  try {
+    try {
+      await db.instantiate(mainModuleUrl, pthreadWorkerUrl)
+    } finally {
+      URL.revokeObjectURL(workerUrl)
+    }
 
-  const conn = await db.connect()
-  await conn.query("SET preserve_insertion_order = false")
-  await conn.query("SET memory_limit = '1500MB'")
-  await conn.query("SET threads = 1")
+    await openDuckDb(db, persistentPath)
 
-  return { conn, db, worker }
+    const conn = await db.connect()
+    await conn.query('PRAGMA enable_object_cache')
+    await conn.query("SET preserve_insertion_order = false")
+    // Keep memory below the observed Wasm ceiling. When the browser exposes
+    // OPFS, the graph runtime now intentionally opens one persistent local DB
+    // file so the hot graph tables can survive full page reloads.
+    await conn.query(`SET memory_limit = '${DUCKDB_MEMORY_LIMIT}'`)
+    await conn.query("SET threads = 1")
+
+    return { conn, db, worker }
+  } catch (error) {
+    try {
+      await db.terminate()
+    } catch {
+      // Best-effort cleanup; surface the original bootstrap error below.
+    }
+    worker.terminate()
+    throw error
+  }
 }
 
 export async function closeConnection(
@@ -100,8 +152,31 @@ export async function closeConnection(
   db: AsyncDuckDB,
   worker: Worker
 ) {
-  await closePreparedStatements(conn)
-  await conn.close()
-  await db.terminate()
+  let firstError: unknown = null
+
+  try {
+    await closePreparedStatements(conn)
+  } catch (error) {
+    firstError ??= error
+  }
+  try {
+    await db.flushFiles()
+  } catch (error) {
+    firstError ??= error
+  }
+  try {
+    await conn.close()
+  } catch (error) {
+    firstError ??= error
+  }
+  try {
+    await db.terminate()
+  } catch (error) {
+    firstError ??= error
+  }
   worker.terminate()
+
+  if (firstError) {
+    throw firstError
+  }
 }

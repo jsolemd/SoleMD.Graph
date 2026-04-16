@@ -4,8 +4,9 @@ import { ActionIcon, Group, Pagination, SegmentedControl, Text, Tooltip } from "
 import { Database, Download } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, MapLayer } from "@/features/graph/types";
-import { panelTextDimStyle, iconBtnStyles, PANEL_ACCENT, PanelInlineLoader } from "../../panels/PanelShell";
+import { panelIconBtnStyles, panelScaledPx, panelTextDimStyle, PANEL_ACCENT, PanelInlineLoader } from "../../panels/PanelShell";
 import { formatNumber } from "@/lib/helpers";
+import { useShellVariantContext } from "../../shell/ShellVariantContext";
 
 interface DataTableToolbarProps {
   resolvedTableView: "selection" | "dataset";
@@ -34,9 +35,13 @@ export function DataTableToolbar({
   activeLayer,
   currentPointScopeSql,
 }: DataTableToolbarProps) {
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
   const setTablePage = useDashboardStore((s) => s.setTablePage);
   const setTableView = useDashboardStore((s) => s.setTableView);
   const togglePanel = useDashboardStore((s) => s.togglePanel);
+  const openOnlyPanel = useDashboardStore((s) => s.openOnlyPanel);
+  const closePanel = useDashboardStore((s) => s.closePanel);
   const queryPanelOpen = useDashboardStore((s) => s.openPanels.query);
 
   const handleExport = async () => {
@@ -88,7 +93,7 @@ export function DataTableToolbar({
               gap: 2,
             },
             label: {
-              fontSize: 9,
+              fontSize: panelScaledPx(9),
               lineHeight: 1,
               padding: "3px 6px",
             },
@@ -110,29 +115,42 @@ export function DataTableToolbar({
           label={queryPanelOpen ? "Close SQL Explorer" : "Open SQL Explorer"}
           position="bottom"
           withArrow
+          disabled={isMobile}
         >
           <ActionIcon
             variant="transparent"
-            size={18}
+            size={isMobile ? 28 : 18}
             radius="xl"
-            onClick={() => togglePanel("query")}
+            onClick={() => {
+              if (!isMobile) {
+                togglePanel("query");
+                return;
+              }
+
+              if (queryPanelOpen) {
+                closePanel("query");
+                return;
+              }
+
+              openOnlyPanel("query");
+            }}
             aria-label={queryPanelOpen ? "Close SQL Explorer" : "Open SQL Explorer"}
             aria-pressed={queryPanelOpen}
-            className="graph-icon-btn"
-            styles={iconBtnStyles}
+            className="panel-icon-btn"
+            styles={panelIconBtnStyles}
           >
             <Database size={11} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Export CSV" position="bottom" withArrow>
+        <Tooltip label="Export CSV" position="bottom" withArrow disabled={isMobile}>
           <ActionIcon
             variant="transparent"
-            size={18}
+            size={isMobile ? 28 : 18}
             radius="xl"
             onClick={() => void handleExport()}
             aria-label="Export graph data"
-            className="graph-icon-btn"
-            styles={iconBtnStyles}
+            className="panel-icon-btn"
+            styles={panelIconBtnStyles}
           >
             <Download size={11} />
           </ActionIcon>
@@ -150,7 +168,7 @@ export function DataTableToolbar({
               color: "var(--graph-panel-text-dim)",
               minWidth: 18,
               height: 18,
-              fontSize: 9,
+              fontSize: panelScaledPx(9),
             },
           }}
         />

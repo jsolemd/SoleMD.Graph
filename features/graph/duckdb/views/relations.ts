@@ -30,7 +30,7 @@ export async function materializeBundleParquetTables(
     )
 
     await conn.query(
-      `CREATE TEMP TABLE IF NOT EXISTS ${safeRuntimeTableName} AS
+      `CREATE TABLE IF NOT EXISTS ${safeRuntimeTableName} AS
        SELECT ${selectList}
        FROM read_parquet('${registeredFileName}')`
     )
@@ -50,7 +50,7 @@ export async function resolveBundleRelations(
     return
   }
 
-  const localTableNames = new Set(['base_points', 'base_clusters', 'universe_points'])
+  const localTableNames = new Set(['base_points', 'base_clusters'])
   const materializedTables: BundleParquetMaterialization[] = selectedTableNames
     .filter((tableName) => localTableNames.has(tableName))
     .map((tableName) => ({
@@ -67,6 +67,9 @@ export async function resolveBundleRelations(
   }
 
   for (const tableName of selectedTableNames.filter((name) => !localTableNames.has(name))) {
+    // Keep optional large relations parquet-backed until a query actually needs
+    // rows from them. Hydrating the full mapped universe into browser-local temp
+    // storage is the fastest route back to DuckDB-Wasm OOMs.
     const safe = validateTableName(tableName)
     const registeredFileName = escapeSqlString(
       getRegisteredBundleTableFileName(bundle, tableName)

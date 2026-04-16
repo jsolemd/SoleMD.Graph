@@ -1,9 +1,9 @@
 "use client";
 
 import {
-  iconBtnStyles,
   PanelDivider,
   PanelInlineLoader,
+  panelIconBtnStyles,
   panelTextDimStyle,
   panelTextMutedStyle,
   panelTextStyle,
@@ -156,8 +156,8 @@ export function EntityHoverCard({
                     variant="transparent"
                     size="xs"
                     radius="md"
-                    className="graph-icon-btn"
-                    styles={iconBtnStyles}
+                    className="panel-icon-btn"
+                    styles={panelIconBtnStyles}
                     onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={() => onShowOnGraph(card.entity)}
                     aria-label="Show on graph"
@@ -172,8 +172,8 @@ export function EntityHoverCard({
                     variant="transparent"
                     size="xs"
                     radius="md"
-                    className="graph-icon-btn"
-                    styles={iconBtnStyles}
+                    className="panel-icon-btn"
+                    styles={panelIconBtnStyles}
                     onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     onClick={() => onOpenWiki(card.entity)}
                     aria-label="Open wiki"

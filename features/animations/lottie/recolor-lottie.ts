@@ -9,7 +9,7 @@
  * accent while light shapes (white highlights, contrast details) stay.
  */
 
-type LottieRgba = [number, number, number, number];
+export type LottieRgba = [number, number, number, number];
 
 interface LottieColorProp {
   a?: number;
@@ -101,16 +101,19 @@ export function recolorLottie(
  */
 const FALLBACK_ACCENT: LottieRgba = [0.4, 0.6, 1, 1];
 
-export function resolveAccentColor(): LottieRgba {
-  if (typeof document === "undefined") return FALLBACK_ACCENT;
+export function resolveCssColor(
+  variableName: string,
+  fallback: LottieRgba,
+): LottieRgba {
+  if (typeof document === "undefined") return fallback;
   try {
     const el = document.createElement("div");
-    el.style.color = "var(--mode-accent)";
+    el.style.color = `var(${variableName})`;
     document.body.appendChild(el);
     const rgb = getComputedStyle(el).color;
     el.remove();
     const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-    if (!m) return FALLBACK_ACCENT;
+    if (!m) return fallback;
     return [
       parseInt(m[1]) / 255,
       parseInt(m[2]) / 255,
@@ -118,6 +121,10 @@ export function resolveAccentColor(): LottieRgba {
       1,
     ];
   } catch {
-    return FALLBACK_ACCENT;
+    return fallback;
   }
+}
+
+export function resolveAccentColor(): LottieRgba {
+  return resolveCssColor("--mode-accent", FALLBACK_ACCENT);
 }

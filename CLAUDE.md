@@ -38,6 +38,22 @@ npm run build && npm run lint  # Build + lint
 cd engine && uv run pytest     # Engine tests
 ```
 
+## Engineering Workflow
+
+For code work in SoleMD.Graph, treat `/clean` as the default engineering contract,
+not as an optional cleanup pass after the fact.
+
+- Apply `/clean` principles to every coding task: native solutions first, thin
+  adapters, zero duplicate work, centralization, modularization, and performance
+  discipline.
+- Use CodeAtlas reconnaissance before non-trivial edits to find existing
+  implementations, reusable modules, native platform capabilities, adapter
+  boundaries, and blast radius.
+- If the user invokes `/clean`, interpret that as `/clean` + `/codeatlas`.
+  `/clean` without live CodeAtlas recon is incomplete.
+- Scale recon depth to risk. Tiny or non-code tasks do not need a full cleanup or
+  architecture pass, but any meaningful code change should start with CodeAtlas.
+
 ## Frontend Performance
 
 Frontend latency and graph-runtime performance rules are canonical requirements in:

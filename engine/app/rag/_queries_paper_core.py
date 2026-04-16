@@ -4,6 +4,7 @@ All other _queries_*.py modules import from this file. Keep this
 module free of circular imports — it must not import from siblings.
 """
 
+from app.graph import paper_runtime_contract
 from app.rag.entity_runtime_keys import (
     catalog_vocab_source_identifier_sql,
     runtime_concept_id_key_sql,
@@ -88,6 +89,11 @@ ENTITY_INPUT_NAMESPACE_KEY_SQL = runtime_concept_namespace_key_sql(
     "resolved.concept_namespace"
 )
 ENTITY_INPUT_CONCEPT_KEY_SQL = runtime_concept_id_key_sql("resolved.concept_id")
+PAPER_SELECT_COLUMNS = paper_runtime_contract.PAPER_RUNTIME_SELECT_COLUMNS
+RANKED_PAPER_SELECT_COLUMNS = (
+    paper_runtime_contract.RANKED_PAPER_RUNTIME_SELECT_COLUMNS
+)
+PAPER_CORE_JOINS = paper_runtime_contract.PAPER_RUNTIME_JOINS
 
 _ENTITY_CATALOG_NULL_VOCAB_COLUMNS = """
         'entity_catalog' AS source_surface,
@@ -649,64 +655,6 @@ top_concepts AS MATERIALIZED (
 )
 """
 
-# ---------------------------------------------------------------------------
-# Paper column lists
-# ---------------------------------------------------------------------------
-
-PAPER_SELECT_COLUMNS = """
-    p.corpus_id,
-    p.paper_id,
-    p.paper_id AS semantic_scholar_paper_id,
-    p.title,
-    p.abstract,
-    p.tldr,
-    COALESCE(p.journal_name, p.venue) AS journal_name,
-    p.year,
-    c.doi,
-    c.pmid,
-    c.pmc_id AS pmcid,
-    p.text_availability,
-    p.is_open_access,
-    COALESCE(p.citation_count, 0) AS citation_count,
-    COALESCE(p.influential_citation_count, 0) AS influential_citation_count,
-    COALESCE(p.reference_count, 0) AS reference_count,
-    COALESCE(p.publication_types, ARRAY[]::text[]) AS publication_types,
-    COALESCE(p.fields_of_study, ARRAY[]::text[]) AS fields_of_study,
-    COALESCE(pes.has_rule_evidence, false) AS has_rule_evidence,
-    COALESCE(pes.has_curated_journal_family, false) AS has_curated_journal_family,
-    pes.journal_family_type,
-    COALESCE(pes.entity_rule_families, 0) AS entity_rule_families,
-    COALESCE(pes.entity_rule_count, 0) AS entity_rule_count,
-    COALESCE(pes.entity_core_families, 0) AS entity_core_families
-"""
-
-RANKED_PAPER_SELECT_COLUMNS = """
-    rp.corpus_id,
-    rp.paper_id,
-    rp.semantic_scholar_paper_id,
-    rp.title,
-    rp.abstract,
-    rp.tldr,
-    rp.journal_name,
-    rp.year,
-    rp.doi,
-    rp.pmid,
-    rp.pmcid,
-    rp.text_availability,
-    rp.is_open_access,
-    rp.citation_count,
-    rp.influential_citation_count,
-    rp.reference_count,
-    rp.publication_types,
-    rp.fields_of_study,
-    rp.has_rule_evidence,
-    rp.has_curated_journal_family,
-    rp.journal_family_type,
-    rp.entity_rule_families,
-    rp.entity_rule_count,
-    rp.entity_core_families
-"""
-
 SPECIES_PROFILE_SQL = """
 SELECT
     pem.corpus_id,
@@ -721,13 +669,6 @@ WHERE
     lower(pem.entity_type) = 'species'
     AND pem.corpus_id = ANY(%s)
 GROUP BY pem.corpus_id
-"""
-
-PAPER_CORE_JOINS = """
-JOIN solemd.corpus c
-  ON c.corpus_id = p.corpus_id
-LEFT JOIN solemd.paper_evidence_summary pes
-  ON pes.corpus_id = p.corpus_id
 """
 
 PAPER_SEARCH_VECTOR_SQL = "p.fts_vector"

@@ -105,6 +105,31 @@ What each layer is for:
 | Active | DuckDB views + overlay membership tables | Immediately after base | Base + promoted overlay in one dense canvas table |
 | Evidence | FastAPI endpoints | On demand | Paper detail, citation neighborhoods, full text, assets |
 
+Base assets are published under checksum-addressed paths (`/graph-bundles/<checksum>/...`).
+When the browser supports OPFS, the graph runtime persists the hot `base_points` and
+`base_clusters` tables in a local DuckDB file so a full page reload can reopen the same
+hot cache instead of rebuilding those tables from parquet again.
+
+### Reload-time optimization contract
+
+These are the permanent browser-runtime rules for first-paint graph assets:
+
+- Bundle files are served through immutable checksum-addressed URLs:
+  - `/graph-bundles/<checksum>/manifest.json`
+  - `/graph-bundles/<checksum>/base_points.parquet`
+  - `/graph-bundles/<checksum>/base_clusters.parquet`
+- The backend publish step owns the checksum alias on disk. The browser must not
+  derive filesystem paths or graph-run directories itself.
+- `base_points` and `base_clusters` remain the canonical first-paint tables.
+  We do not slim first paint by changing the bundle contract implicitly.
+- When OPFS is available, DuckDB-WASM opens one persistent local database file
+  and reuses the hot `base_points` / `base_clusters` tables across full reloads.
+- Cosmograph continues to bind only to the canonical active views
+  (`current_points_canvas_web`, `current_links_web`, related query aliases).
+  The persistence layer stays below that adapter boundary.
+- Optional large relations remain lazy. Persistent caching is for the hot base
+  tables, not permission to hydrate the whole universe or evidence payloads on load.
+
 ---
 
 ## Bundle contract

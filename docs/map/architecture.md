@@ -7,6 +7,9 @@ everything else: which layers own what, which libraries are behind adapters,
 which paths the browser must not take. For how things actually work, see the
 other docs (see [`map.md`](map.md)).
 
+For the canonical local-development network contract, see
+[`local-networking.md`](local-networking.md).
+
 ---
 
 ## Goal

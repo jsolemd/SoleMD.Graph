@@ -8,7 +8,7 @@ import { deriveColumnInsights, type ColumnInsight } from "@/features/graph/lib/i
 import { useDashboardStore } from "@/features/graph/stores";
 import { formatNumber } from "@/lib/helpers";
 import {
-  iconBtnStyles,
+  panelIconBtnStyles,
   panelPillStyles,
   panelScaledPx,
   panelTextDimStyle,
@@ -249,7 +249,8 @@ export function QueryWidgetSlotRenderer({
             radius="sm"
             onClick={() => removeInfoWidget(slot.column)}
             aria-label={`Remove ${slot.label} widget`}
-            styles={iconBtnStyles}
+            className="panel-icon-btn"
+            styles={panelIconBtnStyles}
           >
             <X size={10} />
           </ActionIcon>

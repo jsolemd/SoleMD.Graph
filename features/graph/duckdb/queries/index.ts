@@ -34,5 +34,4 @@ export {
   queryNumericStatsBatch,
 } from './histograms'
 export type { NumericStatsRow } from './histograms'
-export { queryCategoricalValues, queryNumericValues } from './values'
 export { exportCorpusTableCsv, queryCorpusTablePage } from './table-chunk'

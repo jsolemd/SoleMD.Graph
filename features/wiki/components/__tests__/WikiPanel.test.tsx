@@ -60,6 +60,12 @@ jest.mock("@/features/animations/lottie/LottiePulseLoader", () => ({
   ),
 }));
 
+jest.mock("@/features/animations/lottie/SearchToggleLottie", () => ({
+  SearchToggleLottie: ({ mode }: { mode: string }) => (
+    <span data-testid={`search-toggle-${mode}`} />
+  ),
+}));
+
 // Mock the wiki graph runtime (depends on pixi.js + canvas)
 jest.mock("@/features/wiki/graph-runtime", () => ({
   mountWikiGraph: jest.fn().mockResolvedValue({ destroy: jest.fn() }),

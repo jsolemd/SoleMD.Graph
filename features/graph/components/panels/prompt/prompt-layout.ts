@@ -9,7 +9,6 @@ import {
   BOTTOM_BASE,
   VIEWPORT_MARGIN,
   PILL_LEFT,
-  cardWidth,
 } from "./constants";
 
 export function resolveCollapsedTarget(vw: number, targetY: number) {
@@ -23,10 +22,10 @@ export function resolveNormalTarget(
   vw: number,
   vh: number,
   targetY: number,
+  cardW: number,
   cardH: number,
   avoidRects?: PromptAvoidRect[],
 ) {
-  const cardW = cardWidth(vw);
   const centeredLeft = vw / 2 - cardW / 2;
   const centeredRight = centeredLeft + cardW;
   const minX = VIEWPORT_MARGIN - centeredLeft;
@@ -48,3 +47,4 @@ export function resolveNormalTarget(
     avoidRects,
   });
 }
+

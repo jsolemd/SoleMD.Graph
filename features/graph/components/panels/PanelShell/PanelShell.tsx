@@ -1,11 +1,14 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect } from "react";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { APP_CHROME_PX, DEFAULT_PANEL_WIDTH_PX } from "@/lib/density";
-import { panelReveal } from "@/lib/motion";
+import { APP_CHROME_PX, DEFAULT_PANEL_WIDTH_PX, densityCssPx } from "@/lib/density";
+import { panelReveal, smooth } from "@/lib/motion";
 import { useDashboardStore } from "@/features/graph/stores";
-import { selectPanelLeftOffset, selectBottomClearance } from "@/features/graph/stores/dashboard-store";
+import {
+  selectBottomClearance,
+  selectDockedBottomClearance,
+} from "@/features/graph/stores/dashboard-store";
 import {
   PANEL_SCALE_DEFAULT,
   PANEL_SCALE_MAX,
@@ -13,8 +16,9 @@ import {
   PANEL_SCALE_STEP,
 } from "@/features/graph/stores/slices/panel-slice";
 import { PanelChrome } from "../PanelChrome";
-import { useFloatingPanel } from "../use-floating-panel";
+import { useFloatingPanel, useResolvedViewport } from "../use-floating-panel";
 import { createPanelScaleStyle, panelSurfaceStyle } from "./panel-styles";
+import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 
 interface PanelShellProps {
   children: ReactNode;
@@ -39,8 +43,16 @@ interface PanelShellProps {
   onClose: () => void;
 }
 
-/** Top offset so panels float below the Wordmark + panel icon row. */
+/** Top offset so panels float just below the brand wordmark.
+ *  Panel-opener icons moved to the top-right pill, so panels reclaim the
+ *  vertical space previously consumed by the panel-icon row. See
+ *  APP_CHROME_BASE_PX.panelTop in lib/density.ts for the derivation. */
 export const PANEL_TOP = APP_CHROME_PX.panelTop;
+
+/** Symmetric inset for mobile panels — same gap on top/right/bottom/left so the
+ *  floating card reads as a uniform edge margin. Panel overlays the wordmark
+ *  on mobile since space is tight; brand reappears when the panel closes. */
+const mobilePanelInset = densityCssPx(8);
 
 export function PanelShell({
   children,
@@ -60,8 +72,22 @@ export function PanelShell({
   contentScaleMode = "reading",
   onClose,
 }: PanelShellProps) {
-  // Bottom clearance so docked panels don't overlap bottom toolbar/timeline/table
-  const bottomClearance = useDashboardStore(selectBottomClearance);
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
+  // Docked-by-default panels (not yet dragged, not pinned) clamp their height
+  // so their bottom edge stops above the prompt. Pinned / undocked panels use
+  // only the base toolbar/timeline/table clearance so explicit user placement
+  // isn't overridden.
+  const savedPosition = useDashboardStore((s) => s.panelPositions[id]);
+  const isPinnedSeed = savedPosition?.pinned ?? false;
+  const isDockedSeed = savedPosition ? savedPosition.docked : true;
+  const useDockedClearance = isDockedSeed && !isPinnedSeed;
+  const { height: viewportHeight } = useResolvedViewport();
+  const bottomClearance = useDashboardStore((s) =>
+    useDockedClearance
+      ? selectDockedBottomClearance(s, viewportHeight)
+      : selectBottomClearance(s),
+  );
 
   const {
     panelRef,
@@ -70,8 +96,10 @@ export function PanelShell({
     dragY,
     width,
     height,
+    leftOffset,
     isDocked,
     isPinned,
+    dragConstraints,
     onTitlePointerDown,
     onTitleDoubleClick,
     onDragEnd,
@@ -98,13 +126,26 @@ export function PanelShell({
   const togglePanelPinned = useDashboardStore((state) => state.togglePanelPinned);
   const stepPanelScale = useDashboardStore((state) => state.stepPanelScale);
   const resetPanelScale = useDashboardStore((state) => state.resetPanelScale);
-  const panelScale = useDashboardStore((state) => state.panelScales[id] ?? PANEL_SCALE_DEFAULT);
+  const setPanelScale = useDashboardStore((state) => state.setPanelScale);
+  const storedPanelScale = useDashboardStore((state) => state.panelScales[id]);
+  // First-mount mobile default: scale up to 1.25× so touch reading is
+  // comfortable without forcing a floor the user can't escape. Once the
+  // user steps the scale, their choice is honored verbatim.
+  const mobileDefaultScale = 1.25;
+  const panelScale =
+    storedPanelScale ?? (isMobile && contentScaleEnabled ? mobileDefaultScale : PANEL_SCALE_DEFAULT);
+  useEffect(() => {
+    if (isMobile && contentScaleEnabled && storedPanelScale === undefined) {
+      setPanelScale(id, mobileDefaultScale);
+    }
+  }, [contentScaleEnabled, id, isMobile, setPanelScale, storedPanelScale]);
+  const effectivePanelScale = contentScaleEnabled ? panelScale : PANEL_SCALE_DEFAULT;
   const canDecreaseScale = panelScale > PANEL_SCALE_MIN;
   const canIncreaseScale = panelScale < PANEL_SCALE_MAX;
 
   const handleTogglePin = useCallback(() => {
-    togglePanelPinned(id);
-  }, [id, togglePanelPinned]);
+    togglePanelPinned(id, leftOffset);
+  }, [id, togglePanelPinned, leftOffset]);
 
   const handleDecreaseScale = useCallback(() => {
     stepPanelScale(id, -PANEL_SCALE_STEP);
@@ -165,12 +206,14 @@ export function PanelShell({
     element.focus({ preventScroll: true });
   }, [panelRef]);
 
-  // Auto-stacking offset from panels docked before this one
-  const leftOffset = useDashboardStore((state) => selectPanelLeftOffset(state, id));
-
   // Report panelBottomY when docked so the prompt position system knows the panel's height.
   const setPanelBottomY = useDashboardStore((state) => state.setPanelBottomY);
   useEffect(() => {
+    if (isMobile) {
+      setPanelBottomY(side, 0);
+      return;
+    }
+
     const element = panelRef.current;
     if (!element || !isDocked) {
       setPanelBottomY(side, 0);
@@ -194,41 +237,118 @@ export function PanelShell({
       resizeObserver.disconnect();
       setPanelBottomY(side, 0);
     };
-  }, [isDocked, panelRef, setPanelBottomY, side]);
+  }, [isDocked, isMobile, panelRef, setPanelBottomY, side]);
 
   const reveal = panelReveal[side];
+
+  // Handle-drag produces pixel-by-pixel deltas; route flips produce sudden
+  // jumps. Above the threshold we skip the smooth tween so route-driven
+  // resizes snap rather than slide — the user never sees a width pulse on
+  // navigation, and interactive resizes still feel fluid. These hooks live
+  // above the mobile early-return so the Rules of Hooks order is stable.
+  const WIDTH_SNAP_THRESHOLD = 80;
+  const prevWidthRef = useRef(width);
+  const widthDelta = Math.abs(width - prevWidthRef.current);
+  const widthTransition = widthDelta > WIDTH_SNAP_THRESHOLD ? { duration: 0 } : smooth;
+  useEffect(() => {
+    prevWidthRef.current = width;
+  }, [width]);
+
+  if (isMobile) {
+    return (
+      <>
+        <motion.button
+          type="button"
+          className="fixed inset-0 z-40 border-0 bg-black/30 p-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+          onClick={onClose}
+          aria-label={`Close ${title.toLowerCase()} panel`}
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 24 }}
+          transition={{ duration: 0.22, ease: "easeOut" }}
+          data-panel-id={id}
+          data-panel-shell="mobile"
+          style={{
+            ...createPanelScaleStyle(effectivePanelScale),
+            ...panelSurfaceStyle,
+            top: `calc(env(safe-area-inset-top, 0px) + ${mobilePanelInset})`,
+            right: mobilePanelInset,
+            bottom: `calc(env(safe-area-inset-bottom, 0px) + ${mobilePanelInset})`,
+            left: mobilePanelInset,
+          }}
+          className="fixed z-50 flex min-h-0 flex-col overflow-hidden rounded-[1.25rem]"
+        >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
+            <PanelChrome
+              title={title}
+              headerNavigation={headerNavigation}
+              headerActions={headerActions}
+              onClose={onClose}
+              panelScale={contentScaleEnabled ? panelScale : undefined}
+              canIncreaseScale={contentScaleEnabled ? canIncreaseScale : undefined}
+              canDecreaseScale={contentScaleEnabled ? canDecreaseScale : undefined}
+              onIncreaseScale={contentScaleEnabled ? handleIncreaseScale : undefined}
+              onDecreaseScale={contentScaleEnabled ? handleDecreaseScale : undefined}
+              onResetScale={contentScaleEnabled ? handleResetScale : undefined}
+            >
+              {children}
+            </PanelChrome>
+          </div>
+        </motion.div>
+      </>
+    );
+  }
+
+  const animatedLayout = side === "left"
+    ? { width, left: APP_CHROME_PX.edgeMargin + leftOffset }
+    : { width };
 
   return (
     <motion.div
       ref={panelRef}
-      initial={reveal.initial}
-      animate={reveal.animate}
+      data-panel-id={id}
+      data-panel-shell="desktop"
+      initial={{ ...reveal.initial, ...animatedLayout }}
+      animate={{ ...reveal.animate, ...animatedLayout }}
       exit={reveal.exit}
-      transition={reveal.transition}
+      transition={{
+        ...reveal.transition,
+        width: widthTransition,
+        ...(side === "left" ? { left: smooth } : {}),
+      }}
       drag
       dragControls={dragControls}
       dragListener={false}
       dragMomentum={false}
       dragElastic={0}
+      dragConstraints={dragConstraints}
       tabIndex={0}
       onDragEnd={onDragEnd}
       onKeyDownCapture={handlePanelKeyDownCapture}
       onPointerDownCapture={handlePanelPointerDownCapture}
       style={{
         ...reveal.style,
-        ...createPanelScaleStyle(contentScaleEnabled ? panelScale : PANEL_SCALE_DEFAULT),
+        ...createPanelScaleStyle(effectivePanelScale),
         x: dragX,
         y: dragY,
         top: PANEL_TOP,
-        ...(side === "left"
-          ? { left: APP_CHROME_PX.edgeMargin + leftOffset }
-          : { right: APP_CHROME_PX.edgeMargin }),
-        width,
+        ...(side === "right" ? { right: APP_CHROME_PX.edgeMargin } : {}),
         height: height ?? undefined,
-        maxHeight: height
-          ? undefined
-          : isDocked
-            ? `calc(100vh - ${PANEL_TOP + bottomClearance + APP_CHROME_PX.edgeMargin}px)`
+        // Docked panels always apply a maxHeight so a large defaultHeight
+        // (e.g. wiki page) can't push the bottom edge past the prompt. For
+        // docked+unpinned the clearance includes prompt space; pinned panels
+        // get the base clearance so the user's explicit resize still fits.
+        // Floating panels only apply a max when no explicit height is set.
+        maxHeight: isDocked
+          ? `calc(100vh - ${PANEL_TOP + bottomClearance + APP_CHROME_PX.edgeMargin}px)`
+          : height
+            ? undefined
             : `calc(100vh - ${PANEL_TOP + APP_CHROME_PX.floatingViewportInset}px)`,
         ...panelSurfaceStyle,
       }}

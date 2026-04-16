@@ -17,12 +17,12 @@ import type { GraphCanvasSource } from "@/features/graph/duckdb";
 import { useCosmographConfig } from "./hooks/use-cosmograph-config";
 import { useZoomLabels } from "./hooks/use-zoom-labels";
 import { usePointsFiltered } from "./hooks/use-points-filtered";
+import { usePanGuard } from "./hooks/use-pan-guard";
 import {
   NATIVE_COSMOGRAPH_LABEL_THEME_CSS,
   resolveClusterLabelClassName,
 } from "./label-appearance";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
-import { resolveGraphContentContrastLevel } from "@/features/graph/lib/control-contrast";
 import {
   DEFAULT_INITIAL_CAMERA,
   type CameraSnapshot,
@@ -50,8 +50,12 @@ interface CosmographInternalHandle {
 }
 
 function getViewportTransform(
-  cosmograph: CosmographRef | undefined,
+  cosmograph: CosmographRef | undefined | null,
 ): CameraSnapshot | null {
+  if (!cosmograph) {
+    return null;
+  }
+
   const internal = cosmograph as unknown as CosmographInternalHandle;
   const transform = internal._cosmos?.zoomInstance?.eventTransform;
   if (!transform) {
@@ -74,7 +78,7 @@ function getViewportTransform(
 }
 
 function applyViewportCamera(
-  cosmograph: CosmographRef | undefined,
+  cosmograph: CosmographRef | undefined | null,
   camera: CameraSnapshot,
 ): boolean {
   if (!cosmograph) {
@@ -121,9 +125,6 @@ export default function CosmographRenderer({
   const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
   const setFocusedPointIndex = useGraphStore((s) => s.setFocusedPointIndex);
   const markCameraSettled = useGraphStore((s) => s.markCameraSettled);
-  const setGraphContentContrastLevel = useGraphStore(
-    (s) => s.setGraphContentContrastLevel,
-  );
   const setZoomedIn = useGraphStore((s) => s.setZoomedIn);
   const selectNode = useGraphStore((s) => s.selectNode);
 
@@ -156,6 +157,13 @@ export default function CosmographRenderer({
   } =
     useZoomLabels(cosmographRef);
 
+  const {
+    onZoomStart: panGuardOnZoomStart,
+    onZoom: panGuardOnZoom,
+    onZoomEnd: panGuardOnZoomEnd,
+    consumeJustPan,
+  } = usePanGuard();
+
   const handleViewportSettled = useCallback(() => {
     syncZoomState();
 
@@ -169,6 +177,24 @@ export default function CosmographRenderer({
       markCameraSettled();
     }
   }, [focusedPointIndex, markCameraSettled, syncZoomState]);
+
+  type ZoomCallback = Parameters<typeof panGuardOnZoom>;
+
+  const handleZoomWithGuard = useCallback(
+    (event: ZoomCallback[0], userDriven: ZoomCallback[1]) => {
+      panGuardOnZoom(event, userDriven);
+      handleZoom();
+    },
+    [handleZoom, panGuardOnZoom],
+  );
+
+  const handleZoomEndWithGuard = useCallback(
+    (event: ZoomCallback[0], userDriven: ZoomCallback[1]) => {
+      panGuardOnZoomEnd(event, userDriven);
+      handleViewportSettled();
+    },
+    [handleViewportSettled, panGuardOnZoomEnd],
+  );
 
   const resolveAndSelectNode = useCallback(
     async (selector: { id?: string; index?: number }) => {
@@ -290,6 +316,10 @@ export default function CosmographRenderer({
   );
 
   const handleBackgroundClick = useCallback(() => {
+    // Touch pans end with a synthesized background click on Cosmograph.
+    // Preserve selection through pans; clear only on genuine taps.
+    if (consumeJustPan()) return;
+
     selectionRequestId.current += 1;
     if (isLocked) {
       setFocusedPointIndex(null);
@@ -303,7 +333,7 @@ export default function CosmographRenderer({
     // Explicitly clear programmatic selections (selectPoint calls)
     // that resetSelectionOnEmptyCanvasClick may not reach
     cosmographRef.current?.unselectAllPoints();
-  }, [clearVisibilityFocus, isLocked, selectNode, setFocusedPointIndex]);
+  }, [clearVisibilityFocus, consumeJustPan, isLocked, selectNode, setFocusedPointIndex]);
 
   useEffect(() => {
     const pointsSelection = cosmographRef.current?.pointsSelection;
@@ -355,19 +385,6 @@ export default function CosmographRenderer({
     labelMode.effectivePointLabelColumn === "clusterLabel"
       ? undefined
       : "paperReferenceCount";
-  const graphContentContrastLevel = resolveGraphContentContrastLevel({
-    showLabels: labelMode.showLabels,
-    showDynamicLabels: labelMode.showDynamicLabels,
-    showTopLabels: labelMode.showTopLabels,
-  });
-
-  useEffect(() => {
-    setGraphContentContrastLevel(graphContentContrastLevel);
-
-    return () => {
-      setGraphContentContrastLevel(0);
-    };
-  }, [graphContentContrastLevel, setGraphContentContrastLevel]);
 
   useEffect(() => {
     setZoomedIn(zoomedIn);
@@ -496,8 +513,9 @@ export default function CosmographRenderer({
       focusPointOnLabelClick={!isLocked}
       resetSelectionOnEmptyCanvasClick={!isLocked}
       disableLogging
-      onZoom={handleZoom}
-      onZoomEnd={handleViewportSettled}
+      onZoomStart={panGuardOnZoomStart}
+      onZoom={handleZoomWithGuard}
+      onZoomEnd={handleZoomEndWithGuard}
       onLabelClick={handleLabelClick}
       onClusterLabelClick={handleClusterLabelClick}
       onGraphRebuilt={handleGraphRebuilt}

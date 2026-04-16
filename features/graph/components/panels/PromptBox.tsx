@@ -5,6 +5,7 @@ import { densityCssPx } from "@/lib/density";
 import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
 import { usePromptBoxController } from "./prompt/use-prompt-box-controller";
 import { PromptBoxSurface } from "./prompt/PromptBoxSurface";
+import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 
 function PromptBoxComponent({
   bundle,
@@ -13,6 +14,7 @@ function PromptBoxComponent({
   bundle: GraphBundle;
   queries: GraphBundleQueries | null;
 }) {
+  const shellVariant = useShellVariantContext();
   const controller = usePromptBoxController({ bundle, queries });
 
   return (
@@ -27,7 +29,7 @@ function PromptBoxComponent({
               inset: 0,
               pointerEvents: "none",
               padding: "0.25rem 0.5rem",
-              fontSize: densityCssPx(10),
+              fontSize: densityCssPx(shellVariant === "mobile" ? 12 : 10),
               lineHeight: 1.5,
               overflow: "hidden",
               color: "var(--graph-prompt-placeholder)",

@@ -21,8 +21,18 @@
     },
     "chrome-devtools-android": {
       "type": "http",
-      "url": "http://localhost:8402/mcp",
-      "instructions": "Real Android Chrome via HTTP proxy. Requires an Android device with USB or wireless debugging, adb forwarding localabstract:chrome_devtools_remote to localhost:9223, and the chrome-devtools-android Docker service. Start with open-android-review.sh or Start-AndroidChromeDebug.ps1."
+      "url": "http://127.0.0.1:8402/mcp",
+      "instructions": "Compatibility alias for the current-machine Android MCP endpoint. Prefer the explicit chrome-devtools-android-local name in new workflows. This endpoint is for a phone attached to the current machine and uses local Chrome DevTools on 127.0.0.1:9223. Requires adb forwarding localabstract:chrome_devtools_remote to localhost:9223 and the chrome-devtools-android Docker service. Start with open-android-review.sh or Start-AndroidChromeDebug.ps1 when the phone is local."
+    },
+    "chrome-devtools-android-local": {
+      "type": "http",
+      "url": "http://127.0.0.1:8402/mcp",
+      "instructions": "Real Android Chrome via HTTP proxy on the current machine. Use this when the Android device is attached to the same host that is running the MCP client. Requires adb forwarding localabstract:chrome_devtools_remote to localhost:9223 and the chrome-devtools-android Docker service."
+    },
+    "chrome-devtools-android-laptop": {
+      "type": "http",
+      "url": "http://127.0.0.1:18402/mcp",
+      "instructions": "Real Android Chrome attached to the laptop, but controlled from this machine. Use this when the laptop reverse tunnel exposes the laptop phone's Chrome DevTools endpoint on local 127.0.0.1:29223 and the chrome-devtools-android-laptop Docker service is running. This is PC-hosted MCP against reverse-tunneled CDP, not a laptop-hosted MCP."
     },
     "codeatlas": {
       "type": "http",

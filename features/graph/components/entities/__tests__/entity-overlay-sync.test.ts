@@ -37,8 +37,6 @@ function createQueries(): jest.Mocked<GraphBundleQueries> {
     resolvePointSelection: jest.fn(),
     getTablePage: jest.fn(),
     getInfoSummary: jest.fn(),
-    getCategoricalValues: jest.fn(),
-    getNumericValues: jest.fn(),
     getInfoBars: jest.fn(),
     getInfoHistogram: jest.fn(),
     getFacetSummary: jest.fn(),

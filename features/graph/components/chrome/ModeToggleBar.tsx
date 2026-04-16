@@ -13,6 +13,7 @@ import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-co
 import { MODE_ORDER, getModeConfig } from "@/features/graph/lib/modes";
 import { bouncy } from "@/lib/motion";
 import type { GraphMode } from "@/features/graph/types";
+import { useShellVariantContext } from "../shell/ShellVariantContext";
 
 /** Icon mapping — keeps presentation separate from mode data. */
 const MODE_ICONS: Record<GraphMode, typeof MessageCircle> = {
@@ -41,6 +42,8 @@ export function ModeToggleBar({
 }: {
   compact?: boolean;
 }) {
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
   const { mode, applyMode, stepPromptDown } = useGraphModeController();
   const lastActiveClickRef = useRef<number>(0);
 
@@ -71,10 +74,12 @@ export function ModeToggleBar({
         return (
           <Fragment key={key}>
             {i > 0 && <ModeDivider />}
-            <Tooltip label={config.label} position="top" withArrow>
+            <Tooltip label={config.label} position="top" withArrow disabled={isMobile}>
               <motion.button
                 onClick={() => handleClick(key)}
-                className="relative flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium h-7"
+                className={`relative flex items-center gap-1 rounded-full font-medium ${
+                  isMobile ? "h-10 px-3 text-sm" : "h-7 px-2 py-1 text-xs"
+                }`}
                 style={{
                   backgroundColor: isActive
                     ? "var(--mode-accent-subtle)"
@@ -90,8 +95,12 @@ export function ModeToggleBar({
                 aria-pressed={isActive}
                 aria-label={`${config.label} mode`}
               >
-                <div className="flex items-center justify-center w-4 h-4 flex-shrink-0">
-                  <Icon size={14} />
+                <div
+                  className={`flex flex-shrink-0 items-center justify-center ${
+                    isMobile ? "h-5 w-5" : "h-4 w-4"
+                  }`}
+                >
+                  <Icon size={isMobile ? 18 : 14} />
                 </div>
                 {!compact && (
                   <AnimatePresence mode="wait">

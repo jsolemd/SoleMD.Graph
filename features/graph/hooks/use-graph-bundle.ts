@@ -124,8 +124,6 @@ export function useGraphBundle(bundle: GraphBundle): GraphBundleState {
           activateOverlay: session.activateOverlay,
           getClusterDetail: session.getClusterDetail,
           getInfoSummary: session.getInfoSummary,
-          getCategoricalValues: session.getCategoricalValues,
-          getNumericValues: session.getNumericValues,
           getInfoBars: session.getInfoBars,
           getInfoBarsBatch: session.getInfoBarsBatch,
           getInfoHistogram: session.getInfoHistogram,

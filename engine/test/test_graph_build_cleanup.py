@@ -18,6 +18,40 @@ def test_cleanup_unkept_runtime_directories_removes_only_unkept_dirs(tmp_path: P
     assert not drop_dir.exists()
 
 
+def test_cleanup_unkept_runtime_directories_preserves_named_roots(tmp_path: Path) -> None:
+    keep_dir = tmp_path / "keep-me"
+    preserve_dir = tmp_path / build.GRAPH_BUNDLE_CHECKSUM_DIRNAME
+    keep_dir.mkdir()
+    preserve_dir.mkdir()
+
+    build._cleanup_unkept_runtime_directories(
+        tmp_path,
+        keep_names={"keep-me"},
+        preserve_names={build.GRAPH_BUNDLE_CHECKSUM_DIRNAME},
+    )
+
+    assert keep_dir.exists()
+    assert preserve_dir.exists()
+
+
+def test_cleanup_unkept_graph_bundle_aliases_keeps_live_targets(tmp_path: Path) -> None:
+    bundle_root = tmp_path / "bundles"
+    alias_root = bundle_root / build.GRAPH_BUNDLE_CHECKSUM_DIRNAME
+    keep_dir = bundle_root / "keep-run"
+    drop_dir = bundle_root / "drop-run"
+    bundle_root.mkdir()
+    alias_root.mkdir()
+    keep_dir.mkdir()
+    drop_dir.mkdir()
+    (alias_root / "keep-checksum").symlink_to(Path("..") / "keep-run", target_is_directory=True)
+    (alias_root / "drop-checksum").symlink_to(Path("..") / "drop-run", target_is_directory=True)
+
+    build._cleanup_unkept_graph_bundle_aliases(bundle_root, keep_names={"keep-run"})
+
+    assert (alias_root / "keep-checksum").exists()
+    assert not (alias_root / "drop-checksum").exists()
+
+
 class _Cursor:
     def __init__(self, rows) -> None:
         self._rows = list(rows)

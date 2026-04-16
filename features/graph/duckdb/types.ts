@@ -84,18 +84,6 @@ export interface GraphBundleSession {
     scope: GraphInfoScope
     currentPointScopeSql: string | null
   }) => Promise<GraphInfoSummary>
-  getCategoricalValues: (args: {
-    layer: MapLayer
-    scope: GraphInfoScope
-    column: string
-    currentPointScopeSql: string | null
-  }) => Promise<string[]>
-  getNumericValues: (args: {
-    layer: MapLayer
-    scope: GraphInfoScope
-    column: string
-    currentPointScopeSql: string | null
-  }) => Promise<number[]>
   getInfoBars: (args: {
     layer: MapLayer
     scope: GraphInfoScope

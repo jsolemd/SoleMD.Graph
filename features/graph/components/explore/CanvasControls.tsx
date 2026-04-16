@@ -14,8 +14,9 @@ import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-st
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { SelectionToolbar, type SelectionToolbarHandle } from "@/features/graph/cosmograph";
 import type { GraphBundleQueries } from "@/features/graph/types";
-import { iconBtnStyles } from "../panels/PanelShell";
+import { graphControlBtnStyles } from "../panels/PanelShell";
 import { pop } from "@/lib/motion";
+import { useShellVariantContext } from "../shell/ShellVariantContext";
 
 /**
  * Selection tools portaled into the bottom-left viewport toolbar.
@@ -43,31 +44,51 @@ function usePortalTarget(selector: string) {
 
   useEffect(() => {
     let wrapper: HTMLDivElement | null = null;
+    let host: HTMLElement | null = null;
 
-    const attach = (native: HTMLElement) => {
+    const clearTarget = () => {
+      if (wrapper?.isConnected) {
+        wrapper.remove();
+      }
+      wrapper = null;
+      host = null;
+      setTarget(null);
+    };
+
+    const attach = (nextHost: HTMLElement) => {
+      if (wrapper?.isConnected) {
+        wrapper.remove();
+      }
+
       wrapper = document.createElement("div");
       wrapper.style.display = "contents";
-      native.appendChild(wrapper);
+      nextHost.appendChild(wrapper);
+      host = nextHost;
       setTarget(wrapper);
     };
 
-    const native = document.querySelector<HTMLElement>(selector);
-    if (native) {
-      attach(native);
-      return () => { wrapper?.remove(); };
-    }
-
-    const observer = new MutationObserver(() => {
-      const found = document.querySelector<HTMLElement>(selector);
-      if (found) {
-        observer.disconnect();
-        attach(found);
+    const syncTarget = () => {
+      const nextHost = document.querySelector<HTMLElement>(selector);
+      if (!nextHost) {
+        if (host || wrapper) {
+          clearTarget();
+        }
+        return;
       }
-    });
+
+      if (host !== nextHost || !wrapper?.isConnected) {
+        attach(nextHost);
+      }
+    };
+
+    syncTarget();
+
+    const observer = new MutationObserver(syncTarget);
     observer.observe(document.body, { childList: true, subtree: true });
+
     return () => {
       observer.disconnect();
-      wrapper?.remove();
+      clearTarget();
     };
   }, [selector]);
 
@@ -77,7 +98,9 @@ function usePortalTarget(selector: string) {
 /* ── Component ─────────────────────────────────────────────────── */
 
 function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
-  const portalTarget = usePortalTarget("[data-bottom-viewport-toolbar]");
+  const shellVariant = useShellVariantContext();
+  const isMobile = shellVariant === "mobile";
+  const portalTarget = usePortalTarget("[data-chrome-selection-portal]");
   const toolbarRef = useRef<SelectionToolbarHandle>(null);
   const toolActivatedRef = useRef(false);
   const hasSelection = useDashboardStore((s) => s.selectedPointCount > 0);
@@ -221,14 +244,13 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
 
   if (!portalTarget) return null;
 
-  const showLockButton = canLockSelection || isLocked;
+  const showLockButton = isMobile || canLockSelection || isLocked;
+  const showClearButton = isMobile || hasResettableScope;
+  const lockButtonDisabled = !isLocked && !canLockSelection;
+  const clearButtonDisabled = !hasResettableScope;
 
   return createPortal(
     <>
-      <div
-        className="mx-2 h-5 w-px"
-        style={{ backgroundColor: "var(--graph-panel-border)" }}
-      />
       <SelectionToolbar
         ref={toolbarRef}
         isLocked={isLocked}
@@ -244,13 +266,16 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
               label={isLocked ? "Unlock selection" : "Lock selection"}
               position="top"
               withArrow
+              disabled={isMobile || lockButtonDisabled}
             >
               <ActionIcon
                 variant="transparent"
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={iconBtnStyles}
+                styles={graphControlBtnStyles}
+                disabled={lockButtonDisabled}
+                style={lockButtonDisabled ? { opacity: 0.35 } : undefined}
                 onClick={() =>
                   void (isLocked ? handleUnlockSelection() : handleLockSelection())
                 }
@@ -264,15 +289,22 @@ function CanvasControlsComponent({ queries }: { queries: GraphBundleQueries }) {
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {hasResettableScope && (
+        {showClearButton && (
           <motion.div key="clear-selection" {...pop}>
-            <Tooltip label="Clear selection and filters" position="top" withArrow>
+            <Tooltip
+              label="Clear selection and filters"
+              position="top"
+              withArrow
+              disabled={isMobile || clearButtonDisabled}
+            >
               <ActionIcon
                 variant="transparent"
                 size="lg"
                 radius="xl"
                 className="graph-icon-btn"
-                styles={iconBtnStyles}
+                styles={graphControlBtnStyles}
+                disabled={clearButtonDisabled}
+                style={clearButtonDisabled ? { opacity: 0.35 } : undefined}
                 onClick={clearSelection}
                 aria-label="Clear selection and filters"
               >

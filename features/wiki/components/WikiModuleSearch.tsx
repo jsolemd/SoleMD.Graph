@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TextInput } from "@mantine/core";
-import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import {
   PanelIconAction,
+  PanelSearchField,
   panelSelectStyles,
   panelTextMutedStyle,
 } from "@/features/graph/components/panels/PanelShell";
@@ -25,7 +25,6 @@ export function WikiModuleSearch({ scrollRef }: WikiModuleSearchProps) {
   const [query, setQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
   const marksRef = useRef<HTMLElement[]>([]);
 
   const clearMarks = useCallback(() => {
@@ -112,9 +111,7 @@ export function WikiModuleSearch({ scrollRef }: WikiModuleSearchProps) {
 
   const handleToggle = useCallback(() => {
     setOpen((prev) => {
-      if (!prev) {
-        setTimeout(() => inputRef.current?.focus(), 50);
-      } else {
+      if (prev) {
         setQuery("");
         clearMarks();
       }
@@ -140,41 +137,25 @@ export function WikiModuleSearch({ scrollRef }: WikiModuleSearchProps) {
     return () => clearMarks();
   }, [clearMarks]);
 
-  if (!open) {
-    return (
-      <PanelIconAction
-        label="Search in module"
-        icon={<Search size={12} />}
-        onClick={handleToggle}
-        aria-label="Search in module"
-      />
-    );
-  }
-
   return (
     <div className="flex items-center gap-1">
-      <TextInput
-        ref={inputRef}
+      <PanelSearchField
+        open={open}
+        collapsible
         value={query}
-        onChange={(e) => setQuery(e.currentTarget.value)}
+        onValueChange={setQuery}
         onKeyDown={handleKeyDown}
         placeholder="Find..."
-        size="xs"
+        ariaLabel="Search in module"
+        actionLabel={open ? "Close search" : "Search in module"}
+        actionMode={open ? "close" : "search"}
+        onAction={handleToggle}
         styles={panelSelectStyles}
-        rightSection={
-          <PanelIconAction
-            label="Close search"
-            icon={<X size={10} />}
-            onClick={handleToggle}
-            size={16}
-            tooltipDisabled
-            aria-label="Close search"
-          />
-        }
-        style={{ width: 130 }}
-        aria-label="Search in module"
+        width={130}
+        collapsedActionSize={24}
+        inputActionSize={16}
       />
-      {matchCount > 0 && (
+      {open && matchCount > 0 && (
         <>
           <span style={{ ...panelTextMutedStyle, whiteSpace: "nowrap" }}>
             {activeIndex + 1}/{matchCount}

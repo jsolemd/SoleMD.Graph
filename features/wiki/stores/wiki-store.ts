@@ -25,7 +25,7 @@ interface WikiState {
   graphLoading: boolean
   graphError: string | null
   globalGraphOpen: boolean
-  tocOpen: boolean
+  browseOpen: boolean
   localGraphPopped: boolean
   modulePopped: boolean
   modulePoppedSlug: string | null
@@ -42,7 +42,7 @@ interface WikiState {
   goForward: () => void
   fetchGraphData: (graphReleaseId: string, opts?: { force?: boolean }) => Promise<void>
   setGlobalGraphOpen: (open: boolean) => void
-  setTocOpen: (open: boolean) => void
+  setBrowseOpen: (open: boolean) => void
   setLocalGraphPopped: (popped: boolean) => void
   setModulePopped: (popped: boolean, slug?: string) => void
   setCurrentPageKind: (kind: WikiPageResponse['page_kind'] | null) => void
@@ -75,7 +75,7 @@ export const useWikiStore = create<WikiState>((set, get) => ({
   graphLoading: false,
   graphError: null,
   globalGraphOpen: false,
-  tocOpen: true,
+  browseOpen: false,
   localGraphPopped: false,
   modulePopped: false,
   modulePoppedSlug: null,
@@ -147,7 +147,7 @@ export const useWikiStore = create<WikiState>((set, get) => ({
   },
 
   setGlobalGraphOpen: (open) => set({ globalGraphOpen: open }),
-  setTocOpen: (open) => set({ tocOpen: open }),
+  setBrowseOpen: (open) => set({ browseOpen: open }),
   setLocalGraphPopped: (popped) => set({ localGraphPopped: popped }),
   setModulePopped: (popped, slug) =>
     set((s) => ({
@@ -182,7 +182,7 @@ export const useWikiStore = create<WikiState>((set, get) => ({
       routeHistory: [GRAPH_HOME],
       historyIndex: 0,
       globalGraphOpen: false,
-      tocOpen: true,
+      browseOpen: false,
       localGraphPopped: false,
       modulePopped: false,
       modulePoppedSlug: null,

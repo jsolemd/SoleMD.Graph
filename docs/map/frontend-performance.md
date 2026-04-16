@@ -47,6 +47,7 @@ DuckDB-Wasm session code, or graph-loading paths must follow them.
 - Treat `base_points`, `base_clusters`, and other interaction-critical graph tables as hot-path assets.
 - Register bundle parquet assets once per DuckDB session under stable logical file names before building canonical views.
 - Materialize `base_points` and `base_clusters` into local DuckDB tables during bootstrap because first paint already depends on them.
+- When the browser supports OPFS, persist the hot bundle cache across full page reloads instead of rebuilding `base_points` / `base_clusters` from parquet on every reload.
 - Prefer local temp/materialized tables for hot-path data that powers repeated faceting, table paging, search, and high-frequency interactions once the interactive path is active.
 - If an interactive-only runtime table is still needed, build it from the local canonical table instead of reading parquet again.
 - Prompt/entity-driven point resolution must prefer targeted browser attachment before hydrating `universe_points.parquet`; only fall back to the bundled universe table for refs that remain unresolved after the targeted attach path.

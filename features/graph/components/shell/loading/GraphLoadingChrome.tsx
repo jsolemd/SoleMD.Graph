@@ -12,20 +12,14 @@ export function GraphLoadingChrome() {
 
   return (
     <>
-      <div
-        className="fixed left-3 top-3 z-[70]"
-        data-graph-control-contrast="1"
-      >
+      <div className="fixed left-3 top-3 z-[70]">
         <BrandWordmarkButton
           accentColor={modeColor}
           onClick={() => togglePanel("about")}
         />
       </div>
 
-      <div
-        className="fixed right-3 top-3 z-[70]"
-        data-graph-control-contrast="1"
-      >
+      <div className="fixed right-3 top-3 z-[70]">
         <ThemeToggle />
       </div>
     </>

@@ -8,6 +8,7 @@ import {
   resizeScene,
 } from "./render-scene"
 import { wireZoom, wireNodeInteractions, updateTweens } from "./interactions"
+import { createPanLatch } from "@/features/graph/lib/pointer-gesture"
 import { resolvePalette, invalidatePalette } from "./theme"
 import { applyLabelVisibility } from "./label-visibility"
 import { getCachedPositions, setCachedPositions } from "./layout-cache"
@@ -107,16 +108,29 @@ export async function mountWikiGraph(
   // Apply initial highlight if present
   applyHighlight(highlightNodeIds)
 
-  // Wire zoom + node interactions
-  wireZoom(scene)
+  // Wire zoom + node interactions. Shared pan latch lets interactions freeze
+  // hover-driven highlights while d3-zoom is actively panning, and lets the
+  // tap handler branch on "was that a pan?" at pointerup — the same contract
+  // Cosmograph uses via `usePanGuard`.
+  const panLatch = createPanLatch()
+  const zoomControl = wireZoom(scene, panLatch)
   const cleanupInteractions = wireNodeInteractions(
     scene,
     simulation,
     intents,
     palette,
+    panLatch,
   )
 
-  // Cache positions when simulation settles
+  /** Autofit the current node extents into the container. The zoom control
+   *  no-ops after the first user pan/zoom — see {@link WikiGraphZoomControl}
+   *  — so this is safe to call opportunistically on simulation settle and on
+   *  every resize commit without clobbering an intentional camera position. */
+  const autoFit = () => zoomControl.fitToExtents(nodes)
+
+  // Cache positions when simulation settles, and autofit once the layout has
+  // a stable extent — initial mount lands at a pleasant framing without the
+  // user reaching for the pan/zoom.
   simulation.on("end", () => {
     const positions = new Map<string, { x: number; y: number }>()
     for (const node of nodes) {
@@ -125,7 +139,15 @@ export async function mountWikiGraph(
       }
     }
     setCachedPositions(signature, positions)
+    autoFit()
   })
+
+  // Cached-positions path skips most of the simulation, so the "end" event
+  // fires later than feels responsive. Kick an autofit after the first rAF
+  // so the cold-cache first paint already lands framed.
+  if (cached) {
+    requestAnimationFrame(autoFit)
+  }
 
   // rAF animation loop (Quartz pattern — needed for tweens to update every frame)
   let destroyed = false
@@ -151,7 +173,10 @@ export async function mountWikiGraph(
   }
   requestAnimationFrame(animate)
 
-  // Resize observer — rAF-throttled to avoid flashing during panel drag
+  // Resize observer — rAF-throttled to avoid flashing during panel drag.
+  // On commit (after RESIZE_SETTLE_MS), refit the viewport so the graph
+  // tracks the panel. The zoom control preserves the current camera once
+  // the user has panned/zoomed, so this never fights an explicit placement.
   let resizeRaf = 0
   const resizeObserver = new ResizeObserver((entries) => {
     cancelAnimationFrame(resizeRaf)
@@ -159,7 +184,7 @@ export async function mountWikiGraph(
       for (const entry of entries) {
         const { width: w, height: h } = entry.contentRect
         if (w > 0 && h > 0) {
-          resizeScene(scene, w, h)
+          resizeScene(scene, w, h, autoFit)
         }
       }
     })

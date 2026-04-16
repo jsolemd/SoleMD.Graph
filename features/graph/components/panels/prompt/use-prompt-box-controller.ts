@@ -2,7 +2,6 @@
 
 import {
   type KeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
   type RefObject,
   useCallback,
   useEffect,
@@ -10,16 +9,16 @@ import {
   useRef,
   useState,
 } from "react";
-import { animate, type MotionValue } from "framer-motion";
+import { type MotionValue } from "framer-motion";
 import { useViewportSize } from "@mantine/hooks";
 import { useGraphInstance } from "@/features/graph/cosmograph";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
+  selectBottomObstacles,
   selectBottomClearance,
 } from "@/features/graph/stores/dashboard-store";
 import { getModeConfig } from "@/features/graph/lib/modes";
 import { MODE_EXAMPLES, pickRandom } from "@/features/graph/lib/mode-examples";
-import { responsive } from "@/lib/motion";
 import type {
   GraphBundle,
   GraphBundleQueries,
@@ -46,15 +45,14 @@ import {
 import { useEntityOverlaySync } from "@/features/graph/components/entities/use-entity-overlay-sync";
 import { densityCssPx } from "@/lib/density";
 import {
-  BOTTOM_BASE,
-  PROMPT_FALLBACK_NORMAL_HEIGHT,
-  VIEWPORT_MARGIN,
   VW_RATIO,
   cardWidth,
 } from "./constants";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { getEntityWikiSlug } from "@/features/wiki/lib/entity-wiki-route";
 import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
+import { resolveMobileBottomStack } from "@/features/graph/components/shell/use-mobile-bottom-stack";
 
 export interface PromptBoxControllerProps {
   bundle: GraphBundle;
@@ -94,18 +92,13 @@ export interface PromptBoxControllerState {
   stepPromptDown: () => void;
   handlePillClick: () => void;
   handlePillKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
-  handleDragStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  handleDragEnd: () => void;
-  handleRecenter: () => void;
   editorRef: RefObject<{ focus: () => void; flush: () => string; getText: () => string } | null>;
   cardRef: RefObject<HTMLDivElement | null>;
-  dragControls: ReturnType<typeof usePromptPosition>["dragControls"];
   dragX: ReturnType<typeof usePromptPosition>["dragX"];
   dragY: ReturnType<typeof usePromptPosition>["dragY"];
   cardHeight: MotionValue<number>;
   heightOverride: boolean;
   isFullHeightMode: boolean;
-  isOffset: boolean;
   normalWidth: string;
 }
 
@@ -113,6 +106,7 @@ export function usePromptBoxController({
   bundle,
   queries,
 }: PromptBoxControllerProps): PromptBoxControllerState {
+  const shellVariant = useShellVariantContext();
   const mode = useGraphStore((s) => s.mode);
   const selectedNode = useGraphStore((s) => s.selectedNode);
   const focusedPointIndex = useGraphStore((s) => s.focusedPointIndex);
@@ -130,9 +124,11 @@ export function usePromptBoxController({
   const activeSelectionSourceId = useDashboardStore((s) => s.activeSelectionSourceId);
   const setActiveSelectionSourceId = useDashboardStore((s) => s.setActiveSelectionSourceId);
   const openPanel = useDashboardStore((s) => s.openPanel);
+  const openOnlyPanel = useDashboardStore((s) => s.openOnlyPanel);
   const setPanelsVisible = useDashboardStore((s) => s.setPanelsVisible);
   const currentPointScopeSql = useDashboardStore((s) => s.currentPointScopeSql);
-  const bottomClearance = useDashboardStore(selectBottomClearance);
+  const bottomObstacles = useDashboardStore(selectBottomObstacles);
+  const desktopBottomClearance = useDashboardStore(selectBottomClearance);
   const activeMode = getModeConfig(mode);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-pick on mode change
   const examples = useMemo(() => [...pickRandom(MODE_EXAMPLES[mode], 2), `${activeMode.label} with the knowledge graph...`], [mode]);
@@ -152,6 +148,9 @@ export function usePromptBoxController({
   const isCollapsed = promptMode === "collapsed";
   const isMaximized = promptMode === "maximized";
   const isCreateMaximized = isCreate && isMaximized;
+  const bottomClearance = shellVariant === "mobile"
+    ? resolveMobileBottomStack(bottomObstacles).bottomClearance
+    : desktopBottomClearance;
   const activePromptValue = isCreate ? writeContent : askPromptValueRef.current;
   const selectionScopeAvailable = isSelectionScopeAvailable({
     hasQueries: Boolean(queries),
@@ -193,10 +192,14 @@ export function usePromptBoxController({
   const handleOpenEntityInWiki = useCallback(
     (entity: GraphEntityRef) => {
       setPanelsVisible(true);
-      openPanel("wiki");
+      if (shellVariant === "mobile") {
+        openOnlyPanel("wiki");
+      } else {
+        openPanel("wiki");
+      }
       useWikiStore.getState().navigateToPage(getEntityWikiSlug(entity));
     },
-    [setPanelsVisible, openPanel],
+    [openOnlyPanel, openPanel, setPanelsVisible, shellVariant],
   );
 
   const {
@@ -234,23 +237,17 @@ export function usePromptBoxController({
     cameraSettledRevision,
     labelText: focusedLabelText,
   });
+  const normalCardWidth = cardWidth(vw);
 
   const {
-    isDragging,
-    userDragX,
-    userDragY,
-    autoTargetXRef,
-    autoTargetYRef,
-    dragControls,
     dragX,
     dragY,
     cardHeight,
     heightOverride,
     isFullHeightMode,
-    isOffset,
-    setIsOffset,
   } = usePromptPosition({
     isCreate,
+    normalCardWidth,
     promptMode,
     panelsVisible,
     bottomClearance,
@@ -300,13 +297,9 @@ export function usePromptBoxController({
   }, [mode, writeContent, clearRag]);
 
   const handlePillClick = useCallback(() => {
-    if (isDragging.current) {
-      return;
-    }
-
     expandPrompt();
     setTimeout(() => editorRef.current?.focus(), 100);
-  }, [expandPrompt, isDragging]);
+  }, [expandPrompt]);
 
   const handlePillKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
@@ -317,74 +310,6 @@ export function usePromptBoxController({
     },
     [handlePillClick],
   );
-
-  const handleDragStart = useCallback(
-    (event: React.PointerEvent) => {
-      if (isFullHeightMode) {
-        return;
-      }
-
-      isDragging.current = true;
-      dragControls.start(event);
-    },
-    [dragControls, isDragging, isFullHeightMode],
-  );
-
-  const handleDragEnd = useCallback(() => {
-    const viewportW = window.innerWidth;
-    const nextVh = window.innerHeight;
-    const el = cardRef.current;
-    const boxW = el ? el.offsetWidth : cardWidth(viewportW);
-    const boxH = el ? el.offsetHeight : PROMPT_FALLBACK_NORMAL_HEIGHT;
-    const curX = dragX.get();
-    const curY = dragY.get();
-    const minX = isCollapsed
-      ? VIEWPORT_MARGIN - viewportW / 2
-      : -(viewportW / 2 - boxW / 2 - VIEWPORT_MARGIN);
-    const maxX = isCollapsed
-      ? viewportW / 2 - boxW - VIEWPORT_MARGIN
-      : viewportW / 2 - boxW / 2 - VIEWPORT_MARGIN;
-    const maxUp = -(nextVh - BOTTOM_BASE - boxH - VIEWPORT_MARGIN);
-    const safeX = Math.max(minX, Math.min(maxX, curX));
-    const safeY = Math.max(maxUp, Math.min(0, curY));
-
-    if (curX !== safeX) {
-      animate(dragX, safeX, responsive);
-    }
-
-    if (curY !== safeY) {
-      animate(dragY, safeY, responsive);
-    }
-
-    userDragX.current = safeX;
-    userDragY.current = safeY;
-    setIsOffset(
-      Math.abs(safeX - autoTargetXRef.current) > 1 ||
-        Math.abs(safeY - autoTargetYRef.current) > 1,
-    );
-    setTimeout(() => {
-      isDragging.current = false;
-    }, 0);
-  }, [
-    autoTargetXRef,
-    autoTargetYRef,
-    cardRef,
-    dragX,
-    dragY,
-    isCollapsed,
-    isDragging,
-    setIsOffset,
-    userDragX,
-    userDragY,
-  ]);
-
-  const handleRecenter = useCallback(() => {
-    animate(dragX, autoTargetXRef.current, responsive);
-    animate(dragY, autoTargetYRef.current, responsive);
-    userDragX.current = 0;
-    userDragY.current = 0;
-    setIsOffset(false);
-  }, [autoTargetXRef, autoTargetYRef, dragX, dragY, setIsOffset, userDragX, userDragY]);
 
   const handlePromptContentChange = useCallback(
     (markdown: string) => {
@@ -443,7 +368,6 @@ export function usePromptBoxController({
     submitRagQuery();
   }, [clearEntityOverlaySelection, submitRagQuery]);
 
-  const normalCardWidth = cardWidth(vw);
   const normalWidth = vw === 0
     ? `min(${densityCssPx(560)}, ${VW_RATIO * 100}vw)`
     : `${normalCardWidth}px`;
@@ -481,18 +405,13 @@ export function usePromptBoxController({
     stepPromptDown,
     handlePillClick,
     handlePillKeyDown,
-    handleDragStart,
-    handleDragEnd,
-    handleRecenter,
     editorRef,
     cardRef,
-    dragControls,
     dragX,
     dragY,
     cardHeight,
     heightOverride,
     isFullHeightMode,
-    isOffset,
     normalWidth,
   };
 }
