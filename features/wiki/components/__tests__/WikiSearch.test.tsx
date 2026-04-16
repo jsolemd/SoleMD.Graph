@@ -21,6 +21,12 @@ jest.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: React.PropsWithChildren) => <>{children}</>,
 }));
 
+jest.mock("@/features/animations/lottie/SearchToggleLottie", () => ({
+  SearchToggleLottie: ({ mode }: { mode: string }) => (
+    <span data-testid={`search-toggle-${mode}`} />
+  ),
+}));
+
 import { WikiSearch } from "../WikiSearch";
 
 function renderSearch(onNavigate = jest.fn()) {

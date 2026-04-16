@@ -82,20 +82,23 @@ export const dblHoverHint = {
  * strength almost instantly — prevents ghosting over the WebGL canvas.
  */
 
-/** Panel scale-reveal — grows from anchor corner, fast opacity (no ghosting). */
+/** Panel reveal — opacity-only fade so panels open at their designated size
+ *  (no scale-from-corner grow). Fast tween prevents ghosting over the WebGL
+ *  canvas. transformOrigin retained for any callers that animate scale via
+ *  other props (e.g. animation templates). */
 export const panelReveal = {
   left: {
-    initial: { scale: 0.92, opacity: 0 },
-    animate: { scale: 1, opacity: 1 },
-    exit: { scale: 0.92, opacity: 0 },
-    transition: { scale: crisp, opacity: { duration: 0.1, ease: "easeOut" as const } },
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { opacity: { duration: 0.1, ease: "easeOut" as const } },
     style: { transformOrigin: "top left" as const },
   },
   right: {
-    initial: { scale: 0.92, opacity: 0 },
-    animate: { scale: 1, opacity: 1 },
-    exit: { scale: 0.92, opacity: 0 },
-    transition: { scale: crisp, opacity: { duration: 0.1, ease: "easeOut" as const } },
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { opacity: { duration: 0.1, ease: "easeOut" as const } },
     style: { transformOrigin: "top right" as const },
   },
 } as const;

@@ -1,15 +1,22 @@
 import type { CSSProperties } from "react";
-import { APP_DENSITY, densityCssPx, densityPx } from "@/lib/density";
+import { densityCssPx, densityPx } from "@/lib/density";
 
 export const PANEL_SCALE_CSS_VAR = "--graph-panel-scale";
-const panelReadingScaleValue = `var(--graph-panel-reading-scale, calc(var(--app-density, ${APP_DENSITY}) * var(${PANEL_SCALE_CSS_VAR}, 1)))`;
+export const PANEL_READING_SCALE_CSS_VAR = "--graph-panel-reading-scale";
 
 export function panelScaledPx(value: number): string {
-  return `calc(${value}px * ${panelReadingScaleValue})`;
+  return `calc(${value}px * var(${PANEL_READING_SCALE_CSS_VAR}, 1))`;
 }
 
+// Sets both --graph-panel-scale and --graph-panel-reading-scale on the panel
+// element. Declaring --graph-panel-reading-scale here (not at :root) forces
+// Chrome to compute the calc against this element's own --app-density and
+// ${scale}, so per-panel scale changes actually flow through to descendants.
 export function createPanelScaleStyle(scale: number): CSSProperties {
-  return { [PANEL_SCALE_CSS_VAR]: String(scale) } as CSSProperties;
+  return {
+    [PANEL_SCALE_CSS_VAR]: String(scale),
+    [PANEL_READING_SCALE_CSS_VAR]: `calc(var(--app-density) * ${scale})`,
+  } as CSSProperties;
 }
 
 const densityBorder = (color: string) => `${densityCssPx(1)} solid ${color}`;

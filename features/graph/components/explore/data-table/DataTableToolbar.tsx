@@ -4,7 +4,7 @@ import { ActionIcon, Group, Pagination, SegmentedControl, Text, Tooltip } from "
 import { Database, Download } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries, MapLayer } from "@/features/graph/types";
-import { panelIconBtnStyles, panelTextDimStyle, PANEL_ACCENT, PanelInlineLoader } from "../../panels/PanelShell";
+import { panelIconBtnStyles, panelScaledPx, panelTextDimStyle, PANEL_ACCENT, PanelInlineLoader } from "../../panels/PanelShell";
 import { formatNumber } from "@/lib/helpers";
 import { useShellVariantContext } from "../../shell/ShellVariantContext";
 
@@ -93,7 +93,7 @@ export function DataTableToolbar({
               gap: 2,
             },
             label: {
-              fontSize: 9,
+              fontSize: panelScaledPx(9),
               lineHeight: 1,
               padding: "3px 6px",
             },
@@ -168,7 +168,7 @@ export function DataTableToolbar({
               color: "var(--graph-panel-text-dim)",
               minWidth: 18,
               height: 18,
-              fontSize: 9,
+              fontSize: panelScaledPx(9),
             },
           }}
         />

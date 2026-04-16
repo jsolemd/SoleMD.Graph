@@ -5,7 +5,6 @@ import {
   Select,
   Stack,
   Text,
-  TextInput,
   UnstyledButton,
 } from "@mantine/core";
 import { getLayerConfig } from "@/features/graph/lib/layers";
@@ -13,6 +12,7 @@ import { useDashboardStore } from "@/features/graph/stores";
 import type { GraphBundleQueries } from "@/features/graph/types";
 import {
   PanelInlineLoader,
+  PanelSearchField,
   panelCardStyle,
   panelSelectStyles,
   panelTextDimStyle,
@@ -64,6 +64,13 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
     setField(fieldOptions[0]?.value ?? "clusterLabel");
   }, [field, fieldOptions]);
 
+  const handleSearchAction = () => {
+    clearVisibilityFocus();
+    if (query.trim().length > 0) {
+      setQuery("");
+    }
+  };
+
   return (
     <div style={{ overflow: "clip" }}>
       <Text fw={600} mb={4} style={sectionLabelStyle}>
@@ -85,20 +92,26 @@ export function SearchSection({ queries }: { queries: GraphBundleQueries }) {
           styles={panelSelectStyles}
         />
 
-        <TextInput
-          size="xs"
+        <PanelSearchField
           value={query}
-          disabled={isSelectionLocked}
+          onValueChange={(value) => {
+            clearVisibilityFocus();
+            setQuery(value);
+          }}
           placeholder={
             isSelectionLocked
               ? "Unlock selection to search-select..."
               : "Search points, papers, or clusters..."
           }
-          onChange={(event) => {
-            clearVisibilityFocus();
-            setQuery(event.currentTarget.value);
-          }}
+          ariaLabel="Search graph points, papers, or clusters"
+          actionLabel={
+            query.trim().length > 0 ? "Clear search" : "Focus search"
+          }
+          actionMode={query.trim().length > 0 ? "close" : "search"}
+          onAction={handleSearchAction}
+          disabled={isSelectionLocked}
           styles={{ input: panelSelectStyles.input }}
+          inputActionSize={16}
         />
 
         {canSearch && loading ? (

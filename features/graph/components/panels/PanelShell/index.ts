@@ -7,6 +7,7 @@ export {
   PANEL_BODY_INNER_CLASS,
   PANEL_BODY_VIEWPORT_CLASS,
 } from "./panel-primitives";
+export { PanelSearchField } from "./PanelSearchField";
 export {
   PanelHeaderActions,
   PanelHeaderDivider,

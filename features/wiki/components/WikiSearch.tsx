@@ -1,11 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { TextInput } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
-import { Search, X } from "lucide-react";
 import {
-  PanelIconAction,
+  PanelSearchField,
   panelSelectStyles,
   panelTextStyle,
   panelTextMutedStyle,
@@ -45,7 +43,6 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
   const [hits, setHits] = useState<WikiSearchHitResponse[]>([]);
   const [searching, setSearching] = useState(false);
   const requestIdRef = useRef(0);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const isAbortError = useCallback(
     (error: unknown) => error instanceof Error && error.name === "AbortError",
@@ -86,9 +83,7 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
 
   const handleToggle = useCallback(() => {
     setOpen((prev) => {
-      if (!prev) {
-        setTimeout(() => inputRef.current?.focus(), 50);
-      } else {
+      if (prev) {
         setQuery("");
         setHits([]);
       }
@@ -116,39 +111,23 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
     [handleToggle],
   );
 
-  if (!open) {
-    return (
-      <PanelIconAction
-        label="Search wiki"
-        icon={<Search size={12} />}
-        onClick={handleToggle}
-        aria-label="Search wiki"
-      />
-    );
-  }
-
   return (
     <div className="relative">
-      <TextInput
-        ref={inputRef}
+      <PanelSearchField
+        open={open}
+        collapsible
         value={query}
-        onChange={(e) => setQuery(e.currentTarget.value)}
+        onValueChange={setQuery}
         onKeyDown={handleKeyDown}
         placeholder="Search..."
-        size="xs"
+        ariaLabel="Search wiki pages"
+        actionLabel={open ? "Close search" : "Search wiki"}
+        actionMode={open ? "close" : "search"}
+        onAction={handleToggle}
         styles={panelSelectStyles}
-        rightSection={
-          <PanelIconAction
-            label="Close search"
-            icon={<X size={10} />}
-            onClick={handleToggle}
-            size={16}
-            tooltipDisabled
-            aria-label="Close search"
-          />
-        }
-        style={{ width: 160 }}
-        aria-label="Search wiki pages"
+        width={160}
+        collapsedActionSize={24}
+        inputActionSize={16}
       />
       {hits.length > 0 && (
         <div

@@ -444,8 +444,12 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
         // and the active highlight apply to the extended area.
         const extendsTop = isFirst && hasTopExtension;
         const extendsBottom = isLast && hasBottomExtension;
-        const topOffset = extendsTop ? -headerGap : 0;
-        const bottomOffset = extendsBottom ? -footerGap : 0;
+        // Cap the extension to the rounded-corner depth. Without this cap the
+        // first/last buttons reach all the way to the panel top/bottom at
+        // right:0 and cover the header pin/close icons (same z-stack), eating
+        // their clicks. The rail only needs to visually meet the corner.
+        const topOffset = extendsTop ? -Math.min(headerGap, panelRadius) : 0;
+        const bottomOffset = extendsBottom ? -Math.min(footerGap, panelRadius) : 0;
         const topLeftRadius = isFirst && !extendsTop ? capRadius : tailRadius;
         const topRightRadius = extendsTop
           ? panelRadius

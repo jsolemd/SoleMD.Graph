@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Home, LayoutList, List, Maximize2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, Home, LayoutList, Maximize2 } from "lucide-react";
 import { WIKI_PANEL_PX } from "@/lib/density";
 import {
   PANEL_TOP,
@@ -64,8 +64,6 @@ export function WikiNavigation() {
 export function WikiContextActions() {
   const currentRoute = useWikiStore((s) => s.currentRoute);
   const setGlobalGraphOpen = useWikiStore((s) => s.setGlobalGraphOpen);
-  const tocOpen = useWikiStore((s) => s.tocOpen);
-  const setTocOpen = useWikiStore((s) => s.setTocOpen);
   const localGraphPopped = useWikiStore((s) => s.localGraphPopped);
   const setLocalGraphPopped = useWikiStore((s) => s.setLocalGraphPopped);
   const modulePopped = useWikiStore((s) => s.modulePopped);
@@ -166,15 +164,6 @@ export function WikiContextActions() {
 
   return (
     <PanelHeaderActions gap="tight">
-      {isOnPage && (
-        <PanelIconAction
-          label="Table of Contents"
-          icon={<List size={12} />}
-          onClick={() => setTocOpen(!tocOpen)}
-          aria-label="Table of Contents"
-          aria-pressed={tocOpen}
-        />
-      )}
       {isOnPage && (
         <PanelIconAction
           label={localGraphPopped ? "Dock graph" : "Pop out graph"}

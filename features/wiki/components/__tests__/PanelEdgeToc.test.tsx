@@ -66,7 +66,18 @@ function Harness() {
 
   return (
     <MantineProvider>
-      <div data-panel-shell="desktop" data-testid="panel-shell">
+      <div
+        data-panel-shell="desktop"
+        data-testid="panel-shell"
+        style={{
+          // PanelEdgeToc reads borderTopRightRadius/borderBottomRightRadius
+          // via getComputedStyle to cap the first/last segment's extension.
+          // Real panels render with ~12–16px radius; using a concrete value
+          // here exercises the cap rather than leaving it at 0.
+          borderTopRightRadius: "16px",
+          borderBottomRightRadius: "16px",
+        }}
+      >
         <div ref={anchorRef} data-testid="anchor-container" />
         <div ref={scrollRef} data-testid="scroll-container">
           {entries.map((entry) => (
@@ -274,21 +285,23 @@ describe("PanelEdgeToc", () => {
     });
   });
 
-  it("stretches the first segment's wrapper into the panel header gap so the rail reaches the panel corner", async () => {
+  it("stretches the first segment only into the panel's rounded corner, not across the header", async () => {
     render(<Harness />);
 
     const scrollContainer = screen.getByTestId("scroll-container");
     Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 400 });
     Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 1200 });
 
-    // Panel top = 0, anchorTop = 20 → headerGap = 20px. The first segment's
-    // inner wrapper should pull up by -20px to cover that gap so the rail
-    // reads as continuous with the panel's rounded top-right corner.
+    // Panel top = 0, anchorTop = 20 → headerGap = 20px. Panel radius = 16px.
+    // The first segment's wrapper extends up by the capped amount — the
+    // rounded-corner depth (16px), not the full headerGap (20px). The cap
+    // keeps the segment out of the header zone where pin/close sit; without
+    // it the segment would overlay those icons at right:0 and eat clicks.
     await waitFor(() => {
       const firstButton = getSegmentButton("Intro");
       const wrapper = firstButton.querySelector<HTMLSpanElement>(":scope > span");
       expect(wrapper).not.toBeNull();
-      expect(wrapper).toHaveStyle({ top: "-20px" });
+      expect(wrapper).toHaveStyle({ top: "-16px" });
     });
 
     // A middle segment never extends — its wrapper stays at top: 0.
@@ -296,7 +309,7 @@ describe("PanelEdgeToc", () => {
     expect(middleWrapper).toHaveStyle({ top: "0px" });
   });
 
-  it("stretches the last segment's wrapper into the panel footer gap", async () => {
+  it("stretches the last segment only into the panel's rounded corner, not across the footer", async () => {
     render(<Harness />);
 
     const scrollContainer = screen.getByTestId("scroll-container");
@@ -304,11 +317,13 @@ describe("PanelEdgeToc", () => {
     Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 1200 });
 
     // Panel height = 500, anchorTop = 20, anchorHeight = 320 → footerGap = 160.
+    // Panel radius = 16; the extension caps at -16px so the rail terminates
+    // at the rounded corner instead of covering the full footer gap.
     await waitFor(() => {
       const lastButton = getSegmentButton("Pink");
       const wrapper = lastButton.querySelector<HTMLSpanElement>(":scope > span");
       expect(wrapper).not.toBeNull();
-      expect(wrapper).toHaveStyle({ bottom: "-160px" });
+      expect(wrapper).toHaveStyle({ bottom: "-16px" });
     });
   });
 

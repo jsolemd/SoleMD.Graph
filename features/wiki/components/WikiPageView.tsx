@@ -12,8 +12,8 @@ import { WikiBacklinks } from "@/features/wiki/components/WikiBacklinks";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiMarkdownRenderer } from "@/features/wiki/components/WikiMarkdownRenderer";
 import { WikiModuleContent, getWikiModule } from "@/features/wiki/components/WikiModuleContent";
-import { DotToc, entriesFromModuleSections, entriesFromHeadings } from "@/features/wiki/components/DotToc";
-import type { DotTocEntry } from "@/features/wiki/components/DotToc";
+import { PanelEdgeToc, entriesFromModuleSections, entriesFromHeadings } from "@/features/wiki/components/PanelEdgeToc";
+import type { PanelEdgeTocEntry } from "@/features/wiki/components/PanelEdgeToc";
 import { WikiPageHeader, WikiTopGraphPapers } from "@/features/wiki/components/WikiPageHeader";
 import { EntityVisualCard } from "@/features/wiki/components/entity-profiles";
 import { EntityRAGCard } from "@/features/wiki/components/EntityRAGCard";
@@ -78,7 +78,7 @@ export function WikiPageView({
     return sections ? entriesFromModuleSections(sections) : undefined;
   }, [isModulePage, slug]);
 
-  const [headingEntries, setHeadingEntries] = useState<DotTocEntry[]>([]);
+  const [headingEntries, setHeadingEntries] = useState<PanelEdgeTocEntry[]>([]);
 
   // Scan headings from the markdown body only. The TOC should not depend on
   // unrelated widgets that mount later inside the scroll container.
@@ -229,7 +229,7 @@ export function WikiPageView({
       </div>
 
       {dotEntries && (
-        <DotToc entries={dotEntries} scrollRef={scrollRef} anchorRef={tocAnchorRef} />
+        <PanelEdgeToc entries={dotEntries} scrollRef={scrollRef} anchorRef={tocAnchorRef} />
       )}
     </div>
   );

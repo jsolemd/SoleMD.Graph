@@ -48,7 +48,7 @@ These numbers matter because the repo currently has two truths at once:
 
 | Artifact | What it says now | Why it matters |
 |------|-------------------|----------------|
-| [`.tmp/rag-runtime-eval-current-all-families-v30-recheck.json`](/home/workbench/SoleMD/SoleMD.Graph/.tmp/rag-runtime-eval-current-all-families-v30-recheck.json) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The broad current-release runtime floor remains fast, grounded, and operationally healthy. |
+| `rag-runtime-eval-current-all-families-v30-recheck.json` (ephemeral local artifact) | `96` sampled papers / `288` cases, `hit@1=1.0`, `grounded_answer_rate=1.0`, `target_in_grounded_answer_rate=1.0`, `p95_service_duration_ms=83.229`, `p99_service_duration_ms=99.443` | The broad current-release runtime floor remains fast, grounded, and operationally healthy. |
 | `canonicalization-v1-2026-04-10` Langfuse benchmark run | `16` suites / `672` cases completed; only suite-gate failure was `biomedical_evidence_type_v1` latency (`p95_duration_ms = 294.319 > 250`) | The serving path is stable enough to benchmark end to end, and the remaining work is now a retrieval-quality problem rather than an evaluation-blindness problem. |
 
 Current benchmark posture (selected suites):

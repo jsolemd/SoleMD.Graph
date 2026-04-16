@@ -1,11 +1,14 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect } from "react";
+import { type ReactNode, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { APP_CHROME_PX, DEFAULT_PANEL_WIDTH_PX, densityCssPx } from "@/lib/density";
-import { panelReveal } from "@/lib/motion";
+import { panelReveal, smooth } from "@/lib/motion";
 import { useDashboardStore } from "@/features/graph/stores";
-import { selectPanelLeftOffset, selectBottomClearance } from "@/features/graph/stores/dashboard-store";
+import {
+  selectBottomClearance,
+  selectDockedBottomClearance,
+} from "@/features/graph/stores/dashboard-store";
 import {
   PANEL_SCALE_DEFAULT,
   PANEL_SCALE_MAX,
@@ -13,7 +16,7 @@ import {
   PANEL_SCALE_STEP,
 } from "@/features/graph/stores/slices/panel-slice";
 import { PanelChrome } from "../PanelChrome";
-import { useFloatingPanel } from "../use-floating-panel";
+import { useFloatingPanel, useResolvedViewport } from "../use-floating-panel";
 import { createPanelScaleStyle, panelSurfaceStyle } from "./panel-styles";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 
@@ -71,8 +74,20 @@ export function PanelShell({
 }: PanelShellProps) {
   const shellVariant = useShellVariantContext();
   const isMobile = shellVariant === "mobile";
-  // Bottom clearance so docked panels don't overlap bottom toolbar/timeline/table
-  const bottomClearance = useDashboardStore(selectBottomClearance);
+  // Docked-by-default panels (not yet dragged, not pinned) clamp their height
+  // so their bottom edge stops above the prompt. Pinned / undocked panels use
+  // only the base toolbar/timeline/table clearance so explicit user placement
+  // isn't overridden.
+  const savedPosition = useDashboardStore((s) => s.panelPositions[id]);
+  const isPinnedSeed = savedPosition?.pinned ?? false;
+  const isDockedSeed = savedPosition ? savedPosition.docked : true;
+  const useDockedClearance = isDockedSeed && !isPinnedSeed;
+  const { height: viewportHeight } = useResolvedViewport();
+  const bottomClearance = useDashboardStore((s) =>
+    useDockedClearance
+      ? selectDockedBottomClearance(s, viewportHeight)
+      : selectBottomClearance(s),
+  );
 
   const {
     panelRef,
@@ -81,8 +96,10 @@ export function PanelShell({
     dragY,
     width,
     height,
+    leftOffset,
     isDocked,
     isPinned,
+    dragConstraints,
     onTitlePointerDown,
     onTitleDoubleClick,
     onDragEnd,
@@ -127,8 +144,8 @@ export function PanelShell({
   const canIncreaseScale = panelScale < PANEL_SCALE_MAX;
 
   const handleTogglePin = useCallback(() => {
-    togglePanelPinned(id);
-  }, [id, togglePanelPinned]);
+    togglePanelPinned(id, leftOffset);
+  }, [id, togglePanelPinned, leftOffset]);
 
   const handleDecreaseScale = useCallback(() => {
     stepPanelScale(id, -PANEL_SCALE_STEP);
@@ -189,9 +206,6 @@ export function PanelShell({
     element.focus({ preventScroll: true });
   }, [panelRef]);
 
-  // Auto-stacking offset from panels docked before this one
-  const leftOffset = useDashboardStore((state) => selectPanelLeftOffset(state, id));
-
   // Report panelBottomY when docked so the prompt position system knows the panel's height.
   const setPanelBottomY = useDashboardStore((state) => state.setPanelBottomY);
   useEffect(() => {
@@ -226,6 +240,19 @@ export function PanelShell({
   }, [isDocked, isMobile, panelRef, setPanelBottomY, side]);
 
   const reveal = panelReveal[side];
+
+  // Handle-drag produces pixel-by-pixel deltas; route flips produce sudden
+  // jumps. Above the threshold we skip the smooth tween so route-driven
+  // resizes snap rather than slide — the user never sees a width pulse on
+  // navigation, and interactive resizes still feel fluid. These hooks live
+  // above the mobile early-return so the Rules of Hooks order is stable.
+  const WIDTH_SNAP_THRESHOLD = 80;
+  const prevWidthRef = useRef(width);
+  const widthDelta = Math.abs(width - prevWidthRef.current);
+  const widthTransition = widthDelta > WIDTH_SNAP_THRESHOLD ? { duration: 0 } : smooth;
+  useEffect(() => {
+    prevWidthRef.current = width;
+  }, [width]);
 
   if (isMobile) {
     return (
@@ -278,20 +305,29 @@ export function PanelShell({
     );
   }
 
+  const animatedLayout = side === "left"
+    ? { width, left: APP_CHROME_PX.edgeMargin + leftOffset }
+    : { width };
+
   return (
     <motion.div
       ref={panelRef}
       data-panel-id={id}
       data-panel-shell="desktop"
-      initial={reveal.initial}
-      animate={reveal.animate}
+      initial={{ ...reveal.initial, ...animatedLayout }}
+      animate={{ ...reveal.animate, ...animatedLayout }}
       exit={reveal.exit}
-      transition={reveal.transition}
+      transition={{
+        ...reveal.transition,
+        width: widthTransition,
+        ...(side === "left" ? { left: smooth } : {}),
+      }}
       drag
       dragControls={dragControls}
       dragListener={false}
       dragMomentum={false}
       dragElastic={0}
+      dragConstraints={dragConstraints}
       tabIndex={0}
       onDragEnd={onDragEnd}
       onKeyDownCapture={handlePanelKeyDownCapture}
@@ -302,15 +338,17 @@ export function PanelShell({
         x: dragX,
         y: dragY,
         top: PANEL_TOP,
-        ...(side === "left"
-          ? { left: APP_CHROME_PX.edgeMargin + leftOffset }
-          : { right: APP_CHROME_PX.edgeMargin }),
-        width,
+        ...(side === "right" ? { right: APP_CHROME_PX.edgeMargin } : {}),
         height: height ?? undefined,
-        maxHeight: height
-          ? undefined
-          : isDocked
-            ? `calc(100vh - ${PANEL_TOP + bottomClearance + APP_CHROME_PX.edgeMargin}px)`
+        // Docked panels always apply a maxHeight so a large defaultHeight
+        // (e.g. wiki page) can't push the bottom edge past the prompt. For
+        // docked+unpinned the clearance includes prompt space; pinned panels
+        // get the base clearance so the user's explicit resize still fits.
+        // Floating panels only apply a max when no explicit height is set.
+        maxHeight: isDocked
+          ? `calc(100vh - ${PANEL_TOP + bottomClearance + APP_CHROME_PX.edgeMargin}px)`
+          : height
+            ? undefined
             : `calc(100vh - ${PANEL_TOP + APP_CHROME_PX.floatingViewportInset}px)`,
         ...panelSurfaceStyle,
       }}

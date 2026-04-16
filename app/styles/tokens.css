@@ -25,7 +25,7 @@
   --color-semantic-paper: #d4c5a0;
   --color-semantic-module: #7ecfb0;
 
-  /* Extended pastels — DotToc rainbow cycle beyond the 8 brand accents */
+  /* Extended pastels — PanelEdgeToc rainbow cycle beyond the 8 brand accents */
   --color-seafoam: #8ed4c6;
   --color-amber: #f5c26b;
   --color-sky: #7ec8e3;
@@ -89,7 +89,6 @@
     0 calc(2px * var(--app-density)) calc(10px * var(--app-density)) rgba(0, 0, 0, 0.05),
     0 calc(10px * var(--app-density)) calc(24px * var(--app-density)) rgba(0, 0, 0, 0.04);
   --graph-panel-scale: 1;
-  --graph-panel-reading-scale: calc(var(--app-density) * var(--graph-panel-scale));
 
   /* ── Wiki graph (Pixi canvas — semantic-group node colors, see docs/map/wiki-taxonomy.md) ── */
   --wiki-graph-node-diso: var(--color-semantic-disorder);
@@ -316,7 +315,6 @@ html:root {
     0 calc(6px * var(--app-density)) calc(18px * var(--app-density)) rgba(0, 0, 0, 0.3),
     0 calc(16px * var(--app-density)) calc(34px * var(--app-density)) rgba(0, 0, 0, 0.24);
   --graph-panel-scale: 1;
-  --graph-panel-reading-scale: calc(var(--app-density) * var(--graph-panel-scale));
 
   /* ── Wiki graph (dark mode — semantic palette overrides above feed these vars) ── */
   --wiki-graph-node-diso: var(--color-semantic-disorder);

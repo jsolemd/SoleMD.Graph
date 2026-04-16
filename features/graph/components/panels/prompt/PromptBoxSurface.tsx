@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   ArrowUp,
@@ -19,6 +19,7 @@ import {
 import { promptSurfaceStyle } from "../PanelShell";
 import type { PromptBoxControllerState } from "./use-prompt-box-controller";
 import { densityCssClamp, densityCssSpace, densityPx } from "@/lib/density";
+import { useDashboardStore } from "@/features/graph/stores";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 import { useMobileBottomStack } from "@/features/graph/components/shell/use-mobile-bottom-stack";
 
@@ -68,6 +69,32 @@ export function PromptBoxSurface({
   const isMobile = shellVariant === "mobile";
   const { promptBottom } = useMobileBottomStack();
   const mobileBottomInset = `calc(env(safe-area-inset-bottom, 0px) + ${promptBottom}px)`;
+  const setPromptTopY = useDashboardStore((s) => s.setPromptTopY);
+
+  // Publish the prompt card's top Y to the store so docked, unpinned panels
+  // can clamp their height against it. Mobile shells ignore docked panel
+  // geometry (panels render as full-screen sheets), so we skip reporting
+  // there to avoid incidental clamps on desktop state.
+  useEffect(() => {
+    if (isMobile) {
+      setPromptTopY(0);
+      return;
+    }
+    const el = cardRef.current;
+    if (!el) return;
+    const report = () => {
+      setPromptTopY(el.getBoundingClientRect().top);
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    window.addEventListener("resize", report);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", report);
+      setPromptTopY(0);
+    };
+  }, [cardRef, isMobile, setPromptTopY]);
 
   return (
     <div

@@ -7,7 +7,7 @@
     - NetworkProfile → 3+1 pages (component entities grouped by type)
 - wiki pipeline optimization so that it's actually leveraging all the metadata and RAG content from all the papers. 
 2. RAG
-    - full overhaul - agentic RAG + deterministic improval @rag-handoff.md
+    - full overhaul - agentic RAG + deterministic improval @rag-future.md
         1. Add dense child ANN retrieval.
             - lexical child retrieval stays
             - dense child retrieval is added in parallel

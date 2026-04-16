@@ -3,27 +3,27 @@ set -euo pipefail
 
 ENGINE_DIR=/workspaces/SoleMD.Graph/engine
 
-# RAPIDS base installs CUDA headers/libraries under the conda target tree.
-# CuPy's runtime JIT needs CUDA_PATH/CUDA_HOME to point there so it can resolve
-# headers like cuda_fp16.h during GPU kernels.
-export CUDA_PATH=${CUDA_PATH:-/opt/conda/targets/x86_64-linux}
-export CUDA_HOME=${CUDA_HOME:-/opt/conda/targets/x86_64-linux}
+# CUDA toolkit lives under /usr/local/cuda (devel base ships it there).
+# CuPy's runtime JIT and pip-installed RAPIDS resolve headers via these.
+export CUDA_PATH=${CUDA_PATH:-/usr/local/cuda}
+export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
 
 # Auto-provision on first run, then sync on every start so the persisted
-# venv cannot drift away from the lockfile or required extras.
+# .venv never drifts from the lockfile or required extras.
+# --system-site-packages inherits RAPIDS (cuml/cugraph/cupy) from /opt/venv
+# without re-downloading their multi-GB wheels into the .venv volume.
 if [ -d "$ENGINE_DIR" ]; then
     cd "$ENGINE_DIR"
 
     if [ ! -f "$ENGINE_DIR/.venv/pyvenv.cfg" ]; then
         echo "==> Provisioning engine environment (first run)..."
-        uv venv --system-site-packages
+        uv venv --python 3.13 --system-site-packages
     fi
 
     echo "==> Syncing engine environment..."
     uv sync --frozen --extra graph --extra ml
 
-    # Verify the runtime surfaces that the graph container is expected to serve.
-    # Single invocation avoids 4x Python interpreter startup overhead.
+    # Verify GPU/RAPIDS surfaces. Single interpreter invocation.
     uv run python -c "
 import cuml; print('  cuml OK')
 import cugraph; print('  cugraph OK')

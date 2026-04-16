@@ -87,6 +87,7 @@ services:
     build:
       context: ..
       dockerfile: docker/graph/Dockerfile
+    image: solemd-graph/graph:cu13-slim
     container_name: solemd-graph-graph
     profiles: ["gpu"]
     shm_size: 1g
@@ -107,7 +108,7 @@ services:
     environment:
       DATABASE_URL: postgresql://solemd:solemd_local@db:5432/solemd_graph
       REDIS_URL: redis://:local_dev@redis:6379/0
-      LANGFUSE_BASE_URL: http://host.docker.internal:3100
+      LANGFUSE_BASE_URL: http://127.0.0.1:3100
       GRAPH_LAYOUT_BACKEND: gpu
       GRAPH_CLUSTER_BACKEND: gpu
       GRAPH_DIR: /mnt/solemd-graph
@@ -119,7 +120,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_HOST: http://host.docker.internal:3100
+      LANGFUSE_HOST: http://127.0.0.1:3100
       LANGFUSE_TRACING_ENVIRONMENT: development
       UMLS_API_KEY: ${UMLS_API_KEY:-}
     depends_on:

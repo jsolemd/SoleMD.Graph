@@ -122,7 +122,7 @@ export const PANEL_DOCK_WIDTH_BASE_PX = {
   filters: 300,
   info: 320,
   query: 420,
-  wiki: 680,
+  wiki: 820,
 } as const;
 
 export const PANEL_DOCK_WIDTH_PX = {
@@ -134,12 +134,37 @@ export const PANEL_DOCK_WIDTH_PX = {
   wiki: densityPx(PANEL_DOCK_WIDTH_BASE_PX.wiki),
 } as const;
 
-/** Wiki-specific floating and expanded panel geometry. */
+/** Elastic dock minimum widths — floor each panel shrinks to before the
+ *  overflow fallback (right-align rightmost, allow overlap) kicks in. */
+export const PANEL_DOCK_MIN_BASE_PX = {
+  about: 240,
+  config: 240,
+  filters: 260,
+  info: 260,
+  query: 320,
+  wiki: 360,
+} as const;
+
+export const PANEL_DOCK_MIN_PX = {
+  about: densityPx(PANEL_DOCK_MIN_BASE_PX.about),
+  config: densityPx(PANEL_DOCK_MIN_BASE_PX.config),
+  filters: densityPx(PANEL_DOCK_MIN_BASE_PX.filters),
+  info: densityPx(PANEL_DOCK_MIN_BASE_PX.info),
+  query: densityPx(PANEL_DOCK_MIN_BASE_PX.query),
+  wiki: densityPx(PANEL_DOCK_MIN_BASE_PX.wiki),
+} as const;
+
+/** Wiki-specific floating and expanded panel geometry.
+ *  `baseWidth` is the single square-side constant used by
+ *  `resolveWikiPanelGeometry` for both graph home and wiki-page widths —
+ *  keeps width invariant across graph ↔ page navigation.
+ *  `routeGraphWidthMax` is kept as a legacy alias for existing tests. */
 export const WIKI_PANEL_BASE_PX = {
   maxWidth: 1200,
   expandedWidthMax: 1080,
+  baseWidth: 820,
   routeGraphWidthMax: 820,
-  routeGraphHeight: 720,
+  routeGraphHeight: 820,
   routeGraphMinHeight: 520,
   routeGraphMaxHeight: 960,
   contentMinHeight: 400,
@@ -152,6 +177,7 @@ export const WIKI_PANEL_BASE_PX = {
 export const WIKI_PANEL_PX = {
   maxWidth: densityPx(WIKI_PANEL_BASE_PX.maxWidth),
   expandedWidthMax: densityPx(WIKI_PANEL_BASE_PX.expandedWidthMax),
+  baseWidth: densityPx(WIKI_PANEL_BASE_PX.baseWidth),
   routeGraphWidthMax: densityPx(WIKI_PANEL_BASE_PX.routeGraphWidthMax),
   routeGraphHeight: densityPx(WIKI_PANEL_BASE_PX.routeGraphHeight),
   routeGraphMinHeight: densityPx(WIKI_PANEL_BASE_PX.routeGraphMinHeight),
