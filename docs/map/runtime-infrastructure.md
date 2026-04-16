@@ -4,9 +4,14 @@
 
 This document describes the runtime substrate that all SoleMD projects run on:
 the Docker engine, GPU passthrough mechanism, storage layout, and boot flow.
-Anything running in a container — SoleMD.Graph db + redis + graph, SoleMD.Infra
-Langfuse / codeatlas / qdrant / neo4j / TEI / chrome-devtools-mcp / etc. —
-shares this substrate.
+Anything running in a container — SoleMD.Graph db + opensearch + redis + worker,
+SoleMD.Infra Langfuse / codeatlas / qdrant / neo4j / TEI / chrome-devtools-mcp /
+etc. — shares this substrate.
+
+For RAG data-plane ownership (canonical PostgreSQL + OpenSearch serving +
+object-storage archive), see [rag-future.md](./rag-future.md) — the single
+source of truth. This doc covers the physical substrate; rag-future.md covers
+which plane owns what.
 
 ---
 
@@ -29,7 +34,6 @@ NVIDIA-Workbench WSL2 distro**. There is no Docker Desktop. There is no
 
 ```jsonc
 {
-  "data-root": "/mnt/solemd-graph/docker",
   "features": { "cdi": true },
   "cdi-spec-dirs": ["/etc/cdi"],
   "log-driver": "json-file",
@@ -38,9 +42,14 @@ NVIDIA-Workbench WSL2 distro**. There is no Docker Desktop. There is no
 }
 ```
 
-- `data-root` puts every image layer and named volume on the 1 TB `/mnt/solemd-graph` VHDX, keeping C: free.
+- **No `data-root`** — dockerd uses default `/var/lib/docker` on the
+  NVIDIA-Workbench rootfs (SSD-backed serving FS). Image layers, rootfs,
+  named volumes, and BuildKit cache live there. This is the **serving FS**.
 - `features.cdi: true` + `cdi-spec-dirs: ["/etc/cdi"]` enables Container Device Interface for GPU access.
 - Log rotation caps per-container logs at 30 MB.
+- Warehouse-class state (PG data, raw corpus, bundles, model weights) lives
+  on the E-backed ext4 VHDX at `/mnt/solemd-graph/` — bind-mounted, not in
+  `/var/lib/docker/`. See [Storage layout](#storage-layout).
 
 ### Why not Docker Desktop
 
@@ -84,20 +93,49 @@ Expected: full RTX 5090 nvidia-smi output, including driver + CUDA version.
 
 ## Storage layout
 
-Single large VHDX, attached bare, ext4-formatted, automounted.
+Two-filesystem split: **serving** (hot / regeneratable / fast) on the
+NVIDIA-Workbench rootfs, **warehouse** (cold / bulk / irreplaceable) on the
+E-backed ext4 VHDX. This mirrors the rag-future.md three-plane model: serving
+FS carries the OpenSearch plane + runtime caches; warehouse FS carries the PG
+canon + raw corpus + future archives.
 
-| Path | Purpose |
+### Serving FS — NVIDIA-Workbench rootfs (SSD)
+
+Root of the WSL2 distro; dockerd's default `/var/lib/docker/`.
+
+| Contents | Notes |
 |---|---|
-| `/mnt/solemd-graph/docker/` | Docker data-root (images, container rootfs, volumes) |
-| `/mnt/solemd-graph/data/` | Pre-existing app data (pubtator, semantic-scholar, etc.) |
-| `/mnt/solemd-graph/tei-models/` | Locally-cached HuggingFace models mounted into TEI read-only |
-| `/mnt/solemd-graph/migration/` | Reserved for point-in-time db dumps, volume tars, etc. |
-| `/mnt/solemd-graph/isocache/` | ISO image cache |
+| Image layers | all `docker images` blobs |
+| Container rootfs | ephemeral overlay2 layers |
+| Named volumes | `opensearch_data`, `worker-venv`, `langfuse_{pg,clickhouse,minio,redis}_data`, `db_backups`, `storage_backups`, etc. |
+| BuildKit cache | cached build-step intermediate layers |
+| TEI HF cache | runtime-regeneratable HF download cache |
+
+Regenerate-if-lost policy: everything here can be rebuilt from code + compose.
+
+### Warehouse FS — `/mnt/solemd-graph/` (E:\wsl2-solemd-graph.vhdx)
+
+Single VHDX, attached bare via `wsl --mount --vhd`, ext4-formatted, automounted.
+
+| Path | Purpose | Size |
+|---|---|---|
+| `/mnt/solemd-graph/data/` | Raw corpus: pubtator, semantic-scholar | ~870 GB |
+| `/mnt/solemd-graph/bundles/` | Published graph bundles | ~19 GB |
+| `/mnt/solemd-graph/tmp/` | Bundle build scratch | ~3 GB |
+| `/mnt/solemd-graph/pg-data/` | PostgreSQL data root (bind-mounted into graph-db) | — (empty until DB rebuild) |
+| `/mnt/solemd-graph/archives/` | Future pg_dumps, exports, durable backup snapshots | — (empty) |
+| `/mnt/solemd-graph/tei-models/` | Pinned embedding-model weights (RO-bound into TEI) | ~1.8 GB |
+
+Never bind `/mnt/solemd-graph/docker/` (abandoned — previously dockerd
+data-root, now removed).
+
+Don't host running services on `/mnt/e/` or `/mnt/c/` drvfs — too slow and
+out-of-spec per rag-future.md.
 
 ### VHDX
 
 - Filename: `E:\wsl2-solemd-graph.vhdx`
-- Size: ~1 TB
+- Size: 2 TB logical (dynamic; grew from 1 TB on 2026-04-15 to accommodate PG warehouse)
 - Filesystem: ext4
 - Label: `solemd-graph` (required by fstab automount)
 - UUID: `debfd955-bba4-4623-b1cf-60764a41c350`
@@ -123,7 +161,7 @@ The chain that takes the Windows host from cold boot to "containers running":
    - `wsl.exe -d NVIDIA-Workbench -- true` — boots the NVIDIA-Workbench distro.
 3. **NVIDIA-Workbench starts systemd.**
 4. **systemd automounts `/mnt/solemd-graph`** via the fstab `x-systemd.automount` unit.
-5. **systemd starts `docker.service`.** dockerd reads `/etc/docker/daemon.json`, initializes the data-root at `/mnt/solemd-graph/docker`, loads CDI specs.
+5. **systemd starts `docker.service`.** dockerd reads `/etc/docker/daemon.json`, initializes its default data-root at `/var/lib/docker` (on NVIDIA-Workbench rootfs = serving FS), and loads CDI specs.
 6. **Containers with `restart: unless-stopped`** come back up on their own.
 
 No step in this chain requires a user to open a terminal or click Docker Desktop.
@@ -138,17 +176,20 @@ NVIDIA-Workbench. All external networks and volumes are declared in
 
 ### Required pre-created resources
 
-- Network: `solemd-infra`
-- Volumes: `db_backups`, `storage_backups`, and the 5 `langfuse_*` volumes
+- Network: `shared-infra` (external, for cross-project service discovery)
+- Volumes: `opensearch_data`, `worker-venv`, `db_backups`, `storage_backups`, the 5 `langfuse_*` volumes
 
 ```bash
-docker network create solemd-infra
-for v in db_backups storage_backups \
+docker network create shared-infra
+for v in opensearch_data worker-venv \
+         db_backups storage_backups \
          langfuse_postgres_data langfuse_clickhouse_data langfuse_clickhouse_logs \
          langfuse_minio_data langfuse_redis_data; do
   docker volume create "$v"
 done
 ```
+
+No `pgdata` named volume — PG binds directly to `/mnt/solemd-graph/pg-data`.
 
 ### Bringing up stacks
 
@@ -170,9 +211,12 @@ docker compose up -d \
   chrome-devtools-android chrome-devtools-android-backend \
   chrome-devtools-android-laptop chrome-devtools-android-laptop-backend
 
-# SoleMD.Graph stack (db + redis + graph container, gpu)
+# SoleMD.Graph stack — default services (opensearch + redis), then gpu profile (worker)
 cd /home/workbench/SoleMD/SoleMD.Graph
-docker compose -f docker/compose.yaml --profile gpu up -d
+docker compose -f docker/compose.yaml up -d opensearch redis
+docker compose -f docker/compose.yaml --profile gpu up -d worker
+# db is gated behind --profile db; bring up explicitly only when rebuilding:
+#   docker compose -f docker/compose.yaml --profile db up -d db
 ```
 
 Profiles `gpu` and `observability` are additive; omit them to start only the
@@ -189,8 +233,9 @@ that's a Docker Desktop leftover and will fail every pull on native engine.
 
 | Image | Base | Notes |
 |---|---|---|
-| `solemd-graph/graph:cu13-slim` | `nvidia/cuda:13.0.0-devel-ubuntu22.04` | Pip-installed RAPIDS 26.04 cu13 (cugraph/cuml/cupy). Multi-stage build. BuildKit uv cache mount on `/root/.cache/uv`. |
-| `solemd-graph/db:pg16` | `pgvector/pgvector:pg16` | Custom init.sql via `docker-entrypoint-initdb.d/`. |
+| `graph/worker:cu13` | `nvidia/cuda:13.0.0-devel-ubuntu22.04` | Pip-installed RAPIDS 26.04 cu13 (cugraph/cuml/cupy). Multi-stage build. BuildKit uv cache mount on `/root/.cache/uv`. |
+| `graph/db:pg16` | `pgvector/pgvector:pg16` | Custom init.sql via `docker-entrypoint-initdb.d/`. |
+| `opensearchproject/opensearch:3.1.0` | (vendor image) | Pinned 3.x line per rag-future.md. 4 GB heap (single-node local dev). |
 | `solemd-infra/codeatlas-docs-db:16-alpine` | `postgres:16-alpine` | Custom init.sql. |
 | `solemd-infra/langfuse-clickhouse:25.8` | `clickhouse/clickhouse-server:25.8` | Custom memory-spill config. |
 | `solemd-infra-codeatlas` | `python:3.13-slim` | Multi-stage, uv + BuildKit cache. |
@@ -221,6 +266,8 @@ that's a Docker Desktop leftover and will fail every pull on native engine.
 | Portainer | `127.0.0.1:9000` / `:9443` | Container UI, reachable over Tailscale from laptop |
 | Langfuse Web | `127.0.0.1:3100` | LLM tracing + eval UI |
 | TEI | `127.0.0.1:8081` | Embeddings HTTP endpoint |
+| OpenSearch | `127.0.0.1:9200` | RAG evidence-serving plane (paper_index + evidence_index; green empty until RAG P2) |
+| graph-db | `127.0.0.1:5433` | PostgreSQL 16 warehouse — on profile `db`; not up by default |
 | Qdrant | `6333` (container-only) | Vector store; accessed via codeatlas |
 | Neo4j | `7687` (container-only) | Bolt endpoint for codeatlas |
 
@@ -233,6 +280,9 @@ that's a Docker Desktop leftover and will fail every pull on native engine.
 | `docker: command not found` inside NVIDIA-Workbench | DD integration symlink left after uninstall | Re-exec shell (path picks up /usr/bin/docker from docker-ce-cli) |
 | `/mnt/solemd-graph` returns "No such device" | Filesystem label missing | `sudo e2label /dev/sdd solemd-graph` (one-time) |
 | `external volume "foo" not found` on compose up | External volume was never created | `docker volume create foo` (see required list above) |
+| `network shared-infra not found` on compose up | External network was never created | `docker network create shared-infra` |
+| graph-db won't start with `could not access "/var/lib/postgresql/data"` | `/mnt/solemd-graph/pg-data` owned wrong | `sudo chown -R 999:999 /mnt/solemd-graph/pg-data && sudo chmod 700 /mnt/solemd-graph/pg-data` |
+| OpenSearch exits with `max virtual memory areas vm.max_map_count [65530] is too low` | kernel sysctl default | `sudo sysctl -w vm.max_map_count=262144` (persist in `/etc/sysctl.conf`) |
 | TEI unhealthy, `duplicate field max_position_embeddings` | Using a v1.5-style model with TEI 1.9 parser | Switch to `nomic-embed-text-v2-moe` (see embedding-model section) |
 | `error getting credentials: docker-credential-desktop.exe not found` | `~/.docker/config.json` still references DD's credsStore | Remove `credsStore` key from `~/.docker/config.json` |
 | Dockerd won't start after reboot | VHDX not attached (scheduled task failed) | Manually `wsl.exe --mount --vhd E:\wsl2-solemd-graph.vhdx --bare` |
