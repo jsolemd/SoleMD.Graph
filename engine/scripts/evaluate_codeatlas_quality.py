@@ -20,7 +20,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "repo search, graph context, and critical external docs coverage."
         )
     )
-    parser.add_argument("--base-url", default="http://localhost:8100")
+    parser.add_argument("--base-url", default="http://127.0.0.1:8100")
     parser.add_argument("--project", default="solemd.graph")
     parser.add_argument("--timeout-seconds", type=float, default=20.0)
     parser.add_argument(

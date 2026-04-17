@@ -47,7 +47,7 @@ class LynxFaithfulnessChecker:
     Returns structured JSON with REASONING and RESULT (hallucination/faithful).
     """
 
-    def __init__(self, *, model: str | None = None, base_url: str = "http://localhost:11434"):
+    def __init__(self, *, model: str | None = None, base_url: str = "http://127.0.0.1:11434"):
         self._model = model or _LYNX_FALLBACK_MODEL
         self._base_url = base_url
         self._client = None

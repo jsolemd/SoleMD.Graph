@@ -13,8 +13,7 @@
 >   `pubtator.*`
 > - [architecture.md](./architecture.md) -- broader system architecture
 > - [ingest.md](./ingest.md) -- ingestion and corpus data flow
-> - [../plans/rag-runtime-direction-2026-04.md](../plans/rag-runtime-direction-2026-04.md) --
->   the post-ledger next-state runtime plan
+> - `docs/agentic/` ledgers, when present -- post-ledger next-state runtime planning
 
 ---
 
@@ -195,7 +194,7 @@ runs through the Langfuse SDK/API -- not a separate dashboard or log parser.
 
 | Component | State |
 |-----------|-------|
-| Langfuse server | v3.158.0, self-hosted at `localhost:3100` |
+| Langfuse server | v3.158.0, self-hosted at `127.0.0.1:3100` |
 | Python SDK | v4 (observation-centric model) |
 | Score configs | benchmark metrics plus runtime observability dimensions registered via `ensure_score_configs()` |
 | Environment | `development` for experiments, `production` for live API |
@@ -592,7 +591,7 @@ JSON reports alone -- always verify results through Langfuse traces.
 cd engine
 
 # 1. Run benchmarks (traces push to Langfuse automatically)
-export LANGFUSE_HOST=http://localhost:3100
+export LANGFUSE_HOST=http://127.0.0.1:3100
 export LANGFUSE_SECRET_KEY=sk-lf-...
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 

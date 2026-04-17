@@ -2,29 +2,30 @@
 set -euo pipefail
 
 ENGINE_DIR=/workspaces/SoleMD.Graph/engine
+WORKER_VENV=${VIRTUAL_ENV:-/opt/venv}
 
 # CUDA toolkit lives under /usr/local/cuda (devel base ships it there).
 # CuPy's runtime JIT and pip-installed RAPIDS resolve headers via these.
 export CUDA_PATH=${CUDA_PATH:-/usr/local/cuda}
 export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda}
 
-# Auto-provision on first run, then sync on every start so the persisted
-# .venv never drifts from the lockfile or required extras.
-# --system-site-packages inherits RAPIDS (cuml/cugraph/cupy) from /opt/venv
-# without re-downloading their multi-GB wheels into the .venv volume.
+# Sync the active worker environment in place so the preinstalled RAPIDS stack
+# and the persisted project environment are the same environment.
 if [ -d "$ENGINE_DIR" ]; then
     cd "$ENGINE_DIR"
 
-    if [ ! -f "$ENGINE_DIR/.venv/pyvenv.cfg" ]; then
-        echo "==> Provisioning engine environment (first run)..."
-        uv venv --python 3.13 --system-site-packages
+    if [ ! -x "$WORKER_VENV/bin/python" ]; then
+        echo "Expected worker environment at $WORKER_VENV" >&2
+        exit 1
     fi
 
     echo "==> Syncing engine environment..."
-    uv sync --frozen --extra graph --extra ml
+    # Preserve the preinstalled RAPIDS stack in /opt/venv; project sync should
+    # add repo deps, not prune GPU packages that are intentionally image-owned.
+    uv sync --active --inexact --frozen --extra graph --extra ml
 
     # Verify GPU/RAPIDS surfaces. Single interpreter invocation.
-    uv run python -c "
+    python -c "
 import cuml; print('  cuml OK')
 import cugraph; print('  cugraph OK')
 import cupy; print('  cupy OK')

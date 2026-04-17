@@ -21,25 +21,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
 # Add engine/ to path so app imports work when run directly.
 _engine_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_engine_root))
-
-# Load .env.local for Langfuse credentials
-def _load_env_local() -> None:
-    env_local = _engine_root.parent / ".env.local"
-    if not env_local.exists():
-        return
-    for line in env_local.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, value = line.partition("=")
-            value = value.strip().strip('"').strip("'")
-            os.environ.setdefault(key.strip(), value)
 
 
 def _parse_quality_gates(raw: str | None) -> dict[str, float]:

@@ -14,47 +14,8 @@ from __future__ import annotations
 import logging
 import os
 import re
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# 0. Environment — load .env.local so Langfuse SDK finds its keys
-# ---------------------------------------------------------------------------
-_env_loaded = False
-
-
-_NEEDED_PREFIXES = ("LANGFUSE_", "GEMINI_", "GOOGLE_API_KEY")
-
-
-def _load_env_local() -> None:
-    """Inject evaluation-relevant vars from .env.local into os.environ.
-
-    Pydantic's ``env_file`` only populates its own model fields — it doesn't
-    set ``os.environ``, which the Langfuse SDK and Gemini judge read directly.
-    We load ``LANGFUSE_*``, ``GEMINI_*``, and ``GOOGLE_API_KEY`` from the same
-    ``.env.local`` that ``config.py`` uses, only when they aren't already set.
-    """
-    global _env_loaded
-    if _env_loaded:
-        return
-    _env_loaded = True
-
-    env_path = Path(__file__).resolve().parents[2] / ".env.local"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        if any(key.startswith(p) for p in _NEEDED_PREFIXES):
-            value = value.strip().strip('"').strip("'")
-            os.environ.setdefault(key, value)
-
-
-_load_env_local()
 
 # ---------------------------------------------------------------------------
 # 1. Logging — suppress Langfuse SDK noise once, not in every module
@@ -78,10 +39,10 @@ configure()
 # ---------------------------------------------------------------------------
 # 1b. Re-export ``observe`` — all modules MUST import from here, not langfuse
 # ---------------------------------------------------------------------------
-# _load_env_local() has run by this point, so LANGFUSE_PUBLIC_KEY et al. are
-# in os.environ before the Langfuse OTel exporter initializes.  Importing
-# ``observe`` directly from ``langfuse`` in other modules races with env
-# loading and produces silent no-op traces.
+# The canonical `solemd op-run graph -- ...` path injects LANGFUSE_* before the
+# process starts. Importing ``observe`` directly from ``langfuse`` in other
+# modules still risks early SDK initialization, so all imports stay centralized
+# here.
 from langfuse import observe  # noqa: E402 — intentionally late
 
 # Re-export for ``from app.langfuse_config import observe``
@@ -236,7 +197,7 @@ def langfuse_api(method: str, path: str, json_body: dict | None = None) -> dict 
     """
     import httpx
 
-    base_url = os.environ.get("LANGFUSE_BASE_URL", "http://localhost:3100")
+    base_url = os.environ.get("LANGFUSE_BASE_URL", "http://127.0.0.1:3100")
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
 

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -10,11 +10,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class Settings(BaseSettings):
     """Engine settings, loaded from environment variables."""
 
-    # Database — default is intentionally local-dev-only; override via DATABASE_URL in .env.local
-    database_url: str = "postgresql://solemd:solemd_local@localhost:5433/solemd_graph"
+    # Database — default is intentionally local-dev-only; production/local
+    # secrets should arrive through injected environment variables.
+    database_url: str = "postgresql://solemd:solemd_local@127.0.0.1:5433/solemd_graph"
 
-    # Redis (for Dramatiq task queue)
-    redis_url: str = "redis://localhost:6380/0"
+    # Redis (for Dramatiq task queue; local dev container requires auth)
+    redis_url: str = "redis://:local_dev@127.0.0.1:6380/0"
 
     # Data directories
     data_dir: str = "data"
@@ -61,7 +62,9 @@ class Settings(BaseSettings):
     rag_live_biomedical_reranker_enabled: bool = True
     rag_live_biomedical_reranker_topn: int = 8
     rag_live_clinical_priors_enabled: bool = False
-    rag_model_cache_dir: str = "data/huggingface"
+    # Canonical warehouse-backed model cache. This keeps large HF artifacts off
+    # the repo tree and aligned with the E:-backed warehouse mount.
+    rag_model_cache_dir: str = "/mnt/solemd-graph/cache/huggingface/hub"
 
     # DuckDB (for citations pipeline and heavy in-memory queries)
     duckdb_memory_limit: str = "8GB"
@@ -86,17 +89,17 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     openai_api_key: str = ""
 
-    model_config = {"env_file": "../.env.local", "extra": "ignore"}
+    model_config = SettingsConfigDict(extra="ignore")
 
     def validate_for_enrichment(self) -> None:
         """Raise ValueError if enrichment settings are missing."""
         if not self.s2_api_key:
-            raise ValueError("S2_API_KEY is required for enrichment. Set it in .env.local")
+            raise ValueError("S2_API_KEY is required for enrichment. Set it in the environment.")
 
     def validate_for_graph_build(self) -> None:
         """Raise ValueError if graph build settings are missing."""
         if not self.database_url:
-            raise ValueError("DATABASE_URL is required. Set it in .env.local")
+            raise ValueError("DATABASE_URL is required. Set it in the environment.")
 
     def _resolve_project_path(self, value: str | Path) -> Path:
         """Resolve repo-relative data paths against the project root."""

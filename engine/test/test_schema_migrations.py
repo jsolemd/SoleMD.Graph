@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from db.scripts import schema_migrations
 from db.scripts.schema_migrations import (
     MigrationExecutionMode,
     MigrationFile,
@@ -77,7 +78,10 @@ def test_compare_migrations_to_ledger_reports_missing_and_ready_state(tmp_path: 
     assert report.latest_applied_migration == "001_first"
 
 
-def test_apply_schema_migrations_skips_ledgered_files_and_records_new_ones(tmp_path: Path):
+def test_apply_schema_migrations_skips_ledgered_files_and_records_new_ones(
+    tmp_path: Path,
+    monkeypatch,
+):
     (tmp_path / "067_schema_migration_ledger.sql").write_text(
         "BEGIN; SELECT 1; COMMIT;",
         encoding="utf-8",
@@ -101,14 +105,19 @@ def test_apply_schema_migrations_skips_ledgered_files_and_records_new_ones(tmp_p
     ]
     executed: list[str] = []
 
+    def fail_reload():
+        raise AssertionError("unit test should not reload ledger rows from a live DB")
+
+    monkeypatch.setattr(schema_migrations, "_load_ledger_rows", fail_reload)
+
     def fake_executor(migration: MigrationFile, *, database_url: str, applied_via: str) -> None:
-        assert database_url == "postgresql://solemd@localhost:5433/solemd_graph"
+        assert database_url == "postgresql://solemd@127.0.0.1:5433/solemd_graph"
         assert applied_via == "engine/db/scripts/schema_migrations.py"
         executed.append(migration.migration_name)
 
     report = apply_schema_migrations(
         migrations_dir=tmp_path,
-        database_url="postgresql://solemd@localhost:5433/solemd_graph",
+        database_url="postgresql://solemd@127.0.0.1:5433/solemd_graph",
         ledger_rows=ledger_rows,
         executor=fake_executor,  # type: ignore[arg-type]
     )
@@ -116,7 +125,7 @@ def test_apply_schema_migrations_skips_ledgered_files_and_records_new_ones(tmp_p
     assert executed == ["068_followup"]
     assert report.applied_migrations == ["068_followup"]
     assert report.skipped_migrations == ["067_schema_migration_ledger"]
-    assert report.ready_after is False
+    assert report.ready_after is True
 
 
 def test_select_migrations_for_adoption_supports_named_range_and_explicit_selection(tmp_path: Path):
@@ -145,11 +154,16 @@ def test_select_migrations_for_adoption_supports_named_range_and_explicit_select
     ]
 
 
-def test_adopt_schema_migrations_records_notes_and_applied_via(tmp_path: Path):
+def test_adopt_schema_migrations_records_notes_and_applied_via(tmp_path: Path, monkeypatch):
     (tmp_path / "001_first.sql").write_text("BEGIN; SELECT 1; COMMIT;", encoding="utf-8")
     (tmp_path / "002_second.sql").write_text("BEGIN; SELECT 2; COMMIT;", encoding="utf-8")
     ledger_rows: list[MigrationLedgerRecord] = []
     recorded: list[tuple[str, str, str | None]] = []
+
+    def fail_reload():
+        raise AssertionError("unit test should not reload ledger rows from a live DB")
+
+    monkeypatch.setattr(schema_migrations, "_load_ledger_rows", fail_reload)
 
     def fake_recorder(
         migration: MigrationFile,
@@ -158,12 +172,12 @@ def test_adopt_schema_migrations_records_notes_and_applied_via(tmp_path: Path):
         applied_via: str,
         notes: str | None,
     ) -> None:
-        assert database_url == "postgresql://solemd@localhost:5433/solemd_graph"
+        assert database_url == "postgresql://solemd@127.0.0.1:5433/solemd_graph"
         recorded.append((migration.migration_name, applied_via, notes))
 
     report = adopt_schema_migrations(
         migrations_dir=tmp_path,
-        database_url="postgresql://solemd@localhost:5433/solemd_graph",
+        database_url="postgresql://solemd@127.0.0.1:5433/solemd_graph",
         ledger_rows=ledger_rows,
         migration_names=["001_first", "002_second"],
         notes="bootstrap adoption after ledger 067",
@@ -200,7 +214,7 @@ def test_adopt_schema_migrations_refuses_checksum_drift(tmp_path: Path):
     try:
         adopt_schema_migrations(
             migrations_dir=tmp_path,
-            database_url="postgresql://solemd@localhost:5433/solemd_graph",
+            database_url="postgresql://solemd@127.0.0.1:5433/solemd_graph",
             ledger_rows=ledger_rows,
             migration_names=["001_first"],
         )

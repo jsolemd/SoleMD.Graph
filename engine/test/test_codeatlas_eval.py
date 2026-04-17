@@ -32,7 +32,7 @@ class FakeCodeAtlasClient:
             }
         }
         self.project = "solemd.graph"
-        self.base_url = "http://localhost:8100"
+        self.base_url = "http://127.0.0.1:8100"
         self.calls: list[tuple[str, dict]] = []
 
     def health(self) -> dict:

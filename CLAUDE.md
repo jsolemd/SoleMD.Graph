@@ -19,16 +19,25 @@
 
 ## TL;DR
 
-Next.js 16 frontend + Python data engine. Cosmograph graph viz + DuckDB-WASM. PostgreSQL 16 + pgvector (Docker, port 5433). PubTator3 + Semantic Scholar pre-computed data.
+Next.js frontend + Python data engine. Cosmograph graph viz + DuckDB-WASM. PostgreSQL + pgvector. PubTator3 + Semantic Scholar pre-computed data.
+
+## Canonical Sources
+
+- `.claude/skills/graph/SKILL.md` - agent-facing architecture and ownership contract
+- `docs/map/map.md` - human-facing ASCII system map
+- `.claude/skills/graph/references/frontend-performance.md` - mandatory runtime performance contract
+- `.claude/skills/langfuse/references/benchmarking.md` - agent-facing RAG benchmark and Langfuse evaluation workflow
 
 ## Environment
 
 | Context | Details |
 |---------|---------|
-| Frontend | Next.js 16, App Router, Mantine 8, Tailwind CSS 4 |
+| Frontend | Next.js App Router, Mantine 8, Tailwind CSS 4 |
 | Engine | Python 3.13 (uv-managed) in `engine/` |
-| Database | PostgreSQL 16 + pgvector 0.8.2 (Docker, port 5433) |
-| Task queue | Dramatiq + Redis (Docker, port 6380) |
+| Database | PostgreSQL + pgvector; see `docs/map/database.md` and `.claude/skills/graph/references/runtime-infrastructure.md` for runtime substrate and local ports |
+| Task queue | Dramatiq + Redis; see `.claude/skills/graph/references/runtime-infrastructure.md` for local topology and ports |
+
+Pinned local service versions, image tags, and exposed ports live in `.claude/skills/graph/references/runtime-infrastructure.md`. Avoid repeating exact runtime pins in other docs unless that file is also updated.
 
 ## Quick Commands
 
@@ -58,7 +67,7 @@ not as an optional cleanup pass after the fact.
 
 Frontend latency and graph-runtime performance rules are canonical requirements in:
 
-- `docs/map/frontend-performance.md`
+- `.claude/skills/graph/references/frontend-performance.md`
 
 Any agent changing shell startup, DuckDB-Wasm/bootstrap, panel query orchestration,
 selection/scope resolution, or Cosmograph runtime paths must read and follow that
@@ -68,13 +77,14 @@ document before editing code.
 
 | Topic | Location |
 |-------|----------|
+| Agent-facing architecture contract | `.claude/skills/graph/SKILL.md` |
 | Entry point + reader journey | `docs/map/map.md` |
 | Hard boundaries + adapters | `docs/map/architecture.md` |
 | Database schema | `docs/map/database.md` |
-| Frontend latency + runtime rules | `docs/map/frontend-performance.md` |
+| Frontend latency + runtime rules | `.claude/skills/graph/references/frontend-performance.md` |
 | Ingest (PubTator3 + S2 + warehouse) | `docs/map/ingest.md` |
 | Graph build (engine pipeline) | `docs/map/graph-build.md` |
 | Graph runtime (browser + DuckDB + bundle) | `docs/map/graph-runtime.md` |
 | RAG runtime | `docs/map/rag.md` |
-| RAG benchmark | `docs/map/benchmark.md` |
-| Product vision + roadmap | `docs/design/vision.md` |
+| RAG benchmark + Langfuse eval workflow | `.claude/skills/langfuse/references/benchmarking.md` |
+| Product vision + roadmap | `docs/map/vision.md` |

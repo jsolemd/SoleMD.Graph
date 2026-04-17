@@ -111,7 +111,7 @@ jest.mock("@/lib/motion", () => ({
 import { WikiPanel } from "../WikiPanel";
 
 const mockBundle = {
-  assetBaseUrl: "http://localhost:3000",
+  assetBaseUrl: "http://127.0.0.1:3000",
   bundleBytes: 0,
   bundleChecksum: "test-checksum",
   bundleFormat: "parquet",

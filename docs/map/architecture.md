@@ -7,8 +7,8 @@ everything else: which layers own what, which libraries are behind adapters,
 which paths the browser must not take. For how things actually work, see the
 other docs (see [`map.md`](map.md)).
 
-For the canonical local-development network contract, see
-[`local-networking.md`](local-networking.md).
+Agent-facing local networking and runtime operation live in the graph skill
+references, not in `docs/map/`.
 
 ---
 
@@ -37,7 +37,10 @@ Three core technologies are non-negotiable.
 | **PostgreSQL** self-hosted + pgvector | Canonical relational store + vector search | 50-150 GB domain data is too large for Supabase Cloud (~$1,870/month); self-hosted dedicated server is ~$189/month for 128 GB RAM. |
 | **Langfuse** | LLM observability + prompt management + eval | No replacement -- the RAG quality loop depends on it. |
 
-See the technology decisions table below for the surrounding stack.
+See the technology decisions table below for the surrounding stack. Pinned local
+service versions, image tags, and ports live in
+`.claude/skills/graph/references/runtime-infrastructure.md`; this document owns
+the architectural decisions, not the current compose pins.
 
 ---
 
@@ -99,12 +102,13 @@ This solves a critical initialization order problem. The Langfuse v4 SDK
 uses OpenTelemetry, which initializes its exporter on the first
 `from langfuse import observe`. If the exporter initializes before
 `LANGFUSE_PUBLIC_KEY` is in `os.environ`, all traces silently become no-ops.
-`langfuse_config` loads `.env.local` credentials at module scope *before*
-importing from `langfuse`, guaranteeing correct initialization order.
+`langfuse_config` assumes the canonical `solemd op-run graph -- ...` path has
+already injected `LANGFUSE_*` before process boot. Import centralization still
+matters because any direct early `from langfuse import observe` bypasses that
+single safe boundary.
 
 ```
 engine/app/langfuse_config.py
-  _load_env_local()              -- injects LANGFUSE_* into os.environ
   configure()                    -- suppresses SDK log noise
   from langfuse import observe   -- SAFE: env vars loaded first
   get_langfuse()                 -- safe client access (None if unavailable)
@@ -125,8 +129,9 @@ engine/app/langfuse_config.py
 | 5 | Adding a new traced span requires registering the constant in `langfuse_config.py` first |
 | 6 | Span name convention: `domain.subdomain.operation` (domains: `rag`, `graph`, `ingest`) |
 
-See [`rag.md`](rag.md) for the Langfuse evaluation workflow and
-[`benchmark.md`](benchmark.md) for Langfuse-native benchmarks.
+See [`rag.md`](rag.md) for the live RAG runtime path and
+`.claude/skills/langfuse/references/benchmarking.md` for the agent-facing
+Langfuse benchmark workflow.
 
 ---
 
@@ -245,13 +250,13 @@ rejected alternatives live in git history.
 | UI library | Mantine 8 | Data tables, overlays, theming, forms |
 | Styling | Tailwind CSS 4 | Utility-first, tokens shared with Mantine |
 | LLM streaming | Vercel AI SDK 6 | Server Actions, `useChat`, streaming, structured output, multi-provider |
-| Database | PostgreSQL 16 self-hosted (port 5433 in dev) | Domain data is 50-150 GB with pgvector HNSW that needs to fit in RAM |
+| Database | Self-hosted PostgreSQL + pgvector | Domain data is 50-150 GB with pgvector HNSW that needs to fit in RAM |
 | Vector search | pgvector (halfvec storage) | Sub-50ms queries at 2M vectors; zero extra infra |
 | Embedding ORM | Drizzle (Next.js reads only) | Thin metadata scaffolding, not part of the hot path |
 | Backend API | FastAPI | Canonical evidence + retrieval API |
-| Task queue | Dramatiq + Redis (port 6380 in dev) | Ack-after-completion avoids dropped hours-long jobs |
+| Task queue | Dramatiq + Redis | Ack-after-completion avoids dropped hours-long jobs |
 | File serving | Cloudflare R2 | Zero egress for large Parquet bundles |
-| Browser analytics | DuckDB-WASM 1.32.0 | Local SQL over Parquet, minimal JS churn |
+| Browser analytics | DuckDB-WASM | Local SQL over Parquet, minimal JS churn |
 
 ### Models
 

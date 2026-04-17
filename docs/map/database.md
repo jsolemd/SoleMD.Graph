@@ -1,7 +1,7 @@
 # Database Schema
 
 > **Status**: canonical graph-db schema for base admission, mapped canvas state, and evidence substrate
-> **Port**: 5433 (Docker, `pgvector/pgvector:pg16`)
+> **Local service contract**: see `.claude/skills/graph/references/runtime-infrastructure.md` for the pinned image tag, compose service name, and exposed local port
 > **Extensions**: `vector` (pgvector), `pg_trgm` (trigram FTS), `pgcrypto` (UUID generation)
 > **Schemas**: `solemd` (application), `pubtator` (reference data)
 

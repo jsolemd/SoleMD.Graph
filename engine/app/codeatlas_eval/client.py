@@ -15,7 +15,7 @@ class CodeAtlasClient:
     def __init__(
         self,
         *,
-        base_url: str = "http://localhost:8100",
+        base_url: str = "http://127.0.0.1:8100",
         project: str = "solemd.graph",
         timeout_seconds: float = 20.0,
     ) -> None:

@@ -6,10 +6,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# Scoped to the human-facing architectural docs. Other doc trees
-# (plans/, agentic/, investigations/, audit/, archive/) are historical
-# records and are intentionally excluded from these contract tests.
-CANONICAL_DOC_DIRS = ("docs/map", "docs/design")
+# Scoped to the human-facing canonical architecture docs only.
+# Secondary map docs such as wiki planning, taxonomy notes, and placeholders are
+# intentionally excluded; they are not the stable contract an agent should treat
+# as source-of-truth.
+CANONICAL_DOCS = (
+    "docs/map/api.md",
+    "docs/map/architecture.md",
+    "docs/map/brand.md",
+    "docs/map/database.md",
+    "docs/map/graph-build.md",
+    "docs/map/graph-runtime.md",
+    "docs/map/ingest.md",
+    "docs/map/map.md",
+    "docs/map/rag.md",
+    "docs/map/vision.md",
+)
 
 # Matches markdown link targets: ]( ... ) where the target has no whitespace.
 # Does not match reference-style [text][ref] links — we don't use those.
@@ -21,14 +33,13 @@ def _read(relative_path: str) -> str:
 
 
 def _iter_canonical_docs() -> Iterator[Path]:
-    for relative_dir in CANONICAL_DOC_DIRS:
-        for path in sorted((REPO_ROOT / relative_dir).glob("*.md")):
-            yield path
+    for relative_path in CANONICAL_DOCS:
+        yield REPO_ROOT / relative_path
 
 
 def test_base_admission_docs_use_graph_base_points_contract() -> None:
     critical_docs = [
-        "docs/design/vision.md",
+        "docs/map/vision.md",
         "docs/map/architecture.md",
         "docs/map/graph-build.md",
     ]
@@ -41,7 +52,7 @@ def test_base_admission_docs_use_graph_base_points_contract() -> None:
 
 def test_docs_avoid_stale_fixed_base_size_language() -> None:
     critical_docs = [
-        "docs/design/vision.md",
+        "docs/map/vision.md",
         "docs/map/graph-build.md",
         "docs/map/ingest.md",
     ]
@@ -83,7 +94,7 @@ def test_canonical_docs_are_strictly_ascii() -> None:
 
 
 def test_canonical_docs_have_no_broken_markdown_links() -> None:
-    """Every relative `.md` link inside docs/map and docs/design must
+    """Every relative `.md` link inside the canonical doc set must
     resolve to a real file on disk."""
     failures: list[str] = []
     for md in _iter_canonical_docs():

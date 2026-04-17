@@ -61,6 +61,10 @@ def build_required_doc_libraries() -> tuple[RequiredDocLibrary, ...]:
             description="pgvector PostgreSQL extension docs",
             syncable=True,
         ),
+        RequiredDocLibrary(
+            library_id="/codeatlas/1password-developer",
+            name="1Password Developer Docs",
+        ),
     )
 
 

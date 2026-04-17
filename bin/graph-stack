@@ -10,8 +10,10 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 ENGINE_PORT="${ENGINE_PORT:-8300}"
 SESSION_RETENTION_DAYS="${SESSION_RETENTION_DAYS:-7}"
 GRAPH_DEV_AUTOCLEAN="${GRAPH_DEV_AUTOCLEAN:-1}"
-FRONTEND_CMD="cd '${ROOT_DIR}' && PORT='${FRONTEND_PORT}' npm run dev"
-ENGINE_CMD="cd '${ENGINE_DIR}' && uv run uvicorn app.main:app --host 0.0.0.0 --port ${ENGINE_PORT}"
+SOLEMD_SCRIPT="/workspaces/SoleMD.Infra/scripts/solemd.sh"
+
+FRONTEND_CMD="source '${SOLEMD_SCRIPT}' && solemd op-run graph -- env PORT='${FRONTEND_PORT}' npm run dev"
+ENGINE_CMD="source '${SOLEMD_SCRIPT}' && solemd op-run graph -- bash -lc 'cd engine && uv run uvicorn app.main:app --host 0.0.0.0 --port ${ENGINE_PORT}'"
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then

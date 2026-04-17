@@ -464,6 +464,41 @@ def _record_failed_migration(
         conn.commit()
 
 
+def _applied_ledger_row(
+    migration: MigrationFile,
+    *,
+    applied_via: str,
+    notes: str | None = None,
+) -> MigrationLedgerRecord:
+    return MigrationLedgerRecord(
+        migration_name=migration.migration_name,
+        migration_file=migration.migration_file,
+        checksum_sha256=migration.checksum_sha256,
+        execution_mode=migration.execution_mode,
+        status="applied",
+        sql_bytes=migration.sql_bytes,
+        applied_via=applied_via,
+        notes=notes,
+    )
+
+
+def _merge_applied_ledger_rows(
+    ledger_rows: Sequence[MigrationLedgerRecord],
+    *,
+    applied_migrations: Sequence[MigrationFile],
+    applied_via: str,
+    notes: str | None = None,
+) -> list[MigrationLedgerRecord]:
+    ledger_by_name = {row.migration_name: row for row in ledger_rows}
+    for migration in applied_migrations:
+        ledger_by_name[migration.migration_name] = _applied_ledger_row(
+            migration,
+            applied_via=applied_via,
+            notes=notes,
+        )
+    return [ledger_by_name[name] for name in sorted(ledger_by_name)]
+
+
 def apply_schema_migrations(
     *,
     migrations_dir: Path = DEFAULT_MIGRATIONS_DIR,
@@ -474,6 +509,7 @@ def apply_schema_migrations(
     applied_via: str = DEFAULT_APPLIED_VIA,
 ) -> MigrationApplyReport:
     migrations = discover_migrations(migrations_dir=migrations_dir)
+    ledger_rows_supplied = ledger_rows is not None
     if ledger_rows is None:
         ledger_present, loaded_rows = _load_ledger_rows()
         ledger_rows = loaded_rows
@@ -509,6 +545,7 @@ def apply_schema_migrations(
     executor = executor or _execute_migration_via_psql
     ledger_by_name = {row.migration_name: row for row in ledger_rows}
     applied_migrations: list[str] = []
+    applied_migration_files: list[MigrationFile] = []
     skipped_migrations: list[str] = []
     failed_migrations: list[str] = []
 
@@ -526,6 +563,7 @@ def apply_schema_migrations(
         try:
             executor(migration, database_url=database_url, applied_via=applied_via)
             applied_migrations.append(migration.migration_name)
+            applied_migration_files.append(migration)
         except Exception as exc:
             failed_migrations.append(migration.migration_name)
             try:
@@ -539,7 +577,15 @@ def apply_schema_migrations(
                 pass
             raise
 
-    ledger_present_after, ledger_rows_after = _load_ledger_rows()
+    if ledger_rows_supplied:
+        ledger_rows_after = _merge_applied_ledger_rows(
+            ledger_rows,
+            applied_migrations=applied_migration_files,
+            applied_via=applied_via,
+        )
+        ledger_present_after = bool(ledger_rows_after)
+    else:
+        ledger_present_after, ledger_rows_after = _load_ledger_rows()
     readiness_after = compare_migrations_to_ledger(
         migrations,
         ledger_rows_after,
@@ -575,6 +621,7 @@ def adopt_schema_migrations(
         to_migration=to_migration,
     )
 
+    ledger_rows_supplied = ledger_rows is not None
     if ledger_rows is None:
         ledger_present, loaded_rows = _load_ledger_rows()
         ledger_rows = loaded_rows
@@ -590,6 +637,7 @@ def adopt_schema_migrations(
 
     ledger_by_name = {row.migration_name: row for row in ledger_rows}
     adopted_migrations: list[str] = []
+    adopted_migration_files: list[MigrationFile] = []
     skipped_migrations: list[str] = []
     conflicting_migrations: list[str] = []
 
@@ -624,8 +672,18 @@ def adopt_schema_migrations(
             notes=notes,
         )
         adopted_migrations.append(migration.migration_name)
+        adopted_migration_files.append(migration)
 
-    ledger_present_after, ledger_rows_after = _load_ledger_rows()
+    if ledger_rows_supplied:
+        ledger_rows_after = _merge_applied_ledger_rows(
+            ledger_rows,
+            applied_migrations=adopted_migration_files,
+            applied_via=applied_via,
+            notes=notes,
+        )
+        ledger_present_after = bool(ledger_rows_after)
+    else:
+        ledger_present_after, ledger_rows_after = _load_ledger_rows()
     readiness_after = compare_migrations_to_ledger(
         migrations,
         ledger_rows_after,

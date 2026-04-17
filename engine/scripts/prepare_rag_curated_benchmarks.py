@@ -21,22 +21,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
-import os
 import sys
 from collections import Counter
 from pathlib import Path
 
-# Load .env.local for Langfuse credentials
 _engine_root = Path(__file__).resolve().parents[1]
-_env_local = _engine_root.parent / ".env.local"
-if _env_local.exists():
-    for line in _env_local.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, _, value = line.partition("=")
-            value = value.strip().strip('"').strip("'")
-            os.environ.setdefault(key.strip(), value)
-
 sys.path.insert(0, str(_engine_root))
 
 from app import db

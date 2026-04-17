@@ -125,7 +125,8 @@ For future-state RAG architecture, migration planning, retrieval-improvement dir
 These documents remain valid for other purposes and are not deprecated:
 
 - `docs/map/rag.md` for current live runtime behavior
-- `docs/map/benchmark.md` for benchmark policy and current benchmark interpretation
+- `.claude/skills/langfuse/references/benchmarking.md` for benchmark policy and
+  current Langfuse evaluation workflow
 
 Older future-state, handoff, audit, or improvement-plan docs are now historical context only and should not be treated as active guidance when they disagree with this file.
 
@@ -368,7 +369,7 @@ Rule:
                                                          | build / archive
                                                          |
 +--------------------------------------------------------------------------------------+
-| Canonical PostgreSQL 16  (solemd_graph)                                              |
+| Canonical PostgreSQL (repo-pinned major)  (solemd_graph)                             |
 |--------------------------------------------------------------------------------------|
 | Schemas: solemd, pubtator, umls                                                      |
 |                                                                                      |
@@ -3135,10 +3136,10 @@ This section is the default optimization contract for large-table SoleMD.Graph w
 
 Version rule:
 
-- the live canonical database is PostgreSQL 16
 - current official PostgreSQL docs remain the best-practice reference surface
-- implementation choices should default to features and semantics that are known-good on PostgreSQL 16 unless and until the live cluster is upgraded
-- keep the server on the latest PostgreSQL 16 minor release rather than treating “16” as sufficient by itself
+- version-sensitive decisions must follow the repo-pinned server major version from runtime surfaces such as `docker/compose.yaml`, `docker/db/Dockerfile`, and `docs/map/database.md`, not stale narrative text
+- this repo currently contains mixed `16` and `18` references, so any feature-specific tuning or observability advice must verify the active target major before implementation
+- keep the chosen PostgreSQL major on the latest minor release rather than treating the major alone as sufficient
 
 ### Default investigation order
 
@@ -3445,7 +3446,7 @@ When the time comes to split the warehouse plane:
 - remember that replication identity matters, usually via primary key
 - keep schema-sync discipline explicit in the migration plan
 
-PostgreSQL 16 is materially better here than older versions, including parallel apply improvements and better large-transaction handling, but it still needs disciplined ownership and schema coordination.
+Modern PostgreSQL releases materially improve this path, including better logical-replication parallelism and large-transaction handling, but the split still needs disciplined ownership and schema coordination.
 
 ### Practical rules for “large and small both fast”
 
@@ -3563,6 +3564,8 @@ OpenSearch-specific tools that should be part of the normal optimization workflo
 - `_analyze` for analyzer and synonym validation on representative biomedical queries and passages
 - Profile API for timing breakdowns of search components
 - search pipelines for normalization and score-ranker behavior
+- `hybrid_score_explanation` in non-production debugging when hybrid score composition is unclear
+- `pagination_depth` discipline on any hybrid route that supports deeper paging; keep it fixed across page navigation
 - alias-based swap rather than mutable in-place cutovers
 
 Default rule:
@@ -3573,7 +3576,8 @@ Default rule:
 
 For this architecture, the default vector posture is:
 
-- `paper_index`: Faiss-backed dense search with a compression choice pinned up front
+- `paper_index`: default to Faiss HNSW, with the `knn_vector` field-level `mode` and `compression_level` pinned up front and recorded in the serving-package manifest
+- if the chosen paper-lane path is `on_disk` / memory-optimized search, do not plan on IVF or PQ for that same build
 - `evidence_index` v1: lexical-first, bounded semantic rerank, dense ANN default-off
 - use Lucene k-NN for smaller filtered experiments, not as the assumed large-scale main lane
 
@@ -3582,6 +3586,7 @@ Official OpenSearch guidance matters here:
 - vector quantization exists because float vectors are expensive at scale
 - Faiss supports scalar quantization, product quantization, and binary quantization
 - memory-optimized search in OpenSearch 3.1 lets Faiss HNSW operate without loading the full index into off-heap memory, but it does not support IVF or PQ
+- current `knn_vector` mappings expose `mode` and `compression_level` as the clean high-level contract to pin, which is better than letting encoder choices drift ad hoc across rebuilds
 
 So the design rule is:
 
@@ -3832,7 +3837,7 @@ The new PostgreSQL container should be treated as a first-class optimized primar
 
 It should include:
 
-- PostgreSQL 16 on the latest minor release
+- the repo-pinned PostgreSQL major version on the latest minor release
 - `pg_stat_statements`
 - `track_io_timing=on`
 - WAL compression enabled
@@ -4131,11 +4136,12 @@ Decide:
 
 - self-hosted for dev and staging vs managed for production
 - 3.x line
-- secrets in `.env.local`, defaults in `config.py`
+- secrets injected with `solemd op-run graph -- ...` from 1Password Environments; no plaintext dotenv fallback in the runtime
 
 Initial vector posture:
 
-- `paper_index` dense retrieval should use a Faiss-backed vector engine with compression chosen up front
+- `paper_index` dense retrieval should default to Faiss HNSW with an explicit `mode` (`in_memory` or `on_disk`) and a pinned `compression_level`
+- if the chosen paper-lane path is `on_disk` / memory-optimized search, do not plan on IVF or PQ for that same build
 - `evidence_index` v1 should be lexical-first with bounded cross-encoder rerank
 - evidence-dense ANN should default to off in the first production cut unless the miss surface proves it is the next quality lever
 - Lucene k-NN can remain available for smaller filtered experiments, but it should not be the assumed large-scale default for the first serious evidence-serving build
@@ -4622,18 +4628,24 @@ The roadmap is done only when all of these are true:
 Agents implementing or reviewing this architecture should keep the following external libraries available in doc-search:
 
 - `PostgreSQL` — official server documentation for schema design, partitioning, indexing, full-text search, vacuum and autovacuum, WAL/PITR, logical replication, tablespaces, and operational best practices
+- `Psycopg` — the live PostgreSQL driver in this repo for pools, `COPY`, pipeline mode, and connection-lifecycle behavior
 - `OpenSearch` — serving-plane query behavior, hybrid search, k-NN engines, vector modes, and pipeline semantics
+- `DuckDB` and `DuckDB-WASM` — Parquet export shape, row-group/file-size tradeoffs, bundle transforms, and browser/runtime pushdown rules
 - `MedCPT` — retriever and reranker model contracts, bootstrap assets, and implementation details
+- `1Password Developer Docs` — Environments, CLI, SSH agent and WSL integration, shell plugins, service accounts, Connect, and secret-loading workflows used by the no-dotenv runtime contract
 - `pgvector` — current PostgreSQL vector-extension behavior and limits
 - `pgvectorscale` — optional future PostgreSQL ANN comparison surface
 - `Qdrant` — conditional later ANN split and future comparison surface
+- `Redis` — latency, pipelining, and broker/cache operational guidance while Redis remains in the worker topology
+- `Dramatiq` — worker-process concurrency, retry semantics, and async actor constraints if Dramatiq remains the queue surface
 
 Operational note:
 
 - these external doc libraries are implementation aids, not architecture commitments
-- `PostgreSQL`, `OpenSearch`, and `MedCPT` are first-order dependencies for this plan
+- `PostgreSQL`, `Psycopg`, `OpenSearch`, `DuckDB`, and `MedCPT` are first-order implementation references for this plan
+- `Redis` and `Dramatiq` are first-order only while that queue/broker topology remains in use
 - `pgvector`, `pgvectorscale`, and `Qdrant` remain comparison and fallback references unless the roadmap explicitly promotes them
-- the indexed PostgreSQL docs should be treated as the current best-practice reference surface, but implementation decisions still need version awareness because the live canonical database is PostgreSQL 16
+- version-sensitive PostgreSQL guidance must match the repo-pinned server major version; the repo currently contains mixed `16` and `18` references, so verify the active target before applying feature-specific advice
 
 ### Priority official topics to consult first
 
@@ -4650,21 +4662,42 @@ When an agent needs current optimization or operational guidance, start with the
   - `CREATE INDEX` / concurrent index build guidance
   - vacuum and autovacuum
   - logical replication
+- `Psycopg`:
+  - connection pools
+  - `COPY`
+  - pipeline mode for idempotent derived jobs
+  - sync versus async connection lifecycle
 - `OpenSearch`:
   - hybrid query limits and processing order
   - score-ranker and normalization pipelines
+  - hybrid rescoring order and shard-level caveats
+  - `pagination_depth` consistency rules for hybrid paging
   - k-NN methods and engines
+  - `knn_vector` `mode` / `compression_level`
   - Faiss compression and vector-mode choices
   - reranking behavior and shard-level caveats
+- `DuckDB` and `DuckDB-WASM`:
+  - row-group effects on parallelism
+  - Parquet file and row-group sizing
+  - projection and predicate pushdown behavior
+  - browser/runtime attachment constraints where relevant
 - `MedCPT`:
   - published encoders and reranker
   - PMID-aligned bootstrap embeddings
   - query and article encoder usage contracts
+- `Redis`:
+  - latency diagnosis
+  - pipelining
+  - persistence and topology caveats for low-latency use
+- `Dramatiq`:
+  - worker-process concurrency
+  - retry semantics
+  - async actor behavior and middleware constraints
 
 Default rule:
 
 - prefer official docs first
-- prefer PostgreSQL 16 semantics when the live cluster behavior matters
+- prefer the repo-pinned PostgreSQL major-version semantics when live cluster behavior matters
 - treat third-party performance advice as secondary unless it clearly matches the live version and workload
 
 ## Explicit Non-Goals
@@ -4761,4 +4794,4 @@ These documents are now historical context only for future-state RAG planning. D
 Current-state companion docs that remain active:
 
 - `docs/map/rag.md`
-- `docs/map/benchmark.md`
+- `.claude/skills/langfuse/references/benchmarking.md`

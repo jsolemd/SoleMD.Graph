@@ -336,7 +336,7 @@ _Last verified against code: 2026-04-08_
 
   2. Reference layer
 
-  - @ should not mean “entity”.
+  - @ should not mean "entity".
   - @ only makes sense if we want an explicit inline citation/reference affordance in create/manuscript mode.
   - If we keep it, it should search for supporting papers relevant to the surrounding sentence and insert a persistent paper reference.
   - If that interaction is not actually useful, we should not force it.
@@ -345,7 +345,7 @@ _Last verified against code: 2026-04-08_
 
   - Entities and references both feed graph actions.
   - Hover itself is read-only.
-  - Explicit actions like “show related papers” or “show neighborhood” mutate the overlay.
+  - Explicit actions like "show related papers" or "show neighborhood" mutate the overlay.
 
   So I think the adjustment is:
 

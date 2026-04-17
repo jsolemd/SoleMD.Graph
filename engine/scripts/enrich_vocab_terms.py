@@ -6,7 +6,7 @@ One-off script. Run after migration 023 loads the TSV data:
     uv run python scripts/enrich_vocab_terms.py
 
 Requires:
-    - UMLS_API_KEY environment variable (or in ../.env.local)
+    - UMLS_API_KEY environment variable
     - httpx: uv add httpx
     - solemd.vocab_terms table populated (migration 023)
     - pubtator.entity_annotations table populated
@@ -49,22 +49,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # ---------------------------------------------------------------------------
 
 UMLS_API_BASE = "https://uts-ws.nlm.nih.gov/rest"
-ENV_FILE = Path(__file__).resolve().parents[2] / ".env.local"
 
 
 def _load_umls_api_key() -> str:
-    env_value = os.environ.get("UMLS_API_KEY", "").strip()
-    if env_value:
-        return env_value
-
-    if not ENV_FILE.exists():
-        return ""
-
-    for line in ENV_FILE.read_text().splitlines():
-        if not line.startswith("UMLS_API_KEY="):
-            continue
-        return line.split("=", 1)[1].strip().strip('"').strip("'")
-    return ""
+    return os.environ.get("UMLS_API_KEY", "").strip()
 
 
 UMLS_API_KEY = _load_umls_api_key()
@@ -324,7 +312,7 @@ async def run_crosswalk() -> dict[str, str | None]:
     """Run async UMLS -> MeSH crosswalk for all vocab_terms with CUIs."""
     if not UMLS_API_KEY:
         logger.error(
-            "UMLS_API_KEY not set. Export it or add to .env.local. Skipping crosswalk."
+            "UMLS_API_KEY not set. Export it or add it to the plaintext compatibility file. Skipping crosswalk."
         )
         return {}
 

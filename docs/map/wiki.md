@@ -12,6 +12,11 @@
 > - [rag.md](./rag.md) -- RAG evidence pipeline (shares overlay contract)
 > - [wiki-generation.md](./wiki-generation.md) -- canonical authoring and generation contract
 
+> **Local authoring path**: `wiki/` is intentionally local-only and ignored by
+> git. It may be a real directory inside the repo root, a local symlink to an
+> external Obsidian vault, or omitted entirely if you pass `--wiki-dir` to the
+> sync script. Do not commit machine-specific `wiki` symlinks.
+
 ---
 
 ## System Diagram
@@ -20,7 +25,8 @@
    OBSIDIAN VAULT              ENGINE                      BROWSER
    ──────────────              ──────                      ───────
 
-   /SoleMD.Graph/wiki/       sync_wiki_pages.py           WikiPanel
+   local wiki/ or explicit   sync_wiki_pages.py           WikiPanel
+   --wiki-dir path
      entities/*.md               │                           │
        ┌─ frontmatter            ▼                     FloatingPanelShell
        │    title              PostgreSQL                    │
@@ -142,8 +148,13 @@ Unresolved wikilinks render as plain text (no broken links).
 
 **Operator command:**
 ```bash
+# local-only helper: repo-root wiki/ directory or symlink
 cd engine && uv run python db/scripts/sync_wiki_pages.py \
   --wiki-dir ../wiki
+
+# explicit vault path also works
+cd engine && uv run python db/scripts/sync_wiki_pages.py \
+  --wiki-dir /path/to/SoleMD.Wiki
 ```
 
 ---
@@ -283,10 +294,10 @@ Imported via `app/globals.css` alongside other style partials.
 
 ### Adding a New Wiki Page
 
-1. Create `entities/<slug>.md` in the Obsidian vault
+1. Create `entities/<slug>.md` in the local Obsidian vault you sync from
 2. Add frontmatter (title, entity_type, tags — see schema above)
 3. Write content using wikilinks, PMIDs, callouts, GFM tables
-4. Run sync: `cd engine && uv run python db/scripts/sync_wiki_pages.py --wiki-dir ../wiki`
+4. Run sync with your local `wiki/` helper path or an explicit `--wiki-dir`
 5. Verify in browser: open wiki panel, search for new page
 
 ### Wikilink Best Practices

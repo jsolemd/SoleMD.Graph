@@ -213,7 +213,7 @@ def _get_client() -> genai.Client:
     """Build a Gemini client from settings."""
     if not settings.gemini_api_key:
         raise ValueError(
-            "GEMINI_API_KEY is required for LLM labeling. Set it in .env.local"
+            "GEMINI_API_KEY is required for LLM labeling. Set it in the environment."
         )
     return genai.Client(api_key=settings.gemini_api_key)
 

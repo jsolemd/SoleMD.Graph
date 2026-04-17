@@ -8,6 +8,17 @@ from app.config import PROJECT_ROOT, Settings
 
 
 class TestSettingsPaths:
+    def test_defaults_match_local_networking_contract(self):
+        settings = Settings(_env_file=None)
+
+        assert settings.database_url == (
+            "postgresql://solemd:solemd_local@127.0.0.1:5433/solemd_graph"
+        )
+        assert settings.redis_url == "redis://:local_dev@127.0.0.1:6380/0"
+        assert settings.rag_model_cache_path == Path(
+            "/mnt/solemd-graph/cache/huggingface/hub"
+        )
+
     def test_resolves_default_relative_paths_against_project_root(self):
         settings = Settings(
             _env_file=None,

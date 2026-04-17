@@ -33,7 +33,7 @@ def mock_conn():
 def mock_settings():
     """Mock settings with test defaults."""
     with patch("app.config.settings") as s:
-        s.database_url = "postgresql://test:test@localhost:5433/test"
+        s.database_url = "postgresql://test:test@127.0.0.1:5433/test"
         s.s2_api_key = "test-key"
         s.semantic_scholar_dataset_path.return_value = "/tmp/test"
         yield s
