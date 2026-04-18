@@ -87,9 +87,11 @@ rows) on alignment padding. Worth doing once, on a fresh build.
 - Cluster-wide: `default_toast_compression = lz4`. LZ4 is 2–4× faster
   decompression than pglz with similar ratios for English prose.
 - `text` columns inherit `EXTENDED` (compress + TOAST out-of-line).
-- Columns that are *always* read in full (for example, `paper_text.abstract`
-  when served to the frontend) set `STORAGE EXTERNAL` (TOAST out-of-line,
-  no compression) to save a decompression round-trip per read.
+- Large prose columns should usually stay `EXTENDED` and use LZ4 compression;
+  this cuts heap/TOAST footprint without changing application semantics.
+- Reserve `STORAGE EXTERNAL` for already-incompressible payloads, or cases
+  where measurement shows decompression dominates and the extra storage/WAL
+  cost is acceptable.
 - `toast_tuple_target` stays at the PG 18 default (2 kB) except where a
   single wide table has one rarely-read large column we want to keep off
   the main heap page.
@@ -174,14 +176,20 @@ tablespaces within a cluster.
 
 ## 1. Extensions
 
-Required at warehouse cluster boot:
+Required in the initial warehouse baseline:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS vector;            -- halfvec, vector, ivfflat, hnsw
 CREATE EXTENSION IF NOT EXISTS pg_trgm;           -- trigram GiST / GIN
 CREATE EXTENSION IF NOT EXISTS pgcrypto;          -- digest, hmac helpers
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;-- baseline observability
 CREATE EXTENSION IF NOT EXISTS pg_buffercache;    -- warmup + hit-ratio diag
+```
+
+Deferred from the initial warehouse baseline until the warehouse image/config
+slice lands or measured row-volume pressure justifies them:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;            -- halfvec, vector, ivfflat, hnsw
 CREATE EXTENSION IF NOT EXISTS hypopg;            -- plan experiments
 CREATE EXTENSION IF NOT EXISTS pg_cron;           -- scheduled VACUUM, refresh
 CREATE EXTENSION IF NOT EXISTS pg_partman;        -- only if time-range lifecycle kicks in
@@ -281,6 +289,10 @@ inputs*, not canonical truth.
 One row per external-source release (S2 monthly drops, PubTator3 weekly,
 UMLS quarterly). Fillfactor 80 (status transitions).
 
+`release_status` stays TEXT in the baseline because operators inspect these
+rows directly during bootstrap, triage, and migration review; the table is
+small and control-plane oriented.
+
 ```hcl
 table "source_releases" {
   schema = schema.solemd
@@ -364,12 +376,12 @@ and referenced by `manifest_uri` on `ingest_runs`.
 
 #### `solemd.s2_paper_references_raw`
 
-- `citing_paper_id` TEXT, `cited_paper_id` TEXT, `first_seen_release_id`
-  INTEGER, `linkage_status` SMALLINT (`pending` | `linked` | `orphan`),
+- `source_release_id` INTEGER, `citing_paper_id` TEXT, `cited_paper_id`
+  TEXT, `linkage_status` SMALLINT (`pending` | `linked` | `orphan`),
   `is_influential` BOOLEAN, `intent_raw` TEXT.
-- PK `(citing_paper_id, cited_paper_id)`.
-- Btree `(linkage_status, citing_paper_id)`.
-- Reverse btree `(cited_paper_id, citing_paper_id)`.
+- PK `(source_release_id, citing_paper_id, cited_paper_id)`.
+- Btree `(source_release_id, linkage_status, citing_paper_id)`.
+- Reverse btree `(source_release_id, cited_paper_id, citing_paper_id)`.
 
 #### `solemd.s2_paper_assets_raw`
 
@@ -446,6 +458,10 @@ table "corpus" {
 }
 ```
 
+`domain_status` also stays TEXT in the baseline. It is a low-cardinality review
+state surfaced directly to operators during canonical mapping work, so the
+extra enum-code indirection is deferred.
+
 Rule: release-scoped flags (`is_in_current_map`, `is_in_current_base`)
 that lived in `corpus` previously are removed. Current-run membership
 lives on `graph_points` / `serving_members` in the serve cluster.
@@ -488,7 +504,7 @@ Columns (MAXALIGN):
 - `title` TEXT NOT NULL
 - `normalized_title_key` TEXT NOT NULL
   `GENERATED ALWAYS AS (solemd.normalize_title_key(title)) STORED`
-- `abstract` TEXT (STORAGE EXTERNAL — always-full-read)
+- `abstract` TEXT
 - `tldr` TEXT
 - `fts_vector` TSVECTOR `GENERATED ALWAYS AS (
     setweight(to_tsvector('english', coalesce(title, '')), 'A') ||

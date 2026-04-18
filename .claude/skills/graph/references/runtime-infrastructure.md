@@ -117,9 +117,8 @@ Graph-local stack:
 
 ```bash
 cd /workspaces/SoleMD.Graph
-docker compose -f docker/compose.yaml up -d opensearch redis
-docker compose -f docker/compose.yaml --profile gpu up -d worker
-docker compose -f docker/compose.yaml --profile db up -d graph-db
+docker compose -f infra/docker/compose.yaml up -d graph-db-serve pgbouncer-serve graph-redis
+docker compose -f infra/docker/compose.yaml --profile db up -d graph-db-warehouse
 ```
 
 ## Pinned Local Ports
@@ -127,9 +126,11 @@ docker compose -f docker/compose.yaml --profile db up -d graph-db
 | Service | Host port | Notes |
 |---|---|---|
 | Next.js | `3000` | Graph frontend |
-| FastAPI | `8300` | Graph engine |
-| Graph DB | `5433` | Postgres warehouse profile |
-| Redis | `6380` | Local dev cache |
+| FastAPI | `8010` | Host-run API scaffold |
+| Graph DB Warehouse | `54432` | Postgres warehouse profile |
+| Graph DB Serve | `55432` | Postgres serve cluster |
+| PgBouncer Serve | `56432` | Transaction pooler in front of serve |
+| Redis | `57379` | Local dev cache / Dramatiq broker |
 | Langfuse | `3100` | Shared observability |
 | CodeAtlas | `8100` | Shared MCP |
 

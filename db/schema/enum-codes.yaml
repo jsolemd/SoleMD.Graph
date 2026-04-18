@@ -38,3 +38,33 @@ vector_mode:
   halfvec_fp16: 1
   fp32: 2
   sparse: 3
+
+ingest_run_status:
+  started: 1
+  loading: 2
+  indexing: 3
+  analyzing: 4
+  published: 5
+  failed: 6
+  aborted: 7
+
+ingest_requested_status:
+  continue: 1
+  abort: 2
+
+s2_reference_linkage_status:
+  pending: 1
+  linked: 2
+  orphan: 3
+
+text_availability:
+  none: 0
+  abstract: 1
+  fulltext: 2
+
+graph_run_status:
+  running: 1
+  succeeded: 2
+  failed: 3
+  published: 4
+  retired: 5

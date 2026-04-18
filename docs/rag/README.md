@@ -147,6 +147,7 @@ done when the code and docs both reflect reality.
 - [x] `.env.example` finalized for the rebuild contract
 - [ ] Testcontainers migration dry-run passing on empty fresh databases only
 - [x] Graph-local runtime scaffold created under `infra/docker/`
+- [x] `graph-db-warehouse` implemented
 - [x] `graph-db-serve` implemented
 - [x] `pgbouncer-serve` implemented
 - [x] `graph-redis` implemented
@@ -154,8 +155,8 @@ done when the code and docs both reflect reality.
 - [x] Minimal `apps/worker` runtime shell implemented
 - [x] Serve SQL baseline landed under `db/schema/serve/`
 - [x] Serve migration chain landed under `db/migrations/serve/`
-- [ ] Warehouse SQL baseline landed under `db/schema/warehouse/`
-- [ ] Warehouse migration chain landed under `db/migrations/warehouse/`
+- [x] Warehouse SQL baseline landed under `db/schema/warehouse/`
+- [x] Warehouse migration chain landed under `db/migrations/warehouse/`
 - [ ] Ingest lane implemented
 - [ ] Chunking / evidence-unit lane implemented
 - [ ] Projection + active pointer implemented

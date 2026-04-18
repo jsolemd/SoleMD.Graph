@@ -28,13 +28,13 @@ Locked operational posture for the rebuild:
 
 | Name                         | Kind         | Mounted on                           | Owner                 | Class     |
 |------------------------------|--------------|--------------------------------------|-----------------------|-----------|
-| `graph_serve_pg-data`        | named volume | `graph-db-serve:/var/lib/postgresql/data` | PG 18 serve     | serving   |
+| `graph_serve_pg-data`        | named volume | `graph-db-serve:/var/lib/postgresql` | PG 18 serve     | serving   |
 | `graph_opensearch_data`      | named volume | `graph-opensearch:/usr/share/opensearch/data` | OpenSearch serving line (`16`) | serving |
 | `graph_worker-opt-venv`      | named volume | `graph-worker:/opt/venv`             | engine worker         | serving   |
 | `graph_prometheus_data`      | named volume | `graph-prometheus:/prometheus`       | Prometheus            | serving   |
 | `graph_grafana_data`         | named volume | `graph-grafana:/var/lib/grafana`     | Grafana               | serving   |
 | `graph_loki_data`            | named volume | `graph-loki:/loki`                   | Loki                  | serving   |
-| `/mnt/solemd-graph/pg-data`  | bind mount   | `graph-db-warehouse:/var/lib/postgresql/data` | PG 18 warehouse | warehouse |
+| `/mnt/solemd-graph/pg-data`  | bind mount   | `graph-db-warehouse:/var/lib/postgresql` | PG 18 warehouse | warehouse |
 | `/mnt/solemd-graph/data`     | bind mount   | `graph-worker:/mnt/solemd-graph/data`| raw release files     | warehouse |
 | `/mnt/solemd-graph/bundles`  | bind mount   | `graph-worker` + asset-serving read  | published Parquet     | warehouse |
 | `/mnt/solemd-graph/archives` | bind mount   | `graph-worker`                       | retired artifacts     | warehouse |
@@ -60,6 +60,9 @@ restart get re-queued from warehouse source-of-truth.
 Rules:
 - All NVMe volumes use the default `local` driver; no compose-level
   topology override needed.
+- PostgreSQL 18's image stores the live cluster under a version-specific
+  subdirectory beneath `/var/lib/postgresql`, so compose mounts the parent
+  path rather than `/var/lib/postgresql/data`.
 - Never put serve PG data on a bind mount — Docker named volumes behave
   better for crash-resume, ownership, and image-update flows.
 - OpenSearch is single-node dev; `number_of_replicas = 0` makes replica

@@ -267,7 +267,7 @@ process-max               = 4
 process-max               = 4
 
 [serve]
-pg1-path                  = /var/lib/postgresql/data
+pg1-path                  = /var/lib/postgresql/18/docker
 pg1-port                  = 5432
 pg1-user                  = postgres
 pg1-host                  = graph-db-serve
@@ -297,7 +297,7 @@ services:
     container_name: graph-pgbackrest
     networks: [graph-internal]
     volumes:
-      - graph_serve_pg-data:/var/lib/postgresql/data:ro
+      - graph_serve_pg-data:/var/lib/postgresql:ro
       - /mnt/solemd-graph/pgbackrest-repo:/var/lib/pgbackrest
       - ./docker/pgbackrest/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
       - graph_pgbackrest_spool:/var/spool/pgbackrest
@@ -312,6 +312,11 @@ volumes:
   graph_pgbackrest_spool: {}
   graph_pgbackrest_log: {}
 ```
+
+Because the PostgreSQL 18 image now places the initialized cluster under a
+version-specific subdirectory inside `/var/lib/postgresql`, the sidecar mounts
+the parent path and `pg1-path` points at the live cluster directory rather than
+the old `/var/lib/postgresql/data` convention.
 
 The serve cluster image must also bundle the `pgbackrest` binary so
 `archive_command` can invoke it; both containers mount the same

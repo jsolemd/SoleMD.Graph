@@ -1,4 +1,31 @@
 services:
+  graph-db-warehouse:
+    image: postgres:18.3-bookworm
+    container_name: graph-db-warehouse
+    profiles: ["db"]
+    environment:
+      POSTGRES_DB: ${GRAPH_DB_WAREHOUSE_POSTGRES_DB:-warehouse}
+      POSTGRES_USER: ${GRAPH_DB_WAREHOUSE_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${GRAPH_DB_WAREHOUSE_POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "127.0.0.1:${GRAPH_DB_WAREHOUSE_HOST_PORT:-54432}:5432"
+    volumes:
+      # PostgreSQL 18+ changed the image VOLUME/PGDATA contract to a
+      # version-specific subdirectory under /var/lib/postgresql. Mount the
+      # parent path, not /var/lib/postgresql/data.
+      - /mnt/solemd-graph/pg-data:/var/lib/postgresql
+    shm_size: 8g
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${GRAPH_DB_WAREHOUSE_POSTGRES_USER:-postgres} -d ${GRAPH_DB_WAREHOUSE_POSTGRES_DB:-warehouse}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
   graph-db-serve:
     image: postgres:18.3-bookworm
     container_name: graph-db-serve

@@ -192,6 +192,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="After serve migrations succeed, set local role passwords from the environment.",
     )
+    apply_parser.add_argument(
+        "--sync-warehouse-role-passwords",
+        action="store_true",
+        help="After warehouse migrations succeed, set local role passwords from the environment.",
+    )
 
     adopt_parser = subparsers.add_parser("adopt", help="Record existing migrations without executing SQL.")
     add_cluster_arg(adopt_parser)
@@ -241,6 +246,7 @@ def main() -> int:
             dsn_override=args.dsn,
             note=args.note,
             sync_serve_role_passwords=args.sync_serve_role_passwords,
+            sync_warehouse_role_passwords=args.sync_warehouse_role_passwords,
         )
         emit_report(report)
         return 0 if report.ready_after else 1
@@ -269,6 +275,7 @@ def apply_migrations(
     dsn_override: str | None,
     note: str | None,
     sync_serve_role_passwords: bool,
+    sync_warehouse_role_passwords: bool,
 ) -> ApplyReport:
     config = resolve_cluster_config(cluster)
     migrations = discover_migrations(config.migrations_dir)
@@ -326,6 +333,8 @@ def apply_migrations(
     synced_roles: list[str] = []
     if cluster == Cluster.SERVE and sync_serve_role_passwords:
         synced_roles = sync_serve_role_passwords_from_environment(connection_dsn)
+    if cluster == Cluster.WAREHOUSE and sync_warehouse_role_passwords:
+        synced_roles = sync_warehouse_role_passwords_from_environment(connection_dsn)
 
     readiness_after = verify_migrations(cluster=cluster, dsn_override=connection_dsn)
     return ApplyReport(
@@ -422,6 +431,9 @@ def resolve_cluster_config(cluster: Cluster) -> ClusterConfig:
             bootstrap_dsn=build_serve_bootstrap_dsn(),
         )
 
+    # TODO(slice-3): add a warehouse bootstrap env path parallel to serve's
+    # bootstrap DSN flow; until then first-apply uses --dsn with a bootstrap
+    # connection. See db/migrations/warehouse/README.md.
     return ClusterConfig(
         cluster=cluster,
         migrations_dir=MIGRATIONS_ROOT / cluster.value,
@@ -845,6 +857,17 @@ def select_migrations_for_adoption(
 
 def sync_serve_role_passwords_from_environment(connection_dsn: str) -> list[str]:
     roles = resolve_serve_role_passwords()
+    return sync_role_passwords(connection_dsn=connection_dsn, roles=roles)
+
+
+def sync_warehouse_role_passwords_from_environment(connection_dsn: str) -> list[str]:
+    roles = resolve_warehouse_role_passwords()
+    return sync_role_passwords(connection_dsn=connection_dsn, roles=roles)
+
+
+def sync_role_passwords(
+    *, connection_dsn: str, roles: list[RolePassword]
+) -> list[str]:
     if not roles:
         return []
 
@@ -876,6 +899,21 @@ def resolve_serve_role_passwords() -> list[RolePassword]:
     if not pgbouncer_auth_password:
         raise RuntimeError("PGBOUNCER_AUTH_PASSWORD is required when syncing serve role passwords")
     resolved.append(RolePassword(role="pgbouncer_auth", password=pgbouncer_auth_password))
+    return resolved
+
+
+def resolve_warehouse_role_passwords() -> list[RolePassword]:
+    resolved: list[RolePassword] = []
+    for env_name in ("WAREHOUSE_DSN_INGEST", "WAREHOUSE_DSN_READ", "WAREHOUSE_DSN_ADMIN"):
+        dsn = os.getenv(env_name)
+        if not dsn:
+            raise RuntimeError(f"{env_name} is required when syncing warehouse role passwords")
+        parsed = urlsplit(dsn)
+        if not parsed.username or parsed.password is None:
+            raise RuntimeError(
+                f"{env_name} must include a username and password for local role sync"
+            )
+        resolved.append(RolePassword(role=parsed.username, password=parsed.password))
     return resolved
 
 
