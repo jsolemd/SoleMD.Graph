@@ -45,7 +45,7 @@ local argument.
 - [x] OpenSearch version line consolidated here
 - [x] Redis version line consolidated here
 - [x] Python runtime version line consolidated here
-- [ ] FastAPI / async stack version pins consolidated here where required
+- [x] FastAPI / async stack version pins consolidated here where required
 - [x] GPU-runtime compatibility set consolidated here where required
 - [ ] Backup/restore tool exact pins consolidated here where required
 - [x] Repeated exact-version prose normalized across `docs/rag/`
@@ -58,13 +58,17 @@ targets and which are specific pins.
 
 | Surface | Current intended pin or line | Status | Notes / current authority |
 |---|---|---|---|
-| PostgreSQL | `18` line | provisional | `docs/rag/README.md`, `12-migrations.md`, and the wider RAG docs currently target PostgreSQL 18. Exact image tag should lock when `infra/docker/` lands. |
-| PgBouncer | `1.25.1` | provisional | Current intended pin carried by the topology/auth docs; should move into compose/image pins when the runtime scaffold lands. |
+| PostgreSQL | `postgres:18.3-bookworm` | locked for Slice 1 local runtime | Landed in `infra/docker/compose.yaml`. PostgreSQL 18 remains the contract line; `18.3-bookworm` is the current local scaffold tag. |
+| PgBouncer | `1.25.1` via `edoburu/pgbouncer:v1.25.1-p0` | locked for Slice 1 local runtime | Service version follows the current upstream PgBouncer 1.25.1 line; the local compose scaffold currently uses the pinned `edoburu` image tag. |
 | OpenSearch | `3.6` line | provisional | Current intended serving line across topology and serving docs. Exact image tag still needs to be locked in runtime config. |
-| Redis | `8` line | provisional | Current intended queue/cache line across runtime docs. Exact image tag still needs to be locked in runtime config. |
+| Redis | `redis:8.4.2-alpine3.22` | locked for Slice 1 local runtime | Landed in `infra/docker/compose.yaml` for the queue/cache scaffold. |
 | Python | `3.13` line | provisional | Current intended backend runtime line for `apps/api` and `apps/worker`. Exact base image or toolchain pin remains open. |
-| `asyncpg` | `0.31+` | provisional | `06-async-stack.md` already carries the current floor; exact package lock belongs with the eventual backend manifests. |
-| Dramatiq | `2.x` line | provisional | AsyncIO-middleware assumption is already part of `06`, but the exact package pin has not been frozen in code yet. |
+| FastAPI | `0.136.0` | locked for Slice 1 code | Landed in `apps/api/pyproject.toml`. |
+| Uvicorn | `0.44.0` | locked for Slice 1 code | Landed in `apps/api/pyproject.toml`. |
+| Pydantic | `2.13.2` | locked for Slice 1 code | Landed in both backend `pyproject.toml` manifests. |
+| `pydantic-settings` | `2.13.1` | locked for Slice 1 code | Landed in both backend `pyproject.toml` manifests. |
+| `asyncpg` | `0.31.0` | locked for Slice 1 code | Landed in both backend `pyproject.toml` manifests. |
+| Dramatiq | `2.1.0` | locked for Slice 1 code | Landed in `apps/worker/pyproject.toml`. |
 | RAPIDS | `26.04` | provisional | Current intended GPU analytics line from the RAG docs; exact image/base wiring still needs implementation validation. |
 | CUDA | `13.0-13.1` compatibility set | provisional | Compatibility target carried by the docs; exact container/base image selection remains implementation-owned. |
 | PyTorch CUDA | `13.0.x` packaging line | provisional | Compatibility target only; exact wheel/container pin remains implementation-owned. |
@@ -74,11 +78,9 @@ targets and which are specific pins.
 These values still need concrete locking before their checklist items can be
 treated as done:
 
-- exact PostgreSQL image tag
 - exact OpenSearch image tag
-- exact Redis image tag
 - exact Python base image / toolchain pin
-- exact FastAPI / Pydantic / psycopg / uvicorn package pins
+- exact psycopg admin-runner pin
 - exact pgBackRest version pin if the local runtime will ship it directly
 
 ## Normalization rule
@@ -119,3 +121,6 @@ Examples:
 - 2026-04-18: normalized the active `docs/rag/` surfaces so non-essential
   version duplication now points back here instead of drifting across the
   contract docs.
+- 2026-04-18: Slice 1 locked the local runtime image tags (`postgres:18.3-bookworm`,
+  `edoburu/pgbouncer:v1.25.1-p0`, `redis:8.4.2-alpine3.22`) and the initial
+  backend Python package pins in `apps/api` and `apps/worker`.

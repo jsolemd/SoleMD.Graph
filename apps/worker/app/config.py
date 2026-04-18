@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+ROOT_DIR = Path(__file__).resolve().parents[3]
+ENV_FILE = ROOT_DIR / ".env"
+DEFAULT_POSTGRES_PORT = 5432
+DEFAULT_REDIS_PORT = 6379
+
+
+@dataclass(frozen=True, slots=True)
+class DependencyTarget:
+    name: str
+    host: str
+    port: int
+
+
+def dependency_target_from_url(
+    *, name: str, value: str, default_port: int
+) -> DependencyTarget:
+    parsed = urlsplit(value)
+    host = parsed.hostname
+    port = parsed.port or default_port
+    if not host:
+        raise ValueError(f"{name} must include a hostname")
+    return DependencyTarget(name=name, host=host, port=port)
+
+
+class Settings(BaseSettings):
+    app_env: str = Field(default="development", alias="APP_ENV")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    worker_redis_namespace: str = Field(
+        default="solemd-graph", alias="WORKER_REDIS_NAMESPACE"
+    )
+    worker_startup_timeout_seconds: float = Field(
+        default=1.0, alias="WORKER_STARTUP_TIMEOUT_SECONDS"
+    )
+    redis_url: str = Field(..., alias="REDIS_URL")
+    serve_dsn_read: str = Field(..., alias="SERVE_DSN_READ")
+    serve_dsn_admin: str = Field(..., alias="SERVE_DSN_ADMIN")
+    warehouse_dsn_ingest: str | None = Field(default=None, alias="WAREHOUSE_DSN_INGEST")
+    warehouse_dsn_read: str | None = Field(default=None, alias="WAREHOUSE_DSN_READ")
+    warehouse_dsn_admin: str | None = Field(default=None, alias="WAREHOUSE_DSN_ADMIN")
+
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILE,
+        extra="ignore",
+    )
+
+    @property
+    def service_name(self) -> str:
+        return "graph-worker"
+
+    @property
+    def startup_targets(self) -> tuple[DependencyTarget, ...]:
+        targets = [
+            dependency_target_from_url(
+                name="redis",
+                value=self.redis_url,
+                default_port=DEFAULT_REDIS_PORT,
+            ),
+            dependency_target_from_url(
+                name="serve_read",
+                value=self.serve_dsn_read,
+                default_port=DEFAULT_POSTGRES_PORT,
+            ),
+            dependency_target_from_url(
+                name="serve_admin",
+                value=self.serve_dsn_admin,
+                default_port=DEFAULT_POSTGRES_PORT,
+            ),
+        ]
+        optional_dsn_map = {
+            "warehouse_ingest": self.warehouse_dsn_ingest,
+            "warehouse_read": self.warehouse_dsn_read,
+            "warehouse_admin": self.warehouse_dsn_admin,
+        }
+        for name, value in optional_dsn_map.items():
+            if not value:
+                continue
+            targets.append(
+                dependency_target_from_url(
+                    name=name,
+                    value=value,
+                    default_port=DEFAULT_POSTGRES_PORT,
+                )
+            )
+        return tuple(targets)
+
+
+settings = Settings()

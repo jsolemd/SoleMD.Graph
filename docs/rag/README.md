@@ -143,15 +143,15 @@ done when the code and docs both reflect reality.
 - [x] Stale migration/auth vocabulary sweep completed (`Atlas`, `HCL`,
   `@better-auth/cli`, `Drizzle`, `*.hcl`, and related obsolete terms removed or
   explicitly marked historical/comparison-only; working slice: `12-migrations.md`)
-- [x] Version inventory established in one canonical file (`16-version-inventory.md`; exact runtime pins remain implementation-provisional until runtime scaffolding lands)
-- [ ] `.env.example` finalized for the rebuild contract
+- [x] Version inventory established in one canonical file (`16-version-inventory.md`; Slice 1 now locks the local runtime and Python package pins that are real in code)
+- [x] `.env.example` finalized for the rebuild contract
 - [ ] Testcontainers migration dry-run passing on empty fresh databases only
-- [ ] Graph-local runtime scaffold created under `infra/docker/`
-- [ ] `graph-db-serve` implemented
-- [ ] `pgbouncer-serve` implemented
-- [ ] `graph-redis` implemented
-- [ ] Minimal `apps/api` runtime shell implemented
-- [ ] Minimal `apps/worker` runtime shell implemented
+- [x] Graph-local runtime scaffold created under `infra/docker/`
+- [x] `graph-db-serve` implemented
+- [x] `pgbouncer-serve` implemented
+- [x] `graph-redis` implemented
+- [x] Minimal `apps/api` runtime shell implemented
+- [x] Minimal `apps/worker` runtime shell implemented
 - [ ] Serve SQL baseline landed under `db/schema/serve/`
 - [ ] Serve migration chain landed under `db/migrations/serve/`
 - [ ] Warehouse SQL baseline landed under `db/schema/warehouse/`
@@ -208,7 +208,7 @@ There is also a working-surface distinction:
 | 13 | Auth / user-data plane                  | `13-auth.md`                 | spec locked; activation deferred      |
 | 14 | Cross-doc implementation handoff        | `14-implementation-handoff.md` | locked (through-line + drift control) |
 | 15 | Repo structure + deployment boundaries  | `15-repo-structure.md`      | completed (repo shape + deploy roots) |
-| 16 | Canonical version inventory             | `16-version-inventory.md`   | completed (canonical inventory + normalization rules; exact pins still provisional) |
+| 16 | Canonical version inventory             | `16-version-inventory.md`   | completed (canonical inventory + normalization rules; Slice 1 local runtime and Python pins landed, other exact pins remain provisional) |
 | -- | 2026 research synthesis                 | `research-distilled.md`      | archive of the research behind these  |
 
 ## Companion documents

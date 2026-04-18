@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "solemd-graph-worker"
+version = "0.1.0"
+description = "Permanent Dramatiq runtime root for the SoleMD.Graph backend rebuild."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "asyncpg==0.31.0",
+  "dramatiq[redis]==2.1.0",
+  "pydantic==2.13.2",
+  "pydantic-settings==2.13.1",
+]
+
+[project.scripts]
+solemd-graph-worker = "app.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
