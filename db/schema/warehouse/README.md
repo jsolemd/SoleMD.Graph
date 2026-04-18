@@ -45,3 +45,12 @@ the first run. Until the migration runner grows a dedicated warehouse bootstrap
 env path, the first apply should use
 `scripts/schema_migrations.py apply --cluster warehouse --dsn ...` with a
 warehouse bootstrap/superuser connection.
+
+Schema-authoring rule for future warehouse slices:
+- `engine_warehouse_admin` owns the warehouse schemas after bootstrap, but it
+  does not create them from a fresh cluster by itself.
+- New schemas on fresh apply must follow the current pattern: create under the
+  bootstrap/admin connection, then `ALTER SCHEMA ... OWNER TO
+  engine_warehouse_admin`.
+- Do not regress to `SET ROLE engine_warehouse_admin; CREATE SCHEMA ...` for a
+  fresh-start migration path.

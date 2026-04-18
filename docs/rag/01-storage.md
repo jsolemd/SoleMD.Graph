@@ -96,6 +96,11 @@ Rules:
   `/mnt/solemd-graph` is an ext4 VHDX bind; that is the supported path.
 - The bind owner for PG data is UID 999 (the postgres container user).
   Never chown from inside WSL.
+- The current warehouse bind uses the root path
+  `/mnt/solemd-graph/pg-data` for one cluster. Before any future
+  read-replica or second local PG cluster lands, move to a namespaced path such
+  as `/mnt/solemd-graph/pg-data/warehouse` so PG 18 subdirectories cannot
+  collide silently.
 - Raw release files under `data/` are treated as read-only inputs by
   ingest workers; ingest never rewrites them in place.
 - Bundles are append-only by design — a new graph run creates a new

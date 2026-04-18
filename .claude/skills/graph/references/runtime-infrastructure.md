@@ -75,6 +75,10 @@ Rules:
 - PostgreSQL data binds to `/mnt/solemd-graph/pg-data`.
 - Published graph bundles live under `/mnt/solemd-graph/bundles`.
 - Model cache state belongs under `/mnt/solemd-graph/cache/huggingface`.
+- Current warehouse PG bind dedicates `/mnt/solemd-graph/pg-data` to one
+  cluster. Before a second local PG cluster or replica ever shares that tree,
+  move to a namespaced subdirectory such as
+  `/mnt/solemd-graph/pg-data/warehouse`.
 
 ## Secrets Contract
 
@@ -108,6 +112,15 @@ Windows boot/logon
 ```
 
 No step in this path should depend on Docker Desktop UI or manual terminal work.
+
+Current local asymmetry is intentional:
+- `graph-db-serve`, `pgbouncer-serve`, and `graph-redis` are always-up and use
+  restart policies.
+- `graph-db-warehouse` is cold-by-default under the `db` profile and does
+  **not** auto-start on host reboot.
+- A worker process that expects warehouse DSNs will therefore stay `not_ready`
+  until someone runs
+  `docker compose -f infra/docker/compose.yaml --profile db up -d graph-db-warehouse`.
 
 ## Compose Ownership
 

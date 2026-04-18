@@ -684,6 +684,14 @@ Per-role users on each cluster, with grants enumerated in
 | `engine_admin` | serve | All of `engine_serve_read` plus CREATE / ALTER / DROP / COPY on `solemd.*`; UPDATE on `solemd.active_runtime_pointer`; INSERT on `solemd.serving_runs` / `serving_artifacts`. **Never** added to PgBouncer's `auth_query` allowlist (`04 §4.2`). |
 | `warehouse_grounding_reader` | warehouse | SELECT on the FDW-exposed grounding tables only (`03 §3.2`). Used by serve's FDW user-mapping; not opened directly from Python. |
 
+Follow-up note:
+- local warehouse role-password sync currently derives from
+  `WAREHOUSE_DSN_INGEST` / `WAREHOUSE_DSN_READ` / `WAREHOUSE_DSN_ADMIN` only.
+- When FDW activation lands, add a dedicated env var for
+  `warehouse_grounding_reader`; it authenticates via serve-side USER MAPPING
+  rather than a Python DSN, so it cannot be sourced from the current DSN-based
+  sync path.
+
 ### 7.2 DSN env vars
 
 ```
@@ -1026,6 +1034,15 @@ into serve via `admin.acquire()` (`04 §3.3`, `04 §4.2`); pre-flight
 audits / status counters via `serve_read.acquire()`; the swap
 transaction (`04 §3.5`) holds one pinned `admin` connection across
 the full family lifecycle (advisory lock + stage + swap + ledger).
+
+Current local runtime note:
+- worker startup currently probes all configured warehouse DSNs
+  unconditionally.
+- Because `graph-db-warehouse` is cold-by-default, a worker started without the
+  `db` profile will report `not_ready`.
+- That is intentional for the current ingest/build worker shape. If later
+  slices split serving-side async tasks away from warehouse-bound ingest/build
+  work, warehouse readiness should become role-conditional rather than global.
 
 ## Read patterns
 
