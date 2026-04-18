@@ -12,9 +12,9 @@
 > serve cluster and are specified in `03-serve-schema.md`.
 >
 > **Schema authority**: this document is the PG-native authority. Every
-> consumer — engine asyncpg code, Pydantic boundary models, Atlas-generated
-> migrations under `db/schema/warehouse.hcl` — derives from here, not the
-> other way around.
+> consumer — engine asyncpg code, Pydantic boundary models, and the SQL-first
+> schema / migration surfaces under `db/schema/warehouse/` and
+> `db/migrations/warehouse/` — derives from here, not the other way around.
 
 ## Purpose
 
@@ -162,12 +162,13 @@ tablespaces within a cluster.
 
 - `db/schema/enum-codes.yaml` is the authoritative machine-readable
   registry for every SMALLINT-coded enum used by warehouse and serve.
-  `engine/app/db/enums.py` and HCL column comments derive from it; docs
+  `engine/app/models/shared/enums.py` and the generated SQL
+  column-comment artifact are **exclusively generated from it**; docs
   use symbolic names for readability, but on-disk values are SMALLINT
   codes from the registry.
 - Every table and every non-obvious column carries a `COMMENT ON …` so
-  `\d+` output and tooling (SchemaSpy, Atlas introspect) stay legible.
-- Atlas (HCL) under `db/schema/warehouse.hcl` is the authoring surface;
+  `\d+` output and tooling stay legible.
+- Ordered PostgreSQL SQL under `db/schema/warehouse/` is the authoring surface;
   `engine/db/scripts/schema_migrations.py` remains the executor ledger
   per `12-migrations.md`.
 
@@ -180,7 +181,6 @@ CREATE EXTENSION IF NOT EXISTS vector;            -- halfvec, vector, ivfflat, h
 CREATE EXTENSION IF NOT EXISTS pg_trgm;           -- trigram GiST / GIN
 CREATE EXTENSION IF NOT EXISTS pgcrypto;          -- digest, hmac helpers
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;-- baseline observability
-CREATE EXTENSION IF NOT EXISTS auto_explain;      -- slow-query plan capture
 CREATE EXTENSION IF NOT EXISTS pg_buffercache;    -- warmup + hit-ratio diag
 CREATE EXTENSION IF NOT EXISTS hypopg;            -- plan experiments
 CREATE EXTENSION IF NOT EXISTS pg_cron;           -- scheduled VACUUM, refresh
@@ -190,6 +190,13 @@ CREATE EXTENSION IF NOT EXISTS pg_partman;        -- only if time-range lifecycl
 `postgres_fdw` is **not** installed on the warehouse cluster. FDW lives
 on the serve cluster reading *into* warehouse; the warehouse cluster is
 always the source, never the querier.
+
+`auto_explain` is a preload module, not a `CREATE EXTENSION` surface.
+Load it via `shared_preload_libraries` / `session_preload_libraries` and tune
+`auto_explain.*` in `09-tuning.md`. Day-one UUIDv5 generation for
+`evidence_key` is engine-owned; if DB-side UUIDv5 audit helpers are later
+needed, add `uuid-ossp` explicitly rather than assuming a core `uuidv5()`
+function.
 
 ## 2. Identity glossary (warehouse-scoped)
 
@@ -236,9 +243,9 @@ Every child declares:
 - Local indexes identical in structure across children.
 - `autovacuum_enabled = false` **during bulk load only**, re-enabled after.
 
-The HCL under `db/schema/warehouse.hcl` enumerates all 32 children
-explicitly. This document shows parent + one representative child; read
-the generated HCL for the full set.
+The canonical SQL schema files under `db/schema/warehouse/` enumerate all
+32 children explicitly. This document shows parent + one representative child;
+read the schema files for the full set.
 
 ### 3.3 Staged partitioning for `pubtator.*`
 
@@ -259,8 +266,9 @@ list-then-hash nested partitioning would cause.
 
 Each subsection gives a one-paragraph purpose, the canonical column
 layout (in MAXALIGN order, with types), the keys / indexes, partitioning
-(if any), fillfactor, and HCL for the parent. Children and secondary
-indexes are noted in prose where omitting them keeps the doc legible.
+(if any), fillfactor, and representative SQL for the parent. Children and
+secondary indexes are noted in prose where omitting them keeps the doc
+legible.
 
 ### 4.1 Raw ingest and release tracking
 
@@ -923,6 +931,7 @@ comes from release-scoped archive artifacts on `/mnt/solemd-graph`
 - `corpus_id` BIGINT
 - `model_key` SMALLINT (e.g. `SPECTER2_v2 = 1`)
 - `embedding_revision` SMALLINT
+- `embedding_source_kind` SMALLINT (`upstream_release = 1`, `local_generated = 2`)
 - `embedding` halfvec(768)
 
 - PK `(corpus_id, model_key)`. No ANN index by default — SPECTER2 powers
@@ -934,6 +943,11 @@ indexing stays on OpenSearch for runtime dense retrieval; graph build
 runs its own ANN outside PG via cuML / cuGraph. If a PG-local
 comparison path is ever justified, HNSW on this table is the trigger
 already listed in the deferred decisions.
+
+Provenance rule: graph embeddings must be distinguishable as upstream-provided
+versus locally generated. `model_key` + `embedding_revision` name the model
+family/version; `embedding_source_kind` records whether the row came from an
+upstream release shard or from local generation during a rollout wave.
 
 ### 4.7 Graph build control
 
@@ -1068,15 +1082,15 @@ ALTER TABLE solemd.source_releases SET (
 | Hash partitioning by `corpus_id` / `citing_corpus_id` × 32 for the grounding + citation + entity families | Matches rag-future.md §4 shape; stays inside PG 18 fast-path lock slots. |
 | `paper_text` split out from `papers` | Metadata reads don't drag abstracts off disk. |
 | `paper_citation_contexts` split out from `paper_citations` | Narrow edge, heavy text separated. |
-| `paper_embeddings_graph` kept; `paper_embeddings_retrieval` omitted from day-one warehouse | SPECTER2 powers graph build; retrieval embeddings are owned by OpenSearch. Reproducibility comes from release-scoped archive artifacts, not a hot PG table. |
+| `paper_embeddings_graph` kept; `paper_embeddings_retrieval` omitted from day-one warehouse | SPECTER2 powers graph build; retrieval embeddings are owned by OpenSearch. Reproducibility comes from release-scoped archive artifacts, not a hot PG table. Provenance on graph embeddings stays explicit via `embedding_source_kind`. |
 | `paper_evidence_units` lives on warehouse, exposed to serve via FDW | Derives from and joins canonical grounding directly; serve consumes through the bounded FDW path in `00-topology.md` §4. |
 | Generated columns for `normalized_title_key`, `normalized_preferred_name`, `normalized_alias`, `fts_vector` | Always consistent with source; no trigger required. |
 | `TIMESTAMPTZ` everywhere, `text` everywhere, `jsonb` everywhere | Modern PG defaults. |
-| SMALLINT-code enums sourced from `db/schema/enum-codes.yaml` machine-readable registry | `engine/app/db/enums.py` and HCL column comments both generate from the registry; the registry is authoritative, code and comments are derived. |
+| SMALLINT-code enums sourced from `db/schema/enum-codes.yaml` machine-readable registry | `engine/app/models/shared/enums.py` and SQL column comments both generate from the registry; the registry is authoritative, code and comments are derived. |
 | `COMMENT ON` every table and non-obvious column | Tooling legibility. |
 | No `postgres_fdw` installed on warehouse | Warehouse is source, never querier. |
 
-### Provisional (revisit after HCL draft + sample build)
+### Provisional (revisit after schema draft + sample build)
 
 | Decision | Revisit trigger |
 |---|---|
@@ -1089,7 +1103,7 @@ ALTER TABLE solemd.source_releases SET (
 | `paper_evidence_units` unpartitioned | Partition by `hashtext(evidence_key::text)` × 32 if row count exceeds ~50 M. |
 | `paper_chunks` GIN fallback | Remove entirely if the PG fallback retrieval path is retired. |
 | `papers (venue_id, year)` composite index | Drop unless the query family proves to use it. |
-| `MAXALIGN` ordering confirmed via `pg_column_size` sampling | Already applied in HCL — verify no accidental misordering after code-gen. |
+| `MAXALIGN` ordering confirmed via `pg_column_size` sampling | Already applied in the schema files — verify no accidental misordering after code-gen. |
 | `CREATE STATISTICS` on correlated filters (e.g. `paper_citations (intent_code, is_influential, source_mask)`) | Add if planner estimates are off. |
 
 ### Deferred (trigger-gated)
@@ -1110,9 +1124,10 @@ ALTER TABLE solemd.source_releases SET (
 All three previously open items are resolved and reflected in §8 above:
 
 - **Enum source of truth** — canonical machine-readable registry at
-  `db/schema/enum-codes.yaml`. `engine/app/db/enums.py` and HCL column
-  comments both generate from the registry. Neither code nor comments
-  are authoritative. Generator wiring is specified in `12-migrations.md`.
+  `db/schema/enum-codes.yaml`. `engine/app/models/shared/enums.py` and
+  SQL column comments both generate from the registry. Neither code nor
+  comments are authoritative. Generator wiring is specified in
+  `12-migrations.md`.
 - **`paper_evidence_units` placement** — warehouse. Serve consumes it
   via the bounded FDW path already defined in `00-topology.md` §4. If
   FDW round-trip latency ever becomes painful, add a slim projected

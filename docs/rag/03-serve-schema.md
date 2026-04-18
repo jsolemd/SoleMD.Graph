@@ -15,9 +15,10 @@
 > `09-tuning.md`. Backup cadence lives in `11-backup.md`.
 >
 > **Schema authority**: PG-native authority for the serve cluster. Engine
-> asyncpg code, Pydantic boundary models, and Atlas migrations under
-> `db/schema/serve.hcl` derive from here. Inherited conventions from
-> `02-warehouse-schema.md` §0 apply unchanged; only deltas are restated.
+> asyncpg code, Pydantic boundary models, and the SQL-first schema /
+> migration surfaces under `db/schema/serve/` and `db/migrations/serve/`
+> derive from here. Inherited conventions from `02-warehouse-schema.md` §0
+> apply unchanged; only deltas are restated.
 
 ## Purpose
 
@@ -48,7 +49,7 @@ called out below. Do not re-state warehouse conventions; cite `02 §X` instead.
 | Indexing | **Delta.** Covering (`INCLUDE`) indexes matter on serve; see §0.7 below. |
 | Schemas | **Delta.** Serve uses two schemas: `solemd` and `auth`. See §0.8 below. |
 | Tablespaces | Inherited — no tablespaces. The two-cluster split *is* the isolation boundary. | `00 §6`, `02 §0.9` |
-| Comments and migrations | Inherited — `COMMENT ON` every table and non-obvious column; Atlas authors, `schema_migrations.py` applies. | `02 §0.10` |
+| Comments and migrations | Inherited — `COMMENT ON` every table and non-obvious column; SQL-first schema files author, `schema_migrations.py` applies. | `02 §0.10` |
 
 ### 0.5 Fillfactor tiering (serve delta)
 
@@ -60,7 +61,7 @@ space on the same page.
 |---|---:|---|
 | Append-only caches | 100 | `paper_semantic_neighbors`, `graph_points` (rebuilt-whole) |
 | Incrementally-updatable projections | 90 | `paper_api_cards`, `paper_api_profiles`, `graph_cluster_api_cards`, `graph_clusters`, `graph_run_metrics` |
-| Status-flipping control | 80 | `serving_runs`, `api_projection_runs`, `serving_cohorts`, `serving_members`, the `active_runtime_pointer` singleton |
+| Status-flipping control | 80 | `serving_runs`, `api_projection_runs`, `wiki_sync_runs`, `serving_cohorts`, `serving_members`, the `active_runtime_pointer` singleton |
 
 Rationale: 90-tier projections absorb metric refreshes without
 page-split pressure; 80 beats 70 on modern PG (`research-distilled.md`
@@ -98,8 +99,10 @@ Two schemas on serve:
 - `solemd` — all projections, serving-control tables, graph-serving
   metadata. Named consistently with warehouse so foreign-schema lookups
   are unsurprising.
-- `auth` — Better Auth placeholder. Empty day one beyond §4.4; on CLI
-  run, Better Auth targets it via `search_path` without a rename.
+- `auth` — SQL-reserved placeholder only. Empty day one; Better Auth
+  later populates it and owns every `auth.*` table / migration when
+  auth activates. Day one reserves the namespace only and does not
+  author objects inside it.
 
 `warehouse_grounding` is the foreign-schema name created in §3's
 `IMPORT FOREIGN SCHEMA`; not a local schema. No `raw` / `stage` /
@@ -114,7 +117,6 @@ Required at serve cluster boot, in this order. Each rationale is serve-specific.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;             -- digest, hmac, random bytes for identifiers
 CREATE EXTENSION IF NOT EXISTS pg_trgm;              -- trigram GiST on wiki / entity alias lookup
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;   -- baseline observability; keep pg_stat_monitor OFF (conflicts; `research-distilled.md` §7)
-CREATE EXTENSION IF NOT EXISTS auto_explain;         -- capture slow OLTP queries (threshold set in 09-tuning.md)
 CREATE EXTENSION IF NOT EXISTS pg_buffercache;       -- VM / cache-hit diagnostics for index-only-scan health
 CREATE EXTENSION IF NOT EXISTS pg_prewarm;           -- warm hot projection tables on restart; shared_preload_libraries entry required
 CREATE EXTENSION IF NOT EXISTS pg_cron;              -- scheduled refreshes + cleanup; shared_preload_libraries entry required
@@ -122,14 +124,24 @@ CREATE EXTENSION IF NOT EXISTS postgres_fdw;         -- bounded grounding derefe
 ```
 
 Notes:
+- `auto_explain` is a PostgreSQL preload module, not a `CREATE EXTENSION`
+  surface. Load it via `shared_preload_libraries` or
+  `session_preload_libraries`, and configure `auto_explain.*` GUCs in
+  `09-tuning.md`. **locked**
+- `pg_stat_statements` needs both the extension above and
+  `compute_query_id = auto|on` in `postgresql.conf`; PG 18's default
+  `auto` satisfies this unless an operator disables it. **locked**
 - `pg_prewarm` and `pg_cron` both need `shared_preload_libraries` entries
   (listed in `09-tuning.md`). `pg_prewarm`'s autoprewarm worker writes
   `autoprewarm.blocks` periodically and replays it on startup so the
   buffer pool recovers without a cold stall
   (`https://www.postgresql.org/docs/current/pgprewarm.html`). **locked**
-- `pg_cron` jobs live in the `serve` database; single-background-worker
-  model means jobs must be staggered
-  (`https://github.com/citusdata/pg_cron`). **locked**
+- `pg_cron` jobs live in the `serve` database. With
+  `cron.use_background_workers=on`, multiple jobs can run in parallel
+  subject to `max_worker_processes` / `cron.max_running_jobs`; any UTC
+  staggering we keep is an operational choice to reduce collisions, not a
+  hard `pg_cron` limitation (`https://github.com/citusdata/pg_cron`).
+  **locked**
 - `postgres_fdw` installed on serve **only**; warehouse doesn't
   (`02 §1`). **locked**
 - `pgvector` is **deferred** — projected embedding cache is gated on
@@ -172,7 +184,7 @@ CREATE SERVER IF NOT EXISTS warehouse_fdw
     port        '5432',
     dbname      'warehouse',
     fetch_size  '2000',                 -- provisional; large enough to amortize round trips without blowing memory
-    async_capable 'true',               -- PG 18 supports concurrent foreign scans for Append nodes
+    async_capable 'true',               -- enables postgres_fdw's async-capable path where available; one server + one user mapping still serializes work
     use_remote_estimate 'true',         -- warehouse ANALYZE is authoritative for planner; local guesses are stale
     fdw_startup_cost '100',
     fdw_tuple_cost '0.01',
@@ -200,13 +212,12 @@ IMPORT FOREIGN SCHEMA solemd
   FROM SERVER warehouse_fdw INTO warehouse_grounding;
 ```
 
-Atlas HCL captures the server, user mapping, and extension per
-`https://atlasgo.io/hcl/postgres` (foreign-servers require Atlas Pro).
-`IMPORT FOREIGN SCHEMA` is issued via a one-shot migration because
-Atlas's declarative HCL does not round-trip foreign-table shape as of
-v0.36. The migration is idempotent (`DROP SCHEMA warehouse_grounding
-CASCADE` + `IMPORT FOREIGN SCHEMA`) and runs via
-`engine/db/scripts/schema_migrations.py` (`02 §0.10`). **locked**
+Serve-side SQL migrations capture `postgres_fdw`, the foreign server, and the
+bounded `IMPORT FOREIGN SCHEMA` step. Secret-bearing `USER MAPPING`
+credentials stay outside version control and are injected by the admin path
+after structural migration success. The import migration is idempotent
+(`DROP SCHEMA warehouse_grounding CASCADE` + `IMPORT FOREIGN SCHEMA`) and runs
+via `engine/db/scripts/schema_migrations.py` (`02 §0.10`). **locked**
 
 Primary source for options:
 `https://www.postgresql.org/docs/current/postgres-fdw.html`.
@@ -306,10 +317,9 @@ down warehouse behave deterministically:
 ## 4. Table families
 
 Each subsection gives a one-paragraph purpose, MAXALIGN column layout,
-keys / indexes, partitioning (if any), fillfactor, and representative HCL
-for the parent. Secondary indexes are noted in prose; the full HCL under
-`db/schema/serve.hcl` enumerates partitions and every secondary index
-verbatim.
+keys / indexes, partitioning (if any), fillfactor, and representative SQL
+for the parent. Secondary indexes are noted in prose; the canonical SQL
+schema files under `db/schema/serve/` carry the exact structural form.
 
 ### 4.1 Graph-serving projections
 
@@ -488,7 +498,7 @@ scans require visibility-map coverage; §6.3 autovacuum keeps the VM hot.
 **locked** for shape; exact `INCLUDE` list is **provisional**.
 
 Primary sources: `https://www.postgresql.org/docs/current/indexes-index-only-scans.html`,
-`https://atlasgo.io/guides/postgres/included-columns`.
+`https://www.postgresql.org/docs/current/sql-createindex.html`.
 
 #### `solemd.paper_api_profiles`
 
@@ -515,6 +525,65 @@ Per `rag-future.md` §7: small JSONB fields acceptable when they avoid
 fan-out joins and aren't filter keys. Keep `metric_summary`,
 `top_concepts`, `external_ids` < 4 KB each to stay inline rather than
 TOAST'd.
+
+#### `solemd.wiki_sync_runs`
+
+One row per wiki sync/activation cycle. Fillfactor 80.
+
+Columns: `wiki_sync_run_id` UUID PK `uuidv7()`; `source_locator` TEXT;
+`source_checksum` TEXT; `page_count` INTEGER; `build_status` SMALLINT
+(`building` | `activated` | `failed` | `retired`);
+`build_started_at`, `built_at`, `activated_at` TIMESTAMPTZ; `notes`
+TEXT; `error_summary` JSONB.
+
+Indexes: PK; btree `(build_status, built_at DESC, wiki_sync_run_id)`;
+btree `(source_checksum, built_at DESC)`.
+
+The wiki lane is activation-driven even though the authoring source
+remains markdown. `wiki_sync_runs` is the audit/rollback ledger for
+stage-and-swap activation into `solemd.wiki_pages`; request-path reads
+never observe an in-progress sync.
+
+#### `solemd.wiki_pages`
+
+Serve-local active wiki projection for the wiki panel, search, backlinks,
+and page-level graph actions. Fillfactor 90.
+
+Columns (MAXALIGN): `wiki_sync_run_id` UUID; `slug` TEXT PK; `title`
+TEXT; `content_md` TEXT; `frontmatter` JSONB; `entity_type`,
+`concept_id`, `family_key`, `semantic_group` TEXT; `tags`,
+`outgoing_links` TEXT[]; `paper_pmids` INTEGER[]; `checksum` TEXT;
+`fts_vector` TSVECTOR generated/stored; `synced_at`, `created_at`,
+`updated_at` TIMESTAMPTZ.
+
+Design rules:
+
+- This table stores the active request-path wiki shell plus canonical
+  identity and page-level evidence columns only. It is not the editorial
+  source of truth.
+- Rows are populated by successful `wiki_sync_runs` via stage-and-swap
+  or equivalent all-or-nothing activation; routes do not UPSERT pages
+  directly.
+- Runtime-derived fields such as `page_kind`, `section_slug`,
+  `graph_focus`, `summary`, and `featured_pmids` are resolved at read
+  time from slug/frontmatter/content rules rather than duplicated as a
+  second truth surface.
+- Page shell, search, backlinks, and wiki graph reads stay serve-local.
+  Slower page-context enrichment composes from serve projections
+  (`paper_api_cards`, `paper_api_profiles`, graph refs) and bounded FDW
+  only when required by the page-context contract.
+
+Indexes:
+
+- PK `(slug)`.
+- Btree `(wiki_sync_run_id)` — admin/audit lineage.
+- GIN `(fts_vector)` — full-text search over title + markdown shell.
+- GIN `(outgoing_links)` — backlinks query.
+- Btree `(entity_type, concept_id)` — canonical entity lookup.
+- Btree `(family_key)` — section/family browsing.
+- GIN `(tags)` — label search and browse support.
+- GiST `(title gist_trgm_ops)` remains **provisional** and should exist
+  only if measured wiki title-search behavior justifies it.
 
 #### `solemd.graph_cluster_api_cards`
 
@@ -559,8 +628,9 @@ Columns (MAXALIGN): `serving_run_id` UUID PK `uuidv7()` default;
 `build_completed_at` TIMESTAMPTZ; `source_release_watermark`,
 `contract_version`, `synonym_version`, `analyzer_version` INTEGER;
 `package_tier` (hot | warm | mixed), `vector_mode` (halfvec_fp16 | fp32
-| sparse), `build_status` (building | published | retired | failed)
-SMALLINT; `opensearch_alias_swap_status` SMALLINT (`pending` |
+| sparse), `build_status` SMALLINT (`building=1`, `published=2`,
+`aborted=3`, `failed=4`, `retired=5`; canonical registry in `04 §0` /
+`db/schema/enum-codes.yaml`); `opensearch_alias_swap_status` SMALLINT (`pending` |
 `swapped` | `failed`); `opensearch_alias_swap_attempted_at`
 TIMESTAMPTZ; `build_checksum`, `notes`, `opensearch_alias_swap_error`
 TEXT.
@@ -677,17 +747,16 @@ single row closes that class by construction. **locked**
 
 Better Auth's user-data plane is **deferred** per `00-topology.md` §6.
 This section is the skeleton. No Better Auth tables are created day one,
-but the schema and convention are reserved so the Better Auth CLI
-(`npx @better-auth/cli generate` / `migrate`) drops in cleanly without a
-schema rework later.
+but the schema and convention are reserved so a later Better Auth activation
+drops in cleanly without a serve-schema rename or topology rework.
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS auth AUTHORIZATION engine_api;
 COMMENT ON SCHEMA auth IS
   'Better Auth placeholder. Empty on day one; see docs/rag/13-auth.md.';
 
--- role contract: Better Auth CLI runs under a privileged role; engine API reads via a narrow grant.
--- No users / sessions / accounts / verification tables yet — CLI generates them on first run.
+-- No users / sessions / accounts / verification tables yet.
+-- Day one reserves the schema only.
 ```
 
 Reservations so Better Auth's CLI drops in cleanly:
@@ -695,24 +764,18 @@ Reservations so Better Auth's CLI drops in cleanly:
 - **Search path / schema config.** Better Auth's migrate command
   detects `search_path` and places tables in its configured schema
   (`https://better-auth.com/docs/concepts/cli`). Configure Better Auth
-  with `schema: 'auth'`; the `engine_api` role keeps `search_path =
+  with `search_path=auth`; the serve app role keeps `search_path =
   solemd, public`.
-- **Primary key convention.** Better Auth 1.4+ on PostgreSQL delegates
-  UUID generation to the database
-  (`https://better-auth.com/docs/concepts/database`). Wire the Drizzle
-  adapter with `generateId: false` so the PG default (`uuidv7()`) runs,
-  matching serve's identity contract. **provisional**
-- **Expected table set.** `auth.user`, `auth.session`, `auth.account`,
-  `auth.verification` per
-  `https://better-auth.com/docs/concepts/users-accounts`:
-  - `user(id uuid PK, name text, email text UNIQUE, email_verified boolean, image text, created_at timestamptz, updated_at timestamptz)`
-  - `session(id uuid PK, user_id uuid FK, token text UNIQUE, expires_at timestamptz, ip_address inet, user_agent text, created_at timestamptz, updated_at timestamptz)`
-  - `account(id uuid PK, account_id text, provider_id text, user_id uuid FK, access_token text, refresh_token text, id_token text, access_token_expires_at timestamptz, refresh_token_expires_at timestamptz, scope text, password text, created_at timestamptz, updated_at timestamptz)`
-  - `verification(id uuid PK, identifier text, value text, expires_at timestamptz, created_at timestamptz, updated_at timestamptz)`
-- **Expected indexes.** Unique on `user.email`, unique on
-  `session.token`, btree `(session.user_id, expires_at DESC)`,
-  btree `(account.user_id, provider_id)`,
-  btree `(verification.identifier, expires_at)`.
+- **Preferred later integration path.** When auth activates, prefer
+  Better Auth's built-in PostgreSQL path and the current official CLI
+  (`npx auth@latest`) over pre-committing this rebuild to the Drizzle
+  adapter.
+- **Connection boundary.** When auth activates, Better Auth should use a
+  dedicated direct PostgreSQL connection / pool to serve, not the
+  transaction-pooled `pgbouncer-serve` path.
+- **Primary key convention.** The later auth path must remain compatible
+  with PG-side `uuidv7()` defaults, but the exact Better Auth config is
+  deferred to activation because auth is not day-one scope.
 - **Cross-schema joins.** User-scoped surfaces (saved papers, notes,
   collections) live in `solemd.user_*` tables that FK into
   `auth.user(id)`; no user-scoped data in `auth` beyond what Better
@@ -721,8 +784,8 @@ Reservations so Better Auth's CLI drops in cleanly:
   `11-backup.md` owns cadence; first `auth` row is the trigger for the
   off-box B2 mirror (`00 §6` deferred).
 
-**deferred** — no `auth.*` tables day one. Schema created, role /
-search-path reserved. Full spec in `13-auth.md`.
+**deferred** — no `auth.*` tables day one. Schema created; full auth
+activation remains in `13-auth.md`.
 
 ## 5. Cross-family invariants
 
@@ -903,8 +966,10 @@ clients see the whole swap or none of it. **locked**
 ### 6.5 `pg_cron` scheduled jobs
 
 All scheduled maintenance runs in `pg_cron` on serve. Jobs are staggered
-across UTC minutes because `pg_cron` uses a single background worker
-(`https://github.com/citusdata/pg_cron`).
+across UTC minutes to reduce lock and I/O collisions, not because
+`pg_cron` is limited to one active job. With `cron.use_background_workers=on`,
+multiple jobs can run in parallel subject to `max_worker_processes` and
+`cron.max_running_jobs` (`https://github.com/citusdata/pg_cron`).
 
 ```sql
 -- Drop 24h-old _prev rollback tables
@@ -918,7 +983,7 @@ SELECT cron.schedule('cron-audit-hygiene', '0 4 * * 0',
 -- Retire stale serving_runs past the retention window
 SELECT cron.schedule('retire-stale-serving-runs', '23 3 * * *',
   $$UPDATE solemd.serving_runs
-    SET build_status = 4   -- retired
+    SET build_status = 5   -- retired
     WHERE build_status = 2 -- published
       AND build_completed_at < now() - interval '30 days'
       AND serving_run_id <> (SELECT serving_run_id FROM solemd.active_runtime_pointer)$$);
@@ -934,7 +999,8 @@ SELECT cron.schedule('prewarm-hot-cards', '5 * * * *',
 
 Exact schedules are **provisional** and tuned in `10-observability.md` /
 `11-backup.md` once cutover cadence is measured. Staggering across
-different minute values avoids the single-worker bottleneck.
+different minute values avoids unnecessary overlap between maintenance
+jobs.
 
 ## 7. Read patterns
 
@@ -984,11 +1050,12 @@ first sample build; if `Heap Fetches` is non-zero, tighten autovacuum
 
 - `pool_mode = transaction` (locked per `00 §6`).
 - `max_prepared_statements >= 200` enables per-server prepared-statement
-  cache so repeated hot queries amortize parse cost. PgBouncer rewrites
-  client-side statement names to internal names
-  (`https://www.crunchydata.com/blog/prepared-statements-in-transaction-mode-for-pgbouncer`).
-  Clients must use the protocol-level prepared-statement API (asyncpg
-  default), not raw SQL `PREPARE`. **locked**
+  caching inside PgBouncer 1.25 txn mode. On the client side,
+  `serve_read` still keeps `statement_cache_size=0`, avoids explicit
+  `Connection.prepare()` in txn mode, and treats the prepared-plan win as
+  an integration-tested optimization rather than a free guarantee.
+  Schema-changing DDL still bypasses PgBouncer and may require
+  `RECONNECT` to flush stale plans. **provisional**
 - Admin connections (projection worker's rename path, `pg_cron`)
   bypass the pooler via a reserved role.
 - Next.js serverless functions on Vercel pool through the same
@@ -1026,7 +1093,7 @@ pool per `02 §7.3`. Serve stays OLTP-shaped.
 | Stage-and-swap via `ALTER TABLE … RENAME` in a transaction; `_prev` held 24 h | DDL-in-transaction atomicity; 24 h rollback window without full rebuild. |
 | Covering `INCLUDE` index on `idx_paper_api_cards_list` | `rag-future.md` §7 canonical example; PG 18 §11.9 index-only-scan semantics. |
 | Serve projections not partitioned day one | Row counts fit in a single table; OLTP lookups don't benefit from pruning. |
-| PgBouncer transaction mode with prepared statements (1.21+) | Engine API concurrency fits txn mode; prepared statements cut parse cost. |
+| PgBouncer transaction mode with server-side prepared-plan caching (1.21+) | Engine API concurrency fits txn mode, but asyncpg clients still keep `statement_cache_size=0` and avoid explicit prepare calls until integration tests prove the path stable. |
 | `postgres_fdw` on serve only | Warehouse is source, never querier (`02 §1`). |
 | Foreign schema `warehouse_grounding` limited to grounding spine + `paper_evidence_units` | `00 §4` forbids general FDW queries. |
 | FDW queries keyed by `corpus_id` / `evidence_key`, cardinality-bounded | Enforces "if it's hot, project it". |
@@ -1036,8 +1103,8 @@ pool per `02 §7.3`. Serve stays OLTP-shaped.
 | `pg_prewarm` autoprewarm + hourly `pg_cron` reprewarm of hot list index | No cold-cache stalls on restart. |
 | Fillfactor tiers 100 / 90 / 80 (append / updatable-projection / status-flipping) | Serve-delta from `02 §0.5`. |
 | Frozen-column trigger on `serving_runs` once `build_status = 'published'` | Freezes cohort / analyzer / synonym / chunk-version per `rag-future.md` §7 while still allowing post-publish retirement + OpenSearch alias-swap audit fields. |
-| `pg_cron` with staggered UTC schedules | Single-worker model requires staggering. |
-| Extension set: `pgcrypto`, `pg_trgm`, `pg_stat_statements`, `auto_explain`, `pg_buffercache`, `pg_prewarm`, `pg_cron`, `postgres_fdw` | Minimal OLTP + FDW + hygiene + warmup. |
+| `pg_cron` with staggered UTC schedules | Staggering remains the local ops default, but `cron.use_background_workers=on` allows parallel jobs within the worker-process caps. |
+| Extension set: `pgcrypto`, `pg_trgm`, `pg_stat_statements`, `pg_buffercache`, `pg_prewarm`, `pg_cron`, `postgres_fdw`; preload modules include `auto_explain` | Minimal OLTP + FDW + hygiene + warmup without modeling `auto_explain` as a SQL extension. |
 
 ### Provisional (revisit after sample build)
 
@@ -1050,7 +1117,7 @@ pool per `02 §7.3`. Serve stays OLTP-shaped.
 | `paper_api_profiles.full_title` GiST trgm index | Verify wiki autocomplete is the actual shape. |
 | `graph_points` not partitioned | Revisit past ~100 M total rows across retained runs. |
 | `paper_semantic_neighbors` not partitioned | Hash × 16 by `corpus_id` becomes default at ~500 M rows. |
-| Better Auth generator defaults (`schema: 'auth'`, `generateId: false`, UUIDv7 default) | Confirm on CLI first run. |
+| Better Auth activation details beyond the reserved `auth` schema | Confirm on auth activation, not before. |
 | PgBouncer `max_prepared_statements = 200` | Prepared-cache hit rate via `pg_stat_statements`. |
 | 24 h `_prev` retention | Operator-rollback window adequacy after measured cutover frequency. |
 | `pg_cron` job cadences | Tune once `10-observability.md` measures cutover lag. |

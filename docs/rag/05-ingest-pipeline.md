@@ -308,10 +308,11 @@ Partition routing happens **in the worker**, before COPY:
 > compatible with PG's hash-partition function. Two options:
 >
 > 1. Compute via PG: `SELECT (hashint8($1) % 32 + 32) % 32` per batch
->    (cheap, correct). **Locked** for the first sample build.
-> 2. Re-implement PG's `hash_combine64` in Python (zero round-trip).
->    **Deferred** until profiling shows the per-batch hash query is
->    hot.
+>    (cheap, correct parity oracle).
+> 2. Re-implement PG's compatible routing hash in Python (zero
+>    round-trip). **Locked** as the steady-state path, with parity tests
+>    against PostgreSQL on representative `corpus_id` samples before
+>    first production use.
 
 ### 4.4 Post-load index build
 
@@ -327,6 +328,11 @@ session-state of:
 
 plus `temp_buffers='512MB'` and a `DO` block that loops `0..31` and
 `CREATE INDEX` per partition.
+
+PostgreSQL's parallel utility-command rule matters here: for one
+parallel `CREATE INDEX`, `maintenance_work_mem` is the budget for the
+whole command, not a per-worker multiplier. So `max_parallel_maintenance_workers`
+scales CPU / I/O parallelism more than RAM linearly.
 
 Per-family index order: (1) PK on every partition first (COPY does not
 enforce); (2) per-partition btrees (reverse-direction, partial);
@@ -534,10 +540,19 @@ revisit if RAM headroom shrinks once SPECTER2 + PT3 grounding + chunk
 derivation all run in one cycle. Cache is read-only after build;
 newly admitted `corpus_id`s flush at family-boundary checkpoints.
 
-### 5.4 Embeddings ingest
+### 5.4 Graph-embedding ingest / generation
 
 `embeddings-specter_v2` is not present in the 2026-03-10 release on
-disk; the contract reserves the slot and locks the loading shape.
+disk. The graph lane still requires `paper_embeddings_graph`, so the
+source contract is now explicit:
+
+1. **Use upstream S2 embeddings when the release actually carries them.**
+2. **Otherwise generate SPECTER2 locally for the active graph rollout wave**
+   and write the same `paper_embeddings_graph` rows.
+
+This is a local project policy, not a vendor guarantee. It keeps the
+graph lane buildable without pretending the upstream release always
+ships the embedding shard.
 
 DuckDB read:
 
@@ -545,27 +560,36 @@ DuckDB read:
 SELECT corpusid::text       AS s2_corpus_id_raw,
        'SPECTER2_v2'        AS model_key_text,
        1::smallint          AS embedding_revision,
+       1::smallint          AS embedding_source_kind,  -- upstream_release
        vector::FLOAT[768]   AS embedding
   FROM read_parquet('/mnt/solemd-graph/data/semantic-scholar/releases/<tag>/embeddings-specter_v2/*.parquet')
 ```
 
-Worker resolves `s2_corpus_id_raw → corpus_id` via the §5.3 cache,
-then COPYs to `paper_embeddings_graph` (`02 §4.6`):
+When upstream shards exist, worker resolves `s2_corpus_id_raw →
+corpus_id` via the §5.3 cache, then COPYs to `paper_embeddings_graph`
+(`02 §4.6`):
 
 ```python
 async def copy_embeddings(records):
     await wh_pool.copy_records_to_table(
         "paper_embeddings_graph", schema_name="solemd",
-        records=((r.corpus_id, _model_key('SPECTER2_v2'), r.embedding_revision, r.embedding) for r in records),
-        columns=("corpus_id","model_key","embedding_revision","embedding"),
+        records=((r.corpus_id, _model_key('SPECTER2_v2'), r.embedding_revision, r.embedding_source_kind, r.embedding) for r in records),
+        columns=("corpus_id","model_key","embedding_revision","embedding_source_kind","embedding"),
     )
 ```
 
 `halfvec(768)` vs `vector(768)` is provisional per `02 §0.1`. Ingest is
 column-type-agnostic — COPY records emit as `array.array('f', …)` and
 asyncpg handles the wire format either way. **Locked at the COPY
-contract; provisional at the column type.** HNSW build deferred per
-`02 §4.6`.
+contract; provisional at the column type.**
+
+When upstream shards do **not** exist, the same target table is fed by a
+local SPECTER2 batch-generation stage for the included graph cohort. The
+wave-based rule matters here: day one does not require generating
+full-corpus graph embeddings before the graph lane becomes usable.
+Locally generated rows write `embedding_source_kind = 2` so later rebuilds can
+distinguish them from upstream-shipped rows without guesswork. HNSW build
+remains deferred per `02 §4.6`.
 
 ## §6 Resource budget
 
@@ -821,7 +845,7 @@ version of every row." **locked**.
 Release directories under `/mnt/solemd-graph/data/<source>/releases/<tag>/`
 are read-only (`01 §3`). Two workers reading the same shard concurrently
 is fine. The only write conflict is on the §11 manifest polling,
-itself serialized by pg_cron's single-worker model.
+which stays low-frequency and advisory-lock guarded by design.
 
 ## §11 Operational cadence
 
@@ -829,12 +853,14 @@ itself serialized by pg_cron's single-worker model.
 
 | Job | Cron | Purpose |
 |---|---|---|
-| `ingest-poll-manifests` | `*/15 * * * *` | Scans `…/<release_tag>/MANIFEST` files; for each new `(source, tag)` not in `solemd.source_releases`, INSERTs the row and enqueues a Dramatiq `ingest.start` job. |
+| `ingest-poll-manifests` | `*/15 * * * *` | Scans `…/<release_tag>/MANIFEST` files; for each new `(source, tag)` not in `solemd.source_releases`, INSERTs the row and emits a SQL-side handoff / notification that the external dispatcher converts into a Dramatiq `ingest.start` job. |
 | `ingest-audit-orphan-unlogged` | `15 6 * * *` | §9.5 audit. |
 | `ingest-audit-stuck-runs` | `*/30 * * * *` | Find `ingest_runs` in active ingest phases (`loading`, `indexing`, `analyzing`) whose `phase_started_at` is older than the phase budget (e.g., loading > 12 h, indexing > 4 h). Emit Prometheus gauge `ingest_stuck_runs`. |
 
-Per `03 §6.5` and `04 §11.1`, jobs run on staggered minutes because
-pg_cron is single-worker (<https://github.com/citusdata/pg_cron>).
+Per `03 §6.5` and `04 §11.1`, jobs run on staggered minutes to reduce
+collision with other maintenance lanes; `pg_cron` itself is not restricted to
+one active job when background workers are enabled
+(<https://github.com/citusdata/pg_cron>).
 
 ### 11.2 Manual trigger
 
@@ -998,7 +1024,7 @@ single-row lookup at worker entry) run via the warehouse_admin pool
 | asyncpg `copy_records_to_table` (binary `COPY FROM STDIN`) is the sole bulk-write path | `research-distilled §2`; magic.io asyncpg blog. |
 | DuckDB is the sole tabular stream-transformer (parquet, JSONL, CSV) | `read_parquet` / `read_json_auto` push down projection + predicate. |
 | `lxml.iterparse` + `clear(keep_tail=False)` is the sole BioCXML stream-transformer | Bounds RSS < 2 GiB regardless of corpus size. |
-| Partition routing via PG round-trip (`hashint8($1) % 32`) for first sample build | Correctness > microseconds; in-process PG-compatible hash deferred. |
+| Partition routing via in-process PostgreSQL-compatible hash with parity tests against `hashint8($1)` | Keeps Slice 3 within ingest-budget shape while preserving deterministic bucket placement. |
 | Per-release advisory lock `hashtext('ingest:'||source_code||':'||release_tag)::int8` | Mirrors `04 §9.1`; `pg_try_advisory_lock` for fast-fail; auto-release on session drop. |
 | One UPDATE for publish; no swap | No live readers; no rename needed. |
 | Publish flip is projection trigger via `04` pg_cron polling | LISTEN/NOTIFY deferred per `04` open items. |
@@ -1038,7 +1064,7 @@ single-row lookup at worker entry) run via the warehouse_admin pool
 | pgBouncer in front of warehouse for ingest | Worker concurrency exceeds 64-slot direct-pool headroom. |
 | `pg_partman` 5.x on `ingest_runs` time-range lifecycle | Row count > 10 M (`02 §8`). |
 | HNSW build on `paper_embeddings_graph` inside ingest | `02 §4.6` trigger fires. |
-| Inline grounding chunk derivation inside ingest | Today owned by separate post-ingest worker; fold in at phase 4.5 if its lag becomes a publish-blocker. |
+| Inline grounding chunk derivation inside ingest | Today owned by the Dramatiq `chunker.assemble_for_paper` actor per `05a §6`; folding it into ingest itself remains deferred until its lag becomes a publish-blocker. |
 | Side ledger of phase timestamps vs `ingest_runs.phase_started_at` JSONB | Observability needs structured per-phase queries JSONB extraction is too slow for. |
 | GPU-accelerated parquet decode for SPECTER2 | RAPIDS `cudf` profile shows DuckDB-side decode is the bottleneck. |
 | Off-box ingest mirror (second machine, COPY-stream) | Multi-host topology becomes a thing. |
@@ -1056,7 +1082,8 @@ Forward-tracked; none block subsequent docs:
   "parquet/jsonl"; on-disk reality is JSONL.gz only. DuckDB handles
   both; §5.1 uses `read_json_auto` today. Source:
   <https://api.semanticscholar.org/api-docs/datasets>.
-- **In-process PG-compatible hash.** §4.3 locks Option 1 (PG round-trip).
+- **In-process PG-compatible hash.** §4.3 now locks this as the steady-state
+  routing path, with PostgreSQL parity tests required before first use.
   Option 2 deferred. Reviewer: confirm the round-trip cost is acceptable.
 - **Lookup-cache strategy at 128 GB host.** §5.3 locks Python dict;
   at 128 GB the same dict is resident at full 8-worker concurrency.

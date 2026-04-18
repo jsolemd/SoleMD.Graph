@@ -14,8 +14,15 @@
 ## Purpose
 
 Fix exactly where every piece of state lives so `docker/compose.yaml`, the
-warehouse and serve HCL schema files, the ingest pipeline, and the backup
+warehouse and serve SQL schema files, the ingest pipeline, and the backup
 runbook all resolve against the same paths.
+
+Locked operational posture for the rebuild:
+
+- initial implementation is **wave-based**, not immediate full-corpus scale
+- the current 2 TB E-drive is acceptable for those first waves
+- full-corpus warehouse + archive + backup scale is gated by either larger
+  storage or explicit offloading / retention changes
 
 ## 1. Volume inventory
 
@@ -57,6 +64,11 @@ Rules:
   better for crash-resume, ownership, and image-update flows.
 - OpenSearch is single-node dev; `number_of_replicas = 0` makes replica
   storage a non-factor.
+- Langfuse is currently externalized to Langfuse Cloud for the
+  workstation phase, so it adds **no** local NVMe volume footprint.
+  If a later self-hosting decision returns, the required PG +
+  ClickHouse + blob-store surfaces are reinstated explicitly in this
+  inventory.
 
 ## 3. Bind mounts on E-drive (`/mnt/solemd-graph`)
 
@@ -133,6 +145,10 @@ Contract:
 
 ### NVMe (1 TB today, `/var/lib/docker`)
 
+Current sizing table is the **project-local** envelope. Langfuse is
+externalized to Langfuse Cloud in the current workstation phase, so no
+local Langfuse storage is included here.
+
 | Surface                        | Steady state | Peak     |
 |--------------------------------|-------------:|---------:|
 | Docker image layers + cache    |       ~80 GB |  ~120 GB |
@@ -172,7 +188,9 @@ warehouse is fully loaded:
 - `pgbackrest-repo/` will carry ~100–200 GB of rolling full + incr + WAL.
 
 Implication: **the 2 TB E-drive is not a comfortable long-term home for
-the full warehouse + archive + backup set.** Two practical paths:
+the full warehouse + archive + backup set.** That is **not** a blocker for the
+initial wave-based implementation, but it is a blocker before a true
+full-corpus load. Two practical paths:
 1. Grow the E-drive VHDX to 4 TB before warehouse ingest.
 2. Move `pgbackrest-repo/` off the E-drive onto a second bind (separate
    disk or off-box mirror as the primary, not the secondary, target).

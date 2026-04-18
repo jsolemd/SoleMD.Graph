@@ -194,11 +194,15 @@ runs through the Langfuse SDK/API -- not a separate dashboard or log parser.
 
 | Component | State |
 |-----------|-------|
-| Langfuse server | v3.158.0, self-hosted at `127.0.0.1:3100` |
+| Langfuse deployment | Cloud Hobby (`https://cloud.langfuse.com` or `https://us.cloud.langfuse.com`) |
 | Python SDK | v4 (observation-centric model) |
 | Score configs | benchmark metrics plus runtime observability dimensions registered via `ensure_score_configs()` |
 | Environment | `development` for experiments, `production` for live API |
 | Annotation queue | `rag-failure-review` for domain expert triage of hit@1=0 |
+
+Workstation note:
+- Cloud Hobby currently gives `50k` units / month and `30` days data access.
+- Keep traces intentionally coarse; large retrieved text does not belong in span attributes.
 
 ### Benchmark Datasets (16 live suites)
 
@@ -591,7 +595,8 @@ JSON reports alone -- always verify results through Langfuse traces.
 cd engine
 
 # 1. Run benchmarks (traces push to Langfuse automatically)
-export LANGFUSE_HOST=http://127.0.0.1:3100
+export LANGFUSE_HOST=https://cloud.langfuse.com
+# or: https://us.cloud.langfuse.com
 export LANGFUSE_SECRET_KEY=sk-lf-...
 export LANGFUSE_PUBLIC_KEY=pk-lf-...
 

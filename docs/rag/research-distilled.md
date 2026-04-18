@@ -13,7 +13,10 @@ conversational and are not preserved. This is the durable artifact.
   today / 128 GB planned, RTX 5090, NVMe (`/var/lib/docker`, 1 TB) +
   internal-NVMe-backed E-drive VHDX (`/mnt/solemd-graph`, 2 TB ext4).
 - **Pinned stack**: PostgreSQL 18, OpenSearch 3.6, Redis 8, Python 3.13
-  (uv-managed), Next.js 16 on Vercel, CUDA 13.2 + RAPIDS.
+  (uv-managed), Next.js 16 on Vercel, and a GPU-first worker posture on the
+  RTX 5090. As of April 18, 2026, the documented supported baseline is RAPIDS
+  26.04 on CUDA 13.0-13.1; PyTorch stable packaging is CUDA 13.0.x while CUDA
+  13.2.x remains experimental.
 - **Target shape**: two PG clusters (warehouse cold / serve hot), OpenSearch
   serving plane, MedCPT retrieval cascade, object-storage-style archive for
   cold artifacts.
@@ -108,9 +111,9 @@ post-load parallel `CREATE INDEX`; `SET LOGGED`; `VACUUM (FREEZE, ANALYZE)`.
 ### Applied decisions
 
 asyncpg as the default driver; psycopg3 for admin / sync utilities; raw SQL
-+ Pydantic v2; Atlas authors migrations, `schema_migrations.py` applies
-them; Dramatiq AsyncIO middleware with shared pools; Testcontainers for
-integration tests.
++ Pydantic v2; ordered SQL schema files author the desired state and
+`schema_migrations.py` applies versioned SQL migrations; Dramatiq AsyncIO
+middleware with shared pools; Testcontainers for integration tests.
 
 ### Primary sources
 
@@ -151,8 +154,9 @@ integration tests.
 ### Applied decisions
 
 32 hash partitions (provisional); BIGINT + UUIDv7 mix; MAXALIGN ordering in
-HCL authoring; `lz4` TOAST; fillfactor tiering (provisional); skip-scan
-applied opportunistically; pgvector HNSW deferred; no columnar today.
+SQL-first schema authoring; `lz4` TOAST; fillfactor tiering (provisional);
+skip-scan applied opportunistically; pgvector HNSW deferred; no columnar
+today.
 
 ### Primary sources
 
@@ -171,10 +175,20 @@ applied opportunistically; pgvector HNSW deferred; no columnar today.
 - The `postgres:18` Docker image is **not** built `--with-liburing`;
   `io_method=worker` is the safe default. Custom-image maintenance is not
   worth the ~5 s vs 15 s cold-cache delta for solo-dev work.
+- PostgreSQL 18's own docs matter here: `maintenance_work_mem` is a
+  budget for the **utility command**, not a simple per-worker multiplier.
+  Parallel `CREATE INDEX` uses that total budget while requiring only a
+  minimum slice per worker. Treat `max_parallel_maintenance_workers` as a
+  CPU / I/O concurrency knob first, not as linear RAM multiplication.
 - Because the E-drive VHDX is confirmed internal-NVMe-backed, treat it as
   NVMe-backed virtualization rather than raw direct-attached NVMe. Start
   warehouse tuning around `effective_io_concurrency=128` and
   `random_page_cost=1.25`, then re-measure from there.
+- WSL2 host tuning should follow the Linux-native path: enable `systemd`
+  in `/etc/wsl.conf`, persist sysctls in `/etc/sysctl.d/*.conf`, and let
+  `systemd-sysctl` apply them at boot. Use WSL's global `.wslconfig` for
+  VM-level limits such as `memory=` and, if explicit HugeTLB reservation
+  proves timing-sensitive at boot, `kernelCommandLine`.
 - PG 18 autovacuum knobs (`autovacuum_worker_slots`,
   `autovacuum_vacuum_max_threshold`,
   `vacuum_max_eager_freeze_failure_rate`) land useful defaults; tune
@@ -191,17 +205,60 @@ applied opportunistically; pgvector HNSW deferred; no columnar today.
 warehouse on minimal-WAL + async-commit during ingest, serve on
 replica-WAL + sync-commit always. Warehouse tuning should start from an
 internal-NVMe-backed VHDX posture (`effective_io_concurrency≈128`,
-`random_page_cost≈1.25`) and then be refined in `09-tuning.md`.
+`random_page_cost≈1.25`) and then be refined in `09-tuning.md`. WSL gets
+an explicit `.wslconfig memory=` cap rather than inheriting the default
+50 % host-RAM limit.
 
 ### Primary sources
 
 - PG 18 async I/O in production — <https://postgresqlhtx.com/postgresql-18-async-i-o-in-production-real-world-benchmarks-configuration-patterns-and-storage-performance-in-2026/>
 - PG 18 vacuuming improvements — <https://techcommunity.microsoft.com/blog/adforpostgresql/postgresql-18-vacuuming-improvements-explained/4459484>
 - Crunchy on server performance — <https://www.crunchydata.com/blog/optimize-postgresql-server-performance>
+- PG 18 resource consumption — <https://www.postgresql.org/docs/18/runtime-config-resource.html>
+- PG 18 `CREATE INDEX` — <https://www.postgresql.org/docs/18/sql-createindex.html>
 - PG 18 WAL config — <https://www.postgresql.org/docs/current/runtime-config-wal.html>
 - docker-library/postgres#1365 — <https://github.com/docker-library/postgres/issues/1365>
+- WSL advanced config — <https://learn.microsoft.com/en-us/windows/wsl/wsl-config>
+- WSL systemd — <https://learn.microsoft.com/en-us/windows/wsl/systemd>
+- `sysctl.d(5)` — <https://man7.org/linux/man-pages/man5/sysctl.d.5.html>
 
-## 6. OpenSearch 3.x serving plane
+## 6. Monorepo deployment and package boundaries
+
+### Key findings
+
+- Monorepo deployment works best when each deployable has its own root
+  directory and environment contract instead of one broad "app plus helpers"
+  tree.
+- Vercel's monorepo flow is explicitly project-per-root-directory, with support
+  for skipping unaffected projects when internal dependencies are declared
+  clearly.
+- Turborepo's package model is intentionally simple: application packages are
+  deployable leaves of the package graph; library packages are shared code and
+  should not be promoted to deployables by accident.
+- Internal packages should exist for real reuse boundaries, not as a reflexive
+  decomposition of every feature folder.
+
+### Applied decisions
+
+Use deployment-first repository naming:
+
+- `apps/web`
+- `apps/api`
+- `apps/worker`
+- `packages/*` only for true shared code
+- `db/` for SQL authority
+
+Keep wiki as a web feature plus worker/API support surfaces rather than forcing
+it into a separate package. Keep browser graph runtime as a package because it
+is a real runtime contract shared across the frontend surface.
+
+### Primary sources
+
+- Vercel monorepos — <https://vercel.com/docs/monorepos>
+- Turborepo internal packages — <https://turborepo.dev/docs/crafting-your-repository/creating-an-internal-package>
+- Turborepo package types — <https://turborepo.dev/docs/core-concepts/package-types>
+
+## 7. OpenSearch 3.x serving plane
 
 ### Key findings
 
@@ -215,6 +272,12 @@ internal-NVMe-backed VHDX posture (`effective_io_concurrency≈128`,
 - MedCPT query encoder + cross-encoder rerank run in `graph-engine-api`
   (FastAPI), **not** OpenSearch ML Commons. Cleaner GPU control, batching,
   and failover.
+- OpenSearch's own guidance still says JVM heap should be about half the
+  memory available to the system, with `bootstrap.memory_lock=true` and
+  `vm.max_map_count>=262144`. On this stack the better interpretation is
+  a **31 GB cap**, not an always-grow target: Faiss HNSW is mmap-served
+  from disk, so extra RAM above that should flow to the OS file cache
+  rather than to JVM heap.
 - Synonym strategy: search-time `synonym_graph` with `updateable: true`,
   artifact derived from `concept_search_aliases` filtered by
   `eligible_for_search_synonym = true`, with `synonym_version` stamped on
@@ -225,27 +288,59 @@ internal-NVMe-backed VHDX posture (`effective_io_concurrency≈128`,
 
 ### Applied decisions
 
-Two release-scoped indexes (`paper_index`, `evidence_index`) behind
-aliases; Faiss HNSW + fp16 provisional; engine-side rerank; filtered
-synonym pipeline; release cutover via alias swap. Concrete mappings and
-pipeline definitions in `07-opensearch-plane.md`.
+Two release-scoped concrete indexes (`paper_index_<run_token>`,
+`evidence_index_<run_token>`) behind stable live aliases
+(`paper_index_live`, `evidence_index_live`); Faiss HNSW + fp16
+provisional; engine-side rerank; filtered synonym pipeline; release
+cutover via alias swap. Concrete mappings and pipeline definitions in
+`07-opensearch-plane.md`.
 
 ### Primary sources
 
 - OpenSearch 3.6 announcement — <https://opensearch.org/blog/introducing-opensearch-3-6/>
+- OpenSearch system settings — <https://docs.opensearch.org/latest/install-and-configure/configuring-opensearch/configuration-system/>
 - OpenSearch hybrid search — <https://docs.opensearch.org/latest/vector-search/ai-search/hybrid-search/index/>
 - Score ranker processor (RRF) — <https://docs.opensearch.org/latest/search-plugins/search-pipelines/score-ranker-processor/>
 - k-NN methods and engines — <https://docs.opensearch.org/latest/mappings/supported-field-types/knn-methods-engines/>
+- OpenSearch memory-optimized search — <https://docs.opensearch.org/latest/vector-search/optimizing-storage/memory-optimized-search/>
 - Index aliases — <https://docs.opensearch.org/latest/im-plugin/index-alias/>
 - NCBI MedCPT — <https://github.com/ncbi/MedCPT>
 
-## 7. Observability, backup, and ops
+## 8. Observability, backup, and ops
 
 ### Key findings
 
+- Langfuse tracing clients should target the latest SDKs: Python SDK v4
+  today, and JS/TS SDK v5 when frontend traces land later. The Python
+  v4 migration matters operationally because it changes the tracing
+  model to observation-centric instrumentation
+  (`propagate_attributes()`, `start_as_current_observation()`) and
+  changes default span-export filtering.
+- Langfuse Fast Preview / the observation-centric v4 product experience
+  remains Cloud-only today. Self-hosted OSS still follows the current
+  v3 platform deployment path; do **not** assume Observations API v2 /
+  Metrics API v2 availability on self-hosted deployments yet.
+- Langfuse Cloud Hobby is a strong workstation-phase default: 50k units
+  / month included, 30 days data access, 2 users, and no local PG /
+  ClickHouse / Redis / blob-store footprint.
 - Serve is precious (projections, future auth / user-data). pgBackRest
   full weekly + daily incremental + 5–10 min WAL, local repo + off-box
   mirror (Backblaze B2 candidate).
+- Self-hosted Langfuse requires more than web/worker + Postgres +
+  ClickHouse: it also requires Redis / Valkey and a mandatory
+  S3-compatible blob store for event uploads, media, and exports.
+  MinIO is the documented self-hosted local option.
+- Before pgBackRest is actually wired, the correct PostgreSQL posture is
+  `archive_mode=off`. Do **not** normalize fake-success placeholders such
+  as `archive_command='/bin/true'`; PostgreSQL documents that as
+  effectively disabling archiving while reporting success.
+- Langfuse built-in data retention on self-hosted is Enterprise-only.
+  OSS self-host defaults to indefinite retention; if we want a 90-day
+  policy on workstation/shared-infra, that requires either an EE
+  license or an explicit manual cleanup/export runbook.
+- Langfuse Cloud Hobby's 30-day data-access limit changes the benchmark
+  archival contract: datasets and important run history need an export
+  mirror if they must survive beyond the active month.
 - Warehouse is rebuildable from E-drive parquet releases. Back up only the
   canonical-derived schema (concepts, aliases, lifecycle, run metadata,
   grounding spine) as logical dumps.
@@ -258,26 +353,108 @@ pipeline definitions in `07-opensearch-plane.md`.
   hook — keep `pg_stat_statements`.
 - Logs: PG 18 `log_destination = 'stderr,jsonlog'`; Grafana Alloy
   (Promtail EOL early 2026) → Loki → Grafana.
-- Atlas for schema diff and CI lint; keep `schema_migrations.py` as
-  executor ledger (audit history is worth preserving).
+- When pgBackRest lands for real, wire it atomically: repo config,
+  `stanza-create`, `check`, real `archive_command`, and local
+  `spool-path`; enable `archive-async` only with that complete path in
+  place.
+- SQL-first schema authoring and CI drift checks around generated snapshots;
+  keep `schema_migrations.py` as executor ledger (audit history is worth
+  preserving).
 - Secrets: 1Password CLI + direnv (`op run`) — zero disk persistence,
   < 1 s resolution, trivial path to prod secrets managers.
 
 ### Applied decisions
 
 pgBackRest on serve; logical dumps on warehouse canonical-derived;
-Prom / Grafana / Loki / Alloy stack in the always-up profile; Atlas HCL
+Prom / Grafana / Loki / Alloy stack in the always-up profile; SQL-first schema
 authoring; 1Password + direnv for secrets. Concrete runbooks land in
-`10-observability.md`, `11-backup.md`, and `12-migrations.md`.
+`10-observability.md`, `11-backup.md`, and `12-migrations.md`. Until
+`11-backup.md` lands, serve archiving stays off rather than using a
+placeholder success command. Langfuse observability uses Python SDK v4
+at the engine boundary and Langfuse Cloud Hobby for the current
+workstation phase; self-hosting is deferred unless cloud limits,
+retention, or data-control requirements become the forcing function.
 
 ### Primary sources
 
 - pgBackRest — <https://pgbackrest.org/>
+- Langfuse SDK overview — <https://langfuse.com/docs/observability/sdk/overview>
+- Langfuse Python v3 → v4 — <https://langfuse.com/docs/observability/sdk/upgrade-path/python-v3-to-v4>
+- Langfuse JS/TS v4 → v5 — <https://langfuse.com/docs/observability/sdk/upgrade-path/js-v4-to-v5>
+- Langfuse Fast Preview / v4 — <https://langfuse.com/docs/v4>
+- Langfuse pricing — <https://langfuse.com/pricing>
+- Langfuse billable units — <https://langfuse.com/docs/administration/billable-units>
+- Langfuse cloud deployment — <https://langfuse.com/docs/deployment/cloud>
+- Langfuse data regions — <https://langfuse.com/security/data-regions>
+- Langfuse self-hosting overview — <https://langfuse.com/self-hosting>
+- Langfuse blob storage (self-hosted) — <https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage>
+- Langfuse ClickHouse (self-hosted) — <https://langfuse.com/self-hosting/deployment/infrastructure/clickhouse>
+- pgBackRest user guide — <https://pgbackrest.org/user-guide.html>
+- pgBackRest configuration reference — <https://pgbackrest.org/configuration.html>
 - PG 18 jsonlog — <https://www.postgresql.org/about/featurematrix/detail/jsonlog-logging-format/>
+- PG 18 WAL archiving — <https://www.postgresql.org/docs/current/runtime-config-wal.html>
+- Langfuse data retention — <https://langfuse.com/docs/administration/data-retention>
 - Atlas v0.36 PG partitions — <https://atlasgo.io/blog/2025/07/21/v036-snowflake-postgres-partitions-and-azure-devops>
 - Grafana Loki OSS — <https://grafana.com/oss/loki/>
 - 1Password direnv — <https://github.com/tmatilai/direnv-1password>
 - Backblaze B2 vs Cloudflare R2 (ThemeDev, 2026) — <https://themedev.net/blog/cloudflare-r2-vs-backblaze-b2/>
+
+## 9. Langfuse alternatives and fallback ladder
+
+### Key findings
+
+- If Langfuse Cloud Hobby's `50k` monthly-unit budget or `30`-day data
+  access becomes constraining, the cleanest managed alternatives for
+  SoleMD.Graph are **Phoenix Cloud / AX** and **Braintrust**.
+- **Phoenix OSS** is the best lightweight local fallback when the
+  constraint is RAM / local footprint rather than SaaS cost. It stays
+  close to OpenTelemetry / OpenInference, keeps the exit cost low, and
+  has a strong eval surface for RAG-heavy systems.
+- **Braintrust** is the strongest "trace-to-eval" managed alternative
+  if the priority is turning production traces directly into datasets,
+  scorers, and experiments. Its free Starter plan is unusually usable
+  for a solo developer.
+- **LangSmith** is credible and feature-rich, but the fit is best when
+  the product is already strongly LangChain / LangGraph-shaped. For
+  SoleMD.Graph's current engine direction, that ecosystem bias is more
+  coupling than benefit.
+- **Helicone** is best understood as a cheap gateway / request logger,
+  not the primary evaluation control plane. Its token / cost visibility
+  is good, but the experiment surface is no longer the differentiator.
+- **W&B Weave** remains a good Python-first eval / tracing option with
+  strong cost tracking, but it is not a lighter operational fit than
+  Phoenix for this stack.
+
+### Applied decision
+
+Stay on **Langfuse Cloud Hobby** for the current workstation phase. The
+fallback ladder is:
+
+1. **Phoenix OSS** if the forcing function is "keep it local, keep it
+   small, keep it standards-based."
+2. **Phoenix Cloud / AX** if the forcing function is better managed
+   RAG eval tooling without self-hosting.
+3. **Braintrust** if the forcing function is a stronger production-trace
+   to evaluation workflow with generous free collaboration limits.
+
+That keeps the current decision reversible without rewriting the entire
+observability contract around a gateway-specific or framework-specific
+vendor.
+
+### Primary sources
+
+- Phoenix home / product overview — <https://phoenix.arize.com/>
+- Phoenix evaluation overview — <https://arize.com/docs/phoenix/evaluation/llm-evals>
+- Phoenix evaluators API — <https://arize.com/docs/phoenix/api/evaluation-models>
+- Braintrust pricing — <https://www.braintrust.dev/pricing>
+- Braintrust observe docs — <https://www.braintrust.dev/docs/observe>
+- Braintrust plans and limits — <https://www.braintrust.dev/docs/reference/limits>
+- LangSmith pricing — <https://www.langchain.com/pricing>
+- LangSmith product / observability — <https://www.langchain.com/langsmith>
+- Helicone pricing — <https://www.helicone.ai/pricing>
+- Helicone gateway overview — <https://docs.helicone.ai/gateway/overview>
+- Weave OpenAI integration / cost tracking — <https://docs.wandb.ai/weave/guides/integrations/openai>
+- Weave trace plots — <https://docs.wandb.ai/weave/guides/tracking/trace-plots>
 
 ## Lineage
 

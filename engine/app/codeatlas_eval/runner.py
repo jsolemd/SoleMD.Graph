@@ -118,6 +118,10 @@ def sync_required_doc_libraries(
             arguments["docs_path"] = library.docs_path
         if library.description:
             arguments["description"] = library.description
+        if library.include_patterns:
+            arguments["include_patterns"] = library.include_patterns
+        if library.exclude_patterns:
+            arguments["exclude_patterns"] = library.exclude_patterns
         try:
             client.call_tool("add_doc_library", arguments)
         except Exception as exc:  # pragma: no cover - depends on live registry state

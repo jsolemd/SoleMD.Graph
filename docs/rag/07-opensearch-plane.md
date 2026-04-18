@@ -1,7 +1,7 @@
 # 07 — OpenSearch Plane
 
 > **Status**: locked for plane shape — **two-tier serving model** (warm
-> = paper-level, hot = chunk-level), two release-scoped indexes
+> = paper-level, hot = evidence-unit-level), two release-scoped indexes
 > (`paper_index` covers both tiers, `evidence_index` covers hot only)
 > behind stable aliases, Faiss HNSW + fp16 scalar quantization on dense
 > lanes, native `hybrid` compound query + `score-ranker-processor` (RRF)
@@ -49,13 +49,15 @@ doc owns the OpenSearch-side primitives `08` calls.
 
 Seven load-bearing properties:
 
-1. **Two-tier serving model.** **Warm tier** = paper-level grounding
-   (title + abstract + paper-level dense vector); ~14 M papers; lives
-   only in `paper_index`; citation goes back to the paper. **Hot tier**
-   = chunk/sentence-level grounding (per-chunk dense + text); starts at
-   ~500 papers, ceiling ~10 K papers (~100 K chunks at ~10 chunks each);
-   lives in both `paper_index` (paper-level row, marked `tier=hot`) and
-   `evidence_index` (one chunk doc per sentence-aligned chunk). Hot
+1. **Two-tier serving model.** **Warm tier** = paper-level discovery
+   and paper-grounded support (title + abstract + paper-level dense vector); ~14 M
+   papers; lives only in `paper_index`; citation goes back to the
+   paper. **Hot tier** = evidence-unit retrieval over the canonical
+   warehouse sentence/block spine; starts at ~500 papers, ceiling ~10 K
+   papers (~100 K evidence units at ~10 units each); lives in both
+   `paper_index` (paper-level row, marked `tier=hot`) and
+   `evidence_index` (one retrieval doc per promoted evidence unit,
+   carrying sentence/block coordinates for round-trip grounding). Hot
    cohort selection is a product decision driven by `serving_members`
    per `03 §4.3` (cohort_kind = `practice_hot`). (§3, §3.5, §4)
 2. **Two release-scoped indexes behind stable aliases.** `paper_index`
@@ -64,18 +66,21 @@ Seven load-bearing properties:
    and `evidence_index_live` are what every reader knows. Index names
    carry a serving-run suffix; aliases flip atomically per cohort. (§3, §8)
 3. **Faiss HNSW + fp16 scalar quantization on dense lanes.** `sq_fp16`
-   halves dense-vector memory at <1 % recall loss for MedCPT 768d.
+   halves dense-vector memory per the OpenSearch docs; the exact recall
+   trade-off for MedCPT 768d remains benchmark-owned for this project.
    Memory math sized against ~21 GB of paper-level vectors (~14 M)
-   plus ~150 MB of chunk-level vectors (~100 K) — single-node fits
+   plus ~150 MB of evidence-unit vectors (~100 K) — single-node fits
    comfortably on the 68 GB host today and on the 128 GB host. (§4)
-4. **Hybrid retrieval is OpenSearch-native.** Native `hybrid` compound
-   query + `score-ranker-processor` (RRF, added 2.19) does lane fusion
-   inside the cluster. Engine FastAPI sends one query and gets back
-   fused candidates; cross-encoder rerank is a separate engine-side
-   step on the top-30. (§5, §6, §14)
+4. **Hybrid retrieval is OpenSearch-native.** Live retrieval uses
+   native `hybrid` + top-level `hybrid.filter` + `score-ranker-processor`
+   (RRF, added 2.19) inside the cluster. Engine FastAPI sends one query
+   and gets back fused candidates; cross-encoder rerank is a separate
+   engine-side step on the top-30. Score-breakdown / normalization is a
+   separate benchmark-debug path, not the live combiner. (§5, §6, §14)
 5. **MedCPT encoders live in engine FastAPI, not ML Commons.** Model
    lifecycle, GPU residency, batching, and cross-encoder rerank stay
-   on the engine. OpenSearch never holds an inference model. (§6)
+   on the engine by project choice. OpenSearch can host ML models via
+   ML Commons, but that is not the day-one path here. (§6)
 6. **Bulk-then-freeze indexer, two parallel actors.**
    `opensearch.build_paper_index` (warm + hot, ~14 M docs, slow path)
    and `opensearch.build_evidence_index` (hot only, ~100 K docs, fast
@@ -89,8 +94,10 @@ Seven load-bearing properties:
    partial state inside the cluster is impossible by construction. The
    PG-side cohort (`04 §5`) flips first; OpenSearch alias swap follows
    within seconds; failure of the alias swap after PG flip is "retry
-   alias swap; never roll back PG." Warm and hot tiers can rebuild on
-   independent cadences when only one needs to change. (§8, §12)
+   alias swap; never roll back PG." That sequence is a SoleMD.Graph
+   cutover policy, not a cross-system atomic guarantee from OpenSearch.
+   Warm and hot tiers can rebuild on independent cadences when only one
+   needs to change. (§8, §12)
 
 What this doc does **not** cover:
 
@@ -119,11 +126,11 @@ Inherits every convention from `00 §1`, `02 §0`, `03 §0`, `04 §0`,
 |---|---|
 | **Index naming protocol** | `paper_index_<run_token>` and `evidence_index_<run_token>` where `<run_token>` is the full hyphenless `serving_run_id` UUIDv7 (`03 §2`). Stable aliases `paper_index_live` / `evidence_index_live` are what every reader knows. Previous-run alias `_prev` retained 24 h then dropped, mirroring `04 §3.6` `_prev` retention. **locked**. |
 | **`opensearch_index` artifact_kind contract** | Per `03 §4.3`, every OpenSearch build emits a `serving_artifacts` row with `artifact_kind = opensearch_index`. This doc fixes the row shape: `alias_or_index_name` carries the concrete index name (not the alias); `artifact_uri` is `opensearch://<index_name>`; `row_count` carries the post-bulk doc count; `artifact_checksum` is a SHA-256 of the canonical mapping JSON for the index, so mapping drift is detectable. **locked**. |
-| **`opensearch_alias_swap_status` serving-run audit tail** | Adds three additive `serving_runs` columns — `opensearch_alias_swap_status`, `opensearch_alias_swap_attempted_at`, `opensearch_alias_swap_error` — to close the Saga risk named in `04` open items. See §8.4 / §11.2 / `serving_runs` HCL delta. **locked** for shape; **provisional** for whether one combined status column later splits per index. |
-| **Encoder-placement boundary** | MedCPT-Article-Encoder (query side) + MedCPT-Cross-Encoder (rerank) live in engine FastAPI on the RTX 5090, not ML Commons. OpenSearch never holds a model. (§6) **locked**. |
+| **`opensearch_alias_swap_status` serving-run audit tail** | Adds three additive `serving_runs` columns — `opensearch_alias_swap_status`, `opensearch_alias_swap_attempted_at`, `opensearch_alias_swap_error` — to close the Saga risk named in `04` open items. See §8.4 / §11.2 / the serve SQL schema delta. **locked** for shape; **provisional** for whether one combined status column later splits per index. |
+| **Encoder-placement boundary** | MedCPT encoders and the MedCPT-Cross-Encoder live in engine FastAPI on the RTX 5090, not ML Commons, by project choice. OpenSearch can host models via ML Commons, but that is intentionally not the day-one path; the day-one vector query surface is raw `knn`, not `neural`. (§6) **locked**. |
 | **Bulk-then-freeze workflow** | `refresh_interval=-1`, `number_of_replicas=0` during bulk; `force_merge` to reduce segments; restore live settings; `_warmup` k-NN endpoint to warm Faiss graph; alias swap last. (§7) **locked**. |
 | **Per-cohort index lifecycle** | Index build is part of the projection cohort manifest (`04 §5.1`). The cohort manifest's `families` list adds two opaque "families" `opensearch_paper_index` and `opensearch_evidence_index` so cohort-build order, idempotency, and resume work the same way as PG projections. (§7.4) **locked**. |
-| **Two-tier model** | Warm tier = paper-level grounding (~14 M papers, paper-level dense + abstract text only); hot tier = chunk/sentence-level grounding (~500 papers initially, ~10 K ceiling, ~10 chunks/paper, ~100 K chunks max). `paper_index` carries a `tier` byte field (`1=warm`, `2=hot`); `evidence_index` is hot-tier-only. Tier promotion is driven by `serving_members` (cohort_kind = `practice_hot` per `03 §4.3`) + `evidence_priority_score` (`02 §4.4`). (§3.5) **locked** for the split; ceiling **provisional**. |
+| **Two-tier model** | Warm tier = paper-level grounding (~14 M papers, paper-level dense + abstract text only); hot tier = evidence-unit retrieval (~500 papers initially, ~10 K ceiling, ~10 evidence units/paper, ~100 K evidence units max). `paper_index` carries a `tier` byte field (`1=warm`, `2=hot`); `evidence_index` is hot-tier-only. Tier promotion is driven by `serving_members` (cohort_kind = `practice_hot` per `03 §4.3`) + `evidence_priority_score` (`02 §4.4`). (§3.5) **locked** for the split; ceiling **provisional**. |
 
 ## §1 Identity / boundary
 
@@ -147,7 +154,7 @@ The boundary contract for `08`:
   OpenSearch and receives `[(doc_id, score, optional fields)]` back.
 - For paper hits, `doc_id` is `corpus_id` (string-typed at the
   OpenSearch wire boundary; engine casts to `int`).
-- For chunk hits, `doc_id` is `evidence_key` (uuid-typed; engine casts
+- For evidence hits, `doc_id` is `evidence_key` (uuid-typed; engine casts
   to `uuid.UUID`).
 - The cross-encoder rerank, parent-child promotion, packet assembly,
   and grounding round-trip all live engine-side. OpenSearch returns
@@ -349,7 +356,7 @@ retrieval with an explicit filter. Indexes per-paper text (title +
 abstract + optional s2orc snippets when available) plus the paper-level
 dense vector (768d MedCPT-Article-Encoder, fp16-quantized on the Faiss
 HNSW graph). Used by the cards-list lane fusion query, the paper-level
-recommendation surfaces, and as the parent set for hot-tier chunk hits.
+recommendation surfaces, and as the parent set for hot-tier evidence hits.
 
 ```json
 PUT _index_template/paper_index_template
@@ -464,7 +471,7 @@ Mapping notes:
   any debug query can attribute a hit to its build cohort without a
   PG join. Both `keyword` for exact-match filter use.
 - `tier` is the two-tier scope field — `1=warm` for paper-level-only
-  papers, `2=hot` for chunk-indexed papers. `08` passes
+  papers, `2=hot` for evidence-indexed papers. `08` passes
   `filter.tier_in: [1, 2]` (default: both) or `[2]` (hot-only) to
   scope retrieval. Derived at index-build time from `serving_members`
   membership in a `practice_hot` cohort (`03 §4.3`); see §3.5.
@@ -476,13 +483,14 @@ Mapping notes:
 
 ### 3.3 `evidence_index` mapping
 
-One doc per evidence unit (sentence-aligned chunk per `02 §4.5
-paper_evidence_units`), keyed by `evidence_key`. **Hot-tier only** —
-contains chunks for the ~500–10 K papers in the hot cohort, capped at
-roughly ~100 K chunks total at the hot-tier ceiling. Per-chunk dense
-vector, parent `corpus_id`, and the offsets needed for engine-side
-packet assembly. Used by `08` for "deep grounding" queries that need
-sentence-precision citations into the hot cohort.
+One doc per promoted evidence unit (backed by
+`02 §4.5 paper_evidence_units`), keyed by `evidence_key`.
+**Hot-tier only** — contains evidence-unit docs for the ~500–10 K
+papers in the hot cohort, capped at roughly ~100 K evidence units total
+at the hot-tier ceiling. Each doc carries the retrieval text surface,
+parent `corpus_id`, and the sentence/block coordinates needed for
+engine-side packet assembly. Used by `08` for "deep grounding" queries
+that need sentence-coordinated citations into the hot cohort.
 
 ```json
 PUT _index_template/evidence_index_template
@@ -557,20 +565,20 @@ Mapping notes:
 
 - Most paper-level filter fields (`publication_year`, `is_retracted`,
   `package_tier`, `evidence_priority_score`) are denormalized onto every
-  evidence doc. At the hot-tier ceiling (~100 K chunks) this denorm
+  evidence-unit doc. At the hot-tier ceiling (~100 K units) this denorm
   cost is ~3 MB total — trivial; benefit is paper-level filter
-  pushdown at the chunk-lane query without a parent-join detour.
+  pushdown at the evidence-lane query without a parent-join detour.
 - `evidence_key` is `keyword` (not `uuid`) because OpenSearch's
   keyword codec is the path the `_id`-equivalent lookup tooling
   expects; UUID semantics are an engine-side concern.
 - `concept_ids` is multi-valued — the engine fans annotations from
-  `paper_entity_mentions` (`02 §4.5`) onto every chunk that overlaps
-  the entity span. Used by `08` to scope a vector-search to "chunks
-  mentioning concept X."
+  `paper_entity_mentions` (`02 §4.5`) onto every evidence unit whose
+  sentence span overlaps the entity span. Used by `08` to scope a
+  vector-search to "evidence units mentioning concept X."
 - Same `dense_vector` shape as `paper_index`: Faiss HNSW + sq_fp16.
-  Per-chunk vectors are MedCPT-Query-Encoder embeddings of the chunk
-  text; query side uses MedCPT-Article-Encoder for symmetry on the
-  paper lane and MedCPT-Query-Encoder on the evidence lane (see §6).
+  Per-evidence-unit vectors are MedCPT-Article-Encoder embeddings of
+  the canonical evidence-unit text surface; query side uses the
+  MedCPT-Query-Encoder for both the paper and evidence lanes (see §6).
 
 ### 3.4 Per-index settings during build vs live
 
@@ -590,10 +598,11 @@ research-distilled §6 cites the OpenSearch 3.6 announcement.
 
 ### 3.5 Hot-tier cohort selection
 
-The hot cohort is the universe of papers that get chunk-indexed into
-`evidence_index` and stamped `tier=2` in `paper_index`. Selection is a
-product decision driven entirely by serve-side state — this doc fixes
-the contract; cohort policy lives in `04 §5` / `03 §4.3`.
+The hot cohort is the universe of papers whose promoted evidence units
+get indexed into `evidence_index` and whose paper rows are stamped
+`tier=2` in `paper_index`. Selection is a product decision driven
+entirely by serve-side state — this doc fixes the contract; cohort
+policy lives in `04 §5` / `03 §4.3`.
 
 **Source of truth.** The hot cohort is defined by membership in a
 `serving_cohorts` row with `cohort_kind = 'practice_hot'` (`03 §4.3`),
@@ -604,13 +613,13 @@ include explicit operator inclusion / exclusion plus an
 **Promotion / demotion semantics.**
 
 - **Warm → hot promotion.** Adding a `corpus_id` to the
-  `practice_hot` cohort triggers a chunk-index batch in the next
+  `practice_hot` cohort triggers an evidence-index batch in the next
   cohort cycle. The next `04` projection cycle's manifest names
   `opensearch_evidence_index` as a family; `opensearch_paper_index`
   is also re-built (or hot-fix re-indexed per §11.2) so the affected
   paper's `tier` field flips from `1` to `2`.
 - **Hot → warm demotion.** Removing a `corpus_id` from the cohort
-  drops its chunks from the next `evidence_index` build and flips its
+  drops its evidence units from the next `evidence_index` build and flips its
   `paper_index` row's `tier` back to `1`. The drop is automatic —
   the bulk loader simply doesn't write hot-only docs for excluded
   corpus_ids.
@@ -624,8 +633,8 @@ include explicit operator inclusion / exclusion plus an
 | Knob | Default | Operator-tunable bounds |
 |---|---:|---|
 | Hot-tier ceiling | 10 000 papers | 500 (cold start) → ~50 000 (128 GB host upper bound, revisited) |
-| Chunks per paper (mean) | ~10 | 5 → 30 depending on document length |
-| Chunk vector memory budget | ~150 MB at 100 K chunks | enforced by ceiling × per-paper estimate |
+| Evidence units per paper (mean) | ~10 | 5 → 30 depending on document length |
+| Evidence-unit vector memory budget | ~150 MB at 100 K units | enforced by ceiling × per-paper estimate |
 
 **Initial load.** First launch starts at ~500 hot-tier papers,
 selected via `evidence_priority_score DESC` from the
@@ -634,10 +643,10 @@ recall-quality measurements warrant. **provisional** ceiling.
 
 **Failure mode.** A `corpus_id` in the `practice_hot` cohort that has
 no `paper_evidence_units` rows on warehouse is dropped from the
-chunk-index build and logged as a structured event
+evidence-index build and logged as a structured event
 `hot_cohort_member_missing_chunks`. The paper still appears in
 `paper_index` with `tier=2` (so the cohort intent is visible), but
-chunk-level retrieval against it returns no hits.
+evidence-lane retrieval against it returns no hits.
 
 **locked** for the contract; **provisional** for the 500-start /
 10 K-ceiling specific values.
@@ -646,8 +655,9 @@ chunk-level retrieval against it returns no hits.
 
 Faiss HNSW with `space_type=innerproduct` (dot-product on
 L2-normalized vectors equals cosine similarity; MedCPT outputs are
-L2-normalized in the engine before write). `sq_fp16` halves dense-vector
-memory at <1 % recall loss for MedCPT 768d (research-distilled §6).
+L2-normalized in the engine before write). `sq_fp16` halves
+dense-vector memory per the OpenSearch docs; the exact recall trade-off
+for MedCPT 768d remains benchmark-owned for this project.
 
 ### 4.1 Memory math
 
@@ -655,7 +665,7 @@ Dense-vector storage on disk (Faiss segment) under fp16 is
 `dim × 2 bytes/dim + HNSW graph overhead (~1.5×)`. The two-tier model
 makes the totals tractable on a single workstation — `paper_index`
 holds ~14 M paper-level vectors regardless of tier; `evidence_index`
-holds only the hot-tier chunks (capped at ~100 K).
+holds only the hot-tier evidence units (capped at ~100 K).
 
 | Index             | Doc count          | Raw fp16 vectors | HNSW (~1.5×)  | Total per index |
 |-------------------|-------------------:|-----------------:|---------------:|----------------:|
@@ -667,9 +677,9 @@ Per-doc breakdown:
   overhead at `m=16` adds ~50 % → ~32 GB. Includes both warm-tier
   (~14 M minus ~10 K) and hot-tier (~10 K) papers; the per-row
   difference is just the `tier` byte field.
-- `evidence_index`: 10 K hot papers × ~10 chunks each × 768 × 2 B =
-  ~150 MB raw fp16; ~50 % overhead → ~225 MB. Initial load at 500
-  papers × 10 chunks → ~7.5 MB.
+- `evidence_index`: 10 K hot papers × ~10 evidence units each × 768 ×
+  2 B = ~150 MB raw fp16; ~50 % overhead → ~225 MB. Initial load at
+  500 papers × 10 units → ~7.5 MB.
 
 These numbers sit **off-heap** as mmap under the OS file cache. The
 JVM heap target (31 GB, §2.3) is for query / aggregation / circuit
@@ -712,7 +722,7 @@ sizing (§3.5).
 
 The §3.5 ceiling of ~10 K hot papers translates to ~225 MB of
 `evidence_index` Faiss storage. Even a 5× ceiling expansion (~50 K
-hot papers × ~10 chunks → ~500 K chunks → ~1.1 GB) stays trivial
+hot papers × ~10 evidence units → ~500 K units → ~1.1 GB) stays trivial
 against the 68 GB host. The chunk-index lane is not the memory
 constraint; the warm-tier `paper_index` is.
 
@@ -761,11 +771,11 @@ degraded response (no dense lane, BM25 only). **locked**.
 
 Native OpenSearch `hybrid` compound query for lane fusion. Per
 research-distilled §6, `score-ranker-processor` (added 2.19, in 3.6)
-runs the RRF combination at search-pipeline time; the alternative
-`normalization-processor` (min-max + arithmetic-mean) is staged but
-not the default.
+runs the live RRF combination at search-pipeline time. A separate
+normalization-based debug pipeline exists for benchmark/explain runs;
+it is not the production combiner.
 
-### 5.1 Search pipeline definition
+### 5.1 Search pipeline definitions
 
 ```json
 PUT _search/pipeline/solemd_hybrid_rrf
@@ -790,26 +800,40 @@ research-distilled §6). Higher values flatten the rank-bias curve;
 lower values amplify the contribution of top-ranked items. **locked**
 at 60 for the first sample build; **provisional** thereafter.
 
-### 5.2 Per-index pipeline attachment
-
-Both indexes attach the same pipeline as their default:
-
 ```json
-PUT paper_index_<run_token>/_settings
-{ "index.search.default_pipeline": "solemd_hybrid_rrf" }
-
-PUT evidence_index_<run_token>/_settings
-{ "index.search.default_pipeline": "solemd_hybrid_rrf" }
+PUT _search/pipeline/solemd_hybrid_debug
+{
+  "description": "Benchmark/debug hybrid path: normalization + explanation payloads.",
+  "phase_results_processors": [
+    {
+      "normalization-processor": {
+        "normalization": { "technique": "min_max" },
+        "combination": {
+          "technique": "arithmetic_mean",
+          "parameters": { "weights": [0.5, 0.5] }
+        }
+      }
+    }
+  ],
+  "response_processors": [
+    { "hybrid_score_explanation": {} }
+  ]
+}
 ```
 
-A request that names a different pipeline (`?search_pipeline=…`)
-overrides; per-request override is what `08` uses for diagnostic
-"BM25-only" or "dense-only" comparison runs.
+### 5.2 Pipeline selection rule
+
+Search-pipeline selection is explicit from the engine request surface,
+not hidden in `index.search.default_pipeline`. Live requests name
+`search_pipeline=solemd_hybrid_rrf`. Benchmark/debug runs that need
+score-breakdown payloads name `search_pipeline=solemd_hybrid_debug`
+and set `explain=true`. This keeps the rank-based live path and the
+normalization-based debug path from drifting into one another.
 
 ### 5.3 Hybrid query shape — paper lane
 
 Default queries hit `paper_index` and span both tiers (`tier in [1, 2]`).
-"Hot-only" queries pass `tier in [2]` to scope to the chunk-indexed
+"Hot-only" queries pass `tier in [2]` to scope to the evidence-indexed
 universe (used by `08` when the user explicitly wants deep-grounding-
 eligible papers).
 
@@ -819,6 +843,15 @@ GET paper_index_live/_search
   "size": 200,
   "query": {
     "hybrid": {
+      "filter": {
+        "bool": {
+          "filter": [
+            { "term":  { "is_retracted": false } },
+            { "range": { "publication_year": { "gte": 2010 } } },
+            { "terms": { "tier": [1, 2] } }
+          ]
+        }
+      },
       "queries": [
         {
           "bool": {
@@ -826,11 +859,6 @@ GET paper_index_live/_search
               { "match": { "title":    { "query": "<query_text>", "boost": 2.0 } } },
               { "match": { "abstract": { "query": "<query_text>", "boost": 1.0 } } },
               { "match": { "s2orc_snippet_text": { "query": "<query_text>", "boost": 0.5 } } }
-            ],
-            "filter": [
-              { "term":  { "is_retracted": false } },
-              { "range": { "publication_year": { "gte": 2010 } } },
-              { "terms": { "tier": [1, 2] } }
             ]
           }
         },
@@ -838,16 +866,7 @@ GET paper_index_live/_search
           "knn": {
             "dense_vector": {
               "vector": [/* 768 floats from MedCPT-Article-Encoder */],
-              "k": 200,
-              "filter": {
-                "bool": {
-                  "filter": [
-                    { "term":  { "is_retracted": false } },
-                    { "range": { "publication_year": { "gte": 2010 } } },
-                    { "terms": { "tier": [1, 2] } }
-                  ]
-                }
-              }
+              "k": 200
             }
           }
         }
@@ -860,12 +879,12 @@ GET paper_index_live/_search
 
 Notes:
 
-- The `bool.filter` clauses are repeated on both sub-queries because
-  `hybrid` does not push filters across sub-queries; OpenSearch 2026
-  best practice is explicit duplication
+- Current OpenSearch supports a top-level `hybrid.filter` that applies
+  to all subqueries, and that is the default SoleMD shape
   (<https://docs.opensearch.org/latest/query-dsl/compound/hybrid/>).
-  Engine-side helper builds both filter blocks from one
-  `RetrievalFilter` Pydantic model so they cannot drift.
+  If a compatibility path ever duplicates filters inside subqueries, it
+  still flows from one engine-side `RetrievalFilter` model and is not
+  the normative shape.
 - `tier` is always included as an explicit filter, even when both
   tiers are eligible. Saves the cost of OpenSearch's "missing field"
   fallback path, and makes hot-only queries a one-character change
@@ -874,12 +893,15 @@ Notes:
   ranking + parent promotion. Title / abstract are not pulled
   back — text fetch goes through `paper_api_profiles` on serve
   (`03 §4.2`) or through `warehouse_grounding` over FDW (`03 §3`).
+- `hybrid` remains the top-level query. SoleMD does not wrap it in
+  `function_score`, `script_score`, `constant_score`, or `boosting`,
+  because current OpenSearch docs forbid those wrappers for `hybrid`.
 
 ### 5.4 Hybrid query shape — evidence lane
 
 `evidence_index` is hot-tier-only by construction (§3.5), so no `tier`
-filter is needed at query time. The chunk lane is what `08` reaches
-for when the user wants sentence-precision grounding ("deep grounding"
+filter is needed at query time. The evidence lane is what `08` reaches
+for when the user wants sentence-coordinated grounding ("deep grounding"
 queries).
 
 ```json
@@ -888,15 +910,19 @@ GET evidence_index_live/_search
   "size": 100,
   "query": {
     "hybrid": {
+      "filter": {
+        "bool": {
+          "filter": [
+            { "term":  { "is_retracted": false } },
+            { "terms": { "concept_ids":  [/* optional concept scope */] } }
+          ]
+        }
+      },
       "queries": [
         {
           "bool": {
             "should": [
               { "match": { "chunk_text": { "query": "<query_text>" } } }
-            ],
-            "filter": [
-              { "term":  { "is_retracted": false } },
-              { "terms": { "concept_ids":  [/* optional concept scope */] } }
             ]
           }
         },
@@ -904,15 +930,7 @@ GET evidence_index_live/_search
           "knn": {
             "dense_vector": {
               "vector": [/* 768 floats from MedCPT-Query-Encoder */],
-              "k": 100,
-              "filter": {
-                "bool": {
-                  "filter": [
-                    { "term":  { "is_retracted": false } },
-                    { "terms": { "concept_ids":  [/* optional concept scope */] } }
-                  ]
-                }
-              }
+              "k": 100
             }
           }
         }
@@ -929,6 +947,12 @@ The chunk lane returns sentence-coordinate fields so engine FastAPI
 can build the parent paper set + the bounded grounding round-trip
 (`03 §3.3`) without a second OpenSearch query.
 
+This evidence-unit dense surface is a SoleMD retrieval choice, not a
+claim that evidence-unit-level dense indexing is the canonical MedCPT usage
+pattern. MedCPT's native literature posture is query/article retrieval;
+article-style dense retrieval remains the default reference surface for
+benchmark comparison.
+
 ### 5.5 Optional sparse lane (deferred)
 
 Per `00 §6 — Neural sparse (SPLADE) lane in OpenSearch`, a sparse lane
@@ -939,20 +963,20 @@ when the trigger fires).
 
 ### 5.6 Filtering and pre-filter pushdown
 
-OpenSearch k-NN with `filter` runs the filter during ANN traversal,
-not as a post-filter. This is correct only when the filter is
-selective enough that the resulting candidate set still has ≥ k
-matches inside `ef_search`. Engine FastAPI's request builder
-(`engine/app/opensearch/queries.py`, see §14) tracks filter
-selectivity from the previous request and falls back to a
-`post_filter`-equivalent shape when the pre-filter is too aggressive
-(< 0.5 % match rate). **provisional** until measured on real query
-workload.
+OpenSearch efficient k-NN filtering is more nuanced than "always
+pre-filter during ANN traversal." Depending on engine behavior and
+thresholds, OpenSearch may choose exact pre-filtering or approximate
+search with modified post-filtering. Engine FastAPI's request builder
+(`engine/app/opensearch/queries.py`, see §14) may still use local
+selectivity heuristics, but those heuristics are benchmark-owned for
+this project, not vendor-backed thresholds. **provisional** until
+measured on real query workload.
 
 ## §6 Encoder placement
 
-MedCPT-Article-Encoder (paper-level dense) and MedCPT-Query-Encoder
-(query-side dense) and MedCPT-Cross-Encoder (rerank top-30) live
+MedCPT-Article-Encoder (paper-level + evidence-unit document dense),
+MedCPT-Query-Encoder (query-side dense), and MedCPT-Cross-Encoder
+(rerank top-30) live
 in **engine FastAPI**, not OpenSearch ML Commons. This is the locked
 architectural split.
 
@@ -986,23 +1010,26 @@ Three reasons:
 Engine FastAPI request flow (the `08` orchestration is the consumer):
 
 1. `08` receives `query_text`.
-2. Engine encodes `query_text` → 768d float vector via MedCPT-Query-Encoder
-   (or MedCPT-Article-Encoder for paper-lane queries, depending on
-   request shape — `08` decides; this doc owns only the wire shape).
+2. Engine encodes `query_text` → 768d float vector via the
+   MedCPT-Query-Encoder. The locked baseline is the official MedCPT
+   asymmetric retrieval split: query encoder for queries, article
+   encoder for indexed documents. Any symmetric-query experiment is a
+   benchmark branch, not the default runtime contract.
    The vector is L2-normalized in the engine before write/query so
    `space_type=innerproduct` matches cosine.
 3. Engine POSTs the §5.3 / §5.4 hybrid query to OpenSearch with the
    vector embedded inline.
 4. OpenSearch runs hybrid retrieve + RRF fusion → returns top-200
-   paper hits or top-100 chunk hits.
+   paper hits or top-100 evidence hits.
 5. `08` cross-encodes the top-30 (typical) on the GPU; reorders the
    candidate set; promotes parents; issues the bounded
    `paper_evidence_units` round-trip via FDW for grounding.
 
-OpenSearch never holds a model and never runs inference. Every
-ML-Commons-shaped feature (text-embedding ingest pipeline, model-id
-references, `neural_query`) is **explicitly absent** from `paper_index`
-and `evidence_index`. **locked**.
+Current SoleMD.Graph posture keeps query encoding and reranking in the
+engine. Every ML-Commons-shaped feature (text-embedding ingest
+pipeline, model-id references, `neural_query`) is **explicitly absent**
+from `paper_index` and `evidence_index` on day one, even though
+OpenSearch can support model-hosted flows. **locked**.
 
 Primary source (model card + GitHub):
 - <https://github.com/ncbi/MedCPT> — encoder + cross-encoder cards.
@@ -1031,7 +1058,7 @@ Two parallel Dramatiq actors per `06 §6.3`,
   ~14 M paper-level index (warm + hot). Wall-clock: ~2–4 h. Triggered
   on full serving cutover or when the warm-tier set changes (rare).
 - **`opensearch.build_evidence_index`** — fast path. Builds the
-  hot-tier-only ~100 K-chunk index. Wall-clock: ~5–15 min. Triggered
+  hot-tier-only ~100 K-evidence-unit index. Wall-clock: ~5–15 min. Triggered
   on hot-cohort change or on demand.
 
 Both actors read from serve via the `serve_read` pool and warehouse
@@ -1082,16 +1109,17 @@ for bulk index reads. The actor reads:
   list-shaped fields; `solemd.paper_api_profiles` (live) for the
   full text + abstract; `solemd.paper_top_concepts` (warehouse, via
   `warehouse_read` pool — bounded analytical read, justified because
-  the cohort already gates the read window) for `concept_ids_top`;
-  `solemd.paper_embeddings_graph` (warehouse, via `warehouse_read`)
-  for the dense vector source — **but** see §7.6 below for the
-  encoder-output replacement on the runtime retrieval lane.
+  the cohort already gates the read window) for `concept_ids_top`.
+  Dense vectors come from the MedCPT paper-lane path in §7.6:
+  PMID-aligned published bootstrap embeddings where available, then
+  local MedCPT-Article-Encoder batches for the remainder. Graph
+  embeddings in `solemd.paper_embeddings_graph` stay graph-only.
 - **For `evidence_index`**: `solemd.paper_evidence_units` (warehouse,
   via `warehouse_read` — read-only bulk traversal during the cohort
-  window) for chunk identity + offsets; chunk text by joining
+  window) for evidence-unit identity + offsets; chunk text by joining
   `paper_blocks` / `paper_sentences` (warehouse, via `warehouse_read`)
-  on the chunk member spans; vectors by per-chunk MedCPT encoding
-  (engine-side; §7.6).
+  on the member sentence spans; vectors by per-evidence-unit MedCPT
+  Article-Encoder encoding (engine-side; §7.6).
 
 This split honors `00 §4`: FDW is **only** for runtime grounding
 dereference. The cohort-window read of warehouse tables happens through
@@ -1131,7 +1159,7 @@ async def build_paper_index_actor(serving_run_id: str) -> None:
     time_limit=30 * 60 * 1000,       # 30 min ceiling — evidence_index fast path
 )
 async def build_evidence_index_actor(serving_run_id: str) -> None:
-    """Fast path: ~100 K hot-tier chunk docs."""
+    """Fast path: ~100 K hot-tier evidence-unit docs."""
     await _build_index(
         serving_run_id, family="opensearch_evidence_index",
         bulk_loader=bulk_load_evidence_index,
@@ -1254,24 +1282,34 @@ Cohort-level: a half-built OpenSearch index never becomes the
 serving_run in `building` (per `04 §5.3`); the cohort marks itself
 `failed`; PG side stays untouched.
 
-### 7.6 Encoder-side coordination
+### 7.6 Encoder-side coordination and bootstrap
 
 The dense vectors for both indexes are generated **at index time**
-on the engine side, not pulled from `paper_embeddings_graph`. Why
-two encoder revisions:
+on the engine side, with one bootstrap exception for the paper lane:
+published PMID-aligned MedCPT paper embeddings may be reused where
+available. They are never pulled from `paper_embeddings_graph`. Why the
+two encoder families stay separate:
 
 - `paper_embeddings_graph` (`02 §4.6`) is **SPECTER2** — owned by the
   graph build, not by retrieval.
-- `paper_index.dense_vector` is **MedCPT-Article-Encoder** — the
-  retrieval lane needs query/article symmetry with MedCPT-Query-Encoder
-  (research-distilled §6, MedCPT-Article-Encoder card).
+- `paper_index.dense_vector` and `evidence_index.dense_vector` are
+  **MedCPT-Article-Encoder** vectors — one document-representation
+  family across both retrieval lanes, preserving query/article
+  asymmetry with the MedCPT-Query-Encoder on the request side.
 
-So at OpenSearch index-build time, the indexer worker calls into the
-engine's MedCPT-Article-Encoder (paper-level) or MedCPT-Query-Encoder
-(chunk-level — yes, the Query encoder is what generates the chunk-side
-ANN target; this is by design in the MedCPT cascade) to produce the
-768d vector per doc. Batching and GPU residency are the engine's
-problem; the indexer treats the encode call as a synchronous RPC.
+So at OpenSearch index-build time, the indexer worker:
+
+1. Reuses the published PMID-aligned MedCPT paper embeddings for the
+   paper lane where a canonical PMID match exists.
+2. Locally encodes the remaining paper docs through the engine's
+   MedCPT-Article-Encoder, using the canonical paper text composition
+   (`title + abstract`, plus optional approved support fields).
+3. Locally encodes every evidence-unit doc through the same
+   MedCPT-Article-Encoder, using the canonical evidence-unit text
+   surface.
+
+Batching, GPU residency, and backpressure are the engine's problem; the
+indexer treats the encode call as a synchronous RPC.
 
 Implication for §02: `paper_embeddings_graph` stays the SPECTER2 graph
 embedding store, untouched. The MedCPT vectors are **not** persisted to
@@ -1376,6 +1414,11 @@ within seconds.** Both swaps live inside the same Dramatiq
    transaction, atomic).
 2. Immediately follows with the §8.2 `_aliases` POST.
 
+OpenSearch guarantees atomicity only for the `_aliases` call itself.
+The PG-first / alias-second ordering is a SoleMD.Graph application-level
+cutover policy with a bounded inconsistency window, not a vendor-backed
+cross-system transaction.
+
 The "few seconds" gap between PG swap commit and OpenSearch alias
 swap is acceptable because:
 
@@ -1401,26 +1444,21 @@ is bounded.
 
 ### 8.4 Saga risk closure — `serving_runs.opensearch_alias_swap_status`
 
-Adds one column to `serving_runs` (additive HCL, per `03 §4.3` /
-`04 §2.1` pattern):
+Adds three columns to `serving_runs` (schema delta lands in
+`db/schema/serve/*.sql` plus `db/migrations/serve/*.sql`):
 
-```hcl
-table "serving_runs" {
-  schema = schema.solemd
-  // … all columns from 03 §4.3 + 04 §2.1 …
-  column "opensearch_alias_swap_status" {
-    null = false, type = smallint, default = 0
-    comment = "0=pending, 1=swapped, 2=failed. Tracks the OpenSearch alias swap separately from PG cohort swap so retry / runbook decisions are durable. See 07 §8.4."
-  }
-  column "opensearch_alias_swap_attempted_at" {
-    null = true, type = timestamptz
-    comment = "Wall-clock of the most recent alias-swap attempt for this run. Drives 07 §11 retry logic."
-  }
-  column "opensearch_alias_swap_error" {
-    null = true, type = text
-    comment = "Last OpenSearch alias-swap error (HTTP status + body, truncated to 4 KB) when status=2."
-  }
-}
+```sql
+ALTER TABLE solemd.serving_runs
+  ADD COLUMN opensearch_alias_swap_status smallint NOT NULL DEFAULT 0,
+  ADD COLUMN opensearch_alias_swap_attempted_at timestamptz,
+  ADD COLUMN opensearch_alias_swap_error text;
+
+COMMENT ON COLUMN solemd.serving_runs.opensearch_alias_swap_status IS
+  '0=pending, 1=swapped, 2=failed. Tracks the OpenSearch alias swap separately from the PG cohort swap so retry and runbook decisions are durable. See 07 §8.4.';
+COMMENT ON COLUMN solemd.serving_runs.opensearch_alias_swap_attempted_at IS
+  'Wall-clock of the most recent alias-swap attempt for this run. Drives 07 §11 retry logic.';
+COMMENT ON COLUMN solemd.serving_runs.opensearch_alias_swap_error IS
+  'Last OpenSearch alias-swap error (HTTP status + body, truncated to 4 KB) when opensearch_alias_swap_status=2.';
 ```
 
 Operator runbook for `opensearch_alias_swap_status = 2` (failed
@@ -1462,14 +1500,14 @@ each. Operator rollback inside 24 h is possible by re-running the
 
 ## §9 Evidence-key round-trip
 
-Every chunk doc in `evidence_index` carries `evidence_key` (UUIDv5
+Every evidence-unit doc in `evidence_index` carries `evidence_key` (UUIDv5
 derived from `(corpus_id, evidence_kind, section_ordinal,
 block_ordinal, sentence_start_ordinal, sentence_end_ordinal,
 chunk_version_key)` per `02 §2`). Engine code dereferences
 `evidence_key` → PG via the FDW `warehouse_grounding.paper_evidence_units`
 (`03 §3`).
 
-This contract makes "OpenSearch returns chunk hits" safe:
+This contract makes "OpenSearch returns evidence hits" safe:
 
 - No chunk text drift is possible. The serving doc holds the chunk
   text as `chunk_text` (for snippet / highlight rendering) and the
@@ -1693,7 +1731,7 @@ requirements `10` must surface for the OpenSearch plane.
 | `opensearch_circuit_breaker_trips_total` | counter | `breaker_name` (`knn`, `request`, `fielddata`) | k-NN circuit-breaker trips trigger §4.4 degraded path. |
 | `opensearch_bulk_throughput_docs_per_second` | gauge | `index` | Live indexer throughput; sized in `09-tuning.md`. |
 | `opensearch_alias_swap_total` | counter | `index_alias`, `outcome` (`success` / `failed`) | §8 audit log. |
-| `opensearch_alias_swap_lag_seconds` | gauge | `index_alias` | `now() - opensearch_alias_swap_attempted_at` for `serving_runs` rows where status=0. Should be 0 in steady state. |
+| `opensearch_alias_swap_lag_seconds` | gauge | `index_alias` | `now() - opensearch_alias_swap_attempted_at` for `serving_runs` rows where `opensearch_alias_swap_status=0`. Should be 0 in steady state. |
 | `opensearch_index_doc_count` | gauge | `index` | Doc-count drift detection vs cohort manifest. |
 | `opensearch_synonym_reload_total` | counter | `index`, `outcome` | §11.3 hot-reload audit. |
 
@@ -1719,7 +1757,7 @@ The exact JSON shape of the request/response that
 `08-retrieval-cascade.md` consumes. `08` orchestrates and **chooses
 the lane**: `paper` for general retrieval (default; spans both tiers),
 `evidence` for hot-tier deep-grounding queries that need
-sentence-precision citations. This doc fixes the wire contract.
+sentence-coordinated citations. This doc fixes the wire contract.
 
 ### 14.1 Request — paper-lane retrieve
 
@@ -1772,7 +1810,7 @@ class PaperLaneResponse(BaseModel):
 
 The evidence lane targets `evidence_index_live` (hot-tier-only by
 construction, §3.5). `08` picks this lane explicitly when the query
-needs sentence-precision grounding into the hot cohort.
+needs sentence-coordinated grounding into the hot cohort.
 
 ```python
 class EvidenceLaneRequest(BaseModel):
@@ -1788,7 +1826,7 @@ class EvidenceFilter(BaseModel):
     is_retracted:        bool | None = False
     publication_year_gte: int | None = None
     package_tier_in:      list[int] | None = None
-    concept_ids_any:      list[int] | None = None     # multi-valued field on chunk doc
+    concept_ids_any:      list[int] | None = None     # multi-valued field on evidence-unit doc
     corpus_ids_in:        list[int] | None = None     # parent-restrict, e.g. for "rerank in this paper set"
     # No tier filter: evidence_index is hot-only by construction.
 ```
@@ -1842,7 +1880,7 @@ Beyond `06 §`-level invariants:
    not used; text-embedding ingest pipeline not configured. Engine-side
    only. (§6)
 3. **`_id` is content-bound.** `corpus_id` for paper docs;
-   `evidence_key` for chunk docs. Re-indexing the same logical doc
+   `evidence_key` for evidence docs. Re-indexing the same logical doc
    with a different `_id` would create a duplicate; structurally
    impossible if the indexer code uses the §1 boundary types
    correctly. CI lint scans `engine/app/opensearch/indexer.py` for
@@ -1896,8 +1934,8 @@ path.
 Per `08`, the canonical request flow:
 
 1. Engine FastAPI receives a search request.
-2. Engine calls MedCPT-Query-Encoder (or MedCPT-Article-Encoder for
-   paper-lane queries) on the GPU process; receives 768d vector.
+2. Engine calls MedCPT-Query-Encoder on the GPU process; receives 768d
+   vector.
 3. Engine constructs the §14 request payload via the boundary
    helpers (`engine/app/opensearch/queries.py`).
 4. Engine POSTs to `paper_index_live` or `evidence_index_live` with
@@ -1935,17 +1973,18 @@ them.
 
 | Decision | Rationale |
 |---|---|
-| Two-tier serving model: warm = paper-level (~14 M), hot = chunk-level (~500–10 K papers, ~100 K chunks at ceiling) | Single workstation can hold full warm-tier paper-level vectors (~32 GB Faiss) plus a tractable chunk index (~225 MB at ceiling). Chunk indexing for the entire corpus would be ~322 GB, infeasible. |
+| Two-tier serving model: warm = paper-level (~14 M), hot = evidence-unit-level (~500–10 K papers, ~100 K evidence units at ceiling) | Single workstation can hold full warm-tier paper-level vectors (~32 GB Faiss) plus a tractable evidence index (~225 MB at ceiling). Evidence indexing for the entire corpus would be ~322 GB, infeasible. |
 | `paper_index` carries both tiers, distinguished by a `tier` byte field (`1=warm`, `2=hot`); `evidence_index` is hot-only | Paper-level retrieval spans both tiers by default; deep-grounding queries scope with `tier=[2]`. One paper-level lane removes a join class for `08`. |
-| Hot-tier cohort sourced from `serving_members` with `cohort_kind = 'practice_hot'` (`03 §4.3`) | Single source of truth for the chunk-indexed universe; promotion/demotion flows through standard cohort cutover (`04 §5`). |
+| Hot-tier cohort sourced from `serving_members` with `cohort_kind = 'practice_hot'` (`03 §4.3`) | Single source of truth for the evidence-indexed universe; promotion/demotion flows through standard cohort cutover (`04 §5`). |
 | Two parallel build actors: `opensearch.build_paper_index` (slow) + `opensearch.build_evidence_index` (fast) | Independent cadence; hot-cohort tweaks don't pay the 14 M-doc rebuild cost. |
-| Two release-scoped indexes: `paper_index` (paper-level, both tiers) + `evidence_index` (chunk-level, hot only) | Lane separation matches MedCPT cascade; `00 §1` and research-distilled §6 set the shape. |
+| Two release-scoped indexes: `paper_index` (paper-level, both tiers) + `evidence_index` (evidence-unit-level, hot only) | Lane separation matches MedCPT cascade; `00 §1` and research-distilled §6 set the shape. |
 | Stable aliases `paper_index_live` / `evidence_index_live` are the only names readers know | Cutover invisible to request path; one alias-swap API call per cohort. |
 | Index naming: `<family>_<serving_run_id-without-hyphens>` | Full UUIDv7 token is unique, sortable, and safe. Using only the leading hex chars is wrong for UUIDv7 because the high bits are timestamp-heavy. |
-| Faiss HNSW + sq_fp16 quantization on dense lanes | Halves memory at <1 % recall loss for MedCPT 768d (research-distilled §6). |
+| Faiss HNSW + sq_fp16 quantization on dense lanes | Official docs support the 2x memory reduction; exact recall loss remains benchmark-owned for MedCPT 768d. |
 | `space_type=innerproduct` with engine-side L2-normalized MedCPT vectors | Equivalent to cosine; cheaper at query time (no per-vector normalization in OpenSearch). |
-| Native `hybrid` compound query + `score-ranker-processor` (RRF, rank_constant=60) for lane fusion | OpenSearch 3.6 native; no engine-side fusion code path needed. |
-| MedCPT encoders in engine FastAPI; OpenSearch ML Commons not used | Model lifecycle, GPU residency, cross-encoder cost-shape are engine concerns (§6). |
+| Native `hybrid` compound query + top-level `hybrid.filter` + `score-ranker-processor` (RRF, rank_constant=60) for live lane fusion | OpenSearch 3.6 native; no engine-side fusion code path needed. |
+| Search pipeline selected explicitly by the engine (`solemd_hybrid_rrf` live, `solemd_hybrid_debug` benchmark/explain) | Keeps live rank-based retrieval separate from normalization-based debug analysis. |
+| MedCPT encoders in engine FastAPI; OpenSearch ML Commons not used day one | Model lifecycle, GPU residency, and cross-encoder cost-shape stay engine-owned in the current posture, while ML Commons remains an optional later path (§6). |
 | Two-encoder warehouse posture: SPECTER2 in `paper_embeddings_graph` for graph build, MedCPT vectors live only in OpenSearch + parquet archive | Avoids duplicating ~21 GB of fp16 vectors that already sit in Faiss. (Reviewer: confirm acceptable.) |
 | Bulk-then-freeze indexer: `refresh_interval=-1`, `replicas=0` during bulk; force-merge to 1 segment; restore live; `_warmup`; alias swap | Canonical OpenSearch bulk pattern (research-distilled §6). |
 | Per-batch idempotency: `_id = corpus_id` (paper), `_id = evidence_key` (chunk) | Re-runs upsert deterministically; content-bound identity. |
@@ -1958,6 +1997,7 @@ them.
 | Single S3-compatible local snapshot repo at `/mnt/solemd-graph/opensearch-snapshots/`; daily snapshot of both live indexes | Recovery path for cluster-red (§12.3). |
 | 24 h retention of previous-run indexes after alias swap; `pg_cron`-triggered Dramatiq drop actor | Mirrors `04 §3.6` `_prev` retention. |
 | `dynamic: strict` mappings; `_source` excludes `dense_vector` | Schema drift fails fast; read-side bandwidth saved. |
+| `hybrid` remains top-level and is never wrapped in score-query containers | Matches current OpenSearch hybrid-query constraints; prevents undocumented scoring semantics from creeping in. |
 | Synonym artifact at search-time via `synonym_graph` with `updateable: true`; hot-reload via `_reload_search_analyzers` | No re-index on synonym change (research-distilled §6). |
 | `biomedical_text` analyzer with `icu_normalizer + lowercase + asciifolding + synonym_graph + porter_stem`; `*_no_synonyms` sibling field for synonym-blind exact match | Standard 2026 biomedical search pipeline. |
 | Component template `solemd_graph_common` shared by both index templates | Multi-node migration is a shard-count change later. |
@@ -1970,13 +2010,13 @@ them.
 
 | Decision | Revisit trigger |
 |---|---|
-| Hot-tier ceiling = 10 000 papers; initial start = 500 papers | Operator-tunable as RAM headroom and recall-quality measurements warrant; 50 K is the practical upper bound on the 68 GB host before chunk-index memory shows up in cache contention. |
-| Hot-tier mean chunks-per-paper = 10 | Real document-length distribution from PT3 grounding spine; range 5–30 acceptable. |
+| Hot-tier ceiling = 10 000 papers; initial start = 500 papers | Operator-tunable as RAM headroom and recall-quality measurements warrant; 50 K is the practical upper bound on the 68 GB host before evidence-index memory shows up in cache contention. |
+| Hot-tier mean evidence-units-per-paper = 10 | Real document-length distribution from PT3 grounding spine; range 5–30 acceptable. |
 | HNSW `m=16`, `ef_construction=256`, `ef_search=100` | Recall@k benchmarking against the cascade evaluation suite. |
 | RRF `rank_constant=60` | Top-1 / top-10 conversion measured on real query workload. |
 | Per-index doc-count tolerance ±5 % vs cohort manifest | Real release-to-release variability over multiple cohorts. |
 | `bulk` batch size 1 000–5 000 | Throughput measurement on the 68 GB host. |
-| `evidence_index` k-NN p95 budget `< 100 ms` | First sample query workload at 140 M docs. |
+| `evidence_index` k-NN p95 budget `< 100 ms` | First sample query workload at hot-tier scale (initially ~100 K docs, not the warehouse-scale evidence surface). |
 | `_warmup` after every alias swap | Whether the cold-cache p99 hit is genuinely user-visible. |
 | Per-request `ef_search` override budget | `08`'s per-lane decision based on rerank-candidate quality. |
 | Pre-filter vs post-filter fallback threshold (0.5 % match rate) | Real query selectivity distribution. |

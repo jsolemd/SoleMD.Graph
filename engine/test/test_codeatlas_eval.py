@@ -58,7 +58,7 @@ def _tool_key(name: str, arguments: dict) -> str:
 def test_build_foundation_benchmark_covers_repo_and_docs_surfaces() -> None:
     benchmark = build_solemd_graph_foundation_benchmark()
 
-    assert benchmark.benchmark_key == "solemd_graph_codeatlas_foundation_v2"
+    assert benchmark.benchmark_key == "solemd_graph_codeatlas_foundation_v3"
     assert {case.lane for case in benchmark.cases} >= {
         "repo-health",
         "repo-frontend",
@@ -66,17 +66,22 @@ def test_build_foundation_benchmark_covers_repo_and_docs_surfaces() -> None:
         "repo-backend",
         "repo-graph-context",
         "docs-catalog",
+        "docs-auth",
         "docs-frontend",
         "docs-runtime",
         "docs-backend",
+        "docs-search",
     }
     assert any(case.surface == CodeAtlasEvalSurface.REPO for case in benchmark.cases)
     assert any(case.surface == CodeAtlasEvalSurface.DOCS for case in benchmark.cases)
     assert {
         library.library_id for library in benchmark.required_doc_libraries
     } >= {
+        "/better-auth/better-auth",
         "/duckdb/duckdb-web",
         "/duckdb/duckdb-wasm",
+        "/postgres/postgres",
+        "/opensearch-project/documentation-website",
         "/pgvector/pgvector",
     }
 
@@ -159,10 +164,13 @@ def test_sync_required_doc_libraries_queues_missing_syncable_repos() -> None:
             name="Mantine",
         ),
         RequiredDocLibrary(
-            library_id="/duckdb/duckdb-web",
-            name="DuckDB",
-            repo="duckdb/duckdb-web",
-            docs_path="docs",
+            library_id="/postgres/postgres",
+            name="PostgreSQL",
+            repo="postgres/postgres",
+            branch="master",
+            docs_path="doc/src/sgml",
+            include_patterns=["**/*.sgml"],
+            exclude_patterns=["**/Makefile", "**/*.css"],
             syncable=True,
         ),
         RequiredDocLibrary(
@@ -194,10 +202,12 @@ def test_sync_required_doc_libraries_queues_missing_syncable_repos() -> None:
             _tool_key(
                 "add_doc_library",
                 {
-                    "repo": "duckdb/duckdb-web",
-                    "name": "DuckDB",
-                    "branch": "main",
-                    "docs_path": "docs",
+                    "repo": "postgres/postgres",
+                    "name": "PostgreSQL",
+                    "branch": "master",
+                    "docs_path": "doc/src/sgml",
+                    "include_patterns": ["**/*.sgml"],
+                    "exclude_patterns": ["**/Makefile", "**/*.css"],
                     "output": "json",
                 },
             ): {"status": "success", "payload": {}},
@@ -220,7 +230,7 @@ def test_sync_required_doc_libraries_queues_missing_syncable_repos() -> None:
     assert sync_report.queued_count == 2
     assert sync_report.add_failed_count == 0
     assert {record.library_id for record in sync_report.records if record.state == "queued"} == {
-        "/duckdb/duckdb-web",
+        "/postgres/postgres",
         "/pgvector/pgvector",
     }
 
@@ -335,6 +345,10 @@ def test_build_required_doc_libraries_marks_repo_managed_docs_syncable() -> None
     libraries = build_required_doc_libraries()
 
     assert any(
+        library.library_id == "/better-auth/better-auth" and library.syncable
+        for library in libraries
+    )
+    assert any(
         library.library_id == "/duckdb/duckdb-web" and library.syncable
         for library in libraries
     )
@@ -348,5 +362,19 @@ def test_build_required_doc_libraries_marks_repo_managed_docs_syncable() -> None
     )
     assert any(
         library.library_id == "/pgvector/pgvector" and library.branch == "master"
+        for library in libraries
+    )
+    assert any(
+        library.library_id == "/postgres/postgres"
+        and library.docs_path == "doc/src/sgml"
+        and library.include_patterns == ["**/*.sgml"]
+        and library.syncable
+        for library in libraries
+    )
+    assert any(
+        library.library_id == "/opensearch-project/documentation-website"
+        and library.include_patterns == ["**/*.md"]
+        and "_ml-commons-plugin/**" in library.exclude_patterns
+        and library.syncable
         for library in libraries
     )

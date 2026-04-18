@@ -54,9 +54,10 @@ Eight load-bearing properties:
    account. DSNs assembled from environment at startup, never
    hard-coded. `application_name` always set for `pg_stat_activity`
    triage. (§7)
-7. **One asyncpg-based migrations runner.** The existing
+7. **One migrations runner, currently sync psycopg3.** The existing
    `engine/db/scripts/schema_migrations.py` stays the executor /
-   ledger; Atlas (HCL) authors. (§8)
+   ledger; SQL-first schema files author, and async conversion stays deferred
+   until a runtime path truly needs it. (§8)
 8. **Testcontainers as the substrate.** Session-scoped two-cluster
    PG; function-scoped transactional rollback for isolation. No mocks
    for PG, ever. Mocks for OpenSearch / Redis allowed in their own
@@ -245,19 +246,25 @@ Two drivers, two roles:
 
 | Driver | Used for | Why |
 |---|---|---|
-| **asyncpg 0.31+** | Every hot path: ingest COPY, projection swap, FastAPI handlers, Dramatiq async actors, projection-worker reads. | Binary protocol, native `copy_records_to_table`, sustained 250–400 k rows/s per partition (`research-distilled §2`; magic.io asyncpg blog: <https://magic.io/blog/asyncpg-1m-rows-from-postgres-to-python/>). Tighter per-query latency than psycopg3 outside of pipeline mode. |
+| **asyncpg 0.31+** | Every hot path: ingest COPY, projection swap, FastAPI handlers, Dramatiq async actors, projection-worker reads. | Binary protocol, native `copy_records_to_table`, and the leanest direct async surface for the paths this repo cares about. Any claimed latency edge over psycopg3 is benchmark-owned for this project, not an upstream-documented guarantee. |
 | **psycopg3 3.3+** | Sync admin utilities only — primarily `engine/db/scripts/schema_migrations.py` and one-off scripts that genuinely cannot sit inside an event loop. | Sharper sync API, COPY support (less critical here — admin rarely COPYs). Useful when the script must be importable into an interactive REPL or a non-asyncio process. |
 
 ### 3.1 Forbidden shapes
 
 - **No SQLAlchemy / SQLModel / Piccolo** anywhere in the engine —
-  including admin scripts. Atlas (HCL) handles schema; everything
+  including admin scripts. SQL-first schema files handle schema; everything
   else is raw SQL through Pydantic v2 (§4).
 - **No `asyncio.run()` inside a Dramatiq actor.** AsyncIO middleware
   shares one event loop per worker process (§6.2); per-actor
   `asyncio.run()` would create a fresh loop and defeat pool sharing.
 - **No mixing asyncpg + psycopg3 on the same connection.** Different
   wire protocols; one process picks one driver per connection.
+- **No asyncpg client-side statement cache behind transaction-pooled
+  PgBouncer.** `serve_read` keeps `statement_cache_size=0`, avoids
+  explicit `Connection.prepare()`, and treats any server-side
+  prepared-plan reuse as an integration-tested optimization rather than
+  a baseline assumption. Transaction-pooled paths also avoid session-state
+  assumptions (`SET`, temp objects, LISTEN/NOTIFY, session locks).
 
 ### 3.2 Why no SQLAlchemy 2.x async
 
@@ -574,7 +581,9 @@ One process per worker class on the RTX 5090 host:
 | Worker (`engine/app/workers/…`) | Pools | Count |
 |---|---|---:|
 | `ingest.py` | `ingest_write` | 1 (one ingest at a time per release; `05 §10.1`) |
+| `chunker.py` | `ingest_write` | 1 (post-publish evidence-unit assembly actor; `05a §6.2`) |
 | `projection.py` | `warehouse_read`, `serve_read`, `admin` | 1 (advisory lock per family; `04 §9.1`) |
+| `wiki.py` | `admin` | 1 (wiki sync/activation actor; stages and activates `wiki_pages`; `05d §5`) |
 | `rag.py` | `serve_read` | 1 (owns the RTX 5090 RAPIDS context) |
 | `maintenance.py` | `admin` | 1 (cron-trigger; no GPU) |
 
@@ -589,6 +598,12 @@ processes anyway.
 This is intentionally narrow. A second projection process would
 force a re-think of the per-family advisory lock (`04 §9.1`), which
 is process-scoped via the pinned admin connection.
+
+The wiki worker is separate from `maintenance.py` because wiki
+activation is user-visible content publication, not housekeeping. It
+owns the Dramatiq queue that records `wiki_sync_runs`, stages
+`wiki_pages`, and activates the new request-path set without exposing a
+partial sync to readers.
 
 ### 6.4 Actor decorator pattern
 
@@ -674,6 +689,7 @@ Per-role users on each cluster, with grants enumerated in
 ```
 WAREHOUSE_DSN_INGEST   = postgresql://engine_ingest_write@graph-db-warehouse:5432/warehouse?application_name=ingest-worker
 WAREHOUSE_DSN_READ     = postgresql://engine_warehouse_read@graph-db-warehouse:5432/warehouse?application_name=projection-worker-read
+WAREHOUSE_DSN_ADMIN    = postgresql://engine_warehouse_admin@graph-db-warehouse:5432/warehouse?application_name=schema-migrations
 SERVE_DSN_READ         = postgresql://engine_serve_read@pgbouncer-serve:6432/serve?application_name=engine-api
 SERVE_DSN_ADMIN        = postgresql://engine_admin@graph-db-serve:5432/serve?application_name=projection-worker-admin
 REDIS_URL              = redis://graph-redis:6379/0
@@ -684,6 +700,10 @@ Rules:
   `BaseSettings`. The `application_name` query parameter is **always
   set** so `pg_stat_activity` triage can attribute every connection
   to a process / pool (`05 §6.3`).
+- The DSN inventory is a contract, not a convenience. Admin, migration,
+  cutover, and schema-changing paths use the direct `*_ADMIN` surfaces.
+  Pooled request-path reads use `SERVE_DSN_READ`. App-path DSNs are never
+  reused for DDL.
 - Passwords come from environment, never the URL. Dev: `.env` via
   `direnv` with `op run` (1Password) per `research-distilled §7`.
   Prod: same shape, different secrets manager.
@@ -691,14 +711,16 @@ Rules:
   source — `engine_ingest_write` only from `graph-worker` host;
   `engine_warehouse_read` only from `graph-worker` host; serve roles
   only from `graph-engine-api` and `graph-worker`. Specifics in
-  `09-tuning.md`.
+  `09-tuning.md`. Canonical repo-owned paths are
+  `db/conf/warehouse_hba.conf` and `db/conf/serve_hba.conf`.
 
 ### 7.3 Settings model
 
 `engine/app/config.py` exposes a `Settings(BaseSettings)` with
 DSN fields aliased to `WAREHOUSE_DSN_INGEST` / `WAREHOUSE_DSN_READ`
-/ `SERVE_DSN_READ` / `SERVE_DSN_ADMIN` / `REDIS_URL` and pool-size
-fields with defaults from the §2.1 68 GB column (`pool_ingest_min=8,
+/ `WAREHOUSE_DSN_ADMIN` / `SERVE_DSN_READ` / `SERVE_DSN_ADMIN`
+/ `REDIS_URL` and pool-size fields with defaults from the §2.1
+68 GB column (`pool_ingest_min=8,
 pool_ingest_max=64, pool_warehouse_read_min=2, pool_warehouse_read_max=8,
 pool_serve_read_min=2, pool_serve_read_max=16, pool_admin_min=1,
 pool_admin_max=2`). `model_config = SettingsConfigDict(env_file=".env",
@@ -715,26 +737,27 @@ override. Real-process `.env` files are unaffected.
 
 ## §8 Migrations runner contract
 
-`engine/db/scripts/schema_migrations.py` exists today and stays the
-single executor / ledger. This section names the contract; the file
-is the source of truth.
+`engine/db/scripts/schema_migrations.py` is the current executor /
+ledger baseline. This section is the authoritative contract it must
+satisfy as the bottom-up rebuild lands.
 
 | Property | Value |
 |---|---|
-| **Authoring tool** | Atlas (HCL) under `db/schema/{warehouse,serve}.hcl` per `02 §0.10`. |
+| **Authoring tool** | Ordered PostgreSQL SQL under `db/schema/{warehouse,serve}/` per `02 §0.10` and `12`. |
 | **Executor** | `engine/db/scripts/schema_migrations.py` — sync, psycopg3-based per §3. |
-| **Ledger table** | `solemd.schema_migrations` on each cluster (one ledger per cluster). Records `migration_name`, `migration_file`, `checksum_sha256`, `execution_mode` (`transactional` | `autocommit`), `status`, `sql_bytes`, `applied_at`, `applied_by`, `applied_via`, `notes`, `error_message`, `recorded_at`, `updated_at`. |
+| **Ledger table** | `solemd.schema_migration_ledger` on each cluster (one ledger per cluster). Records `migration_name`, `migration_file`, `checksum_sha256`, `execution_mode` (`transactional` | `autocommit`), `status`, `sql_bytes`, `applied_at`, `applied_by`, `applied_via`, `notes`, `error_message`, `recorded_at`, `updated_at`. |
 | **Execution mode** | `transactional` (default) or `autocommit` (when SQL contains `CREATE INDEX CONCURRENTLY`, `ALTER TABLE … SET LOGGED`, `VACUUM`, etc. — full marker list in the existing file). |
-| **Adopt vs apply** | `adopt` records the file as already-applied without running it (matching pre-existing schema); `apply` runs the migration against the cluster. `verify` compares ledger and on-disk files; `--check` exits non-zero on drift. |
+| **Adopt vs apply** | `adopt` records the file as already-applied without running it for pre-existing schema or orphan-ledger repair; `apply` runs the migration against the cluster. Fresh rebuilds do not adopt the archived legacy chain. `verify` compares ledger and on-disk files; `--check` exits non-zero on drift. |
 | **Idempotency** | Re-running a migration is a no-op when the ledger already records `status='applied'` and `checksum_sha256` matches. Mismatches raise `ChecksumMismatch` and refuse to re-apply silently. |
-| **Per-cluster invocation** | `python -m engine.db.scripts.schema_migrations apply --cluster warehouse|serve`. The command resolves the right DSN from `SERVE_DSN_ADMIN` / `WAREHOUSE_DSN_INGEST` (or a separate admin DSN if the migration role differs from app roles — typically `engine_admin` on serve and a dedicated `warehouse_admin` user on warehouse). |
+| **Per-cluster invocation** | `python -m engine.db.scripts.schema_migrations apply --cluster warehouse|serve`. The command resolves the right DSN from `SERVE_DSN_ADMIN` or `WAREHOUSE_DSN_ADMIN`; app-path DSNs (`WAREHOUSE_DSN_INGEST`, `WAREHOUSE_DSN_READ`, `SERVE_DSN_READ`) are never reused for DDL. |
 | **Async in scope** | None today — the runner is sync because (a) it is invoked from the shell or CI, not inside an event loop, and (b) `CREATE INDEX CONCURRENTLY` semantics make sync the simpler shape. asyncpg-conversion is **deferred** until a runtime path (rather than a CLI path) needs migrations. |
 
 The `MigrationFile`, `MigrationFileRecord`, `MigrationLedgerRecord`,
 `MigrationReadinessReport`, `MigrationApplyReport`,
-`MigrationAdoptionReport` types in the existing file already match
-the §4 Pydantic-at-the-boundary rule (they are `ParseContractModel`
-subclasses). **locked** for the contract; the file is the source.
+`MigrationAdoptionReport` types should remain `ParseContractModel`
+surfaces so the runner stays aligned with §4's Pydantic-at-the-boundary
+rule. **locked** for the contract; the implementation is expected to
+converge to it.
 
 ## §9 Testing
 
@@ -1041,7 +1064,7 @@ for `04 §2.4` validation; `serving_members` / `serving_cohorts` on
 | Async actors for PG-touching work; sync actors for CPU-only kernels | AsyncIO middleware composes with asyncpg natively. |
 | Per-role PG users with explicit grants; DSNs from env at startup | `pg_hba.conf` enforces source-host scoping; no shared `postgres` account. |
 | `application_name` query parameter on every DSN | First-class debugging surface for `pg_stat_activity`. |
-| `engine/db/scripts/schema_migrations.py` stays the executor / ledger | Atlas authors HCL; runner applies + records. Existing file is the source of truth. |
+| `engine/db/scripts/schema_migrations.py` stays the executor / ledger | SQL-first schema/migration files author the DB; runner applies + records. Current code is reusable inventory, but the contract remains doc-led. |
 | No-mocks-for-PG rule in tests | Real Testcontainers PG everywhere; mocks are reserved for OpenSearch / Redis. |
 | Session-scoped two-cluster Testcontainers fixture | Apply schema once per session; reuse across tests. |
 | Function-scoped `BEGIN; … ROLLBACK;` for test isolation | Standard 2026 Testcontainers pattern. |

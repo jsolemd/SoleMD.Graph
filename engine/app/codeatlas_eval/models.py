@@ -33,8 +33,10 @@ class RequiredDocLibrary(ParseContractModel):
     name: str
     repo: str | None = None
     docs_path: str | None = None
-    branch: str = "main"
+    branch: str | None = None
     description: str | None = None
+    include_patterns: list[str] = Field(default_factory=list)
+    exclude_patterns: list[str] = Field(default_factory=list)
     syncable: bool = False
 
 

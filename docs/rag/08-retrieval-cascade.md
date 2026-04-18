@@ -16,7 +16,8 @@
 >
 > **Scope**: the engine-side request-time orchestrator that turns one
 > user query into a ranked, grounded list of papers (and, for the
-> evidence lane, sentence-level chunk evidence). Owns the FastAPI
+> evidence lane, evidence-unit hits carrying sentence/block
+> coordinates). Owns the FastAPI
 > handler `POST /api/retrieve`, the five Pydantic models in
 > `engine/app/models/retrieval/`, the asyncpg-on-`serve_read` reads,
 > the OpenSearch hybrid call, the GPU-side MedCPT encoder + cross-
@@ -71,7 +72,8 @@ Eight load-bearing properties:
 4. **Lane choice is explicit and cheap.** `lane='paper'` is the
    default and covers warm + hot via the `paper_index` `tier` field;
    `lane='evidence'` implies `hot_only=True` and targets
-   `evidence_index` for sentence-precision grounding. (§10)
+   `evidence_index` for hot-only evidence-unit retrieval with
+   sentence/block-coordinated grounding. (§10)
 5. **Filters push down to OpenSearch.** Engine never re-filters
    results pulled from OpenSearch. The `07 §5.6` filter contract is
    trusted; the cascade's job is ranking, not policy enforcement on
@@ -165,7 +167,7 @@ class RetrieveRequest(BaseModel):
     cohort_id:     int | None = None                                # explicit cohort pin; default = active
 
     # Diagnostic / power-user knobs (default off):
-    explain:       bool = False                                     # asks OpenSearch for sub-scores; cross-encoder calibrated_score breakdown
+    explain:       bool = False                                     # benchmark/debug only: asks OpenSearch for rank-breakdown payloads on the debug pipeline plus rerank-score payloads
     skip_rerank:   bool = False                                     # debug: skip Stage 2; useful for A/B vs no-rerank baseline
     ef_search_override: int | None = Field(default=None, ge=10, le=2000)
 
@@ -192,12 +194,13 @@ from app.models.serve.projection import PaperApiCard
 
 
 class EvidenceHit(BaseModel):
-    """One sentence-aligned chunk hit. Only present on lane='evidence'."""
+    """One evidence-unit hit carrying sentence/block coordinates.
+    Only present on lane='evidence'."""
     model_config = ConfigDict(frozen=True)
 
     evidence_key:           UUID
     sentence_range:         tuple[int, int]            # (sentence_start_ordinal, sentence_end_ordinal)
-    chunk_text:             str                        # dereferenced from warehouse via FDW (§7)
+    chunk_text:             str                        # evidence-unit text surface, dereferenced from warehouse via FDW (§7)
     chunk_rerank_score:     float                      # MedCPT cross-encoder score (Stage 2)
     section_role:           int                        # smallint enum from 02 §0.10 registry
     grounding_degraded:     bool = False               # True if FDW dereference partially failed (§12.3)
@@ -212,6 +215,7 @@ class RankedPaper(BaseModel):
     rerank_score:   float                               # Stage 2 calibrated cross-encoder score
     rrf_score:      float                               # Stage 1 OpenSearch RRF score (07 §5.1)
     paper_api_card: PaperApiCard                        # 03 §4.2 narrow row; PG-projected
+    grounding_level: Literal["paper", "evidence"]       # "paper" = paper-level support only; "evidence" = at least one resolved EvidenceHit
     evidence_hits:  list[EvidenceHit] | None = None     # only for lane='evidence'; ≤ 3 per paper (§6)
     grounding_degraded: bool = False                    # mirrors per-paper degradation flag
 
@@ -237,8 +241,20 @@ class RetrieveResponse(BaseModel):
     cascade_timings:  CascadeTimings
     serving_run_id:   UUID                              # active-pointer snapshot (§9)
     lane:             Literal["paper", "evidence"]
+    grounding_level:  Literal["paper", "evidence"]      # strongest grounding level present in the ranked packet
     degraded:         dict[str, bool] = {}              # e.g. {"dense_lane_skipped": True, "cross_encoder_skipped": True}
 ```
+
+Grounding-level rule:
+
+- `RankedPaper.grounding_level = "evidence"` when the paper has at
+  least one resolved `EvidenceHit` after Stage 4.
+- `RankedPaper.grounding_level = "paper"` for warm-tier paper support
+  and for degraded evidence-lane rows that fell back to card-only
+  support.
+- `RetrieveResponse.grounding_level` is the strongest grounding level
+  present in the ranked packet: `"evidence"` if any ranked paper is
+  evidence-grounded, otherwise `"paper"`.
 
 ### 2.3 FastAPI handler
 
@@ -307,10 +323,10 @@ async def retrieve(req: RetrieveRequest, pool: ServeReadPool) -> RetrieveRespons
 **Owner**: engine FastAPI process; calls into the GPU-resident
 MedCPT-Query-Encoder via the engine's encoder RPC (per `07 §6.1`,
 encoders live in engine FastAPI on the RTX 5090, not in OpenSearch
-ML Commons). For paper-lane queries the engine may use
-MedCPT-Query-Encoder OR MedCPT-Article-Encoder (asymmetric vs
-symmetric retrieval; default Query for both lanes per `07 §6 Open
-items`); the choice is the engine's, not the cascade's.
+ML Commons). The locked baseline uses the official MedCPT asymmetry:
+the query encoder for queries, the article encoder for indexed
+documents. Any symmetric-query experiment is benchmark-only and does
+not change this contract.
 
 **Input**: `query_text: str`.
 **Output**: `query_vector: list[float]` (768d, L2-normalized so
@@ -445,7 +461,8 @@ async def _stage_1_lane_fusion(self, req, query_vector, snapshot):
 
 - **No engine-side fusion.** RRF runs inside OpenSearch via the
   `score-ranker-processor` (`07 §5.1`). Engine never sees BM25 and
-  KNN sub-scores separately unless `req.explain=True`.
+  KNN rank-breakdown payloads separately unless `req.explain=True`
+  on the benchmark/debug pipeline.
 - **No re-filtering.** Filters applied at index-time on OpenSearch are
   trusted (§11). Engine doesn't re-check `is_retracted`,
   `publication_year`, or `tier` on the returned candidates.
@@ -466,8 +483,8 @@ End-to-end Stage 1: 50–150 ms typical. Outliers triggered by:
 - Cold k-NN graph (post-cutover, before `_warmup` per `07 §7.4`).
 - `circuit_breaking_exception` on the k-NN sub-query (§12.5 → BM25-only
   fallback).
-- Pathological filter selectivity (< 0.5 % match rate per `07 §5.6`
-  threshold) forcing a post-filter shape.
+- Pathological filter selectivity that pushes the engine helper onto its
+  locally-benchmarked fallback path per `07 §5.6`.
 
 ## §5 Stage 2 — Cross-encoder rerank
 
@@ -610,8 +627,9 @@ document rather than concentrated in one strong passage. Locked at max
 for v1; if benchmark shows a top-1 conversion gap, revisit.
 **provisional**.
 
-**Why ≤3 chunks per paper.** UI affordance — the side panel shows up
-to 3 grounded sentences per result. More chunks per paper just
+**Why ≤3 evidence hits per paper.** UI affordance — the side panel
+shows up to 3 grounded sentences per result. More evidence hits per
+paper just
 increase response payload without rendering benefit. Locked at 3 today;
 operator-tunable as a per-request override is **deferred**.
 
@@ -764,7 +782,10 @@ async def _stage_4_grounding_dereference(
     if req.lane == "paper":
         # Card hydration only.
         return [
-            r.model_copy(update={"paper_api_card": by_id[r.corpus_id]})
+            r.model_copy(update={
+                "paper_api_card": by_id[r.corpus_id],
+                "grounding_level": "paper",
+            })
             for r in ranked if r.corpus_id in by_id
         ]
 
@@ -791,6 +812,7 @@ async def _stage_4_grounding_dereference(
             return parent.model_copy(update={
                 "paper_api_card": by_id[parent.corpus_id],
                 "evidence_hits":  updated_hits,
+                "grounding_level": "evidence" if updated_hits else "paper",
                 "grounding_degraded": len(updated_hits) < len(parent.evidence_hits),
             })
         except FDWUnavailable:
@@ -798,6 +820,7 @@ async def _stage_4_grounding_dereference(
             return parent.model_copy(update={
                 "paper_api_card": by_id[parent.corpus_id],
                 "evidence_hits":  [],
+                "grounding_level": "paper",
                 "grounding_degraded": True,
             })
 
@@ -1014,13 +1037,14 @@ Covers both warm and hot tiers via the `paper_index` `tier` field
 papers ranked by RRF + cross-encoder relevance. Suitable for:
 - General search ("find papers about X").
 - Browse-style queries.
-- Any caller that doesn't need sentence-precision citations.
+- Any caller that doesn't need evidence-lane grounding.
 
 ### 10.2 Opt-in — `lane='evidence'`
 
 Targets `evidence_index_live`, which is hot-tier-only by construction
-(`07 §3.5`). Returns paper-level results with up to 3 sentence-aligned
-chunk hits per paper. Suitable for:
+(`07 §3.5`). Returns paper-level results with up to 3 evidence-unit
+hits per paper, each carrying sentence coordinates for grounding.
+Suitable for:
 - Quote extraction ("find papers that say X about Y").
 - LLM grounding pipelines that need precise citation spans.
 - Evidence-comparison surfaces.
@@ -1083,12 +1107,13 @@ Per `07 §5.6` and the `RetrievalFilter` model (§2.1):
 | `corpus_ids_in` | `terms` on `corpus_id` | evidence lane only |
 | `tier_in` (derived from `lane` + `hot_only`) | `terms` on `tier` | paper lane only |
 
-The `RetrievalFilter` Pydantic model is the single source — engine
-helpers (`engine/app/opensearch/queries.py` per `07 §14`) generate both
-the BM25 sub-query's `bool.filter` block and the k-NN sub-query's
-`filter.bool.filter` block from one model. They cannot drift; lint
-test in `engine/test/opensearch/test_filter_duplication.py` asserts
-both blocks compare equal.
+The `RetrievalFilter` Pydantic model is the single source. Current
+OpenSearch supports a top-level `hybrid.filter`, and that is the
+default SoleMD shape. If a compatibility helper ever emits equivalent
+filter blocks into both the BM25 and k-NN subqueries, that is a local
+fallback path rather than the normative contract. The single model
+remains the anti-drift guard, and any duplicated shapes must still
+compare equal in tests.
 
 ### 11.2 What does NOT push down
 
@@ -1106,10 +1131,12 @@ both blocks compare equal.
 
 ### 11.3 Selectivity fallback
 
-Per `07 §5.6`, k-NN with a very-selective filter (< 0.5 % match rate)
-forces a post-filter shape. The engine helper tracks selectivity from
-the previous request and falls back automatically. This is OpenSearch-
-side concern (`07 §5.6`); the cascade just consumes the response.
+Per `07 §5.6`, efficient k-NN filtering may resolve as exact
+pre-filtering or approximate search with modified post-filtering
+depending on OpenSearch engine behavior. If the engine helper uses a
+very-selective-filter fallback, that threshold is a local benchmark
+heuristic, not an upstream OpenSearch contract. The cascade just
+consumes the response.
 
 ## §12 Failure & degradation classes
 
@@ -1362,6 +1389,7 @@ Every stage emits one Langfuse span with the following attributes
 | All | `serving_run_id` | snapshot.serving_run_id |
 | All | `cohort_id` | resolved from active pointer |
 | All | `lane` | req.lane |
+| All | `grounding_level` | response grounding level (`paper` / `evidence`) |
 | All | `redacted_query` | sha256 of query_text (no plaintext PHI) |
 | All | `latency_ms` | per-stage wall-clock |
 | Stage 0 | `encoder_revision` | ENCODER_REVISION constant |
@@ -1371,21 +1399,26 @@ Every stage emits one Langfuse span with the following attributes
 | Stage 1 | `candidate_count` | length of returned candidates (≤ 200 paper, ≤ 100 evidence) |
 | Stage 1 | `total_hits` | OpenSearch `total.value` |
 | Stage 1 | `pre_filter_active` | bool (from `07 §5.6` selectivity fallback) |
+| Stage 1 | `score_breakdown` | optional `list[ScoreBreakdownEntry]` when benchmark/search-pipeline runs enable both `req.explain=True` and the OpenSearch debug pipeline (`normalization` + `hybrid_score_explanation`); per-entry `{corpus_id, bm25_rank, dense_rank, rrf_score}` is a SoleMD.Graph normalization for lane-fusion analysis, not a live raw-score decomposition |
 | Stage 2 | `cross_encoder_revision` | constant |
 | Stage 2 | `top_n` | CROSS_ENCODER_TOP_N |
 | Stage 2 | `skipped` | bool (req.skip_rerank or §12.5) |
+| Stage 2 | `rerank_scores` | optional `list[RerankEntry]` when `req.explain=True`; per-entry `{corpus_id, rerank_score}` for rerank-lift analysis |
 | Stage 3 | `parent_count` | number of unique parents after promotion |
-| Stage 3 | `chunks_per_paper_max` | constant 3 |
+| Stage 3 | `evidence_hits_per_paper_max` | constant 3 |
 | Stage 4 | `cards_hydrated` | int |
 | Stage 4 | `cards_missing` | int (cohort drift signal) |
 | Stage 4 | `evidence_units_resolved` | int |
 | Stage 4 | `evidence_units_failed` | int |
+| Stage 4 | `paper_grounded_results` | int |
+| Stage 4 | `evidence_grounded_results` | int |
 | Stage 4 | `fdw_degraded_papers` | int |
+| Stage 4 | `grounding_roundtrip_failures` | optional `list[evidence_key]`; FDW-unresolved evidence keys for round-trip-success analysis |
 
 Trace-level fields: `trace_id`, `serving_run_id`, `graph_run_id`,
-`api_projection_run_id`, `lane`, `k`, `total_latency_ms`, `degraded`
-flags, HTTP status. PHI-safe: query text is hashed, not transmitted to
-Langfuse.
+`api_projection_run_id`, `lane`, `grounding_level`, `k`,
+`total_latency_ms`, `degraded` flags, HTTP status. PHI-safe: query
+text is hashed, not transmitted to Langfuse.
 
 ### 15.3 Prometheus metrics
 
@@ -1450,11 +1483,31 @@ rules.
   },
   "spans": [
     { "name": "stage_0_query_encoding", "latency_ms": 0.8,  "cache_hit": true,  "cpu_fallback": false },
-    { "name": "stage_1_lane_fusion",    "latency_ms": 64.2, "candidate_count": 100, "total_hits": 4382, "pre_filter_active": true },
-    { "name": "stage_2_cross_encoder_rerank", "latency_ms": 102.7, "top_n": 30, "skipped": false },
-    { "name": "stage_3_parent_child_promotion", "latency_ms": 2.1, "parent_count": 10, "chunks_per_paper_max": 3 },
+    {
+      "name": "stage_1_lane_fusion",
+      "latency_ms": 64.2,
+      "candidate_count": 100,
+      "total_hits": 4382,
+      "pre_filter_active": true,
+      "score_breakdown": [
+        { "corpus_id": 12345, "bm25_rank": 1, "dense_rank": 4, "rrf_score": 0.0317 },
+        { "corpus_id": 67890, "bm25_rank": 7, "dense_rank": 1, "rrf_score": 0.0309 }
+      ]
+    },
+    {
+      "name": "stage_2_cross_encoder_rerank",
+      "latency_ms": 102.7,
+      "top_n": 30,
+      "skipped": false,
+      "rerank_scores": [
+        { "corpus_id": 12345, "rerank_score": 8.42 },
+        { "corpus_id": 67890, "rerank_score": 7.95 }
+      ]
+    },
+    { "name": "stage_3_parent_child_promotion", "latency_ms": 2.1, "parent_count": 10, "evidence_hits_per_paper_max": 3 },
     { "name": "stage_4_grounding_dereference", "latency_ms": 24.5, "cards_hydrated": 10, "cards_missing": 0,
-      "evidence_units_resolved": 27, "evidence_units_failed": 1, "fdw_degraded_papers": 1 }
+      "evidence_units_resolved": 27, "evidence_units_failed": 1, "fdw_degraded_papers": 1,
+      "grounding_roundtrip_failures": ["0192a501-4400-7d10-ae90-5f6a7b8c9d10"] }
   ],
   "output": { "ranked_count": 10, "degraded": { "evidence_partial": true } }
 }
@@ -1488,6 +1541,10 @@ rules.
    in source; not request-tunable beyond `req.skip_rerank=True`.
 10. **No engine-side fusion.** RRF runs in OpenSearch only; engine
     never reweights BM25 vs dense outside the search pipeline.
+11. **Live hybrid semantics stay rank-based.** The production path
+    interprets Stage 1 as ranked candidate output. Any normalization-
+    based score breakdown belongs to benchmark/debug runs only and must
+    not be described as the live production combiner.
 
 ## Write patterns
 
@@ -1595,8 +1652,8 @@ For the evidence lane, steps 5–9 differ:
 | Caller never supplies query vector; engine owns encoding | `07 §6` encoder placement; trace consistency. |
 | Active-pointer fetched once per request; cohort stable for the request's duration; in-process last-known-good cache (60 s) | `04 §3.5` pointer atomicity; mid-request flips invisible (§9). |
 | Cross-encoder top-30; `CROSS_ENCODER_TOP_N` is a source constant | Sweet-spot for sub-second cascade on RTX 5090; over-30 blows the budget (§5.1). |
-| Parent-child promotion: max-aggregate per parent; ≤ 3 chunks per paper | UI affordance + correctness for "best evidence per paper" (§6.2). |
-| Filters push down to OpenSearch as pre-filters; engine never re-filters | `07 §5.6`; `RetrievalFilter` is the single source for both BM25 and k-NN sub-queries (§11.1). |
+| Parent-child promotion: max-aggregate per parent; ≤ 3 evidence hits per paper | UI affordance + correctness for "best evidence per paper" (§6.2). |
+| Filters push down to OpenSearch as pre-filters; engine never re-filters | `07 §5.6`; `RetrievalFilter` is the single source for top-level `hybrid.filter` on the default path (§11.1). |
 | FDW dereference bounded ≤ 256 evidence_keys per call, ≤ 1 corpus_id per call | `03 §3.3` hard schema policy; engine enforces before SQL (§7.2). |
 | Card hydration always runs against `paper_api_cards` (serve), independent of warehouse availability | `03 §3.4` "warehouse down ≠ serve broken" (§7.4). |
 | Five named failure classes with deterministic recovery; every degraded response carries a structured flag | No silent degradation; clients can render the right affordance (§12). |
@@ -1643,7 +1700,7 @@ For the evidence lane, steps 5–9 differ:
 | LLM-output cache | LLM answer synthesis layer lands; cache is at that layer, not the cascade. |
 | OpenSearch-result cache layer in engine | OpenSearch's own queries cache (`07 §3.1`) proves insufficient. |
 | Cascade-response CDN cache | Public-facing read traffic justifies edge caching. |
-| Per-request `chunks_per_paper_max` override | UI shape demands it. |
+| Per-request `evidence_hits_per_paper_max` override | UI shape demands it. |
 | Native Server-Sent-Events FastAPI handler | Same trigger as streaming above. |
 | Two-pass rerank (cheap reranker on top-100, expensive on top-10) | Cross-encoder budget at top-30 stops being adequate; today single-pass is enough. |
 | ColBERTv2 late-interaction sidecar after Stage 2 | `07 §13` deferred; only after MedCPT cascade is live and SPLADE doesn't close the gap. |
@@ -1683,7 +1740,7 @@ Forward-tracked; none block subsequent docs:
   safe. Wire a periodic audit that re-derives `evidence_key` from
   warehouse and asserts the OpenSearch hits round-trip cleanly. Defer
   to `10-observability.md`.
-- **Reviewer flag**: cross-encoder top-30 + chunks-per-paper-max=3 is
+- **Reviewer flag**: cross-encoder top-30 + evidence-hits-per-paper-max=3 is
   the local latency/UI-shaped default, not a universal cascade
   constant. Community retrieve-and-rerank examples often rerank closer
   to top-100; we start at 30 here because of the host budget and widen

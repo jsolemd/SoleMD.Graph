@@ -11,6 +11,28 @@ from app.codeatlas_eval.models import (
     RequiredDocLibrary,
 )
 
+POSTGRES_INCLUDE_PATTERNS = ("**/*.sgml",)
+POSTGRES_EXCLUDE_PATTERNS = (
+    "**/Makefile",
+    "**/*.css",
+    "**/*.xsl",
+    "**/*.dsl",
+    "**/*.gif",
+    "**/*.png",
+    "**/*.svg",
+)
+
+OPENSEARCH_INCLUDE_PATTERNS = (
+    "**/*.md",
+)
+OPENSEARCH_EXCLUDE_PATTERNS = (
+    "_ml-commons-plugin/**",
+    "_dashboards/**",
+    "assets/**",
+    "static/**",
+    "images/**",
+)
+
 
 def build_required_doc_libraries() -> tuple[RequiredDocLibrary, ...]:
     return (
@@ -35,8 +57,61 @@ def build_required_doc_libraries() -> tuple[RequiredDocLibrary, ...]:
             name="Cosmograph",
         ),
         RequiredDocLibrary(
+            library_id="/better-auth/better-auth",
+            name="Better Auth",
+            repo="better-auth/better-auth",
+            description="Official Better Auth docs for deferred auth integration",
+            syncable=True,
+        ),
+        RequiredDocLibrary(
             library_id="/fastapi/fastapi",
             name="FastAPI",
+        ),
+        RequiredDocLibrary(
+            library_id="/postgres/postgres",
+            name="PostgreSQL",
+            repo="postgres/postgres",
+            branch="master",
+            docs_path="doc/src/sgml",
+            description=(
+                "Official PostgreSQL docs curated to the SGML documentation corpus only"
+            ),
+            include_patterns=list(POSTGRES_INCLUDE_PATTERNS),
+            exclude_patterns=list(POSTGRES_EXCLUDE_PATTERNS),
+            syncable=True,
+        ),
+        RequiredDocLibrary(
+            library_id="/opensearch-project/documentation-website",
+            name="OpenSearch",
+            repo="opensearch-project/documentation-website",
+            description=(
+                "Official OpenSearch docs curated for search, index, and vector-retrieval "
+                "surfaces relevant to SoleMD.Graph"
+            ),
+            include_patterns=list(OPENSEARCH_INCLUDE_PATTERNS),
+            exclude_patterns=list(OPENSEARCH_EXCLUDE_PATTERNS),
+            syncable=True,
+        ),
+        RequiredDocLibrary(
+            library_id="/MagicStack/asyncpg",
+            name="asyncpg",
+            repo="MagicStack/asyncpg",
+            description="Official asyncpg docs for PostgreSQL hot-path access",
+            syncable=True,
+        ),
+        RequiredDocLibrary(
+            library_id="/psycopg/psycopg",
+            name="psycopg",
+            repo="psycopg/psycopg",
+            description="Official psycopg docs for sync DDL and migrations",
+            syncable=True,
+        ),
+        RequiredDocLibrary(
+            library_id="/Bogdanp/dramatiq",
+            name="Dramatiq",
+            repo="Bogdanp/dramatiq",
+            description="Official Dramatiq documentation",
+            syncable=True,
         ),
         RequiredDocLibrary(
             library_id="/duckdb/duckdb-web",
@@ -59,6 +134,27 @@ def build_required_doc_libraries() -> tuple[RequiredDocLibrary, ...]:
             repo="pgvector/pgvector",
             branch="master",
             description="pgvector PostgreSQL extension docs",
+            syncable=True,
+        ),
+        RequiredDocLibrary(
+            library_id="/pgbouncer/pgbouncer",
+            name="PgBouncer",
+            repo="pgbouncer/pgbouncer",
+            description="Official PgBouncer documentation",
+            syncable=True,
+        ),
+        RequiredDocLibrary(
+            library_id="/pgbackrest/pgbackrest",
+            name="pgBackRest",
+            repo="pgbackrest/pgbackrest",
+            description="Official pgBackRest documentation",
+            syncable=True,
+        ),
+        RequiredDocLibrary(
+            library_id="/testcontainers/testcontainers-python",
+            name="Testcontainers Python",
+            repo="testcontainers/testcontainers-python",
+            description="Python integration-test containers documentation",
             syncable=True,
         ),
         RequiredDocLibrary(
@@ -245,11 +341,24 @@ def build_solemd_graph_foundation_benchmark(
             case_id="required-doc-libraries-present",
             lane="docs-catalog",
             surface=CodeAtlasEvalSurface.DOCS,
-            description="SoleMD.Graph must have all critical frontend/runtime/backend docs libraries registered.",
+            description=(
+                "SoleMD.Graph must have all critical frontend/runtime/backend docs "
+                "libraries registered."
+            ),
             tool_name=None,
             expected_status=None,
             expected_library_ids=required_library_ids,
             tags=["docs", "catalog"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="resolve-better-auth-library",
+            lane="docs-auth",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description="Better Auth should resolve as the canonical deferred auth docs set.",
+            tool_name="resolve_library_id",
+            arguments={"library_name": "Better Auth", "output": "json"},
+            expected_library_id="/better-auth/better-auth",
+            tags=["docs", "auth"],
         ),
         CodeAtlasBenchmarkCase(
             case_id="resolve-duckdb-library",
@@ -270,6 +379,26 @@ def build_solemd_graph_foundation_benchmark(
             arguments={"library_name": "pgvector", "output": "json"},
             expected_library_id="/pgvector/pgvector",
             tags=["docs", "pgvector"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="resolve-postgresql-library",
+            lane="docs-backend",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description="PostgreSQL should resolve as the canonical database docs set.",
+            tool_name="resolve_library_id",
+            arguments={"library_name": "PostgreSQL", "output": "json"},
+            expected_library_id="/postgres/postgres",
+            tags=["docs", "postgresql"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="resolve-opensearch-library",
+            lane="docs-search",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description="OpenSearch should resolve as the canonical search docs set.",
+            tool_name="resolve_library_id",
+            arguments={"library_name": "OpenSearch", "output": "json"},
+            expected_library_id="/opensearch-project/documentation-website",
+            tags=["docs", "opensearch"],
         ),
         CodeAtlasBenchmarkCase(
             case_id="search-mantine-action-icon-docs",
@@ -316,14 +445,132 @@ def build_solemd_graph_foundation_benchmark(
             min_total=1,
             tags=["docs", "backend", "fastapi"],
         ),
+        CodeAtlasBenchmarkCase(
+            case_id="search-better-auth-search-path-docs",
+            lane="docs-auth",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description=(
+                "Better Auth docs search should surface PostgreSQL schema/search_path "
+                "guidance when auth is eventually activated."
+            ),
+            tool_name="search_docs",
+            arguments={
+                "library_id": "/better-auth/better-auth",
+                "query": "PostgreSQL search_path custom schema auth tables",
+                "limit": 4,
+                "output": "json",
+            },
+            min_total=1,
+            tags=["docs", "auth", "postgresql"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="search-postgres-auto-explain-docs",
+            lane="docs-backend",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description=(
+                "PostgreSQL docs search should land on the auto_explain preload module "
+                "surface instead of unrelated keyword pages."
+            ),
+            tool_name="search_docs",
+            arguments={
+                "library_id": "/postgres/postgres",
+                "query": "auto_explain shared_preload_libraries session_preload_libraries",
+                "limit": 4,
+                "output": "json",
+            },
+            min_total=1,
+            expected_file_paths=["doc/src/sgml/auto-explain.sgml"],
+            tags=["docs", "backend", "postgresql", "observability"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="search-postgres-planning-metrics-docs",
+            lane="docs-backend",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description=(
+                "PostgreSQL docs search should land on pg_stat_statements planning "
+                "metrics guidance."
+            ),
+            tool_name="search_docs",
+            arguments={
+                "library_id": "/postgres/postgres",
+                "query": (
+                    "pg_stat_statements track_planning compute_query_id planning "
+                    "metrics"
+                ),
+                "limit": 4,
+                "output": "json",
+            },
+            min_total=1,
+            expected_file_paths=["doc/src/sgml/pgstatstatements.sgml"],
+            tags=["docs", "backend", "postgresql", "observability"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="search-opensearch-hybrid-filter-docs",
+            lane="docs-search",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description=(
+                "OpenSearch docs search should land on the hybrid query docs when "
+                "looking up top-level hybrid.filter semantics."
+            ),
+            tool_name="search_docs",
+            arguments={
+                "library_id": "/opensearch-project/documentation-website",
+                "query": "hybrid.filter applies to all subqueries",
+                "limit": 4,
+                "output": "json",
+            },
+            min_total=1,
+            expected_file_paths=["_query-dsl/compound/hybrid.md"],
+            tags=["docs", "search", "opensearch", "hybrid"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="search-opensearch-score-ranker-docs",
+            lane="docs-search",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description=(
+                "OpenSearch docs search should land on the score-ranker processor "
+                "for rank-based RRF guidance."
+            ),
+            tool_name="search_docs",
+            arguments={
+                "library_id": "/opensearch-project/documentation-website",
+                "query": "score-ranker processor reciprocal rank fusion RRF",
+                "limit": 4,
+                "output": "json",
+            },
+            min_total=1,
+            expected_file_paths=["_search-plugins/search-pipelines/score-ranker-processor.md"],
+            tags=["docs", "search", "opensearch", "reranking"],
+        ),
+        CodeAtlasBenchmarkCase(
+            case_id="search-opensearch-hybrid-score-explanation-docs",
+            lane="docs-search",
+            surface=CodeAtlasEvalSurface.DOCS,
+            description=(
+                "OpenSearch docs search should land on the hybrid_score_explanation "
+                "processor instead of drifting into unrelated ML surfaces."
+            ),
+            tool_name="search_docs",
+            arguments={
+                "library_id": "/opensearch-project/documentation-website",
+                "query": "hybrid_score_explanation explain search pipeline",
+                "limit": 4,
+                "output": "json",
+            },
+            min_total=1,
+            expected_file_paths=["_search-plugins/search-pipelines/explanation-processor.md"],
+            tags=["docs", "search", "opensearch", "hybrid"],
+        ),
     ]
     if selected_lanes:
         cases = [case for case in cases if case.lane in selected_lanes]
     return CodeAtlasBenchmark(
-        benchmark_key="solemd_graph_codeatlas_foundation_v2",
+        benchmark_key="solemd_graph_codeatlas_foundation_v3",
         benchmark_source=(
             "Repo-owned CodeAtlas dogfood benchmark spanning CSS tokens, Mantine, "
-            "DuckDB-Wasm, Cosmograph, backend RAG search, and required docs coverage."
+            "DuckDB-Wasm, Cosmograph, backend RAG search, and curated implementation "
+            "docs coverage for PostgreSQL, OpenSearch, auth, and ingestion/runtime "
+            "dependencies."
         ),
         cases=cases,
         required_doc_libraries=required_doc_libraries,

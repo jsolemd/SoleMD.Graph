@@ -197,7 +197,11 @@ def langfuse_api(method: str, path: str, json_body: dict | None = None) -> dict 
     """
     import httpx
 
-    base_url = os.environ.get("LANGFUSE_BASE_URL", "http://127.0.0.1:3100")
+    base_url = (
+        os.environ.get("LANGFUSE_BASE_URL")
+        or os.environ.get("LANGFUSE_HOST")
+        or "http://127.0.0.1:3100"
+    )
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
 

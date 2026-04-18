@@ -38,11 +38,15 @@ Dual Tailscale on Windows and WSL is supported. It is not itself a bug.
 | Windows browser | `http://127.0.0.1:3000` |
 | PostgreSQL | `127.0.0.1:5433` |
 | Redis | `127.0.0.1:6380` |
-| Langfuse | `127.0.0.1:3100` |
 
 Non-canonical baseline:
 - `http://localhost:3000`
 - same-machine raw tailnet addresses
+
+Langfuse is no longer part of the local loopback baseline for the
+workstation phase. It is externalized to Langfuse Cloud, so use the
+configured `LANGFUSE_HOST` / `LANGFUSE_BASE_URL` rather than assuming a
+repo-local `127.0.0.1` service.
 
 ## Env Contract
 
@@ -51,8 +55,9 @@ Prefer explicit IPv4 loopback:
 ```text
 DATABASE_URL=...@127.0.0.1:5433/...
 REDIS_URL=redis://:local_dev@127.0.0.1:6380/0
-LANGFUSE_BASE_URL=http://127.0.0.1:3100
-LANGFUSE_HOST=http://127.0.0.1:3100
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_HOST=https://cloud.langfuse.com
+# or: https://us.cloud.langfuse.com
 ```
 
 ## Remote Workflow

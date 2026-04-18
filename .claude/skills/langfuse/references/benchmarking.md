@@ -11,13 +11,26 @@
 
 ## Source Of Truth
 
-- Langfuse datasets are the benchmark source of truth.
-- JSON under `engine/data/runtime_eval_benchmarks/` is an optional snapshot surface
-  created by `prepare_rag_curated_benchmarks.py --snapshot`.
+- Langfuse datasets are the **live** benchmark source of truth.
+- When using Langfuse Cloud Hobby, JSON under
+  `engine/data/runtime_eval_benchmarks/` is also the **archive mirror**
+  created by `prepare_rag_curated_benchmarks.py --snapshot`, because
+  cloud data access is limited to 30 days on that plan.
 - `rag_benchmark.py --all-benchmarks` runs the live dataset list from
   `engine/app/rag_ingest/experiment.py::ALL_BENCHMARK_DATASETS`.
 - `--use-suite-gates` applies default acceptance thresholds only for suites
   registered in `benchmark_catalog.py`.
+
+## Downstream Consumers
+
+- `docs/rag/10a-rag-quality-analyzer.md` is the offline batch consumer of
+  cascade traces emitted by benchmark experiments and run reviews.
+- If a benchmark change adds or removes cascade trace fields, update
+  `08-retrieval-cascade.md` and `10a-rag-quality-analyzer.md` in the same
+  PR so the trace producer and the batch analyzer stay aligned.
+- If a benchmark change adds a new persisted score family, add it to
+  `10a §3` in the same batch if the offline analyzer should retain it
+  beyond Langfuse Cloud's live surface.
 
 ## Benchmark Lifecycle
 

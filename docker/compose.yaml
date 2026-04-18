@@ -164,10 +164,10 @@ services:
       DATABASE_URL: postgresql://solemd:solemd_local@db:5432/solemd_graph
       REDIS_URL: redis://:local_dev@redis:6379/0
       OPENSEARCH_URL: http://opensearch:9200
-      # SDK writes from inside the worker must use the in-network Langfuse
-      # service, while public links should still resolve to the host UI port.
-      LANGFUSE_BASE_URL: http://langfuse-web:3000
-      LANGFUSE_PUBLIC_BASE_URL: http://127.0.0.1:3100
+      # Langfuse is externalized to Cloud for the workstation phase.
+      # Keep both internal API calls and user-facing links env-driven.
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:?LANGFUSE_BASE_URL must be set via 1Password Environments}
+      LANGFUSE_PUBLIC_BASE_URL: ${LANGFUSE_PUBLIC_BASE_URL:-}
       GRAPH_LAYOUT_BACKEND: gpu
       GRAPH_CLUSTER_BACKEND: gpu
       GRAPH_DIR: /mnt/solemd-graph
@@ -181,7 +181,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY must be set via 1Password Environments}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      LANGFUSE_HOST: http://langfuse-web:3000
+      LANGFUSE_HOST: ${LANGFUSE_HOST:?LANGFUSE_HOST must be set via 1Password Environments}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:?LANGFUSE_PUBLIC_KEY must be set via 1Password Environments}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:?LANGFUSE_SECRET_KEY must be set via 1Password Environments}
       LANGFUSE_FLUSH_AT: ${LANGFUSE_FLUSH_AT:-}

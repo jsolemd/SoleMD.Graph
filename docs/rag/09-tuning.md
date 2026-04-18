@@ -46,9 +46,10 @@ Inherits every convention from those documents. This doc adds:
 | Concern | Tuning delta |
 |---|---|
 | **`postgresql.conf` ownership** | Two files under `db/conf/`: `db/conf/warehouse.conf` (mounted into `graph-db-warehouse`) and `db/conf/serve.conf` (mounted into `graph-db-serve`). Each is the authority for cluster-level GUCs; `docker/compose.yaml` mounts the file read-only at `/etc/postgresql/postgresql.conf` and the entrypoint passes `-c config_file=/etc/postgresql/postgresql.conf`. The current `command:` chain in `docker/compose.yaml` is migrated into these files in one step (`12-migrations.md`). |
-| **Per-table autovacuum reloptions** | Every table in `02 §4` and `03 §4` carries an `ALTER TABLE … SET (autovacuum_*)` declaration in HCL, keyed to its fillfactor tier (§5 below). The cluster-level `autovacuum_*` GUCs in §3 / §4 are the **defaults**; per-table reloptions are the **deltas**. |
+| **`pg_hba.conf` ownership** | Canonical repo-owned HBA files are `db/conf/warehouse_hba.conf` and `db/conf/serve_hba.conf`. They are mounted read-only into each cluster, use PostgreSQL first-match-wins ordering, and are paired with database `CONNECT` grants rather than treated as the only admission-control surface. |
+| **Per-table autovacuum reloptions** | Every table in `02 §4` and `03 §4` carries an `ALTER TABLE … SET (autovacuum_*)` declaration in the SQL schema / migration surfaces, keyed to its fillfactor tier (§5 below). A generated include file is deferred until the reloption matrix proves stable enough to justify codegen. The cluster-level `autovacuum_*` GUCs in §3 / §4 are the **defaults**; per-table reloptions are the **deltas**. |
 | **Memory math table** | Required artifact: §2 declares `shared_buffers + effective_cache_size` budgets per cluster at 68 GB and 128 GB and shows the host-level total adds up against OpenSearch heap + Redis + worker + OS reserve. Any change to one column of that table requires re-checking the others in the same edit. |
-| **Host-level kernel tuning side note** | §10 enumerates the host `sysctl` values PG and OpenSearch *both* require (`vm.max_map_count`, `vm.swappiness`, `vm.nr_hugepages`, ulimits). Marked "host-level work, not container-level"; lands in `12-migrations.md` as a one-shot setup step, not a per-cluster GUC. |
+| **Host-level kernel tuning side note** | §10 enumerates the shared host-kernel contract for PG + OpenSearch (`vm.max_map_count`, `vm.swappiness`, `ulimits`) and the PG-specific huge-page setting (`vm.nr_hugepages`). Marked "host-level work, not container-level"; lands in `12-migrations.md` as a one-shot setup step, not a per-cluster GUC. |
 | **`db/conf/<cluster>.conf` immutability discipline** | Restart-required GUCs (`shared_buffers`, `wal_level`, `max_connections`, `max_worker_processes`, `huge_pages`, `io_method`, `shared_preload_libraries`) must be flipped via `db/conf/<cluster>.conf` edit + container restart. SIGHUP-reloadable GUCs (`work_mem`, `maintenance_work_mem`, `autovacuum_*`, `random_page_cost`, `effective_io_concurrency`, planner GUCs) may be edited in place and reloaded via `pg_reload_conf()`. The two classes are called out inline in §3 / §4. |
 | **Provisional-vs-locked annotations** | Every numeric value is tagged in the table that supplies it, not at the GUC line itself, to keep the conf files copyable as-is into the running clusters. |
 
@@ -59,9 +60,9 @@ emitted are referenced by:
 
 - `docker/compose.yaml` — mounts both confs; entrypoint uses
   `-c config_file=…`.
-- `db/schema/{warehouse,serve}.hcl` — the per-table
-  `autovacuum_*` reloptions in §5 are inlined into HCL `settings { … }`
-  blocks per table.
+- `db/schema/{warehouse,serve}/*.sql` — the per-table
+  `autovacuum_*` reloptions in §5 land as SQL `ALTER TABLE … SET (...)`
+  declarations per table.
 - `engine/app/db/pools.py` — consumes the §7 pool sizes via
   `app/config.py` `Settings` defaults.
 - `engine/app/projection/_pools.py` and the ingest worker — consume
@@ -160,12 +161,14 @@ Rationale (provisional):
   16 GB ingest-time value because *cluster-default* applies when
   ingest is *not* running; ingest sessions raise it (§8). Index
   builds at projection time stay under cluster default.
-- Per `research-distilled §2`, parallel index build wants
-  `maintenance_work_mem` × `max_parallel_maintenance_workers` of
-  RAM at peak. At 8 GB × 12 workers = 96 GB peak — only viable
-  on the 128 GB host. On 68 GB, ingest `SET LOCAL
-  maintenance_work_mem = '8GB'` plus
-  `max_parallel_maintenance_workers = 8` keeps peak at 64 GB.
+- PostgreSQL 18's own docs note that **parallel utility commands treat
+  `maintenance_work_mem` as a limit for the entire utility command,
+  regardless of the number of parallel worker processes**. So
+  `max_parallel_maintenance_workers` is primarily a CPU / I/O
+  concurrency knob here, not an 8× or 12× multiplier on one `CREATE
+  INDEX` command's `maintenance_work_mem` budget. The 68 GB vs 128 GB
+  split still matters, but mostly for overall host concurrency and how
+  many other services are hot at the same time.
 
 ## §3 Warehouse `postgresql.conf`
 
@@ -242,9 +245,11 @@ bgwriter_flush_after      = 512kB             # default
 max_worker_processes      = 24                # 16 logical cores + 8 headroom for autovacuum + io_workers
 max_parallel_workers      = 12                # cap parallel scan workers
 max_parallel_workers_per_gather = 6           # per-query cap
-max_parallel_maintenance_workers = 8          # CREATE INDEX parallelism (research-distilled §2);
-                                              #   8 × maintenance_work_mem 8GB = 64 GB peak (fits 68 GB host)
-                                              #   on 128 GB raise to 12
+max_parallel_maintenance_workers = 8          # CREATE INDEX parallelism on 68 GB host.
+                                              # PostgreSQL 18 treats maintenance_work_mem as a
+                                              # per-command limit for parallel utility commands,
+                                              # not a per-worker multiplier. Raise to 12 on 128 GB
+                                              # for faster index build once host concurrency allows.
 
 # ─── Autovacuum (cluster default; per-table reloptions in §5) ─────
 autovacuum                          = on
@@ -286,7 +291,9 @@ track_wal_io_timing       = on                  # PG 18; tracks WAL IO separatel
 track_functions           = pl
 
 # ─── Extensions (cluster-level requirement; 02 §1) ────────────────
-shared_preload_libraries  = 'pg_stat_statements,auto_explain,pg_buffercache,pg_cron'
+shared_preload_libraries  = 'pg_stat_statements,auto_explain,pg_cron'
+compute_query_id          = auto
+pg_stat_statements.track_planning = on
 pg_stat_statements.max    = 10000
 pg_stat_statements.track  = all
 auto_explain.log_min_duration = 5000          # warehouse: only catch >5s queries; ingest dominates
@@ -362,7 +369,7 @@ huge_pages                = try               # vm.nr_hugepages on host (§10)
 # ─── WAL (§4 posture: replica) ────────────────────────────────────
 wal_level                 = replica           # preserves future streaming-replica optionality (00 §6)
                                               # without the logical-WAL tax (research-distilled §1)
-max_wal_senders           = 4                 # headroom for pgBackRest WAL archiver + future replica
+max_wal_senders           = 4                 # headroom for future pgBackRest archiving + optional replica
 max_replication_slots     = 4
 wal_compression           = zstd              # PG 18; reduces WAL bytes ~30 %
 wal_buffers               = 32MB
@@ -372,11 +379,10 @@ synchronous_commit        = on                # always; precious data (03 §8 lo
 synchronous_standby_names = ''                # no replica yet; flip to a quorum spec when one exists
 fsync                     = on
 full_page_writes          = on
-archive_mode              = on                # pgBackRest needs WAL archive (01 §7); 11-backup.md owns
-archive_command           = 'pgbackrest --stanza=serve archive-push %p'
-                                              # placeholder until pgBackRest sidecar lands; until then
-                                              # leave archive_mode = on with archive_command = '/bin/true'
-                                              # so pg_wal doesn't fill (PG 18 docs)
+archive_mode              = off               # keep off until 11-backup wires a real pgBackRest repo + stanza
+                                              # PostgreSQL docs explicitly discourage fake-success placeholders
+                                              # such as archive_command='/bin/true' for normal operation
+archive_command           = ''                # set atomically with pgBackRest stanza-create/check in 11-backup
 max_wal_size              = 4GB               # OLTP — small steady WAL, no bulk
 min_wal_size              = 1GB
 checkpoint_timeout        = 15min             # tighter than warehouse; want fast restart
@@ -436,7 +442,9 @@ track_wal_io_timing       = on
 track_functions           = pl
 
 # ─── Extensions (03 §1) ───────────────────────────────────────────
-shared_preload_libraries  = 'pg_stat_statements,auto_explain,pg_buffercache,pg_prewarm,pg_cron'
+shared_preload_libraries  = 'pg_stat_statements,auto_explain,pg_prewarm,pg_cron'
+compute_query_id          = auto
+pg_stat_statements.track_planning = on
 pg_stat_statements.max    = 10000
 pg_stat_statements.track  = all
 auto_explain.log_min_duration = 250            # serve: capture every >250 ms hot-path query
@@ -465,8 +473,9 @@ Reload class same partition as §3.
 Per `02 §0.5` and `03 §0.5`, every table is in one of three
 fillfactor tiers. Per `02 §6.3` and `03 §6.3`, each tier wants a
 different autovacuum posture. This section is the **single
-authoritative reloption table**; HCL `settings { … }` blocks under
-`db/schema/{warehouse,serve}.hcl` quote these values verbatim.
+authoritative reloption table**; the SQL schema and migration surfaces under
+`db/schema/{warehouse,serve}/*.sql` and `db/migrations/{warehouse,serve}/*.sql`
+quote these values verbatim.
 
 ### 5.1 Tier rules
 
@@ -494,7 +503,7 @@ Rationale:
   singleton from accumulating dead tuples. `analyze_scale_factor`
   at 0.02 keeps planner stats fresh after every status flip.
 
-### 5.2 Warehouse SQL reloptions (illustrative; HCL is authoritative)
+### 5.2 Warehouse SQL reloptions (illustrative; SQL schema is authoritative)
 
 ```sql
 -- Tier 100: append-mostly large facts (02 §0.5 / §6.3)
@@ -585,9 +594,11 @@ of the static reloption set above.
 File path: `db/conf/pgbouncer.ini`; mounted at
 `/etc/pgbouncer/pgbouncer.ini` inside the `pgbouncer-serve`
 container. PgBouncer 1.25.1 (Dec 2025). `pool_mode = transaction`
-locked per `00 §6` and `03 §7.3`. Prepared-statement support
-across txn-mode is the canonical 1.21+ feature
-(<https://www.crunchydata.com/blog/prepared-statements-in-transaction-mode-for-pgbouncer>).
+locked per `00 §6` and `03 §7.3`. PgBouncer can track prepared
+statements across txn-mode, but asyncpg remains on the documented safe
+floor here: `serve_read` keeps `statement_cache_size=0` and avoids
+explicit prepare calls unless integration tests later prove a broader
+compatibility envelope.
 
 PgBouncer-serve sits between everything that goes through the
 `engine_serve_read` role (`06 §7.1`):
@@ -645,13 +656,13 @@ max_db_connections        = 60
                           ;   (§4 max_connections=100; admin pool=4 + replica=4 + buffer=32 = 60)
 max_user_connections      = 60
 
-;; ─── Prepared statements (PgBouncer 1.21+, default-on in 1.25) ────
+;; ─── Prepared statements (optional server-side tracking; asyncpg stays conservative) ────
 max_prepared_statements   = 200
-                          ; LRU cache per server connection; engine asyncpg has
-                          ;   statement_cache_size=0 on serve_read pool (06 §2.1) so the cache
-                          ;   lives ENTIRELY at PgBouncer and is shared across clients
-                          ; (Crunchy Data 2024;
-                          ;  https://dev.to/rajasekhar_beemireddy_cb8/boosting-postgresql-performance-with-pgbouncer-a-configuration-guide-gkj)
+                          ; protocol-level prepared-plan cache per server connection.
+                          ; asyncpg serve_read still keeps statement_cache_size=0
+                          ;   and avoids explicit prepare calls in txn mode; treat this
+                          ;   as optional server-side tracking, not a baseline free win.
+                          ; schema-changing DDL may still require RECONNECT to flush plans.
 
 ;; ─── Timeouts ─────────────────────────────────────────────────────
 query_wait_timeout        = 5
@@ -692,7 +703,7 @@ application_name_add_host = 0
 | `min_pool_size` | 6 | Warm — first hot-path query after PgBouncer restart doesn't pay 5–15 ms PG handshake. | Same as above. |
 | `reserve_pool_size` | 8 | Spike absorption; only triggers when default pool exhausted > `reserve_pool_timeout`. | Same. |
 | `max_db_connections` | 60 | Floor: `max_connections=100` (§4) minus 4 superuser_reserved minus 4 admin pool minus 4 replica/maintenance reserve minus 28 buffer. | PG 18 max_connections docs. |
-| `max_prepared_statements` | 200 | PgBouncer 1.25 default; per Crunchy 2024 guidance, sized to "common hot-query set" — engine API has ~50 distinct hot queries today (`engine/app/rag/_queries_*.py`); 200 leaves 4× headroom. | <https://www.crunchydata.com/blog/prepared-statements-in-transaction-mode-for-pgbouncer> |
+| `max_prepared_statements` | 200 | Keeps PgBouncer's protocol-level prepared-plan cache available while asyncpg clients still run with `statement_cache_size=0`; 200 leaves headroom over the current hot-query set and stays subject to integration-test proof. | <https://www.pgbouncer.org/config.html> |
 | `query_wait_timeout` | 5 s | Backpressure signal; tighter than `statement_timeout=5s` would let a request both wait + run = 10 s; we cap composed budget at ~5 s. | <https://www.pgbouncer.org/config.html> |
 
 **provisional** for `max_client_conn` (revisit after first
@@ -751,7 +762,12 @@ Warehouse PG `max_connections = 80` (§3):
 
 ### 7.2 `statement_cache_size` discipline
 
-- `serve_read` MUST be 0 (PgBouncer txn mode owns the cache).
+- `serve_read` MUST be 0. PgBouncer may track server-side prepared plans,
+  but asyncpg still treats transaction-pooled prepared statements as an
+  unsafe baseline.
+- If PgBouncer's prepared-plan cache remains enabled in txn mode, prove
+  the path with integration tests and expect `RECONNECT` after
+  schema-changing DDL that invalidates cached plans.
 - `warehouse_read` and `admin` use 128 — direct connections, the
   cache is per-physical-conn and amortizes over the projection
   cycle's repeated swap-template statements.
@@ -847,9 +863,11 @@ us tens of percent on every read.
 ## §10 Host-level kernel tuning side note
 
 These are **host-level work, not container-level GUCs**; they belong
-in `12-migrations.md` as a one-shot WSL2 setup step. PG and OpenSearch
-*both* depend on them; OpenSearch already hits some of these per
-`07 §2.4`.
+in `12-migrations.md` as a one-shot WSL2 setup step. PG and
+OpenSearch share part of this host contract: `vm.max_map_count`,
+`vm.swappiness`, `nofile`, and `memlock` matter for OpenSearch, while
+`vm.nr_hugepages` is the PostgreSQL-side optimization. OpenSearch
+already hits some of these per `07 §2.4`.
 
 ```sysctl
 # /etc/sysctl.d/99-solemd-graph.conf (host /, applied via `sysctl --system`)
@@ -898,12 +916,17 @@ starts gracefully even if the host operator hasn't run
 `sysctl --system` yet. OpenSearch's `bootstrap.memory_lock = true`
 (`compose.yaml`) requires the `memlock unlimited` line above.
 
-**Open item flagged for reviewer**: WSL2 honors host-side `sysctl`
-values that are set on the WSL distro itself — *not* the Windows host.
-Confirm during first-boot that `cat /proc/sys/vm/nr_hugepages` shows
-14336 from inside WSL. Documented at
-<https://learn.microsoft.com/en-us/windows/wsl/wsl-config>; use
-`/etc/wsl.conf` `[boot]` section to apply on each WSL start.
+**Open item flagged for reviewer**: preferred persistence path on WSL2
+is the normal Linux one: enable `systemd` in `/etc/wsl.conf`, keep the
+sysctls in `/etc/sysctl.d/99-solemd-graph.conf`, and let
+`systemd-sysctl` apply them at distro boot. Use a `[boot] command=...`
+workaround in `/etc/wsl.conf` only if systemd is unavailable. If
+`vm.nr_hugepages` cannot reliably reach target count early enough at
+boot, the fallback is to reserve huge pages earlier via WSL's global
+`.wslconfig` `kernelCommandLine`. Confirm during first-boot that
+`cat /proc/sys/vm/nr_hugepages` shows 14336 from inside WSL. Documented
+at <https://learn.microsoft.com/en-us/windows/wsl/systemd> and
+<https://learn.microsoft.com/en-us/windows/wsl/wsl-config>.
 
 ## §11 Sample-build calibration plan
 
@@ -1046,20 +1069,21 @@ panels and alert rules; this doc names the validation contract.
 | Decision | Rationale |
 |---|---|
 | Two `postgresql.conf` files (`db/conf/warehouse.conf`, `db/conf/serve.conf`) mounted read-only into each cluster | Per-cluster posture is mirror-image; one conf cannot serve both. Compose mounts replace the current `command:` chain. |
+| Two repo-owned `pg_hba.conf` files (`db/conf/warehouse_hba.conf`, `db/conf/serve_hba.conf`) mounted read-only into each cluster | HBA is cluster config, not ad hoc operator state; first-match ordering and `CONNECT` grants stay reviewable in-repo. |
 | Memory math at 68 GB and 128 GB sums to host (§2.2) | Two-cluster + OpenSearch + worker forces explicit accounting; PG textbook 25 % rule does not generalize here. |
 | Warehouse posture: `wal_level=minimal`, `synchronous_commit=off`, `archive_mode=off`, large `max_wal_size`, long checkpoint_timeout | `00 §3` / `research-distilled §5`; warehouse rebuildable from `/mnt/solemd-graph/data` (`01 §3`). |
-| Serve posture: `wal_level=replica`, `synchronous_commit=on` always, `archive_mode=on`, tight checkpoint_timeout, aggressive bgwriter | Precious data; future streaming-replica optionality without logical-WAL tax. `03 §8` locked. |
-| Per-table `autovacuum_*` reloptions by fillfactor tier (100 / 90 / 80) — §5 | Fillfactor and autovacuum aggressiveness are correlated; tying them in HCL prevents drift. |
+| Serve posture: `wal_level=replica`, `synchronous_commit=on` always, tight checkpoint_timeout, aggressive bgwriter; enable WAL archiving only when real pgBackRest wiring lands | Precious data; future streaming-replica optionality without logical-WAL tax. Do not normalize fake-success `archive_command` placeholders. `03 §8` locked; `11-backup.md` activates archiving. |
+| Per-table `autovacuum_*` reloptions by fillfactor tier (100 / 90 / 80) — §5 | Fillfactor and autovacuum aggressiveness are correlated; tying them in the SQL schema / migration surfaces prevents drift. |
 | `active_runtime_pointer` `analyze_threshold = 10` | Singleton flips on every cutover; planner stats must lead, not lag. |
 | PgBouncer-serve `pool_mode = transaction` | `00 §6` / `03 §7.3` locked. |
-| PgBouncer `max_prepared_statements = 200` | PgBouncer 1.25 default + Crunchy 2024 sizing guidance; serves engine API's ~50 hot-query set with 4× headroom. |
+| PgBouncer `max_prepared_statements = 200` | Keeps optional server-side prepared-plan tracking available, while asyncpg still runs with `statement_cache_size=0`; schema-changing DDL remains a `RECONNECT` boundary if this feature is active. |
 | PgBouncer `max_db_connections = 60` matches §6.2 connection-budget ledger | Single-edit invariant with serve `max_connections = 100`. |
-| asyncpg `serve_read.statement_cache_size = 0` | PgBouncer txn-mode owns the cache; client must not double-cache (`06 §2.1`). |
+| asyncpg `serve_read.statement_cache_size = 0` | Transaction-pooled asyncpg stays on the documented safe floor; any PgBouncer-side prepared-plan tracking is optional and integration-tested, not a reason to enable client-side caching (`06 §2.1`). |
 | `io_method = worker` on both clusters | `postgres:18` Docker image not built `--with-liburing` (<https://github.com/docker-library/postgres/issues/1365>). |
 | `random_page_cost = 1.1`, `effective_io_concurrency = 256` on both clusters | NVMe-class storage on both surfaces (`01 §6`). |
 | `huge_pages = try` on both | Graceful fallback if host kernel not tuned. |
 | `wal_level=minimal` is cluster-level discipline; never per-session toggled | Restart-required GUC; documented to prevent operator confusion. |
-| `vm.swappiness = 1`, `vm.max_map_count = 262144`, `vm.nr_hugepages = 14336` | Required by both PG and OpenSearch; `12-migrations.md` installs as one-shot. |
+| `vm.swappiness = 1`, `vm.max_map_count = 262144`, `vm.nr_hugepages = 14336` | Host contract installed once by `12-migrations.md`: `vm.max_map_count` and memlock are OpenSearch-critical, `vm.nr_hugepages` is PostgreSQL-specific. |
 | `default_toast_compression = lz4`, `wal_compression = zstd` | `02 §0.4`; PG 18 zstd WAL support. |
 | `pg_prewarm.autoprewarm = on` on serve | Cold-cache stall avoidance (`03 §1`). |
 | `pg_stat_monitor` NOT installed; `pg_stat_statements` is the source | `research-distilled §7` — they conflict on the executor hook. |
@@ -1100,16 +1124,21 @@ Forward-tracked; none block subsequent docs:
   column; the operator picks which is active by editing the named
   constants. No re-architecture required.
 - **`wsl mem=` final value.** `01` open item; sets the host
-  ceiling that §2.2 sanity-checks against.
+  ceiling that §2.2 sanity-checks against. WSL defaults to 50 % of
+  host RAM, which is too low for this stack, so an explicit
+  `.wslconfig` cap is required. Recommended starting point:
+  `memory=60GB` on the current 68 GB host, then re-measure after the
+  128 GB upgrade before deciding whether to move closer to `120GB`.
 - **Custom postgres:18 image with liburing** — defer until measured
   cold-cache gap justifies the maintenance.
 - **PgBouncer `userlist.txt` generator + `pgbouncer_auth.user_lookup`
   function** — `12-migrations.md` owns; this doc names the auth
   scheme (scram-sha-256) and the auth_user contract (`pgbouncer_auth`
   must exist on serve PG, NEVER granted to `engine_admin`).
-- **pgBackRest sidecar** — `archive_command` placeholder in §4
-  becomes real when `11-backup.md` lands; until then the placeholder
-  `'/bin/true'` keeps `pg_wal` from filling.
+- **pgBackRest sidecar** — §4 now keeps serve `archive_mode=off`
+  until `11-backup.md` lands with a real repo, `stanza-create`,
+  `check`, and `archive_command`; do not use fake-success placeholders
+  such as `'/bin/true'` as the normal pre-wiring state.
 
 ## Upstream amendments
 

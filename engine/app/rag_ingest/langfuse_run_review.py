@@ -208,6 +208,7 @@ def _trace_url(trace_id: str) -> str | None:
     base_url = (
         os.environ.get("LANGFUSE_PUBLIC_BASE_URL")
         or os.environ.get("LANGFUSE_BASE_URL")
+        or os.environ.get("LANGFUSE_HOST")
         or "http://127.0.0.1:3100"
     ).rstrip("/")
     return f"{base_url}{html_path}"
@@ -217,6 +218,7 @@ def _langfuse_base_url() -> str:
     return (
         os.environ.get("LANGFUSE_PUBLIC_BASE_URL")
         or os.environ.get("LANGFUSE_BASE_URL")
+        or os.environ.get("LANGFUSE_HOST")
         or "http://127.0.0.1:3100"
     ).rstrip("/")
 

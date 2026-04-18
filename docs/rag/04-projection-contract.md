@@ -106,25 +106,21 @@ Contract:
   the publish flip. In-progress writes only update `tables_built`,
   `last_built_family`, and timing fields.
 
-Additive HCL (beyond `03 §4.3`):
+Additive schema delta (lands in `db/schema/serve/*.sql` plus
+`db/migrations/serve/*.sql`):
 
-```hcl
-table "serving_runs" {
-  schema = schema.solemd
-  // … all columns from 03 §4.3 …
-  column "cohort_manifest" {
-    null = false, type = jsonb
-    comment = "Pydantic-validated manifest of families, build order, source watermark, expected row counts. Frozen on publish."
-  }
-  column "tables_built" {
-    null = false, type = sql("text[]"), default = sql("ARRAY[]::text[]")
-    comment = "Family codes successfully built so far. Drives §5.4 idempotency / resume."
-  }
-  column "last_built_family" {
-    null = true, type = text
-    comment = "Most recent family the worker finished. Resume hint."
-  }
-}
+```sql
+ALTER TABLE solemd.serving_runs
+  ADD COLUMN cohort_manifest jsonb NOT NULL,
+  ADD COLUMN tables_built text[] NOT NULL DEFAULT ARRAY[]::text[],
+  ADD COLUMN last_built_family text;
+
+COMMENT ON COLUMN solemd.serving_runs.cohort_manifest IS
+  'Pydantic-validated manifest of families, build order, source watermark, expected row counts. Frozen on publish.';
+COMMENT ON COLUMN solemd.serving_runs.tables_built IS
+  'Family codes successfully built so far. Drives 04 §5.4 idempotency / resume.';
+COMMENT ON COLUMN solemd.serving_runs.last_built_family IS
+  'Most recent family the worker finished. Resume hint.';
 ```
 
 ### 2.2 `solemd.api_projection_runs` — projection-write contract
@@ -134,23 +130,18 @@ every cycle, regardless of whether the cycle is a full serving
 cutover or an API-only refresh. Lifecycle and column shape per `03
 §4.3`. Additive columns:
 
-```hcl
-table "api_projection_runs" {
-  schema = schema.solemd
-  // … all columns from 03 §4.3 …
-  column "advisory_lock_keys" {
-    null = false, type = sql("bigint[]"), default = sql("ARRAY[]::bigint[]")
-    comment = "Advisory-lock keys this run held at peak (one per family). §9 audit trail."
-  }
-  column "swap_duration_ms" {
-    null = true, type = integer
-    comment = "Wall-clock duration of the swap transaction. Emitted to Prometheus per §12."
-  }
-  column "admin_connection_id" {
-    null = true, type = integer
-    comment = "PG backend pid that ran the swap. Cross-references pg_stat_activity for hung-run diagnosis."
-  }
-}
+```sql
+ALTER TABLE solemd.api_projection_runs
+  ADD COLUMN advisory_lock_keys bigint[] NOT NULL DEFAULT ARRAY[]::bigint[],
+  ADD COLUMN swap_duration_ms integer,
+  ADD COLUMN admin_connection_id integer;
+
+COMMENT ON COLUMN solemd.api_projection_runs.advisory_lock_keys IS
+  'Advisory-lock keys this run held at peak (one per family). 04 §9 audit trail.';
+COMMENT ON COLUMN solemd.api_projection_runs.swap_duration_ms IS
+  'Wall-clock duration of the swap transaction. Emitted to Prometheus per 04 §12.';
+COMMENT ON COLUMN solemd.api_projection_runs.admin_connection_id IS
+  'PG backend pid that ran the swap. Cross-references pg_stat_activity for hung-run diagnosis.';
 ```
 
 ### 2.3 `solemd.serving_artifacts` — projection-write contract
@@ -184,7 +175,7 @@ the published-status guard, then INSERTs on serve:
 # pseudocode, projection worker
 async with serve_pool.acquire() as serve, warehouse_pool.acquire() as wh:
     gr = await wh.fetchval(
-        "SELECT graph_run_id FROM solemd.graph_runs WHERE graph_run_id = $1 AND status = 5",
+        "SELECT graph_run_id FROM solemd.graph_runs WHERE graph_run_id = $1 AND status = 3",
         target_graph_run_id,
     )
     if gr is None:
@@ -811,7 +802,7 @@ per `01 §archive`. Contents:
 ```
 /mnt/solemd-graph/archives/serving-packages/<serving_run_id>/
 ├── manifest.json                      # cohort manifest copy + per-table row counts + checksums
-├── schema_hash.txt                    # SHA-256 of the relevant `serve.hcl` slice at build time
+├── schema_hash.txt                    # SHA-256 of the relevant serve-side SQL schema snapshot at build time
 ├── paper_api_cards.parquet            # snapshot of the live table at swap commit time
 ├── paper_api_profiles.parquet
 ├── graph_cluster_api_cards.parquet
@@ -1008,8 +999,8 @@ BEGIN;
          promoted_at                    = now(),
          promoted_by                    = 'operator-rollback';
 
-  UPDATE solemd.serving_runs        SET build_status = 5 WHERE serving_run_id = $failed_run_id;
-  UPDATE solemd.api_projection_runs SET build_status = 5 WHERE api_projection_run_id = $failed_api_projection_run_id;
+  UPDATE solemd.serving_runs        SET build_status = 5 WHERE serving_run_id = $retired_run_id;
+  UPDATE solemd.api_projection_runs SET build_status = 5 WHERE api_projection_run_id = $retired_api_projection_run_id;
 COMMIT;
 ```
 
@@ -1038,16 +1029,15 @@ until proven needed.
 | Job | Cron | Purpose |
 |---|---|---|
 | `drop-stale-projection-prev` | `17 3 * * *` | Drop `_prev` older than 24 h (§3.6). |
-| `projection-trigger-api-refresh` | `0 5 * * *` | Daily API-only refresh — recompute citation counts, retraction flips, tier reassignments. Enqueues a Dramatiq job. |
+| `projection-trigger-api-refresh` | `0 5 * * *` | Daily API-only refresh — recompute citation counts, retraction flips, tier reassignments. Runs a SQL-side handoff that the external dispatcher turns into a Dramatiq job. |
 | `projection-audit-orphans` | `45 4 * * *` | Find `_next` tables older than 6 h (likely orphan); alert via §12. |
 | `projection-cohort-drift-audit` | `*/30 * * * *` | Re-validate live `cohort_manifest` against the actually-promoted family rows; emit a Prometheus gauge. |
 
-Per `03 §6.5`, all jobs run on staggered minutes because pg_cron is
-single-worker (citus README: <https://github.com/citusdata/pg_cron>;
-OneUptime, 2026:
-<https://oneuptime.com/blog/post/2026-02-17-how-to-use-pg-cron-in-cloud-sql-postgresql-for-scheduled-database-maintenance-jobs/view>).
-**locked** for the job set; **provisional** for exact cron values
-(tuned in `10-observability.md`).
+Per `03 §6.5`, all jobs run on staggered minutes to reduce lock and I/O
+collisions. `pg_cron` itself can run multiple jobs in parallel when background
+workers are enabled; the SQL helper / external dispatcher split is what keeps
+Redis and Dramatiq concerns out of Postgres. **locked** for the job set;
+**provisional** for exact cron values (tuned in `10-observability.md`).
 
 ### 11.2 Expected RPO
 

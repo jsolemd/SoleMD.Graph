@@ -52,7 +52,9 @@ ambiguities against the same container, storage, and connectivity contract.
 │                                                                        │   │
 │   ┌─────────────────────┐         ┌──────────────────────┐             │   │
 │   │ graph-db-warehouse  │◄────────│ graph-worker         │             │   │
-│   │   PG 18             │         │   CUDA 13.2 + RAPIDS │             │   │
+│   │   PG 18             │         │   GPU-first worker   │             │   │
+│   │                     │         │   RAPIDS 26.04 on    │             │   │
+│   │                     │         │   CUDA 13.0-13.1     │             │   │
 │   │   E-drive bind      │         │   ingest, projection,│             │   │
 │   │   --profile db      │         │   graph build, RAG   │             │   │
 │   │   direct conns only │         │   --profile gpu      │             │   │
@@ -82,8 +84,9 @@ ambiguities against the same container, storage, and connectivity contract.
 - `pgbouncer-serve` — transaction-mode pooler in front of serve. Engine API
   (`graph-engine-api`) and Next.js server-side calls route through the pooler;
   admin and migration paths bypass it on a reserved role.
-- `graph-opensearch` — release-scoped indexes (`paper_index`, `evidence_index`)
-  behind stable aliases.
+- `graph-opensearch` — concrete release-scoped indexes
+  (`paper_index_<run_token>`, `evidence_index_<run_token>`) behind stable
+  aliases `paper_index_live` and `evidence_index_live`.
 - `graph-redis` — Dramatiq queue + runtime cache.
 - Observability stack — Prometheus, Grafana, Loki, Alloy (Promtail successor).
 
@@ -93,9 +96,11 @@ ambiguities against the same container, storage, and connectivity contract.
   surfaces, canonical metadata, concepts, facts, grounding spine, chunk
   lineage. Brought up for ingest and projection-build windows; taken down
   otherwise. Takes **direct connections** from workers — no pooler today.
-- `graph-worker` (`--profile gpu`) — the engine's CUDA/RAPIDS worker. Reads
-  and writes both clusters, runs ingest, projection builds, graph layout,
-  serving-package builds, and RAG inference.
+- `graph-worker` (`--profile gpu`) — the engine's GPU-first worker. Prefer the
+  RTX 5090 wherever the workload materially benefits (embedding, rerank, graph
+  layout/build, local eval), while keeping image pins inside the supported
+  RAPIDS / PyTorch CUDA matrix rather than assuming one common unsupported
+  CUDA version.
 
 ### Services explicitly not in this topology
 
@@ -200,14 +205,16 @@ No formal release train. Cutover is driven by `serving_runs`:
 
 - Each projection + OpenSearch bulk-load cycle produces a new
   `serving_run_id`.
-- OpenSearch: new release-scoped indexes (`paper_index_v{id}`,
-  `evidence_index_v{id}`) built with `refresh_interval=-1`,
+- OpenSearch: new release-scoped indexes
+  (`paper_index_<run_token>`, `evidence_index_<run_token>`) built with
+  `refresh_interval=-1`,
   `number_of_replicas=0`, force-merged, swapped in via atomic alias update
   (`POST /_aliases` with add + remove in one body).
 - Serve PG projection tables: `_next` staging → build indexes → rename or
   attach → old `_prev` retained for a 24 h rollback window.
-- Frontend reads stable aliases (`paper_index`, `evidence_index`) and live
-  projection table names, so no frontend coordination is needed for cutover.
+- Frontend reads stable aliases (`paper_index_live`, `evidence_index_live`) and
+  live projection table names, so no frontend coordination is needed for
+  cutover.
 - Rollback path: flip alias, rename tables back. No migration replay.
 
 ## 6. Decisions — locked / provisional / deferred
@@ -225,12 +232,12 @@ No formal release train. Cutover is driven by `serving_runs`:
 | PgBouncer 1.25.1 transaction-mode in front of serve                                       | Engine API + frontend concurrency justifies it; prepared-statement support in txn mode since PgBouncer 1.21.|
 | No pooler in front of warehouse today                                                     | Controlled batch / admin traffic; pooler adds surface area without current benefit.                         |
 | `graph-engine-api` names the always-up FastAPI service; `graph-worker` names the on-demand CUDA/build worker | Keeps docs, compose, and later schema/ops sections from drifting on service identity.        |
-| Atlas (HCL) as schema authoring tool                                                      | Declarative schema-as-code; partition support shipped in v0.36 (Jul 2025).                                  |
+| SQL-first schema authoring + runner-owned migrations                                      | Native PostgreSQL features are a better fit than a partial declarative OSS layer for this program's surface. |
 | Existing `engine/db/scripts/schema_migrations.py` remains the applier / ledger            | Preserves audit history, checksum, execution-mode, adopt-vs-apply semantics.                                |
 | Raw SQL + asyncpg on hot paths (ingest, projection, serve reads); psycopg3 for admin only | Benchmarked advantage on bulk COPY and tight per-query paths; keep psycopg3 for its sharper admin features. |
 | Identity types: `BIGINT` for `corpus_id` / `concept_id`; `UUIDv7` for run / version keys (`ingest_run_id`, `graph_run_id`, `chunk_version_key`); `UUIDv5` for `evidence_key` (content-bound) | `02-warehouse-schema.md` §2 is authoritative; summarized here to prevent identity drift across docs. |
 
-### Provisional (revisit after HCL draft + sample build)
+### Provisional (revisit after schema draft + sample build)
 
 | Decision                                                                        | Why provisional                                                                                              |
 |---------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------|
@@ -239,7 +246,7 @@ No formal release train. Cutover is driven by `serving_runs`:
 | Fillfactor tiering (100 / 90 / 80) per table family                             | Directionally right; revisit after first projection-upsert benchmarks on serve.                              |
 | HNSW `m`, `ef_construction`, `ef_search` in Faiss OpenSearch                    | Tune against real recall@k on the benchmark suite before freezing.                                           |
 | `default_toast_compression = lz4` cluster-wide                                  | Right direction; confirm no regression on the widest text columns after load.                                |
-| MAXALIGN column ordering on every fresh table                                   | Right in principle; apply during HCL authoring, verify with `pg_column_size` sampling.                       |
+| MAXALIGN column ordering on every fresh table                                   | Right in principle; apply during schema authoring, verify with `pg_column_size` sampling.                    |
 | `io_method=worker` vs custom `postgres:18 --with-liburing` image                | `worker` accepted today; revisit if upstream image changes or perf gap widens.                               |
 
 ### Deferred (trigger-gated)

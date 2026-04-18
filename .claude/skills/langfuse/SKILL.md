@@ -14,7 +14,7 @@ description: |
 
   Do NOT use for: general project architecture (use /graph),
   graph visualization (use /cosmograph), UI styling (use /aesthetic).
-version: 2.2.0
+version: 2.2.1
 allowed-tools:
   - Read
   - Bash
@@ -52,6 +52,7 @@ metadata:
 | `engine/app/rag_ingest/langfuse_run_review.py` | Review and comparison helpers for stored dataset runs |
 | `engine/scripts/rag_benchmark.py` | CLI for benchmark execution, review, comparison, and quality gates |
 | `engine/scripts/prepare_rag_curated_benchmarks.py` | Build and publish benchmark datasets to Langfuse |
+| `docs/rag/10a-rag-quality-analyzer.md` | Offline batch consumer of cascade traces and downstream quality metric catalog |
 
 ## What Langfuse Owns
 
@@ -67,6 +68,10 @@ work.
   `app.langfuse_config`.
 - `development` and `production` stay separated through
   `LANGFUSE_TRACING_ENVIRONMENT`.
+- `10a-rag-quality-analyzer.md` is the offline downstream consumer of
+  cascade traces emitted by these experiment surfaces; when per-stage
+  trace fields or score families change, update `08`, `10a`, and this
+  skill/reference surface in the same batch.
 - Detailed benchmark policy lives in `references/benchmarking.md`, not in this
   skill body.
 
@@ -143,11 +148,18 @@ Required variables:
 ```
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_PUBLIC_KEY=pk-lf-...
-LANGFUSE_BASE_URL=http://127.0.0.1:3100
-LANGFUSE_HOST=http://127.0.0.1:3100
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_HOST=https://cloud.langfuse.com
+# or: https://us.cloud.langfuse.com
 LANGFUSE_TRACING_ENVIRONMENT=development
 GEMINI_API_KEY=AIza...  # For LLM judge
 ```
+
+Current workstation default:
+- Langfuse Cloud Hobby
+- `50k` units / month
+- `30` days data access
+- Keep traces coarse: one trace per request, one observation per major stage
 
 ## Span Naming Convention
 
