@@ -214,7 +214,7 @@ rebuilt version must satisfy these properties:
 | Invocation | `uv run scripts/schema_migrations.py apply --cluster warehouse|serve` in local development; provisioned environments may invoke the same file with `python` once dependencies are installed. |
 | DSN boundary | DDL/admin DSNs are distinct from app-path DSNs; app read/write DSNs are never reused for migrations. Fresh serve bootstrap may use the cluster bootstrap superuser connection until `engine_admin` and the role-owned schema surfaces are live. |
 | Ledger | `solemd.schema_migration_ledger` records migration name, path, checksum, execution mode, status, applied_at, applied_by, and notes. |
-| Modes | `transactional` by default; `autocommit` for statements that cannot run in a transaction. |
+| Modes | `transactional` by default; `autocommit` for statements that cannot run in a transaction. Any `autocommit` migration must be written to tolerate replay or require explicit operator repair/adopt before a second apply attempt. |
 | Idempotency | Already-applied file with matching checksum is a no-op; checksum mismatch is a hard error. |
 | Fresh-start | Bootstrap creates the ledger and runner helpers only; the baseline migration set then runs in full. |
 | Adopt | Supported only for repairing or importing an already-existing live cluster. Not used on fresh rebuilds. |

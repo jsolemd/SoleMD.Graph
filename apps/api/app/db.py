@@ -21,21 +21,32 @@ class ServePools:
 
 
 async def create_serve_pools(settings: Settings) -> ServePools:
-    serve_read, serve_admin = await asyncio.gather(
-        asyncpg.create_pool(
-            dsn=settings.serve_dsn_read,
-            min_size=settings.pool_serve_read_min,
-            max_size=settings.pool_serve_read_max,
-            command_timeout=settings.serve_read_command_timeout_seconds,
-            statement_cache_size=0,
-        ),
-        asyncpg.create_pool(
-            dsn=settings.serve_dsn_admin,
-            min_size=settings.pool_admin_min,
-            max_size=settings.pool_admin_max,
-            statement_cache_size=settings.admin_statement_cache_size,
-        ),
-    )
+    serve_read: asyncpg.Pool | None = None
+    serve_admin: asyncpg.Pool | None = None
+    try:
+        serve_read, serve_admin = await asyncio.gather(
+            asyncpg.create_pool(
+                dsn=settings.serve_dsn_read,
+                min_size=settings.pool_serve_read_min,
+                max_size=settings.pool_serve_read_max,
+                command_timeout=settings.serve_read_command_timeout_seconds,
+                # Transaction-pooled serve reads stay on the documented
+                # safe floor until the prepared-plan path is proven end to end.
+                statement_cache_size=0,
+            ),
+            asyncpg.create_pool(
+                dsn=settings.serve_dsn_admin,
+                min_size=settings.pool_admin_min,
+                max_size=settings.pool_admin_max,
+                statement_cache_size=settings.admin_statement_cache_size,
+            ),
+        )
+    except Exception:
+        if serve_read is not None:
+            await serve_read.close()
+        if serve_admin is not None:
+            await serve_admin.close()
+        raise
     return ServePools(
         serve_read=serve_read,
         serve_admin=serve_admin,

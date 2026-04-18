@@ -554,6 +554,13 @@ def expand_sql_includes(path: Path, *, seen: tuple[Path, ...] = ()) -> str:
 def resolve_include_path(base_dir: Path, include_token: str) -> Path:
     cleaned = include_token.strip().strip("'\"")
     include_path = (base_dir / cleaned).resolve()
+    allowed_root = (REPO_ROOT / "db").resolve()
+    try:
+        include_path.relative_to(allowed_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"included SQL path must stay under {allowed_root}: {cleaned}"
+        ) from exc
     if not include_path.exists():
         raise FileNotFoundError(f"included SQL file not found: {cleaned}")
     return include_path
