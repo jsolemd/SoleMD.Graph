@@ -14,6 +14,8 @@ DEFAULT_POSTGRES_PORT = 5432
 DEFAULT_REDIS_PORT = 6379
 
 
+# Slice 1 intentionally keeps this tiny URL parsing helper local to the worker
+# root instead of introducing a shared Python package before reuse is proven.
 @dataclass(frozen=True, slots=True)
 class DependencyTarget:
     name: str

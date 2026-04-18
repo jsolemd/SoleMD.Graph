@@ -18,6 +18,28 @@ def ensure_middleware(
     broker.add_middleware(middleware)
 
 
+def configure_retries(
+    broker: dramatiq.Broker,
+    *,
+    max_retries: int,
+    min_backoff: int,
+    max_backoff: int,
+) -> None:
+    for middleware in broker.middleware:
+        if isinstance(middleware, Retries):
+            middleware.max_retries = max_retries
+            middleware.min_backoff = min_backoff
+            middleware.max_backoff = max_backoff
+            return
+    broker.add_middleware(
+        Retries(
+            max_retries=max_retries,
+            min_backoff=min_backoff,
+            max_backoff=max_backoff,
+        )
+    )
+
+
 def create_broker(worker_settings: Settings | None = None) -> dramatiq.Broker:
     runtime_settings = worker_settings or settings
     broker = RedisBroker(
@@ -25,9 +47,11 @@ def create_broker(worker_settings: Settings | None = None) -> dramatiq.Broker:
         namespace=runtime_settings.worker_redis_namespace,
     )
     ensure_middleware(broker, AsyncIO())
-    ensure_middleware(
+    configure_retries(
         broker,
-        Retries(max_retries=3, min_backoff=1_000, max_backoff=60_000),
+        max_retries=3,
+        min_backoff=1_000,
+        max_backoff=60_000,
     )
     ensure_middleware(broker, TimeLimit())
     ensure_middleware(broker, ShutdownNotifications())

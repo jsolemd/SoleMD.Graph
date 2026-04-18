@@ -13,6 +13,8 @@ ENV_FILE = ROOT_DIR / ".env"
 DEFAULT_POSTGRES_PORT = 5432
 
 
+# Slice 1 intentionally keeps this tiny URL parsing helper local to the API
+# root instead of introducing a shared Python package before reuse is proven.
 @dataclass(frozen=True, slots=True)
 class DependencyTarget:
     name: str

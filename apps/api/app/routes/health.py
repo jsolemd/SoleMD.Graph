@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import socket
+import asyncio
 from typing import Literal
 
 from fastapi import APIRouter, Request
@@ -37,16 +37,22 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def check_dependency(target: DependencyTarget, timeout: float) -> DependencyStatus:
+async def check_dependency(
+    target: DependencyTarget, timeout: float
+) -> DependencyStatus:
+    writer: asyncio.StreamWriter | None = None
     try:
-        with socket.create_connection((target.host, target.port), timeout=timeout):
-            return DependencyStatus(
-                name=target.name,
-                host=target.host,
-                port=target.port,
-                ok=True,
-            )
-    except OSError as exc:
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(target.host, target.port),
+            timeout=timeout,
+        )
+        return DependencyStatus(
+            name=target.name,
+            host=target.host,
+            port=target.port,
+            ok=True,
+        )
+    except (TimeoutError, OSError) as exc:
         return DependencyStatus(
             name=target.name,
             host=target.host,
@@ -54,6 +60,10 @@ def check_dependency(target: DependencyTarget, timeout: float) -> DependencyStat
             ok=False,
             error=str(exc),
         )
+    finally:
+        if writer is not None:
+            writer.close()
+            await writer.wait_closed()
 
 
 @router.get("/healthz")
@@ -69,10 +79,12 @@ async def healthz(request: Request) -> HealthResponse:
 @router.get("/readyz", response_model=None)
 async def readyz(request: Request) -> JSONResponse:
     app_settings = get_settings(request)
-    checks = [
-        check_dependency(target, app_settings.api_readiness_timeout_seconds)
-        for target in app_settings.readiness_targets
-    ]
+    checks = await asyncio.gather(
+        *(
+            check_dependency(target, app_settings.api_readiness_timeout_seconds)
+            for target in app_settings.readiness_targets
+        )
+    )
     overall = "ready" if all(check.ok for check in checks) else "not_ready"
     payload = ReadinessResponse(
         status=overall,

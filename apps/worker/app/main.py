@@ -68,10 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.command == "check":
-        return run_startup_check()
-    parser.error(f"unsupported command: {args.command}")
-    return 2
+    return run_startup_check()
 
 
 if __name__ == "__main__":

@@ -10,6 +10,9 @@ services:
     ports:
       - "127.0.0.1:${GRAPH_DB_SERVE_HOST_PORT:-55432}:5432"
     volumes:
+      # PostgreSQL 18+ changed the image VOLUME/PGDATA contract to a
+      # version-specific subdirectory under /var/lib/postgresql. Mount the
+      # parent path, not /var/lib/postgresql/data.
       - graph_db_serve_data:/var/lib/postgresql
     healthcheck:
       test:
@@ -58,7 +61,7 @@ services:
         "",
       ]
     ports:
-      - "127.0.0.1:${GRAPH_REDIS_HOST_PORT:-56379}:6379"
+      - "127.0.0.1:${GRAPH_REDIS_HOST_PORT:-57379}:6379"
     mem_limit: 512m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
