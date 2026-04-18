@@ -1,0 +1,74 @@
+specVersion: v2
+specMinorVersion: 2
+meta:
+  name: solemd-graph
+  image: project-solemd-graph
+  description: SoleMD.Graph local development container
+  labels: []
+  createdOn: "2026-04-18T00:00:00Z"
+  defaultBranch: main
+layout:
+  - path: apps/
+    type: code
+    storage: git
+  - path: packages/
+    type: code
+    storage: git
+  - path: db/
+    type: code
+    storage: git
+  - path: docs/
+    type: code
+    storage: git
+  - path: infra/
+    type: code
+    storage: git
+  - path: data/
+    type: data
+    storage: gitignore
+environment:
+  base:
+    registry: nvcr.io
+    image: nvidia/ai-workbench/python-basic:1.0.8
+    build_timestamp: "20231212000523"
+    name: Python Basic
+    supported_architectures: []
+    cuda_version: ""
+    description: Python Basic for AI Workbench
+    entrypoint_script: ""
+    labels: []
+    apps: []
+    programming_languages:
+      - python3
+    icon_url: ""
+    image_version: 1.0.8
+    os: linux
+    os_distro: ubuntu
+    os_distro_release: "22.04"
+    schema_version: v2
+    user_info:
+      uid: "1001"
+      gid: "1001"
+      username: appuser
+    package_managers:
+      - name: apt
+        binary_path: /usr/bin/apt
+        installed_packages: []
+      - name: pip
+        binary_path: /usr/local/bin/pip
+        installed_packages: []
+    package_manager_environment:
+      name: ""
+      target: ""
+execution:
+  apps: []
+  resources:
+    gpu:
+      requested: 0
+    sharedMemoryMB: 0
+  secrets: []
+  mounts:
+    - type: project
+      target: /project/
+      description: project directory
+      options: rw

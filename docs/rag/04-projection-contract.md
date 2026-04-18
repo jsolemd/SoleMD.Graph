@@ -457,11 +457,11 @@ The projection worker holds **two** asyncpg pools:
 | Pool | Routes through | Used for |
 |---|---|---|
 | `serve_read_pool` | `pgbouncer-serve` (txn mode) | Pre-flight audits, idempotency checks, `pg_stat_activity` queries, observability counters. |
-| `admin_pool` | **Direct PG 18** (no pooler) | The §3.5 swap transaction, `CREATE TABLE … (LIKE …)`, `CREATE INDEX`, `SET LOGGED`, `ANALYZE`, `pg_prewarm`, the 24 h `_prev` cleanup function. |
+| `admin_pool` | **Direct PostgreSQL** (no pooler) | The §3.5 swap transaction, `CREATE TABLE … (LIKE …)`, `CREATE INDEX`, `SET LOGGED`, `ANALYZE`, `pg_prewarm`, the 24 h `_prev` cleanup function. |
 
 ### 4.1 Why bypass
 
-PgBouncer 1.25.1 transaction-mode pooling is correct for hot OLTP
+The pinned PgBouncer line from `16-version-inventory.md` is correct for hot OLTP
 work: short transactions with prepared statements pinned to one
 server connection only for the duration of the transaction. Multi-
 statement DDL transactions break two assumptions:
@@ -1185,7 +1185,7 @@ benchmark) by `02 §7`.
 | `CREATE TABLE … (LIKE … INCLUDING ALL)` for staging | Replicates columns + defaults + storage params + comments without re-authoring; partition-aware variant in §3.2. PG 18 `CREATE TABLE`. |
 | `UNLOGGED` during stage build, `SET LOGGED` before swap | Skips WAL on the COPY fast path, pays it once before swap to keep crash safety. Cybertec / EnterpriseDB; `research-distilled §2`. |
 | Single multi-statement transaction for swap (DROP `_prev` + 2 RENAMEs + pointer UPDATE + ledger updates + artifact INSERT) | PG transactional DDL; one-shot atomicity. PG wiki. |
-| Admin-pool bypass for the swap transaction | PgBouncer 1.25.1 transaction-mode pooling cannot safely pin a multi-statement DDL transaction with the prepared-statement cache; direct connection has no such risk. PgBouncer FAQ; Crunchy Data 2024. |
+| Admin-pool bypass for the swap transaction | The pinned PgBouncer transaction-mode pooler cannot safely pin a multi-statement DDL transaction with the prepared-statement cache; direct connection has no such risk. PgBouncer FAQ; Crunchy Data 2024. |
 | `lock_timeout = '2s'` inside the swap | Prevents indefinite stall behind a stuck reader. |
 | Advisory-lock key `hashtext('projection:'||family)::int8` per family | Deterministic namespace-scoped key without a registry edit for each new family. |
 | `pg_try_advisory_lock` (session-scoped try-lock) over blocking variant | Worker can fail fast and report instead of blocking on a parallel run, while keeping the family lock across stage build + swap on the pinned admin connection. |

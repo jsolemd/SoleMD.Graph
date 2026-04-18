@@ -1,14 +1,15 @@
 # 15 — Repo Structure and Naming
 
-> **Status**: locked for deployable boundaries, top-level directory names, the
-> "apps vs packages" rule, the placement of wiki and graph runtime code, the
-> flat `apps/web` shape, and the cutover order for repository reshaping.
-> **Provisional**: exact workspace tooling files (`pnpm-workspace.yaml`,
-> `turbo.json`, CI matrix) until the first implementation PR lands.
+> **Status**: completed for deployable boundaries, top-level directory names,
+> the "apps vs packages" rule, the placement of wiki and graph runtime code,
+> the flat `apps/web` shape, and the cutover order for repository reshaping.
+> **Provisional**: optional task-runner layering (`turbo.json`, Nx, remote
+> cache wiring, CI matrix fan-out). The core repo shape does not depend on
+> those tools and is valid with plain npm workspaces.
 > **Deferred**: any shared Python package extraction and any auth-specific
 > package or app boundary before `13-auth.md` activates.
 >
-> **Date**: 2026-04-17
+> **Date**: 2026-04-18
 >
 > **Scope**: the target repository layout for the clean cutover. This document
 > names what each top-level directory is for, which parts are deployable, where
@@ -221,22 +222,83 @@ This split matches the architecture already established in `05b`, `05c`, and
 
 ## 5. Deployment model
 
-The deployment model should follow the same boundary names:
+The deployment model should follow the same boundary names and should not force
+the repository to mimic one host's product quirks:
 
-- `apps/web` is the Vercel project root for the frontend deployable.
-- `apps/api` is a separate backend deployable with its own environment and
-  scaling policy. Vercel compatibility is optional, but the backend should not
-  depend on Vercel Services or any private-beta deployment feature.
-- `apps/worker` is a separate backend deployable with its own queue/Redis/DB
+- `apps/web` is the frontend deployable root.
+- `apps/api` is a separate request-time backend deployable with its own
+  environment and scaling policy.
+- `apps/worker` is a separate background deployable with its own queue/Redis/DB
   environment and no browser-facing routing.
 - `packages/*` are never deployed directly.
 
+### 5.1 Vercel
+
+- Treat `apps/web` as its own Vercel project with `Root Directory = apps/web`.
+- If `apps/api` is ever deployed on Vercel, treat it as a separate project and
+  only for thin request/response workloads.
+- Do **not** make the repo architecture depend on Vercel Services or any other
+  private-beta multi-service feature.
+- Do **not** treat Vercel as the canonical durable worker runtime. Long-running
+  or retry-governed worker execution belongs elsewhere.
+
+### 5.2 Google Cloud
+
+- Treat each deployable root as its own source target.
+- `apps/web` can be containerized and deployed independently if the frontend is
+  self-hosted off Vercel.
+- `apps/api` maps cleanly to a Cloud Run service.
+- `apps/worker` maps to a Cloud Run job when the workload is finite and
+  batch-like, or to a Cloud Run worker pool when the workload is non-request,
+  pull-queue, or continuously polled.
+- Use per-deployable Cloud Build / Developer Connect triggers with include/ignore
+  path filters so shared-package changes fan out only to the affected services.
+
 This keeps the repository aligned with standard monorepo deployment best
-practice:
+practice across both hosts:
 
 - deployables are the leaves of the package graph
 - shared libraries are imported explicitly
 - each deployable has a distinct root directory and environment contract
+- deployment targets are selected per app root rather than inferred from a
+  mixed repository root
+
+### 5.3 AI Workbench
+
+AI Workbench should be used here as a thin local development layer, not as the
+thing that defines the production architecture.
+
+Locked rules:
+
+- `SoleMD.Graph` may carry a repo-local AI Workbench project definition under
+  `.project/`.
+- That Workbench project owns only the project container and optional
+  Graph-owned local compose services.
+- It must not absorb shared workspace infrastructure that is already owned by
+  `SoleMD.Infra`.
+- Deployment architecture for Vercel or Google Cloud must remain independent of
+  Workbench metadata.
+
+Implications:
+
+- The Workbench project container is the right place to standardize a local
+  Node + Python development shell for this repo.
+- Shared services such as TEI, CodeAtlas, Neo4j, Qdrant, Langfuse, Portainer,
+  and MCP servers stay in `SoleMD.Infra`.
+- Do not point Graph Workbench metadata at shared Infra compose just to make the
+  Desktop App show more controls.
+- If Graph later needs a repo-owned local compose surface, add a dedicated
+  Graph-owned compose file and wire it explicitly through
+  `environment.compose_file_path`. Do not reuse the shared Infra entrypoint as
+  if it were Graph-local.
+
+This keeps the repo Workbench-aware while preserving the cleaner long-term
+contract:
+
+- Workbench standardizes local development.
+- `infra/` owns deployment and local runtime wiring for this repo.
+- `SoleMD.Infra` owns cross-project shared infrastructure.
+- Vercel and cloud deployment stay product-facing, not desktop-tool-facing.
 
 ## 6. Current-to-target mapping
 
@@ -252,7 +314,7 @@ The cutover should treat the current layout like this:
 | `engine/` | split into `apps/api/` and `apps/worker/`; shared Python extraction is deferred until reuse is proven |
 | `engine/db` and schema SQL | `db/schema/` + `db/migrations/` |
 | `docker/` | `infra/docker/` |
-| `bin/` | `scripts/` or `infra/` depending on whether it is operator tooling or deployment wiring |
+| `bin/` | `scripts/` or `infra/` depending on whether it is operator tooling or deployment wiring; `bin/` is not canonical top-level shape |
 
 If ownership is unclear during migration, use this test:
 
@@ -290,7 +352,30 @@ The repository cutover should happen in this order:
    top of the clarified repository boundaries rather than alongside the old
    mixed roots.
 
-## 8. Immediate naming decisions
+## 8. Current completion state
+
+The repo-shape decision described here is now considered implemented at the
+top-level architecture layer:
+
+- `apps/web` is the only active browser app.
+- `apps/api` and `apps/worker` exist as reserved backend rebuild roots.
+- `packages/graph` and `packages/api-client` are active shared-package roots.
+- `packages/ui` is reserved for true shared React primitives only.
+- `db/schema`, `db/migrations`, `infra/docker`, and `infra/vercel` exist in the
+  correct top-level homes.
+
+What remains intentionally incomplete is **implementation inside those roots**,
+not the root layout itself.
+
+Architecture rule going forward:
+
+- new deployable code goes in `apps/*`
+- new shared non-deployable code goes in `packages/*`
+- new SQL goes in `db/*`
+- new deployment/runtime wiring goes in `infra/*`
+- new operator helpers go in `scripts/*`, not in a revived top-level `bin/`
+
+## 9. Immediate naming decisions
 
 These names are final for the cutover plan:
 

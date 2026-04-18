@@ -52,9 +52,9 @@ ambiguities against the same container, storage, and connectivity contract.
 │                                                                        │   │
 │   ┌─────────────────────┐         ┌──────────────────────┐             │   │
 │   │ graph-db-warehouse  │◄────────│ graph-worker         │             │   │
-│   │   PG 18             │         │   GPU-first worker   │             │   │
-│   │                     │         │   RAPIDS 26.04 on    │             │   │
-│   │                     │         │   CUDA 13.0-13.1     │             │   │
+│   │   current PG line   │         │   GPU-first worker   │             │   │
+│   │   (see `16`)        │         │   GPU stack per `16` │             │   │
+│   │                     │         │                     │             │   │
 │   │   E-drive bind      │         │   ingest, projection,│             │   │
 │   │   --profile db      │         │   graph build, RAG   │             │   │
 │   │   direct conns only │         │   --profile gpu      │             │   │
@@ -229,11 +229,11 @@ No formal release train. Cutover is driven by `serving_runs`:
 | `postgres_fdw` wired day one, bounded grounding dereference only                          | Avoids duplicating canonical grounding into serve; forbidden for general queries.                           |
 | OpenSearch on NVMe as the serving retrieval plane                                         | Per `rag-future.md` Executive Decisions 2 and 5; separate from warehouse truth system.                      |
 | Supabase does not drive core topology                                                     | Auth / user-data is a separate small plane, added later; Better Auth candidate.                             |
-| PgBouncer 1.25.1 transaction-mode in front of serve                                       | Engine API + frontend concurrency justifies it; prepared-statement support in txn mode since PgBouncer 1.21.|
+| Pinned PgBouncer transaction-mode in front of serve (see `16-version-inventory.md`)       | Engine API + frontend concurrency justifies it; prepared-statement support in txn mode since PgBouncer 1.21.|
 | No pooler in front of warehouse today                                                     | Controlled batch / admin traffic; pooler adds surface area without current benefit.                         |
 | `graph-engine-api` names the always-up FastAPI service; `graph-worker` names the on-demand CUDA/build worker | Keeps docs, compose, and later schema/ops sections from drifting on service identity.        |
 | SQL-first schema authoring + runner-owned migrations                                      | Native PostgreSQL features are a better fit than a partial declarative OSS layer for this program's surface. |
-| Existing `engine/db/scripts/schema_migrations.py` remains the applier / ledger            | Preserves audit history, checksum, execution-mode, adopt-vs-apply semantics.                                |
+| `scripts/schema_migrations.py` is the canonical applier / ledger; legacy `engine/...` references are inventory only | Preserves audit history, checksum, execution-mode, adopt-vs-apply semantics while matching the cutover tree. |
 | Raw SQL + asyncpg on hot paths (ingest, projection, serve reads); psycopg3 for admin only | Benchmarked advantage on bulk COPY and tight per-query paths; keep psycopg3 for its sharper admin features. |
 | Identity types: `BIGINT` for `corpus_id` / `concept_id`; `UUIDv7` for run / version keys (`ingest_run_id`, `graph_run_id`, `chunk_version_key`); `UUIDv5` for `evidence_key` (content-bound) | `02-warehouse-schema.md` §2 is authoritative; summarized here to prevent identity drift across docs. |
 

@@ -66,6 +66,8 @@ Locked rule:
 
 The preferred future path is now locked more narrowly than the prior draft:
 
+- Drizzle mentions in this doc are comparison-only and do **not** authorize a
+  Drizzle-based migration or schema path for the backend rebuild.
 - prefer Better Auth's **built-in PostgreSQL path** over the Drizzle adapter
   unless a later codebase-wide ORM decision makes Drizzle mandatory
 - use a dedicated **direct PostgreSQL** connection / pool for Better Auth when
@@ -111,10 +113,9 @@ path.
 
 Operational floor:
 
-- the rest of the serve plane should stay on **PgBouncer 1.25.1 or newer**.
-  That release fixed a `search_path`-related authentication vulnerability,
-  which matters directly because the later auth plan reserves non-default
-  schema placement via `search_path=auth`.
+- the rest of the serve plane should stay on the pinned PgBouncer line from
+  `16-version-inventory.md`; if that pin changes later, the replacement must
+  preserve the `search_path`-related security fix before auth activates.
 
 The project also locks one review policy now, to avoid a future half-and-half
 deployment story:

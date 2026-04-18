@@ -169,7 +169,7 @@ tablespaces within a cluster.
 - Every table and every non-obvious column carries a `COMMENT ON …` so
   `\d+` output and tooling stay legible.
 - Ordered PostgreSQL SQL under `db/schema/warehouse/` is the authoring surface;
-  `engine/db/scripts/schema_migrations.py` remains the executor ledger
+  `scripts/schema_migrations.py` remains the executor ledger
   per `12-migrations.md`.
 
 ## 1. Extensions

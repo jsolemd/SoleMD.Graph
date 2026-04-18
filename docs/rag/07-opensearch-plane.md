@@ -168,15 +168,17 @@ field used in the response shape is round-tripped from PG by
 
 ## §2 Cluster topology
 
-Single-node OpenSearch 3.6 today, sized for ~14 M papers + ~140 M
+Single-node OpenSearch on the current serving line from
+`16-version-inventory.md`, sized for ~14 M papers + ~140 M
 evidence chunks. Production-readiness story (read replicas + multi-node
 + cross-cluster snapshot) is **deferred** per `00 §6` — listed in §13
 deferred decisions.
 
 ### 2.1 Container and network attachment
 
-Per `00 §1`, the container is `graph-opensearch`, version pinned to
-OpenSearch 3.6, attached to the shared-infra Docker network. Data
+Per `00 §1`, the container is `graph-opensearch`, pinned to the
+current OpenSearch serving line recorded in `16-version-inventory.md`,
+attached to the shared-infra Docker network. Data
 volume `graph_opensearch_data` lives on NVMe under `/var/lib/docker`
 per `01 §2`, not on the E-drive bind. NVMe is non-negotiable — Faiss
 HNSW with fp16 SQ is mmap-served from disk at query time, and
@@ -1982,7 +1984,7 @@ them.
 | Index naming: `<family>_<serving_run_id-without-hyphens>` | Full UUIDv7 token is unique, sortable, and safe. Using only the leading hex chars is wrong for UUIDv7 because the high bits are timestamp-heavy. |
 | Faiss HNSW + sq_fp16 quantization on dense lanes | Official docs support the 2x memory reduction; exact recall loss remains benchmark-owned for MedCPT 768d. |
 | `space_type=innerproduct` with engine-side L2-normalized MedCPT vectors | Equivalent to cosine; cheaper at query time (no per-vector normalization in OpenSearch). |
-| Native `hybrid` compound query + top-level `hybrid.filter` + `score-ranker-processor` (RRF, rank_constant=60) for live lane fusion | OpenSearch 3.6 native; no engine-side fusion code path needed. |
+| Native `hybrid` compound query + top-level `hybrid.filter` + `score-ranker-processor` (RRF, rank_constant=60) for live lane fusion | Supported on the current OpenSearch serving line; no engine-side fusion code path needed. |
 | Search pipeline selected explicitly by the engine (`solemd_hybrid_rrf` live, `solemd_hybrid_debug` benchmark/explain) | Keeps live rank-based retrieval separate from normalization-based debug analysis. |
 | MedCPT encoders in engine FastAPI; OpenSearch ML Commons not used day one | Model lifecycle, GPU residency, and cross-encoder cost-shape stay engine-owned in the current posture, while ML Commons remains an optional later path (§6). |
 | Two-encoder warehouse posture: SPECTER2 in `paper_embeddings_graph` for graph build, MedCPT vectors live only in OpenSearch + parquet archive | Avoids duplicating ~21 GB of fp16 vectors that already sit in Faiss. (Reviewer: confirm acceptable.) |
@@ -2032,7 +2034,7 @@ them.
 |---|---|
 | Neural sparse (SPLADE) lane in OpenSearch | `00 §6` — MedCPT cascade is live and top-1 conversion plateaus. |
 | ColBERTv2 late-interaction sidecar | `00 §6` — SPLADE fails to close the top-1 gap. |
-| 1-bit scalar quantization on the dense lane | OpenSearch 3.6 supports it but recall loss is not trivial; revisit when quantization research catches up. |
+| 1-bit scalar quantization on the dense lane | Supported on the current OpenSearch serving line, but recall loss is not trivial; revisit when quantization research catches up. |
 | Multi-node OpenSearch cluster (`number_of_replicas > 0`, multiple primaries on `paper_index`) | Paper count grows >50 M, or warm tier needs sharding by year/venue; until then single-node is the comfortable shape (§4.2). |
 | Year/venue-based shard split for warm tier `paper_index` | Warm-tier `paper_index` exceeds ~50 M docs, or cold-cache p99 on warm-tier queries becomes user-visible. |
 | Off-box snapshot mirror (Backblaze B2) | `00 §6` — any irreplaceable data lands. |

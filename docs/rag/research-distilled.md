@@ -4,6 +4,14 @@ Distilled findings from the seven-cluster research run on 2026-04-16, backing
 the decisions recorded in this folder. The raw agent transcripts were
 conversational and are not preserved. This is the durable artifact.
 
+Archive rule:
+
+- this file preserves the research snapshot, including historical tool
+  comparisons and time-bound version statements
+- it is not the implementation ledger
+- current migration/auth posture lives in `12-migrations.md` and `13-auth.md`
+- current runtime version inventory lives in `16-version-inventory.md`
+
 ## Research context
 
 - **Project**: SoleMD.Graph — biomedical knowledge graph (~14 M papers,
@@ -12,11 +20,10 @@ conversational and are not preserved. This is the durable artifact.
 - **Host**: NVIDIA-Workbench WSL2, Ryzen 9 9950X3D (16c / 32t), 68 GB RAM
   today / 128 GB planned, RTX 5090, NVMe (`/var/lib/docker`, 1 TB) +
   internal-NVMe-backed E-drive VHDX (`/mnt/solemd-graph`, 2 TB ext4).
-- **Pinned stack**: PostgreSQL 18, OpenSearch 3.6, Redis 8, Python 3.13
-  (uv-managed), Next.js 16 on Vercel, and a GPU-first worker posture on the
-  RTX 5090. As of April 18, 2026, the documented supported baseline is RAPIDS
-  26.04 on CUDA 13.0-13.1; PyTorch stable packaging is CUDA 13.0.x while CUDA
-  13.2.x remains experimental.
+- **Pinned stack at research time**: PostgreSQL 18, OpenSearch 3.6, Redis 8,
+  Python 3.13 (uv-managed), Next.js 16 on Vercel, and a GPU-first worker
+  posture on the RTX 5090. Treat this as an archival snapshot; the active
+  version ledger is `16-version-inventory.md`.
 - **Target shape**: two PG clusters (warehouse cold / serve hot), OpenSearch
   serving plane, MedCPT retrieval cascade, object-storage-style archive for
   cold artifacts.

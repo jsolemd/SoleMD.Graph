@@ -161,7 +161,7 @@ Rationale (provisional):
   16 GB ingest-time value because *cluster-default* applies when
   ingest is *not* running; ingest sessions raise it (§8). Index
   builds at projection time stay under cluster default.
-- PostgreSQL 18's own docs note that **parallel utility commands treat
+- PostgreSQL's own docs for the current major note that **parallel utility commands treat
   `maintenance_work_mem` as a limit for the entire utility command,
   regardless of the number of parallel worker processes**. So
   `max_parallel_maintenance_workers` is primarily a CPU / I/O
@@ -246,7 +246,7 @@ max_worker_processes      = 24                # 16 logical cores + 8 headroom fo
 max_parallel_workers      = 12                # cap parallel scan workers
 max_parallel_workers_per_gather = 6           # per-query cap
 max_parallel_maintenance_workers = 8          # CREATE INDEX parallelism on 68 GB host.
-                                              # PostgreSQL 18 treats maintenance_work_mem as a
+                                              # The current PostgreSQL major treats maintenance_work_mem as a
                                               # per-command limit for parallel utility commands,
                                               # not a per-worker multiplier. Raise to 12 on 128 GB
                                               # for faster index build once host concurrency allows.
@@ -593,7 +593,8 @@ of the static reloption set above.
 
 File path: `db/conf/pgbouncer.ini`; mounted at
 `/etc/pgbouncer/pgbouncer.ini` inside the `pgbouncer-serve`
-container. PgBouncer 1.25.1 (Dec 2025). `pool_mode = transaction`
+container. Current pinned PgBouncer line per `16-version-inventory.md`.
+`pool_mode = transaction`
 locked per `00 §6` and `03 §7.3`. PgBouncer can track prepared
 statements across txn-mode, but asyncpg remains on the documented safe
 floor here: `serve_read` keeps `statement_cache_size=0` and avoids
@@ -612,7 +613,7 @@ The `engine_admin` role bypasses (`04 §4`). The
 reaches PgBouncer (warehouse has no pooler today, `00 §1`).
 
 ```ini
-;; db/conf/pgbouncer.ini — PgBouncer 1.25.1, pgbouncer-serve container
+;; db/conf/pgbouncer.ini — pinned PgBouncer line per `16-version-inventory.md`
 ;; Authority: docs/rag/09-tuning.md §6
 ;; Posture: txn-mode pooler in front of graph-db-serve only
 ;; Source: https://www.pgbouncer.org/config.html

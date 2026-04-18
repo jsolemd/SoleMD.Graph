@@ -141,19 +141,14 @@ The canonical home for this diagram is
 # Frontend
 npm run dev                         # Next.js dev server
 solemd op-run graph -- npm run dev  # canonical 1Password-backed frontend start
-npm run dev:stack                   # interactive tmux supervisor for frontend + engine
-npm run dev:stack:start             # start frontend (:3000) + engine (:8300)
-npm run dev:clean                   # stop the dev stack + prune Codex/Claude session artifacts older than 7 days
+npm run dev:stack                   # interactive tmux supervisor for the frontend-only checkout
+npm run dev:stack:start             # start frontend (:3000) in the managed tmux session
+npm run dev:stack:clean             # stop the dev session + prune Codex/Claude session artifacts older than 7 days
 npm run dev:stack:attach            # attach to the tmux dev session
-solemd graph start                  # canonical shared CLI for the Graph dev stack
-solemd graph clean                  # stop stack + prune old Codex/Claude history
-npm run build && npm run lint       # build + lint
+npm run build && npm run lint && npm run typecheck
 
-# Engine
-cd engine && uv run pytest          # test suite
-solemd op-run graph -- bash -lc 'cd engine && uv run pytest'
-cd engine && uv run python -m app.graph.build --run --publish-current --reuse-evidence   # full graph build
-cd engine && uv run python db/scripts/refresh_rag_warehouse.py                           # RAG warehouse refresh
+# Backend rebuild
+# apps/api and apps/worker are reserved roots; no canonical local backend commands yet
 ```
 
 See the individual docs for the full CLI reference.

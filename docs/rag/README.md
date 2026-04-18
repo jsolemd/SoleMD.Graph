@@ -1,9 +1,29 @@
-# SoleMD.Graph RAG Overhaul — Working Docs
+# SoleMD.Graph RAG Overhaul — Working Docs and Execution Contract
 
 This folder collects the operational design decisions driving SoleMD.Graph's
 clean-slate RAG rebuild. `docs/rag-future.md` remains the strategic canon; the
 files here translate that vision into concrete topology, schema, pipelines, and
 ops.
+
+## Stack at a glance
+
+| Layer | Stack | What it is doing here |
+|---|---|---|
+| Host/runtime | NVIDIA Workbench WSL2 + native Docker + systemd | Single-workstation runtime with the RTX 5090, NVMe-backed storage, and compose-profile separation between always-up and on-demand services. |
+| Frontend | Next.js on Vercel | Web product surface and server-rendered app shell. |
+| API | FastAPI + Python async stack | Always-up backend surface, typed DB boundary, and raw-SQL-first request path. |
+| Background work | Dramatiq + Redis | Queue, runtime cache, and worker execution for ingest, projection, graph build, indexing, and maintenance jobs. |
+| Canonical data | PostgreSQL warehouse + PostgreSQL serve | Warehouse holds rebuildable canonical truth; serve holds the hot projection and request-path state. |
+| Pooling / cross-cluster reads | PgBouncer + `postgres_fdw` | Transaction pooling on serve reads, plus a tightly bounded serve-to-warehouse dereference path for grounding detail. |
+| Retrieval plane | OpenSearch + MedCPT retrieval stack | Hybrid lexical/vector search over release-scoped paper and evidence indexes, with alias-based cutover. |
+| GPU path | RTX 5090 + CUDA-class local GPU stack | Preferred execution path wherever GPU materially helps: embedding, rerank, graph build/layout, and local evaluation. |
+| Graph runtime | Parquet bundles + DuckDB-Wasm + OPFS + Cosmograph | Immutable graph-bundle delivery, browser-local query/runtime state, and native graph rendering without a second JS-owned dataset. |
+| Observability | Prometheus + Grafana + Loki + Alloy + Langfuse | Operational telemetry for the stack plus traced RAG evaluation and quality review. |
+| Backup / recovery | pgBackRest + OpenSearch snapshots + logical warehouse dumps | Serve gets real backup/recovery; the rebuildable warehouse is mostly recovered from source data plus a smaller logical subset. |
+
+Exact version pins and image tags do **not** belong in this README. They belong
+in `16-version-inventory.md`, which is the canonical version surface for the
+rebuild.
 
 ## Reading order
 
@@ -17,6 +37,151 @@ through-line for authority order, drift control, and implementation
 sequencing across the whole series. Then read `15-repo-structure.md` for the
 locked repository/package/deployment boundaries that the code cutover should
 follow.
+
+## Implementation contract
+
+This README is the operating contract for the backend rebuild across many
+sessions and many agents. The implementation is intentionally slow,
+piece-by-piece, and documentation-led.
+
+This file has two jobs:
+
+1. it is the **prompt/context surface** every agent should read before working
+   on the backend rebuild
+2. it is the **master ledger** for cross-session progress across the whole
+   `docs/rag/` program
+
+All of the numbered `docs/rag/*.md` files are intended to be implemented. They
+are not passive reference notes. Each one is a contract-bound implementation
+slice for the rebuilt backend.
+
+Rules:
+
+- Treat `docs/rag/` as the contract and the implementation tracker for the
+  clean-room backend rebuild.
+- Build one bounded slice at a time. Do not fan out into parallel backend
+  implementation tracks unless the current slice explicitly requires it.
+- Do not redesign the architecture during implementation unless the docs are
+  first amended in the same batch.
+- New backend code must be written against the documented contract, not against
+  legacy engine structure or convenience one-offs.
+- Every agent working on this rebuild should start here, then read
+  `14-implementation-handoff.md`, then the specific numbered docs for the slice
+  they are implementing.
+- The active agent must treat the selected slice doc as the working task
+  tracker for that session. The slice doc is where task-local notes,
+  amendments, and completion markers should live.
+- Every agent should use `/codeatlas` for live reconnaissance and `/clean` for
+  implementation discipline while rebuilding the backend.
+- No shims, no backward-compatibility scaffolding, no partial legacy carryover.
+  The backend is being rebuilt cleanly.
+
+Practical execution rule:
+
+- Move the rebuild forward by checking off one concrete implementation item at a
+  time.
+- Update this README when a slice becomes real so the next agent sees what is
+  complete, what is in progress, and what remains untouched at the program
+  level.
+- Update the active slice doc while working so the next agent can resume from
+  the slice-local state without reconstructing intent from code diffs.
+- If a code change materially changes the contract, update the relevant doc in
+  the same PR/session instead of leaving drift behind for the next agent.
+
+## How agents should work
+
+Every backend implementation session should follow this pattern:
+
+1. Read this README fully.
+2. Read `14-implementation-handoff.md`.
+3. Read the slice doc you are about to implement.
+4. Use `/codeatlas` to inspect the current repo and blast radius.
+5. Use `/clean` while implementing the slice.
+6. Update the slice doc as the working tracker for that slice.
+7. Update this README only for master-ledger progress.
+
+Working rule:
+
+- README = prompt + master ledger
+- slice doc = active task tracker + slice-local contract
+
+The active slice doc should be treated as the place where the agent tracks:
+
+- what part of the slice is being implemented now
+- what contract amendments were required
+- what remains incomplete inside that slice
+- what has been made real in code
+
+## Implementation sequence
+
+Implementation should proceed in this order unless a narrower doc explicitly
+states otherwise:
+
+1. Preflight cleanup and contract freeze
+2. Repo/runtime scaffold
+3. Serve-side substrate
+4. Serve SQL baseline + migrations
+5. Warehouse SQL baseline + migrations
+6. Ingest + chunking
+7. Projection + active pointer
+8. OpenSearch plane
+9. Retrieval cascade
+10. Graph bundles + browser runtime integration
+11. Wiki runtime integration
+12. Observability + quality
+13. Backup + recovery
+14. Auth only when activation is explicitly chosen
+
+## Implementation checklist
+
+Use this checklist as the cross-session progress tracker. Only mark an item
+done when the code and docs both reflect reality.
+
+- [x] Repo boundaries locked under `apps/`, `packages/`, `db/`, `infra/`, and
+  `scripts` (`15-repo-structure.md`)
+- [x] Thin AI Workbench-aware project layer added for local Graph development
+- [x] Stale migration/auth vocabulary sweep completed (`Atlas`, `HCL`,
+  `@better-auth/cli`, `Drizzle`, `*.hcl`, and related obsolete terms removed or
+  explicitly marked historical/comparison-only; working slice: `12-migrations.md`)
+- [x] Version inventory established in one canonical file (`16-version-inventory.md`; exact runtime pins remain implementation-provisional until runtime scaffolding lands)
+- [ ] `.env.example` finalized for the rebuild contract
+- [ ] Testcontainers migration dry-run passing on empty fresh databases only
+- [ ] Graph-local runtime scaffold created under `infra/docker/`
+- [ ] `graph-db-serve` implemented
+- [ ] `pgbouncer-serve` implemented
+- [ ] `graph-redis` implemented
+- [ ] Minimal `apps/api` runtime shell implemented
+- [ ] Minimal `apps/worker` runtime shell implemented
+- [ ] Serve SQL baseline landed under `db/schema/serve/`
+- [ ] Serve migration chain landed under `db/migrations/serve/`
+- [ ] Warehouse SQL baseline landed under `db/schema/warehouse/`
+- [ ] Warehouse migration chain landed under `db/migrations/warehouse/`
+- [ ] Ingest lane implemented
+- [ ] Chunking / evidence-unit lane implemented
+- [ ] Projection + active pointer implemented
+- [ ] OpenSearch plane implemented
+- [ ] Retrieval cascade implemented
+- [ ] Graph bundle build/export/serve path implemented
+- [ ] Browser graph runtime consuming checksum-addressed bundles
+- [ ] Wiki sync/activation + read/context path implemented
+- [ ] Observability stack wired for the rebuilt backend
+- [ ] Backup/recovery flows wired for the rebuilt backend
+- [ ] Auth remains deferred unless explicitly activated
+
+## Status conventions
+
+There are two kinds of status in this folder:
+
+- The table below tracks **document status**.
+- The checklist above tracks **implementation status**.
+
+Do not confuse a doc being locked with the corresponding backend slice being
+implemented.
+
+There is also a working-surface distinction:
+
+- this README tracks whole-program progress
+- the active numbered doc tracks the current slice’s implementation state
 
 ## Status
 
@@ -42,7 +207,8 @@ follow.
 | 12 | Migration tooling and schema lifecycle  | `12-migrations.md`           | locked (microdesign provisional)      |
 | 13 | Auth / user-data plane                  | `13-auth.md`                 | spec locked; activation deferred      |
 | 14 | Cross-doc implementation handoff        | `14-implementation-handoff.md` | locked (through-line + drift control) |
-| 15 | Repo structure + deployment boundaries  | `15-repo-structure.md`      | locked (naming + cutover shape)       |
+| 15 | Repo structure + deployment boundaries  | `15-repo-structure.md`      | completed (repo shape + deploy roots) |
+| 16 | Canonical version inventory             | `16-version-inventory.md`   | completed (canonical inventory + normalization rules; exact pins still provisional) |
 | -- | 2026 research synthesis                 | `research-distilled.md`      | archive of the research behind these  |
 
 ## Companion documents
@@ -60,6 +226,10 @@ follow.
   substrate contract (host, storage, compose ownership, ports)
 - `.claude/skills/langfuse/references/benchmarking.md` — RAG quality feedback
   loop and benchmark policy
+
+`research-distilled.md` is an archive of the research behind the contract. It
+may retain historical tool comparisons such as Atlas or Drizzle. Those mentions
+are context only, not implementation instructions.
 
 ## Authoring rules
 

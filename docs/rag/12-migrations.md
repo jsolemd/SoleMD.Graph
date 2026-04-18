@@ -22,6 +22,14 @@
 > authority for warehouse / serve table shape; `06 §8` remains authority for
 > the Python-side runner placement and invocation contract.
 
+## Slice tracker
+
+- [x] SQL-first schema-authoring posture locked
+- [x] Per-cluster migration and ledger contract locked
+- [x] Better Auth boundary updated to the current CLI naming
+- [x] Legacy Atlas / HCL vocabulary explicitly demoted from the implementation path
+- [x] Wider cross-doc stale-term sweep finished across the rest of `docs/rag/`
+
 ## Purpose
 
 The rebuilt program cannot depend on Atlas Pro, and the project cannot afford
@@ -41,6 +49,21 @@ Sqitch is the strongest off-the-shelf open-source alternative if the runner
 ever proves insufficient, but it is **not** the locked path here. The locked
 path is native SQL plus the rebuilt executor and ledger.
 
+## Obsolete vocabulary handling
+
+These terms are no longer executable parts of the rebuild contract:
+
+- `db/schema/*.hcl`, `serve.hcl`, `warehouse.hcl`, and similar HCL surfaces are
+  obsolete for this rebuild and must not be reintroduced as live authoring
+  inputs.
+- Atlas / Atlas Pro may be mentioned only when explicitly marked as historical
+  context or as a rejected option.
+- `@better-auth/cli` is obsolete naming. The current CLI spelling is
+  `npx auth@latest`.
+- Drizzle is not part of the migration authority path. It may appear only in
+  deferred auth comparisons inside `13-auth.md`, not as a live schema tool for
+  this rebuild.
+
 ## 0. Through-line decisions
 
 These decisions are no longer open:
@@ -51,9 +74,9 @@ These decisions are no longer open:
    are the canonical structural source.
 3. **Versioned SQL migrations.** Timestamped `*.sql` files under
    `db/migrations/<cluster>/` are the only applied change units.
-4. **Runner-owned ledger.** `engine/db/scripts/schema_migrations.py` remains the
-   executor / ledger contract, rewritten as needed, but still doc-led rather
-   than legacy-led.
+4. **Runner-owned ledger.** `scripts/schema_migrations.py` is the canonical
+   executor / ledger surface for the rebuild. Legacy `engine/...` path
+   references are inventory only, not target structure.
 5. **Fresh-start rule.** New clusters bootstrap the runner ledger, then apply
    the new baseline migration set. They do not adopt the archived legacy chain.
 6. **Better Auth remains outside the runner.** The serve-cluster `auth` schema
@@ -180,13 +203,15 @@ must stay in sync in the same PR.
 
 ## 5. Executor contract
 
-`engine/db/scripts/schema_migrations.py` remains the executor / ledger
-baseline. The rebuilt version must satisfy these properties:
+`scripts/schema_migrations.py` is the executor / ledger baseline for the
+rebuilt repo. The implementation may reuse legacy logic, but the canonical
+contract now follows the cutover tree rather than the old `engine/` path. The
+rebuilt version must satisfy these properties:
 
 | Property | Contract |
 |---|---|
 | Cluster split | One ledger per cluster: warehouse and serve are independent. |
-| Invocation | `python -m engine.db.scripts.schema_migrations apply --cluster warehouse|serve` |
+| Invocation | `python scripts/schema_migrations.py apply --cluster warehouse|serve` |
 | DSN boundary | DDL/admin DSNs are distinct from app-path DSNs; app read/write DSNs are never reused for migrations. |
 | Ledger | `solemd.schema_migration_ledger` records migration name, path, checksum, execution mode, status, applied_at, applied_by, and notes. |
 | Modes | `transactional` by default; `autocommit` for statements that cannot run in a transaction. |
@@ -273,8 +298,8 @@ Locked rule set:
   2. Better Auth CLI
   3. any app-owned `solemd.user_*` additions if the product surface needs them
 
-The current official Better Auth CLI is `npx auth@latest`, not
-`@better-auth/cli`.
+The current official Better Auth CLI is `npx auth@latest`, not the older
+`@better-auth/cli` spelling.
 
 ## 11. CI contract
 
@@ -286,7 +311,8 @@ The CI surface changes with the SQL-first posture:
    - `sqlfluff` or equivalent SQL linter over `db/schema/**/*.sql` and
      `db/migrations/**/*.sql`
 3. **Fresh-database round-trip**
-   - Testcontainers starts PostgreSQL 18 for warehouse and serve
+   - Testcontainers starts the current PostgreSQL major from
+     `16-version-inventory.md` for warehouse and serve
    - runner bootstrap + baseline + pending migrations apply cleanly
 4. **Snapshot refresh / diff**
    - `pg_dump --schema-only` for each cluster
@@ -295,7 +321,7 @@ The CI surface changes with the SQL-first posture:
 5. **Verify command**
    - runner `verify` against the applied migration set
 
-There is no required Atlas dependency in CI.
+There is no Atlas or HCL tooling dependency in CI.
 
 ## 12. Drift detection
 

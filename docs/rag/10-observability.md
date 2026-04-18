@@ -402,9 +402,10 @@ Primary source: Grafana Alloy docs,
 
 ### §4.1 Plugin-based Prometheus export
 
-OpenSearch 3.6 ships the `prometheus-exporter` plugin
+The current OpenSearch serving line in `16-version-inventory.md` ships the
+`prometheus-exporter` plugin
 (<https://github.com/aiven/prometheus-exporter-plugin-for-opensearch>)
-compatible with 3.6. Enabled in the image build; exposes
+compatible with the pinned serving line. Enabled in the image build; exposes
 `/_prometheus/metrics` on the same HTTP listener as the REST API.
 The 15 metric families declared in `07 §13.1` are surfaced via this
 plugin plus four application-owned counters emitted by the engine's
@@ -435,7 +436,8 @@ Scrape config:
 
 `07 §14.4` (verified reference, not reopened here) names Performance
 Analyzer for per-shard / per-thread-pool diagnostics. Enabled as a
-sidecar binding on port 9600 per OpenSearch 3.6 docs
+sidecar binding on port 9600 per current OpenSearch docs for the pinned
+serving line
 (<https://docs.opensearch.org/latest/monitoring-your-cluster/pa/index/>).
 Performance Analyzer's output is **not** scraped by Prometheus by
 default — it's a diagnostic tool invoked ad-hoc. Flag as **deferred**

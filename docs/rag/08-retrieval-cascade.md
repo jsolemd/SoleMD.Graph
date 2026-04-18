@@ -1257,7 +1257,7 @@ queries within one UI session.
 | Key format | `qvec:<sha256(encoder_revision || '\0' || query_text)>` |
 | Value format | `np.float32` raw bytes (768 × 4 = 3072 B) |
 | TTL | 1 hour (3600 s) |
-| Backing store | Redis 8 (`graph-redis` per `00 §1`) |
+| Backing store | Redis current line (`graph-redis` per `00 §1`; see `16-version-inventory.md`) |
 | Invalidation on encoder change | Encoder revision is part of the key; new revision = new cache namespace; old entries TTL out |
 | Invalidation on query rewrite | None — different query text = different key by construction |
 | Eviction policy | `allkeys-lru` per `09-tuning.md` Redis config |

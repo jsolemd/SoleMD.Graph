@@ -78,7 +78,6 @@ Desktop.ini
 *.swp
 *.swo
 *~
-.project
 .classpath
 .settings/
 *.sublime-project

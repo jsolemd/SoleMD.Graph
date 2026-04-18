@@ -1,0 +1,415 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WEB_DIR="${ROOT_DIR}/apps/web"
+SESSION_NAME="solemd-graph"
+LEGACY_SESSION_NAME="solemd-graph-dev"
+FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+SESSION_RETENTION_DAYS="${SESSION_RETENTION_DAYS:-7}"
+GRAPH_DEV_AUTOCLEAN="${GRAPH_DEV_AUTOCLEAN:-1}"
+SOLEMD_SCRIPT="/workspaces/SoleMD.Infra/scripts/solemd.sh"
+STACK_RUNNER="${SOLEMD_GRAPH_STACK_RUNNER:-run}"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/solemd"
+LAST_CLEAN_FILE="${STATE_DIR}/graph-last-clean.txt"
+
+case "${STACK_RUNNER}" in
+  run|op-run)
+    ;;
+  *)
+    echo "Invalid SOLEMD_GRAPH_STACK_RUNNER: ${STACK_RUNNER} (expected 'run' or 'op-run')" >&2
+    exit 1
+    ;;
+esac
+
+FRONTEND_CMD="cd '${ROOT_DIR}' && source '${SOLEMD_SCRIPT}' && solemd ${STACK_RUNNER} graph -- env PORT='${FRONTEND_PORT}' npm run dev"
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+require_cmd tmux
+require_cmd npm
+require_cmd ss
+require_cmd pkill
+require_cmd python3
+
+listener_pid() {
+  local port="$1"
+  python3 - "$port" <<'PY'
+import re
+import subprocess
+import sys
+
+port = sys.argv[1]
+result = subprocess.run(
+    ["ss", "-ltnp"],
+    check=False,
+    capture_output=True,
+    text=True,
+)
+pattern = re.compile(rf":{re.escape(port)}\b")
+for line in result.stdout.splitlines():
+    if not pattern.search(line):
+        continue
+    match = re.search(r"pid=(\d+)", line)
+    if match:
+        print(match.group(1))
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+pid_command() {
+  local pid="$1"
+  ps -p "$pid" -o command= 2>/dev/null || true
+}
+
+frontend_process_pids() {
+  python3 - "${ROOT_DIR}" "${WEB_DIR}" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+root_dir = Path(sys.argv[1]).resolve()
+web_dir = Path(sys.argv[2]).resolve()
+
+for proc_name in os.listdir("/proc"):
+    if not proc_name.isdigit():
+        continue
+    pid = int(proc_name)
+    try:
+        cwd = Path(os.readlink(f"/proc/{pid}/cwd")).resolve()
+        cmdline_raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except (FileNotFoundError, PermissionError, OSError):
+        continue
+    cmd = cmdline_raw.replace(b"\x00", b" ").decode("utf-8", "ignore").strip()
+    if not cmd:
+        continue
+    if cwd in {root_dir, web_dir} and (
+        "next dev" in cmd
+        or "next start" in cmd
+        or "next-server" in cmd
+        or "npm run dev" in cmd
+        or "npm run start" in cmd
+    ):
+        print(pid)
+PY
+}
+
+prune_history() {
+  python3 - "${SESSION_RETENTION_DAYS}" <<'PY'
+import sys
+import time
+from pathlib import Path
+
+retention_days = int(sys.argv[1])
+cutoff = time.time() - retention_days * 86400
+targets = [
+    ("codex sessions", Path.home() / ".codex" / "sessions"),
+    ("codex logs", Path.home() / ".codex" / "log"),
+    ("codex shell snapshots", Path.home() / ".codex" / "shell_snapshots"),
+    ("claude projects", Path.home() / ".claude" / "projects"),
+    ("claude file history", Path.home() / ".claude" / "file-history"),
+    ("claude paste cache", Path.home() / ".claude" / "paste-cache"),
+]
+
+def prune_file(path: Path) -> int:
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError:
+        return 0
+    path.unlink(missing_ok=True)
+    return size
+
+removed_files = 0
+removed_bytes = 0
+
+for _, root in targets:
+    if not root.exists():
+        continue
+    for path in sorted(root.rglob("*"), reverse=True):
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            continue
+        if path.is_file() and stat.st_mtime < cutoff:
+            removed_bytes += prune_file(path)
+            removed_files += 1
+    for path in sorted(root.rglob("*"), reverse=True):
+        if path.is_dir():
+            try:
+                next(path.iterdir())
+            except StopIteration:
+                path.rmdir()
+            except OSError:
+                pass
+
+def human_size(num: int) -> str:
+    units = ["B", "KB", "MB", "GB", "TB"]
+    value = float(num)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.1f}{unit}"
+        value /= 1024
+    return f"{num}B"
+
+print(
+    f"Autoclean pruned {removed_files} old session/history files older than "
+    f"{retention_days} days ({human_size(removed_bytes)} reclaimed)."
+)
+PY
+}
+
+record_last_clean() {
+  mkdir -p "${STATE_DIR}"
+  date -Iseconds > "${LAST_CLEAN_FILE}"
+}
+
+purge_temp_files() {
+  local removed=0
+  local path=""
+  local targets=(
+    "${ROOT_DIR}/.next"
+    "${ROOT_DIR}/.swc"
+    "${ROOT_DIR}/.turbo"
+    "${ROOT_DIR}/.eslintcache"
+    "${ROOT_DIR}/tsconfig.tsbuildinfo"
+    "${WEB_DIR}/.next"
+    "${WEB_DIR}/.swc"
+    "${WEB_DIR}/.turbo"
+    "${WEB_DIR}/.eslintcache"
+    "${WEB_DIR}/tsconfig.tsbuildinfo"
+  )
+
+  for path in "${targets[@]}"; do
+    if [[ -e "${path}" ]]; then
+      rm -rf "${path}"
+      removed=$((removed + 1))
+    fi
+  done
+
+  echo "Removed ${removed} Graph temp/cache target(s)."
+}
+
+session_exists() {
+  tmux has-session -t "${SESSION_NAME}" 2>/dev/null
+}
+
+stop_tmux_sessions() {
+  local name=""
+  while IFS= read -r name; do
+    case "${name}" in
+      "${SESSION_NAME}"|"${LEGACY_SESSION_NAME}"|${SESSION_NAME}-*)
+        tmux kill-session -t "${name}" 2>/dev/null || true
+        ;;
+    esac
+  done < <(tmux list-sessions -F '#S' 2>/dev/null || true)
+}
+
+wait_for_listener() {
+  local port="$1"
+  local attempts="${2:-40}"
+  local sleep_seconds="${3:-0.5}"
+  local i
+  for ((i = 0; i < attempts; i += 1)); do
+    if listener_pid "${port}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "${sleep_seconds}"
+  done
+  return 1
+}
+
+kill_frontend_processes() {
+  local pids
+  pids="$(frontend_process_pids || true)"
+  if [[ -z "${pids}" ]]; then
+    return 0
+  fi
+  while IFS= read -r pid; do
+    [[ -z "${pid}" ]] && continue
+    kill "${pid}" 2>/dev/null || true
+  done <<<"${pids}"
+  sleep 1
+  while IFS= read -r pid; do
+    [[ -z "${pid}" ]] && continue
+    if kill -0 "${pid}" 2>/dev/null; then
+      kill -9 "${pid}" 2>/dev/null || true
+    fi
+  done <<<"${pids}"
+}
+
+print_stray_frontend_status() {
+  python3 - "${ROOT_DIR}" "${WEB_DIR}" "${FRONTEND_PORT}" <<'PY'
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+root_dir = Path(sys.argv[1]).resolve()
+web_dir = Path(sys.argv[2]).resolve()
+expected_port = sys.argv[3]
+result = subprocess.run(["ss", "-ltnp"], capture_output=True, text=True, check=False)
+found = []
+for line in result.stdout.splitlines():
+    m_port = re.search(r":(\d+)\b", line)
+    m_pid = re.search(r"pid=(\d+)", line)
+    if not m_port or not m_pid:
+        continue
+    port = m_port.group(1)
+    if port == expected_port:
+        continue
+    pid = m_pid.group(1)
+    try:
+        cwd = Path(f"/proc/{pid}/cwd").resolve()
+        cmd = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\x00", b" ").decode("utf-8", "ignore").strip()
+    except (FileNotFoundError, PermissionError, OSError):
+        continue
+    if cwd in {root_dir, web_dir} and ("next dev" in cmd or "next-server" in cmd):
+        found.append((port, pid, cmd))
+
+for port, pid, cmd in found:
+    print(f"warning: stray graph frontend listener on :{port} (pid {pid})")
+    print(f"         {cmd}")
+PY
+}
+
+print_port_status() {
+  local label="$1"
+  local port="$2"
+  local pid
+  pid="$(listener_pid "${port}" 2>/dev/null || true)"
+  if [[ -n "${pid}" ]]; then
+    printf "%-10s %s (pid %s)\n" "${label}" "listening on :${port}" "${pid}"
+    printf "           %s\n" "$(pid_command "${pid}")"
+  else
+    printf "%-10s not listening on :%s\n" "${label}" "${port}"
+  fi
+}
+
+start_session() {
+  if session_exists; then
+    if listener_pid "${FRONTEND_PORT}" >/dev/null 2>&1; then
+      echo "tmux session '${SESSION_NAME}' already exists."
+      status_session
+      return 0
+    fi
+    echo "tmux session '${SESSION_NAME}' exists without a frontend listener; recycling stale session."
+  fi
+
+  stop_tmux_sessions
+  kill_frontend_processes
+
+  if listener_pid "${FRONTEND_PORT}" >/dev/null 2>&1; then
+    echo "Frontend port :${FRONTEND_PORT} is already in use outside the '${SESSION_NAME}' tmux session." >&2
+    echo "Use 'npm run dev:stack:restart' to replace the current Graph frontend process." >&2
+    return 1
+  fi
+
+  if [[ "${GRAPH_DEV_AUTOCLEAN}" != "0" ]]; then
+    prune_history
+  fi
+
+  tmux new-session -d -s "${SESSION_NAME}" -n web bash -lc "${FRONTEND_CMD}"
+  tmux set-option -t "${SESSION_NAME}" remain-on-exit on >/dev/null
+
+  if ! wait_for_listener "${FRONTEND_PORT}" 180 0.5; then
+    echo "Frontend did not start on :${FRONTEND_PORT}." >&2
+    return 1
+  fi
+
+  echo "Started SoleMD.Graph frontend dev session in tmux: ${SESSION_NAME}"
+  status_session
+}
+
+stop_session() {
+  stop_tmux_sessions
+  kill_frontend_processes
+  sleep 1
+  echo "Stopped SoleMD.Graph frontend dev processes."
+  status_session
+}
+
+restart_session() {
+  stop_session
+  start_session
+}
+
+clean_session() {
+  stop_session
+  purge_temp_files
+  prune_history
+  record_last_clean
+}
+
+attach_session() {
+  if ! session_exists; then
+    echo "No tmux session named '${SESSION_NAME}'. Use: npm run dev:stack:start" >&2
+    exit 1
+  fi
+  exec tmux attach -t "${SESSION_NAME}"
+}
+
+status_session() {
+  echo "Session: ${SESSION_NAME}"
+  if session_exists; then
+    if listener_pid "${FRONTEND_PORT}" >/dev/null 2>&1; then
+      echo "tmux: running"
+    else
+      echo "tmux: running (stale session; frontend not listening)"
+    fi
+  else
+    echo "tmux: not running"
+  fi
+  print_port_status "frontend" "${FRONTEND_PORT}"
+  print_stray_frontend_status
+  echo "frontend url: http://127.0.0.1:${FRONTEND_PORT}"
+  echo "backend:      reserved in apps/api and apps/worker; no canonical local stack yet"
+}
+
+interactive_menu() {
+  status_session
+  if session_exists || listener_pid "${FRONTEND_PORT}" >/dev/null 2>&1; then
+    echo
+    read -r -p "[a]ttach, [r]estart, [s]top, [q]uit: " choice
+    case "${choice}" in
+      a|A) attach_session ;;
+      r|R) restart_session ;;
+      s|S) stop_session ;;
+      q|Q|"") exit 0 ;;
+      *) echo "Unknown choice: ${choice}" >&2; exit 1 ;;
+    esac
+  else
+    echo
+    read -r -p "[s]tart, [q]uit: " choice
+    case "${choice}" in
+      s|S) start_session ;;
+      q|Q|"") exit 0 ;;
+      *) echo "Unknown choice: ${choice}" >&2; exit 1 ;;
+    esac
+  fi
+}
+
+main() {
+  local action="${1:-menu}"
+  case "${action}" in
+    start) start_session ;;
+    stop) stop_session ;;
+    restart) restart_session ;;
+    clean) clean_session ;;
+    status) status_session ;;
+    attach) attach_session ;;
+    menu) interactive_menu ;;
+    *)
+      echo "Usage: $0 [start|stop|restart|clean|status|attach]" >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

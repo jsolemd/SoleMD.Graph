@@ -217,7 +217,7 @@ bounded `IMPORT FOREIGN SCHEMA` step. Secret-bearing `USER MAPPING`
 credentials stay outside version control and are injected by the admin path
 after structural migration success. The import migration is idempotent
 (`DROP SCHEMA warehouse_grounding CASCADE` + `IMPORT FOREIGN SCHEMA`) and runs
-via `engine/db/scripts/schema_migrations.py` (`02 §0.10`). **locked**
+via `scripts/schema_migrations.py` (`02 §0.10`). **locked**
 
 Primary source for options:
 `https://www.postgresql.org/docs/current/postgres-fdw.html`.
@@ -915,7 +915,7 @@ WHERE t.citation_count <> EXCLUDED.citation_count
 
 The `WHERE` on `DO UPDATE` suppresses no-op writes that would dirty
 pages and grow HOT chains. Fillfactor 90 leaves room for genuine HOT
-updates. PgBouncer 1.25.1 transaction-mode prepared statements
+updates. Transaction-mode prepared statements on the pinned PgBouncer line
 (`https://www.crunchydata.com/blog/prepared-statements-in-transaction-mode-for-pgbouncer`)
 keep this path fast.
 

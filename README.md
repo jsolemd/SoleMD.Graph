@@ -41,6 +41,30 @@ infra/
 - Frontend code now imports directly from `@solemd/graph` and
   `@solemd/api-client`; the old web wrapper layer has been removed.
 
+## AI Workbench
+
+This repo now carries a thin AI Workbench project definition under `.project/`.
+
+- The Graph repo owns only a local project container contract.
+- The Workbench container is intentionally light:
+  - base image: `nvidia/ai-workbench/python-basic:1.0.8`
+  - no GPU requested for the project container itself
+  - Node.js 22 and `uv` are installed by [postBuild.bash](/home/workbench/SoleMD/SoleMD.Graph/postBuild.bash)
+- Shared GPU and infra services remain outside this repo and continue to be
+  owned by `SoleMD.Infra`.
+
+That boundary is intentional:
+
+- `SoleMD.Graph` is Workbench-aware, not Workbench-dominated.
+- `SoleMD.Infra` still owns TEI, CodeAtlas, Neo4j, Qdrant, Langfuse, Portainer,
+  and MCP infrastructure.
+- Vercel and GCP deployment concerns remain separate from AI Workbench metadata.
+
+There is no Graph-local Workbench compose stack yet. If this repo later needs
+Workbench-managed local services that are truly Graph-owned, add an explicit
+repo-local compose file and wire it through `environment.compose_file_path`
+instead of re-owning shared Infra services here.
+
 ## Commands
 
 ```bash
@@ -49,6 +73,7 @@ npm run build
 npm run lint
 npm run typecheck
 npm run test
+~/.nvwb/bin/nvwb-cli validate project-spec --path "$(pwd)"
 ```
 
 ## Canonical Docs

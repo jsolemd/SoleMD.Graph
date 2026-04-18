@@ -1,0 +1,5 @@
+build-essential
+ca-certificates
+curl
+git-lfs
+pkg-config

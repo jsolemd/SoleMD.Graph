@@ -156,8 +156,8 @@ once.
 | `graph-db-serve` (PG 18, NVMe named volume `graph_serve_pg-data`) | irreplaceable | ≤ 5 min | pgBackRest stanza `serve`: full weekly + differential daily + 5-min WAL | §3 |
 | `graph-db-warehouse` (PG 18, E-drive bind `/mnt/solemd-graph/pg-data`) — dumped identity / ledger subset only | canonical-derived | 24 h | `pg_dump --format=custom` per-table nightly | §4 |
 | `graph-db-warehouse` — bulk source-derived tables (`s2_*_raw`, `pt3_*_raw`, `paper_embeddings_graph`) | rebuildable | n/a | **none** — explicitly skipped; rebuild from `/mnt/solemd-graph/data/` per `05 §6` (5–9 h S2 bulk load) | §4.3 |
-| `graph-opensearch` (3.6, NVMe named volume `graph_opensearch_data`) | index | build time (2–6 h re-index) | Daily `fs`-repo snapshot of `paper_index_live` + `evidence_index_live`; canonical recovery is full re-index from serve via `07 §7` | §5 |
-| `graph-redis` (Redis 8, no volume today; planned NVMe target if persistence stays on) | cache | ∞ | RDB-only, `save 900 1 300 10 60 10000`, no AOF | §6 |
+| `graph-opensearch` (current serving line per `16-version-inventory.md`, NVMe named volume `graph_opensearch_data`) | index | build time (2–6 h re-index) | Daily `fs`-repo snapshot of `paper_index_live` + `evidence_index_live`; canonical recovery is full re-index from serve via `07 §7` | §5 |
+| `graph-redis` (current Redis line per `16-version-inventory.md`, no volume today; planned NVMe target if persistence stays on) | cache | ∞ | RDB-only, `save 900 1 300 10 60 10000`, no AOF | §6 |
 | Langfuse (Cloud Hobby today, self-host deferred per `10 §7`) | telemetry — sliding window | n/a | **none** — 30-day Cloud window IS the retention; no backup even if self-host lands | §7 |
 | `/mnt/solemd-graph/data/{semantic-scholar,pubtator}/releases/` (raw release files) | raw-release | ∞ | **none** — re-downloadable from upstream; backup cost > rebuild cost | §2.1 |
 | `/mnt/solemd-graph/bundles/` (published Parquet, `01 §3`) | archive | build time | filesystem-as-is; covered by future off-box mirror; rebuildable from `graph_runs` ledger | §10 |
@@ -697,7 +697,8 @@ prefer re-index.
 
 ### §6.1 RDB-only, no AOF
 
-Redis 8 `redis.conf` snippet shipped under `docker/redis/redis.conf`:
+Redis config for the pinned Redis line in `16-version-inventory.md`, shipped
+under `docker/redis/redis.conf`:
 
 ```conf
 # Persistence: RDB only. No AOF.
@@ -980,7 +981,7 @@ depending on extent of damage.
 2. Re-init `/mnt/solemd-graph/pg-data/` (empty bind, fresh PG init).
 3. Bring up: `docker compose --profile db up -d graph-db-warehouse`.
 4. Apply the warehouse SQL schema / migration set via
-   `engine/db/scripts/schema_migrations.py` (per `06 §8` / `12`).
+   `scripts/schema_migrations.py` (per `06 §8` / `12`).
 5. If raw releases survived: re-run ingest from `/mnt/solemd-graph/data/`
    per `05 §6`. ETA 5–9 h for S2 + PT3.
 6. If raw releases also lost: re-download S2 + PT3 from upstream
@@ -1363,7 +1364,7 @@ PRs.
 
 2. **`01 §1` Volume inventory** — add
    ```
-   | `graph_redis_data` | named volume | `graph-redis:/data` | Redis 8 RDB | serving |
+   | `graph_redis_data` | named volume | `graph-redis:/data` | Redis RDB on the pinned line from `16-version-inventory.md` | serving |
    ```
    when §6 persistence activates.
 

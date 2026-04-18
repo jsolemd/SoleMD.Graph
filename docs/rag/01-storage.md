@@ -29,7 +29,7 @@ Locked operational posture for the rebuild:
 | Name                         | Kind         | Mounted on                           | Owner                 | Class     |
 |------------------------------|--------------|--------------------------------------|-----------------------|-----------|
 | `graph_serve_pg-data`        | named volume | `graph-db-serve:/var/lib/postgresql/data` | PG 18 serve     | serving   |
-| `graph_opensearch_data`      | named volume | `graph-opensearch:/usr/share/opensearch/data` | OpenSearch 3.6 | serving |
+| `graph_opensearch_data`      | named volume | `graph-opensearch:/usr/share/opensearch/data` | OpenSearch serving line (`16`) | serving |
 | `graph_worker-opt-venv`      | named volume | `graph-worker:/opt/venv`             | engine worker         | serving   |
 | `graph_prometheus_data`      | named volume | `graph-prometheus:/prometheus`       | Prometheus            | serving   |
 | `graph_grafana_data`         | named volume | `graph-grafana:/var/lib/grafana`     | Grafana               | serving   |

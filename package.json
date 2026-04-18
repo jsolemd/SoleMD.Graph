@@ -8,6 +8,13 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @solemd/web",
+    "dev:stack": "bash ./scripts/graph-stack",
+    "dev:stack:start": "bash ./scripts/graph-stack start",
+    "dev:stack:stop": "bash ./scripts/graph-stack stop",
+    "dev:stack:restart": "bash ./scripts/graph-stack restart",
+    "dev:stack:clean": "bash ./scripts/graph-stack clean",
+    "dev:stack:status": "bash ./scripts/graph-stack status",
+    "dev:stack:attach": "bash ./scripts/graph-stack attach",
     "build": "npm run build --workspace @solemd/web",
     "build:webpack": "npm run build:webpack --workspace @solemd/web",
     "start": "npm run start --workspace @solemd/web",
@@ -17,6 +24,6 @@
     "test:watch": "npm run test:watch --workspace @solemd/web",
     "storybook": "npm run storybook --workspace @solemd/web",
     "storybook:build": "npm run storybook:build --workspace @solemd/web",
-    "quality": "npm run build && npm run lint && npm run typecheck && npm test -- --runInBand"
+    "quality": "npm run build && npm run lint && npm run typecheck && npm run test -- --runInBand"
   }
 }

@@ -38,7 +38,7 @@ Eight load-bearing properties:
    ad-hoc pool. (§2)
 2. **asyncpg on every hot path.** Ingest, projection, serve reads,
    FastAPI handlers, Dramatiq actors. psycopg3 is reserved for sync
-   admin utilities — primarily `engine/db/scripts/schema_migrations.py`.
+   admin utilities — primarily `scripts/schema_migrations.py`.
    No SQLAlchemy / SQLModel / Piccolo. (§3)
 3. **Pydantic v2 sits at the DB boundary.** Every row that crosses
    asyncpg ↔ Python passes through `model_validate` on read and
@@ -55,7 +55,7 @@ Eight load-bearing properties:
    hard-coded. `application_name` always set for `pg_stat_activity`
    triage. (§7)
 7. **One migrations runner, currently sync psycopg3.** The existing
-   `engine/db/scripts/schema_migrations.py` stays the executor /
+   `scripts/schema_migrations.py` stays the executor /
    ledger; SQL-first schema files author, and async conversion stays deferred
    until a runtime path truly needs it. (§8)
 8. **Testcontainers as the substrate.** Session-scoped two-cluster
@@ -225,7 +225,7 @@ Which process opens which pools is fixed:
 | `graph-worker` — projection actor | — | yes | yes | yes |
 | `graph-worker` — ingest actor | yes | — | — | — |
 | `graph-worker` — RAG inference actor | — | — | yes | — |
-| `engine/db/scripts/schema_migrations.py` (sync) | — | — | — | sync psycopg3 against `SERVE_DSN_ADMIN` (§3, §8) |
+| `scripts/schema_migrations.py` (sync) | — | — | — | sync psycopg3 against `SERVE_DSN_ADMIN` (§3, §8) |
 
 Rules:
 - A given worker process opens only the pools its actors need at
@@ -247,7 +247,7 @@ Two drivers, two roles:
 | Driver | Used for | Why |
 |---|---|---|
 | **asyncpg 0.31+** | Every hot path: ingest COPY, projection swap, FastAPI handlers, Dramatiq async actors, projection-worker reads. | Binary protocol, native `copy_records_to_table`, and the leanest direct async surface for the paths this repo cares about. Any claimed latency edge over psycopg3 is benchmark-owned for this project, not an upstream-documented guarantee. |
-| **psycopg3 3.3+** | Sync admin utilities only — primarily `engine/db/scripts/schema_migrations.py` and one-off scripts that genuinely cannot sit inside an event loop. | Sharper sync API, COPY support (less critical here — admin rarely COPYs). Useful when the script must be importable into an interactive REPL or a non-asyncio process. |
+| **psycopg3 3.3+** | Sync admin utilities only — primarily `scripts/schema_migrations.py` and one-off scripts that genuinely cannot sit inside an event loop. | Sharper sync API, COPY support (less critical here — admin rarely COPYs). Useful when the script must be importable into an interactive REPL or a non-asyncio process. |
 
 ### 3.1 Forbidden shapes
 
@@ -737,19 +737,20 @@ override. Real-process `.env` files are unaffected.
 
 ## §8 Migrations runner contract
 
-`engine/db/scripts/schema_migrations.py` is the current executor /
-ledger baseline. This section is the authoritative contract it must
+`scripts/schema_migrations.py` is the canonical executor / ledger
+baseline for the rebuild. Legacy `engine/...` path references are
+inventory only. This section is the authoritative contract it must
 satisfy as the bottom-up rebuild lands.
 
 | Property | Value |
 |---|---|
 | **Authoring tool** | Ordered PostgreSQL SQL under `db/schema/{warehouse,serve}/` per `02 §0.10` and `12`. |
-| **Executor** | `engine/db/scripts/schema_migrations.py` — sync, psycopg3-based per §3. |
+| **Executor** | `scripts/schema_migrations.py` — sync, psycopg3-based per §3. |
 | **Ledger table** | `solemd.schema_migration_ledger` on each cluster (one ledger per cluster). Records `migration_name`, `migration_file`, `checksum_sha256`, `execution_mode` (`transactional` | `autocommit`), `status`, `sql_bytes`, `applied_at`, `applied_by`, `applied_via`, `notes`, `error_message`, `recorded_at`, `updated_at`. |
 | **Execution mode** | `transactional` (default) or `autocommit` (when SQL contains `CREATE INDEX CONCURRENTLY`, `ALTER TABLE … SET LOGGED`, `VACUUM`, etc. — full marker list in the existing file). |
 | **Adopt vs apply** | `adopt` records the file as already-applied without running it for pre-existing schema or orphan-ledger repair; `apply` runs the migration against the cluster. Fresh rebuilds do not adopt the archived legacy chain. `verify` compares ledger and on-disk files; `--check` exits non-zero on drift. |
 | **Idempotency** | Re-running a migration is a no-op when the ledger already records `status='applied'` and `checksum_sha256` matches. Mismatches raise `ChecksumMismatch` and refuse to re-apply silently. |
-| **Per-cluster invocation** | `python -m engine.db.scripts.schema_migrations apply --cluster warehouse|serve`. The command resolves the right DSN from `SERVE_DSN_ADMIN` or `WAREHOUSE_DSN_ADMIN`; app-path DSNs (`WAREHOUSE_DSN_INGEST`, `WAREHOUSE_DSN_READ`, `SERVE_DSN_READ`) are never reused for DDL. |
+| **Per-cluster invocation** | `python scripts/schema_migrations.py apply --cluster warehouse|serve`. The command resolves the right DSN from `SERVE_DSN_ADMIN` or `WAREHOUSE_DSN_ADMIN`; app-path DSNs (`WAREHOUSE_DSN_INGEST`, `WAREHOUSE_DSN_READ`, `SERVE_DSN_READ`) are never reused for DDL. |
 | **Async in scope** | None today — the runner is sync because (a) it is invoked from the shell or CI, not inside an event loop, and (b) `CREATE INDEX CONCURRENTLY` semantics make sync the simpler shape. asyncpg-conversion is **deferred** until a runtime path (rather than a CLI path) needs migrations. |
 
 The `MigrationFile`, `MigrationFileRecord`, `MigrationLedgerRecord`,
@@ -1064,7 +1065,7 @@ for `04 §2.4` validation; `serving_members` / `serving_cohorts` on
 | Async actors for PG-touching work; sync actors for CPU-only kernels | AsyncIO middleware composes with asyncpg natively. |
 | Per-role PG users with explicit grants; DSNs from env at startup | `pg_hba.conf` enforces source-host scoping; no shared `postgres` account. |
 | `application_name` query parameter on every DSN | First-class debugging surface for `pg_stat_activity`. |
-| `engine/db/scripts/schema_migrations.py` stays the executor / ledger | SQL-first schema/migration files author the DB; runner applies + records. Current code is reusable inventory, but the contract remains doc-led. |
+| `scripts/schema_migrations.py` stays the executor / ledger | SQL-first schema/migration files author the DB; runner applies + records. Legacy code is reusable inventory, but the contract follows the cutover tree. |
 | No-mocks-for-PG rule in tests | Real Testcontainers PG everywhere; mocks are reserved for OpenSearch / Redis. |
 | Session-scoped two-cluster Testcontainers fixture | Apply schema once per session; reuse across tests. |
 | Function-scoped `BEGIN; … ROLLBACK;` for test isolation | Standard 2026 Testcontainers pattern. |
@@ -1089,7 +1090,7 @@ for `04 §2.4` validation; `serving_members` / `serving_cohorts` on
 
 | Decision | Trigger |
 |---|---|
-| asyncpg-conversion of `engine/db/scripts/schema_migrations.py` | A runtime path (rather than a CLI path) needs migrations. |
+| asyncpg-conversion of `scripts/schema_migrations.py` | A runtime path (rather than a CLI path) needs migrations. |
 | SQLAlchemy 2.x async adoption | Hard "no" today — would require a directional reversal of `research-distilled §3`. |
 | psycopg3 pipeline-mode adoption on FastAPI handlers | asyncpg latency proves insufficient on a measured hot path that pipelining could close. |
 | LISTEN/NOTIFY-driven actor enqueue (replace pg_cron polling) | `04` / `05` open items resolved. |
