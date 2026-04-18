@@ -1,7 +1,7 @@
 import type { AsyncDuckDB } from '@duckdb/duckdb-wasm'
 import { DuckDBDataProtocol } from '@duckdb/duckdb-wasm'
 
-import type { GraphBundle } from '@/features/graph/types'
+import type { GraphBundle } from "@solemd/graph"
 
 import { getAbsoluteUrl } from './queries'
 import { requireBundleTable } from './utils'

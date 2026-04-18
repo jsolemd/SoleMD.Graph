@@ -10,7 +10,7 @@ import {
   type WikiPipelineCallbacks,
 } from "@/features/wiki/lib/markdown-pipeline";
 import { preprocessWikilinks } from "@/features/wiki/lib/remark-wikilinks";
-import type { WikiBodyEntityMatch } from "@/lib/engine/wiki-types";
+import type { WikiBodyEntityMatch } from "@solemd/api-client/shared/wiki-types";
 import { WikiLink } from "./elements/WikiLink";
 import { PaperCitation } from "./elements/PaperCitation";
 import { Callout } from "./elements/Callout";

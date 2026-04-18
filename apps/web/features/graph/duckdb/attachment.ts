@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphBundle } from '@/features/graph/types'
+import type { GraphBundle } from "@solemd/graph"
 
 export type EnsureOptionalBundleTables = (requested: string[]) => Promise<void>
 

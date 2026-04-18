@@ -1,4 +1,4 @@
-import type { GraphMode } from '@/features/graph/types';
+import type { GraphMode } from "@/features/graph/config";
 
 /** Example queries per mode — 2 are randomly picked on each mode switch. */
 export const MODE_EXAMPLES: Record<GraphMode, string[]> = {

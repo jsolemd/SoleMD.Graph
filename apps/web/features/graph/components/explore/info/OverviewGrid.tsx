@@ -2,7 +2,7 @@
 
 import { Group, Stack, Text } from "@mantine/core";
 import { formatNumber } from "@/lib/helpers";
-import type { GraphInfoSummary } from "@/features/graph/types";
+import type { GraphInfoSummary } from "@solemd/graph";
 import {
   panelScaledPx,
   panelTextDimStyle,

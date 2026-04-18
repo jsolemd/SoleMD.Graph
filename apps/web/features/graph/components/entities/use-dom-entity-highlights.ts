@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { fetchGraphEntityMatches } from "@/features/graph/lib/entity-service";
-import type { GraphEntityTextMatch } from "@/features/graph/types/entity-service";
+import { fetchGraphEntityMatches } from "@solemd/api-client/client/entity-service";
+import type { GraphEntityTextMatch } from "@solemd/api-client/shared/graph-entity";
 import { useEntityHover } from "./use-entity-hover";
 
 /* ───────── constants ───────── */

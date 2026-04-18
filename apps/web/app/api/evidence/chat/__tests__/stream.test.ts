@@ -9,7 +9,7 @@ jest.mock('@/features/graph/lib/rag-chat', () => ({
   extractLatestUserText: jest.fn(() => null),
 }))
 
-jest.mock('@/lib/engine/graph-rag', () => ({
+jest.mock("@solemd/api-client/server/graph-rag", () => ({
   searchGraphEvidence: jest.fn(),
   toGraphRagErrorResponse: jest.fn(),
 }))

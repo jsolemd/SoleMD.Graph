@@ -6,12 +6,12 @@ import { useDebouncedValue } from "@mantine/hooks";
 import type {
   GraphBundleQueries,
   GraphSearchResult,
-  MapLayer,
-} from "@/features/graph/types";
+  GraphLayer,
+} from "@solemd/graph";
 
 interface UseSearchResultsArgs {
   queries: GraphBundleQueries;
-  activeLayer: MapLayer;
+  activeLayer: GraphLayer;
   field: string;
   query: string;
   disabled: boolean;

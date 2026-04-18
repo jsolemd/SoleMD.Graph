@@ -9,7 +9,7 @@ import {
   mergeInfoComparisonRows,
 } from '../comparison-layers'
 
-import type { GraphInfoSummary } from '@/features/graph/types'
+import type { GraphInfoSummary } from "@solemd/graph"
 
 // ── Helpers ─────────────────────────────────────────────────────────
 

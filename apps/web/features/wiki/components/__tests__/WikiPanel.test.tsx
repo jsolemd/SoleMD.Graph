@@ -25,7 +25,7 @@ beforeAll(() => {
 });
 
 // Mock wiki client boundary
-jest.mock("@/features/wiki/lib/wiki-client", () => ({
+jest.mock("@solemd/api-client/client/wiki-client", () => ({
   fetchWikiPageClient: jest.fn().mockResolvedValue(null),
   fetchWikiPageContextClient: jest.fn().mockResolvedValue(null),
   fetchWikiBacklinksClient: jest
@@ -208,7 +208,7 @@ describe("WikiPanel", () => {
   it("shows page view when route is page", async () => {
     useWikiStore.getState().navigateToPage("entities/melatonin");
 
-    const { fetchWikiPageClient } = require("@/features/wiki/lib/wiki-client");
+    const { fetchWikiPageClient } = require("@solemd/api-client/client/wiki-client");
     fetchWikiPageClient.mockResolvedValue({
       slug: "entities/melatonin",
       title: "Melatonin",
@@ -248,7 +248,7 @@ describe("WikiPanel", () => {
     const {
       fetchWikiPageClient,
       fetchWikiPageContextClient,
-    } = require("@/features/wiki/lib/wiki-client");
+    } = require("@solemd/api-client/client/wiki-client");
     fetchWikiPageClient.mockResolvedValue({
       slug: "entities/melatonin",
       title: "Melatonin",
@@ -338,7 +338,7 @@ describe("WikiPanel", () => {
     const {
       fetchWikiPageClient,
       fetchWikiPageContextClient,
-    } = require("@/features/wiki/lib/wiki-client");
+    } = require("@solemd/api-client/client/wiki-client");
     fetchWikiPageClient.mockResolvedValue({
       slug: "entities/melatonin",
       title: "Melatonin",

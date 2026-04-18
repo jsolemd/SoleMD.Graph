@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type {
   GraphBundle,
   GraphBundleLoadProgress,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { LottiePulseLoader } from "@/features/animations/lottie/LottiePulseLoader";
 import ConnectomeLoader from "@/features/animations/canvas/connectome-loader/ConnectomeLoader";
 import { panelSurfaceStyle } from "@/features/graph/components/panels/PanelShell";

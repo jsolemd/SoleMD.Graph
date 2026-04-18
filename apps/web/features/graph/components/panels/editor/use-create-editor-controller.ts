@@ -39,7 +39,7 @@ import {
   type ReferenceMentionMenuState,
   type ReferenceMentionSource,
 } from "./reference-mention-extension";
-import type { GraphEntityOverlayRef, GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphEntityOverlayRef, GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
 import { readEditorTextContext } from "./editor-text-context";
 import { useEditorEntityRuntime } from "./use-editor-entity-runtime";
 

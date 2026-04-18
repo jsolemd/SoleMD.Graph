@@ -3,7 +3,7 @@
 import type { Histogram } from "@cosmograph/ui";
 import type { HistogramBarData } from "@cosmograph/ui/modules/histogram";
 
-import type { GraphInfoHistogramResult } from "@/features/graph/types";
+import type { GraphInfoHistogramResult } from "@solemd/graph";
 
 type NativeHistogram = {
   _barsData: HistogramBarData[];

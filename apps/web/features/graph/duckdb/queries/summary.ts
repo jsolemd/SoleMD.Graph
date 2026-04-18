@@ -3,8 +3,8 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 import type {
   GraphInfoScope,
   GraphInfoSummary,
-  MapLayer,
-} from '@/features/graph/types'
+  GraphLayer,
+} from "@solemd/graph"
 
 import {
   escapeSqlLiteral,
@@ -18,7 +18,7 @@ import { queryRows } from './core'
 export async function queryInfoSummary(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     currentPointScopeSql: string | null
     datasetTotalCount?: number | null
@@ -210,7 +210,7 @@ export async function queryInfoSummary(
 export async function queryInfoBars(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     column: string
     maxItems: number
@@ -247,7 +247,7 @@ export async function queryInfoBars(
 export async function queryInfoBarsBatch(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     maxItems: number

@@ -10,7 +10,7 @@ import {
   type GraphAskChatErrorPayload,
   type GraphAskChatMessage,
 } from '@/features/graph/lib/rag-chat'
-import { searchGraphEvidence, toGraphRagErrorResponse } from '@/lib/engine/graph-rag'
+import { searchGraphEvidence, toGraphRagErrorResponse } from "@solemd/api-client/server/graph-rag"
 
 const GraphAskChatMessageSchema = z.object({
   id: z.string().optional(),

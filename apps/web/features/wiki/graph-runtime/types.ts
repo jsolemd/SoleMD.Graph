@@ -1,6 +1,6 @@
 import type { SimulationNodeDatum, SimulationLinkDatum } from "d3-force"
 import type { Graphics, Text as PixiText } from "pixi.js"
-import type { WikiGraphNode, WikiGraphEdge } from "@/lib/engine/wiki-types"
+import type { WikiGraphNode, WikiGraphEdge } from "@solemd/api-client/shared/wiki-types"
 
 // ---------------------------------------------------------------------------
 // Simulation node/link types (D3-force compatible)

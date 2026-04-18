@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { searchWiki } from "@/lib/engine/wiki";
+import { searchWiki } from "@solemd/api-client/server/wiki";
 import { toWikiErrorResponse } from "../_lib";
 
 export async function GET(request: NextRequest) {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { toGraphEntityErrorResponse } from "@/lib/engine/entities";
+import { toGraphEntityErrorResponse } from "@solemd/api-client/server/entities";
 
 export const ENTITY_ROUTE_MAX_BODY_BYTES = 64 * 1024;
 

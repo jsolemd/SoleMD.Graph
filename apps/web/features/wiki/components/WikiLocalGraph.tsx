@@ -8,7 +8,7 @@ import {
   toSimLink,
 } from "@/features/wiki/graph-runtime";
 import type { WikiGraphHandle, WikiGraphIntents } from "@/features/wiki/graph-runtime";
-import type { WikiGraphNode, WikiGraphEdge } from "@/lib/engine/wiki-types";
+import type { WikiGraphNode, WikiGraphEdge } from "@solemd/api-client/shared/wiki-types";
 
 interface WikiLocalGraphProps {
   slug: string;

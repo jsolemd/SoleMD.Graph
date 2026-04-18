@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { MapLayer } from '@/features/graph/types'
+import type { GraphLayer } from "@solemd/graph"
 
 import type { GraphCanvasSource } from './types'
 
@@ -25,7 +25,7 @@ export function getActiveCanvasViewNames(overlayRevision: number) {
 export function getCanvasPointCounts(
   basePointCount: number,
   overlayCount: number
-): Record<MapLayer, number> {
+): Record<GraphLayer, number> {
   return {
     corpus: Math.max(0, basePointCount + overlayCount),
   }
@@ -118,7 +118,7 @@ export async function registerActiveCanvasAliasViews(
 export function buildCanvasSource(args: {
   conn: AsyncDuckDBConnection
   db: import('@duckdb/duckdb-wasm').AsyncDuckDB
-  pointCounts: Record<MapLayer, number>
+  pointCounts: Record<GraphLayer, number>
   overlayCount: number
   overlayRevision: number
 }): GraphCanvasSource {

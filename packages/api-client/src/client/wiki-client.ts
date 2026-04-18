@@ -2,13 +2,13 @@ import {
   normalizeWikiPageBundleResponse,
   normalizeWikiPageContextResponse,
   normalizeWikiPageResponse,
-} from "@/lib/engine/wiki-normalize";
+} from "../shared/wiki-normalize";
 import {
   buildWikiPageBundleClientPath,
   buildWikiPageClientPath,
   buildWikiPageContextClientPath,
   encodeWikiSlug,
-} from "@/lib/engine/wiki-paths";
+} from "../shared/wiki-paths";
 import type {
   WikiBacklinksResponse,
   WikiGraphResponse,
@@ -16,7 +16,7 @@ import type {
   WikiPageContextResponse,
   WikiPageResponse,
   WikiSearchResponse,
-} from "@/lib/engine/wiki-types";
+} from "../shared/wiki-types";
 
 interface WikiErrorPayload {
   detail?: unknown;

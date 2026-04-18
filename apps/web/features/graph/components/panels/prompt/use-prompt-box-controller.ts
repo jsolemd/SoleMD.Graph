@@ -22,9 +22,9 @@ import { MODE_EXAMPLES, pickRandom } from "@/features/graph/lib/mode-examples";
 import type {
   GraphBundle,
   GraphBundleQueries,
-  GraphEntityOverlayRef,
   GraphPointRecord,
-} from "@/features/graph/types";
+} from "@solemd/graph";
+import type { GraphEntityOverlayRef } from "@solemd/api-client/shared/graph-entity";
 import { useTypewriter } from "@/features/graph/hooks/use-typewriter";
 import { getSelectionScopeToggleLabel, isSelectionScopeAvailable, isSelectionScopeEnabled } from "./selection-scope";
 import { useFocusedAvoidanceRects } from "./use-focused-avoidance-rects";
@@ -50,7 +50,7 @@ import {
 } from "./constants";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { getEntityWikiSlug } from "@/features/wiki/lib/entity-wiki-route";
-import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 import { resolveMobileBottomStack } from "@/features/graph/components/shell/use-mobile-bottom-stack";
 

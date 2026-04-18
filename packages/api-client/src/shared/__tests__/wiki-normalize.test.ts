@@ -1,4 +1,4 @@
-import { normalizeWikiPageResponse } from '@/lib/engine/wiki-normalize'
+import { normalizeWikiPageResponse } from "../wiki-normalize"
 
 describe('normalizeWikiPageResponse', () => {
   it('fills missing wiki page collections and uses conservative defaults for invalid legacy payloads', () => {

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { WikiGraphResponse, WikiPageResponse } from '@/lib/engine/wiki-types'
-import { fetchWikiGraphClient } from '@/features/wiki/lib/wiki-client'
+import type { WikiGraphResponse, WikiPageResponse } from "@solemd/api-client/shared/wiki-types"
+import { fetchWikiGraphClient } from "@solemd/api-client/client/wiki-client"
 import type { SemanticColorKey } from '@/features/wiki/graph-runtime/theme'
 
 // ---------------------------------------------------------------------------

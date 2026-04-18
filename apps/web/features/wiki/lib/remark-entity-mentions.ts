@@ -12,7 +12,7 @@
 import type { Root, PhrasingContent, Link } from 'mdast'
 import type { Plugin } from 'unified'
 import { visitTextNodes } from './visit-text'
-import type { WikiBodyEntityMatch } from '@/lib/engine/wiki-types'
+import type { WikiBodyEntityMatch } from "@solemd/api-client/shared/wiki-types"
 
 export interface RemarkEntityMentionsOptions {
   bodyEntityMatches: readonly WikiBodyEntityMatch[]

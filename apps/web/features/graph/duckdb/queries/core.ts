@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphQueryResult } from '@/features/graph/types'
+import type { GraphQueryResult } from "@solemd/graph"
 
 const READ_ONLY_QUERY_PREFIXES = new Set([
   'describe',

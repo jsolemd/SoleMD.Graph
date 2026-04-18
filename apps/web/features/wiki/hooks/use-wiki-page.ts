@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import type { WikiPageResponse } from '@/lib/engine/wiki-types'
-import { fetchWikiPageClient } from '@/features/wiki/lib/wiki-client'
+import type { WikiPageResponse } from "@solemd/api-client/shared/wiki-types"
+import { fetchWikiPageClient } from "@solemd/api-client/client/wiki-client"
 
 interface WikiPageState {
   page: WikiPageResponse | null

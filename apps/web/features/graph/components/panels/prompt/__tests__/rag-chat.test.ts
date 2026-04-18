@@ -1,4 +1,4 @@
-import type { GraphRagQueryResponsePayload } from "@/features/graph/types";
+import type { GraphRagQueryResponsePayload } from "@solemd/graph";
 import {
   extractLatestEvidenceResponse,
   extractLatestUserText,

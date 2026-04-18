@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleLoadProgress } from "@solemd/graph";
 import { GraphLoadingExperience } from "./GraphLoadingExperience";
 
 export function GraphBundleLoadingOverlay({

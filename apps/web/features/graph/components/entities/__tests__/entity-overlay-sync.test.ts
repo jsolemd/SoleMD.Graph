@@ -1,10 +1,10 @@
-import type { GraphBundleQueries } from '@/features/graph/types'
+import type { GraphBundleQueries } from "@solemd/graph"
 import { ENTITY_GRAPH_OVERLAY_PRODUCER } from '@/features/graph/lib/overlay-producers'
-import { fetchGraphEntityOverlay } from '@/features/graph/lib/entity-service'
+import { fetchGraphEntityOverlay } from "@solemd/api-client/client/entity-service"
 
 import { syncEntityOverlay } from '../entity-overlay-sync'
 
-jest.mock('@/features/graph/lib/entity-service', () => ({
+jest.mock("@solemd/api-client/client/entity-service", () => ({
   fetchGraphEntityOverlay: jest.fn(),
 }))
 

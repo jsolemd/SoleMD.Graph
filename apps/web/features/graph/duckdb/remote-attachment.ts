@@ -1,6 +1,6 @@
 'use client'
 
-import { resolveGraphReleaseId } from '@/features/graph/lib/graph-release'
+import { resolveGraphReleaseId } from '@solemd/graph'
 
 import type { GraphPaperAttachmentProvider } from './attachment'
 import { ATTACHED_UNIVERSE_POINTS_TABLE } from './views/universe'

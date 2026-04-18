@@ -3,7 +3,7 @@ import {
   sectionLabelStyle,
   panelTextStyle,
 } from "@/features/graph/components/panels/PanelShell";
-import type { WikiPageSummary } from "@/lib/engine/wiki-types";
+import type { WikiPageSummary } from "@solemd/api-client/shared/wiki-types";
 
 interface WikiBacklinksProps {
   backlinks: WikiPageSummary[];

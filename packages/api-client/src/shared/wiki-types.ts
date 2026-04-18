@@ -1,4 +1,4 @@
-/** Wire types matching engine/app/wiki/schemas.py */
+/** Shared wiki transport types for server and client API seams. */
 
 export interface WikiLinkedEntity {
   entity_type: string

@@ -1,7 +1,7 @@
 import type {
   GraphEntityRef,
   GraphEntityOverlayRef,
-} from "@/features/graph/types/entity-service";
+} from "@solemd/api-client/shared/graph-entity";
 
 const EMPTY_ENTITY_OVERLAY_REFS = Object.freeze(
   [],

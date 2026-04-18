@@ -9,7 +9,7 @@ import {
 } from "@mantine/core";
 import { getLayerConfig } from "@/features/graph/lib/layers";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import {
   PanelInlineLoader,
   PanelSearchField,

@@ -3,7 +3,7 @@ import type {
   ColorSchemeName,
   ColorTheme,
   PointColorStrategy,
-} from '@/features/graph/types'
+} from '@/features/graph/config'
 
 /**
  * Canonical graph render theme.

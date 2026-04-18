@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from "react";
 import { useEntityHover } from "@/features/graph/components/entities/use-entity-hover";
-import type { WikiBodyEntityMatch } from "@/lib/engine/wiki-types";
+import type { WikiBodyEntityMatch } from "@solemd/api-client/shared/wiki-types";
 import type { ReactNode } from "react";
 
 export interface EntityMentionProps {

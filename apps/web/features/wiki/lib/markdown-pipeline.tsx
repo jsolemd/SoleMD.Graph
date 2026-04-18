@@ -11,7 +11,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeSlug from 'rehype-slug'
 import type { PluggableList } from 'unified'
 
-import type { WikiBodyEntityMatch } from '@/lib/engine/wiki-types'
+import type { WikiBodyEntityMatch } from "@solemd/api-client/shared/wiki-types"
 import { remarkPmidCitations, type RemarkPmidCitationsOptions } from './remark-pmid-citations'
 import { remarkEntityMentions, type RemarkEntityMentionsOptions } from './remark-entity-mentions'
 import { remarkCallouts } from './remark-callouts'

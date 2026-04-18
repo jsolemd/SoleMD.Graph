@@ -5,10 +5,11 @@ import { Select, Switch, Stack, Text } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
-import type { DataColumnKey, MapLayer } from "@/features/graph/types";
+import type { GraphLayer } from "@solemd/graph";
+import type { DataColumnKey } from "@/features/graph/config";
 import { sectionLabelStyle, panelSelectStyles, panelSwitchStyles, PANEL_ACCENT, GatedSwitch } from "../../panels/PanelShell";
 
-export function LabelConfig({ activeLayer }: { activeLayer: MapLayer }) {
+export function LabelConfig({ activeLayer }: { activeLayer: GraphLayer }) {
   const layerColumns = useMemo(
     () => getRenderableColumnsForLayer(activeLayer),
     [activeLayer],

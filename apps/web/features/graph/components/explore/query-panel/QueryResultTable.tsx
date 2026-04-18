@@ -3,7 +3,7 @@
 import { Table, Text } from "@mantine/core";
 import { formatCellValue } from "@/features/graph/lib/helpers";
 import { panelScaledPx, panelTextDimStyle } from "../../panels/PanelShell";
-import type { GraphQueryResult } from "@/features/graph/types";
+import type { GraphQueryResult } from "@solemd/graph";
 
 export function QueryResultTable({ result }: { result: GraphQueryResult }) {
   if (result.columns.length === 0) {

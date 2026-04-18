@@ -18,7 +18,7 @@ import type {
   GraphBundleQueries,
   GraphNode,
   GraphRagQueryResponsePayload,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import {
   clearRagGraphOverlay,
   syncRagGraphSignals,

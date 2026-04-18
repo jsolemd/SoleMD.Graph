@@ -5,6 +5,15 @@ import {
   Cosmograph,
   type CosmographRef,
 } from "@cosmograph/react";
+import {
+  DEFAULT_INITIAL_CAMERA,
+  NATIVE_COSMOGRAPH_LABEL_THEME_CSS,
+  type CameraSnapshot,
+  loadCameraState,
+  resolveClusterLabelClassName,
+  saveCameraState,
+  useZoomLabels,
+} from "@solemd/graph/cosmograph";
 import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
 import {
   BUDGET_FOCUS_SOURCE_ID,
@@ -12,23 +21,12 @@ import {
   clearSelectionClause,
   createSelectionSource,
 } from "@/features/graph/lib/cosmograph-selection";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
 import { useCosmographConfig } from "./hooks/use-cosmograph-config";
-import { useZoomLabels } from "./hooks/use-zoom-labels";
 import { usePointsFiltered } from "./hooks/use-points-filtered";
 import { usePanGuard } from "./hooks/use-pan-guard";
-import {
-  NATIVE_COSMOGRAPH_LABEL_THEME_CSS,
-  resolveClusterLabelClassName,
-} from "./label-appearance";
 import { resolveGraphLabelMode } from "@/features/graph/lib/label-mode";
-import {
-  DEFAULT_INITIAL_CAMERA,
-  type CameraSnapshot,
-  loadCameraState,
-  saveCameraState,
-} from "./camera-persistence";
 
 interface ZoomTransformLike {
   constructor: new (k: number, x: number, y: number) => ZoomTransformLike;

@@ -3,7 +3,7 @@ import type {
   GraphRagErrorResponsePayload,
   GraphRagQueryRequestPayload,
   GraphRagQueryResponsePayload,
-} from "@/features/graph/types";
+} from "@solemd/api-client/shared/graph-rag";
 
 export const GRAPH_ASK_ENGINE_ERROR_DATA_PART = "data-engine-error";
 export const GRAPH_ASK_EVIDENCE_RESPONSE_DATA_PART = "data-evidence-response";

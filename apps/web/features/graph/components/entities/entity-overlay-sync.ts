@@ -1,13 +1,13 @@
-import { fetchGraphEntityOverlay } from "@/features/graph/lib/entity-service";
+import { fetchGraphEntityOverlay } from "@solemd/api-client/client/entity-service";
 import { ENTITY_GRAPH_OVERLAY_PRODUCER } from "@/features/graph/lib/overlay-producers";
 import type {
   GraphBundleQueries,
   OverlayProducerId,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import type {
   GraphEntityOverlayRef,
   GraphEntityOverlayResponsePayload,
-} from "@/features/graph/types/entity-service";
+} from "@solemd/api-client/shared/graph-entity";
 
 export interface EntityOverlaySyncResult {
   response: GraphEntityOverlayResponsePayload;

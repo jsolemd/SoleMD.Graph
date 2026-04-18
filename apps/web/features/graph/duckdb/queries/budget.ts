@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphVisibilityBudget, MapLayer } from '@/features/graph/types'
+import type { GraphVisibilityBudget, GraphLayer } from "@solemd/graph"
 
 import { hasCurrentPointScopeSql } from '@/features/graph/lib/selection-query-state'
 import { buildScopedLayerPredicate, getLayerTableName } from '../sql-helpers'
@@ -10,7 +10,7 @@ import { queryRows } from './core'
 export async function queryVisibilityBudget(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     selector: { id?: string; index?: number }
     scopeSql?: string | null
     scopeCoordinates?: [number, number, number, number] | null
@@ -213,7 +213,7 @@ export async function queryVisibilityBudget(
 export async function queryScopeCoordinates(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: 'current' | 'selected'
     currentPointScopeSql: string | null
   }

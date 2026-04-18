@@ -9,8 +9,12 @@ import {
   buildWikiPageEnginePath,
   buildWikiPagesEnginePath,
   buildWikiSearchEnginePath,
-} from './wiki-paths'
-import { normalizeWikiPageBundleResponse, normalizeWikiPageContextResponse, normalizeWikiPageResponse } from './wiki-normalize'
+} from '../shared/wiki-paths'
+import {
+  normalizeWikiPageBundleResponse,
+  normalizeWikiPageContextResponse,
+  normalizeWikiPageResponse,
+} from '../shared/wiki-normalize'
 import type {
   WikiPageResponse,
   WikiPageBundleResponse,
@@ -19,7 +23,7 @@ import type {
   WikiBacklinksResponse,
   WikiGraphResponse,
   WikiPageContextResponse,
-} from './wiki-types'
+} from '../shared/wiki-types'
 
 export type {
   WikiPageResponse,

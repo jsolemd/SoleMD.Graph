@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { DashboardState } from '../dashboard-store'
-import type { NumericColumnKey } from '@/features/graph/types'
+import type { NumericColumnKey } from '@/features/graph/config'
 
 function hasSameTimelineSelection(
   current?: [number, number],

@@ -7,7 +7,7 @@ import type {
   GraphBundleQueries,
   GraphPointRecord,
   GraphSelectionDetail,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 
 export function useDetailData({
   bundle,

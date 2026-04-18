@@ -2,7 +2,7 @@
 import type {
   GraphBundleQueries,
   GraphPointRecord,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import {
   resolveWikiOverlay,
   commitWikiOverlay,

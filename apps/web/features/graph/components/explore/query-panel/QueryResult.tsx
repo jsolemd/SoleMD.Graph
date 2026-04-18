@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Button, Code, Collapse, Group, Stack, Text } from "@mantine/core";
 import { ChevronDown } from "lucide-react";
 import { PANEL_ACCENT, panelScaledPx, panelTextDimStyle } from "../../panels/PanelShell";
-import type { GraphQueryResult } from "@/features/graph/types";
+import type { GraphQueryResult } from "@solemd/graph";
 import { QueryResultTable } from "./QueryResultTable";
 
 export function QueryResult({ result }: { result: GraphQueryResult }) {

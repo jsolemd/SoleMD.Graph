@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphInfoFacetRow, GraphInfoScope, MapLayer } from '@/features/graph/types'
+import type { GraphInfoFacetRow, GraphInfoScope, GraphLayer } from "@solemd/graph"
 
 import {
   buildScopedLayerPredicate,
@@ -16,7 +16,7 @@ function buildFacetCountsSql(args: {
   scopedPredicate: string | null
   columns: string[]
   limitPerColumn: number
-  layer: MapLayer
+  layer: GraphLayer
 }) {
   const { tableName, scopedPredicate, columns, limitPerColumn, layer } = args
   if (columns.length === 0) {
@@ -76,7 +76,7 @@ function buildFacetCountsSql(args: {
 export async function queryFacetSummary(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     column: string
     maxItems: number
@@ -179,7 +179,7 @@ export async function queryFacetSummary(
 export async function queryFacetSummaries(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     maxItems: number

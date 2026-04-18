@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useDashboardStore } from "@/features/graph/stores";
 import { crisp, smooth } from "@/lib/motion";
 import { useDragResize } from "@/features/graph/hooks/use-drag-resize";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import { useTableData } from "./use-table-data";
 import { DataTableToolbar } from "./DataTableToolbar";
 import { DataTableBody } from "./DataTableBody";

@@ -1,4 +1,4 @@
-import type { GraphBundleContract } from '@/features/graph/types'
+import type { GraphBundleContract } from "@solemd/graph"
 
 export const GRAPH_NAME = 'cosmograph'
 export const NODE_KIND = 'corpus'

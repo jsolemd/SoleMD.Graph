@@ -6,7 +6,7 @@ import { ActionIcon } from "@mantine/core";
 import { X } from "lucide-react";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { APP_CHROME_PX, densityCssPx } from "@/lib/density";
-import type { WikiGraphNode } from "@/lib/engine/wiki-types";
+import type { WikiGraphNode } from "@solemd/api-client/shared/wiki-types";
 
 const UNCATEGORIZED = "Other";
 

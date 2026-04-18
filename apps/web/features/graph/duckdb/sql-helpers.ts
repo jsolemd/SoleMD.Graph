@@ -4,7 +4,7 @@ import {
   hasCurrentPointScopeSql,
   normalizeCurrentPointScopeSql,
 } from '@/features/graph/lib/selection-query-state'
-import type { GraphInfoScope, MapLayer } from '@/features/graph/types'
+import type { GraphInfoScope, GraphLayer } from "@solemd/graph"
 
 import { validateTableName } from './utils'
 
@@ -23,17 +23,17 @@ export function buildCurrentViewPredicate(args: {
   return 'TRUE'
 }
 
-export function getLayerTableName(layer: MapLayer): string {
+export function getLayerTableName(layer: GraphLayer): string {
   void layer
   return 'current_points_web'
 }
 
-export function getLayerCanvasTableName(layer: MapLayer): string {
+export function getLayerCanvasTableName(layer: GraphLayer): string {
   void layer
   return 'current_points_canvas_web'
 }
 
-export function resolveInfoColumn(layer: MapLayer, column: string): string {
+export function resolveInfoColumn(layer: GraphLayer, column: string): string {
   if (!getColumnsForLayer(layer).some((meta) => meta.key === column)) {
     throw new Error(`Unsupported info column "${column}" for ${layer} layer`)
   }
@@ -42,7 +42,7 @@ export function resolveInfoColumn(layer: MapLayer, column: string): string {
   return safe
 }
 
-export function resolveSearchColumn(layer: MapLayer, column: string): string {
+export function resolveSearchColumn(layer: GraphLayer, column: string): string {
   if (!(column in getLayerConfig(layer).searchableFields)) {
     throw new Error(`Unsupported search column "${column}" for ${layer} layer`)
   }
@@ -50,13 +50,13 @@ export function resolveSearchColumn(layer: MapLayer, column: string): string {
   return validateTableName(column)
 }
 
-export function getSearchLabelExpression(layer: MapLayer): string {
+export function getSearchLabelExpression(layer: GraphLayer): string {
   void layer
   return "COALESCE(NULLIF(clusterLabel, ''), NULLIF(paperTitle, ''), NULLIF(citekey, ''), id)"
 }
 
 export function buildScopedLayerPredicate(
-  layer: MapLayer,
+  layer: GraphLayer,
   scope: GraphInfoScope,
   currentPointScopeSql: string | null
 ): string {
@@ -79,7 +79,7 @@ export function escapeSqlLiteral(value: string): string {
 }
 
 export function getSafeScopedContext(args: {
-  layer: MapLayer
+  layer: GraphLayer
   scope: GraphInfoScope
   currentPointScopeSql: string | null
 }) {

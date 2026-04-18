@@ -1,7 +1,7 @@
 # 15 — Repo Structure and Naming
 
 > **Status**: locked for deployable boundaries, top-level directory names, the
-> "apps vs packages" rule, the placement of wiki and browser-graph code, the
+> "apps vs packages" rule, the placement of wiki and graph runtime code, the
 > flat `apps/web` shape, and the cutover order for repository reshaping.
 > **Provisional**: exact workspace tooling files (`pnpm-workspace.yaml`,
 > `turbo.json`, CI matrix) until the first implementation PR lands.
@@ -46,8 +46,9 @@ be a top-level root in the cutover layout.
 These naming rules are locked for the cutover:
 
 - Use **runtime-role names** for deployables: `web`, `api`, `worker`.
-- Use **capability names** for shared packages: `ui`, `browser-graph`,
-  `api-client`.
+- Use **capability names** for shared packages: `ui`, `graph`, `api-client`.
+- Prefer single-word names when the scope is plain, such as `ui` and `graph`.
+  Use two words only when clarity would otherwise drop, such as `api-client`.
 - Do not use broad top-level buckets like `engine`, `shared`, `common`, or
   `core` as the primary repository shape. Those words are only acceptable as a
   suffix when the scope is already clear, such as `backend-core`.
@@ -71,8 +72,8 @@ apps/
 
 packages/
   ui/                  # Shared React UI primitives used by web + Storybook
-  browser-graph/       # DuckDB-WASM + bundle bootstrap + Cosmograph runtime
-  api-client/          # Typed clients used by web/tests/tools
+  graph/               # Shared graph runtime types, bundle helpers, DuckDB-WASM, Cosmograph
+  api-client/          # Typed API entrypoints and shared transport types
 
 db/
   schema/
@@ -154,18 +155,19 @@ This is the runtime that turns the serve-side projections into HTTP surfaces.
 This is where Dramatiq lives. If a workload is durable, retry-governed, or
 batch-oriented, it belongs here rather than in `apps/api`.
 
-### 3.4 `packages/browser-graph`
+### 3.4 `packages/graph`
 
-`packages/browser-graph` is the shared browser graph runtime package:
+`packages/graph` is the shared graph runtime package:
 
+- graph runtime types
+- bundle helpers and release resolution
 - DuckDB-WASM bootstrap
-- OPFS hot-table reuse
-- checksum-keyed bundle session management
+- OPFS hot-table/session reuse
 - active-view materialization
-- Cosmograph bridge
+- browser-only Cosmograph primitives
 
-This package owns the browser contract for graph bundles. It does **not** own
-server-side bundle publication.
+This package owns the client-side graph runtime contract. It does **not** own
+bundle publication or server-side asset serving.
 
 ### 3.5 `packages/ui`
 
@@ -174,8 +176,8 @@ web app and Storybook. It is not the place for domain feature orchestration.
 
 ### 3.6 `packages/api-client`
 
-`packages/api-client` holds typed clients, DTO helpers, and request wrappers
-used by the web app, tests, or developer tools.
+`packages/api-client` holds typed API entrypoints, shared transport types, and
+normalization helpers used by the web app, route handlers, tests, and tools.
 
 ### 3.7 Shared Python code
 
@@ -205,7 +207,7 @@ These placements are locked:
 - **Wiki frontend** lives in `apps/web/features/wiki`.
 - **Wiki sync/activation** lives in `apps/worker`.
 - **Wiki read/context HTTP surfaces** live in `apps/api`.
-- **Browser graph runtime** lives in `packages/browser-graph`.
+- **Browser graph runtime** lives in `packages/graph`.
 - **Graph bundle build/publish** lives in `apps/worker`.
 - **Graph bundle asset resolution / metadata HTTP surface** lives in `apps/api`.
 
@@ -215,7 +217,7 @@ This split matches the architecture already established in `05b`, `05c`, and
 - worker builds and activates
 - API serves request-time contracts
 - web renders product surfaces
-- browser-graph owns the client runtime contract
+- the graph package owns the client runtime contract
 
 ## 5. Deployment model
 
@@ -244,7 +246,7 @@ The cutover should treat the current layout like this:
 |---|---|
 | `app/` | `apps/web/app/` |
 | `components/` | `apps/web/components/` or `packages/ui/` depending on reuse |
-| `features/graph/` | `apps/web/features/graph/` and `packages/browser-graph/` for reusable runtime pieces |
+| `features/graph/` | `apps/web/features/graph/` and `packages/graph/` for reusable runtime pieces |
 | `features/wiki/` | `apps/web/features/wiki/` |
 | `lib/` | `apps/web/lib/` or `packages/api-client/` depending on ownership |
 | `engine/` | split into `apps/api/` and `apps/worker/`; shared Python extraction is deferred until reuse is proven |
@@ -276,7 +278,7 @@ The repository cutover should happen in this order:
    generating the new baseline/migration chain.
 5. **Extract only true shared browser code**
    Move DuckDB-WASM / bundle-bootstrap / Cosmograph runtime code into
-   `packages/browser-graph`; keep wiki feature orchestration in `apps/web`.
+   `packages/graph`; keep wiki feature orchestration in `apps/web`.
 6. **Re-wire deployment config**
    Point Vercel at `apps/web`; point backend container/runtime config at
    `apps/api` and `apps/worker`; keep packages as internal dependencies only.
@@ -296,7 +298,7 @@ These names are final for the cutover plan:
 - `apps/api`
 - `apps/worker`
 - `packages/ui`
-- `packages/browser-graph`
+- `packages/graph`
 - `packages/api-client`
 - `db/schema`
 - `db/migrations`

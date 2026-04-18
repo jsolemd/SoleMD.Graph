@@ -2,8 +2,8 @@ import type {
   GraphBundleQueries,
   GraphPaperAvailabilityResult,
   OverlayProducerId,
-  GraphRagQueryResponsePayload,
-} from "@/features/graph/types";
+} from "@solemd/graph";
+import type { GraphRagQueryResponsePayload } from "@solemd/api-client/shared/graph-rag";
 
 export interface RagGraphSyncResult {
   availability: GraphPaperAvailabilityResult;

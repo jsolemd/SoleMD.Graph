@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphPointRecord } from '@/features/graph/types'
+import type { GraphPointRecord } from "@solemd/graph"
 
 import { hasCurrentPointScopeSql } from '@/features/graph/lib/selection-query-state'
 import { buildSelectedViewPredicate } from '../sql-helpers'

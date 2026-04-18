@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback } from "react";
-import type { GraphPointRecord } from "@/features/graph/types";
+import type { GraphPointRecord } from "@solemd/graph";
+import { useGraphCamera } from "@solemd/graph/cosmograph";
 import { useGraphStore } from "@/features/graph/stores";
-import { useGraphCamera } from "./use-graph-camera";
 import { useGraphSelection } from "./use-graph-selection";
 
 interface FocusPointOptions {

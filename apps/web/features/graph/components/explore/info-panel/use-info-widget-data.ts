@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { NumericStatsRow } from "@/features/graph/duckdb/queries";
+import type { NumericStatsRow } from "@solemd/graph";
 import type {
   GraphBundleQueries,
   GraphInfoHistogramResult,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { shouldUseQuantileHistogram } from "@/features/graph/lib/histogram-strategy";
 import { DEFAULT_INFO_ROWS } from "@/features/graph/lib/info-widgets";
 import {

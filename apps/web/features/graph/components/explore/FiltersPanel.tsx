@@ -19,7 +19,7 @@ import type {
   GraphBundleQueries,
   GraphInfoFacetRow,
   GraphInfoHistogramResult,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { FilterPanelShell } from "./FilterPanelShell";
 import { queryWidgetThemeVars } from "./widget-theme";
 

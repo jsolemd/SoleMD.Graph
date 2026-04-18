@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { DashboardState } from '../dashboard-store'
-import type { GraphQueryResult } from '@/features/graph/types'
+import type { GraphQueryResult } from "@solemd/graph"
 
 export const DEFAULT_SQL_EXPLORER_QUERY = `SELECT
   cluster_id,

@@ -1,7 +1,7 @@
 import type {
   OverlayActivationResult,
   OverlayProducerId,
-} from '@/features/graph/types'
+} from "@solemd/graph"
 import {
   LEGACY_OVERLAY_PRODUCER,
   MANUAL_CLUSTER_NEIGHBORHOOD_OVERLAY_PRODUCER,

@@ -12,7 +12,7 @@ import {
 import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
 import { MODE_ORDER, getModeConfig } from "@/features/graph/lib/modes";
 import { bouncy } from "@/lib/motion";
-import type { GraphMode } from "@/features/graph/types";
+import type { GraphMode } from "@/features/graph/config";
 import { useShellVariantContext } from "../shell/ShellVariantContext";
 
 /** Icon mapping — keeps presentation separate from mode data. */

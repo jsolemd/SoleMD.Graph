@@ -1,4 +1,4 @@
-import type { GraphBundle } from '@/features/graph/types'
+import type { GraphBundle } from "./types";
 
 /** Resolve the canonical graph release ID from a bundle. */
 export function resolveGraphReleaseId(bundle: GraphBundle): string {

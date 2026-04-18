@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
 
 export interface EntityHoverShowArgs {
   entity: GraphEntityRef;

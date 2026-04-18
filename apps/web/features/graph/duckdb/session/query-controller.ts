@@ -5,7 +5,7 @@ import type {
   GraphSelectionDetail,
   GraphVisibilityBudget,
   PaperDocument,
-} from '@/features/graph/types'
+} from "@solemd/graph"
 
 import { maybeAttachGraphPaperRefs } from '../attachment'
 import { mapCluster, mapExemplar, mapPaper } from '../mappers'
@@ -50,10 +50,10 @@ export function createSessionQueryController({
     Promise<GraphVisibilityBudget | null>
   >()
   const scopeCoordinatesCache = createBoundedCache<string, Promise<number[] | null>>()
-  const tablePage1Cache = createBoundedCache<string, Promise<import('@/features/graph/types').GraphTablePageResult>>()
+  const tablePage1Cache = createBoundedCache<string, Promise<import("@solemd/graph").GraphTablePageResult>>()
   const tablePageInFlightCache = createBoundedCache<
     string,
-    Promise<import('@/features/graph/types').GraphTablePageResult>
+    Promise<import("@solemd/graph").GraphTablePageResult>
   >()
 
   const getDedupedTablePage = (

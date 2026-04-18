@@ -21,7 +21,7 @@ import type {
   WikiPagePaperResponse,
   WikiPageContextResponse,
   WikiPageResponse,
-} from "@/lib/engine/wiki-types";
+} from "@solemd/api-client/shared/wiki-types";
 import { formatNumber } from "@/lib/helpers";
 
 interface WikiPageHeaderProps {

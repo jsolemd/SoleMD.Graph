@@ -5,7 +5,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import type {
   GraphBundleQueries,
   GraphInfoHistogramResult,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { useInfoWidgetData } from "../use-info-widget-data";
 
 function createHistogram(

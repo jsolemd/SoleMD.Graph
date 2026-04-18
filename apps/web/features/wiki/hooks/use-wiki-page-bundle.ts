@@ -5,12 +5,12 @@ import type {
   WikiPageContextResponse,
   WikiPageResponse,
   WikiPageSummary,
-} from '@/lib/engine/wiki-types'
+} from "@solemd/api-client/shared/wiki-types"
 import {
   fetchWikiBacklinksClient,
   fetchWikiPageClient,
   fetchWikiPageContextClient,
-} from '@/features/wiki/lib/wiki-client'
+} from "@solemd/api-client/client/wiki-client"
 import { isEntityWikiSlug } from '@/features/wiki/lib/entity-wiki-route'
 
 interface WikiPageBundleState {

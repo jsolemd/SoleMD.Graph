@@ -11,7 +11,7 @@ import {
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { WikiPageResponse } from "@/lib/engine/wiki-types";
+import type { WikiPageResponse } from "@solemd/api-client/shared/wiki-types";
 
 interface EntityRAGCardProps {
   page: WikiPageResponse;

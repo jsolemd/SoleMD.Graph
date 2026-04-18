@@ -5,7 +5,8 @@ import { Select, Switch, Slider, Stack, Text } from "@mantine/core";
 import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
 import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
-import type { MapLayer, PointSizeStrategy, SizeColumnKey } from "@/features/graph/types";
+import type { GraphLayer } from "@solemd/graph";
+import type { PointSizeStrategy, SizeColumnKey } from "@/features/graph/config";
 import { sectionLabelStyle, panelSelectStyles, panelTextMutedStyle, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
 const SIZE_STRATEGY_OPTIONS = [
@@ -14,7 +15,7 @@ const SIZE_STRATEGY_OPTIONS = [
   { value: "single", label: "Single (uniform)" },
 ];
 
-export function SizeConfig({ activeLayer }: { activeLayer: MapLayer }) {
+export function SizeConfig({ activeLayer }: { activeLayer: GraphLayer }) {
   const layerColumns = useMemo(
     () => getRenderableColumnsForLayer(activeLayer),
     [activeLayer],

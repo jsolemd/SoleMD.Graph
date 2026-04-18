@@ -27,6 +27,18 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@solemd/api-client": [
+        "../../packages/api-client/src/index.ts"
+      ],
+      "@solemd/api-client/*": [
+        "../../packages/api-client/src/*"
+      ],
+      "@solemd/graph": [
+        "../../packages/graph/src/index.ts"
+      ],
+      "@solemd/graph/*": [
+        "../../packages/graph/src/*"
       ]
     }
   },

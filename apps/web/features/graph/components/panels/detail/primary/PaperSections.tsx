@@ -1,7 +1,7 @@
 "use client";
 
 import { Group, Text } from "@mantine/core";
-import type { GraphPaperDetail, PaperDocument } from "@/features/graph/types";
+import type { GraphPaperDetail, PaperDocument } from "@solemd/graph";
 import {
   panelAccentCardClassName,
   panelAccentCardStyle,

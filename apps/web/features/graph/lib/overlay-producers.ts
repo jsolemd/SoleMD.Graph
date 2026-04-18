@@ -1,4 +1,4 @@
-import type { OverlayProducerId } from "@/features/graph/types";
+import type { OverlayProducerId } from "@solemd/graph";
 
 export const MANUAL_CLUSTER_NEIGHBORHOOD_OVERLAY_PRODUCER =
   "manual:cluster-neighborhood" satisfies OverlayProducerId;

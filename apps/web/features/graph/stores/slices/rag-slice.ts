@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { DashboardState } from '../dashboard-store'
-import type { GraphRagQueryResponsePayload } from '@/features/graph/types'
+import type { GraphRagQueryResponsePayload } from "@solemd/api-client/shared/graph-rag"
 import type {
   RagGraphAvailabilitySummary,
   RagResponseSession,

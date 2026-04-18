@@ -1,15 +1,15 @@
 import type { StateCreator } from 'zustand'
-import type { GraphVisibilityBudget, MapLayer } from '@/features/graph/types'
+import type { GraphVisibilityBudget, GraphLayer } from "@solemd/graph"
 import type { DashboardState } from '../dashboard-store'
 
 export interface VisibilityFocus extends GraphVisibilityBudget {
-  layer: MapLayer
+  layer: GraphLayer
 }
 
 export interface VisibilitySlice {
   visibilityFocus: VisibilityFocus | null
   setVisibilityFocus: (focus: VisibilityFocus | null) => void
-  applyVisibilityBudget: (layer: MapLayer, budget: GraphVisibilityBudget) => void
+  applyVisibilityBudget: (layer: GraphLayer, budget: GraphVisibilityBudget) => void
   clearVisibilityFocus: () => void
 }
 

@@ -1,4 +1,4 @@
-import type { GraphEntityRef, GraphEntityAlias } from "@/features/graph/types/entity-service";
+import type { GraphEntityRef, GraphEntityAlias } from "@solemd/api-client/shared/graph-entity";
 
 export interface EntityHoverCardModel {
   x: number

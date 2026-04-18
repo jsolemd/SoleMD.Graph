@@ -12,7 +12,7 @@ import { APP_CHROME_PX } from "@/lib/density";
 import type {
   GraphBundle,
   GraphBundleQueries,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { PanelBody, PanelDivider, PanelHeaderActions, PanelIconAction, PanelShell } from "./PanelShell";
 import {
   buildPaperNoteMarkdown,

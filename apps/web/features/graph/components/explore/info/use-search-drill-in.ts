@@ -8,7 +8,7 @@ import { useDashboardStore } from "@/features/graph/stores";
 import type {
   GraphBundleQueries,
   GraphSearchResult,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 
 export function useSearchDrillIn({ queries }: { queries: GraphBundleQueries }) {
   const activeLayer = useDashboardStore((s) => s.activeLayer);

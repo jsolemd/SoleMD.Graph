@@ -58,7 +58,7 @@ jest.mock("@/features/wiki/lib/wiki-graph-sync", () => ({
 }));
 
 import { useWikiGraphSync } from "../use-wiki-graph-sync";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 
 function createMockQueries(): GraphBundleQueries {
   return {

@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphBundle, MapLayer } from '@/features/graph/types'
+import type { GraphBundle, GraphLayer } from "@solemd/graph"
 
 import { validateTableName, requireBundleTable } from '../utils'
 
@@ -26,7 +26,7 @@ import {
 } from './universe'
 
 export interface SessionViewState {
-  availableLayers: MapLayer[]
+  availableLayers: GraphLayer[]
   attachedTableSet: Set<string>
   basePointCount: number
   buildPointCanvasProjectionSql: (sourceTable: string, indexSql: string) => string
@@ -101,7 +101,7 @@ export async function registerInitialSessionViews(
     registerClusterViews(conn, validateTableName(BASE_CLUSTER_CANONICAL_SOURCE_TABLE))
   )
 
-  const availableLayers: MapLayer[] = ['corpus']
+  const availableLayers: GraphLayer[] = ['corpus']
 
   return {
     availableLayers,

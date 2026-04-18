@@ -15,7 +15,7 @@ import {
   type SemanticColorKey,
 } from "@/features/wiki/graph-runtime/theme";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
-import type { WikiGraphResponse } from "@/lib/engine/wiki-types";
+import type { WikiGraphResponse } from "@solemd/api-client/shared/wiki-types";
 
 interface WikiGraphLegendProps {
   graphData: WikiGraphResponse;

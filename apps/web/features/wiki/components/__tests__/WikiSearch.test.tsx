@@ -7,7 +7,7 @@ import { MantineProvider } from "@mantine/core";
 
 // Mock wiki client
 const mockSearchWikiPagesClient = jest.fn().mockResolvedValue({ hits: [], total: 0 });
-jest.mock("@/features/wiki/lib/wiki-client", () => ({
+jest.mock("@solemd/api-client/client/wiki-client", () => ({
   searchWikiPagesClient: (...args: unknown[]) => mockSearchWikiPagesClient(...args),
 }));
 

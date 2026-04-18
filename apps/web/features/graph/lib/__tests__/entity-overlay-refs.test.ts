@@ -1,7 +1,7 @@
 import type {
   GraphEntityOverlayRef,
   GraphEntityRef,
-} from "@/features/graph/types/entity-service";
+} from "@solemd/api-client/shared/graph-entity";
 
 import {
   areEntityOverlayRefsEqual,

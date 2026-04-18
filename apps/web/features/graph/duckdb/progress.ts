@@ -1,4 +1,4 @@
-import type { GraphBundle, GraphBundleLoadProgress } from '@/features/graph/types'
+import type { GraphBundle, GraphBundleLoadProgress } from "@solemd/graph"
 
 import { createGraphBundleSession } from './session'
 import type { GraphBundleSession } from './types'

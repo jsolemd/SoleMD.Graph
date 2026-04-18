@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge, Group, Stack, Text } from "@mantine/core";
-import type { ClusterExemplar, ClusterInfo } from "@/features/graph/types";
+import type { ClusterExemplar, ClusterInfo } from "@solemd/graph";
 import { KV, panelTextDimStyle, panelTextStyle } from "../ui";
 
 export function ClusterContent({ cluster }: { cluster: ClusterInfo | null }) {

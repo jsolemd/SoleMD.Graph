@@ -1,6 +1,6 @@
 import { useWikiStore } from "../wiki-store";
 
-jest.mock("@/features/wiki/lib/wiki-client", () => ({
+jest.mock("@solemd/api-client/client/wiki-client", () => ({
   fetchWikiGraphClient: jest.fn(),
 }));
 
@@ -19,7 +19,7 @@ describe("wiki-store graph fetch state", () => {
   });
 
   it("stores an empty graph as successful data", async () => {
-    const { fetchWikiGraphClient } = jest.requireMock("@/features/wiki/lib/wiki-client") as {
+    const { fetchWikiGraphClient } = jest.requireMock("@solemd/api-client/client/wiki-client") as {
       fetchWikiGraphClient: jest.Mock;
     };
     fetchWikiGraphClient.mockResolvedValue({ nodes: [], edges: [], signature: "empty" });
@@ -36,7 +36,7 @@ describe("wiki-store graph fetch state", () => {
   });
 
   it("preserves the real error when graph fetch fails", async () => {
-    const { fetchWikiGraphClient } = jest.requireMock("@/features/wiki/lib/wiki-client") as {
+    const { fetchWikiGraphClient } = jest.requireMock("@solemd/api-client/client/wiki-client") as {
       fetchWikiGraphClient: jest.Mock;
     };
     fetchWikiGraphClient.mockRejectedValue(

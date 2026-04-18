@@ -1,7 +1,7 @@
 import type {
   GraphInfoHistogramResult,
   GraphInfoSummary,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 
 export interface InfoComparisonState {
   hasSelection: boolean;

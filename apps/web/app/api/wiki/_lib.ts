@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { EngineApiError } from "@/lib/engine/client";
+import { EngineApiError } from "@solemd/api-client/server/client";
 
 export type WikiSlugRouteContext = {
   params: Promise<{

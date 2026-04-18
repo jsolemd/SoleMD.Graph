@@ -1,7 +1,7 @@
 import type {
   GraphEntityAlias,
   GraphEntityRef,
-} from "@/features/graph/types/entity-service";
+} from "@solemd/api-client/shared/graph-entity";
 
 export interface GraphLoadingConstellationNode {
   id: string;

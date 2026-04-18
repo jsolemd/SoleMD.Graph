@@ -22,9 +22,9 @@ import type {
   GraphBundle,
   GraphBundleQueries,
   GraphPointRecord,
-  GraphRagQueryResponsePayload,
   OverlayProducerId,
-} from "@/features/graph/types";
+} from "@solemd/graph";
+import type { GraphRagQueryResponsePayload } from "@solemd/api-client/shared/graph-rag";
 import type { EvidenceAssistRequest } from "./evidence-assist";
 import { resolvePromptScopeRequest } from "./prompt-scope-request";
 import {

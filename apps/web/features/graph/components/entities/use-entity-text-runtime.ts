@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchGraphEntityMatches,
-} from "@/features/graph/lib/entity-service";
+} from "@solemd/api-client/client/entity-service";
 import type {
   GraphEntityTextMatch,
-} from "@/features/graph/types/entity-service";
+} from "@solemd/api-client/shared/graph-entity";
 import {
   recordMatchAbort,
   recordMatchCacheHit,

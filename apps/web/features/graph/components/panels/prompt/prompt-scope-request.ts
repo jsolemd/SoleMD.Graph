@@ -2,7 +2,7 @@ import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-st
 import type {
   GraphBundleQueries,
   GraphPointRecord,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 
 export interface PromptScopeRequest {
   selectionGraphPaperRefs: string[] | null;

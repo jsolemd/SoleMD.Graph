@@ -13,12 +13,12 @@ import {
   isVisibilitySelectionSourceId,
 } from "@/features/graph/lib/cosmograph-selection";
 import { isSelectedPointBaselineSelectionSourceId } from "@/features/graph/lib/overlay-producers";
-import type { GraphBundleQueries, GraphVisibilityBudget, MapLayer } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphVisibilityBudget, GraphLayer } from "@solemd/graph";
 import type { VisibilityFocus } from "@/features/graph/stores/slices/visibility-slice";
 
 export function usePointsFiltered(deps: {
   cosmographRef: RefObject<CosmographRef | undefined>;
-  activeLayer: MapLayer;
+  activeLayer: GraphLayer;
   selectionLocked: boolean;
   hasSelection: boolean;
   visibilityFocus: VisibilityFocus | null;
@@ -27,7 +27,7 @@ export function usePointsFiltered(deps: {
   setSelectedPointCount: (count: number) => void;
   setActiveSelectionSourceId: (id: string | null) => void;
   clearVisibilityFocus: () => void;
-  applyVisibilityBudget: (layer: MapLayer, budget: GraphVisibilityBudget) => void;
+  applyVisibilityBudget: (layer: GraphLayer, budget: GraphVisibilityBudget) => void;
   queries: GraphBundleQueries;
 }) {
   const visibilityBudgetRequestId = useRef(0);

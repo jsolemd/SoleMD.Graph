@@ -4,7 +4,7 @@
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MantineProvider } from "@mantine/core";
-import type { GraphRagQueryResponsePayload } from "@/features/graph/types";
+import type { GraphRagQueryResponsePayload } from "@solemd/graph";
 import { useDashboardStore } from "@/features/graph/stores";
 
 // Mock framer-motion (PanelShell uses motion.div)

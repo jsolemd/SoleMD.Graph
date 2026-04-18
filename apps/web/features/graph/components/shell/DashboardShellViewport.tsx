@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useRef, type ReactNode } from "react";
+import { resolveGraphReleaseId } from "@solemd/graph";
 import { GraphShell, useGraphSelection } from "@/features/graph/cosmograph";
 import { EntityHoverCardProvider } from "@/features/graph/components/entities/EntityHoverCardProvider";
 import { syncEntityOverlay } from "@/features/graph/components/entities/entity-overlay-sync";
 import { commitSelectionState } from "@/features/graph/lib/graph-selection-state";
-import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
 import { ENTITY_OVERLAY_SELECTION_SOURCE_ID } from "@/features/graph/lib/overlay-producers";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphEntityRef } from "@/features/graph/types/entity-service";
-import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
+import type { GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
+import type { GraphBundle, GraphBundleQueries } from "@solemd/graph";
 import { getEntityWikiSlug } from "@/features/wiki/lib/entity-wiki-route";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { ModeColorSync } from "./ModeColorSync";

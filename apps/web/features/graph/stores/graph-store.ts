@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { GraphMode, GraphPointRecord } from '@/features/graph/types'
+import type { GraphPointRecord } from '@solemd/graph'
+import type { GraphMode } from '@/features/graph/config'
 
 export type AnimationPhase = 'idle' | 'repositioning' | 'focusing'
 

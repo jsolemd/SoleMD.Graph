@@ -5,7 +5,7 @@ import type {
   GraphPaperDetail,
   PaperAuthor,
   PaperDocument,
-} from '@/features/graph/types'
+} from "@solemd/graph"
 
 export interface GraphClusterDetailRow {
   candidate_count: number | null

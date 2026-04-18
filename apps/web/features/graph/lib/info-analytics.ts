@@ -1,7 +1,7 @@
-import type { GraphInfoHistogramBin } from "@/features/graph/types";
+import type { GraphInfoHistogramBin } from "@solemd/graph";
 import type { InfoComparisonFacetRow, InfoHistogramComparison } from "@/features/graph/components/explore/info/comparison-layers";
 import type { NumericStatsComparison } from "@/features/graph/components/explore/info-panel/use-info-widget-data";
-import type { NumericStatsRow } from "@/features/graph/duckdb/queries";
+import type { NumericStatsRow } from "@solemd/graph";
 
 // ── Individual metric results ────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { createUIMessageStream } from 'ai'
-import { searchGraphEvidence } from '../../../../lib/engine/graph-rag'
+import { searchGraphEvidence } from '@solemd/api-client/server/graph-rag'
 import {
   createGraphAskMessageStream,
   parseGraphAskChatRequest,
@@ -10,7 +10,7 @@ jest.mock('ai', () => ({
   isTextUIPart: (part: { type?: string }) => part.type === 'text',
 }))
 
-jest.mock('../../../../lib/engine/graph-rag', () => ({
+jest.mock('@solemd/api-client/server/graph-rag', () => ({
   searchGraphEvidence: jest.fn(),
   toGraphRagErrorResponse: jest.fn(() => ({
     error_code: 'engine_request_failed',

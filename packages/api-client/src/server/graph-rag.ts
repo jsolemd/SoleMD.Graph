@@ -12,7 +12,7 @@ import type {
   GraphRagQueryRequestPayload,
   GraphRagQueryResponsePayload,
   GraphRagResult,
-} from '@/features/graph/types'
+} from '../shared/graph-rag'
 import { EngineApiError } from './client'
 import {
   searchEvidence,

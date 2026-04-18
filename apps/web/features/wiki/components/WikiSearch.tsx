@@ -8,8 +8,8 @@ import {
   panelTextStyle,
   panelTextMutedStyle,
 } from "@/features/graph/components/panels/PanelShell";
-import type { WikiSearchHitResponse } from "@/lib/engine/wiki-types";
-import { searchWikiPagesClient } from "@/features/wiki/lib/wiki-client";
+import type { WikiSearchHitResponse } from "@solemd/api-client/shared/wiki-types";
+import { searchWikiPagesClient } from "@solemd/api-client/client/wiki-client";
 
 interface WikiSearchProps {
   onNavigate: (slug: string) => void;

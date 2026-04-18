@@ -14,7 +14,7 @@ import type {
   GraphBundle,
   GraphBundleLoadProgress,
   GraphBundleQueries,
-} from '@/features/graph/types'
+} from "@solemd/graph"
 
 interface ResolvedGraphBundleState {
   bundleChecksum: string | null

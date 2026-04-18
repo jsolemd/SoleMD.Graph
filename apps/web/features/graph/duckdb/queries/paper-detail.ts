@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { PaperDocument } from '@/features/graph/types'
+import type { PaperDocument } from "@solemd/graph"
 
 import {
   mapPaperDocument,

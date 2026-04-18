@@ -9,7 +9,7 @@ import {
   clearSelectionClause,
   getSelectionValueForSource,
 } from "@/features/graph/lib/cosmograph-selection";
-import type { GraphBundleQueries, GraphInfoFacetRow } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphInfoFacetRow } from "@solemd/graph";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
 import { toFacetRowsFromBarCounts } from "./facet-rows";

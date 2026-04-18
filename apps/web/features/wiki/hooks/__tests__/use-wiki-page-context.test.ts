@@ -3,10 +3,10 @@
  */
 import { renderHook, waitFor } from "@testing-library/react";
 
-import { fetchWikiPageContextClient } from "@/features/wiki/lib/wiki-client";
+import { fetchWikiPageContextClient } from "@solemd/api-client/client/wiki-client";
 import { useWikiPageContext } from "../use-wiki-page-context";
 
-jest.mock("@/features/wiki/lib/wiki-client", () => ({
+jest.mock("@solemd/api-client/client/wiki-client", () => ({
   fetchWikiPageContextClient: jest.fn(),
 }));
 

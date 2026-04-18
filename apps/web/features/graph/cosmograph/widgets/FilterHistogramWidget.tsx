@@ -9,7 +9,8 @@ import {
   clearSelectionClause,
   getSelectionValueForSource,
 } from "@/features/graph/lib/cosmograph-selection";
-import type { GraphBundleQueries, GraphInfoHistogramResult } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphInfoHistogramResult } from "@solemd/graph";
+import { normalizeRange, rangesEqual } from "@solemd/graph/cosmograph";
 import { formatNumber } from "@/lib/helpers";
 import { panelTextDimStyle } from "@/features/graph/components/panels/PanelShell";
 import {
@@ -25,7 +26,6 @@ import {
 } from "./dataset-cache";
 import { initCrossfilterClient } from "./init-crossfilter-client";
 import { useWidgetSelectors } from "./use-widget-selectors";
-import { normalizeRange, rangesEqual } from "./widget-range-utils";
 
 const YEAR_LIKE_COLUMNS = new Set(["year", "pageNumber"]);
 const FILTER_HISTOGRAM_HEIGHT = 72;

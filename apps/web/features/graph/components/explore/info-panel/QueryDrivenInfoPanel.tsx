@@ -6,7 +6,7 @@ import { PANEL_DOCK_WIDTH_PX } from "@/lib/density";
 import { getGraphClusterColor } from "@/features/graph/lib/colors";
 import { useSelectionQueryState } from "@/features/graph/hooks/use-selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphBundleQueries, GraphInfoSummary } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphInfoSummary } from "@solemd/graph";
 import { useShallow } from "zustand/react/shallow";
 import { PanelBody, PanelDivider, PanelInlineLoader, PanelShell, panelTextDimStyle } from "../../panels/PanelShell";
 import {

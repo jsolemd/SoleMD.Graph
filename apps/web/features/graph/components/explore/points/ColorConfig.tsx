@@ -7,7 +7,8 @@ import { useShallow } from "zustand/react/shallow";
 import { useDashboardStore } from "@/features/graph/stores";
 import { getRenderableColumnsForLayer } from "@/features/graph/lib/columns";
 import { COLOR_SCHEME_OPTIONS, getGraphPaletteColors } from "@/features/graph/lib/colors";
-import type { ColorSchemeName, DataColumnKey, MapLayer, PointColorStrategy } from "@/features/graph/types";
+import type { GraphLayer } from "@solemd/graph";
+import type { ColorSchemeName, DataColumnKey, PointColorStrategy } from "@/features/graph/config";
 import { sectionLabelStyle, panelSelectStyles, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
 const COLOR_STRATEGY_OPTIONS = [
@@ -56,7 +57,7 @@ function renderSchemeOption({ option }: { option: ComboboxItem; checked?: boolea
   return <SchemeOptionContent option={option} />;
 }
 
-export function ColorConfig({ activeLayer }: { activeLayer: MapLayer }) {
+export function ColorConfig({ activeLayer }: { activeLayer: GraphLayer }) {
   const layerColumns = useMemo(
     () => getRenderableColumnsForLayer(activeLayer),
     [activeLayer],

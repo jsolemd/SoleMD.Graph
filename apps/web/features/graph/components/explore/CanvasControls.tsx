@@ -13,7 +13,7 @@ import {
 import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { SelectionToolbar, type SelectionToolbarHandle } from "@/features/graph/cosmograph";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import { graphControlBtnStyles } from "../panels/PanelShell";
 import { pop } from "@/lib/motion";
 import { useShellVariantContext } from "../shell/ShellVariantContext";

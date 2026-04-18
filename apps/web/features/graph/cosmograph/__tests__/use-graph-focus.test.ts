@@ -14,6 +14,19 @@ jest.mock("@cosmograph/react", () => ({
   useCosmograph: () => ({ cosmograph: mockCosmograph }),
 }));
 
+jest.mock("../hooks/use-graph-selection", () => ({
+  useGraphSelection: () => {
+    const { useGraphStore } = require("@/features/graph/stores");
+    return {
+      selectPoint: mockCosmograph.selectPoint,
+      setFocusedPoint: (index: number) => {
+        mockCosmograph.setFocusedPoint(index);
+        useGraphStore.setState({ focusedPointIndex: index });
+      },
+    };
+  },
+}));
+
 import { useGraphFocus } from "../hooks/use-graph-focus";
 
 beforeEach(() => {

@@ -12,12 +12,12 @@ import type {
   ColorSchemeName,
   DataColumnKey,
   FilterableColumnKey,
-  MapLayer,
   NumericColumnKey,
   PointColorStrategy,
   PointSizeStrategy,
   SizeColumnKey,
-} from '@/features/graph/types'
+} from '@/features/graph/config'
+import type { GraphLayer } from '@solemd/graph'
 
 export type TableView = 'selection' | 'dataset'
 
@@ -32,15 +32,15 @@ const CORPUS_FILTER_COLUMNS: Array<{ column: FilterableColumnKey; type: 'numeric
   { column: 'semanticGroups', type: 'categorical' },
 ]
 
-function getDefaultFiltersForLayer(layer: MapLayer) {
+function getDefaultFiltersForLayer(layer: GraphLayer) {
   void layer
   return CORPUS_FILTER_COLUMNS
 }
 
 export interface ConfigSlice {
   // Layer
-  activeLayer: MapLayer
-  availableLayers: MapLayer[]
+  activeLayer: GraphLayer
+  availableLayers: GraphLayer[]
 
   // Config: Points
   pointColorColumn: DataColumnKey | 'hexColor'
@@ -103,8 +103,8 @@ export interface ConfigSlice {
   setShowHoveredPointLabel: (show: boolean) => void
   setHoverLabelAlwaysOn: (on: boolean) => void
   setRenderHoveredPointRing: (show: boolean) => void
-  setActiveLayer: (layer: MapLayer) => void
-  setAvailableLayers: (layers: MapLayer[]) => void
+  setActiveLayer: (layer: GraphLayer) => void
+  setAvailableLayers: (layers: GraphLayer[]) => void
 }
 
 export const createConfigSlice: StateCreator<DashboardState, [], [], ConfigSlice> = (set) => {

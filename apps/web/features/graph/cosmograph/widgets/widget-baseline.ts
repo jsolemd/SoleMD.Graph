@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphInfoScope } from "@/features/graph/types";
+import type { GraphInfoScope } from "@solemd/graph";
 
 export function resolveWidgetBaselineScope(args: {
   selectionLocked: boolean;

@@ -14,9 +14,9 @@ import {
   clearOwnedSelectionState,
   commitSelectionState,
 } from "@/features/graph/lib/graph-selection-state";
-import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
-import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
-import type { GraphEntityOverlayRef } from "@/features/graph/types/entity-service";
+import { resolveGraphReleaseId } from "@solemd/graph";
+import type { GraphBundle, GraphBundleQueries } from "@solemd/graph";
+import type { GraphEntityOverlayRef } from "@solemd/api-client/shared/graph-entity";
 import { clearEntityOverlay, syncEntityOverlay } from "./entity-overlay-sync";
 
 interface UseEntityOverlaySyncArgs {

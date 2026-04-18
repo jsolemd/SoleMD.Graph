@@ -3,7 +3,7 @@ import type {
   GraphPaperAvailabilityResult,
   GraphPointRecord,
   OverlayProducerId,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 
 export interface WikiOverlayResolution {
   availability: GraphPaperAvailabilityResult;

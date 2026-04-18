@@ -8,7 +8,7 @@ import type {
   GraphEntityMatchResponsePayload,
   GraphEntityOverlayRequestPayload,
   GraphEntityOverlayResponsePayload,
-} from '@/features/graph/types/entity-service'
+} from '../shared/graph-entity'
 
 export class GraphEntityRequestError extends Error {
   readonly payload: GraphEntityErrorResponsePayload

@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { PANEL_DOCK_WIDTH_PX } from "@/lib/density";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import { PanelBody, PanelShell } from "../../panels/PanelShell";
 import { SqlExplorerContent } from "./SqlExplorerContent";
 

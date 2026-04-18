@@ -4,7 +4,7 @@ import { Badge, Group, Text } from "@mantine/core";
 import type {
   GraphPaperDetail,
   GraphPointRecord,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { badgeAccentStyles, badgeOutlineStyles, panelScaledPx } from "@/features/graph/components/panels/PanelShell";
 import { panelTextDimStyle, panelTextStyle } from "../ui";
 

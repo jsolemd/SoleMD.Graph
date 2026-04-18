@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchWikiBacklinks } from "@/lib/engine/wiki";
+import { fetchWikiBacklinks } from "@solemd/api-client/server/wiki";
 import { resolveWikiSlug, toWikiErrorResponse } from "../../_lib";
 
 type RouteContext = {

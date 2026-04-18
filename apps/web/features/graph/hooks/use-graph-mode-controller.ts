@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { getModeConfig } from "@/features/graph/lib/modes";
-import type { GraphMode } from "@/features/graph/types";
+import type { GraphMode } from "@/features/graph/config";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 
 export function useGraphModeController() {

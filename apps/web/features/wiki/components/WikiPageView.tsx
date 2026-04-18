@@ -7,7 +7,7 @@ import {
   panelTextMutedStyle,
   panelTextStyle,
 } from "@/features/graph/components/panels/PanelShell";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import { WikiBacklinks } from "@/features/wiki/components/WikiBacklinks";
 import { WikiLocalGraph } from "@/features/wiki/components/WikiLocalGraph";
 import { WikiMarkdownRenderer } from "@/features/wiki/components/WikiMarkdownRenderer";

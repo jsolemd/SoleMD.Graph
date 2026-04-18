@@ -2,7 +2,7 @@ import type {
   GraphBundleQueries,
   GraphRagQueryResponsePayload,
   PaperNode,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { RAG_ASK_OVERLAY_PRODUCER } from "@/features/graph/lib/overlay-producers";
 import {
   clearRagGraphOverlay,

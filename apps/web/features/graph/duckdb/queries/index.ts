@@ -33,5 +33,5 @@ export {
   queryInfoHistogramsBatch,
   queryNumericStatsBatch,
 } from './histograms'
-export type { NumericStatsRow } from './histograms'
+export type { NumericStatsRow } from '@solemd/graph'
 export { exportCorpusTableCsv, queryCorpusTablePage } from './table-chunk'

@@ -5,7 +5,7 @@ import { ActionIcon, Button, Group, Paper, Select, Slider, Switch, Text } from "
 import { ChevronLeft, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { GraphLoadingExperience } from "@/features/graph/components/shell/loading";
-import type { GraphBundle, GraphBundleLoadProgress } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleLoadProgress } from "@solemd/graph";
 
 const stageOptions: Array<{
   value: GraphBundleLoadProgress["stage"];

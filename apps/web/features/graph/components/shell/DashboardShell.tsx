@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { GraphBundle } from "@/features/graph/types";
+import type { GraphBundle } from "@solemd/graph";
 
 const DashboardShellClient = dynamic(
   () =>

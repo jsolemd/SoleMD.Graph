@@ -2,13 +2,13 @@
 
 import { getGraphRagQuery } from '@/app/actions/graph'
 
-import type { GraphBundle, GraphPointRecord } from '@/features/graph/types'
+import type { GraphBundle, GraphPointRecord } from "@solemd/graph"
 import type {
   GraphRagQueryRequestPayload,
   GraphRagErrorResponsePayload,
   GraphRagQueryResponsePayload,
-} from '@/features/graph/types/detail-service'
-import { resolveGraphReleaseId } from '@/features/graph/lib/graph-release'
+} from "@solemd/api-client/shared/graph-rag"
+import { resolveGraphReleaseId } from '@solemd/graph'
 
 interface FetchGraphRagQueryArgs {
   bundle: GraphBundle

@@ -3,7 +3,7 @@
  */
 import { renderHook } from "@testing-library/react";
 import { useGraphBundle } from "../use-graph-bundle";
-import type { GraphBundle } from "@/features/graph/types";
+import type { GraphBundle } from "@solemd/graph";
 
 const invalidateGraphBundleSessionCache = jest.fn();
 const loadGraphBundle = jest.fn(() => new Promise(() => {}));

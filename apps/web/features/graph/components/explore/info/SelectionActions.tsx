@@ -5,7 +5,7 @@ import { Button, Group, Stack } from "@mantine/core";
 import { useGraphCamera } from "@/features/graph/cosmograph";
 import { hasCurrentPointScopeSql } from "@/features/graph/lib/selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import { PANEL_ACCENT } from "../../panels/PanelShell";
 
 interface SelectionActionsProps {

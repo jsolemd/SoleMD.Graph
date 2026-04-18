@@ -4,10 +4,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import {
   fetchGraphEntityMatches,
-} from "@/features/graph/lib/entity-service";
+} from "@solemd/api-client/client/entity-service";
 import { useEntityTextRuntime } from "../use-entity-text-runtime";
 
-jest.mock("@/features/graph/lib/entity-service", () => ({
+jest.mock("@solemd/api-client/client/entity-service", () => ({
   fetchGraphEntityMatches: jest.fn(),
 }));
 

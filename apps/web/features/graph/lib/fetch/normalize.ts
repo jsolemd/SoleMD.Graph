@@ -7,7 +7,7 @@ import type {
   GraphBundleManifest,
   GraphBundleProfile,
   GraphBundleTableManifest,
-} from '@/features/graph/types'
+} from "@solemd/graph"
 import {
   CANONICAL_BUNDLE_VERSION,
   DEFAULT_BUNDLE_CONTRACT,

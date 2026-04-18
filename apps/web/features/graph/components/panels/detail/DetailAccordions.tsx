@@ -3,7 +3,7 @@
 import { Accordion, Text } from "@mantine/core";
 import type {
   GraphSelectionDetail,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import {
   ClusterContent,
   ExemplarsContent,

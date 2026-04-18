@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphInfoFacetRow, GraphInfoHistogramResult } from "@/features/graph/types";
+import type { GraphInfoFacetRow, GraphInfoHistogramResult } from "@solemd/graph";
 
 /** Shared retry delays for widget dataset loading (retry on empty result). */
 export const WIDGET_DATASET_RETRY_DELAYS = [0, 150, 450] as const;

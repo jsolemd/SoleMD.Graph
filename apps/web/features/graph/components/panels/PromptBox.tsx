@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import { densityCssPx } from "@/lib/density";
-import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleQueries } from "@solemd/graph";
 import { usePromptBoxController } from "./prompt/use-prompt-box-controller";
 import { PromptBoxSurface } from "./prompt/PromptBoxSurface";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";

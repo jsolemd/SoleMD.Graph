@@ -2,12 +2,12 @@
 
 import type {
   GraphRagQueryActionResponsePayload,
-} from '@/features/graph/types'
+} from "@solemd/api-client/shared/graph-rag"
 import {
   searchGraphEvidence,
   type GraphEvidenceSearchInput,
   toGraphRagErrorResponse,
-} from '@/lib/engine/graph-rag'
+} from "@solemd/api-client/server/graph-rag"
 
 type GraphRagQueryInput = GraphEvidenceSearchInput
 

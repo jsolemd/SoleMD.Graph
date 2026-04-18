@@ -9,6 +9,10 @@ const config: Config = {
   testPathIgnorePatterns: ["/node_modules/", "/examples/", "/archive/", "-utils\\.ts$"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
+    "^@solemd/api-client$": "<rootDir>/../../packages/api-client/src/index.ts",
+    "^@solemd/api-client/(.*)$": "<rootDir>/../../packages/api-client/src/$1",
+    "^@solemd/graph$": "<rootDir>/../../packages/graph/src/index.ts",
+    "^@solemd/graph/(.*)$": "<rootDir>/../../packages/graph/src/$1",
   },
 };
 

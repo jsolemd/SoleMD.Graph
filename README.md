@@ -16,7 +16,7 @@ apps/
 
 packages/
   ui/
-  browser-graph/
+  graph/
   api-client/
 
 db/
@@ -32,11 +32,14 @@ infra/
 
 - `apps/web` is the only active application package today.
 - `apps/api` and `apps/worker` are intentionally empty and reserved for the
-  rebuild.
-- `packages/*` are reserved shared roots; no forced extraction was done during
-  this cutover.
-- Legacy web adapters that still talk to the old backend remain in
-  `apps/web/lib/engine` until they are replaced during the rebuild.
+  backend rebuild.
+- `packages/graph` is the active shared graph runtime package for runtime
+  types, bundle helpers, DuckDB-WASM, and browser-only Cosmograph code.
+- `packages/api-client` is the active shared transport package for typed API
+  entrypoints, shared response shapes, and normalization helpers.
+- `packages/ui` remains reserved until real cross-app UI reuse exists.
+- Frontend code now imports directly from `@solemd/graph` and
+  `@solemd/api-client`; the old web wrapper layer has been removed.
 
 ## Commands
 

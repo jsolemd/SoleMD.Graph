@@ -6,7 +6,7 @@ import { getModeConfig } from "@/features/graph/lib/modes";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { useShallow } from "zustand/react/shallow";
 import type { PanelId } from "@/features/graph/stores";
-import type { GraphBundle } from "@/features/graph/types";
+import type { GraphBundle } from "@solemd/graph";
 
 export interface DashboardShellController {
   bundle: GraphBundle;

@@ -1,5 +1,5 @@
-import { overlayGraphEntities } from "@/lib/engine/entities";
-import type { GraphEntityOverlayRequestPayload } from "@/features/graph/types/entity-service";
+import { overlayGraphEntities } from "@solemd/api-client/server/entities";
+import type { GraphEntityOverlayRequestPayload } from "@solemd/api-client/shared/graph-entity";
 import { handleEntityPost } from "../_lib";
 
 export async function POST(request: Request) {

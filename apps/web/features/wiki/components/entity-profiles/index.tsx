@@ -5,7 +5,7 @@ import type {
   WikiPageResponse,
   WikiPageContextResponse,
   WikiBodyEntityMatch,
-} from "@/lib/engine/wiki-types";
+} from "@solemd/api-client/shared/wiki-types";
 
 // ---------------------------------------------------------------------------
 // Shared props contract for all entity profile cards

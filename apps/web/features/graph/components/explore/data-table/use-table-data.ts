@@ -5,7 +5,7 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { useTableSelectionQueryState } from "@/features/graph/hooks/use-selection-query-state";
 import { useDashboardStore } from "@/features/graph/stores";
 import { clamp } from "@/lib/helpers";
-import type { GraphBundleQueries, GraphPointRecord, MapLayer } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphPointRecord, GraphLayer } from "@solemd/graph";
 import { useShallow } from "zustand/react/shallow";
 
 interface UseTableDataOptions {
@@ -14,7 +14,7 @@ interface UseTableDataOptions {
 }
 
 export interface TableDataState {
-  activeLayer: MapLayer;
+  activeLayer: GraphLayer;
   pageRows: GraphPointRecord[];
   totalRows: number;
   totalPages: number;
@@ -32,7 +32,7 @@ export interface TableDataState {
 }
 
 interface TableDataSnapshot {
-  activeLayer: MapLayer;
+  activeLayer: GraphLayer;
   setTablePage: ReturnType<typeof useDashboardStore.getState>["setTablePage"];
   tablePage: number;
   tablePageSize: number;

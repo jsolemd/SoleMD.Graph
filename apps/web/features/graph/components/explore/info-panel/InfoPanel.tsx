@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import { QueryDrivenInfoPanel } from "./QueryDrivenInfoPanel";
 
 function InfoPanelComponent({

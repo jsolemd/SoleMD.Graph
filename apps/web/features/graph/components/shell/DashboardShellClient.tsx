@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphBundle } from "@/features/graph/types";
+import type { GraphBundle } from "@solemd/graph";
 import { DashboardShellViewport } from "./DashboardShellViewport";
 import { useDashboardShellController } from "./use-dashboard-shell-controller";
 

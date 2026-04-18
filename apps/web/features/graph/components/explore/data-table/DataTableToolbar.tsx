@@ -3,7 +3,7 @@
 import { ActionIcon, Group, Pagination, SegmentedControl, Text, Tooltip } from "@mantine/core";
 import { Database, Download } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
-import type { GraphBundleQueries, MapLayer } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphLayer } from "@solemd/graph";
 import { panelIconBtnStyles, panelScaledPx, panelTextDimStyle, PANEL_ACCENT, PanelInlineLoader } from "../../panels/PanelShell";
 import { formatNumber } from "@/lib/helpers";
 import { useShellVariantContext } from "../../shell/ShellVariantContext";
@@ -18,7 +18,7 @@ interface DataTableToolbarProps {
   pageRefreshing: boolean;
   totalRows: number;
   queries: GraphBundleQueries;
-  activeLayer: MapLayer;
+  activeLayer: GraphLayer;
   currentPointScopeSql: string | null;
 }
 

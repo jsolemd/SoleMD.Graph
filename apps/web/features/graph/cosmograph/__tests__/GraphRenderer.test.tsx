@@ -4,7 +4,7 @@
 import { act, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { forwardRef, type ForwardedRef, useImperativeHandle } from "react";
-import { DEFAULT_INITIAL_CAMERA, saveCameraState } from "../camera-persistence";
+import { DEFAULT_INITIAL_CAMERA, saveCameraState } from "@solemd/graph/cosmograph";
 
 jest.mock("@mantine/core", () => ({
   useComputedColorScheme: () => "dark",
@@ -33,14 +33,6 @@ class MockZoomTransform {
     public y: number,
   ) {}
 }
-
-jest.mock("../hooks/use-zoom-labels", () => ({
-  useZoomLabels: () => ({
-    zoomedIn: mockZoomLabelsState.zoomedIn,
-    syncZoomState: mockSyncZoomState,
-    handleZoom: mockHandleZoom,
-  }),
-}));
 
 jest.mock("@uwdata/mosaic-sql", () => ({
   and: jest.fn(),
@@ -85,9 +77,21 @@ jest.mock("@cosmograph/react", () => {
   };
 });
 
+jest.mock("@solemd/graph/cosmograph", () => {
+  const actual = jest.requireActual("@solemd/graph/cosmograph");
+  return {
+    ...actual,
+    useZoomLabels: () => ({
+      zoomedIn: mockZoomLabelsState.zoomedIn,
+      syncZoomState: mockSyncZoomState,
+      handleZoom: mockHandleZoom,
+    }),
+  };
+});
+
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import type { GraphCanvasSource } from "@/features/graph/duckdb/types";
-import type { GraphBundleQueries, GraphPointRecord } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphPointRecord } from "@solemd/graph";
 import GraphRenderer from "../GraphRenderer";
 
 const CANVAS_STUB = {

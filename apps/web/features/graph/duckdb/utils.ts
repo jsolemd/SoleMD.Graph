@@ -1,4 +1,4 @@
-import type { GraphBundle } from '@/features/graph/types'
+import type { GraphBundle } from "@solemd/graph"
 
 const CACHE_MAX_ENTRIES = 200
 

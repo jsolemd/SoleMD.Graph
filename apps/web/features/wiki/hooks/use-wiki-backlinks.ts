@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { WikiPageSummary } from "@/lib/engine/wiki-types";
-import { fetchWikiBacklinksClient } from "@/features/wiki/lib/wiki-client";
+import type { WikiPageSummary } from "@solemd/api-client/shared/wiki-types";
+import { fetchWikiBacklinksClient } from "@solemd/api-client/client/wiki-client";
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";

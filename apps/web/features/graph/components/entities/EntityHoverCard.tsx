@@ -9,7 +9,7 @@ import {
   panelTextStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import { FloatingHoverCard } from "@/features/graph/components/overlay/FloatingHoverCard";
-import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
 import type { EntityHoverCardModel } from "./entity-hover-card";
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { BookOpenText, FileText, Orbit, Tag } from "lucide-react";

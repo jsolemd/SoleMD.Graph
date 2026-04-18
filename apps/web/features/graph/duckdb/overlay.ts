@@ -1,7 +1,7 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { MapLayer, OverlayActivationRequest, OverlayActivationResult } from '@/features/graph/types'
-import type { OverlayProducerId } from '@/features/graph/types'
+import type { GraphLayer, OverlayActivationRequest, OverlayActivationResult } from "@solemd/graph"
+import type { OverlayProducerId } from "@solemd/graph"
 
 import { escapeSqlString, queryRows } from './queries'
 import { buildSelectedViewPredicate, getLayerTableName } from './sql-helpers'
@@ -11,7 +11,7 @@ export interface OverlayActivationWriteResult
   applied: boolean
 }
 
-export function getOverlayUniversePredicate(layer: MapLayer, alias = 'u'): string {
+export function getOverlayUniversePredicate(layer: GraphLayer, alias = 'u'): string {
   void layer
   void alias
   return 'TRUE'

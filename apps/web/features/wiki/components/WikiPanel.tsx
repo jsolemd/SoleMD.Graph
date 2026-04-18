@@ -41,8 +41,8 @@ import { WikiContextActions, WikiNavigation } from "@/features/wiki/components/W
 import { AnimationEmbed } from "@/features/wiki/components/elements/AnimationEmbed";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
-import { resolveGraphReleaseId } from "@/features/graph/lib/graph-release";
-import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleQueries } from "@solemd/graph";
+import { resolveGraphReleaseId } from "@solemd/graph";
 
 interface WikiPanelProps {
   bundle: GraphBundle;

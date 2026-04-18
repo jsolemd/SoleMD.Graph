@@ -3,8 +3,9 @@ import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 import type {
   GraphInfoHistogramResult,
   GraphInfoScope,
-  MapLayer,
-} from '@/features/graph/types'
+  GraphLayer,
+  NumericStatsRow,
+} from "@solemd/graph"
 
 import {
   escapeSqlLiteral,
@@ -18,7 +19,7 @@ import { queryRows } from './core'
 export async function queryInfoHistogram(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     column: string
     bins: number
@@ -38,7 +39,7 @@ export async function queryInfoHistogram(
 export async function queryInfoHistogramsBatch(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     bins: number
@@ -236,17 +237,10 @@ export async function queryInfoHistogramsBatch(
   return result
 }
 
-export interface NumericStatsRow {
-  min: number
-  median: number
-  avg: number
-  max: number
-}
-
 export async function queryNumericStatsBatch(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     currentPointScopeSql: string | null

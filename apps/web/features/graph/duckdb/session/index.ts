@@ -1,4 +1,4 @@
-import type { GraphBundle } from '@/features/graph/types'
+import type { GraphBundle } from "@solemd/graph"
 
 import { registerBundleTableFiles } from '../bundle-files'
 import { getCanvasPointCounts, registerActiveCanvasAliasViews } from '../canvas'

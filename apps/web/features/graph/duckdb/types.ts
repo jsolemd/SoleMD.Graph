@@ -14,12 +14,12 @@ import type {
   GraphQueryResult,
   GraphTablePageResult,
   GraphSelectionDetail,
-  MapLayer,
+  GraphLayer,
   OverlayActivationRequest,
   OverlayActivationResult,
   OverlayProducerId,
   PaperDocument,
-} from '@/features/graph/types'
+} from "@solemd/graph"
 import type { NumericStatsRow } from './queries'
 
 export interface GraphCanvasSource {
@@ -27,7 +27,7 @@ export interface GraphCanvasSource {
     connection: AsyncDuckDBConnection
     duckdb: import('@duckdb/duckdb-wasm').AsyncDuckDB
   }
-  pointCounts: Record<MapLayer, number>
+  pointCounts: Record<GraphLayer, number>
   overlayCount: number
   overlayRevision: number
 }
@@ -35,7 +35,7 @@ export interface GraphCanvasSource {
 export type GraphCanvasListener = (canvas: GraphCanvasSource) => void
 
 export interface GraphBundleSession {
-  availableLayers: MapLayer[]
+  availableLayers: GraphLayer[]
   canvas: GraphCanvasSource
   dispose: () => Promise<void>
   subscribeCanvas: (listener: GraphCanvasListener) => () => void
@@ -69,30 +69,30 @@ export interface GraphBundleSession {
     graphPaperRefs: string[]
   ) => Promise<Record<string, string>>
   resolvePointSelection: (
-    layer: MapLayer,
+    layer: GraphLayer,
     selector: { id?: string; index?: number }
   ) => Promise<GraphPointRecord | null>
   getTablePage: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     view: 'current' | 'selected'
     page: number
     pageSize: number
     currentPointScopeSql: string | null
   }) => Promise<GraphTablePageResult>
   getInfoSummary: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     currentPointScopeSql: string | null
   }) => Promise<GraphInfoSummary>
   getInfoBars: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     column: string
     maxItems?: number
     currentPointScopeSql: string | null
   }) => Promise<Array<{ value: string; count: number }>>
   getInfoHistogram: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     column: string
     bins?: number
@@ -101,28 +101,28 @@ export interface GraphBundleSession {
     currentPointScopeSql: string | null
   }) => Promise<GraphInfoHistogramResult>
   getFacetSummary: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     column: string
     maxItems?: number
     currentPointScopeSql: string | null
   }) => Promise<GraphInfoFacetRow[]>
   getFacetSummaries: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     maxItems?: number
     currentPointScopeSql: string | null
   }) => Promise<Record<string, GraphInfoFacetRow[]>>
   getInfoBarsBatch: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     maxItems?: number
     currentPointScopeSql: string | null
   }) => Promise<Record<string, Array<{ value: string; count: number }>>>
   getInfoHistogramsBatch: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     bins?: number
@@ -132,31 +132,31 @@ export interface GraphBundleSession {
     currentPointScopeSql: string | null
   }) => Promise<Record<string, GraphInfoHistogramResult>>
   getNumericStatsBatch: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: GraphInfoScope
     columns: string[]
     currentPointScopeSql: string | null
   }) => Promise<Record<string, NumericStatsRow>>
   searchPoints: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     column: string
     query: string
     limit?: number
   }) => Promise<GraphSearchResult[]>
   getVisibilityBudget: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     selector: { id?: string; index?: number }
     scopeSql?: string | null
   }) => Promise<GraphVisibilityBudget | null>
   getScopeCoordinates: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     scope: 'current' | 'selected'
     currentPointScopeSql: string | null
   }) => Promise<number[] | null>
   getSelectionDetail: (point: GraphPointRecord) => Promise<GraphSelectionDetail>
   runReadOnlyQuery: (sql: string) => Promise<GraphQueryResult>
   exportTableCsv: (args: {
-    layer: MapLayer
+    layer: GraphLayer
     view: 'current' | 'selected'
     currentPointScopeSql: string | null
   }) => Promise<string>

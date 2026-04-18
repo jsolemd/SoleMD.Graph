@@ -14,7 +14,7 @@ import {
 import { ArrowUp, Play, Sparkles } from "lucide-react";
 import { useDashboardStore } from "@/features/graph/stores";
 import { useTypewriter } from "@/features/graph/hooks/use-typewriter";
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 import {
   PANEL_ACCENT,
   PanelDivider,

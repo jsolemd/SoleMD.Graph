@@ -1,5 +1,5 @@
 import { MODES, getModeConfig, MODE_ORDER } from '../modes'
-import type { GraphMode } from '@/features/graph/types'
+import type { GraphMode } from "@/features/graph/config"
 
 describe('modes registry', () => {
   it('defines all four modes', () => {

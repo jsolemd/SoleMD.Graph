@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
 
 export function normalizeWikiSlug(raw: string): string {
   let slug = raw.trim().replace(/^\/+|\/+$/g, "");

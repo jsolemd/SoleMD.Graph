@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import { type GraphTablePageResult } from '@/features/graph/types'
+import { type GraphTablePageResult } from "@solemd/graph"
 
 import {
   buildCurrentViewPredicate,

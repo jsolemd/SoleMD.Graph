@@ -1,4 +1,4 @@
-import type { WikiPageResponse } from "@/lib/engine/wiki-types";
+import type { WikiPageResponse } from "@solemd/api-client/shared/wiki-types";
 
 const EMPTY_WIKI_PAGE_GRAPH_REFS = Object.freeze([]) as readonly string[];
 

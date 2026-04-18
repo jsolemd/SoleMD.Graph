@@ -11,7 +11,7 @@ export interface HistogramHighlightValue {
 }
 import type {
   GraphInfoHistogramBin,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import {
   panelPillStyles,
   panelScaledPx,

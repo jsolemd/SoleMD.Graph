@@ -6,7 +6,7 @@ import "@testing-library/jest-dom";
 import type {
   GraphBundleQueries,
   GraphInfoHistogramResult,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { useInfoWidgetData } from "../use-info-widget-data";
 
 const DATASET_YEAR_HISTOGRAM: GraphInfoHistogramResult = {

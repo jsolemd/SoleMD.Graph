@@ -1,5 +1,6 @@
 import type { InfoWidgetSlot } from './info-widgets'
-import type { MapLayer, PointColorStrategy, PointSizeStrategy } from '@/features/graph/types'
+import type { GraphLayer } from '@solemd/graph'
+import type { PointColorStrategy, PointSizeStrategy } from '@/features/graph/config'
 
 /** Default link column names shared by layer configs. */
 export const LINK_COLUMNS = {
@@ -11,7 +12,7 @@ export const LINK_COLUMNS = {
 
 /** Configuration for a single map layer. */
 export interface LayerConfig {
-  key: MapLayer
+  key: GraphLayer
   label: string
   /** DuckDB table name for Cosmograph `points` prop */
   pointsTable: string
@@ -40,7 +41,7 @@ export interface LayerConfig {
   searchableFields: Record<string, string>
 }
 
-export const LAYERS: Record<MapLayer, LayerConfig> = {
+export const LAYERS: Record<GraphLayer, LayerConfig> = {
   corpus: {
     key: 'corpus',
     label: 'Corpus',
@@ -78,9 +79,9 @@ export const LAYERS: Record<MapLayer, LayerConfig> = {
 }
 
 /** Ordered list of layers for rendering in the UI. */
-export const LAYER_ORDER: MapLayer[] = ['corpus']
+export const LAYER_ORDER: GraphLayer[] = ['corpus']
 
 /** Get layer config by key. */
-export function getLayerConfig(layer: MapLayer): LayerConfig {
+export function getLayerConfig(layer: GraphLayer): LayerConfig {
   return LAYERS[layer]
 }

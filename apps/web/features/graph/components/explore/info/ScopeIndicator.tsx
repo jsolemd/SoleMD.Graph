@@ -2,7 +2,7 @@
 
 import { Badge, Group } from "@mantine/core";
 import { motion, AnimatePresence } from "framer-motion";
-import type { GraphInfoScope } from "@/features/graph/types";
+import type { GraphInfoScope } from "@solemd/graph";
 import { chromeToggle } from "@/lib/motion";
 import { formatNumber } from "@/lib/helpers";
 import {

@@ -1,4 +1,4 @@
-import type { MapLayer } from '@/features/graph/types'
+import type { GraphLayer } from "@solemd/graph"
 
 export type ColumnType = 'categorical' | 'numeric' | 'text'
 
@@ -77,22 +77,22 @@ export const GEO_COLUMNS: ColumnMeta[] = []
 export const ALL_GEO_DATA_COLUMNS = GEO_COLUMNS
 export const GEO_TABLE_COLUMNS: string[] = []
 
-export function getColumnsForLayer(layer: MapLayer): ColumnMeta[] {
+export function getColumnsForLayer(layer: GraphLayer): ColumnMeta[] {
   void layer
   return ALL_DATA_COLUMNS
 }
 
-export function getRenderableColumnsForLayer(layer: MapLayer): ColumnMeta[] {
+export function getRenderableColumnsForLayer(layer: GraphLayer): ColumnMeta[] {
   void layer
   return RENDER_COLUMNS
 }
 
-export function getTableColumnsForLayer(layer: MapLayer): string[] {
+export function getTableColumnsForLayer(layer: GraphLayer): string[] {
   void layer
   return TABLE_COLUMNS
 }
 
-export function getColumnMetaForLayer(key: string, layer: MapLayer): ColumnMeta | undefined {
+export function getColumnMetaForLayer(key: string, layer: GraphLayer): ColumnMeta | undefined {
   void layer
   return COLUMNS.find((column) => column.key === key)
 }

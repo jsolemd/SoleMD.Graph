@@ -1,4 +1,4 @@
-import type { GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundleQueries } from "@solemd/graph";
 
 export async function commitSelectionState(args: {
   sourceId: string;

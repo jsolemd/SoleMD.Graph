@@ -4,7 +4,7 @@ import type {
   GraphInfoFacetRow,
   GraphInfoHistogramResult,
   GraphInfoSummary,
-} from '@/features/graph/types'
+} from "@solemd/graph"
 
 import { cachedQuery, createBoundedCache } from '../utils'
 import {

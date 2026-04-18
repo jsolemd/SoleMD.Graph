@@ -10,7 +10,7 @@ import { panelSurfaceStyle } from "../panels/PanelShell";
 import { useShellVariantContext } from "./ShellVariantContext";
 import type { PanelId } from "@/features/graph/stores";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
-import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleQueries } from "@solemd/graph";
 
 const legendStyle = {
   ...panelSurfaceStyle,
@@ -63,17 +63,11 @@ const CanvasControls = dynamic(
   { loading: () => null },
 );
 const ColorLegends = dynamic(
-  () =>
-    import("@/features/graph/cosmograph/widgets/ColorLegends").then(
-      (mod) => mod.ColorLegends,
-    ),
+  () => import("@solemd/graph/cosmograph").then((mod) => mod.ColorLegends),
   { loading: () => null },
 );
 const SizeLegend = dynamic(
-  () =>
-    import("@/features/graph/cosmograph/widgets/SizeLegend").then(
-      (mod) => mod.SizeLegend,
-    ),
+  () => import("@solemd/graph/cosmograph").then((mod) => mod.SizeLegend),
   { loading: () => null },
 );
 

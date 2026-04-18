@@ -1,6 +1,6 @@
 import type { AsyncDuckDB, AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphBundle } from '@/features/graph/types'
+import type { GraphBundle } from "@solemd/graph"
 
 import type { GraphBundleSession, GraphCanvasSource } from '../types'
 

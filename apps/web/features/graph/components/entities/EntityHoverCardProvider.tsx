@@ -8,8 +8,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { fetchGraphEntityDetail } from "@/features/graph/lib/entity-service";
-import type { GraphEntityDetailResponsePayload } from "@/features/graph/types/entity-service";
+import { fetchGraphEntityDetail } from "@solemd/api-client/client/entity-service";
+import type { GraphEntityDetailResponsePayload } from "@solemd/api-client/shared/graph-entity";
 import { EntityHoverCard } from "./EntityHoverCard";
 import type { EntityHoverCardModel } from "./entity-hover-card";
 import {
@@ -17,7 +17,7 @@ import {
   type EntityHoverContext,
   type EntityHoverShowArgs,
 } from "./use-entity-hover";
-import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
 
 const DISMISS_DELAY_MS = 120;
 const HOVER_CARD_SHELL_ATTR = "data-entity-hover-card";

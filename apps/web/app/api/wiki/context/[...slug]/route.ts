@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchWikiPageContext } from "@/lib/engine/wiki";
+import { fetchWikiPageContext } from "@solemd/api-client/server/wiki";
 import {
   readWikiGraphReleaseId,
   resolveWikiSlugFromContext,

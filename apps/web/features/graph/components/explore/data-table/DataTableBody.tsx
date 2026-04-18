@@ -7,10 +7,10 @@ import { useGraphStore } from "@/features/graph/stores";
 import { getTableColumnsForLayer, getColumnMetaForLayer } from "@/features/graph/lib/columns";
 import { formatCellValue } from "@/features/graph/lib/helpers";
 import { panelScaledPx, panelTableHeaderStyle, panelTextDimStyle, PanelInlineLoader } from "../../panels/PanelShell";
-import type { GraphPointRecord, MapLayer } from "@/features/graph/types";
+import type { GraphPointRecord, GraphLayer } from "@solemd/graph";
 
 interface DataTableBodyProps {
-  activeLayer: MapLayer;
+  activeLayer: GraphLayer;
   pageRows: GraphPointRecord[];
   startIdx: number;
   pageLoading: boolean;

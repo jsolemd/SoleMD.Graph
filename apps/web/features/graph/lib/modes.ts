@@ -1,4 +1,4 @@
-import type { GraphMode } from '@/features/graph/types'
+import type { GraphMode } from '@/features/graph/config'
 import type { PanelId, PromptMode } from '@/features/graph/stores'
 import {
   brandPastelFallbackHexByKey,
@@ -52,7 +52,7 @@ const SHARED_PANELS: PanelId[] = ['config', 'filters', 'info', 'query', 'wiki']
  * Mode registry — single source of truth for all mode behavior.
  *
  * To add a new mode or expand an existing one:
- * 1. Add the key to `GraphMode` union in types.ts
+ * 1. Add the key to `GraphMode` union in config.ts
  * 2. Add its config entry here
  * 3. DashboardShell and PromptBox automatically pick it up
  */

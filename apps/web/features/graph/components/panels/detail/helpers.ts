@@ -2,7 +2,7 @@ import type {
   GraphPaperDetail,
   PaperDocument,
   PaperNode,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 
 function joinNonEmpty(values: Array<string | null | undefined>) {
   return values

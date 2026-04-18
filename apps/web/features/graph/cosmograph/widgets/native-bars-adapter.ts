@@ -2,7 +2,7 @@
 
 import type { Bars, BarData } from "@cosmograph/ui";
 
-import type { GraphInfoFacetRow } from "@/features/graph/types";
+import type { GraphInfoFacetRow } from "@solemd/graph";
 
 export const NATIVE_BARS_DATA_LIMIT = 64;
 

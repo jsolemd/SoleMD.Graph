@@ -3,7 +3,7 @@
  */
 import { act, renderHook } from "@testing-library/react";
 import { motionValue } from "framer-motion";
-import type { GraphBundle } from "@/features/graph/types";
+import type { GraphBundle } from "@solemd/graph";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { useWikiStore } from "@/features/wiki/stores/wiki-store";
 import { usePromptBoxController } from "../use-prompt-box-controller";

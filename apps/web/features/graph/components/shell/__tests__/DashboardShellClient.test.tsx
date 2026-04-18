@@ -3,7 +3,7 @@
  */
 import { act, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import type { GraphBundle, GraphBundleQueries } from "@/features/graph/types";
+import type { GraphBundle, GraphBundleQueries } from "@solemd/graph";
 import type { GraphCanvasSource } from "@/features/graph/duckdb";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 

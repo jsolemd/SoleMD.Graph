@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { EntityTextScope } from "@/features/graph/components/entities/entity-text-runtime";
 import { useEntityTextRuntime } from "@/features/graph/components/entities/use-entity-text-runtime";
 import { useEntityHover } from "@/features/graph/components/entities/use-entity-hover";
-import type { GraphEntityTextMatch } from "@/features/graph/types/entity-service";
+import type { GraphEntityTextMatch } from "@solemd/api-client/shared/graph-entity";
 import type {
   EntityHighlight,
   EntityHighlightHoverState,

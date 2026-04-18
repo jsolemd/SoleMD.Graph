@@ -10,7 +10,7 @@ import {
 } from "@/features/graph/lib/cosmograph-selection";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 import { getColumnsForLayer, getColumnMeta } from "@/features/graph/lib/columns";
-import type { FilterableColumnKey } from "@/features/graph/types";
+import type { FilterableColumnKey } from "@/features/graph/config";
 import {
   PANEL_ACCENT,
   PanelBody,

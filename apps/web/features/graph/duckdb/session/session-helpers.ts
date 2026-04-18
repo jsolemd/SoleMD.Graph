@@ -1,7 +1,7 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
 import { hasCurrentPointScopeSql } from '@/features/graph/lib/selection-query-state'
-import type { GraphInfoFacetRow } from '@/features/graph/types'
+import type { GraphInfoFacetRow } from "@solemd/graph"
 
 import { queryFacetSummary, queryFacetSummaries, queryInfoBarsBatch } from '../queries'
 import { getColumnMetaForLayer } from '../sql-helpers'

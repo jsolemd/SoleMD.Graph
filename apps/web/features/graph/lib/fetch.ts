@@ -3,7 +3,7 @@ import 'server-only'
 import { and, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { graphRuns } from '@/lib/db/schema'
-import type { GraphBundle } from '@/features/graph/types'
+import type { GraphBundle } from "@solemd/graph"
 
 import { buildGraphBundleAssetUrl } from './bundle-assets'
 import {

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { isEntityWikiSlug } from '@/features/wiki/lib/entity-wiki-route'
-import { fetchWikiPageContextClient } from '@/features/wiki/lib/wiki-client'
-import type { WikiPageContextResponse, WikiPageResponse } from '@/lib/engine/wiki-types'
+import { fetchWikiPageContextClient } from "@solemd/api-client/client/wiki-client"
+import type { WikiPageContextResponse, WikiPageResponse } from "@solemd/api-client/shared/wiki-types"
 
 interface WikiPageContextState {
   context: WikiPageContextResponse | null

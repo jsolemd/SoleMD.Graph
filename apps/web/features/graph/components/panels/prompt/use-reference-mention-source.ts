@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
 import { fetchGraphRagQuery } from "@/features/graph/lib/detail-service";
-import type { GraphBundle, GraphBundleQueries, GraphPointRecord } from "@/features/graph/types";
-import type { GraphEvidenceBundle } from "@/features/graph/types/detail-service";
+import type { GraphBundle, GraphBundleQueries, GraphPointRecord } from "@solemd/graph";
+import type { GraphEvidenceBundle } from "@solemd/api-client/shared/graph-rag";
 import type { Editor } from "@/features/graph/tiptap";
 import { readEditorTextContext } from "../editor/editor-text-context";
 import type {

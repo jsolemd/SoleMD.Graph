@@ -15,7 +15,7 @@ import {
   WIKI_PAGE_OVERLAY_PRODUCER,
   WIKI_PAGE_SELECTION_SOURCE_ID,
 } from "@/features/graph/lib/overlay-producers";
-import type { GraphBundleQueries, GraphPointRecord } from "@/features/graph/types";
+import type { GraphBundleQueries, GraphPointRecord } from "@solemd/graph";
 import {
   cacheWikiGraphNodes,
   clearWikiGraphOverlay,

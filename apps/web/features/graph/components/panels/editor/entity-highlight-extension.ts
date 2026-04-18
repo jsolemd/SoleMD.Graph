@@ -9,7 +9,7 @@ import {
   type Editor,
   type EditorView,
 } from "@/features/graph/tiptap";
-import type { GraphEntityRef } from "@/features/graph/types/entity-service";
+import type { GraphEntityRef } from "@solemd/api-client/shared/graph-entity";
 
 export interface EntityHighlight {
   id: string;

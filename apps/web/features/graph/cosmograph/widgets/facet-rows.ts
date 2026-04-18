@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphInfoFacetRow } from "@/features/graph/types";
+import type { GraphInfoFacetRow } from "@solemd/graph";
 
 export function toFacetRowsFromBarCounts(
   rows: Array<{ value: string; count: number }>,

@@ -5,7 +5,7 @@ import { render, waitFor } from "@testing-library/react";
 import type {
   GraphBundleQueries,
   GraphInfoHistogramResult,
-} from "@/features/graph/types";
+} from "@solemd/graph";
 import { useDashboardStore } from "@/features/graph/stores";
 
 const mockFilterBarWidget = jest.fn(() => null);

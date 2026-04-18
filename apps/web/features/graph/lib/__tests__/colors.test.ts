@@ -8,7 +8,7 @@ import {
   resolveGraphPaletteSelection,
   resolvePaletteSelection,
 } from "../colors";
-import type { ColorTheme } from "@/features/graph/types";
+import type { ColorTheme } from "@/features/graph/config";
 
 const CSS_COLOR_RE = /^(#[0-9a-f]{6}|rgb\(|rgba\()/i;
 

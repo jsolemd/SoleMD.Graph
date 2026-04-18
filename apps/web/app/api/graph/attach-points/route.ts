@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-import { EngineApiError } from '@/lib/engine/client'
+import { EngineApiError } from "@solemd/api-client/server/client"
 import {
   fetchGraphPointAttachment,
   GRAPH_POINT_ATTACHMENT_MEDIA_TYPE,
-} from '@/lib/engine/graph-attachment'
+} from "@solemd/api-client/server/graph-attachment"
 
 const GraphPointAttachmentRequestSchema = z.object({
   graph_release_id: z.string().min(1),

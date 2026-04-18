@@ -8,10 +8,11 @@ import {
   getColumnsForLayer,
   getRenderableColumnsForLayer,
 } from "@/features/graph/lib/columns";
-import type { MapLayer, NumericColumnKey } from "@/features/graph/types";
+import type { GraphLayer } from "@solemd/graph";
+import type { NumericColumnKey } from "@/features/graph/config";
 import { sectionLabelStyle, panelSelectStyles, panelSwitchStyles, PANEL_ACCENT } from "../../panels/PanelShell";
 
-export function PositionConfig({ activeLayer }: { activeLayer: MapLayer }) {
+export function PositionConfig({ activeLayer }: { activeLayer: GraphLayer }) {
   const renderColumns = useMemo(
     () => getRenderableColumnsForLayer(activeLayer),
     [activeLayer],

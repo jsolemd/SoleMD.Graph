@@ -1,6 +1,6 @@
 import type { AsyncDuckDBConnection } from '@duckdb/duckdb-wasm'
 
-import type { GraphSearchResult, MapLayer } from '@/features/graph/types'
+import type { GraphSearchResult, GraphLayer } from "@solemd/graph"
 
 import {
   getLayerTableName,
@@ -14,7 +14,7 @@ import { mapGraphPointRow, type GraphPointSelectionRow } from './node-selection'
 export async function queryPointSearch(
   conn: AsyncDuckDBConnection,
   args: {
-    layer: MapLayer
+    layer: GraphLayer
     column: string
     query: string
     limit?: number
