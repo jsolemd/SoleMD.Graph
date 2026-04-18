@@ -1,1 +1,1 @@
-"postgres" "postgres"
+"pgbouncer_auth" "pgbouncer_auth"

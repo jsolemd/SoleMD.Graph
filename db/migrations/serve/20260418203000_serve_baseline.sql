@@ -1,0 +1,10 @@
+\ir ../../schema/serve/00_roles.sql
+\ir ../../schema/serve/10_schemas.sql
+\ir ../../schema/serve/20_extensions.sql
+\ir ../../schema/serve/30_fdw.sql
+\ir ../../schema/serve/40_tables_core.sql
+\ir ../../schema/serve/50_indexes.sql
+\ir ../../schema/serve/60_functions.sql
+\ir ../../schema/serve/70_triggers.sql
+\ir ../../schema/serve/80_comments.sql
+\ir ../../schema/serve/90_grants.sql

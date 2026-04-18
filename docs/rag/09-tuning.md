@@ -1117,6 +1117,17 @@ panels and alert rules; this doc names the validation contract.
 | Move serve PG to its own NVMe (split from OpenSearch) | OpenSearch IO contends with serve PG (`01 §8`). |
 | Per-process `huge_pages = on` (forced) | Operator runbook makes `vm.nr_hugepages` provision a hard prerequisite of cluster start. |
 
+### Forward considerations from the initial serve-baseline review
+
+These are not locked tuning changes today. They are preserved here so the later
+config / image slice can evaluate them deliberately.
+
+| Consideration | Revisit trigger |
+|---|---|
+| Treat structural extension SQL and runtime capability as separate states. `pg_stat_statements`, `pg_prewarm`, and any later `pg_cron` adoption only become real when the image and `shared_preload_libraries` contract in this doc are live. | The serve baseline lands schema-level extension declarations before the full tuning slice wires image, preload, and operator runbook support. |
+| Revisit PgBouncer prepared-plan settings as one joint change: if parse-cost or eviction pressure shows up, evaluate `server_prepared_statements = 1` and a higher `max_prepared_statements` ceiling together rather than changing one in isolation. | `SHOW STATS_AVERAGES`, `SHOW POOLS`, or `pg_stat_statements` show prepared-plan churn or parse-cost that the current `200` ceiling is not absorbing. |
+| Keep `default_toast_compression = lz4` as the cluster target, but allow specific serve columns to carry earlier per-column compression/storage directives where the schema slice has already proven that the read path benefits. | A serve-table review lands column-local compression choices before the cluster-level config rollout is complete. |
+
 ## Open items
 
 Forward-tracked; none block subsequent docs:

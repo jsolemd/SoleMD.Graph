@@ -750,15 +750,15 @@ satisfy as the bottom-up rebuild lands.
 | **Execution mode** | `transactional` (default) or `autocommit` (when SQL contains `CREATE INDEX CONCURRENTLY`, `ALTER TABLE … SET LOGGED`, `VACUUM`, etc. — full marker list in the existing file). |
 | **Adopt vs apply** | `adopt` records the file as already-applied without running it for pre-existing schema or orphan-ledger repair; `apply` runs the migration against the cluster. Fresh rebuilds do not adopt the archived legacy chain. `verify` compares ledger and on-disk files; `--check` exits non-zero on drift. |
 | **Idempotency** | Re-running a migration is a no-op when the ledger already records `status='applied'` and `checksum_sha256` matches. Mismatches raise `ChecksumMismatch` and refuse to re-apply silently. |
-| **Per-cluster invocation** | `python scripts/schema_migrations.py apply --cluster warehouse|serve`. The command resolves the right DSN from `SERVE_DSN_ADMIN` or `WAREHOUSE_DSN_ADMIN`; app-path DSNs (`WAREHOUSE_DSN_INGEST`, `WAREHOUSE_DSN_READ`, `SERVE_DSN_READ`) are never reused for DDL. |
+| **Per-cluster invocation** | `uv run scripts/schema_migrations.py apply --cluster warehouse|serve` during local development. The command resolves the right direct admin connection for each cluster; fresh serve bootstrap may temporarily use the cluster superuser connection until `engine_admin` is viable. App-path DSNs (`WAREHOUSE_DSN_INGEST`, `WAREHOUSE_DSN_READ`, `SERVE_DSN_READ`) are never reused for DDL. |
 | **Async in scope** | None today — the runner is sync because (a) it is invoked from the shell or CI, not inside an event loop, and (b) `CREATE INDEX CONCURRENTLY` semantics make sync the simpler shape. asyncpg-conversion is **deferred** until a runtime path (rather than a CLI path) needs migrations. |
 
-The `MigrationFile`, `MigrationFileRecord`, `MigrationLedgerRecord`,
-`MigrationReadinessReport`, `MigrationApplyReport`,
-`MigrationAdoptionReport` types should remain `ParseContractModel`
-surfaces so the runner stays aligned with §4's Pydantic-at-the-boundary
-rule. **locked** for the contract; the implementation is expected to
-converge to it.
+The runner still emits structured `MigrationFile`, `MigrationLedgerRecord`,
+`MigrationReadinessReport`, `MigrationApplyReport`, and
+`MigrationAdoptionReport` surfaces, but the contract is the field shape
+and JSON output, not inheritance from a legacy base class. **locked** for
+the contract; the implementation may use dataclasses or Pydantic so long
+as the emitted schema stays stable.
 
 ## §9 Testing
 
@@ -1099,6 +1099,18 @@ for `04 §2.4` validation; `serving_members` / `serving_cohorts` on
 | Pool-warmer that pre-prepares hot statements at FastAPI lifespan start | First measurement of cold-cache p99 spikes. |
 | Multi-process coordination of `admin` pool (more than one projection process) | Today bounded by `04 §9.1` advisory lock semantics; would require lock-key extension. |
 | Per-process Pydantic model warmup (`Model.model_rebuild()` at startup) | Cold-import latency on first FastAPI request becomes a measured issue. |
+
+### Forward considerations from the initial serve-baseline review
+
+These are not the day-one async contract. They are tracked here so the later
+runtime slice can evaluate them with real measurements instead of rediscovering
+them ad hoc.
+
+| Consideration | Revisit trigger |
+|---|---|
+| Add Linux-only FastAPI runtime extras (`uvloop`, `httptools`) on the API path. | Production-shape HTTP load tests show stdlib event-loop or parser overhead that is worth the added dependency surface. |
+| Revisit PgBouncer transaction-mode prepared-plan reuse as one coordinated decision across `06` and `09`: keep `serve_read.statement_cache_size = 0` until end-to-end tests are stable, then evaluate `server_prepared_statements = 1` plus a higher `max_prepared_statements` ceiling together. | Integration tests prove transaction-mode prepared-plan reuse stable, and PgBouncer or `pg_stat_statements` telemetry shows parse-cost or eviction pressure at the current conservative settings. |
+| Keep worker AsyncIO lifecycle ownership explicit when the first real PG-touching async actors land. | The first production actor opens long-lived pools or mixes asyncpg + Redis in the same worker process, making event-loop-thread ownership a practical failure mode rather than a scaffold assumption. |
 
 ## Open items
 

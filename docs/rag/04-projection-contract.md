@@ -1233,6 +1233,18 @@ benchmark) by `02 §7`.
 | GPU-accelerated projection compute (NVIDIA RAPIDS for the warehouse-side join) | Profile shows the join is the cohort-build bottleneck. Today the bottleneck is index build on serve. |
 | Side ledger of swap timestamps (instead of `pg_stat_get_last_analyze_time`) | Cleanup function (§3.6) becomes ambiguous because external `ANALYZE` runs interfere. |
 
+### Forward considerations from the initial serve-baseline review
+
+These are not locked for day-one projection flow. They are preserved here so
+the later projection slice does not lose the review signal.
+
+| Consideration | Revisit trigger |
+|---|---|
+| Promote the per-run serve families (`graph_clusters`, `graph_points`, `paper_semantic_neighbors`, `graph_cluster_api_cards`) to LIST-partitioned layouts keyed by run identity, so retirement becomes metadata drop / detach instead of row-wise cleanup. | Run retirement or rollback cleanup becomes visibly WAL-heavy, vacuum-heavy, or lock-visible at sample-build scale. |
+| Move the per-run families from `_next`/`_prev` rename flow to `ATTACH PARTITION` / `DETACH PARTITION` promotion once those tables are partitioned. | Projection swap lock time is a measurable operator concern, or run retirement cost dominates the cutover window. |
+| Re-audit composite index order for PG 18 skip-scan only after hot-query traces exist. | `pg_stat_statements` shows a stable hot-query set where a high-cardinality leading key is leaving useful indexes underused. |
+| Revisit `warehouse_fdw` bulk options or split server definitions (`fetch_size`, `keep_connections`, `parallel_commit`) if grounding dereference starts to show up in projection-path latency. | `fdw_round_trip_duration_seconds` or operator traces show round-trip cost that the current conservative server options are not absorbing. |
+
 ## Open items
 
 Forward-tracked; none block `05-ingest-pipeline.md`:

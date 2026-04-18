@@ -7,16 +7,19 @@ import uvicorn
 from fastapi import FastAPI
 
 from app.config import settings
+from app.db import create_serve_pools
 from app.routes.health import router as health_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Slice 1 owns the permanent app bootstrap. Later slices extend this
-    # lifespan with asyncpg pools instead of replacing the entrypoint.
     app.state.settings = settings
     app.state.started_at = datetime.now(UTC)
-    yield
+    app.state.serve_pools = await create_serve_pools(settings)
+    try:
+        yield
+    finally:
+        await app.state.serve_pools.close()
 
 
 def create_app() -> FastAPI:

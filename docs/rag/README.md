@@ -152,8 +152,8 @@ done when the code and docs both reflect reality.
 - [x] `graph-redis` implemented
 - [x] Minimal `apps/api` runtime shell implemented
 - [x] Minimal `apps/worker` runtime shell implemented
-- [ ] Serve SQL baseline landed under `db/schema/serve/`
-- [ ] Serve migration chain landed under `db/migrations/serve/`
+- [x] Serve SQL baseline landed under `db/schema/serve/`
+- [x] Serve migration chain landed under `db/migrations/serve/`
 - [ ] Warehouse SQL baseline landed under `db/schema/warehouse/`
 - [ ] Warehouse migration chain landed under `db/migrations/warehouse/`
 - [ ] Ingest lane implemented

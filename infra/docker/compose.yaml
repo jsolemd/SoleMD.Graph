@@ -41,7 +41,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "PGPASSWORD=${GRAPH_DB_SERVE_POSTGRES_PASSWORD:-postgres} psql -h 127.0.0.1 -p 6432 -U ${GRAPH_DB_SERVE_POSTGRES_USER:-postgres} ${GRAPH_DB_SERVE_POSTGRES_DB:-serve} -c 'SELECT 1;' >/dev/null",
+          "PGPASSWORD=${PGBOUNCER_AUTH_PASSWORD:-pgbouncer_auth} psql -h 127.0.0.1 -p 6432 -U pgbouncer_auth ${GRAPH_DB_SERVE_POSTGRES_DB:-serve} -c 'SELECT 1;' >/dev/null",
         ]
       interval: 5s
       timeout: 5s

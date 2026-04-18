@@ -5,6 +5,7 @@ from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import AsyncIO, Retries, ShutdownNotifications, TimeLimit
 
 from app.config import Settings, settings
+from app.db import WorkerPoolBootstrap
 
 
 _broker: dramatiq.Broker | None = None
@@ -55,6 +56,7 @@ def create_broker(worker_settings: Settings | None = None) -> dramatiq.Broker:
     )
     ensure_middleware(broker, TimeLimit())
     ensure_middleware(broker, ShutdownNotifications())
+    ensure_middleware(broker, WorkerPoolBootstrap(runtime_settings))
     return broker
 
 

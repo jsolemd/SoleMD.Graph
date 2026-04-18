@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
+import asyncpg
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import DependencyTarget, Settings
+from app.db import ServePools
 
 
 router = APIRouter(tags=["system"])
@@ -37,22 +39,27 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
+def get_pools(request: Request) -> ServePools:
+    return request.app.state.serve_pools
+
+
 async def check_dependency(
-    target: DependencyTarget, timeout: float
+    target: DependencyTarget,
+    *,
+    pool: asyncpg.Pool,
+    timeout: float,
 ) -> DependencyStatus:
-    writer: asyncio.StreamWriter | None = None
     try:
-        _, writer = await asyncio.wait_for(
-            asyncio.open_connection(target.host, target.port),
-            timeout=timeout,
-        )
+        async with asyncio.timeout(timeout):
+            async with pool.acquire() as connection:
+                await connection.execute("SELECT 1")
         return DependencyStatus(
             name=target.name,
             host=target.host,
             port=target.port,
             ok=True,
         )
-    except (TimeoutError, OSError) as exc:
+    except (TimeoutError, OSError, asyncpg.PostgresError) as exc:
         return DependencyStatus(
             name=target.name,
             host=target.host,
@@ -60,10 +67,6 @@ async def check_dependency(
             ok=False,
             error=str(exc),
         )
-    finally:
-        if writer is not None:
-            writer.close()
-            await writer.wait_closed()
 
 
 @router.get("/healthz")
@@ -79,9 +82,18 @@ async def healthz(request: Request) -> HealthResponse:
 @router.get("/readyz", response_model=None)
 async def readyz(request: Request) -> JSONResponse:
     app_settings = get_settings(request)
+    pools = get_pools(request)
+    pool_map: dict[str, asyncpg.Pool] = {
+        "serve_read": pools.serve_read,
+        "serve_admin": pools.serve_admin,
+    }
     checks = await asyncio.gather(
         *(
-            check_dependency(target, app_settings.api_readiness_timeout_seconds)
+            check_dependency(
+                target,
+                pool=pool_map[target.name],
+                timeout=app_settings.api_readiness_timeout_seconds,
+            )
             for target in app_settings.readiness_targets
         )
     )

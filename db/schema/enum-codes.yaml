@@ -1,0 +1,40 @@
+package_tier:
+  none: 0
+  warm: 1
+  hot: 2
+
+serving_build_status:
+  building: 1
+  published: 2
+  aborted: 3
+  failed: 4
+  retired: 5
+
+wiki_sync_status:
+  building: 1
+  activated: 2
+  failed: 3
+  retired: 4
+
+opensearch_alias_swap_status:
+  pending: 1
+  swapped: 2
+  failed: 3
+
+serving_artifact_kind:
+  opensearch_index: 1
+  synonym_bundle: 2
+  cohort_manifest: 3
+  projection_run: 4
+  grounding_manifest: 5
+
+serving_cohort_kind:
+  practice_hot: 1
+  warm_backfill: 2
+  historical_exception: 3
+  rubric_test: 4
+
+vector_mode:
+  halfvec_fp16: 1
+  fp32: 2
+  sparse: 3

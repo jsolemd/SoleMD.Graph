@@ -69,6 +69,7 @@ targets and which are specific pins.
 | `pydantic-settings` | `2.13.1` | locked for Slice 1 code | Landed in both backend `pyproject.toml` manifests. |
 | `asyncpg` | `0.31.0` | locked for Slice 1 code | Landed in both backend `pyproject.toml` manifests. |
 | Dramatiq | `2.1.0` | locked for Slice 1 code | Landed in `apps/worker/pyproject.toml`. |
+| `psycopg[binary]` | `3.2.10` | locked for Slice 4 code | Landed in `scripts/schema_migrations.py` as the sync admin-runner dependency. |
 | RAPIDS | `26.04` | provisional | Current intended GPU analytics line from the RAG docs; exact image/base wiring still needs implementation validation. |
 | CUDA | `13.0-13.1` compatibility set | provisional | Compatibility target carried by the docs; exact container/base image selection remains implementation-owned. |
 | PyTorch CUDA | `13.0.x` packaging line | provisional | Compatibility target only; exact wheel/container pin remains implementation-owned. |
@@ -80,7 +81,6 @@ treated as done:
 
 - exact OpenSearch image tag
 - exact Python base image / toolchain pin
-- exact psycopg admin-runner pin
 - exact pgBackRest version pin if the local runtime will ship it directly
 
 ## Normalization rule
@@ -124,3 +124,5 @@ Examples:
 - 2026-04-18: Slice 1 locked the local runtime image tags (`postgres:18.3-bookworm`,
   `edoburu/pgbouncer:v1.25.1-p0`, `redis:8.4.2-alpine3.22`) and the initial
   backend Python package pins in `apps/api` and `apps/worker`.
+- 2026-04-18: Slice 4 locked the sync admin-runner dependency
+  `psycopg[binary]==3.2.10` inside `scripts/schema_migrations.py`.

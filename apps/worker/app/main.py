@@ -1,43 +1,45 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
-import socket
 from collections.abc import Sequence
 
 import dramatiq
 
 from app.broker import configure_broker
-from app.config import DependencyTarget, settings
+from app.config import settings
+from app.db import probe_postgres_target, probe_redis_target
 
 
 broker = configure_broker()
 
 
-def check_dependency(target: DependencyTarget, timeout: float) -> dict[str, object]:
-    try:
-        with socket.create_connection((target.host, target.port), timeout=timeout):
-            return {
-                "name": target.name,
-                "host": target.host,
-                "port": target.port,
-                "ok": True,
-            }
-    except OSError as exc:
-        return {
-            "name": target.name,
-            "host": target.host,
-            "port": target.port,
-            "ok": False,
-            "error": str(exc),
-        }
-
-
-def run_startup_check() -> int:
-    checks = [
-        check_dependency(target, settings.worker_startup_timeout_seconds)
-        for target in settings.startup_targets
-    ]
+async def run_startup_check() -> int:
+    dsn_map = {
+        "serve_read": (settings.serve_dsn_read, 0),
+        "serve_admin": (settings.serve_dsn_admin, settings.admin_statement_cache_size),
+        "warehouse_ingest": (settings.warehouse_dsn_ingest, 0),
+        "warehouse_read": (settings.warehouse_dsn_read, settings.admin_statement_cache_size),
+        "warehouse_admin": (settings.warehouse_dsn_admin, settings.admin_statement_cache_size),
+    }
+    checks = await asyncio.gather(
+        *(
+            probe_redis_target(
+                target,
+                redis_url=settings.redis_url,
+                timeout=settings.worker_startup_timeout_seconds,
+            )
+            if target.name == "redis"
+            else probe_postgres_target(
+                target,
+                dsn=dsn_map[target.name][0] or "",
+                timeout=settings.worker_startup_timeout_seconds,
+                statement_cache_size=dsn_map[target.name][1],
+            )
+            for target in settings.startup_targets
+        )
+    )
     status = "ready" if all(check["ok"] for check in checks) else "not_ready"
     payload = {
         "status": status,
@@ -68,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return run_startup_check()
+    return asyncio.run(run_startup_check())
 
 
 if __name__ == "__main__":

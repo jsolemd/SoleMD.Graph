@@ -43,6 +43,16 @@ class Settings(BaseSettings):
     )
     serve_dsn_read: str = Field(..., alias="SERVE_DSN_READ")
     serve_dsn_admin: str = Field(..., alias="SERVE_DSN_ADMIN")
+    pool_serve_read_min: int = Field(default=2, alias="POOL_SERVE_READ_MIN")
+    pool_serve_read_max: int = Field(default=16, alias="POOL_SERVE_READ_MAX")
+    pool_admin_min: int = Field(default=1, alias="POOL_ADMIN_MIN")
+    pool_admin_max: int = Field(default=2, alias="POOL_ADMIN_MAX")
+    serve_read_command_timeout_seconds: float = Field(
+        default=5.0, alias="SERVE_READ_COMMAND_TIMEOUT_SECONDS"
+    )
+    admin_statement_cache_size: int = Field(
+        default=128, alias="ADMIN_STATEMENT_CACHE_SIZE"
+    )
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
