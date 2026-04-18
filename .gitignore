@@ -53,7 +53,6 @@ lerna-debug.log*
 
 # TypeScript
 *.tsbuildinfo
-next-env.d.ts
 
 # Testing
 coverage/
@@ -96,23 +95,22 @@ Desktop.ini
 /.swc/
 /HelperMD
 
-# Python engine
-engine/.venv/
-engine/__pycache__/
-engine/**/__pycache__/
-engine/**/*.pyc
-engine/.pytest_cache/
-engine/.ruff_cache/
-engine/.mypy_cache/
+# Future Python apps
+apps/api/.venv/
+apps/api/**/__pycache__/
+apps/api/**/*.pyc
+apps/api/.pytest_cache/
+apps/api/.ruff_cache/
+apps/api/.mypy_cache/
+apps/worker/.venv/
+apps/worker/**/__pycache__/
+apps/worker/**/*.pyc
+apps/worker/.pytest_cache/
+apps/worker/.ruff_cache/
+apps/worker/.mypy_cache/
 
-# Bulk data downloads (PubTator3, Semantic Scholar)
+# Local backend data
 data/
-!engine/data/
-!engine/data/runtime_eval_benchmarks/
-!engine/data/runtime_eval_benchmarks/*.json
-
-# Docker volumes
-docker/pgdata/
 
 # Package manager lock files (keep one, ignore others)
 # Uncomment the ones you want to ignore
@@ -155,6 +153,5 @@ temp-ai-for-mds/
 # Windows artifacts
 nul
 docs/design/mantine-llms.txt
-engine/data/huggingface/
 # Local wiki authoring helper path (directory or symlink)
 /wiki

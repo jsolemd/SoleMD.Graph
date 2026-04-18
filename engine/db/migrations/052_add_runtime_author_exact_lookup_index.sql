@@ -1,6 +1,0 @@
--- Migration 052: reserved no-op
---
--- The runtime author exact-lookup index was canonically introduced in
--- 051_add_runtime_author_exact_lookup_index.sql. This file is intentionally a
--- no-op to preserve migration numbering without recreating the same index a
--- second time under a duplicate migration name.

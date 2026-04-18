@@ -1,1 +1,0 @@
-"""SoleMD.Graph data engine."""
