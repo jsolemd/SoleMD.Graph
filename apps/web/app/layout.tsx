@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ColorSchemeScript, mantineHtmlProps } from "@mantine/core";
-import { MantineThemeProvider } from "@/components/MantineThemeProvider";
-import { themeViewportColorByScheme } from "@/lib/theme/pastel-tokens";
+import { Providers } from "@/app/providers";
+import { themeViewportColorByScheme } from "@/lib/pastel-tokens";
 
 import "@mantine/core/styles.css";
 import "@/app/globals.css";
@@ -59,7 +59,7 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans">
-        <MantineThemeProvider>{children}</MantineThemeProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

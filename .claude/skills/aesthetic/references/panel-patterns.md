@@ -132,7 +132,7 @@ To add a new entity type:
 
 1. Add the node-color token in `tokens.css` (`--wiki-graph-node-<short>`, mapped to a `--color-semantic-*`).
 2. Add the `[data-entity-type="<long>"] { --entity-accent: ... }` selector in `tokens.css`.
-3. Update `semanticColorVarNameByKey` in `lib/theme/pastel-tokens.ts` if runtime (WebGL, SVG) consumers need the hex.
+3. Update `semanticColorVarNameByKey` in `lib/pastel-tokens.ts` if runtime (WebGL, SVG) consumers need the hex.
 4. Add a new profile component in `entity-profiles/` if the type needs a custom layout.
 
 ## Example — Minimal Panel

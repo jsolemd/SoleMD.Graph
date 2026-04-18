@@ -13,7 +13,7 @@ import {
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import { formatNumber } from "@/lib/helpers";
-import { entityTypeCssColorByType } from "@/lib/theme/pastel-tokens";
+import { entityTypeCssColorByType } from "@/lib/pastel-tokens";
 import type { EntityProfileProps } from "./index";
 
 const CHEMICAL_TYPES = new Set(["chemical"]);

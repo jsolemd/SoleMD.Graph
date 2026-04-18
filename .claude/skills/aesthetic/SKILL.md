@@ -73,7 +73,7 @@ app/styles/ (Source of Truth)          Mantine Theme (Bridge)        Components
 │  html:root { cosmograph }      │    │   component defaults     │   │ + styles prop        │
 │                                │    └──────────────────────────┘   │ (internals only)    │
 │ graph-ui.css                   │                                   │                     │
-│  .graph-icon-btn, animations,  │    lib/theme/pastel-tokens.ts     │ PanelShell/          │
+│  .graph-icon-btn, animations,  │    lib/pastel-tokens.ts           │ PanelShell/          │
 │  cosmograph widget fixes       │    ┌──────────────────────────┐   │  panel-styles.ts     │
 │                                │    │ CSS var ↔ Mantine tuple  │   │ (panel surfaces,     │
 │ base.css                       │    │ bridge (brand + neutral) │   │  text, cards, pills) │
@@ -82,7 +82,7 @@ app/styles/ (Source of Truth)          Mantine Theme (Bridge)        Components
        │
        ▼
   app/globals.css  (pure import ordering — NOT token source)
-  app/layout.tsx   (<html> props, ColorSchemeScript, MantineThemeProvider)
+  app/layout.tsx   (<html> props, ColorSchemeScript, Providers)
 ```
 
 Five layers work together:
@@ -90,7 +90,7 @@ Five layers work together:
 1. **`app/styles/tokens.css`** — design tokens (@theme for Tailwind v4 color generation) + semantic tokens (`:root` light, `.dark` overrides) + Cosmograph overrides (`html:root`, `html.dark`) + entity-type attribute selectors. This is the one place tokens get defined.
 2. **`app/styles/graph-ui.css`** — component-level CSS: `.graph-icon-btn`/`.panel-icon-btn` matte control shells, Mantine overrides (`.table-pagination`, `.detail-accordion`), Cosmograph widget fixes, animations (`pill-activate`, `constellation-drift-0/1/2`).
 3. **`app/styles/base.css`** — reset, `--app-density` scaling, scrollbar utilities, view-transition animations.
-4. **`lib/mantine-theme.ts` + `lib/theme/pastel-tokens.ts`** — bridge tokens into Mantine's theme object (shadows, radius, 10-shade brand/neutral tuples, component defaults).
+4. **`lib/mantine-theme.ts` + `lib/pastel-tokens.ts`** — bridge tokens into Mantine's theme object (shadows, radius, 10-shade brand/neutral tuples, component defaults).
 5. **`lib/graph/brand-colors.ts`** — hex constants WebGL/Cosmograph needs (can't read CSS vars). Mirror-synced with `tokens.css`.
 
 `app/globals.css` is the entry file: it imports `tokens.css`, `base.css`, `graph-ui.css` in order — nothing else lives there. Don't put new tokens or rules in `globals.css`.
@@ -104,9 +104,9 @@ Five layers work together:
 | `app/styles/base.css` | Reset, density scaling, scrollbar utilities, view transitions. |
 | `app/globals.css` | Import ordering only — pulls the three files above. |
 | `lib/mantine-theme.ts` | Mantine `createTheme()` — brand colors, shadows, radius, component defaults. |
-| `lib/theme/pastel-tokens.ts` | CSS-var ↔ Mantine 10-shade tuple bridge; entity-type → semantic color map; DotToc palette cycle. |
+| `lib/pastel-tokens.ts` | CSS-var ↔ Mantine 10-shade tuple bridge; entity-type → semantic color map; DotToc palette cycle. |
 | `lib/graph/brand-colors.ts` | WebGL hex constants (`BRAND`, `DARK_ON_COLOR`, etc.) — mirror of `tokens.css`. |
-| `components/mantine-theme-provider.tsx` | `MantineProvider` + `DarkClassSync` + `ModeColorSync`. |
+| `app/providers.tsx` | `MantineProvider` + `DarkClassSync` for app-wide color-scheme synchronization. |
 | `app/layout.tsx` | `mantineHtmlProps` on `<html>`, `ColorSchemeScript` before paint. |
 | `lib/graph/modes.ts` | Mode registry — `color` + `colorVar` per mode (Ask/Explore/Learn/Write). |
 | `features/graph/components/panels/PanelShell/` | Canonical panel directory — `PanelShell.tsx`, `panel-primitives.tsx`, `panel-header-actions.tsx`, `panel-styles.ts`. |
@@ -265,11 +265,11 @@ const theme = createTheme({
     <ColorSchemeScript defaultColorScheme="auto" />
   </head>
   <body>
-    <MantineThemeProvider>{children}</MantineThemeProvider>
+    <Providers>{children}</Providers>
   </body>
 </html>
 
-// components/mantine-theme-provider.tsx
+// app/providers.tsx
 <MantineProvider theme={theme} defaultColorScheme="auto">
   <DarkClassSync />  {/* Keeps .dark class on <html> in sync */}
   {children}

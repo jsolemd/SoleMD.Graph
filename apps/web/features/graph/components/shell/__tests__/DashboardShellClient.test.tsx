@@ -25,16 +25,6 @@ jest.mock("../preload-chrome-chunks", () => ({
   preloadChromeChunks: jest.fn(),
 }));
 
-jest.mock("../chrome", () => ({
-  TIMELINE_HEIGHT: 44,
-  BottomToolbar: () => null,
-  useBottomChromeFloat: () => ({
-    initial: { bottom: 12 },
-    animate: { bottom: 12 },
-    transition: { bottom: {} },
-  }),
-}));
-
 jest.mock("../loading", () => ({
   GraphBundleErrorState: ({ error }: { error: Error }) => <div>{error.message}</div>,
   GraphBundleLoadingOverlay: () => <div data-testid="loading-overlay" />,

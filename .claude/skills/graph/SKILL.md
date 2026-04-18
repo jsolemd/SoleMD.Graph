@@ -26,10 +26,11 @@ metadata:
 
 Use `/graph` for the system-level contract:
 
-- engine build and publish flow
+- repo-shape boundaries across `apps/` and `packages/`
+- bundle publication contract and the rebuild surfaces that will own it
 - PostgreSQL release metadata and `solemd.graph_runs`
 - bundle artifact layout and checksum-addressed browser URLs
-- Next.js/backend asset serving and local networking
+- current Next.js asset serving plus future backend ownership
 - operational triage for "which layer owns this failure?"
 
 Use `/cosmograph` when the problem is inside the browser runtime after the bundle
@@ -59,11 +60,12 @@ contract changes, update this skill or its references in the same batch and run
 
 | Need | Source |
 |------|--------|
+| Repo shape + cutover boundaries | `docs/rag/15-repo-structure.md` |
 | Reader journey / system map | `docs/map/map.md` |
 | Hard boundaries and adapters | `docs/map/architecture.md` |
 | Frontend/runtime performance rules | `references/frontend-performance.md` |
 | Browser graph runtime contract | `docs/map/graph-runtime.md` |
-| Engine build and publish pipeline | `docs/map/graph-build.md` |
+| Legacy graph build and publish inventory | `docs/map/graph-build.md` |
 | Database ownership / release tables | `docs/map/database.md` |
 | Local host / WSL / tailnet rules | `references/local-networking.md` |
 | Runtime substrate, Docker, GPU, ports | `references/runtime-infrastructure.md` |
@@ -85,24 +87,23 @@ are mandatory.
 ## System Map
 
 ```text
-PubTator3 + Semantic Scholar
-          |
-          v
-  Python engine (`engine/app/**`)
-    - corpus admission
-    - graph build
-    - parquet export
-    - publish current run
-          |
-          v
-  PostgreSQL (`solemd.graph_runs`, graph tables, paper metadata)
+PostgreSQL (`solemd.graph_runs`, graph tables, paper metadata)
           |
           +--> published bundle directory / checksum alias
           |
+          +--> reserved backend rebuild surfaces
+          |      - `apps/api`    request-time HTTP + asset boundaries
+          |      - `apps/worker` ingest/build/publish + queue plane
+          |
           v
-  Next.js app (port 3000)
+  Next.js app (`apps/web`, port 3000)
     - resolves current bundle metadata
     - serves /graph-bundles/<checksum>/<asset>
+    - hosts graph + wiki product surfaces
+          |
+          +--> shared packages
+          |      - `packages/graph/src/**`
+          |      - `packages/api-client/src/**`
           |
           v
   Browser runtime
@@ -116,9 +117,12 @@ PubTator3 + Semantic Scholar
 These rules are the durable contract. Do not weaken them with convenience
 fallbacks in the wrong layer.
 
-### Engine / publish ownership
+### Backend / publish ownership
 
-- The engine builds the bundle and writes the run-scoped artifact set.
+- `apps/api` and `apps/worker` are the only sanctioned homes for the rebuilt
+  backend publish flow.
+- `main` is intentionally frontend-first today; do not resurrect backend logic
+  under random roots or reintroduce `engine/` as a canonical surface.
 - Publish metadata lives in PostgreSQL, primarily `solemd.graph_runs`.
 - The backend publish step owns the checksum alias on disk.
 - Run directories are an implementation detail. The browser does not know or care
@@ -126,12 +130,17 @@ fallbacks in the wrong layer.
 
 ### Backend / asset-serving ownership
 
+- The current browser-visible asset route lives at
+  `apps/web/app/graph-bundles/[checksum]/[asset]/route.ts` and resolves through
+  `apps/web/features/graph/lib/bundle-assets.ts`.
+- When the request-time Python API lands, move the resolver behind `apps/api`
+  without changing the browser URL contract.
 - Browser-visible assets are immutable checksum-addressed URLs:
   - `/graph-bundles/<checksum>/manifest.json`
   - `/graph-bundles/<checksum>/base_points.parquet`
   - `/graph-bundles/<checksum>/base_clusters.parquet`
-- `features/graph/lib/bundle-assets.ts` is the backend resolver boundary for
-  published bundle assets.
+- `apps/web/features/graph/lib/bundle-assets.ts` is the current resolver
+  boundary for published bundle assets on `main`.
 - If the published checksum alias is missing, backend recovery may use
   `solemd.graph_runs` to find the real run directory, but that recovery must not
   change the browser URL contract.
@@ -192,7 +201,7 @@ Check:
 
 - `solemd.graph_runs` current completed row for `bundle_checksum`, `id`, `bundle_uri`
 - on-disk published checksum alias versus real run directory
-- `features/graph/lib/bundle-assets.ts`
+- `apps/web/features/graph/lib/bundle-assets.ts`
 
 Typical failure classes:
 
@@ -259,25 +268,28 @@ Signs of a bad implementation:
 | `npm run typecheck` | TypeScript check |
 | `npm test` | Jest tests |
 
-### Engine
+### Backend Rebuild
 
-| Command | Action |
-|---------|--------|
-| `cd engine && uv run python -m app.graph.build --run --publish-current` | Full rebuild and publish |
-| `cd engine && uv run python -m app.graph.build --run --resume-run <id> --publish-current` | Resume failed run |
-| `cd engine && uv run python -m app.graph.build --publish-run <id> --publish-current` | Publish an existing run |
-| `cd engine && uv run python -m app.graph.build --cleanup` | Purge stale runs and artifacts |
+`main` intentionally does not define canonical backend commands yet. Use
+`apps/api/README.md`, `apps/worker/README.md`, and `docs/rag/15-repo-structure.md`
+as the current cutover contract for backend work, and do not reintroduce
+`engine/` command paths.
 
 ## Key Paths
 
 | Area | Path |
 |------|------|
-| Engine build pipeline | `engine/app/graph/` |
+| Repo shape contract | `docs/rag/15-repo-structure.md` |
 | Current runtime docs | `docs/map/graph-runtime.md` |
 | Performance requirements | `references/frontend-performance.md` |
-| Backend asset resolver | `features/graph/lib/bundle-assets.ts` |
-| DuckDB runtime boundary | `features/graph/duckdb/` |
-| Cosmograph adapter boundary | `features/graph/cosmograph/` |
+| Current asset route | `apps/web/app/graph-bundles/[checksum]/[asset]/route.ts` |
+| Current asset resolver | `apps/web/features/graph/lib/bundle-assets.ts` |
+| DuckDB runtime boundary | `apps/web/features/graph/duckdb/` |
+| Web Cosmograph adapter boundary | `apps/web/features/graph/cosmograph/` |
+| Shared Cosmograph package boundary | `packages/graph/src/cosmograph/` |
+| Shared transport package | `packages/api-client/src/` |
+| Reserved request-time backend | `apps/api/README.md` |
+| Reserved background worker | `apps/worker/README.md` |
 
 ## Update This Skill When
 

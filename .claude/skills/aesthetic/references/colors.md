@@ -35,7 +35,7 @@ Dark-mode values are desaturated ~25–35% lightness, ~20–30% saturation.
 | `--color-plum` | `#d4a0c8` |
 | `--color-pear` | `#c8d8a0` |
 
-Consumed via `lib/theme/pastel-tokens.ts` → `dotTocPastelColorSequence` (20-color cycle). The DotToc component rotates through this sequence.
+Consumed via `lib/pastel-tokens.ts` → `dotTocPastelColorSequence` (20-color cycle). The DotToc component rotates through this sequence.
 
 ## Feedback Colors
 
@@ -118,7 +118,7 @@ Mode colors: Ask → `--color-soft-blue`, Explore → `--color-golden-yellow`, L
 | `--wiki-graph-node-module` | → `--color-semantic-module` | Module |
 | `--wiki-graph-link`, `--wiki-graph-label` | — | Edge + label styling |
 
-Runtime bridge: `entityTypeCssColorByType` in `lib/theme/pastel-tokens.ts` exposes these hexes as runtime constants for WebGL/SVG that can't read CSS vars.
+Runtime bridge: `entityTypeCssColorByType` in `lib/pastel-tokens.ts` exposes these hexes as runtime constants for WebGL/SVG that can't read CSS vars.
 
 ## Entity Accent (attribute-driven theming)
 
@@ -193,7 +193,7 @@ Wired by `.graph-icon-btn` / `.panel-icon-btn` rules in `graph-ui.css`.
 
 ## Mantine Brand Tuple
 
-From `lib/theme/pastel-tokens.ts` → `mantineBrandColorsTuple` (primary shade index = 3):
+From `lib/pastel-tokens.ts` → `mantineBrandColorsTuple` (primary shade index = 3):
 
 ```
 [0] #eef3f9   [1] #dce7f4   [2] #c9dcef   [3] #a8c5e9 (primary)

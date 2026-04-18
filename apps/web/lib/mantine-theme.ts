@@ -9,7 +9,7 @@ import {
   mantineBrandColorsTuple,
   mantineNeutralColorsTuple,
   themeSurfaceFallbackHexByKey,
-} from "@/lib/theme/pastel-tokens";
+} from "@/lib/pastel-tokens";
 export const theme = createTheme({
   primaryColor: "brand",
   primaryShade: { light: 3, dark: 3 },

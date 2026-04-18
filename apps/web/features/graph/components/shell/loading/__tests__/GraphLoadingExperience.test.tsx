@@ -3,7 +3,7 @@
  */
 import { fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
-import { MantineThemeProvider } from "@/components/MantineThemeProvider";
+import { Providers } from "@/app/providers";
 import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
 
 jest.mock("@/features/animations/canvas/connectome-loader/ConnectomeLoader", () => ({
@@ -31,9 +31,9 @@ describe("GraphLoadingExperience", () => {
 
   it("opens the about panel from the loading chrome", () => {
     render(
-      <MantineThemeProvider>
+      <Providers>
         <GraphLoadingExperience />
-      </MantineThemeProvider>,
+      </Providers>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "About SoleMD" }));
@@ -44,9 +44,9 @@ describe("GraphLoadingExperience", () => {
 
   it("suspends the interactive backdrop once the canvas is ready", () => {
     render(
-      <MantineThemeProvider>
+      <Providers>
         <GraphLoadingExperience canvasReady />
-      </MantineThemeProvider>,
+      </Providers>,
     );
 
     expect(screen.getByTestId("connectome-loader")).toHaveAttribute(

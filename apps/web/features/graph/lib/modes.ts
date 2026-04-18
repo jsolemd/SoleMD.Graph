@@ -3,7 +3,7 @@ import type { PanelId, PromptMode } from '@/features/graph/stores'
 import {
   brandPastelFallbackHexByKey,
   brandPastelVarNameByKey,
-} from '@/lib/theme/pastel-tokens'
+} from '@/lib/pastel-tokens'
 
 /** What chrome/controls each mode makes available in the dashboard. */
 export interface ModeLayout {

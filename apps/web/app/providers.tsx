@@ -21,7 +21,7 @@ function DarkClassSync({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export function MantineThemeProvider({
+export function Providers({
   children,
 }: {
   children: React.ReactNode;

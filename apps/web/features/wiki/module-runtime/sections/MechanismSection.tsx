@@ -12,7 +12,7 @@ import {
   cardRevealReduced,
   staggerChildren,
 } from "@/features/wiki/module-runtime/motion";
-import { moduleAccentCssVar } from "@/lib/theme/pastel-tokens";
+import { moduleAccentCssVar } from "@/lib/pastel-tokens";
 
 export function MechanismSection({
   stages,

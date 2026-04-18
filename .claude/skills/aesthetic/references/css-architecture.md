@@ -84,7 +84,7 @@ Component-level CSS that doesn't fit token blocks.
 - **Keyframe animations**: `pill-activate`, `constellation-drift-0/1/2`, `constellation-glow`
 - **Entity accent pill**: `.entity-accent-pill` uses `color-mix()` with `--entity-accent`
 
-## Layer 4 — Mantine Bridge (`lib/mantine-theme.ts` + `lib/theme/pastel-tokens.ts`)
+## Layer 4 — Mantine Bridge (`lib/mantine-theme.ts` + `lib/pastel-tokens.ts`)
 
 ### `lib/mantine-theme.ts`
 
@@ -114,7 +114,7 @@ createTheme({
 })
 ```
 
-### `lib/theme/pastel-tokens.ts`
+### `lib/pastel-tokens.ts`
 
 The canonical CSS-var ↔ Mantine-tuple bridge. Exports:
 
@@ -180,7 +180,7 @@ Tokens before base (base.css reads `--app-density`, etc.) and before component r
 
 | "I need to..." | Put it in... |
 |----------------|--------------|
-| Add a brand or pastel color | `tokens.css` `@theme` + `lib/theme/pastel-tokens.ts` if bridging to Mantine |
+| Add a brand or pastel color | `tokens.css` `@theme` + `lib/pastel-tokens.ts` if bridging to Mantine |
 | Add a semantic token (surface, border, panel-*) | `tokens.css` `:root` + `.dark` |
 | Add a Cosmograph widget color | `tokens.css` `html:root` (+ `html.dark` if it needs a hard-coded dark value) |
 | Add a new panel style object | `features/graph/components/panels/PanelShell/panel-styles.ts` + export from `index.ts` |
@@ -188,6 +188,6 @@ Tokens before base (base.css reads `--app-density`, etc.) and before component r
 | Add a reset/global rule | `base.css` |
 | Add a WebGL hex constant | `lib/graph/brand-colors.ts` (mirror the value in `tokens.css`) |
 | Bridge a token to Mantine's theme | `lib/mantine-theme.ts` |
-| Map an entity type to a graph color | `lib/theme/pastel-tokens.ts` + matching `[data-entity-type]` rule in `tokens.css` |
+| Map an entity type to a graph color | `lib/pastel-tokens.ts` + matching `[data-entity-type]` rule in `tokens.css` |
 
 **Never** add tokens directly to `app/globals.css` — it's pure import ordering.

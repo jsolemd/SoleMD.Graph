@@ -1,10 +1,10 @@
 import {
   entityTypeSemanticColorKeyByType,
   semanticColorFallbackHexByKey,
-} from "@/lib/theme/pastel-tokens"
-import type { SemanticColorKey } from "@/lib/theme/pastel-tokens"
+} from "@/lib/pastel-tokens"
+import type { SemanticColorKey } from "@/lib/pastel-tokens"
 
-export type { SemanticColorKey } from "@/lib/theme/pastel-tokens"
+export type { SemanticColorKey } from "@/lib/pastel-tokens"
 
 // ---------------------------------------------------------------------------
 // Theme palette — semantic-group node colors from CSS tokens

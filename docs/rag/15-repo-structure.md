@@ -114,7 +114,6 @@ Expected internal shape:
 ```text
 apps/web/
   app/
-  components/
   features/
     graph/
     wiki/
@@ -126,7 +125,8 @@ Important rule: the wiki stays here as a feature because it is rendered and
 composed as part of the web product. It is not a platform package.
 Use Next.js route groups like `(group)` and private folders like `_internal`
 inside `app/` to keep route organization clean without adding another mandatory
-`src/` layer.
+`src/` layer. Add `apps/web/components` only if a genuinely cross-feature app
+primitive appears; do not create it for one-off wrappers.
 
 ### 3.2 `apps/api`
 

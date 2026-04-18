@@ -10,7 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { Tooltip } from "@mantine/core";
 import { panelScaledPx } from "@/features/graph/components/panels/PanelShell";
-import { dotTocPastelColorSequence } from "@/lib/theme/pastel-tokens";
+import { dotTocPastelColorSequence } from "@/lib/pastel-tokens";
 import type { ModuleSection } from "@/features/wiki/module-runtime/types";
 
 // ---------------------------------------------------------------------------

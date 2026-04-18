@@ -6,7 +6,7 @@ import "@testing-library/jest-dom";
 import { MantineProvider } from "@mantine/core";
 import { useRef } from "react";
 import type { ModuleSection } from "@/features/wiki/module-runtime/types";
-import { dotTocPastelColorSequence } from "@/lib/theme/pastel-tokens";
+import { dotTocPastelColorSequence } from "@/lib/pastel-tokens";
 import {
   PanelEdgeToc,
   entriesFromHeadings,

@@ -2,16 +2,18 @@
 
 Agent-facing performance rules for SoleMD.Graph frontend and browser runtime.
 
-Use this reference when touching `features/graph/**`, DuckDB bootstrap,
-selection/scope resolution, panel orchestration, or graph-loading paths. Keep
-this contract here instead of recreating it in human-facing docs.
+Use this reference when touching `apps/web/features/graph/**`,
+`packages/graph/src/cosmograph/**`, DuckDB bootstrap, selection/scope
+resolution, panel orchestration, or graph-loading paths. Keep this contract
+here instead of recreating it in human-facing docs.
 
 ## Core Rules
 
 1. Native-first runtime
 - Prefer built-in platform capabilities before JS-side orchestration.
-- Keep Cosmograph behind `features/graph/cosmograph/**`.
-- Keep Tiptap behind `features/graph/tiptap/**`.
+- Keep the app-owned Cosmograph adapter behind `apps/web/features/graph/cosmograph/**`.
+- Keep shared browser-runtime Cosmograph code behind `packages/graph/src/cosmograph/**`.
+- Keep Tiptap behind `apps/web/features/graph/tiptap/**`.
 
 2. One canonical query/state path
 - Selection, scope, and graph projection intent resolve through shared layers.

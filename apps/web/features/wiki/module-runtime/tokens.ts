@@ -2,7 +2,7 @@ import type { ModuleAccent } from "./types";
 import {
   brandPastelCssVar,
   brandPastelVarNameByKey,
-} from "@/lib/theme/pastel-tokens";
+} from "@/lib/pastel-tokens";
 
 const ACCENT_TO_CSS_VAR = brandPastelVarNameByKey satisfies Record<ModuleAccent, string>;
 

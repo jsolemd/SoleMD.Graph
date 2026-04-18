@@ -46,7 +46,7 @@ import {
 import {
   brandPastelFallbackHexByKey,
   brandPastelVarNameByKey,
-} from "@/lib/theme/pastel-tokens";
+} from "@/lib/pastel-tokens";
 
 export const NODE_COUNT = 6000;
 const BOUNDARY_RADIUS = 6;

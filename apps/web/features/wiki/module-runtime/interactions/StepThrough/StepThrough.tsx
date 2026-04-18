@@ -10,7 +10,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { ActionIcon } from "@mantine/core";
 import { ChevronUp, ChevronDown } from "lucide-react";
-import { moduleAccentCssVar } from "@/lib/theme/pastel-tokens";
+import { moduleAccentCssVar } from "@/lib/pastel-tokens";
 import {
   useStepThrough,
   type UseStepThroughConfig,

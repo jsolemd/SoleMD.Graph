@@ -1,4 +1,4 @@
-import { brandPastelFallbackHexByKey } from '@/lib/theme/pastel-tokens'
+import { brandPastelFallbackHexByKey } from '@/lib/pastel-tokens'
 
 /** WebGL needs actual hex values, not CSS vars. Keep in sync with globals.css. */
 export const BRAND = {

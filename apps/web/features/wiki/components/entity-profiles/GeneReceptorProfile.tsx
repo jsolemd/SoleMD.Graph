@@ -11,7 +11,7 @@ import {
   panelTextStyle,
   sectionLabelStyle,
 } from "@/features/graph/components/panels/PanelShell";
-import { entityTypeCssColorByType } from "@/lib/theme/pastel-tokens";
+import { entityTypeCssColorByType } from "@/lib/pastel-tokens";
 import type { EntityProfileProps } from "./index";
 
 const BAR_H = 14;

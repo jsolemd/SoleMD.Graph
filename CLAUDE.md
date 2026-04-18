@@ -19,11 +19,12 @@
 
 ## TL;DR
 
-Next.js frontend + Python data engine. Cosmograph graph viz + DuckDB-WASM. PostgreSQL + pgvector. PubTator3 + Semantic Scholar pre-computed data.
+Next.js frontend on `main`, with clean-room backend rebuild targets reserved under `apps/api` and `apps/worker`. Cosmograph graph viz + DuckDB-WASM. PostgreSQL + pgvector. Checksum-addressed graph bundles remain the browser contract.
 
 ## Canonical Sources
 
 - `.claude/skills/graph/SKILL.md` - agent-facing architecture and ownership contract
+- `docs/rag/15-repo-structure.md` - locked repo shape and cutover boundaries
 - `docs/map/map.md` - human-facing ASCII system map
 - `.claude/skills/graph/references/frontend-performance.md` - mandatory runtime performance contract
 - `.claude/skills/langfuse/references/benchmarking.md` - agent-facing RAG benchmark and Langfuse evaluation workflow
@@ -32,10 +33,11 @@ Next.js frontend + Python data engine. Cosmograph graph viz + DuckDB-WASM. Postg
 
 | Context | Details |
 |---------|---------|
-| Frontend | Next.js App Router, Mantine 8, Tailwind CSS 4 |
-| Engine | Python 3.13 (uv-managed) in `engine/` |
+| Frontend | Next.js App Router in `apps/web`, Mantine 8, Tailwind CSS 4 |
+| Backend | Clean-room rebuild targets in `apps/api/` and `apps/worker/`; `main` is intentionally frontend-first until those runtimes land |
+| Shared packages | `packages/graph`, `packages/api-client`; `packages/ui` is reserved for future shared React primitives |
 | Database | PostgreSQL + pgvector; see `docs/map/database.md` and `.claude/skills/graph/references/runtime-infrastructure.md` for runtime substrate and local ports |
-| Task queue | Dramatiq + Redis; see `.claude/skills/graph/references/runtime-infrastructure.md` for local topology and ports |
+| Task queue | Dramatiq + Redis remain the intended worker-plane substrate; see `.claude/skills/graph/references/runtime-infrastructure.md` for local topology and ports |
 
 Pinned local service versions, image tags, and exposed ports live in `.claude/skills/graph/references/runtime-infrastructure.md`. Avoid repeating exact runtime pins in other docs unless that file is also updated.
 
@@ -43,8 +45,8 @@ Pinned local service versions, image tags, and exposed ports live in `.claude/sk
 
 ```bash
 npm run dev                    # Next.js dev server
-npm run build && npm run lint  # Build + lint
-cd engine && uv run pytest     # Engine tests
+npm run build && npm run lint && npm run typecheck
+npm test -- --runInBand        # Frontend Jest suite
 ```
 
 ## Engineering Workflow
@@ -78,12 +80,13 @@ document before editing code.
 | Topic | Location |
 |-------|----------|
 | Agent-facing architecture contract | `.claude/skills/graph/SKILL.md` |
+| Repo structure + cutover boundaries | `docs/rag/15-repo-structure.md` |
 | Entry point + reader journey | `docs/map/map.md` |
 | Hard boundaries + adapters | `docs/map/architecture.md` |
 | Database schema | `docs/map/database.md` |
 | Frontend latency + runtime rules | `.claude/skills/graph/references/frontend-performance.md` |
-| Ingest (PubTator3 + S2 + warehouse) | `docs/map/ingest.md` |
-| Graph build (engine pipeline) | `docs/map/graph-build.md` |
+| Ingest (legacy inventory until backend rebuild lands) | `docs/map/ingest.md` |
+| Graph build (legacy inventory until backend rebuild lands) | `docs/map/graph-build.md` |
 | Graph runtime (browser + DuckDB + bundle) | `docs/map/graph-runtime.md` |
 | RAG runtime | `docs/map/rag.md` |
 | RAG benchmark + Langfuse eval workflow | `.claude/skills/langfuse/references/benchmarking.md` |

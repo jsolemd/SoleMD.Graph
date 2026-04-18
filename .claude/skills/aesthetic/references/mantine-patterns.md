@@ -2,12 +2,12 @@
 
 ## Theme Configuration
 
-The Mantine theme is configured in `lib/mantine-theme.ts`. It imports the 10-shade color tuples from `lib/theme/pastel-tokens.ts` (the canonical CSS-var ↔ Mantine-tuple bridge) and pulls shadows from `app/styles/tokens.css`.
+The Mantine theme is configured in `lib/mantine-theme.ts`. It imports the 10-shade color tuples from `lib/pastel-tokens.ts` (the canonical CSS-var ↔ Mantine-tuple bridge) and pulls shadows from `app/styles/tokens.css`.
 
 ### Pastel-tokens bridge
 
 ```ts
-// lib/theme/pastel-tokens.ts (excerpt)
+// lib/pastel-tokens.ts (excerpt)
 export const mantineBrandColorsTuple: MantineColorsTuple = [
   '#eef3f9', '#dce7f4', '#c9dcef',
   '#a8c5e9',  // [3] — primary, matches --color-soft-blue
@@ -31,7 +31,7 @@ export const mantineNeutralColorsTuple: MantineColorsTuple = [
 
 ```typescript
 // lib/mantine-theme.ts
-import { mantineBrandColorsTuple, mantineNeutralColorsTuple } from "./theme/pastel-tokens";
+import { mantineBrandColorsTuple, mantineNeutralColorsTuple } from "./pastel-tokens";
 
 const theme = createTheme({
   primaryColor: 'brand',
@@ -67,7 +67,7 @@ const theme = createTheme({
 ### Provider setup
 
 ```tsx
-// components/mantine-theme-provider.tsx
+// app/providers.tsx
 <MantineProvider theme={theme} defaultColorScheme="auto">
   <DarkClassSync />  {/* Keeps .dark class on <html> in sync */}
   {children}
@@ -78,6 +78,9 @@ const theme = createTheme({
   <head>
     <ColorSchemeScript defaultColorScheme="auto" />
   </head>
+  <body>
+    <Providers>{children}</Providers>
+  </body>
 ```
 
 ### DarkClassSync

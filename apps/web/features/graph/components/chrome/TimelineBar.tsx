@@ -26,7 +26,8 @@ import {
   panelTextMutedStyle,
   panelTypePillStyles,
 } from "../panels/PanelShell";
-import { TIMELINE_HEIGHT } from "../shell/chrome";
+
+const TIMELINE_HEIGHT = 44;
 
 const timelineStyle: React.CSSProperties = {
   height: TIMELINE_HEIGHT,
