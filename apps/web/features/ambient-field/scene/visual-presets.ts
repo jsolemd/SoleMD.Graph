@@ -10,7 +10,8 @@ import {
 export type AmbientFieldVisualPreset = "blob" | "stream" | "pcb";
 export type AmbientFieldStageItemId = AmbientFieldVisualPreset;
 export type AmbientFieldPhaseId =
-  | "blobSelection"
+  | "paperHighlights"
+  | "paperCards"
   | "detailInspection"
   | "synthesisLinks"
   | "reform";
@@ -102,7 +103,8 @@ export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
 ] as const satisfies readonly AmbientFieldStageItemId[];
 
 export const AMBIENT_FIELD_PHASE_IDS = [
-  "blobSelection",
+  "paperHighlights",
+  "paperCards",
   "detailInspection",
   "synthesisLinks",
   "reform",
@@ -136,11 +138,11 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       pulsePhase: 0.35,
-      pulseRate: 3.18,
-      pulseSoftness: 0.12,
+      pulseRate: 3.26,
+      pulseSoftness: 0.16,
       pulseSpatialScale: 1.45,
-      pulseStrength: 1.16,
-      pulseThreshold: 0.76,
+      pulseStrength: 1.22,
+      pulseThreshold: 0.72,
       selection: 1,
       size: 7.2,
       sizeMobile: 4.8,
@@ -173,11 +175,11 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0.4,
       pulsePhase: 1.6,
-      pulseRate: 3.34,
-      pulseSoftness: 0.12,
+      pulseRate: 3.4,
+      pulseSoftness: 0.15,
       pulseSpatialScale: 1.28,
-      pulseStrength: 1.02,
-      pulseThreshold: 0.74,
+      pulseStrength: 1.08,
+      pulseThreshold: 0.72,
       selection: 1,
       size: 9.2,
       sizeMobile: 5.8,
@@ -244,7 +246,8 @@ export function createAmbientFieldSceneState(): AmbientFieldSceneState {
     processProgress: 0,
     motionEnabled: true,
     phases: {
-      blobSelection: 0,
+      paperHighlights: 0,
+      paperCards: 0,
       detailInspection: 0,
       synthesisLinks: 0,
       reform: 0,

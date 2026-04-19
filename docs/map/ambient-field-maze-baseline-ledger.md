@@ -457,9 +457,12 @@ Primary files:
 - [ ] Welcome:
   cohesive rotating globe, early deformation onset, no overlay dependency
 - [ ] Paper Story:
-  selected paper points, persistent blob, first emphasis windows
+  beat 1 = selected paper points only; beat 2 = selected paper points plus
+  projected hover cards; beat 3 = bridge into the detail chapter while the blob
+  remains present
 - [ ] Detail Story:
-  adapt Maze's stream inspection mechanics into paper/entity/relation detail
+  adapt Maze's inspection mechanics into paper/entity/relation detail without
+  carrying the Paper Story hover-card mode into this chapter
 - [ ] Synthesis Story:
   relation links between points, wiki-facing connection story, persistent blob
 - [ ] End State:
@@ -489,6 +492,9 @@ Primary files:
 - [ ] Use the new named phase channels to drive selected-point density and later overlays
 - [ ] Add a paper-highlight chapter using Maze-style selected-point staging
 - [ ] Add a paper metadata / entity-relation hover-card phase using projected overlays
+- [ ] Keep Paper Story beat naming explicit in code and docs:
+  beat-level highlight/card windows are not the same thing as section-level
+  chapter names
 - [ ] Replace the current DOM-heavy detail section with a field-led reveal:
   particles disburse or separate to expose the relevant module panel
 - [ ] Add a synthesis phase with visible point-to-point connections for the wiki story
@@ -508,8 +514,9 @@ Primary files:
   gap is a visibility/readability problem, not a count or randomization problem.
 - Scroll dwell is still shorter than the source, which compresses the perceived
   lifecycle and makes rotation/motion transitions feel less continuous.
-- Selected-point phases exist only as shader-side thinning right now; projected
-  hotspot and hover-card layers are still missing.
+- Projected hotspot and hover-card layers now exist, but the remaining work is
+  tightening their chapter timing, motion quality, and parity against Maze's
+  persistent sampled-anchor behavior.
 - The current stream/detail chapter is still simplified compared with Maze:
   one SVG path family, limited popup choreography, and no authored highlight pool.
 - The landing content now follows the SoleMD chapter arc, but the later synthesis

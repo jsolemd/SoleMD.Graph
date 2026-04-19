@@ -170,14 +170,24 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
   activationViewportRatio: 0.24,
   focusViewportRatio: 0.32,
   phases: {
-    blobSelection: {
+    paperHighlights: {
       start: {
         sectionId: "section-story-1",
         offsetViewport: -0.08,
       },
       end: {
+        sectionId: "section-story-1",
+        offsetViewport: 0.84,
+      },
+    },
+    paperCards: {
+      start: {
+        sectionId: "section-story-1",
+        offsetViewport: 0.84,
+      },
+      end: {
         sectionId: "section-graph",
-        offsetViewport: -0.08,
+        offsetViewport: -0.12,
       },
     },
     detailInspection: {
