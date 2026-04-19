@@ -3,10 +3,10 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef, type MutableRefObject } from "react";
 import {
-  AdditiveBlending,
   Texture,
   Color,
   Group,
+  NormalBlending,
   ShaderMaterial,
 } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
@@ -177,7 +177,7 @@ function AmbientFieldStageLayer({
           transparent
           depthTest={false}
           depthWrite={false}
-          blending={AdditiveBlending}
+          blending={NormalBlending}
           uniforms={uniforms}
           vertexShader={FIELD_VERTEX_SHADER}
           fragmentShader={FIELD_FRAGMENT_SHADER}
