@@ -7,16 +7,49 @@ description: |
   modules, building interaction primitives/shells, working on features/learn/,
   or when the user mentions "learn", "module", "interactive lesson", "SHOW don't
   TELL", "interaction shell", "compound component", or specific modules like
-  "ai-for-mds". Companions: /clean (engineering review), /animation-authoring
-  (motion details). Do NOT use for: animation syntax (use /animation-authoring),
-  graph panels (use /graph), styling (use /aesthetic).
-version: 1.0.0
+  "ai-for-mds". Companions: /ambient-field-modules (shared stage/background
+  runtime), /clean (engineering review), /animation-authoring (motion details).
+  Do NOT use for: animation syntax (use /animation-authoring), graph panels
+  (use /graph), styling (use /aesthetic).
+version: 1.1.0
 ---
 
 # Learn Module Authoring
 
 > Interactive educational modules for SoleMD.Graph at `/learn/[slug]`.
 > Every section SHOWS a concept through interaction - text-only sections are a design failure.
+
+## Ambient Module Contract
+
+If a learn module uses a persistent stage layer, ambient background, scroll
+chapters, GSAP choreography, or R3F/Three.js rendering, pair this skill with
+`/ambient-field-modules`.
+
+Do not treat ambient motion as a decorative afterthought attached at the end of
+module work. In SoleMD.Graph, module surfaces and the ambient runtime are meant
+to converge on one shared presentation system.
+
+Required recon before implementation when a module touches GSAP or Three.js:
+
+1. Use CodeAtlas `search_docs` with `/greensock/GSAP` for timeline,
+   `ScrollTrigger`, cleanup, and reduced-motion questions.
+2. Use CodeAtlas `search_docs` with `/mrdoob/three.js` for renderer,
+   shader, material, camera, geometry, and lifecycle questions.
+3. Use `search_docs_multi` across both when the behavior spans scroll state and
+   WebGL state together.
+4. Use the GSAP skills repo and Three.js `llms*.txt` docs as official
+   supplements, not as a replacement for CodeAtlas retrieval inside this repo.
+
+Recommended query shapes:
+
+- `ScrollTrigger React cleanup`
+- `GSAP matchMedia reduced motion`
+- `ShaderMaterial uniforms update`
+- `PointsMaterial vs ShaderMaterial`
+- `WebGLRenderer setPixelRatio performance`
+
+Hard rule: do not invent GSAP or Three.js patterns from memory when the docs
+are already indexed and current.
 
 ## The Three-Tier Architecture
 

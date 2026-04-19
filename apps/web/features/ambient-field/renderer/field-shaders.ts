@@ -1,6 +1,7 @@
 export const FIELD_VERTEX_SHADER = `
 precision highp float;
 
+attribute vec3 color;
 attribute float aAlpha;
 attribute float aIndex;
 attribute float aSelection;
@@ -27,6 +28,12 @@ uniform float uDepth;
 uniform float uAmplitude;
 uniform float uFrequency;
 uniform float uSelection;
+uniform float uPulseRate;
+uniform float uPulsePhase;
+uniform float uPulseSoftness;
+uniform float uPulseSpatialScale;
+uniform float uPulseStrength;
+uniform float uPulseThreshold;
 
 uniform float uWidth;
 uniform float uHeight;
@@ -203,11 +210,27 @@ float fbm(vec3 x) {
 void main() {
   vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
 
-  float colorMix = clamp(vNoise, 0.0, 1.0) * 4.0;
-  float r = uColorBase.r + colorMix * (uColorNoise.r - uColorBase.r);
-  float g = uColorBase.g + colorMix * (uColorNoise.g - uColorBase.g);
-  float b = uColorBase.b + colorMix * (uColorNoise.b - uColorBase.g);
-  vColor = vec3(r, g, b);
+  float colorNoise = clamp(vNoise, 0.0, 1.0);
+  vec3 baseColor = mix(uColorBase, uColorNoise, colorNoise * 0.10);
+  float pulseTime = uTime + (uPulsePhase * 0.1);
+  float pulseStep = floor(pulseTime * uPulseRate);
+  float pulseCycle = fract(pulseTime * uPulseRate);
+  vec3 pulseBasis = position;
+  float pulseBasisLength = max(length(pulseBasis), 0.0001);
+  pulseBasis /= pulseBasisLength;
+  float pulseEnvelope =
+    smoothstep(0.0, 0.18, pulseCycle) *
+    (1.0 - smoothstep(0.42, 0.92, pulseCycle));
+  float pulseField = snoise(vec4(
+    pulseBasis * uPulseSpatialScale +
+    vec3(pulseStep * 0.11, -pulseStep * 0.07, pulseStep * 0.05 + uPulsePhase),
+    0.0
+  ));
+  float pulseMask =
+    smoothstep(uPulseThreshold, uPulseThreshold + uPulseSoftness, pulseField) *
+    pulseEnvelope;
+  vec3 pulseColor = mix(uColorNoise, color, 0.78);
+  vColor = mix(baseColor, pulseColor, pulseMask * uPulseStrength);
 
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
@@ -248,6 +271,8 @@ void main() {
   vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
   if (aSelection > uSelection) {
     vAlpha = 0.0;
+  } else {
+    vAlpha *= 1.0 + pulseMask * 0.18;
   }
 }
 `;
@@ -261,13 +286,13 @@ varying vec3 vColor;
 uniform sampler2D pointTexture;
 
 void main() {
-  float spriteAlpha = texture2D(pointTexture, gl_PointCoord).a;
-  float alpha = spriteAlpha * vAlpha;
+  vec4 sprite = texture2D(pointTexture, gl_PointCoord);
+  vec4 color = vec4(vColor, vAlpha) * sprite;
 
-  if (alpha <= 0.01) {
+  if (color.a <= 0.01) {
     discard;
   }
 
-  gl_FragColor = vec4(vColor, alpha);
+  gl_FragColor = color;
 }
 `;

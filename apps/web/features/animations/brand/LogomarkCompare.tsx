@@ -96,7 +96,7 @@ const CANDIDATES: CandidateRow[] = [
 ];
 
 const APPROACH_COLORS: Record<string, string> = {
-  baseline: "var(--color-gray)",
+  baseline: "var(--text-secondary)",
   distilled: "var(--color-soft-blue)",
   claude: "var(--color-soft-lavender)",
 };

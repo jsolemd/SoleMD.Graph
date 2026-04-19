@@ -329,7 +329,7 @@ export default function SoleMDLogo({
       {layout && (
         <>
           <g
-            stroke="var(--color-gray)"
+            stroke="var(--text-secondary)"
             strokeOpacity={0.5}
             strokeWidth={0.45}
             strokeLinecap="round"

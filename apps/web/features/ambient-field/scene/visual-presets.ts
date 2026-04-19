@@ -34,6 +34,12 @@ export interface AmbientFieldShaderPreset {
   selection: number;
   size: number;
   sizeMobile?: number;
+  pulsePhase: number;
+  pulseRate: number;
+  pulseSoftness: number;
+  pulseSpatialScale: number;
+  pulseStrength: number;
+  pulseThreshold: number;
   speed: number;
   stream: number;
   width: number;
@@ -71,8 +77,11 @@ const semanticToken = (
 });
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
-const SHARED_PARTICLE_BASE = semanticToken("phys");
-const SHARED_PARTICLE_NOISE = semanticToken("section");
+const NEUTRAL_PARTICLE_BASE: ColorToken = {
+  cssVarName: "--ambient-field-particle-base",
+  fallbackHex: "#a0a0bb",
+};
+const SHARED_PARTICLE_NOISE = semanticToken("paper");
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
@@ -89,13 +98,13 @@ export const visualPresets: Record<
     sceneScaleMobile: 0.55,
     sceneOffset: [0, -0.02, 0],
     sceneRotation: [0, 0, 0],
-    rotationVelocity: [0.004, 0.085, 0.004],
-    scrollRotation: [0, 0.38, 0],
+    rotationVelocity: [0, 0.06, 0],
+    scrollRotation: [0, Math.PI, 0],
     shader: {
       alpha: 1,
       alphaMobile: 1,
       amplitude: 0.05,
-      colorBase: SHARED_PARTICLE_BASE,
+      colorBase: NEUTRAL_PARTICLE_BASE,
       colorNoise: SHARED_PARTICLE_NOISE,
       depth: 0.3,
       frequency: 0.5,
@@ -107,6 +116,12 @@ export const visualPresets: Record<
       funnelStartShift: 0,
       funnelThick: 0,
       height: 0,
+      pulsePhase: 0.35,
+      pulseRate: 2.2,
+      pulseSoftness: 0.14,
+      pulseSpatialScale: 1.55,
+      pulseStrength: 0.75,
+      pulseThreshold: 0.82,
       selection: 1,
       size: 8,
       sizeMobile: 5.6,
@@ -126,7 +141,7 @@ export const visualPresets: Record<
       alpha: 1,
       alphaMobile: 1,
       amplitude: 0.05,
-      colorBase: SHARED_PARTICLE_BASE,
+      colorBase: NEUTRAL_PARTICLE_BASE,
       colorNoise: SHARED_PARTICLE_NOISE,
       depth: 0.69,
       frequency: 1.7,
@@ -138,6 +153,12 @@ export const visualPresets: Record<
       funnelStartShift: 0,
       funnelThick: 0,
       height: 0.4,
+      pulsePhase: 1.6,
+      pulseRate: 2.6,
+      pulseSoftness: 0.14,
+      pulseSpatialScale: 1.35,
+      pulseStrength: 0.68,
+      pulseThreshold: 0.8,
       selection: 1,
       size: 10,
       sizeMobile: 6.6,
@@ -157,7 +178,7 @@ export const visualPresets: Record<
       alpha: 0.9,
       alphaMobile: 0.82,
       amplitude: 0.05,
-      colorBase: SHARED_PARTICLE_BASE,
+      colorBase: NEUTRAL_PARTICLE_BASE,
       colorNoise: SHARED_PARTICLE_NOISE,
       depth: 0.3,
       frequency: 0.1,
@@ -169,6 +190,12 @@ export const visualPresets: Record<
       funnelStartShift: 0,
       funnelThick: 0,
       height: 0,
+      pulsePhase: 2.8,
+      pulseRate: 1.9,
+      pulseSoftness: 0.16,
+      pulseSpatialScale: 1.15,
+      pulseStrength: 0.58,
+      pulseThreshold: 0.84,
       selection: 1,
       size: 6,
       sizeMobile: 4.4,

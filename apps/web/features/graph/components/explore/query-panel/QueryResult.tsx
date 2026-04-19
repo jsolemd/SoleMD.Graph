@@ -3,7 +3,11 @@
 import { useState } from "react";
 import { Button, Code, Collapse, Group, Stack, Text } from "@mantine/core";
 import { ChevronDown } from "lucide-react";
-import { PANEL_ACCENT, panelScaledPx, panelTextDimStyle } from "../../panels/PanelShell";
+import {
+  insetCodeBlockStyle,
+  PANEL_ACCENT,
+  panelTextDimStyle,
+} from "../../panels/PanelShell";
 import type { GraphQueryResult } from "@solemd/graph";
 import { QueryResultTable } from "./QueryResultTable";
 
@@ -38,19 +42,7 @@ export function QueryResult({ result }: { result: GraphQueryResult }) {
       </Group>
 
       <Collapse in={showSql}>
-        <Code
-          block
-          style={{
-            backgroundColor: "var(--graph-panel-input-bg)",
-            border: "1px solid var(--graph-panel-border)",
-            color: "var(--graph-panel-text-dim)",
-            fontSize: panelScaledPx(9),
-            lineHeight: panelScaledPx(13),
-            padding: `${panelScaledPx(4)} ${panelScaledPx(6)}`,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
+        <Code block style={insetCodeBlockStyle}>
           {result.executedSql}
         </Code>
       </Collapse>

@@ -3,7 +3,7 @@
 import type { KeyboardEvent, RefObject } from "react";
 import type { PromptInteractionMenuState } from "./prompt-interaction-extension";
 import type { ReferenceMentionMenuState } from "./reference-mention-extension";
-import { promptSurfaceStyle } from "@/features/graph/components/panels/PanelShell";
+import { PopoverSurface } from "@/features/graph/components/panels/PanelShell";
 
 interface EditorOverlaySurfaceProps {
   promptInteractionMenuRef: RefObject<HTMLDivElement | null>;
@@ -35,17 +35,14 @@ export function EditorOverlaySurface({
       }}
     >
       {promptInteractionMenu && (
-        <div
+        <PopoverSurface
           ref={promptInteractionMenuRef}
           tabIndex={-1}
           onKeyDown={handlePromptInteractionMenuKeyDown}
           className="rounded-2xl px-2 py-2"
-          style={floatingMenuStyle({
-            x: promptInteractionMenu.x,
-            y: promptInteractionMenu.y,
-            minWidth: 240,
-            maxWidth: 280,
-          })}
+          style={floatingMenuStyle(promptInteractionMenu.x, promptInteractionMenu.y)}
+          minWidth={240}
+          maxWidth={280}
         >
           <div style={{ display: "grid", gap: 4 }}>
             {promptInteractionMenu.provider.commands.map((command, index) => {
@@ -72,18 +69,15 @@ export function EditorOverlaySurface({
               );
             })}
           </div>
-        </div>
+        </PopoverSurface>
       )}
 
       {referenceMentionMenu && (
-        <div
+        <PopoverSurface
           className="rounded-2xl px-2 py-2"
-          style={floatingMenuStyle({
-            x: referenceMentionMenu.x,
-            y: referenceMentionMenu.y,
-            minWidth: 300,
-            maxWidth: 360,
-          })}
+          style={floatingMenuStyle(referenceMentionMenu.x, referenceMentionMenu.y)}
+          minWidth={300}
+          maxWidth={360}
         >
           {referenceMentionMenu.items.length === 0 ? (
             <div className="rounded-xl px-3 py-2" style={floatingMenuEmptyStateStyle}>
@@ -121,32 +115,19 @@ export function EditorOverlaySurface({
               })}
             </div>
           )}
-        </div>
+        </PopoverSurface>
       )}
     </div>
   );
 }
 
-function floatingMenuStyle({
-  x,
-  y,
-  minWidth,
-  maxWidth,
-}: {
-  x: number;
-  y: number;
-  minWidth: number;
-  maxWidth: number;
-}) {
+function floatingMenuStyle(x: number, y: number) {
   return {
     position: "absolute" as const,
     top: y,
     left: x,
-    minWidth,
-    maxWidth,
     zIndex: 1,
     pointerEvents: "auto" as const,
-    ...promptSurfaceStyle,
   };
 }
 

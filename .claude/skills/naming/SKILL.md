@@ -174,7 +174,7 @@ All CSS custom properties use kebab-case with a scope prefix.
 | Scope | Purpose | Examples |
 |-------|---------|----------|
 | `graph-panel-` | Graph panel tokens | `--graph-panel-text-dim`, `--graph-panel-bg` |
-| `graph-prompt-` | Prompt box tokens | `--graph-prompt-bg`, `--graph-prompt-border` |
+| `graph-prompt-` | Prompt box tokens | `--graph-prompt-bg`, `--graph-prompt-shadow` |
 | `mode-` | Active mode tokens | `--mode-accent`, `--mode-accent-subtle` |
 | `brand-` | Brand identity tokens | `--brand-accent`, `--brand-accent-alt` |
 | `color-` | Named palette colors | `--color-soft-blue`, `--color-warm-coral` |

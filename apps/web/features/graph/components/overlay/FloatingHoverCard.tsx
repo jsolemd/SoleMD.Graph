@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { promptSurfaceStyle } from "../panels/PanelShell";
+import { promptSurfaceStyle } from "../panels/PanelShell/panel-styles";
 
 type FloatingHoverCardPlacement = "above-start" | "below-start";
 
@@ -34,15 +34,15 @@ export function FloatingHoverCard({
 }: FloatingHoverCardProps) {
   return (
     <div
-      onPointerEnter={onPointerEnter}
-      onPointerLeave={onPointerLeave}
       className={className}
       data-entity-type={entityType}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
       style={{
         position: "absolute",
         top: y,
         left: x,
-        transform: getFloatingHoverCardTransform(placement),
+        transform: getHoverCardTransform(placement),
         minWidth,
         maxWidth,
         zIndex,
@@ -55,9 +55,7 @@ export function FloatingHoverCard({
   );
 }
 
-function getFloatingHoverCardTransform(
-  placement: FloatingHoverCardPlacement,
-) {
+function getHoverCardTransform(placement: FloatingHoverCardPlacement) {
   switch (placement) {
     case "below-start":
       return "translateY(0)";

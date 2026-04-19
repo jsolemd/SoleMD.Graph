@@ -14,7 +14,9 @@
 > the first sample bulk-load** validates them on real data. The hot
 > tier ceiling (~10 K papers, ~100 K chunks) and the 500-paper start
 > are **provisional**, operator-tunable as RAM allows; the warm-tier
-> universe (~14 M papers, paper-level only) is **locked**.
+> split is **locked**, while the historical ~14 M-paper universe is the
+> eventual full-backfill ceiling for the selected canonical corpus rather
+> than a day-one live requirement.
 >
 > **Date**: 2026-04-16
 >
@@ -47,11 +49,18 @@ time. The retrieval cascade orchestrator
 promotion → packet assembly) is `08-retrieval-cascade.md`'s scope. This
 doc owns the OpenSearch-side primitives `08` calls.
 
+Scope clarification: the ~14 M-paper counts below are capacity and full-backfill
+numbers for the historically selected canonical corpus, not an instruction to
+index all raw S2 papers immediately. Until `05e-corpus-selection.md` publishes a
+full mapped backfill wave, warm indexing may operate on a smaller mapped wave.
+
 Seven load-bearing properties:
 
 1. **Two-tier serving model.** **Warm tier** = paper-level discovery
-   and paper-grounded support (title + abstract + paper-level dense vector); ~14 M
-   papers; lives only in `paper_index`; citation goes back to the
+   and paper-grounded support (title + abstract + paper-level dense vector)
+   over the selected canonical corpus. The active warm wave may be smaller than
+   the historical ~14 M-paper full backfill; warm lives only in `paper_index`;
+   citation goes back to the
    paper. **Hot tier** = evidence-unit retrieval over the canonical
    warehouse sentence/block spine; starts at ~500 papers, ceiling ~10 K
    papers (~100 K evidence units at ~10 units each); lives in both
@@ -82,7 +91,8 @@ Seven load-bearing properties:
    on the engine by project choice. OpenSearch can host ML models via
    ML Commons, but that is not the day-one path here. (§6)
 6. **Bulk-then-freeze indexer, two parallel actors.**
-   `opensearch.build_paper_index` (warm + hot, ~14 M docs, slow path)
+   `opensearch.build_paper_index` (warm + hot, selected mapped wave,
+   eventual ~14 M docs on full backfill, slow path)
    and `opensearch.build_evidence_index` (hot only, ~100 K docs, fast
    path). Both follow `06 §6.3`, read from `serve_read` + `warehouse_read`,
    stream via `_bulk` with `refresh_interval=-1`, force-merge, restore
@@ -130,7 +140,7 @@ Inherits every convention from `00 §1`, `02 §0`, `03 §0`, `04 §0`,
 | **Encoder-placement boundary** | MedCPT encoders and the MedCPT-Cross-Encoder live in engine FastAPI on the RTX 5090, not ML Commons, by project choice. OpenSearch can host models via ML Commons, but that is intentionally not the day-one path; the day-one vector query surface is raw `knn`, not `neural`. (§6) **locked**. |
 | **Bulk-then-freeze workflow** | `refresh_interval=-1`, `number_of_replicas=0` during bulk; `force_merge` to reduce segments; restore live settings; `_warmup` k-NN endpoint to warm Faiss graph; alias swap last. (§7) **locked**. |
 | **Per-cohort index lifecycle** | Index build is part of the projection cohort manifest (`04 §5.1`). The cohort manifest's `families` list adds two opaque "families" `opensearch_paper_index` and `opensearch_evidence_index` so cohort-build order, idempotency, and resume work the same way as PG projections. (§7.4) **locked**. |
-| **Two-tier model** | Warm tier = paper-level grounding (~14 M papers, paper-level dense + abstract text only); hot tier = evidence-unit retrieval (~500 papers initially, ~10 K ceiling, ~10 evidence units/paper, ~100 K evidence units max). `paper_index` carries a `tier` byte field (`1=warm`, `2=hot`); `evidence_index` is hot-tier-only. Tier promotion is driven by `serving_members` (cohort_kind = `practice_hot` per `03 §4.3`) + `evidence_priority_score` (`02 §4.4`). (§3.5) **locked** for the split; ceiling **provisional**. |
+| **Two-tier model** | Warm tier = paper-level grounding over the selected canonical corpus; the active warm wave may be smaller than the historical ~14 M-paper full backfill, while hot tier = evidence-unit retrieval (~500 papers initially, ~10 K ceiling, ~10 evidence units/paper, ~100 K evidence units max). `paper_index` carries a `tier` byte field (`1=warm`, `2=hot`); `evidence_index` is hot-tier-only. Tier promotion is driven by `serving_members` (cohort_kind = `practice_hot` per `03 §4.3`) + `evidence_priority_score` (`02 §4.4`). (§3.5) **locked** for the split; ceiling **provisional**. |
 
 ## §1 Identity / boundary
 

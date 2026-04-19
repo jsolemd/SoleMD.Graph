@@ -111,7 +111,6 @@ Light mode uses subtle rgba shadows. Dark mode uses deep black shadows.
 |-------|-------|------|
 | `--graph-bg` | `#f8f9fa` | `#111113` |
 | `--graph-prompt-bg` | `var(--surface)` | `var(--surface)` |
-| `--graph-prompt-border` | `var(--border-default)` | `#353840` |
 | `--graph-greyout-opacity` | `0.25` | `0.15` |
 
 ---

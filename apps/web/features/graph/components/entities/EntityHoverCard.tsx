@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  MetaPill,
   PanelDivider,
   PanelInlineLoader,
   panelIconBtnStyles,
@@ -51,19 +52,6 @@ function pubtatorUrl(
   return `https://www.ncbi.nlm.nih.gov/research/pubtator3/docsum?text=${encodeURIComponent(query)}`;
 }
 
-const neutralPill: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  fontSize: 8,
-  lineHeight: 1,
-  padding: "2px 4px",
-  borderRadius: 4,
-  whiteSpace: "nowrap",
-  backgroundColor: "var(--graph-panel-input-bg)",
-  color: "var(--graph-panel-text-dim)",
-  border: "1px solid var(--graph-panel-border)",
-};
-
 export function EntityHoverCard({
   card,
   onShowOnGraph,
@@ -100,39 +88,21 @@ export function EntityHoverCard({
                 </span>
               )}
               {conceptLabel && (conceptUrl ? (
-                <a
+                <MetaPill
                   href={conceptUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="truncate"
-                  style={{
-                    ...neutralPill,
-                    flexShrink: 1,
-                    minWidth: 0,
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    textDecoration: "none",
-                  }}
+                  truncate
+                  mono
                   title="Open in PubTator3"
                   onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 >
                   {conceptLabel}
-                </a>
+                </MetaPill>
               ) : (
-                <span
-                  className="truncate"
-                  style={{
-                    ...neutralPill,
-                    flexShrink: 1,
-                    minWidth: 0,
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
+                <MetaPill truncate mono>
                   {conceptLabel}
-                </span>
+                </MetaPill>
               ))}
             </div>
             <div
@@ -220,13 +190,18 @@ export function EntityHoverCard({
                 style={{ color: "var(--graph-panel-text-dim)", flexShrink: 0, marginRight: 1 }}
               />
               {displayAliases.map((alias) => (
-                <span
-                  key={alias.aliasText}
-                  className={alias.isCanonical ? "entity-accent-pill" : undefined}
-                  style={alias.isCanonical ? undefined : neutralPill}
-                >
-                  {alias.aliasText}
-                </span>
+                alias.isCanonical ? (
+                  <span
+                    key={alias.aliasText}
+                    className="entity-accent-pill"
+                  >
+                    {alias.aliasText}
+                  </span>
+                ) : (
+                  <MetaPill key={alias.aliasText}>
+                    {alias.aliasText}
+                  </MetaPill>
+                )
               ))}
               {card.aliases.length > 4 && (
                 <span style={{ ...panelTextDimStyle, fontSize: 8 }}>

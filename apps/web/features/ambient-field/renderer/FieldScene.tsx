@@ -51,6 +51,12 @@ interface LayerUniforms {
   uHeight: { value: number };
   uIsMobile: { value: boolean };
   uPixelRatio: { value: number };
+  uPulsePhase: { value: number };
+  uPulseRate: { value: number };
+  uPulseSoftness: { value: number };
+  uPulseSpatialScale: { value: number };
+  uPulseStrength: { value: number };
+  uPulseThreshold: { value: number };
   uScale: { value: number };
   uSelection: { value: number };
   uSize: { value: number };
@@ -88,6 +94,12 @@ function createLayerUniforms(
     pointTexture: { value: pointTexture },
     uIsMobile: { value: isMobile },
     uPixelRatio: { value: 1 },
+    uPulsePhase: { value: shader.pulsePhase },
+    uPulseRate: { value: shader.pulseRate },
+    uPulseSoftness: { value: shader.pulseSoftness },
+    uPulseSpatialScale: { value: shader.pulseSpatialScale },
+    uPulseStrength: { value: shader.pulseStrength },
+    uPulseThreshold: { value: shader.pulseThreshold },
     uTime: { value: 0 },
     uScale: { value: 1 / preset.sceneScale },
     uSpeed: { value: shader.speed },
@@ -113,76 +125,76 @@ function createLayerUniforms(
 }
 
 function AmbientFieldStageLayer({
-  itemId,
-  onGroupRef,
+  onModelRef,
   onMaterialRef,
+  onWrapperRef,
   source,
   uniforms,
 }: {
-  itemId: AmbientFieldStageItemId;
-  onGroupRef: (group: Group | null) => void;
+  onModelRef: (group: Group | null) => void;
   onMaterialRef: (material: ShaderMaterial | null) => void;
+  onWrapperRef: (group: Group | null) => void;
   source: AmbientFieldPointSource;
   uniforms: LayerUniforms;
 }) {
-  const preset = visualPresets[itemId];
   const { buffers } = source;
 
   return (
     <group
-      ref={onGroupRef}
+      ref={onWrapperRef}
       position={[0, 0, 0]}
-      rotation={preset.sceneRotation}
       scale={[1, 1, 1]}
     >
-      <points frustumCulled={false}>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[buffers.position, 3]} />
-          <bufferAttribute attach="attributes-color" args={[buffers.color, 3]} />
-          <bufferAttribute attach="attributes-aMove" args={[buffers.aMove, 3]} />
-          <bufferAttribute attach="attributes-aSpeed" args={[buffers.aSpeed, 3]} />
-          <bufferAttribute
-            attach="attributes-aRandomness"
-            args={[buffers.aRandomness, 3]}
+      <group ref={onModelRef}>
+        <points frustumCulled={false}>
+          <bufferGeometry>
+            <bufferAttribute attach="attributes-position" args={[buffers.position, 3]} />
+            <bufferAttribute attach="attributes-color" args={[buffers.color, 3]} />
+            <bufferAttribute attach="attributes-aMove" args={[buffers.aMove, 3]} />
+            <bufferAttribute attach="attributes-aSpeed" args={[buffers.aSpeed, 3]} />
+            <bufferAttribute
+              attach="attributes-aRandomness"
+              args={[buffers.aRandomness, 3]}
+            />
+            <bufferAttribute attach="attributes-aIndex" args={[buffers.aIndex, 1]} />
+            <bufferAttribute attach="attributes-aAlpha" args={[buffers.aAlpha, 1]} />
+            <bufferAttribute
+              attach="attributes-aSelection"
+              args={[buffers.aSelection, 1]}
+            />
+            <bufferAttribute
+              attach="attributes-aStreamFreq"
+              args={[buffers.aStreamFreq, 1]}
+            />
+            <bufferAttribute
+              attach="attributes-aFunnelNarrow"
+              args={[buffers.aFunnelNarrow, 1]}
+            />
+            <bufferAttribute
+              attach="attributes-aFunnelThickness"
+              args={[buffers.aFunnelThickness, 1]}
+            />
+            <bufferAttribute
+              attach="attributes-aFunnelStartShift"
+              args={[buffers.aFunnelStartShift, 1]}
+            />
+            <bufferAttribute
+              attach="attributes-aFunnelEndShift"
+              args={[buffers.aFunnelEndShift, 1]}
+            />
+          </bufferGeometry>
+          <shaderMaterial
+            ref={onMaterialRef}
+            transparent
+            depthTest={false}
+            depthWrite={false}
+            blending={NormalBlending}
+            uniforms={uniforms}
+            vertexShader={FIELD_VERTEX_SHADER}
+            fragmentShader={FIELD_FRAGMENT_SHADER}
           />
-          <bufferAttribute attach="attributes-aIndex" args={[buffers.aIndex, 1]} />
-          <bufferAttribute attach="attributes-aAlpha" args={[buffers.aAlpha, 1]} />
-          <bufferAttribute
-            attach="attributes-aSelection"
-            args={[buffers.aSelection, 1]}
-          />
-          <bufferAttribute
-            attach="attributes-aStreamFreq"
-            args={[buffers.aStreamFreq, 1]}
-          />
-          <bufferAttribute
-            attach="attributes-aFunnelNarrow"
-            args={[buffers.aFunnelNarrow, 1]}
-          />
-          <bufferAttribute
-            attach="attributes-aFunnelThickness"
-            args={[buffers.aFunnelThickness, 1]}
-          />
-          <bufferAttribute
-            attach="attributes-aFunnelStartShift"
-            args={[buffers.aFunnelStartShift, 1]}
-          />
-          <bufferAttribute
-            attach="attributes-aFunnelEndShift"
-            args={[buffers.aFunnelEndShift, 1]}
-          />
-        </bufferGeometry>
-        <shaderMaterial
-          ref={onMaterialRef}
-          transparent
-          depthTest={false}
-          depthWrite={false}
-          blending={NormalBlending}
-          uniforms={uniforms}
-          vertexShader={FIELD_VERTEX_SHADER}
-          fragmentShader={FIELD_FRAGMENT_SHADER}
-        />
-      </points>
+        </points>
+      </group>
     </group>
   );
 }
@@ -200,7 +212,12 @@ export function FieldScene({
   );
   const pointTexture = useMemo(() => getFieldPointTexture(), []);
 
-  const stageGroupRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
+  const stageWrapperRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
+    blob: null,
+    stream: null,
+    pcb: null,
+  });
+  const stageModelRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
     blob: null,
     stream: null,
     pcb: null,
@@ -211,6 +228,11 @@ export function FieldScene({
     blob: null,
     stream: null,
     pcb: null,
+  });
+  const stageIdleRotationRefs = useRef<Record<AmbientFieldStageItemId, number>>({
+    blob: 0,
+    stream: 0,
+    pcb: 0,
   });
 
   const layerUniformsRef = useRef({
@@ -250,15 +272,17 @@ export function FieldScene({
 
     for (const itemId of stageItemIds) {
       const layer = {
-        group: stageGroupRefs.current[itemId],
+        model: stageModelRefs.current[itemId],
         material: stageMaterialRefs.current[itemId],
+        wrapper: stageWrapperRefs.current[itemId],
       };
-      if (!layer.group || !layer.material) continue;
+      if (!layer.model || !layer.material || !layer.wrapper) continue;
 
       const preset = visualPresets[itemId];
       const { shader } = preset;
       const uniforms = layerUniforms[itemId];
       const runtimeState = sceneState.items[itemId];
+      const emphasis = runtimeState?.emphasis ?? 0;
       const visibility = runtimeState?.visibility ?? 0;
       const localProgress = runtimeState?.localProgress ?? 0;
       const motionScale = motionEnabled ? 1 : 0.16;
@@ -286,19 +310,30 @@ export function FieldScene({
         ? (shader.sizeMobile ?? shader.size)
         : shader.size;
       const blobFrequencyRamp =
-        itemId === "blob" ? smoothstep(0.0, 0.17, localProgress) : 0;
-      const blobStats = itemId === "blob" ? smoothstep(0.11, 0.16, localProgress) : 0;
+        itemId === "blob" ? smoothstep(0.0, 0.15, localProgress) : 0;
+      const blobStats =
+        itemId === "blob" ? smoothstep(0.1, 0.14, localProgress) : 0;
       const blobSelection =
-        itemId === "blob" ? smoothstep(0.38, 0.44, localProgress) : 0;
-      const blobDiagram = itemId === "blob" ? smoothstep(0.54, 0.63, localProgress) : 0;
-      const blobShrink = itemId === "blob" ? smoothstep(0.7, 0.8, localProgress) : 0;
+        itemId === "blob" ? smoothstep(0.34, 0.4, localProgress) : 0;
+      const blobDiagram =
+        itemId === "blob" ? smoothstep(0.49, 0.59, localProgress) : 0;
+      const blobAlphaWindow =
+        itemId === "blob" ? smoothstep(0.49, 0.53, localProgress) : 0;
+      const blobAlphaReturn =
+        itemId === "blob" ? smoothstep(0.63, 0.66, localProgress) : 0;
+      const blobShrink =
+        itemId === "blob" ? smoothstep(0.63, 0.73, localProgress) : 0;
       const blobEnd = itemId === "blob" ? smoothstep(0.9, 1.0, localProgress) : 0;
-      const blobAlphaDip = clamp01(blobDiagram - blobShrink);
+      const blobAlphaDip = clamp01(blobAlphaWindow - blobAlphaReturn);
       const blobScaleBurst = clamp01(blobDiagram - blobShrink);
+      const pulseProgress =
+        itemId === "blob"
+          ? smoothstep(0.1, 0.59, localProgress)
+          : clamp01(emphasis);
 
       const targetAlpha =
         itemId === "blob"
-          ? shaderAlpha * visibility * (1 - blobAlphaDip)
+          ? shaderAlpha * visibility * (0.42 + 0.58 * (1 - blobAlphaDip))
           : shaderAlpha * visibility;
       const blobStatsAmplitude =
         shader.amplitude + (0.25 - shader.amplitude) * blobStats;
@@ -317,9 +352,16 @@ export function FieldScene({
           : shader.frequency;
       const targetSpeed = shader.speed * motionScale;
       const targetSize = shaderSize;
+      const targetPulseRate =
+        shader.pulseRate + (3 - shader.pulseRate) * pulseProgress;
+      const targetPulseThreshold =
+        shader.pulseThreshold + (0.72 - shader.pulseThreshold) * pulseProgress;
+      const targetPulseStrength =
+        shader.pulseStrength +
+        ((itemId === "blob" ? 0.9 : 0.82) - shader.pulseStrength) * pulseProgress;
       const targetSelection =
         itemId === "blob"
-          ? shader.selection - (shader.selection - 0.3) * blobSelection
+          ? shader.selection - (shader.selection - 0.45) * blobSelection
           : shader.selection;
       const targetFunnelDistortion = shader.funnelDistortion;
       const targetFunnelStartShift = shader.funnelStartShift;
@@ -330,16 +372,25 @@ export function FieldScene({
           : baseScale;
       const targetPositionY =
         sceneUnits * (preset.sceneOffset[1] + (itemId === "blob" ? blobEnd * 0.5 : 0));
-      const targetRotationX = preset.sceneRotation[0];
+      const targetRotationX =
+        preset.sceneRotation[0] + preset.scrollRotation[0] * localProgress;
       const targetRotationY =
-        preset.sceneRotation[1] +
-        time * preset.rotationVelocity[1] * motionScale +
-        (itemId === "blob" ? localProgress * Math.PI : 0);
-      const targetRotationZ = preset.sceneRotation[2];
+        preset.sceneRotation[1] + preset.scrollRotation[1] * localProgress;
+      const targetRotationZ =
+        preset.sceneRotation[2] + preset.scrollRotation[2] * localProgress;
+      const idleRotationY =
+        stageIdleRotationRefs.current[itemId] +
+        delta * preset.rotationVelocity[1] * motionScale;
+      stageIdleRotationRefs.current[itemId] = idleRotationY;
 
       uniforms.uTime.value = time;
       uniforms.uPixelRatio.value = Math.min(state.gl.getPixelRatio(), 2);
       uniforms.uIsMobile.value = isMobile;
+      uniforms.uPulseRate.value = targetPulseRate;
+      uniforms.uPulseSoftness.value = shader.pulseSoftness;
+      uniforms.uPulseSpatialScale.value = shader.pulseSpatialScale;
+      uniforms.uPulseStrength.value = targetPulseStrength;
+      uniforms.uPulseThreshold.value = targetPulseThreshold;
       uniforms.uScale.value = 1 / baseScale;
       uniforms.uAlpha.value = targetAlpha;
       uniforms.uAmplitude.value = targetAmplitude;
@@ -354,27 +405,24 @@ export function FieldScene({
       uniforms.uColorBase.value.copy(colorTargets[itemId].base);
       uniforms.uColorNoise.value.copy(colorTargets[itemId].noise);
 
-      layer.group.visible = visibility > 0.01;
-      layer.group.position.x +=
-        (sceneUnits * preset.sceneOffset[0] - layer.group.position.x) * driftBlend;
-      layer.group.position.y +=
-        (targetPositionY - layer.group.position.y) * driftBlend;
-      layer.group.position.z +=
-        (preset.sceneOffset[2] - layer.group.position.z) * driftBlend;
+      layer.wrapper.visible = visibility > 0.01;
+      layer.wrapper.position.x +=
+        (sceneUnits * preset.sceneOffset[0] - layer.wrapper.position.x) * driftBlend;
+      layer.wrapper.position.y +=
+        (targetPositionY - layer.wrapper.position.y) * driftBlend;
+      layer.wrapper.position.z +=
+        (preset.sceneOffset[2] - layer.wrapper.position.z) * driftBlend;
+      layer.wrapper.rotation.x = 0;
+      layer.wrapper.rotation.y = idleRotationY;
+      layer.wrapper.rotation.z = 0;
 
-      layer.group.rotation.x +=
-        (targetRotationX - layer.group.rotation.x) *
-        driftBlend;
-      layer.group.rotation.y +=
-        (targetRotationY - layer.group.rotation.y) *
-        driftBlend;
-      layer.group.rotation.z +=
-        (targetRotationZ - layer.group.rotation.z) *
-        driftBlend;
+      layer.model.rotation.x = targetRotationX;
+      layer.model.rotation.y = targetRotationY;
+      layer.model.rotation.z = targetRotationZ;
 
-      layer.group.scale.x += (targetScale - layer.group.scale.x) * driftBlend;
-      layer.group.scale.y += (targetScale - layer.group.scale.y) * driftBlend;
-      layer.group.scale.z += (targetScale - layer.group.scale.z) * driftBlend;
+      layer.wrapper.scale.x += (targetScale - layer.wrapper.scale.x) * driftBlend;
+      layer.wrapper.scale.y += (targetScale - layer.wrapper.scale.y) * driftBlend;
+      layer.wrapper.scale.z += (targetScale - layer.wrapper.scale.z) * driftBlend;
     }
   });
 
@@ -383,13 +431,15 @@ export function FieldScene({
       {stageItemIds.map((itemId) => (
         <AmbientFieldStageLayer
           key={itemId}
-          itemId={itemId}
           source={pointSources[itemId]}
-          onGroupRef={(group) => {
-            stageGroupRefs.current[itemId] = group;
+          onModelRef={(group) => {
+            stageModelRefs.current[itemId] = group;
           }}
           onMaterialRef={(material) => {
             stageMaterialRefs.current[itemId] = material;
+          }}
+          onWrapperRef={(group) => {
+            stageWrapperRefs.current[itemId] = group;
           }}
           uniforms={layerUniforms[itemId]}
         />

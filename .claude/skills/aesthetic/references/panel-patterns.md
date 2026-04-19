@@ -31,7 +31,7 @@ import {
 | Export | Tokens it wires | Use for |
 |--------|-----------------|---------|
 | `panelSurfaceStyle` | `--graph-panel-bg` / `--graph-panel-shadow` | Docked panels |
-| `promptSurfaceStyle` | `--graph-prompt-bg` / `--graph-prompt-border` / `--graph-prompt-shadow` | Floating prompt overlay |
+| `promptSurfaceStyle` | `--graph-prompt-bg` / transparent border / `--graph-prompt-shadow` | Floating prompt overlay |
 | `panelCardStyle` + `panelCardClassName` | `--graph-panel-input-bg` / `--graph-panel-border` / `rounded-lg px-2 py-1.5` | Neutral card (input-ish) |
 | `panelAccentCardStyle` + `panelAccentCardClassName` | `--mode-accent-subtle` / `--mode-accent-border` / `rounded-xl px-3 py-3` | Mode-accent preview |
 | `panelAccentCardEntityStyle` + `panelAccentCardEntityClassName` | `color-mix()` of `--entity-accent` (fallback `--mode-accent`) against panel bg/border | Wiki entity profile cards |

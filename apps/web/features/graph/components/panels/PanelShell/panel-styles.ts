@@ -65,7 +65,7 @@ export const panelSurfaceStyle: CSSProperties = {
 /** Prompt/overlay surface triple — uses prompt-specific tokens. */
 export const promptSurfaceStyle: CSSProperties = {
   backgroundColor: "var(--graph-prompt-bg)",
-  border: densityBorder("var(--graph-prompt-border)"),
+  border: densityBorder("transparent"),
   boxShadow: "var(--graph-prompt-shadow)",
 };
 
@@ -77,7 +77,6 @@ export const chromePillSurfaceStyle = {
   ...promptSurfaceStyle,
   padding: densityCssPx(3),
   "--graph-control-idle-bg": "transparent",
-  "--graph-control-idle-border": "transparent",
 } as CSSProperties;
 
 export const panelCardClassName = "rounded-lg px-2 py-1.5";
@@ -114,7 +113,7 @@ export const panelErrorStyle: CSSProperties = {
  * Hover/active backgrounds are handled by the `.graph-icon-btn` CSS class.
  */
 export const iconBtnStyles = {
-  root: { color: "var(--graph-control-icon-color, var(--graph-panel-text))" },
+  root: { color: "var(--graph-icon-color)" },
 } as const;
 
 export const panelIconBtnStyles = {
@@ -159,7 +158,7 @@ export const disabledNativeIconBtnStyle: CSSProperties = {
 
 export const graphControlBtnStyles = {
   root: {
-    color: "var(--graph-control-icon-color, var(--graph-panel-text))",
+    color: "var(--graph-icon-color)",
     width: graphControlShellSize,
     height: graphControlShellSize,
     minWidth: graphControlShellSize,

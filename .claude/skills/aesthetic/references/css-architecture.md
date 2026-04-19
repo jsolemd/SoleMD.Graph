@@ -41,14 +41,14 @@ Defines `--color-*` and `--font-*` that Tailwind v4 reads at build time. These b
 Everything downstream uses these. Grouped into families:
 
 - **Foundations** — `--background`, `--foreground`, `--surface`, `--surface-alt`, `--text-primary/secondary/tertiary`, `--border-default/subtle`, `--shadow-sm/md/lg`, `--brand-accent`, `--brand-accent-alt`, `--interactive-hover`, `--interactive-active`
-- **Graph canvas + panels** — `--graph-canvas-filter`, `--graph-bg`, `--graph-panel-bg`, `--graph-panel-border`, `--graph-panel-text`, `--graph-panel-text-muted`, `--graph-panel-text-dim`, `--graph-panel-input-bg`, `--graph-panel-hover`, `--graph-panel-active`, `--graph-panel-shadow`, `--graph-panel-scale`, `--graph-panel-reading-scale`
+- **Graph canvas + panels** — `--graph-canvas-filter`, `--graph-bg`, `--graph-panel-bg`, `--graph-panel-border`, `--graph-panel-text`, `--graph-panel-text-muted`, `--graph-panel-text-dim`, `--graph-panel-input-bg`, `--graph-panel-hover`, `--graph-panel-shadow`, `--graph-panel-scale`, `--graph-panel-reading-scale`
 - **Wiki graph** — `--wiki-graph-node-{diso,chem,gene,anat,phys,proc,section,paper,default,module}`, `--wiki-graph-link`, `--wiki-graph-label`
 - **Entity accent** — `--entity-accent`, `--entity-highlight-radius` (rewired by `[data-entity-type]` selectors)
-- **Graph overlays (chrome)** — `--graph-prompt-*`, `--graph-wordmark-*`, `--graph-stats-*`, `--graph-label-*`, `--graph-greyout-opacity`, `--graph-overlay-scrim`, `--graph-overlay-scrim-strong`
+- **Graph overlays (chrome)** — `--graph-prompt-*`, `--graph-label-*`, `--graph-greyout-opacity`, `--graph-overlay-scrim`, `--graph-overlay-scrim-strong`
 - **Filter/timeline** — `--filter-bar-base`, `--filter-bar-active`, `--filter-bar-marker`
 - **Mode accent spectrum** — `--mode-accent`, `--mode-accent-subtle`, `--mode-accent-hover`, `--mode-accent-border`, `--module-accent-default` (set by `ModeColorSync`, derived via `color-mix()`)
 - **Icon sizing** — `--icon-size`, `--icon-stroke-width`, `--panel-icon-size`, `--panel-icon-stroke-width`
-- **Graph control (matte shell)** — `--graph-control-icon-color`, `--graph-control-active-icon-color`, `--graph-control-idle-bg`, `--graph-control-idle-border`, `--graph-control-hover-bg`, `--graph-control-pressed-bg`, `--graph-control-active-bg`
+- **Graph control (matte shell)** — `--graph-icon-color`, `--graph-control-idle-bg`, `--graph-control-hover-bg`, `--graph-control-pressed-bg`, `--graph-control-active-bg`
 - **Feedback states** — `--feedback-warning-{accent,bg,border,text}`, `--feedback-danger-{accent,bg,border,text}`
 - **Density** — `--app-density: 0.8` (global scale multiplier)
 

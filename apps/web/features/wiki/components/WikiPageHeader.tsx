@@ -3,6 +3,7 @@
 import { Text } from "@mantine/core";
 import { Orbit } from "lucide-react";
 import {
+  MetaPill,
   PanelIconAction,
   PanelInlineLoader,
   panelAccentCardClassName,
@@ -83,8 +84,16 @@ export function WikiPageHeader({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            {entityTypeLabel && <MetaPill label={entityTypeLabel} entityType={page.entity_type} />}
-            {sectionLabel && <MetaPill label={toTitleCase(sectionLabel)} />}
+            {entityTypeLabel && (
+              <MetaPill entityType={page.entity_type} style={wikiHeaderMetaPillStyle}>
+                {entityTypeLabel}
+              </MetaPill>
+            )}
+            {sectionLabel && (
+              <MetaPill style={wikiHeaderMetaPillStyle}>
+                {toTitleCase(sectionLabel)}
+              </MetaPill>
+            )}
           </div>
           <h2
             className="mt-1 font-semibold leading-snug"
@@ -222,29 +231,11 @@ export function WikiTopGraphPapers({
   );
 }
 
-function MetaPill({ label, entityType }: { label: string; entityType?: string | null }) {
-  const hasEntityAccent = entityType != null;
-  return (
-    <span
-      className={panelCardClassName}
-      data-entity-type={entityType?.toLowerCase()}
-      style={{
-        ...(hasEntityAccent
-          ? {
-              backgroundColor: "color-mix(in srgb, var(--entity-accent, var(--graph-panel-input-bg)) 25%, var(--graph-panel-input-bg))",
-              border: "1px solid color-mix(in srgb, var(--entity-accent, var(--graph-panel-border)) 40%, var(--graph-panel-border))",
-              color: "var(--graph-panel-text)",
-            }
-          : panelCardStyle),
-        padding: `${panelScaledPx(1)} ${panelScaledPx(6)}`,
-        fontSize: panelScaledPx(9),
-        borderRadius: 999,
-      }}
-    >
-      {label}
-    </span>
-  );
-}
+const wikiHeaderMetaPillStyle = {
+  padding: `${panelScaledPx(1)} ${panelScaledPx(6)}`,
+  fontSize: panelScaledPx(9),
+  borderRadius: 999,
+};
 
 function formatContextCount(
   value: number | null | undefined,

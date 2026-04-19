@@ -106,7 +106,7 @@ export function WikiBrowseSheet() {
                     <button
                       type="button"
                       onClick={() => handleOpen(page.slug)}
-                      className="w-full rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-[var(--graph-panel-hover-bg)]"
+                      className="w-full rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-[var(--graph-panel-hover)]"
                       style={{ color: "var(--graph-panel-text)" }}
                     >
                       {page.label}

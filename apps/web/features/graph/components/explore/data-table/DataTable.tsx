@@ -1,14 +1,13 @@
 "use client";
 
 import { memo } from "react";
-import { motion } from "framer-motion";
 import { useDashboardStore } from "@/features/graph/stores";
-import { crisp, smooth } from "@/lib/motion";
 import { useDragResize } from "@/features/graph/hooks/use-drag-resize";
 import type { GraphBundleQueries } from "@solemd/graph";
 import { useTableData } from "./use-table-data";
 import { DataTableToolbar } from "./DataTableToolbar";
 import { DataTableBody } from "./DataTableBody";
+import { BottomTrayShell } from "../../panels/PanelShell";
 
 function DataTableComponent({
   queries,
@@ -33,59 +32,36 @@ function DataTableComponent({
   const bottomOffset = showTimeline ? 44 : 0;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 40, bottom: bottomOffset }}
-      animate={{ opacity: 1, y: 0, bottom: bottomOffset }}
-      exit={{ opacity: 0, y: 40, bottom: bottomOffset }}
-      transition={{
-        y: smooth,
-        bottom: crisp,
-        opacity: { duration: 0.1, ease: "easeOut" },
-      }}
-      className="absolute left-0 right-0 z-20 flex flex-col rounded-t-xl"
-      style={{
-        height: tableHeight,
-        backgroundColor: "var(--graph-panel-bg)",
-        border: "1px solid var(--graph-panel-border)",
-        boxShadow: "var(--graph-panel-shadow)",
-      }}
-    >
-      {/* Resize handle — thin and subtle */}
-      <div
-        className="flex h-1.5 cursor-row-resize items-center justify-center transition-colors hover:bg-[var(--interactive-hover)]"
-        onMouseDown={handleDragStart}
-      >
-        <div
-          className="h-px w-6 rounded-full"
-          style={{ backgroundColor: "var(--graph-panel-text-dim)" }}
-        />
-      </div>
-
-      <DataTableToolbar
-        resolvedTableView={state.resolvedTableView}
-        queryTableView={state.queryTableView}
-        selectionAvailable={state.selectionAvailable}
-        totalPages={state.totalPages}
-        safePage={state.safePage}
-        pageLoading={state.pageLoading}
-        pageRefreshing={state.pageRefreshing}
-        totalRows={state.totalRows}
-        queries={queries}
-        activeLayer={state.activeLayer}
-        currentPointScopeSql={state.currentPointScopeSql}
-      />
-
-      <div className="flex-1 overflow-auto px-2.5">
-        <DataTableBody
-          activeLayer={state.activeLayer}
-          pageRows={state.pageRows}
-          startIdx={state.startIdx}
-          pageLoading={state.pageLoading}
-          pageError={state.pageError}
+    <BottomTrayShell
+      height={tableHeight}
+      bottomOffset={bottomOffset}
+      onResizeMouseDown={handleDragStart}
+      toolbar={(
+        <DataTableToolbar
           resolvedTableView={state.resolvedTableView}
+          queryTableView={state.queryTableView}
+          selectionAvailable={state.selectionAvailable}
+          totalPages={state.totalPages}
+          safePage={state.safePage}
+          pageLoading={state.pageLoading}
+          pageRefreshing={state.pageRefreshing}
+          totalRows={state.totalRows}
+          queries={queries}
+          activeLayer={state.activeLayer}
+          currentPointScopeSql={state.currentPointScopeSql}
         />
-      </div>
-    </motion.div>
+      )}
+      bodyClassName="px-2.5"
+    >
+      <DataTableBody
+        activeLayer={state.activeLayer}
+        pageRows={state.pageRows}
+        startIdx={state.startIdx}
+        pageLoading={state.pageLoading}
+        pageError={state.pageError}
+        resolvedTableView={state.resolvedTableView}
+      />
+    </BottomTrayShell>
   );
 }
 

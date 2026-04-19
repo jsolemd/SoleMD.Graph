@@ -5,11 +5,10 @@ import { useDebouncedValue } from "@mantine/hooks";
 import {
   PanelSearchField,
   panelSelectStyles,
-  panelTextStyle,
-  panelTextMutedStyle,
 } from "@/features/graph/components/panels/PanelShell";
 import type { WikiSearchHitResponse } from "@solemd/api-client/shared/wiki-types";
 import { searchWikiPagesClient } from "@solemd/api-client/client/wiki-client";
+import { WIKI_SEARCH_SURFACE_WIDTH, WikiSearchResultsSurface } from "./WikiSearchResultsSurface";
 
 interface WikiSearchProps {
   onNavigate: (slug: string) => void;
@@ -125,57 +124,20 @@ export function WikiSearch({ onNavigate }: WikiSearchProps) {
         actionMode={open ? "close" : "search"}
         onAction={handleToggle}
         styles={panelSelectStyles}
-        width={160}
+        width={WIKI_SEARCH_SURFACE_WIDTH}
         collapsedActionSize={24}
         inputActionSize={16}
       />
-      {hits.length > 0 && (
-        <div
-          className="absolute right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg"
-          style={{
-            width: 240,
-            backgroundColor: "var(--graph-panel-bg)",
-            boxShadow: "var(--graph-panel-shadow)",
-          }}
-        >
-          {hits.map((hit) => (
-            <button
-              key={hit.slug}
-              type="button"
-              style={{
-                all: "unset",
-                display: "block",
-                width: "100%",
-                padding: "6px 10px",
-                cursor: "pointer",
-                boxSizing: "border-box",
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--mode-accent-subtle)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
-              onClick={() => handleSelect(hit.slug)}
-            >
-              <div style={panelTextStyle}>{hit.title}</div>
-              {hit.headline && (
-                <div style={panelTextMutedStyle} className="line-clamp-1">
-                  {cleanHeadline(hit.headline)}
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-      {searching && hits.length === 0 && debouncedQuery.trim().length >= 2 && (
-        <div
-          className="absolute right-0 top-full z-50 mt-1 rounded-lg px-2.5 py-1.5"
-          style={{
-            width: 240,
-            backgroundColor: "var(--graph-panel-bg)",
-            boxShadow: "var(--graph-panel-shadow)",
-          }}
-        >
-          <span style={panelTextMutedStyle}>Searching...</span>
-        </div>
-      )}
+      <WikiSearchResultsSurface
+        hits={hits.map((hit) => ({
+          ...hit,
+          headline: hit.headline ? cleanHeadline(hit.headline) : hit.headline,
+        }))}
+        searching={searching}
+        query={debouncedQuery}
+        onSelect={handleSelect}
+        width={WIKI_SEARCH_SURFACE_WIDTH}
+      />
     </div>
   );
 }

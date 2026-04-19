@@ -66,15 +66,15 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     preset: "blob",
     variant: "hero",
     eyebrow: "Ambient Field",
-    title: "Enter the same world the graph will later deepen.",
+    title: "Enter a living evidence field that never drops out of view.",
     body:
-      "The landing surface should already feel alive: one continuous evidence field, a clear narrative spine, and enough motion discipline that the user reads structure before they read interface chrome.",
+      "The homepage should begin with a coherent rotating globe of papers and stay in that same living substrate all the way down the page. Each chapter changes what the user notices inside the field rather than replacing the field itself.",
     detail:
-      "This baseline deliberately follows Maze's chapter grammar first. SoleMD-specific prompts, entity callouts, and paper overlays should return only after the runtime behaves like the source.",
+      "Maze parity remains the motion baseline, but SoleMD now needs a persistent blob story: intro, paper discovery, paper/entity detail, relation synthesis, and a final re-formed end state.",
     bullets: [
       "One fixed stage",
-      "Blob carry through Story 1",
-      "Graph chapter is the turning point",
+      "Blob persists through the full scroll",
+      "Each chapter changes emphasis, not substrate",
     ],
     accentVar: "var(--color-soft-blue)",
     align: "center",
@@ -83,16 +83,16 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     id: "section-story-1",
     preset: "blob",
     variant: "story",
-    eyebrow: "Story 1",
-    title: "Narrative chapters should wrap the carried blob instead of replacing it.",
+    eyebrow: "Paper Story",
+    title: "Begin by surfacing the papers that deserve attention.",
     body:
-      "The first band teaches the world before the graph section takes over. Progress, text, and small DOM visuals should build pressure while the blob keeps rotating and gradually opens up.",
+      "The first chapter should make the blob feel like a searchable paper universe. Individual points start to matter, a selected subset begins to emerge, and the field feels curated rather than uniformly dense.",
     detail:
-      "The stage is still blob-owned here. Story 1 is a DOM-native chapter layered around the field, not a separate visualization module.",
+      "This is still blob-owned. The chapter should teach paper exploration by highlighting a few points without ever losing the rotating world behind them.",
     bullets: [
-      "DOM-native progress",
-      "Blob still alive",
-      "Question bridge into graph chapter",
+      "Highlighted paper points",
+      "Persistent blob rotation",
+      "Selection without disappearance",
     ],
     accentVar: "var(--color-soft-lavender)",
     align: "left",
@@ -101,16 +101,16 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     id: "section-graph",
     preset: "stream",
     variant: "graph",
-    eyebrow: "Turning Point",
-    title: "The graph chapter should feel routed, procedural, and sticky.",
+    eyebrow: "Detail Story",
+    title: "Move from papers into entities, relations, and paper metadata.",
     body:
-      "This is where the carried blob overlaps with a new local stream owner. The field stops reading like one drifting cloud and starts behaving like an authored system trace with DOM-native popups and rails.",
+      "The next chapter should feel like points are being inspected in context. Selected papers become richer, surrounding metadata starts to matter, and the user can imagine hover cards for entities, relations, and other evidence details.",
     detail:
-      "The stream chapter is hybrid by design: the shader handles particle motion, but the visible chapter rhythm comes from authored SVG rails, stream points, and popup timing.",
+      "For now the runtime can still use the existing hybrid stream choreography, but the story intent should shift from 'system trace' to 'paper detail and evidence context'.",
     bullets: [
-      "Sticky local owner",
-      "DOM + SVG + WebGL",
-      "Blob overlaps before yielding",
+      "Selected papers stay in focus",
+      "Hover-card phase for metadata",
+      "Blob remains visible underneath",
     ],
     accentVar: "var(--color-golden-yellow)",
     align: "right",
@@ -119,16 +119,16 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     id: "section-story-2",
     preset: "stream",
     variant: "story",
-    eyebrow: "Story 2",
-    title: "Carry the same routed world into explanation and handoff.",
+    eyebrow: "Synthesis Story",
+    title: "Show how evidence connects across papers, entities, and wiki structure.",
     body:
-      "Once the graph chapter has established the directional trace, the next chapter should keep that shared world alive for explanation, comparison, and eventual graph entry.",
+      "Once a paper subset is visible, the next chapter should show synthesis: points relating to points, small bridges forming between neighborhoods, and an early sense of how the wiki or graph story emerges from connected evidence.",
     detail:
-      "This later band remains part of the baseline ledger, but the first parity implementation can prioritize the path through the graph turning point before fully rebuilding Story 2.",
+      "This is where connections between selected nodes should become explicit and where the later wiki-facing story can be staged without abandoning the same field.",
     bullets: [
-      "Second progress band",
-      "Graph ribbon beat",
-      "Events beat",
+      "Relation links between points",
+      "Wiki-facing synthesis beat",
+      "Persistent rotating substrate",
     ],
     accentVar: "var(--color-teal)",
     align: "left",
@@ -137,16 +137,16 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     id: "section-cta",
     preset: "pcb",
     variant: "cta",
-    eyebrow: "Graph Bridge",
-    title: "Let the pcb CTA quiet the field before the workspace opens.",
+    eyebrow: "End State",
+    title: "Let the field reform into a clearer final shape rather than dropping away.",
     body:
-      "The CTA should feel calmer and more technical than the earlier chapters. The field is still alive, but the page is handing the user toward a deliberate graph transition instead of one more animated story beat.",
+      "The last chapter should feel like the evidence field has learned something. Instead of vanishing, it should reform into a more recognizable end state, potentially a brain-like silhouette or another biologically meaningful shape.",
     detail:
-      "The pcb section remains part of the full baseline scope, but it can stay lighter while the blob and stream chapters are brought to parity first.",
+      "The current runtime can keep the later chapter lighter while parity work continues, but the ledger should now treat a re-formed end shape as the target instead of a quiet technical CTA.",
     bullets: [
-      "Calmer technical substrate",
-      "Centered CTA stack",
-      "Graph-ready handoff",
+      "Blob never fully disappears",
+      "Re-formed end-state target",
+      "Brain-shape exploration later",
     ],
     accentVar: "var(--color-warm-coral)",
     align: "center",
@@ -166,27 +166,27 @@ export const ambientFieldStoryOneBeats: readonly AmbientFieldStoryBeat[] = [
   {
     id: "info-1",
     progressLabel: "01",
-    title: "Reveal the few evidence paths that actually deserve attention",
+    title: "Highlight the papers that should pull the reader deeper",
     body:
-      "The first story beat should make the blob feel governed rather than decorative. Motion tightens, context starts to matter, and the field begins to read like a map instead of a wash.",
+      "The field should still feel like a globe here, but a few papers begin to stand out so the user understands that the system can guide attention without losing the larger context.",
     accentVar: "var(--color-soft-blue)",
     variant: "columns",
   },
   {
     id: "info-2",
     progressLabel: "02",
-    title: "Show how context removes noise before the graph chapter arrives",
+    title: "Use context to separate high-value papers from the wider field",
     body:
-      "This middle beat is where the user should start trusting the field. The blob is still present, but density and emphasis shifts make it clear that not every point matters equally.",
+      "This middle beat is where selection becomes trustworthy. The blob remains present, but emphasis, pulse activity, and thinning make it clear that some papers now matter more than others.",
     accentVar: "var(--color-golden-yellow)",
     variant: "columns",
   },
   {
     id: "info-3",
     progressLabel: "03",
-    title: "What should the system surface before the next chapter takes over?",
+    title: "Prepare the jump from selected papers into paper details and relations",
     body:
-      "Use the last beat as the bridge into the graph chapter: one centered question block, with the blob thinning and preparing to overlap with the sticky stream owner.",
+      "Use the last beat as the bridge into the detail chapter: one centered question block, with selected papers ready to reveal entities, relations, and richer evidence context.",
     accentVar: "var(--color-soft-lavender)",
     variant: "centered",
   },
@@ -196,22 +196,22 @@ export const ambientFieldGraphSteps: readonly AmbientFieldGraphStep[] = [
   {
     id: "step-1",
     number: "01",
-    text: "Signals enter from the broader evidence environment.",
+    text: "Selected papers move into focus without losing the wider field.",
   },
   {
     id: "step-2",
     number: "02",
-    text: "Agents investigate each route in context before highlighting it.",
+    text: "Entities, relations, and metadata begin to cluster around them.",
   },
   {
     id: "step-3",
     number: "03",
-    text: "Low-signal paths fall away and the useful traces remain visible.",
+    text: "Connections between evidence neighborhoods become legible.",
   },
   {
     id: "step-4",
     number: "04",
-    text: "The strongest corridor is ready for the next module or graph handoff.",
+    text: "The same field can now transition into synthesis, wiki context, or graph entry.",
   },
 ] as const;
 
@@ -416,16 +416,6 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
             offsetViewport: 0.16,
           },
         },
-        exit: {
-          start: {
-            sectionId: "section-story-2",
-            offsetViewport: -0.42,
-          },
-          end: {
-            sectionId: "section-story-2",
-            offsetViewport: 0.1,
-          },
-        },
       },
       localProgress: {
         start: {
@@ -433,14 +423,14 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
           offsetViewport: 0,
         },
         end: {
-          sectionId: "section-graph",
+          sectionId: "section-story-2",
           offsetViewport: 0.18,
         },
       },
       emphasis: {
-        base: 0.52,
-        metric: "visibility",
-        range: 0.48,
+        base: 0.62,
+        metric: "localProgress",
+        range: 0.38,
       },
     },
     stream: {

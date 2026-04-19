@@ -91,14 +91,14 @@ Mode colors: Ask → `--color-soft-blue`, Explore → `--color-golden-yellow`, L
 | `--graph-panel-border`, `--graph-panel-shadow` | Panel edge + elevation |
 | `--graph-panel-text`, `--graph-panel-text-muted`, `--graph-panel-text-dim` | Three text tiers |
 | `--graph-panel-input-bg` | Embedded input/select backgrounds |
-| `--graph-panel-hover`, `--graph-panel-active` | Interaction states |
+| `--graph-panel-hover` | Interaction state |
 | `--graph-panel-scale` (1, user 0.8–1.4), `--graph-panel-reading-scale` | Scaling |
 
 ## Graph Prompt Tokens (distinct elevation tier)
 
 | Variable | Purpose |
 |----------|---------|
-| `--graph-prompt-bg`, `--graph-prompt-border`, `--graph-prompt-shadow` | Floating prompt surface + two-tier shadow |
+| `--graph-prompt-bg`, `--graph-prompt-shadow` | Floating prompt surface + two-tier shadow |
 | `--graph-prompt-text`, `--graph-prompt-placeholder`, `--graph-prompt-inactive` | Prompt text tiers |
 | `--graph-prompt-divider` | Motion divider below input |
 
@@ -146,10 +146,8 @@ Consume by setting `data-entity-type` on a container and reading `var(--entity-a
 
 | Variable | Purpose |
 |----------|---------|
-| `--feedback-warning-accent` | Hex from `--color-feedback-warning` |
-| `--feedback-warning-bg` | Subtle tinted bg via `color-mix()` with `--surface-alt` |
-| `--feedback-warning-border` | Mixed with `--border-default` |
-| `--feedback-warning-text` | Same as accent |
+| `--feedback-warning-bg` | Subtle tinted bg via `color-mix()` with `--surface-alt` + `--color-feedback-warning` |
+| `--feedback-warning-border` | Mixed with `--border-default` + `--color-feedback-warning` |
 | `--feedback-danger-accent` / `-bg` / `-border` / `-text` | Same pattern, danger variant |
 
 `panelErrorStyle` in `panel-styles.ts` wires these into a ready-to-use surface.
@@ -158,8 +156,8 @@ Consume by setting `data-entity-type` on a container and reading `var(--entity-a
 
 | Variable | Purpose |
 |----------|---------|
-| `--graph-control-icon-color`, `--graph-control-active-icon-color` | Icon tints (idle, active) |
-| `--graph-control-idle-bg`, `--graph-control-idle-border` | Base shell |
+| `--graph-icon-color` | Shared idle icon tint across graph chrome + wordmark |
+| `--graph-control-idle-bg` | Base shell background |
 | `--graph-control-hover-bg`, `--graph-control-pressed-bg`, `--graph-control-active-bg` | Interaction states |
 
 Wired by `.graph-icon-btn` / `.panel-icon-btn` rules in `graph-ui.css`.

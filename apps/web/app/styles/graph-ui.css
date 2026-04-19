@@ -43,10 +43,10 @@
    :hover is gated on (hover: hover) so touch devices don't hold the hover
    tint after a tap — otherwise it reads as a stuck "active" highlight. */
 .graph-icon-btn {
-  color: var(--graph-control-icon-color, var(--graph-panel-text));
+  color: var(--graph-icon-color);
   cursor: pointer;
   background-color: var(--graph-control-idle-bg, var(--graph-panel-input-bg)) !important;
-  box-shadow: inset 0 0 0 calc(1px * var(--app-density)) var(--graph-control-idle-border, var(--graph-panel-border));
+  box-shadow: inset 0 0 0 calc(1px * var(--app-density)) transparent;
   -webkit-tap-highlight-color: transparent;
   transition:
     color 150ms ease,
@@ -57,18 +57,18 @@
 @media (hover: hover) {
   .graph-icon-btn:hover {
     background-color: var(--graph-control-hover-bg, var(--mode-accent-subtle)) !important;
-    color: var(--graph-control-active-icon-color, var(--graph-panel-text));
+    color: var(--graph-panel-text);
   }
 }
 
 .graph-icon-btn[aria-pressed="true"] {
   background-color: var(--graph-control-pressed-bg, var(--mode-accent-subtle)) !important;
-  color: var(--graph-control-active-icon-color, var(--graph-panel-text));
+  color: var(--graph-panel-text);
 }
 
 .graph-icon-btn:active {
   background-color: var(--graph-control-active-bg, var(--mode-accent-hover)) !important;
-  color: var(--graph-control-active-icon-color, var(--graph-panel-text));
+  color: var(--graph-panel-text);
 }
 
 /* Panel icon buttons — transparent hit area, icon carries the affordance. */

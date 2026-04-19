@@ -93,6 +93,9 @@ Pick a question, follow the arrow.
 | [ingest.md](ingest.md) | Where does data come from? | PubTator3 + S2 pipelines, RAG warehouse ingest, BioCXML overlays, operator CLIs |
 | [graph-build.md](graph-build.md) | How is the bundle built? | UMAP/Leiden/base-admission pipeline, CLI flags, checkpoint + recovery |
 | [graph-runtime.md](graph-runtime.md) | How does the browser render it? | Bundle contract, checksum-addressed asset serving, persistent DuckDB hot-cache rules, three nested layers, crossfilter cost, initial camera / starting frame |
+| [ambient-field-runtime.md](ambient-field-runtime.md) | How do homepage, modules, and graph bridge behaviors share one field runtime? | Ambient asset contract, scene API, scroll choreography, homepage/module reuse, and graph bridge rules |
+| [ambient-field-implementation.md](ambient-field-implementation.md) | How should we build the field runtime in our stack? | Maze audit, R3F/drei/Three/GSAP choices, dependency inventory, package shape, and v1 implementation plan |
+| [author-institution-world-runtime.md](author-institution-world-runtime.md) | How should geographic author and institution exploration work? | World asset contract, institution geo anchors, search-first delivery, geography-to-graph handoff |
 | [api.md](api.md) | How do the backend endpoints behave? | FastAPI endpoint families, error mapping, pooling, shell/context split, serving-index rules |
 | [rag.md](rag.md) | How does evidence retrieval work? | RAG runtime, retrieval channels, grounding, answer assembly |
 | [wiki-taxonomy.md](wiki-taxonomy.md) | How are wiki entities categorized and colored? | Two-axis model (semantic group + editorial section), color map, scaling rules |

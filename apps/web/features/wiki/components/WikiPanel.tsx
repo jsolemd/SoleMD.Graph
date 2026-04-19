@@ -7,7 +7,6 @@ import { X } from "lucide-react";
 import {
   APP_CHROME_BASE_PX,
   APP_CHROME_PX,
-  densityCssPx,
   densityCssViewportInset,
   densityPx,
   WIKI_PANEL_PX,
@@ -22,6 +21,8 @@ import {
   selectPanelLeftOffset,
 } from "@/features/graph/stores/dashboard-store";
 import {
+  OverlayCard,
+  OverlaySurface,
   PANEL_TOP,
   PanelBody,
   PanelHeaderActions,
@@ -301,17 +302,11 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
       {globalGraphOpen &&
         typeof document !== "undefined" &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[9998] flex items-center justify-center"
-            style={{
-              backgroundColor: "var(--graph-overlay-scrim)",
-              backdropFilter: `blur(${densityCssPx(APP_CHROME_BASE_PX.overlayBlur)})`,
-              WebkitBackdropFilter: `blur(${densityCssPx(APP_CHROME_BASE_PX.overlayBlur)})`,
-            }}
-            onClick={handleCloseOverlay}
+          <OverlaySurface
+            blurPx={APP_CHROME_BASE_PX.overlayBlur}
+            onBackdropClick={handleCloseOverlay}
           >
-            <div
-              className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
+            <OverlayCard
               style={{
                 width: isMobile
                   ? "100vw"
@@ -321,7 +316,6 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
                   : densityCssViewportInset("vh", APP_CHROME_BASE_PX.wikiOverlayInset),
                 borderRadius: isMobile ? 0 : "1rem",
               }}
-              onClick={(e) => e.stopPropagation()}
             >
               <div className="absolute right-3 top-3 z-10">
                 <ActionIcon
@@ -341,8 +335,8 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
                   onOpenPage={handleGlobalGraphOpenPage}
                 />
               </div>
-            </div>
-          </div>,
+            </OverlayCard>
+          </OverlaySurface>,
           document.body,
         )}
 
@@ -352,19 +346,17 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
       {fullscreenAnim &&
         typeof document !== "undefined" &&
         createPortal(
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center"
-            style={{ backgroundColor: "var(--graph-overlay-scrim-strong)" }}
-            onClick={() => setFullscreenAnim(null)}
+          <OverlaySurface
+            scrimVariant="strong"
+            className="z-[9999]"
+            onBackdropClick={() => setFullscreenAnim(null)}
           >
-            <div
-              className="relative overflow-hidden rounded-[1rem] bg-[var(--surface)] shadow-[var(--shadow-lg)]"
+            <OverlayCard
               style={{
                 width: "80vw",
                 height: "80vh",
                 border: "1px solid var(--border-default)",
               }}
-              onClick={(e) => e.stopPropagation()}
             >
               <div className="absolute right-3 top-3 z-10">
                 <ActionIcon
@@ -379,8 +371,8 @@ export function WikiPanel({ bundle, queries }: WikiPanelProps) {
                 </ActionIcon>
               </div>
               <AnimationEmbed name={fullscreenAnim} />
-            </div>
-          </div>,
+            </OverlayCard>
+          </OverlaySurface>,
           document.body,
         )}
     </>

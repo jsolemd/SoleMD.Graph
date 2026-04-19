@@ -1,4 +1,8 @@
 export { PanelShell, type PanelShellProps, PANEL_TOP } from "./PanelShell";
+export { BottomTrayShell } from "./BottomTrayShell";
+export { PopoverSurface } from "./PopoverSurface";
+export { MetaPill } from "./MetaPill";
+export { OverlayCard, OverlaySurface } from "./OverlaySurface";
 export {
   GatedSwitch,
   PanelBody,
@@ -53,3 +57,12 @@ export {
   sectionLabelStyle,
   switchLabelStyle,
 } from "./panel-styles";
+export {
+  compactSegmentedControlStyles,
+  insetCodeBlockStyle,
+  insetTableFrameStyle,
+  metaPillStyle,
+  overlayCardSurfaceStyle,
+  overlayScrimStyle,
+  overlayStrongScrimStyle,
+} from "./surface-styles";

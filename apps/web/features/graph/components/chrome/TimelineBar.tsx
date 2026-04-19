@@ -25,6 +25,7 @@ import {
   panelPillStyles,
   panelTextMutedStyle,
   panelTypePillStyles,
+  promptSurfaceStyle,
 } from "../panels/PanelShell";
 
 const TIMELINE_HEIGHT = 44;
@@ -180,9 +181,8 @@ function TimelineBarComponent() {
           </Popover.Target>
           <Popover.Dropdown
             style={{
-              backgroundColor: "var(--surface)",
-              border: "1px solid var(--graph-panel-border)",
               padding: "8px 12px 16px",
+              ...promptSurfaceStyle,
             }}
           >
             <Slider
