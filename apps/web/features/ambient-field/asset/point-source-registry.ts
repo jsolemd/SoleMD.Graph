@@ -1,5 +1,12 @@
-import { Color } from "three";
-import { semanticColorFallbackHexByKey } from "@/lib/pastel-tokens";
+import { BufferAttribute, BufferGeometry, Color } from "three";
+import type * as THREE from "three";
+import {
+  bakeFieldAttributes,
+  buildBucketIndex,
+  SOLEMD_DEFAULT_BUCKETS,
+  type FieldSemanticBucket,
+} from "./field-attribute-baker";
+import { FieldGeometry } from "./field-geometry";
 import type {
   AmbientFieldPointSource,
   AmbientFieldPointSourceBuffers,
@@ -13,59 +20,32 @@ const STREAM_POINT_COUNT_MOBILE = 10000;
 const PCB_WIDTH = 72;
 const PCB_HEIGHT = 46;
 
-const paletteWeights = [
-  { color: new Color(semanticColorFallbackHexByKey.paper), weight: 0.1 },
-  { color: new Color(semanticColorFallbackHexByKey.phys), weight: 0.18 },
-  { color: new Color(semanticColorFallbackHexByKey.chem), weight: 0.18 },
-  { color: new Color(semanticColorFallbackHexByKey.gene), weight: 0.14 },
-  { color: new Color(semanticColorFallbackHexByKey.diso), weight: 0.14 },
-  { color: new Color(semanticColorFallbackHexByKey.anat), weight: 0.1 },
-  { color: new Color(semanticColorFallbackHexByKey.proc), weight: 0.08 },
-  { color: new Color(semanticColorFallbackHexByKey.module), weight: 0.08 },
-] as const;
+// SoleMD bucket -> hotspot-sampling color mapping. The shader itself no
+// longer reads the `color` attribute (Maze never did); we bake it so
+// legacy consumers like `getPointColorCss` can still tag hotspots with a
+// sensible semantic hue. Phase 4/7 will retire the final readers.
+const BUCKET_COLOR_FALLBACKS: Record<string, string> = {
+  paper: "#42A4FE",
+  entity: "#8958FF",
+  relation: "#02E8FF",
+  evidence: "#D409FE",
+};
+
+const BUCKET_COLORS: Record<string, Color> = Object.fromEntries(
+  SOLEMD_DEFAULT_BUCKETS.map((bucket) => [
+    bucket.id,
+    new Color(BUCKET_COLOR_FALLBACKS[bucket.id] ?? "#EFF0F0"),
+  ]),
+);
+
+const BUCKET_INDEX = buildBucketIndex(SOLEMD_DEFAULT_BUCKETS);
+const BUCKET_INDEX_TO_COLOR = SOLEMD_DEFAULT_BUCKETS.map(
+  (bucket) => BUCKET_COLORS[bucket.id]!,
+);
 
 interface RandomSource {
   (): number;
 }
-
-interface StreamProfile {
-  funnelEndShift: number;
-  funnelNarrow: number;
-  funnelStartShift: number;
-  funnelThickness: number;
-  streamFreq: number;
-}
-
-const streamProfiles: readonly StreamProfile[] = [
-  {
-    funnelEndShift: 0.29,
-    funnelNarrow: 0.03,
-    funnelStartShift: 0.42,
-    funnelThickness: 0.1,
-    streamFreq: 0.1,
-  },
-  {
-    funnelEndShift: -0.06,
-    funnelNarrow: 0.04,
-    funnelStartShift: 0.28,
-    funnelThickness: 0.14,
-    streamFreq: -0.2,
-  },
-  {
-    funnelEndShift: -0.29,
-    funnelNarrow: 0.05,
-    funnelStartShift: 0.1,
-    funnelThickness: 0.18,
-    streamFreq: -1.4,
-  },
-  {
-    funnelEndShift: -0.4,
-    funnelNarrow: 0.18,
-    funnelStartShift: -0.25,
-    funnelThickness: 0.55,
-    streamFreq: 0.5,
-  },
-] as const;
 
 class AmbientFieldPointSourceRegistry {
   private readonly cache = new Map<string, Record<string, AmbientFieldPointSource>>();
@@ -90,8 +70,6 @@ class AmbientFieldPointSourceRegistry {
       FIELD_SEED + (isMobile ? 1000 : 0) + Math.round(density * 100),
     );
     const sources = {
-      // Maze keeps the blob shell at a fixed point count and thins via
-      // selection during scroll-driven choreography, not via geometry swaps.
       blob: createBlobSource(BLOB_POINT_COUNT, random),
       stream: createStreamSource(
         Math.max(
@@ -123,83 +101,55 @@ function createRandomSource(seed: number): RandomSource {
   };
 }
 
-function createBuffers(pointCount: number): AmbientFieldPointSourceBuffers {
-  return {
-    position: new Float32Array(pointCount * 3),
-    color: new Float32Array(pointCount * 3),
-    aMove: new Float32Array(pointCount * 3),
-    aSpeed: new Float32Array(pointCount * 3),
-    aRandomness: new Float32Array(pointCount * 3),
-    aIndex: new Float32Array(pointCount),
-    aAlpha: new Float32Array(pointCount),
-    aSelection: new Float32Array(pointCount),
-    aStreamFreq: new Float32Array(pointCount),
-    aFunnelNarrow: new Float32Array(pointCount),
-    aFunnelThickness: new Float32Array(pointCount),
-    aFunnelStartShift: new Float32Array(pointCount),
-    aFunnelEndShift: new Float32Array(pointCount),
-  };
-}
-
-function writeColor(
-  buffers: AmbientFieldPointSourceBuffers,
-  index: number,
-  color: Color,
-) {
-  buffers.color[index * 3] = color.r;
-  buffers.color[index * 3 + 1] = color.g;
-  buffers.color[index * 3 + 2] = color.b;
-}
-
-function pickWeightedColor(random: RandomSource): Color {
-  const total = paletteWeights.reduce((sum, entry) => sum + entry.weight, 0);
-  let cursor = random() * total;
-
-  for (const entry of paletteWeights) {
-    cursor -= entry.weight;
-    if (cursor <= 0) {
-      const color = entry.color.clone();
-      const hsl = { h: 0, s: 0, l: 0 };
-      color.getHSL(hsl);
-      const lightness = hsl.l - 0.01 + random() * 0.02;
-      color.setHSL(hsl.h, hsl.s, Math.max(0, Math.min(1, lightness)));
-      return color;
-    }
+function extractAttribute(
+  geometry: THREE.BufferGeometry,
+  name: string,
+): Float32Array {
+  const attribute = geometry.getAttribute(name) as
+    | THREE.BufferAttribute
+    | undefined;
+  if (!attribute) {
+    throw new Error(`ambient-field geometry is missing attribute "${name}"`);
   }
-
-  return paletteWeights[0].color.clone();
+  return attribute.array as Float32Array;
 }
 
-function applySharedAttributes(
-  buffers: AmbientFieldPointSourceBuffers,
-  index: number,
+function deriveColorBuffer(aBucket: Float32Array): Float32Array {
+  const count = aBucket.length;
+  const color = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    const bucketColor =
+      BUCKET_INDEX_TO_COLOR[aBucket[i]!] ?? BUCKET_INDEX_TO_COLOR[0]!;
+    color[i * 3] = bucketColor.r;
+    color[i * 3 + 1] = bucketColor.g;
+    color[i * 3 + 2] = bucketColor.b;
+  }
+  return color;
+}
+
+function bakeGeometryAttributes(
+  geometry: THREE.BufferGeometry,
   random: RandomSource,
-  alphaRange: [number, number],
-  streamProfile?: StreamProfile,
-) {
-  buffers.aIndex[index] = index;
-  buffers.aAlpha[index] = alphaRange[0] + random() * (alphaRange[1] - alphaRange[0]);
-  buffers.aSelection[index] = random();
-
-  buffers.aMove[index * 3] = (random() * 2 - 1) * 30;
-  buffers.aMove[index * 3 + 1] = (random() * 2 - 1) * 30;
-  buffers.aMove[index * 3 + 2] = (random() * 2 - 1) * 30;
-
-  buffers.aSpeed[index * 3] = random();
-  buffers.aSpeed[index * 3 + 1] = random();
-  buffers.aSpeed[index * 3 + 2] = random();
-
-  buffers.aRandomness[index * 3] = 0;
-  buffers.aRandomness[index * 3 + 1] = (random() * 2 - 1);
-  buffers.aRandomness[index * 3 + 2] = (random() * 2 - 1) * 0.5;
-
-  if (!streamProfile) return;
-
-  buffers.aStreamFreq[index] = streamProfile.streamFreq;
-  buffers.aFunnelNarrow[index] = streamProfile.funnelNarrow;
-  buffers.aFunnelThickness[index] = streamProfile.funnelThickness;
-  buffers.aFunnelStartShift[index] = streamProfile.funnelStartShift;
-  buffers.aFunnelEndShift[index] = streamProfile.funnelEndShift;
+  buckets: readonly FieldSemanticBucket[] = SOLEMD_DEFAULT_BUCKETS,
+): AmbientFieldPointSourceBuffers {
+  bakeFieldAttributes(geometry, { random, buckets });
+  const aBucket = extractAttribute(geometry, "aBucket");
+  return {
+    position: extractAttribute(geometry, "position"),
+    aMove: extractAttribute(geometry, "aMove"),
+    aSpeed: extractAttribute(geometry, "aSpeed"),
+    aRandomness: extractAttribute(geometry, "aRandomness"),
+    aAlpha: extractAttribute(geometry, "aAlpha"),
+    aSelection: extractAttribute(geometry, "aSelection"),
+    aIndex: extractAttribute(geometry, "aIndex"),
+    aStreamFreq: extractAttribute(geometry, "aStreamFreq"),
+    aFunnelThickness: extractAttribute(geometry, "aFunnelThickness"),
+    aFunnelNarrow: extractAttribute(geometry, "aFunnelNarrow"),
+    aFunnelStartShift: extractAttribute(geometry, "aFunnelStartShift"),
+    aFunnelEndShift: extractAttribute(geometry, "aFunnelEndShift"),
+    aBucket,
+    color: deriveColorBuffer(aBucket),
+  };
 }
 
 function computeBounds(position: Float32Array) {
@@ -226,42 +176,12 @@ function computeBounds(position: Float32Array) {
   return { minX, minY, minZ, maxX, maxY, maxZ };
 }
 
-function sampleSpherePoint(random: RandomSource) {
-  while (true) {
-    const x = random() * 2 - 1;
-    const y = random() * 2 - 1;
-    const z = random() * 2 - 1;
-    const length = Math.hypot(x, y, z);
-    if (length > 1 || length === 0) continue;
-
-    return {
-      x: x / length,
-      y: y / length,
-      z: z / length,
-    };
-  }
-}
-
-function createBlobSource(pointCount: number, random: RandomSource): AmbientFieldPointSource {
-  const buffers = createBuffers(pointCount);
-
-  for (let index = 0; index < pointCount; index += 1) {
-    const point = sampleSpherePoint(random);
-    const radiusBias = 1;
-
-    buffers.position[index * 3] = point.x * radiusBias;
-    buffers.position[index * 3 + 1] = point.y * radiusBias;
-    buffers.position[index * 3 + 2] = point.z * radiusBias;
-
-    writeColor(buffers, index, pickWeightedColor(random));
-    applySharedAttributes(
-      buffers,
-      index,
-      random,
-      [0.2, 1],
-    );
-  }
-
+function createBlobSource(
+  pointCount: number,
+  random: RandomSource,
+): AmbientFieldPointSource {
+  const geometry = FieldGeometry.sphere({ count: pointCount, random });
+  const buffers = bakeGeometryAttributes(geometry, random);
   return {
     id: "blob",
     pointCount,
@@ -270,37 +190,12 @@ function createBlobSource(pointCount: number, random: RandomSource): AmbientFiel
   };
 }
 
-function selectStreamProfile(random: RandomSource): StreamProfile {
-  const sample = random();
-  if (sample > 0.3) return streamProfiles[3]!;
-  const branch = random();
-  if (branch <= 0.15) return streamProfiles[0]!;
-  if (branch <= 0.4) return streamProfiles[1]!;
-  return streamProfiles[2]!;
-}
-
 function createStreamSource(
   pointCount: number,
   random: RandomSource,
 ): AmbientFieldPointSource {
-  const buffers = createBuffers(pointCount);
-
-  for (let index = 0; index < pointCount; index += 1) {
-    const x = (random() - 0.5) * 4;
-    buffers.position[index * 3] = x;
-    buffers.position[index * 3 + 1] = 0;
-    buffers.position[index * 3 + 2] = 0;
-
-    writeColor(buffers, index, pickWeightedColor(random));
-    applySharedAttributes(
-      buffers,
-      index,
-      random,
-      [0.2, 1],
-      selectStreamProfile(random),
-    );
-  }
-
+  const geometry = FieldGeometry.stream({ count: pointCount, random });
+  const buffers = bakeGeometryAttributes(geometry, random);
   return {
     id: "stream",
     pointCount,
@@ -310,7 +205,9 @@ function createStreamSource(
 }
 
 function createBitmap(width: number, height: number) {
-  return Array.from({ length: height }, () => Array.from({ length: width }, () => false));
+  return Array.from({ length: height }, () =>
+    Array.from({ length: width }, () => false),
+  );
 }
 
 function paintHorizontal(
@@ -320,8 +217,16 @@ function paintHorizontal(
   toX: number,
   thickness = 1,
 ) {
-  for (let row = Math.max(0, y - thickness); row <= Math.min(bitmap.length - 1, y + thickness); row += 1) {
-    for (let column = Math.max(0, fromX); column <= Math.min(bitmap[row]!.length - 1, toX); column += 1) {
+  for (
+    let row = Math.max(0, y - thickness);
+    row <= Math.min(bitmap.length - 1, y + thickness);
+    row += 1
+  ) {
+    for (
+      let column = Math.max(0, fromX);
+      column <= Math.min(bitmap[row]!.length - 1, toX);
+      column += 1
+    ) {
       bitmap[row]![column] = true;
     }
   }
@@ -334,16 +239,37 @@ function paintVertical(
   toY: number,
   thickness = 1,
 ) {
-  for (let row = Math.max(0, fromY); row <= Math.min(bitmap.length - 1, toY); row += 1) {
-    for (let column = Math.max(0, x - thickness); column <= Math.min(bitmap[row]!.length - 1, x + thickness); column += 1) {
+  for (
+    let row = Math.max(0, fromY);
+    row <= Math.min(bitmap.length - 1, toY);
+    row += 1
+  ) {
+    for (
+      let column = Math.max(0, x - thickness);
+      column <= Math.min(bitmap[row]!.length - 1, x + thickness);
+      column += 1
+    ) {
       bitmap[row]![column] = true;
     }
   }
 }
 
-function paintPad(bitmap: boolean[][], centerX: number, centerY: number, radius = 2) {
-  for (let row = Math.max(0, centerY - radius); row <= Math.min(bitmap.length - 1, centerY + radius); row += 1) {
-    for (let column = Math.max(0, centerX - radius); column <= Math.min(bitmap[row]!.length - 1, centerX + radius); column += 1) {
+function paintPad(
+  bitmap: boolean[][],
+  centerX: number,
+  centerY: number,
+  radius = 2,
+) {
+  for (
+    let row = Math.max(0, centerY - radius);
+    row <= Math.min(bitmap.length - 1, centerY + radius);
+    row += 1
+  ) {
+    for (
+      let column = Math.max(0, centerX - radius);
+      column <= Math.min(bitmap[row]!.length - 1, centerX + radius);
+      column += 1
+    ) {
       const dx = column - centerX;
       const dy = row - centerY;
       if (Math.hypot(dx, dy) <= radius + 0.35) {
@@ -396,7 +322,7 @@ function createPcbSource(random: RandomSource): AmbientFieldPointSource {
     for (let column = 0; column < width; column += 1) {
       if (!bitmap[row]![column]) continue;
 
-      const x = ((column / (width - 1)) - 0.5) * 2.2;
+      const x = (column / (width - 1) - 0.5) * 2.2;
       const y = (0.5 - row / (height - 1)) * 1.45;
       const depth = 0.06 + random() * 0.14;
 
@@ -406,19 +332,13 @@ function createPcbSource(random: RandomSource): AmbientFieldPointSource {
   }
 
   const pointCount = points.length / 3;
-  const buffers = createBuffers(pointCount);
-  buffers.position.set(points);
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new BufferAttribute(new Float32Array(points), 3),
+  );
 
-  for (let index = 0; index < pointCount; index += 1) {
-    writeColor(buffers, index, pickWeightedColor(random));
-    applySharedAttributes(
-      buffers,
-      index,
-      random,
-      [0.2, 1],
-    );
-  }
-
+  const buffers = bakeGeometryAttributes(geometry, random);
   return {
     id: "pcb",
     pointCount,
@@ -445,3 +365,6 @@ export function prewarmAmbientFieldPointSources(
 }
 
 export const ambientFieldPointSourceRegistry = new AmbientFieldPointSourceRegistry();
+
+export const AMBIENT_FIELD_BUCKET_INDEX = BUCKET_INDEX;
+export { SOLEMD_DEFAULT_BUCKETS } from "./field-attribute-baker";

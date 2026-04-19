@@ -62,6 +62,53 @@ here instead of recreating it in human-facing docs.
 - Did the change preserve one canonical implementation?
 - Was the result verified with tests or runtime inspection?
 
+## Ambient Field Runtime
+
+Applies to anything under `apps/web/features/ambient-field/**`. The ambient
+field is a persistent fixed-stage WebGL surface with its own performance
+contract that complements the graph runtime's.
+
+- **One continuous uTime.** `uTime` increments monotonically from
+  `getAmbientFieldElapsedSeconds()` (a module-scope singleton in
+  `renderer/field-loop-clock.ts`). Never reset it on StrictMode double-mount,
+  warmup remount, or chapter boundaries. Resetting it reverts months of Maze
+  parity work — the cyan→magenta FBM drift is time-coherent only if uTime
+  never steps backwards.
+- **Scroll-driven uniforms lerp, never snap.** Every uniform that responds
+  to scroll progress goes through `createUniformScrubber<K>` (1 s half-life
+  low-pass, `0.5 ** (dtMs / halfLifeMs)`). Fast scroll trails ~1 s and
+  settles; slow scroll feels immediate. Snapping a uniform on a phase
+  boundary is the regression shape to avoid.
+- **Chapter choreography is declarative.** Use
+  `createFieldChapterTimeline({events, scrubber, initialTargets})` with a
+  list of `ChapterEvent<K>` records, never hand-written scroll math. The
+  timeline's `setProgress(p)` + `applyTargets(dtMs)` is the per-frame hook.
+- **Hotspots render via DOM + CSS keyframes.** `AmbientFieldHotspotRing` +
+  `createHotspotLifecycleController` own the Maze hotspot pool. Per-hotspot
+  `animationend` triggers reseed for that hotspot only — never a shared
+  timer. CSS keyframes (`afr-hotspot-inner` / `afr-hotspot-outer`) live in
+  `overlay/ambient-field-hotspot-ring.css`.
+- **No per-frame React updates from ambient-field.** The useFrame hook
+  mutates Three.js uniforms directly via refs. Do not call `setState` /
+  dispatch / Zustand writes from inside useFrame — that triggers a React
+  rerender for every frame of the WebGL loop.
+- **DPR capped at 2.** `uPixelRatio` is `min(devicePixelRatio, 2)`. Never
+  raise above 2 — high-DPR MacBooks already spend ~4x fill-rate per pixel
+  at 2.
+- **Burst strength scrubs.** When activating a new bucket, do not set
+  `uBurstStrength` directly; route through `createBurstController` so the
+  hue shift eases in over 1 s instead of snapping.
+- **Mouse parallax ≤ ±5e-4 rad/px.** `attachMouseParallax` caps at Maze's
+  values (±3e-4 x / ±5e-4 y). Exceeding them reads as a 3D orbit, not
+  ambient parallax.
+
+Canonical refs:
+
+- `docs/map/ambient-field-maze-baseline-ledger-round-12.md` — Source Ground
+  Truth + Foundation Primitives + Phase Log.
+- `.claude/skills/ambient-field-modules/SKILL.md` — authoring contract for
+  any module that uses the shared stage.
+
 ## References
 
 - `../SKILL.md` for graph ownership and companion-skill routing

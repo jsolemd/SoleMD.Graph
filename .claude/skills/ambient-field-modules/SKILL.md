@@ -8,13 +8,19 @@ description: |
   substrate. Companions: /aesthetic for shell styling, /animation-authoring for
   motion craft, /learn-modules for educational interaction shells, /graph for
   live graph boundaries.
-version: 1.6.0
+version: 1.7.0
 ---
 
 # Ambient Field Modules
 
 > Canonical sources:
 >
+> - `docs/map/ambient-field-maze-baseline-ledger-round-12.md` — the
+>   Round 12 Source Ground Truth + Foundation Primitives + Phase Log.
+>   **Read this first** for any new ambient-field work.
+> - `references/round-12-module-authoring.md` — step-by-step authoring
+>   guide with 3 worked examples (landing blob, landing pcb, hypothetical
+>   MRI module using the luma channel).
 > - `docs/map/ambient-field-runtime.md`
 > - `docs/map/ambient-field-implementation.md`
 > - `docs/map/ambient-field-best-practices.md`
@@ -46,15 +52,56 @@ Do not use this skill for:
 
 ## Current Repo Reality
 
-As of `2026-04-18`, the homepage runtime is no longer just a prototype shell.
-The canonical implementation now lives in:
+As of `2026-04-19` (Round 12 rebuild), the homepage runtime is a foundation
+of reusable primitives, not a prototype. Every primitive exports through
+the barrel `apps/web/features/ambient-field/index.ts`. Canonical modules:
 
-- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx`
-- `apps/web/features/ambient-field/renderer/FieldCanvas.tsx`
-- `apps/web/features/ambient-field/renderer/FieldScene.tsx`
-- `apps/web/features/ambient-field/asset/point-source-registry.ts`
-- `apps/web/features/ambient-field/scroll/ambient-field-scroll-state.ts`
-- `apps/web/features/ambient-field/scroll/ambient-field-scroll-driver.ts`
+Asset + geometry:
+- `asset/field-geometry.ts` — `FieldGeometry.sphere/stream/fromTexture/fromVertices`.
+- `asset/field-attribute-baker.ts` — `bakeFieldAttributes` + `SOLEMD_DEFAULT_BUCKETS`.
+- `asset/image-point-source.ts` — `createImagePointGeometry` (async; url / Image / ImageBitmap / ImageLikeData).
+- `asset/model-point-source.ts` — `createModelPointGeometry` (walks Object3D).
+- `asset/point-source-registry.ts` — thin consumer of the above, plus the
+  homepage `blob/stream/pcb` entries.
+
+Renderer:
+- `renderer/field-shaders.ts` — Maze-parity vertex + fragment shaders with
+  6 scalar color uniforms + burst overlay block.
+- `renderer/FieldScene.tsx` — R3F stage consumer; owns the per-layer
+  `wrapper → mouseWrapper → model` hierarchy.
+- `renderer/field-loop-clock.ts` — singleton `uTime` source
+  (`getAmbientFieldElapsedMs`, `getAmbientFieldElapsedSeconds`).
+- `renderer/mouse-parallax-wrapper.ts` — `attachMouseParallax(group)`.
+- `renderer/burst-controller.ts` — `createBurstController`.
+
+Controllers:
+- `controller/FieldController.ts` — abstract base (attach, loop,
+  updateScale, updateVisibility, animateIn/Out, toScreenPosition, destroy).
+- `controller/BlobController.ts` / `StreamController.ts` /
+  `PcbController.ts` — stage-item specializations with Maze-parity
+  updateScale formulas.
+
+Overlay:
+- `overlay/AmbientFieldHotspotRing.tsx` + `ambient-field-hotspot-ring.css` —
+  DOM hotspot primitive with Maze CSS keyframes under an `afr-` prefix.
+- `overlay/ambient-field-hotspot-lifecycle.ts` — `createHotspotLifecycleController`
+  (per-hotspot animationend reseed, never a shared timer).
+
+Scroll:
+- `scroll/ambient-field-uniform-scrubber.ts` — GSAP `scrub: 1` emulator
+  with 1 s half-life low-pass (`0.5 ** (dtMs / halfLifeMs)`).
+- `scroll/field-chapter-timeline.ts` — declarative chapter events
+  (atProgress + duration + set/to/from/fromTo).
+- `scroll/chapters/landing-*-chapter.ts` — Maze-parity event lists for
+  blob / pcb / stream.
+- `scroll/ambient-field-scroll-state.ts` — target producer.
+- `scroll/ambient-field-scroll-driver.ts` — scroll intake.
+
+Scene/config:
+- `scene/visual-presets.ts` — blob/stream/pcb presets with Maze numeric values.
+- `scene/burst-config.ts` — `SOLEMD_BURST_COLORS` + `PHASE_TO_BUCKET`.
+
+Legacy (pre-Round-12, now superseded in place):
 
 Important reality checks:
 

@@ -32,24 +32,22 @@ export interface AmbientFieldFocusPresentation {
   state: AmbientFieldFocusMotionState;
 }
 
+// Maze authors the card seat with `left: 2.5rem; top: 0`
+// (styles.css `.hotspot__ui`). Hotspots that omit cardLeft/cardTop
+// fall through to those defaults in the new `AmbientFieldHotspotRing`
+// primitive.
 export const ambientFieldBlobHotspots: readonly AmbientFieldBlobHotspot[] = [
   {
-    cardLeft: "28px",
-    cardTop: "-18px",
     id: "papers",
     title: "Paper subset enters focus",
     badges: ["Selected", "High confidence"],
   },
   {
-    cardLeft: "28px",
-    cardTop: "-18px",
     id: "entities",
     title: "Entity-rich paper neighborhood",
     badges: ["Gene", "Chemical"],
   },
   {
-    cardLeft: "28px",
-    cardTop: "-18px",
     id: "relations",
     title: "Relation bridge becomes visible",
     badges: ["Linking", "Synthesis-ready"],

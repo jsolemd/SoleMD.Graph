@@ -3,6 +3,10 @@
 Use this reference when a task touches stage ownership, scene controllers,
 projection, hotspots, stream markers, progress bars, or chapter choreography.
 
+The Round 12 canonical ledger is
+`docs/map/ambient-field-maze-baseline-ledger-round-12.md`. Line citations below
+are to `scripts.pretty.js` unless otherwise noted.
+
 ## Fixed Stage Ownership
 
 Maze uses one page-global stage shell:
@@ -22,8 +26,11 @@ SoleMD rule:
 - one persistent stage owner per surface adapter
 - no per-section canvases
 - no section-local renderer instances
+- elapsed-ms comes from `renderer/field-loop-clock.ts` — controllers and
+  components read that singleton, never a local clock (see
+  `maze-particle-runtime-architecture.md` → Field-Loop Clock)
 
-## Controller-Per-Anchor Model
+## Controller-Per-Anchor Model (Round 12)
 
 The stage manager scans `[data-gfx]` anchors and instantiates one scene
 controller per slug:
@@ -32,20 +39,61 @@ controller per slug:
 - `stream`
 - `pcb`
 
+In Round 12, SoleMD mirrors Maze's class hierarchy (`yr` / `mm` / `ug` / `_m`)
+with a typed controller hierarchy under `apps/web/features/ambient-field/`:
+
+- `controller/FieldController.ts` — abstract base (`yr`,
+  `scripts.pretty.js:43013-43254`)
+- `controller/BlobController.ts` — subclass (`mm`, `:43257-43526`)
+- `controller/StreamController.ts` — subclass (`ug`, `:49326-49345`)
+- `controller/PcbController.ts` — subclass (`_m`, `:43615-43630`)
+
 Each controller owns:
 
 - initial parameters
-- carry window visibility
+- carry window visibility (`updateVisibility` with `entryFactor` /
+  `exitFactor`)
 - scroll binding
-- scale/position updates
-- per-frame loop behavior
+- scale/position updates (`updateScale`; Stream overrides with Maze's
+  `250 * (innerW/innerH) / (1512/748)` desktop / `168` mobile formula)
+- per-frame loop behavior (`loop(dtSec)` handles only idle wrapper rotation
+  at `0.001` rad/frame — matching Maze `:43047`. The second Maze delta
+  on that same pair of lines, `uTime += 0.002`, is owned by the
+  field-loop clock singleton, not the controller)
+- enter/exit tweens (`animateIn` / `animateOut`, 1.4s / 1s, `tnEase`
+  cubic-bezier, `:43125-43187`)
+- screen-space projection (`toScreenPosition`, `:43213-43227`)
 - optional sticky behavior
+
+React / R3F still owns component lifecycle, scene graph declaration, and
+hotspot component instances. Controllers are plain-TypeScript objects attached
+via `attach(...)` after refs are wired. This keeps per-frame math out of React
+render and out of React state.
 
 This is why Maze feels continuous:
 
 - multiple controllers can stay mounted at once
 - visibility and emphasis interpolate
-- the stage does not “switch scenes” by remounting global state
+- the stage does not "switch scenes" by remounting global state
+
+## Mouse Parallax Wrapper
+
+Maze's base controller (`yr`, `scripts.pretty.js:43189-43196`) wires a
+mousemove parallax that rotates a dedicated `mouseWrapper` group. SoleMD
+Round 12 ships this as:
+
+- `apps/web/features/ambient-field/renderer/mouse-parallax-wrapper.ts`
+- export: `attachMouseParallax(group, options)`
+- GSAP `sine.out` tween, 1s duration
+- ±3e-4 rad/px on x, ±5e-4 rad/px on y
+- returns a cleanup function (remove listener, kill tween)
+
+SoleMD rule:
+
+- scene groups that need pointer parallax attach via this primitive, not
+  bespoke mousemove listeners
+- the wrapper target is always the dedicated `mouseWrapper`, not the scene
+  root, so `updateScale` and `animateIn` tweens do not clobber each other
 
 ## Sticky Stage Behavior
 
@@ -62,7 +110,7 @@ SoleMD rule:
 
 - sticky chapter behavior belongs in controller math, not in extra canvas mounts
 
-## Hotspot Overlay System
+## Hotspot Overlay System (Round 12)
 
 Maze predeclares a hotspot pool directly inside `.s-gfx`:
 
@@ -72,22 +120,58 @@ Maze predeclares a hotspot pool directly inside `.s-gfx`:
 - only `3` hotspots ship with attached card UI
 - the remaining `38` are bare ring affordances
 
-The blob scene owns hotspot projection:
+DOM shape: `index.html:87-149`. CSS keyframes: extracted in
+`docs/map/ambient-field-maze-baseline-ledger-round-12.md` §13. Pool + projection
+logic: `scripts.pretty.js:43421-43524`.
 
-- it creates hidden 3D anchor meshes
-- projects them to screen space
-- writes DOM `x`, `y`, `scale`, and `opacity`
-- toggles stage-level classes like `has-only-reds`
+### SoleMD Primitives
 
-Important distinction:
+Round 12 replaces the pre-R12 inline `FieldScene` hotspot DOM logic with three
+named primitives under `apps/web/features/ambient-field/overlay/`:
 
-- declared hotspot pool size is not the same as visible hotspot count
-- scroll choreography changes visibility density over time
+- `AmbientFieldHotspotRing.tsx` — React component for a single hotspot.
+  Props:
+  - `variant`: `'cyan' | 'red'`
+  - `phase`: `'idle' | 'animating' | 'only-reds' | 'only-single' | 'hidden'`
+  - `delayMs`, `durationMs`, `easing`
+  - `seedKey` — bumping this value forces a CSS reflow reseed so the keyframe
+    animation restarts
+  - `cardOffset`
+  - `projection` — screen-space x/y/scale/opacity from the projection step
+  - `onAnimationEnd` — wired to per-hotspot reseed
+- `ambient-field-hotspot-ring.css` — ports Maze's hotspot keyframes verbatim
+  under an `afr-` prefix. Anything referencing Maze's original class names
+  should use the `afr-hotspot*` equivalents here.
+- `ambient-field-hotspot-lifecycle.ts` — exports
+  `createHotspotLifecycleController({ count, samplePosition, sampleDelayMs,
+  durationMs, maxRetries })`.
+  - Each hotspot's `animationend` handler triggers `reseed(index)` for
+    **that hotspot only**.
+  - `reseed(index)` bumps the hotspot's `seedKey` so the React component
+    restarts the CSS animation.
+  - Phase transitions (e.g. `only-reds`, `only-single`) are owned here.
+
+### Banned: Shared-Timer Reseed (Round 11 Regression)
+
+A shared `setInterval` / shared timeline driving every hotspot's reseed was
+the Round 11 regression. It drifted out of phase and clobbered the blobby
+cadence Maze establishes. In Round 12, reseed is strictly
+per-hotspot-per-`animationend`. Do not reintroduce a shared timer.
+
+### Blob Controller Ownership
+
+`BlobController` holds a `hotspotState` container for the 3D anchor meshes and
+projection cache. Current status: projection + pool orchestration still live
+in `FieldScene`; full delegation into `BlobController.hotspotState` is
+deferred to a later `/clean` pass. Hotspot rejection rules live at
+`scripts.pretty.js:43470-43499`; projection at `:43501-43524`.
 
 SoleMD rule:
 
-- keep a projected overlay layer with a reusable hotspot pool
-- do not make every hotspot a React-mounted one-off card
+- use `AmbientFieldHotspotRing` + `createHotspotLifecycleController` for any
+  new hotspot surface
+- do not ship bespoke DOM pools
+- do not drive reseed from a global interval
 
 ## Stream Overlay System
 
@@ -130,7 +214,7 @@ Lane start order is authored, not DOM-order:
 - `image`: `19.2s`
 - `framebuffer`: `22.4s`
 
-Do not flatten this into “all markers loop together.”
+Do not flatten this into "all markers loop together."
 
 ## Dual Responsive SVG Contract
 
@@ -190,8 +274,11 @@ Maze separates these layers cleanly:
 
 - fixed WebGL stage:
   - points, shaders, controller transforms
+  - `uTime` fed from the field-loop clock singleton
 - projected hotspot DOM:
-  - blob-stage annotation pool
+  - `AmbientFieldHotspotRing` instances driven by
+    `createHotspotLifecycleController`
+  - per-hotspot `animationend` reseed (no shared timer)
 - stream DOM/SVG overlay layer:
   - motion-path markers and popups
 - progress widgets:
@@ -202,9 +289,17 @@ UI into the particle layer.
 
 ## Implementation Rules For SoleMD
 
-- build a reusable `StageManager`
-- keep one `SceneController` per anchor/manifest item
-- centralize screen-space projection in a `ProjectionController`
-- keep hotspot, marker, popup, and progress systems as overlay authorities
+- keep one persistent stage owner per surface adapter
+- keep one `FieldController` subclass per anchor/manifest item
+- centralize screen-space projection in `FieldController.toScreenPosition`
+  (migrate any stray projection math into the controller)
+- attach pointer parallax via `attachMouseParallax`, never bespoke listeners
+- read elapsed time from `renderer/field-loop-clock`, never from a
+  component-local clock
+- build hotspots from `AmbientFieldHotspotRing` +
+  `createHotspotLifecycleController`; reseed per-hotspot on `animationend`
+- use the `tnEase` cubic-bezier (`cubic-bezier(0.5, 0, 0.1, 1)`) wherever
+  Maze calls its `CustomEase("tnEase")` — documented divergence because the
+  Club GSAP CustomEase plugin is not installed
 - let chapter timing drive mutable runtime state, not heavy remounts
 - preserve carry windows instead of abrupt section swaps

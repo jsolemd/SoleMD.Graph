@@ -1,7 +1,7 @@
 # Maze Particle Runtime Architecture
 
 This reference captures the particle-system and scene-runtime findings recovered
-from the live Maze homepage, its shipped `scripts.min.js`, `styles.css`,
+from the live Maze homepage, its shipped `scripts.pretty.js`, `styles.css`,
 supporting bitmap assets, and downloaded `.glb` files.
 
 Use this as the canonical motion/runtime reference for SoleMD's Ambient Field.
@@ -42,36 +42,174 @@ separate DOM/SVG overlay systems
 SoleMD shell chrome
 ```
 
-## Current SoleMD Translation
+## Current SoleMD Translation (Round 12)
 
-As of `2026-04-18`, the canonical SoleMD landing runtime maps this architecture
-into the repo as follows:
+As of Round 12 (2026-04-19), the canonical SoleMD landing runtime maps this
+architecture into the repo as follows. The ledger of record is
+`docs/map/ambient-field-maze-baseline-ledger-round-12.md`.
 
-- fixed stage shell:
-  - `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx`
-- shared canvas and frame-budget surface:
-  - `apps/web/features/ambient-field/renderer/FieldCanvas.tsx`
-- source-specific point generation:
-  - `apps/web/features/ambient-field/asset/point-source-registry.ts`
-- shared responsive contract:
-  - `apps/web/features/ambient-field/ambient-field-breakpoints.ts`
-- shared shader/material family:
-  - `apps/web/features/ambient-field/renderer/field-shaders.ts`
-- scene transform and uniform presets:
-  - `apps/web/features/ambient-field/scene/visual-presets.ts`
-- scroll-derived scene carry and overlap:
-  - `apps/web/features/ambient-field/scroll/ambient-field-scroll-state.ts`
-- landing process chapter geometry:
-  - `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/ambient-field-process-geometry.ts`
-- landing process DOM/SVG overlay:
-  - `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldProcessStage.tsx`
-- shared section navigation adapter with narrow dock fallback:
-  - `apps/web/features/wiki/components/use-section-toc-state.ts`
-  - `apps/web/features/wiki/components/ViewportTocRail.tsx`
+Fixed stage + canvas shell:
 
-That is the implementation to extend moving forward. Future modules should plug
-into these runtime seams instead of reintroducing page-local background
-animation code.
+- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldLandingPage.tsx`
+- `apps/web/features/ambient-field/renderer/FieldCanvas.tsx`
+
+Scene controllers (new in Round 12 — controller hierarchy owns the
+Three.js-level runtime refs while React still owns lifecycle):
+
+- `apps/web/features/ambient-field/controller/FieldController.ts` — abstract
+  base. Owns `wrapper`, `mouseWrapper`, `model`, and `material` refs. Methods:
+  - `attach(...)` — wires scene graph refs and initial state
+  - `loop(dtSec)` — idle wrapper rotation only (uTime is a separate singleton,
+    see Field-Loop Clock below). Rotation deltas match Maze `yr` at
+    `scripts.pretty.js:43047-43049` (`0.001` / `0.002` per frame)
+  - `updateScale(sceneUnits, sourceHeight, isMobile)`
+  - `updateVisibility(scrollY, viewportH, layerTop, layerHeight)` — carry
+    window with `entryFactor` / `exitFactor`
+  - `animateIn()` / `animateOut(side, instant)` — 1.4s / 1s GSAP tweens using
+    `tnEase` (see tnEase Approximation below). Matches Maze
+    `scripts.pretty.js:43125-43187`
+  - `toScreenPosition(...)` — ports `scripts.pretty.js:43213-43227`
+  - `destroy()`
+- `apps/web/features/ambient-field/controller/BlobController.ts` — subclass
+  that holds the `hotspotState` container. Hotspot projection + pool still
+  live in `FieldScene` today; full delegation into the controller is deferred
+  to a later `/clean` pass. Source ref: `mm` at
+  `scripts.pretty.js:43257-43526`.
+- `apps/web/features/ambient-field/controller/StreamController.ts` — overrides
+  `updateScale` with Maze's `ug` formula: desktop
+  `250 * (innerW/innerH) / (1512/748)`, mobile `168`. Source ref:
+  `scripts.pretty.js:49326-49345`.
+- `apps/web/features/ambient-field/controller/PcbController.ts` — subclass for
+  the horizon-mesh. Source ref: `_m` at `scripts.pretty.js:43615-43630`.
+
+Renderer primitives (new in Round 12):
+
+- `apps/web/features/ambient-field/renderer/mouse-parallax-wrapper.ts` —
+  `attachMouseParallax(group, options)` attaches a mousemove listener with a
+  GSAP `sine.out` tween: ±3e-4 rad/px on x, ±5e-4 rad/px on y, 1s duration.
+  Returns a cleanup function. Matches Maze
+  `scripts.pretty.js:43189-43196`.
+- `apps/web/features/ambient-field/renderer/field-loop-clock.ts` — **singleton
+  elapsed-ms clock** exporting `getAmbientFieldElapsedMs()` and
+  `getAmbientFieldElapsedSeconds()`. State lives in module scope so the clock
+  survives React StrictMode double-mounts and the landing warmup remount.
+  Controllers do not own `uTime`; the singleton is the one writer, keeping
+  shader motion continuous across component remounts.
+
+Hotspot overlay primitives (new in Round 12, replaces the pre-R12 inline
+FieldScene DOM-pool logic):
+
+- `apps/web/features/ambient-field/overlay/AmbientFieldHotspotRing.tsx` —
+  React component matching Maze's DOM hotspot. Props: `variant`
+  (`'cyan' | 'red'`), `phase`
+  (`'idle' | 'animating' | 'only-reds' | 'only-single' | 'hidden'`),
+  `delayMs`, `durationMs`, `easing`, `seedKey` (bumping triggers a CSS-reflow
+  reseed), `cardOffset`, `projection`, `onAnimationEnd`.
+- `apps/web/features/ambient-field/overlay/ambient-field-hotspot-ring.css` —
+  ports Maze's hotspot keyframes verbatim under an `afr-` prefix. Extracted
+  source in `docs/map/ambient-field-maze-baseline-ledger-round-12.md` §13;
+  Maze DOM shape at `index.html:87-149`.
+- `apps/web/features/ambient-field/overlay/ambient-field-hotspot-lifecycle.ts`
+  — `createHotspotLifecycleController({ count, samplePosition,
+  sampleDelayMs, durationMs, maxRetries })`. Per-hotspot `animationend`
+  triggers `reseed(index)` for **that hotspot only**, not a shared interval.
+  The shared-timer design was the Round 11 regression and is now banned.
+  `reseed(index)` bumps `seedKey` so the React component restarts its CSS
+  animation. Source ref: Maze pool + `animationend` at
+  `scripts.pretty.js:43421-43457`; rejection rules at
+  `:43470-43499`; projection at `:43501-43524`.
+
+Source-specific point generation, shared contracts, and scroll plumbing:
+
+- `apps/web/features/ambient-field/asset/point-source-registry.ts`
+- `apps/web/features/ambient-field/ambient-field-breakpoints.ts`
+- `apps/web/features/ambient-field/renderer/field-shaders.ts`
+- `apps/web/features/ambient-field/scene/visual-presets.ts`
+- `apps/web/features/ambient-field/scroll/ambient-field-scroll-state.ts`
+- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/ambient-field-process-geometry.ts`
+- `apps/web/features/ambient-field/surfaces/AmbientFieldLandingPage/AmbientFieldProcessStage.tsx`
+- `apps/web/features/wiki/components/use-section-toc-state.ts`
+- `apps/web/features/wiki/components/ViewportTocRail.tsx`
+
+That is the implementation to extend moving forward. Future modules plug into
+these runtime seams — the controller hierarchy, the field-loop clock, the
+hotspot ring primitive, and the lifecycle controller — instead of reintroducing
+page-local background animation code.
+
+## Controller Hierarchy And R3F Boundary
+
+Round 12 introduced a plain-TypeScript controller hierarchy that wraps
+Three.js-level refs. React still owns mount/unmount, scene graph declaration,
+and prop flow; controllers own imperative per-frame math that the legacy Maze
+runtime expressed as class instances.
+
+Division of responsibility:
+
+- React / R3F owns:
+  - component tree and remount lifecycle
+  - scene graph declaration (groups, meshes, points)
+  - hotspot component instances (`AmbientFieldHotspotRing`)
+  - lifecycle controller ownership (`createHotspotLifecycleController`)
+- Controllers own:
+  - wrapper rotation (idle loop)
+  - visibility carry windows and entry/exit factors
+  - `updateScale` math
+  - GSAP `animateIn` / `animateOut` tweens
+  - `toScreenPosition` projection
+- Field-loop clock owns:
+  - `uTime` accumulation (not controllers, not React state)
+
+A controller is attached via `attach(...)` once React has wired up the refs.
+React never calls controller math from render; the per-frame loop
+(`useFrame` equivalent) is the only driver. State that must survive StrictMode
+double-mount (elapsed time, hotspot seeds) stays outside React state.
+
+## tnEase Approximation
+
+Maze defines the primary field-animation ease via GSAP Club's `CustomEase`:
+
+```js
+CustomEase.create("tnEase", "0.5, 0, 0.1, 1")
+```
+
+The Club GSAP `CustomEase` plugin is not installed in SoleMD.Graph. Round 12
+approximates it with a standard cubic-bezier in every GSAP call that needs it:
+
+```ts
+const tnEase = "cubic-bezier(0.5, 0, 0.1, 1)"
+```
+
+This is a documented divergence. If strict ease parity later matters (e.g. a
+matched scrub curve on a long animateOut), either install Club GSAP or swap in
+a piecewise cubic that matches the CustomEase control lattice. Do not change
+the bezier casually — it affects every controller tween.
+
+## Field-Loop Clock (Singleton)
+
+Legacy Maze derives particle time from a single `requestAnimationFrame` loop
+that also owns the renderer. SoleMD's R3F runtime has many potential `useFrame`
+callsites and a warmup remount pattern that can reset per-component state at
+awkward moments.
+
+`renderer/field-loop-clock.ts` solves this by holding elapsed-ms in module
+scope:
+
+- one module-level clock, started on first import
+- `getAmbientFieldElapsedMs()` / `getAmbientFieldElapsedSeconds()` are pure
+  readers
+- StrictMode double-invocation does not reset the clock
+- the landing warmup remount does not reset the clock
+- controllers read, never write, this value
+
+Why it matters:
+
+- `uTime`-driven shader motion stays continuous across dev-mode double mount
+- hotspot reseed cadence (which also runs through lifecycle controller timers)
+  cannot drift out of sync with shader noise after a remount
+- tests can fake the clock by replacing the module at the import boundary
+
+Do not introduce a second clock. Do not assign `uTime` from a React ref.
+Do not derive elapsed time from `performance.now()` inside controllers.
 
 ## Source Coordinate Spaces
 
@@ -271,17 +409,21 @@ points.
 
 ## Remaining Canonical Gaps
 
-The current landing implementation now matches the most important Maze-derived
-rules:
+Round 12 closed the biggest controller and hotspot gaps. The current landing
+runtime now matches:
 
-- one fixed stage
+- one fixed stage with a singleton elapsed-ms clock
 - one shared point shader family
 - source-specific point spaces for `blob`, `stream`, and `pcb`
 - hybrid process chapter overlays
 - shared breakpoint contract across stage and overlay shell
-- a single stage-owned frame clock feeding both WebGL and overlay choreography
-- manifest-authored carry windows for the shipped landing surface
-- separated landing overlay adapter ownership instead of one page-global driver
+- manifest-authored carry windows
+- a typed controller hierarchy (`FieldController` / `BlobController` /
+  `StreamController` / `PcbController`) mirroring Maze's `yr` / `mm` /
+  `ug` / `_m`
+- a reusable hotspot ring primitive (`AmbientFieldHotspotRing`) plus a
+  per-hotspot-reseed lifecycle controller
+- an attachable mouse parallax wrapper that matches Maze's tween envelope
 
 The main remaining gaps before full architectural parity are:
 
@@ -290,8 +432,8 @@ The main remaining gaps before full architectural parity are:
 - a surface-agnostic `SceneResolver -> ResolvedFieldScene` chain so wiki and
   module surfaces author the same contract without inheriting landing names
 - visibility-aware pause or demotion policy when the tab or surface is hidden
-- more overlay adapters beyond the landing process chapter, including future
-  hotspot, wiki, and module-specific controllers
+- full delegation of hotspot projection from `FieldScene` into
+  `BlobController.hotspotState` (deferred to a later `/clean` pass)
 - model-backed point adapters for future `World`/`Shield`/`Users`-class scenes
 
 Those are foundation tasks, not visual polish. They should be treated as the
@@ -359,7 +501,7 @@ Important material quirk:
 
 - the live material defaults to normal blending
 - additive blending only appears behind a query-string debug switch
-- do not assume “glowy” parity requires additive blending by default
+- do not assume "glowy" parity requires additive blending by default
 
 ## Stage and Overlay Separation
 
@@ -381,7 +523,7 @@ Owns:
 
 Owns:
 
-- hotspot rings
+- hotspot rings (SoleMD: `AmbientFieldHotspotRing` + `afr-hotspot*` CSS)
 - popup cards
 - progress rails
 - moving stream markers
@@ -436,7 +578,7 @@ them, do it as a documented divergence rather than by accident.
 Maze remains legible on mobile because the runtime is adapted, not merely
 shrunk.
 
-Mobile-specific findings to preserve:
+Maze-side findings to preserve:
 
 - stream density is reduced from `15000` to `10000`
 - blob/sphere density stays `16384` in this snapshot
@@ -444,6 +586,22 @@ Mobile-specific findings to preserve:
 - overlay density is lower
 - chapter UI remains separate from particle stage
 - scene readability is preserved by motion simplification, not only by scaling
+
+Round 12 adds a matching set of SoleMD runtime rules (expanded in
+`maze-mobile-performance-contract.md`):
+
+- DPR is capped at 2 and passed to the shader as
+  `uPixelRatio = min(devicePixelRatio, 2)` so `gl_PointSize` and `vAlpha`
+  do not blow up on HiDPI phones
+- `attachMouseParallax` is not wired on mobile — pointer parallax is a
+  desktop-only affordance and the `mouseWrapper` group stays at identity
+  rotation below `1024px`
+- `useFrame` must not call `setState` or otherwise schedule a React render
+  per frame. Controllers mutate Three.js refs and material uniforms
+  directly; React state changes are reserved for discrete phase/chapter
+  transitions and hotspot reseed events
+- `StreamController.updateScale` uses Maze's mobile-only constant `168`
+  rather than the aspect-driven desktop formula
 
 Do not simply squeeze the desktop layout into a smaller viewport.
 
@@ -459,7 +617,9 @@ When building or reviewing the SoleMD Ambient Field runtime, apply these rules:
 
 2. Use one shared shader/material family across scenes whenever possible.
 
-3. Keep overlays separate from WebGL particles.
+3. Keep overlays separate from WebGL particles. Hotspot overlay work uses
+   `AmbientFieldHotspotRing` + `createHotspotLifecycleController`, not
+   bespoke DOM pools.
 
 4. Preserve depth hierarchy.
 
@@ -469,6 +629,9 @@ When building or reviewing the SoleMD Ambient Field runtime, apply these rules:
 
 7. Treat this runtime as canonical infrastructure for homepage and modules, not
    as one page-specific animation.
+
+8. Route per-frame time through `field-loop-clock`. Route controller tween
+   eases through the `tnEase` cubic-bezier constant.
 
 ## Anti-Patterns
 
@@ -482,6 +645,11 @@ Do not approve implementations that:
 - remount geometry on chapter boundaries
 - conflate DOM markers/popups with particle coordinates
 - flatten all points into one visual depth plane
+- introduce a second elapsed-time clock instead of reading
+  `field-loop-clock`
+- drive hotspot reseed from a shared interval timer — reseed is per-hotspot
+  on `animationend` (Round 11 regression)
+- assign `uTime` from React state or a ref synced via `setState`
 
 ## Translation To SoleMD
 
@@ -501,3 +669,25 @@ That is the canonical basis for:
 - inline learning modules
 - expanded module surfaces
 - future graph bridges
+
+## Source Citations
+
+All line references are to the prettified Maze bundle unless noted.
+
+- Stage runtime `Os` / `xi`: `scripts.pretty.js:49427-49587`
+- Base controller `yr`: `scripts.pretty.js:43013-43254`
+  - idle loop deltas (0.001 / 0.002): `:43047-43049`
+  - `animateIn` / `animateOut`: `:43125-43187`
+  - mouse parallax: `:43189-43196`
+  - `toScreenPosition`: `:43213-43227`
+- Blob controller `mm`: `scripts.pretty.js:43257-43526`
+  - hotspot pool + `animationend`: `:43421-43457`
+  - hotspot rejection rules: `:43470-43499`
+  - hotspot projection: `:43501-43524`
+- Stream controller `ug`: `scripts.pretty.js:49326-49345`
+- PCB controller `_m`: `scripts.pretty.js:43615-43630`
+- Hotspot DOM: `index.html:87-149`
+- Hotspot CSS: `docs/map/ambient-field-maze-baseline-ledger-round-12.md` §13
+- Canonical Round 12 ledger:
+  `docs/map/ambient-field-maze-baseline-ledger-round-12.md` — Source Ground
+  Truth, Foundation Primitives, and Phase Log.

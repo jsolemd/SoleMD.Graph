@@ -1,8 +1,9 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useMemo, useRef, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import {
+  AdditiveBlending,
   Camera,
   Texture,
   Color,
@@ -13,6 +14,16 @@ import {
 } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
 import { AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT } from "../ambient-field-breakpoints";
+import { getAmbientFieldElapsedSeconds } from "./field-loop-clock";
+import {
+  AMBIENT_FIELD_BUCKET_INDEX,
+} from "../asset/point-source-registry";
+import {
+  PHASE_TO_BUCKET,
+  SOLEMD_BURST_COLORS,
+} from "../scene/burst-config";
+import { createBurstController } from "./burst-controller";
+import { attachMouseParallax } from "./mouse-parallax-wrapper";
 import { resolveAmbientFieldPointSources } from "../asset/point-source-registry";
 import type { AmbientFieldPointSource } from "../asset/point-source-types";
 import {
@@ -61,8 +72,8 @@ interface LayerUniforms {
   pointTexture: { value: Texture };
   uAlpha: { value: number };
   uAmplitude: { value: number };
-  uColorBase: { value: Color };
-  uColorNoise: { value: Color };
+  uBcolor: { value: number };
+  uBnoise: { value: number };
   uDepth: { value: number };
   uFrequency: { value: number };
   uFunnelDistortion: { value: number };
@@ -72,15 +83,13 @@ interface LayerUniforms {
   uFunnelStart: { value: number };
   uFunnelStartShift: { value: number };
   uFunnelThick: { value: number };
+  uGcolor: { value: number };
+  uGnoise: { value: number };
   uHeight: { value: number };
   uIsMobile: { value: boolean };
   uPixelRatio: { value: number };
-  uPulsePhase: { value: number };
-  uPulseRate: { value: number };
-  uPulseSoftness: { value: number };
-  uPulseSpatialScale: { value: number };
-  uPulseStrength: { value: number };
-  uPulseThreshold: { value: number };
+  uRcolor: { value: number };
+  uRnoise: { value: number };
   uScale: { value: number };
   uSelection: { value: number };
   uSize: { value: number };
@@ -88,6 +97,11 @@ interface LayerUniforms {
   uStream: { value: number };
   uTime: { value: number };
   uWidth: { value: number };
+  uBurstType: { value: number };
+  uBurstStrength: { value: number };
+  uBurstColor: { value: Color };
+  uBurstRegionScale: { value: number };
+  uBurstSoftness: { value: number };
 }
 
 const stageItemIds = AMBIENT_FIELD_STAGE_ITEM_IDS;
@@ -107,8 +121,19 @@ interface BlobHotspotRuntime {
   phaseKey: "card" | "dot" | "focus" | "hidden";
 }
 
-function createColorFromFallbackHex(hex: string): Color {
-  return new Color(hex);
+// Maze parity toggle: the source exposes `?blending` to swap
+// AdditiveBlending in for debug. SoleMD mirrors this as `?field-blending=additive`.
+// Default stays NormalBlending (Maze homepage default).
+function resolveFieldBlending() {
+  if (typeof window === "undefined") return NormalBlending;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("field-blending") === "additive"
+      ? AdditiveBlending
+      : NormalBlending;
+  } catch {
+    return NormalBlending;
+  }
 }
 
 function clamp01(value: number) {
@@ -119,12 +144,6 @@ function smoothstep(min: number, max: number, value: number) {
   if (max <= min) return value >= max ? 1 : 0;
   const t = clamp01((value - min) / (max - min));
   return t * t * (3 - 2 * t);
-}
-
-function getAmbientFieldLoopSeconds(loopEpochMs: number | null) {
-  if (typeof performance === "undefined") return 0;
-  if (loopEpochMs == null) return 0;
-  return Math.max(0, (performance.now() - loopEpochMs) / 1000);
 }
 
 function sampleBlobHotspotDelayMs() {
@@ -368,12 +387,6 @@ function createLayerUniforms(
     pointTexture: { value: pointTexture },
     uIsMobile: { value: isMobile },
     uPixelRatio: { value: 1 },
-    uPulsePhase: { value: shader.pulsePhase },
-    uPulseRate: { value: shader.pulseRate },
-    uPulseSoftness: { value: shader.pulseSoftness },
-    uPulseSpatialScale: { value: shader.pulseSpatialScale },
-    uPulseStrength: { value: shader.pulseStrength },
-    uPulseThreshold: { value: shader.pulseThreshold },
     uTime: { value: 0 },
     uScale: { value: 1 / preset.sceneScale },
     uSpeed: { value: shader.speed },
@@ -393,20 +406,31 @@ function createLayerUniforms(
     uFunnelStartShift: { value: shader.funnelStartShift },
     uFunnelEndShift: { value: shader.funnelEndShift },
     uFunnelDistortion: { value: shader.funnelDistortion },
-    uColorBase: { value: createColorFromFallbackHex(shader.colorBase.fallbackHex) },
-    uColorNoise: { value: createColorFromFallbackHex(shader.colorNoise.fallbackHex) },
+    uRcolor: { value: shader.rColor },
+    uGcolor: { value: shader.gColor },
+    uBcolor: { value: shader.bColor },
+    uRnoise: { value: shader.rNoise },
+    uGnoise: { value: shader.gNoise },
+    uBnoise: { value: shader.bNoise },
+    uBurstType: { value: -1 },
+    uBurstStrength: { value: 0 },
+    uBurstColor: { value: new Color("#000000") },
+    uBurstRegionScale: { value: 1.2 },
+    uBurstSoftness: { value: 0.2 },
   };
 }
 
 function AmbientFieldStageLayer({
   onModelRef,
   onMaterialRef,
+  onMouseWrapperRef,
   onWrapperRef,
   source,
   uniforms,
 }: {
   onModelRef: (group: Group | null) => void;
   onMaterialRef: (material: ShaderMaterial | null) => void;
+  onMouseWrapperRef: (group: Group | null) => void;
   onWrapperRef: (group: Group | null) => void;
   source: AmbientFieldPointSource;
   uniforms: LayerUniforms;
@@ -419,6 +443,7 @@ function AmbientFieldStageLayer({
       position={[0, 0, 0]}
       scale={[1, 1, 1]}
     >
+      <group ref={onMouseWrapperRef}>
       <group ref={onModelRef}>
         <points frustumCulled={false}>
           <bufferGeometry>
@@ -456,18 +481,23 @@ function AmbientFieldStageLayer({
               attach="attributes-aFunnelEndShift"
               args={[buffers.aFunnelEndShift, 1]}
             />
+            <bufferAttribute
+              attach="attributes-aBucket"
+              args={[buffers.aBucket, 1]}
+            />
           </bufferGeometry>
           <shaderMaterial
             ref={onMaterialRef}
             transparent
             depthTest={false}
             depthWrite={false}
-            blending={NormalBlending}
+            blending={resolveFieldBlending()}
             uniforms={uniforms}
             vertexShader={FIELD_VERTEX_SHADER}
             fragmentShader={FIELD_FRAGMENT_SHADER}
           />
         </points>
+      </group>
       </group>
     </group>
   );
@@ -486,7 +516,6 @@ export function FieldScene({
     [densityScale, isMobile],
   );
   const pointTexture = useMemo(() => getFieldPointTexture(), []);
-  const loopEpochMsRef = useRef<number | null>(null);
 
   const stageWrapperRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
     blob: null,
@@ -494,6 +523,11 @@ export function FieldScene({
     pcb: null,
   });
   const stageModelRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
+    blob: null,
+    stream: null,
+    pcb: null,
+  });
+  const stageMouseWrapperRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
     blob: null,
     stream: null,
     pcb: null,
@@ -530,31 +564,29 @@ export function FieldScene({
     };
   }
   const layerUniforms = layerUniformsRef.current;
-  const colorTargets = useMemo(
-    () =>
-      Object.fromEntries(
-        stageItemIds.map((itemId) => {
-          const preset = visualPresets[itemId];
-          return [
-            itemId,
-            {
-              base: createColorFromFallbackHex(preset.shader.colorBase.fallbackHex),
-              noise: createColorFromFallbackHex(preset.shader.colorNoise.fallbackHex),
-            },
-          ];
-        }),
-      ) as Record<AmbientFieldStageItemId, { base: Color; noise: Color }>,
-    [],
+
+  const blobBurstControllerRef = useRef(
+    createBurstController({
+      bucketIndex: AMBIENT_FIELD_BUCKET_INDEX,
+      semanticColorMap: SOLEMD_BURST_COLORS,
+    }),
   );
+
+  // Phase 6: mouse parallax. Attached to the blob mouseWrapper only —
+  // stream and pcb do not rotate with the pointer in Maze either.
+  useEffect(() => {
+    const group = stageMouseWrapperRefs.current.blob;
+    if (!group) return;
+    return attachMouseParallax(group);
+  }, []);
 
   useFrame((state, delta) => {
     onFrame?.(state.clock.elapsedTime * 1000);
     const sceneState = sceneStateRef.current ?? DEFAULT_AMBIENT_FIELD_SCENE;
     const motionEnabled = sceneState.motionEnabled;
-    if (loopEpochMsRef.current == null && typeof performance !== "undefined") {
-      loopEpochMsRef.current = performance.now();
-    }
-    const loopSeconds = getAmbientFieldLoopSeconds(loopEpochMsRef.current);
+    // Module-level clock — survives StrictMode + warmup remounts so uTime
+    // never resets mid-session (Round 12 Phase 5).
+    const loopSeconds = getAmbientFieldElapsedSeconds();
     const {
       paperCards,
       paperFocus,
@@ -563,6 +595,29 @@ export function FieldScene({
       reform,
       synthesisLinks,
     } = sceneState.phases;
+
+    // Route the highest-weight phase to the burst controller. Ties break by
+    // order below — later phases (reform) outrank earlier ones.
+    const phaseStrengths = [
+      { id: "paperHighlights", value: paperHighlights },
+      { id: "paperCards", value: paperCards },
+      { id: "paperFocus", value: paperFocus },
+      { id: "detailInspection", value: detailInspection },
+      { id: "synthesisLinks", value: synthesisLinks },
+      { id: "reform", value: reform },
+    ];
+    let activePhase: string | null = null;
+    let activeStrength = 0;
+    for (const entry of phaseStrengths) {
+      if (entry.value >= activeStrength) {
+        activePhase = entry.id;
+        activeStrength = entry.value;
+      }
+    }
+    const activeBucket = activePhase ? PHASE_TO_BUCKET[activePhase] ?? null : null;
+    const blobBurst = blobBurstControllerRef.current;
+    blobBurst.setActive(activeStrength > 0.01 ? activeBucket : null, activeStrength);
+    blobBurst.step(delta * 1000);
 
     for (const itemId of stageItemIds) {
       const layer = {
@@ -639,9 +694,6 @@ export function FieldScene({
           : shader.frequency;
       const targetSpeed = shader.speed * motionScale;
       const targetSize = shaderSize;
-      const targetPulseRate = shader.pulseRate;
-      const targetPulseThreshold = shader.pulseThreshold;
-      const targetPulseStrength = shader.pulseStrength;
       const targetSelection =
         itemId === "blob"
           ? shader.selection -
@@ -676,11 +728,6 @@ export function FieldScene({
       uniforms.uTime.value = time;
       uniforms.uPixelRatio.value = Math.min(state.gl.getPixelRatio(), 2);
       uniforms.uIsMobile.value = isMobile;
-      uniforms.uPulseRate.value = targetPulseRate;
-      uniforms.uPulseSoftness.value = shader.pulseSoftness;
-      uniforms.uPulseSpatialScale.value = shader.pulseSpatialScale;
-      uniforms.uPulseStrength.value = targetPulseStrength;
-      uniforms.uPulseThreshold.value = targetPulseThreshold;
       uniforms.uScale.value = 1 / baseScale;
       uniforms.uAlpha.value = targetAlpha;
       uniforms.uAmplitude.value = targetAmplitude;
@@ -692,8 +739,12 @@ export function FieldScene({
       uniforms.uFunnelDistortion.value = targetFunnelDistortion;
       uniforms.uFunnelStartShift.value = targetFunnelStartShift;
       uniforms.uFunnelEndShift.value = targetFunnelEndShift;
-      uniforms.uColorBase.value.copy(colorTargets[itemId].base);
-      uniforms.uColorNoise.value.copy(colorTargets[itemId].noise);
+
+      // Burst only affects the blob today; stream/pcb stay on the Maze
+      // base palette unless a future module subscribes them as well.
+      if (itemId === "blob") {
+        blobBurst.apply(layer.material);
+      }
 
       layer.wrapper.visible = visibility > 0.01;
       layer.wrapper.position.x +=
@@ -1017,6 +1068,9 @@ export function FieldScene({
           }}
           onMaterialRef={(material) => {
             stageMaterialRefs.current[itemId] = material;
+          }}
+          onMouseWrapperRef={(group) => {
+            stageMouseWrapperRefs.current[itemId] = group;
           }}
           onWrapperRef={(group) => {
             stageWrapperRefs.current[itemId] = group;

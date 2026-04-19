@@ -1,4 +1,8 @@
-import { resolveAmbientFieldPointSources } from "../point-source-registry";
+import {
+  AMBIENT_FIELD_BUCKET_INDEX,
+  resolveAmbientFieldPointSources,
+  SOLEMD_DEFAULT_BUCKETS,
+} from "../point-source-registry";
 
 describe("resolveAmbientFieldPointSources", () => {
   it("builds Maze-parity point counts for the canonical homepage scenes", () => {
@@ -62,6 +66,37 @@ describe("resolveAmbientFieldPointSources", () => {
         expect(alpha).toBeLessThanOrEqual(1);
       }
     }
+  });
+
+  it("exposes an aBucket attribute aligned with the SoleMD bucket index", () => {
+    const { blob } = resolveAmbientFieldPointSources({
+      densityScale: 1,
+      isMobile: false,
+    });
+    expect(blob.buffers.aBucket.length).toBe(blob.pointCount);
+    for (let index = 0; index < Math.min(512, blob.pointCount); index += 1) {
+      const bucket = blob.buffers.aBucket[index]!;
+      expect(bucket).toBeGreaterThanOrEqual(0);
+      expect(bucket).toBeLessThan(SOLEMD_DEFAULT_BUCKETS.length);
+      expect(Number.isInteger(bucket)).toBe(true);
+    }
+    expect(AMBIENT_FIELD_BUCKET_INDEX.paper).toBe(0);
+    expect(AMBIENT_FIELD_BUCKET_INDEX.evidence).toBe(3);
+  });
+
+  it("produces a bucket histogram within 2% of SoleMD weights on the blob", () => {
+    const { blob } = resolveAmbientFieldPointSources({
+      densityScale: 1,
+      isMobile: false,
+    });
+    const counts = new Array(SOLEMD_DEFAULT_BUCKETS.length).fill(0);
+    for (let index = 0; index < blob.pointCount; index += 1) {
+      counts[blob.buffers.aBucket[index]!] += 1;
+    }
+    SOLEMD_DEFAULT_BUCKETS.forEach((bucket, index) => {
+      const observed = counts[index] / blob.pointCount;
+      expect(Math.abs(observed - bucket.weight)).toBeLessThan(0.02);
+    });
   });
 
   it("seeds stream funnel attributes with both positive and negative profile branches", () => {

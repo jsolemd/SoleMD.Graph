@@ -1,9 +1,10 @@
 "use client";
 
-import {
-  brandPastelFallbackHexByKey,
-  brandPastelVarNameByKey,
-} from "@/lib/pastel-tokens";
+// Maze-native visual presets for ambient-field stage items.
+// Numeric values mirror scripts.pretty.js:42412-42543 (cs.default + cs.blob +
+// cs.stream + cs.pcb). Color scalars are 0-255 for 1:1 dev cross-reference
+// with the Maze uniforms `uRcolor`/`uGcolor`/`uBcolor`/`uRnoise`/`uGnoise`/
+// `uBnoise`. See docs/map/ambient-field-maze-baseline-ledger-round-12.md §2-§3.
 
 export type AmbientFieldVisualPreset = "blob" | "stream" | "pcb";
 export type AmbientFieldStageItemId = AmbientFieldVisualPreset;
@@ -15,19 +16,20 @@ export type AmbientFieldPhaseId =
   | "synthesisLinks"
   | "reform";
 
-type ColorToken = {
-  cssVarName: string;
-  fallbackHex: string;
-};
-
 type Vec3 = readonly [number, number, number];
 
 export interface AmbientFieldShaderPreset {
   alpha: number;
   alphaMobile?: number;
   amplitude: number;
-  colorBase: ColorToken;
-  colorNoise: ColorToken;
+  // Maze color pair: base cyan -> noise magenta, both expressed as 0-255
+  // scalars to match the Maze uniform shape exactly.
+  rColor: number;
+  gColor: number;
+  bColor: number;
+  rNoise: number;
+  gNoise: number;
+  bNoise: number;
   depth: number;
   frequency: number;
   funnelDistortion: number;
@@ -41,24 +43,36 @@ export interface AmbientFieldShaderPreset {
   selection: number;
   size: number;
   sizeMobile?: number;
-  pulsePhase: number;
-  pulseRate: number;
-  pulseSoftness: number;
-  pulseSpatialScale: number;
-  pulseStrength: number;
-  pulseThreshold: number;
   speed: number;
   stream: number;
   width: number;
 }
 
 export interface AmbientFieldVisualPresetConfig {
+  // Controller-plane (Phase 6) — kept on the preset so existing consumers
+  // continue to work while `FieldController` is being built out.
   rotationVelocity: Vec3;
   sceneOffset: Vec3;
   sceneRotation: Vec3;
   sceneScale: number;
   sceneScaleMobile?: number;
   scrollRotation: Vec3;
+  // `animateIn`/`animateOut` targets (Phase 6). For Phase 1 we initialize
+  // them but the continuous frame loop does not yet consult these.
+  alphaOut: number;
+  amplitudeOut: number;
+  depthOut: number;
+  // Visibility carry window ("enter when scrollY + vh * entryFactor > y
+  // && y + height > scrollY + vh * exitFactor"). Maze defaults are 0.5/0.5;
+  // stream tightens to 0.7/0.3. Applied in Phase 6.
+  entryFactor: number;
+  exitFactor: number;
+  // Whether idle +0.001 rad/frame wrapper spin is enabled. pcb and stream
+  // default to false in Maze (rotate:false). Applied in Phase 6.
+  rotate: boolean;
+  // Whether animateIn adds a +pi wrapper rotation kickoff. Only `blob` in
+  // Maze uses this pattern via bindScroll's own 0->pi model tween.
+  rotateAnimation: boolean;
   shader: AmbientFieldShaderPreset;
 }
 
@@ -77,16 +91,16 @@ export interface AmbientFieldSceneState {
   scrollProgress: number;
 }
 
-const brandToken = (
-  key: keyof typeof brandPastelVarNameByKey,
-): ColorToken => ({
-  cssVarName: brandPastelVarNameByKey[key],
-  fallbackHex: brandPastelFallbackHexByKey[key],
-});
-
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
-const NEUTRAL_PARTICLE_BASE = brandToken("soft-blue");
-const NEUTRAL_PARTICLE_WAVE = brandToken("teal");
+
+// Maze cyan base (40, 197, 234) -> magenta noise (202, 50, 223).
+// `scripts.pretty.js:42564-42569`.
+const MAZE_BASE_R = 40;
+const MAZE_BASE_G = 197;
+const MAZE_BASE_B = 234;
+const MAZE_NOISE_R = 202;
+const MAZE_NOISE_G = 50;
+const MAZE_NOISE_B = 223;
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
@@ -108,20 +122,33 @@ export const visualPresets: Record<
   AmbientFieldVisualPresetConfig
 > = {
   blob: {
+    // Maze: cs.blob extends cs.default with uFrequency 0.7, uAmplitude 0.4,
+    // uDepth 0.5, uSize 10. scripts.pretty.js:42420-42443.
     sceneScale: 0.75,
     sceneScaleMobile: 0.55,
     sceneOffset: [0, -0.02, 0],
     sceneRotation: [0, 0, 0],
     rotationVelocity: [0, 0.06, 0],
     scrollRotation: [0, Math.PI, 0],
+    alphaOut: 0,
+    amplitudeOut: 0.8,
+    depthOut: 1.0,
+    entryFactor: 0.5,
+    exitFactor: 0.5,
+    rotate: true,
+    rotateAnimation: false,
     shader: {
-      alpha: 1.08,
-      alphaMobile: 1.04,
-      amplitude: 0.05,
-      colorBase: NEUTRAL_PARTICLE_BASE,
-      colorNoise: NEUTRAL_PARTICLE_WAVE,
-      depth: 0.3,
-      frequency: 0.5,
+      alpha: 1,
+      alphaMobile: 1,
+      amplitude: 0.4,
+      rColor: MAZE_BASE_R,
+      gColor: MAZE_BASE_G,
+      bColor: MAZE_BASE_B,
+      rNoise: MAZE_NOISE_R,
+      gNoise: MAZE_NOISE_G,
+      bNoise: MAZE_NOISE_B,
+      depth: 0.5,
+      frequency: 0.7,
       funnelDistortion: 0,
       funnelEnd: 0,
       funnelEndShift: 0,
@@ -130,33 +157,41 @@ export const visualPresets: Record<
       funnelStartShift: 0,
       funnelThick: 0,
       height: 0,
-      pulsePhase: 0.35,
-      pulseRate: 3.9,
-      pulseSoftness: 0.2,
-      pulseSpatialScale: 1.08,
-      pulseStrength: 1.24,
-      pulseThreshold: 0.68,
       selection: 1,
-      size: 7.2,
-      sizeMobile: 4.8,
+      size: 10,
+      sizeMobile: 6,
       speed: 1,
       stream: 0,
       width: 0,
     },
   },
   stream: {
+    // Maze: cs.stream with uFrequency 1.7, uAmplitude 0.05, uDepth 0.69,
+    // uWidth 2, uHeight 0.4, uFunnelStart -0.18, uFunnelEnd 0.3.
+    // scripts.pretty.js:42445-42452.
     sceneScale: 0.85,
     sceneScaleMobile: 1,
     sceneOffset: [0.12, -0.02, 0],
     sceneRotation: [0, 0, 0],
     rotationVelocity: ZERO_VEC3,
     scrollRotation: ZERO_VEC3,
+    alphaOut: 0,
+    amplitudeOut: 0.1,
+    depthOut: 1.0,
+    entryFactor: 0.7,
+    exitFactor: 0.3,
+    rotate: false,
+    rotateAnimation: false,
     shader: {
       alpha: 1,
       alphaMobile: 1,
       amplitude: 0.05,
-      colorBase: NEUTRAL_PARTICLE_BASE,
-      colorNoise: NEUTRAL_PARTICLE_WAVE,
+      rColor: MAZE_BASE_R,
+      gColor: MAZE_BASE_G,
+      bColor: MAZE_BASE_B,
+      rNoise: MAZE_NOISE_R,
+      gNoise: MAZE_NOISE_G,
+      bNoise: MAZE_NOISE_B,
       depth: 0.69,
       frequency: 1.7,
       funnelDistortion: 1,
@@ -167,33 +202,41 @@ export const visualPresets: Record<
       funnelStartShift: 0,
       funnelThick: 0,
       height: 0.4,
-      pulsePhase: 1.6,
-      pulseRate: 3.5,
-      pulseSoftness: 0.2,
-      pulseSpatialScale: 1.02,
-      pulseStrength: 1.02,
-      pulseThreshold: 0.7,
       selection: 1,
-      size: 9.2,
-      sizeMobile: 5.8,
+      size: 9,
+      sizeMobile: 6,
       speed: 1,
       stream: 1,
       width: 2,
     },
   },
   pcb: {
+    // Maze: cs.pcb with uFrequency 0.1, uAmplitude 0.05, uSize 6,
+    // rotation x:-80deg, position.z 0.3, scaleFactor 0.5.
+    // scripts.pretty.js:42453-42466.
     sceneScale: 0.5,
     sceneScaleMobile: 0.5,
     sceneOffset: [0, 0, 0.3],
-    sceneRotation: [-1.3962634016, 0, 0],
+    sceneRotation: [(-80 * Math.PI) / 180, 0, 0],
     rotationVelocity: ZERO_VEC3,
     scrollRotation: [0, 0.12, 0],
+    alphaOut: 0,
+    amplitudeOut: 0.05,
+    depthOut: 0.3,
+    entryFactor: 0.5,
+    exitFactor: 0.5,
+    rotate: false,
+    rotateAnimation: false,
     shader: {
-      alpha: 0.9,
-      alphaMobile: 0.82,
+      alpha: 1,
+      alphaMobile: 1,
       amplitude: 0.05,
-      colorBase: NEUTRAL_PARTICLE_BASE,
-      colorNoise: NEUTRAL_PARTICLE_WAVE,
+      rColor: MAZE_BASE_R,
+      gColor: MAZE_BASE_G,
+      bColor: MAZE_BASE_B,
+      rNoise: MAZE_NOISE_R,
+      gNoise: MAZE_NOISE_G,
+      bNoise: MAZE_NOISE_B,
       depth: 0.3,
       frequency: 0.1,
       funnelDistortion: 0,
@@ -204,15 +247,9 @@ export const visualPresets: Record<
       funnelStartShift: 0,
       funnelThick: 0,
       height: 0,
-      pulsePhase: 2.8,
-      pulseRate: 2.8,
-      pulseSoftness: 0.18,
-      pulseSpatialScale: 0.94,
-      pulseStrength: 0.78,
-      pulseThreshold: 0.72,
       selection: 1,
-      size: 5.4,
-      sizeMobile: 4.0,
+      size: 6,
+      sizeMobile: 4,
       speed: 1,
       stream: 0,
       width: 0,

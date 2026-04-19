@@ -11,6 +11,7 @@ export interface AmbientFieldBounds {
 
 export interface AmbientFieldPointSourceBuffers {
   aAlpha: Float32Array;
+  aBucket: Float32Array;
   aFunnelEndShift: Float32Array;
   aFunnelNarrow: Float32Array;
   aFunnelStartShift: Float32Array;

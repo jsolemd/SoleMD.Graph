@@ -8,6 +8,21 @@ Companion archive artifact:
 
 - `data/research/mazehq-homepage/2026-04-18/derived/model-inspection.md`
 
+Source ground truth:
+
+- Maze model-to-points converter `jo.fromVertices`:
+  `scripts.pretty.js:42723-42745`
+- Maze asset registry / loader entry for GLB slugs:
+  `scripts.pretty.js:42941-43011`
+
+SoleMD round-12 wrapper:
+
+- `apps/web/features/ambient-field/asset/model-point-source.ts`
+  (`createModelPointGeometry`)
+- underlying buffer producer:
+  `apps/web/features/ambient-field/asset/field-geometry.ts`
+  (`FieldGeometry.fromVertices`)
+
 ## Why This Matters
 
 Maze does not render these assets as meshes on the homepage runtime. It reads
@@ -16,6 +31,14 @@ passes the points into the shared particle material family.
 
 For parity, the most important count is therefore `uploadVertexCount`, not
 `renderVertexCount`.
+
+SoleMD matches the contract with a thin walker:
+`createModelPointGeometry(model, options?)` visits the `Object3D` graph
+depth-first, concatenates every `geometry.getAttribute('position').array`
+it finds, and hands the combined buffer to `FieldGeometry.fromVertices`.
+That routine applies `countFactor` duplication and `positionRandomness`
+jitter exactly as Maze does (with one intentional divergence around integer
+`countFactor` — see `maze-asset-pipeline.md`).
 
 ## Archived Model Summary
 
@@ -68,3 +91,11 @@ For parity, the most important count is therefore `uploadVertexCount`, not
 - size model-derived point clouds from `uploadVertexCount`
 - treat normals, UVs, and materials as optional future divergence hooks rather
   than part of the baseline Maze parity contract
+- call `createModelPointGeometry(model, { countFactor, positionRandomness })`
+  from `asset/model-point-source.ts`; then `bakeFieldAttributes` on the
+  returned geometry so every model point receives the same motion + funnel +
+  `aBucket` vocabulary as procedural and bitmap points
+- when importing GLTFs through the standard three.js loader, the returned
+  `THREE.Group` satisfies the `Object3DLike` structural type
+  (`children`, `geometry.getAttribute('position')`) — do not pre-flatten
+  the hierarchy

@@ -1,3 +1,9 @@
+// Ambient-field shader — 1:1 parity with Maze homepage runtime through the
+// `vColor = vec3(r, g, b)` binary-lerp assignment, plus SoleMD burst-overlay
+// uniforms declared for Phase 4 wiring. Source citations live in
+// `docs/map/ambient-field-maze-baseline-ledger-round-12.md`
+// (index.html:2119-2393, scripts.pretty.js:42545-42595).
+
 export const FIELD_VERTEX_SHADER = `
 precision highp float;
 
@@ -5,6 +11,7 @@ attribute vec3 color;
 attribute float aAlpha;
 attribute float aIndex;
 attribute float aSelection;
+attribute float aBucket;
 
 attribute float aStreamFreq;
 attribute float aFunnelNarrow;
@@ -28,12 +35,6 @@ uniform float uDepth;
 uniform float uAmplitude;
 uniform float uFrequency;
 uniform float uSelection;
-uniform float uPulseRate;
-uniform float uPulsePhase;
-uniform float uPulseSoftness;
-uniform float uPulseSpatialScale;
-uniform float uPulseStrength;
-uniform float uPulseThreshold;
 
 uniform float uWidth;
 uniform float uHeight;
@@ -46,14 +47,25 @@ uniform float uFunnelStartShift;
 uniform float uFunnelEndShift;
 uniform float uFunnelDistortion;
 
-uniform vec3 uColorBase;
-uniform vec3 uColorNoise;
+uniform float uRcolor;
+uniform float uGcolor;
+uniform float uBcolor;
+uniform float uRnoise;
+uniform float uGnoise;
+uniform float uBnoise;
+
+// SoleMD burst overlay — bucket-gated monochromatic tint sweeps.
+// Disabled when uBurstType < 0. See burst-controller.ts for CPU driver.
+uniform float uBurstType;
+uniform float uBurstStrength;
+uniform vec3 uBurstColor;
+uniform float uBurstRegionScale;
+uniform float uBurstSoftness;
 
 varying float vAlpha;
 varying float vDistance;
 varying float vNoise;
 varying vec3 vColor;
-varying float vAccent;
 
 vec3 mod289_1_0(vec3 x) {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
@@ -211,79 +223,32 @@ float fbm(vec3 x) {
 void main() {
   vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
 
-  float colorNoise = clamp(vNoise, 0.0, 1.0);
-  float r = uColorBase.r + (colorNoise * 4.0 * (uColorNoise.r - uColorBase.r));
-  float g = uColorBase.g + (colorNoise * 4.0 * (uColorNoise.g - uColorBase.g));
-  float b = uColorBase.b + (colorNoise * 4.0 * (uColorNoise.b - uColorBase.g));
-  vec3 sourceColor = clamp(vec3(r, g, b), 0.0, 1.0);
-  vec3 pulseBasis = position;
-  float pulseBasisLength = max(length(pulseBasis), 0.0001);
-  pulseBasis /= pulseBasisLength;
-  float accentWavePrimary = 0.5 + 0.5 * snoise(vec4(
-    pulseBasis * uPulseSpatialScale +
-    vec3(
-      uTime * uPulseRate * 0.28 + uPulsePhase,
-      -uTime * uPulseRate * 0.19,
-      uTime * uPulseRate * 0.13
-    ),
+  // Maze binary color lerp, x4 amplification, base -> noise.
+  // Source typo preserved on the blue channel: Maze's scripts.pretty.js:2336
+  // uses (uGnoise - uGcolor) for b, not (uBnoise - uBcolor). We keep it for
+  // 1:1 parity; swapping it would alter the purple bias of the field.
+  float r = uRcolor / 255.0 + clamp(vNoise, 0.0, 1.0) * 4.0 * (uRnoise - uRcolor) / 255.0;
+  float g = uGcolor / 255.0 + clamp(vNoise, 0.0, 1.0) * 4.0 * (uGnoise - uGcolor) / 255.0;
+  float b = uBcolor / 255.0 + clamp(vNoise, 0.0, 1.0) * 4.0 * (uBnoise - uGcolor) / 255.0;
+  vColor = vec3(r, g, b);
+
+  // SoleMD burst overlay — gate a coherent region of the active bucket
+  // and lerp its color over the Maze base; burstBoost feeds vAlpha below.
+  float bucketGate = uBurstType < 0.0
+    ? 0.0
+    : step(0.5, 1.0 - abs(aBucket - uBurstType));
+  float burstField = 0.5 + 0.5 * snoise(vec4(
+    position * uBurstRegionScale + vec3(uTime * 0.4),
     0.0
   ));
-  float accentWaveSecondary = 0.5 + 0.5 * snoise(vec4(
-    pulseBasis * (uPulseSpatialScale * 0.58) +
-    vec3(
-      -uTime * uPulseRate * 0.12,
-      uTime * uPulseRate * 0.24 + uPulsePhase * 1.7,
-      uTime * uPulseRate * 0.09
-    ),
-    0.0
-  ));
-  float accentWaveTertiary = 0.5 + 0.5 * snoise(vec4(
-    pulseBasis * (uPulseSpatialScale * 1.12) +
-    vec3(
-      uTime * uPulseRate * 0.34,
-      uTime * uPulseRate * -0.16 + uPulsePhase * 0.7,
-      uTime * uPulseRate * 0.21
-    ),
-    0.0
-  ));
-  float accentField = max(
-    max(accentWavePrimary, accentWaveSecondary * 0.94),
-    accentWaveTertiary * 0.88
-  );
-  float accentEligibility = 1.0 - smoothstep(0.18, 0.62, aSelection);
-  float accentSelectionBias = 1.0 - smoothstep(0.22, 0.92, aSelection);
-  float accentMaskPrimary = smoothstep(
-    max(0.0, uPulseThreshold - (uPulseSoftness * 1.0)),
-    uPulseThreshold + (uPulseSoftness * 0.35),
-    accentField
-  ) * mix(0.52, 1.0, accentSelectionBias) * accentEligibility;
-  float accentMaskSecondary = smoothstep(
-    max(0.0, uPulseThreshold - (uPulseSoftness * 0.72)),
-    min(0.98, uPulseThreshold + (uPulseSoftness * 0.12)),
-    accentWaveSecondary
-  ) * smoothstep(
-    max(0.0, uPulseThreshold - (uPulseSoftness * 0.86)),
-    min(0.96, uPulseThreshold + (uPulseSoftness * 0.08)),
-    accentWaveTertiary
-  ) * mix(0.28, 0.78, accentSelectionBias) * accentEligibility;
-  float accentHalo = smoothstep(
-    max(0.0, uPulseThreshold - (uPulseSoftness * 1.5)),
-    uPulseThreshold - (uPulseSoftness * 0.18),
-    accentField
-  ) * mix(0.12, 0.26, accentSelectionBias) * accentEligibility;
-  float accentMask = max(accentMaskPrimary, accentMaskSecondary * 0.78);
-  float accentMix = max(
-    clamp(accentMask * uPulseStrength, 0.0, 1.0),
-    accentHalo * min(1.0, uPulseStrength * 0.72)
-  );
-  accentMix = pow(clamp(accentMix, 0.0, 1.0), 0.9);
-  vec3 accentColor = clamp(
-    mix(color, vec3(1.0), 0.1) * (1.1 + 0.2 * accentField),
-    0.0,
-    1.0
-  );
-  vAccent = clamp(accentMix, 0.0, 1.0);
-  vColor = mix(sourceColor, accentColor, smoothstep(0.22, 0.9, vAccent));
+  float burstEnv = smoothstep(
+    0.5 - uBurstSoftness,
+    0.5 + uBurstSoftness,
+    burstField
+  ) * uBurstStrength;
+  float burstBoost = clamp(bucketGate * burstEnv, 0.0, 1.0);
+  vec3 burstColor = uBurstColor * (1.0 + 0.22 * vNoise);
+  vColor = mix(vColor, burstColor, burstBoost);
 
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
@@ -324,9 +289,10 @@ void main() {
   vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
   if (aSelection > uSelection) {
     vAlpha = 0.0;
-  } else {
-    vAlpha *= 1.0 + vAccent * 0.56;
   }
+  // Burst tint pulls a slight alpha boost so tinted regions read as
+  // luminous sweeps instead of a flat color overlay.
+  vAlpha *= 1.0 + 0.35 * burstBoost;
 }
 `;
 
@@ -342,6 +308,8 @@ void main() {
   vec4 sprite = texture2D(pointTexture, gl_PointCoord);
   vec4 color = vec4(vColor, vAlpha) * sprite;
 
+  // SoleMD optimization over Maze (Maze always writes): discard sub-threshold
+  // fragments to cut fill-rate on feathered sprite edges.
   if (color.a <= 0.01) {
     discard;
   }

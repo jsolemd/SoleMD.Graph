@@ -53,7 +53,20 @@ Useful parity takeaway:
 - mutable scene/runtime state
 - no remount-driven animation transport
 
-Deliberate SoleMD improvement:
+SoleMD (Round 12) maps this onto R3F with the following hard rules:
+
+- a single top-level `useFrame` per stage drives controller ticks; nested
+  `useFrame` callbacks per hotspot or per anchor are banned
+- `useFrame` callbacks must not call `setState`, `useReducer`'s dispatch,
+  `useTransition`, or any other API that schedules a React render. Per-frame
+  output flows into Three.js refs and material uniforms directly
+- React state changes are reserved for discrete transitions: phase gates,
+  chapter boundaries, hotspot reseed events, visibility-based mount/unmount
+- elapsed time comes from `renderer/field-loop-clock.ts`, a singleton that
+  keeps `uTime` in module scope. This is why the shader survives React
+  StrictMode double-mount and the landing warmup remount without snapping
+
+Deliberate SoleMD improvement over Maze:
 
 - add tab visibility pause or a stricter frame policy
 - do not leave a continuous loop running for hidden or suspended surfaces
@@ -73,6 +86,18 @@ These are the important rules to copy:
 - cap DPR
 - debounce resize
 - distinguish meaningful breakpoint transitions from viewport-bar noise
+
+SoleMD (Round 12) contract:
+
+- configure R3F with `gl={{ pixelRatio: Math.min(2, devicePixelRatio) }}` (or
+  explicit `gl.setPixelRatio` in a `useThree` effect) so the renderer and the
+  shader share the same effective ratio
+- pass that same value into every shader material as
+  `uPixelRatio = min(devicePixelRatio, 2)`. `gl_PointSize` and `vAlpha` both
+  scale with it, so the renderer and the uniform must agree or sprite sizing
+  desynchronizes on HiDPI phones
+- treat the pair (renderer pixelRatio, `uPixelRatio` uniform) as a single
+  value with one source of truth
 
 Do not copy Maze's exact breakpoint-detection mechanism if a cleaner shared
 viewport contract exists.
@@ -126,6 +151,29 @@ Important correction:
 - this is not portrait-only logic
 - it is the general non-desktop branch
 
+SoleMD Round 12 encodes the scale half of that branch in
+`controller/StreamController.ts`: desktop uses Maze's aspect-driven
+`250 * (innerW/innerH) / (1512/748)`, mobile short-circuits to the
+fixed `168` without touching `innerW/innerH`
+(`scripts.pretty.js:49326-49345`). Rotation, asset swap, and popup
+placement remain overlay-side responsibilities, not controller-side.
+
+## Mouse Parallax Is Desktop-Only
+
+`renderer/mouse-parallax-wrapper.ts` is the sole site where pointer
+parallax is wired, via `attachMouseParallax(mouseWrapper, options)`.
+Round 12 gates that attachment so it only runs on desktop:
+
+- mobile surfaces leave the `mouseWrapper` group at identity rotation;
+  the idle wrapper spin and scroll-driven model rotation are enough to
+  keep the scene alive without pointer input
+- do not attach the mousemove listener on touch-only devices even as a
+  no-op; tween accumulation costs real frame time and `overwrite: "auto"`
+  still runs per event
+- if a future mobile surface wants parallax, drive it from device-orientation
+  events in a separate primitive — do not pass synthetic mouse coordinates
+  into this wrapper
+
 ## Overlay Differences By Breakpoint
 
 Maze reduces explanatory density on smaller screens:
@@ -173,16 +221,38 @@ Maze explicitly disposes:
 This is worth copying directly. Ambient-field work that ignores teardown is not
 production-grade.
 
+SoleMD (Round 12) adds GSAP-level cleanup rules on top of the WebGL
+disposal. Long-lived tweens will keep a dead Three.js object alive and
+will keep firing into unmounted materials unless they are killed:
+
+- `attachMouseParallax` returns a cleanup function that removes the
+  `mousemove` listener and runs `gsap.killTweensOf(group.rotation)`. The
+  effect that calls `attachMouseParallax` must invoke that cleanup on
+  unmount — not just on re-render
+- `FieldController.animateIn` / `animateOut` run GSAP tweens against
+  `uAlpha` / `uDepth` / `uAmplitude`. `FieldController.destroy()`
+  calls `gsap.killTweensOf` on those uniforms; controllers must be
+  destroyed when their owning stage unmounts
+- hotspot lifecycle controllers created via
+  `createHotspotLifecycleController` hold no GSAP state themselves, but
+  the `AmbientFieldHotspotRing` CSS animation must be allowed to emit
+  its final `animationend` or be explicitly stopped; do not force-remount
+  the ring to clear a tween
+
+Leaked tweens are the most common cause of "it keeps animating after I
+navigate away" bugs. Treat GSAP disposal with the same discipline as
+geometry/material disposal.
+
 ## What To Copy
 
 - one persistent stage owner
-- capped DPR
+- capped DPR, propagated into `uPixelRatio`
 - breakpoint-specific point budgets
 - debounced resize
 - mobile resize-noise suppression
-- one RAF owner
+- one `useFrame` driver per stage, feeding the controller hierarchy
 - separate DOM overlays instead of forcing everything into WebGL
-- explicit disposal on teardown
+- explicit disposal on teardown (material, geometry, renderer, WebGL context)
 
 ## What To Improve In SoleMD
 
@@ -191,3 +261,7 @@ production-grade.
   contract
 - add explicit hidden-tab / suspended-surface frame policy
 - keep performance rules in the shared runtime, not in page-local code
+- never mutate React state from `useFrame`; uniforms and Three.js refs
+  are the per-frame output channel
+- always read elapsed time from `renderer/field-loop-clock.ts` so
+  StrictMode double-mount and warmup remount do not reset shader motion
