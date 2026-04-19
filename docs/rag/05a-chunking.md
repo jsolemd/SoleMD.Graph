@@ -72,6 +72,10 @@ landing, but not the actor/writer code yet.
   `paper_chunk_members`, and `paper_evidence_units` remain empty in the
   steady-state path until the selected-corpus slice (`05e`) lands and
   chunking starts consuming mapped papers from the canonical document spine.
+- Targeted API-backed full-text refresh for hot papers is now split into its
+  own worker/runtime slice (`05f`) so chunking can consume a canonical spine
+  derived either from bulk S2ORC or from targeted PMC BioC acquisition without
+  redefining corpus membership.
 - Still owed: the `chunker.assemble_for_paper` actor body, the
   `paper_evidence_units` writer, the write-contract / Pydantic model
   surfaces, `chunk-policies.yaml` generation, metrics, and the

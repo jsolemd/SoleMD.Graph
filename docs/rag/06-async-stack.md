@@ -237,6 +237,7 @@ Which process opens which pools is fixed:
 | `graph-engine-api` (FastAPI) | — | — | yes | yes |
 | `graph-worker` — projection actor | — | yes | yes | yes |
 | `graph-worker` — ingest actor | yes | — | — | — |
+| `graph-worker` — hot-text actor | yes | — | — | — |
 | `graph-worker` — RAG inference actor | — | — | yes | — |
 | `scripts/schema_migrations.py` (sync) | — | — | — | sync psycopg3 against `SERVE_DSN_ADMIN` (§3, §8) |
 
@@ -594,6 +595,7 @@ One process per worker class on the RTX 5090 host:
 | Worker (`engine/app/workers/…`) | Pools | Count |
 |---|---|---:|
 | `ingest.py` | `ingest_write` | 1 (owns the raw-refresh `ingest.start_release` lane for S2 / PT3, one release actor per advisory lock; `05 §4.7`, `05 §10.1`) |
+| `hot_text.py` | `ingest_write` | 1 (owns the paper-level `hot_text.acquire_for_paper` lane for PMC BioC refresh; `05f`) |
 | `chunker.py` | `ingest_write` | 1 (post-publish evidence-unit assembly actor; `05a §6.2`) |
 | `projection.py` | `warehouse_read`, `serve_read`, `admin` | 1 (advisory lock per family; `04 §9.1`) |
 | `wiki.py` | `admin` | 1 (wiki sync/activation actor; stages and activates `wiki_pages`; `05d §5`) |

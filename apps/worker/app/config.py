@@ -97,6 +97,18 @@ class Settings(BaseSettings):
         default=300.0,
         alias="INGEST_WRITE_COMMAND_TIMEOUT_SECONDS",
     )
+    ncbi_api_tool: str = Field(
+        default="solemd_graph_worker",
+        alias="NCBI_API_TOOL",
+    )
+    ncbi_api_email: str = Field(
+        default="noreply@example.com",
+        alias="NCBI_API_EMAIL",
+    )
+    ncbi_api_timeout_seconds: float = Field(
+        default=30.0,
+        alias="NCBI_API_TIMEOUT_SECONDS",
+    )
 
     model_config = SettingsConfigDict(
         env_file=(ENV_FILE, ENV_LOCAL_FILE),

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS solemd.paper_documents (
     text_hash BYTEA,
     is_active BOOLEAN NOT NULL DEFAULT true,
     CONSTRAINT ck_paper_documents_document_source_kind
-        CHECK (document_source_kind BETWEEN 1 AND 3)
+        CHECK (document_source_kind BETWEEN 1 AND 4)
 );
 ALTER TABLE solemd.paper_documents SET (fillfactor = 90);
 

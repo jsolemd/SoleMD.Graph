@@ -51,6 +51,7 @@ unless a table explicitly states otherwise.
 | `venue_id`, `author_id` | `bigint` | identity | registries |
 | `source_release_id` | `integer` | identity (low cardinality) | `source_releases`, fact tables |
 | `ingest_run_id` | `uuid` (v7) | `uuidv7()` (PG 18 native) | `ingest_runs`, `load_history` |
+| `paper_text_run_id` | `uuid` (v7) | `uuidv7()` | `paper_text_acquisition_runs` |
 | `graph_run_id` | `uuid` (v7) | `uuidv7()` | `graph_runs` |
 | `chunk_version_key` | `uuid` (v7) | `uuidv7()` | `paper_chunk_versions` |
 | `api_projection_run_id`, `serving_run_id` | `uuid` (v7) | `uuidv7()` | serve cluster (in `03`) |
@@ -213,6 +214,7 @@ function.
 | `corpus_id` | Canonical paper identity across the entire SoleMD estate. | Permanent. Never recycled. | Identity sequence on `solemd.corpus.corpus_id`. Every other warehouse table that references a paper carries `corpus_id`, not `pmid` / `doi` / `s2_paper_id`. |
 | `source_release_id` | Surrogate PK for one source release (e.g. S2 `2026-03-10`). | Permanent. | Identity sequence; low cardinality. |
 | `ingest_run_id` | One ingest run against one source release. | Permanent. | `uuidv7()` — timestamp-ordered so `ORDER BY run_id` tracks wall-clock order. |
+| `paper_text_run_id` | One targeted full-text acquisition attempt for one `corpus_id`. | Permanent. | `uuidv7()`. |
 | `concept_id` | Canonical concept identity across RAG, graph, and API surfaces. | Permanent. | Identity sequence on `solemd.concepts`. Source identifiers (UMLS CUI, MeSH, NCBI Gene) live in `concept_xrefs`. |
 | `chunk_version_key` | Version identity for the chunk derivation policy. | Permanent. | `uuidv7()` at policy-change time. |
 | `graph_run_id` | Graph build run identity. | Permanent. | `uuidv7()`. |
@@ -345,6 +347,30 @@ Indexes:
 - Btree on `(status, started_at DESC)` — stuck-run and recent-failure
   operational lookups.
 - BRIN on `started_at` — analytical scans.
+
+#### `solemd.paper_text_acquisition_runs`
+
+One row per paper-level full-text acquisition attempt. Fillfactor 80.
+
+Columns:
+- `paper_text_run_id` UUID, PK, default `uuidv7()`
+- `advisory_lock_key` BIGINT
+- `corpus_id` BIGINT, FK → `corpus`
+- `requested_by` TEXT
+- `started_at`, `completed_at` TIMESTAMPTZ
+- `status` SMALLINT (`started` | `published` | `unavailable` | `failed`)
+- `locator_kind` TEXT nullable (`pmcid` | `pmid`)
+- `locator_value` TEXT nullable
+- `resolved_pmc_id` TEXT nullable
+- `resolver_kind` TEXT nullable
+- `manifest_uri` TEXT nullable
+- `response_checksum` TEXT nullable
+- `error_message` TEXT nullable
+
+Indexes:
+- PK on `paper_text_run_id`.
+- Btree on `(corpus_id, started_at DESC)` — latest run per paper.
+- Btree on `(status, started_at DESC)` — operational failure / backlog scans.
 
 #### `solemd.s2_papers_raw`
 
@@ -787,6 +813,10 @@ Columns: `corpus_id` PK FK, `document_source_kind` SMALLINT,
 
 - PK `(corpus_id)`.
 - Partial btree `(corpus_id, source_priority)` where `is_active = true`.
+
+`document_source_kind` codes now include `pmc_bioc` as the targeted hot-text
+full-text surface in addition to the existing `pubtator_biocxml` and
+`s2orc_annotation` codes.
 
 #### `solemd.paper_sections`
 

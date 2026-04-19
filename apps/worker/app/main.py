@@ -10,7 +10,7 @@ import dramatiq
 
 from app.broker import configure_broker
 from app.config import settings
-from app.db import build_pool_specs, probe_postgres_target, probe_redis_target
+from app.db import build_pool_specs, open_pools, probe_postgres_target, probe_redis_target
 
 
 broker = configure_broker()
@@ -21,6 +21,8 @@ from app.ingest.cli import (
     parse_dispatch_manifest_request,
     parse_manual_release_request,
 )
+from app.hot_text.cli import enqueue_paper_text_request, parse_paper_text_request
+from app.hot_text.runtime import acquire_paper_text
 
 
 async def run_startup_check() -> int:
@@ -114,6 +116,22 @@ def build_parser() -> argparse.ArgumentParser:
     manifest_parser.add_argument("--max-records-per-file", type=int, default=None)
     manifest_parser.add_argument("--family", action="append", dest="families", default=None)
 
+    enqueue_hot_text_parser = subparsers.add_parser(
+        "enqueue-hot-text",
+        help="Validate and enqueue one paper-level targeted hot-text acquisition request.",
+    )
+    enqueue_hot_text_parser.add_argument("corpus_id", type=int)
+    enqueue_hot_text_parser.add_argument("--force-refresh", action="store_true")
+    enqueue_hot_text_parser.add_argument("--requested-by", default=os.environ.get("USER"))
+
+    run_hot_text_parser = subparsers.add_parser(
+        "run-hot-text-now",
+        help="Run one paper-level targeted hot-text acquisition directly in-process.",
+    )
+    run_hot_text_parser.add_argument("corpus_id", type=int)
+    run_hot_text_parser.add_argument("--force-refresh", action="store_true")
+    run_hot_text_parser.add_argument("--requested-by", default=os.environ.get("USER"))
+
     parser.set_defaults(command="check")
     return parser
 
@@ -147,6 +165,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         dispatch_manifest_requests((request,))
         broker.close()
+        return 0
+    if args.command == "enqueue-hot-text":
+        request = parse_paper_text_request(
+            corpus_id=args.corpus_id,
+            force_refresh=args.force_refresh,
+            requested_by=args.requested_by,
+        )
+        enqueue_paper_text_request(request)
+        broker.close()
+        return 0
+    if args.command == "run-hot-text-now":
+        request = parse_paper_text_request(
+            corpus_id=args.corpus_id,
+            force_refresh=args.force_refresh,
+            requested_by=args.requested_by,
+        )
+
+        async def _run() -> str:
+            pools = await open_pools(settings, names=("ingest_write",))
+            try:
+                return await acquire_paper_text(
+                    request,
+                    ingest_pool=pools.get("ingest_write"),
+                    runtime_settings=settings,
+                )
+            finally:
+                await pools.close()
+
+        print(asyncio.run(_run()))
         return 0
     parser.error(f"unknown command: {args.command}")
     return 2

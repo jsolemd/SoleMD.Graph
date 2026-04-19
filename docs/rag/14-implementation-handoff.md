@@ -399,8 +399,9 @@ As of this handoff:
 - `13` remains intentionally activation-gated and should stay that way.
 
 The largest remaining parity work is no longer another raw-ingest rewrite.
-It is locking the selected-corpus contract that downstream chunking,
-graph, and retrieval slices will read.
+It is locking the selected-corpus contract and then landing the targeted
+full-text acquisition lane that downstream chunking, graph, and retrieval
+slices will read.
 
 ## 7.1 Slice 6 follow-on handoff — canonical corpus selection
 
@@ -413,10 +414,11 @@ the **selected-corpus activation** slice documented in `05e`, not another
 raw-ingest rewrite.
 
 The next agent should implement the **canonical corpus selection layer**
-that sits between raw ingest and downstream chunking / graph / retrieval
-work. The target is a refresh-safe, modular worker-owned surface in
-`apps/worker` that can deterministically reconstruct the selected SoleMD
-paper universe from raw release facts plus curated editorial assets.
+that sits between raw ingest and the newer targeted hot-text / downstream
+chunking / graph / retrieval work. The target is a refresh-safe, modular
+worker-owned surface in `apps/worker` that can deterministically reconstruct
+the selected SoleMD paper universe from raw release facts plus curated
+editorial assets.
 
 Current starting point:
 
@@ -484,11 +486,16 @@ The cleanest order from here is:
    Land the explicit selector that separates broad raw release coverage from the
    selected SoleMD paper universe. This slice owns `candidate -> mapped`
    promotion and the downstream scope contract.
-2. **Grounding spine and chunk/evidence activation**
-   Once the selected corpus boundary is real, land the chunker actor body,
-   evidence-unit writer, and post-publish fanout to the downstream retrieval
-   lane.
-3. **Graph-embedding wave for `paper_embeddings_graph`**
+2. **Targeted hot-text acquisition**
+   Once the selected corpus boundary is real, land the paper-scoped PMC BioC
+   refresh lane for the much smaller hot cohort. This slice rewrites the
+   canonical document spine for those mapped papers without re-opening the
+   raw-release orchestration problem.
+3. **Grounding spine and chunk/evidence activation**
+   Once the selected corpus boundary and paper-level full-text lane are real,
+   land the chunker actor body, evidence-unit writer, and post-publish fanout
+   to the downstream retrieval lane.
+4. **Graph-embedding wave for `paper_embeddings_graph`**
    Land the dedicated graph-embedding slice after corpus selection has
    established stable mapped-paper ownership. This slice owns ingesting upstream
    `embeddings-specter_v2` shards when releases carry them, or local SPECTER2
@@ -497,15 +504,15 @@ The cleanest order from here is:
    approximately 14M-paper cohort, that full backfill remains an explicit wave
    in this slice rather than an implicit requirement hidden inside graph-bundle
    publish.
-4. **Serve and retrieval implementation**
+5. **Serve and retrieval implementation**
    Land serve schema + projection/cutover, then OpenSearch plane, then the
    request-time cascade.
-5. **Analyzer / bundle / backup hardening**
+6. **Analyzer / bundle / backup hardening**
    Implement graph bundles, observability, quality analysis, and backup only
    after the runtime identities and cutover surfaces are real. The graph lane
    explicitly includes the chosen source for `paper_embeddings_graph` in the
    current rollout wave.
-6. **Sample build**
+7. **Sample build**
    Use the sample-build harness to promote still-provisional tuning values. Do
    not lock measurement-owned values before this step.
 

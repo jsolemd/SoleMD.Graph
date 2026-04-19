@@ -34,6 +34,7 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
   - `solemd.paper_sections`
   - `solemd.paper_blocks`
   - `solemd.paper_sentences`
+  - `solemd.paper_text_acquisition_runs`
   - `solemd.paper_chunks`
   - `solemd.paper_chunk_members`
   - `solemd.paper_evidence_units`
@@ -45,6 +46,8 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
   with no database default, and an intentionally unpartitioned
   `paper_evidence_units` table while the fully grounded hot cohort remains
   small (roughly hundreds of papers, not millions)
+- targeted hot-text refresh lineage for PMC BioC-backed paper-level document
+  replacement on the same canonical grounding spine
 - chunking hardening on the same stock-PG surface:
   - DB-level CHECK constraints on the new SMALLINT enum columns
   - parent-column LZ4 compression for partitioned text tables

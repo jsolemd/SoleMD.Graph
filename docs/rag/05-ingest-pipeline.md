@@ -11,14 +11,16 @@
 >
 > **Date**: 2026-04-16
 >
-> **Scope**: parquet / JSONL / BioCXML → warehouse PG ingest end-to-end. One
-> ingest cycle outputs a published `ingest_runs` row plus all warehouse rows
-> the cycle wrote (`s2_*_raw`, `papers`, `paper_text`, `paper_authors`,
-> `paper_citations`, `paper_concepts`, `paper_relations`, the grounding
-> spine — `paper_documents` / `_sections` / `_blocks` / `_sentences` /
+> **Scope**: parquet / JSONL / BioCXML → warehouse PG ingest end-to-end for the
+> bulk release-backed lane. One ingest cycle outputs a published `ingest_runs`
+> row plus all warehouse rows the cycle wrote (`s2_*_raw`, `papers`,
+> `paper_text`, `paper_authors`, `paper_citations`, `paper_concepts`,
+> `paper_relations`, the release-backed document spine when a source family
+> carries it — `paper_documents` / `_sections` / `_blocks` / `_sentences` /
 > `_*_mentions` / `_chunk_*` / `paper_evidence_units` —
-> `paper_embeddings_graph`, `pubtator.*`). Projection (`04`) consumes
-> those rows; projection is **not** part of ingest.
+> `paper_embeddings_graph`, `pubtator.*`). Projection (`04`) consumes those
+> rows; projection is **not** part of ingest. Targeted paper-level PMC BioC
+> refresh is a separate follow-on lane in `05f`.
 >
 > **Schema authority**: `02-warehouse-schema.md` is PG-native authority for
 > table shapes. This doc is authority for the ingest worker's runtime
@@ -1172,6 +1174,12 @@ all `pubtator.*` tables (32-partition + `_stage` siblings), all
 `concept_relations` family during the `umls_concepts` derivation
 cycle. `vocab_terms` / `vocab_term_aliases` are written during the
 manually-triggered curated cycle.
+
+This ownership statement applies to the release-backed raw lane only. The
+paper-scoped hot-text lane in `05f` may later replace the current
+`paper_documents` / `paper_sections` / `paper_blocks` / `paper_sentences`
+rows for a mapped paper with a higher-fidelity PMC BioC document source, but
+it does not write raw release tables or take over `ingest_runs`.
 
 The ingest worker reads (does not write): the release directories
 under `/mnt/solemd-graph/data/<source>/releases/<tag>/` (read-only per

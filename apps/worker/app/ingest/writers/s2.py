@@ -9,6 +9,7 @@ from uuid import UUID
 import asyncpg
 
 from app.config import Settings
+from app.document_spine import replace_document_spines
 from app.ingest.models import CopyStats, FilePlan, IngestPlan, StartReleaseRequest
 from app.ingest.sources import semantic_scholar
 from app.ingest.writers.base import (
@@ -63,49 +64,6 @@ _CITATION_COLUMNS: tuple[str, ...] = (
     "is_influential",
     "intent_raw",
 )
-
-_PAPER_DOCUMENT_COLUMNS: tuple[str, ...] = (
-    "corpus_id",
-    "document_source_kind",
-    "source_priority",
-    "source_revision",
-    "text_hash",
-    "is_active",
-)
-
-_PAPER_SECTION_COLUMNS: tuple[str, ...] = (
-    "corpus_id",
-    "section_ordinal",
-    "parent_section_ordinal",
-    "section_role",
-    "numbering_token",
-    "display_label",
-)
-
-_PAPER_BLOCK_COLUMNS: tuple[str, ...] = (
-    "corpus_id",
-    "block_ordinal",
-    "section_ordinal",
-    "start_offset",
-    "end_offset",
-    "block_kind",
-    "section_role",
-    "is_retrieval_default",
-    "linked_asset_ref",
-    "text",
-)
-
-_PAPER_SENTENCE_COLUMNS: tuple[str, ...] = (
-    "corpus_id",
-    "block_ordinal",
-    "sentence_ordinal",
-    "section_ordinal",
-    "start_offset",
-    "end_offset",
-    "segmentation_source",
-    "text",
-)
-
 
 async def load_family(
     pool: asyncpg.Pool,
@@ -537,97 +495,24 @@ async def _flush_document_batch(
         if not corpus_by_paper_id:
             return 0
 
-        document_rows: list[tuple] = []
-        section_rows: list[tuple] = []
-        block_rows: list[tuple] = []
-        sentence_rows: list[tuple] = []
+        resolved_documents: list[dict[str, Any]] = []
 
         for document in documents:
             corpus_id = corpus_by_paper_id.get(document["paper_id"])
             if corpus_id is None:
                 continue
-            document_rows.append(
-                (
-                    corpus_id,
-                    document["document_source_kind"],
-                    document["source_priority"],
-                    source_revision,
-                    document["text_hash"],
-                    True,
-                )
+            resolved_documents.append(
+                {
+                    **document,
+                    "corpus_id": corpus_id,
+                }
             )
-            for section in document["sections"]:
-                section_rows.append(
-                    (
-                        corpus_id,
-                        section["section_ordinal"],
-                        section["parent_section_ordinal"],
-                        section["section_role"],
-                        section["numbering_token"],
-                        section["display_label"],
-                    )
-                )
-            for block in document["blocks"]:
-                block_rows.append(
-                    (
-                        corpus_id,
-                        block["block_ordinal"],
-                        block["section_ordinal"],
-                        block["start_offset"],
-                        block["end_offset"],
-                        block["block_kind"],
-                        block["section_role"],
-                        block["is_retrieval_default"],
-                        block["linked_asset_ref"],
-                        block["text"],
-                    )
-                )
-            for sentence in document["sentences"]:
-                sentence_rows.append(
-                    (
-                        corpus_id,
-                        sentence["block_ordinal"],
-                        sentence["sentence_ordinal"],
-                        sentence["section_ordinal"],
-                        sentence["start_offset"],
-                        sentence["end_offset"],
-                        sentence["segmentation_source"],
-                        sentence["text"],
-                    )
-                )
-
-        await copy_records(
+        return await replace_document_spines(
             connection,
-            table_name="paper_documents",
-            schema_name="solemd",
-            columns=_PAPER_DOCUMENT_COLUMNS,
-            records=document_rows,
+            resolved_documents,
+            source_revision=source_revision,
+            skip_delete=True,
         )
-        if section_rows:
-            await copy_records(
-                connection,
-                table_name="paper_sections",
-                schema_name="solemd",
-                columns=_PAPER_SECTION_COLUMNS,
-                records=section_rows,
-            )
-        if block_rows:
-            await copy_records(
-                connection,
-                table_name="paper_blocks",
-                schema_name="solemd",
-                columns=_PAPER_BLOCK_COLUMNS,
-                records=block_rows,
-            )
-        if sentence_rows:
-            await copy_records(
-                connection,
-                table_name="paper_sentences",
-                schema_name="solemd",
-                columns=_PAPER_SENTENCE_COLUMNS,
-                records=sentence_rows,
-            )
-    return len(document_rows)
 
 
 async def _upsert_publication_venues(

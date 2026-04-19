@@ -202,6 +202,7 @@ There is also a working-surface distinction:
 | 05c| Browser DuckDB runtime                  | `05c-browser-duckdb-runtime.md` | locked (microdesign provisional)   |
 | 05d| Wiki runtime                            | `05d-wiki-runtime.md`        | locked (microdesign provisional)      |
 | 05e| Canonical corpus selection              | `05e-corpus-selection.md`    | locked (next implementation slice)    |
+| 05f| Hot-text acquisition                    | `05f-hot-text-acquisition.md`| locked (microdesign provisional)      |
 | 06 | Async Python stack + pools + migrations | `06-async-stack.md`          | locked (microdesign provisional)      |
 | 07 | OpenSearch serving plane                | `07-opensearch-plane.md`     | locked (microdesign provisional)      |
 | 08 | Retrieval cascade (three-stage)         | `08-retrieval-cascade.md`    | locked (microdesign provisional)      |

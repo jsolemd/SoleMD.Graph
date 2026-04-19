@@ -13,6 +13,25 @@ from uuid import UUID
 import asyncpg
 
 from app.config import Settings
+from app.document_schema import (
+    BLOCK_KIND_PARAGRAPH,
+    DOCUMENT_SOURCE_KIND_S2ORC_ANNOTATION,
+    SECTION_ROLE_ABSTRACT,
+    SECTION_ROLE_CONCLUSION,
+    SECTION_ROLE_DISCUSSION,
+    SECTION_ROLE_INTRODUCTION,
+    SECTION_ROLE_METHODS,
+    SECTION_ROLE_OTHER,
+    SECTION_ROLE_RESULTS,
+    SECTION_ROLE_SUPPLEMENT,
+    SECTION_ROLE_UNKNOWN,
+    SEGMENTATION_SOURCE_S2ORC_ANNOTATION,
+    SOURCE_PRIORITY_S2ORC,
+    TEXT_AVAILABILITY_ABSTRACT,
+    TEXT_AVAILABILITY_FULLTEXT,
+    TEXT_AVAILABILITY_NONE,
+)
+from app.document_spine import fallback_sentence_spans
 from app.ingest.errors import SourceSchemaDrift
 from app.ingest.manifest_registry import (
     ManifestRegistryError,
@@ -22,23 +41,6 @@ from app.ingest.manifest_registry import (
     resolve_release_dir,
 )
 from app.ingest.models import FamilyPlan, IngestPlan, StartReleaseRequest
-
-
-DOCUMENT_SOURCE_KIND_S2ORC = 2
-TEXT_AVAILABILITY_NONE = 0
-TEXT_AVAILABILITY_ABSTRACT = 1
-TEXT_AVAILABILITY_FULLTEXT = 2
-SEGMENTATION_SOURCE_S2ORC = 1
-SECTION_ROLE_UNKNOWN = 0
-SECTION_ROLE_ABSTRACT = 1
-SECTION_ROLE_INTRODUCTION = 2
-SECTION_ROLE_METHODS = 3
-SECTION_ROLE_RESULTS = 4
-SECTION_ROLE_DISCUSSION = 5
-SECTION_ROLE_CONCLUSION = 6
-SECTION_ROLE_SUPPLEMENT = 7
-SECTION_ROLE_OTHER = 8
-BLOCK_KIND_PARAGRAPH = 1
 
 
 def build_plan(settings: Settings, request: StartReleaseRequest) -> IngestPlan:
@@ -154,7 +156,7 @@ async def promote_family(
             )
             """,
             TEXT_AVAILABILITY_FULLTEXT,
-            DOCUMENT_SOURCE_KIND_S2ORC,
+            DOCUMENT_SOURCE_KIND_S2ORC_ANNOTATION,
             plan.release_tag,
         )
         return
@@ -430,7 +432,7 @@ def _parse_s2orc_document(payload: dict[str, Any]) -> dict[str, Any]:
     for block in blocks:
         block_spans = block_sentence_buckets.get(block["block_ordinal"])
         if not block_spans:
-            block_spans = _fallback_sentence_spans(block["text"], block["start_offset"])
+            block_spans = fallback_sentence_spans(block["text"], block["start_offset"])
         for sentence_ordinal, span in enumerate(block_spans):
             start_offset = span["start"]
             end_offset = span["end"]
@@ -444,7 +446,7 @@ def _parse_s2orc_document(payload: dict[str, Any]) -> dict[str, Any]:
                     "section_ordinal": block["section_ordinal"],
                     "start_offset": start_offset,
                     "end_offset": end_offset,
-                    "segmentation_source": SEGMENTATION_SOURCE_S2ORC,
+                    "segmentation_source": SEGMENTATION_SOURCE_S2ORC_ANNOTATION,
                     "text": text,
                 }
             )
@@ -452,8 +454,8 @@ def _parse_s2orc_document(payload: dict[str, Any]) -> dict[str, Any]:
     document_text = "\n".join(block["text"] for block in blocks)
     return {
         "paper_id": paper_id,
-        "document_source_kind": DOCUMENT_SOURCE_KIND_S2ORC,
-        "source_priority": 10,
+        "document_source_kind": DOCUMENT_SOURCE_KIND_S2ORC_ANNOTATION,
+        "source_priority": SOURCE_PRIORITY_S2ORC,
         "text_hash": hashlib.sha1(document_text.encode("utf-8")).digest()[:16],
         "sections": sections,
         "blocks": blocks,
@@ -820,19 +822,3 @@ def _find_block_index(
         if block["start_offset"] <= start_offset and end_offset <= block["end_offset"]:
             return int(block["block_ordinal"])
     return None
-
-
-def _fallback_sentence_spans(text: str, absolute_start: int) -> list[dict[str, int]]:
-    spans: list[dict[str, int]] = []
-    cursor = 0
-    for match in re.finditer(r"[^.!?]+[.!?]?", text, flags=re.MULTILINE):
-        sentence = match.group(0).strip()
-        if not sentence:
-            continue
-        start = absolute_start + match.start()
-        end = absolute_start + match.end()
-        spans.append({"start": start, "end": end})
-        cursor = match.end()
-    if not spans and text.strip():
-        spans.append({"start": absolute_start, "end": absolute_start + len(text)})
-    return spans
