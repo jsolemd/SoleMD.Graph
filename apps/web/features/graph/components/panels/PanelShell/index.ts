@@ -20,6 +20,7 @@ export {
   PanelWindowActions,
 } from "./panel-header-actions";
 export {
+  type ChromeSurfaceMode,
   PANEL_ACCENT,
   PANEL_SCALE_CSS_VAR,
   badgeAccentStyles,

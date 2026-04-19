@@ -20,11 +20,6 @@ export interface AmbientFieldLandingSection {
   variant: AmbientFieldLandingSectionVariant;
 }
 
-export interface AmbientFieldClientRailItem {
-  id: string;
-  label: string;
-}
-
 export interface AmbientFieldStoryBeat {
   accentVar: string;
   body: string;
@@ -40,9 +35,9 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     preset: "blob",
     variant: "hero",
     eyebrow: "Ambient Field",
-    title: "Enter a living evidence field that never drops out of view.",
+    title: "Enter one living evidence field.",
     body:
-      "The homepage should begin with a coherent rotating globe of papers and stay in that same living substrate all the way down the page. Each chapter changes what the user notices inside the field rather than replacing the field itself.",
+      "Start with papers, then stay in the same field as the story moves deeper into evidence, context, and synthesis.",
     detail:
       "Maze parity remains the motion baseline, but SoleMD now needs a persistent blob story: intro, paper discovery, paper/entity detail, relation synthesis, and a final re-formed end state.",
     bullets: [
@@ -127,15 +122,6 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
   },
 ];
 
-export const ambientFieldHeroClients: readonly AmbientFieldClientRailItem[] = [
-  { id: "papers", label: "Papers" },
-  { id: "entities", label: "Entities" },
-  { id: "pathways", label: "Pathways" },
-  { id: "mechanisms", label: "Mechanisms" },
-  { id: "clusters", label: "Clusters" },
-  { id: "timelines", label: "Timelines" },
-] as const;
-
 export const ambientFieldStoryOneBeats: readonly AmbientFieldStoryBeat[] = [
   {
     id: "info-1",
@@ -177,17 +163,27 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
       },
       end: {
         sectionId: "section-story-1",
-        offsetViewport: 0.84,
+        offsetViewport: 0.72,
       },
     },
     paperCards: {
       start: {
         sectionId: "section-story-1",
-        offsetViewport: 0.84,
+        offsetViewport: 0.68,
+      },
+      end: {
+        sectionId: "section-story-1",
+        offsetViewport: 1.68,
+      },
+    },
+    paperFocus: {
+      start: {
+        sectionId: "section-story-1",
+        offsetViewport: 1.72,
       },
       end: {
         sectionId: "section-graph",
-        offsetViewport: -0.12,
+        offsetViewport: 0.12,
       },
     },
     detailInspection: {

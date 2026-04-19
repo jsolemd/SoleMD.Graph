@@ -307,6 +307,70 @@ being adapted for SoleMD:
   the base blob now stays blue-led for readability, while semantic colors are
   reserved for burst events and the sampled hotspot overlays.
 
+### Round 10
+
+- Focus:
+  carry one selected paper from the card phase into Beat 3, keep the card seat
+  stable, and make the late handoff return that paper to the field instead of
+  collapsing back toward the blob center
+- Source findings:
+  Maze keeps hotspot UI as a static authored offset from the sampled point and
+  only animates the hotspot marker itself; there is no runtime card-side flip
+  or card-relative orbit system.
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/styles.css` hotspot rules around
+  `.hotspot__ui`, `.hotspot.is-animating`, and `.has-only-reds .hotspot`
+- Source findings:
+  Maze hotspot ownership is split the same way throughout the blob chapter:
+  scroll/timeline controls `maxNumber`, opacity, and the red-only card phase,
+  while each hotspot independently reseeds itself on its own animation cycle.
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43326-43524`
+- Parity implication:
+  SoleMD should keep scroll as the phase gate, let the selected-point phase
+  reseed per hotspot on hotspot-local timers, and keep the later card-bearing
+  phase statically attached once it is active. That is the source split; the
+  card phase is not an always-hopping background system.
+- Implementation:
+  Beat 2 now keeps one smaller/deeper authored card hotspot and two more
+  forward card hotspots, Beat 3 carries the same sampled paper into the focus
+  seat instead of reseeding to a new point, and the focus dismissal now peels
+  that paper up-right into the background as the detail chapter takes over.
+- Intentional SoleMD divergence:
+  the late Beat 3 dismissal path is storyboard-specific. Maze does not send a
+  highlighted paper back into the field this way because it hands off into a
+  different downstream scene, but the motion still honors Maze's ownership
+  split: sampled point first, authored card seat second.
+
+### Round 11
+
+- Focus:
+  restore the source-owned parts of the motion stack that had drifted: true
+  zero-turn startup, neutral-field shader drift, and a Beat 3 focus path that
+  lifts from the blob without orbiting the overlay card
+- Source findings:
+  Maze's blob color motion is shader-time driven and independent of scroll.
+  The source shader only mixes a fixed blue-to-magenta field noise and then
+  thins points via `uSelection`; it does not attach DOM color waves to scroll.
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/index.html:2336-2391`
+- Source findings:
+  Maze's wrapper rotation is authored from a true zero-turn state in the blob
+  chapter timeline instead of inheriting an arbitrary already-running clock.
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43326-43345`
+- Parity implication:
+  SoleMD should keep semantic colors as a constrained burst layer, but those
+  bursts must be time/noise driven and independent of scroll while the neutral
+  field remains stable. Beat 3 focus motion may arc in from the blob, but it
+  should not orbit around the card because the source never does.
+- Implementation:
+  the field now starts from a component-local zero-turn clock, the card-focus
+  helper uses a one-way lift-and-hold path instead of orbiting the seat, the
+  base blob stays in a neutral blue/teal family, and semantic bursts ride on a
+  broader noise mask so multiple semantic colors can read clearly on top of the
+  neutral field.
+
 ### 1. Fixed Stage Runtime
 
 - [x] One fixed ambient-field canvas

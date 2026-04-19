@@ -37,11 +37,21 @@ interface FieldSceneProps {
 
 export interface AmbientFieldHotspotFrame {
   color: string;
+  focusDismissProgress: number;
+  focusProgress: number;
   id: string;
+  mode: "card" | "dot" | "focus" | "hidden";
   opacity: number;
   scale: number;
   showCard: boolean;
   visible: boolean;
+  x: number;
+  y: number;
+}
+
+interface BlobHotspotProjection {
+  candidateIndex: number;
+  scale: number;
   x: number;
   y: number;
 }
@@ -81,8 +91,6 @@ interface LayerUniforms {
 }
 
 const stageItemIds = AMBIENT_FIELD_STAGE_ITEM_IDS;
-const AMBIENT_FIELD_LOOP_EPOCH_MS =
-  typeof performance === "undefined" ? 0 : performance.now();
 const BLOB_HOTSPOT_COUNT = 40;
 const BLOB_HOTSPOT_CARD_COUNT = 3;
 const BLOB_HOTSPOT_IDS = Array.from(
@@ -94,7 +102,9 @@ interface BlobHotspotRuntime {
   candidateIndex: number | null;
   cycleDurationMs: number;
   cycleStartAtMs: number;
-  phaseKey: "card" | "dot" | "hidden";
+  invalidSinceAtMs: number | null;
+  lastProjected: BlobHotspotProjection | null;
+  phaseKey: "card" | "dot" | "focus" | "hidden";
 }
 
 function createColorFromFallbackHex(hex: string): Color {
@@ -111,17 +121,30 @@ function smoothstep(min: number, max: number, value: number) {
   return t * t * (3 - 2 * t);
 }
 
-function getAmbientFieldLoopSeconds() {
+function getAmbientFieldLoopSeconds(loopEpochMs: number | null) {
   if (typeof performance === "undefined") return 0;
-  return Math.max(0, (performance.now() - AMBIENT_FIELD_LOOP_EPOCH_MS) / 1000);
+  if (loopEpochMs == null) return 0;
+  return Math.max(0, (performance.now() - loopEpochMs) / 1000);
 }
 
 function sampleBlobHotspotDelayMs() {
   return Math.random() * 2000;
 }
 
-function getBlobHotspotCycleDurationMs(isSingleVisible: boolean) {
+function getBlobHotspotCycleDurationMs({
+  hotspotIndex,
+  isSingleVisible,
+  phaseKey,
+}: {
+  hotspotIndex: number;
+  isSingleVisible: boolean;
+  phaseKey: BlobHotspotRuntime["phaseKey"];
+}) {
   return isSingleVisible ? 4000 : 2000;
+}
+
+function hotspotPhaseUsesCycle(phaseKey: BlobHotspotRuntime["phaseKey"]) {
+  return phaseKey === "dot";
 }
 
 function getBlobHotspotPulseEnvelope(progress: number) {
@@ -150,6 +173,23 @@ function getBlobHotspotVerticalBand(hotspotIndex: number) {
   return bands[hotspotIndex] ?? [0.18, 0.82];
 }
 
+function getBlobHotspotScaleRange(
+  hotspotIndex: number,
+  phaseKey: BlobHotspotRuntime["phaseKey"],
+) {
+  if (phaseKey === "card") {
+    if (hotspotIndex === 0) {
+      return [0.74, 0.96] as const;
+    }
+
+    if (hotspotIndex < BLOB_HOTSPOT_CARD_COUNT) {
+      return [0.98, 1.3] as const;
+    }
+  }
+
+  return null;
+}
+
 function getPointColorCss(
   source: AmbientFieldPointSource,
   candidateIndex: number,
@@ -175,9 +215,12 @@ function projectBlobHotspotCandidate({
   blobModel,
   camera,
   candidateIndex,
+  centerLeftBand,
   height,
   hotspotIndex,
+  lockLeftHalf,
   pinVerticalBand,
+  scaleRange,
   source,
   vector,
   width,
@@ -185,9 +228,12 @@ function projectBlobHotspotCandidate({
   blobModel: Group;
   camera: Camera;
   candidateIndex: number;
+  centerLeftBand: boolean;
   height: number;
   hotspotIndex: number;
+  lockLeftHalf: boolean;
   pinVerticalBand: boolean;
+  scaleRange: readonly [number, number] | null;
   source: AmbientFieldPointSource;
   vector: Vector3;
   width: number;
@@ -215,11 +261,22 @@ function projectBlobHotspotCandidate({
     y > 24 &&
     y < height - 24 &&
     vector.z < 0.84;
+  const withinLeftHalf = !lockLeftHalf || x <= width * 0.5;
+  const withinCenterLeftBand =
+    !centerLeftBand || (x >= width * 0.18 && x <= width * 0.48);
   const [bandMin, bandMax] = getBlobHotspotVerticalBand(hotspotIndex);
   const withinVerticalBand =
     !pinVerticalBand || (y >= height * bandMin && y <= height * bandMax);
+  const withinScaleRange =
+    !scaleRange || (scale >= scaleRange[0] && scale <= scaleRange[1]);
 
-  if (!withinViewport || !withinVerticalBand) {
+  if (
+    !withinViewport ||
+    !withinLeftHalf ||
+    !withinCenterLeftBand ||
+    !withinVerticalBand ||
+    !withinScaleRange
+  ) {
     return null;
   }
 
@@ -234,9 +291,12 @@ function projectBlobHotspotCandidate({
 function selectBlobHotspotCandidate({
   blobModel,
   camera,
+  centerLeftBand,
   hotspotIndex,
+  lockLeftHalf,
   maxAttempts = 20,
   pinVerticalBand,
+  scaleRange,
   source,
   usedCandidateIndices,
   vector,
@@ -245,9 +305,12 @@ function selectBlobHotspotCandidate({
 }: {
   blobModel: Group;
   camera: Camera;
+  centerLeftBand: boolean;
   hotspotIndex: number;
+  lockLeftHalf: boolean;
   maxAttempts?: number;
   pinVerticalBand: boolean;
+  scaleRange: readonly [number, number] | null;
   source: AmbientFieldPointSource;
   usedCandidateIndices: Set<number>;
   vector: Vector3;
@@ -258,29 +321,36 @@ function selectBlobHotspotCandidate({
     return null;
   }
 
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const candidateIndex = Math.floor(Math.random() * source.pointCount);
-    if (usedCandidateIndices.has(candidateIndex)) {
-      continue;
+  const scaleRanges = scaleRange ? [scaleRange, null] : [null];
+
+  for (const activeScaleRange of scaleRanges) {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const candidateIndex = Math.floor(Math.random() * source.pointCount);
+      if (usedCandidateIndices.has(candidateIndex)) {
+        continue;
+      }
+
+      const projected = projectBlobHotspotCandidate({
+        blobModel,
+        camera,
+        candidateIndex,
+        centerLeftBand,
+        height: viewportHeight,
+        hotspotIndex,
+        lockLeftHalf,
+        pinVerticalBand,
+        scaleRange: activeScaleRange,
+        source,
+        vector,
+        width: viewportWidth,
+      });
+
+      if (!projected) {
+        continue;
+      }
+
+      return projected;
     }
-
-    const projected = projectBlobHotspotCandidate({
-      blobModel,
-      camera,
-      candidateIndex,
-      height: viewportHeight,
-      hotspotIndex,
-      pinVerticalBand,
-      source,
-      vector,
-      width: viewportWidth,
-    });
-
-    if (!projected) {
-      continue;
-    }
-
-    return projected;
   }
 
   return null;
@@ -416,6 +486,7 @@ export function FieldScene({
     [densityScale, isMobile],
   );
   const pointTexture = useMemo(() => getFieldPointTexture(), []);
+  const loopEpochMsRef = useRef<number | null>(null);
 
   const stageWrapperRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
     blob: null,
@@ -440,6 +511,8 @@ export function FieldScene({
       candidateIndex: null,
       cycleDurationMs: 0,
       cycleStartAtMs: 0,
+      invalidSinceAtMs: null,
+      lastProjected: null,
       phaseKey: "hidden",
     })),
   );
@@ -478,9 +551,13 @@ export function FieldScene({
     onFrame?.(state.clock.elapsedTime * 1000);
     const sceneState = sceneStateRef.current ?? DEFAULT_AMBIENT_FIELD_SCENE;
     const motionEnabled = sceneState.motionEnabled;
-    const loopSeconds = getAmbientFieldLoopSeconds();
+    if (loopEpochMsRef.current == null && typeof performance !== "undefined") {
+      loopEpochMsRef.current = performance.now();
+    }
+    const loopSeconds = getAmbientFieldLoopSeconds(loopEpochMsRef.current);
     const {
       paperCards,
+      paperFocus,
       paperHighlights,
       detailInspection,
       reform,
@@ -574,6 +651,7 @@ export function FieldScene({
                   sourceHotspotIntro,
                   paperHighlights * 0.52,
                   paperCards * 0.72,
+                  paperFocus * 0.9,
                   detailInspection * 0.48,
                 ),
               )
@@ -639,9 +717,12 @@ export function FieldScene({
 
     if (onHotspotsFrame) {
       const loopMs = loopSeconds * 1000;
-      const frames = BLOB_HOTSPOT_IDS.map((id, index) => ({
+      const frames: AmbientFieldHotspotFrame[] = BLOB_HOTSPOT_IDS.map((id, index) => ({
         color: "var(--color-soft-blue)",
+        focusDismissProgress: 0,
+        focusProgress: 0,
         id,
+        mode: "hidden",
         opacity: 0,
         scale: 0.9,
         showCard: index < BLOB_HOTSPOT_CARD_COUNT,
@@ -662,19 +743,25 @@ export function FieldScene({
           paperHighlights * (1 - smoothstep(0.14, 0.82, paperCards)),
         );
         const paperCardWindow = clamp01(
-          paperCards * (1 - smoothstep(0.04, 0.52, detailInspection)),
+          paperCards * (1 - smoothstep(0.08, 0.48, paperFocus)),
         );
-        const paperCardDots = paperCardWindow;
+        const paperFocusWindow = clamp01(
+          paperFocus * (1 - smoothstep(0.12, 0.62, detailInspection)),
+        );
+        const paperCardDots = 0;
+        const paperFocusDots = 0;
         const detailDots = clamp01(detailInspection * 0.46);
         const synthesisDots = clamp01(synthesisLinks * 0.54);
         const dotOpacity =
           Math.max(
             paperHighlightDots,
             paperCardDots * 0.82,
+            paperFocusDots * 0.44,
             detailDots * 0.52,
             synthesisDots * 0.64,
           ) * blobVisibility;
         const cardOpacity = paperCardWindow * blobVisibility;
+        const focusOpacity = paperFocusWindow * blobVisibility;
         const paperHighlightDotCount =
           paperHighlightDots <= 0.01
             ? 0
@@ -686,6 +773,7 @@ export function FieldScene({
                 )
               : BLOB_HOTSPOT_COUNT;
         const paperCardDotCount = paperCardDots > 0.01 ? 12 : 0;
+        const paperFocusDotCount = paperFocusDots > 0.01 ? 4 : 0;
         const detailDotCount = detailDots > 0.01 ? 8 : 0;
         const synthesisDotCount = synthesisDots > 0.01 ? 10 : 0;
         const usedCandidateIndices = new Set<number>();
@@ -693,37 +781,56 @@ export function FieldScene({
         for (let hotspotIndex = 0; hotspotIndex < BLOB_HOTSPOT_COUNT; hotspotIndex += 1) {
           const frame = frames[hotspotIndex]!;
           const runtime = blobHotspotRuntimeRef.current[hotspotIndex]!;
+          const shouldShowFocus = focusOpacity > 0.01 && hotspotIndex === 0;
           const shouldShowCard =
-            cardOpacity > 0.01 && hotspotIndex < BLOB_HOTSPOT_CARD_COUNT;
+            !shouldShowFocus &&
+            cardOpacity > 0.01 &&
+            hotspotIndex < BLOB_HOTSPOT_CARD_COUNT;
           const shouldShowDot =
+            !shouldShowFocus &&
             dotOpacity > 0.01 &&
             hotspotIndex <
               Math.max(
                 shouldShowCard ? BLOB_HOTSPOT_CARD_COUNT : 0,
                 paperHighlightDotCount,
                 paperCardDotCount,
+                paperFocusDotCount,
                 detailDotCount,
                 synthesisDotCount,
               );
-          const phaseKey: BlobHotspotRuntime["phaseKey"] = shouldShowCard
-            ? "card"
-            : shouldShowDot
-              ? "dot"
-              : "hidden";
+          const phaseKey: BlobHotspotRuntime["phaseKey"] = shouldShowFocus
+            ? "focus"
+            : shouldShowCard
+              ? "card"
+              : shouldShowDot
+                ? "dot"
+                : "hidden";
           const isSingleVisible =
             phaseKey === "dot" &&
             paperHighlightDotCount > 0 &&
             paperHighlightDotCount <= BLOB_HOTSPOT_CARD_COUNT;
           const pinVerticalBand =
             hotspotIndex < BLOB_HOTSPOT_CARD_COUNT &&
-            (shouldShowCard || isSingleVisible);
+            (shouldShowCard || shouldShowFocus || isSingleVisible);
+          const centerLeftBand = shouldShowFocus;
+          const lockLeftHalf = shouldShowCard || shouldShowFocus;
+          const scaleRange = getBlobHotspotScaleRange(hotspotIndex, phaseKey);
 
           if (runtime.phaseKey !== phaseKey) {
             runtime.phaseKey = phaseKey;
+            runtime.invalidSinceAtMs = null;
             runtime.cycleDurationMs =
-              phaseKey === "dot" ? getBlobHotspotCycleDurationMs(isSingleVisible) : 0;
+              hotspotPhaseUsesCycle(phaseKey)
+                ? getBlobHotspotCycleDurationMs({
+                    hotspotIndex,
+                    isSingleVisible,
+                    phaseKey,
+                  })
+                : 0;
             runtime.cycleStartAtMs =
-              phaseKey === "dot" ? loopMs + sampleBlobHotspotDelayMs() : loopMs;
+              hotspotPhaseUsesCycle(phaseKey)
+                ? loopMs + sampleBlobHotspotDelayMs()
+                : loopMs;
           }
 
           if (phaseKey === "hidden") {
@@ -733,23 +840,34 @@ export function FieldScene({
           const vector = hotspotVectorRef.current;
           const shouldReseed =
             runtime.candidateIndex == null ||
-            (phaseKey === "dot" &&
+            (hotspotPhaseUsesCycle(phaseKey) &&
               runtime.cycleDurationMs > 0 &&
               loopMs >= runtime.cycleStartAtMs + runtime.cycleDurationMs);
 
           if (shouldReseed) {
             runtime.candidateIndex = null;
             runtime.cycleDurationMs =
-              phaseKey === "dot" ? getBlobHotspotCycleDurationMs(isSingleVisible) : 0;
+              hotspotPhaseUsesCycle(phaseKey)
+                ? getBlobHotspotCycleDurationMs({
+                    hotspotIndex,
+                    isSingleVisible,
+                    phaseKey,
+                  })
+                : 0;
             runtime.cycleStartAtMs =
-              phaseKey === "dot" ? loopMs + sampleBlobHotspotDelayMs() : loopMs;
+              hotspotPhaseUsesCycle(phaseKey)
+                ? loopMs + sampleBlobHotspotDelayMs()
+                : loopMs;
 
             const reseeded = selectBlobHotspotCandidate({
               blobModel,
               camera: state.camera,
+              centerLeftBand,
               hotspotIndex,
-              maxAttempts: shouldShowCard ? 80 : 20,
+              lockLeftHalf,
+              maxAttempts: shouldShowCard || shouldShowFocus ? 80 : 20,
               pinVerticalBand,
+              scaleRange,
               source: pointSources.blob,
               usedCandidateIndices,
               vector,
@@ -771,7 +889,7 @@ export function FieldScene({
                 )
               : 1;
 
-          if (cycleEnvelope <= 0.001) {
+          if (phaseKey === "dot" && cycleEnvelope <= 0.001) {
             continue;
           }
 
@@ -779,22 +897,41 @@ export function FieldScene({
             blobModel,
             camera: state.camera,
             candidateIndex: runtime.candidateIndex,
+            centerLeftBand,
             height: state.size.height,
             hotspotIndex,
+            lockLeftHalf,
             pinVerticalBand,
+            scaleRange,
             source: pointSources.blob,
             vector,
             width: state.size.width,
           });
           if (!projected) {
-            if (phaseKey === "card") {
+            if (runtime.lastProjected && runtime.invalidSinceAtMs == null) {
+              runtime.invalidSinceAtMs = loopMs;
+            }
+            const withinProjectionGrace =
+              runtime.invalidSinceAtMs != null &&
+              loopMs - runtime.invalidSinceAtMs < 240;
+
+            if (
+              (phaseKey === "card" || phaseKey === "focus") &&
+              runtime.lastProjected &&
+              withinProjectionGrace
+            ) {
+              projected = runtime.lastProjected;
+            } else if (phaseKey === "card" || phaseKey === "focus") {
               runtime.candidateIndex = null;
               const reseeded = selectBlobHotspotCandidate({
                 blobModel,
                 camera: state.camera,
+                centerLeftBand,
                 hotspotIndex,
+                lockLeftHalf,
                 maxAttempts: 80,
                 pinVerticalBand,
+                scaleRange,
                 source: pointSources.blob,
                 usedCandidateIndices,
                 vector,
@@ -807,9 +944,12 @@ export function FieldScene({
                   blobModel,
                   camera: state.camera,
                   candidateIndex: runtime.candidateIndex,
+                  centerLeftBand,
                   height: state.size.height,
                   hotspotIndex,
+                  lockLeftHalf,
                   pinVerticalBand,
+                  scaleRange,
                   source: pointSources.blob,
                   vector,
                   width: state.size.width,
@@ -832,15 +972,33 @@ export function FieldScene({
             );
           }
           usedCandidateIndices.add(projected.candidateIndex);
+          runtime.invalidSinceAtMs = null;
+          runtime.lastProjected = projected;
 
           frame.visible = true;
+          frame.focusDismissProgress =
+            phaseKey === "focus" && paperFocus > 0.001
+              ? clamp01(1 - paperFocusWindow / paperFocus)
+              : 0;
+          frame.focusProgress = phaseKey === "focus" ? paperFocusWindow : 0;
+          frame.mode = phaseKey;
           frame.color = getPointColorCss(pointSources.blob, projected.candidateIndex);
-          frame.opacity =
-            (shouldShowCard ? cardOpacity : dotOpacity * cycleEnvelope) * projected.scale;
-          frame.scale = shouldShowCard ? projected.scale : projected.scale * cycleEnvelope;
+          if (phaseKey === "focus") {
+            frame.opacity = focusOpacity * projected.scale;
+            frame.scale = projected.scale;
+            frame.x = projected.x;
+            frame.y = projected.y;
+          } else {
+            frame.opacity =
+              (shouldShowCard ? cardOpacity : dotOpacity * cycleEnvelope) *
+              projected.scale;
+            frame.scale = shouldShowCard
+              ? projected.scale
+              : projected.scale * cycleEnvelope;
+            frame.x = projected.x;
+            frame.y = projected.y;
+          }
           frame.showCard = shouldShowCard;
-          frame.x = projected.x;
-          frame.y = projected.y;
         }
       }
 

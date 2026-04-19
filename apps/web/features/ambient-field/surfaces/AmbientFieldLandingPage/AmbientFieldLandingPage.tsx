@@ -4,17 +4,17 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
 } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useViewportSize } from "@mantine/hooks";
 import { motion, useReducedMotion } from "framer-motion";
-import type { GraphBundle, GraphBundleLoadProgress } from "@solemd/graph";
+import type { GraphBundle } from "@solemd/graph";
 import { MetaPill } from "@/features/graph/components/panels/PanelShell/MetaPill";
 import { OverlayCard } from "@/features/graph/components/panels/PanelShell/OverlaySurface";
 import {
-  chromePillSurfaceStyle,
-  panelAccentCardStyle,
+  type ChromeSurfaceMode,
   panelSurfaceStyle,
 } from "@/features/graph/components/panels/PanelShell/panel-styles";
 import { GraphLoadingChrome } from "@/features/graph/components/shell/loading/GraphLoadingChrome";
@@ -46,9 +46,17 @@ import {
   ambientFieldLandingSections,
   ambientFieldLandingScrollManifest,
 } from "./ambient-field-landing-content";
+import {
+  ambientFieldBlobHotspots,
+  ambientFieldFocusedPaperSeat,
+  resolveAmbientFieldFocusPresentation,
+  type AmbientFieldFocusMotionState,
+} from "./ambient-field-hotspot-overlay";
 import { AmbientFieldCtaSection } from "./AmbientFieldCtaSection";
+import { AmbientFieldGraphWarmupAction } from "./AmbientFieldGraphWarmupAction";
 import { AmbientFieldGraphSection } from "./AmbientFieldGraphSection";
 import { AmbientFieldHeroSection } from "./AmbientFieldHeroSection";
+import { AmbientFieldScrollCue } from "./AmbientFieldScrollCue";
 import { AmbientFieldSectionCard } from "./AmbientFieldSectionCard";
 import { AmbientFieldStoryChapter } from "./AmbientFieldStoryChapter";
 import { ambientFieldStoryOneBeats } from "./ambient-field-landing-content";
@@ -67,106 +75,24 @@ const secondaryCardStyle: CSSProperties = {
   border: "1px solid color-mix(in srgb, var(--graph-panel-border) 72%, transparent)",
 };
 
-const ambientFieldBlobHotspots: ReadonlyArray<{
-  badges: string[];
-  id: string;
-  title: string;
-}> = [
-  {
-    id: "papers",
-    title: "Paper subset enters focus",
-    badges: ["Selected", "High confidence"],
-  },
-  {
-    id: "entities",
-    title: "Entity-rich paper neighborhood",
-    badges: ["Gene", "Chemical"],
-  },
-  {
-    id: "relations",
-    title: "Relation bridge becomes visible",
-    badges: ["Linking", "Synthesis-ready"],
-  },
-  ...Array.from({ length: 37 }, (_, index) => ({
-    id: `dot-${index + 4}`,
-    title: "",
-    badges: [],
-  })),
-];
+const CHROME_SURFACE_TRANSITION_SCROLL_PX = 24;
+const LANDING_GRAPH_READY_DEBUG_PARAM = "landingGraphReady";
 
-const GRAPH_UNAVAILABLE_ERROR = new Error("Graph warmup unavailable");
+function useLandingGraphReadyDebugOverride(): boolean {
+  const searchParams = useSearchParams();
 
-function getGraphWarmupLabel(progress: GraphBundleLoadProgress | null): string {
-  switch (progress?.stage) {
-    case "resolving":
-      return "Connecting graph";
-    case "views":
-      return "Preparing tables";
-    case "points":
-      return "Loading points";
-    case "clusters":
-      return "Organizing clusters";
-    case "facets":
-      return "Building facets";
-    case "hydrating":
-      return "Preparing layout";
-    case "ready":
-      return "Graph ready";
-    default:
-      return "Warming graph";
-  }
-}
-
-function GraphWarmupStatus({
-  graphError,
-  graphProgress,
-  graphReady,
-  onOpenGraph,
-}: {
-  graphError: Error | null;
-  graphProgress: GraphBundleLoadProgress | null;
-  graphReady: boolean;
-  onOpenGraph: () => void;
-}) {
-  if (graphReady) {
-    return (
-      <button
-        type="button"
-        onClick={onOpenGraph}
-        className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
-        style={{
-          ...chromePillSurfaceStyle,
-          color: "var(--graph-panel-text)",
-        }}
-      >
-        Go to graph
-      </button>
-    );
+  if (process.env.NODE_ENV === "production") {
+    return false;
   }
 
-  return (
-    <div
-      className="rounded-full px-3.5 py-2 text-xs font-medium"
-      style={{
-        ...chromePillSurfaceStyle,
-        color: graphError
-          ? "var(--feedback-danger-fg)"
-          : "var(--graph-panel-text-dim)",
-      }}
-    >
-      {graphError ? "Graph warmup unavailable" : getGraphWarmupLabel(graphProgress)}
-    </div>
-  );
+  const value = searchParams.get(LANDING_GRAPH_READY_DEBUG_PARAM);
+  return value === "1" || value === "true" || value === "ready";
 }
 
 function AmbientFieldLandingShell({
-  graphError,
-  graphProgress,
   graphReady,
   shellVariant,
 }: {
-  graphError: Error | null;
-  graphProgress: GraphBundleLoadProgress | null;
   graphReady: boolean;
   shellVariant: ShellVariant;
 }) {
@@ -176,10 +102,14 @@ function AmbientFieldLandingShell({
   const rootRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const blobHotspotRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const focusMotionStateRef = useRef<AmbientFieldFocusMotionState | null>(null);
+  const focusedPaperSeatRef = useRef<HTMLDivElement>(null);
   const sceneStateRef = useRef<AmbientFieldSceneState>(
     createAmbientFieldSceneState(),
   );
   const scrollControllerRef = useRef<AmbientFieldScrollController | null>(null);
+  const [chromeSurfaceMode, setChromeSurfaceMode] =
+    useState<ChromeSurfaceMode>("flush");
   const isCompactFieldViewport =
     viewportWidth > 0
       ? viewportWidth < AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT
@@ -221,13 +151,60 @@ function AmbientFieldLandingShell({
     };
   }, [isCompactFieldViewport, reducedMotion]);
 
+  useEffect(() => {
+    const scrollRoot = rootRef.current;
+    if (!scrollRoot) return undefined;
+
+    let frame = 0;
+
+    function syncChromeSurfaceMode() {
+      frame = 0;
+      const nextMode: ChromeSurfaceMode =
+        scrollRoot!.scrollTop > CHROME_SURFACE_TRANSITION_SCROLL_PX
+          ? "pill"
+          : "flush";
+      setChromeSurfaceMode((current) =>
+        current === nextMode ? current : nextMode,
+      );
+    }
+
+    function handleScroll() {
+      if (frame !== 0) return;
+      frame = window.requestAnimationFrame(syncChromeSurfaceMode);
+    }
+
+    syncChromeSurfaceMode();
+    scrollRoot!.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      scrollRoot!.removeEventListener("scroll", handleScroll);
+      if (frame !== 0) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
+  }, []);
+
   function handleFieldFrame(timestamp: number) {
     scrollControllerRef.current?.syncFrame(timestamp);
   }
 
   function handleHotspotFrame(hotspots: AmbientFieldHotspotFrame[]) {
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    const focusedPaperFrame =
+      hotspots.find((frame) => frame.visible && frame.mode === "focus") ?? null;
+    const focusedPaperSeat = focusedPaperSeatRef.current;
+    const focusedPaperSeatRect = focusedPaperSeat?.getBoundingClientRect() ?? null;
+    const nowSeconds =
+      typeof performance === "undefined" ? 0 : performance.now() / 1000;
+    const focusPresentation =
+      focusedPaperFrame && focusedPaperSeatRect
+        ? resolveAmbientFieldFocusPresentation({
+            frame: focusedPaperFrame,
+            nowSeconds,
+            previousState: focusMotionStateRef.current,
+            seatRect: focusedPaperSeatRect,
+          })
+        : null;
+    focusMotionStateRef.current = focusPresentation?.state ?? null;
 
     blobHotspotRefs.current.forEach((node, index) => {
       if (!node) return;
@@ -239,14 +216,10 @@ function AmbientFieldLandingShell({
         return;
       }
 
-      node.dataset.mode = frame.showCard ? "card" : "dot";
-      const cardLeft = frame.x > viewportWidth * 0.62 ? "-220px" : "28px";
-      const cardTop =
-        frame.y < viewportHeight * 0.28
-          ? "24px"
-          : frame.y > viewportHeight * 0.72
-            ? "-92px"
-            : "-18px";
+      node.dataset.mode = frame.mode;
+      const hotspot = ambientFieldBlobHotspots[index];
+      const cardLeft = hotspot?.cardLeft ?? "28px";
+      const cardTop = hotspot?.cardTop ?? "-18px";
       node.style.setProperty(
         "--ambient-hotspot-ring",
         frame.color,
@@ -257,19 +230,46 @@ function AmbientFieldLandingShell({
       );
       node.style.setProperty(
         "--ambient-hotspot-card-opacity",
-        frame.showCard ? "1" : "0",
+        frame.mode === "card" ? "1" : "0",
       );
       node.style.setProperty(
         "--ambient-hotspot-card-translate-y",
-        frame.showCard ? "0px" : "10px",
+        frame.mode === "card" ? "0px" : "10px",
       );
       node.style.setProperty("--ambient-hotspot-card-left", cardLeft);
       node.style.setProperty("--ambient-hotspot-card-top", cardTop);
 
-      node.style.opacity = frame.opacity.toFixed(4);
+      let displayX = frame.x;
+      let displayY = frame.y;
+      let displayScale = frame.scale;
+      let pointOpacity = frame.opacity;
+      if (frame.mode === "focus" && focusPresentation) {
+        displayX = focusPresentation.pointX;
+        displayY = focusPresentation.pointY;
+        displayScale = focusPresentation.pointScale;
+        pointOpacity = focusPresentation.pointOpacity;
+      }
+
+      node.style.opacity = pointOpacity.toFixed(4);
       node.style.transform =
-        `translate3d(${frame.x}px, ${frame.y}px, 0) scale(${frame.scale})`;
+        `translate3d(${displayX}px, ${displayY}px, 0) scale(${displayScale})`;
     });
+    if (!focusedPaperSeat) return;
+
+    if (!focusedPaperFrame || !focusPresentation) {
+      focusMotionStateRef.current = null;
+      focusedPaperSeat.style.opacity = "0";
+      focusedPaperSeat.style.transform = "translate3d(0, 18px, 0) scale(0.96)";
+      return;
+    }
+
+    focusedPaperSeat.style.setProperty(
+      "--ambient-focused-paper-accent",
+      focusedPaperFrame.color,
+    );
+    focusedPaperSeat.style.opacity = Math.min(1, focusPresentation.seatOpacity).toFixed(4);
+    focusedPaperSeat.style.transform =
+      `translate3d(0, ${focusPresentation.seatTranslateY}px, 0) scale(${focusPresentation.seatScale})`;
   }
 
   const tocEntries = useMemo<PanelEdgeTocEntry[]>(
@@ -396,6 +396,44 @@ function AmbientFieldLandingShell({
             </div>
           );
         })}
+        <div
+          ref={focusedPaperSeatRef}
+          className="absolute right-4 top-[20%] w-[min(23rem,calc(100vw-2rem))] max-w-[420px] transition-[opacity,transform] duration-300 sm:right-6 sm:top-[18%] lg:right-[max(2rem,6vw)] lg:top-[18%]"
+          style={{
+            "--ambient-focused-paper-accent": "var(--color-soft-blue)",
+            opacity: 0,
+            transform: "translate3d(0, 18px, 0) scale(0.96)",
+            willChange: "opacity, transform",
+          } as CSSProperties}
+        >
+          <OverlayCard
+            className="px-5 py-5 sm:px-6 sm:py-6"
+            style={{
+              ...panelSurfaceStyle,
+              border:
+                "1px solid color-mix(in srgb, var(--ambient-focused-paper-accent) 26%, var(--graph-panel-border) 74%)",
+            }}
+          >
+            <div className="flex flex-wrap gap-2">
+              <MetaPill mono>{ambientFieldFocusedPaperSeat.badge}</MetaPill>
+              <MetaPill style={{ color: "var(--ambient-focused-paper-accent)" }}>
+                {ambientFieldFocusedPaperSeat.eyebrow}
+              </MetaPill>
+            </div>
+            <p className="mt-4 text-[14px] font-medium leading-6 sm:text-[15px]">
+              {ambientFieldFocusedPaperSeat.title}
+            </p>
+            <p
+              className="mt-3 text-[13px] leading-6 sm:text-[14px]"
+              style={{
+                color:
+                  "color-mix(in srgb, var(--graph-panel-text) 78%, transparent)",
+              }}
+            >
+              {ambientFieldFocusedPaperSeat.summary}
+            </p>
+          </OverlayCard>
+        </div>
       </div>
 
       <div
@@ -405,30 +443,25 @@ function AmbientFieldLandingShell({
 
       <GraphLoadingChrome
         brandTooltipLabel="Back to top"
+        groupRightControls
         onBrandClick={() =>
           rootRef.current?.scrollTo({ top: 0, behavior: "smooth" })
         }
+        surfaceMode={chromeSurfaceMode}
         rightSlot={
-          <GraphWarmupStatus
-            graphError={graphError}
-            graphProgress={graphProgress}
+          <AmbientFieldGraphWarmupAction
             graphReady={graphReady}
             onOpenGraph={() => router.push("/graph")}
           />
         }
       />
 
+      <AmbientFieldScrollCue visible={chromeSurfaceMode === "flush"} />
+
       <main className="relative z-10">
         <div ref={heroRef}>
           <AmbientFieldHeroSection
-            graphReady={graphReady}
-            warmupLabel={getGraphWarmupLabel(graphProgress)}
             onExploreRuntime={() => scrollToSection("section-story-1")}
-            onOpenGraph={() => {
-              if (graphReady) {
-                router.push("/graph");
-              }
-            }}
             section={heroSection}
           />
         </div>
@@ -514,15 +547,14 @@ function AmbientFieldLandingShell({
 }
 
 function AmbientFieldLandingPageWithWarmup({ bundle }: { bundle: GraphBundle }) {
-  const { graphError, graphProgress, graphReady } = useGraphWarmup(bundle);
+  const forcedGraphReady = useLandingGraphReadyDebugOverride();
+  const { graphReady } = useGraphWarmup(bundle);
   const shellVariant = useShellVariant();
 
   return (
     <ShellVariantProvider value={shellVariant}>
       <AmbientFieldLandingShell
-        graphError={graphError}
-        graphProgress={graphProgress}
-        graphReady={graphReady}
+        graphReady={graphReady || forcedGraphReady}
         shellVariant={shellVariant}
       />
     </ShellVariantProvider>
@@ -534,15 +566,14 @@ export function AmbientFieldLandingPage({
 }: {
   bundle: GraphBundle | null;
 }) {
+  const forcedGraphReady = useLandingGraphReadyDebugOverride();
   const shellVariant = useShellVariant();
 
   if (bundle == null) {
     return (
       <ShellVariantProvider value={shellVariant}>
         <AmbientFieldLandingShell
-          graphError={GRAPH_UNAVAILABLE_ERROR}
-          graphProgress={null}
-          graphReady={false}
+          graphReady={forcedGraphReady}
           shellVariant={shellVariant}
         />
       </ShellVariantProvider>

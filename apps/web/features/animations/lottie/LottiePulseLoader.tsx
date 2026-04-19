@@ -3,13 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { motion, useReducedMotionConfig as useReducedMotion } from "framer-motion";
+import { useComputedColorScheme } from "@mantine/core";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 import { useGraphStore } from "@/features/graph/stores";
 import { loadingBreathe } from "@/lib/motion";
-import { recolorLottie, resolveAccentColor } from "./recolor-lottie";
+import {
+  recolorLottie,
+  resolveCssColor,
+  type LottieRgba,
+} from "./recolor-lottie";
 
 type LottieJson = Record<string, unknown>;
+
+const MODE_ACCENT_FALLBACK: LottieRgba = [0.4, 0.6, 1, 1];
+const GRAPH_ICON_FALLBACK: LottieRgba = [0.102, 0.106, 0.118, 0.68];
 
 let cached: Promise<LottieJson | null> | null = null;
 function fetchLoaderJson() {
@@ -26,8 +34,17 @@ function fetchLoaderJson() {
  * matte (no glow/blur), recolored to `--mode-accent` via a shape walker.
  * Falls back to a breathing dot while JSON loads or on reduced-motion.
  */
-export function LottiePulseLoader({ size = 80 }: { size?: number }) {
+export function LottiePulseLoader({
+  size = 80,
+  colorVar = "--mode-accent",
+  fallbackColor,
+}: {
+  size?: number | string;
+  colorVar?: string;
+  fallbackColor?: LottieRgba;
+}) {
   const reduced = useReducedMotion();
+  const computedColorScheme = useComputedColorScheme("light");
   const mode = useGraphStore((s) => s.mode);
   const [raw, setRaw] = useState<LottieJson | null>(null);
   const [accent, setAccent] = useState<
@@ -45,9 +62,16 @@ export function LottiePulseLoader({ size = 80 }: { size?: number }) {
   }, []);
 
   useEffect(() => {
-    const id = requestAnimationFrame(() => setAccent(resolveAccentColor()));
+    const resolvedFallback =
+      fallbackColor
+      ?? (colorVar === "--graph-icon-color"
+        ? GRAPH_ICON_FALLBACK
+        : MODE_ACCENT_FALLBACK);
+    const id = requestAnimationFrame(() =>
+      setAccent(resolveCssColor(colorVar, resolvedFallback)),
+    );
     return () => cancelAnimationFrame(id);
-  }, [mode]);
+  }, [colorVar, computedColorScheme, fallbackColor, mode]);
 
   const recolored = useMemo(() => {
     if (!raw || !accent) return null;
@@ -61,7 +85,7 @@ export function LottiePulseLoader({ size = 80 }: { size?: number }) {
         style={{
           width: size,
           height: size,
-          backgroundColor: "var(--mode-accent)",
+          backgroundColor: `var(${colorVar})`,
         }}
         {...loadingBreathe}
       />

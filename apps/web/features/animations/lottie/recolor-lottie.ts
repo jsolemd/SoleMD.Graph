@@ -112,13 +112,15 @@ export function resolveCssColor(
     document.body.appendChild(el);
     const rgb = getComputedStyle(el).color;
     el.remove();
-    const m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    const m = rgb.match(
+      /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/,
+    );
     if (!m) return fallback;
     return [
       parseInt(m[1]) / 255,
       parseInt(m[2]) / 255,
       parseInt(m[3]) / 255,
-      1,
+      m[4] == null ? 1 : parseFloat(m[4]),
     ];
   } catch {
     return fallback;

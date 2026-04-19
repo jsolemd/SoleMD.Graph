@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useState } from "react";
 import {
   ActionIcon,
@@ -11,9 +12,36 @@ import { useMounted } from "@mantine/hooks";
 import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 import { crisp } from "@/lib/motion";
-import { graphControlBtnStyles } from "../panels/PanelShell";
+import {
+  graphControlBtnStyles,
+  type ChromeSurfaceMode,
+} from "../panels/PanelShell";
 
-export default function ThemeToggle() {
+const flushToggleStyle: CSSProperties = {
+  "--graph-control-idle-bg": "transparent",
+  border: "1px solid transparent",
+  boxShadow: "none",
+} as CSSProperties;
+
+const pillToggleStyle: CSSProperties = {
+  "--graph-control-idle-bg": "var(--graph-prompt-bg)",
+  border: "calc(1px * var(--app-density, 0.8)) solid transparent",
+  boxShadow: "var(--graph-prompt-shadow)",
+} as CSSProperties;
+
+const groupedToggleStyle: CSSProperties = {
+  "--graph-control-idle-bg": "transparent",
+  border: "1px solid transparent",
+  boxShadow: "none",
+} as CSSProperties;
+
+export default function ThemeToggle({
+  grouped = false,
+  surfaceMode = "pill",
+}: {
+  grouped?: boolean;
+  surfaceMode?: ChromeSurfaceMode;
+}) {
   const { toggleColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme("light");
   const mounted = useMounted();
@@ -34,6 +62,13 @@ export default function ThemeToggle() {
         radius="xl"
         className="graph-icon-btn"
         aria-label={label}
+        style={
+          grouped
+            ? groupedToggleStyle
+            : surfaceMode === "flush"
+              ? flushToggleStyle
+              : pillToggleStyle
+        }
         styles={graphControlBtnStyles}
       >
         <motion.div

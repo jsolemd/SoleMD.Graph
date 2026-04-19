@@ -250,39 +250,40 @@ void main() {
     max(accentWavePrimary, accentWaveSecondary * 0.94),
     accentWaveTertiary * 0.88
   );
+  float accentEligibility = 1.0 - smoothstep(0.18, 0.62, aSelection);
   float accentSelectionBias = 1.0 - smoothstep(0.22, 0.92, aSelection);
   float accentMaskPrimary = smoothstep(
-    max(0.0, uPulseThreshold - (uPulseSoftness * 0.38)),
-    uPulseThreshold + (uPulseSoftness * 0.18),
+    max(0.0, uPulseThreshold - (uPulseSoftness * 1.0)),
+    uPulseThreshold + (uPulseSoftness * 0.35),
     accentField
-  ) * mix(0.4, 1.0, accentSelectionBias);
+  ) * mix(0.52, 1.0, accentSelectionBias) * accentEligibility;
   float accentMaskSecondary = smoothstep(
-    min(0.98, uPulseThreshold + 0.04),
-    0.98,
+    max(0.0, uPulseThreshold - (uPulseSoftness * 0.72)),
+    min(0.98, uPulseThreshold + (uPulseSoftness * 0.12)),
     accentWaveSecondary
   ) * smoothstep(
-    min(0.96, uPulseThreshold + 0.02),
-    0.96,
+    max(0.0, uPulseThreshold - (uPulseSoftness * 0.86)),
+    min(0.96, uPulseThreshold + (uPulseSoftness * 0.08)),
     accentWaveTertiary
-  ) * mix(0.24, 0.82, accentSelectionBias);
+  ) * mix(0.28, 0.78, accentSelectionBias) * accentEligibility;
   float accentHalo = smoothstep(
-    max(0.0, uPulseThreshold - (uPulseSoftness * 1.2)),
-    uPulseThreshold - (uPulseSoftness * 0.14),
+    max(0.0, uPulseThreshold - (uPulseSoftness * 1.5)),
+    uPulseThreshold - (uPulseSoftness * 0.18),
     accentField
-  ) * mix(0.12, 0.32, accentSelectionBias);
-  float accentMask = max(accentMaskPrimary, accentMaskSecondary * 0.66);
+  ) * mix(0.12, 0.26, accentSelectionBias) * accentEligibility;
+  float accentMask = max(accentMaskPrimary, accentMaskSecondary * 0.78);
   float accentMix = max(
     clamp(accentMask * uPulseStrength, 0.0, 1.0),
-    accentHalo * min(1.0, uPulseStrength * 0.6)
+    accentHalo * min(1.0, uPulseStrength * 0.72)
   );
-  accentMix = pow(clamp(accentMix, 0.0, 1.0), 0.94);
+  accentMix = pow(clamp(accentMix, 0.0, 1.0), 0.9);
   vec3 accentColor = clamp(
-    mix(color, vec3(1.0), 0.04) * (1.08 + 0.24 * accentField),
+    mix(color, vec3(1.0), 0.1) * (1.1 + 0.2 * accentField),
     0.0,
     1.0
   );
   vAccent = clamp(accentMix, 0.0, 1.0);
-  vColor = mix(sourceColor, accentColor, smoothstep(0.06, 0.92, vAccent));
+  vColor = mix(sourceColor, accentColor, smoothstep(0.22, 0.9, vAccent));
 
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
@@ -324,7 +325,7 @@ void main() {
   if (aSelection > uSelection) {
     vAlpha = 0.0;
   } else {
-    vAlpha *= 1.0 + vAccent * 0.42;
+    vAlpha *= 1.0 + vAccent * 0.56;
   }
 }
 `;

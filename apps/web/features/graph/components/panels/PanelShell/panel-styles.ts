@@ -3,6 +3,7 @@ import { densityCssPx, densityPx } from "@/lib/density";
 
 export const PANEL_SCALE_CSS_VAR = "--graph-panel-scale";
 export const PANEL_READING_SCALE_CSS_VAR = "--graph-panel-reading-scale";
+export type ChromeSurfaceMode = "flush" | "pill";
 
 export function panelScaledPx(value: number): string {
   return `calc(${value}px * var(${PANEL_READING_SCALE_CSS_VAR}, 1))`;

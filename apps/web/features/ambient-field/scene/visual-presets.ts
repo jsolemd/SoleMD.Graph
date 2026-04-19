@@ -3,8 +3,6 @@
 import {
   brandPastelFallbackHexByKey,
   brandPastelVarNameByKey,
-  semanticColorFallbackHexByKey,
-  semanticColorVarNameByKey,
 } from "@/lib/pastel-tokens";
 
 export type AmbientFieldVisualPreset = "blob" | "stream" | "pcb";
@@ -12,6 +10,7 @@ export type AmbientFieldStageItemId = AmbientFieldVisualPreset;
 export type AmbientFieldPhaseId =
   | "paperHighlights"
   | "paperCards"
+  | "paperFocus"
   | "detailInspection"
   | "synthesisLinks"
   | "reform";
@@ -78,13 +77,6 @@ export interface AmbientFieldSceneState {
   scrollProgress: number;
 }
 
-const semanticToken = (
-  key: keyof typeof semanticColorVarNameByKey,
-): ColorToken => ({
-  cssVarName: semanticColorVarNameByKey[key],
-  fallbackHex: semanticColorFallbackHexByKey[key],
-});
-
 const brandToken = (
   key: keyof typeof brandPastelVarNameByKey,
 ): ColorToken => ({
@@ -94,7 +86,7 @@ const brandToken = (
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
 const NEUTRAL_PARTICLE_BASE = brandToken("soft-blue");
-const NEUTRAL_PARTICLE_WAVE = semanticToken("phys");
+const NEUTRAL_PARTICLE_WAVE = brandToken("teal");
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
@@ -105,6 +97,7 @@ export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
 export const AMBIENT_FIELD_PHASE_IDS = [
   "paperHighlights",
   "paperCards",
+  "paperFocus",
   "detailInspection",
   "synthesisLinks",
   "reform",
@@ -138,11 +131,11 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       pulsePhase: 0.35,
-      pulseRate: 3.26,
-      pulseSoftness: 0.16,
-      pulseSpatialScale: 1.45,
-      pulseStrength: 1.22,
-      pulseThreshold: 0.72,
+      pulseRate: 3.9,
+      pulseSoftness: 0.2,
+      pulseSpatialScale: 1.08,
+      pulseStrength: 1.24,
+      pulseThreshold: 0.68,
       selection: 1,
       size: 7.2,
       sizeMobile: 4.8,
@@ -175,11 +168,11 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0.4,
       pulsePhase: 1.6,
-      pulseRate: 3.4,
-      pulseSoftness: 0.15,
-      pulseSpatialScale: 1.28,
-      pulseStrength: 1.08,
-      pulseThreshold: 0.72,
+      pulseRate: 3.5,
+      pulseSoftness: 0.2,
+      pulseSpatialScale: 1.02,
+      pulseStrength: 1.02,
+      pulseThreshold: 0.7,
       selection: 1,
       size: 9.2,
       sizeMobile: 5.8,
@@ -212,11 +205,11 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       pulsePhase: 2.8,
-      pulseRate: 2.3,
-      pulseSoftness: 0.16,
-      pulseSpatialScale: 1.08,
-      pulseStrength: 0.66,
-      pulseThreshold: 0.74,
+      pulseRate: 2.8,
+      pulseSoftness: 0.18,
+      pulseSpatialScale: 0.94,
+      pulseStrength: 0.78,
+      pulseThreshold: 0.72,
       selection: 1,
       size: 5.4,
       sizeMobile: 4.0,
@@ -248,6 +241,7 @@ export function createAmbientFieldSceneState(): AmbientFieldSceneState {
     phases: {
       paperHighlights: 0,
       paperCards: 0,
+      paperFocus: 0,
       detailInspection: 0,
       synthesisLinks: 0,
       reform: 0,
