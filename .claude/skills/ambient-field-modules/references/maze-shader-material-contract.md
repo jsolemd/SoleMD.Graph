@@ -103,20 +103,18 @@ Shared uniforms (Maze):
 - `uDepth`
 - `uAmplitude`
 - `uFrequency`
-- `uRcolor`
-- `uGcolor`
-- `uBcolor`
-- `uRnoise`
-- `uGnoise`
-- `uBnoise`
+- `uRcolor` / `uGcolor` / `uBcolor` / `uRnoise` / `uGnoise` / `uBnoise`
+  (Maze shape; SoleMD has diverged — see below)
 - `uStream`
 - `uSelection`
 
-Color uniforms are six scalars, not two vec3s. Do not collapse them back into
-`uColorBase` / `uColorNoise` vec3 pairs; that was the round-≤11 pulse-era
-shape and has been removed. The scalar form matches Maze
+Color uniforms in Maze are six scalars
 (`scripts.pretty.js:42564-42569`: `uRcolor=40, uGcolor=197, uBcolor=234`
-cyan base; `uRnoise=202, uGnoise=50, uBnoise=223` magenta noise).
+cyan base; `uRnoise=202, uGnoise=50, uBnoise=223` magenta noise). SoleMD
+replaces that family with `uBaseColor: vec3` and `uBucketAccents: vec3[4]`
+so multiple hues can coexist in one frame — see Parity-Sensitive Quirks.
+Do not collapse SoleMD's shape back into the six scalars and do not bring
+back the round-≤11 pulse-era `uColorBase` / `uColorNoise` vec3 pair.
 
 Stream-only uniforms:
 
@@ -277,15 +275,32 @@ The mobile rotation branch is:
 
 These are strange enough that agents may "fix" them by accident:
 
-- blue channel mixes with `uBnoise - uGcolor`, not `uBnoise - uBcolor`. The
-  typo is preserved verbatim in SoleMD with an inline comment; swapping it
-  alters the purple bias of the field. See `field-shaders.ts` around the
-  `vColor` assignment.
+- SoleMD diverges from Maze's six-scalar `uR/G/B color/noise` color lerp.
+  The scalar family is replaced by `uBaseColor: vec3` plus
+  `uBucketAccents: vec3[4]` indexed by `aBucket`, so four bucket hues
+  coexist in one frame (Maze's binary lerp only ever shows two hues). The
+  vec3 form naturally removes Maze's blue-channel typo
+  (`uBnoise - uGcolor`); SoleMD no longer carries that bias. CPU hijack in
+  `FieldScene.tsx` walks the four accents at quarter-period phase offsets
+  through `LANDING_ACCENT_RAINBOW_RGB` on the blob layer; stream/pcb keep
+  all four accents at Maze magenta for layer-level parity. The landing-page
+  palette is a hand-picked 8-stop saturated rainbow in
+  `scene/burst-config.ts` (orange → gold → green → teal → sky → violet →
+  magenta → pink, ~85-100% sat), **not** the pastel
+  `semanticColorFallbackHexByKey` tokens — those stay the UI source for
+  `--color-semantic-*` and would read washed out against Maze's saturated
+  magenta base. Three stops (phys/section/proc) align with
+  `SOLEMD_BURST_COLORS` (paper/entity/evidence) to anchor the cycle to
+  brand identity.
 - `uScreen` exists but is inactive
 - geometry `color` exists but is inactive for the live shader (SoleMD still
   writes it for the legacy hotspot color sampler; see Attribute Family note
   above)
 - point-size `clamp(...)` is a no-op in Maze; SoleMD omits the dead statement
+- Raw `scrollTop` is low-passed through `UniformScrubber` at the scroll
+  driver's input stage to emulate Maze's single-timeline `scrub: 1`.
+  Downstream shader scrubbers still apply their own 1 s half-life for
+  uniform-specific polish.
 
 If SoleMD changes any of these, do it deliberately and record the divergence.
 

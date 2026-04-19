@@ -22,14 +22,14 @@ export interface AmbientFieldShaderPreset {
   alpha: number;
   alphaMobile?: number;
   amplitude: number;
-  // Maze color pair: base cyan -> noise magenta, both expressed as 0-255
-  // scalars to match the Maze uniform shape exactly.
-  rColor: number;
-  gColor: number;
-  bColor: number;
-  rNoise: number;
-  gNoise: number;
-  bNoise: number;
+  // SoleMD multi-hue contract (diverges from Maze's six scalar
+  // uR/G/B color/noise). `baseColor` is the fixed base tint shared across
+  // all particles; `bucketAccents` is one RGB accent per entry in
+  // SOLEMD_DEFAULT_BUCKETS order — each particle lerps base→its bucket
+  // accent based on vNoise, so four hues coexist in one frame. All values
+  // are 0-255 for readability against Maze palette notes.
+  baseColor: Vec3;
+  bucketAccents: readonly [Vec3, Vec3, Vec3, Vec3];
   depth: number;
   frequency: number;
   funnelDistortion: number;
@@ -94,13 +94,19 @@ export interface AmbientFieldSceneState {
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
 
 // Maze cyan base (40, 197, 234) -> magenta noise (202, 50, 223).
-// `scripts.pretty.js:42564-42569`.
-const MAZE_BASE_R = 40;
-const MAZE_BASE_G = 197;
-const MAZE_BASE_B = 234;
-const MAZE_NOISE_R = 202;
-const MAZE_NOISE_G = 50;
-const MAZE_NOISE_B = 223;
+// `scripts.pretty.js:42564-42569`. SoleMD preserves the base as the shared
+// `baseColor`; the magenta noise is the default resting accent for every
+// bucket. Per-bucket bursts and the landing rainbow walk override these on
+// the blob layer at runtime (FieldScene.tsx) — stream/pcb keep the Maze
+// magenta across every bucket so those layers stay 1:1 with Maze's look.
+const MAZE_BASE: Vec3 = [40, 197, 234];
+const MAZE_NOISE: Vec3 = [202, 50, 223];
+const MAZE_DEFAULT_ACCENTS: readonly [Vec3, Vec3, Vec3, Vec3] = [
+  MAZE_NOISE,
+  MAZE_NOISE,
+  MAZE_NOISE,
+  MAZE_NOISE,
+];
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
@@ -123,12 +129,16 @@ export const visualPresets: Record<
 > = {
   blob: {
     // Maze: cs.blob extends cs.default with uFrequency 0.7, uAmplitude 0.4,
-    // uDepth 0.5, uSize 10. scripts.pretty.js:42420-42443.
+    // uDepth 0.5, uSize 10. scripts.pretty.js:42420-42443. Maze's cs.default
+    // uFrequency is 0.5 (scripts.pretty.js:42561-42567 family) — SoleMD
+    // matches that resting value so the blob reads as dynamic from page
+    // load. LANDING_BLOB_CHAPTER's `start-frequency` event still ramps
+    // 0.5 → 1.7 across the first ~15 % of chapter scroll.
     sceneScale: 0.75,
     sceneScaleMobile: 0.55,
     sceneOffset: [0, -0.02, 0],
     sceneRotation: [0, 0, 0],
-    rotationVelocity: [0, 0.06, 0],
+    rotationVelocity: [0, 0.12, 0],
     scrollRotation: [0, Math.PI, 0],
     alphaOut: 0,
     amplitudeOut: 0.8,
@@ -140,15 +150,11 @@ export const visualPresets: Record<
     shader: {
       alpha: 1,
       alphaMobile: 1,
-      amplitude: 0.4,
-      rColor: MAZE_BASE_R,
-      gColor: MAZE_BASE_G,
-      bColor: MAZE_BASE_B,
-      rNoise: MAZE_NOISE_R,
-      gNoise: MAZE_NOISE_G,
-      bNoise: MAZE_NOISE_B,
+      amplitude: 0.08,
+      baseColor: MAZE_BASE,
+      bucketAccents: MAZE_DEFAULT_ACCENTS,
       depth: 0.5,
-      frequency: 0.7,
+      frequency: 0.5,
       funnelDistortion: 0,
       funnelEnd: 0,
       funnelEndShift: 0,
@@ -186,12 +192,8 @@ export const visualPresets: Record<
       alpha: 1,
       alphaMobile: 1,
       amplitude: 0.05,
-      rColor: MAZE_BASE_R,
-      gColor: MAZE_BASE_G,
-      bColor: MAZE_BASE_B,
-      rNoise: MAZE_NOISE_R,
-      gNoise: MAZE_NOISE_G,
-      bNoise: MAZE_NOISE_B,
+      baseColor: MAZE_BASE,
+      bucketAccents: MAZE_DEFAULT_ACCENTS,
       depth: 0.69,
       frequency: 1.7,
       funnelDistortion: 1,
@@ -231,12 +233,8 @@ export const visualPresets: Record<
       alpha: 1,
       alphaMobile: 1,
       amplitude: 0.05,
-      rColor: MAZE_BASE_R,
-      gColor: MAZE_BASE_G,
-      bColor: MAZE_BASE_B,
-      rNoise: MAZE_NOISE_R,
-      gNoise: MAZE_NOISE_G,
-      bNoise: MAZE_NOISE_B,
+      baseColor: MAZE_BASE,
+      bucketAccents: MAZE_DEFAULT_ACCENTS,
       depth: 0.3,
       frequency: 0.1,
       funnelDistortion: 0,

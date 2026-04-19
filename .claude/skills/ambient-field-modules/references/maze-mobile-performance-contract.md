@@ -158,11 +158,17 @@ fixed `168` without touching `innerW/innerH`
 (`scripts.pretty.js:49326-49345`). Rotation, asset swap, and popup
 placement remain overlay-side responsibilities, not controller-side.
 
-## Mouse Parallax Is Desktop-Only
+## Mouse Parallax Is Opt-In And Desktop-Only
 
 `renderer/mouse-parallax-wrapper.ts` is the sole site where pointer
 parallax is wired, via `attachMouseParallax(mouseWrapper, options)`.
-Round 12 gates that attachment so it only runs on desktop:
+
+Round 13 removed the landing page's background-blob parallax altogether,
+so the homepage ships zero pointer-driven rotation on any device. The
+`mouseWrapper` group is still present per stage item as an identity group
+so future modules can opt in without remounting the tree.
+
+If a future module *does* opt in, it must still be desktop-gated:
 
 - mobile surfaces leave the `mouseWrapper` group at identity rotation;
   the idle wrapper spin and scroll-driven model rotation are enough to

@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  forwardRef,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   type CSSProperties,
@@ -45,19 +47,37 @@ export interface AmbientFieldHotspotRingProps {
   children?: ReactNode;
 }
 
-export function AmbientFieldHotspotRing({
-  variant = "cyan",
-  phase = "idle",
-  delayMs = 0,
-  durationMs = 2000,
-  easing = "ease-in-out",
-  seedKey = 0,
-  cardOffset,
-  projection,
-  onAnimationEnd,
-  children,
-}: AmbientFieldHotspotRingProps) {
+// forwardRef lets the parent (e.g. AmbientFieldLandingPage) write the per-
+// frame transform/opacity imperatively to the root .afr-hotspot div, keeping
+// the 60fps render path native while the primitive still owns its class list,
+// keyframe animations, and SVG tree.
+export const AmbientFieldHotspotRing = forwardRef<
+  HTMLDivElement,
+  AmbientFieldHotspotRingProps
+>(function AmbientFieldHotspotRing(
+  {
+    variant = "cyan",
+    phase = "idle",
+    delayMs = 0,
+    durationMs = 2000,
+    easing = "ease-in-out",
+    seedKey = 0,
+    cardOffset,
+    projection,
+    onAnimationEnd,
+    children,
+  },
+  forwardedRef,
+) {
   const elementRef = useRef<HTMLDivElement | null>(null);
+
+  // Expose the internal element to the parent while still keeping our own
+  // reference for the reflow/reseed effect below.
+  useImperativeHandle<HTMLDivElement | null, HTMLDivElement | null>(
+    forwardedRef,
+    () => elementRef.current,
+    [],
+  );
 
   // Maze resets the animation by: remove class -> reset --delay -> force
   // reflow (`el.offsetWidth`) -> setTimeout(add class, 1). In React we
@@ -132,4 +152,4 @@ export function AmbientFieldHotspotRing({
       ) : null}
     </div>
   );
-}
+});

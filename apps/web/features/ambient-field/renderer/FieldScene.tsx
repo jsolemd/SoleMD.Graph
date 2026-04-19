@@ -1,7 +1,7 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
+import { useMemo, useRef, type MutableRefObject } from "react";
 import {
   AdditiveBlending,
   Camera,
@@ -19,11 +19,11 @@ import {
   AMBIENT_FIELD_BUCKET_INDEX,
 } from "../asset/point-source-registry";
 import {
+  LANDING_ACCENT_RAINBOW_RGB,
   PHASE_TO_BUCKET,
   SOLEMD_BURST_COLORS,
 } from "../scene/burst-config";
 import { createBurstController } from "./burst-controller";
-import { attachMouseParallax } from "./mouse-parallax-wrapper";
 import { resolveAmbientFieldPointSources } from "../asset/point-source-registry";
 import type { AmbientFieldPointSource } from "../asset/point-source-types";
 import {
@@ -72,8 +72,8 @@ interface LayerUniforms {
   pointTexture: { value: Texture };
   uAlpha: { value: number };
   uAmplitude: { value: number };
-  uBcolor: { value: number };
-  uBnoise: { value: number };
+  uBaseColor: { value: Color };
+  uBucketAccents: { value: Color[] };
   uDepth: { value: number };
   uFrequency: { value: number };
   uFunnelDistortion: { value: number };
@@ -83,13 +83,9 @@ interface LayerUniforms {
   uFunnelStart: { value: number };
   uFunnelStartShift: { value: number };
   uFunnelThick: { value: number };
-  uGcolor: { value: number };
-  uGnoise: { value: number };
   uHeight: { value: number };
   uIsMobile: { value: boolean };
   uPixelRatio: { value: number };
-  uRcolor: { value: number };
-  uRnoise: { value: number };
   uScale: { value: number };
   uSelection: { value: number };
   uSize: { value: number };
@@ -104,7 +100,35 @@ interface LayerUniforms {
   uBurstSoftness: { value: number };
 }
 
+const BUCKET_ACCENT_COUNT = 4;
+// Four simultaneous hues 90° apart on the shared rainbow ring. Choosing
+// quarter-period phase offsets guarantees the blob is never monochromatic:
+// at any instant the four buckets display four distinct hues, and over one
+// cycle each bucket traces the full palette.
+const BLOB_BUCKET_ACCENT_PHASE_OFFSETS: readonly number[] = [
+  0 / BUCKET_ACCENT_COUNT,
+  1 / BUCKET_ACCENT_COUNT,
+  2 / BUCKET_ACCENT_COUNT,
+  3 / BUCKET_ACCENT_COUNT,
+];
+
 const stageItemIds = AMBIENT_FIELD_STAGE_ITEM_IDS;
+// Base (`uR/G/Bcolor`) stays at its Maze-cyan init value from
+// visual-presets.ts. Only the noise side (`uR/G/Bnoise`) walks, smoothly
+// lerping through the 8-stop semantic rainbow — 10 s per stop = 80 s full
+// cycle, slow enough that at any instant the field reads as a single
+// accent color punctuating the cyan base (native Maze read) while over a
+// minute+ the burst hue walks through peach → yellow → green → mint →
+// blue → purple → lavender → pink.
+const ACCENT_CYCLE_STEP_SECONDS = 10;
+// Intro: kill the globe-expand (wrapper scale lerping from 1 on mount by
+// snapping to baseScale on first frame) and ramp uDepth down from a boost
+// multiplier over ~0.9 s, so particles start scattered along their per-
+// particle aMove axes and converge onto the sphere surface — the Maze
+// "particles assembling" read, produced entirely by the native shader's
+// existing position + uDepth * aMove * aSpeed * snoise displacement term.
+const INTRO_DURATION_SECONDS = 0.9;
+const INTRO_DEPTH_BOOST = 2.6;
 const BLOB_HOTSPOT_COUNT = 40;
 const BLOB_HOTSPOT_CARD_COUNT = 3;
 const BLOB_HOTSPOT_IDS = Array.from(
@@ -406,12 +430,18 @@ function createLayerUniforms(
     uFunnelStartShift: { value: shader.funnelStartShift },
     uFunnelEndShift: { value: shader.funnelEndShift },
     uFunnelDistortion: { value: shader.funnelDistortion },
-    uRcolor: { value: shader.rColor },
-    uGcolor: { value: shader.gColor },
-    uBcolor: { value: shader.bColor },
-    uRnoise: { value: shader.rNoise },
-    uGnoise: { value: shader.gNoise },
-    uBnoise: { value: shader.bNoise },
+    uBaseColor: {
+      value: new Color(
+        shader.baseColor[0] / 255,
+        shader.baseColor[1] / 255,
+        shader.baseColor[2] / 255,
+      ),
+    },
+    uBucketAccents: {
+      value: shader.bucketAccents.map(
+        ([r, g, b]) => new Color(r / 255, g / 255, b / 255),
+      ),
+    },
     uBurstType: { value: -1 },
     uBurstStrength: { value: 0 },
     uBurstColor: { value: new Color("#000000") },
@@ -540,6 +570,11 @@ export function FieldScene({
     pcb: null,
   });
   const hotspotVectorRef = useRef(new Vector3());
+  const wrapperInitializedRef = useRef<Record<AmbientFieldStageItemId, boolean>>({
+    blob: false,
+    stream: false,
+    pcb: false,
+  });
   const blobHotspotRuntimeRef = useRef<BlobHotspotRuntime[]>(
     BLOB_HOTSPOT_IDS.map(() => ({
       candidateIndex: null,
@@ -571,14 +606,6 @@ export function FieldScene({
       semanticColorMap: SOLEMD_BURST_COLORS,
     }),
   );
-
-  // Phase 6: mouse parallax. Attached to the blob mouseWrapper only —
-  // stream and pcb do not rotate with the pointer in Maze either.
-  useEffect(() => {
-    const group = stageMouseWrapperRefs.current.blob;
-    if (!group) return;
-    return attachMouseParallax(group);
-  }, []);
 
   useFrame((state, delta) => {
     onFrame?.(state.clock.elapsedTime * 1000);
@@ -616,7 +643,10 @@ export function FieldScene({
     }
     const activeBucket = activePhase ? PHASE_TO_BUCKET[activePhase] ?? null : null;
     const blobBurst = blobBurstControllerRef.current;
-    blobBurst.setActive(activeStrength > 0.01 ? activeBucket : null, activeStrength);
+    blobBurst.setActive(
+      activeStrength > 0.01 ? activeBucket : null,
+      activeStrength,
+    );
     blobBurst.step(delta * 1000);
 
     for (const itemId of stageItemIds) {
@@ -635,9 +665,15 @@ export function FieldScene({
       const localProgress = runtimeState?.localProgress ?? 0;
       const motionScale = motionEnabled ? 1 : 0.16;
       const driftBlend = lerpFactor(delta, DECAY.standard);
+      // uTime multiplier per layer. Maze drives `uTime` directly from a
+      // GSAP timeline playhead (≈ 1:1 real-time coupling). SoleMD runs on
+      // a module clock, so we scale. Blob previously ran at 0.12 which
+      // reads as sluggish vs mazehq.com — 0.25 roughly doubles the
+      // `snoise(aIndex, uTime * uSpeed)` update rate in field-shaders.ts
+      // :256 and restores the Maze-level dynamism without uniform changes.
       const timeFactor = motionEnabled
-        ? (itemId === "pcb" ? 0.6 : 0.12)
-        : (itemId === "pcb" ? 0.2 : 0.04);
+        ? (itemId === "pcb" ? 0.6 : itemId === "blob" ? 0.25 : 0.12)
+        : (itemId === "pcb" ? 0.2 : itemId === "blob" ? 0.1 : 0.04);
       const time = loopSeconds * timeFactor;
       const sceneScale = isMobile
         ? (preset.sceneScaleMobile ?? preset.sceneScale)
@@ -694,10 +730,16 @@ export function FieldScene({
           : shader.frequency;
       const targetSpeed = shader.speed * motionScale;
       const targetSize = shaderSize;
+      // Hotspot phases dim `uSelection` to cull a chunk of particles so the
+      // projected rings read cleanly. Maze does the same (scripts.pretty
+      // .js:43344-43348) but reads denser because their floor removes less.
+      // Floor raised from 0.3 → 0.55 so max cull is ~45 % of particles (at
+      // paperFocus peak) instead of ~70 % — preserves the hotspot-visibility
+      // intent while keeping the field visually dense throughout scroll.
       const targetSelection =
         itemId === "blob"
           ? shader.selection -
-            (shader.selection - 0.3) *
+            (shader.selection - 0.55) *
               clamp01(
                 Math.max(
                   sourceHotspotIntro,
@@ -726,12 +768,53 @@ export function FieldScene({
       const idleRotationY = loopSeconds * preset.rotationVelocity[1] * motionScale;
 
       uniforms.uTime.value = time;
+
+      if (itemId === "blob") {
+        // Multi-hue accent hijack. The base (uBaseColor) stays at its
+        // Maze-cyan init from visual-presets.ts. Each of the four buckets
+        // (aBucket 0..3 — paper/entity/relation/evidence) gets its own
+        // accent sampled from LANDING_ACCENT_RAINBOW_RGB at a quarter-period
+        // phase offset, so at any frame the blob carries four distinct hues
+        // simultaneously. Over one cycle every bucket traces the full
+        // rainbow; the quarter offsets keep the set visually separated.
+        const palette = LANDING_ACCENT_RAINBOW_RGB;
+        const len = palette.length;
+        const cycle = loopSeconds / ACCENT_CYCLE_STEP_SECONDS;
+        const accents = uniforms.uBucketAccents.value;
+        for (let bucketIdx = 0; bucketIdx < BUCKET_ACCENT_COUNT; bucketIdx += 1) {
+          const phase =
+            (cycle + BLOB_BUCKET_ACCENT_PHASE_OFFSETS[bucketIdx]! * len) % len;
+          const idx = Math.floor(phase);
+          const t = phase - idx;
+          const c0 = palette[idx]!;
+          const c1 = palette[(idx + 1) % len]!;
+          const accent = accents[bucketIdx]!;
+          accent.setRGB(
+            (c0[0] + (c1[0] - c0[0]) * t) / 255,
+            (c0[1] + (c1[1] - c0[1]) * t) / 255,
+            (c0[2] + (c1[2] - c0[2]) * t) / 255,
+          );
+        }
+      }
+
       uniforms.uPixelRatio.value = Math.min(state.gl.getPixelRatio(), 2);
       uniforms.uIsMobile.value = isMobile;
       uniforms.uScale.value = 1 / baseScale;
       uniforms.uAlpha.value = targetAlpha;
       uniforms.uAmplitude.value = targetAmplitude;
-      uniforms.uDepth.value = targetDepth;
+      // Intro: boost uDepth above resting for the first INTRO_DURATION_SECONDS
+      // so the per-particle `position + uDepth * aMove * aSpeed * snoise`
+      // displacement starts large and decays — particles scatter, then
+      // converge onto the sphere as the boost eases out. Blob only; stream
+      // and pcb already carry their own scroll-driven uAlpha intros.
+      if (itemId === "blob") {
+        const introProgress = clamp01(loopSeconds / INTRO_DURATION_SECONDS);
+        const introEase = 1 - (1 - introProgress) * (1 - introProgress);
+        const depthBoost = 1 + (INTRO_DEPTH_BOOST - 1) * (1 - introEase);
+        uniforms.uDepth.value = targetDepth * depthBoost;
+      } else {
+        uniforms.uDepth.value = targetDepth;
+      }
       uniforms.uFrequency.value = targetFrequency;
       uniforms.uSize.value = targetSize;
       uniforms.uSpeed.value = targetSpeed;
@@ -747,12 +830,29 @@ export function FieldScene({
       }
 
       layer.wrapper.visible = visibility > 0.01;
-      layer.wrapper.position.x +=
-        (sceneUnits * preset.sceneOffset[0] - layer.wrapper.position.x) * driftBlend;
-      layer.wrapper.position.y +=
-        (targetPositionY - layer.wrapper.position.y) * driftBlend;
-      layer.wrapper.position.z +=
-        (preset.sceneOffset[2] - layer.wrapper.position.z) * driftBlend;
+      // First frame: snap transform to target values so the blob appears at
+      // full size immediately (no globe-expand from the default scale=1).
+      // Particle assembly is owned by the uDepth intro ramp above, not by
+      // a wrapper-scale animation.
+      if (!wrapperInitializedRef.current[itemId]) {
+        layer.wrapper.position.x = sceneUnits * preset.sceneOffset[0];
+        layer.wrapper.position.y = targetPositionY;
+        layer.wrapper.position.z = preset.sceneOffset[2];
+        layer.wrapper.scale.x = targetScale;
+        layer.wrapper.scale.y = targetScale;
+        layer.wrapper.scale.z = targetScale;
+        wrapperInitializedRef.current[itemId] = true;
+      } else {
+        layer.wrapper.position.x +=
+          (sceneUnits * preset.sceneOffset[0] - layer.wrapper.position.x) * driftBlend;
+        layer.wrapper.position.y +=
+          (targetPositionY - layer.wrapper.position.y) * driftBlend;
+        layer.wrapper.position.z +=
+          (preset.sceneOffset[2] - layer.wrapper.position.z) * driftBlend;
+        layer.wrapper.scale.x += (targetScale - layer.wrapper.scale.x) * driftBlend;
+        layer.wrapper.scale.y += (targetScale - layer.wrapper.scale.y) * driftBlend;
+        layer.wrapper.scale.z += (targetScale - layer.wrapper.scale.z) * driftBlend;
+      }
       layer.wrapper.rotation.x = 0;
       layer.wrapper.rotation.y = idleRotationY;
       layer.wrapper.rotation.z = 0;
@@ -760,10 +860,6 @@ export function FieldScene({
       layer.model.rotation.x = targetRotationX;
       layer.model.rotation.y = targetRotationY;
       layer.model.rotation.z = targetRotationZ;
-
-      layer.wrapper.scale.x += (targetScale - layer.wrapper.scale.x) * driftBlend;
-      layer.wrapper.scale.y += (targetScale - layer.wrapper.scale.y) * driftBlend;
-      layer.wrapper.scale.z += (targetScale - layer.wrapper.scale.z) * driftBlend;
     }
 
     if (onHotspotsFrame) {

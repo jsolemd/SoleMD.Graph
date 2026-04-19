@@ -19,7 +19,12 @@ export {
   type AmbientFieldVisualPresetConfig,
 } from "./scene/visual-presets";
 
-export { PHASE_TO_BUCKET, SOLEMD_BURST_COLORS } from "./scene/burst-config";
+export {
+  LANDING_ACCENT_RAINBOW_RGB,
+  LANDING_BURST_PALETTE,
+  PHASE_TO_BUCKET,
+  SOLEMD_BURST_COLORS,
+} from "./scene/burst-config";
 
 // Asset / point-source primitives
 export {

@@ -80,6 +80,16 @@
   animation-fill-mode: forwards;
 }
 
+/* Stage wrapper. Hosts a set of AmbientFieldHotspotRing mounts and provides
+ * the phase-gate hooks (`afr-has-only-reds`, `afr-has-only-single`). The
+ * stage itself is purely a positioning/pointer-events shell; hotspots inside
+ * are `position: absolute` and imperatively positioned by the caller. */
+.afr-stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 /* Stage-level phase gates — mount the appropriate class on the
  * AmbientFieldHotspotRing parent. */
 .afr-stage.afr-has-only-reds .afr-hotspot:not(.afr-hotspot--red) {

@@ -7,6 +7,7 @@ import {
   type FieldSemanticBucket,
 } from "./field-attribute-baker";
 import { FieldGeometry } from "./field-geometry";
+import { SOLEMD_BURST_COLORS } from "../scene/burst-config";
 import type {
   AmbientFieldPointSource,
   AmbientFieldPointSourceBuffers,
@@ -23,18 +24,13 @@ const PCB_HEIGHT = 46;
 // SoleMD bucket -> hotspot-sampling color mapping. The shader itself no
 // longer reads the `color` attribute (Maze never did); we bake it so
 // legacy consumers like `getPointColorCss` can still tag hotspots with a
-// sensible semantic hue. Phase 4/7 will retire the final readers.
-const BUCKET_COLOR_FALLBACKS: Record<string, string> = {
-  paper: "#42A4FE",
-  entity: "#8958FF",
-  relation: "#02E8FF",
-  evidence: "#D409FE",
-};
-
+// sensible semantic hue. Resolves through the shared `SOLEMD_BURST_COLORS`
+// map so every bucket id (Maze ambient or SoleMD semantic) has one
+// canonical hex.
 const BUCKET_COLORS: Record<string, Color> = Object.fromEntries(
   SOLEMD_DEFAULT_BUCKETS.map((bucket) => [
     bucket.id,
-    new Color(BUCKET_COLOR_FALLBACKS[bucket.id] ?? "#EFF0F0"),
+    new Color(SOLEMD_BURST_COLORS[bucket.id] ?? "#EFF0F0"),
   ]),
 );
 

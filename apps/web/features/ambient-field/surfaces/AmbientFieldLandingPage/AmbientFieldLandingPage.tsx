@@ -29,7 +29,13 @@ import { ViewportTocRail } from "@/features/wiki/components/ViewportTocRail";
 import { APP_CHROME_PX } from "@/lib/density";
 import { smooth } from "@/lib/motion";
 import { FieldCanvas } from "../../renderer/FieldCanvas";
-import type { AmbientFieldHotspotFrame } from "../../renderer/FieldScene";
+import type {
+  AmbientFieldHotspotFrame,
+} from "../../renderer/FieldScene";
+import {
+  AmbientFieldHotspotRing,
+  type AmbientFieldHotspotPhase,
+} from "../../overlay/AmbientFieldHotspotRing";
 import {
   prewarmAmbientFieldPointSources,
 } from "../../asset/point-source-registry";
@@ -70,10 +76,15 @@ const fieldVignetteStyle: CSSProperties = {
   background: "transparent",
 };
 
-const secondaryCardStyle: CSSProperties = {
-  ...panelSurfaceStyle,
-  border: "1px solid color-mix(in srgb, var(--graph-panel-border) 72%, transparent)",
-};
+/** Build the secondary sidebar card's tinted style from the hosting section's
+ *  accentVar so the card matches its chapter's brand color. */
+function buildSecondaryCardStyle(accentVar: string): CSSProperties {
+  return {
+    ...panelSurfaceStyle,
+    backgroundColor: `color-mix(in srgb, ${accentVar} 8%, var(--graph-panel-bg))`,
+    border: `1px solid color-mix(in srgb, ${accentVar} 22%, var(--graph-panel-border))`,
+  };
+}
 
 const CHROME_SURFACE_TRANSITION_SCROLL_PX = 24;
 const LANDING_GRAPH_READY_DEBUG_PARAM = "landingGraphReady";
@@ -102,6 +113,21 @@ function AmbientFieldLandingShell({
   const rootRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
   const blobHotspotRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const blobHotspotCardRefs = useRef<Array<HTMLDivElement | null>>([]);
+  // Per-hotspot reseed counter. Bumped from `onAnimationEnd` on the ring
+  // primitive (Maze pattern) so each hotspot's 2 s CSS loop restarts
+  // independently with its authored `--afr-delay`.
+  const [hotspotSeedKeys, setHotspotSeedKeys] = useState<number[]>(() =>
+    ambientFieldBlobHotspots.map(() => 0),
+  );
+  // Per-hotspot phase derived from the latest `handleHotspotFrame`. Stored in
+  // state so the ring primitive can react via its `phase` prop (which gates
+  // the `is-animating` class), while the per-frame transform/opacity stays
+  // on the direct-DOM-write path for 60fps.
+  const [hotspotPhases, setHotspotPhases] = useState<
+    AmbientFieldHotspotPhase[]
+  >(() => ambientFieldBlobHotspots.map(() => "hidden" as const));
+  const hotspotPhasesRef = useRef<AmbientFieldHotspotPhase[]>(hotspotPhases);
   const focusMotionStateRef = useRef<AmbientFieldFocusMotionState | null>(null);
   const focusedPaperSeatRef = useRef<HTMLDivElement>(null);
   const sceneStateRef = useRef<AmbientFieldSceneState>(
@@ -206,38 +232,30 @@ function AmbientFieldLandingShell({
         : null;
     focusMotionStateRef.current = focusPresentation?.state ?? null;
 
+    const currentPhases = hotspotPhasesRef.current;
+    const nextPhases: AmbientFieldHotspotPhase[] = currentPhases.slice();
+    let phasesChanged = false;
+
     blobHotspotRefs.current.forEach((node, index) => {
-      if (!node) return;
       const frame = hotspots[index];
+      const cardNode = blobHotspotCardRefs.current[index] ?? null;
       if (!frame?.visible) {
-        node.style.opacity = "0";
-        node.style.transform = "translate3d(-9999px, -9999px, 0) scale(0.92)";
-        node.dataset.mode = "hidden";
+        if (node) {
+          node.style.opacity = "0";
+          node.style.transform =
+            "translate3d(-9999px, -9999px, 0) scale(0.92)";
+        }
+        if (cardNode) {
+          cardNode.style.opacity = "0";
+          cardNode.style.transform =
+            "translate3d(-9999px, -9999px, 0) scale(0.92)";
+        }
+        if (nextPhases[index] !== "hidden") {
+          nextPhases[index] = "hidden";
+          phasesChanged = true;
+        }
         return;
       }
-
-      node.dataset.mode = frame.mode;
-      const hotspot = ambientFieldBlobHotspots[index];
-      const cardLeft = hotspot?.cardLeft ?? "28px";
-      const cardTop = hotspot?.cardTop ?? "-18px";
-      node.style.setProperty(
-        "--ambient-hotspot-ring",
-        frame.color,
-      );
-      node.style.setProperty(
-        "--ambient-hotspot-core",
-        frame.color,
-      );
-      node.style.setProperty(
-        "--ambient-hotspot-card-opacity",
-        frame.mode === "card" ? "1" : "0",
-      );
-      node.style.setProperty(
-        "--ambient-hotspot-card-translate-y",
-        frame.mode === "card" ? "0px" : "10px",
-      );
-      node.style.setProperty("--ambient-hotspot-card-left", cardLeft);
-      node.style.setProperty("--ambient-hotspot-card-top", cardTop);
 
       let displayX = frame.x;
       let displayY = frame.y;
@@ -250,10 +268,35 @@ function AmbientFieldLandingShell({
         pointOpacity = focusPresentation.pointOpacity;
       }
 
-      node.style.opacity = pointOpacity.toFixed(4);
-      node.style.transform =
-        `translate3d(${displayX}px, ${displayY}px, 0) scale(${displayScale})`;
+      if (node) {
+        node.style.opacity = pointOpacity.toFixed(4);
+        node.style.transform = `translate3d(${displayX}px, ${displayY}px, 0) scale(${displayScale})`;
+      }
+
+      if (cardNode) {
+        // Card rides the same sampled blob position as the ring, so it stays
+        // visually tethered to the hotspot. The card's own opacity/offset is
+        // driven by `frame.mode === "card"` — a soft fade-in/translate-Y as
+        // the beat enters "card" mode.
+        const cardVisible = frame.mode === "card";
+        cardNode.style.opacity = cardVisible ? "1" : "0";
+        const cardTranslateY = cardVisible ? 0 : 10;
+        cardNode.style.transform = `translate3d(${displayX}px, ${displayY + cardTranslateY}px, 0)`;
+      }
+
+      const nextPhase: AmbientFieldHotspotPhase =
+        frame.mode === "focus" ? "only-single" : "animating";
+      if (nextPhases[index] !== nextPhase) {
+        nextPhases[index] = nextPhase;
+        phasesChanged = true;
+      }
     });
+
+    if (phasesChanged) {
+      hotspotPhasesRef.current = nextPhases;
+      setHotspotPhases(nextPhases);
+    }
+
     if (!focusedPaperSeat) return;
 
     if (!focusedPaperFrame || !focusPresentation) {
@@ -316,56 +359,55 @@ function AmbientFieldLandingShell({
 
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-[6]"
+        className="afr-stage pointer-events-none fixed inset-0 z-[6]"
       >
         {ambientFieldBlobHotspots.map((hotspot, index) => {
+          // Stable per-hotspot animation delay so each ring's 2 s pulse is
+          // out of phase with its neighbors — Maze authors these by hand; we
+          // derive a stable stagger from index using a prime multiplier.
+          const delayMs = (index * 137) % 2000;
+          const phase = hotspotPhases[index] ?? "hidden";
+          const seedKey = hotspotSeedKeys[index] ?? 0;
           return (
-            <div
-              key={hotspot.id}
-              ref={(node) => {
-                blobHotspotRefs.current[index] = node;
-              }}
-              className="absolute left-0 top-0"
-              style={{
-                "--ambient-hotspot-card-opacity": "0",
-                "--ambient-hotspot-card-translate-y": "10px",
-                "--ambient-hotspot-card-left": "28px",
-                "--ambient-hotspot-card-top": "-18px",
-                "--ambient-hotspot-core": "var(--color-soft-blue)",
-                "--ambient-hotspot-ring": "var(--color-soft-blue)",
-                opacity: 0,
-                transform: "translate3d(-9999px, -9999px, 0) scale(0.92)",
-                willChange: "transform, opacity",
-              } as CSSProperties}
-            >
-              <div
-                className="absolute left-0 top-0 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full"
-                style={{
-                  border:
-                    "1px solid color-mix(in srgb, var(--ambient-hotspot-ring) 58%, transparent)",
-                  background:
-                    "color-mix(in srgb, var(--graph-panel-bg) 84%, transparent)",
-                  boxShadow: [
-                    "0 0 0 7px color-mix(in srgb, var(--ambient-hotspot-core) 9%, transparent)",
-                    "0 0 24px color-mix(in srgb, var(--ambient-hotspot-core) 26%, transparent)",
-                  ].join(", "),
+            <div key={hotspot.id} style={{ display: "contents" }}>
+              <AmbientFieldHotspotRing
+                ref={(node) => {
+                  blobHotspotRefs.current[index] = node;
                 }}
-              >
-                <div
-                  className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
-                  style={{ backgroundColor: "var(--ambient-hotspot-core)" }}
-                />
-              </div>
+                delayMs={delayMs}
+                phase={reducedMotion ? "idle" : phase}
+                projection={{
+                  x: -9999,
+                  y: -9999,
+                  scale: 0.92,
+                  opacity: 0,
+                }}
+                seedKey={seedKey}
+                variant="cyan"
+                onAnimationEnd={() => {
+                  // Maze-parity per-hotspot reseed: bump the seed so the
+                  // ring primitive's useEffect reflow-restarts the CSS
+                  // keyframe for this index only.
+                  setHotspotSeedKeys((previous) => {
+                    const next = previous.slice();
+                    next[index] = (next[index] ?? 0) + 1;
+                    return next;
+                  });
+                }}
+              />
 
               {index < 3 ? (
                 <div
-                  className="ambient-field-hotspot-card absolute w-[198px] max-w-[34vw] transition-[opacity,transform] duration-300"
+                  ref={(node) => {
+                    blobHotspotCardRefs.current[index] = node;
+                  }}
+                  className="ambient-field-hotspot-card absolute left-0 top-0 w-[198px] max-w-[34vw] transition-[opacity] duration-300"
                   style={{
-                    left: "var(--ambient-hotspot-card-left)",
-                    opacity: "var(--ambient-hotspot-card-opacity)",
-                    top: "var(--ambient-hotspot-card-top)",
-                    transform:
-                      "translateY(var(--ambient-hotspot-card-translate-y))",
+                    marginLeft: hotspot.cardLeft ?? "28px",
+                    marginTop: hotspot.cardTop ?? "-18px",
+                    opacity: 0,
+                    transform: "translate3d(-9999px, -9999px, 0)",
+                    willChange: "transform, opacity",
                   }}
                 >
                   <OverlayCard
@@ -373,18 +415,13 @@ function AmbientFieldLandingShell({
                     style={{
                       ...panelSurfaceStyle,
                       border:
-                        "1px solid color-mix(in srgb, var(--ambient-hotspot-core) 24%, var(--graph-panel-border) 76%)",
+                        "1px solid color-mix(in srgb, var(--graph-panel-border) 76%, transparent)",
                     }}
                   >
                     <div className="flex flex-wrap gap-2">
                       <MetaPill mono>Selected</MetaPill>
                       {hotspot.badges.map((badge) => (
-                        <MetaPill
-                          key={badge}
-                          style={{ color: "var(--ambient-hotspot-core)" }}
-                        >
-                          {badge}
-                        </MetaPill>
+                        <MetaPill key={badge}>{badge}</MetaPill>
                       ))}
                     </div>
                     <p className="mt-3 text-[13px] font-medium leading-5">
@@ -483,8 +520,8 @@ function AmbientFieldLandingShell({
           data-section-id={storyTwoSection.id}
           className="flex min-h-[128svh] items-center px-4 py-[12vh] sm:px-6 sm:py-[14vh]"
         >
-          <div className="mx-auto grid w-full max-w-[1180px] grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
-            <div className="hidden lg:col-span-4 lg:col-start-1 lg:block">
+          <div className="mx-auto grid w-full max-w-[1440px] grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-10">
+            <div className="hidden lg:col-span-3 lg:col-start-1 lg:block">
               <motion.div
                 initial={{ opacity: 0, y: 18 }}
                 viewport={{ once: true, amount: 0.35 }}
@@ -494,7 +531,10 @@ function AmbientFieldLandingShell({
                   opacity: { duration: 0.18, ease: "easeOut" },
                 }}
               >
-                <OverlayCard style={secondaryCardStyle} className="px-5 py-5">
+                <OverlayCard
+                  style={buildSecondaryCardStyle(storyTwoSection.accentVar)}
+                  className="px-5 py-5"
+                >
                   <div className="flex items-center gap-2">
                     <MetaPill mono>Module</MetaPill>
                     <MetaPill style={{ color: storyTwoSection.accentVar }}>
@@ -514,7 +554,7 @@ function AmbientFieldLandingShell({
                 </OverlayCard>
               </motion.div>
             </div>
-            <div className="lg:col-span-5 lg:col-start-8">
+            <div className="lg:col-span-4 lg:col-start-9">
               <AmbientFieldSectionCard section={storyTwoSection} />
             </div>
           </div>

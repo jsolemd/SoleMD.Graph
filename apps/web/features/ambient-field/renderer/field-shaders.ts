@@ -1,6 +1,15 @@
-// Ambient-field shader — 1:1 parity with Maze homepage runtime through the
-// `vColor = vec3(r, g, b)` binary-lerp assignment, plus SoleMD burst-overlay
-// uniforms declared for Phase 4 wiring. Source citations live in
+// Ambient-field shader — Maze-derived point pipeline, diverged at the color
+// lerp to carry per-particle hue variety. Maze uses six scalar
+// `uR/G/B color/noise` uniforms and lerps each channel independently (with a
+// documented blue-channel typo). SoleMD replaces those six scalars with:
+//   uBaseColor    : vec3  — static cyan base (Maze's fixed base contract)
+//   uBucketAccents: vec3[4] — per-bucket accent, indexed by aBucket
+// The lerp becomes one native vec3 mix on the accent chosen for that point's
+// bucket. This lets four hues coexist in a single frame while the CPU walks
+// all four accents through the same semantic rainbow, 90° apart in phase.
+// The divergence (and the blue-channel typo removal) is recorded in
+// `.claude/skills/ambient-field-modules/references/maze-shader-material-contract.md`.
+// Source citations for the Maze baseline:
 // `docs/map/ambient-field-maze-baseline-ledger-round-12.md`
 // (index.html:2119-2393, scripts.pretty.js:42545-42595).
 
@@ -47,12 +56,12 @@ uniform float uFunnelStartShift;
 uniform float uFunnelEndShift;
 uniform float uFunnelDistortion;
 
-uniform float uRcolor;
-uniform float uGcolor;
-uniform float uBcolor;
-uniform float uRnoise;
-uniform float uGnoise;
-uniform float uBnoise;
+// SoleMD multi-hue color contract (see header). uBaseColor holds the
+// fixed Maze-cyan base; uBucketAccents carries one accent per semantic
+// bucket (0..3 in SOLEMD_DEFAULT_BUCKETS order). aBucket selects which
+// accent this particle lerps toward.
+uniform vec3 uBaseColor;
+uniform vec3 uBucketAccents[4];
 
 // SoleMD burst overlay — bucket-gated monochromatic tint sweeps.
 // Disabled when uBurstType < 0. See burst-controller.ts for CPU driver.
@@ -223,14 +232,15 @@ float fbm(vec3 x) {
 void main() {
   vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
 
-  // Maze binary color lerp, x4 amplification, base -> noise.
-  // Source typo preserved on the blue channel: Maze's scripts.pretty.js:2336
-  // uses (uGnoise - uGcolor) for b, not (uBnoise - uBcolor). We keep it for
-  // 1:1 parity; swapping it would alter the purple bias of the field.
-  float r = uRcolor / 255.0 + clamp(vNoise, 0.0, 1.0) * 4.0 * (uRnoise - uRcolor) / 255.0;
-  float g = uGcolor / 255.0 + clamp(vNoise, 0.0, 1.0) * 4.0 * (uGnoise - uGcolor) / 255.0;
-  float b = uBcolor / 255.0 + clamp(vNoise, 0.0, 1.0) * 4.0 * (uBnoise - uGcolor) / 255.0;
-  vColor = vec3(r, g, b);
+  // Per-particle bucket-accent color lerp. Same clamp(vNoise, 0, 1) * 4
+  // shape as Maze's binary lerp, rewritten as a single vec3 mix so the
+  // blue-channel typo from Maze's scalar form (uBnoise - uGcolor) is
+  // naturally absent. Accent is chosen per particle from uBucketAccents,
+  // indexed by aBucket -- four hues coexist in one frame.
+  int bucketId = int(clamp(aBucket, 0.0, 3.0));
+  vec3 accent = uBucketAccents[bucketId];
+  float noiseMix = clamp(vNoise, 0.0, 1.0) * 4.0;
+  vColor = uBaseColor + noiseMix * (accent - uBaseColor);
 
   // SoleMD burst overlay — gate a coherent region of the active bucket
   // and lerp its color over the Maze base; burstBoost feeds vAlpha below.

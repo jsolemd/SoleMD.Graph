@@ -90,6 +90,14 @@ Round 12 ships this as:
 
 SoleMD rule:
 
+- mouse parallax is **opt-in per module**, not a global landing-page default
+- the landing-page ambient-field surface does **not** attach parallax to its
+  background blob (Round 13 removed the homepage `useEffect`); the
+  `mouseWrapper` group still exists per stage item as an identity group so
+  future modules can target it without remounting the tree
+- modules that want pointer-driven parallax on their own Three.js group call
+  `attachMouseParallax(group)` from a scoped `useEffect` and invoke the
+  returned cleanup on unmount
 - scene groups that need pointer parallax attach via this primitive, not
   bespoke mousemove listeners
 - the wrapper target is always the dedicated `mouseWrapper`, not the scene
@@ -172,6 +180,12 @@ SoleMD rule:
   new hotspot surface
 - do not ship bespoke DOM pools
 - do not drive reseed from a global interval
+- `AmbientFieldHotspotRing` + co-located `ambient-field-hotspot-ring.css`
+  are the canonical ring primitive across every ambient-field surface (SVG
+  stroke-dasharray `128`, `0.5` opacity, `6px` inner dot, `2s` per-hotspot
+  pulse). The landing page mounts instances inside `.afr-stage` and drives
+  `opacity` / `transform` imperatively via refs — no ad-hoc CSS-in-JS
+  box-shadow rings, no inline `<div>` glow pools anywhere else in the tree.
 
 ## Stream Overlay System
 

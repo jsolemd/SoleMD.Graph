@@ -7,6 +7,7 @@ import {
   type AmbientFieldScrollManifest,
   type AmbientFieldScrollStop,
 } from "./ambient-field-scroll-state";
+import { createUniformScrubber } from "./ambient-field-uniform-scrubber";
 
 interface SetupAmbientFieldScrollOptions {
   hero: HTMLElement;
@@ -81,6 +82,20 @@ export function createAmbientFieldScrollController({
     root.querySelectorAll<HTMLElement>("[data-ambient-section]"),
   );
 
+  // Low-pass the raw scroll input once at the driver stage to emulate Maze's
+  // `scrub: 1` contract — verified in Maze source at
+  // `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43300` and
+  // matching sites, where GSAP ScrollTrigger timelines bind with scrub: 1
+  // (linear 1-second catchup). Exponential half-life of 250 ms ≈ 94 %
+  // catchup in 1 s, close to GSAP's linear duration behavior; a 1-second
+  // half-life (the original Round-13 pick) only reaches 50 % in 1 s and
+  // reads as sluggish compared to mazehq.com.
+  const scrollScrubber = createUniformScrubber<"scrollTop">({
+    halfLifeMs: 250,
+    initial: { scrollTop: root.scrollTop },
+  });
+  let lastFrameMs: number | null = null;
+
   function measureSectionStops(): AmbientFieldScrollStop[] {
     const rootRect = root.getBoundingClientRect();
 
@@ -101,7 +116,12 @@ export function createAmbientFieldScrollController({
   }
 
   function syncFrame(timestamp: number) {
-    const scrollTop = root.scrollTop;
+    const rawScrollTop = root.scrollTop;
+    const dtMs = lastFrameMs == null ? 0 : Math.max(0, timestamp - lastFrameMs);
+    lastFrameMs = timestamp;
+    const scrollTop = reducedMotion
+      ? rawScrollTop
+      : scrollScrubber.step(dtMs, { scrollTop: rawScrollTop }).scrollTop;
     const viewportHeight = root.clientHeight;
     const scrollMax = Math.max(0, root.scrollHeight - viewportHeight);
     const heroProgress = clamp01(scrollTop / Math.max(1, viewportHeight * 0.96));

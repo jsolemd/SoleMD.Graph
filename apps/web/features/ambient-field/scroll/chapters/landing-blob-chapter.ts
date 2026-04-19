@@ -19,10 +19,16 @@ export type LandingBlobChapterKey =
   | "hotspotOnlyReds";
 
 export const LANDING_BLOB_CHAPTER: readonly ChapterEvent<LandingBlobChapterKey>[] = [
-  // t=0..1.5s: uFrequency 0 -> 1.7
-  { label: "start-frequency", atProgress: 0, duration: 0.15, fromTo: { uFrequency: [0.7, 1.7] } },
-  // "stats" (t=1..1.4s): uAmplitude -> 0.25
-  { label: "stats-amplitude", atProgress: 0.1, duration: 0.04, fromTo: { uAmplitude: [0.4, 0.25] } },
+  // Formation → expansion. At progress 0 the blob reads as a formed globe
+  // (resting uAmplitude 0.08, uFrequency 0.3 in visual-presets.ts); this
+  // event ramps both up to the Maze stats shape over the first ~15 % of
+  // chapter scroll (scripts.pretty.js:43291-43303 + stats beat merged).
+  {
+    label: "start-frequency",
+    atProgress: 0,
+    duration: 0.15,
+    fromTo: { uFrequency: [0.3, 1.7], uAmplitude: [0.08, 0.25] },
+  },
   // "hotspots" (t=2..2.1s): opacity 0->1, maxNumber 0->3
   { label: "hotspots-open", atProgress: 0.2, duration: 0.01, fromTo: { hotspotOpacity: [0, 1], hotspotMaxNumber: [0, 3] } },
   // +1.2..+1.3s: maxNumber 3 -> 40
