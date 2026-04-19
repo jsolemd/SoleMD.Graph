@@ -74,6 +74,37 @@ explicit selection lane does not.
 This is the next slice that should land before chunking, graph-bundle
 selection, or S2 embedding fetch are scaled beyond a narrow test cohort.
 
+## Immediate execution split after `05f`
+
+Because `05f-hot-text-acquisition.md` is now landed, the practical next work
+should be treated as two tightly related steps rather than one undifferentiated
+"selection" block:
+
+- **A. Selected-corpus builder**
+  - build the worker lane that turns published S2 / PubTator raw releases plus
+    curated assets into the durable `candidate -> mapped` warehouse state
+  - this is the actual implementation of the selected canonical corpus
+  - this slice owns `solemd.corpus.domain_status`, run tracking, signal
+    provenance, and per-paper selection summary
+- **B. Mapped-paper hot/warm dispatch**
+  - once mapped papers exist, define the first explicit child-wave surfaces that
+    fan out from them
+  - the immediate requirement is a worker-owned dispatcher that selects which
+    mapped papers should be enqueued into `hot_text.acquire_for_paper`
+    (`05f`) rather than making `05f` guess its own target set
+  - this dispatch layer may also define a warm / graph child-wave contract, but
+    it must not absorb chunk/evidence work from `05a`
+
+`C` remains downstream:
+
+- **C. Chunking / evidence activation**
+  - consume the canonical document spine produced by raw S2ORC and `05f`
+  - stays in `05a`, not in the selector or the hot-text dispatcher
+
+This preserves the intended hierarchy:
+
+`full raw upstream -> selected canonical corpus -> child waves -> hot-text fetch -> chunk/evidence`
+
 ## Eight load-bearing properties
 
 1. **Raw release scope and selected corpus scope are different.** Raw S2 /
