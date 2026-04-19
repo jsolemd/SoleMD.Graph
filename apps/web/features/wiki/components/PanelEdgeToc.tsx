@@ -1,17 +1,18 @@
 "use client";
 
 import {
+  type RefObject,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
 import { Tooltip } from "@mantine/core";
-import { panelScaledPx } from "@/features/graph/components/panels/PanelShell";
+import { panelScaledPx } from "@/features/graph/components/panels/PanelShell/panel-styles";
 import { dotTocPastelColorSequence } from "@/lib/pastel-tokens";
 import type { ModuleSection } from "@/features/wiki/module-runtime/types";
+import { useSectionTocState } from "./use-section-toc-state";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -25,60 +26,8 @@ export interface PanelEdgeTocEntry {
 
 interface PanelEdgeTocProps {
   entries: PanelEdgeTocEntry[];
-  scrollRef: React.RefObject<HTMLDivElement | null>;
-  anchorRef?: React.RefObject<HTMLElement | null>;
-}
-
-// ---------------------------------------------------------------------------
-// Section math (shared with tests)
-// ---------------------------------------------------------------------------
-
-function areNumberArraysEqual(a: number[], b: number[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (Math.abs(a[i] - b[i]) > 0.5) return false;
-  }
-  return true;
-}
-
-function resolveRailProgress(scrollTop: number, sectionStarts: number[]): number {
-  if (sectionStarts.length <= 1) return 0;
-
-  const clampedScrollTop = Math.max(0, scrollTop);
-  if (clampedScrollTop <= sectionStarts[0]) return 0;
-
-  for (let i = 0; i < sectionStarts.length - 1; i++) {
-    const start = sectionStarts[i];
-    const end = sectionStarts[i + 1];
-    if (clampedScrollTop <= end) {
-      const span = Math.max(1, end - start);
-      return i + (clampedScrollTop - start) / span;
-    }
-  }
-
-  return sectionStarts.length - 1;
-}
-
-function measureSectionStarts(
-  container: HTMLElement,
-  targets: HTMLElement[],
-): number[] {
-  if (targets.length === 0) return [];
-
-  const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-  const activationOffset = container.clientHeight * 0.2;
-  const containerRect = container.getBoundingClientRect();
-  let previous = 0;
-
-  return targets.map((target) => {
-    const rawStart = target.getBoundingClientRect().top
-      - containerRect.top
-      + container.scrollTop
-      - activationOffset;
-    const start = Math.min(maxScroll, Math.max(previous, rawStart));
-    previous = start;
-    return start;
-  });
+  scrollRef: RefObject<HTMLDivElement | null>;
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
 function findRightEdgeResizeHandle(panel: HTMLElement): HTMLElement | null {
@@ -154,23 +103,18 @@ const DEFAULT_COLOR = "var(--mode-accent)";
  * the panel.
  */
 export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProps) {
-  const [inView, setInView] = useState<Set<string>>(new Set());
   const [layout, setLayout] = useState<{
     anchorTop: number;
     anchorHeight: number;
     panelHeight: number;
     panelRadius: number;
   } | null>(null);
-  const [fillProgress, setFillProgress] = useState(0);
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const panelRef = useRef<HTMLElement | null>(null);
-  const sectionStartsRef = useRef<number[]>([]);
   const driftedRef = useRef(false);
-
-  const entriesKey = useMemo(
-    () => entries.map((e) => e.id).join("|"),
-    [entries],
-  );
+  const { activeIndex, fillProgress, handleJump } = useSectionTocState({
+    entries,
+    scrollRef,
+  });
 
   // Portal target — matches both desktop (z-30) and mobile (z-50) PanelShell roots.
   useEffect(() => {
@@ -218,118 +162,6 @@ export function PanelEdgeToc({ entries, scrollRef, anchorRef }: PanelEdgeTocProp
       panelMo.disconnect();
     };
   }, [anchorRef, scrollRef, entries.length]);
-
-  // Section tracking.
-  useEffect(() => {
-    const maybeScrollEl = scrollRef.current;
-    if (!maybeScrollEl || entries.length === 0) return;
-    const scrollEl = maybeScrollEl;
-
-    const entryIds = new Set(entries.map((e) => e.id));
-    let targets: HTMLElement[] = [];
-    let resizeObserver: ResizeObserver | null = null;
-    let setupRaf = 0;
-
-    function syncFillProgress() {
-      const next = resolveRailProgress(scrollEl.scrollTop, sectionStartsRef.current);
-      setFillProgress((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
-    }
-
-    function setupObserver() {
-      observerRef.current?.disconnect();
-      resizeObserver?.disconnect();
-
-      targets = [];
-      for (const id of entryIds) {
-        const target = scrollEl.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
-        if (target) targets.push(target);
-      }
-      if (targets.length === 0) {
-        sectionStartsRef.current = [];
-        setFillProgress(0);
-        setInView((prev) => (prev.size === 0 ? prev : new Set()));
-        return;
-      }
-
-      const observer = new IntersectionObserver(
-        (observed) => {
-          setInView((prev) => {
-            const next = new Set(prev);
-            let changed = false;
-            for (const entry of observed) {
-              if (entry.isIntersecting) {
-                if (!next.has(entry.target.id)) {
-                  next.add(entry.target.id);
-                  changed = true;
-                }
-              } else if (next.delete(entry.target.id)) {
-                changed = true;
-              }
-            }
-            return changed ? next : prev;
-          });
-        },
-        { root: scrollEl, rootMargin: "0px 0px -80% 0px" },
-      );
-      observerRef.current = observer;
-      for (const t of targets) observer.observe(t);
-
-      sectionStartsRef.current = measureSectionStarts(scrollEl, targets);
-      syncFillProgress();
-
-      resizeObserver = new ResizeObserver(() => {
-        const measuredStarts = measureSectionStarts(scrollEl, targets);
-        if (!areNumberArraysEqual(sectionStartsRef.current, measuredStarts)) {
-          sectionStartsRef.current = measuredStarts;
-        }
-        syncFillProgress();
-      });
-      resizeObserver.observe(scrollEl);
-      for (const t of targets) resizeObserver.observe(t);
-    }
-
-    setupRaf = requestAnimationFrame(setupObserver);
-    scrollEl.addEventListener("scroll", syncFillProgress, { passive: true });
-
-    const mutationObserver = new MutationObserver(() => {
-      cancelAnimationFrame(setupRaf);
-      setupRaf = requestAnimationFrame(setupObserver);
-    });
-    mutationObserver.observe(scrollEl, { childList: true, subtree: true });
-
-    return () => {
-      cancelAnimationFrame(setupRaf);
-      scrollEl.removeEventListener("scroll", syncFillProgress);
-      observerRef.current?.disconnect();
-      resizeObserver?.disconnect();
-      mutationObserver.disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- entriesKey is the stable proxy for entries
-  }, [scrollRef, entriesKey]);
-
-  const activeIndex = useMemo(() => {
-    if (inView.size > 0) {
-      for (let i = 0; i < entries.length; i++) {
-        if (inView.has(entries[i].id)) return i;
-      }
-    }
-    // No heading sits in the top-20% activation zone — happens between
-    // two headings (dead zone) or when scrolled past the last heading
-    // at the bottom of the page. Fall back to the section that contains
-    // the current scroll position, computed from fillProgress, so the
-    // rail doesn't snap back to section 0.
-    if (entries.length === 0) return 0;
-    return Math.max(0, Math.min(entries.length - 1, Math.floor(fillProgress)));
-  }, [inView, entries, fillProgress]);
-
-  const handleJump = useCallback(
-    (id: string) => {
-      scrollRef.current
-        ?.querySelector(`#${CSS.escape(id)}`)
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    },
-    [scrollRef],
-  );
 
   // Gesture disambiguator: a small horizontal drift during pointerdown means
   // the user is resizing the panel's right edge, not tapping a section. When
