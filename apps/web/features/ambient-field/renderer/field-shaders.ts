@@ -1,127 +1,254 @@
 export const FIELD_VERTEX_SHADER = `
 precision highp float;
 
+attribute float aAlpha;
+attribute float aIndex;
+attribute float aSelection;
+
+attribute float aStreamFreq;
+attribute float aFunnelNarrow;
+attribute float aFunnelThickness;
+attribute float aFunnelStartShift;
+attribute float aFunnelEndShift;
+
+attribute vec3 aMove;
+attribute vec3 aSpeed;
+attribute vec3 aRandomness;
+
 uniform bool uIsMobile;
-uniform float uAlpha;
-uniform float uAmplitude;
-uniform float uDepth;
-uniform float uFrequency;
-uniform float uFunnelDistortion;
-uniform float uFunnelEnd;
-uniform float uFunnelEndShift;
-uniform float uFunnelNarrow;
-uniform float uFunnelStart;
-uniform float uFunnelStartShift;
-uniform float uFunnelThick;
-uniform float uHeight;
 uniform float uPixelRatio;
 uniform float uScale;
-uniform float uSelection;
-uniform float uSize;
-uniform float uSpeed;
-uniform float uStream;
 uniform float uTime;
+
+uniform float uSpeed;
+uniform float uSize;
+uniform float uAlpha;
+uniform float uDepth;
+uniform float uAmplitude;
+uniform float uFrequency;
+uniform float uSelection;
+
 uniform float uWidth;
+uniform float uHeight;
+uniform float uStream;
+uniform float uFunnelStart;
+uniform float uFunnelEnd;
+uniform float uFunnelThick;
+uniform float uFunnelNarrow;
+uniform float uFunnelStartShift;
+uniform float uFunnelEndShift;
+uniform float uFunnelDistortion;
+
 uniform vec3 uColorBase;
 uniform vec3 uColorNoise;
 
-attribute vec3 aMove;
-attribute vec3 aRandomness;
-attribute vec3 aSpeed;
-attribute float aAlpha;
-attribute float aFunnelEndShift;
-attribute float aFunnelNarrow;
-attribute float aFunnelStartShift;
-attribute float aFunnelThickness;
-attribute float aIndex;
-attribute float aSelection;
-attribute float aStreamFreq;
-
 varying float vAlpha;
+varying float vDistance;
+varying float vNoise;
 varying vec3 vColor;
 
-float hash13(vec3 p) {
-  p = fract(p * 0.1031);
-  p += dot(p, p.yzx + 33.33);
-  return fract((p.x + p.y) * p.z);
+vec3 mod289_1_0(vec3 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
 }
 
-float noise3(vec3 x) {
-  vec3 i = floor(x);
-  vec3 f = fract(x);
-  vec3 u = f * f * (3.0 - 2.0 * f);
+vec2 mod289_1_0(vec2 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
 
-  return mix(
-    mix(
-      mix(hash13(i + vec3(0.0, 0.0, 0.0)), hash13(i + vec3(1.0, 0.0, 0.0)), u.x),
-      mix(hash13(i + vec3(0.0, 1.0, 0.0)), hash13(i + vec3(1.0, 1.0, 0.0)), u.x),
-      u.y
-    ),
-    mix(
-      mix(hash13(i + vec3(0.0, 0.0, 1.0)), hash13(i + vec3(1.0, 0.0, 1.0)), u.x),
-      mix(hash13(i + vec3(0.0, 1.0, 1.0)), hash13(i + vec3(1.0, 1.0, 1.0)), u.x),
-      u.y
-    ),
-    u.z
+vec3 permute_1_1(vec3 x) {
+  return mod289_1_0(((x * 34.0) + 1.0) * x);
+}
+
+float snoise_1_2(vec2 v) {
+  const vec4 C = vec4(
+    0.211324865405187,
+    0.366025403784439,
+    -0.577350269189626,
+    0.024390243902439
+  );
+  vec2 i = floor(v + dot(v, C.yy));
+  vec2 x0 = v - i + dot(i, C.xx);
+  vec2 i1;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod289_1_0(i);
+  vec3 p = permute_1_1(
+    permute_1_1(i.y + vec3(0.0, i1.y, 1.0)) +
+    i.x + vec3(0.0, i1.x, 1.0)
+  );
+  vec3 m = max(
+    0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy), dot(x12.zw, x12.zw)),
+    0.0
+  );
+  m = m * m;
+  m = m * m;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+  vec3 g;
+  g.x = a0.x * x0.x + h.x * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+vec4 permute(vec4 x) {
+  return mod(((x * 34.0) + 1.0) * x, 289.0);
+}
+
+float permute(float x) {
+  return floor(mod(((x * 34.0) + 1.0) * x, 289.0));
+}
+
+vec4 taylorInvSqrt(vec4 r) {
+  return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+float taylorInvSqrt(float r) {
+  return 1.79284291400159 - 0.85373472095314 * r;
+}
+
+vec4 grad4(float j, vec4 ip) {
+  const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+  vec4 p;
+  vec4 s;
+
+  p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+  p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+  s = vec4(lessThan(p, vec4(0.0)));
+  p.xyz = p.xyz + (s.xyz * 2.0 - 1.0) * s.www;
+
+  return p;
+}
+
+float snoise(vec4 v) {
+  const vec2 C = vec2(0.138196601125010504, 0.309016994374947451);
+
+  vec4 i = floor(v + dot(v, C.yyyy));
+  vec4 x0 = v - i + dot(i, C.xxxx);
+
+  vec4 i0;
+  vec3 isX = step(x0.yzw, x0.xxx);
+  vec3 isYZ = step(x0.zww, x0.yyz);
+
+  i0.x = isX.x + isX.y + isX.z;
+  i0.yzw = 1.0 - isX;
+  i0.y += isYZ.x + isYZ.y;
+  i0.zw += 1.0 - isYZ.xy;
+  i0.z += isYZ.z;
+  i0.w += 1.0 - isYZ.z;
+
+  vec4 i3 = clamp(i0, 0.0, 1.0);
+  vec4 i2 = clamp(i0 - 1.0, 0.0, 1.0);
+  vec4 i1 = clamp(i0 - 2.0, 0.0, 1.0);
+
+  vec4 x1 = x0 - i1 + 1.0 * C.xxxx;
+  vec4 x2 = x0 - i2 + 2.0 * C.xxxx;
+  vec4 x3 = x0 - i3 + 3.0 * C.xxxx;
+  vec4 x4 = x0 - 1.0 + 4.0 * C.xxxx;
+
+  i = mod(i, 289.0);
+  float j0 = permute(permute(permute(permute(i.w) + i.z) + i.y) + i.x);
+  vec4 j1 = permute(permute(permute(permute(
+    i.w + vec4(i1.w, i2.w, i3.w, 1.0)) +
+    i.z + vec4(i1.z, i2.z, i3.z, 1.0)) +
+    i.y + vec4(i1.y, i2.y, i3.y, 1.0)) +
+    i.x + vec4(i1.x, i2.x, i3.x, 1.0));
+
+  vec4 ip = vec4(1.0 / 294.0, 1.0 / 49.0, 1.0 / 7.0, 0.0);
+
+  vec4 p0 = grad4(j0, ip);
+  vec4 p1 = grad4(j1.x, ip);
+  vec4 p2 = grad4(j1.y, ip);
+  vec4 p3 = grad4(j1.z, ip);
+  vec4 p4 = grad4(j1.w, ip);
+
+  vec4 norm = taylorInvSqrt(vec4(
+    dot(p0, p0),
+    dot(p1, p1),
+    dot(p2, p2),
+    dot(p3, p3)
+  ));
+  p0 *= norm.x;
+  p1 *= norm.y;
+  p2 *= norm.z;
+  p3 *= norm.w;
+  p4 *= taylorInvSqrt(dot(p4, p4));
+
+  vec3 m0 = max(0.6 - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), 0.0);
+  vec2 m1 = max(0.6 - vec2(dot(x3, x3), dot(x4, x4)), 0.0);
+  m0 = m0 * m0;
+  m1 = m1 * m1;
+  return 49.0 * (
+    dot(m0 * m0, vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2))) +
+    dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4)))
   );
 }
 
+#define NUM_OCTAVES 5
 float fbm(vec3 x) {
-  float value = 0.0;
-  float amplitude = 0.5;
-
-  for (int octave = 0; octave < 5; octave += 1) {
-    value += amplitude * (noise3(x + vec3(0.0, 0.0, uTime * 0.12)) * 2.0 - 1.0);
-    x = x * 2.02 + vec3(17.0, 9.0, 13.0);
-    amplitude *= 0.5;
+  float v = 0.0;
+  float a = 0.5;
+  vec3 shift = vec3(100.0);
+  for (int i = 0; i < NUM_OCTAVES; ++i) {
+    v += a * snoise(vec4(x, uTime));
+    x = x * 2.0 + shift;
+    a *= 0.5;
   }
-
-  return value;
+  return v;
 }
 
 void main() {
+  vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
+
+  float colorMix = clamp(vNoise, 0.0, 1.0) * 4.0;
+  float r = uColorBase.r + colorMix * (uColorNoise.r - uColorBase.r);
+  float g = uColorBase.g + colorMix * (uColorNoise.g - uColorBase.g);
+  float b = uColorBase.b + colorMix * (uColorNoise.b - uColorBase.g);
+  vColor = vec3(r, g, b);
+
   vec3 displaced = position;
-  float streamFreq = max(0.0, aStreamFreq);
-  float fieldFreq = max(0.01, uFrequency + streamFreq * uStream);
-  float noiseValue = fbm(position * fieldFreq);
+  displaced *= (1.0 + (uAmplitude * vNoise));
+  displaced += vec3(
+    uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uSpeed))
+  );
 
-  vec3 colorDelta = (uColorNoise - uColorBase) * clamp(noiseValue, 0.0, 1.0) * 4.0;
-  vColor = clamp(uColorBase + colorDelta, 0.0, 1.0);
-
-  displaced *= (1.0 + (uAmplitude * noiseValue));
-
-  float driftNoise = noise3(vec3(aIndex * 0.013, uTime * max(0.05, uSpeed), 0.0)) * 2.0 - 1.0;
-  displaced += uScale * uDepth * aMove * aSpeed * driftNoise * 0.018;
-
-  if (uStream > 0.5) {
+  if (uStream > 0.0) {
     displaced.x += uTime * uSpeed * uStream * 0.3;
-    displaced.x = mod(displaced.x + uWidth * 0.5, uWidth) - uWidth * 0.5;
+    displaced.x = mod(displaced.x - uWidth * 0.5, uWidth) - uWidth * 0.5;
 
-    float streamSpan = max(0.001, uFunnelEnd - uFunnelStart);
-    float t = clamp((displaced.x - uFunnelStart) / streamSpan, 0.0, 1.0);
-    float thickness = mix(uFunnelThick + aFunnelThickness, uFunnelNarrow + aFunnelNarrow, t);
+    float t = clamp((displaced.x - uFunnelStart) / (uFunnelEnd - uFunnelStart), 0.0, 1.0);
+    float thickness = mix(
+      uFunnelThick + aFunnelThickness,
+      uFunnelNarrow + aFunnelNarrow,
+      t
+    );
 
     displaced.y += thickness * uHeight * aRandomness.y * uFunnelDistortion;
     displaced.y += (1.0 - t) * (uFunnelStartShift + aFunnelStartShift);
     displaced.y += t * (uFunnelEndShift + aFunnelEndShift);
     displaced.z += uHeight * aRandomness.z * (-1.0 * cos(displaced.x)) * uFunnelDistortion;
 
+    mat2 rot = mat2(0.0, -1.0, 1.0, 0.0);
     if (uIsMobile) {
-      displaced.xy = vec2(-displaced.y, displaced.x);
+      displaced.xy = rot * displaced.xy;
     }
   }
 
   vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
   gl_Position = projectionMatrix * mvPosition;
 
-  float vDistance = -mvPosition.z;
-  float pointSize = uSize;
-  pointSize *= 100.0 / max(1.0, vDistance);
-  pointSize *= uPixelRatio;
-  gl_PointSize = clamp(pointSize, 0.5, uIsMobile ? 4.8 : 7.6);
+  vDistance = -mvPosition.z;
+  gl_PointSize = uSize;
+  gl_PointSize *= 100.0 / vDistance;
+  gl_PointSize *= uPixelRatio;
 
-  float selectionMask = step(aSelection, uSelection);
-  vAlpha = uAlpha * aAlpha * (300.0 / max(20.0, vDistance)) * selectionMask;
+  vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
+  if (aSelection > uSelection) {
+    vAlpha = 0.0;
+  }
 }
 `;
 
@@ -135,7 +262,6 @@ uniform sampler2D pointTexture;
 
 void main() {
   float spriteAlpha = texture2D(pointTexture, gl_PointCoord).a;
-  spriteAlpha = smoothstep(0.02, 1.0, spriteAlpha);
   float alpha = spriteAlpha * vAlpha;
 
   if (alpha <= 0.01) {

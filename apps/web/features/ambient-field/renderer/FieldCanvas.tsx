@@ -26,15 +26,19 @@ export function FieldCanvas({
   return (
     <div
       aria-hidden="true"
-      className={["pointer-events-none absolute inset-0 z-0", className]
+      className={[
+        "pointer-events-none absolute inset-0 z-0 [&_canvas]:h-full [&_canvas]:w-full",
+        className,
+      ]
         .filter(Boolean)
         .join(" ")}
       style={style}
     >
       <Canvas
         frameloop="always"
-        camera={{ position: [0, 0, 14], fov: 45, near: 0.1, far: 120 }}
+        camera={{ position: [0, 0, 400], fov: 45, near: 80, far: 10000 }}
         dpr={[1, 1.75]}
+        style={{ width: "100%", height: "100%" }}
         gl={{
           alpha: true,
           antialias: true,

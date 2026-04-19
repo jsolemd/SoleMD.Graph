@@ -3,10 +3,10 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef, type MutableRefObject } from "react";
 import {
+  AdditiveBlending,
   Texture,
   Color,
   Group,
-  NormalBlending,
   ShaderMaterial,
 } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
@@ -66,6 +66,16 @@ function createColorFromFallbackHex(hex: string): Color {
   return new Color(hex);
 }
 
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function smoothstep(min: number, max: number, value: number) {
+  if (max <= min) return value >= max ? 1 : 0;
+  const t = clamp01((value - min) / (max - min));
+  return t * t * (3 - 2 * t);
+}
+
 function createLayerUniforms(
   itemId: AmbientFieldStageItemId,
   isMobile: boolean,
@@ -121,9 +131,9 @@ function AmbientFieldStageLayer({
   return (
     <group
       ref={onGroupRef}
-      position={preset.sceneOffset}
+      position={[0, 0, 0]}
       rotation={preset.sceneRotation}
-      scale={[preset.sceneScale, preset.sceneScale, preset.sceneScale]}
+      scale={[1, 1, 1]}
     >
       <points frustumCulled={false}>
         <bufferGeometry>
@@ -165,8 +175,9 @@ function AmbientFieldStageLayer({
         <shaderMaterial
           ref={onMaterialRef}
           transparent
+          depthTest={false}
           depthWrite={false}
-          blending={NormalBlending}
+          blending={AdditiveBlending}
           uniforms={uniforms}
           vertexShader={FIELD_VERTEX_SHADER}
           fragmentShader={FIELD_FRAGMENT_SHADER}
@@ -249,113 +260,116 @@ export function FieldScene({
       const uniforms = layerUniforms[itemId];
       const runtimeState = sceneState.items[itemId];
       const visibility = runtimeState?.visibility ?? 0;
-      const emphasis = runtimeState?.emphasis ?? visibility;
       const localProgress = runtimeState?.localProgress ?? 0;
       const motionScale = motionEnabled ? 1 : 0.16;
       const driftBlend = lerpFactor(delta, DECAY.standard);
-      const emphasisBlend = lerpFactor(delta, DECAY.micro);
-      const visibilityScale = 0.24 + visibility * 0.76;
-      const time = uniforms.uTime.value + (motionEnabled ? delta * 0.12 : delta * 0.015);
-      const depthBoost = 0.82 + emphasis * 0.18;
+      const time = uniforms.uTime.value + (
+        motionEnabled
+          ? delta * (itemId === "pcb" ? 0.6 : 0.12)
+          : delta * (itemId === "pcb" ? 0.2 : 0.04)
+      );
       const sceneScale = isMobile
         ? (preset.sceneScaleMobile ?? preset.sceneScale)
         : preset.sceneScale;
+      const bounds = pointSources[itemId].bounds;
+      const sourceHeight = Math.max(bounds.maxY - bounds.minY, 0.001);
+      const camera = state.camera;
+      const sceneUnits =
+        "fov" in camera
+          ? 2 * camera.position.z * Math.tan((camera.fov * Math.PI) / 360)
+          : 0;
+      const baseScale = (sceneUnits / sourceHeight) * sceneScale;
       const shaderAlpha = isMobile
         ? (shader.alphaMobile ?? shader.alpha)
         : shader.alpha;
       const shaderSize = isMobile
         ? (shader.sizeMobile ?? shader.size)
         : shader.size;
+      const blobFrequencyRamp =
+        itemId === "blob" ? smoothstep(0.0, 0.17, localProgress) : 0;
+      const blobStats = itemId === "blob" ? smoothstep(0.11, 0.16, localProgress) : 0;
+      const blobSelection =
+        itemId === "blob" ? smoothstep(0.38, 0.44, localProgress) : 0;
+      const blobDiagram = itemId === "blob" ? smoothstep(0.54, 0.63, localProgress) : 0;
+      const blobShrink = itemId === "blob" ? smoothstep(0.7, 0.8, localProgress) : 0;
+      const blobEnd = itemId === "blob" ? smoothstep(0.9, 1.0, localProgress) : 0;
+      const blobAlphaDip = clamp01(blobDiagram - blobShrink);
+      const blobScaleBurst = clamp01(blobDiagram - blobShrink);
 
-      const targetAlpha = shaderAlpha * visibility;
+      const targetAlpha =
+        itemId === "blob"
+          ? shaderAlpha * visibility * (1 - blobAlphaDip)
+          : shaderAlpha * visibility;
+      const blobStatsAmplitude =
+        shader.amplitude + (0.25 - shader.amplitude) * blobStats;
       const targetAmplitude =
-        shader.amplitude *
-        (itemId === "blob"
-          ? 0.88 + localProgress * 0.24
-          : itemId === "stream"
-            ? 0.82 + sceneState.processProgress * 0.3
-            : 0.9 + localProgress * 0.1) *
-        motionScale;
-      const targetDepth = shader.depth * depthBoost;
+        itemId === "blob"
+          ? (blobStatsAmplitude + (0.5 - blobStatsAmplitude) * blobDiagram) *
+            motionScale
+          : shader.amplitude * motionScale;
+      const targetDepth =
+        itemId === "blob"
+          ? shader.depth + (1 - shader.depth) * blobDiagram
+          : shader.depth;
       const targetFrequency =
-        shader.frequency +
-        (itemId === "stream"
-          ? sceneState.processProgress * 0.08
-          : localProgress * 0.04);
-      const targetSpeed = shader.speed * (0.9 + emphasis * 0.14) * motionScale;
-      const targetSize = shaderSize * (0.78 + emphasis * 0.12);
-      const targetFunnelDistortion =
-        shader.funnelDistortion *
-        (itemId === "stream"
-          ? 0.74 + sceneState.processProgress * 0.42
-          : 1);
-      const targetFunnelStartShift =
-        shader.funnelStartShift +
-        (itemId === "stream" ? (sceneState.processProgress - 0.5) * 0.06 : 0);
-      const targetFunnelEndShift =
-        shader.funnelEndShift +
-        (itemId === "stream" ? (sceneState.processProgress - 0.5) * 0.14 : 0);
-      const driftX =
-        Math.sin(time * (0.16 + shader.speed * 0.1) + preset.sceneRotation[1]) *
-        0.06 *
-        visibilityScale *
-        motionScale;
-      const driftY =
-        Math.cos(time * (0.12 + shader.speed * 0.08) + preset.sceneRotation[0]) *
-        0.05 *
-        visibilityScale *
-        motionScale;
-      const targetScale = sceneScale * (0.94 + emphasis * 0.08);
+        itemId === "blob"
+          ? shader.frequency + (1.7 - shader.frequency) * blobFrequencyRamp
+          : shader.frequency;
+      const targetSpeed = shader.speed * motionScale;
+      const targetSize = shaderSize;
+      const targetSelection =
+        itemId === "blob"
+          ? shader.selection - (shader.selection - 0.3) * blobSelection
+          : shader.selection;
+      const targetFunnelDistortion = shader.funnelDistortion;
+      const targetFunnelStartShift = shader.funnelStartShift;
+      const targetFunnelEndShift = shader.funnelEndShift;
+      const targetScale =
+        itemId === "blob"
+          ? baseScale * (1 + 0.8 * blobScaleBurst)
+          : baseScale;
+      const targetPositionY =
+        sceneUnits * (preset.sceneOffset[1] + (itemId === "blob" ? blobEnd * 0.5 : 0));
+      const targetRotationX = preset.sceneRotation[0];
+      const targetRotationY =
+        preset.sceneRotation[1] +
+        time * preset.rotationVelocity[1] * motionScale +
+        (itemId === "blob" ? localProgress * Math.PI : 0);
+      const targetRotationZ = preset.sceneRotation[2];
 
       uniforms.uTime.value = time;
       uniforms.uPixelRatio.value = Math.min(state.gl.getPixelRatio(), 2);
       uniforms.uIsMobile.value = isMobile;
-      uniforms.uScale.value = 1 / sceneScale;
-      uniforms.uAlpha.value += (targetAlpha - uniforms.uAlpha.value) * emphasisBlend;
-      uniforms.uAmplitude.value +=
-        (targetAmplitude - uniforms.uAmplitude.value) * driftBlend;
-      uniforms.uDepth.value += (targetDepth - uniforms.uDepth.value) * driftBlend;
-      uniforms.uFrequency.value +=
-        (targetFrequency - uniforms.uFrequency.value) * driftBlend;
-      uniforms.uSize.value += (targetSize - uniforms.uSize.value) * emphasisBlend;
-      uniforms.uSpeed.value += (targetSpeed - uniforms.uSpeed.value) * driftBlend;
-      uniforms.uSelection.value +=
-        ((shader.selection * (0.86 + visibility * 0.14)) - uniforms.uSelection.value) *
-        emphasisBlend;
-      uniforms.uFunnelDistortion.value +=
-        (targetFunnelDistortion - uniforms.uFunnelDistortion.value) * driftBlend;
-      uniforms.uFunnelStartShift.value +=
-        (targetFunnelStartShift - uniforms.uFunnelStartShift.value) * driftBlend;
-      uniforms.uFunnelEndShift.value +=
-        (targetFunnelEndShift - uniforms.uFunnelEndShift.value) * driftBlend;
-      uniforms.uColorBase.value.lerp(colorTargets[itemId].base, driftBlend);
-      uniforms.uColorNoise.value.lerp(colorTargets[itemId].noise, driftBlend);
+      uniforms.uScale.value = 1 / baseScale;
+      uniforms.uAlpha.value = targetAlpha;
+      uniforms.uAmplitude.value = targetAmplitude;
+      uniforms.uDepth.value = targetDepth;
+      uniforms.uFrequency.value = targetFrequency;
+      uniforms.uSize.value = targetSize;
+      uniforms.uSpeed.value = targetSpeed;
+      uniforms.uSelection.value = targetSelection;
+      uniforms.uFunnelDistortion.value = targetFunnelDistortion;
+      uniforms.uFunnelStartShift.value = targetFunnelStartShift;
+      uniforms.uFunnelEndShift.value = targetFunnelEndShift;
+      uniforms.uColorBase.value.copy(colorTargets[itemId].base);
+      uniforms.uColorNoise.value.copy(colorTargets[itemId].noise);
 
       layer.group.visible = visibility > 0.01;
       layer.group.position.x +=
-        (preset.sceneOffset[0] + driftX - layer.group.position.x) * driftBlend;
+        (sceneUnits * preset.sceneOffset[0] - layer.group.position.x) * driftBlend;
       layer.group.position.y +=
-        (preset.sceneOffset[1] + driftY - layer.group.position.y) * driftBlend;
+        (targetPositionY - layer.group.position.y) * driftBlend;
       layer.group.position.z +=
         (preset.sceneOffset[2] - layer.group.position.z) * driftBlend;
 
       layer.group.rotation.x +=
-        ((preset.sceneRotation[0] +
-          time * preset.rotationVelocity[0] * motionScale +
-          localProgress * preset.scrollRotation[0]) -
-          layer.group.rotation.x) *
+        (targetRotationX - layer.group.rotation.x) *
         driftBlend;
       layer.group.rotation.y +=
-        ((preset.sceneRotation[1] +
-          time * preset.rotationVelocity[1] * motionScale +
-          sceneState.scrollProgress * preset.scrollRotation[1]) -
-          layer.group.rotation.y) *
+        (targetRotationY - layer.group.rotation.y) *
         driftBlend;
       layer.group.rotation.z +=
-        ((preset.sceneRotation[2] +
-          time * preset.rotationVelocity[2] * motionScale +
-          localProgress * preset.scrollRotation[2]) -
-          layer.group.rotation.z) *
+        (targetRotationZ - layer.group.rotation.z) *
         driftBlend;
 
       layer.group.scale.x += (targetScale - layer.group.scale.x) * driftBlend;

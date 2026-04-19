@@ -1,5 +1,5 @@
 import { Color } from "three";
-import { brandPastelFallbackHexByKey } from "@/lib/pastel-tokens";
+import { semanticColorFallbackHexByKey } from "@/lib/pastel-tokens";
 import type {
   AmbientFieldPointSource,
   AmbientFieldPointSourceBuffers,
@@ -14,11 +14,11 @@ const PCB_WIDTH = 72;
 const PCB_HEIGHT = 46;
 
 const paletteWeights = [
-  { color: new Color(brandPastelFallbackHexByKey["soft-blue"]), weight: 0.28 },
-  { color: new Color(brandPastelFallbackHexByKey["soft-lavender"]), weight: 0.24 },
-  { color: new Color(brandPastelFallbackHexByKey["muted-indigo"]), weight: 0.18 },
-  { color: new Color(brandPastelFallbackHexByKey["teal"]), weight: 0.16 },
-  { color: new Color(brandPastelFallbackHexByKey["golden-yellow"]), weight: 0.14 },
+  { color: new Color(semanticColorFallbackHexByKey.paper), weight: 0.05 },
+  { color: new Color(semanticColorFallbackHexByKey.phys), weight: 0.3 },
+  { color: new Color(semanticColorFallbackHexByKey.chem), weight: 0.3 },
+  { color: new Color(semanticColorFallbackHexByKey.gene), weight: 0.18 },
+  { color: new Color(semanticColorFallbackHexByKey.diso), weight: 0.17 },
 ] as const;
 
 interface RandomSource {
@@ -87,10 +87,9 @@ class AmbientFieldPointSourceRegistry {
       FIELD_SEED + (isMobile ? 1000 : 0) + Math.round(density * 100),
     );
     const sources = {
-      blob: createBlobSource(
-        Math.max(4096, Math.round(BLOB_POINT_COUNT * density)),
-        random,
-      ),
+      // Maze keeps the blob shell at a fixed point count and thins via
+      // selection during scroll-driven choreography, not via geometry swaps.
+      blob: createBlobSource(BLOB_POINT_COUNT, random),
       stream: createStreamSource(
         Math.max(
           3600,
@@ -159,11 +158,8 @@ function pickWeightedColor(random: RandomSource): Color {
       const color = entry.color.clone();
       const hsl = { h: 0, s: 0, l: 0 };
       color.getHSL(hsl);
-      color.setHSL(
-        hsl.h,
-        Math.min(1, hsl.s * (0.92 + random() * 0.16)),
-        Math.max(0.5, Math.min(0.84, hsl.l * (0.88 + random() * 0.2))),
-      );
+      const lightness = hsl.l - 0.01 + random() * 0.02;
+      color.setHSL(hsl.h, hsl.s, Math.max(0, Math.min(1, lightness)));
       return color;
     }
   }
@@ -248,7 +244,7 @@ function createBlobSource(pointCount: number, random: RandomSource): AmbientFiel
 
   for (let index = 0; index < pointCount; index += 1) {
     const point = sampleSpherePoint(random);
-    const radiusBias = 0.92 + random() * 0.18;
+    const radiusBias = 1;
 
     buffers.position[index * 3] = point.x * radiusBias;
     buffers.position[index * 3 + 1] = point.y * radiusBias;

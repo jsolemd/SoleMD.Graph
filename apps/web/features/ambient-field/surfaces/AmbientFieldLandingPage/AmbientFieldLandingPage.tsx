@@ -18,11 +18,6 @@ import {
   panelAccentCardStyle,
   panelSurfaceStyle,
 } from "@/features/graph/components/panels/PanelShell/panel-styles";
-import { PromptStageSurface } from "@/features/graph/components/panels/prompt/PromptStageSurface";
-import {
-  MAX_CARD_W,
-  cardWidth,
-} from "@/features/graph/components/panels/prompt/constants";
 import { GraphLoadingChrome } from "@/features/graph/components/shell/loading/GraphLoadingChrome";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import {
@@ -54,11 +49,12 @@ import {
   ambientFieldProcessStageManifest,
 } from "./ambient-field-landing-content";
 import { AmbientFieldCtaSection } from "./AmbientFieldCtaSection";
-import { createAmbientFieldHeroPromptController } from "./ambient-field-hero-prompt-controller";
+import { AmbientFieldGraphSection } from "./AmbientFieldGraphSection";
 import { AmbientFieldHeroSection } from "./AmbientFieldHeroSection";
 import { createAmbientFieldProcessStageController } from "./ambient-field-process-stage-controller";
-import { AmbientFieldProcessStage } from "./AmbientFieldProcessStage";
 import { AmbientFieldSectionCard } from "./AmbientFieldSectionCard";
+import { AmbientFieldStoryChapter } from "./AmbientFieldStoryChapter";
+import { ambientFieldStoryOneBeats, ambientFieldGraphSteps } from "./ambient-field-landing-content";
 
 const rootShellStyle: CSSProperties = {
   backgroundColor: "var(--graph-bg)",
@@ -66,8 +62,7 @@ const rootShellStyle: CSSProperties = {
 };
 
 const fieldVignetteStyle: CSSProperties = {
-  background:
-    "radial-gradient(circle at 50% 16%, transparent 0%, transparent 24%, color-mix(in srgb, var(--graph-bg) 14%, transparent) 58%, color-mix(in srgb, var(--graph-bg) 62%, transparent) 100%)",
+  background: "transparent",
 };
 
 const secondaryCardStyle: CSSProperties = {
@@ -156,19 +151,17 @@ function AmbientFieldLandingShell({
   const { width: viewportWidth } = useViewportSize();
   const rootRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
-  const heroPromptRef = useRef<HTMLDivElement>(null);
-  const topPromptRef = useRef<HTMLDivElement>(null);
   const processPanelRef = useRef<HTMLDivElement>(null);
-  const processMarkerRefs = useMemo(
+  const processPathRefs = useMemo(
     () =>
-      ambientFieldProcessStageManifest.markerLanes.map(() =>
-        createRef<HTMLDivElement>(),
+      ambientFieldProcessStageManifest.desktopRailPaths.map(() =>
+        createRef<SVGPathElement>(),
       ),
     [],
   );
-  const processPopupRefs = useMemo(
+  const processPointRefs = useMemo(
     () =>
-      ambientFieldProcessStageManifest.popups.map(() =>
+      ambientFieldProcessStageManifest.points.map(() =>
         createRef<HTMLDivElement>(),
       ),
     [],
@@ -184,12 +177,6 @@ function AmbientFieldLandingShell({
   const sectionNavScrollOffset = isCompactFieldViewport
     ? 24
     : APP_CHROME_PX.panelTop + 76;
-  const stagePromptWidth =
-    viewportWidth > 0
-      ? isCompactFieldViewport
-        ? Math.min(viewportWidth - 32, 496)
-        : Math.min(cardWidth(viewportWidth), 640)
-      : MAX_CARD_W;
 
   useEffect(() => {
     sceneStateRef.current.motionEnabled = !reducedMotion;
@@ -205,19 +192,14 @@ function AmbientFieldLandingShell({
   useEffect(() => {
     const root = rootRef.current;
     const hero = heroRef.current;
-    const heroPrompt = heroPromptRef.current;
-    if (!root || !hero || !heroPrompt) return undefined;
+    if (!root || !hero) return undefined;
 
     const overlayController = composeAmbientFieldOverlayControllers([
-      createAmbientFieldHeroPromptController({
-        heroPrompt,
-        topPrompt: topPromptRef.current,
-      }),
       createAmbientFieldProcessStageController({
         isMobile: isCompactFieldViewport,
         panel: processPanelRef.current,
-        markers: processMarkerRefs.map((markerRef) => markerRef.current),
-        popups: processPopupRefs.map((popupRef) => popupRef.current),
+        pathNodes: processPathRefs.map((pathRef) => pathRef.current),
+        points: processPointRefs.map((pointRef) => pointRef.current),
       }),
     ]);
     const controller = createAmbientFieldScrollController({
@@ -236,7 +218,7 @@ function AmbientFieldLandingShell({
       }
       controller.cleanup();
     };
-  }, [isCompactFieldViewport, processMarkerRefs, processPopupRefs, reducedMotion]);
+  }, [isCompactFieldViewport, processPathRefs, processPointRefs, reducedMotion]);
 
   function handleFieldFrame(timestamp: number) {
     scrollControllerRef.current?.syncFrame(timestamp);
@@ -254,7 +236,7 @@ function AmbientFieldLandingShell({
 
   const heroSection = ambientFieldLandingSections[0]!;
   const storyOneSection = ambientFieldLandingSections[1]!;
-  const processSection = ambientFieldLandingSections[2]!;
+  const graphSection = ambientFieldLandingSections[2]!;
   const storyTwoSection = ambientFieldLandingSections[3]!;
   const ctaSection = ambientFieldLandingSections[4]!;
 
@@ -303,31 +285,10 @@ function AmbientFieldLandingShell({
         }
       />
 
-      {!isCompactFieldViewport ? (
-        <div
-          ref={topPromptRef}
-          aria-hidden="true"
-          className="pointer-events-none fixed left-1/2 top-5 z-20 opacity-0"
-          style={{
-            width: `min(${stagePromptWidth}px, calc(100vw - 6rem))`,
-          }}
-        >
-          <div className="origin-top scale-[0.9]">
-            <PromptStageSurface
-              compact
-              placeholder="Ask the knowledge web about a pathway, paper cluster, or mechanism…"
-              primaryActionDisabled={!graphReady}
-            />
-          </div>
-        </div>
-      ) : null}
-
       <main className="relative z-10">
         <div ref={heroRef}>
           <AmbientFieldHeroSection
             graphReady={graphReady}
-            promptRef={heroPromptRef}
-            stagePromptWidth={stagePromptWidth}
             warmupLabel={getGraphWarmupLabel(graphProgress)}
             onExploreRuntime={() => scrollToSection("section-story-1")}
             onOpenGraph={() => {
@@ -339,67 +300,20 @@ function AmbientFieldLandingShell({
           />
         </div>
 
-        <section
-          id={storyOneSection.id}
-          data-ambient-section
-          data-preset={storyOneSection.preset}
-          data-section-id={storyOneSection.id}
-          className="flex min-h-[95svh] items-center px-4 py-16 sm:px-6 sm:py-20"
-        >
-          <div className="mx-auto grid w-full max-w-[1180px] grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
-            <div className="lg:col-span-5 lg:col-start-1">
-              <AmbientFieldSectionCard section={storyOneSection} />
-            </div>
-            <div className="hidden lg:col-span-4 lg:col-start-8 lg:block">
-              <motion.div
-                initial={{ opacity: 0, y: 18 }}
-                viewport={{ once: true, amount: 0.35 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{
-                  y: smooth,
-                  opacity: { duration: 0.18, ease: "easeOut" },
-                }}
-              >
-                <OverlayCard style={secondaryCardStyle} className="px-5 py-5">
-                  <div className="flex items-center gap-2">
-                    <MetaPill mono>Signal</MetaPill>
-                    <MetaPill style={{ color: "var(--color-soft-blue)" }}>
-                      Field is still the same object
-                    </MetaPill>
-                  </div>
-                  <div className="mt-5 rounded-[1rem] p-4" style={panelAccentCardStyle}>
-                    <p className="text-[13px] leading-6 text-[var(--graph-panel-text-dim)]">
-                      One fixed stage means the user keeps orienting inside the same
-                      world while the story changes around it.
-                    </p>
-                  </div>
-                </OverlayCard>
-              </motion.div>
-            </div>
-          </div>
-        </section>
+        <AmbientFieldStoryChapter
+          beats={ambientFieldStoryOneBeats}
+          rootRef={rootRef}
+          section={storyOneSection}
+        />
 
-        <section
-          id={processSection.id}
-          data-ambient-section
-          data-preset={processSection.preset}
-          data-section-id={processSection.id}
-          className="flex min-h-[108svh] items-center px-4 py-16 sm:px-6 sm:py-20"
-        >
-          <div className="mx-auto grid w-full max-w-[1240px] grid-cols-1 gap-6 lg:grid-cols-12 lg:items-center lg:gap-8">
-            <div className="lg:col-span-5">
-              <AmbientFieldSectionCard section={processSection} />
-            </div>
-            <div className="lg:col-span-7">
-              <AmbientFieldProcessStage
-                isMobile={isCompactFieldViewport}
-                markerRefs={processMarkerRefs}
-                panelRef={processPanelRef}
-                popupRefs={processPopupRefs}
-              />
-            </div>
-          </div>
-        </section>
+        <AmbientFieldGraphSection
+          isMobile={isCompactFieldViewport}
+          panelRef={processPanelRef}
+          pathRefs={processPathRefs}
+          pointRefs={processPointRefs}
+          section={graphSection}
+          steps={ambientFieldGraphSteps}
+        />
 
         <section
           id={storyTwoSection.id}

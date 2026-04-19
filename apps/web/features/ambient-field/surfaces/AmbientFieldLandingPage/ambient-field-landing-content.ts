@@ -4,7 +4,7 @@ import type { AmbientFieldScrollManifest } from "../../scroll/ambient-field-scro
 export type AmbientFieldLandingSectionVariant =
   | "hero"
   | "story"
-  | "process"
+  | "graph"
   | "cta";
 
 export interface AmbientFieldLandingSection {
@@ -20,34 +20,44 @@ export interface AmbientFieldLandingSection {
   variant: AmbientFieldLandingSectionVariant;
 }
 
-export interface AmbientFieldProcessPoint {
-  x: number;
-  y: number;
+export interface AmbientFieldClientRailItem {
+  id: string;
+  label: string;
 }
 
-export interface AmbientFieldProcessMarkerLane {
-  accentVar: string;
-  phase: number;
-  scale: number;
-}
-
-export interface AmbientFieldProcessPopup {
+export interface AmbientFieldStoryBeat {
   accentVar: string;
   body: string;
-  desktopLeft: string;
-  desktopTop: string;
   id: string;
-  mobileLeft: string;
-  mobileTop: string;
+  progressLabel: string;
   title: string;
-  window: readonly [number, number, number, number];
+  variant: "columns" | "centered";
+}
+
+export interface AmbientFieldGraphStep {
+  id: string;
+  number: string;
+  text: string;
+}
+
+export interface AmbientFieldStreamPopup {
+  category?: string;
+  id: string;
+  label?: string;
+  title: string;
+}
+
+export interface AmbientFieldStreamPoint {
+  id: string;
+  pathIndex: number;
+  popups: readonly AmbientFieldStreamPopup[];
+  tone: "default" | "danger";
 }
 
 export interface AmbientFieldProcessStageManifest {
-  desktopPath: readonly AmbientFieldProcessPoint[];
-  markerLanes: readonly AmbientFieldProcessMarkerLane[];
-  mobilePath: readonly AmbientFieldProcessPoint[];
-  popups: readonly AmbientFieldProcessPopup[];
+  desktopRailPaths: readonly string[];
+  mobileRailPaths: readonly string[];
+  points: readonly AmbientFieldStreamPoint[];
 }
 
 export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
@@ -55,16 +65,16 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     id: "section-welcome",
     preset: "blob",
     variant: "hero",
-    eyebrow: "Ambient Landing",
-    title: "Enter the evidence space before the full graph opens.",
+    eyebrow: "Ambient Field",
+    title: "Enter the same world the graph will later deepen.",
     body:
-      "The landing page should already feel like the graph is thinking: one persistent world, a standard prompt surface, and a quiet warmup of the deeper workspace behind it.",
+      "The landing surface should already feel alive: one continuous evidence field, a clear narrative spine, and enough motion discipline that the user reads structure before they read interface chrome.",
     detail:
-      "This is the shared ambient substrate for the homepage first, then inline modules, expanded modules, and graph handoff after that.",
+      "This baseline deliberately follows Maze's chapter grammar first. SoleMD-specific prompts, entity callouts, and paper overlays should return only after the runtime behaves like the source.",
     bullets: [
-      "Fixed ambient stage",
-      "Prompt-first entry",
-      "Graph warms in parallel",
+      "One fixed stage",
+      "Blob carry through Story 1",
+      "Graph chapter is the turning point",
     ],
     accentVar: "var(--color-soft-blue)",
     align: "center",
@@ -73,34 +83,34 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     id: "section-story-1",
     preset: "blob",
     variant: "story",
-    eyebrow: "Scene Carry",
-    title: "The opening field should already teach structure, not just mood.",
+    eyebrow: "Story 1",
+    title: "Narrative chapters should wrap the carried blob instead of replacing it.",
     body:
-      "A calm evidence atmosphere works only if it feels governed. The field should carry density, neighborhoods, and center-of-gravity changes before the user ever opens the full workspace.",
+      "The first band teaches the world before the graph section takes over. Progress, text, and small DOM visuals should build pressure while the blob keeps rotating and gradually opens up.",
     detail:
-      "This first chapter keeps the motion soft and clustered so the world reads as one stable substrate instead of decorative noise.",
+      "The stage is still blob-owned here. Story 1 is a DOM-native chapter layered around the field, not a separate visualization module.",
     bullets: [
-      "Stable visual identity",
-      "Sparse overlays",
-      "No loading-screen reset",
+      "DOM-native progress",
+      "Blob still alive",
+      "Question bridge into graph chapter",
     ],
     accentVar: "var(--color-soft-lavender)",
     align: "left",
   },
   {
-    id: "section-process",
+    id: "section-graph",
     preset: "stream",
-    variant: "process",
-    eyebrow: "Process Chapter",
-    title: "When the story turns procedural, the field should flow with it.",
+    variant: "graph",
+    eyebrow: "Turning Point",
+    title: "The graph chapter should feel routed, procedural, and sticky.",
     body:
-      "This is the key Maze move to preserve: the background stops reading like a cloud and starts behaving like a routed trace. Movement becomes directional and the DOM callouts explain what is happening in the same world.",
+      "This is where the carried blob overlaps with a new local stream owner. The field stops reading like one drifting cloud and starts behaving like an authored system trace with DOM-native popups and rails.",
     detail:
-      "The stream chapter is hybrid on purpose: the fixed stage carries the point field while the DOM layer handles the marker cadence, popup sequencing, and chapter-specific instruction.",
+      "The stream chapter is hybrid by design: the shader handles particle motion, but the visible chapter rhythm comes from authored SVG rails, stream points, and popup timing.",
     bullets: [
-      "Directional field motion",
-      "Inline process callouts",
-      "Shared substrate, not a separate module",
+      "Sticky local owner",
+      "DOM + SVG + WebGL",
+      "Blob overlaps before yielding",
     ],
     accentVar: "var(--color-golden-yellow)",
     align: "right",
@@ -109,139 +119,273 @@ export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
     id: "section-story-2",
     preset: "stream",
     variant: "story",
-    eyebrow: "Module Basis",
-    title: "The same scene should survive into explanation, modules, and handoff.",
+    eyebrow: "Story 2",
+    title: "Carry the same routed world into explanation and handoff.",
     body:
-      "This second band is where the ambient field proves it is infrastructure. Inline modules, learning shells, and sparse paper or entity overlays should land on the same carried scene instead of swapping to a new background.",
+      "Once the graph chapter has established the directional trace, the next chapter should keep that shared world alive for explanation, comparison, and eventual graph entry.",
     detail:
-      "That continuity is what makes the later graph handoff feel like a deepening of context rather than a route change into a different product.",
+      "This later band remains part of the baseline ledger, but the first parity implementation can prioritize the path through the graph turning point before fully rebuilding Story 2.",
     bullets: [
-      "Scene overlap instead of hard switches",
-      "Inline modules can mount here",
-      "Graph handoff stays visually continuous",
+      "Second progress band",
+      "Graph ribbon beat",
+      "Events beat",
     ],
     accentVar: "var(--color-teal)",
-    align: "right",
+    align: "left",
   },
   {
     id: "section-cta",
     preset: "pcb",
     variant: "cta",
     eyebrow: "Graph Bridge",
-    title: "Open the graph only when the user is ready to go deeper.",
+    title: "Let the pcb CTA quiet the field before the workspace opens.",
     body:
-      "The landing experience should end in a calmer technical substrate that makes the final transition into the full graph feel deliberate, not forced.",
+      "The CTA should feel calmer and more technical than the earlier chapters. The field is still alive, but the page is handing the user toward a deliberate graph transition instead of one more animated story beat.",
     detail:
-      "This is the state the module system can also use for expansion moments, contextual bridges, and explicit graph entry packets later.",
+      "The pcb section remains part of the full baseline scope, but it can stay lighter while the blob and stream chapters are brought to parity first.",
     bullets: [
-      "Same world, deeper mode",
-      "Quiet readiness signal",
-      "Direct graph entry when warm",
+      "Calmer technical substrate",
+      "Centered CTA stack",
+      "Graph-ready handoff",
     ],
     accentVar: "var(--color-warm-coral)",
     align: "center",
   },
 ];
 
+export const ambientFieldHeroClients: readonly AmbientFieldClientRailItem[] = [
+  { id: "papers", label: "Papers" },
+  { id: "entities", label: "Entities" },
+  { id: "pathways", label: "Pathways" },
+  { id: "mechanisms", label: "Mechanisms" },
+  { id: "clusters", label: "Clusters" },
+  { id: "timelines", label: "Timelines" },
+] as const;
+
+export const ambientFieldStoryOneBeats: readonly AmbientFieldStoryBeat[] = [
+  {
+    id: "info-1",
+    progressLabel: "01",
+    title: "Reveal the few evidence paths that actually deserve attention",
+    body:
+      "The first story beat should make the blob feel governed rather than decorative. Motion tightens, context starts to matter, and the field begins to read like a map instead of a wash.",
+    accentVar: "var(--color-soft-blue)",
+    variant: "columns",
+  },
+  {
+    id: "info-2",
+    progressLabel: "02",
+    title: "Show how context removes noise before the graph chapter arrives",
+    body:
+      "This middle beat is where the user should start trusting the field. The blob is still present, but density and emphasis shifts make it clear that not every point matters equally.",
+    accentVar: "var(--color-golden-yellow)",
+    variant: "columns",
+  },
+  {
+    id: "info-3",
+    progressLabel: "03",
+    title: "What should the system surface before the next chapter takes over?",
+    body:
+      "Use the last beat as the bridge into the graph chapter: one centered question block, with the blob thinning and preparing to overlap with the sticky stream owner.",
+    accentVar: "var(--color-soft-lavender)",
+    variant: "centered",
+  },
+] as const;
+
+export const ambientFieldGraphSteps: readonly AmbientFieldGraphStep[] = [
+  {
+    id: "step-1",
+    number: "01",
+    text: "Signals enter from the broader evidence environment.",
+  },
+  {
+    id: "step-2",
+    number: "02",
+    text: "Agents investigate each route in context before highlighting it.",
+  },
+  {
+    id: "step-3",
+    number: "03",
+    text: "Low-signal paths fall away and the useful traces remain visible.",
+  },
+  {
+    id: "step-4",
+    number: "04",
+    text: "The strongest corridor is ready for the next module or graph handoff.",
+  },
+] as const;
+
 export const ambientFieldProcessStageManifest: AmbientFieldProcessStageManifest = {
-  desktopPath: [
-    { x: 0.06, y: 0.72 },
-    { x: 0.16, y: 0.42 },
-    { x: 0.26, y: 0.2 },
-    { x: 0.38, y: 0.28 },
-    { x: 0.52, y: 0.64 },
-    { x: 0.66, y: 0.74 },
-    { x: 0.78, y: 0.36 },
-    { x: 0.9, y: 0.32 },
-    { x: 0.96, y: 0.46 },
+  desktopRailPaths: [
+    "M1175 480.3C1019.6 479.3 1016 453.8 848.9 453.8C681.8 453.8 657 475.9 465.1 475.9C273.2 475.9 320.5 414.1 183.9 414.1",
+    "M1175 465.2C1019.6 464.2 1016 497.9 848.9 497.9C681.8 497.9 657 452.8 465.1 452.8C273.2 452.8 320.5 391 183.9 391",
+    "M1175 450.2C1019.6 449.2 1016 467.9 848.9 467.9C681.8 467.9 657 499.7 465.1 499.7C273.2 499.7 320.5 437.9 183.9 437.9",
+    "M1175 146.2C512.5 146.2 895.4 77 184 77",
+    "M1175 302C1019.6 301 1076 303.4 908.9 303.4C741.8 303.4 697 128.5 505.1 128.5C313.2 128.5 320.5 127.7 183.9 127.7",
+    "M1175 326C1019.6 325 1086 327.4 918.9 327.4C751.8 327.4 667 152.5 475.1 152.5C283.2 152.5 320.5 151.7 183.9 151.7",
+    "M1175 509C1019.6 508 1026 477.4 858.9 477.4C691.8 477.4 667 431.5 475.1 431.5C283.2 431.5 320.5 367.7 183.9 367.7",
+    "M1175 495C1019.6 494 1006 441.4 838.9 441.4C671.8 441.4 667 411.5 475.1 411.5C283.2 411.5 320.5 344.7 183.9 344.7",
   ] as const,
-  mobilePath: [
-    { x: 0.24, y: 0.86 },
-    { x: 0.26, y: 0.68 },
-    { x: 0.35, y: 0.5 },
-    { x: 0.48, y: 0.38 },
-    { x: 0.58, y: 0.54 },
-    { x: 0.66, y: 0.7 },
-    { x: 0.74, y: 0.48 },
-    { x: 0.82, y: 0.24 },
+  mobileRailPaths: [
+    "M47.2 653C47.9 554.4 64.9 552.2 64.9 446.2C64.9 340.2 50.2 324.5 50.2 202.8C50.2 81.1 91.4 111.1 91.4 24.5",
+    "M57.3 653C58 554.4 35.5 552.2 35.5 446.2C35.5 340.2 65.6 324.5 65.6 202.8C65.6 81.1 106.8 111.1 106.8 24.5",
+    "M67.3 653C68 554.4 55.5 552.2 55.5 446.2C55.5 340.2 34.3 324.5 34.3 202.8C34.3 81.1 75.4 111.1 75.4 24.5",
+    "M269.9 653C269.9 232.8 316 475.6 316 24.5",
+    "M166.1 653C166.8 554.4 165.2 590.2 165.2 484.3C165.2 378.4 281.7 349.9 281.7 228.2C281.7 106.5 282.2 111.1 282.2 24.5",
+    "M150 653C150.7 554.4 149.1 596.6 149.1 490.6C149.1 384.7 265.6 330.9 265.6 209.2C265.6 87.5 266.1 111.1 266.1 24.5",
+    "M28.1 653C28.8 554.4 49.1 558.5 49.1 452.6C49.1 346.7 79.7 330.9 79.7 209.2C79.7 87.5 122.2 111.1 122.2 24.5",
+    "M37.4 653C38.1 554.4 73.1 545.8 73.1 439.9C73.1 334 93 330.9 93 209.2C93 87.5 137.5 111.1 137.5 24.5",
   ] as const,
-  markerLanes: [
+  points: [
     {
-      accentVar: "var(--color-soft-blue)",
-      phase: 0,
-      scale: 1,
+      id: "kdc",
+      pathIndex: 0,
+      tone: "default",
+      popups: [
+        {
+          id: "kdc-primary",
+          category: "Evidence check",
+          title: "KDC-style dependency chain",
+          label: "Not present",
+        },
+        {
+          id: "kdc-secondary",
+          title: "Exception logged for later review",
+        },
+      ],
     },
     {
-      accentVar: "var(--color-golden-yellow)",
-      phase: 0.22,
-      scale: 0.82,
+      id: "function",
+      pathIndex: 1,
+      tone: "default",
+      popups: [
+        {
+          id: "function-primary",
+          category: "Evidence check",
+          title: "Function remains reachable",
+          label: "Not present",
+        },
+        {
+          id: "function-secondary",
+          title: "Context removed this route from focus",
+        },
+      ],
     },
     {
-      accentVar: "var(--color-teal)",
-      phase: 0.48,
-      scale: 0.68,
-    },
-  ] as const,
-  popups: [
-    {
-      id: "ingest",
-      title: "Retrieve the right neighborhood",
-      body:
-        "Pull a narrow evidence corridor first so the chapter feels intentional instead of dropping the user into undifferentiated motion.",
-      accentVar: "var(--color-soft-blue)",
-      desktopLeft: "4%",
-      desktopTop: "10%",
-      mobileLeft: "6%",
-      mobileTop: "8%",
-      window: [0.02, 0.15, 0.24, 0.34],
+      id: "fpt",
+      pathIndex: 2,
+      tone: "default",
+      popups: [
+        {
+          id: "fpt-primary",
+          category: "Evidence check",
+          title: "Related paper corridor detected",
+          label: "Not present",
+        },
+        {
+          id: "fpt-secondary",
+          title: "Exception logged for later review",
+        },
+      ],
     },
     {
-      id: "route",
-      title: "Route the stream through the chapter",
-      body:
-        "Directional current should read like system logic: the stream narrows, accelerates, and starts to convey ordered movement.",
-      accentVar: "var(--color-soft-lavender)",
-      desktopLeft: "28%",
-      desktopTop: "54%",
-      mobileLeft: "14%",
-      mobileTop: "54%",
-      window: [0.18, 0.3, 0.42, 0.54],
+      id: "access",
+      pathIndex: 3,
+      tone: "danger",
+      popups: [
+        {
+          id: "access-primary",
+          category: "Evidence check",
+          title: "High-confidence access route",
+          label: "Present",
+        },
+        {
+          id: "access-secondary",
+          title: "Highly connected paper cluster",
+        },
+        {
+          id: "access-tertiary",
+          title: "Module state prepared automatically",
+        },
+      ],
     },
     {
-      id: "focus",
-      title: "Surface the current decision point",
-      body:
-        "The DOM layer should explain what the field is doing at the same moment the background shifts into stronger directional emphasis.",
-      accentVar: "var(--color-golden-yellow)",
-      desktopLeft: "40%",
-      desktopTop: "14%",
-      mobileLeft: "30%",
-      mobileTop: "24%",
-      window: [0.34, 0.46, 0.56, 0.68],
+      id: "json",
+      pathIndex: 4,
+      tone: "danger",
+      popups: [
+        {
+          id: "json-primary",
+          category: "Evidence check",
+          title: "Cross-study signal convergence",
+          label: "Present",
+        },
+        {
+          id: "json-secondary",
+          title: "Isolated validation environment",
+        },
+        {
+          id: "json-tertiary",
+          title: "Ticket created",
+          label: "SLA 7 days",
+        },
+      ],
     },
     {
-      id: "sequence",
-      title: "Sequence the bridge actions",
-      body:
-        "Cards should feel looped and procedural, not statically pinned. The chapter needs multiple beats before the next story band takes over.",
-      accentVar: "var(--color-teal)",
-      desktopLeft: "62%",
-      desktopTop: "60%",
-      mobileLeft: "26%",
-      mobileTop: "66%",
-      window: [0.54, 0.66, 0.78, 0.9],
+      id: "fou",
+      pathIndex: 5,
+      tone: "danger",
+      popups: [
+        {
+          id: "fou-primary",
+          category: "Evidence check",
+          title: "Mechanism bridge already configured",
+          label: "Present",
+        },
+        {
+          id: "fou-secondary",
+          title: "Test environment prepared",
+        },
+        {
+          id: "fou-tertiary",
+          title: "Ticket created",
+          label: "SLA 30 days",
+        },
+      ],
     },
     {
-      id: "handoff",
-      title: "Hold continuity into the next surface",
-      body:
-        "The stream chapter should still feel like the same world as the inline module and graph handoff that follow after it.",
-      accentVar: "var(--color-warm-coral)",
-      desktopLeft: "76%",
-      desktopTop: "18%",
-      mobileLeft: "34%",
-      mobileTop: "36%",
-      window: [0.76, 0.86, 0.94, 1],
+      id: "image",
+      pathIndex: 6,
+      tone: "default",
+      popups: [
+        {
+          id: "image-primary",
+          category: "Evidence check",
+          title: "Image parsing configuration",
+          label: "Not present",
+        },
+        {
+          id: "image-secondary",
+          title: "Exception logged for later review",
+        },
+      ],
+    },
+    {
+      id: "framebuffer",
+      pathIndex: 7,
+      tone: "default",
+      popups: [
+        {
+          id: "framebuffer-primary",
+          category: "Evidence check",
+          title: "Framebuffer console enable",
+          label: "Not present",
+        },
+        {
+          id: "framebuffer-secondary",
+          title: "Context removed this route from focus",
+        },
+      ],
     },
   ] as const,
 };
@@ -251,7 +395,7 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
   focusViewportRatio: 0.32,
   processProgress: {
     start: {
-      sectionId: "section-process",
+      sectionId: "section-graph",
       offsetViewport: 0.04,
     },
     end: {
@@ -274,12 +418,12 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
         },
         exit: {
           start: {
-            sectionId: "section-process",
-            offsetViewport: -0.58,
+            sectionId: "section-story-2",
+            offsetViewport: -0.42,
           },
           end: {
-            sectionId: "section-process",
-            offsetViewport: 0.16,
+            sectionId: "section-story-2",
+            offsetViewport: 0.1,
           },
         },
       },
@@ -289,26 +433,26 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
           offsetViewport: 0,
         },
         end: {
-          sectionId: "section-process",
-          offsetViewport: 0.08,
+          sectionId: "section-graph",
+          offsetViewport: 0.18,
         },
       },
       emphasis: {
-        base: 0.58,
+        base: 0.52,
         metric: "visibility",
-        range: 0.42,
+        range: 0.48,
       },
     },
     stream: {
       visibility: {
         enter: {
           start: {
-            sectionId: "section-process",
-            offsetViewport: -0.34,
+            sectionId: "section-graph",
+            offsetViewport: -0.32,
           },
           end: {
-            sectionId: "section-process",
-            offsetViewport: 0.18,
+            sectionId: "section-graph",
+            offsetViewport: 0.1,
           },
         },
         exit: {
@@ -324,7 +468,7 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
       },
       localProgress: {
         start: {
-          sectionId: "section-process",
+          sectionId: "section-graph",
           offsetViewport: -0.08,
         },
         end: {
@@ -333,9 +477,9 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
         },
       },
       emphasis: {
-        base: 0.36,
+        base: 0.32,
         metric: "processProgress",
-        range: 0.64,
+        range: 0.68,
       },
     },
     pcb: {

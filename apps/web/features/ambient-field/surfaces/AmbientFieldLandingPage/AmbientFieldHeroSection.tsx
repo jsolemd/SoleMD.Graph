@@ -1,15 +1,15 @@
 "use client";
 
-import type { RefObject } from "react";
 import { MetaPill } from "@/features/graph/components/panels/PanelShell/MetaPill";
 import { chromePillSurfaceStyle } from "@/features/graph/components/panels/PanelShell/panel-styles";
-import { PromptStageSurface } from "@/features/graph/components/panels/prompt/PromptStageSurface";
-import type { AmbientFieldLandingSection } from "./ambient-field-landing-content";
+import {
+  ambientFieldHeroClients,
+  type AmbientFieldLandingSection,
+} from "./ambient-field-landing-content";
+import { AmbientFieldClientsRail } from "./AmbientFieldClientsRail";
 
 interface AmbientFieldHeroSectionProps {
   graphReady: boolean;
-  promptRef: RefObject<HTMLDivElement | null>;
-  stagePromptWidth: number;
   warmupLabel: string;
   onExploreRuntime: () => void;
   onOpenGraph: () => void;
@@ -18,8 +18,6 @@ interface AmbientFieldHeroSectionProps {
 
 export function AmbientFieldHeroSection({
   graphReady,
-  promptRef,
-  stagePromptWidth,
   warmupLabel,
   onExploreRuntime,
   onOpenGraph,
@@ -37,14 +35,12 @@ export function AmbientFieldHeroSection({
         <div className="max-w-[880px] text-center">
           <div className="mb-5 flex flex-wrap items-center justify-center gap-2">
             <MetaPill mono>{section.eyebrow}</MetaPill>
-            <MetaPill style={{ color: section.accentVar }}>
-              Shared ambient substrate
-            </MetaPill>
+            <MetaPill style={{ color: section.accentVar }}>Blob owner</MetaPill>
             <MetaPill>{warmupLabel}</MetaPill>
           </div>
 
-          <h1 className="mx-auto max-w-[13ch] text-[2.7rem] font-medium leading-[0.92] tracking-[-0.045em] sm:text-[4rem] lg:text-[4.6rem]">
-            A living evidence field before the graph opens.
+          <h1 className="mx-auto max-w-[12ch] text-[2.7rem] font-medium leading-[0.92] tracking-[-0.045em] sm:text-[4rem] lg:text-[4.8rem]">
+            {section.title}
           </h1>
 
           <p
@@ -64,23 +60,7 @@ export function AmbientFieldHeroSection({
           </div>
         </div>
 
-        <div
-          ref={promptRef}
-          className="mt-9 w-full"
-          style={{ maxWidth: `${stagePromptWidth}px` }}
-        >
-          <PromptStageSurface
-            compact
-            helperText={
-              graphReady
-                ? "The graph workspace is ready. Open it now or keep scrolling through the same world."
-                : `${warmupLabel} while the ambient stage stays fully available.`
-            }
-            onPrimaryAction={graphReady ? onOpenGraph : undefined}
-            placeholder="What does DRD2 connectivity suggest about psychosis-related pathways?"
-            primaryActionDisabled={!graphReady}
-          />
-        </div>
+        <AmbientFieldClientsRail items={ambientFieldHeroClients} />
 
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
           <button
@@ -92,7 +72,7 @@ export function AmbientFieldHeroSection({
               color: "var(--graph-panel-text)",
             }}
           >
-            Explore the landing runtime
+            Explore the story
           </button>
           <button
             type="button"
@@ -105,7 +85,7 @@ export function AmbientFieldHeroSection({
               opacity: graphReady ? 1 : 0.58,
             }}
           >
-            {graphReady ? "Open graph now" : "Graph still warming"}
+            {graphReady ? "Open graph now" : "Graph warming"}
           </button>
         </div>
       </div>
