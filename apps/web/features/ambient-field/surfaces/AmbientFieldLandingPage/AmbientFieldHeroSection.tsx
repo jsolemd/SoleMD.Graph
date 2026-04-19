@@ -29,7 +29,7 @@ export function AmbientFieldHeroSection({
       data-ambient-section
       data-preset={section.preset}
       data-section-id={section.id}
-      className="flex min-h-[108svh] items-center justify-center px-4 pb-20 pt-24 sm:px-6 sm:pb-24 sm:pt-28"
+      className="flex min-h-[118svh] items-center justify-center px-4 pb-[14vh] pt-24 sm:px-6 sm:pb-[16vh] sm:pt-28"
     >
       <div className="relative mx-auto flex w-full max-w-[1240px] flex-col items-center">
         <div className="max-w-[880px] text-center">

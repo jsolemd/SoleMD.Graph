@@ -1,8 +1,10 @@
 "use client";
 
 import {
+  AMBIENT_FIELD_PHASE_IDS,
   AMBIENT_FIELD_STAGE_ITEM_IDS,
   createAmbientFieldSceneState,
+  type AmbientFieldPhaseId,
   type AmbientFieldSceneState,
   type AmbientFieldStageItemId,
   type AmbientFieldVisualPreset,
@@ -44,12 +46,14 @@ interface AmbientFieldStageScrollManifest {
 export interface AmbientFieldScrollManifest {
   activationViewportRatio: number;
   focusViewportRatio: number;
+  phases?: Partial<Record<AmbientFieldPhaseId, AmbientFieldScrollWindow>>;
   processProgress: AmbientFieldScrollWindow;
   stages: Record<AmbientFieldStageItemId, AmbientFieldStageScrollManifest>;
 }
 
 export interface ResolvedAmbientFieldScrollState {
   activeSectionId: string;
+  phases: AmbientFieldSceneState["phases"];
   processProgress: number;
   scrollProgress: number;
   items: AmbientFieldSceneState["items"];
@@ -193,6 +197,7 @@ export function resolveAmbientFieldScrollState({
     const fallback = createAmbientFieldSceneState();
     return {
       activeSectionId: fallback.activeSectionId,
+      phases: fallback.phases,
       processProgress: 0,
       scrollProgress: 0,
       items: fallback.items,
@@ -218,6 +223,20 @@ export function resolveAmbientFieldScrollState({
     viewportHeight,
     fallback,
   );
+  const phases = Object.fromEntries(
+    AMBIENT_FIELD_PHASE_IDS.map((phaseId) => [
+      phaseId,
+      manifest.phases?.[phaseId]
+        ? resolveProgressWindow(
+            manifest.phases[phaseId],
+            focusTop,
+            stopMap,
+            viewportHeight,
+            fallback,
+          )
+        : 0,
+    ]),
+  ) as AmbientFieldSceneState["phases"];
   const items = {} as AmbientFieldSceneState["items"];
 
   for (const stageItemId of AMBIENT_FIELD_STAGE_ITEM_IDS) {
@@ -255,6 +274,7 @@ export function resolveAmbientFieldScrollState({
 
   return {
     activeSectionId,
+    phases,
     processProgress,
     scrollProgress,
     items,

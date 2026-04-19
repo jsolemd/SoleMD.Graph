@@ -1,12 +1,19 @@
 "use client";
 
 import {
+  brandPastelFallbackHexByKey,
+  brandPastelVarNameByKey,
   semanticColorFallbackHexByKey,
   semanticColorVarNameByKey,
 } from "@/lib/pastel-tokens";
 
 export type AmbientFieldVisualPreset = "blob" | "stream" | "pcb";
 export type AmbientFieldStageItemId = AmbientFieldVisualPreset;
+export type AmbientFieldPhaseId =
+  | "blobSelection"
+  | "detailInspection"
+  | "synthesisLinks"
+  | "reform";
 
 type ColorToken = {
   cssVarName: string;
@@ -65,6 +72,7 @@ export interface AmbientFieldSceneState {
   activeSectionId: string;
   items: Record<AmbientFieldStageItemId, AmbientFieldStageItemState>;
   motionEnabled: boolean;
+  phases: Record<AmbientFieldPhaseId, number>;
   processProgress: number;
   scrollProgress: number;
 }
@@ -76,18 +84,29 @@ const semanticToken = (
   fallbackHex: semanticColorFallbackHexByKey[key],
 });
 
+const brandToken = (
+  key: keyof typeof brandPastelVarNameByKey,
+): ColorToken => ({
+  cssVarName: brandPastelVarNameByKey[key],
+  fallbackHex: brandPastelFallbackHexByKey[key],
+});
+
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
-const NEUTRAL_PARTICLE_BASE: ColorToken = {
-  cssVarName: "--ambient-field-particle-base",
-  fallbackHex: "#a0a0bb",
-};
-const SHARED_PARTICLE_NOISE = semanticToken("paper");
+const NEUTRAL_PARTICLE_BASE = brandToken("soft-blue");
+const NEUTRAL_PARTICLE_WAVE = brandToken("soft-pink");
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
   "stream",
   "pcb",
 ] as const satisfies readonly AmbientFieldStageItemId[];
+
+export const AMBIENT_FIELD_PHASE_IDS = [
+  "blobSelection",
+  "detailInspection",
+  "synthesisLinks",
+  "reform",
+] as const satisfies readonly AmbientFieldPhaseId[];
 
 export const visualPresets: Record<
   AmbientFieldVisualPreset,
@@ -101,11 +120,11 @@ export const visualPresets: Record<
     rotationVelocity: [0, 0.06, 0],
     scrollRotation: [0, Math.PI, 0],
     shader: {
-      alpha: 1,
-      alphaMobile: 1,
+      alpha: 1.08,
+      alphaMobile: 1.04,
       amplitude: 0.05,
       colorBase: NEUTRAL_PARTICLE_BASE,
-      colorNoise: SHARED_PARTICLE_NOISE,
+      colorNoise: NEUTRAL_PARTICLE_WAVE,
       depth: 0.3,
       frequency: 0.5,
       funnelDistortion: 0,
@@ -117,14 +136,14 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       pulsePhase: 0.35,
-      pulseRate: 2.2,
+      pulseRate: 2.8,
       pulseSoftness: 0.14,
-      pulseSpatialScale: 1.55,
-      pulseStrength: 0.75,
-      pulseThreshold: 0.82,
+      pulseSpatialScale: 1.45,
+      pulseStrength: 0.84,
+      pulseThreshold: 0.7,
       selection: 1,
-      size: 8,
-      sizeMobile: 5.6,
+      size: 7.2,
+      sizeMobile: 4.8,
       speed: 1,
       stream: 0,
       width: 0,
@@ -142,7 +161,7 @@ export const visualPresets: Record<
       alphaMobile: 1,
       amplitude: 0.05,
       colorBase: NEUTRAL_PARTICLE_BASE,
-      colorNoise: SHARED_PARTICLE_NOISE,
+      colorNoise: NEUTRAL_PARTICLE_WAVE,
       depth: 0.69,
       frequency: 1.7,
       funnelDistortion: 1,
@@ -154,14 +173,14 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0.4,
       pulsePhase: 1.6,
-      pulseRate: 2.6,
+      pulseRate: 3.1,
       pulseSoftness: 0.14,
-      pulseSpatialScale: 1.35,
-      pulseStrength: 0.68,
-      pulseThreshold: 0.8,
+      pulseSpatialScale: 1.28,
+      pulseStrength: 0.76,
+      pulseThreshold: 0.68,
       selection: 1,
-      size: 10,
-      sizeMobile: 6.6,
+      size: 9.2,
+      sizeMobile: 5.8,
       speed: 1,
       stream: 1,
       width: 2,
@@ -179,7 +198,7 @@ export const visualPresets: Record<
       alphaMobile: 0.82,
       amplitude: 0.05,
       colorBase: NEUTRAL_PARTICLE_BASE,
-      colorNoise: SHARED_PARTICLE_NOISE,
+      colorNoise: NEUTRAL_PARTICLE_WAVE,
       depth: 0.3,
       frequency: 0.1,
       funnelDistortion: 0,
@@ -191,14 +210,14 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       pulsePhase: 2.8,
-      pulseRate: 1.9,
+      pulseRate: 2.3,
       pulseSoftness: 0.16,
-      pulseSpatialScale: 1.15,
-      pulseStrength: 0.58,
-      pulseThreshold: 0.84,
+      pulseSpatialScale: 1.08,
+      pulseStrength: 0.66,
+      pulseThreshold: 0.74,
       selection: 1,
-      size: 6,
-      sizeMobile: 4.4,
+      size: 5.4,
+      sizeMobile: 4.0,
       speed: 1,
       stream: 0,
       width: 0,
@@ -224,6 +243,12 @@ export function createAmbientFieldSceneState(): AmbientFieldSceneState {
     scrollProgress: 0,
     processProgress: 0,
     motionEnabled: true,
+    phases: {
+      blobSelection: 0,
+      detailInspection: 0,
+      synthesisLinks: 0,
+      reform: 0,
+    },
     items: {
       blob: createStageItemState(1, 0, 1),
       stream: createStageItemState(),

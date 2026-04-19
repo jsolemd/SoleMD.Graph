@@ -269,6 +269,12 @@ export function FieldScene({
     onFrame?.(state.clock.elapsedTime * 1000);
     const sceneState = sceneStateRef.current ?? DEFAULT_AMBIENT_FIELD_SCENE;
     const motionEnabled = sceneState.motionEnabled;
+    const {
+      blobSelection,
+      detailInspection,
+      reform,
+      synthesisLinks,
+    } = sceneState.phases;
 
     for (const itemId of stageItemIds) {
       const layer = {
@@ -328,7 +334,15 @@ export function FieldScene({
       const blobScaleBurst = clamp01(blobDiagram - blobShrink);
       const pulseProgress =
         itemId === "blob"
-          ? smoothstep(0.1, 0.59, localProgress)
+          ? clamp01(
+              Math.max(
+                smoothstep(0.1, 0.59, localProgress),
+                blobSelection * 0.86,
+                detailInspection * 0.96,
+                synthesisLinks * 0.9,
+                reform * 0.7,
+              ),
+            )
           : clamp01(emphasis);
 
       const targetAlpha =
@@ -353,25 +367,33 @@ export function FieldScene({
       const targetSpeed = shader.speed * motionScale;
       const targetSize = shaderSize;
       const targetPulseRate =
-        shader.pulseRate + (3 - shader.pulseRate) * pulseProgress;
+        shader.pulseRate + (4.1 - shader.pulseRate) * pulseProgress;
       const targetPulseThreshold =
-        shader.pulseThreshold + (0.72 - shader.pulseThreshold) * pulseProgress;
+        shader.pulseThreshold + (0.56 - shader.pulseThreshold) * pulseProgress;
       const targetPulseStrength =
         shader.pulseStrength +
-        ((itemId === "blob" ? 0.9 : 0.82) - shader.pulseStrength) * pulseProgress;
+        ((itemId === "blob" ? 1.18 : 0.94) - shader.pulseStrength) * pulseProgress;
       const targetSelection =
         itemId === "blob"
-          ? shader.selection - (shader.selection - 0.45) * blobSelection
+          ? shader.selection -
+            (shader.selection - 0.42) *
+              clamp01(
+                Math.max(
+                  blobSelection,
+                  detailInspection * 0.84,
+                  synthesisLinks * 0.62,
+                ),
+              )
           : shader.selection;
       const targetFunnelDistortion = shader.funnelDistortion;
       const targetFunnelStartShift = shader.funnelStartShift;
       const targetFunnelEndShift = shader.funnelEndShift;
       const targetScale =
         itemId === "blob"
-          ? baseScale * (1 + 0.8 * blobScaleBurst)
+          ? baseScale * (1 + 0.8 * blobScaleBurst + reform * 0.16)
           : baseScale;
       const targetPositionY =
-        sceneUnits * (preset.sceneOffset[1] + (itemId === "blob" ? blobEnd * 0.5 : 0));
+        sceneUnits * (preset.sceneOffset[1] + (itemId === "blob" ? blobEnd * 0.12 : 0));
       const targetRotationX =
         preset.sceneRotation[0] + preset.scrollRotation[0] * localProgress;
       const targetRotationY =

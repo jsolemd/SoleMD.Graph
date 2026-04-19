@@ -34,32 +34,6 @@ export interface AmbientFieldStoryBeat {
   variant: "columns" | "centered";
 }
 
-export interface AmbientFieldGraphStep {
-  id: string;
-  number: string;
-  text: string;
-}
-
-export interface AmbientFieldStreamPopup {
-  category?: string;
-  id: string;
-  label?: string;
-  title: string;
-}
-
-export interface AmbientFieldStreamPoint {
-  id: string;
-  pathIndex: number;
-  popups: readonly AmbientFieldStreamPopup[];
-  tone: "default" | "danger";
-}
-
-export interface AmbientFieldProcessStageManifest {
-  desktopRailPaths: readonly string[];
-  mobileRailPaths: readonly string[];
-  points: readonly AmbientFieldStreamPoint[];
-}
-
 export const ambientFieldLandingSections: AmbientFieldLandingSection[] = [
   {
     id: "section-welcome",
@@ -192,207 +166,51 @@ export const ambientFieldStoryOneBeats: readonly AmbientFieldStoryBeat[] = [
   },
 ] as const;
 
-export const ambientFieldGraphSteps: readonly AmbientFieldGraphStep[] = [
-  {
-    id: "step-1",
-    number: "01",
-    text: "Selected papers move into focus without losing the wider field.",
-  },
-  {
-    id: "step-2",
-    number: "02",
-    text: "Entities, relations, and metadata begin to cluster around them.",
-  },
-  {
-    id: "step-3",
-    number: "03",
-    text: "Connections between evidence neighborhoods become legible.",
-  },
-  {
-    id: "step-4",
-    number: "04",
-    text: "The same field can now transition into synthesis, wiki context, or graph entry.",
-  },
-] as const;
-
-export const ambientFieldProcessStageManifest: AmbientFieldProcessStageManifest = {
-  desktopRailPaths: [
-    "M1175 480.3C1019.6 479.3 1016 453.8 848.9 453.8C681.8 453.8 657 475.9 465.1 475.9C273.2 475.9 320.5 414.1 183.9 414.1",
-    "M1175 465.2C1019.6 464.2 1016 497.9 848.9 497.9C681.8 497.9 657 452.8 465.1 452.8C273.2 452.8 320.5 391 183.9 391",
-    "M1175 450.2C1019.6 449.2 1016 467.9 848.9 467.9C681.8 467.9 657 499.7 465.1 499.7C273.2 499.7 320.5 437.9 183.9 437.9",
-    "M1175 146.2C512.5 146.2 895.4 77 184 77",
-    "M1175 302C1019.6 301 1076 303.4 908.9 303.4C741.8 303.4 697 128.5 505.1 128.5C313.2 128.5 320.5 127.7 183.9 127.7",
-    "M1175 326C1019.6 325 1086 327.4 918.9 327.4C751.8 327.4 667 152.5 475.1 152.5C283.2 152.5 320.5 151.7 183.9 151.7",
-    "M1175 509C1019.6 508 1026 477.4 858.9 477.4C691.8 477.4 667 431.5 475.1 431.5C283.2 431.5 320.5 367.7 183.9 367.7",
-    "M1175 495C1019.6 494 1006 441.4 838.9 441.4C671.8 441.4 667 411.5 475.1 411.5C283.2 411.5 320.5 344.7 183.9 344.7",
-  ] as const,
-  mobileRailPaths: [
-    "M47.2 653C47.9 554.4 64.9 552.2 64.9 446.2C64.9 340.2 50.2 324.5 50.2 202.8C50.2 81.1 91.4 111.1 91.4 24.5",
-    "M57.3 653C58 554.4 35.5 552.2 35.5 446.2C35.5 340.2 65.6 324.5 65.6 202.8C65.6 81.1 106.8 111.1 106.8 24.5",
-    "M67.3 653C68 554.4 55.5 552.2 55.5 446.2C55.5 340.2 34.3 324.5 34.3 202.8C34.3 81.1 75.4 111.1 75.4 24.5",
-    "M269.9 653C269.9 232.8 316 475.6 316 24.5",
-    "M166.1 653C166.8 554.4 165.2 590.2 165.2 484.3C165.2 378.4 281.7 349.9 281.7 228.2C281.7 106.5 282.2 111.1 282.2 24.5",
-    "M150 653C150.7 554.4 149.1 596.6 149.1 490.6C149.1 384.7 265.6 330.9 265.6 209.2C265.6 87.5 266.1 111.1 266.1 24.5",
-    "M28.1 653C28.8 554.4 49.1 558.5 49.1 452.6C49.1 346.7 79.7 330.9 79.7 209.2C79.7 87.5 122.2 111.1 122.2 24.5",
-    "M37.4 653C38.1 554.4 73.1 545.8 73.1 439.9C73.1 334 93 330.9 93 209.2C93 87.5 137.5 111.1 137.5 24.5",
-  ] as const,
-  points: [
-    {
-      id: "kdc",
-      pathIndex: 0,
-      tone: "default",
-      popups: [
-        {
-          id: "kdc-primary",
-          category: "Evidence check",
-          title: "KDC-style dependency chain",
-          label: "Not present",
-        },
-        {
-          id: "kdc-secondary",
-          title: "Exception logged for later review",
-        },
-      ],
-    },
-    {
-      id: "function",
-      pathIndex: 1,
-      tone: "default",
-      popups: [
-        {
-          id: "function-primary",
-          category: "Evidence check",
-          title: "Function remains reachable",
-          label: "Not present",
-        },
-        {
-          id: "function-secondary",
-          title: "Context removed this route from focus",
-        },
-      ],
-    },
-    {
-      id: "fpt",
-      pathIndex: 2,
-      tone: "default",
-      popups: [
-        {
-          id: "fpt-primary",
-          category: "Evidence check",
-          title: "Related paper corridor detected",
-          label: "Not present",
-        },
-        {
-          id: "fpt-secondary",
-          title: "Exception logged for later review",
-        },
-      ],
-    },
-    {
-      id: "access",
-      pathIndex: 3,
-      tone: "danger",
-      popups: [
-        {
-          id: "access-primary",
-          category: "Evidence check",
-          title: "High-confidence access route",
-          label: "Present",
-        },
-        {
-          id: "access-secondary",
-          title: "Highly connected paper cluster",
-        },
-        {
-          id: "access-tertiary",
-          title: "Module state prepared automatically",
-        },
-      ],
-    },
-    {
-      id: "json",
-      pathIndex: 4,
-      tone: "danger",
-      popups: [
-        {
-          id: "json-primary",
-          category: "Evidence check",
-          title: "Cross-study signal convergence",
-          label: "Present",
-        },
-        {
-          id: "json-secondary",
-          title: "Isolated validation environment",
-        },
-        {
-          id: "json-tertiary",
-          title: "Ticket created",
-          label: "SLA 7 days",
-        },
-      ],
-    },
-    {
-      id: "fou",
-      pathIndex: 5,
-      tone: "danger",
-      popups: [
-        {
-          id: "fou-primary",
-          category: "Evidence check",
-          title: "Mechanism bridge already configured",
-          label: "Present",
-        },
-        {
-          id: "fou-secondary",
-          title: "Test environment prepared",
-        },
-        {
-          id: "fou-tertiary",
-          title: "Ticket created",
-          label: "SLA 30 days",
-        },
-      ],
-    },
-    {
-      id: "image",
-      pathIndex: 6,
-      tone: "default",
-      popups: [
-        {
-          id: "image-primary",
-          category: "Evidence check",
-          title: "Image parsing configuration",
-          label: "Not present",
-        },
-        {
-          id: "image-secondary",
-          title: "Exception logged for later review",
-        },
-      ],
-    },
-    {
-      id: "framebuffer",
-      pathIndex: 7,
-      tone: "default",
-      popups: [
-        {
-          id: "framebuffer-primary",
-          category: "Evidence check",
-          title: "Framebuffer console enable",
-          label: "Not present",
-        },
-        {
-          id: "framebuffer-secondary",
-          title: "Context removed this route from focus",
-        },
-      ],
-    },
-  ] as const,
-};
-
 export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
   activationViewportRatio: 0.24,
   focusViewportRatio: 0.32,
+  phases: {
+    blobSelection: {
+      start: {
+        sectionId: "section-story-1",
+        offsetViewport: -0.08,
+      },
+      end: {
+        sectionId: "section-graph",
+        offsetViewport: -0.08,
+      },
+    },
+    detailInspection: {
+      start: {
+        sectionId: "section-graph",
+        offsetViewport: -0.06,
+      },
+      end: {
+        sectionId: "section-story-2",
+        offsetViewport: 0.04,
+      },
+    },
+    synthesisLinks: {
+      start: {
+        sectionId: "section-story-2",
+        offsetViewport: -0.08,
+      },
+      end: {
+        sectionId: "section-cta",
+        offsetViewport: -0.1,
+      },
+    },
+    reform: {
+      start: {
+        sectionId: "section-cta",
+        offsetViewport: -0.06,
+      },
+      end: {
+        sectionId: "section-cta",
+        offsetViewport: 0.86,
+      },
+    },
+  },
   processProgress: {
     start: {
       sectionId: "section-graph",
@@ -420,11 +238,11 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
       localProgress: {
         start: {
           sectionId: "section-welcome",
-          offsetViewport: 0,
+          offsetViewport: 0.32,
         },
         end: {
           sectionId: "section-story-2",
-          offsetViewport: 0.18,
+          offsetViewport: 0.32,
         },
       },
       emphasis: {
@@ -459,11 +277,11 @@ export const ambientFieldLandingScrollManifest: AmbientFieldScrollManifest = {
       localProgress: {
         start: {
           sectionId: "section-graph",
-          offsetViewport: -0.08,
+          offsetViewport: 0.06,
         },
         end: {
           sectionId: "section-cta",
-          offsetViewport: 0,
+          offsetViewport: 0.14,
         },
       },
       emphasis: {

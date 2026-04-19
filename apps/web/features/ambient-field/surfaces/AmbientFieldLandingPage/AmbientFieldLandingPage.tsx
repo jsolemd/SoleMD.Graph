@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  createRef,
   useEffect,
   useMemo,
   useRef,
@@ -38,7 +37,6 @@ import {
   type AmbientFieldSceneState,
 } from "../../scene/visual-presets";
 import {
-  composeAmbientFieldOverlayControllers,
   createAmbientFieldScrollController,
   type AmbientFieldScrollController,
 } from "../../scroll/ambient-field-scroll-driver";
@@ -46,15 +44,13 @@ import { AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT } from "../../ambient-field-breakp
 import {
   ambientFieldLandingSections,
   ambientFieldLandingScrollManifest,
-  ambientFieldProcessStageManifest,
 } from "./ambient-field-landing-content";
 import { AmbientFieldCtaSection } from "./AmbientFieldCtaSection";
 import { AmbientFieldGraphSection } from "./AmbientFieldGraphSection";
 import { AmbientFieldHeroSection } from "./AmbientFieldHeroSection";
-import { createAmbientFieldProcessStageController } from "./ambient-field-process-stage-controller";
 import { AmbientFieldSectionCard } from "./AmbientFieldSectionCard";
 import { AmbientFieldStoryChapter } from "./AmbientFieldStoryChapter";
-import { ambientFieldStoryOneBeats, ambientFieldGraphSteps } from "./ambient-field-landing-content";
+import { ambientFieldStoryOneBeats } from "./ambient-field-landing-content";
 
 const rootShellStyle: CSSProperties = {
   backgroundColor: "var(--graph-bg)",
@@ -151,21 +147,6 @@ function AmbientFieldLandingShell({
   const { width: viewportWidth } = useViewportSize();
   const rootRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
-  const processPanelRef = useRef<HTMLDivElement>(null);
-  const processPathRefs = useMemo(
-    () =>
-      ambientFieldProcessStageManifest.desktopRailPaths.map(() =>
-        createRef<SVGPathElement>(),
-      ),
-    [],
-  );
-  const processPointRefs = useMemo(
-    () =>
-      ambientFieldProcessStageManifest.points.map(() =>
-        createRef<HTMLDivElement>(),
-      ),
-    [],
-  );
   const sceneStateRef = useRef<AmbientFieldSceneState>(
     createAmbientFieldSceneState(),
   );
@@ -194,18 +175,9 @@ function AmbientFieldLandingShell({
     const hero = heroRef.current;
     if (!root || !hero) return undefined;
 
-    const overlayController = composeAmbientFieldOverlayControllers([
-      createAmbientFieldProcessStageController({
-        isMobile: isCompactFieldViewport,
-        panel: processPanelRef.current,
-        pathNodes: processPathRefs.map((pathRef) => pathRef.current),
-        points: processPointRefs.map((pointRef) => pointRef.current),
-      }),
-    ]);
     const controller = createAmbientFieldScrollController({
       root,
       hero,
-      overlayController,
       reducedMotion: !!reducedMotion,
       scrollManifest: ambientFieldLandingScrollManifest,
       sceneStateRef,
@@ -218,7 +190,7 @@ function AmbientFieldLandingShell({
       }
       controller.cleanup();
     };
-  }, [isCompactFieldViewport, processPathRefs, processPointRefs, reducedMotion]);
+  }, [isCompactFieldViewport, reducedMotion]);
 
   function handleFieldFrame(timestamp: number) {
     scrollControllerRef.current?.syncFrame(timestamp);
@@ -307,12 +279,7 @@ function AmbientFieldLandingShell({
         />
 
         <AmbientFieldGraphSection
-          isMobile={isCompactFieldViewport}
-          panelRef={processPanelRef}
-          pathRefs={processPathRefs}
-          pointRefs={processPointRefs}
           section={graphSection}
-          steps={ambientFieldGraphSteps}
         />
 
         <section
@@ -320,7 +287,7 @@ function AmbientFieldLandingShell({
           data-ambient-section
           data-preset={storyTwoSection.preset}
           data-section-id={storyTwoSection.id}
-          className="flex min-h-[100svh] items-center px-4 py-16 sm:px-6 sm:py-20"
+          className="flex min-h-[128svh] items-center px-4 py-[12vh] sm:px-6 sm:py-[14vh]"
         >
           <div className="mx-auto grid w-full max-w-[1180px] grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-8">
             <div className="hidden lg:col-span-4 lg:col-start-1 lg:block">

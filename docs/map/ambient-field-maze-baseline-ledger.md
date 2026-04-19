@@ -66,6 +66,82 @@ being adapted for SoleMD:
 - projected hotspot / hover-card phases
 - late-stage re-formation into a new shape instead of a hard cut
 
+## Agentic Rounds
+
+### Round 1
+
+- Focus:
+  persistent blob, wrapper/model split, Maze-timed deformation windows
+- Result:
+  blob now persists through the full scroll and no longer drops out between
+  chapters
+- Browser finding:
+  substrate continuity is correct, but the hero still reads dim and too uniform
+  compared with Maze
+
+### Round 2
+
+- Focus:
+  brighter semantic pulse clusters, tighter point-size feel, more active
+  cool-neutral base
+- Maze comparison:
+  Maze hero shows a brighter cool-neutral field with more frequent cyan/purple
+  cluster seams than our previous pass
+- Current intent:
+  increase pulse visibility and brightness without abandoning the neutral base
+  plus semantic-burst contract
+
+### Round 3
+
+- Focus:
+  move chapter meaning into named progress phases instead of one generic process
+  channel
+- Implementation:
+  added explicit phase tracks for `blobSelection`, `detailInspection`,
+  `synthesisLinks`, and `reform`
+- Why:
+  future rounds now have direct storyboard knobs for paper selection, detail
+  inspection, synthesis links, and late re-formation
+
+### Round 4
+
+- Focus:
+  source-only review of Maze particle motion, color drift, section dwell, and
+  rotation cadence
+- Source findings:
+  `data/research/mazehq-homepage/2026-04-18/index.html` confirms the particle
+  shader uses continuous FBM-driven color drift plus direct displacement, not
+  discrete pulse-island reseeding:
+  - `vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));`
+  - `r/g/b = base + clamp(vNoise, 0.0, 1.0) * 4.0 * (noise - base)`
+  - `displaced += vec3(uScale * uDepth * aMove * aSpeed * snoise_1_2(...))`
+  - `gl_PointSize = uSize * 100.0 / vDistance * uPixelRatio`
+- Source findings:
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js` confirms the
+  blob render loop is steady and should not visually restart on load:
+  - `this.wrapper.rotation.y += 0.001`
+  - `this.material.uniforms.uTime.value += 0.002`
+- Source findings:
+  our point-source registry already matches Maze's motion attributes:
+  - `aMove`: `±30`
+  - `aSpeed`: `0..1`
+  - `aRandomness.y`: `±1`
+  - `aRandomness.z`: `±0.5`
+- Source findings:
+  the long-lived Maze feel also comes from authored dwell, not shader alone:
+  `styles.css` shows `.c-stream{height:84.75rem}` and story items with
+  viewport-block padding around `20vh`, with centered titles using a taller
+  `26.875vh / 12.5vh` rhythm
+- Implementation target:
+  replace our discrete pulse-mask islands with source-led continuous color
+  drift, keep semantic colors as moving accents on top of that field, make the
+  load state start at true zero-turn, and lengthen section dwell so source
+  displacement can actually read
+- Follow-up:
+  current color pulsing is a step in the right direction but still does not
+  honor Maze closely enough. The shader and the rest of the field grammar need
+  another source-only review pass before the clean round.
+
 ### 1. Fixed Stage Runtime
 
 - [x] One fixed ambient-field canvas
@@ -87,6 +163,8 @@ Primary files:
 
 - [x] Keep idle spin and scroll-linked half-turn on separate transforms
 - [ ] Blob should read as a cohesive globe at local progress `0.00`
+- [ ] Initial page load must start at true zero-turn:
+  no entering mid-rotation, no stop/restart cadence before the steady spin
 - [x] Retimed blob deformation windows to Maze-style ranges:
   - frequency ramp `0.00-0.15`
   - first amplitude rise `0.10-0.14`
@@ -96,6 +174,9 @@ Primary files:
   - shrink/re-form `0.63-0.73`
 - [x] Preserve continuous rotation after the half-turn so later phases still
   feel alive
+- [ ] Re-check section geometry and scroll anchors after each pass:
+  Maze's steady loop should never read like a rotation reset caused by short
+  dwell or mid-range entry
 
 Primary files:
 
@@ -127,6 +208,11 @@ Primary files:
 - [ ] Keep pulse motion source-led:
   clustered and spatially coherent, not hue-jitter sparkle noise
 - [x] Preserve the Maze rule that color motion comes from shader noise first
+- [ ] Keep the source color grammar continuous:
+  no discrete pulse-step islands where the source uses drifting FBM color
+  movement
+- [ ] Re-review Maze shader color propagation in more detail before `/clean`:
+  the current pulse feel still does not match the source closely enough
 - [ ] Document every intentional SoleMD divergence from Maze here
 
 Current working divergence:
@@ -142,11 +228,16 @@ Primary files:
 
 ### 5. Particle Movement Types
 
-- [ ] Ambient drift from the shared noise path
+- [x] Ambient drift from the shared noise path
 - [x] Rigid-body idle spin at the wrapper level
 - [x] Scroll-linked half-turn at the model level
 - [ ] Stream conveyor motion and funnel shaping
 - [ ] Later phase selected-point thinning via `uSelection`
+- [x] Source movement attribute ranges already match Maze:
+  `aMove ±30`, `aSpeed 0..1`, `aRandomness.y ±1`, `aRandomness.z ±0.5`
+- [ ] Make source-matched displacement read as alive:
+  some particles should visibly zip through because color/alpha contrast and
+  dwell make the existing source displacement legible
 
 Primary files:
 
@@ -156,7 +247,11 @@ Primary files:
 ### 6. Selected Points And Hover-Panel Phase
 
 - [ ] Blob-era selected points should be treated as a staged hotspot pool
-- [ ] Later metadata cards should be projected DOM overlays, not shader widgets
+- [ ] Later module reveals should be field-led:
+  particles can disburse or part to reveal module panels, but the reveal should
+  stay owned by the ambient field rather than by a large static DOM block
+- [ ] If cards exist later, they should be sparse projected overlays or module
+  reveals, not a bulky explanatory DOM slab inside the detail chapter
 - [ ] Record how many selected nodes are visible in each chapter
 - [ ] Keep this ledger updated as more source-owned phases are identified
 
@@ -183,9 +278,19 @@ Primary files:
 ## To-Do List
 
 - [ ] Tighten the initial globe read against the live Maze homepage
+- [ ] Fix the load-time rotation stutter so the blob enters at zero-turn and
+  stays in a steady counterclockwise spin
+- [ ] Re-pass on color pulsing with source-only shader analysis:
+  current color movement is improved but still not close enough to Maze
+- [ ] Re-review every major field element before `/clean`:
+  shader, displacement read, rotation cadence, section dwell, and later reveal
+  phases
 - [ ] Keep adapting Maze mechanics to the SoleMD storyboard instead of removing them
+- [ ] Use the new named phase channels to drive selected-point density and later overlays
 - [ ] Add a paper-highlight chapter using Maze-style selected-point staging
 - [ ] Add a paper metadata / entity-relation hover-card phase using projected overlays
+- [ ] Replace the current DOM-heavy detail section with a field-led reveal:
+  particles disburse or separate to expose the relevant module panel
 - [ ] Add a synthesis phase with visible point-to-point connections for the wiki story
 - [ ] Add a re-formed end-state chapter, likely brain-like, while preserving the shared field
 - [ ] Keep adding newly identified source elements to this ledger as they are found
@@ -196,6 +301,13 @@ Primary files:
 
 - The blob now persists, but the initial globe read still needs live visual
   tightening against Maze.
+- The current field still needs a stronger source-like continuous color drift so
+  semantic accents read as waves moving across a neutral base rather than as
+  isolated pulse islands.
+- The point-source movement ranges already match Maze, so the remaining "zip"
+  gap is a visibility/readability problem, not a count or randomization problem.
+- Scroll dwell is still shorter than the source, which compresses the perceived
+  lifecycle and makes rotation/motion transitions feel less continuous.
 - Selected-point phases exist only as shader-side thinning right now; projected
   hotspot and hover-card layers are still missing.
 - The current stream/detail chapter is still simplified compared with Maze:

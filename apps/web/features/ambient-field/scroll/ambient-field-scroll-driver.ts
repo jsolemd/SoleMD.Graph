@@ -25,7 +25,10 @@ export interface AmbientFieldScrollController {
 export interface AmbientFieldScrollOverlayController {
   cleanup?: () => void;
   syncFrame: (frame: {
+    activeSectionId: string;
     heroProgress: number;
+    itemState: AmbientFieldSceneState["items"];
+    phaseProgress: AmbientFieldSceneState["phases"];
     processProgress: number;
     reducedMotion: boolean;
     scrollProgress: number;
@@ -111,12 +114,16 @@ export function createAmbientFieldScrollController({
     });
 
     sceneStateRef.current.activeSectionId = resolved.activeSectionId;
+    sceneStateRef.current.phases = resolved.phases;
     sceneStateRef.current.scrollProgress = resolved.scrollProgress;
     sceneStateRef.current.processProgress = resolved.processProgress;
     sceneStateRef.current.items = resolved.items;
 
     overlayController?.syncFrame({
+      activeSectionId: resolved.activeSectionId,
       heroProgress,
+      itemState: resolved.items,
+      phaseProgress: resolved.phases,
       processProgress: resolved.processProgress,
       reducedMotion,
       scrollProgress: resolved.scrollProgress,

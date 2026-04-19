@@ -92,7 +92,7 @@ export function AmbientFieldStoryChapter({
       data-ambient-section
       data-preset={section.preset}
       data-section-id={section.id}
-      className="px-4 py-16 sm:px-6 sm:py-20"
+      className="px-4 pb-[9.5rem] pt-[6vh] sm:px-6 sm:pt-[8vh]"
     >
       <div className="mx-auto w-full max-w-[1180px]">
         <AmbientFieldStoryProgress
@@ -100,7 +100,7 @@ export function AmbientFieldStoryChapter({
           rootRef={rootRef}
         />
 
-        <div className="space-y-14 lg:space-y-20">
+        <div className="space-y-[4vh]">
           {beats.map((beat) =>
             beat.variant === "centered" ? (
               <motion.div
@@ -113,7 +113,7 @@ export function AmbientFieldStoryChapter({
                   y: smooth,
                   opacity: { duration: 0.18, ease: "easeOut" },
                 }}
-                className="mx-auto max-w-[860px] py-12 text-center"
+                className="mx-auto max-w-[860px] pb-[12vh] pt-[26vh] text-center"
               >
                 <div className="mb-5 flex justify-center">
                   <MetaPill style={{ color: beat.accentVar }}>
@@ -138,7 +138,7 @@ export function AmbientFieldStoryChapter({
                   y: smooth,
                   opacity: { duration: 0.18, ease: "easeOut" },
                 }}
-                className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-center lg:gap-8"
+                className="grid min-h-[72svh] grid-cols-1 gap-6 py-[20vh] lg:grid-cols-12 lg:items-center lg:gap-8"
               >
                 <div className="lg:col-span-5">
                   <div className="flex items-center gap-2">

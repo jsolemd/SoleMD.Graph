@@ -29,7 +29,7 @@ export function AmbientFieldCtaSection({
       data-ambient-section
       data-preset={section.preset}
       data-section-id={section.id}
-      className="flex min-h-[100svh] items-center justify-center px-4 py-16 sm:px-6 sm:py-20"
+      className="flex min-h-[124svh] items-center justify-center px-4 py-[12vh] sm:px-6 sm:py-[14vh]"
     >
       <div className="mx-auto w-full max-w-[760px]">
         <motion.div

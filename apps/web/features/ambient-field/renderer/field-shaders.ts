@@ -53,6 +53,7 @@ varying float vAlpha;
 varying float vDistance;
 varying float vNoise;
 varying vec3 vColor;
+varying float vAccent;
 
 vec3 mod289_1_0(vec3 x) {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
@@ -211,26 +212,18 @@ void main() {
   vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
 
   float colorNoise = clamp(vNoise, 0.0, 1.0);
-  vec3 baseColor = mix(uColorBase, uColorNoise, colorNoise * 0.10);
-  float pulseTime = uTime + (uPulsePhase * 0.1);
-  float pulseStep = floor(pulseTime * uPulseRate);
-  float pulseCycle = fract(pulseTime * uPulseRate);
-  vec3 pulseBasis = position;
-  float pulseBasisLength = max(length(pulseBasis), 0.0001);
-  pulseBasis /= pulseBasisLength;
-  float pulseEnvelope =
-    smoothstep(0.0, 0.18, pulseCycle) *
-    (1.0 - smoothstep(0.42, 0.92, pulseCycle));
-  float pulseField = snoise(vec4(
-    pulseBasis * uPulseSpatialScale +
-    vec3(pulseStep * 0.11, -pulseStep * 0.07, pulseStep * 0.05 + uPulsePhase),
-    0.0
-  ));
-  float pulseMask =
-    smoothstep(uPulseThreshold, uPulseThreshold + uPulseSoftness, pulseField) *
-    pulseEnvelope;
-  vec3 pulseColor = mix(uColorNoise, color, 0.78);
-  vColor = mix(baseColor, pulseColor, pulseMask * uPulseStrength);
+  float r = uColorBase.r + (colorNoise * 4.0 * (uColorNoise.r - uColorBase.r));
+  float g = uColorBase.g + (colorNoise * 4.0 * (uColorNoise.g - uColorBase.g));
+  float b = uColorBase.b + (colorNoise * 4.0 * (uColorNoise.b - uColorBase.g));
+  vec3 sourceColor = clamp(vec3(r, g, b), 0.0, 1.0);
+  float accentMask = smoothstep(
+    max(0.0, uPulseThreshold - 0.08),
+    uPulseThreshold + uPulseSoftness,
+    colorNoise
+  ) * uPulseStrength * 0.28;
+  vec3 accentColor = clamp(mix(sourceColor, color, 0.58) * 1.06, 0.0, 1.0);
+  vAccent = clamp(accentMask, 0.0, 1.0);
+  vColor = mix(sourceColor, accentColor, vAccent);
 
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
@@ -272,7 +265,7 @@ void main() {
   if (aSelection > uSelection) {
     vAlpha = 0.0;
   } else {
-    vAlpha *= 1.0 + pulseMask * 0.18;
+    vAlpha *= 1.0 + vAccent * 0.24;
   }
 }
 `;
