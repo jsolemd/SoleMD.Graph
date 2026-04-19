@@ -284,6 +284,29 @@ being adapted for SoleMD:
   completion. The later card phase should stay attached and stable rather than
   continue hopping.
 
+### Round 9
+
+- Focus:
+  separate the neutral field substrate from the SoleMD semantic burst overlay so
+  the field reads blue-first and semantic colors read as explicit pulse events
+- Source findings:
+  Maze's particle shader owns the neutral field color and does not use the
+  geometry color buffer to tint the full blob. The hotspot layer is also not an
+  arbitrary screen-space effect: `setRandomHotspotPosition()` samples positions
+  from the model's geometry attribute and projects those sampled geometry points
+  into the DOM layer.
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/index.html:2337-2343`,
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43470-43524`
+- Parity implication:
+  when SoleMD keeps semantic colors, they should live in a constrained burst
+  mask on top of the neutral field rather than becoming the full-field tint.
+  The later selected-paper / card layer should still feel like it is attaching
+  to sampled points from the blob, not to free-floating screen markers.
+- Intentional SoleMD divergence:
+  the base blob now stays blue-led for readability, while semantic colors are
+  reserved for burst events and the sampled hotspot overlays.
+
 ### 1. Fixed Stage Runtime
 
 - [x] One fixed ambient-field canvas

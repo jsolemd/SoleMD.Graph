@@ -93,7 +93,7 @@ const brandToken = (
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
 const NEUTRAL_PARTICLE_BASE = brandToken("soft-blue");
-const NEUTRAL_PARTICLE_WAVE = brandToken("soft-pink");
+const NEUTRAL_PARTICLE_WAVE = semanticToken("phys");
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
@@ -136,11 +136,11 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       pulsePhase: 0.35,
-      pulseRate: 3.22,
-      pulseSoftness: 0.18,
+      pulseRate: 3.18,
+      pulseSoftness: 0.12,
       pulseSpatialScale: 1.45,
-      pulseStrength: 1.08,
-      pulseThreshold: 0.6,
+      pulseStrength: 1.16,
+      pulseThreshold: 0.76,
       selection: 1,
       size: 7.2,
       sizeMobile: 4.8,
@@ -173,11 +173,11 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0.4,
       pulsePhase: 1.6,
-      pulseRate: 3.42,
-      pulseSoftness: 0.16,
+      pulseRate: 3.34,
+      pulseSoftness: 0.12,
       pulseSpatialScale: 1.28,
-      pulseStrength: 0.96,
-      pulseThreshold: 0.62,
+      pulseStrength: 1.02,
+      pulseThreshold: 0.74,
       selection: 1,
       size: 9.2,
       sizeMobile: 5.8,
