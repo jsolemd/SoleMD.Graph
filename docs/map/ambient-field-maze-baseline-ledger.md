@@ -142,6 +142,95 @@ being adapted for SoleMD:
   honor Maze closely enough. The shader and the rest of the field grammar need
   another source-only review pass before the clean round.
 
+### Round 5
+
+- Focus:
+  source-only review of Maze hotspot selection, projected hover-card behavior,
+  and the remaining color-pulse parity gap
+- Source findings:
+  Maze does not stop at shader thinning. The blob chapter instantiates a real
+  hotspot pool from `.js-hotspot` DOM nodes in `index.html` and projects them
+  from geometry positions every frame:
+  - `.s-gfx__hotspot.js-hotspot` nodes live in
+    `data/research/mazehq-homepage/2026-04-18/index.html:87-149`
+  - `addHotspots()` queries `.js-hotspot`, creates meshes, and records
+    `isRed` via `.hotspot--red` in
+    `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43421-43457`
+  - `setRandomHotspotPosition()` samples random geometry positions and rejects
+    bad placements in
+    `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43470-43499`
+  - `updateHotspots()` projects hotspot positions every frame and drives DOM
+    opacity/scale in
+    `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43501-43524`
+- Source findings:
+  Maze explicitly stages selected-point and hover-card density during the blob
+  timeline:
+  - `hotspots` label at `2`
+  - `maxNumber: 0 -> 3` at `hotspots`
+  - `maxNumber -> 40` at `hotspots += 1.2`
+  - `uSelection: 1 -> 0.3` at `hotspots += 1.4`
+  - `onlyReds: 0 -> 1` at `quickly`
+  - hotspot opacity back to `0` at `respond`
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43326-43405`
+- Source findings:
+  The strong sense of extra color variation in Maze is not from many shader
+  palettes. The shader still uses a single blue/magenta pair:
+  - `uR/G/Bcolor = 40 / 197 / 234`
+  - `uR/G/Bnoise = 202 / 50 / 223`
+  - `r/g/b = base + clamp(vNoise, 0, 1) * 4.0 * (noise - base)`
+  Source:
+  `index.html:2171-2176`, `index.html:2341-2344`,
+  `scripts.pretty.js:42564-42569`
+- Parity implication:
+  Maze's extra color/readability comes from the base shader drift plus hotspot
+  overlays and selection staging. Semantic accents in SoleMD must stay sparse
+  and secondary so they do not flatten into one dominant purple wash.
+
+### Round 6
+
+- Focus:
+  source-only review of startup rotation resets, card hotspot timing, and the
+  semantic-pulse regression
+- Source findings:
+  Maze's particle loop is continuous from the first visible frame. The archive
+  loop only ever increments wrapper rotation and shader time:
+  - `this.wrapper.rotation.y += 0.001`
+  - `this.material.uniforms.uTime.value += 0.002`
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43047-43049`
+- Parity implication:
+  Any visible spin-then-reset cadence in SoleMD is our runtime remount or state
+  churn, not a Maze mechanic. The blob clock needs to survive dev remount and
+  viewport settling so the first seconds never read like a restart.
+- Source findings:
+  Maze cards are not shown during the initial selected-point phase. The
+  stylesheet keeps hotspot cards hidden until the later `onlyReds` phase, while
+  the earlier single-hotspot stage just keeps a few circle hotspots alive for a
+  longer beat:
+  - `.s-gfx:not(.has-only-reds) .hotspot__ui { display:none !important; }`
+  - `.s-gfx:not(.has-only-reds).has-only-single .hotspot { --duration:4s; opacity:1 !important; }`
+  Source:
+  Maze homepage stylesheet inspected against the archived CSS/runtime grammar on
+  `2026-04-19`
+- Source findings:
+  Maze hotspot anchors are assigned once, then only reattached when each
+  hotspot's own animation cycle completes. The runtime does not batch-reseed
+  the full hotspot pool on one timer:
+  - initial placement via `setRandomHotspotPosition()` in `addHotspots()`
+  - per-hotspot reattachment in each hotspot SVG `animationend` handler
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43421-43457`
+- Parity implication:
+  Our hotspot overlay must keep a stable candidate per hotspot and only
+  reassign that hotspot when it truly falls out of a valid screen slot. Shared
+  reseed clocks create the jumpy card drift the source avoids.
+- Current gap:
+  the semantic pulses regressed into a mostly purple wash. The source base still
+  needs to stay blue/pink, but SoleMD's semantic accents must reassert
+  themselves as sparse direct overrides rather than being mixed back into the
+  magenta base.
+
 ### 1. Fixed Stage Runtime
 
 - [x] One fixed ambient-field canvas
@@ -213,6 +302,12 @@ Primary files:
   movement
 - [ ] Re-review Maze shader color propagation in more detail before `/clean`:
   the current pulse feel still does not match the source closely enough
+- [ ] Keep semantic accents sparse and secondary:
+  the source still reads like one blue/magenta field with projected hotspots,
+  not a globally semanticized blob
+- [ ] Fix the semantic-pulse regression:
+  semantic colors should read as distinct sparse waves again, not collapse into
+  one dominant purple wash
 - [ ] Document every intentional SoleMD divergence from Maze here
 
 Current working divergence:
@@ -247,11 +342,24 @@ Primary files:
 ### 6. Selected Points And Hover-Panel Phase
 
 - [ ] Blob-era selected points should be treated as a staged hotspot pool
+- [ ] Recreate the source hotspot pool explicitly:
+  `maxNumber 3 -> 40`, `uSelection 1 -> 0.3`, then later `onlyReds`
+- [ ] Mirror the source hotspot structure:
+  a few labeled hotspots plus many unlabeled circles instead of one bulky
+  explanatory card block
 - [ ] Later module reveals should be field-led:
   particles can disburse or part to reveal module panels, but the reveal should
   stay owned by the ambient field rather than by a large static DOM block
 - [ ] If cards exist later, they should be sparse projected overlays or module
   reveals, not a bulky explanatory DOM slab inside the detail chapter
+- [ ] Keep hover cards projected from selected points:
+  source hotspots are projected each frame from geometry positions, not pinned
+  to static layout slots
+- [ ] Keep hotspot anchors stable for longer:
+  source hotspots hold one attachment until that hotspot's own animation cycle
+  ends, not until a shared timer reseeds the whole pool
+- [ ] Keep the first selected-point phase circle-only:
+  source cards do not appear until the later `onlyReds` / detail-reveal beat
 - [ ] Record how many selected nodes are visible in each chapter
 - [ ] Keep this ledger updated as more source-owned phases are identified
 
@@ -282,9 +390,15 @@ Primary files:
   stays in a steady counterclockwise spin
 - [ ] Re-pass on color pulsing with source-only shader analysis:
   current color movement is improved but still not close enough to Maze
+- [ ] Fix hotspot tracking quality:
+  anchors should stay attached to one point much longer and cards should stop
+  jumping around the viewport
 - [ ] Re-review every major field element before `/clean`:
   shader, displacement read, rotation cadence, section dwell, and later reveal
   phases
+- [ ] Add the missing blob hotspot / projected hover-card baseline:
+  selected points and projected cards are source-owned mechanics, not optional
+  polish
 - [ ] Keep adapting Maze mechanics to the SoleMD storyboard instead of removing them
 - [ ] Use the new named phase channels to drive selected-point density and later overlays
 - [ ] Add a paper-highlight chapter using Maze-style selected-point staging

@@ -216,12 +216,36 @@ void main() {
   float g = uColorBase.g + (colorNoise * 4.0 * (uColorNoise.g - uColorBase.g));
   float b = uColorBase.b + (colorNoise * 4.0 * (uColorNoise.b - uColorBase.g));
   vec3 sourceColor = clamp(vec3(r, g, b), 0.0, 1.0);
+  vec3 pulseBasis = position;
+  float pulseBasisLength = max(length(pulseBasis), 0.0001);
+  pulseBasis /= pulseBasisLength;
+  float accentWavePrimary = 0.5 + 0.5 * snoise(vec4(
+    pulseBasis * uPulseSpatialScale +
+    vec3(
+      uTime * uPulseRate * 0.28 + uPulsePhase,
+      -uTime * uPulseRate * 0.19,
+      uTime * uPulseRate * 0.13
+    ),
+    0.0
+  ));
+  float accentWaveSecondary = 0.5 + 0.5 * snoise(vec4(
+    pulseBasis * (uPulseSpatialScale * 0.58) +
+    vec3(
+      -uTime * uPulseRate * 0.12,
+      uTime * uPulseRate * 0.24 + uPulsePhase * 1.7,
+      uTime * uPulseRate * 0.09
+    ),
+    0.0
+  ));
+  float accentField = max(accentWavePrimary, accentWaveSecondary * 0.94);
+  float accentSelectionBias = 1.0 - smoothstep(0.22, 0.92, aSelection);
   float accentMask = smoothstep(
     max(0.0, uPulseThreshold - 0.08),
-    uPulseThreshold + uPulseSoftness,
-    colorNoise
-  ) * uPulseStrength * 0.28;
-  vec3 accentColor = clamp(mix(sourceColor, color, 0.58) * 1.06, 0.0, 1.0);
+    uPulseThreshold + (uPulseSoftness * 0.82),
+    accentField
+  ) * smoothstep(0.1, 0.92, colorNoise) * mix(0.42, 1.0, accentSelectionBias);
+  accentMask *= uPulseStrength;
+  vec3 accentColor = clamp(color * (1.02 + 0.24 * accentField) + sourceColor * 0.06, 0.0, 1.0);
   vAccent = clamp(accentMask, 0.0, 1.0);
   vColor = mix(sourceColor, accentColor, vAccent);
 
@@ -265,7 +289,7 @@ void main() {
   if (aSelection > uSelection) {
     vAlpha = 0.0;
   } else {
-    vAlpha *= 1.0 + vAccent * 0.24;
+    vAlpha *= 1.0 + vAccent * 0.42;
   }
 }
 `;

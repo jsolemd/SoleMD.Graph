@@ -14,11 +14,14 @@ const PCB_WIDTH = 72;
 const PCB_HEIGHT = 46;
 
 const paletteWeights = [
-  { color: new Color(semanticColorFallbackHexByKey.paper), weight: 0.05 },
-  { color: new Color(semanticColorFallbackHexByKey.phys), weight: 0.3 },
-  { color: new Color(semanticColorFallbackHexByKey.chem), weight: 0.3 },
-  { color: new Color(semanticColorFallbackHexByKey.gene), weight: 0.18 },
-  { color: new Color(semanticColorFallbackHexByKey.diso), weight: 0.17 },
+  { color: new Color(semanticColorFallbackHexByKey.paper), weight: 0.1 },
+  { color: new Color(semanticColorFallbackHexByKey.phys), weight: 0.18 },
+  { color: new Color(semanticColorFallbackHexByKey.chem), weight: 0.18 },
+  { color: new Color(semanticColorFallbackHexByKey.gene), weight: 0.14 },
+  { color: new Color(semanticColorFallbackHexByKey.diso), weight: 0.14 },
+  { color: new Color(semanticColorFallbackHexByKey.anat), weight: 0.1 },
+  { color: new Color(semanticColorFallbackHexByKey.proc), weight: 0.08 },
+  { color: new Color(semanticColorFallbackHexByKey.module), weight: 0.08 },
 ] as const;
 
 interface RandomSource {

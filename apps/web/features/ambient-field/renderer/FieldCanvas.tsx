@@ -3,13 +3,14 @@
 import { useState, type CSSProperties, type MutableRefObject } from "react";
 import { AdaptiveDpr, PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { FieldScene } from "./FieldScene";
+import { FieldScene, type AmbientFieldHotspotFrame } from "./FieldScene";
 import type { AmbientFieldSceneState } from "../scene/visual-presets";
 
 interface FieldCanvasProps {
   sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
   reducedMotion?: boolean;
   onFrame?: (timestamp: number) => void;
+  onHotspotsFrame?: (hotspots: AmbientFieldHotspotFrame[]) => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -18,6 +19,7 @@ export function FieldCanvas({
   sceneStateRef,
   reducedMotion = false,
   onFrame,
+  onHotspotsFrame,
   className,
   style,
 }: FieldCanvasProps) {
@@ -57,6 +59,7 @@ export function FieldCanvas({
           sceneStateRef={sceneStateRef}
           densityScale={reducedMotion ? Math.min(densityScale, 0.84) : densityScale}
           onFrame={onFrame}
+          onHotspotsFrame={onHotspotsFrame}
         />
       </Canvas>
     </div>

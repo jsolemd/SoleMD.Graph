@@ -3,11 +3,13 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useMemo, useRef, type MutableRefObject } from "react";
 import {
+  Camera,
   Texture,
   Color,
   Group,
   NormalBlending,
   ShaderMaterial,
+  Vector3,
 } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
 import { AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT } from "../ambient-field-breakpoints";
@@ -30,6 +32,18 @@ interface FieldSceneProps {
   sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
   densityScale?: number;
   onFrame?: (timestamp: number) => void;
+  onHotspotsFrame?: (hotspots: AmbientFieldHotspotFrame[]) => void;
+}
+
+export interface AmbientFieldHotspotFrame {
+  id: string;
+  isRed: boolean;
+  opacity: number;
+  scale: number;
+  showCard: boolean;
+  visible: boolean;
+  x: number;
+  y: number;
 }
 
 interface LayerUniforms {
@@ -67,6 +81,34 @@ interface LayerUniforms {
 }
 
 const stageItemIds = AMBIENT_FIELD_STAGE_ITEM_IDS;
+const AMBIENT_FIELD_LOOP_EPOCH_MS =
+  typeof performance === "undefined" ? 0 : performance.now();
+const BLOB_HOTSPOT_COUNT = 40;
+const BLOB_HOTSPOT_CARD_COUNT = 3;
+const BLOB_HOTSPOT_IDS = Array.from(
+  { length: BLOB_HOTSPOT_COUNT },
+  (_, index) => `blob-hotspot-${index}`,
+);
+
+interface BlobHotspotRuntime {
+  candidateIndex: number | null;
+}
+
+function createBlobHotspotCandidates(source: AmbientFieldPointSource, count: number) {
+  const ranked = Array.from(
+    { length: source.pointCount },
+    (_, index) => ({
+      index,
+      selection: source.buffers.aSelection[index] ?? 1,
+    }),
+  ).sort((left, right) => left.selection - right.selection);
+  const stride = Math.max(1, Math.floor(ranked.length / count));
+
+  return Array.from({ length: count }, (_, offset) => {
+    const rankedIndex = Math.min(ranked.length - 1, offset * stride);
+    return ranked[rankedIndex]?.index ?? 0;
+  });
+}
 
 function createColorFromFallbackHex(hex: string): Color {
   return new Color(hex);
@@ -80,6 +122,150 @@ function smoothstep(min: number, max: number, value: number) {
   if (max <= min) return value >= max ? 1 : 0;
   const t = clamp01((value - min) / (max - min));
   return t * t * (3 - 2 * t);
+}
+
+function getAmbientFieldLoopSeconds() {
+  if (typeof performance === "undefined") return 0;
+  return Math.max(0, (performance.now() - AMBIENT_FIELD_LOOP_EPOCH_MS) / 1000);
+}
+
+function getBlobHotspotVerticalBand(hotspotIndex: number) {
+  const bands = [
+    [0.3, 0.4],
+    [0.45, 0.55],
+    [0.6, 0.7],
+  ] as const;
+
+  return bands[hotspotIndex] ?? [0.2, 0.8];
+}
+
+function projectBlobHotspotCandidate({
+  blobModel,
+  camera,
+  candidateIndex,
+  height,
+  hotspotIndex,
+  source,
+  vector,
+  width,
+}: {
+  blobModel: Group;
+  camera: Camera;
+  candidateIndex: number;
+  height: number;
+  hotspotIndex: number;
+  source: AmbientFieldPointSource;
+  vector: Vector3;
+  width: number;
+}) {
+  const positionOffset = candidateIndex * 3;
+  const localZ = source.buffers.position[positionOffset + 2] ?? 0;
+  if (localZ > 0) {
+    return null;
+  }
+
+  vector.set(
+    source.buffers.position[positionOffset] ?? 0,
+    source.buffers.position[positionOffset + 1] ?? 0,
+    source.buffers.position[positionOffset + 2] ?? 0,
+  );
+  blobModel.localToWorld(vector);
+  vector.project(camera);
+
+  const x = ((vector.x + 1) * width) / 2;
+  const y = ((-vector.y + 1) * height) / 2;
+  const scale = Math.max(0.72, Math.min(1.36, (1 - vector.z) * 2));
+  const withinViewport =
+    x > 24 &&
+    x < width - 24 &&
+    y > 24 &&
+    y < height - 24 &&
+    vector.z < 0.84;
+
+  if (!withinViewport) {
+    return null;
+  }
+
+  if (hotspotIndex < BLOB_HOTSPOT_CARD_COUNT) {
+    const [minBand, maxBand] = getBlobHotspotVerticalBand(hotspotIndex);
+    const withinCardBand =
+      x < width * 0.5 &&
+      y >= height * minBand &&
+      y <= height * maxBand;
+
+    if (!withinCardBand) {
+      return null;
+    }
+  } else if (x > width * 0.665) {
+    return null;
+  }
+
+  return {
+    candidateIndex,
+    scale,
+    x,
+    y,
+  };
+}
+
+function selectBlobHotspotCandidate({
+  blobHotspotCandidates,
+  blobModel,
+  camera,
+  hotspotIndex,
+  source,
+  usedCandidateIndices,
+  vector,
+  viewportHeight,
+  viewportWidth,
+}: {
+  blobHotspotCandidates: number[];
+  blobModel: Group;
+  camera: Camera;
+  hotspotIndex: number;
+  source: AmbientFieldPointSource;
+  usedCandidateIndices: Set<number>;
+  vector: Vector3;
+  viewportHeight: number;
+  viewportWidth: number;
+}) {
+  if (blobHotspotCandidates.length === 0) {
+    return null;
+  }
+
+  const startOffset = Math.floor(
+    (blobHotspotCandidates.length / BLOB_HOTSPOT_COUNT) * hotspotIndex,
+  );
+
+  for (let attempt = 0; attempt < blobHotspotCandidates.length; attempt += 1) {
+    const candidateIndex =
+      blobHotspotCandidates[
+        (startOffset + attempt * 17 + hotspotIndex * 11) %
+          blobHotspotCandidates.length
+      ] ?? 0;
+    if (usedCandidateIndices.has(candidateIndex)) {
+      continue;
+    }
+
+    const projected = projectBlobHotspotCandidate({
+      blobModel,
+      camera,
+      candidateIndex,
+      height: viewportHeight,
+      hotspotIndex,
+      source,
+      vector,
+      width: viewportWidth,
+    });
+
+    if (!projected) {
+      continue;
+    }
+
+    return projected;
+  }
+
+  return null;
 }
 
 function createLayerUniforms(
@@ -203,6 +389,7 @@ export function FieldScene({
   sceneStateRef,
   densityScale = 1,
   onFrame,
+  onHotspotsFrame,
 }: FieldSceneProps) {
   const viewportWidth = useThree((state) => state.size.width);
   const isMobile = viewportWidth < AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT;
@@ -211,6 +398,10 @@ export function FieldScene({
     [densityScale, isMobile],
   );
   const pointTexture = useMemo(() => getFieldPointTexture(), []);
+  const blobHotspotCandidates = useMemo(
+    () => createBlobHotspotCandidates(pointSources.blob, 320),
+    [pointSources.blob],
+  );
 
   const stageWrapperRefs = useRef<Record<AmbientFieldStageItemId, Group | null>>({
     blob: null,
@@ -229,11 +420,10 @@ export function FieldScene({
     stream: null,
     pcb: null,
   });
-  const stageIdleRotationRefs = useRef<Record<AmbientFieldStageItemId, number>>({
-    blob: 0,
-    stream: 0,
-    pcb: 0,
-  });
+  const hotspotVectorRef = useRef(new Vector3());
+  const blobHotspotRuntimeRef = useRef<BlobHotspotRuntime[]>(
+    BLOB_HOTSPOT_IDS.map(() => ({ candidateIndex: null })),
+  );
 
   const layerUniformsRef = useRef({
     blob: createLayerUniforms("blob", isMobile, pointTexture),
@@ -269,8 +459,8 @@ export function FieldScene({
     onFrame?.(state.clock.elapsedTime * 1000);
     const sceneState = sceneStateRef.current ?? DEFAULT_AMBIENT_FIELD_SCENE;
     const motionEnabled = sceneState.motionEnabled;
+    const loopSeconds = getAmbientFieldLoopSeconds();
     const {
-      blobSelection,
       detailInspection,
       reform,
       synthesisLinks,
@@ -293,11 +483,10 @@ export function FieldScene({
       const localProgress = runtimeState?.localProgress ?? 0;
       const motionScale = motionEnabled ? 1 : 0.16;
       const driftBlend = lerpFactor(delta, DECAY.standard);
-      const time = uniforms.uTime.value + (
-        motionEnabled
-          ? delta * (itemId === "pcb" ? 0.6 : 0.12)
-          : delta * (itemId === "pcb" ? 0.2 : 0.04)
-      );
+      const timeFactor = motionEnabled
+        ? (itemId === "pcb" ? 0.6 : 0.12)
+        : (itemId === "pcb" ? 0.2 : 0.04);
+      const time = loopSeconds * timeFactor;
       const sceneScale = isMobile
         ? (preset.sceneScaleMobile ?? preset.sceneScale)
         : preset.sceneScale;
@@ -376,12 +565,11 @@ export function FieldScene({
       const targetSelection =
         itemId === "blob"
           ? shader.selection -
-            (shader.selection - 0.42) *
+            (shader.selection - 0.3) *
               clamp01(
                 Math.max(
                   blobSelection,
-                  detailInspection * 0.84,
-                  synthesisLinks * 0.62,
+                  detailInspection * 0.48,
                 ),
               )
           : shader.selection;
@@ -400,10 +588,7 @@ export function FieldScene({
         preset.sceneRotation[1] + preset.scrollRotation[1] * localProgress;
       const targetRotationZ =
         preset.sceneRotation[2] + preset.scrollRotation[2] * localProgress;
-      const idleRotationY =
-        stageIdleRotationRefs.current[itemId] +
-        delta * preset.rotationVelocity[1] * motionScale;
-      stageIdleRotationRefs.current[itemId] = idleRotationY;
+      const idleRotationY = loopSeconds * preset.rotationVelocity[1] * motionScale;
 
       uniforms.uTime.value = time;
       uniforms.uPixelRatio.value = Math.min(state.gl.getPixelRatio(), 2);
@@ -445,6 +630,92 @@ export function FieldScene({
       layer.wrapper.scale.x += (targetScale - layer.wrapper.scale.x) * driftBlend;
       layer.wrapper.scale.y += (targetScale - layer.wrapper.scale.y) * driftBlend;
       layer.wrapper.scale.z += (targetScale - layer.wrapper.scale.z) * driftBlend;
+    }
+
+    if (onHotspotsFrame) {
+      const frames = BLOB_HOTSPOT_IDS.map((id, index) => ({
+        id,
+        isRed: index % 2 === 0,
+        opacity: 0,
+        scale: 0.9,
+        showCard: index < BLOB_HOTSPOT_CARD_COUNT,
+        visible: false,
+        x: -9999,
+        y: -9999,
+      }));
+      const blobModel = stageModelRefs.current.blob;
+      const blobWrapper = stageWrapperRefs.current.blob;
+      const blobRuntime = sceneState.items.blob;
+      const blobVisibility = blobRuntime?.visibility ?? 0;
+      const blobLocalProgress = blobRuntime?.localProgress ?? 0;
+
+      if (blobModel && blobWrapper && blobVisibility > 0.01) {
+        blobWrapper.updateWorldMatrix(true, true);
+
+        const hotspotsIntro =
+          smoothstep(0.2, 0.21, blobLocalProgress) *
+          (1 - smoothstep(0.44, 0.46, blobLocalProgress));
+        const hotspotsQuick =
+          smoothstep(0.73, 0.74, blobLocalProgress) *
+          (1 - smoothstep(0.79, 0.8, blobLocalProgress));
+        const hotspotOpacity = Math.max(hotspotsIntro, hotspotsQuick) * blobVisibility;
+        const onlyReds = hotspotsQuick > hotspotsIntro && hotspotsQuick > 0.01;
+        const activeCount = hotspotOpacity <= 0.01
+          ? 0
+          : onlyReds
+            ? 3
+            : blobLocalProgress < 0.32
+              ? Math.round(3 + (BLOB_HOTSPOT_COUNT - 3) * clamp01((blobLocalProgress - 0.2) / 0.12))
+              : BLOB_HOTSPOT_COUNT;
+        const usedCandidateIndices = new Set<number>();
+
+        for (let hotspotIndex = 0; hotspotIndex < BLOB_HOTSPOT_COUNT; hotspotIndex += 1) {
+          const frame = frames[hotspotIndex]!;
+          if (hotspotIndex >= activeCount) continue;
+          const runtime = blobHotspotRuntimeRef.current[hotspotIndex]!;
+          const vector = hotspotVectorRef.current;
+          let projected =
+            runtime.candidateIndex == null
+              ? null
+              : projectBlobHotspotCandidate({
+                  blobModel,
+                  camera: state.camera,
+                  candidateIndex: runtime.candidateIndex,
+                  height: state.size.height,
+                  hotspotIndex,
+                  source: pointSources.blob,
+                  vector,
+                  width: state.size.width,
+                });
+
+          if (!projected) {
+            projected = selectBlobHotspotCandidate({
+              blobHotspotCandidates,
+              blobModel,
+              camera: state.camera,
+              hotspotIndex,
+              source: pointSources.blob,
+              usedCandidateIndices,
+              vector,
+              viewportHeight: state.size.height,
+              viewportWidth: state.size.width,
+            });
+            runtime.candidateIndex = projected?.candidateIndex ?? null;
+          }
+
+          if (!projected) continue;
+          usedCandidateIndices.add(projected.candidateIndex);
+
+          frame.visible = true;
+          frame.opacity = hotspotOpacity * projected.scale;
+          frame.scale = projected.scale;
+          frame.showCard = onlyReds && hotspotIndex < BLOB_HOTSPOT_CARD_COUNT;
+          frame.x = projected.x;
+          frame.y = projected.y;
+        }
+      }
+
+      onHotspotsFrame(frames);
     }
   });
 
