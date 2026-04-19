@@ -1,0 +1,14 @@
+https://mazehq.com/
+https://mazehq.com/public/theme/scripts.min.js?v=1.0.47
+https://mazehq.com/public/theme/styles.css?v=1.0.47
+https://mazehq.com/public/theme/libs.min.js?v=1.0.47
+https://mazehq.com/public/theme/images/particle.png
+https://mazehq.com/public/theme/images/logo.png
+https://mazehq.com/public/theme/images/pcb.png
+https://mazehq.com/public/theme/images/svg/flow-diagram-main.svg
+https://mazehq.com/public/theme/images/svg/flow-diagram-main-mobile.svg
+https://mazehq.com/public/theme/models/World.glb
+https://mazehq.com/public/theme/models/Shield.glb
+https://mazehq.com/public/theme/models/Cubes.glb
+https://mazehq.com/public/theme/models/Net.glb
+https://mazehq.com/public/theme/models/Users.glb

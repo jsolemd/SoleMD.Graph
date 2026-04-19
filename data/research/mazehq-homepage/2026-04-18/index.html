@@ -1,0 +1,2407 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="version" content="1.0.47">
+
+<title>Agentic AI for Vulnerability Management - Maze</title>
+<meta name="description" content="Maze is a new type of security platform - built from scratch to use modern AI to make decisions, instead of pre-defined logic.">
+<meta http-equiv=”content-language” content="en">
+
+<meta property="og:description" content="Maze is a new type of security platform - built from scratch to use modern AI to make decisions, instead of pre-defined logic.">
+<meta property="og:title" content="Agentic AI for Vulnerability Management - Maze">
+<meta property="og:image" content="https://mazehq.com/public/og_image.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:url" content="https://mazehq.com">
+<meta property="og:type" content="website">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Agentic AI for Vulnerability Management - Maze">
+<meta name="twitter:description" content="Maze is a new type of security platform - built from scratch to use modern AI to make decisions, instead of pre-defined logic.">
+<meta name="twitter:image" content="https://mazehq.com/public/og_image.jpg">
+<meta name="twitter:url" content="https://mazehq.com">
+
+    <!-- website by huncwot.com -->
+
+    <link rel="icon" type="image/png" href="/public/theme/favicons/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/public/theme/favicons/favicon.svg" />
+<link rel="shortcut icon" href="/public/theme/favicons/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/public/theme/favicons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-title" content="Maze" />
+<link rel="manifest" href="/public/theme/favicons/site.webmanifest" crossorigin="use-credentials"/>
+    <!-- Google Tag Manager -->
+<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-TVSRKRNW');</script>
+<!-- End Google Tag Manager -->
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-ZWY3GBMR7X"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-ZWY3GBMR7X');
+</script>
+    <script>!function(){var e=["identify","page","startAutoPage","stopAutoPage","startAutoIdentify","stopAutoIdentify"];function t(o){return Object.assign([],e.reduce(function(r,n){return r[n]=function(){return o.push([n,[].slice.call(arguments)]),o},r},{}))}window.unify||(window.unify=t(window.unify)),window.unifyBrowser||(window.unifyBrowser=t(window.unifyBrowser));var n=document.createElement("script");n.async=!0,n.setAttribute("src","https://tag.unifyintent.com/v1/QxV3QCbi48r8ZuwEZjmnGt/script.js"),n.setAttribute("data-api-key","wk_36tzxZXv_7HmMRHnzHWbuzqB1PaXt4owNWEdLJz4H"),n.setAttribute("id","unifytag"),(document.body||document.head).appendChild(n)}();</script>
+    <link rel="stylesheet" href="/public/theme/styles.css?v=1.0.47" />
+    <style>
+        .oembed iframe {
+            max-width: 100%;
+            aspect-ratio: 16 / 9;
+            height: auto;
+        }
+        .module-section-pdf iframe {
+            max-width: 100%;
+            
+        }
+    </style>
+
+    <script>!function () { var e = ["identify", "page", "startAutoPage", "stopAutoPage", "startAutoIdentify", "stopAutoIdentify"]; function t(o) { return Object.assign([], e.reduce(function (r, n) { return r[n] = function () { return o.push([n, [].slice.call(arguments)]), o }, r }, {})) } window.unify || (window.unify = t(window.unify)), window.unifyBrowser || (window.unifyBrowser = t(window.unifyBrowser)); var n = document.createElement("script"); n.async = !0, n.setAttribute("src", "https://tag.unifyintent.com/v1/QxV3QCbi48r8ZuwEZjmnGt/script.js"), n.setAttribute("data-api-key", "wk_36tzxZXv_7HmMRHnzHWbuzqB1PaXt4owNWEdLJz4H"), n.setAttribute("id", "unifytag"), (document.body || document.head).appendChild(n) }();</script>
+
+</head>
+
+<body class="is-not-ready">
+
+    <!-- Google Tag Manager (noscript) -->
+    <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TVSRKRNW" height="0" width="0"
+            style="display:none;visibility:hidden"></iframe></noscript>
+    <!-- End Google Tag Manager (noscript) -->
+
+    <nav class="quick-access">
+	<ul class="quick-access__list quick-access__list--main">
+		<li>
+			<a href="#content" data-scroll-to-content class="quick-access__link" data-gtm='{"event": "quick-access", "quick": "main-content"}'>Skip to <b>main content</b></a>
+		</li>
+		<li>
+			<a href="#footer" class="quick-access__link" data-skip-to data-gtm='{"event": "quick-access", "quick": "footer"}'>Skip to <b>footer</b></a>
+		</li>
+	</ul>
+</nav>
+    <div class="s-gfx js-gfx">
+
+<div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 250ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg><div class="hotspot__ui c-ui-box c-ui-box--event desktop-only">
+        <p class="c-ui-box__text">CVE-2024-53194</p>
+        <div class="c-ui-box__badges">
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Exploitable</output></div>
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>High Likelihood</output></div>
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Critical Impact</output></div>
+        </div>
+    </div></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 752ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg><div class="hotspot__ui c-ui-box c-ui-box--event desktop-only">
+        <p class="c-ui-box__text">CVE-2024-53990</p>
+        <div class="c-ui-box__badges">
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Exploitable</output></div>
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>High Likelihood</output></div>
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Critical Impact</output></div>
+        </div>
+    </div></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 37ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg><div class="hotspot__ui c-ui-box c-ui-box--event desktop-only">
+        <p class="c-ui-box__text">CVE-2025-21613</p>
+        <div class="c-ui-box__badges">
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Exploitable</output></div>
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>High Likelihood</output></div>
+            <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Critical Impact</output></div>
+        </div>
+    </div></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 2ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 63ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 38ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1005ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 974ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 420ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 213ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 669ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 60ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 117ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 897ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 774ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 69ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 79ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 1698ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1683ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 528ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 737ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 631ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1154ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 136ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 13ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 1314ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1279ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 800ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1577ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 1922ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1374ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 1642ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 994ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 92ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 550ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 1634ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1282ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 1475ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 70ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot" style="--delay: 885ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div><div class="s-gfx__hotspot js-hotspot hotspot hotspot--red" style="--delay: 1756ms">
+    <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg></div>
+</div>
+    <header class="s-header js-header" data-component="Header">
+  <div class="s-header__wrap wrap js-wrap">
+    <a href="/" class="s-header__logo" data-ga='["click", "header-logo", "logo"]'>
+      <svg class="svg-maze-logo"  width="98" height="30" viewBox="0 0 98 30" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15.728 5.135l1.097.587V20.44l-1.097.587-1.096-.587V8.07l-6.577 3.522v10.023l-2.192-1.174V10.418l9.865-5.283z" fill="#EFF0F0"/><path d="M21.21 10.418l2.191 1.174v10.023l2.193-1.174V10.42l-6.577-3.523v14.719l-3.289 1.76-3.288-1.76V11.593l-2.193 1.173v10.023l5.481 2.935 5.481-2.935V10.418zM86.328 8.995c3.437 0 5.796 2.604 5.809 6.421 0 .345-.025.69-.051.996h-9.079c.36 2.196 1.911 3.115 3.655 3.115 1.231 0 2.539-.485 3.552-1.29l1.334 1.903c-1.501 1.276-3.194 1.723-5.053 1.723-3.68 0-6.283-2.553-6.283-6.434 0-3.83 2.5-6.434 6.116-6.434zm-.05 2.375c-1.912 0-2.975 1.225-3.258 3.012h6.373c-.295-1.902-1.41-3.012-3.116-3.012zM78.924 9.314v1.94l-6.706 7.865h6.834v2.425H68.653v-1.94l6.821-7.864h-6.616V9.314h10.066zM66.356 9.314v12.23h-2.679v-1.468c-.847 1.085-2.116 1.787-3.86 1.787-3.436 0-6.142-2.693-6.142-6.434 0-3.74 2.706-6.434 6.142-6.434 1.744 0 3.013.715 3.86 1.8v-1.48h2.68zm-6.218 2.196c-2.308 0-3.706 1.774-3.706 3.92 0 2.144 1.398 3.918 3.706 3.918 2.218 0 3.705-1.685 3.705-3.919s-1.487-3.919-3.705-3.919zM46.768 8.995c2.924 0 4.988 2.004 4.988 4.864v7.685h-2.692V14.74c0-2.056-1.065-3.204-2.86-3.204-1.73 0-3.18 1.136-3.18 3.23v6.778h-2.693V14.74c0-2.056-1.064-3.204-2.86-3.204-1.73 0-3.18 1.136-3.18 3.23v6.778H31.6V9.314h2.667v1.494c.988-1.443 2.513-1.813 3.77-1.813 1.872 0 3.398.83 4.244 2.183 1.065-1.749 2.962-2.183 4.488-2.183z" fill="#EFF0F0"/></svg>
+    </a>
+
+    <ul class="s-header__nav">
+            <li class="s-header__nav-item js-item">
+        <a href="/product" class="s-header__nav-link" data-ga='["click", "header-nav", "Investigation"]'>Investigation</a>
+      </li>
+            <li class="s-header__nav-item js-item">
+        <a href="/remediation" class="s-header__nav-link" data-ga='["click", "header-nav", "Remediation"]'>Remediation</a>
+      </li>
+            <li class="s-header__nav-item js-item">
+        <a href="/our-philosophy" class="s-header__nav-link" data-ga='["click", "header-nav", "Our Philosophy"]'>Our Philosophy</a>
+      </li>
+            <li class="s-header__nav-item js-item">
+        <a href="/resources" class="s-header__nav-link" data-ga='["click", "header-nav", "Resources"]'>Resources</a>
+      </li>
+            <li class="s-header__nav-item js-item">
+        <a href="/contact" class="s-header__nav-link" data-ga='["click", "header-nav", "Contact"]'>Contact</a>
+      </li>
+            <div class="s-header__underline--active js-underline"></div>
+    </ul>
+
+    <div class="s-header__button">
+
+      <a href="/contact#demo" class="a-button a-button--secondary" data-cssanimate data-ga='["click", "header-button", "book-demo"]'>
+        <span class="a-button__dot"></span> <span class="a-button__text">
+          <span class="primary">
+            Book Demo
+          </span>
+          <span class="secondary">
+            Book Demo
+          </span>
+        </span>
+      </a>
+    </div>
+
+    <button class="s-header__toggle js-menu-toggle desktop-hide">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+
+    <div class="s-header__underline dotted-line"></div>
+  </div>
+</header>
+
+<div class="s-header__bg"></div>
+
+<nav class="s-menu desktop-hide" id="menu">
+  <div class="s-menu__bg"></div>
+  <div class="s-menu__content">
+    <ul class="s-menu__nav">
+      <li class="s-menu__nav-item js-item">
+        <a href="/" class="s-menu__nav-link" data-ga='["click", "menu", "home"]'>Home</a>
+      </li>
+            <li class="s-menu__nav-item js-item">
+        <a href="/product" class="s-menu__nav-link" data-ga='["click", "menu", "Investigation"]'>Investigation</a>
+      </li>
+            <li class="s-menu__nav-item js-item">
+        <a href="/remediation" class="s-menu__nav-link" data-ga='["click", "menu", "Remediation"]'>Remediation</a>
+      </li>
+            <li class="s-menu__nav-item js-item">
+        <a href="/our-philosophy" class="s-menu__nav-link" data-ga='["click", "menu", "Our Philosophy"]'>Our Philosophy</a>
+      </li>
+            <li class="s-menu__nav-item js-item">
+        <a href="/resources" class="s-menu__nav-link" data-ga='["click", "menu", "Resources"]'>Resources</a>
+      </li>
+            <li class="s-menu__nav-item js-item">
+        <a href="/contact" class="s-menu__nav-link" data-ga='["click", "menu", "Contact"]'>Contact</a>
+      </li>
+          </ul>
+    <div class="s-menu__social">
+            <a class="s-menu__social-link" href="https://www.linkedin.com/company/mazehq" target="_blank" data-ga='["click", "menu", "linkedin"]'><svg class="svg-social-linkedin"  width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.594.432H1.802A1.071 1.071 0 00.73 1.505v11.811a1.075 1.075 0 001.072 1.074h11.792a1.07 1.07 0 001.072-1.074V1.506A1.074 1.074 0 0013.594.431zm-8.04 10.2a.537.537 0 01-.915.38.537.537 0 01-.157-.38V6.337a.537.537 0 01.915-.38c.101.101.157.238.157.38v4.295zm-.536-5.369a.803.803 0 01-.788-.962.806.806 0 011.096-.587.804.804 0 01-.308 1.55zm6.432 5.369a.537.537 0 11-1.072 0V8.216a1.343 1.343 0 00-1.34-1.342 1.339 1.339 0 00-1.34 1.342v2.416a.537.537 0 01-.915.38.537.537 0 01-.157-.38V6.337a.537.537 0 01.845-.436c.154.109.382.204.552.124a2.409 2.409 0 013.082.946c.226.376.345.806.345 1.245v2.416z" fill="#D6D8D8"/></svg></a>
+          </div>
+  </div>
+</nav>
+
+    <div class="wrapper" id="wrapper">
+        <main id="content" class="content" aria-live="polite" role="main" aria-label="Main content">
+            <article data-page  data-title="Agentic AI for Vulnerability Management - Maze" >
+<h1 class="sr-only">Agentic AI for Vulnerability Management - Maze</h1>
+    <section class="module module--welcome module--welcome--has-clients module--full-height" id="section-welcome" data-gfx="blob" data-gfx-end-trigger="#section-story-2">
+            
+<a href="https://mazehq.com/blog/ai-remediation-developers-actually-want-to-use" class="c-alert" data-ga='["click", "home", "alert"]' data-observe>
+    <div class="c-alert__bell"><svg class="svg-icon-bell"  xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 17 16">
+  <path d="M2.95,4.11c.5-.98,1.25-1.81,2.18-2.4.05-.04.09-.09.1-.16.01-.06,0-.13-.03-.18-.03-.05-.09-.09-.15-.11-.06-.02-.13,0-.18.02-1,.64-1.82,1.54-2.36,2.6-.03.06-.04.13-.02.19.02.06.06.12.12.15.04.02.07.03.11.03.05,0,.09-.01.13-.04s.07-.06.09-.1Z"/>
+  <path d="M14.49,3.88c-.54-1.06-1.36-1.96-2.36-2.6-.03-.02-.06-.03-.09-.04-.03,0-.07,0-.1,0-.03,0-.06.02-.09.04-.03.02-.05.04-.07.07-.02.03-.03.06-.04.09s0,.07,0,.1c0,.03.02.06.04.09.02.03.05.05.08.07.93.59,1.68,1.42,2.18,2.4.02.04.05.07.09.1.04.02.08.04.13.04.04,0,.08,0,.11-.03.06-.03.1-.08.12-.15.02-.06.01-.13-.02-.19Z"/>
+  <path id="bell-dong" d="M10.23,12.25c-.06.42-.27.8-.59,1.07-.32.28-.72.43-1.15.43s-.83-.15-1.15-.43c-.32-.28-.53-.66-.59-1.07h-.5c.02.17.12.87.74,1.42.62.55,1.33.57,1.5.57s.88-.02,1.5-.57c.62-.55.72-1.26.74-1.42h-.5Z"/>
+  <path d="M14.15,11.12c-.6-1.03-.9-2.41-.9-4.12,0-1.26-.5-2.47-1.39-3.36-.89-.89-2.1-1.39-3.36-1.39s-2.47.5-3.36,1.39c-.89.89-1.39,2.1-1.39,3.36,0,1.71-.3,3.1-.9,4.12-.07.11-.1.24-.1.37,0,.13.03.26.1.37.07.11.16.21.27.27.11.07.24.1.37.1h10c.13,0,.26-.04.37-.1s.21-.16.27-.27c.07-.11.1-.24.1-.37,0-.13-.03-.26-.1-.37ZM13.71,11.62s-.05.07-.09.09c-.04.02-.08.03-.12.03H3.5s-.09-.01-.12-.03-.07-.05-.09-.09c-.02-.04-.03-.08-.03-.12s.01-.09.03-.12c.64-1.1.97-2.57.97-4.38,0-1.13.45-2.21,1.24-3.01s1.88-1.24,3.01-1.24,2.21.45,3.01,1.24,1.24,1.88,1.24,3.01c0,1.8.32,3.27.96,4.38.02.04.03.08.03.13,0,.04-.01.09-.03.12Z"/>
+</svg></div>
+    <p class="c-alert__text">Maze Launches AI Agents for Remediation - Read More</p>
+    <div class="c-alert__arrow">
+        <svg class="svg-icon-arrow"  width="17" height="16" viewBox="0 0 17 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9.5 15.071L16.571 8 9.5.929M16 8H.5" stroke="#22D0DF" stroke-linecap="square" stroke-linejoin="bevel"/></svg>
+        <svg class="svg-icon-arrow"  width="17" height="16" viewBox="0 0 17 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M9.5 15.071L16.571 8 9.5.929M16 8H.5" stroke="#22D0DF" stroke-linecap="square" stroke-linejoin="bevel"/></svg>
+    </div>
+</a>
+    
+    <div class="m-welcome" data-scroll="welcome">
+                <div class="m-welcome__wrap">
+                    <h1 class="m-welcome__title js-title" data-text="Get cloud vulnerabilities&lt;br&gt;under control">Get cloud vulnerabilities<br>under control</h1>
+            <h2 class="m-welcome__subtitle js-subtitle">AI Agents that investigate and resolve cloud vulnerabilities</h2>
+            
+
+    <a href="/contact#demo"  class="a-button a-button--primary" data-cssanimate data-ga='["click", "button", "/contact#demo"]'>
+        <span class="a-button__dot"></span>        <span class="a-button__text">
+            <span class="primary">
+                Book Demo
+            </span>
+            <span class="secondary">
+                Book Demo
+            </span>
+        </span>
+    </a>
+                </div>
+                            
+<div class="c-clients"  data-scroll="moveNew" >
+			<div class="c-clients__list" data-scroll="clients" style="--items: 5">
+							<div class="c-clients__client js-item">
+					<img loading="lazy" src="/public/upload/logotypes/120_72_x2/6960b7b1c9525.png?v=1772010362" alt="Alloy" class="c-clients__logo">
+				</div>
+							<div class="c-clients__client js-item">
+					<img loading="lazy" src="/public/upload/logotypes/120_72_x2/6960b7c8dc1fa.png?v=1767948096" alt="Cohere Health" class="c-clients__logo">
+				</div>
+							<div class="c-clients__client js-item">
+					<img loading="lazy" src="/public/upload/logotypes/120_72_x2/6960b7a592c98.png?v=1767948107" alt="Forge" class="c-clients__logo">
+				</div>
+							<div class="c-clients__client js-item">
+					<img loading="lazy" src="/public/upload/logotypes/120_72_x2/6960b7bc688dc.png?v=1772010419" alt="PartsSource" class="c-clients__logo">
+				</div>
+							<div class="c-clients__client js-item">
+					<img loading="lazy" src="/public/upload/logotypes/120_72_x2/69cf206f5a938.png?v=1775181935" alt="halcyon" class="c-clients__logo">
+				</div>
+						<div class="c-clients__lines">
+									<div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>									<div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>									<div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>									<div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>												<div class="desktop-only"></div>
+				<div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>			</div>
+		</div>
+
+	</div>
+                <a href="#" data-scroll-down data-offset="60" class="m-welcome__scroll typo-tiny js-scroll-down" data-ga='["click", "welcome", "scroll"]'><span>Scroll down</span></a>
+    </div>
+</section>
+  <section class="module module--story" id="section-story-1">
+    
+
+<div class="s-progress js-progress desktop-only" data-component="Progress" data-observe>
+     
+        <div class="s-progress__segment s-progress__segment--1 js-progress-segment" data-id="info-1">
+            <div class="s-progress__number">01</div>
+            <div class="s-progress__progress js-progress-bar">
+                <div class="s-progress__line dotted-line"></div>
+                <div class="s-progress__dot"></div>
+            </div>
+        </div>
+     
+        <div class="s-progress__segment s-progress__segment--2 js-progress-segment" data-id="info-2">
+            <div class="s-progress__number">02</div>
+            <div class="s-progress__progress js-progress-bar">
+                <div class="s-progress__line dotted-line"></div>
+                <div class="s-progress__dot"></div>
+            </div>
+        </div>
+     
+        <div class="s-progress__segment s-progress__segment--3 js-progress-segment" data-id="info-3">
+            <div class="s-progress__number">03</div>
+            <div class="s-progress__progress js-progress-bar">
+                <div class="s-progress__line dotted-line"></div>
+                <div class="s-progress__dot"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="m-story m-story--padding-bottom-small grid-wrap">
+        <div class="m-story__item m-story__item--left m-story__item--columns col-span-12 col-start-1" id="info-1">
+            <div class="m-story__copy" data-observe="children">
+                <h2 class="m-story__title typo-lead">Vulnerability backlogs keep growing, and attackers are moving faster than ever to exploit them</h2>
+            </div>
+            <div class="m-story__stats" data-observe="children">
+                <div class="c-ui-box c-ui-box--stats c-ui-box--published">
+                    <div class="c-ui-box__legend">
+                        <p class="c-ui-box__number">40,000</p>
+                        <p class="c-ui-box__text typo-small">Vulnerabilities published in 2024</p>
+                    </div>
+                    <div class="c-ui-box__overlay-years">
+                        <p class="c-ui-box__overlay-year">2008</p>
+                        <p class="c-ui-box__overlay-year">2025</p>
+                    </div>
+                    <svg class="svg-ui-graph-published"  xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 336 189">
+  <defs>
+    <linearGradient id="linear-gradient" x1="17.94" y1="659" x2="320.26" y2="659" gradientTransform="translate(0 -578)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00e7fb"/>
+      <stop offset="1" stop-color="#e628ff"/>
+    </linearGradient>
+  </defs>
+  <line x1="2" y1="173.5" x2="334" y2="173.5" fill="none" isolation="isolate" opacity=".6" stroke="#83919b" stroke-dasharray="1.26 1.89"/>
+  <g id="published-pillars">
+    <line x1="2" y1="166" x2="2" y2="159.13" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="13.86" y1="166" x2="13.86" y2="154.15" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="25.71" y1="166" x2="25.71" y2="150.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="37.57" y1="166" x2="37.57" y2="148" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="49.43" y1="166" x2="49.43" y2="153.12" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="61.29" y1="166" x2="61.29" y2="153.12" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="73.14" y1="166" x2="73.14" y2="145.74" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="85" y1="166" x2="85" y2="141.45" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="96.86" y1="166" x2="96.86" y2="145.74" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="108.71" y1="166" x2="108.71" y2="150.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="120.57" y1="166" x2="120.57" y2="146.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="132.43" y1="166" x2="132.43" y2="144" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="144.29" y1="166" x2="144.29" y2="147.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="156.14" y1="166" x2="156.14" y2="150.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="168" y1="166" x2="168" y2="141.45" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="179.86" y1="166" x2="179.86" y2="127.37" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="191.71" y1="166" x2="191.71" y2="131.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="203.57" y1="166" x2="203.57" y2="119.98" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="215.43" y1="166" x2="215.43" y2="125.18" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="227.29" y1="166" x2="227.29" y2="131.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="239.14" y1="166" x2="239.14" y2="128.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="251" y1="166" x2="251" y2="119" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="262.86" y1="166" x2="262.86" y2="113" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="274.71" y1="166" x2="274.71" y2="111.23" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="286.57" y1="166" x2="286.57" y2="104" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="298.43" y1="166" x2="298.43" y2="91.5" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="310.28" y1="166" x2="310.28" y2="90" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="322.14" y1="166" x2="322.14" y2="63" fill="none" isolation="isolate" opacity=".2" stroke="#d6d8d8"/>
+    <line x1="334" y1="166" x2="334" y2="2" fill="none" isolation="isolate" opacity="1" stroke="#d6d8d8"/>
+  </g>
+  <path id="published-line" d="M2,159.5s26.5-12,35-12,7,7,18,7,18.19-13.7,30-13.5c6.88.11,15,9,24,9s12-6.5,23.5-6.5,10.5,6.5,23.5,6.5,17-23.5,25-23.5,6,5,12,5,3-12,11.5-12,14.9,12.51,24.5,12c16.12-.87,23-20.5,44-20.5s8.58-20,33-20c12,0,11.07-19.6,16.5-28,4.89-7.56,11.5-60.5,11.5-60.5" fill="none" stroke="url(#linear-gradient)" stroke-linecap="round"/>
+</svg>
+
+                </div>
+                <div class="c-ui-box c-ui-box--stats c-ui-box--days">
+                    <p class="c-ui-box__text typo-small">Time to exploit is collapsing</p>
+                    <div class="c-ui-box__overlay">
+                        <div class="c-ui-box__overlay-segment">
+                            <p class="c-ui-box__overlay-year">2019</p>
+                            <p class="c-ui-box__overlay-number">063</p>
+                            <p class="c-ui-box__overlay-label">days</p>
+                        </div>
+                        <div class="c-ui-box__overlay-segment">
+                            <p class="c-ui-box__overlay-year">2022</p>
+                            <p class="c-ui-box__overlay-number">032</p>
+                            <p class="c-ui-box__overlay-label">days</p>
+                        </div>
+                        <div class="c-ui-box__overlay-segment">
+                            <p class="c-ui-box__overlay-year">2023</p>
+                            <p class="c-ui-box__overlay-number">005</p>
+                            <p class="c-ui-box__overlay-label">days</p>
+                        </div>
+                        <svg class="svg-ui-days"  xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 336 69">
+  <line x1=".75" y1="31" x2=".75" y2="0" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+  <rect x="1" y="36" width="94" height="32" rx="4" ry="4" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+  <path d="M115,31V1" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+  <rect x="115" y="36" width="95" height="32" rx="4" ry="4" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+  <path d="M236.25,31V0" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+  <rect x="236.25" y="36" width="99" height="32" rx="4" ry="4" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+</svg>
+
+                    </div>
+                </div>
+                <div class="c-ui-box c-ui-box--stats c-ui-box--percent">
+                    <p class="c-ui-box__number">34<span>%</span></p>
+                    <svg class="svg-ui-percent-bar"  width="39" height="41" viewBox="0 0 39 41" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect id="white-bar" y="29" width="39" height="12" fill="#EFF0F0"/>
+<g id="gradient-bars" opacity="0.5">
+<rect opacity="0.2" y="28" width="39" height="5" fill="url(#paint7_linear_3537_27135)"/>
+<rect opacity="0.3" y="24" width="39" height="5" fill="url(#paint6_linear_3537_27135)"/>
+<rect opacity="0.4" y="20" width="39" height="5" fill="url(#paint5_linear_3537_27135)"/>
+<rect opacity="0.5" y="16" width="39" height="5" fill="url(#paint4_linear_3537_27135)"/>
+<rect opacity="0.6" y="12" width="39" height="5" fill="url(#paint3_linear_3537_27135)"/>
+<rect opacity="0.7" y="8" width="39" height="5" fill="url(#paint2_linear_3537_27135)"/>
+<rect opacity="0.8" y="4" width="39" height="5" fill="url(#paint1_linear_3537_27135)"/>
+<rect opacity="0.9" width="39" height="5" fill="url(#paint0_linear_3537_27135)"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_3537_27135" x1="3.62229" y1="4.00862" x2="25.2873" y2="-11.6377" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+<linearGradient id="paint1_linear_3537_27135" x1="3.62229" y1="8.00862" x2="25.2873" y2="-7.63774" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+<linearGradient id="paint2_linear_3537_27135" x1="3.62229" y1="12.0086" x2="25.2873" y2="-3.63774" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+<linearGradient id="paint3_linear_3537_27135" x1="3.62229" y1="16.0086" x2="25.2873" y2="0.362257" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+<linearGradient id="paint4_linear_3537_27135" x1="3.62229" y1="20.0086" x2="25.2873" y2="4.36226" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+<linearGradient id="paint5_linear_3537_27135" x1="3.62229" y1="24.0086" x2="25.2873" y2="8.36226" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+<linearGradient id="paint6_linear_3537_27135" x1="3.62229" y1="28.0086" x2="25.2873" y2="12.3623" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+<linearGradient id="paint7_linear_3537_27135" x1="3.62229" y1="32.0086" x2="25.2873" y2="16.3623" gradientUnits="userSpaceOnUse">
+<stop stop-color="#00E7FB"/>
+<stop offset="1" stop-color="#E628FF"/>
+</linearGradient>
+</defs>
+</svg>
+
+                    <div class="c-ui-box__line dotted-line"></div>
+                    <p class="c-ui-box__text typo-small"> increase in 2024  in attackers exploiting vulnerabilities to gain initial access</p>
+
+                </div>
+            </div>
+        </div>
+
+        <div class="m-story__item m-story__item--left m-story__item--columns col-span-12 col-start-1" id="info-2">
+            <div class="m-story__copy" data-observe="children">
+                <h2 class="m-story__title typo-lead">Most vulnerabilities are false‑positives, but security teams have no way to identify them at scale</h2>
+            </div>
+            <div class="m-story__stats" data-observe="children">
+                <div class="c-ui-box c-ui-box--stats c-ui-box--icon">
+                    <svg class="svg-ui-icon-dots"  width="38" height="38" viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2" d="M5 1h28s4 0 4 4v28s0 4 -4 4h-28s-4 0 -4 -4v-28s0 -4 4 -4" />
+<path d="M14.5 11.125C13.8325 11.125 13.18 11.3229 12.625 11.6938C12.0699 12.0646 11.6374 12.5917 11.3819 13.2084C11.1265 13.8251 11.0596 14.5037 11.1899 15.1584C11.3201 15.8131 11.6415 16.4145 12.1135 16.8865C12.5855 17.3585 13.1869 17.6799 13.8416 17.8102C14.4963 17.9404 15.1749 17.8735 15.7916 17.6181C16.4083 17.3626 16.9354 16.9301 17.3062 16.3751C17.6771 15.82 17.875 15.1675 17.875 14.5C17.875 13.6049 17.5194 12.7465 16.8865 12.1135C16.2536 11.4806 15.3951 11.125 14.5 11.125ZM14.5 17.125C13.9808 17.125 13.4733 16.971 13.0416 16.6826C12.61 16.3942 12.2735 15.9842 12.0748 15.5045C11.8761 15.0249 11.8242 14.4971 11.9254 13.9879C12.0267 13.4787 12.2767 13.011 12.6438 12.6438C13.011 12.2767 13.4787 12.0267 13.9879 11.9254C14.4971 11.8242 15.0249 11.8761 15.5045 12.0748C15.9842 12.2735 16.3942 12.61 16.6826 13.0416C16.971 13.4733 17.125 13.9808 17.125 14.5C17.125 15.1962 16.8484 15.8639 16.3562 16.3562C15.8639 16.8484 15.1962 17.125 14.5 17.125ZM23.5 17.875C24.1675 17.875 24.82 17.6771 25.3751 17.3062C25.9301 16.9354 26.3626 16.4083 26.6181 15.7916C26.8735 15.1749 26.9404 14.4963 26.8102 13.8416C26.6799 13.1869 26.3585 12.5855 25.8865 12.1135C25.4145 11.6415 24.8131 11.3201 24.1584 11.1899C23.5037 11.0596 22.8251 11.1265 22.2084 11.3819C21.5917 11.6374 21.0646 12.0699 20.6938 12.625C20.3229 13.18 20.125 13.8325 20.125 14.5C20.125 15.3951 20.4806 16.2536 21.1135 16.8865C21.7465 17.5194 22.6049 17.875 23.5 17.875ZM23.5 11.875C24.0192 11.875 24.5267 12.029 24.9584 12.3174C25.3901 12.6058 25.7265 13.0158 25.9252 13.4955C26.1239 13.9751 26.1758 14.5029 26.0746 15.0121C25.9733 15.5213 25.7233 15.989 25.3562 16.3562C24.989 16.7233 24.5213 16.9733 24.0121 17.0746C23.5029 17.1758 22.9751 17.1239 22.4955 16.9252C22.0158 16.7265 21.6058 16.3901 21.3174 15.9584C21.029 15.5267 20.875 15.0192 20.875 14.5C20.875 13.8038 21.1516 13.1361 21.6438 12.6438C22.1361 12.1516 22.8038 11.875 23.5 11.875ZM14.5 20.125C13.8325 20.125 13.18 20.3229 12.625 20.6938C12.0699 21.0646 11.6374 21.5917 11.3819 22.2084C11.1265 22.8251 11.0596 23.5037 11.1899 24.1584C11.3201 24.8131 11.6415 25.4145 12.1135 25.8865C12.5855 26.3585 13.1869 26.6799 13.8416 26.8102C14.4963 26.9404 15.1749 26.8735 15.7916 26.6181C16.4083 26.3626 16.9354 25.9301 17.3062 25.3751C17.6771 24.82 17.875 24.1675 17.875 23.5C17.875 22.6049 17.5194 21.7465 16.8865 21.1135C16.2536 20.4806 15.3951 20.125 14.5 20.125ZM14.5 26.125C13.9808 26.125 13.4733 25.971 13.0416 25.6826C12.61 25.3942 12.2735 24.9842 12.0748 24.5045C11.8761 24.0249 11.8242 23.4971 11.9254 22.9879C12.0267 22.4787 12.2767 22.011 12.6438 21.6438C13.011 21.2767 13.4787 21.0267 13.9879 20.9254C14.4971 20.8242 15.0249 20.8761 15.5045 21.0748C15.9842 21.2735 16.3942 21.61 16.6826 22.0416C16.971 22.4733 17.125 22.9808 17.125 23.5C17.125 24.1962 16.8484 24.8639 16.3562 25.3562C15.8639 25.8484 15.1962 26.125 14.5 26.125ZM26.875 23.5C26.875 23.5995 26.8355 23.6948 26.7652 23.7652C26.6948 23.8355 26.5995 23.875 26.5 23.875H23.875V26.5C23.875 26.5995 23.8355 26.6948 23.7652 26.7652C23.6948 26.8355 23.5995 26.875 23.5 26.875C23.4005 26.875 23.3052 26.8355 23.2348 26.7652C23.1645 26.6948 23.125 26.5995 23.125 26.5V23.875H20.5C20.4005 23.875 20.3052 23.8355 20.2348 23.7652C20.1645 23.6948 20.125 23.5995 20.125 23.5C20.125 23.4005 20.1645 23.3052 20.2348 23.2348C20.3052 23.1645 20.4005 23.125 20.5 23.125H23.125V20.5C23.125 20.4005 23.1645 20.3052 23.2348 20.2348C23.3052 20.1645 23.4005 20.125 23.5 20.125C23.5995 20.125 23.6948 20.1645 23.7652 20.2348C23.8355 20.3052 23.875 20.4005 23.875 20.5V23.125H26.5C26.5995 23.125 26.6948 23.1645 26.7652 23.2348C26.8355 23.3052 26.875 23.4005 26.875 23.5Z" fill="#EFF0F0"/>
+</svg>
+
+                    <div class="c-ui-box__line dotted-line"></div>
+                    <p class="c-ui-box__text typo-small">Rule-based logic and scoring criteria can’t accurately identify false-positives</p>
+                </div>
+                <div class="c-ui-box c-ui-box--stats c-ui-box--icon">
+                    <svg class="svg-ui-icon-hourglass"  width="42" height="42" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path stroke="#83919B" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2" d="M5 1h32s4 0 4 4v32s0 4 -4 4h-32s-4 0 -4 -4v-32s0 -4 4 -4" />
+<g opacity="0.6">
+<path d="M21.632 21L29.8001 13.1786C29.9837 12.9952 30.1088 12.7616 30.1596 12.5071C30.2104 12.2527 30.1847 11.9889 30.0857 11.7491C29.9867 11.5093 29.8188 11.3042 29.6033 11.1597C29.3877 11.0153 29.1342 10.9379 28.8748 10.9375H13.1248C12.865 10.9373 12.6111 11.0142 12.3951 11.1584C12.179 11.3026 12.0106 11.5076 11.9112 11.7476C11.8118 11.9875 11.7858 12.2516 11.8365 12.5063C11.8873 12.7611 12.0124 12.995 12.1962 13.1786L12.2038 13.1852L20.3676 21L12.2071 28.8148L12.1995 28.8214C12.0159 29.0048 11.8908 29.2384 11.84 29.4929C11.7891 29.7473 11.8148 30.0111 11.9139 30.2509C12.0129 30.4907 12.1808 30.6958 12.3963 30.8403C12.6118 30.9847 12.8653 31.0621 13.1248 31.0625H28.8748C29.1352 31.0625 29.3898 30.985 29.6061 30.8399C29.8223 30.6948 29.9905 30.4886 30.0893 30.2476C30.188 30.0066 30.2128 29.7417 30.1606 29.4866C30.1083 29.2314 29.9813 28.9976 29.7957 28.8148L21.632 21ZM16.6073 16.1875H25.3923L20.9998 20.3941L16.6073 16.1875ZM12.7234 12.0827C12.7554 12.0025 12.8109 11.9339 12.8825 11.8857C12.954 11.8376 13.0385 11.812 13.1248 11.8125H28.8748C28.9606 11.8124 29.0445 11.8375 29.1162 11.8848C29.1878 11.932 29.2439 11.9993 29.2776 12.0782C29.3113 12.1572 29.3211 12.2442 29.3056 12.3286C29.2902 12.4131 29.2503 12.4911 29.1909 12.553L26.3056 15.3125H15.6962L12.8153 12.5563C12.7542 12.4956 12.7128 12.4181 12.6964 12.3336C12.68 12.2491 12.6894 12.1617 12.7234 12.0827ZM29.2762 29.9173C29.2441 29.9975 29.1887 30.0661 29.1171 30.1143C29.0455 30.1624 28.9611 30.188 28.8748 30.1875H13.1248C13.0386 30.1876 12.9543 30.1622 12.8825 30.1145C12.8107 30.0669 12.7545 29.9991 12.7211 29.9196C12.6877 29.8402 12.6785 29.7526 12.6947 29.668C12.7108 29.5833 12.7516 29.5053 12.812 29.4438L20.5623 22.0248V25.375C20.5623 25.491 20.6084 25.6023 20.6904 25.6844C20.7725 25.7664 20.8838 25.8125 20.9998 25.8125C21.1158 25.8125 21.2271 25.7664 21.3091 25.6844C21.3912 25.6023 21.4373 25.491 21.4373 25.375V22.0248L29.181 29.4405C29.2432 29.5011 29.2855 29.579 29.3025 29.6642C29.3195 29.7493 29.3103 29.8375 29.2762 29.9173Z" fill="#EFF0F0"/>
+</g>
+</svg>
+
+                    <div class="c-ui-box__line dotted-line"></div>
+                    <p class="c-ui-box__text typo-small">Manual triage is slow, expensive, and can’t keep up with the volume of vulnerabilities</p>
+                </div>
+                <div class="c-ui-box c-ui-box--stats c-ui-box--icon">
+                                        <svg class="svg-ui-icon-network"  width="42" height="42" viewBox="0 0 42 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2" d="M5 1h32s4 0 4 4v32s0 4 -4 4h-32s-4 0 -4 -4v-32s0 -4 4 -4" />
+<g opacity="0.6">
+<path d="M32.375 19.6875H21.4375V16.1875H22.75C23.0981 16.1875 23.4319 16.0492 23.6781 15.8031C23.9242 15.5569 24.0625 15.2231 24.0625 14.875V11.375C24.0625 11.0269 23.9242 10.6931 23.6781 10.4469C23.4319 10.2008 23.0981 10.0625 22.75 10.0625H19.25C18.9019 10.0625 18.5681 10.2008 18.3219 10.4469C18.0758 10.6931 17.9375 11.0269 17.9375 11.375V14.875C17.9375 15.2231 18.0758 15.5569 18.3219 15.8031C18.5681 16.0492 18.9019 16.1875 19.25 16.1875H20.5625V19.6875H9.625C9.50897 19.6875 9.39769 19.7336 9.31564 19.8156C9.23359 19.8977 9.1875 20.009 9.1875 20.125C9.1875 20.241 9.23359 20.3523 9.31564 20.4344C9.39769 20.5164 9.50897 20.5625 9.625 20.5625H13.5625V24.9375H12.25C11.9019 24.9375 11.5681 25.0758 11.3219 25.3219C11.0758 25.5681 10.9375 25.9019 10.9375 26.25V29.75C10.9375 30.0981 11.0758 30.4319 11.3219 30.6781C11.5681 30.9242 11.9019 31.0625 12.25 31.0625H15.75C16.0981 31.0625 16.4319 30.9242 16.6781 30.6781C16.9242 30.4319 17.0625 30.0981 17.0625 29.75V26.25C17.0625 25.9019 16.9242 25.5681 16.6781 25.3219C16.4319 25.0758 16.0981 24.9375 15.75 24.9375H14.4375V20.5625H27.5625V24.9375H26.25C25.9019 24.9375 25.5681 25.0758 25.3219 25.3219C25.0758 25.5681 24.9375 25.9019 24.9375 26.25V29.75C24.9375 30.0981 25.0758 30.4319 25.3219 30.6781C25.5681 30.9242 25.9019 31.0625 26.25 31.0625H29.75C30.0981 31.0625 30.4319 30.9242 30.6781 30.6781C30.9242 30.4319 31.0625 30.0981 31.0625 29.75V26.25C31.0625 25.9019 30.9242 25.5681 30.6781 25.3219C30.4319 25.0758 30.0981 24.9375 29.75 24.9375H28.4375V20.5625H32.375C32.491 20.5625 32.6023 20.5164 32.6844 20.4344C32.7664 20.3523 32.8125 20.241 32.8125 20.125C32.8125 20.009 32.7664 19.8977 32.6844 19.8156C32.6023 19.7336 32.491 19.6875 32.375 19.6875ZM18.8125 14.875V11.375C18.8125 11.259 18.8586 11.1477 18.9406 11.0656C19.0227 10.9836 19.134 10.9375 19.25 10.9375H22.75C22.866 10.9375 22.9773 10.9836 23.0594 11.0656C23.1414 11.1477 23.1875 11.259 23.1875 11.375V14.875C23.1875 14.991 23.1414 15.1023 23.0594 15.1844C22.9773 15.2664 22.866 15.3125 22.75 15.3125H19.25C19.134 15.3125 19.0227 15.2664 18.9406 15.1844C18.8586 15.1023 18.8125 14.991 18.8125 14.875ZM16.1875 26.25V29.75C16.1875 29.866 16.1414 29.9773 16.0594 30.0594C15.9773 30.1414 15.866 30.1875 15.75 30.1875H12.25C12.134 30.1875 12.0227 30.1414 11.9406 30.0594C11.8586 29.9773 11.8125 29.866 11.8125 29.75V26.25C11.8125 26.134 11.8586 26.0227 11.9406 25.9406C12.0227 25.8586 12.134 25.8125 12.25 25.8125H15.75C15.866 25.8125 15.9773 25.8586 16.0594 25.9406C16.1414 26.0227 16.1875 26.134 16.1875 26.25ZM30.1875 26.25V29.75C30.1875 29.866 30.1414 29.9773 30.0594 30.0594C29.9773 30.1414 29.866 30.1875 29.75 30.1875H26.25C26.134 30.1875 26.0227 30.1414 25.9406 30.0594C25.8586 29.9773 25.8125 29.866 25.8125 29.75V26.25C25.8125 26.134 25.8586 26.0227 25.9406 25.9406C26.0227 25.8586 26.134 25.8125 26.25 25.8125H29.75C29.866 25.8125 29.9773 25.8586 30.0594 25.9406C30.1414 26.0227 30.1875 26.134 30.1875 26.25Z" fill="#EFF0F0"/>
+</g>
+</svg>
+
+                    <div class="c-ui-box__line dotted-line"></div>
+                    <p class="c-ui-box__text typo-small">90% of all findings are false positives when investigated in context</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="m-story__item col-span-8 col-start-3" id="info-3" >
+            <h2 class="m-story__title m-story__title--center typo-lead">How can we fix the vulnerabilities that matter, before attackers beat us to it?</h2>
+        </div>
+    </div>
+</section>
+  <section class="module module--graph" id="section-graph">
+    <div class="grid-wrap">
+         
+            <div class="col-span-2 col-start-6 m-graph__logo">
+                <svg class="svg-maze-logo"  width="98" height="30" viewBox="0 0 98 30" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15.728 5.135l1.097.587V20.44l-1.097.587-1.096-.587V8.07l-6.577 3.522v10.023l-2.192-1.174V10.418l9.865-5.283z" fill="#EFF0F0"/><path d="M21.21 10.418l2.191 1.174v10.023l2.193-1.174V10.42l-6.577-3.523v14.719l-3.289 1.76-3.288-1.76V11.593l-2.193 1.173v10.023l5.481 2.935 5.481-2.935V10.418zM86.328 8.995c3.437 0 5.796 2.604 5.809 6.421 0 .345-.025.69-.051.996h-9.079c.36 2.196 1.911 3.115 3.655 3.115 1.231 0 2.539-.485 3.552-1.29l1.334 1.903c-1.501 1.276-3.194 1.723-5.053 1.723-3.68 0-6.283-2.553-6.283-6.434 0-3.83 2.5-6.434 6.116-6.434zm-.05 2.375c-1.912 0-2.975 1.225-3.258 3.012h6.373c-.295-1.902-1.41-3.012-3.116-3.012zM78.924 9.314v1.94l-6.706 7.865h6.834v2.425H68.653v-1.94l6.821-7.864h-6.616V9.314h10.066zM66.356 9.314v12.23h-2.679v-1.468c-.847 1.085-2.116 1.787-3.86 1.787-3.436 0-6.142-2.693-6.142-6.434 0-3.74 2.706-6.434 6.142-6.434 1.744 0 3.013.715 3.86 1.8v-1.48h2.68zm-6.218 2.196c-2.308 0-3.706 1.774-3.706 3.92 0 2.144 1.398 3.918 3.706 3.918 2.218 0 3.705-1.685 3.705-3.919s-1.487-3.919-3.705-3.919zM46.768 8.995c2.924 0 4.988 2.004 4.988 4.864v7.685h-2.692V14.74c0-2.056-1.065-3.204-2.86-3.204-1.73 0-3.18 1.136-3.18 3.23v6.778h-2.693V14.74c0-2.056-1.064-3.204-2.86-3.204-1.73 0-3.18 1.136-3.18 3.23v6.778H31.6V9.314h2.667v1.494c.988-1.443 2.513-1.813 3.77-1.813 1.872 0 3.398.83 4.244 2.183 1.065-1.749 2.962-2.183 4.488-2.183z" fill="#EFF0F0"/></svg>
+            </div>
+            <h2 class="col-span-6 col-start-4 typo-lead text-centered text-wide">AI Agents that investigate and resolve cloud vulnerabilities</h2>
+             <div class="m-graph__steps grid col-span-12 scrollbar-hidden" data-observe="children">
+                <div class="col-span-3 m-graph__step">
+                    <div class="m-graph__step-number">01</div>
+                    <p class="m-graph__step-text typo-body">Vulnerabilities ingested from cloud vulnerability scanners</p>
+                </div>
+                <div class="col-span-3 m-graph__step">
+                    <div class="m-graph__step-number">02</div>
+                    <p class="m-graph__step-text typo-body">AI Agents investigate every vulnerability in the context of your environment</p>
+                </div>
+                <div class="col-span-3 m-graph__step">
+                    <div class="m-graph__step-number">03</div>
+                    <p class="m-graph__step-text typo-body">False positives removed and high-risk vulnerabilities identified</p>
+                </div>
+                <div class="col-span-3 m-graph__step">
+                    <div class="m-graph__step-number">04</div>
+                    <p class="m-graph__step-text typo-body">One-click mitigation and remediation actions sent to owners</p>
+                </div>
+            </div>
+        
+        <div class="col-span-12 c-stream" data-gfx="stream" data-gfx-sticky data-scroll="stream">
+    <picture>
+        <source srcset="/public/theme/images/svg/flow-diagram-main-mobile.svg" type="image/svg+xml" media="(max-width: 1023px)">
+        <img loading="lazy" src="/public/theme/images/svg/flow-diagram-main.svg" alt="Maze AI Vulnerability Analyst Flow Diagram" style="display:block; width:100%;">
+    </picture>
+
+    <?xml version="1.0" encoding="UTF-8"?>
+<svg class="svg-flow-diagram-paths"  id="Layer_1" xmlns="http://www.w3.org/2000/svg" width="1204" height="535" version="1.1" viewBox="0 0 1204 535">
+  <!-- Generator: Adobe Illustrator 29.5.1, SVG Export Plug-In . SVG Version: 2.1.0 Build 141)  -->
+  <path d="M1175,480.3c-155.4-1-159-26.5-326.1-26.5s-191.9,22.1-383.8,22.1-144.6-61.8-281.2-61.8" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+  <path d="M1175,465.2c-155.4-1-159,32.7-326.1,32.7s-191.9-45.1-383.8-45.1-144.6-61.8-281.2-61.8" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+  <path d="M1175,450.2c-155.4-1-159,17.7-326.1,17.7s-191.9,31.8-383.8,31.8-144.6-61.8-281.2-61.8" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+  <path d="M1175,146.2c-662.5,0-279.6-69.2-991-69.2" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+  <path d="M1175,302c-155.4-1-99,1.4-266.1,1.4s-211.9-174.9-403.8-174.9-184.6-.8-321.2-.8" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+  <path d="M1175,326c-155.4-1-89,1.4-256.1,1.4s-251.9-174.9-443.8-174.9-154.6-.8-291.2-.8" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+  <path d="M1175,509c-155.4-1-149-31.6-316.1-31.6s-191.9-45.9-383.8-45.9-154.6-63.8-291.2-63.8" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+  <path d="M1175,495c-155.4-1-169-53.6-336.1-53.6s-171.9-29.9-363.8-29.9-154.6-66.8-291.2-66.8" fill="none" stroke="#37c6f4" stroke-miterlimit="10"/>
+</svg>
+    <?xml version="1.0" encoding="UTF-8"?>
+<svg class="svg-flow-diagram-paths-mobile"  id="Layer_1" xmlns="http://www.w3.org/2000/svg" width="345" height="653" version="1.1" viewBox="0 0 345 653">
+  <!-- Generator: Adobe Illustrator 29.5.1, SVG Export Plug-In . SVG Version: 2.1.0 Build 141)  -->
+  <path d="M47.2,653c.7-98.6,17.7-100.8,17.7-206.8s-14.7-121.7-14.7-243.4S91.4,111.1,91.4,24.5" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+  <path d="M57.3,653c.7-98.6-21.8-100.8-21.8-206.8s30.1-121.7,30.1-243.4S106.8,111.1,106.8,24.5" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+  <path d="M67.3,653c.7-98.6-11.8-100.8-11.8-206.8s-21.2-121.7-21.2-243.4S75.4,111.1,75.4,24.5" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+  <path d="M269.9,653c0-420.2,46.1-177.4,46.1-628.5" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+  <path d="M166.1,653c.7-98.6-.9-62.8-.9-168.7s116.5-134.4,116.5-256.1.5-117.1.5-203.7" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+  <path d="M150,653c.7-98.6-.9-56.4-.9-162.4s116.5-159.7,116.5-281.4.5-98,.5-184.7" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+  <path d="M28.1,653c.7-98.6,21-94.5,21-200.4s30.6-121.7,30.6-243.4S122.2,111.1,122.2,24.5" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+  <path d="M37.4,653c.7-98.6,35.7-107.2,35.7-213.1s19.9-109,19.9-230.7,44.5-98,44.5-184.7" fill="none" stroke="#37c6f4" stroke-miterlimit="10" stroke-width=".7"/>
+</svg>
+
+
+    
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">KDC Server Running</div>
+                                    <div class="popup__label">Not present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--mobile-right popup--left">
+                                    <div class="popup__name">Exception logged for audit</div>
+                                            </div>
+            </div>
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">Function reachable</div>
+                                    <div class="popup__label">Not present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--mobile-right popup--left">
+                                    <div class="popup__name">Exception logged for audit</div>
+                                            </div>
+            </div>
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">FTP Client Functionality</div>
+                                    <div class="popup__label">Not present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--mobile-right popup--left">
+                                    <div class="popup__name">Exception logged for audit</div>
+                                            </div>
+            </div>
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot hotspot--red">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red popup--mobile-left">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">Access to package repositories</div>
+                                    <div class="popup__label">Present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red popup--mobile-left">
+                                    <div class="popup__name">Highly privileged IAM role</div>
+                                            </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red popup--mobile-left">
+                                    <div class="popup__name">PR automatically created</div>
+                                            </div>
+            </div>
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot hotspot--red">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red popup--mobile-left">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">JSON Payload Processing</div>
+                                    <div class="popup__label">Present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red popup--mobile-center">
+                                    <div class="popup__name">Isolated environment</div>
+                                            </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red popup--mobile-left popup--left">
+                                    <div class="popup__name">Ticket created</div>
+                                                <div class="popup__category">(SLA 7 days)</div>
+                    </div>
+            </div>
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot hotspot--red">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">FOU tunnels configured</div>
+                                    <div class="popup__label">Present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red">
+                                    <div class="popup__name">Test environment</div>
+                                            </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--red popup--left">
+                                    <div class="popup__name">Ticket created</div>
+                                                <div class="popup__category">(SLA 30 days)</div>
+                    </div>
+            </div>
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">Image Parsing Configuration</div>
+                                    <div class="popup__label">Not present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--mobile-right popup--left">
+                                    <div class="popup__name">Exception logged for audit</div>
+                                            </div>
+            </div>
+        <div class="c-stream__point js-stream-point">
+        <div class="c-stream__hotspot hotspot">
+            <svg class="svg-circle" viewBox="0 0 220 220"><circle cx="110" cy="110" r="100"></circle></svg>
+        </div>
+                <div class="c-stream__popup js-stream-point-popup popup">
+                        <div class="popup__category">Requirement</div>
+                                    <div class="popup__name">Framebuffer console enable</div>
+                                    <div class="popup__label">Not present</div>
+                                </div>
+                <div class="c-stream__popup js-stream-point-popup popup popup--mobile-right popup--left">
+                                    <div class="popup__name">Exception logged for audit</div>
+                                            </div>
+            </div>
+    </div>
+    </div>
+</section>
+  <section class="module module--story" id="section-story-2">
+    
+
+<div class="s-progress js-progress desktop-only" data-component="Progress" data-observe>
+     
+        <div class="s-progress__segment s-progress__segment--1 js-progress-segment" data-id="info-4">
+            <div class="s-progress__number">01</div>
+            <div class="s-progress__progress js-progress-bar">
+                <div class="s-progress__line dotted-line"></div>
+                <div class="s-progress__dot"></div>
+            </div>
+        </div>
+     
+        <div class="s-progress__segment s-progress__segment--2 js-progress-segment" data-id="info-5">
+            <div class="s-progress__number">02</div>
+            <div class="s-progress__progress js-progress-bar">
+                <div class="s-progress__line dotted-line"></div>
+                <div class="s-progress__dot"></div>
+            </div>
+        </div>
+     
+        <div class="s-progress__segment s-progress__segment--3 js-progress-segment" data-id="info-6">
+            <div class="s-progress__number">03</div>
+            <div class="s-progress__progress js-progress-bar">
+                <div class="s-progress__line dotted-line"></div>
+                <div class="s-progress__dot"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="m-story m-story--no-padding-bottom grid-wrap">
+        <div class="m-story__item m-story__item--left m-story__item--columns col-span-11 col-start-1" id="info-4">
+            <div class="m-story__copy" data-observe="children">
+                <h2 class="m-story__title typo-lead">Shrink your vulnerability<br />
+backlog</h2>
+                <p class="m-story__text typo-body">Confidently identify vulnerabilities that cannot be exploited in your environment, allowing you to remove 90% of your backlog.</p>
+            </div>
+
+            <div class="c-ui-box--grid-trigger">
+                <div class="m-story__visual-grid c-ui-box c-ui-box--grid" data-scroll="graphRibbon">
+                    <div class="c-ui-box__grid-graph js-grid-graph">
+                        <svg class="svg-ui-graph-ribbon"  xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 297 201.05">
+  <defs>
+    <linearGradient id="linear-gradient" x1="54.41" y1="617.25" x2="269.64" y2="617.25" gradientTransform="translate(0 -447.2)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e42269"/>
+      <stop offset="1" stop-color="#2fd48d"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient1" x1="54.83" y1="587.58" x2="270.06" y2="587.58" gradientTransform="translate(0 -447.2)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e42269"/>
+      <stop offset="1" stop-color="#2fd48d"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient2" x1="54.41" y1="554.32" x2="269.64" y2="554.32" gradientTransform="translate(0 -447.2)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e19c1b"/>
+      <stop offset="1" stop-color="#2fd48d"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient3" x1="54.41" y1="509.63" x2="269.64" y2="509.63" gradientTransform="translate(0 -447.2)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e19c1b"/>
+      <stop offset="1" stop-color="#2fd48d"/>
+    </linearGradient>
+  </defs>
+  <g id="ribbon-chart">
+    <g id="ribbon-chart-thick">
+      <path d="M54.41,170.96c83.96,0,123.45-17.63,215.23-17.63v32.83c-103.93,0-158.12.61-215.23.61,0,0,0-15.81,0-15.81Z" fill="url(#linear-gradient)" fill-opacity=".4"/>
+      <path d="M54.83,139.78c83.96,0,123.45-20.06,215.23-20.06v32.22c-111.58,0-131.27,9.12-215.23,9.12v-21.28Z" fill="url(#linear-gradient1)" fill-opacity=".4"/>
+      <path d="M54.41,104.69c83.96,0,123.45-18.24,215.23-18.24v32.22c-111.58,0-131.27,9.12-215.23,9.12,0,0,0-23.1,0-23.1Z" fill="url(#linear-gradient2)" fill-opacity=".4"/>
+      <path d="M54.41,32.34c83.96,0,123.45,20.67,215.23,20.67v32.22c-111.58,0-131.27,7.3-215.23,7.3v-60.19h0Z" fill="url(#linear-gradient3)" fill-opacity=".4"/>
+    </g>
+    <g id="ribbon-chart-thin">
+      <path d="M54.41,166.1c83.96,0,123.45-125.86,215.23-125.86v6.69c-98.65,0-131.28,122.82-215.23,122.82,0,0,0-3.65,0-3.65Z" fill="#d54646" fill-opacity=".4"/>
+      <path d="M54.41,132.66c83.96,0,123.45-100.32,215.23-100.32v6.69c-98.65,0-131.28,99.71-215.23,99.71,0,0,0-6.08,0-6.08Z" fill="#e42269" fill-opacity=".3"/>
+      <path d="M54.41,97.39c83.96,0,123.45-72.96,215.23-72.96v6.69c-98.65,0-131.28,72.35-215.23,72.35,0,0,0-6.08,0-6.08Z" fill="#f4af88" fill-opacity=".4"/>
+      <path d="M54.41,16.53h215.23v6.69c-111.58,0-131.27,7.9-215.23,7.9,0,0,0-14.59,0-14.59Z" fill="#e19c1b" fill-opacity=".4"/>
+    </g>
+    <path d="M55.01,16.53h0c.67,0,1.22.54,1.22,1.22v73.57c0,.67-.54,1.22-1.22,1.22h0c-.67,0-1.22-.54-1.22-1.22V17.75c0-.67.54-1.22,1.22-1.22Z" fill="#f4cf88"/>
+    <path d="M55.01,97.4h0c.67,0,1.22.54,1.22,1.22v27.97c0,.67-.54,1.22-1.22,1.22h0c-.67,0-1.22-.54-1.22-1.22v-27.97c0-.67.54-1.22,1.22-1.22Z" fill="#e19c1b"/>
+    <path d="M55.01,132.66h0c.67,0,1.22.54,1.22,1.22v26.14c0,.67-.54,1.22-1.22,1.22h0c-.67,0-1.22-.54-1.22-1.22v-26.14c0-.67.54-1.22,1.22-1.22Z" fill="#f48888"/>
+    <path d="M55.01,166.1h0c.67,0,1.22.54,1.22,1.22v18.24c0,.67-.54,1.22-1.22,1.22h0c-.67,0-1.22-.54-1.22-1.22v-18.24c0-.67.54-1.22,1.22-1.22Z" fill="#e42269"/>
+    <path d="M268.43,17.75c0-.67.54-1.22,1.22-1.22s1.22.54,1.22,1.22v27.97c0,.67-.55,1.22-1.22,1.22s-1.22-.54-1.22-1.22v-27.97Z" fill="#e42269"/>
+    <path d="M268.43,54.23c0-.67.54-1.22,1.22-1.22s1.22.54,1.22,1.22v130.72c0,.67-.55,1.22-1.22,1.22s-1.22-.54-1.22-1.22V54.23Z" fill="#2fd48d"/>
+  </g>
+  <g id="ribbon-text-left">
+    <g>
+      <path d="M10.56,51.28v-5.11h.79v4.39h2.46v.72h-3.25ZM16.22,51.38c-.36,0-.68-.07-.96-.22-.28-.15-.5-.37-.66-.64-.16-.28-.24-.61-.24-.99v-.11c0-.38.08-.71.24-.98.16-.28.38-.49.66-.64.28-.15.6-.23.96-.23s.68.08.96.23.5.37.66.64c.16.27.24.6.24.98v.11c0,.38-.08.71-.24.99-.16.28-.38.49-.66.64-.28.15-.6.22-.96.22ZM16.22,50.71c.33,0,.6-.1.8-.31.21-.21.31-.51.31-.88v-.07c0-.38-.1-.67-.31-.88-.2-.21-.47-.32-.81-.32s-.59.11-.8.32c-.2.21-.31.5-.31.88v.07c0,.38.1.67.31.88.21.21.48.31.8.31h0ZM19.37,51.28l-.61-3.6h.75l.45,3.09h.12l.63-3.09h1.22l.62,3.09h.12l.45-3.09h.75l-.61,3.6h-1.26l-.62-3.09h-.12l-.62,3.09h-1.26Z" fill="#8e8b99"/>
+      <path d="M11.97,62.28c-.84,0-1.53-.68-1.53-1.53v-.3h.85v.3c0,.38.31.68.68.68h.68c.38,0,.68-.3.68-.68v-.43c0-.38-.3-.68-.68-.68h-.6v-.85h.6c.38,0,.68-.3.68-.68v-.26c0-.38-.3-.68-.68-.68h-.68c-.38,0-.68.31-.68.68v.3h-.85v-.3c0-.85.69-1.53,1.53-1.53h.68c.85,0,1.53.68,1.53,1.53v.26c0,.43-.18.83-.47,1.11.29.28.47.67.47,1.11v.43c0,.85-.68,1.53-1.53,1.53h-.68ZM16.56,62.28c-.84,0-1.53-.7-1.53-1.54v-.42c0-.46.2-.87.52-1.15-.26-.28-.43-.65-.43-1.07v-.25c0-.85.69-1.53,1.53-1.53h.51c.85,0,1.53.68,1.53,1.53v.25c0,.42-.16.79-.43,1.07.32.28.52.69.52,1.15v.42c0,.84-.68,1.54-1.53,1.54h-.68ZM15.88,60.74c0,.38.31.7.68.69h.68c.38,0,.68-.31.68-.69v-.42c0-.38-.3-.68-.68-.68h-.68c-.38,0-.68.31-.68.68,0,0,0,.42,0,.42ZM15.97,58.1c0,.38.29.68.66.69h.54c.38,0,.68-.31.68-.69v-.25c0-.38-.3-.68-.68-.68h-.51c-.38,0-.68.31-.68.68v.25ZM21.28,62.28c-.88,0-1.6-.7-1.6-1.54v-2.89c0-.85.72-1.53,1.6-1.53h.72c.89,0,1.6.68,1.6,1.53v2.89c0,.84-.72,1.54-1.6,1.54h-.72ZM20.52,60.74c0,.38.35.68.76.68h.72c.11,0,.22-.03.32-.07l-1.79-2.91v2.3ZM20.83,57.3l1.92,3.14v-2.59c0-.38-.33-.68-.76-.68h-.72c-.17,0-.32.05-.45.13ZM23.72,63.22l.61-1.79h.85l-.2.62-.89,1.17h-.38ZM25.2,59.81v-3.49h.85v2.64h1.19v-2.13h.85v2.13h.85v.85h-.85v2.47h-.85v-2.47h-2.04ZM31.12,62.28c-.84,0-1.53-.68-1.53-1.53v-.3h.85v.3c0,.38.31.68.68.68h.68c.38,0,.68-.3.68-.68v-.43c0-.38-.3-.68-.68-.68h-.6v-.85h.6c.38,0,.68-.3.68-.68v-.26c0-.38-.3-.68-.68-.68h-.68c-.38,0-.68.31-.68.68v.3h-.85v-.3c0-.85.69-1.53,1.53-1.53h.68c.85,0,1.53.68,1.53,1.53v.26c0,.43-.18.83-.47,1.11.29.28.47.67.47,1.11v.43c0,.85-.68,1.53-1.53,1.53h-.68ZM34.15,62.28v-.85h1.45v-4.12l-1.45.85v-.99l1.45-.85h.85v5.11h1.45v.85h-3.74Z" fill="#d6d8d8"/>
+    </g>
+    <g>
+      <path d="M10.56,109.65v-5.11h1.48l1.12,4.58h.12l1.12-4.58h1.48v5.11h-.77v-4.55h-.12l-1.11,4.55h-1.33l-1.11-4.55h-.12v4.55h-.77,0ZM18.6,109.75c-.36,0-.68-.07-.96-.23-.27-.16-.49-.37-.64-.65-.15-.28-.23-.61-.23-.98v-.09c0-.37.08-.7.23-.98.15-.28.36-.5.63-.65.27-.15.59-.23.94-.23s.65.08.91.23c.26.15.47.36.61.64.15.27.22.59.22.96v.28h-2.76c.01.32.11.57.31.76.2.18.46.28.76.28.28,0,.49-.06.64-.19.15-.13.26-.27.34-.44l.62.32c-.07.14-.17.28-.3.43-.13.15-.29.28-.5.38s-.48.15-.8.15h0ZM17.55,107.49h1.99c-.02-.27-.12-.48-.29-.64-.17-.15-.4-.23-.69-.23s-.51.08-.69.23c-.17.15-.28.36-.32.64ZM22.7,109.75c-.3,0-.57-.07-.82-.22-.25-.15-.46-.36-.61-.63-.15-.28-.23-.61-.23-1v-.11c0-.38.08-.71.23-.99.15-.28.35-.49.61-.64s.53-.22.83-.22c.23,0,.43.03.58.09.16.06.29.13.39.23.1.09.18.18.23.28h.12v-2h.75v5.11h-.74v-.51h-.12c-.09.16-.23.3-.42.42-.18.13-.45.19-.8.19h0ZM22.92,109.1c.33,0,.59-.1.8-.31.21-.21.32-.51.32-.9v-.07c0-.39-.1-.68-.31-.89-.21-.21-.48-.31-.81-.31s-.59.1-.8.31c-.21.21-.31.5-.31.89v.07c0,.39.1.69.31.9.21.21.48.31.8.31ZM25.89,109.65v-3.6h.75v3.6h-.75ZM26.27,105.57c-.15,0-.27-.05-.37-.14-.1-.1-.15-.22-.15-.37s.05-.27.15-.36c.1-.1.23-.15.37-.15s.27.05.37.15c.1.09.15.21.15.36s-.05.28-.15.37c-.1.09-.22.14-.37.14ZM29.13,109.72c-.27,0-.52-.06-.73-.18-.21-.12-.38-.29-.5-.52-.12-.22-.18-.49-.18-.8v-2.16h.75v2.11c0,.31.08.54.23.69.16.15.37.22.65.22.31,0,.55-.1.74-.31.19-.21.28-.51.28-.9v-1.82h.75v3.6h-.74v-.54h-.12c-.07.15-.19.29-.36.42-.17.13-.43.19-.77.19h0ZM32.24,109.65v-3.6h.74v.42h.12c.07-.13.18-.24.33-.33.15-.1.35-.15.61-.15s.48.06.64.17c.17.11.29.25.37.42h.12c.08-.17.2-.3.36-.42.16-.11.39-.17.68-.17.23,0,.44.05.62.15.18.09.32.23.43.42.11.18.16.42.16.69v2.39h-.75v-2.33c0-.22-.06-.39-.18-.5-.12-.12-.28-.18-.5-.18-.23,0-.42.08-.56.23-.14.15-.21.37-.21.65v2.14h-.75v-2.33c0-.22-.06-.39-.18-.5-.12-.12-.28-.18-.5-.18-.23,0-.42.08-.56.23-.14.15-.21.37-.21.65v2.14h-.75Z" fill="#8e8b99"/>
+      <path d="M11.39,120.65v-.85h1.45v-4.12l-1.45.85v-.99l1.45-.85h.85v5.11h1.45v.85h-3.75ZM15.18,118.18v-3.49h.85v2.64h1.19v-2.13h.85v2.13h.85v.85h-.85v2.47h-.85v-2.47h-2.04ZM21.37,120.65c-.88,0-1.6-.7-1.6-1.54v-2.89c0-.85.72-1.53,1.6-1.53h.72c.89,0,1.6.68,1.6,1.53v2.89c0,.84-.72,1.54-1.6,1.54h-.72ZM20.62,119.11c0,.38.35.68.76.68h.72c.11,0,.22-.03.32-.07l-1.79-2.91v2.3h0ZM20.92,115.67l1.92,3.14v-2.59c0-.38-.33-.68-.76-.68h-.72c-.17,0-.32.05-.45.13ZM23.82,121.59l.61-1.79h.85l-.2.62-.89,1.17h-.38ZM26,120.65v-.85h1.45v-4.12l-1.45.85v-.99l1.45-.85h.85v5.11h1.45v.85h-3.75ZM33.2,118.15c0-.37-.31-.68-.68-.68h-.39l-.97.66h-.85v-3.43h3.24v.85h-2.38v1.55l.71-.48h.66c.84,0,1.53.68,1.53,1.53v.97c0,.85-.68,1.53-1.53,1.53h-.68c-.84,0-1.53-.68-1.53-1.53v-.08h.85v.08c0,.37.31.68.68.68h.68c.38,0,.68-.3.68-.68,0,0,0-.97,0-.97ZM36.4,120.65c-.84,0-1.53-.68-1.53-1.53v-2.89c0-.85.68-1.53,1.53-1.53h.68c.85,0,1.53.68,1.53,1.53v.25h-.85v-.25c0-.38-.3-.68-.68-.68h-.68c-.38,0-.68.3-.68.68v1.12l.71-.48h.65c.84,0,1.53.68,1.53,1.53v.71c0,.85-.68,1.53-1.53,1.53h-.68,0ZM35.72,119.12c0,.37.31.68.68.68h.68c.38,0,.68-.3.68-.68v-.71c0-.38-.31-.68-.68-.68h-.39l-.97.65v.74Z" fill="#d6d8d8"/>
+    </g>
+    <g>
+      <path d="M10.56,142.79v-5.11h.79v2.19h2.15v-2.19h.79v5.11h-.79v-2.2h-2.15v2.2h-.79ZM15.36,142.79v-3.6h.75v3.6h-.75ZM15.74,138.7c-.15,0-.27-.05-.37-.14-.1-.1-.15-.22-.15-.37s.05-.27.15-.37c.1-.1.23-.15.37-.15s.28.05.37.15c.1.09.15.21.15.37s-.05.27-.15.37c-.1.09-.22.14-.37.14ZM17.06,141.01v-.11c0-.38.08-.7.23-.97.16-.27.36-.48.61-.62.25-.15.53-.22.83-.22.35,0,.62.07.8.2.19.13.33.27.42.42h.12v-.52h.73v4.33c0,.22-.07.39-.2.52-.13.13-.3.2-.52.2h-2.42v-.66h2.19c.14,0,.21-.07.21-.22v-1.15h-.12c-.05.09-.13.18-.23.27s-.23.17-.39.23c-.16.06-.35.09-.59.09-.3,0-.58-.07-.84-.21-.25-.15-.45-.35-.61-.62-.15-.27-.23-.6-.23-.97h0ZM18.93,142.15c.33,0,.59-.1.8-.31.21-.21.32-.5.32-.86v-.07c0-.38-.1-.66-.31-.86-.21-.2-.48-.31-.81-.31s-.59.1-.8.31c-.21.2-.31.49-.31.86v.07c0,.36.1.65.31.86.21.2.48.31.8.31ZM21.9,142.79v-5.11h.75v2.02h.12c.05-.09.12-.18.2-.27.09-.09.21-.16.36-.21.15-.06.34-.09.57-.09.27,0,.51.06.72.18.21.12.38.29.5.52.12.22.18.48.18.79v2.16h-.75v-2.1c0-.31-.08-.54-.23-.68-.16-.15-.37-.23-.64-.23-.31,0-.56.1-.75.31-.18.2-.28.5-.28.89v1.82h-.75Z" fill="#8e8b99"/>
+      <path d="M11.27,153.79v-.85h1.45v-4.12l-1.45.85v-.99l1.45-.85h.85v5.11h1.45v.85h-3.75ZM17.18,153.79c-.88,0-1.6-.7-1.6-1.54v-2.89c0-.85.72-1.53,1.6-1.53h.72c.89,0,1.6.68,1.6,1.53v2.89c0,.84-.72,1.54-1.6,1.54h-.72ZM16.43,152.25c0,.38.35.68.76.68h.72c.11,0,.22-.02.32-.07l-1.79-2.91v2.3h0ZM16.73,148.81l1.92,3.14v-2.59c0-.38-.33-.68-.76-.68h-.72c-.17,0-.32.05-.45.13h0ZM21.92,153.79c-.88,0-1.6-.7-1.6-1.54v-2.89c0-.85.72-1.53,1.6-1.53h.72c.89,0,1.6.68,1.6,1.53v2.89c0,.84-.72,1.54-1.6,1.54h-.72ZM21.16,152.25c0,.38.35.68.76.68h.72c.11,0,.22-.02.32-.07l-1.79-2.91v2.3h0ZM21.46,148.81l1.92,3.14v-2.59c0-.38-.33-.68-.76-.68h-.72c-.17,0-.32.05-.45.13h0ZM24.36,154.72l.61-1.79h.85l-.2.62-.89,1.17h-.38ZM25.83,151.32v-3.49h.85v2.64h1.19v-2.13h.85v2.13h.85v.85h-.85v2.47h-.85v-2.47h-2.04ZM33.3,151.28c0-.37-.31-.68-.68-.68h-.39l-.97.66h-.85v-3.43h3.24v.85h-2.38v1.55l.71-.48h.66c.84,0,1.53.68,1.53,1.53v.97c0,.85-.68,1.53-1.53,1.53h-.68c-.84,0-1.53-.68-1.53-1.53v-.09h.85v.09c0,.37.31.68.68.68h.68c.38,0,.68-.3.68-.68v-.97h0ZM37.85,151.28c0-.37-.31-.68-.68-.68h-.39l-.97.66h-.85v-3.43h3.24v.85h-2.38v1.55l.71-.48h.65c.84,0,1.53.68,1.53,1.53v.97c0,.85-.68,1.53-1.53,1.53h-.68c-.84,0-1.53-.68-1.53-1.53v-.09h.85v.09c0,.37.31.68.68.68h.68c.38,0,.68-.3.68-.68v-.97h0Z" fill="#d6d8d8"/>
+    </g>
+    <g>
+      <path d="M12.45,172.68c-.62,0-1.12-.18-1.48-.52-.36-.35-.55-.87-.55-1.53v-1.2c0-.67.18-1.18.55-1.52.36-.35.86-.53,1.48-.53s1.09.17,1.41.51c.34.34.5.8.5,1.39v.04h-.78v-.07c0-.35-.1-.63-.28-.85-.19-.22-.47-.33-.85-.33s-.69.12-.91.36c-.22.23-.33.56-.33.98v1.23c0,.41.11.74.33.98.22.24.52.36.91.36s.67-.11.85-.33c.19-.22.28-.51.28-.85v-.12h.78v.1c0,.59-.17,1.05-.5,1.39-.33.34-.8.51-1.41.51ZM15.27,172.58v-3.6h.74v.42h.12c.06-.15.15-.26.28-.33.13-.07.29-.11.48-.11h.43v.68h-.46c-.24,0-.44.07-.6.2-.16.13-.23.34-.23.61v2.12h-.75ZM18.09,172.58v-3.6h.75v3.6h-.75ZM18.47,168.49c-.15,0-.27-.05-.37-.14-.1-.1-.15-.22-.15-.37s.05-.27.15-.37c.1-.1.23-.15.37-.15s.27.05.37.15c.1.09.15.21.15.37s-.05.27-.15.37c-.1.09-.22.14-.37.14ZM21.3,172.58c-.22,0-.39-.07-.52-.2-.13-.13-.19-.31-.19-.53v-2.24h-.99v-.63h.99v-1.19h.75v1.19h1.07v.63h-1.07v2.11c0,.15.07.22.2.22h.75v.63h-.99ZM23.3,172.58v-3.6h.75v3.6h-.75ZM23.67,168.49c-.15,0-.27-.05-.37-.14-.1-.1-.15-.22-.15-.37s.05-.27.15-.37c.1-.1.23-.15.37-.15s.27.05.37.15c.1.09.15.21.15.37s-.05.27-.15.37c-.1.09-.22.14-.37.14ZM26.83,172.68c-.34,0-.66-.07-.94-.22-.28-.15-.5-.36-.66-.63-.16-.28-.24-.61-.24-1v-.1c0-.39.08-.72.24-.99.17-.28.39-.49.66-.63.28-.15.6-.23.94-.23s.64.06.88.19c.24.13.44.29.58.5.15.21.25.44.29.69l-.73.15c-.02-.16-.08-.31-.15-.44-.08-.13-.19-.24-.33-.31-.14-.08-.32-.12-.53-.12s-.4.05-.57.15c-.17.09-.3.23-.39.41-.1.18-.15.39-.15.64v.07c0,.25.05.47.15.65.1.18.23.32.39.41.17.09.36.14.57.14.32,0,.56-.08.72-.24.17-.16.27-.38.31-.63l.73.17c-.06.25-.16.48-.31.69-.15.21-.34.38-.58.5-.24.12-.54.18-.88.18ZM30.6,172.68c-.26,0-.49-.04-.69-.13-.2-.09-.36-.22-.48-.39-.12-.17-.17-.38-.17-.62s.06-.45.17-.61c.12-.17.28-.29.49-.37.21-.08.44-.12.71-.12h1.09v-.23c0-.21-.06-.38-.19-.5-.13-.13-.32-.19-.58-.19s-.45.06-.59.18c-.14.12-.23.28-.27.47l-.7-.23c.06-.2.15-.37.28-.53.13-.16.3-.29.52-.39.21-.1.47-.15.77-.15.47,0,.83.12,1.1.36.27.24.4.58.4,1.01v1.48c0,.15.07.22.2.22h.31v.63h-.56c-.17,0-.31-.04-.42-.13-.11-.09-.16-.21-.16-.36v-.02h-.11c-.04.07-.1.16-.17.26-.08.1-.19.18-.34.26-.15.07-.35.1-.6.1h0ZM30.71,172.06c.3,0,.55-.09.73-.26.18-.18.28-.41.28-.71v-.07h-1.05c-.2,0-.36.04-.48.13-.12.08-.18.21-.18.37s.06.3.19.39c.13.1.3.15.52.15ZM33.69,172.58v-5.11h.75v5.11h-.75Z" fill="#8e8b99"/>
+      <path d="M12.59,183.58c-.84,0-1.53-.7-1.53-1.54v-.42c0-.46.2-.87.52-1.15-.26-.28-.43-.66-.43-1.07v-.25c0-.85.69-1.53,1.53-1.53h.51c.85,0,1.53.68,1.53,1.53v.25c0,.42-.16.79-.43,1.07.32.28.52.69.52,1.15v.42c0,.84-.68,1.54-1.53,1.54h-.68ZM11.91,182.04c0,.38.31.7.68.69h.68c.38,0,.68-.31.68-.69v-.42c0-.38-.3-.68-.68-.68h-.68c-.38,0-.68.31-.68.68v.42ZM11.99,179.4c0,.38.29.68.65.69h.54c.37,0,.68-.31.68-.69v-.25c0-.38-.3-.68-.68-.68h-.51c-.38,0-.68.31-.68.68v.25h0ZM17.31,183.58c-.88,0-1.6-.7-1.6-1.54v-2.89c0-.85.72-1.53,1.6-1.53h.72c.89,0,1.6.68,1.6,1.53v2.89c0,.84-.72,1.54-1.6,1.54h-.72ZM16.55,182.04c0,.38.35.68.76.68h.72c.11,0,.22-.03.32-.07l-1.79-2.91v2.3h0ZM16.86,178.6l1.92,3.14v-2.59c0-.38-.33-.68-.76-.68h-.72c-.17,0-.32.05-.45.13h0ZM19.75,184.51l.61-1.79h.85l-.2.62-.89,1.17h-.38ZM21.94,183.58v-.85h1.45v-4.12l-1.45.85v-.99l1.45-.85h.85v5.11h1.45v.85h-3.75ZM27.75,183.58c-.84,0-1.53-.7-1.53-1.54v-.42c0-.46.2-.87.52-1.15-.26-.28-.43-.66-.43-1.07v-.25c0-.85.69-1.53,1.53-1.53h.51c.85,0,1.53.68,1.53,1.53v.25c0,.42-.16.79-.43,1.07.32.28.52.69.52,1.15v.42c0,.84-.68,1.54-1.53,1.54,0,0-.68,0-.68,0ZM27.07,182.04c0,.38.31.7.68.69h.68c.38,0,.68-.31.68-.69v-.42c0-.38-.3-.68-.68-.68h-.68c-.38,0-.68.31-.68.68v.42ZM27.16,179.4c0,.38.29.68.66.69h.54c.38,0,.68-.31.68-.69v-.25c0-.38-.3-.68-.68-.68h-.51c-.38,0-.68.31-.68.68v.25h0ZM32.4,183.58c-.84,0-1.53-.68-1.53-1.53v-2.9c0-.85.68-1.53,1.53-1.53h.68c.85,0,1.53.68,1.53,1.53v.26h-.85v-.26c0-.38-.3-.68-.68-.68h-.68c-.38,0-.68.3-.68.68v1.12l.71-.48h.65c.84,0,1.53.68,1.53,1.53v.71c0,.85-.68,1.53-1.53,1.53h-.68,0ZM31.72,182.05c0,.37.31.68.68.68h.68c.38,0,.68-.3.68-.68v-.71c0-.38-.31-.68-.68-.68h-.39l-.97.65s0,.74,0,.74Z" fill="#d6d8d8"/>
+    </g>
+  </g>
+  <g id="ribbon-text-right">
+    <g>
+      <path d="M285.33,184.31h-5.96v-1.77l5.35-1.62v-.14h-5.35v-.91h5.96v1.77l-5.35,1.62v.14h5.35v.91ZM285.45,176.64c0,.42-.09.79-.26,1.12-.18.32-.42.58-.75.77-.32.19-.71.28-1.15.28h-.13c-.44,0-.82-.09-1.14-.28-.32-.19-.57-.44-.75-.77-.18-.33-.26-.7-.26-1.12s.09-.79.26-1.12.42-.59.75-.77c.32-.19.7-.28,1.14-.28h.13c.44,0,.83.09,1.15.28.32.19.57.45.75.77.17.33.26.7.26,1.12ZM284.67,176.64c0-.38-.12-.7-.37-.94-.25-.24-.59-.37-1.03-.37h-.08c-.44,0-.78.12-1.02.36-.25.24-.37.55-.37.94s.12.69.37.94c.24.24.58.36,1.02.36h.08c.44,0,.78-.12,1.03-.36.24-.24.37-.56.37-.94ZM285.33,171.95c0,.26-.08.46-.23.61-.15.15-.36.22-.61.22h-2.61v1.16h-.74v-1.16h-1.39v-.88h1.39v-1.25h.74v1.25h2.46c.17,0,.26-.08.26-.24v-.88h.74v1.16h0ZM285.33,167.49h-5.96v-3.75h.83v2.84h1.71v-2.6h.83v2.6h1.74v-2.88h.83v3.8h0ZM285.33,163.06l-2.12-1.6-2.08,1.57v-1.03l1.51-1.1v-.14l-1.51-1.1v-1.04l2.08,1.57,2.12-1.6v1.05l-1.54,1.12v.14l1.54,1.12v1.05h0ZM287.03,157.66h-5.9v-.86h.6v-.14c-.19-.11-.35-.27-.5-.49-.15-.22-.22-.54-.22-.95,0-.35.08-.67.26-.96.17-.29.42-.53.74-.71.32-.18.7-.27,1.16-.27h.13c.45,0,.84.09,1.17.26.32.18.56.41.73.71.17.29.26.62.26.97,0,.27-.03.5-.1.69-.07.19-.15.34-.26.45-.11.11-.22.2-.33.27v.14h2.27v.88ZM284.68,155.49c0-.39-.12-.7-.37-.94-.24-.24-.59-.37-1.05-.37h-.08c-.45,0-.8.12-1.04.38-.24.24-.37.56-.37.94s.12.69.37.94c.24.24.59.37,1.04.37h.08c.45,0,.8-.12,1.05-.37.24-.25.37-.56.37-.94ZM285.33,152.21h-5.96v-.88h5.96v.88ZM285.45,148.06c0,.42-.09.79-.26,1.12-.18.32-.42.58-.75.77-.32.19-.71.28-1.15.28h-.13c-.44,0-.82-.09-1.14-.28-.32-.19-.57-.44-.75-.77-.18-.33-.26-.7-.26-1.12s.09-.79.26-1.12.42-.59.75-.77c.32-.19.7-.28,1.14-.28h.13c.44,0,.83.09,1.15.28.32.19.57.45.75.77.17.33.26.7.26,1.12ZM284.67,148.06c0-.39-.12-.7-.37-.94-.25-.24-.59-.37-1.03-.37h-.08c-.44,0-.78.12-1.02.36-.25.24-.37.55-.37.95s.12.69.37.94c.24.24.58.36,1.02.36h.08c.44,0,.78-.12,1.03-.36.24-.24.37-.56.37-.94h0ZM285.33,144.79h-4.2v-.88h4.2v.88ZM280.56,144.35c0,.17-.05.32-.16.43-.11.11-.26.17-.43.17s-.32-.06-.43-.17c-.11-.12-.17-.26-.17-.43s.06-.32.17-.43c.11-.11.25-.17.43-.17s.32.06.43.17c.11.11.16.26.16.43ZM285.33,141.04c0,.26-.08.46-.23.61-.15.15-.36.22-.61.22h-2.61v1.16h-.74v-1.16h-1.39v-.88h1.39v-1.25h.74v1.25h2.46c.17,0,.26-.08.26-.24v-.88h.74v1.16h0ZM285.45,137.42c0,.3-.05.57-.15.81-.1.23-.25.42-.45.56-.2.14-.44.2-.72.2s-.53-.07-.71-.2c-.19-.14-.34-.33-.43-.57-.1-.24-.14-.52-.14-.83v-1.28h-.27c-.24,0-.44.07-.59.22-.15.15-.22.38-.22.68s.07.53.21.69.33.26.55.32l-.26.82c-.23-.07-.43-.18-.61-.32-.19-.15-.34-.35-.45-.6-.11-.25-.17-.55-.17-.9,0-.54.14-.97.42-1.29.28-.31.67-.47,1.18-.47h1.73c.17,0,.26-.08.26-.24v-.36h.73v.65c0,.2-.05.36-.15.49-.1.12-.24.19-.42.19h-.02v.13c.08.05.18.11.3.2.11.09.21.23.3.4.08.18.12.41.12.7h0ZM284.73,137.29c0-.35-.1-.64-.3-.85-.2-.22-.48-.32-.83-.32h-.08v1.23c0,.23.05.42.15.56.1.14.24.21.43.21s.35-.07.46-.22c.11-.15.17-.35.17-.6ZM285.45,131.38c0,.41-.07.72-.22.95-.15.22-.31.38-.49.49v.14h.6v.86h-5.96v-.88h2.33v-.14c-.11-.07-.22-.16-.32-.27-.11-.11-.2-.26-.26-.45-.07-.19-.1-.42-.1-.69,0-.35.08-.68.26-.97s.42-.53.74-.71c.32-.18.71-.26,1.16-.26h.13c.45,0,.84.09,1.17.27.32.18.56.41.73.71.17.29.26.61.26.96h0ZM284.68,131.64c0-.38-.12-.69-.37-.94-.24-.25-.59-.37-1.05-.37h-.08c-.45,0-.8.12-1.04.37s-.37.56-.37.95.12.69.37.94c.24.24.59.37,1.04.37h.08c.45,0,.8-.12,1.05-.37.24-.25.37-.56.37-.94h0ZM285.33,128.36h-5.96v-.88h5.96v.88ZM285.45,124.25c0,.43-.09.8-.26,1.11-.18.32-.43.57-.76.75-.33.18-.71.26-1.14.26h-.1c-.44,0-.82-.09-1.14-.26-.33-.18-.58-.42-.76-.73-.18-.32-.27-.68-.27-1.1s.09-.75.27-1.06c.18-.31.42-.54.74-.71s.69-.25,1.11-.25h.33v3.23c.37-.01.66-.13.89-.37.22-.24.32-.53.32-.89,0-.33-.07-.58-.22-.74-.15-.17-.32-.3-.51-.39l.38-.72c.16.08.33.2.5.35.18.15.32.34.44.59.12.24.18.56.18.94ZM282.8,125.48v-2.32c-.32.02-.56.14-.74.34-.18.2-.27.47-.27.8s.09.6.27.81c.18.2.42.33.74.37Z" fill="#ede6f3"/>
+      <path d="M284.43,117.24c0,.38-.06.71-.19.98-.13.27-.31.48-.55.63-.24.15-.52.22-.83.22v-.78c.25,0,.46-.08.64-.25.17-.17.25-.43.25-.79s-.1-.64-.29-.84c-.2-.19-.46-.29-.8-.29h-.61v.12c.12.08.23.22.33.4s.16.45.16.8c0,.3-.07.57-.2.82-.13.25-.32.46-.56.61-.25.15-.54.23-.88.23h-.09c-.34,0-.64-.08-.89-.23-.25-.16-.45-.38-.59-.66-.14-.29-.21-.61-.21-.99s.07-.7.22-.98c.14-.28.34-.5.6-.66.25-.15.55-.23.9-.23h1.77c.4,0,.73.08,1.01.24.27.16.48.38.62.66.14.28.2.61.2.99h0ZM281.92,117.21c0-.22-.04-.42-.13-.58-.09-.17-.21-.29-.36-.39-.16-.09-.34-.14-.55-.14h-.06c-.32,0-.56.1-.74.31-.18.2-.28.47-.28.8s.09.61.28.81c.18.2.43.3.74.3h.06c.21,0,.39-.04.55-.13.15-.09.27-.22.36-.39.09-.17.13-.37.13-.59ZM284.43,112.58c0,.59-.17,1.07-.5,1.42-.34.35-.85.53-1.53.53h-1.24c-.67,0-1.17-.18-1.52-.53-.35-.36-.52-.83-.52-1.42s.17-1.07.52-1.42c.35-.36.85-.53,1.52-.53h1.24c.68,0,1.19.18,1.53.53.34.35.5.82.5,1.42ZM283.75,112.58c0-.4-.11-.7-.34-.9-.23-.19-.56-.29-.98-.29h-1.31c-.42,0-.74.11-.96.31-.23.21-.34.5-.34.88s.12.67.35.88c.23.2.55.31.96.31h1.31c.43,0,.76-.1.98-.29.22-.2.34-.5.34-.89ZM284.42,109.2l-.38.47-4.92-3.99.38-.47,4.92,3.99ZM284.41,106.04c0,.36-.1.64-.3.85-.2.21-.48.31-.83.31h-.04c-.35,0-.62-.11-.82-.31-.2-.21-.31-.49-.31-.85s.1-.64.31-.85c.2-.21.47-.32.82-.32h.04c.35,0,.62.11.83.32.2.21.3.49.3.85ZM283.9,106.04c0-.18-.05-.31-.16-.41-.11-.1-.25-.15-.42-.15h-.1c-.18,0-.32.05-.43.15-.11.1-.16.23-.16.41s.05.31.16.41c.11.1.25.15.43.15h.1c.17,0,.32-.05.42-.15.11-.1.16-.24.16-.41ZM281.44,108.84c0,.36-.1.65-.3.86-.2.21-.48.31-.82.31h-.05c-.35,0-.63-.1-.83-.31-.2-.21-.3-.5-.3-.86s.1-.64.3-.85c.2-.21.47-.32.83-.32h.05c.35,0,.62.11.82.31.2.21.3.49.3.85ZM280.93,108.84c0-.17-.05-.3-.16-.4-.11-.1-.26-.15-.43-.15h-.1c-.17,0-.32.05-.42.15-.11.1-.16.23-.16.4s.05.31.16.42c.11.1.25.15.42.15h.1c.18,0,.32-.05.43-.15.11-.1.16-.24.16-.42Z" fill="#8e8b99"/>
+    </g>
+    <g>
+      <path d="M285.33,79.25h-5.96v-3.75h.83v2.83h1.71v-2.6h.83v2.6h1.74v-2.88h.83v3.8h0ZM285.33,74.82l-2.12-1.6-2.08,1.57v-1.03l1.51-1.1v-.14l-1.51-1.1v-1.04l2.08,1.57,2.12-1.6v1.05l-1.54,1.11v.14l1.54,1.11v1.05ZM287.03,69.42h-5.9v-.86h.6v-.14c-.19-.11-.35-.27-.5-.49-.15-.22-.22-.54-.22-.94,0-.35.08-.67.26-.96.17-.29.42-.53.74-.71.32-.18.7-.27,1.16-.27h.13c.45,0,.84.09,1.17.26.32.18.56.41.73.71.17.29.26.62.26.97,0,.27-.03.5-.1.69-.07.19-.15.34-.26.45-.11.11-.22.2-.33.27v.14h2.27v.88ZM284.68,67.25c0-.39-.12-.7-.37-.94-.24-.24-.59-.37-1.05-.37h-.08c-.45,0-.8.12-1.04.37-.24.24-.37.56-.37.94s.12.69.37.94c.24.24.59.37,1.04.37h.08c.45,0,.8-.12,1.05-.37.24-.25.37-.56.37-.94h0ZM285.33,63.97h-5.96v-.88h5.96v.88ZM285.45,59.83c0,.42-.09.79-.26,1.12-.18.32-.42.58-.75.77-.32.19-.71.28-1.15.28h-.13c-.44,0-.82-.09-1.14-.28-.32-.19-.57-.44-.75-.77-.18-.33-.26-.7-.26-1.12s.09-.79.26-1.12c.18-.33.42-.59.75-.78.32-.19.7-.28,1.14-.28h.13c.44,0,.83.09,1.15.28.32.19.57.44.75.78.17.33.26.7.26,1.12ZM284.67,59.83c0-.39-.12-.7-.37-.94-.25-.24-.59-.37-1.03-.37h-.08c-.44,0-.78.12-1.02.36-.25.24-.37.55-.37.94s.12.69.37.94c.24.24.58.36,1.02.36h.08c.44,0,.78-.12,1.03-.36.24-.24.37-.56.37-.94h0ZM285.33,56.55h-4.2v-.88h4.2v.88ZM280.56,56.11c0,.17-.05.31-.16.43-.11.11-.26.17-.43.17s-.32-.06-.43-.17c-.11-.12-.17-.26-.17-.43s.06-.32.17-.43c.11-.11.25-.17.43-.17s.32.06.43.17c.11.11.16.26.16.43ZM285.33,52.8c0,.26-.08.46-.23.61-.15.15-.36.22-.61.22h-2.61v1.16h-.74v-1.16h-1.39v-.88h1.39v-1.25h.74v1.25h2.46c.17,0,.26-.08.26-.24v-.88h.74v1.16h0ZM285.45,49.18c0,.3-.05.57-.15.81-.1.23-.25.42-.45.56-.2.14-.44.2-.72.2s-.53-.07-.71-.2c-.19-.14-.34-.33-.43-.57-.1-.24-.14-.52-.14-.83v-1.28h-.27c-.24,0-.44.07-.59.22-.15.15-.22.38-.22.68s.07.53.21.69c.14.16.33.26.55.31l-.26.82c-.23-.07-.43-.18-.61-.32-.19-.15-.34-.35-.45-.6-.11-.25-.17-.55-.17-.9,0-.54.14-.97.42-1.28.28-.31.67-.47,1.18-.47h1.73c.17,0,.26-.08.26-.24v-.36h.73v.65c0,.2-.05.36-.15.49-.1.12-.24.19-.42.19h-.02v.13c.08.04.18.11.3.2.11.09.21.22.3.4.08.18.12.41.12.7h0ZM284.73,49.06c0-.35-.1-.64-.3-.85-.2-.22-.48-.32-.83-.32h-.08v1.23c0,.23.05.42.15.56.1.14.24.21.43.21s.35-.07.46-.22c.11-.15.17-.35.17-.6h0ZM285.45,43.15c0,.41-.07.72-.22.94-.15.22-.31.38-.49.49v.14h.6v.86h-5.96v-.88h2.33v-.14c-.11-.07-.22-.16-.32-.27-.11-.11-.2-.26-.26-.45s-.1-.42-.1-.69c0-.35.08-.67.26-.97.17-.29.42-.53.74-.71.32-.18.71-.26,1.16-.26h.13c.45,0,.84.09,1.17.27.32.18.56.41.73.71.17.29.26.61.26.96h0ZM284.68,43.4c0-.38-.12-.69-.37-.94-.24-.25-.59-.38-1.05-.38h-.08c-.45,0-.8.12-1.04.37s-.37.56-.37.94.12.69.37.94c.24.24.59.37,1.04.37h.08c.45,0,.8-.12,1.05-.37.24-.25.37-.56.37-.94ZM285.33,40.12h-5.96v-.88h5.96v.88ZM285.45,36.02c0,.43-.09.8-.26,1.12-.18.32-.43.57-.76.75-.33.18-.71.26-1.14.26h-.1c-.44,0-.82-.09-1.14-.26-.33-.18-.58-.42-.76-.73-.18-.32-.27-.68-.27-1.1s.09-.76.27-1.06c.18-.31.42-.54.74-.72.32-.17.69-.26,1.11-.26h.33v3.23c.37-.01.66-.13.89-.37.22-.24.32-.53.32-.88,0-.33-.07-.58-.22-.74-.15-.17-.32-.3-.51-.39l.38-.72c.16.08.33.2.5.35.18.15.32.34.44.59.12.24.18.56.18.94h0ZM282.8,37.24v-2.32c-.32.02-.56.14-.74.34-.18.2-.27.47-.27.8s.09.6.27.81c.18.2.42.33.74.38Z" fill="#ede6f3"/>
+      <path d="M284.33,29.31h-4.57v.12l1.72.84v.81l-2.26-1.13v-1.4h5.11s0,.77,0,.77ZM284.43,25.67c0,.59-.17,1.07-.5,1.42-.34.35-.85.52-1.53.52h-1.24c-.67,0-1.17-.17-1.52-.52-.35-.35-.52-.83-.52-1.42s.17-1.07.52-1.42c.35-.35.85-.53,1.52-.53h1.24c.68,0,1.19.18,1.53.53.34.35.5.82.5,1.42ZM283.75,25.67c0-.4-.11-.7-.34-.9-.23-.19-.56-.29-.98-.29h-1.31c-.42,0-.74.1-.96.31-.23.21-.34.5-.34.88s.12.67.35.88c.23.2.55.31.96.31h1.31c.43,0,.76-.1.98-.29.22-.2.34-.5.34-.89ZM284.42,22.28l-.38.47-4.92-3.99.38-.47s4.92,3.99,4.92,3.99ZM284.41,19.12c0,.36-.1.65-.3.85-.2.21-.48.31-.83.31h-.04c-.35,0-.62-.1-.82-.31-.2-.21-.31-.49-.31-.85s.1-.64.31-.85c.2-.21.47-.32.82-.32h.04c.35,0,.62.11.83.32.2.21.3.49.3.85ZM283.9,19.12c0-.17-.05-.31-.16-.41-.11-.1-.25-.15-.42-.15h-.1c-.18,0-.32.05-.43.15-.11.1-.16.23-.16.41s.05.31.16.41c.11.1.25.15.43.15h.1c.17,0,.32-.05.42-.15.11-.1.16-.24.16-.41ZM281.44,21.92c0,.36-.1.65-.3.86-.2.21-.48.31-.82.31h-.05c-.35,0-.63-.1-.83-.31-.2-.21-.3-.5-.3-.86s.1-.64.3-.85c.2-.21.47-.32.83-.32h.05c.35,0,.62.1.82.31.2.21.3.49.3.85h0ZM280.93,21.92c0-.17-.05-.3-.16-.4-.11-.1-.26-.15-.43-.15h-.1c-.17,0-.32.05-.42.15-.11.1-.16.23-.16.4s.05.31.16.42c.11.1.25.15.42.15h.1c.18,0,.32-.05.43-.15.11-.1.16-.24.16-.42Z" fill="#8e8b99"/>
+    </g>
+  </g>
+</svg>
+
+                    </div>
+                    <div class="c-ui-box__grid-item js-grid-item"></div>
+                    <div class="c-ui-box__grid-item js-grid-item"></div>
+                    <div class="c-ui-box__grid-item js-grid-item"></div>
+                    <div class="c-ui-box__grid-item js-grid-item"></div>
+                    <div class="c-ui-box__grid-item js-grid-item"></div>
+                    <div class="c-ui-box__grid-item js-grid-item"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="m-story__item m-story__item--left m-story__item--columns col-span-10 col-start-1" id="info-5">
+            <div class="m-story__copy" data-observe="children">
+                <h2 class="m-story__title typo-lead">Quickly identify the few vulnerabilities that matter</h2>
+                <p class="m-story__text typo-body">Identify the few vulnerabilities that are truly critical, so you can stop worrying about an unpatched vulnerability leading to a breach.</p>
+            </div>
+            <div class="m-story__items m-story__items--events desktop-hide">
+                                <div class="c-ui-box c-ui-box--event">
+                                        <p class="c-ui-box__text">CVE-2024-53194</p>
+                    <div class="c-ui-box__badges">
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>Exploitable</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>High Likelihood</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>Critical Impact</output></div>
+                    </div>
+                    <svg class="svg-dotted-circle"  width="31" height="32" viewBox="0 0 31 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="15.5" cy="16" r="15" stroke="#83919B" stroke-width="0.5" stroke-dasharray="1.26 1.89"/>
+<circle cx="15.4446" cy="15.9447" r="2.94463" fill="#83919B"/>
+</svg>
+
+                </div>
+                                <div class="c-ui-box c-ui-box--event">
+                                        <p class="c-ui-box__text">CVE-2024-53990</p>
+                    <div class="c-ui-box__badges">
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>Exploitable</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>High Likelihood</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>Critical Impact</output></div>
+                    </div>
+                    <svg class="svg-dotted-circle"  width="31" height="32" viewBox="0 0 31 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="15.5" cy="16" r="15" stroke="#83919B" stroke-width="0.5" stroke-dasharray="1.26 1.89"/>
+<circle cx="15.4446" cy="15.9447" r="2.94463" fill="#83919B"/>
+</svg>
+
+                </div>
+                                <div class="c-ui-box c-ui-box--event">
+                                        <p class="c-ui-box__text">CVE-2025-21613</p>
+                    <div class="c-ui-box__badges">
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>Exploitable</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>High Likelihood</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small a-badge--opacity-50" data-color="red"><output>Critical Impact</output></div>
+                    </div>
+                    <svg class="svg-dotted-circle"  width="31" height="32" viewBox="0 0 31 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="15.5" cy="16" r="15" stroke="#83919B" stroke-width="0.5" stroke-dasharray="1.26 1.89"/>
+<circle cx="15.4446" cy="15.9447" r="2.94463" fill="#83919B"/>
+</svg>
+
+                </div>
+                            </div>
+        </div>
+
+        <div class="m-story__item m-story__item--left m-story__item--columns col-span-10 col-start-1" id="info-6">
+            <div class="m-story__copy" data-observe="children">
+                <h2 class="m-story__title typo-lead">Respond fast when needed,<br />
+and stop project managing remediation</h2>
+                <p class="m-story__text typo-body">Use intelligent workflows to prepare immediate mitigations for critical vulnerabilities, and provide one-click remediation options to engineering teams.</p>
+            </div>
+            <div class="m-story__items m-story__items--mixed" data-scroll="events">
+                <div class="c-ui-box c-ui-box--event js-event-main">
+                    <p class="c-ui-box__text">CVE-2024-53194</p>
+                    <div class="c-ui-box__badges">
+                        <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Exploitable</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>High Likelihood</output></div>
+                        <div class="a-badge js-badge a-badge--red a-badge--small" data-color="red"><output>Critical Impact</output></div>
+                    </div>
+                    <svg class="svg-dotted-circle"  width="31" height="32" viewBox="0 0 31 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="15.5" cy="16" r="15" stroke="#83919B" stroke-width="0.5" stroke-dasharray="1.26 1.89"/>
+<circle cx="15.4446" cy="15.9447" r="2.94463" fill="#83919B"/>
+</svg>
+
+                </div>
+                <div class="c-ui-box c-ui-box--checkmark js-event-subitem">
+                    <div class="c-ui-box__number js-event-number">
+                        <svg class="svg-dotted-circle-clean"  xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="15" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+</svg>
+                        <span>01.</span>
+                    </div>
+                    <p class="c-ui-box__text js-event-text">Incident created</p>
+                    <div class="c-ui-box__checkmark js-event-checkmark"><svg class="svg-checkmark-thin"  width="14" height="13" viewBox="0 0 14 13" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.198 7.191l4.215 4.496L13.56 1.01" stroke="#2FD48D" stroke-width=".698"/></svg></div>
+                </div>
+                <div class="c-ui-box c-ui-box--checkmark js-event-subitem">
+                    <div class="c-ui-box__number js-event-number">
+                        <svg class="svg-dotted-circle-clean"  xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="15" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+</svg>
+                        <span>02.</span>
+                    </div>
+                    <p class="c-ui-box__text js-event-text">WAF policy deployed</p>
+                    <div class="c-ui-box__checkmark js-event"></div>
+                    <div class="c-ui-box__checkmark js-event-checkmark"><svg class="svg-checkmark-thin"  width="14" height="13" viewBox="0 0 14 13" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.198 7.191l4.215 4.496L13.56 1.01" stroke="#2FD48D" stroke-width=".698"/></svg></div>
+
+                </div>
+                <div class="c-ui-box c-ui-box--checkmark js-event-subitem">
+                    <div class="c-ui-box__number js-event-number">
+                        <svg class="svg-dotted-circle-clean"  xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="15" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+</svg>
+                        <span>03.</span>
+                    </div>
+                    <p class="c-ui-box__text js-event-text">Ticket created</p>
+                    <div class="c-ui-box__checkmark js-event-checkmark"><svg class="svg-checkmark-thin"  width="14" height="13" viewBox="0 0 14 13" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.198 7.191l4.215 4.496L13.56 1.01" stroke="#2FD48D" stroke-width=".698"/></svg></div>
+                </div>
+                <div class="c-ui-box c-ui-box--checkmark js-event-subitem">
+                    <div class="c-ui-box__number js-event-number">
+                        <svg class="svg-dotted-circle-clean"  xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 32 32">
+  <circle cx="16" cy="16" r="15" fill="none" stroke="#83919b" stroke-dasharray="1.26 1.89" stroke-width=".5"/>
+</svg>
+                        <span>04.</span>
+                    </div>
+                    <p class="c-ui-box__text js-event-text">Slack notification sent to<br> #maze-alerts</p>
+                    <div class="c-ui-box__checkmark js-event-checkmark"><svg class="svg-checkmark-thin"  width="14" height="13" viewBox="0 0 14 13" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.198 7.191l4.215 4.496L13.56 1.01" stroke="#2FD48D" stroke-width=".698"/></svg></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+  
+
+<section class="module module--slider">
+    <div class="m-slider">
+
+        <div class="m-slider__controls">
+            <button class="swiper-button-prev m-slider__button m-slider__button--prev js-slider-button-prev" data-ga='["click", "slider", "prev"]'>
+                <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+                <span class="m-slider__button--dot dot"></span>
+            </button>
+            <div class="dotted-line"></div>
+            <button class="swiper-button-next m-slider__button m-slider__button--next js-slider-button-next" data-ga='["click", "slider", "next"]'>
+                <span class="m-slider__button--dot dot"></span>
+                <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+            </button>
+        </div>
+        <div class="m-slider__inner js-slider swiper" data-component="SwiperSlider">
+            <div class="m-slider__wrapper swiper-wrapper" data-observe="children">
+                                    <div class="m-slider__slide swiper-slide">
+                                                    <div class="c-tile-quote">
+    <div class="c-tile-quote__copy">Maze's product is almost too good to be true. It is a truly novel use of Agentic AI that goes well beyond automating manual workflows.</div>
+
+    <div class="c-tile-quote__author">
+        <div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>        <div class="c-tile-quote__author-name">Mandy Andress</div>
+        <div class="c-tile-quote__author-role">CISO</div>
+    </div>
+</div>                                            </div>
+                                    <div class="m-slider__slide swiper-slide">
+                                                    <div class="c-tile-quote">
+    <div class="c-tile-quote__copy">In a perfect world every company would have an army of experts assessing every vulnerability against every workload - but the world isn’t perfect. Maze gives you an advantage - identifying the most critical weaknesses before attackers do, and telling you WHY they matter most.</div>
+
+    <div class="c-tile-quote__author">
+        <div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>        <div class="c-tile-quote__author-name"> </div>
+        <div class="c-tile-quote__author-role">Security Engineering Leader, Fortune50 Company</div>
+    </div>
+</div>                                            </div>
+                                    <div class="m-slider__slide swiper-slide">
+                                                    <div class="c-tile-quote">
+    <div class="c-tile-quote__copy">After all the hype around Agentic AI, witnessing it in action for the first time—through Maze’s demo—was truly eye-opening. I am now a firm believer that Agentic AI will revolutionize the way cyber risks are autonomously identified, prioritized, and remediated.</div>
+
+    <div class="c-tile-quote__author">
+        <div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>        <div class="c-tile-quote__author-name">Mahdi Abdulrazak</div>
+        <div class="c-tile-quote__author-role">CISO at SHV Energy</div>
+    </div>
+</div>                                            </div>
+                                    <div class="m-slider__slide swiper-slide">
+                                                    <div class="c-tile-quote">
+    <div class="c-tile-quote__copy">The current state of vulnerability management is broken; we need to skate to where the puck is going to be, not where it is today.</div>
+
+    <div class="c-tile-quote__author">
+        <div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>        <div class="c-tile-quote__author-name">Terry  O’Daniel</div>
+        <div class="c-tile-quote__author-role">Security Leader at Amplitude, Salesforce, &amp; Netflix</div>
+    </div>
+</div>                                            </div>
+                                    <div class="m-slider__slide swiper-slide">
+                                                    <div class="c-tile-quote">
+    <div class="c-tile-quote__copy">Maze is going to revolutionize the vulnerability management and remediation space. Maze not only reinvents the way prioritization is done, but helps to automate remediation too, eliminating the traditional back-and-forth way of working.</div>
+
+    <div class="c-tile-quote__author">
+        <div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>        <div class="c-tile-quote__author-name">Kyle Bubp</div>
+        <div class="c-tile-quote__author-role">Head of Attack Surface Management at JLL</div>
+    </div>
+</div>                                            </div>
+                                    <div class="m-slider__slide swiper-slide">
+                                                    <div class="c-tile-quote">
+    <div class="c-tile-quote__copy">This is the future.</div>
+
+    <div class="c-tile-quote__author">
+        <div class="a-dotted-plus
+">
+    <div class="line dotted-line"></div>
+    <div class="line dotted-line-vertical"></div>
+    <div class="dot"></div>
+</div>        <div class="c-tile-quote__author-name"> </div>
+        <div class="c-tile-quote__author-role">Staff Security Engineer, Technology Scale-up</div>
+    </div>
+</div>                                            </div>
+                            </div>
+        </div>
+
+    </div>
+</section>
+  <section class="module module--full-height module--centered module--cta" data-gfx="pcb" data-gfx-end-trigger="#footer" id="section-cta">
+    <div class="m-cta grid-wrap" data-scroll="cta">
+        <div class="m-cta__wrap col-span-8 col-start-3">
+                        <h2 class="m-cta__title typo-headline js-title">Get cloud vulnerabilities<br> under control</h2>
+            <p class="m-cta__text typo-body js-subtitle">AI that investigates and resolves cloud vulnerabilities.</p>
+            <div class="m-cta__buttons">
+                
+
+    <a href="/contact"  class="a-button a-button--basic m-cta__button" data-cssanimate data-ga='["click", "button", "/contact"]'>
+                <span class="a-button__text">
+            <span class="primary">
+                Contact
+            </span>
+            <span class="secondary">
+                Contact
+            </span>
+        </span>
+    </a>
+                
+
+    <a href="/contact#demo"  class="a-button a-button--primary m-cta__button" data-cssanimate data-ga='["click", "button", "/contact#demo"]'>
+        <span class="a-button__dot"></span>        <span class="a-button__text">
+            <span class="primary">
+                Book Demo
+            </span>
+            <span class="secondary">
+                Book Demo
+            </span>
+        </span>
+    </a>
+            </div>
+        </div>
+    </div>
+</section>
+  <section class="module module--articles" id="section-our-blog">
+    <div class="m-articles m-articles--short-margin m-articles--homepage">
+        
+                <div class="m-articles__top">
+            <div class="m-articles__line dotted-line"></div>
+            <h3 class="m-articles__label">Our Blog</h3>
+            
+
+    <a href="/resources"  class="a-button a-button--basic" data-cssanimate data-ga='["click", "button", "/resources"]'>
+                <span class="a-button__text">
+            <span class="primary">
+                All articles
+            </span>
+            <span class="secondary">
+                All articles
+            </span>
+        </span>
+    </a>
+        </div>
+        
+        <div class="m-articles__list" id="blog" data-observe="children">
+                            <a href="/blog/how-ai-changes-the-speed-of-public-exploits" class="c-tile-article" style="transition-delay: 100ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">April 14, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">How AI Changes the Speed of Public Exploits</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae97eb6c6.webp?v=1775613364, /public/upload/blog/mobile_x2/69d5ae97eb6c6.webp?v=1775613365 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae97eb6c6.jpg?v=1775613364, /public/upload/blog/mobile_x2/69d5ae97eb6c6.jpg?v=1775613365 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae97eb6c6.webp?v=1775613364, /public/upload/blog/mobile_x2/69d5ae97eb6c6.webp?v=1775613365 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae97eb6c6.jpg?v=1775613364, /public/upload/blog/mobile_x2/69d5ae97eb6c6.jpg?v=1775613365 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/79-gadgets-hidden-in-deserialization-flaw" class="c-tile-article" style="transition-delay: 200ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">April 14, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">79 Gadgets Hidden in a Single Deserialization Flaw: CVE-2026-25632</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae7c35f32.webp?v=1775613306, /public/upload/blog/mobile_x2/69d5ae7c35f32.webp?v=1775613306 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae7c35f32.jpg?v=1775613306, /public/upload/blog/mobile_x2/69d5ae7c35f32.jpg?v=1775613306 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae7c35f32.webp?v=1775613306, /public/upload/blog/mobile_x2/69d5ae7c35f32.webp?v=1775613306 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69d5ae7c35f32.jpg?v=1775613306, /public/upload/blog/mobile_x2/69d5ae7c35f32.jpg?v=1775613306 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/remediation-ownership" class="c-tile-article" style="transition-delay: 300ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">April 9, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">A Fix Without an Owner Is Just a Suggestion</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69d7c7c28fa07.webp?v=1775749059, /public/upload/blog/mobile_x2/69d7c7c28fa07.webp?v=1775749059 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69d7c7c28fa07.jpg?v=1775749058, /public/upload/blog/mobile_x2/69d7c7c28fa07.jpg?v=1775749059 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69d7c7c28fa07.webp?v=1775749059, /public/upload/blog/mobile_x2/69d7c7c28fa07.webp?v=1775749059 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69d7c7c28fa07.jpg?v=1775749058, /public/upload/blog/mobile_x2/69d7c7c28fa07.jpg?v=1775749059 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/exploitability" class="c-tile-article" style="transition-delay: 400ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">March 12, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">Exploitability: The Fastest Way to Fewer False Positives</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69b30ff06c1e9.webp?v=1773684206, /public/upload/blog/mobile_x2/69b30ff06c1e9.webp?v=1773684207 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/69b30ff06c1e9.jpg?v=1773684206, /public/upload/blog/mobile_x2/69b30ff06c1e9.jpg?v=1773684206 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69b30ff06c1e9.webp?v=1773684206, /public/upload/blog/mobile_x2/69b30ff06c1e9.webp?v=1773684207 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/69b30ff06c1e9.jpg?v=1773684206, /public/upload/blog/mobile_x2/69b30ff06c1e9.jpg?v=1773684206 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/ai-remediation-developers-actually-want-to-use" class="c-tile-article" style="transition-delay: 500ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">February 25, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">AI Remediation Developers Actually Want to Use</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/699ef346e4cc6.webp?v=1772030244, /public/upload/blog/mobile_x2/699ef346e4cc6.webp?v=1772030245 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/699ef346e4cc6.jpg?v=1772030244, /public/upload/blog/mobile_x2/699ef346e4cc6.jpg?v=1772030245 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/699ef346e4cc6.webp?v=1772030244, /public/upload/blog/mobile_x2/699ef346e4cc6.webp?v=1772030245 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/699ef346e4cc6.jpg?v=1772030244, /public/upload/blog/mobile_x2/699ef346e4cc6.jpg?v=1772030245 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/2025-wrapped-the-year-vulnerabilities-broke-every-record" class="c-tile-article" style="transition-delay: 600ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">January 20, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">2025: The Year Vulnerabilities Broke Every Record</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6967b3ec052c3.webp?v=1768497548, /public/upload/blog/mobile_x2/6967b3ec052c3.webp?v=1768497549 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6967b3ec052c3.jpg?v=1768497548, /public/upload/blog/mobile_x2/6967b3ec052c3.jpg?v=1768497548 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6967b3ec052c3.webp?v=1768497548, /public/upload/blog/mobile_x2/6967b3ec052c3.webp?v=1768497549 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6967b3ec052c3.jpg?v=1768497548, /public/upload/blog/mobile_x2/6967b3ec052c3.jpg?v=1768497548 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/resources/matt-johansen" class="c-tile-article" style="transition-delay: 700ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">January 19, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">Matt Johansen's First Look at Maze</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/696e35b1732ae.webp?v=1768988646, /public/upload/blog/mobile_x2/696e35b1732ae.webp?v=1768988646 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/696e35b1732ae.jpg?v=1768988646, /public/upload/blog/mobile_x2/696e35b1732ae.jpg?v=1768988646 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/696e35b1732ae.webp?v=1768988646, /public/upload/blog/mobile_x2/696e35b1732ae.webp?v=1768988646 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/696e35b1732ae.jpg?v=1768988646, /public/upload/blog/mobile_x2/696e35b1732ae.jpg?v=1768988646 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/resources/maze-datasheet" class="c-tile-article" style="transition-delay: 800ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">January 15, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">Maze Data Sheet</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6968f0d233923.webp?v=1768552840, /public/upload/blog/mobile_x2/6968f0d233923.webp?v=1768552840 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6968f0d233923.jpg?v=1768552839, /public/upload/blog/mobile_x2/6968f0d233923.jpg?v=1768552840 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6968f0d233923.webp?v=1768552840, /public/upload/blog/mobile_x2/6968f0d233923.webp?v=1768552840 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6968f0d233923.jpg?v=1768552839, /public/upload/blog/mobile_x2/6968f0d233923.jpg?v=1768552840 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/vulnerability-deja-vu" class="c-tile-article" style="transition-delay: 900ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">January 5, 2026</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">Vulnerability Déjà Vu: Why the Same Bug Keeps Coming Back</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/695c2877ebef8.webp?v=1767647352, /public/upload/blog/mobile_x2/695c2877ebef8.webp?v=1767647352 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/695c2877ebef8.jpg?v=1767647352, /public/upload/blog/mobile_x2/695c2877ebef8.jpg?v=1767647352 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/695c2877ebef8.webp?v=1767647352, /public/upload/blog/mobile_x2/695c2877ebef8.webp?v=1767647352 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/695c2877ebef8.jpg?v=1767647352, /public/upload/blog/mobile_x2/695c2877ebef8.jpg?v=1767647352 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/cross-platform-false-positive-problem" class="c-tile-article" style="transition-delay: 1000ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">December 29, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">The Cross-Platform False Positive Problem: Why Vulnerability Scanners Flag Windows CVEs on Linux</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6952a7dcec3f0.webp?v=1767025572, /public/upload/blog/mobile_x2/6952a7dcec3f0.webp?v=1767025572 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6952a7dcec3f0.jpg?v=1767025572, /public/upload/blog/mobile_x2/6952a7dcec3f0.jpg?v=1767025572 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6952a7dcec3f0.webp?v=1767025572, /public/upload/blog/mobile_x2/6952a7dcec3f0.webp?v=1767025572 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6952a7dcec3f0.jpg?v=1767025572, /public/upload/blog/mobile_x2/6952a7dcec3f0.jpg?v=1767025572 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/the-language-barrier" class="c-tile-article" style="transition-delay: 1100ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">December 22, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">The Language Barrier: Why Security and Engineering Are Never Aligned</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6945e58e98964.webp?v=1766188430, /public/upload/blog/mobile_x2/6945e58e98964.webp?v=1766188431 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6945e58e98964.jpg?v=1766188430, /public/upload/blog/mobile_x2/6945e58e98964.jpg?v=1766188430 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6945e58e98964.webp?v=1766188430, /public/upload/blog/mobile_x2/6945e58e98964.webp?v=1766188431 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6945e58e98964.jpg?v=1766188430, /public/upload/blog/mobile_x2/6945e58e98964.jpg?v=1766188430 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/analysts-take-on-maze" class="c-tile-article" style="transition-delay: 1200ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">December 4, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">An Analyst's Take on Maze: AI That Actually Moves the Needle on Vulnerability Management</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6930ebb38b974.webp?v=1764813748, /public/upload/blog/mobile_x2/6930ebb38b974.webp?v=1764813748 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6930ebb38b974.jpg?v=1764813747, /public/upload/blog/mobile_x2/6930ebb38b974.jpg?v=1764813748 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6930ebb38b974.webp?v=1764813748, /public/upload/blog/mobile_x2/6930ebb38b974.webp?v=1764813748 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6930ebb38b974.jpg?v=1764813747, /public/upload/blog/mobile_x2/6930ebb38b974.jpg?v=1764813748 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/resources/should-cisos-build-or-buy" class="c-tile-article" style="transition-delay: 1300ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">December 4, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">Should CISOs Build or Buy?</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6970a3e5afcd3.webp?v=1773155076, /public/upload/blog/mobile_x2/6970a3e5afcd3.webp?v=1773155076 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6970a3e5afcd3.jpg?v=1773155076, /public/upload/blog/mobile_x2/6970a3e5afcd3.jpg?v=1773155076 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6970a3e5afcd3.webp?v=1773155076, /public/upload/blog/mobile_x2/6970a3e5afcd3.webp?v=1773155076 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6970a3e5afcd3.jpg?v=1773155076, /public/upload/blog/mobile_x2/6970a3e5afcd3.jpg?v=1773155076 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/checkbox-security-compliance-driven-security-is-bound-to" class="c-tile-article" style="transition-delay: 1400ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">November 27, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">Checkbox Security - Compliance Driven Security is Bound to Fail</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6928252a621b8.webp?v=1764238726, /public/upload/blog/mobile_x2/6928252a621b8.webp?v=1764238726 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6928252a621b8.jpg?v=1764238726, /public/upload/blog/mobile_x2/6928252a621b8.jpg?v=1764238726 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6928252a621b8.webp?v=1764238726, /public/upload/blog/mobile_x2/6928252a621b8.webp?v=1764238726 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6928252a621b8.jpg?v=1764238726, /public/upload/blog/mobile_x2/6928252a621b8.jpg?v=1764238726 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/hidden-problem-with-cvss" class="c-tile-article" style="transition-delay: 1500ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">November 25, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security</span>
+        </div>
+
+    <div class="c-tile-article__copy">The Hidden Problem With CVSS: The Same CVE Gets Different Scores</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6925113e900cf.webp?v=1764037575, /public/upload/blog/mobile_x2/6925113e900cf.webp?v=1764037575 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6925113e900cf.jpg?v=1764037575, /public/upload/blog/mobile_x2/6925113e900cf.jpg?v=1764037575 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6925113e900cf.webp?v=1764037575, /public/upload/blog/mobile_x2/6925113e900cf.webp?v=1764037575 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6925113e900cf.jpg?v=1764037575, /public/upload/blog/mobile_x2/6925113e900cf.jpg?v=1764037575 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/resources/meet-maze" class="c-tile-article" style="transition-delay: 1600ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">November 12, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">Meet Maze: AI Agents That Bring Clarity to Vulnerability Chaos</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/690a4351c580e.webp?v=1762957390, /public/upload/blog/mobile_x2/690a4351c580e.webp?v=1762957390 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/690a4351c580e.jpg?v=1762957390, /public/upload/blog/mobile_x2/690a4351c580e.jpg?v=1762957390 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/690a4351c580e.webp?v=1762957390, /public/upload/blog/mobile_x2/690a4351c580e.webp?v=1762957390 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/690a4351c580e.jpg?v=1762957390, /public/upload/blog/mobile_x2/690a4351c580e.jpg?v=1762957390 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/resources/maze-named-a-cloud-security-segment-leader-in-latio-report" class="c-tile-article" style="transition-delay: 1700ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">October 22, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Company</span>
+        </div>
+
+    <div class="c-tile-article__copy">Maze Named a Cloud Security Segment Leader in the 2025 Latio Cloud Security Report</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/68f89020a0b4f.webp?v=1761207887, /public/upload/blog/mobile_x2/68f89020a0b4f.webp?v=1761207887 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/68f89020a0b4f.jpg?v=1761207918, /public/upload/blog/mobile_x2/68f89020a0b4f.jpg?v=1761207918 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/68f89020a0b4f.webp?v=1761207887, /public/upload/blog/mobile_x2/68f89020a0b4f.webp?v=1761207887 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/68f89020a0b4f.jpg?v=1761207918, /public/upload/blog/mobile_x2/68f89020a0b4f.jpg?v=1761207918 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/why-we-cant-just-auto-fix-all-our-vulnerabilities-away-yet" class="c-tile-article" style="transition-delay: 1800ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">August 1, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Security Automation</span>
+        </div>
+
+    <div class="c-tile-article__copy">Why we can't just auto-fix all our vulnerabilities away, yet</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/688ccf1729771.webp?v=1754058723, /public/upload/blog/mobile_x2/688ccf1729771.webp?v=1754058723 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/688ccf1729771.jpg?v=1754058722, /public/upload/blog/mobile_x2/688ccf1729771.jpg?v=1754058723 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/688ccf1729771.webp?v=1754058723, /public/upload/blog/mobile_x2/688ccf1729771.webp?v=1754058723 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/688ccf1729771.jpg?v=1754058722, /public/upload/blog/mobile_x2/688ccf1729771.jpg?v=1754058723 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/ai-vulnerability-analysis-in-action-cve-2025-27363" class="c-tile-article" style="transition-delay: 1900ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">June 26, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Case Studies</span>
+        </div>
+
+    <div class="c-tile-article__copy">AI Vulnerability Analysis in Action: CVE-2025-27363</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/685d4f354e0c5.webp?v=1750945607, /public/upload/blog/mobile_x2/685d4f354e0c5.webp?v=1750945607 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/685d4f354e0c5.jpg?v=1750945606, /public/upload/blog/mobile_x2/685d4f354e0c5.jpg?v=1750945607 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/685d4f354e0c5.webp?v=1750945607, /public/upload/blog/mobile_x2/685d4f354e0c5.webp?v=1750945607 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/685d4f354e0c5.jpg?v=1750945606, /public/upload/blog/mobile_x2/685d4f354e0c5.jpg?v=1750945607 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/resources/from-rules-to-reasoning-the-shift-that-made-maze-possible" class="c-tile-article" style="transition-delay: 2000ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">June 19, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Product</span>
+        </div>
+
+    <div class="c-tile-article__copy">From Rules to Reasoning: The Shift That Made Maze Possible</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6853e77737fad.webp?v=1750329388, /public/upload/blog/mobile_x2/6853e77737fad.webp?v=1750329388 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6853e77737fad.jpg?v=1750329388, /public/upload/blog/mobile_x2/6853e77737fad.jpg?v=1750329388 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6853e77737fad.webp?v=1750329388, /public/upload/blog/mobile_x2/6853e77737fad.webp?v=1750329388 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6853e77737fad.jpg?v=1750329388, /public/upload/blog/mobile_x2/6853e77737fad.jpg?v=1750329388 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/the-problem-of-vulnerability-management" class="c-tile-article" style="transition-delay: 2100ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">June 12, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Company</span>
+        </div>
+
+    <div class="c-tile-article__copy">The Vulnerability Management Problem</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/684ad2ad6984b.webp?v=1749740011, /public/upload/blog/mobile_x2/684ad2ad6984b.webp?v=1749740011 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/684ad2ad6984b.jpg?v=1749740011, /public/upload/blog/mobile_x2/684ad2ad6984b.jpg?v=1749740011 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/684ad2ad6984b.webp?v=1749740011, /public/upload/blog/mobile_x2/684ad2ad6984b.webp?v=1749740011 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/684ad2ad6984b.jpg?v=1749740011, /public/upload/blog/mobile_x2/684ad2ad6984b.jpg?v=1749740011 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                            <a href="/blog/launching-maze-ai-agents-for-vulnerability-management" class="c-tile-article" style="transition-delay: 2200ms;" data-ga='["click", "article-tile", ""]'>
+         <div class="tag">
+                <span class="tag__date">June 10, 2025</span>
+                <span class="tag__name"><span class="tag__dot"></span>Company</span>
+        </div>
+
+    <div class="c-tile-article__copy">Launching Maze: AI Agents for Vulnerability Management</div>
+    
+    <span class="c-tile-article__more desktop-only">
+        <svg class="svg-arrow-dot"  width="38" height="36" viewBox="0 0 38 36">
+  <path d="M1,18h37" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18L16,3" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+  <path d="M1,18l15,15" vector-effect="non-scaling-stroke" fill="none" stroke="#83919b" stroke-dasharray="1 2"/>
+</svg>
+
+        <span>Read more</span>
+    </span>
+
+    <div class="c-tile-article__image">
+        
+<picture>
+
+                <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6848183e605dc.webp?v=1749555577, /public/upload/blog/mobile_x2/6848183e605dc.webp?v=1749555577 2x" type="image/webp">
+    
+            <source media="(max-width: 1023px)" srcset="/public/upload/blog/mobile/6848183e605dc.jpg?v=1749555577, /public/upload/blog/mobile_x2/6848183e605dc.jpg?v=1749555577 2x">
+    
+
+                <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6848183e605dc.webp?v=1749555577, /public/upload/blog/mobile_x2/6848183e605dc.webp?v=1749555577 2x" type="image/webp">
+    
+            <source media="(min-width: 1023px)" srcset="/public/upload/blog/mobile/6848183e605dc.jpg?v=1749555577, /public/upload/blog/mobile_x2/6848183e605dc.jpg?v=1749555577 2x">
+    
+
+            
+    <img
+        src="data:image/png;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+        alt=""
+                class="is-loading"
+    />
+</picture>
+    </div>
+</a>
+                    </div>
+
+
+            </div>
+</section>
+</article>
+<!-- offscreen lightbox data -->
+
+        </main>
+
+        <footer class="s-footer" id="footer">
+  <div class="s-footer__wrap">
+    <div class="s-footer__top">
+      <p class="s-footer__title">Get cloud vulnerabilities under control</p>
+      <div class="s-footer__button">
+        <a href="/contact#demo" class="a-button a-button--secondary" data-cssanimate data-ga='["click", "footer-button", "book-demo"]'>
+          <span class="a-button__dot"></span> <span class="a-button__text">
+            <span class="primary">
+              Book Demo
+            </span>
+            <span class="secondary">
+              Book Demo
+            </span>
+          </span>
+        </a>
+      </div>
+    </div>
+    <div class="s-footer__inner">
+      <div class="s-footer__line dotted-line"></div>
+
+      <div class="s-footer__left">
+                  <a class="s-footer__link" href="/product"  data-ga='["click", "footer-link", "Product"]'>Product</a>
+                  <a class="s-footer__link" href="/our-philosophy"  data-ga='["click", "footer-link", "Our Philosophy"]'>Our Philosophy</a>
+                  <a class="s-footer__link" href="/blog"  data-ga='["click", "footer-link", "Blog"]'>Blog</a>
+                  <a class="s-footer__link" href="https://jobs.ashbyhq.com/mazehq" target="_blank" data-ga='["click", "footer-link", "Careers"]'>Careers</a>
+                  <a class="s-footer__link" href="/privacy-policy"  data-ga='["click", "footer-link", "Privacy policy"]'>Privacy policy</a>
+                
+      </div>
+      <div class="s-footer__right">
+        <a class="s-footer__link" href="/contact#contact" data-offset="50" data-ga='["click", "footer-link", "contact"]'>Contact</a>
+                <a class="s-footer__social" href="https://www.linkedin.com/company/mazehq" target="_blank" data-ga='["click", "footer-social", "linkedin"]'><svg class="svg-social-linkedin"  width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.594.432H1.802A1.071 1.071 0 00.73 1.505v11.811a1.075 1.075 0 001.072 1.074h11.792a1.07 1.07 0 001.072-1.074V1.506A1.074 1.074 0 0013.594.431zm-8.04 10.2a.537.537 0 01-.915.38.537.537 0 01-.157-.38V6.337a.537.537 0 01.915-.38c.101.101.157.238.157.38v4.295zm-.536-5.369a.803.803 0 01-.788-.962.806.806 0 011.096-.587.804.804 0 01-.308 1.55zm6.432 5.369a.537.537 0 11-1.072 0V8.216a1.343 1.343 0 00-1.34-1.342 1.339 1.339 0 00-1.34 1.342v2.416a.537.537 0 01-.915.38.537.537 0 01-.157-.38V6.337a.537.537 0 01.845-.436c.154.109.382.204.552.124a2.409 2.409 0 013.082.946c.226.376.345.806.345 1.245v2.416z" fill="#D6D8D8"/></svg></a>
+                
+      </div>
+    </div>
+  </div>
+</footer>    </div>
+
+    <div class="s-cookies js-cookies">
+    <div class="s-cookies__bg"></div>
+    <div class="s-cookies__wrap js-cookies-wrapper">
+        <div class="s-cookies__top">
+            <div class="s-cookies__title">Cookies</div>
+            <button class="s-cookies__close js-cookies-close" data-ga='["click", "cookies", "close"]'><svg data-id="a1c678b8" class="svg-close" width="24"
+                    height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" >
+                    <path d="M5.7002 18.3L18.3002 5.70001M5.7002 5.70001L18.3002 18.3" stroke="#EFF0F0"
+                        stroke-linecap="square" stroke-linejoin="bevel" />
+                </svg>
+            </button>
+        </div>
+        <div class="dotted-line"></div>
+        <div class="s-cookies__bottom">
+            <div class="s-cookies__copy">
+                <p>
+                    We use cookies to better understand how our visitors use our site and to improve your experience.
+                    By clicking "Accept", you consent to our <a href="/privacy-policy">terms</a>.
+                </p>                
+            </div>
+            <div class="s-cookies__buttons">
+
+
+                <button class="a-button a-button--basic m-cta__button js-cookies-close" data-cssanimate data-ga='["click", "cookies", "decline"]'>
+                    <span class="a-button__text">
+                        <span class="primary">
+                            Decline
+                        </span>
+                        <span class="secondary">
+                            Decline
+                        </span>
+                    </span>
+                </button>
+
+
+                <button class="a-button a-button--basic m-cta__button js-cookies-agree" data-cssanimate data-ga='["click", "cookies", "accept"]'>
+                    <span class="a-button__text">
+                        <span class="primary">
+                            Accept
+                        </span>
+                        <span class="secondary">
+                            Accept
+                        </span>
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>        <script type="x-shader/x-fragment" id="particles-fragment-shader">
+  uniform sampler2D pointTexture;
+
+varying float vAlpha;
+varying vec3 vColor;
+
+void main() {
+
+    gl_FragColor = vec4(vColor, vAlpha);
+    gl_FragColor = gl_FragColor * texture2D( pointTexture, gl_PointCoord );
+
+}
+</script>
+<script type="x-shader/x-vertex" id="particles-vertex-shader">
+  attribute float aAlpha;
+attribute float aIndex;
+attribute float aSelection;
+
+attribute float aStreamFreq;
+attribute float aFunnelNarrow;
+attribute float aFunnelThickness;
+attribute float aFunnelStartShift;
+attribute float aFunnelEndShift;
+
+attribute vec3 aMove;
+attribute vec3 aSpeed;
+attribute vec3 aRandomness;
+
+uniform bool uIsMobile;
+uniform float uPixelRatio;
+uniform float uScale;
+uniform float uTime;
+
+uniform float uSpeed;
+uniform float uSize;
+uniform float uAlpha;
+uniform float uDepth;
+uniform float uAmplitude;
+uniform float uFrequency;
+uniform float uSelection;
+
+uniform float uWidth;
+uniform float uHeight;
+uniform float uStream;
+uniform float uFunnelStart;
+uniform float uFunnelEnd;
+uniform float uFunnelThick;
+uniform float uFunnelNarrow;
+uniform float uFunnelStartShift;
+uniform float uFunnelEndShift;
+uniform float uFunnelDistortion;
+
+uniform float uRcolor;
+uniform float uGcolor;
+uniform float uBcolor;
+uniform float uRnoise;
+uniform float uGnoise;
+uniform float uBnoise;
+
+varying float vAlpha;
+varying float vDistance;
+varying float vNoise;
+varying vec3 vColor;
+
+const float PI = 3.1415926535897932384626433832795;
+
+vec3 mod289_1_0(vec3 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec2 mod289_1_0(vec2 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+
+vec3 permute_1_1(vec3 x) {
+  return mod289_1_0(((x*34.0)+1.0)*x);
+}
+
+float snoise_1_2(vec2 v) {
+  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0
+                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)
+                     -0.577350269189626,  // -1.0 + 2.0 * C.x
+                      0.024390243902439); // 1.0 / 41.0
+  vec2 i  = floor(v + dot(v, C.yy) );
+  vec2 x0 = v -   i + dot(i, C.xx);
+  vec2 i1;
+  i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+    vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod289_1_0(i);
+  vec3 p = permute_1_1( permute_1_1( i.y + vec3(0.0, i1.y, 1.0 ))
+    + i.x + vec3(0.0, i1.x, 1.0 ));
+  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+  m = m*m ;
+  m = m*m ;
+  vec3 x = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(x) - 0.5;
+  vec3 ox = floor(x + 0.5);
+  vec3 a0 = x - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );
+  vec3 g;
+  g.x  = a0.x  * x0.x  + h.x  * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+//Noise algorithm https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
+vec4 permute(vec4 x){ return mod(((x * 34.0) + 1.0) * x, 289.0); }
+float permute(float x){ return floor(mod(((x * 34.0) + 1.0) * x, 289.0)); }
+vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+float taylorInvSqrt(float r){ return 1.79284291400159 - 0.85373472095314 * r; }
+
+vec4 grad4(float j, vec4 ip){
+    const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+    vec4 p, s;
+
+    p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+    p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+    s = vec4(lessThan(p, vec4(0.0)));
+    p.xyz = p.xyz + (s.xyz * 2.0 - 1.0) * s.www;
+
+    return p;
+}
+
+float snoise(vec4 v){
+    const vec2  C = vec2(0.138196601125010504,  // (5 - sqrt(5))/20  G4
+        0.309016994374947451); // (sqrt(5) - 1)/4   F4
+    // First corner
+    vec4 i = floor(v + dot(v, C.yyyy));
+    vec4 x0 = v - i + dot(i, C.xxxx);
+
+    // Other corners
+
+    // Rank sorting originally contributed by Bill Licea-Kane, AMD (formerly ATI)
+    vec4 i0;
+
+    vec3 isX = step(x0.yzw, x0.xxx);
+    vec3 isYZ = step(x0.zww, x0.yyz);
+    //  i0.x = dot( isX, vec3( 1.0 ) );
+    i0.x = isX.x + isX.y + isX.z;
+    i0.yzw = 1.0 - isX;
+
+    //  i0.y += dot( isYZ.xy, vec2( 1.0 ) );
+    i0.y += isYZ.x + isYZ.y;
+    i0.zw += 1.0 - isYZ.xy;
+
+    i0.z += isYZ.z;
+    i0.w += 1.0 - isYZ.z;
+
+    // i0 now contains the unique values 0,1,2,3 in each channel
+    vec4 i3 = clamp(i0, 0.0, 1.0);
+    vec4 i2 = clamp(i0 - 1.0, 0.0, 1.0);
+    vec4 i1 = clamp(i0 - 2.0, 0.0, 1.0);
+
+    //  x0 = x0 - 0.0 + 0.0 * C
+    vec4 x1 = x0 - i1 + 1.0 * C.xxxx;
+    vec4 x2 = x0 - i2 + 2.0 * C.xxxx;
+    vec4 x3 = x0 - i3 + 3.0 * C.xxxx;
+    vec4 x4 = x0 - 1.0 + 4.0 * C.xxxx;
+
+    // Permutations
+    i = mod(i, 289.0);
+    float j0 = permute(permute(permute(permute(i.w) + i.z) + i.y) + i.x);
+    vec4 j1 = permute(permute(permute(permute(
+        i.w + vec4(i1.w, i2.w, i3.w, 1.0))
+        + i.z + vec4(i1.z, i2.z, i3.z, 1.0))
+        + i.y + vec4(i1.y, i2.y, i3.y, 1.0))
+        + i.x + vec4(i1.x, i2.x, i3.x, 1.0));
+    // Gradients
+    // ( 7*7*6 points uniformly over a cube, mapped onto a 4-octahedron.)
+    // 7*7*6 = 294, which is close to the ring size 17*17 = 289.
+
+    vec4 ip = vec4(1.0 / 294.0, 1.0 / 49.0, 1.0 / 7.0, 0.0);
+
+    vec4 p0 = grad4(j0, ip);
+    vec4 p1 = grad4(j1.x, ip);
+    vec4 p2 = grad4(j1.y, ip);
+    vec4 p3 = grad4(j1.z, ip);
+    vec4 p4 = grad4(j1.w, ip);
+
+    // Normalise gradients
+    vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+    p0 *= norm.x;
+    p1 *= norm.y;
+    p2 *= norm.z;
+    p3 *= norm.w;
+    p4 *= taylorInvSqrt(dot(p4, p4));
+
+    // Mix contributions from the five corners
+    vec3 m0 = max(0.6 - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), 0.0);
+    vec2 m1 = max(0.6 - vec2(dot(x3, x3), dot(x4, x4)), 0.0);
+    m0 = m0 * m0;
+    m1 = m1 * m1;
+    return 49.0 * (dot(m0 * m0, vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2)))
+        + dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4))));
+
+}
+
+// noise
+#define NUM_OCTAVES 5
+float fbm(vec3 x) {
+  float v = 0.0;
+  float a = 0.5;
+  vec3 shift = vec3(100);
+  for (int i = 0; i < NUM_OCTAVES; ++i) {
+    v += a * snoise(vec4(x, uTime));
+    x = x * 2.0 + shift;
+    a *= 0.5;
+  }
+  return v;
+}
+
+
+
+
+void main() {
+
+  // === noise:
+  vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
+
+  // === color:
+  float r, g, b;
+  r = uRcolor / 255.0 + (clamp(vNoise, 0.0, 1.0) * 4.0 * (uRnoise - uRcolor) / 255.0);
+  g = uGcolor / 255.0 + (clamp(vNoise, 0.0, 1.0) * 4.0 * (uGnoise - uGcolor) / 255.0);
+  b = uBcolor / 255.0 + (clamp(vNoise, 0.0, 1.0) * 4.0 * (uBnoise - uGcolor) / 255.0);
+  vColor = vec3(r, g, b);
+
+
+  vec3 displaced = position;
+
+  // === blob waiving effect:
+  displaced *= (1.0 + (uAmplitude * vNoise));
+
+  // === noise effect:
+  displaced += vec3(uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uSpeed)));
+
+  // === stream effect:
+  if (uStream > 0.0) {
+    // move continously:
+    displaced.x += uTime * uSpeed * uStream * 0.3;
+    // clamp position:
+    displaced.x = mod(displaced.x - uWidth * 0.5, uWidth) - uWidth * 0.5;
+    // count position factor (0.0 - 1.0):
+    float t = clamp((displaced.x - uFunnelStart) / (uFunnelEnd - uFunnelStart), 0.0, 1.0);
+    // funnel effect:
+    float thickness = mix(uFunnelThick + aFunnelThickness, uFunnelNarrow + aFunnelNarrow, t);
+    displaced.y += thickness * uHeight * aRandomness.y * uFunnelDistortion;
+    displaced.y += (1.0 - t) * (uFunnelStartShift + aFunnelStartShift);
+    displaced.y += t * (uFunnelEndShift + aFunnelEndShift);
+    displaced.z += uHeight * aRandomness.z * (-1.0 * cos(displaced.x)) * uFunnelDistortion;
+
+    // === mobile rotation:
+    mat2 rot = mat2(0.0, -1.0, 1.0, 0.0);
+    if (uIsMobile) { displaced.xy = rot * displaced.xy; }
+  }
+
+
+  // === general position:
+  vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+
+
+  // === point size:
+  vDistance = -mvPosition.z;
+  gl_PointSize = uSize;
+  gl_PointSize *= 100.0 / vDistance;
+  gl_PointSize *= uPixelRatio;
+  clamp(gl_PointSize, 1.0, 100.0);
+
+
+  // === transparency:
+  vAlpha = uAlpha * aAlpha * (300.0 / vDistance);
+  if (aSelection > uSelection) { vAlpha = 0.0; }
+
+}
+</script>
+    <script>
+    const versionTag = document.head.querySelector('meta[name="version"]');
+    const version = versionTag instanceof HTMLMetaElement ? versionTag.content : null;
+    version && console.log(` version: %c${version}`, 'color: yellow');
+    window.location.search.indexOf('version') >= 0 && alert(`version: ${version}`);
+</script>
+
+    <script src="/public/theme/libs.min.js?v=1.0.47" defer></script>
+    <script src="/public/theme/scripts.min.js?v=1.0.47" defer></script>
+
+</body>
+
+</html>

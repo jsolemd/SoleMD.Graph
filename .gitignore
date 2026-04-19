@@ -109,7 +109,8 @@ apps/worker/.ruff_cache/
 apps/worker/.mypy_cache/
 
 # Local backend data
-data/
+data/*
+!data/research/
 
 # Package manager lock files (keep one, ignore others)
 # Uncomment the ones you want to ignore
