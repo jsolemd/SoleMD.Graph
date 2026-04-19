@@ -231,6 +231,59 @@ being adapted for SoleMD:
   themselves as sparse direct overrides rather than being mixed back into the
   magenta base.
 
+### Round 7
+
+- Focus:
+  remove the remaining authored screen-space bias from selected points and make
+  the SoleMD highlight/card phases use real semantic point colors
+- Source findings:
+  Maze hotspot placement is geometry-random, not authored to one side of the
+  viewport. `setRandomHotspotPosition()` repeatedly samples random geometry
+  points until they satisfy basic screen-fit constraints, then that hotspot
+  holds the same attachment until its own animation completes.
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43470-43499`
+- Parity implication:
+  our selected-paper phase should not appear to originate from one back-left
+  ribbon. Selected circles need to surface across the visible blob rather than
+  following an authored left-side band.
+- Intentional SoleMD divergence:
+  Maze only distinguishes cyan/magenta hotspot classes. SoleMD should keep the
+  same random geometry attachment grammar, but the highlight circles and cards
+  should inherit the actual semantic point colors so the paper/entity/relation
+  story reads through the selected nodes themselves.
+
+### Round 8
+
+- Focus:
+  restore Maze's per-hotspot animation rhythm so selected papers appear as
+  random living popups instead of one always-on rotating ribbon
+- Source findings:
+  Maze hotspot motion is staggered per hotspot, not one global always-on state:
+  - archived HTML seeds each hotspot with its own `--delay` inline style in the
+    `0ms..2000ms` range
+  - `animationend` on each hotspot SVG resets `--delay`, reattaches that one
+    hotspot to a new geometry point, forces layout, then re-adds
+    `.is-animating`
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/index.html:87-149`,
+  `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43421-43457`
+- Source findings:
+  Maze's CSS hotspot timing is explicit:
+  - default hotspot cycle duration is `2s`
+  - the initial single-hotspot beat stretches to `4s`
+  - the later `onlyReds` card phase disables the circle animation and keeps the
+    selected hotspots statically visible
+  Source:
+  `data/research/mazehq-homepage/2026-04-18/styles.css` hotspot rules around
+  `.hotspot.is-animating`, `.has-only-reds .hotspot`, and
+  `.s-gfx:not(.has-only-reds).has-only-single .hotspot`
+- Parity implication:
+  our selected-paper phase should use per-hotspot random delays plus
+  hotspot-local 2s/4s cycles and only reattach on that hotspot's own cycle
+  completion. The later card phase should stay attached and stable rather than
+  continue hopping.
+
 ### 1. Fixed Stage Runtime
 
 - [x] One fixed ambient-field canvas
@@ -358,6 +411,13 @@ Primary files:
 - [ ] Keep hotspot anchors stable for longer:
   source hotspots hold one attachment until that hotspot's own animation cycle
   ends, not until a shared timer reseeds the whole pool
+- [ ] Remove the remaining left-side authored placement bias:
+  selected dots and cards should surface across the visible globe rather than
+  sweeping in from one back-left arc
+- [ ] Use actual semantic point colors for the selected-paper and hover-card
+  layers:
+  the hotspot pool should read from the point palette, not from a binary
+  blue/pink proxy
 - [ ] Keep the first selected-point phase circle-only:
   source cards do not appear until the later `onlyReds` / detail-reveal beat
 - [ ] Record how many selected nodes are visible in each chapter
@@ -393,6 +453,9 @@ Primary files:
 - [ ] Fix hotspot tracking quality:
   anchors should stay attached to one point much longer and cards should stop
   jumping around the viewport
+- [ ] Fix highlight distribution:
+  selected points and the later card anchors should surface throughout the blob
+  instead of clustering into one rotating side band
 - [ ] Re-review every major field element before `/clean`:
   shader, displacement read, rotation cadence, section dwell, and later reveal
   phases

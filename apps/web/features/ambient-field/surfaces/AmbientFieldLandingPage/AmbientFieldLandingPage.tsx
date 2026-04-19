@@ -70,30 +70,25 @@ const secondaryCardStyle: CSSProperties = {
 const ambientFieldBlobHotspots: ReadonlyArray<{
   badges: string[];
   id: string;
-  isRed: boolean;
   title: string;
 }> = [
   {
     id: "papers",
-    isRed: false,
     title: "Paper subset enters focus",
     badges: ["Selected", "High confidence"],
   },
   {
     id: "entities",
-    isRed: true,
     title: "Entity-rich paper neighborhood",
     badges: ["Gene", "Chemical"],
   },
   {
     id: "relations",
-    isRed: true,
     title: "Relation bridge becomes visible",
     badges: ["Linking", "Synthesis-ready"],
   },
   ...Array.from({ length: 37 }, (_, index) => ({
     id: `dot-${index + 4}`,
-    isRed: index % 2 === 0,
     title: "",
     badges: [],
   })),
@@ -231,6 +226,9 @@ function AmbientFieldLandingShell({
   }
 
   function handleHotspotFrame(hotspots: AmbientFieldHotspotFrame[]) {
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
     blobHotspotRefs.current.forEach((node, index) => {
       if (!node) return;
       const frame = hotspots[index];
@@ -242,21 +240,20 @@ function AmbientFieldLandingShell({
       }
 
       node.dataset.mode = frame.showCard ? "card" : "dot";
+      const cardLeft = frame.x > viewportWidth * 0.62 ? "-220px" : "28px";
+      const cardTop =
+        frame.y < viewportHeight * 0.28
+          ? "24px"
+          : frame.y > viewportHeight * 0.72
+            ? "-92px"
+            : "-18px";
       node.style.setProperty(
         "--ambient-hotspot-ring",
-        frame.showCard
-          ? "var(--graph-panel-text)"
-          : frame.isRed
-            ? "var(--color-soft-pink)"
-            : "var(--color-soft-blue)",
+        frame.color,
       );
       node.style.setProperty(
         "--ambient-hotspot-core",
-        frame.showCard
-          ? "var(--color-soft-pink)"
-          : frame.isRed
-            ? "var(--color-soft-pink)"
-            : "var(--color-soft-blue)",
+        frame.color,
       );
       node.style.setProperty(
         "--ambient-hotspot-card-opacity",
@@ -266,6 +263,8 @@ function AmbientFieldLandingShell({
         "--ambient-hotspot-card-translate-y",
         frame.showCard ? "0px" : "10px",
       );
+      node.style.setProperty("--ambient-hotspot-card-left", cardLeft);
+      node.style.setProperty("--ambient-hotspot-card-top", cardTop);
 
       node.style.opacity = frame.opacity.toFixed(4);
       node.style.transform =
@@ -330,6 +329,8 @@ function AmbientFieldLandingShell({
               style={{
                 "--ambient-hotspot-card-opacity": "0",
                 "--ambient-hotspot-card-translate-y": "10px",
+                "--ambient-hotspot-card-left": "28px",
+                "--ambient-hotspot-card-top": "-18px",
                 "--ambient-hotspot-core": "var(--color-soft-blue)",
                 "--ambient-hotspot-ring": "var(--color-soft-blue)",
                 opacity: 0,
@@ -358,9 +359,11 @@ function AmbientFieldLandingShell({
 
               {index < 3 ? (
                 <div
-                  className="ambient-field-hotspot-card absolute left-10 top-0 w-[198px] max-w-[34vw] transition-[opacity,transform] duration-300"
+                  className="ambient-field-hotspot-card absolute w-[198px] max-w-[34vw] transition-[opacity,transform] duration-300"
                   style={{
+                    left: "var(--ambient-hotspot-card-left)",
                     opacity: "var(--ambient-hotspot-card-opacity)",
+                    top: "var(--ambient-hotspot-card-top)",
                     transform:
                       "translateY(var(--ambient-hotspot-card-translate-y))",
                   }}
