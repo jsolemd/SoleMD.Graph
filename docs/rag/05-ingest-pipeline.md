@@ -24,7 +24,15 @@
 > table shapes. This doc is authority for the ingest worker's runtime
 > contract: `ingest_runs` lifecycle, phase order, manifest protocol,
 > advisory-lock keys, `families_loaded` resume, publish flip. Engine code
-> under `engine/app/ingest/` derives from here.
+> under `apps/worker/app/ingest/` derives from here; legacy
+> `engine/app/ingest/` code is reusable salvage inventory, not the
+> runtime root.
+>
+> **Selection boundary**: this doc governs raw release ingest and the
+> warehouse-local promotion surfaces it owns. The next slice,
+> `05e-corpus-selection.md`, governs how broad raw release content is turned
+> into the selected canonical paper corpus consumed by chunking, graph
+> embeddings, and warm retrieval.
 
 ## Purpose
 
@@ -62,6 +70,22 @@ load (`07`, triggered off the same publish flip on a different actor);
 concrete tuning numbers (`09-tuning.md`); backup / archive (`11-backup.md`,
 raw release dirs are themselves the source-of-truth backup per `01 §3`);
 observability dashboards (`10-observability.md`).
+
+## Implementation state
+
+The first production raw-refresh implementation is now landed in
+`apps/worker/app`.
+
+- Landed in code: broker bootstrap, four-pool bootstrap, startup probe,
+  `ingest.start_release`, source adapters for Semantic Scholar and
+  PubTator, validated CLI enqueue/dispatch entrypoints, asyncpg
+  `COPY`-driven loaders, and warehouse-local promotion helpers.
+- Landed in tests: request-shape validation, runtime resume behavior, and
+  end-to-end sample-ingest coverage against a real warehouse target.
+- The next follow-on slice is therefore **canonical corpus selection**
+  (`05e`), not another raw-ingest rewrite. Raw releases can now land
+  safely; what remains is to formalize which papers become the selected
+  SoleMD canonical corpus downstream lanes may consume.
 
 ## §0 Conventions delta from `02` / `04`
 
@@ -232,7 +256,7 @@ doing right now?" without extra instrumentation.
 
 Inputs: on-disk release directory; every
 `manifests/<dataset>.manifest.json`; the per-source dataset registry
-in `engine/app/ingest/manifest_registry.py` (Pydantic v2 schema,
+in `apps/worker/app/ingest/manifest_registry.py` (Pydantic v2 schema,
 following the registry / generation rules in `02 §0.10`).
 
 Outputs: (1) `ingest_runs.plan_manifest jsonb` — Pydantic-validated
@@ -392,6 +416,32 @@ state. **locked**.
 Post-publish, the worker releases the §10 advisory lock and exits.
 The next pg_cron poll (§11) will not re-trigger the same release.
 
+### 4.7 Slice 6 follow-on actor topology
+
+The next agent should implement the first warehouse ingest lane by
+extending the **current** worker shell in `apps/worker/app`, not by
+reviving the archived `engine/app/...` layout used in historical
+examples elsewhere in this doc set.
+
+The shape is intentionally narrow:
+
+- queue: `ingest`
+- entry actor: `ingest.start_release(source_code, release_tag, force_new_run=False)`
+- trigger: `ingest-poll-manifests` / external dispatcher hands off one
+  new `(source_code, release_tag)` pair at a time from the warehouse
+  filesystem
+- pool: `ingest_write` only
+- lock scope: one per-release advisory lock held by the entry actor for
+  the full run
+- in-actor decomposition: family loaders are regular async functions
+  inside the actor process, not separate Dramatiq messages for the same
+  release
+
+This keeps one `ingest_runs` owner, one retry boundary, and one
+warehouse-local promotion lane. The detailed file split, retry shape,
+refresh contract, and acceptance bar for the implementing agent are
+owned by §14.
+
 ## §5 Per-source pipelines
 
 ### 5.1 Semantic Scholar JSONL → warehouse
@@ -515,7 +565,12 @@ at ingest start and held constant for the cycle.
 **Side-channel TSVs.** `bioconcepts2pubtator3.gz` and
 `relation2pubtator3.gz` load via DuckDB `read_csv_auto` (gzip
 auto-detected) into the same staging tables as BioCXML rows. Used as
-cross-check; disagreements log to §12 but don't abort.
+cross-check; disagreements log to §12 but don't abort. If BioCXML and
+`relation2pubtator3.gz` emit the same canonical relation key
+`(corpus_id, subject_entity_id, relation_type, object_entity_id)`,
+canonical `pubtator.relations` keeps the BioCXML row
+(`relation_source = biocxml`) and treats the TSV row as stage-level
+cross-check lineage rather than the winner.
 
 ### 5.3 ID remapping
 
@@ -606,11 +661,16 @@ Concrete numbers for the first run on the 68 GB host. Updated when the
 
 ### 6.2 Worker pool sizing
 
-S2 workers: 4 (one per heavy dataset; `citations` is the pacing item).
-PT3 workers: 4 during S2 overlap, full 8 once S2 phase completes (one
-per `BioCXML.NN.tar.gz`). Concept-mapping workers: 1–2. Index-build
-coordinator: 1 (spawns parallel `CREATE INDEX` across families; PG
-controls parallel maintenance workers per §4.4).
+Inside the single active release actor, loader concurrency stays
+bounded and source-aware rather than spawning multiple independent
+Dramatiq workers for the same release.
+
+S2 loader tasks: 4 at peak (one per heavy dataset; `citations` is the
+pacing item). PT3 archive-loader tasks: 4 during S2 overlap, full 8
+only when PT3 is the active pacing source and memory headroom is
+available. Concept-mapping tasks: 1–2. Index-build coordinator: 1
+(spawns parallel `CREATE INDEX` across families; PG controls parallel
+maintenance workers per §4.4).
 
 Per-worker peak: ~24 GB DuckDB + ~700 MB lookup cache + ~1 GB Python ≈
 26 GB. S2 / PT3 phases don't overlap by default (separate
@@ -621,7 +681,7 @@ DuckDB `memory_limit` to 12 GB during 4-worker concurrent S2 (4 × 14 ≈
 
 ### 6.3 asyncpg pool
 
-Per `00`'s four-pool topology, ingest uses one **warehouse_admin
+Per `00`'s four-pool topology, raw ingest uses one **ingest_write
 pool** — direct, no pooler (warehouse has no PgBouncer day one).
 Sizing: `min=8, max=64` (32 partitions × ~2 = 64); `command_timeout=None`;
 session GUCs `synchronous_commit='off'`, `temp_buffers='256MB'`,
@@ -865,7 +925,7 @@ one active job when background workers are enabled
 ### 11.2 Manual trigger
 
 Operator launches a forced re-ingest:
-`python -m engine.app.ingest run --source s2 --release 2026-03-10 --force-new-run`.
+`uv run --project apps/worker python -m app.main enqueue-release s2 2026-03-10 --force-new-run`.
 The §3.2 entry guard leaves the prior published row immutable, mints a fresh `ingest_run_id`,
 acquires the §10.1 advisory lock, and runs the §4 pipeline.
 
@@ -948,6 +1008,125 @@ The poll uses the same admin pool (direct asyncpg, no pooler) per
 `04 §4`. No FDW dependency for the trigger — 5-minute poll is the
 acceptable publish-to-projection-start latency.
 
+## §14 Historical handoff — first raw-release worker landing (completed)
+
+This section is retained as implementation inventory because the first
+production-shape raw ingest worker is now landed in `apps/worker`. The next
+follow-on slice is `05e-corpus-selection.md`; this section remains useful only
+as a record of the worker shape that was just implemented.
+
+### 14.1 Ownership in code
+
+The implementation should stay modular, but the split is by responsibility,
+not by queue count:
+
+- `apps/worker/app/actors/ingest.py` owns Dramatiq actor entrypoints only.
+- `apps/worker/app/ingest/runtime.py` owns run start/resume, advisory lock,
+  status transitions, `families_loaded`, and per-family orchestration.
+- `apps/worker/app/ingest/models.py` owns Pydantic request / plan / result
+  payloads shared across actor, CLI, and tests.
+- `apps/worker/app/ingest/sources/semantic_scholar.py` and
+  `pubtator.py` own source-specific planning and stream transforms.
+- `apps/worker/app/ingest/writers/` owns COPY tuple materialization and
+  table-write helpers.
+- `apps/worker/app/ingest/cli.py` owns the manual/operator entrypoint and
+  must enqueue the same request payload shape the manifest dispatcher uses.
+
+### 14.2 Actor topology
+
+One release-level actor is the canonical boundary:
+
+- `ingest.start_release(request)` is the only release actor. Payload:
+  `source_code`, `release_tag`, `force_new_run`, `trigger`,
+  `requested_by`, and optional dry-run flags for bench/dev.
+- The actor acquires the per-release advisory lock, opens or resumes the
+  `ingest_runs` row, builds and verifies `IngestPlan`, then executes the
+  per-family loop inside the same actor invocation.
+- Do **not** create one Dramatiq message per shard or per partition.
+  Dramatiq owns job durability, retries, and crash recovery. Throughput
+  inside a family comes from async stream readers plus bounded asyncpg COPY
+  coroutines.
+- Post-publish follow-on work stays downstream: projection enqueue remains the
+  handoff in §13, and chunking remains the `05a` lane. The raw ingest actor
+  may enqueue those later actors when their inputs exist, but they are not a
+  precondition for the first raw-source landing.
+
+### 14.3 Source-adapter contract
+
+Each source module should own exactly three responsibilities:
+
+1. `build_plan(release_dir, manifests) -> IngestPlan`
+2. `stream_family(plan_family) -> AsyncIterator[tuple | dataclass]`
+3. `promote_family(run_id, family, copy_writer) -> None`
+
+Shared runtime code owns everything else: run lifecycle, lock management,
+metrics, retries, and resume. That split keeps future source refreshes cheap:
+new `release_tag` values reuse the same actor and runtime envelope while the
+source adapter swaps only the planning and transform logic.
+
+Source-specific notes that should stay explicit:
+
+- Semantic Scholar `s2orc` remains optional. Missing `s2orc` shards are a
+  plan omission, not a run failure.
+- PubTator `biocxml.corpus_locator.sqlite` is an accelerator only. It may be
+  used to narrow archive reads, but it is not the authority for what belongs
+  in the release.
+- Canonical promotion from the S2 raw staging tables stays on
+  `engine_ingest_write`; do not route that promotion through admin just to
+  avoid writing the shared helper correctly.
+
+### 14.4 Write-path rules
+
+- Bulk writes use asyncpg `copy_records_to_table`; no row-at-a-time INSERT
+  loops on hot families.
+- The first raw ingest worker uses the `ingest_write` pool only. Do not add
+  `admin` or `warehouse_read` dependencies to the initial S2 / PubTator actor
+  path.
+- Bound in-family concurrency with a small `asyncio.TaskGroup` or semaphore
+  over partitions/shards. The concurrency knob is the number of concurrent
+  COPY coroutines, not the Dramatiq thread count.
+- Start the raw ingest worker with one process and a low thread count
+  (`dramatiq app.ingest_worker --processes 1 --threads 1 --queues ingest` or the
+  equivalent wrapper). Dramatiq's AsyncIO middleware still schedules async
+  actors on its event-loop thread; extra worker threads only multiply message
+  concurrency and connection pressure.
+- Deterministic bad-input failures such as `IngestAlreadyPublished`,
+  `IngestAlreadyInProgress`, `PlanDrift`, or `SourceSchemaDrift` should be
+  typed exceptions surfaced through actor `throws=` or explicit early exits so
+  duplicate manifest/manual triggers do not thrash retries or the dead-letter
+  queue.
+
+### 14.5 Refresh and rerun contract
+
+- A new S2 or PubTator refresh is a new `source_releases` row plus a new
+  `ingest.start_release` message. There is no in-place "current release"
+  rewrite inside raw tables.
+- A forced replay of the same release uses `force_new_run=True` and mints a
+  fresh `ingest_run_id` against the same immutable release directory.
+- Resume remains keyed to `families_loaded` within one `ingest_run_id`; do not
+  add a second shard-level checkpoint ledger in the first implementation.
+- Keep raw and canonical promotion modular so a later diff-based S2 refresh can
+  skip untouched families without changing the actor envelope.
+- Warehouse stays a separate cluster for the full path. The ingest worker never
+  writes serve tables and never treats warehouse as "extra tables inside
+  serve."
+
+### 14.6 Acceptance bar for the implementing agent
+
+The next implementation PR should not stop at actor stubs. Minimum acceptance:
+
+- manual CLI and manifest dispatcher both enqueue the same validated request
+  payload
+- one integration test per source proves plan build + deterministic resume
+- one end-to-end local sample ingest writes real warehouse rows and updates
+  `ingest_runs`
+- S2 citations remain refresh-safe in `solemd.s2_paper_references_raw` with
+  linkage-status promotion; canonical `paper_citations` stays deferred
+- docs move with code if the file layout, queue names, or role boundaries
+  change
+- chunking stays downstream of the raw ingest lane rather than being
+  reimplemented inline
+
 **locked** for polling; **deferred** for LISTEN/NOTIFY per `04`.
 
 ## Cross-family invariants
@@ -1006,8 +1185,10 @@ This doc is **write-only** — ingest never reads warehouse tables for
 serving. Warehouse reads happen at projection-build time (`04`) and at
 analytical query time (`02 §7.3`). The two internal reads ingest
 performs (lookup cache build via full-table scan; resume-state
-single-row lookup at worker entry) run via the warehouse_admin pool
-(§6.3), direct, no FDW.
+single-row lookup at worker entry) run via the same `ingest_write`
+pool / role, using the narrow SELECT grants documented in `06 §7.1`.
+No separate warehouse-admin read path is part of the current Slice 6
+implementation contract, and no FDW surface belongs here.
 
 ## §N Decisions — locked / provisional / deferred
 

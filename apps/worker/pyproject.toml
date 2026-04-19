@@ -10,13 +10,22 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
   "asyncpg==0.31.0",
+  "duckdb==1.4.1",
   "dramatiq[redis]==2.1.0",
+  "lxml==6.0.2",
   "pydantic==2.13.2",
   "pydantic-settings==2.13.1",
 ]
 
 [project.scripts]
 solemd-graph-worker = "app.main:main"
+
+[dependency-groups]
+dev = [
+  "pytest==8.4.2",
+  "pytest-asyncio==1.2.0",
+  "testcontainers==4.13.2",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]

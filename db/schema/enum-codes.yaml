@@ -57,6 +57,36 @@ s2_reference_linkage_status:
   linked: 2
   orphan: 3
 
+pubtator_entity_type:
+  gene: 1
+  disease: 2
+  chemical: 3
+  species: 4
+  mutation: 5
+  cell_line: 6
+
+pubtator_entity_resource:
+  biocxml: 1
+  bioconcepts_tsv: 2
+
+pubtator_relation_type:
+  associate: 1
+  treat: 2
+  negative_correlate: 3
+  cause: 4
+  positive_correlate: 5
+  stimulate: 6
+  inhibit: 7
+  cotreat: 8
+  compare: 9
+  interact: 10
+  prevent: 11
+  drug_interact: 12
+
+pubtator_relation_source:
+  biocxml: 1
+  relation_tsv: 2
+
 text_availability:
   none: 0
   abstract: 1
@@ -68,3 +98,45 @@ graph_run_status:
   failed: 3
   published: 4
   retired: 5
+
+document_source_kind:
+  pubtator_biocxml: 1
+  s2orc_annotation: 2
+  other: 3
+
+section_role:
+  unknown: 0
+  abstract: 1
+  introduction: 2
+  methods: 3
+  results: 4
+  discussion: 5
+  conclusion: 6
+  supplement: 7
+  other: 8
+
+block_kind:
+  narrative_paragraph: 1
+  figure_caption: 2
+  table_caption: 3
+  table_body_text: 4
+  structured_block: 5
+  metadata: 6
+  other: 7
+
+segmentation_source:
+  s2orc_annotation: 1
+  stanza_biomedical: 2
+  syntok: 3
+  deterministic_fallback: 4
+
+evidence_kind:
+  paragraph: 1
+  results_paragraph: 2
+  abstract_conclusion: 3
+  sentence_window: 4
+
+chunk_run_status:
+  started: 1
+  completed: 2
+  failed: 3

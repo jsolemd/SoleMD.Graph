@@ -22,9 +22,36 @@ GRANT INSERT ON TABLE
 TO engine_ingest_write;
 GRANT UPDATE ON TABLE
     solemd.source_releases,
-    solemd.ingest_runs
+    solemd.ingest_runs,
+    solemd.venues,
+    solemd.authors,
+    solemd.papers,
+    solemd.paper_text,
+    solemd.s2_papers_raw,
+    solemd.s2_paper_authors_raw,
+    solemd.s2_paper_references_raw,
+    solemd.s2_paper_assets_raw
 TO engine_ingest_write;
-GRANT SELECT ON TABLE solemd.papers TO engine_ingest_write;
+GRANT DELETE ON TABLE
+    solemd.paper_authors,
+    solemd.s2_papers_raw,
+    solemd.s2_paper_authors_raw,
+    solemd.s2_paper_assets_raw,
+    solemd.s2_paper_references_raw
+TO engine_ingest_write;
+GRANT SELECT ON TABLE
+    solemd.source_releases,
+    solemd.ingest_runs,
+    solemd.venues,
+    solemd.authors,
+    solemd.papers,
+    solemd.paper_text,
+    solemd.paper_authors,
+    solemd.s2_papers_raw,
+    solemd.s2_paper_authors_raw,
+    solemd.s2_paper_references_raw,
+    solemd.s2_paper_assets_raw
+TO engine_ingest_write;
 GRANT SELECT ON ALL TABLES IN SCHEMA solemd TO engine_warehouse_read;
 GRANT SELECT ON ALL TABLES IN SCHEMA pubtator TO engine_warehouse_read;
 

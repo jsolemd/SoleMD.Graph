@@ -122,15 +122,17 @@ states otherwise:
 3. Serve-side substrate
 4. Serve SQL baseline + migrations
 5. Warehouse SQL baseline + migrations
-6. Ingest + chunking
-7. Projection + active pointer
-8. OpenSearch plane
-9. Retrieval cascade
-10. Graph bundles + browser runtime integration
-11. Wiki runtime integration
-12. Observability + quality
-13. Backup + recovery
-14. Auth only when activation is explicitly chosen
+6. Ingest lane
+7. Canonical corpus selection
+8. Chunking / evidence-unit lane
+9. Projection + active pointer
+10. OpenSearch plane
+11. Retrieval cascade
+12. Graph bundles + browser runtime integration
+13. Wiki runtime integration
+14. Observability + quality
+15. Backup + recovery
+16. Auth only when activation is explicitly chosen
 
 ## Implementation checklist
 
@@ -157,7 +159,8 @@ done when the code and docs both reflect reality.
 - [x] Serve migration chain landed under `db/migrations/serve/`
 - [x] Warehouse SQL baseline landed under `db/schema/warehouse/`
 - [x] Warehouse migration chain landed under `db/migrations/warehouse/`
-- [ ] Ingest lane implemented
+- [x] Ingest lane implemented
+- [ ] Canonical corpus selection slice implemented
 - [ ] Chunking / evidence-unit lane implemented
 - [ ] Projection + active pointer implemented
 - [ ] OpenSearch plane implemented
@@ -198,6 +201,7 @@ There is also a working-surface distinction:
 | 05b| Graph bundles — build / export / serve  | `05b-graph-bundles.md`       | locked (microdesign provisional)      |
 | 05c| Browser DuckDB runtime                  | `05c-browser-duckdb-runtime.md` | locked (microdesign provisional)   |
 | 05d| Wiki runtime                            | `05d-wiki-runtime.md`        | locked (microdesign provisional)      |
+| 05e| Canonical corpus selection              | `05e-corpus-selection.md`    | locked (next implementation slice)    |
 | 06 | Async Python stack + pools + migrations | `06-async-stack.md`          | locked (microdesign provisional)      |
 | 07 | OpenSearch serving plane                | `07-opensearch-plane.md`     | locked (microdesign provisional)      |
 | 08 | Retrieval cascade (three-stage)         | `08-retrieval-cascade.md`    | locked (microdesign provisional)      |

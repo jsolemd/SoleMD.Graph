@@ -20,6 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_corpus_domain_status
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_venues_normalized_name
     ON solemd.venues (normalized_name);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_venues_source_venue_id
+    ON solemd.venues (source_venue_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_venues_issn
     ON solemd.venues (issn)
     WHERE issn IS NOT NULL;
@@ -30,6 +32,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_venues_eissn
 CREATE UNIQUE INDEX IF NOT EXISTS uq_authors_orcid
     ON solemd.authors (orcid)
     WHERE orcid IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_authors_source_author_id
+    ON solemd.authors (source_author_id);
 CREATE INDEX IF NOT EXISTS idx_authors_normalized_name
     ON solemd.authors (normalized_name);
 
@@ -80,6 +84,9 @@ CREATE INDEX IF NOT EXISTS idx_s2_papers_raw_pmc_id
 CREATE INDEX IF NOT EXISTS idx_s2_papers_raw_corpus
     ON solemd.s2_papers_raw (corpus_id)
     WHERE corpus_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_s2_papers_raw_source_venue_id
+    ON solemd.s2_papers_raw (source_venue_id)
+    WHERE source_venue_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_s2_paper_authors_raw_source_author
     ON solemd.s2_paper_authors_raw (source_author_id)
@@ -89,5 +96,24 @@ CREATE INDEX IF NOT EXISTS idx_s2_paper_references_raw_linkage
     ON solemd.s2_paper_references_raw (source_release_id, linkage_status, citing_paper_id);
 CREATE INDEX IF NOT EXISTS idx_s2_paper_references_raw_reverse
     ON solemd.s2_paper_references_raw (source_release_id, cited_paper_id, citing_paper_id);
+
+CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_stage_release_pmid
+    ON pubtator.entity_annotations_stage (source_release_id, pmid);
+CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_stage_corpus
+    ON pubtator.entity_annotations_stage (corpus_id)
+    WHERE corpus_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_concept
+    ON pubtator.entity_annotations (corpus_id, concept_id_raw);
+CREATE INDEX IF NOT EXISTS idx_pubtator_entity_annotations_pmid
+    ON pubtator.entity_annotations (pmid, start_offset)
+    WHERE pmid IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_pubtator_relations_stage_release_pmid
+    ON pubtator.relations_stage (source_release_id, pmid);
+CREATE INDEX IF NOT EXISTS idx_pubtator_relations_stage_corpus
+    ON pubtator.relations_stage (corpus_id)
+    WHERE corpus_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pubtator_relations_reverse
+    ON pubtator.relations (corpus_id, object_entity_id, relation_type, subject_entity_id);
 
 RESET ROLE;

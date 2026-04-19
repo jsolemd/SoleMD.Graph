@@ -63,6 +63,19 @@ Eight load-bearing properties:
    for PG, ever. Mocks for OpenSearch / Redis allowed in their own
    plane. (§9)
 
+## Implementation state
+
+The live repo has the worker shell, but not the full actor inventory yet.
+
+- Landed in `apps/worker/app`: `config.py`, `db.py`, `broker.py`, and
+  `main.py`, including the four-pool bootstrap and startup-check path.
+- Not landed yet: the source-specific ingest actor modules, projection
+  actor modules, chunker actor module, or the reusable `app/ingest/`
+  family-loader package described in `05`.
+- For the next Slice 6 follow-on, the implementing agent should extend
+  `apps/worker/app` directly. The `engine/app/...` paths in this doc are
+  historical sketches, not the preferred landing zone.
+
 ## §0 Conventions delta from `00` / `04` / `05`
 
 Inherits every convention from `00 §1`, `02 §0`, `04 §0`, `05 §0`.
@@ -358,7 +371,7 @@ in a shape Pydantic v2 can validate without custom validators. **locked**
 ### 4.4 Directory layout
 
 ```
-engine/app/models/
+apps/worker/app/models/
 ├── warehouse/      corpus.py, citation.py, grounding.py, concept.py,
 │                   ingest.py, pubtator.py — one file per 02 §4 family
 ├── serve/          projection.py (cards, profiles, cluster_cards),
@@ -371,10 +384,10 @@ engine/app/models/
 ```
 
 Co-location rules: one file per **family**, not per table; no
-business logic in `engine/app/models/` (SQL templates and transforms
-live in `engine/app/projection/`, `engine/app/ingest/`); enum models
-are SMALLINT-coded `IntEnum` generated from `db/schema/enum-codes.yaml`
-per `02 §0.10`.
+business logic in `apps/worker/app/models/` (SQL templates and
+transforms live in `apps/worker/app/projection/`,
+`apps/worker/app/ingest/`); enum models are SMALLINT-coded `IntEnum`
+generated from `db/schema/enum-codes.yaml` per `02 §0.10`.
 
 **locked** for the split; **provisional** for per-family file
 partitioning — revisit if any single file passes ~600 lines.
@@ -580,7 +593,7 @@ One process per worker class on the RTX 5090 host:
 
 | Worker (`engine/app/workers/…`) | Pools | Count |
 |---|---|---:|
-| `ingest.py` | `ingest_write` | 1 (one ingest at a time per release; `05 §10.1`) |
+| `ingest.py` | `ingest_write` | 1 (owns the raw-refresh `ingest.start_release` lane for S2 / PT3, one release actor per advisory lock; `05 §4.7`, `05 §10.1`) |
 | `chunker.py` | `ingest_write` | 1 (post-publish evidence-unit assembly actor; `05a §6.2`) |
 | `projection.py` | `warehouse_read`, `serve_read`, `admin` | 1 (advisory lock per family; `04 §9.1`) |
 | `wiki.py` | `admin` | 1 (wiki sync/activation actor; stages and activates `wiki_pages`; `05d §5`) |
@@ -649,6 +662,48 @@ Retry semantics:
 - Archive actor: idempotent (`04 §10.5`); `max_retries=3` (small,
   cheap to retry).
 
+### 6.4A Raw ingest follow-on handoff
+
+The next Slice 6 implementation should land the first real ingest actor
+against the current `apps/worker/app` shell with the shape below:
+
+```python
+@dramatiq.actor(
+    queue_name="ingest",
+    max_retries=2,
+    min_backoff=10_000,
+    max_backoff=600_000,
+    time_limit=6 * 60 * 60 * 1000,
+)
+async def start_release_actor(
+    source_code: str,
+    release_tag: str,
+    force_new_run: bool = False,
+) -> None:
+    await run_release_ingest(
+        source_code=source_code,
+        release_tag=release_tag,
+        force_new_run=force_new_run,
+        ingest_pool=get_pool("ingest_write"),
+    )
+```
+
+Contract details:
+
+- The actor owns one full release lifecycle: plan, raw / stage COPY,
+  canonical promotion, publish / fail / abort finalization.
+- Family loaders for S2 and PubTator live as async helpers under an
+  `app/ingest/` package and run **inside** the actor invocation.
+  Do not fan one release out across multiple concurrently retrying
+  Dramatiq messages until a later slice explicitly solves advisory-lock
+  and ownership coordination for that shape.
+- The actor uses `ingest_write` only. Same-run reads against
+  `solemd.papers`, `solemd.concept_xrefs`, and `solemd.s2_*_raw`
+  happen through the narrow SELECT rights already documented in §7.1.
+- The implementation must stay warehouse-only. It does not write to
+  serve, does not use FDW, and does not rely on the future CREATE
+  surface noted in §7.1.
+
 ### 6.5 Sync vs async actors
 
 Dramatiq permits mixing — sync actors run on the worker thread pool,
@@ -669,6 +724,28 @@ Per `00 §1`, Redis is the broker. Connection-string assembled from
 
 Concrete tuning lives in `09-tuning.md`. **provisional**.
 
+### 6.7 First raw-ingest worker landing
+
+The first production `apps/worker` ingest implementation should keep the
+runtime shape tighter than the eventual full worker fleet:
+
+- `ingest.start_release` runs as one async actor on queue `ingest`.
+- Worker boot for that process uses `pool_names=("ingest_write",)` only.
+- Start with one process and one low-concurrency queue consumer
+  (`dramatiq app.ingest_worker --processes 1 --threads 1 --queues ingest` or the
+  equivalent wrapper). COPY fanout lives inside the actor via bounded asyncpg
+  coroutines; Dramatiq thread count is not the partition-concurrency knob.
+- Duplicate manifest/manual triggers should resolve through typed early exits
+  or actor `throws=` for `IngestAlreadyPublished` and
+  `IngestAlreadyInProgress`, not through retry churn.
+- Do not route the first raw ingest actor through `admin` just to future-proof
+  later UNLOGGED / partition-state work. The role/grant decision for any
+  owner-level CREATE surface remains deferred until that schema slice actually
+  lands.
+- Post-publish chunk/evidence fanout stays a separate queue and actor family.
+  The ingest worker may enqueue it later, but it should not collapse the two
+  lanes into one actor body.
+
 ## §7 Connection strings & secrets
 
 ### 7.1 PG roles
@@ -678,11 +755,17 @@ Per-role users on each cluster, with grants enumerated in
 
 | Role | Cluster | Grants |
 |---|---|---|
-| `engine_ingest_write` | warehouse | INSERT, COPY on `solemd.*` and `pubtator.*` raw + canonical tables; UPDATE on `ingest_runs` / `source_releases`; SELECT on lookup-cache source tables (`papers`, `concept_xrefs`); CREATE on `solemd.*` for UNLOGGED partition state changes (`05 §4.5` SET LOGGED). |
+| `engine_ingest_write` | warehouse | INSERT, COPY on `solemd.*` and `pubtator.*` raw + canonical tables; UPDATE on `ingest_runs` / `source_releases`; SELECT on lookup-cache source tables (`papers`, `concept_xrefs`) **plus the `solemd.s2_*_raw` staging tables used for same-run canonical promotion**; CREATE on `solemd.*` for the future UNLOGGED/partition state changes only when that slice actually lands (`05 §4.5` SET LOGGED). |
 | `engine_warehouse_read` | warehouse | SELECT on `solemd.*` and `pubtator.*`; **no** INSERT / UPDATE / DELETE / CREATE. Default `transaction_read_only = on` belt-and-braces. |
 | `engine_serve_read` | serve | SELECT on `solemd.*` projection + control tables; UPDATE on `solemd.api_projection_runs.*` for the projection worker's pre-flight audits / status counters; **no** DDL. Mapped to `pgbouncer-serve`'s `auth_query` allowlist. |
 | `engine_admin` | serve | All of `engine_serve_read` plus CREATE / ALTER / DROP / COPY on `solemd.*`; UPDATE on `solemd.active_runtime_pointer`; INSERT on `solemd.serving_runs` / `serving_artifacts`. **Never** added to PgBouncer's `auth_query` allowlist (`04 §4.2`). |
 | `warehouse_grounding_reader` | warehouse | SELECT on the FDW-exposed grounding tables only (`03 §3.2`). Used by serve's FDW user-mapping; not opened directly from Python. |
+
+Raw-ingest follow-on note:
+- The next Slice 6 worker implementation must fit inside the
+  `engine_ingest_write` rights that exist today. It should not depend on
+  the future CREATE surface in that row; that decision remains deferred
+  until the later UNLOGGED / partition-state slice actually lands.
 
 Follow-up note:
 - local warehouse role-password sync currently derives from
@@ -1043,6 +1126,9 @@ Current local runtime note:
 - That is intentional for the current ingest/build worker shape. If later
   slices split serving-side async tasks away from warehouse-bound ingest/build
   work, warehouse readiness should become role-conditional rather than global.
+- The first raw-release ingest actor should keep this contract literal:
+  `ingest_write` only, one release actor at a time, bounded internal async
+  COPY fanout, and no hidden second scheduler inside the API path.
 
 ## Read patterns
 

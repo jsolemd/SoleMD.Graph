@@ -5,7 +5,7 @@ from dramatiq.brokers.redis import RedisBroker
 from dramatiq.middleware import AsyncIO, Retries, ShutdownNotifications, TimeLimit
 
 from app.config import Settings, settings
-from app.db import WorkerPoolBootstrap
+from app.db import PoolName, WorkerPoolBootstrap
 
 
 _broker: dramatiq.Broker | None = None
@@ -41,7 +41,11 @@ def configure_retries(
     )
 
 
-def create_broker(worker_settings: Settings | None = None) -> dramatiq.Broker:
+def create_broker(
+    worker_settings: Settings | None = None,
+    *,
+    pool_names: tuple[PoolName, ...] | None = None,
+) -> dramatiq.Broker:
     runtime_settings = worker_settings or settings
     broker = RedisBroker(
         url=runtime_settings.redis_url,
@@ -56,13 +60,20 @@ def create_broker(worker_settings: Settings | None = None) -> dramatiq.Broker:
     )
     ensure_middleware(broker, TimeLimit())
     ensure_middleware(broker, ShutdownNotifications())
-    ensure_middleware(broker, WorkerPoolBootstrap(runtime_settings))
+    ensure_middleware(
+        broker,
+        WorkerPoolBootstrap(runtime_settings, pool_names=pool_names),
+    )
     return broker
 
 
-def configure_broker(worker_settings: Settings | None = None) -> dramatiq.Broker:
+def configure_broker(
+    worker_settings: Settings | None = None,
+    *,
+    pool_names: tuple[PoolName, ...] | None = None,
+) -> dramatiq.Broker:
     global _broker
     if _broker is None:
-        _broker = create_broker(worker_settings)
+        _broker = create_broker(worker_settings, pool_names=pool_names)
         dramatiq.set_broker(_broker)
     return _broker

@@ -389,41 +389,123 @@ As of this handoff:
   to the graph / relatedness lane.
 - The implementation path is now wave-based rather than silently assuming full
   corpus scale on day one.
+- The first production S2 / PubTator raw-ingest worker lane is now landed in
+  `apps/worker/app`, including release-level orchestration, source-family
+  loaders, and warehouse-local promotion.
+- The next missing runtime boundary is not raw ingest. It is the explicit
+  selected-corpus activation layer that decides which papers move from
+  broad raw-release coverage into the SoleMD canonical paper universe that
+  chunking, graph embedding, and warm retrieval should consume.
 - `13` remains intentionally activation-gated and should stay that way.
 
-The largest remaining parity work is no longer more speculative writing.
-It is landing the ingested amendment ledger into code, migrations, and
-runtime setup.
+The largest remaining parity work is no longer another raw-ingest rewrite.
+It is locking the selected-corpus contract that downstream chunking,
+graph, and retrieval slices will read.
+
+## 7.1 Slice 6 follow-on handoff — canonical corpus selection
+
+Status on 2026-04-18: the first production raw-refresh worker lane is now
+landed in `apps/worker/app`. The release-level actor
+`ingest.start_release`, the source adapters for Semantic Scholar and
+PubTator, and the operator CLI entrypoints in `app.main`
+(`enqueue-release`, `dispatch-manifest`) are in place. The next follow-on is
+the **selected-corpus activation** slice documented in `05e`, not another
+raw-ingest rewrite.
+
+The next agent should implement the **canonical corpus selection layer**
+that sits between raw ingest and downstream chunking / graph / retrieval
+work. The target is a refresh-safe, modular worker-owned surface in
+`apps/worker` that can deterministically reconstruct the selected SoleMD
+paper universe from raw release facts plus curated editorial assets.
+
+Current starting point:
+
+- The worker shell plus the first raw-refresh implementation now exist in
+  `apps/worker/app`.
+- Warehouse raw / chunking schema work now exists, and the S2 / PubTator raw
+  loaders are landed.
+- `solemd.corpus.admission_reason` and `solemd.corpus.domain_status` already
+  exist in `02` and are the right durable selection ledger.
+- Legacy inventory under `legacy/pre-cutover-2026-04-18:engine/app/corpus/`
+  shows the prior selection logic: venue/journal normalization, curated
+  vocab aliases, PubTator evidence, and promotion from `candidate` to
+  `mapped`.
+
+Scope for that agent:
+
+- Extend `apps/worker/app`, using the existing Dramatiq broker and pool
+  bootstrap.
+- Add a worker-owned selection entrypoint that operates after raw release
+  ingest and before chunking / graph / warm retrieval.
+- Reconstruct or refresh `solemd.corpus` candidate rows from raw S2/PT3
+  evidence using release-local and curated assets rather than live APIs.
+- Promote candidates to `domain_status = 'mapped'` using reproducible
+  curated rules and corroborating gates.
+- Keep mapped-only downstream fanout explicit in logs and metrics so later
+  chunking and embedding slices can trust the scope boundary.
+
+Non-goals for that slice:
+
+- No serve-cluster writes.
+- No FDW read path.
+- No chunk/evidence implementation inside the selector itself.
+- No graph-embedding backfill inside the selector itself.
+- No full-200 M+ S2 canonicalization by accident.
+
+Implementation sequence for that agent:
+
+1. Materialize the selected-corpus contract from `05e` in worker-owned code:
+   broad raw coverage, candidate admission, mapped promotion.
+2. Reuse and modernize the legacy selection ideas:
+   venue normalization, curated journal inventory, curated vocab aliases,
+   PubTator entity/relation corroboration.
+3. Keep the selection phase warehouse-local and set-based; do not gate it on
+   S2 batch enrichment or OpenAlex.
+4. Add integration coverage proving deterministic resume and reproducible
+   `candidate -> mapped` outcomes for a sample release.
+5. Leave chunking, graph embedding, and warm retrieval as downstream lanes
+   operating on the selected corpus.
+
+Definition of done:
+
+- Reconstructing the same release/rule set produces the same mapped corpus.
+- The selected corpus is queryable by one durable warehouse predicate
+  (`c.domain_status = 'mapped'`).
+- Chunking, graph-embedding, and warm-indexing agents all inherit the same
+  scope boundary instead of each inventing one.
+- The slice leaves a clean enqueue point for later chunker / evidence work,
+  but does not block on that later lane.
 
 ## 8. Recommended implementation order
 
 The cleanest order from here is:
 
-1. **Preflight contract landing**
-   Land the locked decisions in `12`, `14`, `15`, `06`, `07`, `08`, and `09`
-   so the implementation path no longer depends on unresolved migration,
-   pooling, versioning, repo-boundary, or OpenSearch semantics.
-2. **Repository-shape cutover**
-   Create the locked roots (`apps`, `packages`, `db`, `infra`, `scripts`),
-   move the current web app under `apps/web`, and split `engine/` by runtime
-   role into `apps/api`, `apps/worker`, and `packages/backend-core` before
-   mixing that reshaping with deeper runtime changes.
-3. **Fresh baseline reconciliation**
-   Fold the schema-bearing `12 §9` rows that define today's intended initial
-   surfaces into the initial warehouse / serve SQL baselines before generating
-   the first new migration set.
-4. **Warehouse-first implementation**
-   Start at the physical/runtime substrate, then warehouse schema, then ingest,
-   then chunk/evidence-unit assembly.
-5. **Serve and retrieval implementation**
+1. **Canonical corpus selection / mapped-corpus activation**
+   Land the explicit selector that separates broad raw release coverage from the
+   selected SoleMD paper universe. This slice owns `candidate -> mapped`
+   promotion and the downstream scope contract.
+2. **Grounding spine and chunk/evidence activation**
+   Once the selected corpus boundary is real, land the chunker actor body,
+   evidence-unit writer, and post-publish fanout to the downstream retrieval
+   lane.
+3. **Graph-embedding wave for `paper_embeddings_graph`**
+   Land the dedicated graph-embedding slice after corpus selection has
+   established stable mapped-paper ownership. This slice owns ingesting upstream
+   `embeddings-specter_v2` shards when releases carry them, or local SPECTER2
+   generation when they do not, with explicit provenance on
+   `paper_embeddings_graph`. If the chosen graph backbone is the full
+   approximately 14M-paper cohort, that full backfill remains an explicit wave
+   in this slice rather than an implicit requirement hidden inside graph-bundle
+   publish.
+4. **Serve and retrieval implementation**
    Land serve schema + projection/cutover, then OpenSearch plane, then the
    request-time cascade.
-6. **Analyzer / bundle / backup hardening**
+5. **Analyzer / bundle / backup hardening**
    Implement graph bundles, observability, quality analysis, and backup only
    after the runtime identities and cutover surfaces are real. The graph lane
    explicitly includes the chosen source for `paper_embeddings_graph` in the
    current rollout wave.
-7. **Sample build**
+6. **Sample build**
    Use the sample-build harness to promote still-provisional tuning values. Do
    not lock measurement-owned values before this step.
 
@@ -478,18 +560,22 @@ drift.
 
 The next unit of work should be named plainly:
 
-**Repository-shape cutover, amendment-ingest, and parity reconciliation**
+**Canonical corpus selection on the existing `apps/worker` shell**
 
 That pass should:
 
-- land the locked repository roots and runtime names from `15`
-- move the current code into the new ownership boundaries before deep feature
-  work continues
-- treat `12 §9` as the canonical amendment ledger
-- reconcile `02`, `03`, `06`, `10`, and `12` against the accumulated decided
-  rows and the SQL-first schema posture
-- leave sample-build-gated values provisional
-- leave `13` deferred
+- land the worker-owned selector that turns broad raw release coverage into the
+  selected SoleMD canonical corpus
+- reuse and modernize the prior venue/vocab/PubTator-driven selection logic
+  rather than rediscovering the corpus boundary from scratch
+- keep selection warehouse-local and reproducible from raw releases plus
+  curated editorial assets; no live API calls as admission gates
+- make `solemd.corpus.domain_status = 'mapped'` the explicit downstream scope
+  contract for chunking, graph embeddings, and warm retrieval
+- leave chunking, graph embedding, and warm indexing as downstream waves rather
+  than entangling them into the selector
+- keep full-200 M+ S2 canonicalization out of scope; the historical ~14 M
+  backbone is an explicit selected-corpus wave, not an automatic import rule
 
 No additional speculative subsystem docs are needed before that work begins.
 

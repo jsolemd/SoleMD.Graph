@@ -376,10 +376,14 @@ and referenced by `manifest_uri` on `ingest_runs`.
 
 #### `solemd.s2_paper_references_raw`
 
-- `source_release_id` INTEGER, `citing_paper_id` TEXT, `cited_paper_id`
-  TEXT, `linkage_status` SMALLINT (`pending` | `linked` | `orphan`),
+- `source_release_id` INTEGER, `citing_paper_id` TEXT,
+  `reference_checksum` TEXT, `cited_paper_id` TEXT nullable,
+  `linkage_status` SMALLINT (`pending` | `linked` | `orphan`),
   `is_influential` BOOLEAN, `intent_raw` TEXT.
-- PK `(source_release_id, citing_paper_id, cited_paper_id)`.
+- PK `(source_release_id, reference_checksum)`.
+- `reference_checksum` is a release-scoped stable checksum over the upstream
+  citation row identity/payload so raw rows can remain refresh-safe even when
+  S2 omits `citedcorpusid`.
 - Btree `(source_release_id, linkage_status, citing_paper_id)`.
 - Reverse btree `(source_release_id, cited_paper_id, citing_paper_id)`.
 

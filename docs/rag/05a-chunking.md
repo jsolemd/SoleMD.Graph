@@ -40,6 +40,45 @@ is one new write surface (`paper_evidence_units`), one new YAML registry
 (`chunk-policies.yaml`), and one canonical worker placement (Dramatiq
 `chunker.assemble_for_paper`).
 
+Selection boundary clarification: where this doc says "full corpus" or
+"corpus-wide" below, it means the full **selected canonical corpus** defined by
+`05e-corpus-selection.md`, not the full raw Semantic Scholar universe. The
+chunker never treats all raw-release papers as in-scope by default.
+
+## Implementation state
+
+The current repo now has the slice's first concrete warehouse/runtime
+landing, but not the actor/writer code yet.
+
+- Landed in code and SQL: `paper_documents`, `paper_sections`,
+  `paper_blocks`, `paper_sentences`, `paper_chunks`,
+  `paper_chunk_members`, `paper_evidence_units`, `chunk_runs`, and
+  `chunk_assembly_errors`, plus the companion warehouse migration.
+- Landed in the enum registry: `evidence_kind` and
+  `chunk_run_status = started|completed|failed`.
+- Landed in the worker shell: named pool/bootstrap support for
+  `ingest_write`, `warehouse_read`, `serve_read`, and `admin`.
+- Explicit decision: canonical promotion remains on the
+  `engine_ingest_write` path; the role now gets `SELECT` on the
+  `solemd.s2_*_raw` staging tables instead of routing that work
+  through warehouse admin.
+- Explicit decision: `paper_evidence_units.evidence_key` remains a
+  deterministic writer-owned UUIDv5 with no database default, and the
+  table remains unpartitioned for now because the initial fully
+  grounded hot cohort is expected to stay in the low hundreds of
+  papers rather than millions.
+- Current warehouse state: `paper_documents`, `paper_sections`,
+  `paper_blocks`, `paper_sentences`, `paper_chunks`,
+  `paper_chunk_members`, and `paper_evidence_units` remain empty in the
+  steady-state path until the selected-corpus slice (`05e`) lands and
+  chunking starts consuming mapped papers from the canonical document spine.
+- Still owed: the `chunker.assemble_for_paper` actor body, the
+  `paper_evidence_units` writer, the write-contract / Pydantic model
+  surfaces, `chunk-policies.yaml` generation, metrics, and the
+  broader mention / concept / relation grounding families. Raw-source
+  ingest is landed; the selected-corpus slice (`05e`) is now the
+  prerequisite for steady-state chunking, not a parallel optional lane.
+
 Five load-bearing properties:
 
 1. **Sentence segmentation is the canonical spine, and the existing
@@ -73,10 +112,11 @@ Five load-bearing properties:
    publishes `ingest_runs`. The orchestrator-inline `--backfill-chunks`
    mode that exists today (`orchestrator.py:1376`) becomes the dev /
    bench path.
-5. **All chunkable papers get canonical derivation; only hot-tier
+5. **All chunkable papers in the selected canonical corpus get canonical
+   derivation; only hot-tier
    papers get indexed into the evidence lane.** `paper_chunks` /
    `paper_chunk_members` / `paper_evidence_units` are canonical-derived
-   per `02 §0` and populated for every paper with chunkable text
+   per `02 §0` and populated for every mapped paper with chunkable text
    surfaces. Abstract-only or otherwise thin papers may yield a
    minimal evidence surface or no chunk rows at all. Hot / warm tiering
    is owned by `serving_members` (`07 §3.5`) and is purely an
@@ -95,7 +135,7 @@ docs.
 | **Chunker inventory is salvage material, not authority** | The 3 000-line surface enumerated in §2 is the reusable inventory for the rebuild. Refactors that change algorithm shape still require a §9 amendment in `12-migrations.md` plus an explicit revision of this doc, but current file:line references are inventory breadcrumbs, not a "legacy canon" override of this spec. |
 | **One new write path** | `paper_evidence_units` (`02 §883`) is the only new write surface introduced by this lane. Owned by `evidence_unit_writer.py` (§5) on the `ingest_write` pool (`06 §2.1`). |
 | **Chunking is a per-paper unit** | Each `chunker.assemble_for_paper` actor invocation operates on exactly one `(corpus_id, chunk_version_key)` pair. No batch-spanning state. (§6) |
-| **Re-chunk by minting new `chunk_version_key`** | A policy edit never mutates existing rows. It mints a new `chunk_version_key`, runs the actor across the full corpus under the new key, then atomically flips `paper_chunk_versions.is_active` (`02 §851` partial unique index does the work). Old rows survive for rollback. (§7) |
+| **Re-chunk by minting new `chunk_version_key`** | A policy edit never mutates existing rows. It mints a new `chunk_version_key`, runs the actor across the active mapped corpus under the new key, then atomically flips `paper_chunk_versions.is_active` (`02 §851` partial unique index does the work). Old rows survive for rollback. (§7) |
 
 ## §1 Identity / boundary
 
@@ -118,7 +158,7 @@ SOLEMD_NS: uuid.UUID = uuid.UUID("5f0e6d9c-c1c8-5dfb-9a0a-3a0a3a0a3a0a")
 ```
 
 This is the same byte sequence already pinned in `05 §505`. **locked**.
-Recovering from a wrong namespace requires a corpus-wide re-derivation
+Recovering from a wrong namespace requires a selected-corpus-wide re-derivation
 of every `paper_evidence_units` row and a full `evidence_index`
 rebuild — non-trivial but bounded. The constant is exported once from
 `evidence_unit_writer.py` and imported by every caller; no other
@@ -661,7 +701,7 @@ exact column set.
 
 `orchestrator.py:1375-1603`'s `--seed-chunk-version` /
 `--backfill-chunks` flags continue to work unchanged. They become the
-**dev / benchmark path**: a developer runs the full corpus chunker
+**dev / benchmark path**: a developer runs the full selected-corpus chunker
 inline on their box for benchmarking against a sample release without
 involving Dramatiq / Redis / pg_cron. Documented; de-prioritized
 relative to the actor for steady-state.
@@ -689,7 +729,7 @@ keeping the existing `default-structural-v1` row.
    — new CLI. Looks up the registry entry, finds the matching
    `paper_chunk_versions` row, **leaves `is_active=false`** for now (it
    is not yet built).
-3. Operator enqueues a corpus-wide re-chunk: a Dramatiq dispatcher
+3. Operator enqueues a selected-corpus re-chunk: a Dramatiq dispatcher
    sends `assemble_for_paper_actor` per `corpus_id` against the new
    `chunk_version_key`. Writes new `paper_chunks` /
    `paper_chunk_members` / `paper_evidence_units` rows. Old rows
@@ -729,10 +769,10 @@ Old rows are still present, the cohort manifest re-issues the previous
 
 ## §8 Hot-tier vs warm-tier interaction
 
-This lane writes canonical-derived rows for the full chunkable corpus.
+This lane writes canonical-derived rows for the full selected chunkable corpus.
 Tier selection lives elsewhere.
 
-### 8.1 All chunkable papers derive canonical rows
+### 8.1 All selected chunkable papers derive canonical rows
 
 `paper_chunks`, `paper_chunk_members`, and `paper_evidence_units` are
 canonical-derived per `02 §0` and populated for every paper with
@@ -862,7 +902,7 @@ Beyond `02 §5`:
 | Idempotency: `INSERT … ON CONFLICT (evidence_key) DO NOTHING` | UUIDv5 is content-deterministic; conflict means same content already chunked. No UPDATE path. |
 | Canonical worker placement = Dramatiq actor `chunker.assemble_for_paper(corpus_id, chunk_version_key, ingest_run_id)` | Per-paper unit; one actor process; `ingest_write` pool; trigger is ingest-side dispatch on `ingest_runs.status='published'` within the same warehouse-up window. |
 | Re-chunk lifecycle = mint new `chunk_version_key`, build, atomic-flip via `02 §851` partial unique index | No row mutation; old rows survive for rollback. |
-| All chunkable papers derive canonical sentence/chunk/evidence rows; only hot-tier papers are indexed in `evidence_index` | Tier is owned by `serving_members` (`07 §3.5`); not a chunker concern. |
+| All mapped papers with chunkable text derive canonical sentence/chunk/evidence rows; only hot-tier papers are indexed in `evidence_index` | Tier is owned by `serving_members` (`07 §3.5`); not a chunker concern. |
 
 ### Provisional (revisit after sample build)
 
@@ -892,26 +932,16 @@ Beyond `02 §5`:
 
 Forward-tracked; none block subsequent docs:
 
-- **`evidence_kind` enum landing.** `02 §883` defines the four-value
-  enum (`paragraph` | `results_paragraph` | `abstract_conclusion` |
-  `sentence_window`) but `12 §952` row 14 enumerates only the initial
-  enum population without naming `evidence_kind`. This doc adds it as
-  an upstream amendment (below); reviewer should confirm the four
-  enum values land in `enum-codes.yaml` row N+1 in `12 §9`.
-- **Chunker process count in `06 §6.3` table.** That table enumerates
-  `ingest.py` / `projection.py` / `rag.py` / `maintenance.py` only.
-  This doc requires adding `chunker.py` (count: 1) on the
-  `ingest_write` pool. Listed as upstream amendment.
-- **`05 §1046` deferred-decision row redirection.** Today reads "Today
-  owned by separate post-ingest worker; fold in at phase 4.5 if its
-  lag becomes a publish-blocker." After this doc lands, the "separate
-  post-ingest worker" is a named, locked entity (the §6 actor); the
-  row should redirect to `05a §6` rather than be open-ended.
-- **Where does `chunk_runs` ledger live?** §6.3 references a sidecar
-  ledger to track which `ingest_run_id` × `chunk_version_key` pairs
-  have completed. Today this is implicit (presence of
-  `paper_evidence_units` rows for that key). A small explicit ledger
-  on warehouse simplifies the pg_cron query; not yet specified.
+- **Actor / writer implementation still absent in-tree.** The SQL
+  landing is now real, but `chunker.assemble_for_paper`,
+  `extend_write_batch_with_evidence_units`, and their boundary models
+  are still future code work.
+- **`chunk-policies.yaml` generator and CI parity check are still doc-only.**
+  The registry file and its generator/check command remain to be
+  implemented.
+- **Mention / concept / relation grounding families are still deferred.**
+  This batch only landed the chunking spine and control tables, not
+  the wider grounding packet-assembly families from `02` / `05`.
 
 ## Upstream amendments applied in this batch
 

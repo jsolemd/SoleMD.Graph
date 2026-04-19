@@ -1,7 +1,7 @@
 # Warehouse Baseline Scope
 
-This directory defines the structural warehouse-cluster baseline for the first
-warehouse schema slice.
+This directory defines the structural warehouse-cluster baseline plus the
+extension-safe ingest/chunking foundation for the next warehouse schema slice.
 
 ## In scope for this slice
 
@@ -24,18 +24,51 @@ warehouse schema slice.
   - `solemd.s2_paper_authors_raw`
   - `solemd.s2_paper_references_raw`
   - `solemd.s2_paper_assets_raw`
+- PubTator stage/canonical refresh tables required by the first raw-ingest lane:
+  - `pubtator.entity_annotations_stage`
+  - `pubtator.entity_annotations`
+  - `pubtator.relations_stage`
+  - `pubtator.relations`
+- chunking/grounding spine tables that stay on stock PostgreSQL types:
+  - `solemd.paper_documents`
+  - `solemd.paper_sections`
+  - `solemd.paper_blocks`
+  - `solemd.paper_sentences`
+  - `solemd.paper_chunks`
+  - `solemd.paper_chunk_members`
+  - `solemd.paper_evidence_units`
+  - `solemd.chunk_runs`
+  - `solemd.chunk_assembly_errors`
+- grant updates that keep canonical promotion and chunk assembly on the
+  `engine_ingest_write` role instead of routing them through warehouse admin
+- deterministic `paper_evidence_units.evidence_key` as a writer-owned UUIDv5
+  with no database default, and an intentionally unpartitioned
+  `paper_evidence_units` table while the fully grounded hot cohort remains
+  small (roughly hundreds of papers, not millions)
+- chunking hardening on the same stock-PG surface:
+  - DB-level CHECK constraints on the new SMALLINT enum columns
+  - parent-column LZ4 compression for partitioned text tables
+  - explicit retry-count bound on `chunk_assembly_errors`
 
-## Intentionally deferred
+## Still intentionally deferred
 
-- partitioned fact families (`paper_citations`, `paper_concepts`,
-  `paper_relations`, `paper_blocks`, `paper_sentences`, mention tables, and
-  related partition children)
-- PubTator and UMLS physical table inventory
-- grounding/packet-assembly tables beyond `paper_chunk_versions`
-- graph bundle artifact inventory and warehouse-local embedding tables
+- citation, concept, and relation fact families beyond the chunking spine
+- broader PubTator mention-alignment families and UMLS physical table inventory
+  beyond the current first-lane stage/canonical tables
+- mention tables and broader grounding packet-assembly families outside the
+  chunking path
 - scheduler wiring and any runtime jobs that depend on these tables
+- graph bundle artifact inventory and warehouse-local embedding tables
 - non-stock extensions (`vector`, `hypopg`, `pg_cron`, `pg_partman`) that
   require the warehouse image/config slice before first apply
+- repartitioning `paper_evidence_units`; revisit only when the fully grounded
+  evidence path materially expands beyond the initial hot cohort
+
+## Tradeoffs kept explicit
+
+- `paper_blocks.section_ordinal` and the related sentence/block coordinates do
+  not carry the heavier cross-table FKs in this slice. That remains an ingest /
+  chunker consistency concern so bulk COPY paths stay simple.
 
 ## Apply path note
 
