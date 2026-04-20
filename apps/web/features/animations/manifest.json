@@ -74,7 +74,7 @@
   {
     "name": "smoke-text-reveal",
     "format": "framer",
-    "path": "_smoke/text-reveal/TextReveal.tsx",
+    "path": "text-reveal/TextReveal.tsx",
     "entity": "smoke",
     "caption": "D13 — Framer Motion stagger text reveal",
     "mounts": ["wiki"]

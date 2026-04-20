@@ -6,16 +6,14 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MutableRefObject,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useViewportSize } from "@mantine/hooks";
 import { motion, useReducedMotion } from "framer-motion";
 import type { GraphBundle } from "@solemd/graph";
-import { MetaPill } from "@/features/graph/components/panels/PanelShell/MetaPill";
-import { OverlayCard } from "@/features/graph/components/panels/PanelShell/OverlaySurface";
 import {
   type ChromeSurfaceMode,
-  panelSurfaceStyle,
 } from "@/features/graph/components/panels/PanelShell/panel-styles";
 import {
   AmbientFieldConnectionOverlay,
@@ -31,29 +29,39 @@ import { useGraphWarmup } from "@/features/graph/hooks/use-graph-warmup";
 import type { PanelEdgeTocEntry } from "@/features/wiki/components/PanelEdgeToc";
 import { ViewportTocRail } from "@/features/wiki/components/ViewportTocRail";
 import { APP_CHROME_PX } from "@/lib/density";
-import { smooth } from "@/lib/motion";
 import { FieldCanvas } from "../../renderer/FieldCanvas";
 import type { BlobController } from "../../controller/BlobController";
+import type { FieldController } from "../../controller/FieldController";
 import { fieldLoopClock } from "../../renderer/field-loop-clock";
 import { AmbientFieldHotspotPool } from "./AmbientFieldHotspotPool";
 import {
-  prewarmAmbientFieldPointSources,
-} from "../../asset/point-source-registry";
-import {
   createAmbientFieldSceneState,
   type AmbientFieldSceneState,
+  type AmbientFieldStageItemId,
 } from "../../scene/visual-presets";
-import { bindAmbientFieldControllers } from "../../scroll/ambient-field-scroll-driver";
+import {
+  FixedStageManagerProvider,
+  useFixedStageManager,
+} from "../../stage/FixedStageManager";
 import { AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT } from "../../ambient-field-breakpoints";
-import { ambientFieldLandingSections } from "./ambient-field-landing-content";
+import {
+  ambientFieldLandingSections,
+  FIELD_SECTION_MANIFEST,
+} from "./ambient-field-landing-content";
 import { ambientFieldBlobHotspots } from "./ambient-field-hotspot-overlay";
+import { AmbientFieldClientsSection } from "./AmbientFieldClientsSection";
 import { AmbientFieldCtaSection } from "./AmbientFieldCtaSection";
+import { AmbientFieldEventsSection } from "./AmbientFieldEventsSection";
 import { AmbientFieldGraphWarmupAction } from "./AmbientFieldGraphWarmupAction";
 import { AmbientFieldGraphSection } from "./AmbientFieldGraphSection";
 import { AmbientFieldHeroSection } from "./AmbientFieldHeroSection";
+import { AmbientFieldMoveNewSection } from "./AmbientFieldMoveNewSection";
 import { AmbientFieldScrollCue } from "./AmbientFieldScrollCue";
 import { AmbientFieldStoryChapter } from "./AmbientFieldStoryChapter";
-import { ambientFieldStoryOneBeats } from "./ambient-field-landing-content";
+import {
+  ambientFieldStoryOneBeats,
+  ambientFieldStoryTwoBeats,
+} from "./ambient-field-landing-content";
 
 const rootShellStyle: CSSProperties = {
   backgroundColor: "var(--graph-bg)",
@@ -78,18 +86,27 @@ function useLandingGraphReadyDebugOverride(): boolean {
   return value === "1" || value === "true" || value === "ready";
 }
 
-function AmbientFieldLandingShell({
+function getLandingSection(sectionId: string) {
+  const section = ambientFieldLandingSections.find(
+    (candidate) => candidate.id === sectionId,
+  );
+  if (!section) {
+    throw new Error(`Missing ambient-field landing section "${sectionId}"`);
+  }
+  return section;
+}
+
+function AmbientFieldLandingShellContent({
   graphReady,
-  shellVariant,
+  isCompactFieldViewport,
+  sceneStateRef,
 }: {
   graphReady: boolean;
-  shellVariant: ShellVariant;
+  isCompactFieldViewport: boolean;
+  sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
 }) {
+  const { ready: stageReady, registerController } = useFixedStageManager();
   const router = useRouter();
-  const reducedMotion = useReducedMotion();
-  const { width: viewportWidth } = useViewportSize();
-  const rootRef = useRef<HTMLDivElement>(null);
-  const heroRef = useRef<HTMLDivElement>(null);
   const storyTwoRef = useRef<HTMLElement>(null);
   const connectionOverlayRef =
     useRef<AmbientFieldConnectionOverlayHandle>(null);
@@ -98,52 +115,11 @@ function AmbientFieldLandingShell({
   const blobHotspotRefsRef = useRef<Array<HTMLDivElement | null>>([]);
   const blobHotspotCardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [blobControllerReady, setBlobControllerReady] = useState(false);
-  const sceneStateRef = useRef<AmbientFieldSceneState>(
-    createAmbientFieldSceneState(),
-  );
   const [chromeSurfaceMode, setChromeSurfaceMode] =
     useState<ChromeSurfaceMode>("flush");
-  const isCompactFieldViewport =
-    viewportWidth > 0
-      ? viewportWidth < AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT
-      : shellVariant === "mobile";
   const sectionNavScrollOffset = isCompactFieldViewport
     ? 24
     : APP_CHROME_PX.panelTop + 76;
-
-  useEffect(() => {
-    sceneStateRef.current.motionEnabled = !reducedMotion;
-  }, [reducedMotion]);
-
-  useEffect(() => {
-    prewarmAmbientFieldPointSources({
-      densityScale: 1,
-      isMobile: isCompactFieldViewport,
-      ids: ["blob"],
-    });
-  }, [isCompactFieldViewport]);
-
-  useEffect(() => {
-    if (!blobControllerReady) return undefined;
-    const root = rootRef.current;
-    const hero = heroRef.current;
-    const blobAnchor = root?.querySelector<HTMLElement>("#section-story-1");
-    const blobEndAnchor = root?.querySelector<HTMLElement>("#section-story-2");
-    const blob = blobControllerRef.current;
-    if (!root || !hero || !blobAnchor || !blobEndAnchor || !blob) {
-      return undefined;
-    }
-
-    const dispose = bindAmbientFieldControllers({
-      anchors: { blob: blobAnchor, blobEnd: blobEndAnchor },
-      controllers: { blob },
-      hero,
-      reducedMotion: !!reducedMotion,
-      sceneStateRef,
-    });
-
-    return dispose;
-  }, [blobControllerReady, reducedMotion]);
 
   useEffect(() => {
     function syncChromeSurfaceMode() {
@@ -195,8 +171,13 @@ function AmbientFieldLandingShell({
     return disposer;
   }, []);
 
-  function handleBlobControllerReady(controller: BlobController) {
-    blobControllerRef.current = controller;
+  function handleControllerReady(
+    id: AmbientFieldStageItemId,
+    controller: FieldController,
+  ) {
+    registerController(id, controller);
+    if (id !== "blob") return;
+    blobControllerRef.current = controller as BlobController;
     setBlobControllerReady(true);
   }
 
@@ -226,11 +207,14 @@ function AmbientFieldLandingShell({
     [],
   );
 
-  const heroSection = ambientFieldLandingSections[0]!;
-  const storyOneSection = ambientFieldLandingSections[1]!;
-  const graphSection = ambientFieldLandingSections[2]!;
-  const storyTwoSection = ambientFieldLandingSections[3]!;
-  const ctaSection = ambientFieldLandingSections[4]!;
+  const heroSection = getLandingSection("section-welcome");
+  const clientsSection = getLandingSection("section-clients");
+  const storyOneSection = getLandingSection("section-story-1");
+  const graphSection = getLandingSection("section-graph");
+  const storyTwoSection = getLandingSection("section-story-2");
+  const eventsSection = getLandingSection("section-events");
+  const moveNewSection = getLandingSection("section-move-new");
+  const ctaSection = getLandingSection("section-cta");
 
   function scrollToSection(sectionId: string) {
     const section = document.getElementById(sectionId);
@@ -245,7 +229,6 @@ function AmbientFieldLandingShell({
 
   return (
     <div
-      ref={rootRef}
       data-panel-shell
       className="relative"
       style={rootShellStyle}
@@ -253,8 +236,8 @@ function AmbientFieldLandingShell({
       <FieldCanvas
         className="fixed inset-0"
         sceneStateRef={sceneStateRef}
-        reducedMotion={!!reducedMotion}
-        onBlobControllerReady={handleBlobControllerReady}
+        stageReady={stageReady}
+        onControllerReady={handleControllerReady}
       />
 
       <div
@@ -281,6 +264,10 @@ function AmbientFieldLandingShell({
           renderCard={(index) => {
             const hotspot = ambientFieldBlobHotspots[index];
             if (!hotspot) return null;
+            if (!hotspot.title && hotspot.badges.length === 0) return null;
+            const hotspotLabel = Array.from(
+              new Set(["Selected", ...hotspot.badges]),
+            ).join(" · ");
             return (
               <div
                 className="ambient-field-hotspot-card-inner w-[198px] max-w-[34vw]"
@@ -289,24 +276,33 @@ function AmbientFieldLandingShell({
                   marginTop: hotspot.cardTop ?? "-18px",
                 }}
               >
-                <OverlayCard
-                  className="px-4 py-4"
+                <div
+                  className="space-y-2 px-2 py-2 text-left"
                   style={{
-                    ...panelSurfaceStyle,
-                    border:
-                      "1px solid color-mix(in srgb, var(--graph-panel-border) 76%, transparent)",
+                    color: "var(--graph-panel-text)",
                   }}
                 >
-                  <div className="flex flex-wrap gap-2">
-                    <MetaPill mono>Selected</MetaPill>
-                    {hotspot.badges.map((badge) => (
-                      <MetaPill key={badge}>{badge}</MetaPill>
-                    ))}
-                  </div>
-                  <p className="mt-3 text-[13px] font-medium leading-5">
+                  <p
+                    className="text-[10px] uppercase tracking-[0.18em]"
+                    style={{
+                      color:
+                        "color-mix(in srgb, var(--graph-panel-text-dim) 88%, transparent)",
+                      textShadow:
+                        "0 1px 16px color-mix(in srgb, var(--graph-bg) 74%, transparent)",
+                    }}
+                  >
+                    {hotspotLabel}
+                  </p>
+                  <p
+                    className="text-[13px] font-medium leading-5"
+                    style={{
+                      textShadow:
+                        "0 1px 20px color-mix(in srgb, var(--graph-bg) 82%, transparent)",
+                    }}
+                  >
                     {hotspot.title}
                   </p>
-                </OverlayCard>
+                </div>
               </div>
             );
           }}
@@ -341,12 +337,12 @@ function AmbientFieldLandingShell({
       <AmbientFieldScrollCue visible={chromeSurfaceMode === "flush"} />
 
       <main className="relative z-10">
-        <div ref={heroRef}>
-          <AmbientFieldHeroSection
-            onExploreRuntime={() => scrollToSection("section-story-1")}
-            section={heroSection}
-          />
-        </div>
+        <AmbientFieldHeroSection
+          onExploreRuntime={() => scrollToSection("section-story-1")}
+          section={heroSection}
+        />
+
+        <AmbientFieldClientsSection section={clientsSection} />
 
         <AmbientFieldStoryChapter
           beats={ambientFieldStoryOneBeats}
@@ -357,65 +353,15 @@ function AmbientFieldLandingShell({
           section={graphSection}
         />
 
-        <section
-          ref={storyTwoRef}
-          id={storyTwoSection.id}
-          data-ambient-section
-          data-preset={storyTwoSection.preset}
-          data-section-id={storyTwoSection.id}
-          className="grid min-h-[128svh] grid-cols-12 grid-rows-[auto_1fr_auto] gap-x-6 gap-y-10 px-4 py-[12vh] sm:px-6 sm:py-[14vh]"
-        >
-          <div className="col-span-12 row-start-1 self-start text-left lg:col-span-6 lg:col-start-1">
-            <motion.p
-              className="text-[11px] uppercase tracking-[0.24em]"
-              initial={{ opacity: 0, y: 12 }}
-              viewport={{ once: true, amount: 0.35 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{
-                y: smooth,
-                opacity: { duration: 0.18, ease: "easeOut" },
-              }}
-              style={{
-                color:
-                  "color-mix(in srgb, var(--graph-panel-text-dim) 92%, transparent)",
-              }}
-            >
-              {storyTwoSection.eyebrow}
-            </motion.p>
+        <AmbientFieldStoryChapter
+          beats={ambientFieldStoryTwoBeats}
+          section={storyTwoSection}
+          sectionRef={storyTwoRef}
+        />
 
-            <motion.h2
-              className="mt-5 max-w-[18ch] text-[2.9rem] font-medium leading-[0.9] tracking-[-0.05em] sm:text-[4.25rem] lg:text-[5.2rem]"
-              initial={{ opacity: 0, y: 18 }}
-              viewport={{ once: true, amount: 0.35 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{
-                y: smooth,
-                opacity: { duration: 0.18, ease: "easeOut" },
-              }}
-            >
-              {storyTwoSection.title}
-            </motion.h2>
-          </div>
+        <AmbientFieldEventsSection section={eventsSection} />
 
-          <div className="col-span-12 row-start-3 self-end text-left lg:col-span-5 lg:col-start-8 sm:text-right lg:text-right">
-            <motion.p
-              className="max-w-[44ch] text-[15px] leading-7 sm:text-[17px] sm:leading-8 sm:ml-auto"
-              initial={{ opacity: 0, y: 18 }}
-              viewport={{ once: true, amount: 0.35 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{
-                y: smooth,
-                opacity: { duration: 0.18, ease: "easeOut", delay: 0.04 },
-              }}
-              style={{
-                color:
-                  "color-mix(in srgb, var(--graph-panel-text) 76%, transparent)",
-              }}
-            >
-              {storyTwoSection.body}
-            </motion.p>
-          </div>
-        </section>
+        <AmbientFieldMoveNewSection section={moveNewSection} />
 
         <AmbientFieldCtaSection
           graphReady={graphReady}
@@ -431,14 +377,51 @@ function AmbientFieldLandingShell({
         />
       </main>
 
-      <ViewportTocRail
-        entries={tocEntries}
-        compact
-        hideBelowWidth={AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT}
-        narrowMode="dock"
-        scrollOffsetPx={sectionNavScrollOffset}
-      />
+      {isCompactFieldViewport ? null : (
+        <ViewportTocRail
+          entries={tocEntries}
+          compact
+          scrollOffsetPx={sectionNavScrollOffset}
+        />
+      )}
     </div>
+  );
+}
+
+function AmbientFieldLandingShell({
+  graphReady,
+  shellVariant,
+}: {
+  graphReady: boolean;
+  shellVariant: ShellVariant;
+}) {
+  const reducedMotion = useReducedMotion();
+  const { width: viewportWidth } = useViewportSize();
+  const sceneStateRef = useRef<AmbientFieldSceneState>(
+    createAmbientFieldSceneState(),
+  );
+  const isCompactFieldViewport =
+    viewportWidth > 0
+      ? viewportWidth < AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT
+      : shellVariant === "mobile";
+
+  useEffect(() => {
+    sceneStateRef.current.motionEnabled = !reducedMotion;
+  }, [reducedMotion]);
+
+  return (
+    <FixedStageManagerProvider
+      isMobile={isCompactFieldViewport}
+      manifest={FIELD_SECTION_MANIFEST}
+      reducedMotion={!!reducedMotion}
+      sceneStateRef={sceneStateRef}
+    >
+      <AmbientFieldLandingShellContent
+        graphReady={graphReady}
+        isCompactFieldViewport={isCompactFieldViewport}
+        sceneStateRef={sceneStateRef}
+      />
+    </FixedStageManagerProvider>
   );
 }
 

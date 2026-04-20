@@ -56,9 +56,26 @@ const NotoBrain = dynamic(() => import("./_smoke/noto-brain/NotoBrain"), {
   loading: () => fallback,
 });
 
-const TextReveal = dynamic(() => import("./_smoke/text-reveal/TextReveal"), {
-  loading: () => fallback,
-});
+const TextReveal = dynamic(
+  async () => {
+    const { TextReveal: MotionTextReveal } = await import("./text-reveal/TextReveal");
+    return function AnimationRegistryTextReveal() {
+      return (
+        <MotionTextReveal
+          as="p"
+          className="text-lg font-medium leading-8 text-[var(--graph-panel-text)]"
+          grain="words"
+          stagger={0.045}
+          text="Framer text reveal now lives as a production animation primitive."
+          trigger="mount"
+        />
+      );
+    };
+  },
+  {
+    loading: () => fallback,
+  },
+);
 
 const NodeFocusDemo = dynamic(() => import("./_smoke/node-focus-demo/NodeFocusDemo"), {
   loading: () => fallback,

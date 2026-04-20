@@ -78,6 +78,12 @@ CORPUS_SELECTION_SUMMARY_ROWS_TOTAL = Counter(
     "Selection summary rows refreshed during corpus selection.",
     ["selector_version"],
 )
+CORPUS_PIPELINE_STAGE_PAPERS = Gauge(
+    "corpus_pipeline_stage_papers",
+    "Latest absolute paper counts for the raw -> corpus -> mapped contract on one release pair.",
+    ["selector_version", "s2_release_tag", "pt3_release_tag", "stage"],
+    multiprocess_mode="livemostrecent",
+)
 CORPUS_SELECTION_FAILURES_TOTAL = Counter(
     "corpus_selection_failures_total",
     "Corpus-selection failures by phase and exception class.",
@@ -110,6 +116,12 @@ CORPUS_WAVE_ENQUEUED_TOTAL = Counter(
     "corpus_wave_enqueued_total",
     "Mapped papers enqueued from evidence waves.",
     ["wave_policy_key", "selector_version"],
+)
+CORPUS_EVIDENCE_POLICY_PAPERS = Gauge(
+    "corpus_evidence_policy_papers",
+    "Latest absolute paper counts for evidence cohort, satisfied, and backlog policy buckets.",
+    ["wave_policy_key", "selector_version", "s2_release_tag", "pt3_release_tag", "stage"],
+    multiprocess_mode="livemostrecent",
 )
 CORPUS_WAVE_FAILURES_TOTAL = Counter(
     "corpus_wave_failures_total",
@@ -223,6 +235,22 @@ def record_corpus_selection_summary_rows(
     CORPUS_SELECTION_SUMMARY_ROWS_TOTAL.labels(selector_version).inc(row_count)
 
 
+def record_corpus_pipeline_stage_count(
+    *,
+    selector_version: str,
+    s2_release_tag: str,
+    pt3_release_tag: str,
+    stage: str,
+    paper_count: int,
+) -> None:
+    CORPUS_PIPELINE_STAGE_PAPERS.labels(
+        selector_version,
+        s2_release_tag,
+        pt3_release_tag,
+        stage,
+    ).set(paper_count)
+
+
 def record_corpus_selection_failure(
     *,
     selector_version: str,
@@ -273,6 +301,24 @@ def record_corpus_wave_enqueue_count(
     CORPUS_WAVE_ENQUEUED_TOTAL.labels(wave_policy_key, selector_version).inc(enqueue_count)
 
 
+def record_corpus_evidence_policy_count(
+    *,
+    wave_policy_key: str,
+    selector_version: str,
+    s2_release_tag: str,
+    pt3_release_tag: str,
+    stage: str,
+    paper_count: int,
+) -> None:
+    CORPUS_EVIDENCE_POLICY_PAPERS.labels(
+        wave_policy_key,
+        selector_version,
+        s2_release_tag,
+        pt3_release_tag,
+        stage,
+    ).set(paper_count)
+
+
 def record_corpus_wave_failure(
     *,
     wave_policy_key: str,
@@ -288,7 +334,7 @@ def record_corpus_wave_failure(
     ).inc()
 
 
-def observe_hot_text_acquisition(
+def observe_evidence_text_acquisition(
     *,
     outcome: str,
     locator_kind: str | None,
@@ -302,7 +348,7 @@ def observe_hot_text_acquisition(
     ).observe(duration_seconds)
 
 
-def record_hot_text_run(
+def record_evidence_text_run(
     *,
     outcome: str,
     locator_kind: str | None,
@@ -315,7 +361,7 @@ def record_hot_text_run(
     ).inc()
 
 
-def record_hot_text_document_rows(
+def record_evidence_text_document_rows(
     *,
     section_count: int,
     block_count: int,
@@ -327,7 +373,7 @@ def record_hot_text_document_rows(
     PAPER_TEXT_DOCUMENT_ROWS_TOTAL.labels("sentences").inc(sentence_count)
 
 
-def record_hot_text_failure(*, failure_class: str) -> None:
+def record_evidence_text_failure(*, failure_class: str) -> None:
     PAPER_TEXT_FAILURES_TOTAL.labels(failure_class).inc()
 
 
@@ -376,7 +422,7 @@ async def track_corpus_wave_lock_age(
 
 
 @asynccontextmanager
-async def track_hot_text_inprogress() -> AsyncIterator[None]:
+async def track_evidence_text_inprogress() -> AsyncIterator[None]:
     PAPER_TEXT_INPROGRESS.inc()
     try:
         yield

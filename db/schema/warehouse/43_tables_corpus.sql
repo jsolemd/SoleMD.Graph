@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS solemd.corpus_wave_members (
     member_ordinal INTEGER NOT NULL,
     priority_score INTEGER NOT NULL DEFAULT 0,
     enqueued_at TIMESTAMPTZ,
-    actor_name TEXT NOT NULL DEFAULT 'hot_text.acquire_for_paper',
+    actor_name TEXT NOT NULL DEFAULT 'evidence.acquire_for_paper',
     selection_detail JSONB,
     PRIMARY KEY (corpus_wave_run_id, corpus_id),
     CONSTRAINT ck_corpus_wave_members_member_ordinal

@@ -132,6 +132,7 @@ export function projectBlobHotspotCandidate({
   camera,
   candidateIndex,
   height,
+  pixelRatio = 1,
   source,
   vector,
   width,
@@ -140,6 +141,7 @@ export function projectBlobHotspotCandidate({
   camera: Camera;
   candidateIndex: number;
   height: number;
+  pixelRatio?: number;
   source: AmbientFieldPointSource;
   vector: Vector3;
   width: number;
@@ -156,8 +158,8 @@ export function projectBlobHotspotCandidate({
   blobModel.localToWorld(vector);
   vector.project(camera);
 
-  const x = ((vector.x + 1) * width) / 2;
-  const y = ((-vector.y + 1) * height) / 2;
+  const x = ((vector.x + 1) * width) / 2 / pixelRatio;
+  const y = ((-vector.y + 1) * height) / 2 / pixelRatio;
   // Maze: scale = (1 - vector.z) * 2; clamp keeps slot from going micro/oversize.
   const scale = Math.max(0.72, Math.min(1.36, (1 - vector.z) * 2));
   const withinViewport =
@@ -175,6 +177,7 @@ export function selectBlobHotspotCandidate({
   blobModel,
   camera,
   maxAttempts = 20,
+  pixelRatio = 1,
   source,
   usedCandidateIndices,
   vector,
@@ -184,6 +187,7 @@ export function selectBlobHotspotCandidate({
   blobModel: Group;
   camera: Camera;
   maxAttempts?: number;
+  pixelRatio?: number;
   source: AmbientFieldPointSource;
   usedCandidateIndices: Set<number>;
   vector: Vector3;
@@ -200,6 +204,7 @@ export function selectBlobHotspotCandidate({
       camera,
       candidateIndex,
       height: viewportHeight,
+      pixelRatio,
       source,
       vector,
       width: viewportWidth,
@@ -658,6 +663,7 @@ export class BlobController extends FieldController {
     viewportHeight: number,
     elapsedSec: number,
     sceneState: import("../scene/visual-presets").AmbientFieldSceneState,
+    pixelRatio = 1,
   ): AmbientFieldHotspotFrame[] {
     const frames = this.lastFrames;
     for (let index = 0; index < frames.length; index += 1) {
@@ -774,6 +780,7 @@ export class BlobController extends FieldController {
           vector,
           viewportHeight,
           viewportWidth,
+          pixelRatio,
         });
         runtime.candidateIndex = reseeded?.candidateIndex ?? null;
       }
@@ -794,6 +801,7 @@ export class BlobController extends FieldController {
         camera,
         candidateIndex: runtime.candidateIndex,
         height: viewportHeight,
+        pixelRatio,
         source: pointSource,
         vector,
         width: viewportWidth,
@@ -819,6 +827,7 @@ export class BlobController extends FieldController {
             vector,
             viewportHeight,
             viewportWidth,
+            pixelRatio,
           });
           runtime.candidateIndex = reseeded?.candidateIndex ?? null;
           if (runtime.candidateIndex != null) {
@@ -827,6 +836,7 @@ export class BlobController extends FieldController {
               camera,
               candidateIndex: runtime.candidateIndex,
               height: viewportHeight,
+              pixelRatio,
               source: pointSource,
               vector,
               width: viewportWidth,

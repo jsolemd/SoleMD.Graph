@@ -7,6 +7,8 @@ import { LANDING_BASE_BLUE, LANDING_RAINBOW_RGB } from "./accent-palette";
 // cs.blob + cs.stream + cs.pcb). Colors are a single (base, noise) pair
 // per preset that feeds Maze's binary-lerp shape in the shader:
 //   vColor = base + clamp(vNoise, 0, 1) * 4 * (noise - base)
+// Effective Maze defaults: size=8, depth=0.3, amplitude=0.05, depthOut=10,
+// amplitudeOut=4, entryFactor=0.5, exitFactor=0.5.
 // See `scene/accent-palette.ts` and `renderer/field-shaders.ts`.
 
 export type AmbientFieldVisualPreset = "blob" | "stream" | "pcb";
@@ -111,7 +113,7 @@ export const visualPresets: Record<
 > = {
   blob: {
     // Maze: cs.blob extends cs.default with uFrequency 0.5, uAmplitude 0.05,
-    // uDepth 0.3, uSize 10 at scripts.pretty.js:42427-42433.
+    // uDepth 0.3, uSize 8 at scripts.pretty.js:42427-42433.
     // LANDING_BLOB_CHAPTER's `start-frequency` event ramps 0.5 → 1.7 at
     // chapter head, per scripts.pretty.js:43291-43304.
     sceneScale: 0.75,
@@ -125,6 +127,8 @@ export const visualPresets: Record<
     rotationVelocity: [0, 0.06, 0],
     scrollRotation: [0, Math.PI, 0],
     alphaOut: 0,
+    // User-locked deviation 2026-04-19: keep blob points visible through
+    // the detail story instead of dissolving to Maze's 4 / 10 out-values.
     amplitudeOut: 0.8,
     depthOut: 1.0,
     entryFactor: 0.5,
@@ -150,7 +154,7 @@ export const visualPresets: Record<
       height: 0,
       selection: 1,
       selectionHotspotFloor: 0.85,
-      size: 10,
+      size: 8,
       sizeMobile: 6,
       speed: 1,
       stream: 0,
@@ -193,7 +197,7 @@ export const visualPresets: Record<
       height: 0.4,
       selection: 1,
       selectionHotspotFloor: 0.3,
-      size: 9,
+      size: 10,
       sizeMobile: 6,
       speed: 1,
       stream: 1,
@@ -209,8 +213,10 @@ export const visualPresets: Record<
     sceneOffset: [0, 0, 0.3],
     sceneRotation: [(-80 * Math.PI) / 180, 0, 0],
     rotationVelocity: ZERO_VEC3,
-    scrollRotation: [0, 0.12, 0],
+    scrollRotation: ZERO_VEC3,
     alphaOut: 0,
+    // User-locked deviation 2026-04-19: keep the closing pcb surface flat
+    // until the end-state object-formation product surface exists.
     amplitudeOut: 0.05,
     depthOut: 0.3,
     entryFactor: 0.5,

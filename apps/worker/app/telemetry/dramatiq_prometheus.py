@@ -67,5 +67,31 @@ class ScopedPrometheus(Middleware):
         )
         self._delegate.after_process_boot(broker)
 
+    def after_worker_shutdown(self, broker, worker) -> None:
+        self._delegate.after_worker_shutdown(broker, worker)
+
+    def after_nack(self, broker, message) -> None:
+        self._delegate.after_nack(broker, message)
+
+    def after_enqueue(self, broker, message, delay) -> None:
+        self._delegate.after_enqueue(broker, message, delay)
+
+    def before_delay_message(self, broker, message) -> None:
+        self._delegate.before_delay_message(broker, message)
+
+    def before_process_message(self, broker, message) -> None:
+        self._delegate.before_process_message(broker, message)
+
+    def after_process_message(self, broker, message, *, result=None, exception=None) -> None:
+        self._delegate.after_process_message(
+            broker,
+            message,
+            result=result,
+            exception=exception,
+        )
+
+    def after_skip_message(self, broker, message) -> None:
+        self._delegate.after_skip_message(broker, message)
+
     def __getattr__(self, name: str):
         return getattr(self._delegate, name)

@@ -113,6 +113,7 @@ async def run_release_ingest(
                     source_release_id=source_release_id,
                     lock_key=lock_key,
                 )
+                await _mark_source_release_ingesting(control_connection, source_release_id)
                 ingest_run_id = run.ingest_run_id
                 _emit_event(
                     "ingest.cycle.started",
@@ -308,14 +309,12 @@ async def _ensure_source_release(
             source_release_key,
             release_status
         )
-        VALUES ($1, $2, $3, $4, $5, 'ingesting')
+        VALUES ($1, $2, $3, $4, $5, 'planned')
         ON CONFLICT (source_name, source_release_key)
         DO UPDATE SET
             source_published_at = EXCLUDED.source_published_at,
             manifest_checksum = EXCLUDED.manifest_checksum,
-            manifest_uri = EXCLUDED.manifest_uri,
-            release_status = 'ingesting',
-            source_ingested_at = now()
+            manifest_uri = EXCLUDED.manifest_uri
         RETURNING source_release_id
         """,
         plan.source_published_at,
@@ -325,6 +324,20 @@ async def _ensure_source_release(
         request.release_tag,
     )
     return int(row["source_release_id"])
+
+
+async def _mark_source_release_ingesting(
+    connection: asyncpg.Connection,
+    source_release_id: int,
+) -> None:
+    await connection.execute(
+        """
+        UPDATE solemd.source_releases
+        SET release_status = 'ingesting'
+        WHERE source_release_id = $1
+        """,
+        source_release_id,
+    )
 
 
 async def _open_or_resume_run(
@@ -354,11 +367,11 @@ async def _open_or_resume_run(
             raise IngestAlreadyPublished(
                 f"release {request.source_code}:{request.release_tag} already published"
             )
-        if run.plan_manifest is not None and _digest_payload(run.plan_manifest) != _digest_payload(plan_payload):
-            raise PlanDrift(
-                f"planned family layout drifted for {request.source_code}:{request.release_tag}"
-            )
         if run.status != INGEST_STATUS_PUBLISHED and not request.force_new_run:
+            if run.plan_manifest is not None and _digest_payload(run.plan_manifest) != _digest_payload(plan_payload):
+                raise PlanDrift(
+                    f"planned family layout drifted for {request.source_code}:{request.release_tag}"
+                )
             await connection.execute(
                 """
                 UPDATE solemd.ingest_runs

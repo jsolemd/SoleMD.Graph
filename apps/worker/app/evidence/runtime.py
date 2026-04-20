@@ -25,11 +25,11 @@ from app.evidence.models import (
 from app.evidence.ncbi import fetch_pmc_biocxml, resolve_locators
 from app.evidence.parser import parse_pmc_bioc_document
 from app.telemetry.metrics import (
-    observe_hot_text_acquisition,
-    record_hot_text_document_rows,
-    record_hot_text_failure,
-    record_hot_text_run,
-    track_hot_text_inprogress,
+    observe_evidence_text_acquisition,
+    record_evidence_text_document_rows,
+    record_evidence_text_failure,
+    record_evidence_text_run,
+    track_evidence_text_inprogress,
 )
 
 
@@ -51,16 +51,16 @@ async def acquire_paper_text(
     async with ingest_pool.acquire() as connection:
         lock_key = await _acquire_paper_lock(connection, request.corpus_id)
         try:
-            async with track_hot_text_inprogress():
+            async with track_evidence_text_inprogress():
                 paper = await _load_paper_metadata(connection, request.corpus_id)
                 existing_run = await _load_existing_current_run(connection, paper.corpus_id)
                 if existing_run is not None and not request.force_refresh:
-                    record_hot_text_run(
+                    record_evidence_text_run(
                         outcome="already_current",
                         locator_kind="pmc_bioc",
                         resolver_kind="current_document",
                     )
-                    observe_hot_text_acquisition(
+                    observe_evidence_text_acquisition(
                         outcome="already_current",
                         locator_kind="pmc_bioc",
                         resolver_kind="current_document",
@@ -117,18 +117,18 @@ async def acquire_paper_text(
                             response_checksum=manifest.response_checksum,
                         )
 
-                    record_hot_text_run(
+                    record_evidence_text_run(
                         outcome="published",
                         locator_kind=manifest.locator_kind,
                         resolver_kind=manifest.resolver_kind,
                     )
-                    observe_hot_text_acquisition(
+                    observe_evidence_text_acquisition(
                         outcome="published",
                         locator_kind=manifest.locator_kind,
                         resolver_kind=manifest.resolver_kind,
                         duration_seconds=perf_counter() - started,
                     )
-                    record_hot_text_document_rows(
+                    record_evidence_text_document_rows(
                         section_count=len(document["sections"]),
                         block_count=len(document["blocks"]),
                         sentence_count=len(document["sentences"]),
@@ -157,12 +157,12 @@ async def acquire_paper_text(
                         resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
                         error_message=str(exc),
                     )
-                    record_hot_text_run(
+                    record_evidence_text_run(
                         outcome="unavailable",
                         locator_kind=getattr(failed_locator, "locator_kind", None),
                         resolver_kind=getattr(failed_locator, "resolver_kind", None),
                     )
-                    observe_hot_text_acquisition(
+                    observe_evidence_text_acquisition(
                         outcome="unavailable",
                         locator_kind=getattr(failed_locator, "locator_kind", None),
                         resolver_kind=getattr(failed_locator, "resolver_kind", None),
@@ -187,13 +187,13 @@ async def acquire_paper_text(
                         resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
                         error_message=str(exc),
                     )
-                    record_hot_text_run(
+                    record_evidence_text_run(
                         outcome="failed",
                         locator_kind=getattr(failed_locator, "locator_kind", None),
                         resolver_kind=getattr(failed_locator, "resolver_kind", None),
                     )
-                    record_hot_text_failure(failure_class=type(exc).__name__)
-                    observe_hot_text_acquisition(
+                    record_evidence_text_failure(failure_class=type(exc).__name__)
+                    observe_evidence_text_acquisition(
                         outcome="failed",
                         locator_kind=getattr(failed_locator, "locator_kind", None),
                         resolver_kind=getattr(failed_locator, "resolver_kind", None),

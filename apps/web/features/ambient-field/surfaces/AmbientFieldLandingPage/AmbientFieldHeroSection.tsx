@@ -1,9 +1,12 @@
 "use client";
 
+import { useRef } from "react";
 import { motion } from "framer-motion";
 import { chromePillSurfaceStyle } from "@/features/graph/components/panels/PanelShell/panel-styles";
+import { TextReveal } from "@/features/animations/text-reveal/TextReveal";
 import { smooth } from "@/lib/motion";
 import type { AmbientFieldLandingSection } from "./ambient-field-landing-content";
+import { useChapterAdapter } from "../../scroll/chapter-adapters/useChapterAdapter";
 
 interface AmbientFieldHeroSectionProps {
   onExploreRuntime: () => void;
@@ -14,11 +17,16 @@ export function AmbientFieldHeroSection({
   onExploreRuntime,
   section,
 }: AmbientFieldHeroSectionProps) {
+  const sectionRef = useRef<HTMLElement | null>(null);
+  useChapterAdapter(sectionRef, "welcome");
+
   return (
     <section
+      ref={sectionRef}
       id={section.id}
       data-ambient-section
       data-preset={section.preset}
+      data-scroll="welcome"
       data-section-id={section.id}
       className="flex min-h-[100svh] items-center justify-center px-4 pb-24 pt-24 sm:px-6 sm:pb-28 sm:pt-28"
     >
@@ -40,33 +48,27 @@ export function AmbientFieldHeroSection({
             {section.eyebrow}
           </motion.p>
 
-          <motion.h1
+          <TextReveal
+            as="h1"
             className="mx-auto mt-5 max-w-[10ch] text-[2.9rem] font-medium leading-[0.9] tracking-[-0.05em] sm:text-[4.25rem] lg:text-[5.2rem]"
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              y: smooth,
-              opacity: { duration: 0.18, ease: "easeOut" },
-            }}
-          >
-            {section.title}
-          </motion.h1>
+            grain="words"
+            stagger={0.08}
+            text={section.title}
+            trigger="mount"
+          />
 
-          <motion.p
+          <TextReveal
+            as="p"
             className="mx-auto mt-6 max-w-[38ch] text-[15px] leading-7 sm:text-[17px] sm:leading-8"
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{
-              y: smooth,
-              opacity: { duration: 0.18, ease: "easeOut", delay: 0.04 },
-            }}
             style={{
               color:
                 "color-mix(in srgb, var(--graph-panel-text) 76%, transparent)",
             }}
-          >
-            {section.body}
-          </motion.p>
+            grain="words"
+            stagger={0.03}
+            text={section.body}
+            trigger="mount"
+          />
         </div>
 
         <motion.div

@@ -11,12 +11,13 @@ Source ground truth:
 - stream material branch: `scripts.pretty.js:42577-42581`
 - `?blending` URL param: `scripts.pretty.js:42580`
 
-Round-12 SoleMD implementation lives in
+Current SoleMD implementation lives in
 `apps/web/features/ambient-field/renderer/field-shaders.ts` and
 `apps/web/features/ambient-field/scene/visual-presets.ts`. The old pulse-era
 uniform family (`uPulseRate`, `uPulseStrength`, `uPulseThreshold`,
-`uPulseSoftness`, vec3 `uColorBase` / `uColorNoise`, per-point `color` read)
-has been fully retired; do not reintroduce it.
+`uPulseSoftness`) and the later bucket-accent / burst-overlay experiment are
+fully retired. The shipped SoleMD shader uses one vec3 base/noise pair
+(`uColorBase` / `uColorNoise`) and does not read per-point `color`.
 
 ## Shared Material Family
 
@@ -65,7 +66,7 @@ The live particle shaders consume:
 - `aMove`
 - `aSpeed`
 - `aRandomness`
-- `aBucket` (SoleMD-only, round-12 addition)
+- `aBucket` (baked for hotspot/color bookkeeping only; shader-inactive today)
 
 Geometry also carries:
 
@@ -82,7 +83,8 @@ Important quirks:
   only to keep the legacy `getPointColorCss` hotspot sampler working until
   Phase 7 retires it.
 - `aBucket` is a float holding the bucket index (0..N-1) in
-  `SOLEMD_DEFAULT_BUCKETS` order. The Phase-4 burst overlay uses it as a gate.
+  `SOLEMD_DEFAULT_BUCKETS` order. It is currently preserved for CPU-side
+  bucket semantics and future extensions, not for live shader branching.
 
 For parity work, treat `color` as present-but-inactive unless the shader family
 is intentionally rewritten.
@@ -111,10 +113,11 @@ Shared uniforms (Maze):
 Color uniforms in Maze are six scalars
 (`scripts.pretty.js:42564-42569`: `uRcolor=40, uGcolor=197, uBcolor=234`
 cyan base; `uRnoise=202, uGnoise=50, uBnoise=223` magenta noise). SoleMD
-replaces that family with `uBaseColor: vec3` and `uBucketAccents: vec3[4]`
-so multiple hues can coexist in one frame — see Parity-Sensitive Quirks.
-Do not collapse SoleMD's shape back into the six scalars and do not bring
-back the round-≤11 pulse-era `uColorBase` / `uColorNoise` vec3 pair.
+replaces that family with the shipped pair `uColorBase: vec3` and
+`uColorNoise: vec3`. `BlobController` drives rainbow motion by tweening the
+live `uColorNoise` value through `LANDING_RAINBOW_RGB`; stream and pcb keep the
+Maze-faithful cyan→magenta pair static. Do not collapse SoleMD's shape back
+into the six scalars.
 
 Stream-only uniforms:
 
@@ -127,14 +130,6 @@ Stream-only uniforms:
 - `uFunnelStartShift`
 - `uFunnelEndShift`
 - `uFunnelDistortion`
-
-SoleMD burst overlay uniforms (added round 12, no Maze counterpart):
-
-- `uBurstType` — float bucket id to activate; `< 0` disables the overlay
-- `uBurstStrength` — overlay amount in `[0, 1]`
-- `uBurstColor` — vec3 tint color
-- `uBurstRegionScale` — noise frequency controlling the tint patch size
-- `uBurstSoftness` — smoothstep width for the bucket-region envelope
 
 Important quirk:
 
@@ -150,14 +145,7 @@ position
   ->
 vNoise = fbm(position * (uFrequency + aStreamFreq * uStream))
   ->
-vColor from uR/G/Bcolor + uR/G/Bnoise (binary lerp, x4)
-  ->
-burst overlay (SoleMD):
-  bucketGate = (uBurstType >= 0) ? step(0.5, 1 - |aBucket - uBurstType|) : 0
-  burstField = 0.5 + 0.5 * snoise(position * uBurstRegionScale + uTime * 0.4)
-  burstEnv   = smoothstep(0.5 - uBurstSoftness, 0.5 + uBurstSoftness, burstField) * uBurstStrength
-  burstBoost = clamp(bucketGate * burstEnv, 0, 1)
-  vColor     = mix(vColor, uBurstColor * (1 + 0.22 * vNoise), burstBoost)
+vColor from uColorBase + clamp(vNoise, 0, 1) * 4.0 * (uColorNoise - uColorBase)
   ->
 displaced = position
   ->
@@ -176,16 +164,11 @@ modelView / projection
   ->
 distance-based point size
   ->
-distance-based alpha and selection cut, then vAlpha *= 1 + 0.35 * burstBoost
+distance-based alpha and selection cut
 ```
 
 The amplitude multiply is global, not blob-only. Blob scenes just reveal it
 more clearly because their source geometry is spherical.
-
-The burst overlay block replaces the old "rainbow confetti" path (triple
-`snoise` accent pyramid reading the per-point `color` attribute at
-`field-shaders.ts:222-286` before round 12). It is bucket-coherent,
-monochromatic, and time-continuous.
 
 ## Point Size And Alpha
 
@@ -194,8 +177,6 @@ Perspective importance is a core part of the look:
 - `gl_PointSize = uSize * 100.0 / vDistance * uPixelRatio`
 - `vAlpha = uAlpha * aAlpha * (300.0 / vDistance)`
 - points with `aSelection > uSelection` are hidden by zeroing alpha
-- SoleMD additionally multiplies `vAlpha *= 1.0 + 0.35 * burstBoost` so burst
-  regions read as luminous sweeps, not flat color overlays
 
 Important quirk:
 
@@ -226,7 +207,7 @@ There is no extra lighting model in the fragment shader. The look comes from:
 - noise/deformation
 - point sprite texture
 - distance-scaled size/alpha
-- burst overlay tint (SoleMD)
+- `BlobController`-driven `uColorNoise` motion on the blob layer
 
 ## Stream Branch Constants
 
@@ -260,7 +241,7 @@ The mobile rotation branch is:
 - `NUM_OCTAVES = 5`
 - runtime increments `uTime += 0.002` (foreground) via `FieldLoopClock`
   singleton at `renderer/field-loop-clock.ts`
-- default `uSize = 10`
+- default `uSize = 8`
 - blob preset (`scripts.pretty.js:42427-42433`):
   - `uDepth = 0.3`
   - `uAmplitude = 0.05`
@@ -277,23 +258,10 @@ The mobile rotation branch is:
 
 These are strange enough that agents may "fix" them by accident:
 
-- SoleMD diverges from Maze's six-scalar `uR/G/B color/noise` color lerp.
-  The scalar family is replaced by `uBaseColor: vec3` plus
-  `uBucketAccents: vec3[4]` indexed by `aBucket`, so four bucket hues
-  coexist in one frame (Maze's binary lerp only ever shows two hues). The
-  vec3 form naturally removes Maze's blue-channel typo
-  (`uBnoise - uGcolor`); SoleMD no longer carries that bias. CPU hijack in
-  `FieldScene.tsx` walks the four accents at quarter-period phase offsets
-  through `LANDING_ACCENT_RAINBOW_RGB` on the blob layer; stream/pcb keep
-  all four accents at Maze magenta for layer-level parity. The landing-page
-  palette is a hand-picked 8-stop saturated rainbow in
-  `scene/burst-config.ts` (orange → gold → green → teal → sky → violet →
-  magenta → pink, ~85-100% sat), **not** the pastel
-  `semanticColorFallbackHexByKey` tokens — those stay the UI source for
-  `--color-semantic-*` and would read washed out against Maze's saturated
-  magenta base. Three stops (phys/section/proc) align with
-  `SOLEMD_BURST_COLORS` (paper/entity/evidence) to anchor the cycle to
-  brand identity.
+- SoleMD diverges from Maze's six-scalar `uR/G/B color/noise` color lerp by
+  collapsing it to `uColorBase: vec3` and `uColorNoise: vec3`. This preserves
+  the binary-lerp visual grammar while removing Maze's blue-channel typo by
+  construction.
 - `uScreen` exists but is inactive
 - geometry `color` exists but is inactive for the live shader (SoleMD still
   writes it for the legacy hotspot color sampler; see Attribute Family note
@@ -314,5 +282,20 @@ If SoleMD changes any of these, do it deliberately and record the divergence.
 - do not reintroduce mesh rendering for scenes that should stay point-based
 - do not replace point sprites with flat circles unless the visual target also
   changes
-- do not reintroduce the pulse-era vec3 color uniforms or the per-point
-  rainbow-confetti accent path; burst-overlay uniforms are the replacement
+- do not reintroduce retired pulse-era or burst-overlay uniform families; the
+  shipped `uColorBase` / `uColorNoise` pair is the live contract
+
+## Retired (Round 14)
+
+Older SoleMD notes described a temporary experiment with:
+
+- `uBaseColor: vec3`
+- `uBucketAccents: vec3[4]`
+- `uBurstType`
+- `uBurstStrength`
+- `uBurstColor`
+- `uBurstRegionScale`
+- `uBurstSoftness`
+
+That family is not part of the shipped shader contract. Keep it documented only
+as historical context; do not build new surface work against it.

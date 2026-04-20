@@ -124,7 +124,7 @@ export class StreamController extends FieldController {
 
   // Maze stream bindScroll (scripts.pretty.js:43560-43578) tweens
   // `wrapper.position.z: -500 → 0` across the section with `scrub: true`.
-  // (Maze also tweens a uWave uniform that the SoleMD shader doesn't have.)
+  // (Maze also tweens a uWave uniform on `xm`, not on the shipped `ug` stream shader.)
   bindScroll(
     anchor: HTMLElement,
     endAnchor?: HTMLElement | null,

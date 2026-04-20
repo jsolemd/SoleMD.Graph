@@ -14,43 +14,14 @@ import {
   type PanelEdgeTocEntry,
 } from "../PanelEdgeToc";
 
-const intersectionObservers: IntersectionObserverMock[] = [];
-
 class ResizeObserverMock {
   observe() {}
   unobserve() {}
   disconnect() {}
 }
 
-class IntersectionObserverMock {
-  callback: IntersectionObserverCallback;
-  observed = new Set<Element>();
-
-  constructor(callback: IntersectionObserverCallback) {
-    this.callback = callback;
-    intersectionObservers.push(this);
-  }
-
-  observe(element: Element) {
-    this.observed.add(element);
-  }
-
-  unobserve(element: Element) {
-    this.observed.delete(element);
-  }
-
-  disconnect() {
-    this.observed.clear();
-  }
-}
-
 beforeAll(() => {
   global.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
-  global.IntersectionObserver = IntersectionObserverMock as typeof IntersectionObserver;
-});
-
-beforeEach(() => {
-  intersectionObservers.length = 0;
 });
 
 const entries: PanelEdgeTocEntry[] = [
@@ -90,21 +61,6 @@ function Harness() {
       </div>
     </MantineProvider>
   );
-}
-
-function makeIntersectionEntry(
-  target: Element,
-  isIntersecting: boolean,
-): IntersectionObserverEntry {
-  return {
-    boundingClientRect: target.getBoundingClientRect(),
-    intersectionRatio: isIntersecting ? 1 : 0,
-    intersectionRect: isIntersecting ? target.getBoundingClientRect() : DOMRect.fromRect(),
-    isIntersecting,
-    rootBounds: null,
-    target,
-    time: 0,
-  } as IntersectionObserverEntry;
 }
 
 function getSegmentButton(title: string): HTMLButtonElement {
@@ -156,7 +112,7 @@ describe("PanelEdgeToc", () => {
     jest.restoreAllMocks();
   });
 
-  it("marks the intersecting section active and leaves the others idle", async () => {
+  it("keeps the active segment aligned with scroll progress as the rail crosses a section boundary", async () => {
     render(<Harness />);
 
     const scrollContainer = screen.getByTestId("scroll-container");
@@ -164,31 +120,20 @@ describe("PanelEdgeToc", () => {
     Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 1200 });
 
     await waitFor(() => {
-      expect(intersectionObservers).toHaveLength(1);
       expect(getSegmentButton("Intro")).toBeInTheDocument();
     });
 
-    const observer = intersectionObservers[0];
-    const headings = entries.map((entry) => {
-      const heading = document.getElementById(entry.id);
-      if (!heading) throw new Error(`Missing heading ${entry.id}`);
-      return heading;
-    });
-
     act(() => {
-      observer.callback(
-        [
-          makeIntersectionEntry(headings[0], false),
-          makeIntersectionEntry(headings[1], false),
-          makeIntersectionEntry(headings[2], true),
-          makeIntersectionEntry(headings[3], false),
-        ],
-        observer as unknown as IntersectionObserver,
-      );
+      scrollContainer.scrollTop = 650;
+      scrollContainer.dispatchEvent(new Event("scroll"));
     });
 
     await waitFor(() => {
       expect(getSegmentButton("Green")).toHaveAttribute("data-active", "true");
+      expect(screen.getByTestId("panel-edge-toc-progress")).toHaveStyle({
+        height: "25%",
+        backgroundColor: "var(--color-fresh-green)",
+      });
     });
 
     expect(getSegmentButton("Intro")).not.toHaveAttribute("data-active");
@@ -238,27 +183,12 @@ describe("PanelEdgeToc", () => {
     Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 1200 });
 
     await waitFor(() => {
-      expect(intersectionObservers).toHaveLength(1);
       expect(getSegmentButton("Intro")).toBeInTheDocument();
     });
 
-    const observer = intersectionObservers[0];
-    const headings = entries.map((entry) => {
-      const heading = document.getElementById(entry.id);
-      if (!heading) throw new Error(`Missing heading ${entry.id}`);
-      return heading;
-    });
-
-    // Scroll to the very bottom: all headings have left the top-20%
-    // activation zone, so no IntersectionObserver entry is intersecting.
-    // The rail should stay on the last section, not snap back to section 0.
     act(() => {
       scrollContainer.scrollTop = 800;
       scrollContainer.dispatchEvent(new Event("scroll"));
-      observer.callback(
-        headings.map((heading) => makeIntersectionEntry(heading, false)),
-        observer as unknown as IntersectionObserver,
-      );
     });
 
     await waitFor(() => {

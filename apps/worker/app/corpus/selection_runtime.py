@@ -45,6 +45,7 @@ from app.telemetry.metrics import (
     observe_corpus_selection_phase,
     record_corpus_selection_failure,
     record_corpus_selection_materialized_papers,
+    record_corpus_pipeline_stage_count,
     record_corpus_selection_run,
     record_corpus_selection_signals,
     record_corpus_selection_summary_rows,
@@ -189,10 +190,24 @@ async def run_corpus_selection(
                             selector_version=request.selector_version,
                             row_count=summary_row_count,
                         )
+                        pipeline_stage_counts = await _load_pipeline_stage_counts(
+                            connection,
+                            corpus_selection_run_id=run_id,
+                            s2_source_release_id=plan.s2_source_release_id,
+                        )
+                        for stage_name, paper_count in pipeline_stage_counts.items():
+                            record_corpus_pipeline_stage_count(
+                                selector_version=request.selector_version,
+                                s2_release_tag=request.s2_release_tag,
+                                pt3_release_tag=request.pt3_release_tag,
+                                stage=stage_name,
+                                paper_count=paper_count,
+                            )
                         emit_event(
                             "corpus.selection.summary.completed",
                             corpus_selection_run_id=run_id,
                             summary_row_count=summary_row_count,
+                            pipeline_stage_counts=pipeline_stage_counts,
                         )
                     observe_corpus_selection_phase(
                         selector_version=request.selector_version,
@@ -571,3 +586,44 @@ async def _count_materialized_papers(
         s2_source_release_id,
     )
     return int(count)
+
+
+async def _load_pipeline_stage_counts(
+    connection: asyncpg.Connection,
+    *,
+    corpus_selection_run_id: UUID,
+    s2_source_release_id: int,
+) -> dict[str, int]:
+    row = await connection.fetchrow(
+        """
+        WITH raw_scope AS (
+            SELECT count(*)::INTEGER AS raw_count
+            FROM solemd.s2_papers_raw raw
+            WHERE raw.source_release_id = $2
+        ),
+        summary_scope AS (
+            SELECT
+                count(*) FILTER (
+                    WHERE summary.current_status IN ('corpus', 'mapped')
+                )::INTEGER AS corpus_count,
+                count(*) FILTER (
+                    WHERE summary.current_status = 'mapped'
+                )::INTEGER AS mapped_count
+            FROM solemd.paper_selection_summary summary
+            WHERE summary.corpus_selection_run_id = $1
+        )
+        SELECT
+            raw_scope.raw_count,
+            coalesce(summary_scope.corpus_count, 0) AS corpus_count,
+            coalesce(summary_scope.mapped_count, 0) AS mapped_count
+        FROM raw_scope
+        CROSS JOIN summary_scope
+        """,
+        corpus_selection_run_id,
+        s2_source_release_id,
+    )
+    return {
+        "raw": int(row["raw_count"]),
+        "corpus": int(row["corpus_count"]),
+        "mapped": int(row["mapped_count"]),
+    }

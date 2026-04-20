@@ -147,6 +147,15 @@ Current evidence-text metric families:
 - `paper_text_failures_total`
 - `paper_text_inprogress`
 
+Current warehouse-local audit surface:
+
+- `solemd.paper_text_contract_audit`
+  - read-only view that joins `paper_text` to the active document spine and
+    exposes mismatch flags such as:
+    - active document present but `paper_text.text_availability` still below
+      full-text
+    - parsed abstract present but stored `paper_text.abstract` still empty
+
 Evidence-wave selection itself is metered on the `corpus` worker scope
 via `corpus_wave_*` metrics; this evidence scope starts once
 `evidence.acquire_for_paper` is enqueued.

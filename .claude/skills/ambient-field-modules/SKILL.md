@@ -15,6 +15,9 @@ version: 1.7.0
 
 > Canonical sources:
 >
+> - `references/maze-build-spec.md` — **canonical first-read parity reference + rebuild backlog for every ambient-field surface.** Start here before any Maze parity or drift work.
+> - `references/stream-chapter-hybrid.md` — stream chapter contract: WebGL conveyor + DOM rail + SVG motion geometry on one authored anchor.
+> - `references/object-formation-surface.md` — future pattern for "particles converge into a shape" surfaces and the exact undo path for the two current user-locked deviations.
 > - `docs/map/ambient-field-maze-baseline-ledger-round-12.md` — the
 >   Round 12 Source Ground Truth + Foundation Primitives + Phase Log.
 >   **Read this first** for any new ambient-field work.
@@ -69,7 +72,7 @@ Asset + geometry:
 
 Renderer:
 - `renderer/field-shaders.ts` — Maze-parity vertex + fragment shaders with
-  6 scalar color uniforms + burst overlay block.
+  the shipped SoleMD `uColorBase` / `uColorNoise` vec3 pair.
 - `renderer/FieldScene.tsx` — R3F stage consumer; owns the per-layer
   `wrapper → mouseWrapper → model` hierarchy.
 - `renderer/field-loop-clock.ts` — singleton `uTime` source
@@ -129,8 +132,8 @@ What is still not complete:
 
 - model-backed point adapters for `World`/`Shield`/`Users`-class scenes
 - preload plus eviction discipline for heavier asset families
-- a fully surface-agnostic `FieldSectionManifest -> SceneResolver` layer shared
-  across homepage, wiki, and learn modules
+- broader reuse of the new `FixedStageManager` seam across homepage, wiki, and
+  learn-module surfaces
 - visibility-aware clock demotion when future surfaces can safely move from
   continuous animation to demand-driven rendering
 

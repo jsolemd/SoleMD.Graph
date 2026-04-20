@@ -31,10 +31,12 @@ export interface ImageLikeData {
 }
 
 export interface TextureGeometryOptions {
+  appendExtents?: boolean;
   textureScale?: number;
   gridRandomness?: number;
   thickness?: number;
   layers?: number;
+  spreadFirstLayer?: boolean;
   colorThreshold?: number;
   channel?: "r" | "g" | "b" | "a" | "luma";
   random?: () => number;
@@ -53,9 +55,11 @@ const DEFAULT_TEXTURE_SCALE = 1.5;
 const DEFAULT_GRID_RANDOMNESS = 0.5;
 const DEFAULT_THICKNESS = 10;
 const DEFAULT_LAYERS = 1;
+const DEFAULT_APPEND_EXTENTS = true;
 const DEFAULT_COLOR_THRESHOLD = 200;
 const DEFAULT_COUNT_FACTOR = 1;
 const DEFAULT_POSITION_RANDOMNESS = 0.01;
+const DEFAULT_SPREAD_FIRST_LAYER = false;
 
 function rejectionSampleSpherePoint(random: () => number) {
   // Maze's `getPoint` rejection-samples inside a unit cube, discards the
@@ -135,10 +139,12 @@ function sampleChannel(
 function fromTexture(
   image: ImageLikeData,
   {
+    appendExtents = DEFAULT_APPEND_EXTENTS,
     textureScale = DEFAULT_TEXTURE_SCALE,
     gridRandomness = DEFAULT_GRID_RANDOMNESS,
     thickness = DEFAULT_THICKNESS,
     layers = DEFAULT_LAYERS,
+    spreadFirstLayer = DEFAULT_SPREAD_FIRST_LAYER,
     colorThreshold = DEFAULT_COLOR_THRESHOLD,
     channel = "r",
     random = Math.random,
@@ -164,7 +170,11 @@ function fromTexture(
       for (let layer = 0; layer < layers; layer += 1) {
         const jitterX = (random() - 0.5) * gridRandomness;
         const jitterY = (random() - 0.5) * gridRandomness;
-        const depth = random() * thickness * (layer + 1);
+        const depth = spreadFirstLayer
+          ? random() * thickness * (layer + 1)
+          : layer === 0
+            ? 0
+            : (1 + random()) * thickness * layer;
         const x = sx + jitterX;
         // flip y: `-sy` so y=0 is top-of-image.
         const y = -sy + jitterY;
@@ -172,6 +182,11 @@ function fromTexture(
         points.push(x, y, -depth);
       }
     }
+  }
+
+  if (appendExtents) {
+    points.push(0, 0, 0);
+    points.push(width, height, 0);
   }
 
   const position = new Float32Array(points);

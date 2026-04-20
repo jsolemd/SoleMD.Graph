@@ -575,14 +575,36 @@ are:
 | Lane | Metric families |
 |---|---|
 | Ingest | `ingest_phase_duration_seconds`, `ingest_runs_total`, `ingest_family_rows_total`, `ingest_family_files_total`, `ingest_failures_total`, `ingest_active_lock_age_seconds` |
-| Corpus selection | `corpus_selection_phase_duration_seconds`, `corpus_selection_runs_total`, `corpus_selection_signals_total`, `corpus_selection_materialized_papers_total`, `corpus_selection_summary_rows_total`, `corpus_selection_failures_total`, `corpus_selection_active_lock_age_seconds` |
-| Evidence wave dispatch | `corpus_wave_phase_duration_seconds`, `corpus_wave_runs_total`, `corpus_wave_members_selected_total`, `corpus_wave_enqueued_total`, `corpus_wave_failures_total`, `corpus_wave_active_lock_age_seconds` |
-| Hot-text acquisition | `paper_text_acquisitions_total`, `paper_text_acquisition_duration_seconds`, `paper_text_document_rows_total`, `paper_text_failures_total`, `paper_text_inprogress` |
+| Corpus selection | `corpus_selection_phase_duration_seconds`, `corpus_selection_runs_total`, `corpus_selection_signals_total`, `corpus_selection_materialized_papers_total`, `corpus_selection_summary_rows_total`, `corpus_pipeline_stage_papers`, `corpus_selection_failures_total`, `corpus_selection_active_lock_age_seconds` |
+| Evidence wave dispatch | `corpus_wave_phase_duration_seconds`, `corpus_wave_runs_total`, `corpus_wave_members_selected_total`, `corpus_wave_enqueued_total`, `corpus_evidence_policy_papers`, `corpus_wave_failures_total`, `corpus_wave_active_lock_age_seconds` |
+| Evidence-text acquisition | `paper_text_acquisitions_total`, `paper_text_acquisition_duration_seconds`, `paper_text_document_rows_total`, `paper_text_failures_total`, `paper_text_inprogress` |
 
 These application-owned metric families sit beside Dramatiq's own
 middleware families on the same per-scope store. The exact Dramatiq
 family names remain owned by Dramatiq; the queue / actor counters are
 not re-declared here.
+
+The two latest absolute-count gauges are there to make the warehouse
+contract visible in Grafana without reconstructing it from run deltas:
+
+- `corpus_pipeline_stage_papers`
+  - latest `raw`, `corpus`, and `mapped` counts for a
+    `(selector_version, s2_release_tag, pt3_release_tag)` release pair
+- `corpus_evidence_policy_papers`
+  - latest `evidence_cohort`, `evidence_satisfied`,
+    `evidence_backlog`, and `evidence_selected` counts for one
+    `(wave_policy_key, selector_version, s2_release_tag, pt3_release_tag)`
+    plan
+
+The provisioned Grafana worker dashboard is expected to render these beside a
+text panel named `Pipeline Contract And Criteria` so the operator can see both
+the numbers and the actual stage-membership rules in one place. The dashboard
+should answer:
+
+- what `raw`, `corpus`, `mapped`, and `evidence` mean
+- how many papers are in each stage for the monitored release pair
+- whether the current evidence run is measuring the whole cohort or only the
+  current backlog dispatch
 
 Exemplar emit helper (§0 rule):
 

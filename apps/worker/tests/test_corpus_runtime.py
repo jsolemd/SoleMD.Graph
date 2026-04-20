@@ -332,6 +332,33 @@ async def test_end_to_end_ingest_selection_and_dispatch(
         {"selector_version": "selector-v1"},
     ) > before_summary_rows
     assert metric_sample_value(
+        "corpus_pipeline_stage_papers",
+        {
+            "selector_version": "selector-v1",
+            "s2_release_tag": s2_release_tag,
+            "pt3_release_tag": pt3_release_tag,
+            "stage": "raw",
+        },
+    ) == 2
+    assert metric_sample_value(
+        "corpus_pipeline_stage_papers",
+        {
+            "selector_version": "selector-v1",
+            "s2_release_tag": s2_release_tag,
+            "pt3_release_tag": pt3_release_tag,
+            "stage": "corpus",
+        },
+    ) == 2
+    assert metric_sample_value(
+        "corpus_pipeline_stage_papers",
+        {
+            "selector_version": "selector-v1",
+            "s2_release_tag": s2_release_tag,
+            "pt3_release_tag": pt3_release_tag,
+            "stage": "mapped",
+        },
+    ) == 2
+    assert metric_sample_value(
         "corpus_wave_runs_total",
         {
             "wave_policy_key": "evidence_missing_pmc_bioc",
@@ -346,6 +373,46 @@ async def test_end_to_end_ingest_selection_and_dispatch(
             "selector_version": "selector-v1",
         },
     ) > before_wave_members
+    assert metric_sample_value(
+        "corpus_evidence_policy_papers",
+        {
+            "wave_policy_key": "evidence_missing_pmc_bioc",
+            "selector_version": "selector-v1",
+            "s2_release_tag": s2_release_tag,
+            "pt3_release_tag": pt3_release_tag,
+            "stage": "evidence_cohort",
+        },
+    ) == 1
+    assert metric_sample_value(
+        "corpus_evidence_policy_papers",
+        {
+            "wave_policy_key": "evidence_missing_pmc_bioc",
+            "selector_version": "selector-v1",
+            "s2_release_tag": s2_release_tag,
+            "pt3_release_tag": pt3_release_tag,
+            "stage": "evidence_satisfied",
+        },
+    ) == 0
+    assert metric_sample_value(
+        "corpus_evidence_policy_papers",
+        {
+            "wave_policy_key": "evidence_missing_pmc_bioc",
+            "selector_version": "selector-v1",
+            "s2_release_tag": s2_release_tag,
+            "pt3_release_tag": pt3_release_tag,
+            "stage": "evidence_backlog",
+        },
+    ) == 1
+    assert metric_sample_value(
+        "corpus_evidence_policy_papers",
+        {
+            "wave_policy_key": "evidence_missing_pmc_bioc",
+            "selector_version": "selector-v1",
+            "s2_release_tag": s2_release_tag,
+            "pt3_release_tag": pt3_release_tag,
+            "stage": "evidence_selected",
+        },
+    ) == 1
 
     summary_rows = await _fetch_selection_summary_rows(warehouse_dsns["admin"], selection_run_id)
     assert summary_rows == [

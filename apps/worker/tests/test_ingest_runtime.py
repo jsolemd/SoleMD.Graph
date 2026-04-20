@@ -7,6 +7,7 @@ import asyncpg
 import pytest
 
 from app.db import open_pools
+from app.ingest.errors import IngestAlreadyPublished
 from app.ingest.models import StartReleaseRequest
 from app.ingest.runtime import run_release_ingest
 from app.ingest.sources import pubtator, semantic_scholar
@@ -254,6 +255,242 @@ async def test_s2_sample_ingest_writes_raw_rows_only(
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sections") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_blocks") == 0
         assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sentences") == 0
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_already_published_rerun_does_not_regress_release_status(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-01-15"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    citations_dir = release_dir / "citations"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": False,
+                "intents": ["background"],
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("citations",),
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        ingest_run_id = await run_release_ingest(
+            request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        before_row = await admin_connection.fetchrow(
+            """
+            SELECT source_release_id, release_status, source_ingested_at
+            FROM solemd.source_releases
+            WHERE source_name = 's2'
+              AND source_release_key = $1
+            """,
+            release_tag,
+        )
+        assert before_row is not None
+        assert before_row["release_status"] == "loaded"
+    finally:
+        await admin_connection.close()
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        with pytest.raises(IngestAlreadyPublished):
+            await run_release_ingest(
+                request,
+                ingest_pool=pools.get("ingest_write"),
+                runtime_settings=runtime_settings,
+            )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        after_row = await admin_connection.fetchrow(
+            """
+            SELECT source_release_id, release_status, source_ingested_at
+            FROM solemd.source_releases
+            WHERE source_name = 's2'
+              AND source_release_key = $1
+            """,
+            release_tag,
+        )
+        assert after_row is not None
+        assert after_row["source_release_id"] == before_row["source_release_id"]
+        assert after_row["release_status"] == "loaded"
+        assert after_row["source_ingested_at"] == before_row["source_ingested_at"]
+        assert await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.ingest_runs
+            WHERE source_release_id = $1
+            """,
+            before_row["source_release_id"],
+        ) == 1
+        assert await admin_connection.fetchval(
+            "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
+            ingest_run_id,
+        ) == 5
+    finally:
+        await admin_connection.close()
+
+
+@pytest.mark.asyncio
+async def test_force_new_run_allows_published_plan_change(
+    tmp_path: Path,
+    warehouse_dsns: dict[str, str],
+    runtime_settings_factory,
+) -> None:
+    release_tag = "2026-01-16"
+    s2_root = tmp_path / "semantic-scholar"
+    release_dir = s2_root / "releases" / release_tag
+    authors_dir = release_dir / "authors"
+    citations_dir = release_dir / "citations"
+    authors_path = authors_dir / "authors-0000.jsonl.gz"
+    citations_path = citations_dir / "citations-0000.jsonl.gz"
+
+    write_jsonl_gz(
+        authors_path,
+        [
+            {
+                "authorid": "author-1",
+                "name": "Ada Ingest",
+                "externalids": {"ORCID": "0000-0000-0000-0001"},
+            }
+        ],
+    )
+    write_jsonl_gz(
+        citations_path,
+        [
+            {
+                "citationid": 1,
+                "citingcorpusid": 101,
+                "citedcorpusid": 202,
+                "isinfluential": True,
+                "intents": ["background"],
+            }
+        ],
+    )
+    write_manifest(
+        release_dir / "manifests" / "authors.manifest.json",
+        dataset="authors",
+        release_tag=release_tag,
+        output_dir=authors_dir,
+        file_names=[authors_path.name],
+    )
+    write_manifest(
+        release_dir / "manifests" / "citations.manifest.json",
+        dataset="citations",
+        release_tag=release_tag,
+        output_dir=citations_dir,
+        file_names=[citations_path.name],
+    )
+
+    runtime_settings = runtime_settings_factory(
+        semantic_scholar_dir=s2_root,
+        ingest_dsn=warehouse_dsns["ingest"],
+    )
+    first_request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("citations",),
+    )
+    second_request = StartReleaseRequest(
+        source_code="s2",
+        release_tag=release_tag,
+        requested_by="tester",
+        family_allowlist=("authors", "citations"),
+        force_new_run=True,
+    )
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        first_run_id = await run_release_ingest(
+            first_request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    pools = await open_pools(runtime_settings, names=("ingest_write",))
+    try:
+        second_run_id = await run_release_ingest(
+            second_request,
+            ingest_pool=pools.get("ingest_write"),
+            runtime_settings=runtime_settings,
+        )
+    finally:
+        await pools.close()
+
+    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
+    try:
+        assert first_run_id != second_run_id
+        release_row = await admin_connection.fetchrow(
+            """
+            SELECT source_release_id, release_status
+            FROM solemd.source_releases
+            WHERE source_name = 's2'
+              AND source_release_key = $1
+            """,
+            release_tag,
+        )
+        assert release_row is not None
+        assert release_row["release_status"] == "loaded"
+        assert await admin_connection.fetchval(
+            """
+            SELECT count(*)
+            FROM solemd.ingest_runs
+            WHERE source_release_id = $1
+            """,
+            release_row["source_release_id"],
+        ) == 2
+        latest_families = await admin_connection.fetchval(
+            """
+            SELECT families_loaded
+            FROM solemd.ingest_runs
+            WHERE ingest_run_id = $1
+            """,
+            second_run_id,
+        )
+        assert latest_families == ["authors", "citations"]
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.authors") == 1
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_paper_references_raw") == 1
     finally:
         await admin_connection.close()
 

@@ -12,7 +12,26 @@ const ChartReveal = dynamic(() => import("@/features/animations/_smoke/chart-rev
 const DrawMorph = dynamic(() => import("@/features/animations/_smoke/gsap-draw-morph/DrawMorph"), { ssr: false, loading: fallback });
 const LottieDemo = dynamic(() => import("@/features/animations/_smoke/lottie-demo/LottieDemo"), { ssr: false, loading: fallback });
 const NotoBrain = dynamic(() => import("@/features/animations/_smoke/noto-brain/NotoBrain"), { ssr: false, loading: fallback });
-const TextReveal = dynamic(() => import("@/features/animations/_smoke/text-reveal/TextReveal"), { ssr: false, loading: fallback });
+const TextReveal = dynamic(
+  async () => {
+    const { TextReveal: MotionTextReveal } = await import("@/features/animations/text-reveal/TextReveal");
+    return function SmokeTextRevealCard() {
+      return (
+        <div className="flex h-[280px] items-center justify-center">
+          <MotionTextReveal
+            as="p"
+            className="max-w-[20ch] text-center text-[1.15rem] font-medium leading-8"
+            grain="words"
+            stagger={0.055}
+            text="Framer text reveal now ships as a reusable production primitive."
+            trigger="mount"
+          />
+        </div>
+      );
+    };
+  },
+  { ssr: false, loading: fallback },
+);
 const NodeFocusDemo = dynamic(() => import("@/features/animations/_smoke/node-focus-demo/NodeFocusDemo"), { ssr: false, loading: fallback });
 const AnimatedBeamDemo = dynamic(() => import("@/features/animations/_smoke/animated-beam/AnimatedBeamDemo"), { ssr: false, loading: fallback });
 const BioIconsSmoke = dynamic(() => import("@/features/animations/_smoke/bioicons/BioIconsSmoke"), { ssr: false, loading: fallback });

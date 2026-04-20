@@ -4,12 +4,21 @@ import { useState, type CSSProperties, type MutableRefObject } from "react";
 import { AdaptiveDpr, PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { FieldScene } from "./FieldScene";
+import type { FieldController } from "../controller/FieldController";
 import type { BlobController } from "../controller/BlobController";
-import type { AmbientFieldSceneState } from "../scene/visual-presets";
+import type {
+  AmbientFieldSceneState,
+  AmbientFieldStageItemId,
+} from "../scene/visual-presets";
 
 interface FieldCanvasProps {
   sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
   reducedMotion?: boolean;
+  stageReady?: boolean;
+  onControllerReady?: (
+    id: AmbientFieldStageItemId,
+    controller: FieldController,
+  ) => void;
   onBlobControllerReady?: (controller: BlobController) => void;
   className?: string;
   style?: CSSProperties;
@@ -18,6 +27,8 @@ interface FieldCanvasProps {
 export function FieldCanvas({
   sceneStateRef,
   reducedMotion = false,
+  stageReady = true,
+  onControllerReady,
   onBlobControllerReady,
   className,
   style,
@@ -57,6 +68,8 @@ export function FieldCanvas({
         <FieldScene
           sceneStateRef={sceneStateRef}
           densityScale={reducedMotion ? Math.min(densityScale, 0.84) : densityScale}
+          stageReady={stageReady}
+          onControllerReady={onControllerReady}
           onBlobControllerReady={onBlobControllerReady}
         />
       </Canvas>

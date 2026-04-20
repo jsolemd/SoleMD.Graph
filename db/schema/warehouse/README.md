@@ -58,6 +58,8 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
   - `solemd.paper_selection_summary`
   - `solemd.corpus_wave_runs`
   - `solemd.corpus_wave_members`
+- evidence-text audit surface for warehouse-local quality review:
+  - `solemd.paper_text_contract_audit`
 - chunking hardening on the same stock-PG surface:
   - DB-level CHECK constraints on the new SMALLINT enum columns
   - parent-column LZ4 compression for partitioned text tables

@@ -1,8 +1,7 @@
 "use client";
 
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
-import type { MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 import {
   AdditiveBlending,
   Group,
@@ -10,31 +9,50 @@ import {
   ShaderMaterial,
 } from "three";
 import { AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT } from "../ambient-field-breakpoints";
+import type { BlobController } from "../controller/BlobController";
+import { BlobController as BlobControllerClass } from "../controller/BlobController";
+import type { FieldController, LayerUniforms } from "../controller/FieldController";
+import { PcbController } from "../controller/PcbController";
+import { StreamController } from "../controller/StreamController";
+import {
+  DEFAULT_AMBIENT_FIELD_SCENE,
+  AMBIENT_FIELD_STAGE_ITEM_IDS,
+  visualPresets,
+  type AmbientFieldSceneState,
+  type AmbientFieldStageItemId,
+} from "../scene/visual-presets";
 import {
   fieldLoopClock,
   getAmbientFieldElapsedSeconds,
 } from "./field-loop-clock";
-import { resolveAmbientFieldPointSources } from "../asset/point-source-registry";
-import type { AmbientFieldPointSource } from "../asset/point-source-types";
 import {
-  DEFAULT_AMBIENT_FIELD_SCENE,
-  visualPresets,
-  type AmbientFieldSceneState,
-} from "../scene/visual-presets";
+  resolveAmbientFieldPointSources,
+} from "../asset/point-source-registry";
+import type { AmbientFieldPointSource } from "../asset/point-source-types";
 import {
   FIELD_FRAGMENT_SHADER,
   FIELD_VERTEX_SHADER,
 } from "./field-shaders";
 import { getFieldPointTexture } from "./field-point-texture";
-import { BlobController } from "../controller/BlobController";
-import type { LayerUniforms } from "../controller/FieldController";
 
 export type { AmbientFieldHotspotFrame } from "../controller/BlobController";
 
 interface FieldSceneProps {
-  sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
   densityScale?: number;
   onBlobControllerReady?: (controller: BlobController) => void;
+  onControllerReady?: (
+    id: AmbientFieldStageItemId,
+    controller: FieldController,
+  ) => void;
+  sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
+  stageReady?: boolean;
+}
+
+interface StageLayerHandle {
+  material: MutableRefObject<ShaderMaterial | null>;
+  model: MutableRefObject<Group | null>;
+  mouseWrapper: MutableRefObject<Group | null>;
+  wrapper: MutableRefObject<Group | null>;
 }
 
 // Maze parity toggle: source exposes `?blending` to swap AdditiveBlending
@@ -52,26 +70,20 @@ function resolveFieldBlending() {
 }
 
 function AmbientFieldStageLayer({
-  onModelRef,
-  onMaterialRef,
-  onMouseWrapperRef,
-  onWrapperRef,
+  handles,
   source,
   uniforms,
 }: {
-  onModelRef: (group: Group | null) => void;
-  onMaterialRef: (material: ShaderMaterial | null) => void;
-  onMouseWrapperRef: (group: Group | null) => void;
-  onWrapperRef: (group: Group | null) => void;
+  handles: StageLayerHandle;
   source: AmbientFieldPointSource;
   uniforms: LayerUniforms;
 }) {
   const { buffers } = source;
 
   return (
-    <group ref={onWrapperRef} position={[0, 0, 0]} scale={[1, 1, 1]}>
-      <group ref={onMouseWrapperRef}>
-        <group ref={onModelRef}>
+    <group ref={handles.wrapper} position={[0, 0, 0]} scale={[1, 1, 1]}>
+      <group ref={handles.mouseWrapper}>
+        <group ref={handles.model}>
           <points frustumCulled={false}>
             <bufferGeometry>
               <bufferAttribute attach="attributes-position" args={[buffers.position, 3]} />
@@ -89,7 +101,7 @@ function AmbientFieldStageLayer({
               <bufferAttribute attach="attributes-aBucket" args={[buffers.aBucket, 1]} />
             </bufferGeometry>
             <shaderMaterial
-              ref={onMaterialRef}
+              ref={handles.material}
               transparent
               depthTest={false}
               depthWrite={false}
@@ -105,16 +117,46 @@ function AmbientFieldStageLayer({
   );
 }
 
-// Landing-only FieldScene: renders the blob layer only. Stream + pcb
-// controllers + presets stay exported from the module for other surfaces
-// (Maze's per-section "one particle system per view" pattern —
-// `scripts.pretty.js:43030-43045`). See
-// `.claude/skills/ambient-field-modules/references/image-particle-conformation.md`
-// for how to rehydrate them on a new section.
+function syncLayerUniforms(
+  controller: FieldController,
+  isMobile: boolean,
+  pointTexture: ReturnType<typeof getFieldPointTexture>,
+  uniformsRef: MutableRefObject<LayerUniforms>,
+) {
+  if (uniformsRef.current.uIsMobile.value !== isMobile) {
+    uniformsRef.current = controller.createLayerUniforms(isMobile, pointTexture);
+  }
+  return uniformsRef.current;
+}
+
+function attachController(
+  controller: FieldController,
+  handles: StageLayerHandle,
+) {
+  const wrapper = handles.wrapper.current;
+  const mouseWrapper = handles.mouseWrapper.current;
+  const model = handles.model.current;
+  const material = handles.material.current;
+  if (!wrapper || !mouseWrapper || !model || !material) return;
+  wrapper.visible = false;
+  controller.attach({
+    material,
+    model,
+    mouseWrapper,
+    view: null,
+    wrapper,
+  });
+}
+
+// Shared landing FieldScene: blob, stream, and pcb layers all mount once.
+// Visibility, carry windows, and chapter overlap are now owned by the
+// FixedStageManager manifest and scroll binder rather than the page shell.
 export function FieldScene({
-  sceneStateRef,
   densityScale = 1,
   onBlobControllerReady,
+  onControllerReady,
+  sceneStateRef,
+  stageReady = true,
 }: FieldSceneProps) {
   const viewportWidth = useThree((state) => state.size.width);
   const isMobile = viewportWidth < AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT;
@@ -122,32 +164,73 @@ export function FieldScene({
     () =>
       resolveAmbientFieldPointSources({
         densityScale,
+        ids: AMBIENT_FIELD_STAGE_ITEM_IDS,
         isMobile,
-        ids: ["blob"],
       }),
     [densityScale, isMobile],
   );
   const pointTexture = useMemo(() => getFieldPointTexture(), []);
 
-  // Only the blob controller is instantiated on this surface.
   const blobController = useMemo(
-    () => new BlobController({ id: "blob", preset: visualPresets.blob }),
+    () => new BlobControllerClass({ id: "blob", preset: visualPresets.blob }),
+    [],
+  );
+  const streamController = useMemo(
+    () => new StreamController({ id: "stream", preset: visualPresets.stream }),
+    [],
+  );
+  const pcbController = useMemo(
+    () => new PcbController({ id: "pcb", preset: visualPresets.pcb }),
     [],
   );
 
-  // Blob uniforms. Rebuild when `isMobile` flips; `uColorNoise` is a
-  // live Three.Color that BlobController tweens at runtime, so the
-  // uniform identity must be stable inside each (isMobile) epoch.
-  const layerUniformsRef = useRef<LayerUniforms>(
+  const blobUniformsRef = useRef<LayerUniforms>(
     blobController.createLayerUniforms(isMobile, pointTexture),
   );
-  if (layerUniformsRef.current.uIsMobile.value !== isMobile) {
-    layerUniformsRef.current = blobController.createLayerUniforms(
-      isMobile,
-      pointTexture,
-    );
-  }
-  const layerUniforms = layerUniformsRef.current;
+  const streamUniformsRef = useRef<LayerUniforms>(
+    streamController.createLayerUniforms(isMobile, pointTexture),
+  );
+  const pcbUniformsRef = useRef<LayerUniforms>(
+    pcbController.createLayerUniforms(isMobile, pointTexture),
+  );
+
+  const blobUniforms = syncLayerUniforms(
+    blobController,
+    isMobile,
+    pointTexture,
+    blobUniformsRef,
+  );
+  const streamUniforms = syncLayerUniforms(
+    streamController,
+    isMobile,
+    pointTexture,
+    streamUniformsRef,
+  );
+  const pcbUniforms = syncLayerUniforms(
+    pcbController,
+    isMobile,
+    pointTexture,
+    pcbUniformsRef,
+  );
+
+  const blobHandles: StageLayerHandle = {
+    material: useRef<ShaderMaterial | null>(null),
+    model: useRef<Group | null>(null),
+    mouseWrapper: useRef<Group | null>(null),
+    wrapper: useRef<Group | null>(null),
+  };
+  const streamHandles: StageLayerHandle = {
+    material: useRef<ShaderMaterial | null>(null),
+    model: useRef<Group | null>(null),
+    mouseWrapper: useRef<Group | null>(null),
+    wrapper: useRef<Group | null>(null),
+  };
+  const pcbHandles: StageLayerHandle = {
+    material: useRef<ShaderMaterial | null>(null),
+    model: useRef<Group | null>(null),
+    mouseWrapper: useRef<Group | null>(null),
+    wrapper: useRef<Group | null>(null),
+  };
 
   useEffect(() => {
     blobController.setPointSource(pointSources.blob);
@@ -155,62 +238,88 @@ export function FieldScene({
 
   useEffect(() => {
     onBlobControllerReady?.(blobController);
-  }, [blobController, onBlobControllerReady]);
+    onControllerReady?.("blob", blobController);
+    onControllerReady?.("stream", streamController);
+    onControllerReady?.("pcb", pcbController);
+  }, [
+    blobController,
+    onBlobControllerReady,
+    onControllerReady,
+    pcbController,
+    streamController,
+  ]);
 
-  // Kill the controller's GSAP timelines (rainbow color cycle + scroll
-  // timeline + ScrollTrigger) on unmount so re-mounts don't stack
-  // listeners or tweens.
   useEffect(() => {
     return () => {
       blobController.destroy();
+      streamController.destroy();
+      pcbController.destroy();
     };
-  }, [blobController]);
+  }, [blobController, pcbController, streamController]);
 
-  const wrapperRef = useRef<Group | null>(null);
-  const mouseWrapperRef = useRef<Group | null>(null);
-  const modelRef = useRef<Group | null>(null);
-  const materialRef = useRef<ShaderMaterial | null>(null);
+  useEffect(() => {
+    attachController(blobController, blobHandles);
+  });
 
-  const tryAttachController = () => {
-    const wrapper = wrapperRef.current;
-    const mouseWrapper = mouseWrapperRef.current;
-    const model = modelRef.current;
-    const material = materialRef.current;
-    if (!wrapper || !mouseWrapper || !model || !material) return;
-    blobController.attach({
-      view: null,
-      wrapper,
-      mouseWrapper,
-      model,
-      material,
-    });
-  };
+  useEffect(() => {
+    attachController(streamController, streamHandles);
+  });
+
+  useEffect(() => {
+    attachController(pcbController, pcbHandles);
+  });
 
   useFrame((state, delta) => {
     const sceneState = sceneStateRef.current ?? DEFAULT_AMBIENT_FIELD_SCENE;
     const elapsedSec = getAmbientFieldElapsedSeconds();
     const pixelRatio = Math.min(state.gl.getPixelRatio(), 2);
     const camera = state.camera;
-    const viewportW = state.size.width;
-    const viewportH = state.size.height;
+    const viewportW = state.gl.domElement.width;
+    const viewportH = state.gl.domElement.height;
 
-    const blobSource = pointSources.blob;
-    const blobState = sceneState.items.blob;
-    blobController.tick({
-      camera,
-      dtSec: delta,
-      elapsedSec,
-      isMobile,
-      itemState: blobState,
-      pixelRatio,
-      sceneState,
-      sourceBounds: blobSource.bounds,
-      uniforms: layerUniforms,
-      viewportHeight: viewportH,
-      viewportWidth: viewportW,
-      wrapperInitialized: true,
-      markWrapperInitialized: () => {},
-    });
+    if (!stageReady) {
+      fieldLoopClock.tick(delta);
+      return;
+    }
+
+    const layers = [
+      {
+        controller: blobController,
+        itemState: sceneState.items.blob,
+        source: pointSources.blob,
+        uniforms: blobUniforms,
+      },
+      {
+        controller: streamController,
+        itemState: sceneState.items.stream,
+        source: pointSources.stream,
+        uniforms: streamUniforms,
+      },
+      {
+        controller: pcbController,
+        itemState: sceneState.items.pcb,
+        source: pointSources.pcb,
+        uniforms: pcbUniforms,
+      },
+    ] as const;
+
+    for (const layer of layers) {
+      layer.controller.tick({
+        camera,
+        dtSec: delta,
+        elapsedSec,
+        isMobile,
+        itemState: layer.itemState,
+        pixelRatio,
+        sceneState,
+        sourceBounds: layer.source.bounds,
+        uniforms: layer.uniforms,
+        viewportHeight: viewportH,
+        viewportWidth: viewportW,
+        wrapperInitialized: true,
+        markWrapperInitialized: () => {},
+      });
+    }
 
     blobController.projectHotspots(
       camera,
@@ -218,34 +327,29 @@ export function FieldScene({
       viewportH,
       elapsedSec,
       sceneState,
+      pixelRatio,
     );
 
-    // Single RAF fan-out: after the blob's per-frame tick, pump the
-    // subscriber bus so priority 40+ consumers (overlays, chrome) advance
-    // in the same render tick.
     fieldLoopClock.tick(delta);
   });
 
   return (
-    <AmbientFieldStageLayer
-      source={pointSources.blob}
-      onModelRef={(group) => {
-        modelRef.current = group;
-        tryAttachController();
-      }}
-      onMaterialRef={(material) => {
-        materialRef.current = material;
-        tryAttachController();
-      }}
-      onMouseWrapperRef={(group) => {
-        mouseWrapperRef.current = group;
-        tryAttachController();
-      }}
-      onWrapperRef={(group) => {
-        wrapperRef.current = group;
-        tryAttachController();
-      }}
-      uniforms={layerUniforms}
-    />
+    <>
+      <AmbientFieldStageLayer
+        handles={blobHandles}
+        source={pointSources.blob}
+        uniforms={blobUniforms}
+      />
+      <AmbientFieldStageLayer
+        handles={streamHandles}
+        source={pointSources.stream}
+        uniforms={streamUniforms}
+      />
+      <AmbientFieldStageLayer
+        handles={pcbHandles}
+        source={pointSources.pcb}
+        uniforms={pcbUniforms}
+      />
+    </>
   );
 }

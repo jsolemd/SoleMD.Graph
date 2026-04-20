@@ -29,9 +29,11 @@ import type {
 
 // FieldController mirrors Maze's `yr` base controller (scripts.pretty.js:43013-43254).
 // Owns the wrapper + mouseWrapper + model hierarchy, carries the shader
-// material, and runs per-frame `loop`, `updateScale`, `updateVisibility`,
-// and `animateIn/Out` tweens. In R3F the Three.js Group refs are handed
-// in from the React layer after reconciliation.
+// material, and exposes the shared controller contract. In SoleMD the
+// frame lifecycle is flattened into `tick(FrameContext)`; subclasses
+// either own visibility through `bindScroll()` or opt in to a custom
+// fallback. The base `updateVisibility()` is therefore a sanctioned no-op
+// while the landing keeps the blob visible through the detail story.
 
 export interface LayerUniforms {
   [uniform: string]: { value: unknown };
@@ -224,72 +226,117 @@ export abstract class FieldController {
   }
 
   updateVisibility(
-    scrollY: number,
-    viewportH: number,
-    layerTop: number,
-    layerHeight: number,
+    _scrollY: number,
+    _viewportH: number,
+    _layerTop: number,
+    _layerHeight: number,
   ): boolean {
-    const entryFactor = this.params.entryFactor ?? 0.5;
-    const exitFactor = this.params.exitFactor ?? 0.5;
-    const isVisible =
-      layerTop + layerHeight > scrollY + viewportH * exitFactor &&
-      layerTop < scrollY + viewportH * entryFactor;
-
-    if (isVisible !== this.visible) {
-      this.visible = isVisible;
-      if (isVisible) this.animateIn();
-      else this.animateOut("bottom");
-    }
-
-    return isVisible;
+    void _scrollY;
+    void _viewportH;
+    void _layerTop;
+    void _layerHeight;
+    return this.visible;
   }
 
-  animateIn(): void {
-    if (!this.material) return;
+  animateIn(): Promise<void> {
+    if (!this.material) return Promise.resolve();
     const uniforms = this.material.uniforms;
+    const wrapper = this.wrapper;
     gsap.killTweensOf(uniforms.uAlpha);
     gsap.killTweensOf(uniforms.uDepth);
     gsap.killTweensOf(uniforms.uAmplitude);
-    gsap.to(uniforms.uAlpha, {
-      value: this.params.shader.alpha,
-      duration: 1.4,
-      ease: tnEase,
-    });
-    gsap.to(uniforms.uDepth, {
-      value: this.params.shader.depth,
-      duration: 1.4,
-      ease: tnEase,
-    });
-    gsap.to(uniforms.uAmplitude, {
-      value: this.params.shader.amplitude,
-      duration: 1.4,
-      ease: tnEase,
+    if (wrapper && this.params.rotateAnimation) {
+      gsap.killTweensOf(wrapper.rotation);
+    }
+
+    return new Promise((resolve) => {
+      const timeline = gsap.timeline({
+        defaults: { duration: 1.4, ease: tnEase },
+        onComplete: resolve,
+      });
+      timeline.fromTo(
+        uniforms.uAlpha,
+        { value: this.params.alphaOut },
+        { value: this.params.shader.alpha },
+        0,
+      );
+      timeline.fromTo(
+        uniforms.uDepth,
+        { value: this.params.depthOut },
+        { value: this.params.shader.depth },
+        0,
+      );
+      timeline.fromTo(
+        uniforms.uAmplitude,
+        { value: this.params.amplitudeOut },
+        { value: this.params.shader.amplitude },
+        0,
+      );
+      if (wrapper && this.params.rotateAnimation) {
+        timeline.fromTo(
+          wrapper.rotation,
+          { y: 0 },
+          { y: Math.PI },
+          0,
+        );
+      }
     });
   }
 
-  animateOut(side: "top" | "bottom" | "center", instant = false): void {
-    if (!this.material) return;
+  animateOut(
+    side: "top" | "bottom" | "center",
+    instant = false,
+  ): Promise<void> {
+    if (!this.material) return Promise.resolve();
     const uniforms = this.material.uniforms;
+    const wrapper = this.wrapper;
     const duration = instant ? 0 : 1;
     gsap.killTweensOf(uniforms.uAlpha);
     gsap.killTweensOf(uniforms.uDepth);
     gsap.killTweensOf(uniforms.uAmplitude);
-    gsap.to(uniforms.uAlpha, {
-      value: this.params.alphaOut,
-      duration,
-      ease: tnEase,
+    if (wrapper && this.params.rotateAnimation) {
+      gsap.killTweensOf(wrapper.rotation);
+    }
+
+    const rotationDelta =
+      side === "top" ? -Math.PI : side === "bottom" ? Math.PI : 0;
+
+    return new Promise((resolve) => {
+      const timeline = gsap.timeline({
+        defaults: { duration, ease: tnEase },
+        onComplete: resolve,
+      });
+      timeline.to(
+        uniforms.uAlpha,
+        {
+          value: this.params.alphaOut,
+        },
+        0,
+      );
+      timeline.to(
+        uniforms.uDepth,
+        {
+          value: this.params.depthOut,
+        },
+        0,
+      );
+      timeline.to(
+        uniforms.uAmplitude,
+        {
+          value: this.params.amplitudeOut,
+        },
+        0,
+      );
+      if (wrapper && this.params.rotateAnimation && rotationDelta !== 0) {
+        timeline.to(
+          wrapper.rotation,
+          {
+            y: wrapper.rotation.y + rotationDelta,
+          },
+          0,
+        );
+      }
     });
-    gsap.to(uniforms.uDepth, {
-      value: this.params.depthOut,
-      duration,
-      ease: tnEase,
-    });
-    gsap.to(uniforms.uAmplitude, {
-      value: this.params.amplitudeOut,
-      duration,
-      ease: tnEase,
-    });
-    void side;
   }
 
   // Attach GSAP mouse-parallax to a group (typically `mouseWrapper`).
@@ -321,8 +368,12 @@ export abstract class FieldController {
     scratch.copy(target);
     this.model.localToWorld(scratch);
     scratch.project(camera);
-    const x = ((scratch.x + 1) * viewportWidth) / 2;
-    const y = ((-scratch.y + 1) * viewportHeight) / 2;
+    const pixelRatio =
+      typeof window === "undefined"
+        ? 1
+        : Math.min(window.devicePixelRatio || 1, 2);
+    const x = ((scratch.x + 1) * viewportWidth) / 2 / pixelRatio;
+    const y = ((-scratch.y + 1) * viewportHeight) / 2 / pixelRatio;
     const z = scratch.z;
     return { x, y, z };
   }
@@ -331,6 +382,10 @@ export abstract class FieldController {
   // Subclasses use it to drive uniforms + wrapper transforms.
   tick(_context: FrameContext): void {
     void _context;
+  }
+
+  whenReady(): Promise<void> {
+    return Promise.resolve();
   }
 
   destroy(): void {

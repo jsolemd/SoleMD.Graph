@@ -33,6 +33,7 @@ from app.corpus.runtime_support import (
     utc_now_iso,
 )
 from app.telemetry.metrics import (
+    record_corpus_evidence_policy_count,
     observe_corpus_wave_phase,
     record_corpus_wave_enqueue_count,
     record_corpus_wave_failure,
@@ -94,15 +95,30 @@ async def dispatch_evidence_wave(
                         async with connection.transaction():
                             await _refresh_wave_members(connection, run_id, plan)
                         member_count = await _count_wave_members(connection, run_id)
+                        evidence_policy_counts = await _load_evidence_policy_counts(
+                            connection,
+                            corpus_wave_run_id=run_id,
+                            plan=plan,
+                        )
                         record_corpus_wave_member_count(
                             wave_policy_key=request.wave_policy_key,
                             selector_version=request.selector_version,
                             member_count=member_count,
                         )
+                        for stage_name, paper_count in evidence_policy_counts.items():
+                            record_corpus_evidence_policy_count(
+                                wave_policy_key=request.wave_policy_key,
+                                selector_version=request.selector_version,
+                                s2_release_tag=request.s2_release_tag,
+                                pt3_release_tag=request.pt3_release_tag,
+                                stage=stage_name,
+                                paper_count=paper_count,
+                            )
                         emit_event(
                             "corpus.evidence_wave.members.completed",
                             corpus_wave_run_id=run_id,
                             member_count=member_count,
+                            evidence_policy_counts=evidence_policy_counts,
                         )
                     else:
                         await _enqueue_wave_members(
@@ -113,15 +129,30 @@ async def dispatch_evidence_wave(
                             runtime_settings=runtime_settings,
                         )
                         enqueued_count = await _count_enqueued_members(connection, run_id)
+                        evidence_policy_counts = await _load_evidence_policy_counts(
+                            connection,
+                            corpus_wave_run_id=run_id,
+                            plan=plan,
+                        )
                         record_corpus_wave_enqueue_count(
                             wave_policy_key=request.wave_policy_key,
                             selector_version=request.selector_version,
                             enqueue_count=enqueued_count,
                         )
+                        for stage_name, paper_count in evidence_policy_counts.items():
+                            record_corpus_evidence_policy_count(
+                                wave_policy_key=request.wave_policy_key,
+                                selector_version=request.selector_version,
+                                s2_release_tag=request.s2_release_tag,
+                                pt3_release_tag=request.pt3_release_tag,
+                                stage=stage_name,
+                                paper_count=paper_count,
+                            )
                         emit_event(
                             "corpus.evidence_wave.enqueue.completed",
                             corpus_wave_run_id=run_id,
                             enqueued_count=enqueued_count,
+                            evidence_policy_counts=evidence_policy_counts,
                         )
                     observe_corpus_wave_phase(
                         wave_policy_key=request.wave_policy_key,
@@ -598,3 +629,67 @@ async def _count_enqueued_members(
         corpus_wave_run_id,
     )
     return int(count)
+
+
+async def _load_evidence_policy_counts(
+    connection: asyncpg.Connection,
+    *,
+    corpus_wave_run_id: UUID,
+    plan: CorpusWavePlan,
+) -> dict[str, int]:
+    row = await connection.fetchrow(
+        """
+        WITH evidence_cohort AS (
+            SELECT summary.corpus_id
+            FROM solemd.paper_selection_summary summary
+            WHERE summary.corpus_selection_run_id = $1
+              AND summary.current_status = 'mapped'
+              AND (
+                    summary.publication_year IS NULL
+                    OR summary.publication_year >= $2::SMALLINT
+                  )
+              AND summary.evidence_priority_score >= $3::INTEGER
+              AND (
+                    NOT $4::BOOLEAN
+                    OR summary.has_locator_candidate
+                  )
+        ),
+        satisfied AS (
+            SELECT count(*)::INTEGER AS satisfied_count
+            FROM evidence_cohort cohort
+            JOIN solemd.paper_documents documents
+              ON documents.corpus_id = cohort.corpus_id
+             AND documents.document_source_kind = $5
+        ),
+        backlog AS (
+            SELECT count(*)::INTEGER AS backlog_count
+            FROM evidence_cohort cohort
+            LEFT JOIN solemd.paper_documents documents
+              ON documents.corpus_id = cohort.corpus_id
+             AND documents.document_source_kind = $5
+            WHERE documents.corpus_id IS NULL
+        ),
+        selected AS (
+            SELECT count(*)::INTEGER AS selected_count
+            FROM solemd.corpus_wave_members members
+            WHERE members.corpus_wave_run_id = $6
+        )
+        SELECT
+            (SELECT count(*)::INTEGER FROM evidence_cohort) AS evidence_cohort_count,
+            coalesce((SELECT satisfied_count FROM satisfied), 0) AS evidence_satisfied_count,
+            coalesce((SELECT backlog_count FROM backlog), 0) AS evidence_backlog_count,
+            coalesce((SELECT selected_count FROM selected), 0) AS evidence_selected_count
+        """,
+        plan.corpus_selection_run_id,
+        plan.evidence_policy.publication_year_floor,
+        plan.evidence_policy.min_evidence_priority_score,
+        plan.evidence_policy.require_locator_candidate,
+        plan.evidence_policy.missing_document_source_kind,
+        corpus_wave_run_id,
+    )
+    return {
+        "evidence_cohort": int(row["evidence_cohort_count"]),
+        "evidence_satisfied": int(row["evidence_satisfied_count"]),
+        "evidence_backlog": int(row["evidence_backlog_count"]),
+        "evidence_selected": int(row["evidence_selected_count"]),
+    }

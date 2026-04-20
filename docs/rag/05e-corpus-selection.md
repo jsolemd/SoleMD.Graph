@@ -87,6 +87,49 @@ Working ladder for the warehouse contract:
 Mapped now absorbs what earlier drafts called "warm." The first-wave runtime
 now uses `evidence` naming for the evidence-acquisition lane.
 
+## Locked Stage Criteria
+
+The ladder is only useful if each stage has an explicit membership rule rather
+than a name.
+
+- `raw`
+  - all paper rows in the published S2 release scope for the monitored release
+    pair before any selector policy is applied
+- `corpus`
+  - the broad selected canonical paper universe
+  - admission is high-recall and warehouse-local
+  - current admission families are:
+    - exact journal inventory match
+    - curated venue-pattern match
+    - curated vocabulary alias/entity hit
+- `mapped`
+  - stricter active paper subset inside corpus
+  - current promotion families are:
+    - mapped journal match
+    - mapped venue-pattern match
+    - mapped entity-rule match
+    - mapped relation-rule match
+  - noisy entity families require the second gate before final promotion
+  - broad mapped floor remains `publication_year >= 1945`
+- `evidence cohort`
+  - mapped papers that satisfy the evidence gate whether or not the preferred
+    source is already present
+  - current evidence gate is:
+    - `publication_year >= current_year - 10`, null allowed
+    - `evidence_priority_score >= 150`
+    - `has_locator_candidate = true`
+- `evidence satisfied`
+  - evidence-cohort papers that already have active `pmc_bioc`
+- `evidence backlog`
+  - evidence-cohort papers still missing active `pmc_bioc`
+- `selected / enqueued`
+  - evidence-backlog papers chosen by one dispatch run
+  - `max_papers` is an operator cap, not a stage-membership rule
+
+This is the contract now rendered in Grafana through the
+`Pipeline Contract And Criteria` panel plus the absolute-count gauges
+`corpus_pipeline_stage_papers` and `corpus_evidence_policy_papers`.
+
 ## Current state
 
 The raw-refresh worker lane already exists in `apps/worker/app`, and the
@@ -465,7 +508,7 @@ Recommended advisory-lock key:
 
 Validate before any writes:
 
-- both upstream source releases exist and are `published`
+- both upstream source releases exist and are `loaded`
 - required raw / stage tables for those releases exist and are populated
 - required curated assets are present
 - selector / asset checksums can be computed
@@ -741,6 +784,7 @@ Current corpus-selection metric families:
 - `corpus_selection_signals_total`
 - `corpus_selection_materialized_papers_total`
 - `corpus_selection_summary_rows_total`
+- `corpus_pipeline_stage_papers`
 - `corpus_selection_failures_total`
 - `corpus_selection_active_lock_age_seconds`
 
@@ -750,6 +794,7 @@ Current evidence-wave metric families on the same `corpus` scope:
 - `corpus_wave_runs_total`
 - `corpus_wave_members_selected_total`
 - `corpus_wave_enqueued_total`
+- `corpus_evidence_policy_papers`
 - `corpus_wave_failures_total`
 - `corpus_wave_active_lock_age_seconds`
 
@@ -757,6 +802,16 @@ The same `/metrics` listener also carries Dramatiq middleware families
 for the `corpus` queue. Keep `WORKER_METRICS_PORT` unset locally so the
 `corpus` root stays on its own port rather than colliding with other
 queue-owned roots.
+
+The new absolute-count gauges exist so Grafana can show the current
+business contract directly rather than only run-volume counters:
+
+- `corpus_pipeline_stage_papers`
+  - latest `raw`, `corpus`, and `mapped` counts for one release pair
+- `corpus_evidence_policy_papers`
+  - latest `evidence_cohort`, `evidence_satisfied`,
+    `evidence_backlog`, and `evidence_selected` counts for one release
+    pair and one wave policy key
 
 ## Downstream contract
 

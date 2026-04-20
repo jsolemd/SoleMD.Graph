@@ -51,7 +51,7 @@ COMMENT ON COLUMN solemd.corpus_wave_runs.plan_checksum IS
     'Stable SHA-256 digest of the validated child-wave plan manifest for resume/drift checks.';
 
 COMMENT ON COLUMN solemd.corpus_wave_members.actor_name IS
-    'Downstream actor target for the wave member; initial slice dispatches to hot_text.acquire_for_paper.';
+    'Downstream actor target for the wave member; initial slice dispatches to evidence.acquire_for_paper.';
 COMMENT ON COLUMN solemd.corpus_wave_members.priority_score IS
     'Persisted evidence-wave ranking score copied from paper_selection_summary at selection time.';
 COMMENT ON COLUMN solemd.corpus_wave_members.selection_detail IS

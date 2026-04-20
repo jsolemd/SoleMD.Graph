@@ -97,9 +97,7 @@ export function useSectionTocState({
   scrollRef?: RefObject<HTMLElement | null>;
   scrollOffsetPx?: number;
 }): SectionTocState {
-  const [inView, setInView] = useState<Set<string>>(new Set());
   const [fillProgress, setFillProgress] = useState(0);
-  const observerRef = useRef<IntersectionObserver | null>(null);
   const sectionStartsRef = useRef<number[]>([]);
   const entriesKey = useMemo(
     () => entries.map((entry) => entry.id).join("|"),
@@ -132,7 +130,6 @@ export function useSectionTocState({
     }
 
     function setupObserver() {
-      observerRef.current?.disconnect();
       resizeObserver?.disconnect();
 
       targets = [];
@@ -146,35 +143,8 @@ export function useSectionTocState({
       if (targets.length === 0) {
         sectionStartsRef.current = [];
         setFillProgress(0);
-        setInView((previous) => (previous.size === 0 ? previous : new Set()));
         return;
       }
-
-      const observer = new IntersectionObserver(
-        (observed) => {
-          setInView((previous) => {
-            const next = new Set(previous);
-            let changed = false;
-
-            for (const entry of observed) {
-              if (entry.isIntersecting) {
-                if (!next.has(entry.target.id)) {
-                  next.add(entry.target.id);
-                  changed = true;
-                }
-              } else if (next.delete(entry.target.id)) {
-                changed = true;
-              }
-            }
-
-            return changed ? next : previous;
-          });
-        },
-        { root: scrollContainer, rootMargin: "0px 0px -80% 0px" },
-      );
-
-      observerRef.current = observer;
-      for (const target of targets) observer.observe(target);
 
       sectionStartsRef.current = measureSectionStarts(scrollContainer, targets);
       syncFillProgress();
@@ -210,22 +180,15 @@ export function useSectionTocState({
     return () => {
       cancelAnimationFrame(setupRaf);
       scrollEventTarget.removeEventListener("scroll", syncFillProgress);
-      observerRef.current?.disconnect();
       resizeObserver?.disconnect();
       mutationObserver?.disconnect();
     };
   }, [entries, entries.length, entriesKey, scrollRef]);
 
   const activeIndex = useMemo(() => {
-    if (inView.size > 0) {
-      for (let index = 0; index < entries.length; index += 1) {
-        if (inView.has(entries[index].id)) return index;
-      }
-    }
-
     if (entries.length === 0) return 0;
     return Math.max(0, Math.min(entries.length - 1, Math.floor(fillProgress)));
-  }, [entries, fillProgress, inView]);
+  }, [entries.length, fillProgress]);
 
   const handleJump = useCallback(
     (id: string) => {

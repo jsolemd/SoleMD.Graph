@@ -159,6 +159,16 @@ Fresh run inputs for this ledger:
   - `corpus_selection_runs_total{selector_version="selector-v2-monitored-policy-r1"} = 1`
   - `corpus_wave_members_selected_total{selector_version="selector-v2-monitored-policy-r1",wave_policy_key="evidence_missing_pmc_bioc"} = 0`
   - `corpus_wave_enqueued_total{selector_version="selector-v2-monitored-policy-r1",wave_policy_key="evidence_missing_pmc_bioc"} = 0`
+- Later on `2026-04-19`, the initial dashboard gaps were traced to two separate
+  observability defects:
+  - the worker-side Dramatiq Prometheus wrapper was not delegating the runtime
+    middleware hooks that actually increment `dramatiq_*` counters and
+    histograms
+  - the provisioned Grafana panels were using short-window `rate(...)` and
+    plain `increase(...)` queries that collapse to zero or `No data` for sparse,
+    bounded worker runs
+- Those defects were repaired in Batch 4 below and Grafana now returns non-zero
+  series for the monitored campaign through its own datasource proxy.
 
 ## Worker Processes
 
@@ -369,6 +379,101 @@ Completed:
   - `uv run --project apps/worker pytest apps/worker/tests/test_evidence_cli.py apps/worker/tests/test_evidence_runtime.py apps/worker/tests/test_corpus_cli.py apps/worker/tests/test_corpus_runtime.py apps/worker/tests/test_telemetry_bootstrap.py apps/worker/tests/test_db.py -q`
   - result: `17 passed`
 
+### Batch 4 — Observability Repair And Live Verification
+
+Completed:
+
+- fixed the worker-side Dramatiq telemetry wrapper in
+  `apps/worker/app/telemetry/dramatiq_prometheus.py`
+  so the scoped middleware delegates the real Dramatiq lifecycle hooks:
+  - `after_worker_shutdown`
+  - `after_nack`
+  - `after_enqueue`
+  - `before_delay_message`
+  - `before_process_message`
+  - `after_process_message`
+  - `after_skip_message`
+- added a regression test in
+  `apps/worker/tests/test_telemetry_bootstrap.py`
+  to lock those delegations
+- verified the repo-side fix with:
+  - `uv run --project apps/worker pytest apps/worker/tests/test_telemetry_bootstrap.py apps/worker/tests/test_evidence_runtime.py apps/worker/tests/test_corpus_runtime.py -q`
+  - result: `14 passed`
+- updated the provisioned Grafana worker dashboard so sparse bounded runs are
+  measurable over a `24h` window:
+  - count panels now use `last_over_time(...) - baseline` deltas instead of
+    short-window `increase(...)`
+  - duration panels now use histogram deltas over `24h` instead of
+    `rate(...[5m])`
+  - Dramatiq panels now filter on
+    `job=~"graph-(ingest|corpus|evidence)-worker"` and legend on
+    `{{actor_name}}`
+- updated the shared Prometheus scrape config so the evidence lane is labeled
+  canonically:
+  - job name: `graph-evidence-worker`
+  - `worker_scope="evidence"`
+- reloaded both stacks live:
+  - Grafana dashboard provisioning reload -> `200`
+  - Prometheus config reload -> `200`
+- restarted the three worker roots under the live worker env so the fixed
+  middleware and metric roots were actually in process
+- ran a bounded verification pass under live telemetry:
+  - selector version: `selector-v2-monitored-policy-r2`
+  - corpus selection run id: `019da886-7ff6-789f-b028-95d0a532e6dc`
+  - evidence wave run id: `019da886-838c-7fc7-a25f-171e9f054b65`
+  - direct evidence acquisition: `enqueue-evidence-text 900001 --force-refresh`
+
+Verified live from Grafana's Prometheus datasource:
+
+- worker scrape labels:
+  - `graph-ingest-worker / ingest = 1`
+  - `graph-corpus-worker / corpus = 1`
+  - `graph-evidence-worker / evidence = 1`
+- Dramatiq processed messages over `24h`:
+  - `corpus.start_selection = 1`
+  - `corpus.dispatch_evidence_wave = 1`
+  - `evidence.acquire_for_paper = 1`
+- ingest rows loaded over `24h`:
+  - `pt3 / bioconcepts = 1`
+  - `s2 / papers = 2`
+  - `s2 / abstracts = 2`
+  - `s2 / authors = 1`
+  - `s2 / publication_venues = 2`
+  - `s2 / citations = 1`
+- corpus selection volume over `24h`:
+  - `selector-v2-monitored-policy-r2 / corpus_admission = 14`
+  - `selector-v2-monitored-policy-r2 / mapped_promotion = 1`
+- evidence wave selected over `24h`:
+  - `selector-v2-monitored-policy-r2 / evidence_missing_pmc_bioc = 0`
+- paper-text outcomes over `24h`:
+  - `published / pmcid / paper_row_pmcid = 2`
+  - `unavailable / pmid / pmid_direct = 1`
+- document spine rows written over `24h`:
+  - `documents = 2`
+  - `sections = 28`
+  - `blocks = 236`
+  - `sentences = 950`
+
+Verified latest direct evidence acquisition outcome:
+
+- `corpus_id = 900001`
+- `locator_kind = pmcid`
+- `locator_value = PMC6220770`
+- publish outcome: `published`
+- rows written:
+  - `sections = 14`
+  - `blocks = 118`
+  - `sentences = 475`
+
+Outcome:
+
+- Grafana is no longer pinned to zero-value short-window queries for bounded
+  worker campaigns
+- the dashboard now surfaces real ingest, corpus, evidence, Dramatiq, and
+  paper-text activity from the existing worker slices
+- the observability path is usable for the next ingestion-analysis and policy
+  locking pass without introducing new architecture
+
 ## Open Policy Questions To Answer From Measurements
 
 1. Corpus admission:
@@ -380,9 +485,7 @@ Completed:
 
 ## Remaining Follow-On Work
 
-- rename the shared-infra Prometheus scrape job label so Grafana no longer
-  shows the evidence lane as historical `graph-hot-text-worker`
 - update any broader downstream docs outside this measured campaign once the
   policy contract is agreed
-- make only the smallest observability/measurement patch if the live run
-  exposes a real gap
+- keep future policy dashboards on sparse-safe `24h` delta queries unless the
+  system starts producing dense enough traffic to justify short-window rates

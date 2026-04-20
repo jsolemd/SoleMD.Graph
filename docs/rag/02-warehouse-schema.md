@@ -962,6 +962,37 @@ evidence-acquisition full-text surface in addition to the existing
 `pubtator_biocxml` and
 `s2orc_annotation` codes.
 
+#### `solemd.paper_text_contract_audit` (view)
+
+Read-only warehouse audit surface for evidence-text contract checks.
+This view exists so operators and later policy/audit passes can detect
+document-spine vs `paper_text` mismatches without rebuilding the joins by hand.
+
+Columns:
+- `corpus_id`
+- `has_active_document` BOOLEAN
+- `document_source_kind` SMALLINT nullable
+- `source_priority` SMALLINT nullable
+- `source_revision` TEXT nullable
+- `text_availability` SMALLINT
+- `stored_abstract_present` BOOLEAN
+- `parsed_abstract_present` BOOLEAN
+- `section_count` INTEGER
+- `block_count` INTEGER
+- `sentence_count` INTEGER
+- `abstract_block_count` INTEGER
+- `retrieval_default_block_count` INTEGER
+- `blocks_without_sentences_count` INTEGER
+- `active_document_text_availability_mismatch` BOOLEAN
+- `parsed_abstract_storage_mismatch` BOOLEAN
+
+Primary use:
+- flag rows where an active parsed document exists but
+  `paper_text.text_availability` still reports less than full-text
+- flag rows where parsed abstract structure exists but `paper_text.abstract`
+  is still empty
+- expose compact document-structure counts for evidence-text artifact review
+
 #### `solemd.paper_sections`
 
 Fillfactor 100 (append-only once parsed).

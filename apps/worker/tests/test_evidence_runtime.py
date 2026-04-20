@@ -85,7 +85,7 @@ async def test_evidence_runtime_writes_canonical_pmc_document(
     monkeypatch,
 ) -> None:
     runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
-    await _seed_hot_text_paper(warehouse_dsns["admin"], corpus_id=101, pmid=30112764)
+    await _seed_evidence_text_paper(warehouse_dsns["admin"], corpus_id=101, pmid=30112764)
 
     async def fake_resolve_locators(*_args, **_kwargs) -> tuple[ResolvedLocator, ...]:
         return (
@@ -251,7 +251,7 @@ async def test_evidence_runtime_fails_loudly_on_upstream_fetch_error(
     monkeypatch,
 ) -> None:
     runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
-    await _seed_hot_text_paper(warehouse_dsns["admin"], corpus_id=404, pmid=30112764, pmc_id="PMC2869000")
+    await _seed_evidence_text_paper(warehouse_dsns["admin"], corpus_id=404, pmid=30112764, pmc_id="PMC2869000")
 
     async def fake_resolve_locators(*_args, **_kwargs) -> tuple[ResolvedLocator, ...]:
         return (
@@ -330,7 +330,7 @@ async def test_evidence_runtime_is_deterministic_without_force_refresh(
     runtime_settings_factory,
 ) -> None:
     runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
-    await _seed_hot_text_paper(
+    await _seed_evidence_text_paper(
         warehouse_dsns["admin"],
         corpus_id=202,
         pmid=30112764,
@@ -425,7 +425,7 @@ async def test_evidence_runtime_records_failed_locator_on_unavailable(
     monkeypatch,
 ) -> None:
     runtime_settings = runtime_settings_factory(ingest_dsn=warehouse_dsns["ingest"])
-    await _seed_hot_text_paper(warehouse_dsns["admin"], corpus_id=303, pmid=20466091, pmc_id="PMC2869000")
+    await _seed_evidence_text_paper(warehouse_dsns["admin"], corpus_id=303, pmid=20466091, pmc_id="PMC2869000")
 
     async def fake_resolve_locators(*_args, **_kwargs) -> tuple[ResolvedLocator, ...]:
         return (
@@ -530,7 +530,7 @@ async def test_fetch_pmc_biocxml_treats_explicit_no_result_payload_as_unavailabl
         await fetch_pmc_biocxml(settings, locator)
 
 
-async def _seed_hot_text_paper(
+async def _seed_evidence_text_paper(
     admin_dsn: str,
     *,
     corpus_id: int,
