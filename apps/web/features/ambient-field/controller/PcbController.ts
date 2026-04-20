@@ -83,7 +83,6 @@ export class PcbController extends FieldController {
     uniforms.uFunnelDistortion.value = shader.funnelDistortion;
     uniforms.uFunnelStartShift.value = shader.funnelStartShift;
     uniforms.uFunnelEndShift.value = shader.funnelEndShift;
-    uniforms.uSynthesisCluster.value = 0;
 
     const targetScale = baseScale;
     const targetPositionY = sceneUnits * preset.sceneOffset[1];

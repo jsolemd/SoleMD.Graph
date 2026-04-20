@@ -37,3 +37,10 @@ export interface ResolveAmbientFieldPointSourcesOptions {
   densityScale: number;
   isMobile: boolean;
 }
+
+export interface PrewarmAmbientFieldPointSourcesOptions
+  extends ResolveAmbientFieldPointSourcesOptions {
+  // Optional subset to prewarm (e.g. just the blob on landing surfaces).
+  // When omitted, warms all registered sources.
+  ids?: readonly AmbientFieldStageItemId[];
+}

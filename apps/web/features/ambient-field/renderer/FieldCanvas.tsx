@@ -5,16 +5,12 @@ import { AdaptiveDpr, PerformanceMonitor } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { FieldScene } from "./FieldScene";
 import type { BlobController } from "../controller/BlobController";
-import type { PcbController } from "../controller/PcbController";
-import type { StreamController } from "../controller/StreamController";
 import type { AmbientFieldSceneState } from "../scene/visual-presets";
 
 interface FieldCanvasProps {
   sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
   reducedMotion?: boolean;
   onBlobControllerReady?: (controller: BlobController) => void;
-  onStreamControllerReady?: (controller: StreamController) => void;
-  onPcbControllerReady?: (controller: PcbController) => void;
   className?: string;
   style?: CSSProperties;
 }
@@ -23,8 +19,6 @@ export function FieldCanvas({
   sceneStateRef,
   reducedMotion = false,
   onBlobControllerReady,
-  onStreamControllerReady,
-  onPcbControllerReady,
   className,
   style,
 }: FieldCanvasProps) {
@@ -64,8 +58,6 @@ export function FieldCanvas({
           sceneStateRef={sceneStateRef}
           densityScale={reducedMotion ? Math.min(densityScale, 0.84) : densityScale}
           onBlobControllerReady={onBlobControllerReady}
-          onStreamControllerReady={onStreamControllerReady}
-          onPcbControllerReady={onPcbControllerReady}
         />
       </Canvas>
     </div>

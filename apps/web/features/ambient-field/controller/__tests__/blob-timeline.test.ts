@@ -82,14 +82,22 @@ describe("BlobController bindScroll timeline", () => {
     tl.seek(3.3, false);
     expect(controller.hotspotState.maxNumber).toBeCloseTo(40, 0);
 
-    // t=4.05: uSelection tween (1 → 0.3, dur 0.6 starting at 3.4) finishes
+    // t=4.05: uSelection tween (1 → selectionHotspotFloor, dur 0.6 starting at 3.4) finishes
     tl.seek(4.05, false);
-    expect(uniforms.uSelection.value).toBeCloseTo(0.3, 2);
+    expect(uniforms.uSelection.value).toBeCloseTo(
+      visualPresets.blob.shader.selectionHotspotFloor,
+      2,
+    );
 
-    // t=5.3: diagram beat — uDepth, uAlpha, wrapper.scale all complete
+    // t=5.3: diagram beat — uDepth, uAlpha, wrapper.scale all complete.
+    // uAlpha holds the `alphaDiagramFloor` preset floor instead of 0 so
+    // the silhouette stays readable through the chapter.
     tl.seek(5.3, false);
     expect(uniforms.uDepth.value).toBeCloseTo(1, 2);
-    expect(uniforms.uAlpha.value).toBeCloseTo(0, 2);
+    expect(uniforms.uAlpha.value).toBeCloseTo(
+      visualPresets.blob.shader.alphaDiagramFloor,
+      2,
+    );
     expect(controller.wrapper!.scale.x).toBeGreaterThan(1.4);
 
     // t=7.3: shrink completes — wrapper.scale back near 1
@@ -103,6 +111,10 @@ describe("BlobController bindScroll timeline", () => {
     // t=8.0: respond — opacity drops to 0 (tween at 7.9 dur 0.1)
     tl.seek(8.0, false);
     expect(controller.hotspotState.opacity).toBeCloseTo(0, 1);
+
+    // t=8.3: respond uSelection restore completes (1 dur 0.4 from 7.9)
+    tl.seek(8.3, false);
+    expect(uniforms.uSelection.value).toBeCloseTo(1, 2);
 
     // t=10: end-drift completes; model.position.y at sceneUnits * 0.5
     tl.seek(10, false);

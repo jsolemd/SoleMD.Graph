@@ -1,33 +1,33 @@
 "use client";
 
-import {
-  LANDING_BUCKET_BASES_RGB,
-  LANDING_BUCKET_NOISES_RGB,
-} from "./accent-palette";
+import { LANDING_BASE_BLUE, LANDING_RAINBOW_RGB } from "./accent-palette";
 
 // Maze-native visual presets for ambient-field stage items.
 // Scalar uniforms mirror `scripts.pretty.js:42412-42543` (cs.default +
-// cs.blob + cs.stream + cs.pcb). Colors are paired base/noise arrays
-// (0-255 per channel) that feed the shader's paired binary lerp — see
-// `scene/accent-palette.ts` and `renderer/field-shaders.ts`.
+// cs.blob + cs.stream + cs.pcb). Colors are a single (base, noise) pair
+// per preset that feeds Maze's binary-lerp shape in the shader:
+//   vColor = base + clamp(vNoise, 0, 1) * 4 * (noise - base)
+// See `scene/accent-palette.ts` and `renderer/field-shaders.ts`.
 
 export type AmbientFieldVisualPreset = "blob" | "stream" | "pcb";
 export type AmbientFieldStageItemId = AmbientFieldVisualPreset;
 
 type Vec3 = readonly [number, number, number];
-type BucketPairArray = readonly [Vec3, Vec3, Vec3, Vec3, Vec3, Vec3, Vec3, Vec3];
 
 export interface AmbientFieldShaderPreset {
   alpha: number;
   alphaMobile?: number;
+  // Diagram-beat alpha floor. BlobController's scroll timeline fades
+  // `uAlpha` from 1 to this value (instead of Maze's 0) at the diagram
+  // label so the silhouette stays readable the whole way through the
+  // story. Stream/pcb carry 0 (timeline-inert).
+  alphaDiagramFloor: number;
   amplitude: number;
-  // Paired binary color contract. Each slot is one (base, noise) pair
-  // feeding the shader's `base + clamp(vNoise,0,1) * 4 * (noise - base)`
-  // lerp. Eight slots so the rainbow palette can live on-field in a
-  // single frame via `int b = int(aBucket) % 8`. Values are 0-255 for
-  // readability against Maze palette notes.
-  bucketBases: BucketPairArray;
-  bucketNoises: BucketPairArray;
+  // 0-255 RGB pair feeding the shader's Maze single-pair lerp.
+  // `colorBase` stays fixed per preset; `colorNoise` is the seed value,
+  // which BlobController tweens through `LANDING_RAINBOW_RGB` at runtime.
+  colorBase: Vec3;
+  colorNoise: Vec3;
   depth: number;
   frequency: number;
   funnelDistortion: number;
@@ -39,6 +39,12 @@ export interface AmbientFieldShaderPreset {
   funnelThick: number;
   height: number;
   selection: number;
+  // Hotspot-beat selection floor. BlobController's timeline fades
+  // `uSelection` from 1 to this value (instead of Maze's 0.3) at the
+  // hotspots+=1.4 beat so only the top ~15% of particles dim out. A
+  // restore tween at the respond beat brings it back to 1 for the rest
+  // of the story.
+  selectionHotspotFloor: number;
   size: number;
   sizeMobile?: number;
   speed: number;
@@ -84,35 +90,14 @@ export interface AmbientFieldSceneState {
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
 
 // Maze cyan base (40, 197, 234) → magenta noise (202, 50, 223) pair
-// (`scripts.pretty.js:42564-42569`). Repeated across all 8 slots so every
-// particle lerps cyan→magenta exactly like Maze's six-scalar family. The
-// blob layer replaces these with the full landing rainbow at preset
-// attach (see `scene/accent-palette.ts`).
+// (`scripts.pretty.js:42564-42569`). Used by stream/pcb for 1:1 parity
+// with Maze's default material look.
 const MAZE_CYAN: Vec3 = [40, 197, 234];
 const MAZE_MAGENTA: Vec3 = [202, 50, 223];
-const MAZE_BASES: BucketPairArray = [
-  MAZE_CYAN, MAZE_CYAN, MAZE_CYAN, MAZE_CYAN,
-  MAZE_CYAN, MAZE_CYAN, MAZE_CYAN, MAZE_CYAN,
-];
-const MAZE_NOISES: BucketPairArray = [
-  MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA,
-  MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA,
-];
 
-function toBucketPair(
-  rgb: readonly (readonly [number, number, number])[],
-): BucketPairArray {
-  if (rgb.length < 8) {
-    throw new Error(`bucket pair array must have 8 slots, got ${rgb.length}`);
-  }
-  return [
-    rgb[0]!, rgb[1]!, rgb[2]!, rgb[3]!,
-    rgb[4]!, rgb[5]!, rgb[6]!, rgb[7]!,
-  ];
-}
-
-const LANDING_BASES = toBucketPair(LANDING_BUCKET_BASES_RGB);
-const LANDING_NOISES = toBucketPair(LANDING_BUCKET_NOISES_RGB);
+// First rainbow stop doubles as the blob's initial `colorNoise` before
+// BlobController's runtime timeline takes over.
+const LANDING_INITIAL_NOISE: Vec3 = LANDING_RAINBOW_RGB[0]!;
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
@@ -145,12 +130,10 @@ export const visualPresets: Record<
     shader: {
       alpha: 1,
       alphaMobile: 1,
+      alphaDiagramFloor: 0.22,
       amplitude: 0.05,
-      // Blob carries the landing rainbow so the full wheel is on-field at
-      // rest; stream/pcb stay on the Maze cyan→magenta pair below for
-      // 1:1 parity with Maze's look.
-      bucketBases: LANDING_BASES,
-      bucketNoises: LANDING_NOISES,
+      colorBase: LANDING_BASE_BLUE,
+      colorNoise: LANDING_INITIAL_NOISE,
       depth: 0.3,
       frequency: 0.5,
       funnelDistortion: 0,
@@ -162,6 +145,7 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       selection: 1,
+      selectionHotspotFloor: 0.85,
       size: 10,
       sizeMobile: 6,
       speed: 1,
@@ -189,9 +173,10 @@ export const visualPresets: Record<
     shader: {
       alpha: 1,
       alphaMobile: 1,
+      alphaDiagramFloor: 0,
       amplitude: 0.05,
-      bucketBases: MAZE_BASES,
-      bucketNoises: MAZE_NOISES,
+      colorBase: MAZE_CYAN,
+      colorNoise: MAZE_MAGENTA,
       depth: 0.69,
       frequency: 1.7,
       funnelDistortion: 1,
@@ -203,6 +188,7 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0.4,
       selection: 1,
+      selectionHotspotFloor: 0.3,
       size: 9,
       sizeMobile: 6,
       speed: 1,
@@ -230,9 +216,10 @@ export const visualPresets: Record<
     shader: {
       alpha: 1,
       alphaMobile: 1,
+      alphaDiagramFloor: 0,
       amplitude: 0.05,
-      bucketBases: MAZE_BASES,
-      bucketNoises: MAZE_NOISES,
+      colorBase: MAZE_CYAN,
+      colorNoise: MAZE_MAGENTA,
       depth: 0.3,
       frequency: 0.1,
       funnelDistortion: 0,
@@ -244,6 +231,7 @@ export const visualPresets: Record<
       funnelThick: 0,
       height: 0,
       selection: 1,
+      selectionHotspotFloor: 0.3,
       size: 6,
       sizeMobile: 4,
       speed: 1,

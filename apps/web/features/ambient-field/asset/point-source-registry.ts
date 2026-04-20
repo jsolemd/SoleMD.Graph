@@ -8,9 +8,14 @@ import {
 } from "./field-attribute-baker";
 import { FieldGeometry } from "./field-geometry";
 import { SOLEMD_BURST_COLORS } from "../scene/accent-palette";
+import {
+  AMBIENT_FIELD_STAGE_ITEM_IDS,
+  type AmbientFieldStageItemId,
+} from "../scene/visual-presets";
 import type {
   AmbientFieldPointSource,
   AmbientFieldPointSourceBuffers,
+  PrewarmAmbientFieldPointSourcesOptions,
   ResolveAmbientFieldPointSourcesOptions,
 } from "./point-source-types";
 
@@ -43,46 +48,81 @@ interface RandomSource {
   (): number;
 }
 
+// Per-(environment, id) lazy cache so surfaces that only need a subset of
+// layers (e.g. the landing's blob-only field) don't pay the parse/bake
+// cost for stream + pcb.
 class AmbientFieldPointSourceRegistry {
-  private readonly cache = new Map<string, Record<string, AmbientFieldPointSource>>();
+  private readonly cache = new Map<string, AmbientFieldPointSource>();
 
   clear() {
     this.cache.clear();
   }
 
-  prewarm(options: ResolveAmbientFieldPointSourcesOptions) {
+  prewarm(options: PrewarmAmbientFieldPointSourcesOptions) {
     this.resolve(options);
   }
 
-  resolve({ densityScale, isMobile }: ResolveAmbientFieldPointSourcesOptions) {
+  resolve({
+    densityScale,
+    isMobile,
+    ids = AMBIENT_FIELD_STAGE_ITEM_IDS,
+  }: ResolveAmbientFieldPointSourcesOptions & {
+    ids?: readonly AmbientFieldStageItemId[];
+  }): Record<AmbientFieldStageItemId, AmbientFieldPointSource> {
     const density = roundDensityScale(densityScale);
-    const cacheKey = `${isMobile ? "mobile" : "desktop"}:${density.toFixed(2)}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached) {
-      return cached;
+    const envKey = `${isMobile ? "mobile" : "desktop"}:${density.toFixed(2)}`;
+    const resolved = {} as Record<
+      AmbientFieldStageItemId,
+      AmbientFieldPointSource
+    >;
+    for (const id of ids) {
+      const cacheKey = `${envKey}:${id}`;
+      const cached = this.cache.get(cacheKey);
+      if (cached) {
+        resolved[id] = cached;
+        continue;
+      }
+      const random = createRandomSource(
+        FIELD_SEED +
+          (isMobile ? 1000 : 0) +
+          Math.round(density * 100) +
+          idOffset(id),
+      );
+      const source = buildSource(id, random, { density, isMobile });
+      this.cache.set(cacheKey, source);
+      resolved[id] = source;
     }
-
-    const random = createRandomSource(
-      FIELD_SEED + (isMobile ? 1000 : 0) + Math.round(density * 100),
-    );
-    const sources = {
-      blob: createBlobSource(BLOB_POINT_COUNT, random),
-      stream: createStreamSource(
-        Math.max(
-          3600,
-          Math.round(
-            (isMobile ? STREAM_POINT_COUNT_MOBILE : STREAM_POINT_COUNT_DESKTOP) *
-              density,
-          ),
-        ),
-        random,
-      ),
-      pcb: createPcbSource(random),
-    } satisfies Record<string, AmbientFieldPointSource>;
-
-    this.cache.set(cacheKey, sources);
-    return sources;
+    return resolved;
   }
+}
+
+const ID_OFFSETS: Record<AmbientFieldStageItemId, number> = {
+  blob: 0,
+  stream: 1,
+  pcb: 2,
+};
+
+function idOffset(id: AmbientFieldStageItemId): number {
+  return ID_OFFSETS[id];
+}
+
+function buildSource(
+  id: AmbientFieldStageItemId,
+  random: RandomSource,
+  { density, isMobile }: { density: number; isMobile: boolean },
+): AmbientFieldPointSource {
+  if (id === "blob") return createBlobSource(BLOB_POINT_COUNT, random);
+  if (id === "stream") {
+    const target = Math.max(
+      3600,
+      Math.round(
+        (isMobile ? STREAM_POINT_COUNT_MOBILE : STREAM_POINT_COUNT_DESKTOP) *
+          density,
+      ),
+    );
+    return createStreamSource(target, random);
+  }
+  return createPcbSource(random);
 }
 
 function createRandomSource(seed: number): RandomSource {
@@ -347,15 +387,16 @@ function roundDensityScale(value: number) {
   return Math.max(0.55, Math.min(1, Math.round(value * 100) / 100));
 }
 
-export function resolveAmbientFieldPointSources({
-  densityScale,
-  isMobile,
-}: ResolveAmbientFieldPointSourcesOptions) {
-  return ambientFieldPointSourceRegistry.resolve({ densityScale, isMobile });
+export function resolveAmbientFieldPointSources(
+  options: ResolveAmbientFieldPointSourcesOptions & {
+    ids?: readonly AmbientFieldStageItemId[];
+  },
+) {
+  return ambientFieldPointSourceRegistry.resolve(options);
 }
 
 export function prewarmAmbientFieldPointSources(
-  options: ResolveAmbientFieldPointSourcesOptions,
+  options: PrewarmAmbientFieldPointSourcesOptions,
 ) {
   ambientFieldPointSourceRegistry.prewarm(options);
 }

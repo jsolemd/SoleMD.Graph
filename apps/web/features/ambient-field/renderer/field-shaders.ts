@@ -1,15 +1,14 @@
-// Ambient-field shader — Maze-derived point pipeline. The color lerp is the
-// one place SoleMD diverges: Maze uses six scalar uniforms `uR/G/B
-// color/noise` (with a blue-channel source typo at
-// `index.html:2165-2172`). SoleMD replaces those with two vec3 arrays,
-//   uBucketBases : vec3[8]
-//   uBucketNoises: vec3[8]
-// indexed by `aBucket`. Each particle runs the same Maze binary-lerp shape
+// Ambient-field shader — Maze-derived point pipeline. Uses Maze's single
+// color-pair shape: one `uColorBase` and one `uColorNoise` (vec3 form,
+// which removes Maze's `uBnoise - uGcolor` blue-channel typo by
+// construction — see `index.html:2165-2172`). The per-particle lerp is
+// Maze-verbatim:
 //   vColor = base + clamp(vNoise, 0, 1) * 4.0 * (noise - base)
-// but on its own pair, so every paired hue carries its own full lerp
-// simultaneously. The vec3 form removes the blue-channel typo by
-// construction. Source citations: Maze shader `index.html:2119-2393`,
-// base material `scripts.pretty.js:42545-42595`.
+// `vNoise` already varies across the field (driven by `aMove`/`uTime`),
+// so a GSAP timeline tweening `uColorNoise` through a rainbow palette
+// produces rolling waves of color — different particles reach peak noise
+// saturation at different moments. Source citations: Maze shader
+// `index.html:2119-2393`, base material `scripts.pretty.js:42545-42595`.
 
 export const FIELD_VERTEX_SHADER = `
 precision highp float;
@@ -17,7 +16,6 @@ precision highp float;
 attribute float aAlpha;
 attribute float aIndex;
 attribute float aSelection;
-attribute float aBucket;
 
 attribute float aStreamFreq;
 attribute float aFunnelNarrow;
@@ -53,19 +51,10 @@ uniform float uFunnelStartShift;
 uniform float uFunnelEndShift;
 uniform float uFunnelDistortion;
 
-// Paired binary color contract. uBucketBases[b] is the base hue for
-// particles whose aBucket mod 8 == b; uBucketNoises[b] is the paired
-// noise hue. The Maze binary-lerp runs on the pair so every live bucket
-// contributes its own full two-stop lerp simultaneously.
-uniform vec3 uBucketBases[8];
-uniform vec3 uBucketNoises[8];
-
-// Synthesis cluster gather: pulls particles toward a per-bucket world-space
-// direction so the four aBucket groups separate into distinct neighborhoods
-// during the synthesis beat. Zero outside that beat — the base position is
-// untouched.
-uniform float uSynthesisCluster;
-uniform vec3 uBucketOffsets[4];
+// Maze single-pair color uniforms. uColorBase is fixed by the preset;
+// uColorNoise is tweened at runtime (BlobController rainbow cycle).
+uniform vec3 uColorBase;
+uniform vec3 uColorNoise;
 
 varying float vAlpha;
 varying float vDistance;
@@ -228,31 +217,16 @@ float fbm(vec3 x) {
 void main() {
   vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
 
-  // Paired binary color lerp. One pair per bucket carries its own Maze
-  // shape (base + clamp(vNoise,0,1) * 4 * (noise - base)); the vec3
-  // form naturally removes Maze's uBnoise - uGcolor blue-channel typo.
-  int bucketId = int(aBucket);
-  int pairSlot = bucketId - (bucketId / 8) * 8;
-  vec3 base = uBucketBases[pairSlot];
-  vec3 noise = uBucketNoises[pairSlot];
-  vColor = base + clamp(vNoise, 0.0, 1.0) * 4.0 * (noise - base);
+  // Maze single-pair color lerp. One base + one noise hue; per-particle
+  // vNoise variance (driven by aMove / uTime) gives the "waves" effect
+  // when uColorNoise is tweened through a palette at runtime.
+  vColor = uColorBase + clamp(vNoise, 0.0, 1.0) * 4.0 * (uColorNoise - uColorBase);
 
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
   displaced += vec3(
     uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uSpeed))
   );
-
-  // Synthesis cluster gather. Each semantic bucket is pulled along its
-  // own direction so the four aBucket groups form spatially separate
-  // neighborhoods. uBucketOffsets is vec3[4]; clamp in case the particle
-  // pipeline ever expands aBucket cardinality without growing this array.
-  if (uSynthesisCluster > 0.0) {
-    int clusterSlot = bucketId - (bucketId / 4) * 4;
-    vec3 clusterDir = uBucketOffsets[clusterSlot];
-    vec3 jitter = (aRandomness - 0.5) * 0.35;
-    displaced += (clusterDir + jitter) * uSynthesisCluster;
-  }
 
   if (uStream > 0.0) {
     displaced.x += uTime * uSpeed * uStream * 0.3;

@@ -34,8 +34,6 @@ import { APP_CHROME_PX } from "@/lib/density";
 import { smooth } from "@/lib/motion";
 import { FieldCanvas } from "../../renderer/FieldCanvas";
 import type { BlobController } from "../../controller/BlobController";
-import type { PcbController } from "../../controller/PcbController";
-import type { StreamController } from "../../controller/StreamController";
 import { fieldLoopClock } from "../../renderer/field-loop-clock";
 import { AmbientFieldHotspotPool } from "./AmbientFieldHotspotPool";
 import {
@@ -97,12 +95,9 @@ function AmbientFieldLandingShell({
     useRef<AmbientFieldConnectionOverlayHandle>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const blobControllerRef = useRef<BlobController | null>(null);
-  const streamControllerRef = useRef<StreamController | null>(null);
-  const pcbControllerRef = useRef<PcbController | null>(null);
   const blobHotspotRefsRef = useRef<Array<HTMLDivElement | null>>([]);
   const blobHotspotCardRefs = useRef<Array<HTMLDivElement | null>>([]);
   const [blobControllerReady, setBlobControllerReady] = useState(false);
-  const [allControllersReady, setAllControllersReady] = useState(false);
   const sceneStateRef = useRef<AmbientFieldSceneState>(
     createAmbientFieldSceneState(),
   );
@@ -124,50 +119,31 @@ function AmbientFieldLandingShell({
     prewarmAmbientFieldPointSources({
       densityScale: 1,
       isMobile: isCompactFieldViewport,
+      ids: ["blob"],
     });
   }, [isCompactFieldViewport]);
 
   useEffect(() => {
-    if (!allControllersReady) return undefined;
+    if (!blobControllerReady) return undefined;
     const root = rootRef.current;
     const hero = heroRef.current;
     const blobAnchor = root?.querySelector<HTMLElement>("#section-story-1");
     const blobEndAnchor = root?.querySelector<HTMLElement>("#section-story-2");
-    const streamAnchor = root?.querySelector<HTMLElement>("#section-graph");
-    const pcbAnchor = root?.querySelector<HTMLElement>("#section-cta");
     const blob = blobControllerRef.current;
-    const stream = streamControllerRef.current;
-    const pcb = pcbControllerRef.current;
-    if (
-      !root ||
-      !hero ||
-      !blobAnchor ||
-      !blobEndAnchor ||
-      !streamAnchor ||
-      !pcbAnchor ||
-      !blob ||
-      !stream ||
-      !pcb
-    ) {
+    if (!root || !hero || !blobAnchor || !blobEndAnchor || !blob) {
       return undefined;
     }
 
     const dispose = bindAmbientFieldControllers({
-      anchors: {
-        blob: blobAnchor,
-        blobEnd: blobEndAnchor,
-        stream: streamAnchor,
-        pcb: pcbAnchor,
-        pcbEnd: pcbAnchor,
-      },
-      controllers: { blob, stream, pcb },
+      anchors: { blob: blobAnchor, blobEnd: blobEndAnchor },
+      controllers: { blob },
       hero,
       reducedMotion: !!reducedMotion,
       sceneStateRef,
     });
 
     return dispose;
-  }, [allControllersReady, isCompactFieldViewport, reducedMotion]);
+  }, [blobControllerReady, reducedMotion]);
 
   useEffect(() => {
     function syncChromeSurfaceMode() {
@@ -222,23 +198,6 @@ function AmbientFieldLandingShell({
   function handleBlobControllerReady(controller: BlobController) {
     blobControllerRef.current = controller;
     setBlobControllerReady(true);
-    if (streamControllerRef.current && pcbControllerRef.current) {
-      setAllControllersReady(true);
-    }
-  }
-
-  function handleStreamControllerReady(controller: StreamController) {
-    streamControllerRef.current = controller;
-    if (blobControllerRef.current && pcbControllerRef.current) {
-      setAllControllersReady(true);
-    }
-  }
-
-  function handlePcbControllerReady(controller: PcbController) {
-    pcbControllerRef.current = controller;
-    if (blobControllerRef.current && streamControllerRef.current) {
-      setAllControllersReady(true);
-    }
   }
 
   // Once both the BlobController and the pool refs are available, hand the
@@ -296,8 +255,6 @@ function AmbientFieldLandingShell({
         sceneStateRef={sceneStateRef}
         reducedMotion={!!reducedMotion}
         onBlobControllerReady={handleBlobControllerReady}
-        onStreamControllerReady={handleStreamControllerReady}
-        onPcbControllerReady={handlePcbControllerReady}
       />
 
       <div

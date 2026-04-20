@@ -38,9 +38,8 @@ export interface LayerUniforms {
   pointTexture: { value: Texture };
   uAlpha: { value: number };
   uAmplitude: { value: number };
-  uBucketBases: { value: Color[] };
-  uBucketNoises: { value: Color[] };
-  uBucketOffsets: { value: Vector3[] };
+  uColorBase: { value: Color };
+  uColorNoise: { value: Color };
   uDepth: { value: number };
   uFrequency: { value: number };
   uFunnelDistortion: { value: number };
@@ -58,7 +57,6 @@ export interface LayerUniforms {
   uSize: { value: number };
   uSpeed: { value: number };
   uStream: { value: number };
-  uSynthesisCluster: { value: number };
   uTime: { value: number };
   uWidth: { value: number };
 }
@@ -76,16 +74,6 @@ export interface FieldControllerInit {
   id: AmbientFieldStageItemId;
   preset: AmbientFieldVisualPresetConfig;
 }
-
-// World-space unit directions the four aBucket groups gather toward during
-// the synthesis beat. Magnitude is tuned per-frame so distances scale with
-// the blob's own radius.
-const BLOB_BUCKET_CLUSTER_OFFSETS: ReadonlyArray<readonly [number, number, number]> = [
-  [-0.82, 0.48, 0.18],
-  [0.82, 0.48, 0.18],
-  [0.0, -0.85, 0.18],
-  [0.0, 0.0, -0.35],
-];
 
 // Maze: `Tn = CustomEase("custom", "0.5, 0, 0.1, 1")`. CustomEase is a
 // Club GSAP plugin not installed here, so we approximate with a cubic
@@ -175,13 +163,15 @@ export abstract class FieldController {
     if (attachment.hotspotRefs) this.hotspotRefs = attachment.hotspotRefs;
   }
 
-  // Build the full uniform bag for this controller's preset. The blob's
-  // bucket arrays carry the landing rainbow; stream/pcb stay on the Maze
-  // cyan→magenta pair. `?field-blending=additive` etc. stays owned by
-  // FieldScene since it's a render-time concern.
+  // Build the full uniform bag for this controller's preset. Single-pair
+  // Maze color uniforms: the blob's `uColorNoise` is further tweened at
+  // runtime by BlobController through `LANDING_RAINBOW_RGB`; stream/pcb
+  // hold the cyan→magenta pair statically.
   createLayerUniforms(isMobile: boolean, pointTexture: Texture): LayerUniforms {
     const preset = this.params;
     const { shader } = preset;
+    const [baseR, baseG, baseB] = shader.colorBase;
+    const [noiseR, noiseG, noiseB] = shader.colorNoise;
     return {
       pointTexture: { value: pointTexture },
       uIsMobile: { value: isMobile },
@@ -205,22 +195,8 @@ export abstract class FieldController {
       uFunnelStartShift: { value: shader.funnelStartShift },
       uFunnelEndShift: { value: shader.funnelEndShift },
       uFunnelDistortion: { value: shader.funnelDistortion },
-      uBucketBases: {
-        value: shader.bucketBases.map(
-          ([r, g, b]) => new Color(r / 255, g / 255, b / 255),
-        ),
-      },
-      uBucketNoises: {
-        value: shader.bucketNoises.map(
-          ([r, g, b]) => new Color(r / 255, g / 255, b / 255),
-        ),
-      },
-      uSynthesisCluster: { value: 0 },
-      uBucketOffsets: {
-        value: BLOB_BUCKET_CLUSTER_OFFSETS.map(
-          ([x, y, z]) => new Vector3(x, y, z),
-        ),
-      },
+      uColorBase: { value: new Color(baseR / 255, baseG / 255, baseB / 255) },
+      uColorNoise: { value: new Color(noiseR / 255, noiseG / 255, noiseB / 255) },
     };
   }
 

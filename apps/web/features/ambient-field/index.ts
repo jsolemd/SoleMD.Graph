@@ -18,11 +18,8 @@ export {
 } from "./scene/visual-presets";
 
 export {
-  LANDING_BUCKET_BASES_RGB,
-  LANDING_BUCKET_NOISES_RGB,
+  LANDING_BASE_BLUE,
   LANDING_RAINBOW_RGB,
-  MAZE_DEFAULT_BASES_RGB,
-  MAZE_DEFAULT_NOISES_RGB,
   SOLEMD_BURST_COLORS,
 } from "./scene/accent-palette";
 

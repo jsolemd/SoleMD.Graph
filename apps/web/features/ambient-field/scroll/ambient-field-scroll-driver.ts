@@ -7,12 +7,7 @@ import {
   ensureGsapScrollTriggerRegistered,
 } from "../controller/FieldController";
 import type { BlobController } from "../controller/BlobController";
-import type { PcbController } from "../controller/PcbController";
-import type { StreamController } from "../controller/StreamController";
-import type {
-  AmbientFieldSceneState,
-  AmbientFieldStageItemId,
-} from "../scene/visual-presets";
+import type { AmbientFieldSceneState } from "../scene/visual-presets";
 
 export function registerAmbientFieldScrollTrigger(): void {
   ensureGsapScrollTriggerRegistered();
@@ -22,20 +17,20 @@ export interface BindAmbientFieldControllersOptions {
   anchors: {
     blob: HTMLElement;
     blobEnd: HTMLElement;
-    stream: HTMLElement;
-    pcb: HTMLElement;
-    pcbEnd?: HTMLElement | null;
   };
   controllers: {
     blob: BlobController;
-    stream: StreamController;
-    pcb: PcbController;
   };
   hero: HTMLElement;
   reducedMotion: boolean;
   sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
 }
 
+// Landing-only binder: the landing is a blob-centric story, so only the
+// blob layer is wired here. Stream + pcb controllers exist in the module
+// for other surfaces — see
+// `.claude/skills/ambient-field-modules/references/image-particle-conformation.md`
+// for how to rehydrate them.
 export function bindAmbientFieldControllers({
   anchors,
   controllers,
@@ -48,59 +43,35 @@ export function bindAmbientFieldControllers({
   const disposers: Array<() => void> = [];
   const triggers: ScrollTrigger[] = [];
 
-  // Each controller owns its scroll-linked timeline. Reduced motion is
-  // handled inside `bindScroll` (skips construction, snaps baseline).
+  // Blob owns its own scroll-linked timeline. Reduced motion is handled
+  // inside `bindScroll` (skips construction, snaps baseline).
   disposers.push(controllers.blob.bindScroll(anchors.blob, anchors.blobEnd));
-  disposers.push(controllers.stream.bindScroll(anchors.stream, null));
-  disposers.push(
-    controllers.pcb.bindScroll(anchors.pcb, anchors.pcbEnd ?? null),
-  );
 
   if (!reducedMotion) {
-    // Per-item visibility / localProgress writers. The blob is treated as
-    // the persistent stage substrate (visibility 1, localProgress driven by
-    // the blob anchor span) and stream/pcb fade in/out by their anchors.
-    const itemAnchors: Array<{
-      anchor: HTMLElement;
-      endAnchor?: HTMLElement | null;
-      id: AmbientFieldStageItemId;
-    }> = [
-      { anchor: anchors.blob, endAnchor: anchors.blobEnd, id: "blob" },
-      { anchor: anchors.stream, id: "stream" },
-      { anchor: anchors.pcb, endAnchor: anchors.pcbEnd ?? null, id: "pcb" },
-    ];
-
-    for (const { anchor, endAnchor, id } of itemAnchors) {
-      const trigger = ScrollTrigger.create({
-        trigger: anchor,
-        endTrigger: endAnchor ?? anchor,
-        start: "top bottom",
-        end: "bottom top",
-        onUpdate: (self) => {
-          const item = sceneStateRef.current.items[id];
-          if (!item) return;
-          item.localProgress = self.progress;
-          item.visibility = self.isActive ? 1 : item.visibility;
-        },
-        onEnter: () => {
-          const item = sceneStateRef.current.items[id];
-          if (item) item.visibility = 1;
-        },
-        onEnterBack: () => {
-          const item = sceneStateRef.current.items[id];
-          if (item) item.visibility = 1;
-        },
-        onLeave: () => {
-          const item = sceneStateRef.current.items[id];
-          if (item && id !== "blob") item.visibility = 0;
-        },
-        onLeaveBack: () => {
-          const item = sceneStateRef.current.items[id];
-          if (item && id !== "blob") item.visibility = 0;
-        },
-      });
-      triggers.push(trigger);
-    }
+    // Supplementary visibility/localProgress writer for the blob — the
+    // blob is the persistent stage substrate (visibility 1 while on-
+    // screen, localProgress driven by the anchor span).
+    const trigger = ScrollTrigger.create({
+      trigger: anchors.blob,
+      endTrigger: anchors.blobEnd,
+      start: "top bottom",
+      end: "bottom top",
+      onUpdate: (self) => {
+        const item = sceneStateRef.current.items.blob;
+        if (!item) return;
+        item.localProgress = self.progress;
+        item.visibility = self.isActive ? 1 : item.visibility;
+      },
+      onEnter: () => {
+        const item = sceneStateRef.current.items.blob;
+        if (item) item.visibility = 1;
+      },
+      onEnterBack: () => {
+        const item = sceneStateRef.current.items.blob;
+        if (item) item.visibility = 1;
+      },
+    });
+    triggers.push(trigger);
 
     // `--ambient-hero-progress` drives the chrome surface fade-in. Was
     // previously written from the per-frame syncFrame in the manifest
@@ -118,22 +89,20 @@ export function bindAmbientFieldControllers({
     });
     triggers.push(heroTrigger);
   } else {
-    // Reduced motion: still surface visibility=1 for the blob substrate.
+    // Reduced motion: hold blob visibility at 1.
     sceneStateRef.current.items.blob.visibility = 1;
-    sceneStateRef.current.items.stream.visibility = 1;
-    sceneStateRef.current.items.pcb.visibility = 1;
     hero.style.setProperty("--ambient-hero-progress", "0");
   }
 
   // Maze defers its bind under `setTimeout(..., 1)` so ScrollTrigger's
   // post-bind refresh runs after layout settles. In React we can bind
   // synchronously but still need to force a refresh: multiple `fromTo`
-  // tweens on the same uniform (uAlpha 1→0 at `diagram`, then 0→1 at
-  // `shrink`) each write their `from` value at construction time; the
-  // last one wins unless ScrollTrigger has had a chance to revert the
-  // timeline back to progress 0. Without this refresh, on reload with
-  // scroll already at 0 the user sees the blob invisible until the
-  // first manual scroll kicks a refresh.
+  // tweens on the same uniform (uAlpha 1→floor at `diagram`, then
+  // floor→1 at `shrink`) each write their `from` value at construction
+  // time; the last one wins unless ScrollTrigger has had a chance to
+  // revert the timeline back to progress 0. Without this refresh, on
+  // reload with scroll already at 0 the user sees the blob in the wrong
+  // state until the first manual scroll kicks a refresh.
   ScrollTrigger.refresh();
 
   return () => {

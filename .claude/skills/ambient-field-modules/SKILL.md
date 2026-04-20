@@ -30,6 +30,9 @@ version: 1.7.0
 > - `references/maze-stage-overlay-contract.md`
 > - `references/maze-asset-pipeline.md`
 > - `references/maze-model-point-source-inspection.md`
+> - `references/image-particle-conformation.md` — **read before adding any
+>   image/bitmap/model-derived particle layer to a surface.** Wiring
+>   checklist + the three SoleMD primitives to route through.
 > - `references/maze-mobile-performance-contract.md`
 > - `references/maze-rebuild-checklist.md`
 
@@ -231,6 +234,11 @@ parity spec every time:
 - `references/maze-asset-pipeline.md`
   - procedural, bitmap, and model-backed point sources plus the recommended
     SoleMD asset pipeline
+- `references/image-particle-conformation.md`
+  - required read before adding any image- / bitmap- / model-derived particle
+    layer to a surface. Maze-HQ pattern + wiring checklist + the three SoleMD
+    primitives (createImagePointGeometry, createModelPointGeometry, the PCB
+    bitmap painters) to route through. Route here before inventing anything.
 - `references/maze-model-point-source-inspection.md`
   - archived `.glb` bounds, upload counts, retained attributes, and model scene
     parity rules

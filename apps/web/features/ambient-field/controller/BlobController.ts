@@ -1,7 +1,8 @@
 import gsap from "gsap";
-import { Camera, Group, PerspectiveCamera, Vector3 } from "three";
+import { Camera, Color, Group, PerspectiveCamera, Vector3 } from "three";
 import { DECAY, lerpFactor } from "@/lib/motion3d";
 import type { AmbientFieldPointSource } from "../asset/point-source-types";
+import { LANDING_RAINBOW_RGB } from "../scene/accent-palette";
 import {
   ensureGsapScrollTriggerRegistered,
   FieldController,
@@ -52,6 +53,11 @@ interface BlobHotspotRuntime {
 // start scattered along aMove axes and converge onto the sphere.
 export const INTRO_DURATION_SECONDS = 0.9;
 export const INTRO_DEPTH_BOOST = 2.6;
+
+// GSAP rainbow color cycle: tween `uColorNoise` through the palette one
+// stop at a time, `ease: "none"`, `repeat: -1`. ~2s per stop → full
+// wheel in ~16s. Tunable.
+export const BLOB_COLOR_CYCLE_PER_STOP_SECONDS = 2;
 export const BLOB_HOTSPOT_COUNT = 40;
 export const BLOB_HOTSPOT_CARD_COUNT = 3;
 export const BLOB_HOTSPOT_IDS = Array.from(
@@ -225,6 +231,7 @@ export class BlobController extends FieldController {
   stageHasOnlySingle = false;
   private wrapperInitialized = false;
   private introCompleted = false;
+  private colorCycleTimeline: gsap.core.Timeline | null = null;
   private hotspotVector = new Vector3();
   private lastFrames: AmbientFieldHotspotFrame[] = BLOB_HOTSPOT_IDS.map(
     (id, index) => ({
@@ -356,7 +363,6 @@ export class BlobController extends FieldController {
     uniforms.uScale.value = 1 / baseScale;
     uniforms.uSize.value = shaderSize;
     uniforms.uSpeed.value = shader.speed * motionScale;
-    uniforms.uSynthesisCluster.value = 0;
 
     // Intro depth boost. Maze's `mm.animateIn` ramps uDepth from a
     // boosted value to baseline. SoleMD now defers uDepth ownership to the
@@ -401,6 +407,39 @@ export class BlobController extends FieldController {
     void sourceBounds;
   }
 
+  // Start (or re-start) the rainbow color cycle. Tweens `uColorNoise`
+  // — a live three.Color on the material — through LANDING_RAINBOW_RGB
+  // one stop at a time with `ease: "none"` and `repeat: -1`, so the
+  // field shows one color wave at a time rather than a static rainbow.
+  // Per-particle vNoise variance (driven by aMove / uTime) desynchronizes
+  // particles across the field — different parts peak on the current
+  // noise hue at different instants, producing the "waves of color"
+  // effect.
+  private startColorCycle(): void {
+    const material = this.material;
+    if (!material) return;
+    this.colorCycleTimeline?.kill();
+    const colorUniform = material.uniforms.uColorNoise?.value;
+    if (!(colorUniform instanceof Color)) return;
+    const timeline = gsap.timeline({ repeat: -1, ease: "none" });
+    for (const [r, g, b] of LANDING_RAINBOW_RGB) {
+      timeline.to(colorUniform, {
+        r: r / 255,
+        g: g / 255,
+        b: b / 255,
+        duration: BLOB_COLOR_CYCLE_PER_STOP_SECONDS,
+        ease: "none",
+      });
+    }
+    this.colorCycleTimeline = timeline;
+  }
+
+  override destroy(): void {
+    this.colorCycleTimeline?.kill();
+    this.colorCycleTimeline = null;
+    super.destroy();
+  }
+
   // Build the Maze blob scroll timeline (scripts.pretty.js:43291-43414).
   // Tweens uniforms + hotspotState + wrapper.scale + model.position.y across
   // a 10-second timeline scrubbed by ScrollTrigger from anchor's `top top`
@@ -426,7 +465,8 @@ export class BlobController extends FieldController {
     ) {
       // Maze skips scroll-binding entirely under reduced motion. Snap
       // baseline preset values onto the uniforms so the blob is still
-      // legible and leave hotspotState zeroed.
+      // legible and leave hotspotState zeroed. Reduced-motion also skips
+      // the rainbow color cycle — `uColorNoise` stays at the preset seed.
       material.uniforms.uAmplitude.value = shader.amplitude;
       material.uniforms.uFrequency.value = shader.frequency;
       material.uniforms.uDepth.value = shader.depth;
@@ -437,6 +477,8 @@ export class BlobController extends FieldController {
       this.hotspotState.onlyReds = 0;
       return () => {};
     }
+
+    this.startColorCycle();
 
     const sceneUnits = this.sceneUnits;
     const timeline = gsap.timeline({
@@ -485,10 +527,15 @@ export class BlobController extends FieldController {
       { maxNumber: 40, duration: 0.1 },
       "hotspots+=1.2",
     );
+    // uSelection floor: Maze ports 1 → 0.3 here (70% of particles
+    // gated out via `aSelection > uSelection`). For the SoleMD landing
+    // we raise the floor to `selectionHotspotFloor` so the blob keeps
+    // its density through the hotspot beat; a restore to 1 at the
+    // respond label brings the rest back for the end of the story.
     timeline.fromTo(
       material.uniforms.uSelection,
       { value: 1 },
-      { value: 0.3, duration: 0.6 },
+      { value: shader.selectionHotspotFloor, duration: 0.6 },
       "hotspots+=1.4",
     );
     timeline.to(
@@ -504,10 +551,13 @@ export class BlobController extends FieldController {
       { value: 1, duration: 0.4 },
       4.9,
     );
+    // uAlpha floor: Maze ports 1 → 0 here (full fade at the diagram
+    // beat). SoleMD holds a floor so the silhouette stays readable
+    // across the full story — same beat, non-zero endpoint.
     timeline.fromTo(
       material.uniforms.uAlpha,
       { value: 1 },
-      { value: 0, duration: 0.4 },
+      { value: shader.alphaDiagramFloor, duration: 0.4 },
       4.9,
     );
     timeline.fromTo(
@@ -531,7 +581,7 @@ export class BlobController extends FieldController {
     // documented fix for this specific multi-fromTo-on-same-property case.
     timeline.fromTo(
       material.uniforms.uAlpha,
-      { value: 0 },
+      { value: shader.alphaDiagramFloor },
       { value: 1, duration: 0.3, immediateRender: false },
       6.3,
     );
@@ -557,6 +607,14 @@ export class BlobController extends FieldController {
 
     timeline.addLabel("respond", 7.9);
     timeline.to(this.hotspotState, { opacity: 0, duration: 0.1 }, 7.9);
+    // Restore uSelection back to 1 as the hotspots fade, so the
+    // remaining ~15% of gated particles return to full density for the
+    // end of the story.
+    timeline.to(
+      material.uniforms.uSelection,
+      { value: 1, duration: 0.4, immediateRender: false },
+      7.9,
+    );
 
     timeline.addLabel("end", 9);
     timeline.fromTo(
