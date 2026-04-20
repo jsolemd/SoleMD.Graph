@@ -5,8 +5,8 @@ import * as THREE from "three";
 // `scripts.pretty.js:42784-42893`; SoleMD relabels them under product terms
 // but keeps the motion values intact so the field reads identically to Maze.
 //
-// Bucket id -> aBucket float (0..N-1) is exposed via `buildBucketIndex()` and
-// consumed by the Phase 4 burst overlay to gate color tinting.
+// Bucket id -> aBucket float (0..N-1) is exposed via `buildBucketIndex()`
+// so consumers can gate per-bucket color behavior on-field.
 
 export interface FieldSemanticBucket {
   id: string;

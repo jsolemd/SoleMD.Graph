@@ -11,10 +11,11 @@ from app.ingest.models import StartReleaseRequest
 from app.ingest.runtime import run_release_ingest
 from app.ingest.sources import pubtator, semantic_scholar
 from helpers import write_jsonl_gz, write_manifest, write_tar_gz, write_tsv_gz
+from telemetry_test_support import metric_sample_value
 
 
 @pytest.mark.asyncio
-async def test_s2_sample_ingest_writes_canonical_rows(
+async def test_s2_sample_ingest_writes_raw_rows_only(
     tmp_path: Path,
     warehouse_dsns: dict[str, str],
     runtime_settings_factory,
@@ -161,6 +162,22 @@ async def test_s2_sample_ingest_writes_canonical_rows(
         family_allowlist=("publication_venues", "authors", "papers", "abstracts", "s2orc_v2"),
     )
 
+    before_runs_published = metric_sample_value(
+        "ingest_runs_total",
+        {"source_code": "s2", "outcome": "published"},
+    )
+    before_loading_count = metric_sample_value(
+        "ingest_phase_duration_seconds_count",
+        {
+            "source_code": "s2",
+            "release_tag": release_tag,
+            "phase": "loading",
+        },
+    )
+    before_paper_rows = metric_sample_value(
+        "ingest_family_rows_total",
+        {"source_code": "s2", "family": "papers"},
+    )
     pools = await open_pools(runtime_settings, names=("ingest_write",))
     try:
         ingest_run_id = await run_release_ingest(
@@ -170,6 +187,23 @@ async def test_s2_sample_ingest_writes_canonical_rows(
         )
     finally:
         await pools.close()
+
+    assert metric_sample_value(
+        "ingest_runs_total",
+        {"source_code": "s2", "outcome": "published"},
+    ) == before_runs_published + 1
+    assert metric_sample_value(
+        "ingest_phase_duration_seconds_count",
+        {
+            "source_code": "s2",
+            "release_tag": release_tag,
+            "phase": "loading",
+        },
+    ) == before_loading_count + 1
+    assert metric_sample_value(
+        "ingest_family_rows_total",
+        {"source_code": "s2", "family": "papers"},
+    ) == before_paper_rows + 1
 
     admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
     try:
@@ -195,18 +229,13 @@ async def test_s2_sample_ingest_writes_canonical_rows(
         paper_row = await admin_connection.fetchrow(
             """
             SELECT
-                papers.pmid,
-                papers.doi_norm,
-                paper_text.title,
-                paper_text.abstract,
-                paper_text.text_availability,
-                paper_documents.source_revision
-            FROM solemd.papers papers
-            JOIN solemd.paper_text paper_text
-              ON paper_text.corpus_id = papers.corpus_id
-            JOIN solemd.paper_documents paper_documents
-              ON paper_documents.corpus_id = papers.corpus_id
-            WHERE papers.s2_paper_id = '101'
+                pmid,
+                doi_norm,
+                title,
+                abstract,
+                corpus_id
+            FROM solemd.s2_papers_raw
+            WHERE paper_id = '101'
             """,
         )
         assert paper_row is not None
@@ -214,13 +243,17 @@ async def test_s2_sample_ingest_writes_canonical_rows(
         assert paper_row["doi_norm"] == "10.1000/ingest-test"
         assert paper_row["title"] == "Release-safe ingest worker lane"
         assert paper_row["abstract"] == "This release proves the first warehouse ingest lane."
-        assert paper_row["text_availability"] == 2
-        assert paper_row["source_revision"] == release_tag
+        assert paper_row["corpus_id"] is None
 
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_authors") == 1
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sections") == 1
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_blocks") == 1
-        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sentences") >= 1
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2_paper_authors_raw") == 1
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.s2orc_documents_raw") == 1
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.papers") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_text") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_authors") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_documents") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sections") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_blocks") == 0
+        assert await admin_connection.fetchval("SELECT count(*) FROM solemd.paper_sentences") == 0
     finally:
         await admin_connection.close()
 
@@ -363,21 +396,6 @@ async def test_pubtator_relations_resume_is_deterministic(
     plan = pubtator.build_plan(runtime_settings, request)
     assert plan.family_names == ("relations",)
 
-    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
-    try:
-        corpus_id = await admin_connection.fetchval(
-            "INSERT INTO solemd.corpus (admission_reason) VALUES ('test') RETURNING corpus_id"
-        )
-        await admin_connection.execute(
-            """
-            INSERT INTO solemd.papers (corpus_id, pmid, s2_paper_id)
-            VALUES ($1, 12345, '12345')
-            """,
-            corpus_id,
-        )
-    finally:
-        await admin_connection.close()
-
     pools = await open_pools(runtime_settings, names=("ingest_write",))
     try:
         first_run_id = await run_release_ingest(
@@ -395,7 +413,7 @@ async def test_pubtator_relations_resume_is_deterministic(
         ) == 1
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM pubtator.relations"
-        ) == 1
+        ) == 0
         relation_stage = await admin_connection.fetchrow(
             """
             SELECT relation_type, subject_entity_id, object_entity_id, subject_type, object_type
@@ -410,19 +428,6 @@ async def test_pubtator_relations_resume_is_deterministic(
         assert relation_stage["subject_type"] == 3
         assert relation_stage["object_type"] == 2
 
-        relation_canonical = await admin_connection.fetchrow(
-            """
-            SELECT relation_type, subject_entity_id, object_entity_id, subject_type, object_type
-            FROM pubtator.relations
-            WHERE pmid = 12345
-            """
-        )
-        assert relation_canonical is not None
-        assert relation_canonical["relation_type"] == 1
-        assert relation_canonical["subject_entity_id"] == "Chemical|MESH:D000001"
-        assert relation_canonical["object_entity_id"] == "Disease|MESH:D000002"
-        assert relation_canonical["subject_type"] == 3
-        assert relation_canonical["object_type"] == 2
         await admin_connection.execute(
             """
             UPDATE solemd.ingest_runs
@@ -451,7 +456,7 @@ async def test_pubtator_relations_resume_is_deterministic(
         assert resumed_run_id == first_run_id
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM pubtator.relations"
-        ) == 1
+        ) == 0
         assert await admin_connection.fetchval(
             "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
             first_run_id,
@@ -544,21 +549,6 @@ async def test_pubtator_biocxml_relations_prefer_xml_and_resume_cleanly(
     plan = pubtator.build_plan(runtime_settings, request)
     assert plan.family_names == ("biocxml", "relations")
 
-    admin_connection = await asyncpg.connect(warehouse_dsns["admin"])
-    try:
-        corpus_id = await admin_connection.fetchval(
-            "INSERT INTO solemd.corpus (admission_reason) VALUES ('test') RETURNING corpus_id"
-        )
-        await admin_connection.execute(
-            """
-            INSERT INTO solemd.papers (corpus_id, pmid, s2_paper_id)
-            VALUES ($1, 12345, '12345')
-            """,
-            corpus_id,
-        )
-    finally:
-        await admin_connection.close()
-
     pools = await open_pools(runtime_settings, names=("ingest_write",))
     try:
         first_run_id = await run_release_ingest(
@@ -576,13 +566,13 @@ async def test_pubtator_biocxml_relations_prefer_xml_and_resume_cleanly(
         ) == 2
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM pubtator.entity_annotations"
-        ) == 2
+        ) == 0
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM pubtator.relations_stage"
         ) == 2
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM pubtator.relations"
-        ) == 1
+        ) == 0
 
         relation_stage_counts = await admin_connection.fetch(
             """
@@ -595,33 +585,6 @@ async def test_pubtator_biocxml_relations_prefer_xml_and_resume_cleanly(
         assert [(row["relation_source"], row["row_count"]) for row in relation_stage_counts] == [
             (1, 1),
             (2, 1),
-        ]
-
-        canonical_relation = await admin_connection.fetchrow(
-            """
-            SELECT relation_source, subject_entity_id, object_entity_id, subject_type, object_type
-            FROM pubtator.relations
-            WHERE pmid = 12345
-            """
-        )
-        assert canonical_relation is not None
-        assert canonical_relation["relation_source"] == 1
-        assert canonical_relation["subject_entity_id"] == "Chemical|MESH:D000001"
-        assert canonical_relation["object_entity_id"] == "Disease|MESH:D000002"
-        assert canonical_relation["subject_type"] == 3
-        assert canonical_relation["object_type"] == 2
-
-        entity_rows = await admin_connection.fetch(
-            """
-            SELECT start_offset, end_offset, concept_id_raw
-            FROM pubtator.entity_annotations
-            WHERE pmid = 12345
-            ORDER BY start_offset
-            """
-        )
-        assert [(row["start_offset"], row["end_offset"], row["concept_id_raw"]) for row in entity_rows] == [
-            (0, 7, "Chemical|MESH:D000001"),
-            (17, 25, "Disease|MESH:D000002"),
         ]
 
         await admin_connection.execute(
@@ -652,13 +615,13 @@ async def test_pubtator_biocxml_relations_prefer_xml_and_resume_cleanly(
         assert resumed_run_id == first_run_id
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM pubtator.entity_annotations"
-        ) == 2
+        ) == 0
         assert await admin_connection.fetchval(
             "SELECT count(*) FROM pubtator.relations"
-        ) == 1
+        ) == 0
         assert await admin_connection.fetchval(
-            "SELECT relation_source FROM pubtator.relations WHERE pmid = 12345"
-        ) == 1
+            "SELECT count(*) FROM pubtator.relations WHERE pmid = 12345"
+        ) == 0
         assert await admin_connection.fetchval(
             "SELECT status FROM solemd.ingest_runs WHERE ingest_run_id = $1",
             first_run_id,

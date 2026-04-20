@@ -2,10 +2,10 @@
  * AmbientFieldHotspotRing — Maze homepage hotspot primitive, ported
  * verbatim with an `afr-` (ambient-field-ring) namespace prefix.
  *
- * Source keyframes + rules: Maze `styles.css` (extracted in the Round 12
- * ledger §13). Per-hotspot `--delay` is authored by the React component;
- * `--duration` overrides to 4 s when the stage gate enters
- * `has-only-single` mode. Colors, sizes, and fill-modes match Maze 1:1.
+ * Source keyframes + rules: Maze `styles.css`. Per-hotspot `--delay` is
+ * authored by the React component; `--duration` overrides to 4 s when the
+ * stage gate enters `has-only-single` mode. Colors, sizes, and fill-modes
+ * match Maze 1:1.
  */
 
 @keyframes afr-hotspot-inner {

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useGraphModeController } from "@/features/graph/hooks/use-graph-mode-controller";
 import { MODE_ORDER, getModeConfig } from "@/features/graph/lib/modes";
-import { bouncy } from "@/lib/motion";
+import { pressable } from "@/lib/motion";
 import type { GraphMode } from "@/features/graph/config";
 import { useShellVariantContext } from "../shell/ShellVariantContext";
 
@@ -89,9 +89,7 @@ export function ModeToggleBar({
                   border: "none",
                   cursor: "pointer",
                 }}
-                whileHover={{ scale: 1.08 }}
-                whileTap={{ scale: 0.92 }}
-                transition={bouncy}
+                {...pressable()}
                 aria-pressed={isActive}
                 aria-label={`${config.label} mode`}
               >

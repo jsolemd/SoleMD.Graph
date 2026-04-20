@@ -72,7 +72,7 @@
   color: var(--mode-accent);
   cursor: pointer;
   font-weight: 500;
-  border-bottom: 1px dotted var(--mode-accent-border);
+  border-bottom: 1px dotted var(--mode-accent);
   transition: opacity 0.15s, border-color 0.15s;
 }
 
@@ -112,7 +112,7 @@
   padding: calc(8px * var(--graph-panel-reading-scale, 1)) calc(10px * var(--graph-panel-reading-scale, 1));
   margin: 0.5em 0;
   background-color: var(--mode-accent-subtle);
-  border: 1px solid var(--mode-accent-border);
+  border: 1px solid var(--mode-accent);
 }
 
 .wiki-callout-header {
@@ -223,7 +223,7 @@
 .wiki-content blockquote {
   margin: 0.5em 0;
   padding: calc(4px * var(--graph-panel-reading-scale, 1)) calc(10px * var(--graph-panel-reading-scale, 1));
-  border-left: 2px solid var(--mode-accent-border);
+  border-left: 2px solid var(--mode-accent);
   color: var(--graph-panel-text-muted);
 }
 

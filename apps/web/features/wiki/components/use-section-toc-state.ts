@@ -36,22 +36,45 @@ function resolveRailProgress(scrollTop: number, sectionStarts: number[]): number
   return sectionStarts.length - 1;
 }
 
+function getScrollTop(container: HTMLElement | null): number {
+  if (container) return container.scrollTop;
+  if (typeof window === "undefined") return 0;
+  return window.scrollY;
+}
+
+function getViewportHeight(container: HTMLElement | null): number {
+  if (container) return container.clientHeight;
+  if (typeof window === "undefined") return 0;
+  return window.innerHeight;
+}
+
 function measureSectionStarts(
-  container: HTMLElement,
+  container: HTMLElement | null,
   targets: HTMLElement[],
 ): number[] {
   if (targets.length === 0) return [];
 
-  const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
-  const activationOffset = container.clientHeight * 0.2;
-  const containerRect = container.getBoundingClientRect();
+  const scrollTop = getScrollTop(container);
+  const viewportHeight = getViewportHeight(container);
+  const activationOffset = viewportHeight * 0.2;
+  const maxScroll = container
+    ? Math.max(0, container.scrollHeight - container.clientHeight)
+    : Math.max(
+        0,
+        (typeof document === "undefined"
+          ? 0
+          : document.documentElement.scrollHeight) - viewportHeight,
+      );
+  const containerTop = container
+    ? container.getBoundingClientRect().top
+    : 0;
   let previous = 0;
 
   return targets.map((target) => {
     const rawStart =
       target.getBoundingClientRect().top -
-      containerRect.top +
-      container.scrollTop -
+      containerTop +
+      scrollTop -
       activationOffset;
     const start = Math.min(maxScroll, Math.max(previous, rawStart));
     previous = start;
@@ -71,7 +94,7 @@ export function useSectionTocState({
   scrollOffsetPx = 0,
 }: {
   entries: PanelEdgeTocEntry[];
-  scrollRef: RefObject<HTMLElement | null>;
+  scrollRef?: RefObject<HTMLElement | null>;
   scrollOffsetPx?: number;
 }): SectionTocState {
   const [inView, setInView] = useState<Set<string>>(new Set());
@@ -84,9 +107,14 @@ export function useSectionTocState({
   );
 
   useEffect(() => {
-    const scrollElement = scrollRef.current;
-    if (!scrollElement || entries.length === 0) return undefined;
-    const scrollContainer: HTMLElement = scrollElement;
+    if (entries.length === 0) return undefined;
+    const scrollContainer: HTMLElement | null = scrollRef?.current ?? null;
+    const scrollEventTarget: Window | HTMLElement | null =
+      scrollContainer ?? (typeof window === "undefined" ? null : window);
+    if (!scrollEventTarget) return undefined;
+    const queryRoot: Document | HTMLElement =
+      scrollContainer ?? (typeof document === "undefined" ? null! : document);
+    if (!queryRoot) return undefined;
 
     const entryIds = new Set(entries.map((entry) => entry.id));
     let targets: HTMLElement[] = [];
@@ -95,7 +123,7 @@ export function useSectionTocState({
 
     function syncFillProgress() {
       const next = resolveRailProgress(
-        scrollContainer.scrollTop,
+        getScrollTop(scrollContainer),
         sectionStartsRef.current,
       );
       setFillProgress((previous) => (
@@ -109,7 +137,7 @@ export function useSectionTocState({
 
       targets = [];
       for (const id of entryIds) {
-        const target = scrollContainer.querySelector<HTMLElement>(
+        const target = queryRoot.querySelector<HTMLElement>(
           `#${CSS.escape(id)}`,
         );
         if (target) targets.push(target);
@@ -159,25 +187,32 @@ export function useSectionTocState({
         syncFillProgress();
       });
 
-      resizeObserver.observe(scrollContainer);
+      if (scrollContainer) resizeObserver.observe(scrollContainer);
       for (const target of targets) resizeObserver.observe(target);
     }
 
     setupRaf = requestAnimationFrame(setupObserver);
-    scrollContainer.addEventListener("scroll", syncFillProgress, { passive: true });
+    scrollEventTarget.addEventListener("scroll", syncFillProgress, {
+      passive: true,
+    });
 
-    const mutationObserver = new MutationObserver(() => {
+    const mutationTarget: HTMLElement | null =
+      scrollContainer ??
+      (typeof document === "undefined" ? null : document.body);
+    const mutationObserver = mutationTarget ? new MutationObserver(() => {
       cancelAnimationFrame(setupRaf);
       setupRaf = requestAnimationFrame(setupObserver);
-    });
-    mutationObserver.observe(scrollContainer, { childList: true, subtree: true });
+    }) : null;
+    if (mutationObserver && mutationTarget) {
+      mutationObserver.observe(mutationTarget, { childList: true, subtree: true });
+    }
 
     return () => {
       cancelAnimationFrame(setupRaf);
-      scrollContainer.removeEventListener("scroll", syncFillProgress);
+      scrollEventTarget.removeEventListener("scroll", syncFillProgress);
       observerRef.current?.disconnect();
       resizeObserver?.disconnect();
-      mutationObserver.disconnect();
+      mutationObserver?.disconnect();
     };
   }, [entries, entries.length, entriesKey, scrollRef]);
 
@@ -194,19 +229,30 @@ export function useSectionTocState({
 
   const handleJump = useCallback(
     (id: string) => {
-      const container = scrollRef.current;
-      const target = container?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
-      if (!container || !target) return;
+      const container = scrollRef?.current ?? null;
+      const target = (container ?? document).querySelector<HTMLElement>(
+        `#${CSS.escape(id)}`,
+      );
+      if (!target) return;
 
-      const containerRect = container.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      const nextTop =
-        targetRect.top - containerRect.top + container.scrollTop - scrollOffsetPx;
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const nextTop =
+          targetRect.top - containerRect.top + container.scrollTop - scrollOffsetPx;
 
-      container.scrollTo({
-        top: Math.max(0, nextTop),
-        behavior: "smooth",
-      });
+        container.scrollTo({
+          top: Math.max(0, nextTop),
+          behavior: "smooth",
+        });
+      } else {
+        const nextTop =
+          target.getBoundingClientRect().top + window.scrollY - scrollOffsetPx;
+        window.scrollTo({
+          top: Math.max(0, nextTop),
+          behavior: "smooth",
+        });
+      }
     },
     [scrollOffsetPx, scrollRef],
   );

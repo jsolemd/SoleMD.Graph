@@ -1,22 +1,19 @@
-// Ambient-field shader — Maze-derived point pipeline, diverged at the color
-// lerp to carry per-particle hue variety. Maze uses six scalar
-// `uR/G/B color/noise` uniforms and lerps each channel independently (with a
-// documented blue-channel typo). SoleMD replaces those six scalars with:
-//   uBaseColor    : vec3  — static cyan base (Maze's fixed base contract)
-//   uBucketAccents: vec3[4] — per-bucket accent, indexed by aBucket
-// The lerp becomes one native vec3 mix on the accent chosen for that point's
-// bucket. This lets four hues coexist in a single frame while the CPU walks
-// all four accents through the same semantic rainbow, 90° apart in phase.
-// The divergence (and the blue-channel typo removal) is recorded in
-// `.claude/skills/ambient-field-modules/references/maze-shader-material-contract.md`.
-// Source citations for the Maze baseline:
-// `docs/map/ambient-field-maze-baseline-ledger-round-12.md`
-// (index.html:2119-2393, scripts.pretty.js:42545-42595).
+// Ambient-field shader — Maze-derived point pipeline. The color lerp is the
+// one place SoleMD diverges: Maze uses six scalar uniforms `uR/G/B
+// color/noise` (with a blue-channel source typo at
+// `index.html:2165-2172`). SoleMD replaces those with two vec3 arrays,
+//   uBucketBases : vec3[8]
+//   uBucketNoises: vec3[8]
+// indexed by `aBucket`. Each particle runs the same Maze binary-lerp shape
+//   vColor = base + clamp(vNoise, 0, 1) * 4.0 * (noise - base)
+// but on its own pair, so every paired hue carries its own full lerp
+// simultaneously. The vec3 form removes the blue-channel typo by
+// construction. Source citations: Maze shader `index.html:2119-2393`,
+// base material `scripts.pretty.js:42545-42595`.
 
 export const FIELD_VERTEX_SHADER = `
 precision highp float;
 
-attribute vec3 color;
 attribute float aAlpha;
 attribute float aIndex;
 attribute float aSelection;
@@ -56,20 +53,19 @@ uniform float uFunnelStartShift;
 uniform float uFunnelEndShift;
 uniform float uFunnelDistortion;
 
-// SoleMD multi-hue color contract (see header). uBaseColor holds the
-// fixed Maze-cyan base; uBucketAccents carries one accent per semantic
-// bucket (0..3 in SOLEMD_DEFAULT_BUCKETS order). aBucket selects which
-// accent this particle lerps toward.
-uniform vec3 uBaseColor;
-uniform vec3 uBucketAccents[4];
+// Paired binary color contract. uBucketBases[b] is the base hue for
+// particles whose aBucket mod 8 == b; uBucketNoises[b] is the paired
+// noise hue. The Maze binary-lerp runs on the pair so every live bucket
+// contributes its own full two-stop lerp simultaneously.
+uniform vec3 uBucketBases[8];
+uniform vec3 uBucketNoises[8];
 
-// SoleMD burst overlay — bucket-gated monochromatic tint sweeps.
-// Disabled when uBurstType < 0. See burst-controller.ts for CPU driver.
-uniform float uBurstType;
-uniform float uBurstStrength;
-uniform vec3 uBurstColor;
-uniform float uBurstRegionScale;
-uniform float uBurstSoftness;
+// Synthesis cluster gather: pulls particles toward a per-bucket world-space
+// direction so the four aBucket groups separate into distinct neighborhoods
+// during the synthesis beat. Zero outside that beat — the base position is
+// untouched.
+uniform float uSynthesisCluster;
+uniform vec3 uBucketOffsets[4];
 
 varying float vAlpha;
 varying float vDistance;
@@ -232,39 +228,31 @@ float fbm(vec3 x) {
 void main() {
   vNoise = fbm(position * (uFrequency + aStreamFreq * uStream));
 
-  // Per-particle bucket-accent color lerp. Same clamp(vNoise, 0, 1) * 4
-  // shape as Maze's binary lerp, rewritten as a single vec3 mix so the
-  // blue-channel typo from Maze's scalar form (uBnoise - uGcolor) is
-  // naturally absent. Accent is chosen per particle from uBucketAccents,
-  // indexed by aBucket -- four hues coexist in one frame.
-  int bucketId = int(clamp(aBucket, 0.0, 3.0));
-  vec3 accent = uBucketAccents[bucketId];
-  float noiseMix = clamp(vNoise, 0.0, 1.0) * 4.0;
-  vColor = uBaseColor + noiseMix * (accent - uBaseColor);
-
-  // SoleMD burst overlay — gate a coherent region of the active bucket
-  // and lerp its color over the Maze base; burstBoost feeds vAlpha below.
-  float bucketGate = uBurstType < 0.0
-    ? 0.0
-    : step(0.5, 1.0 - abs(aBucket - uBurstType));
-  float burstField = 0.5 + 0.5 * snoise(vec4(
-    position * uBurstRegionScale + vec3(uTime * 0.4),
-    0.0
-  ));
-  float burstEnv = smoothstep(
-    0.5 - uBurstSoftness,
-    0.5 + uBurstSoftness,
-    burstField
-  ) * uBurstStrength;
-  float burstBoost = clamp(bucketGate * burstEnv, 0.0, 1.0);
-  vec3 burstColor = uBurstColor * (1.0 + 0.22 * vNoise);
-  vColor = mix(vColor, burstColor, burstBoost);
+  // Paired binary color lerp. One pair per bucket carries its own Maze
+  // shape (base + clamp(vNoise,0,1) * 4 * (noise - base)); the vec3
+  // form naturally removes Maze's uBnoise - uGcolor blue-channel typo.
+  int bucketId = int(aBucket);
+  int pairSlot = bucketId - (bucketId / 8) * 8;
+  vec3 base = uBucketBases[pairSlot];
+  vec3 noise = uBucketNoises[pairSlot];
+  vColor = base + clamp(vNoise, 0.0, 1.0) * 4.0 * (noise - base);
 
   vec3 displaced = position;
   displaced *= (1.0 + (uAmplitude * vNoise));
   displaced += vec3(
     uScale * uDepth * aMove * aSpeed * snoise_1_2(vec2(aIndex, uTime * uSpeed))
   );
+
+  // Synthesis cluster gather. Each semantic bucket is pulled along its
+  // own direction so the four aBucket groups form spatially separate
+  // neighborhoods. uBucketOffsets is vec3[4]; clamp in case the particle
+  // pipeline ever expands aBucket cardinality without growing this array.
+  if (uSynthesisCluster > 0.0) {
+    int clusterSlot = bucketId - (bucketId / 4) * 4;
+    vec3 clusterDir = uBucketOffsets[clusterSlot];
+    vec3 jitter = (aRandomness - 0.5) * 0.35;
+    displaced += (clusterDir + jitter) * uSynthesisCluster;
+  }
 
   if (uStream > 0.0) {
     displaced.x += uTime * uSpeed * uStream * 0.3;
@@ -300,9 +288,6 @@ void main() {
   if (aSelection > uSelection) {
     vAlpha = 0.0;
   }
-  // Burst tint pulls a slight alpha boost so tinted regions read as
-  // luminous sweeps instead of a flat color overlay.
-  vAlpha *= 1.0 + 0.35 * burstBoost;
 }
 `;
 

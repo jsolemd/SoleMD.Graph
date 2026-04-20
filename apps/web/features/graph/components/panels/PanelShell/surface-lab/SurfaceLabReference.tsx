@@ -9,6 +9,7 @@ import {
   panelAccentCardStyle,
   panelCardClassName,
   panelCardStyle,
+  panelMonoLabelStyle,
   panelPillStyles,
   panelSurfaceStyle,
   panelTextDimStyle,
@@ -62,7 +63,7 @@ export function TokenSwatch({
       <Text mt={10} fw={600} style={panelTextStyle}>
         {label}
       </Text>
-      <Text mt={2} className="font-mono text-[11px]" style={panelTextDimStyle}>
+      <Text mt={2} style={panelMonoLabelStyle}>
         {token}
       </Text>
     </div>
@@ -85,7 +86,7 @@ function TokenWallChip({
       <Text mt={8} fw={600} style={panelTextStyle}>
         {label}
       </Text>
-      <Text mt={2} className="font-mono text-[11px]" style={panelTextDimStyle}>
+      <Text mt={2} style={panelMonoLabelStyle}>
         {token}
       </Text>
     </div>
@@ -144,7 +145,7 @@ export function AdoptionInventory({ rows }: { rows: SurfaceInventoryRow[] }) {
             },
             th: {
               backgroundColor: "var(--graph-panel-bg)",
-              borderColor: "var(--graph-panel-border)",
+              borderColor: "transparent",
               color: "var(--graph-panel-text-dim)",
               fontSize: 11,
               fontWeight: 600,
@@ -152,7 +153,7 @@ export function AdoptionInventory({ rows }: { rows: SurfaceInventoryRow[] }) {
             },
             td: {
               verticalAlign: "top",
-              borderColor: "var(--graph-panel-border)",
+              borderColor: "transparent",
             },
           }}
         >

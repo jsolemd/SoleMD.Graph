@@ -2,10 +2,16 @@
 
 > **Status**: locked for stack shape, container placement, collector
 > set, label taxonomy, PG / OpenSearch / Redis / engine instrumentation
-> surfaces, the Langfuse-vs-Prometheus split contract, the core
-> dashboards, and the alert policy. Specific retention windows,
-> per-panel queries, exact Grafonnet layout, and dashboard JSON land
-> after a first cycle of real data (**provisional**).
+> surfaces, and the Langfuse-vs-Prometheus split contract. The first
+> worker telemetry slice is landed in `apps/worker`: Dramatiq
+> Prometheus middleware and `prometheus_client` application metrics
+> share per-scope multiprocess stores for `ingest`, `corpus`, and
+> `evidence`. Prometheus + Grafana provisioning for those worker lanes
+> now lives in `SoleMD.Infra/infra/observability/`, using host
+> networking to scrape the host-run worker endpoints on `9464` /
+> `9465` / `9466` and exposing local UIs on Prometheus `9095` and
+> Grafana `3300`. Loki / Alloy / Alertmanager and the wider non-worker
+> exporter set remain deferred.
 >
 > **Date**: 2026-04-16
 >
@@ -67,7 +73,7 @@ Inherits every convention from those documents. This doc adds:
 | **Langfuse-vs-Prometheus split contract** | RAG-quality signals (faithfulness, context relevance, answer relevance, LLM-judge scores, per-dataset eval run outcomes) live in Langfuse. Operational signals (latency, throughput, error counters, cache hit ratio, pool state, disk, GPU) live in Prometheus. Cascade per-stage latency is the only quantity dual-emitted: Prometheus histogram for operational dashboarding + alerting (`cascade_stage_duration_seconds`), Langfuse span for per-request trace reconstruction. The two are linked via exemplars, not joined at the data layer. |
 | **Sibling batch-quality surface** | `10a-rag-quality-analyzer.md` is the sibling authority for offline batch analytics derived from cascade traces and persisted in `solemd.rag_quality_metrics`. `10` owns live operational telemetry, Langfuse wiring, and Grafana plumbing; `10a` owns the Postgres-backed quality table and the batch dashboard query surface. No shared metric tables. |
 | **Exemplar wiring rule** | Every histogram on the cascade's hot path (`cascade_request_duration_seconds`, `cascade_stage_duration_seconds`) MUST attach the active Langfuse `trace_id` as an exemplar. Jumping from a Grafana latency panel to the exact cascade trace is a product feature, not an optional debugging convenience. The emit helper in `engine/app/observability/metrics.py` enforces this on every `.observe()` call inside a cascade span context. |
-| **Dashboard-as-code discipline** | All Grafana dashboards are authored as Grafonnet (`.jsonnet`) source, committed under `engine/observability/dashboards/`, and rendered by the Alloy provisioning pipeline. Hand-edits in the Grafana UI are for exploration only; a CI diff job (deferred until the dashboard set is stable) will reject drift between the UI and the committed source. |
+| **Dashboard-as-code discipline** | Current worker dashboards are provisioned from committed JSON under `SoleMD.Infra/infra/observability/grafana/dashboards/`. Hand-edits in the Grafana UI are for exploration only; the committed dashboard file remains canonical. If the dashboard set expands materially, migrating the source-of-truth to Grafonnet is acceptable, but JSON provisioning is the current contract. |
 | **Alert severity taxonomy** | Two tiers. `severity=page` — user-visible outage, data loss, or read-path broken; routes to ntfy.sh (sole-developer pager); counter example: serve cluster down, OpenSearch RED, cascade p95 > 800 ms, disk < 10 %. `severity=warn` — degradation or capacity risk; routes to email (`jsolemd@gmail.com`); counter example: autovacuum lag, Redis memory pressure, evaluator failure rate elevated. No third tier — at solo-dev scale a three-tier policy devolves into noise. |
 | **Project-scoped vs shared-infra placement** | Prometheus, Grafana, Loki, Alloy run in shared-infra's compose and scrape across the `solemd-shared-infra` Docker network plus any project's `graph-internal` network that Alloy is a member of. The project-scoped exporters (`postgres_exporter` ×2, `redis_exporter`, `opensearch-prometheus-exporter`, `pgbouncer_exporter`, `dcgm-exporter`, `node_exporter`, `cadvisor`) live in SoleMD.Graph's compose and expose their scrape targets on the `graph-internal` network. This decision is §2.2 and is **locked**. |
 | **Cross-signal navigation** | A Grafana panel on `cascade_request_duration_seconds` with exemplars enabled produces click-through to the Langfuse trace UI (via a data-link template using the `trace_id` exemplar label). Same pattern on Loki — every log with a `trace_id` field produces a "view in Langfuse" quick-link via a Grafana Loki derived field. This is the 2026 "metrics → logs → traces" pattern (Prometheus exemplars spec, <https://prometheus.io/docs/instrumenting/exposition_formats/#exemplars>; Grafana data links, <https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links/>). |
@@ -95,11 +101,11 @@ Loki-derived fields, not via Prometheus label dimensions.
 ┌───────────────────────────────────────────────────────────────────┐
 │ shared-infra compose                                              │
 │                                                                   │
-│   prometheus ── scrapes ──►  [project exporters across projects]  │
-│   grafana   ── queries ──►   prometheus / loki                     │
-│   loki      ── ingests ──►   alloy                                │
-│   alloy     ── ships ───►    loki; pushes otlp traces to cloud     │
-│   alertmanager ── routes ──► ntfy.sh (page) + email (warn)        │
+│   graph-prometheus ─ scrapes ─► host-run graph workers            │
+│   graph-grafana   ─ queries ─► graph-prometheus                   │
+│                                                                   │
+│   deferred shared surfaces:                                       │
+│     loki / alloy / alertmanager / wider exporter fleet            │
 │                                                                   │
 ├───────────────────────────────────────────────────────────────────┤
 │ SoleMD.Graph compose (graph-internal network)                     │
@@ -113,8 +119,15 @@ Loki-derived fields, not via Prometheus label dimensions.
 │   node_exporter               ── host-cgroup metrics              │
 │   cadvisor                    ── container-level metrics          │
 │                                                                   │
-│   graph-engine-api + graph-worker expose:                         │
+│   graph-engine-api exposes:                                       │
 │     :9464 /metrics   — prometheus-client                          │
+│                                                                   │
+│   apps/worker queue-owned roots expose:                           │
+│     app.ingest_worker   :9464 /metrics                            │
+│     app.corpus_worker   :9465 /metrics                            │
+│     app.evidence_worker :9466 /metrics                            │
+│   each backed by its own multiprocess scope under                 │
+│     .state/prometheus/<scope>                                     │
 │     :4317 otlp/grpc → alloy (logs + traces)                       │
 │                                                                   │
 └───────────────────────────────────────────────────────────────────┘
@@ -127,9 +140,13 @@ External:
 
 ### §2.2 Placement decision
 
-**Locked**: Prometheus, Grafana, Loki, Alloy, Alertmanager run in
-`shared-infra`. Langfuse runs in the managed cloud for the workstation
-phase. Exporters and instrumented app surfaces run in SoleMD.Graph.
+**Locked for the worker slice**: Prometheus and Grafana run in
+`SoleMD.Infra/infra/observability`. Langfuse runs in the managed cloud
+for the workstation phase. Worker instrumentation surfaces run in
+SoleMD.Graph as host processes and are scraped through
+`host.docker.internal`. Loki, Alloy, Alertmanager, and the wider
+exporter fleet remain the next observability expansion, not part of the
+landed worker slice.
 Rationale:
 
 - Single pane of glass across SoleMD.Graph, SoleMD.Make, and any
@@ -509,8 +526,11 @@ Primary source: `redis_exporter` README,
 Declared by `06 §10.2`: `dramatiq_actor_invocations_total`,
 `dramatiq_actor_duration_seconds`, `dramatiq_actor_retries_total`,
 `dramatiq_in_flight_messages`. Exposed via Dramatiq's built-in
-Prometheus middleware on the engine's `/metrics` endpoint (§6). Not
-double-counted via `redis_exporter`.
+Prometheus middleware on each queue-owned worker root's `/metrics`
+listener (§6). In `apps/worker`, the middleware shares the same
+per-scope multiprocess store as the application-owned
+`prometheus_client` counters, histograms, and gauges. Not double-counted
+via `redis_exporter`.
 
 ## §6 Engine process instrumentation
 
@@ -525,10 +545,44 @@ double-counted via `redis_exporter`.
 
 ### §6.2 Metric surface
 
-FastAPI (`graph-engine-api`) and Dramatiq workers (`graph-worker`)
-expose Prometheus metrics on a `/metrics` endpoint bound to port
-`9464` (the OpenTelemetry canonical Prometheus port). The shared
-Prometheus scrapes both via Docker service discovery.
+FastAPI (`graph-engine-api`) and the queue-owned Dramatiq worker roots
+expose Prometheus metrics on `/metrics`. For `apps/worker`, the worker
+bootstrap prepares one multiprocess directory per local scope and
+configures Dramatiq's Prometheus middleware plus application-owned
+`prometheus_client` metrics to write into that same scope-local store.
+
+Current local defaults:
+
+- `app.ingest_worker` uses scope `ingest`, directory
+  `.state/prometheus/ingest`, and port `9464`
+- `app.corpus_worker` uses scope `corpus`, directory
+  `.state/prometheus/corpus`, and port `9465`
+- `app.evidence_worker` uses scope `evidence`, directory
+  `.state/prometheus/evidence`, and port `9466`
+
+`WORKER_METRICS_PORT` remains optional. Leave it unset for local
+multi-root development so each queue-owned root gets a distinct port
+from `WORKER_METRICS_PORT_BASE`. Setting it pins every scope to one port
+and is only safe when a single worker root is running in that host
+namespace. The CLI prepares its own `cli` scope for direct runs/tests
+but is not a standing scrape target.
+
+### §6.3 Current `apps/worker` application metrics
+
+The current worker-owned metrics emitted by `apps/worker/app/telemetry`
+are:
+
+| Lane | Metric families |
+|---|---|
+| Ingest | `ingest_phase_duration_seconds`, `ingest_runs_total`, `ingest_family_rows_total`, `ingest_family_files_total`, `ingest_failures_total`, `ingest_active_lock_age_seconds` |
+| Corpus selection | `corpus_selection_phase_duration_seconds`, `corpus_selection_runs_total`, `corpus_selection_signals_total`, `corpus_selection_materialized_papers_total`, `corpus_selection_summary_rows_total`, `corpus_selection_failures_total`, `corpus_selection_active_lock_age_seconds` |
+| Evidence wave dispatch | `corpus_wave_phase_duration_seconds`, `corpus_wave_runs_total`, `corpus_wave_members_selected_total`, `corpus_wave_enqueued_total`, `corpus_wave_failures_total`, `corpus_wave_active_lock_age_seconds` |
+| Hot-text acquisition | `paper_text_acquisitions_total`, `paper_text_acquisition_duration_seconds`, `paper_text_document_rows_total`, `paper_text_failures_total`, `paper_text_inprogress` |
+
+These application-owned metric families sit beside Dramatiq's own
+middleware families on the same per-scope store. The exact Dramatiq
+family names remain owned by Dramatiq; the queue / actor counters are
+not re-declared here.
 
 Exemplar emit helper (§0 rule):
 

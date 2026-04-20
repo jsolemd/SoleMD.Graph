@@ -1,8 +1,9 @@
 # 07 — OpenSearch Plane
 
-> **Status**: locked for plane shape — **two-tier serving model** (warm
-> = paper-level, hot = evidence-unit-level), two release-scoped indexes
-> (`paper_index` covers both tiers, `evidence_index` covers hot only)
+> **Status**: locked for plane shape — **two-lane serving model** (`mapped`
+> = paper-level active universe, `evidence` = smaller evidence-unit-level
+> subset), two release-scoped indexes (`paper_index` covers the mapped paper
+> lane, `evidence_index` covers the evidence lane only)
 > behind stable aliases, Faiss HNSW + fp16 scalar quantization on dense
 > lanes, native `hybrid` compound query + `score-ranker-processor` (RRF)
 > for lane fusion, MedCPT encoders in engine FastAPI (not ML Commons),
@@ -11,9 +12,9 @@
 > Microdesign details (HNSW `m` / `ef_construction` / `ef_search`,
 > exact `refresh_interval` cadence, per-shard sizing, RRF rank constant
 > beyond the 60 default, snapshot retention) are **provisional until
-> the first sample bulk-load** validates them on real data. The hot
-> tier ceiling (~10 K papers, ~100 K chunks) and the 500-paper start
-> are **provisional**, operator-tunable as RAM allows; the warm-tier
+> the first sample bulk-load** validates them on real data. The evidence
+> subset ceiling (~10 K papers, ~100 K chunks) and the 500-paper start
+> are **provisional**, operator-tunable as RAM allows; the mapped/evidence
 > split is **locked**, while the historical ~14 M-paper universe is the
 > eventual full-backfill ceiling for the selected canonical corpus rather
 > than a day-one live requirement.
@@ -52,26 +53,26 @@ doc owns the OpenSearch-side primitives `08` calls.
 Scope clarification: the ~14 M-paper counts below are capacity and full-backfill
 numbers for the historically selected canonical corpus, not an instruction to
 index all raw S2 papers immediately. Until `05e-corpus-selection.md` publishes a
-full mapped backfill wave, warm indexing may operate on a smaller mapped wave.
+full mapped backfill wave, the mapped paper lane may operate on a smaller
+mapped rollout wave.
 
 Seven load-bearing properties:
 
-1. **Two-tier serving model.** **Warm tier** = paper-level discovery
+1. **Two-lane serving model.** **Mapped paper lane** = paper-level discovery
    and paper-grounded support (title + abstract + paper-level dense vector)
-   over the selected canonical corpus. The active warm wave may be smaller than
-   the historical ~14 M-paper full backfill; warm lives only in `paper_index`;
-   citation goes back to the
-   paper. **Hot tier** = evidence-unit retrieval over the canonical
-   warehouse sentence/block spine; starts at ~500 papers, ceiling ~10 K
-   papers (~100 K evidence units at ~10 units each); lives in both
-   `paper_index` (paper-level row, marked `tier=hot`) and
-   `evidence_index` (one retrieval doc per promoted evidence unit,
-   carrying sentence/block coordinates for round-trip grounding). Hot
-   cohort selection is a product decision driven by `serving_members`
-   per `03 §4.3` (cohort_kind = `practice_hot`). (§3, §3.5, §4)
+   over the mapped active universe. The active mapped rollout wave may be
+   smaller than the historical ~14 M-paper full backfill; mapped papers live in
+   `paper_index`; citation goes back to the paper. **Evidence lane** =
+   evidence-unit retrieval over the canonical warehouse sentence/block spine;
+   starts at ~500 papers, ceiling ~10 K papers (~100 K evidence units at ~10
+   units each); lives in `evidence_index` (one retrieval doc per promoted
+   evidence unit, carrying sentence/block coordinates for round-trip
+   grounding). Evidence-subset selection is a product decision driven by
+   `serving_members` per `03 §4.3` (the current cohort may still carry the
+   legacy `practice_hot` name). (§3, §3.5, §4)
 2. **Two release-scoped indexes behind stable aliases.** `paper_index`
-   covers both tiers (warm + hot, distinguished by a `tier` byte field);
-   `evidence_index` covers the hot tier only. Aliases `paper_index_live`
+   covers the mapped paper lane; `evidence_index` covers the evidence
+   lane only. Aliases `paper_index_live`
    and `evidence_index_live` are what every reader knows. Index names
    carry a serving-run suffix; aliases flip atomically per cohort. (§3, §8)
 3. **Faiss HNSW + fp16 scalar quantization on dense lanes.** `sq_fp16`
@@ -91,9 +92,9 @@ Seven load-bearing properties:
    on the engine by project choice. OpenSearch can host ML models via
    ML Commons, but that is not the day-one path here. (§6)
 6. **Bulk-then-freeze indexer, two parallel actors.**
-   `opensearch.build_paper_index` (warm + hot, selected mapped wave,
+   `opensearch.build_paper_index` (mapped paper lane, selected mapped wave,
    eventual ~14 M docs on full backfill, slow path)
-   and `opensearch.build_evidence_index` (hot only, ~100 K docs, fast
+   and `opensearch.build_evidence_index` (evidence lane only, ~100 K docs, fast
    path). Both follow `06 §6.3`, read from `serve_read` + `warehouse_read`,
    stream via `_bulk` with `refresh_interval=-1`, force-merge, restore
    live settings, warm ANN, then alias-swap. Idempotent on `_id`
@@ -106,8 +107,8 @@ Seven load-bearing properties:
    within seconds; failure of the alias swap after PG flip is "retry
    alias swap; never roll back PG." That sequence is a SoleMD.Graph
    cutover policy, not a cross-system atomic guarantee from OpenSearch.
-   Warm and hot tiers can rebuild on independent cadences when only one
-   needs to change. (§8, §12)
+   The mapped paper lane and evidence lane can rebuild on independent cadences
+   when only one needs to change. (§8, §12)
 
 What this doc does **not** cover:
 
@@ -140,7 +141,7 @@ Inherits every convention from `00 §1`, `02 §0`, `03 §0`, `04 §0`,
 | **Encoder-placement boundary** | MedCPT encoders and the MedCPT-Cross-Encoder live in engine FastAPI on the RTX 5090, not ML Commons, by project choice. OpenSearch can host models via ML Commons, but that is intentionally not the day-one path; the day-one vector query surface is raw `knn`, not `neural`. (§6) **locked**. |
 | **Bulk-then-freeze workflow** | `refresh_interval=-1`, `number_of_replicas=0` during bulk; `force_merge` to reduce segments; restore live settings; `_warmup` k-NN endpoint to warm Faiss graph; alias swap last. (§7) **locked**. |
 | **Per-cohort index lifecycle** | Index build is part of the projection cohort manifest (`04 §5.1`). The cohort manifest's `families` list adds two opaque "families" `opensearch_paper_index` and `opensearch_evidence_index` so cohort-build order, idempotency, and resume work the same way as PG projections. (§7.4) **locked**. |
-| **Two-tier model** | Warm tier = paper-level grounding over the selected canonical corpus; the active warm wave may be smaller than the historical ~14 M-paper full backfill, while hot tier = evidence-unit retrieval (~500 papers initially, ~10 K ceiling, ~10 evidence units/paper, ~100 K evidence units max). `paper_index` carries a `tier` byte field (`1=warm`, `2=hot`); `evidence_index` is hot-tier-only. Tier promotion is driven by `serving_members` (cohort_kind = `practice_hot` per `03 §4.3`) + `evidence_priority_score` (`02 §4.4`). (§3.5) **locked** for the split; ceiling **provisional**. |
+| **Mapped/evidence split** | `mapped` = paper-level grounding over the selected canonical corpus; the active mapped rollout wave may be smaller than the historical ~14 M-paper full backfill, while `evidence` = evidence-unit retrieval (~500 papers initially, ~10 K ceiling, ~10 evidence units/paper, ~100 K evidence units max). `paper_index` covers mapped papers; `evidence_index` is evidence-only. Evidence membership is driven by `serving_members` (the current cohort may still use the legacy `practice_hot` name) + `evidence_priority_score` (`02 §4.4`). (§3.5) **locked** for the split; ceiling **provisional**. |
 
 ## §1 Identity / boundary
 
@@ -362,13 +363,12 @@ Notes:
 
 ### 3.2 `paper_index` mapping
 
-One doc per paper **across both tiers**, keyed by `corpus_id`. Every
-doc carries a `tier` byte field (`1=warm`, `2=hot`) so `08` can scope
-retrieval with an explicit filter. Indexes per-paper text (title +
-abstract + optional s2orc snippets when available) plus the paper-level
-dense vector (768d MedCPT-Article-Encoder, fp16-quantized on the Faiss
-HNSW graph). Used by the cards-list lane fusion query, the paper-level
-recommendation surfaces, and as the parent set for hot-tier evidence hits.
+One doc per mapped paper, keyed by `corpus_id`. The index covers the
+paper-level active universe: title + abstract + optional s2orc snippets when
+available plus the paper-level dense vector (768d MedCPT-Article-Encoder,
+fp16-quantized on the Faiss HNSW graph). Used by the cards-list lane fusion
+query, the paper-level recommendation surfaces, and as the parent set for
+evidence hits.
 
 ```json
 PUT _index_template/paper_index_template
@@ -482,11 +482,12 @@ Mapping notes:
 - `serving_run_id` and `chunk_version_key` are stamped on every doc so
   any debug query can attribute a hit to its build cohort without a
   PG join. Both `keyword` for exact-match filter use.
-- `tier` is the two-tier scope field — `1=warm` for paper-level-only
-  papers, `2=hot` for evidence-indexed papers. `08` passes
-  `filter.tier_in: [1, 2]` (default: both) or `[2]` (hot-only) to
-  scope retrieval. Derived at index-build time from `serving_members`
-  membership in a `practice_hot` cohort (`03 §4.3`); see §3.5.
+- `tier` is the mapped/evidence scope field while neighboring docs are still
+  converging on naming — `1=mapped-only`, `2=evidence-member`. `08` can still
+  scope retrieval with `filter.tier_in: [1, 2]` (default: both paper-level
+  modes) or `[2]` (papers that also belong to the evidence subset). Derived at
+  index-build time from `serving_members` membership in the current evidence
+  cohort (`03 §4.3` still uses the legacy `practice_hot` name); see §3.5.
 - `dense_vector.method.parameters` defaults from research-distilled §6;
   see §4 for the fp16 quantization math and `m` / `ef_construction` /
   `ef_search` rationale. **provisional**.
@@ -497,12 +498,12 @@ Mapping notes:
 
 One doc per promoted evidence unit (backed by
 `02 §4.5 paper_evidence_units`), keyed by `evidence_key`.
-**Hot-tier only** — contains evidence-unit docs for the ~500–10 K
-papers in the hot cohort, capped at roughly ~100 K evidence units total
-at the hot-tier ceiling. Each doc carries the retrieval text surface,
+**Evidence-subset only** — contains evidence-unit docs for the ~500–10 K
+papers in the evidence subset, capped at roughly ~100 K evidence units total
+at the initial evidence-wave ceiling. Each doc carries the retrieval text surface,
 parent `corpus_id`, and the sentence/block coordinates needed for
 engine-side packet assembly. Used by `08` for "deep grounding" queries
-that need sentence-coordinated citations into the hot cohort.
+that need sentence-coordinated citations into the evidence subset.
 
 ```json
 PUT _index_template/evidence_index_template
@@ -608,34 +609,34 @@ Primary source for the bulk pattern:
 <https://docs.opensearch.org/latest/api-reference/index-apis/update-settings/>;
 research-distilled §6 cites the OpenSearch 3.6 announcement.
 
-### 3.5 Hot-tier cohort selection
+### 3.5 Evidence-subset selection
 
-The hot cohort is the universe of papers whose promoted evidence units
+The evidence subset is the universe of papers whose promoted evidence units
 get indexed into `evidence_index` and whose paper rows are stamped
 `tier=2` in `paper_index`. Selection is a product decision driven
 entirely by serve-side state — this doc fixes the contract; cohort
 policy lives in `04 §5` / `03 §4.3`.
 
-**Source of truth.** The hot cohort is defined by membership in a
-`serving_cohorts` row with `cohort_kind = 'practice_hot'` (`03 §4.3`),
-joined to `serving_members` for the corpus_id list. The cohort can
-include explicit operator inclusion / exclusion plus an
-`evidence_priority_score` cutoff (`02 §4.4`).
+**Source of truth.** The evidence subset is defined by membership in a
+`serving_cohorts` row. Current control-plane surfaces may still use the legacy
+`cohort_kind = 'practice_hot'` name in `03 §4.3`, joined to `serving_members`
+for the corpus_id list. The cohort can include explicit operator inclusion /
+exclusion plus an `evidence_priority_score` cutoff (`02 §4.4`).
 
 **Promotion / demotion semantics.**
 
-- **Warm → hot promotion.** Adding a `corpus_id` to the
-  `practice_hot` cohort triggers an evidence-index batch in the next
+- **Mapped → evidence promotion.** Adding a `corpus_id` to the
+  evidence cohort triggers an evidence-index batch in the next
   cohort cycle. The next `04` projection cycle's manifest names
   `opensearch_evidence_index` as a family; `opensearch_paper_index`
   is also re-built (or hot-fix re-indexed per §11.2) so the affected
   paper's `tier` field flips from `1` to `2`.
-- **Hot → warm demotion.** Removing a `corpus_id` from the cohort
+- **Evidence → mapped demotion.** Removing a `corpus_id` from the cohort
   drops its evidence units from the next `evidence_index` build and flips its
   `paper_index` row's `tier` back to `1`. The drop is automatic —
-  the bulk loader simply doesn't write hot-only docs for excluded
+  the bulk loader simply doesn't write evidence-only docs for excluded
   corpus_ids.
-- **No incremental hot-mutation.** All tier changes flow through the
+- **No incremental evidence-mutation.** All tier changes flow through the
   cohort cutover (`04 §5` cohort manifest), never as live
   document-level UPSERTs against `evidence_index`. Build-once-then-
   read-only is preserved.
@@ -644,19 +645,19 @@ include explicit operator inclusion / exclusion plus an
 
 | Knob | Default | Operator-tunable bounds |
 |---|---:|---|
-| Hot-tier ceiling | 10 000 papers | 500 (cold start) → ~50 000 (128 GB host upper bound, revisited) |
+| Evidence-subset ceiling | 10 000 papers | 500 (cold start) → ~50 000 (128 GB host upper bound, revisited) |
 | Evidence units per paper (mean) | ~10 | 5 → 30 depending on document length |
 | Evidence-unit vector memory budget | ~150 MB at 100 K units | enforced by ceiling × per-paper estimate |
 
-**Initial load.** First launch starts at ~500 hot-tier papers,
+**Initial load.** First launch starts at ~500 evidence-subset papers,
 selected via `evidence_priority_score DESC` from the
-`practice_hot` cohort manifest. Operator scales up as RAM headroom and
+current evidence-cohort manifest. Operator scales up as RAM headroom and
 recall-quality measurements warrant. **provisional** ceiling.
 
-**Failure mode.** A `corpus_id` in the `practice_hot` cohort that has
+**Failure mode.** A `corpus_id` in the evidence cohort that has
 no `paper_evidence_units` rows on warehouse is dropped from the
 evidence-index build and logged as a structured event
-`hot_cohort_member_missing_chunks`. The paper still appears in
+`evidence_member_missing_chunks`. The paper still appears in
 `paper_index` with `tier=2` (so the cohort intent is visible), but
 evidence-lane retrieval against it returns no hits.
 
@@ -898,9 +899,10 @@ Notes:
   still flows from one engine-side `RetrievalFilter` model and is not
   the normative shape.
 - `tier` is always included as an explicit filter, even when both
-  tiers are eligible. Saves the cost of OpenSearch's "missing field"
-  fallback path, and makes hot-only queries a one-character change
-  in the engine helper.
+  mapped/evidence paper modes are eligible. Saves the cost of
+  OpenSearch's "missing field" fallback path, and makes
+  evidence-member-only paper queries a one-character change in the
+  engine helper.
 - `_source` is restricted to the fields engine FastAPI needs for
   ranking + parent promotion. Title / abstract are not pulled
   back — text fetch goes through `paper_api_profiles` on serve
@@ -1820,9 +1822,9 @@ class PaperLaneResponse(BaseModel):
 
 ### 14.3 Request — evidence-lane retrieve
 
-The evidence lane targets `evidence_index_live` (hot-tier-only by
+The evidence lane targets `evidence_index_live` (evidence-subset-only by
 construction, §3.5). `08` picks this lane explicitly when the query
-needs sentence-coordinated grounding into the hot cohort.
+needs sentence-coordinated grounding into the evidence subset.
 
 ```python
 class EvidenceLaneRequest(BaseModel):
@@ -1840,7 +1842,7 @@ class EvidenceFilter(BaseModel):
     package_tier_in:      list[int] | None = None
     concept_ids_any:      list[int] | None = None     # multi-valued field on evidence-unit doc
     corpus_ids_in:        list[int] | None = None     # parent-restrict, e.g. for "rerank in this paper set"
-    # No tier filter: evidence_index is hot-only by construction.
+    # No tier filter: evidence_index is evidence-subset-only by construction.
 ```
 
 ### 14.4 Response — evidence-lane
@@ -1985,11 +1987,11 @@ them.
 
 | Decision | Rationale |
 |---|---|
-| Two-tier serving model: warm = paper-level (~14 M), hot = evidence-unit-level (~500–10 K papers, ~100 K evidence units at ceiling) | Single workstation can hold full warm-tier paper-level vectors (~32 GB Faiss) plus a tractable evidence index (~225 MB at ceiling). Evidence indexing for the entire corpus would be ~322 GB, infeasible. |
-| `paper_index` carries both tiers, distinguished by a `tier` byte field (`1=warm`, `2=hot`); `evidence_index` is hot-only | Paper-level retrieval spans both tiers by default; deep-grounding queries scope with `tier=[2]`. One paper-level lane removes a join class for `08`. |
-| Hot-tier cohort sourced from `serving_members` with `cohort_kind = 'practice_hot'` (`03 §4.3`) | Single source of truth for the evidence-indexed universe; promotion/demotion flows through standard cohort cutover (`04 §5`). |
-| Two parallel build actors: `opensearch.build_paper_index` (slow) + `opensearch.build_evidence_index` (fast) | Independent cadence; hot-cohort tweaks don't pay the 14 M-doc rebuild cost. |
-| Two release-scoped indexes: `paper_index` (paper-level, both tiers) + `evidence_index` (evidence-unit-level, hot only) | Lane separation matches MedCPT cascade; `00 §1` and research-distilled §6 set the shape. |
+| Two-lane serving model: mapped = paper-level (~14 M), evidence = evidence-unit-level (~500–10 K papers, ~100 K evidence units at ceiling) | Single workstation can hold the mapped paper-level vectors (~32 GB Faiss) plus a tractable evidence index (~225 MB at ceiling). Evidence indexing for the entire corpus would be ~322 GB, infeasible. |
+| `paper_index` carries the mapped paper lane; `tier` remains the transitional field for `1=mapped-only`, `2=evidence-member`; `evidence_index` is evidence-only | Paper-level retrieval spans the mapped universe by default; deep-grounding queries scope with `tier=[2]` or the dedicated evidence lane. One paper-level lane removes a join class for `08`. |
+| Evidence cohort sourced from `serving_members` (current control-plane name may still be `practice_hot`, `03 §4.3`) | Single source of truth for the evidence-indexed universe; promotion/demotion flows through standard cohort cutover (`04 §5`). |
+| Two parallel build actors: `opensearch.build_paper_index` (slow) + `opensearch.build_evidence_index` (fast) | Independent cadence; evidence-cohort tweaks don't pay the 14 M-doc rebuild cost. |
+| Two release-scoped indexes: `paper_index` (paper-level mapped lane) + `evidence_index` (evidence-unit-level subset) | Lane separation matches MedCPT cascade; `00 §1` and research-distilled §6 set the shape. |
 | Stable aliases `paper_index_live` / `evidence_index_live` are the only names readers know | Cutover invisible to request path; one alias-swap API call per cohort. |
 | Index naming: `<family>_<serving_run_id-without-hyphens>` | Full UUIDv7 token is unique, sortable, and safe. Using only the leading hex chars is wrong for UUIDv7 because the high bits are timestamp-heavy. |
 | Faiss HNSW + sq_fp16 quantization on dense lanes | Official docs support the 2x memory reduction; exact recall loss remains benchmark-owned for MedCPT 768d. |
@@ -2045,8 +2047,8 @@ them.
 | Neural sparse (SPLADE) lane in OpenSearch | `00 §6` — MedCPT cascade is live and top-1 conversion plateaus. |
 | ColBERTv2 late-interaction sidecar | `00 §6` — SPLADE fails to close the top-1 gap. |
 | 1-bit scalar quantization on the dense lane | Supported on the current OpenSearch serving line, but recall loss is not trivial; revisit when quantization research catches up. |
-| Multi-node OpenSearch cluster (`number_of_replicas > 0`, multiple primaries on `paper_index`) | Paper count grows >50 M, or warm tier needs sharding by year/venue; until then single-node is the comfortable shape (§4.2). |
-| Year/venue-based shard split for warm tier `paper_index` | Warm-tier `paper_index` exceeds ~50 M docs, or cold-cache p99 on warm-tier queries becomes user-visible. |
+| Multi-node OpenSearch cluster (`number_of_replicas > 0`, multiple primaries on `paper_index`) | Paper count grows >50 M, or the mapped paper lane needs sharding by year/venue; until then single-node is the comfortable shape (§4.2). |
+| Year/venue-based shard split for the mapped `paper_index` | The mapped paper lane exceeds ~50 M docs, or cold-cache p99 on mapped-paper queries becomes user-visible. |
 | Off-box snapshot mirror (Backblaze B2) | `00 §6` — any irreplaceable data lands. |
 | OpenSearch Performance Analyzer remote scrape integration | `10-observability.md` decides; today Prometheus scrape via the OpenSearch exporter is sufficient. |
 | ML Commons text-embedding ingest pipeline | Hard "no" today — would require reversing §6 architectural decision. |
@@ -2064,13 +2066,13 @@ Forward-tracked; none block subsequent docs:
   ef_search=100` provisional; first sample build measures recall@10
   against the benchmark suite, then locks. The locked decision is the
   engine + quantization, not the parameters.
-- **Hot-tier ceiling growth path.** §3.5 starts at 500 papers, ceiling
+- **Evidence-subset ceiling growth path.** §3.5 starts at 500 papers, ceiling
   10 K. The 50 K practical upper bound on the 68 GB host (§4.3) is a
   back-of-envelope; revisit once measured encoder throughput +
   cache-pressure curves are in hand.
-- **Hot-cohort change frequency.** Drives the cadence of
-  `opensearch.build_evidence_index` runs. If hot cohort changes daily,
-  the fast-path actor's ~5–15 min budget keeps it tractable; if it
+- **Evidence-cohort change frequency.** Drives the cadence of
+  `opensearch.build_evidence_index` runs. If the evidence cohort changes
+  daily, the fast-path actor's ~5–15 min budget keeps it tractable; if it
   changes hourly, batch the changes within a tighter `pg_cron` window.
 - **Single vs split `opensearch_alias_swap_status` column.** §8.4 keeps
   one column; revisit at observability-build time if per-index queries

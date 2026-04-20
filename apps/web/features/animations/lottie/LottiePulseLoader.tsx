@@ -77,6 +77,7 @@ export function LottiePulseLoader({
     if (!raw || !accent) return null;
     return recolorLottie(raw, accent);
   }, [raw, accent]);
+  const colorOpacity = accent?.[3] ?? 1;
 
   if (!recolored || reduced) {
     return (
@@ -98,7 +99,7 @@ export function LottiePulseLoader({
       loop
       autoplay
       className="leading-none"
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, opacity: colorOpacity }}
     />
   );
 }

@@ -376,7 +376,7 @@ Indexes:
 
 Normalized S2 paper metadata. Fillfactor 100 (append-only per release).
 
-Columns: `corpus_id` (nullable until mapped), `source_release_id`,
+Columns: `corpus_id` (nullable until canonical corpus materialization), `source_release_id`,
 `paper_id` TEXT (S2 paperId), `pmid` INTEGER, `doi_norm` TEXT, `pmc_id`
 TEXT, `title` TEXT, `abstract` TEXT, `venue_raw` TEXT, `year` INTEGER,
 `publication_date` DATE, `payload_checksum` TEXT, `last_seen_run_id` UUID.
@@ -479,7 +479,7 @@ table "corpus" {
   column "first_seen_at"    { null = false, type = timestamptz, default = sql("now()") }
   column "last_seen_at"     { null = false, type = timestamptz, default = sql("now()") }
   column "admission_reason" { null = false, type = text }
-  column "domain_status"    { null = false, type = text, default = "candidate" }  // candidate | mapped | retired
+  column "domain_status"    { null = false, type = text, default = "corpus" }  // corpus | mapped | retired
   primary_key { columns = [column.corpus_id] }
   index "idx_corpus_domain_status" {
     columns = [column.domain_status]
@@ -489,8 +489,15 @@ table "corpus" {
 ```
 
 `domain_status` also stays TEXT in the baseline. It is a low-cardinality review
-state surfaced directly to operators during canonical mapping work, so the
-extra enum-code indirection is deferred.
+state surfaced directly to operators during canonical corpus / mapped-universe
+work, so the extra enum-code indirection is deferred. `mapped` is a stricter
+active-universe subset inside the canonical corpus rather than a second durable
+status family.
+
+Operationally:
+
+- broad canonical-corpus membership is `c.domain_status IN ('corpus', 'mapped')`
+- mapped paper-level active-universe membership is `c.domain_status = 'mapped'`
 
 Rule: release-scoped flags (`is_in_current_map`, `is_in_current_base`)
 that lived in `corpus` previously are removed. Current-run membership
@@ -599,7 +606,7 @@ Columns: `corpus_id` PK, `first_seen_source_release_id` INTEGER,
 Indexes:
 - PK.
 - Partial btree `(serving_eligibility_class, corpus_id)` where
-  `serving_eligibility_class > 0` — hot-lane admission queries.
+  `serving_eligibility_class > 0` — evidence-lane admission queries.
 - Btree `(retraction_status, corpus_id)` where `retraction_status > 0`
   — retraction audit.
 - Btree `(last_seen_source_release_id, corpus_id)` — stale-paper scans.
@@ -664,7 +671,7 @@ Indexes:
   synonym-artifact builder scans.
 - Btree `(normalized_alias, ambiguity_score, concept_id)`.
 
-Rule: this is a derived table. UMLS is the main candidate source;
+Rule: this is a derived table. UMLS is the main canonical source;
 PubTator provides observed-surface-form evidence and ambiguity /
 frequency support. Only `eligible_for_search_synonym = true` rows feed
 the OpenSearch synonym artifact.
@@ -684,7 +691,143 @@ the OpenSearch synonym artifact.
 #### `solemd.vocab_terms` + `solemd.vocab_term_aliases`
 
 Curated editorial inputs. Feed `concepts` / `concept_aliases` / `concept_xrefs`
-on refresh. Kept as they are in the current repo.
+on refresh. Kept as warehouse-local materializations of the repo-curated TSV
+assets rather than as serve tables.
+
+`solemd.vocab_terms`
+
+- PK `term_id UUID`.
+- Core columns: `canonical_name`, generated `normalized_name`, `category`,
+  `umls_cui`, `rxnorm_cui`, `semantic_types TEXT[]`, `semantic_groups TEXT[]`,
+  `organ_systems TEXT[]`.
+- Operational columns: `source_asset_sha256`, `loaded_at`.
+- Indexes:
+  - btree `(normalized_name)`
+  - btree `(category)`
+  - partial btree `(umls_cui)` where `umls_cui IS NOT NULL`
+
+`solemd.vocab_term_aliases`
+
+- PK `(term_id, alias)` with FK to `vocab_terms`.
+- Core columns: `alias`, generated `normalized_alias`, `alias_type`,
+  `quality_score`, `is_preferred`, `umls_cui`.
+- Operational columns: `source_asset_sha256`, `loaded_at`.
+- Indexes:
+  - btree `(normalized_alias, term_id, quality_score DESC, is_preferred DESC)`
+    for PubTator surface joins
+  - partial btree `(umls_cui)` where `umls_cui IS NOT NULL`
+
+#### `solemd.corpus_selection_runs` + `solemd.corpus_selection_signals`
+
+The durable run/provenance ledger for release-pair corpus selection.
+
+`corpus_selection_runs`
+
+- One row per `(s2_release_tag, pt3_release_tag, selector_version)` plan run.
+- Columns: advisory lock, source release ids, selector version, requester,
+  trigger, lifecycle status, error, `phases_completed`, `last_completed_phase`,
+  `plan_checksum`, `plan_manifest`, `phase_started_at`, started/completed
+  timestamps.
+- Indexes:
+  - btree `(s2_source_release_id, pt3_source_release_id, selector_version, started_at DESC)`
+  - btree `(status, started_at DESC)`
+  - partial unique `(advisory_lock_key)` for active runs
+
+`corpus_selection_signals`
+
+- Durable per-paper signal ledger keyed to one selection run.
+- Columns: `corpus_id`, `phase_name`, `signal_kind`, `family_key`,
+  `match_key`, `match_value`, `signal_count`, corpus/mapped contribution
+  flags, `detail JSONB`, `created_at`.
+- Indexes:
+  - btree `(corpus_selection_run_id, corpus_id)`
+  - btree `(corpus_id, corpus_selection_run_id)`
+  - btree `(signal_kind, corpus_selection_run_id)`
+
+#### `solemd.paper_selection_summary`
+
+Compact per-paper summary refreshed from the signal ledger and release-scoped
+PubTator counts. The table name stays `paper_selection_summary` in the first
+wave, but the business semantics are broad corpus admission plus mapped
+promotion plus evidence-wave ranking.
+
+- PK `corpus_id`.
+- Columns: owning `corpus_selection_run_id`, `selector_version`,
+  `current_status`, `primary_admission_reason`, `normalized_venue`,
+  `publication_year`, corpus-admission booleans
+  (`has_journal_match`, `has_pattern_match`, `has_vocab_entity_match`),
+  mapped-rule booleans
+  (`has_mapped_journal_match`, `has_mapped_pattern_match`,
+  `has_mapped_entity_match`, `has_mapped_relation_match`), signal counts,
+  release-scoped entity/relation counts, `mapped_family_keys`,
+  locator-readiness booleans (`has_open_access`, `has_pmc_id`,
+  `has_locator_candidate`, `has_abstract`), citation/reference support
+  (`reference_out_count`, `influential_reference_count`), mapped/evidence
+  priority scores, `updated_at`.
+- Indexes:
+  - btree `(current_status, corpus_id)`
+  - btree `(corpus_selection_run_id, current_status, corpus_id)`
+  - btree `(corpus_selection_run_id, current_status,
+    evidence_priority_score DESC, mapped_priority_score DESC, corpus_id)` for
+    mapped-paper evidence ranking
+  - btree `(corpus_selection_run_id, current_status, publication_year DESC,
+    has_locator_candidate, evidence_priority_score DESC, corpus_id)` for the
+    current evidence-wave scan
+
+Current first-wave summary fields that downstream waves should treat as the
+stable contract:
+
+- `publication_year`
+- `has_locator_candidate`
+- `has_mapped_pattern_match`
+- `has_mapped_entity_match`
+- `has_mapped_relation_match`
+- `mapped_entity_signal_count`
+- `mapped_relation_signal_count`
+- `mapped_priority_score`
+- `evidence_priority_score`
+
+#### `solemd.corpus_wave_runs` + `solemd.corpus_wave_members`
+
+Mapped-paper child-wave dispatch ledger for downstream mapped-rollout and
+evidence enqueue. The current first-wave runtime dispatches through
+`evidence.acquire_for_paper`.
+
+`corpus_wave_runs`
+
+- One row per `(published selection run, wave_policy_key, max_papers)` plan.
+- The first locked policy key is `evidence_missing_pmc_bioc`.
+- Columns: advisory lock, owning selection run, wave policy, requester,
+  lifecycle status, error, `phases_completed`, `last_completed_phase`,
+  `plan_checksum`, `plan_manifest`, `phase_started_at`, started/completed
+  timestamps.
+- Indexes:
+  - btree `(corpus_selection_run_id, wave_policy_key, started_at DESC)`
+  - btree `(status, started_at DESC)`
+  - partial unique `(advisory_lock_key)` for active waves
+
+`corpus_wave_members`
+
+- PK `(corpus_wave_run_id, corpus_id)`.
+- Columns: deterministic `member_ordinal`, persisted `priority_score`,
+  `selection_detail JSONB`, `enqueued_at`, `actor_name`.
+- Current first-wave semantics: one row per mapped paper selected by the
+  recent/high-signal/locator-aware evidence-wave policy, copied from
+  `paper_selection_summary` at wave-selection time so enqueue/resume does not
+  have to recompute ranking.
+- Indexes:
+  - unique `(corpus_wave_run_id, member_ordinal)`
+  - btree `(corpus_wave_run_id, enqueued_at, member_ordinal)` for pending
+    dispatch scans
+
+Locked first-wave evidence-wave policy carried in `plan_manifest` for
+`wave_policy_key = 'evidence_missing_pmc_bioc'`:
+
+- parent scope `current_status = 'mapped'`
+- missing active `pmc_bioc` document
+- `publication_year IS NULL OR publication_year >= current_year - 10`
+- `evidence_priority_score >= 150`
+- `has_locator_candidate = true`
 
 ### 4.4 Canonical paper facts & aggregates
 
@@ -785,7 +928,7 @@ Columns: `corpus_id` PK FK,
 Indexes:
 - PK.
 - Btree `(evidence_recency_bucket, evidence_priority_score DESC, corpus_id)`
-  — hot-lane admission scan.
+  — evidence-wave admission scan.
 - Partial btree `(historical_exception_reason, corpus_id)` where
   `historical_foundation_exception = true`.
 
@@ -814,8 +957,9 @@ Columns: `corpus_id` PK FK, `document_source_kind` SMALLINT,
 - PK `(corpus_id)`.
 - Partial btree `(corpus_id, source_priority)` where `is_active = true`.
 
-`document_source_kind` codes now include `pmc_bioc` as the targeted hot-text
-full-text surface in addition to the existing `pubtator_biocxml` and
+`document_source_kind` codes now include `pmc_bioc` as the targeted
+evidence-acquisition full-text surface in addition to the existing
+`pubtator_biocxml` and
 `s2orc_annotation` codes.
 
 #### `solemd.paper_sections`

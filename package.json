@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @solemd/web",
+    "dev:phone": "bash ./scripts/phone-dev dev",
     "dev:stack": "bash ./scripts/graph-stack",
     "dev:stack:start": "bash ./scripts/graph-stack start",
     "dev:stack:stop": "bash ./scripts/graph-stack stop",
@@ -22,6 +23,9 @@
     "typecheck": "npm run typecheck --workspace @solemd/web",
     "test": "npm run test --workspace @solemd/web",
     "test:watch": "npm run test:watch --workspace @solemd/web",
+    "phone:port": "bash ./scripts/phone-dev set-port",
+    "phone:open": "bash ./scripts/phone-dev open",
+    "phone:status": "bash ./scripts/phone-dev status",
     "storybook": "npm run storybook --workspace @solemd/web",
     "storybook:build": "npm run storybook:build --workspace @solemd/web",
     "quality": "npm run build && npm run lint && npm run typecheck && npm run test -- --runInBand"

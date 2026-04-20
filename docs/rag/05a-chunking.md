@@ -11,9 +11,9 @@
 >
 > **Date**: 2026-04-17
 >
-> **Scope**: the seam between the warehouse grounding spine
+> **Scope**: the seam between the downstream evidence-wave document spine
 > (`paper_blocks` / `paper_sentences`, `02 §774`/§789) and the chunk
-> tables that hot-tier OpenSearch consumes (`paper_chunks`,
+> tables that the evidence subset of OpenSearch consumes (`paper_chunks`,
 > `paper_chunk_members`, `paper_chunk_versions`, `paper_evidence_units`,
 > `02 §841`/§856/§868/§883). Sentence segmentation backends, structural
 > chunk assembly, narrative classification, and tokenizer wiring already
@@ -43,7 +43,10 @@ is one new write surface (`paper_evidence_units`), one new YAML registry
 Selection boundary clarification: where this doc says "full corpus" or
 "corpus-wide" below, it means the full **selected canonical corpus** defined by
 `05e-corpus-selection.md`, not the full raw Semantic Scholar universe. The
-chunker never treats all raw-release papers as in-scope by default.
+chunker never treats all raw-release papers as in-scope by default. Under the
+current hierarchy, `mapped` is the paper-level active universe and `evidence`
+is the smaller full-text / chunk / evidence subset inside mapped. Chunking
+consumes evidence-wave papers only.
 
 ## Implementation state
 
@@ -65,23 +68,24 @@ landing, but not the actor/writer code yet.
 - Explicit decision: `paper_evidence_units.evidence_key` remains a
   deterministic writer-owned UUIDv5 with no database default, and the
   table remains unpartitioned for now because the initial fully
-  grounded hot cohort is expected to stay in the low hundreds of
+  grounded evidence subset is expected to stay in the low hundreds of
   papers rather than millions.
-- Current warehouse state: `paper_documents`, `paper_sections`,
-  `paper_blocks`, `paper_sentences`, `paper_chunks`,
-  `paper_chunk_members`, and `paper_evidence_units` remain empty in the
-  steady-state path until the selected-corpus slice (`05e`) lands and
-  chunking starts consuming mapped papers from the canonical document spine.
-- Targeted API-backed full-text refresh for hot papers is now split into its
-  own worker/runtime slice (`05f`) so chunking can consume a canonical spine
-  derived either from bulk S2ORC or from targeted PMC BioC acquisition without
-  redefining corpus membership.
+- Current warehouse state: `05e`'s first-wave selector is now landed, but the
+  broader selected-paper canonical promotion/backfill boundary is still moving.
+  `paper_documents`, `paper_sections`, `paper_blocks`, `paper_sentences`,
+  `paper_chunks`, `paper_chunk_members`, and `paper_evidence_units` therefore
+  remain downstream child-wave surfaces and stay empty until mapped papers are
+  explicitly admitted into the evidence/full-text lane.
+- Targeted API-backed full-text refresh for evidence-wave papers is now split
+  into its own worker/runtime slice (`05f`) so chunking can consume a canonical
+  spine derived either from bulk S2ORC or from targeted PMC BioC acquisition
+  without redefining corpus membership.
 - Still owed: the `chunker.assemble_for_paper` actor body, the
   `paper_evidence_units` writer, the write-contract / Pydantic model
-  surfaces, `chunk-policies.yaml` generation, metrics, and the
-  broader mention / concept / relation grounding families. Raw-source
-  ingest is landed; the selected-corpus slice (`05e`) is now the
-  prerequisite for steady-state chunking, not a parallel optional lane.
+  surfaces, `chunk-policies.yaml` generation, metrics, and the broader
+  downstream grounding families. Raw-source ingest and the first-wave
+  selector are landed; selection alone does not materialize the
+  evidence/full-text child wave.
 
 Five load-bearing properties:
 
@@ -116,16 +120,14 @@ Five load-bearing properties:
    publishes `ingest_runs`. The orchestrator-inline `--backfill-chunks`
    mode that exists today (`orchestrator.py:1376`) becomes the dev /
    bench path.
-5. **All chunkable papers in the selected canonical corpus get canonical
-   derivation; only hot-tier
-   papers get indexed into the evidence lane.** `paper_chunks` /
-   `paper_chunk_members` / `paper_evidence_units` are canonical-derived
-   per `02 §0` and populated for every mapped paper with chunkable text
-   surfaces. Abstract-only or otherwise thin papers may yield a
-   minimal evidence surface or no chunk rows at all. Hot / warm tiering
-   is owned by `serving_members` (`07 §3.5`) and is purely an
-   OpenSearch-side decision. Promotion does not run the chunker; the
-   canonical rows already exist.
+5. **Chunking is an evidence-wave child lane, not a parent-corpus obligation.**
+   `paper_chunks` / `paper_chunk_members` / `paper_evidence_units` are
+   canonical-derived only for selected-corpus papers that have entered the
+   evidence/full-text child wave with chunkable text surfaces. Abstract-only or
+   otherwise thin papers may yield a minimal evidence surface or no chunk rows
+   at all. `mapped` rollout into paper-level retrieval/embedding is a separate
+   downstream concern. Selection or mapped membership alone does not run the
+   chunker.
 
 ## §0 Conventions delta from `02` / `05` / `06` / `12`
 
@@ -773,53 +775,55 @@ Old rows are still present, the cohort manifest re-issues the previous
 
 ## §8 Hot-tier vs warm-tier interaction
 
-This lane writes canonical-derived rows for the full selected chunkable corpus.
-Tier selection lives elsewhere.
+This lane writes canonical-derived rows for the hot parsed / chunked / grounded
+child wave. Tier selection lives elsewhere.
 
-### 8.1 All selected chunkable papers derive canonical rows
+### 8.1 Hot-wave papers derive canonical rows
 
 `paper_chunks`, `paper_chunk_members`, and `paper_evidence_units` are
-canonical-derived per `02 §0` and populated for every paper with
-usable text surfaces in `solemd.corpus`. The actor runs across the
-published-run cohort without reference to tier.
+canonical-derived per `02 §0`, but they are populated only for papers
+explicitly admitted into the downstream evidence/full-text lane. The actor runs
+across that child wave rather than the full mapped corpus.
 
 The storage contract is intentionally broader than the retrieval
 contract:
 
 - `paper_sentences` / `paper_chunks` / `paper_chunk_members` remain the
-  canonical warehouse spine for every chunkable paper.
+  canonical warehouse spine for every evidence-wave paper that is actually parsed
+  and chunked.
 - `paper_evidence_units` materializes the retrieval-facing unit keyed by
   `evidence_key`, but still points back to canonical block and sentence
   coordinates.
-- `evidence_index` only receives the hot subset of those evidence units;
+- `evidence_index` only receives the evidence subset of those evidence units;
   it is not a mirror of every sentence row or every raw chunk row in the
   warehouse.
 
 Papers that only have abstract text, sparse captions, or otherwise thin
-surfaces may emit a smaller evidence footprint than long full-text
-papers. That is expected and does not weaken the "derive once in the
-warehouse, promote later into OpenSearch" rule.
+surfaces may stay mapped-only and never enter this lane. Full-text-rich papers
+in the evidence wave may emit a larger evidence footprint. That is expected and does
+not weaken the "derive once in the warehouse, promote later into OpenSearch"
+rule.
 
-Storage rough-cut: 14 M papers × ~10 chunks × 1 evidence unit per
-chunk = **140 M `paper_evidence_units` rows**. The partitioning
-trigger at `02 §1089` (>50 M rows) will fire in the first full sample
-build. Partition strategy is already specified in `02 §909-911`:
-hash × 32 by `hashtext(evidence_key::text)`. **locked** as a follow-up
-once the trigger fires; *provisional* on whether the trigger fires
-before the sample build is fully populated (it depends on test-corpus
-size).
+Storage rough-cut should therefore be governed by the evidence-wave ceiling rather
+than the full mapped corpus. The current posture remains deliberately smaller
+because the initial fully grounded evidence subset is expected to stay in the low
+hundreds of papers rather than millions. If evidence-wave growth later pushes
+`paper_evidence_units` past the `02 §1089` trigger, the partition follow-on
+still applies.
 
-### 8.2 Hot-tier indexing in OpenSearch
+### 8.2 Evidence-subset indexing in OpenSearch
 
-Per `07 §3.5`, `evidence_index` is hot-tier-only. The hot cohort is
-defined by `serving_members` rows with `cohort_kind = 'practice_hot'`
-(`03 §4.3`), filtered by `evidence_priority_score` (`02 §4.4`).
+Per `07 §3.5`, `evidence_index` is evidence-subset-only. The current serve-side
+cohort may still use the legacy `practice_hot` name in `serving_members`, but
+architecturally it is the evidence subset, filtered by
+`evidence_priority_score` (`02 §4.4`).
 That selection determines which `evidence_key` rows make it into
 OpenSearch. The chunker does not consult `serving_members`.
 
 ### 8.3 Promotion
 
-Adding a `corpus_id` to `practice_hot` triggers the next
+Adding a `corpus_id` to the evidence subset (currently surfaced through the
+legacy `practice_hot` cohort name) triggers the next
 projection cycle to add its `evidence_key` rows to `evidence_index`
 during `opensearch_evidence_index` family build (`04 §5.2`,
 `07 §3.3`). The chunks already exist; promotion is purely an
@@ -827,9 +831,10 @@ OpenSearch-index operation.
 
 ### 8.4 Demotion
 
-Removing a `corpus_id` from `practice_hot` results in the next
-`evidence_index` build simply not writing those docs (`07 §612-616`).
-Warehouse rows untouched. No chunker work involved.
+Removing a `corpus_id` from the evidence subset (currently surfaced through the
+legacy `practice_hot` cohort name) results in the next `evidence_index` build
+simply not writing those docs (`07 §612-616`). Warehouse rows stay untouched.
+No chunker work is involved.
 
 ## §9 Failure modes
 
@@ -906,7 +911,7 @@ Beyond `02 §5`:
 | Idempotency: `INSERT … ON CONFLICT (evidence_key) DO NOTHING` | UUIDv5 is content-deterministic; conflict means same content already chunked. No UPDATE path. |
 | Canonical worker placement = Dramatiq actor `chunker.assemble_for_paper(corpus_id, chunk_version_key, ingest_run_id)` | Per-paper unit; one actor process; `ingest_write` pool; trigger is ingest-side dispatch on `ingest_runs.status='published'` within the same warehouse-up window. |
 | Re-chunk lifecycle = mint new `chunk_version_key`, build, atomic-flip via `02 §851` partial unique index | No row mutation; old rows survive for rollback. |
-| All mapped papers with chunkable text derive canonical sentence/chunk/evidence rows; only hot-tier papers are indexed in `evidence_index` | Tier is owned by `serving_members` (`07 §3.5`); not a chunker concern. |
+| Chunk/evidence rows are derived only for selected-corpus papers that have entered the evidence/full-text child wave | `mapped` is the paper-level active universe; the evidence subset is smaller. Selected-corpus or mapped membership alone does not run the chunker. |
 
 ### Provisional (revisit after sample build)
 

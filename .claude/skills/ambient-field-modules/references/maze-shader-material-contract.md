@@ -261,10 +261,12 @@ The mobile rotation branch is:
 - runtime increments `uTime += 0.002` (foreground) via `FieldLoopClock`
   singleton at `renderer/field-loop-clock.ts`
 - default `uSize = 10`
-- blob preset:
-  - `uDepth = 0.5`
-  - `uAmplitude = 0.4`
-  - `uFrequency = 0.7`
+- blob preset (`scripts.pretty.js:42427-42433`):
+  - `uDepth = 0.3`
+  - `uAmplitude = 0.05`
+  - `uFrequency = 0.5`
+  - Adjacent `sphere` preset at `:42451` uses `0.5 / 0.4 / 0.7` —
+    pre-Round-14 docs conflated the two.
 - pcb preset:
   - `uDepth = 0.3`
   - `uAmplitude = 0.05`

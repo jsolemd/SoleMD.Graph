@@ -13,14 +13,22 @@
 >
 > **Scope**: parquet / JSONL / BioCXML → warehouse PG ingest end-to-end for the
 > bulk release-backed lane. One ingest cycle outputs a published `ingest_runs`
-> row plus all warehouse rows the cycle wrote (`s2_*_raw`, `papers`,
-> `paper_text`, `paper_authors`, `paper_citations`, `paper_concepts`,
-> `paper_relations`, the release-backed document spine when a source family
-> carries it — `paper_documents` / `_sections` / `_blocks` / `_sentences` /
-> `_*_mentions` / `_chunk_*` / `paper_evidence_units` —
-> `paper_embeddings_graph`, `pubtator.*`). Projection (`04`) consumes those
-> rows; projection is **not** part of ingest. Targeted paper-level PMC BioC
-> refresh is a separate follow-on lane in `05f`.
+> row plus the broad upstream raw/stage warehouse surfaces the cycle wrote
+> (`s2_*_raw`, `pubtator.*_stage`, and source-local raw helpers such as
+> `s2_paper_authors_raw` / `s2_paper_references_raw`). The **selected canonical
+> corpus** is the operational warehouse universe
+> (`corpus`, `papers`, `paper_text`, `paper_authors`, `paper_citations`,
+> `pubtator.entity_annotations`, `pubtator.relations`), but the durable
+> ownership of that boundary belongs to `05e-corpus-selection.md`: corpus work
+> decides `raw -> corpus -> mapped` membership and idempotently
+> promotes/backfills selected-paper facts into those canonical surfaces.
+> `corpus` is the broad admitted canonical corpus. `mapped` is the stricter
+> paper-level active universe inside that corpus. Current code still includes
+> some broad S2 canonical promotion helpers as transitional machinery; that
+> reality does not redefine raw-ingest ownership. Full-text document spine,
+> chunking, grounded mention/concept/relation families, evidence units, and
+> targeted PMC BioC refresh remain downstream evidence-lane child work (`05a`,
+> `05f`).
 >
 > **Schema authority**: `02-warehouse-schema.md` is PG-native authority for
 > table shapes. This doc is authority for the ingest worker's runtime
@@ -30,11 +38,13 @@
 > `engine/app/ingest/` code is reusable salvage inventory, not the
 > runtime root.
 >
-> **Selection boundary**: this doc governs raw release ingest and the
-> warehouse-local promotion surfaces it owns. The next slice,
-> `05e-corpus-selection.md`, governs how broad raw release content is turned
-> into the selected canonical paper corpus consumed by chunking, graph
-> embeddings, and warm retrieval.
+> **Selection boundary**: this doc governs broad upstream raw/stage ingest.
+> `05e-corpus-selection.md` governs two distinct jobs: (1) deciding what enters
+> the admitted canonical corpus from raw upstream data; (2) deciding which
+> admitted corpus papers are promoted into the mapped paper-level active
+> universe and idempotently promoting/backfilling selected-paper facts into the
+> canonical warehouse surfaces. Selection is not just labeling rows; it is the
+> boundary that determines what reaches the durable canonical paper layer.
 
 ## Purpose
 
@@ -81,13 +91,17 @@ The first production raw-refresh implementation is now landed in
 - Landed in code: broker bootstrap, four-pool bootstrap, startup probe,
   `ingest.start_release`, source adapters for Semantic Scholar and
   PubTator, validated CLI enqueue/dispatch entrypoints, asyncpg
-  `COPY`-driven loaders, and warehouse-local promotion helpers.
+  `COPY`-driven raw/stage loaders, transitional broad S2 canonical
+  promotion helpers, and the worker telemetry slice under
+  `app/telemetry/`.
 - Landed in tests: request-shape validation, runtime resume behavior, and
   end-to-end sample-ingest coverage against a real warehouse target.
 - The next follow-on slice is therefore **canonical corpus selection**
-  (`05e`), not another raw-ingest rewrite. Raw releases can now land
-  safely; what remains is to formalize which papers become the selected
-  SoleMD canonical corpus downstream lanes may consume.
+  (`05e`), not another raw-ingest rewrite. Broad upstream releases can now land
+  safely on raw/stage surfaces; what remains is to keep the hierarchy explicit:
+  raw upstream lands here, `05e` admits the broad canonical corpus and promotes
+  the mapped paper-level active universe, and downstream evidence work consumes
+  that narrower mapped/evidence scope rather than raw release breadth.
 
 ## §0 Conventions delta from `02` / `04`
 
@@ -134,14 +148,14 @@ set. Per-shard sizes from a 2026-04-16 listing of
 
 | Dataset | On-disk shape | Shards | Maps to (`02 §4`) |
 |---|---|---:|---|
-| `papers` | `papers/papers-NNNN.jsonl.gz` (1 GB shards) | 60 | `s2_papers_raw` → `papers` + `paper_text` |
-| `paper-ids` | `paper-ids/paper-ids-NNNN.jsonl.gz` | 30 | `papers` external-id columns |
-| `abstracts` | `abstracts/abstracts-NNNN.jsonl.gz` | 30 | `paper_text.abstract` |
-| `authors` | `authors/authors-NNNN.jsonl.gz` | 30 | `s2_paper_authors_raw` → `authors` + `paper_authors` |
-| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | `s2_paper_references_raw` → `paper_citations` (hash × 32 by `citing_corpus_id`) |
-| `tldrs` | `tldrs/tldrs-NNNN.jsonl.gz` | 30 | `paper_text.tldr` |
-| `publication-venues` | one shard | 1 | `venues` |
-| `s2orc` | `s2orc/`, `s2orc-v2/`, `s2orc_v2/` (empty today; slot reserved) | 0 | `paper_blocks` + `paper_sections` + `paper_sentences` |
+| `papers` | `papers/papers-NNNN.jsonl.gz` (1 GB shards) | 60 | `s2_papers_raw`; `05e` promotes mapped-paper rows into `papers` + `paper_text` |
+| `paper-ids` | `paper-ids/paper-ids-NNNN.jsonl.gz` | 30 | raw identifier input; `05e` backfills canonical `papers` ids for mapped papers |
+| `abstracts` | `abstracts/abstracts-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.abstract` for mapped papers |
+| `authors` | `authors/authors-NNNN.jsonl.gz` | 30 | `s2_paper_authors_raw`; `05e` promotes mapped-paper authorship into `authors` + `paper_authors` |
+| `citations` | `citations/citations-NNNN.jsonl.gz` (largest) | 358 | `s2_paper_references_raw`; `05e` backfills `paper_citations` for mapped papers |
+| `tldrs` | `tldrs/tldrs-NNNN.jsonl.gz` | 30 | raw text input; `05e` backfills `paper_text.tldr` for mapped papers |
+| `publication-venues` | one shard | 1 | raw venue input for selection and later canonical backfill |
+| `s2orc` | `s2orc/`, `s2orc-v2/`, `s2orc_v2/` (empty today; slot reserved) | 0 | downstream child-wave document-spine input, not broad raw-ingest ownership |
 | `embeddings-specter_v2` | not present in 2026-03-10 release; reserved | 0 | `paper_embeddings_graph` halfvec(768) per `02 §4.6` |
 | `manifests` | `manifests/<dataset>.manifest.json` | 1 per ds | per-dataset planning input (§4.1) |
 
@@ -175,9 +189,9 @@ Release-level checksum = canonicalized hash of the concatenated
 
 | Dataset | On-disk shape | Maps to (`02 §4`) |
 |---|---|---|
-| `biocxml` | `biocxml/BioCXML.NN.tar.gz` (10 tarballs) | `pubtator.entity_annotations` (hash × 32 after backfill) + `paper_blocks` + `paper_sentences` + `paper_entity_mentions` (hash × 32) |
-| `bioconcepts2pubtator3.gz` | TSV bio-concept dump | side-channel into `pubtator.entity_annotations` |
-| `relation2pubtator3.gz` | TSV BioREx relations | `pubtator.relations` (hash × 32 after backfill) → `paper_relations` after `concept_id_raw → concept_id` mapping |
+| `biocxml` | `biocxml/BioCXML.NN.tar.gz` (10 tarballs) | `pubtator.*_stage` payload for later selected-paper canonical promotion; full document spine and grounding families remain downstream child-wave work |
+| `bioconcepts2pubtator3.gz` | TSV bio-concept dump | side-channel into `pubtator.entity_annotations_stage` |
+| `relation2pubtator3.gz` | TSV BioREx relations | `pubtator.relations_stage`; `05e` backfills canonical `pubtator.relations` for mapped papers |
 | `cache` | local download cache | ignored |
 | `manifests` | `annotations.manifest.json`, `biocxml.archive_manifest.sqlite`, `biocxml.corpus_locator.sqlite`, `biocxml.manifest.json` | sqlite files are PubTator-side PMID → tarball indexes; ingest may use `corpus_locator.sqlite` for §5.2 dedup but it is not authoritative |
 
@@ -270,14 +284,17 @@ expected_row_count: int | None, depends_on: list[str] = [])])`;
 with `manifest_checksum = IngestPlan.release_checksum`;
 (3) `ingest_runs.status = loading-code`.
 
-Default S2 build order: `s2_papers_raw → papers + paper_text → venues
-+ authors + paper_authors → s2_paper_references_raw → paper_citations
-(× 32) → paper_lifecycle → paper_embeddings_graph (when SPECTER2
-shards present)`. Default PT3 build order:
-`pubtator.entity_annotations_stage + relations_stage → grounding
-spine → paper_entity_mentions + paper_citation_mentions (× 32) →
-pubtator.entity_annotations + relations (× 32 post backfill) →
-paper_concepts + paper_relations (× 32) → paper_evidence_units`.
+Default S2 build order lands the broad raw/source-local inputs:
+`s2_papers_raw`, abstract / TLDR / external-id inputs, `s2_paper_authors_raw`,
+`s2_paper_references_raw`, venue payloads, and `paper_embeddings_graph` when
+SPECTER2 shards are present. Current code still carries transitional broad S2
+promotion helpers into canonical paper tables, but the steady-state ownership
+of canonical `papers` / `paper_text` / `paper_authors` / `paper_citations`
+belongs to `05e`. Default PT3 build order lands
+`pubtator.entity_annotations_stage + relations_stage`; canonical
+`pubtator.entity_annotations` / `pubtator.relations` backfill for mapped papers
+belongs to `05e`, while full document-spine / grounding families remain
+downstream child-wave work.
 
 Plan is advisory inside one ingest run — used for resume + audit, not
 to constrain the writer. **locked**.
@@ -387,8 +404,8 @@ no readers.
 
 `VACUUM (FREEZE, ANALYZE, PARALLEL 6)` does three things in one pass:
 sets hint bits + freeze map so post-publish FDW index-only scans don't
-pay the VM-miss cost (critical for the `paper_evidence_units`
-round-trip path, `02 §4.5` / `03 §3`); refreshes planner stats
+pay the VM-miss cost on downstream selected-corpus and evidence-serving
+round-trip paths (`02 §4.5` / `03 §3`); refreshes planner stats
 (mandatory pre-publish so the FDW-side planner sees real stats); runs
 6 worker parallelism (<https://www.postgresql.org/docs/current/sql-vacuum.html>).
 
@@ -448,8 +465,8 @@ owned by §14.
 
 ### 5.1 Semantic Scholar JSONL → warehouse
 
-**`papers` → `s2_papers_raw` → `papers` + `paper_text`.** DuckDB
-stream-transform with predicate pushdown:
+**`papers` → `s2_papers_raw`; selected-paper canonical promotion is owned by
+`05e`.** DuckDB stream-transform with predicate pushdown:
 
 ```sql
 COPY (
@@ -483,28 +500,33 @@ async def load_s2_papers_raw():
         )
 ```
 
-A one-shot SQL pass then promotes `s2_papers_raw` → `papers` +
-`paper_text`, allocating `corpus_id` via the identity sequence. The
-§5.3 lookup cache handles `paper_id → corpus_id` for downstream tables.
+A one-shot SQL path currently broad-promotes portions of `s2_papers_raw`
+into `papers` + `paper_text`, allocating `corpus_id` via the identity
+sequence. Treat that as transitional implementation inventory. The
+durable contract is that `05e` promotes/backfills mapped-paper rows into
+the canonical paper layer idempotently so those tables reflect the
+selected universe rather than the full raw release breadth.
 
-**`citations` → `s2_paper_references_raw` → `paper_citations` (hash × 32
-by `citing_corpus_id`).** Largest dataset — 358 shards, ~330 GB
+**`citations` → `s2_paper_references_raw`; selected-paper
+`paper_citations` backfill is owned by `05e`.** Largest dataset — 358 shards, ~330 GB
 compressed. Same DuckDB stream pattern. After raw load, one
-warehouse-local SQL pass joins `s2_paper_references_raw → papers` on
-`paper_id` to resolve `citing_corpus_id` / `cited_corpus_id`, drops
-orphans (§8), routes via `(hashint8(citing_corpus_id) % 32 + 32) % 32`,
-and writes via 32 parallel `INSERT … SELECT` into the UNLOGGED leaf
-tables. This is the load shape that benefits most from UNLOGGED — WAL
-avoidance saves >100 GB of WAL writes per cycle on citations alone.
+warehouse-local follow-on owned by `05e` resolves mapped-paper
+`citing_corpus_id` / `cited_corpus_id` and backfills canonical
+`paper_citations`. This is still the load shape that benefits most from
+UNLOGGED on the broad upstream side — WAL avoidance saves >100 GB of WAL
+writes per cycle on citations alone.
 
-**`abstracts` → `paper_text.abstract`.** UPSERT keyed on `paper_id`;
-storage `EXTERNAL` per `02 §4.2`.
+**`abstracts`** remain raw text input until `05e` backfills
+`paper_text.abstract` for mapped papers. Storage remains `EXTERNAL` per
+`02 §4.2`.
 
-**`authors` → `s2_paper_authors_raw` → `authors` + `paper_authors`.**
-Author dedup keyed on `(orcid, normalized_name)` per `02 §4.2`.
+**`authors` → `s2_paper_authors_raw`.** `05e` promotes mapped-paper
+authorship into canonical `authors` + `paper_authors`. Author dedup is
+still keyed on `(orcid, normalized_name)` per `02 §4.2`.
 
-**`paper-ids` → external-id columns on `papers`.** UPSERT fills `pmid`,
-`doi_norm`, `pmc_id`, `s2_paper_id`. Used by PT3's `pmid → corpus_id`
+**`paper-ids`** remain raw identifier input until `05e` backfills
+canonical `papers.pmid`, `doi_norm`, `pmc_id`, and `s2_paper_id` for
+mapped papers. Those ids are then used by PT3's `pmid → corpus_id`
 lookup (§5.3).
 
 **`tldrs`, `publication-venues`** — same shape; `embeddings-specter_v2`
@@ -537,32 +559,23 @@ def stream_biocxml(tarball_path: str):
 offsets / text / `infon[@key='section_type']` / nested `<annotation>`
 rows, and iterates `<relation>` for BioREx outputs.
 
-Per-`<document>` output mapping:
+Per-`<document>` output mapping in the raw lane:
 
-| BioCXML element | Output table | Hash partition |
+| BioCXML element | Raw/stage output | Contract note |
 |---|---|---|
-| `<document><id>` | `paper_documents` | none |
-| `<document><passage>` | `paper_sections` | none |
-| `<passage><text>` | `paper_blocks` | hash × 32 by `corpus_id` |
-| sentence segmentation | `paper_sentences` | hash × 32 by `corpus_id` |
-| `<annotation>` (entity) | `paper_entity_mentions` | hash × 32 by `corpus_id` |
-| `<annotation>` (citation) | `paper_citation_mentions` | hash × 32 by `corpus_id` |
-| `<relation>` | `pubtator.relations_stage` → `pubtator.relations` | hash × 32 (post backfill) |
+| `<document><id>` | stage-level PMID / document locator carried through `pubtator.*_stage` rows | broad upstream identity only |
+| `<document><passage>` | stage-level passage text / offsets | feeds later selected-paper canonical promotion or downstream hot/full-text work |
+| `<annotation>` (entity) | `pubtator.entity_annotations_stage` | broad upstream annotation payload only |
+| `<annotation>` (citation) | stage-level citation payload | downstream grounding family still owed |
+| `<relation>` | `pubtator.relations_stage` | broad upstream relation payload only |
 
-`paper_evidence_units` rows are computed during BioCXML stream ingest
-because sentence-aligned offsets are the primary input to the
-`evidence_key` UUIDv5 derivation per `02 §2`:
-
-```python
-import uuid
-SOLEMD_NS = uuid.UUID('5f0e6d9c-c1c8-5dfb-9a0a-3a0a3a0a3a0a')   # locked nsuuid; 02 §2
-def evidence_key(corpus_id, kind_code, section_ord, block_ord, sent_start, sent_end, chunk_version_key):
-    payload = f"{corpus_id}|{kind_code}|{section_ord}|{block_ord}|{sent_start}|{sent_end}|{chunk_version_key}"
-    return uuid.uuid5(SOLEMD_NS, payload)
-```
-
-`chunk_version_key` is read from the active `paper_chunk_versions` row
-at ingest start and held constant for the cycle.
+Canonical `pubtator.entity_annotations` / `pubtator.relations` are
+selected-corpus backfill targets for mapped papers under `05e`.
+`paper_documents`, `paper_sections`, `paper_blocks`, `paper_sentences`,
+`paper_entity_mentions`, `paper_citation_mentions`, `paper_concepts`,
+`paper_relations`, and `paper_evidence_units` remain downstream
+document-spine / grounding work (`05a`, `05f`); the raw lane must not
+present them as already-owned outputs.
 
 **Side-channel TSVs.** `bioconcepts2pubtator3.gz` and
 `relation2pubtator3.gz` load via DuckDB `read_csv_auto` (gzip
@@ -570,9 +583,9 @@ auto-detected) into the same staging tables as BioCXML rows. Used as
 cross-check; disagreements log to §12 but don't abort. If BioCXML and
 `relation2pubtator3.gz` emit the same canonical relation key
 `(corpus_id, subject_entity_id, relation_type, object_entity_id)`,
-canonical `pubtator.relations` keeps the BioCXML row
-(`relation_source = biocxml`) and treats the TSV row as stage-level
-cross-check lineage rather than the winner.
+the later selected-corpus backfill into canonical `pubtator.relations`
+should keep the BioCXML row (`relation_source = biocxml`) and treat the
+TSV row as stage-level cross-check lineage rather than the winner.
 
 ### 5.3 ID remapping
 
@@ -951,19 +964,27 @@ it emits requirements `10` must surface. The primary ledger is
 transitions, `families_loaded`, `last_loaded_family`, `error_message`
 on failure, and `advisory_lock_key` for `pg_locks` cross-reference.
 
+The landed worker telemetry uses Dramatiq's Prometheus middleware plus
+`prometheus_client` application metrics on the same scope-local
+multiprocess store prepared by `app.telemetry.bootstrap`.
+`app.ingest_worker` owns the `ingest` scope and, by default, exposes it
+on local port `9464`.
+
 ### 12.2 Required Prometheus metrics
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
 | `ingest_phase_duration_seconds` | histogram | `source_code`, `release_tag`, `phase` | Per-phase wall-clock distribution. |
-| `ingest_copy_throughput_rows_per_second` | gauge | `source_code`, `family`, `partition` | Live COPY throughput; alerts on drop. |
-| `ingest_partition_row_count` | gauge | `source_code`, `family`, `partition` | Live row counts during loading. |
-| `ingest_index_build_duration_seconds` | histogram | `source_code`, `family`, `index_name` | Per-index build wall-clock. |
-| `ingest_biocxml_rss_bytes` | gauge | `worker_id`, `tarball` | RSS during BioCXML stream; alerts at 2 GiB ceiling. |
+| `ingest_runs_total` | counter | `source_code`, `outcome` | Terminal ingest outcomes. |
+| `ingest_family_rows_total` | counter | `source_code`, `family` | Rows loaded per ingest family. |
+| `ingest_family_files_total` | counter | `source_code`, `family` | Files loaded per ingest family. |
 | `ingest_failures_total` | counter | `source_code`, `phase`, `failure_class` | Failure-class breakdown. |
-| `ingest_orphan_unlogged_partitions` | gauge | (none) | §9.5 audit — should be ≤ 1 in steady state. |
-| `ingest_stuck_runs` | gauge | (none) | §11.1 audit. |
-| `ingest_active_lock_age_seconds` | gauge | `release_key` | `now() - lock_acquired_at`; alerts on long-held locks. |
+| `ingest_active_lock_age_seconds` | gauge | `source_code`, `release_tag` | `now() - lock_acquired_at`; alerts on long-held locks. |
+
+The ingest scope also carries Dramatiq middleware metrics for the
+`ingest` queue on the same multiprocess store. Earlier aspirational
+throughput / row-count / RSS gauges remain follow-on work and should not
+be documented as landed.
 
 ### 12.3 Required structured log events
 
@@ -984,9 +1005,12 @@ Once `ingest_runs.status = published-code`, the projection worker (`04`)
 becomes eligible to start a cohort using this `ingest_run_id` as the
 source watermark.
 
-**What projection consumes.** Projection (`04 §6.1`) joins on `papers`,
-`paper_text`, `paper_metrics`, `paper_lifecycle`, `paper_authors`,
-`authors`, `venues`, `paper_top_concepts` — all rows written by ingest.
+**What projection consumes.** Projection (`04 §6.1`) joins on the
+canonical selected-corpus tables such as `papers`, `paper_text`,
+`paper_metrics`, `paper_lifecycle`, `paper_authors`, `authors`, `venues`,
+and `paper_top_concepts`. Under the target contract those tables reflect
+the mapped universe maintained by `05e`; current code may still populate
+some S2-backed rows earlier as transitional machinery.
 It also reads `serving_members` / `serving_cohorts` on **serve** to
 resolve the cohort. `serving_runs.source_release_watermark` on serve
 is sourced from `ingest_runs.source_release_id` at projection-start time.
@@ -1016,6 +1040,11 @@ This section is retained as implementation inventory because the first
 production-shape raw ingest worker is now landed in `apps/worker`. The next
 follow-on slice is `05e-corpus-selection.md`; this section remains useful only
 as a record of the worker shape that was just implemented.
+
+Where this historical section mentions canonical promotion helpers, read them
+as transitional implementation inventory. The durable boundary is now: raw/stage
+ownership in `05`, selected-corpus promotion/backfill ownership in `05e`,
+child-wave document/chunk/evidence ownership in `05a` / `05f`.
 
 ### 14.1 Ownership in code
 
@@ -1158,28 +1187,30 @@ Beyond `02 §5`:
 ## Write patterns (ingest worker)
 
 The ingest worker is the only writer of: `solemd.source_releases` (§11
-poll), `solemd.ingest_runs` (entirety), all `s2_*_raw` tables, the
-canonical `papers` / `paper_text` / `paper_authors` / `paper_lifecycle`
-/ `paper_metrics` / `paper_top_concepts` / `paper_assets`, `venues` and
-canonical `authors`, the citation tables (`paper_citations`,
-`paper_citation_contexts`, hash × 32 each), the grounding spine
-(`paper_documents`, `paper_sections`, `paper_blocks` × 32,
-`paper_sentences` × 32, `paper_citation_mentions` × 32,
-`paper_entity_mentions` × 32), the chunk lineage (`paper_chunk_versions`,
-`paper_chunk_members` × 32, `paper_chunks` × 32), `paper_evidence_units`,
-`paper_embeddings_graph`, `paper_concepts` × 32, `paper_relations` × 32,
-all `pubtator.*` tables (32-partition + `_stage` siblings), all
-`umls.*` raw tables, and the canonical `solemd.concepts` /
-`concept_aliases` / `concept_search_aliases` / `concept_xrefs` /
-`concept_relations` family during the `umls_concepts` derivation
-cycle. `vocab_terms` / `vocab_term_aliases` are written during the
-manually-triggered curated cycle.
+poll), `solemd.ingest_runs` (entirety), all `s2_*_raw` tables,
+source-local S2 raw helpers such as `s2_paper_authors_raw` and
+`s2_paper_references_raw`, all `pubtator.*_stage` tables, all `umls.*`
+raw tables, and the release-manifest / checksum staging needed to land a
+source release. `vocab_terms` / `vocab_term_aliases` are still written
+during the manually-triggered curated cycle.
 
-This ownership statement applies to the release-backed raw lane only. The
-paper-scoped hot-text lane in `05f` may later replace the current
-`paper_documents` / `paper_sections` / `paper_blocks` / `paper_sentences`
-rows for a mapped paper with a higher-fidelity PMC BioC document source, but
-it does not write raw release tables or take over `ingest_runs`.
+The operational selected canonical corpus
+(`solemd.corpus`, `papers`, `paper_text`, `paper_authors`,
+`paper_citations`, `pubtator.entity_annotations`, `pubtator.relations`)
+is owned by `05e` as the `raw -> corpus -> mapped` membership +
+promotion/backfill boundary.
+Current code still includes some broad S2 canonical promotion helpers on
+`ingest_write`; treat those as transitional implementation inventory
+rather than the durable ownership line.
+
+The full-text document spine (`paper_documents` / `paper_sections` /
+`paper_blocks` / `paper_sentences`), grounded mention/concept/relation
+families, chunk lineage, and `paper_evidence_units` are downstream
+evidence-lane surfaces owned by `05a` / `05f`, not broad raw release
+ingest. The paper-scoped `evidence` lane in `05f` may later replace the
+canonical document-spine rows for an evidence-wave paper with a
+higher-fidelity PMC BioC document source, but it does not write raw
+release tables or take over `ingest_runs`.
 
 The ingest worker reads (does not write): the release directories
 under `/mnt/solemd-graph/data/<source>/releases/<tag>/` (read-only per

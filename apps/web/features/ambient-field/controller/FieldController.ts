@@ -1,25 +1,67 @@
 import { gsap } from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import {
   Camera,
+  Color,
   Group,
+  Texture,
   type ShaderMaterial,
   Vector3,
 } from "three";
+
+let scrollTriggerRegistered = false;
+
+// Register ScrollTrigger once on the browser. Idempotent so subclass
+// `bindScroll` calls and the scroll-driver bootstrap can both invoke it.
+export function ensureGsapScrollTriggerRegistered(): void {
+  if (scrollTriggerRegistered) return;
+  if (typeof window === "undefined") return;
+  gsap.registerPlugin(ScrollTrigger);
+  scrollTriggerRegistered = true;
+}
+import { attachMouseParallax } from "../renderer/mouse-parallax-wrapper";
 import type {
-  AmbientFieldVisualPresetConfig,
+  AmbientFieldSceneState,
   AmbientFieldStageItemId,
+  AmbientFieldStageItemState,
+  AmbientFieldVisualPresetConfig,
 } from "../scene/visual-presets";
 
 // FieldController mirrors Maze's `yr` base controller (scripts.pretty.js:43013-43254).
-// It owns the wrapper + mouseWrapper + model hierarchy, carries the
-// shader material, and runs the per-frame `loop`, `updateScale`,
-// `updateVisibility`, and `animateIn/Out` tweens.
-//
-// SoleMD note: in R3F the Three.js Group refs are handed in from the
-// React layer after reconciliation; the controller does not own them.
-// Call `controller.attach({ view, wrapper, mouseWrapper, model, material })`
-// once the refs are live, then drive per-frame updates from the render
-// loop.
+// Owns the wrapper + mouseWrapper + model hierarchy, carries the shader
+// material, and runs per-frame `loop`, `updateScale`, `updateVisibility`,
+// and `animateIn/Out` tweens. In R3F the Three.js Group refs are handed
+// in from the React layer after reconciliation.
+
+export interface LayerUniforms {
+  [uniform: string]: { value: unknown };
+  pointTexture: { value: Texture };
+  uAlpha: { value: number };
+  uAmplitude: { value: number };
+  uBucketBases: { value: Color[] };
+  uBucketNoises: { value: Color[] };
+  uBucketOffsets: { value: Vector3[] };
+  uDepth: { value: number };
+  uFrequency: { value: number };
+  uFunnelDistortion: { value: number };
+  uFunnelEnd: { value: number };
+  uFunnelEndShift: { value: number };
+  uFunnelNarrow: { value: number };
+  uFunnelStart: { value: number };
+  uFunnelStartShift: { value: number };
+  uFunnelThick: { value: number };
+  uHeight: { value: number };
+  uIsMobile: { value: boolean };
+  uPixelRatio: { value: number };
+  uScale: { value: number };
+  uSelection: { value: number };
+  uSize: { value: number };
+  uSpeed: { value: number };
+  uStream: { value: number };
+  uSynthesisCluster: { value: number };
+  uTime: { value: number };
+  uWidth: { value: number };
+}
 
 export interface FieldControllerAttachment {
   view: HTMLElement | null;
@@ -27,6 +69,7 @@ export interface FieldControllerAttachment {
   mouseWrapper: Group;
   model: Group;
   material: ShaderMaterial;
+  hotspotRefs?: HTMLElement[];
 }
 
 export interface FieldControllerInit {
@@ -34,11 +77,19 @@ export interface FieldControllerInit {
   preset: AmbientFieldVisualPresetConfig;
 }
 
-// Maze: `Tn = CustomEase("custom", "0.5, 0, 0.1, 1")`.
-// CustomEase is a Club GSAP plugin not installed here, so we approximate
-// via a cubic-bezier ease function with the same control points. The
-// curve has a slow start, a fast middle, and a quick finish — close
-// enough to Maze's Tn to be visually indistinguishable on a 1 s tween.
+// World-space unit directions the four aBucket groups gather toward during
+// the synthesis beat. Magnitude is tuned per-frame so distances scale with
+// the blob's own radius.
+const BLOB_BUCKET_CLUSTER_OFFSETS: ReadonlyArray<readonly [number, number, number]> = [
+  [-0.82, 0.48, 0.18],
+  [0.82, 0.48, 0.18],
+  [0.0, -0.85, 0.18],
+  [0.0, 0.0, -0.35],
+];
+
+// Maze: `Tn = CustomEase("custom", "0.5, 0, 0.1, 1")`. CustomEase is a
+// Club GSAP plugin not installed here, so we approximate with a cubic
+// bezier using the same control points.
 export function tnEase(t: number): number {
   return cubicBezier(0.5, 0, 0.1, 1)(t);
 }
@@ -77,6 +128,24 @@ function cubicBezier(
   };
 }
 
+// Per-layer uTime multiplier. Maze drives `uTime` directly from a GSAP
+// timeline playhead (1:1 real-time). SoleMD runs on a module clock, so
+// we scale per layer: blob 0.25 / pcb 0.6 / stream 0.12 on desktop;
+// 0.1 / 0.2 / 0.04 with motion disabled.
+export function getTimeFactor(
+  id: AmbientFieldStageItemId,
+  motionEnabled: boolean,
+): number {
+  if (motionEnabled) {
+    if (id === "pcb") return 0.6;
+    if (id === "blob") return 0.25;
+    return 0.12;
+  }
+  if (id === "pcb") return 0.2;
+  if (id === "blob") return 0.1;
+  return 0.04;
+}
+
 export abstract class FieldController {
   readonly id: AmbientFieldStageItemId;
   readonly params: AmbientFieldVisualPresetConfig;
@@ -85,9 +154,12 @@ export abstract class FieldController {
   mouseWrapper: Group | null = null;
   model: Group | null = null;
   material: ShaderMaterial | null = null;
+  hotspotRefs: HTMLElement[] = [];
   visible = false;
   sceneUnits = 0;
   isMobile = false;
+  protected mouseParallaxDisposer: (() => void) | null = null;
+  protected scrollDisposer: (() => void) | null = null;
 
   constructor({ id, preset }: FieldControllerInit) {
     this.id = id;
@@ -100,19 +172,71 @@ export abstract class FieldController {
     this.mouseWrapper = attachment.mouseWrapper;
     this.model = attachment.model;
     this.material = attachment.material;
+    if (attachment.hotspotRefs) this.hotspotRefs = attachment.hotspotRefs;
   }
 
-  // Continuous loop tick — called each frame.
-  // Maze: `wrapper.rotation.y += 0.001; material.uniforms.uTime.value += 0.002;`
-  // SoleMD reads uTime from `getAmbientFieldElapsedSeconds()` so it does
-  // not own uTime here; only idle wrapper rotation.
+  // Build the full uniform bag for this controller's preset. The blob's
+  // bucket arrays carry the landing rainbow; stream/pcb stay on the Maze
+  // cyan→magenta pair. `?field-blending=additive` etc. stays owned by
+  // FieldScene since it's a render-time concern.
+  createLayerUniforms(isMobile: boolean, pointTexture: Texture): LayerUniforms {
+    const preset = this.params;
+    const { shader } = preset;
+    return {
+      pointTexture: { value: pointTexture },
+      uIsMobile: { value: isMobile },
+      uPixelRatio: { value: 1 },
+      uTime: { value: 0 },
+      uScale: { value: 1 / preset.sceneScale },
+      uSpeed: { value: shader.speed },
+      uSize: { value: shader.size },
+      uAlpha: { value: shader.alpha },
+      uDepth: { value: shader.depth },
+      uAmplitude: { value: shader.amplitude },
+      uFrequency: { value: shader.frequency },
+      uSelection: { value: shader.selection },
+      uWidth: { value: shader.width },
+      uHeight: { value: shader.height },
+      uStream: { value: shader.stream },
+      uFunnelStart: { value: shader.funnelStart },
+      uFunnelEnd: { value: shader.funnelEnd },
+      uFunnelThick: { value: shader.funnelThick },
+      uFunnelNarrow: { value: shader.funnelNarrow },
+      uFunnelStartShift: { value: shader.funnelStartShift },
+      uFunnelEndShift: { value: shader.funnelEndShift },
+      uFunnelDistortion: { value: shader.funnelDistortion },
+      uBucketBases: {
+        value: shader.bucketBases.map(
+          ([r, g, b]) => new Color(r / 255, g / 255, b / 255),
+        ),
+      },
+      uBucketNoises: {
+        value: shader.bucketNoises.map(
+          ([r, g, b]) => new Color(r / 255, g / 255, b / 255),
+        ),
+      },
+      uSynthesisCluster: { value: 0 },
+      uBucketOffsets: {
+        value: BLOB_BUCKET_CLUSTER_OFFSETS.map(
+          ([x, y, z]) => new Vector3(x, y, z),
+        ),
+      },
+    };
+  }
+
+  getTimeFactor(motionEnabled: boolean): number {
+    return getTimeFactor(this.id, motionEnabled);
+  }
+
+  // Idle wrapper rotation; FieldScene currently drives rotations directly
+  // from `loopSeconds * rotationVelocity.y`, so the loop() default is a
+  // dt-local increment used by subclasses.
   loop(dtSec: number): void {
     if (!this.wrapper || !this.params.rotate) return;
     this.wrapper.rotation.y += this.params.rotationVelocity[1] * dtSec;
   }
 
-  // Base updateScale: scene-units / source-height * sceneScale. Subclasses
-  // override for aspect-driven stream / pcb variants.
+  // Base updateScale: scene-units / source-height * sceneScale.
   updateScale(sceneUnits: number, sourceHeight: number, isMobile: boolean): number {
     this.sceneUnits = sceneUnits;
     this.isMobile = isMobile;
@@ -123,8 +247,12 @@ export abstract class FieldController {
     return base;
   }
 
-  // Visibility carry window — default 0.5/0.5, stream 0.7/0.3.
-  updateVisibility(scrollY: number, viewportH: number, layerTop: number, layerHeight: number): boolean {
+  updateVisibility(
+    scrollY: number,
+    viewportH: number,
+    layerTop: number,
+    layerHeight: number,
+  ): boolean {
     const entryFactor = this.params.entryFactor ?? 0.5;
     const exitFactor = this.params.exitFactor ?? 0.5;
     const isVisible =
@@ -188,6 +316,22 @@ export abstract class FieldController {
     void side;
   }
 
+  // Attach GSAP mouse-parallax to a group (typically `mouseWrapper`).
+  attachMouseParallaxTo(group: Group): void {
+    this.mouseParallaxDisposer?.();
+    this.mouseParallaxDisposer = attachMouseParallax(group);
+  }
+
+  bindScroll(
+    _anchor: HTMLElement,
+    _endAnchor?: HTMLElement | null,
+  ): () => void {
+    ensureGsapScrollTriggerRegistered();
+    void _anchor;
+    void _endAnchor;
+    return () => {};
+  }
+
   toScreenPosition(
     target: Vector3,
     camera: Camera,
@@ -207,11 +351,37 @@ export abstract class FieldController {
     return { x, y, z };
   }
 
+  // FrameContext is the per-frame bundle FieldScene passes on each tick.
+  // Subclasses use it to drive uniforms + wrapper transforms.
+  tick(_context: FrameContext): void {
+    void _context;
+  }
+
   destroy(): void {
     if (this.material) {
       gsap.killTweensOf(this.material.uniforms.uAlpha);
       gsap.killTweensOf(this.material.uniforms.uDepth);
       gsap.killTweensOf(this.material.uniforms.uAmplitude);
     }
+    this.mouseParallaxDisposer?.();
+    this.mouseParallaxDisposer = null;
+    this.scrollDisposer?.();
+    this.scrollDisposer = null;
   }
+}
+
+export interface FrameContext {
+  camera: Camera;
+  dtSec: number;
+  elapsedSec: number;
+  isMobile: boolean;
+  itemState: AmbientFieldStageItemState;
+  pixelRatio: number;
+  sceneState: AmbientFieldSceneState;
+  sourceBounds: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number };
+  uniforms: LayerUniforms;
+  viewportHeight: number;
+  viewportWidth: number;
+  wrapperInitialized: boolean;
+  markWrapperInitialized: () => void;
 }

@@ -9,11 +9,10 @@ import { getModeConfig } from "@/features/graph/lib/modes";
  * Components use var(--mode-accent) and its derived tokens instead of
  * hardcoding mode-specific colors.
  *
- * Derived tokens (computed via color-mix in globals.css):
- *   --mode-accent          Full accent color
- *   --mode-accent-subtle   ~10% opacity (fills, backgrounds)
- *   --mode-accent-hover    ~18% opacity (hover states)
- *   --mode-accent-border   ~30% opacity (borders)
+ * Derived tokens (computed via color-mix in tokens.css):
+ *   --mode-accent          Full accent color — toggle-ON fills, accent borders
+ *   --mode-accent-subtle   Resting active/selected fill (~55%)
+ *   --mode-accent-hover    Mouse-over affordance (~78%)
  *
  * Sibling of DarkClassSync — mount once in the provider tree.
  */

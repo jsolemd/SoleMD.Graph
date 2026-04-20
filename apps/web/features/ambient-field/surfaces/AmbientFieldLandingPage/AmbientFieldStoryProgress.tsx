@@ -1,10 +1,10 @@
 "use client";
 
-import { createRef, useEffect, useMemo, useRef, type RefObject } from "react";
+import { createRef, useEffect, useMemo, useRef } from "react";
+import { fieldLoopClock } from "@/features/ambient-field";
 
 interface AmbientFieldStoryProgressProps {
   beatIds: readonly string[];
-  rootRef: RefObject<HTMLDivElement | null>;
 }
 
 function clamp01(value: number) {
@@ -13,7 +13,6 @@ function clamp01(value: number) {
 
 export function AmbientFieldStoryProgress({
   beatIds,
-  rootRef,
 }: AmbientFieldStoryProgressProps) {
   const beatKey = beatIds.join("|");
   const segmentRefs = useMemo(
@@ -23,26 +22,23 @@ export function AmbientFieldStoryProgress({
   const progressRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return undefined;
-
-    let frame = 0;
+    let pending = true;
 
     const sync = () => {
-      frame = 0;
-
-      const viewportHeight = root.clientHeight;
-      const focusTop = root.scrollTop + viewportHeight * 0.35;
+      const viewportHeight = window.innerHeight;
+      const scrollY = window.scrollY;
+      const focusTop = scrollY + viewportHeight * 0.35;
       let currentVisible = 0;
 
       beatIds.forEach((beatId, index) => {
-        const sectionNode = root.querySelector<HTMLElement>(`#${CSS.escape(beatId)}`);
+        const sectionNode = document.getElementById(beatId);
         const segmentNode = segmentRefs[index]?.current;
         if (!sectionNode || !segmentNode) return;
 
-        const start = sectionNode.offsetTop - viewportHeight * 0.24;
-        const end =
-          sectionNode.offsetTop + sectionNode.offsetHeight - viewportHeight * 0.46;
+        const sectionTop = sectionNode.getBoundingClientRect().top + scrollY;
+        const sectionHeight = sectionNode.offsetHeight;
+        const start = sectionTop - viewportHeight * 0.24;
+        const end = sectionTop + sectionHeight - viewportHeight * 0.46;
         const progress = clamp01((focusTop - start) / Math.max(1, end - start));
 
         if (progress > 0.01) {
@@ -59,22 +55,25 @@ export function AmbientFieldStoryProgress({
     };
 
     const requestSync = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(sync);
+      pending = true;
     };
 
-    requestSync();
-    root.addEventListener("scroll", requestSync, { passive: true });
+    const disposer = fieldLoopClock.subscribe("story-progress", 50, () => {
+      if (!pending) return;
+      pending = false;
+      sync();
+    });
+
+    sync();
+    window.addEventListener("scroll", requestSync, { passive: true });
     window.addEventListener("resize", requestSync);
 
     return () => {
-      if (frame) {
-        window.cancelAnimationFrame(frame);
-      }
-      root.removeEventListener("scroll", requestSync);
+      disposer();
+      window.removeEventListener("scroll", requestSync);
       window.removeEventListener("resize", requestSync);
     };
-  }, [beatIds, beatKey, progressRootRef, rootRef, segmentRefs]);
+  }, [beatIds, beatKey, segmentRefs]);
 
   return (
     <div

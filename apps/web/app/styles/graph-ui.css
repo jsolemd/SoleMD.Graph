@@ -56,18 +56,18 @@
 
 @media (hover: hover) {
   .graph-icon-btn:hover {
-    background-color: var(--graph-control-hover-bg, var(--mode-accent-subtle)) !important;
+    background-color: var(--mode-accent-subtle) !important;
     color: var(--graph-panel-text);
   }
 }
 
 .graph-icon-btn[aria-pressed="true"] {
-  background-color: var(--graph-control-pressed-bg, var(--mode-accent-subtle)) !important;
+  background-color: var(--mode-accent) !important;
   color: var(--graph-panel-text);
 }
 
 .graph-icon-btn:active {
-  background-color: var(--graph-control-active-bg, var(--mode-accent-hover)) !important;
+  background-color: var(--mode-accent-hover) !important;
   color: var(--graph-panel-text);
 }
 
@@ -252,9 +252,9 @@ html:not(.dark) .graph-filter-bars-widget .unselected > .info > .count {
   white-space: nowrap;
   text-transform: capitalize;
   flex-shrink: 0;
-  background: color-mix(in srgb, var(--entity-accent) 25%, transparent);
+  background: color-mix(in oklch, var(--entity-accent) var(--tint-accent-pill), transparent);
   color: var(--graph-panel-text);
-  border: calc(1px * var(--app-density)) solid color-mix(in srgb, var(--entity-accent) 55%, transparent);
+  border: calc(1px * var(--app-density)) solid color-mix(in oklch, var(--entity-accent) var(--tint-accent-strong), transparent);
 }
 
 /* ═══════════════════════════════════════════════════════════════════

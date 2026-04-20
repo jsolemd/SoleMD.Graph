@@ -1,9 +1,9 @@
 import { brandPastelFallbackHexByKey } from '@/lib/pastel-tokens'
 
-/** WebGL needs actual hex values, not CSS vars. Keep in sync with globals.css. */
+/** WebGL needs actual hex values, not CSS vars. Keep in sync with tokens.css. */
 export const BRAND = {
-  light: { bg: "#f8f9fa", ring: brandPastelFallbackHexByKey["muted-indigo"], greyout: 0.25 },
-  dark:  { bg: "#111113", ring: brandPastelFallbackHexByKey["soft-blue"], greyout: 0.12 },
+  light: { bg: "#faf9f7", ring: brandPastelFallbackHexByKey["muted-indigo"], greyout: 0.25 },
+  dark:  { bg: "#000000", ring: brandPastelFallbackHexByKey["soft-blue"], greyout: 0.12 },
 } as const;
 
 /**
@@ -30,8 +30,9 @@ export const CANVAS = {
   maxOpacity: 0.85,
 } as const;
 
-/** Always-dark text for contrast on pastel backgrounds (both themes). */
-export const DARK_ON_COLOR = "#1a1b1e";
+/** Always-dark text for contrast on pastel backgrounds (both themes).
+ *  Warm off-black — mirror of tokens.css --text-primary (light). */
+export const DARK_ON_COLOR = "#1a1817";
 
 /** Noise cluster color (HDBSCAN cluster 0). */
 export const NOISE_COLOR = "#555555";

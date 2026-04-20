@@ -69,7 +69,7 @@ export function OverlayCard({
 }: OverlayCardProps) {
   return (
     <div
-      className={["relative overflow-hidden rounded-[1rem]", className].filter(Boolean).join(" ")}
+      className={["relative overflow-hidden rounded-surface-sm", className].filter(Boolean).join(" ")}
       style={{
         ...overlayCardSurfaceStyle,
         ...style,

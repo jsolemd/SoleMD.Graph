@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GRAPH_STACK_SCRIPT="${ROOT_DIR}/scripts/graph-stack"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/solemd"
+PORT_FILE="${STATE_DIR}/graph-phone-adb-port.txt"
+ADB="${SOLEMD_PHONE_ADB:-/mnt/c/Users/Jon/AppData/Local/Android/Sdk/platform-tools/adb.exe}"
+PHONE_HOST="${SOLEMD_PHONE_HOST:-100.105.176.74}"
+FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+BROWSER_PACKAGE="${SOLEMD_PHONE_BROWSER_PACKAGE:-com.android.chrome}"
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "Missing required command: $1" >&2
+    exit 1
+  fi
+}
+
+require_file() {
+  if [[ ! -x "$1" ]]; then
+    echo "Missing required executable: $1" >&2
+    exit 1
+  fi
+}
+
+normalize_port() {
+  local raw="${1:-}"
+  local port=""
+
+  if [[ -z "${raw}" ]]; then
+    echo "Missing wireless debugging port." >&2
+    exit 1
+  fi
+
+  port="${raw##*:}"
+  if [[ ! "${port}" =~ ^[0-9]{2,5}$ ]]; then
+    echo "Invalid wireless debugging port: ${raw}" >&2
+    exit 1
+  fi
+
+  printf "%s\n" "${port}"
+}
+
+save_port() {
+  local port="$1"
+  mkdir -p "${STATE_DIR}"
+  printf "%s\n" "${port}" > "${PORT_FILE}"
+}
+
+load_saved_port() {
+  if [[ ! -f "${PORT_FILE}" ]]; then
+    echo "No saved phone ADB port. Run: npm run phone:port -- <wireless-debug-port>" >&2
+    exit 1
+  fi
+
+  normalize_port "$(tr -d '[:space:]' < "${PORT_FILE}")"
+}
+
+resolve_port() {
+  local candidate="${1:-}"
+  local port=""
+
+  if [[ -n "${candidate}" ]]; then
+    port="$(normalize_port "${candidate}")"
+    save_port "${port}"
+    printf "%s\n" "${port}"
+    return 0
+  fi
+
+  load_saved_port
+}
+
+device_serial() {
+  local port="$1"
+  printf "%s:%s\n" "${PHONE_HOST}" "${port}"
+}
+
+listener_exists() {
+  local port="$1"
+  python3 - "${port}" <<'PY'
+import re
+import subprocess
+import sys
+
+port = sys.argv[1]
+result = subprocess.run(["ss", "-ltn"], capture_output=True, text=True, check=False)
+pattern = re.compile(rf":{re.escape(port)}\b")
+for line in result.stdout.splitlines():
+    if pattern.search(line):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+wait_for_listener() {
+  local port="$1"
+  local attempts="${2:-60}"
+  local sleep_seconds="${3:-0.5}"
+  local i
+
+  for ((i = 0; i < attempts; i += 1)); do
+    if listener_exists "${port}"; then
+      return 0
+    fi
+    sleep "${sleep_seconds}"
+  done
+
+  return 1
+}
+
+start_frontend_if_needed() {
+  if listener_exists "${FRONTEND_PORT}"; then
+    return 0
+  fi
+
+  bash "${GRAPH_STACK_SCRIPT}" start
+
+  if ! wait_for_listener "${FRONTEND_PORT}" 180 0.5; then
+    echo "Frontend did not start on :${FRONTEND_PORT}." >&2
+    exit 1
+  fi
+}
+
+ensure_frontend_listener() {
+  if listener_exists "${FRONTEND_PORT}"; then
+    return 0
+  fi
+
+  echo "No Graph frontend is listening on :${FRONTEND_PORT}. Start it with 'npm run dev' or use 'npm run dev:phone'." >&2
+  exit 1
+}
+
+connect_phone() {
+  local port="$1"
+  local serial=""
+  local output=""
+
+  serial="$(device_serial "${port}")"
+  output="$("${ADB}" start-server 2>&1 || true)"
+  if [[ -n "${output}" ]]; then
+    printf "%s\n" "${output}"
+  fi
+
+  output="$("${ADB}" connect "${serial}" 2>&1)" || {
+    printf "%s\n" "${output}" >&2
+    echo "Failed to connect to phone at ${serial}." >&2
+    exit 1
+  }
+
+  printf "%s\n" "${output}"
+  printf "%s\n" "${serial}"
+}
+
+open_phone() {
+  local serial="$1"
+
+  "${ADB}" -s "${serial}" reverse "tcp:${FRONTEND_PORT}" "tcp:${FRONTEND_PORT}" >/dev/null
+  "${ADB}" -s "${serial}" shell am start \
+    -a android.intent.action.VIEW \
+    -d "http://localhost:${FRONTEND_PORT}" \
+    "${BROWSER_PACKAGE}" >/dev/null
+
+  echo "Opened SoleMD.Graph on phone via ${serial} -> http://localhost:${FRONTEND_PORT}"
+}
+
+print_status() {
+  local saved_port=""
+
+  echo "frontend url: http://127.0.0.1:${FRONTEND_PORT}"
+  if listener_exists "${FRONTEND_PORT}"; then
+    echo "frontend:     listening on :${FRONTEND_PORT}"
+  else
+    echo "frontend:     not listening on :${FRONTEND_PORT}"
+  fi
+
+  if [[ -f "${PORT_FILE}" ]]; then
+    saved_port="$(load_saved_port)"
+    echo "saved port:   ${saved_port}"
+    echo "device:       $(device_serial "${saved_port}")"
+  else
+    echo "saved port:   none"
+  fi
+
+  echo "adb devices:"
+  "${ADB}" devices -l || true
+}
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/phone-dev set-port <wireless-debug-port>
+  scripts/phone-dev open [wireless-debug-port]
+  scripts/phone-dev dev [wireless-debug-port]
+  scripts/phone-dev status
+
+Examples:
+  npm run phone:port -- 36327
+  npm run phone:open
+  npm run dev:phone
+EOF
+}
+
+main() {
+  local action="${1:-status}"
+  local port=""
+  local serial=""
+
+  require_cmd python3
+  require_cmd ss
+  require_file "${ADB}"
+
+  case "${action}" in
+    set-port)
+      port="$(resolve_port "${2:-}")"
+      serial="$(connect_phone "${port}" | tail -n 1)"
+      echo "Saved wireless debugging port ${port} for ${serial}"
+      ;;
+    open)
+      port="$(resolve_port "${2:-}")"
+      ensure_frontend_listener
+      serial="$(connect_phone "${port}" | tail -n 1)"
+      open_phone "${serial}"
+      ;;
+    dev)
+      port="$(resolve_port "${2:-}")"
+      start_frontend_if_needed
+      serial="$(connect_phone "${port}" | tail -n 1)"
+      open_phone "${serial}"
+      ;;
+    status)
+      print_status
+      ;;
+    *)
+      usage >&2
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

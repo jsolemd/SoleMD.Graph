@@ -123,16 +123,52 @@ states otherwise:
 4. Serve SQL baseline + migrations
 5. Warehouse SQL baseline + migrations
 6. Ingest lane
-7. Canonical corpus selection
-8. Chunking / evidence-unit lane
-9. Projection + active pointer
-10. OpenSearch plane
-11. Retrieval cascade
-12. Graph bundles + browser runtime integration
-13. Wiki runtime integration
-14. Observability + quality
-15. Backup + recovery
-16. Auth only when activation is explicitly chosen
+7. Canonical corpus selection + canonical-boundary promotion
+8. Targeted evidence-text acquisition
+9. Chunking / evidence-unit lane
+10. Projection + active pointer
+11. OpenSearch plane
+12. Retrieval cascade
+13. Graph bundles + browser runtime integration
+14. Wiki runtime integration
+15. Observability + quality
+16. Backup + recovery
+17. Auth only when activation is explicitly chosen
+
+## Selected-corpus contract
+
+The current hierarchy is:
+
+- `full upstream raw` = `s2_*_raw`, `pubtator.*_stage`
+- `selected canonical corpus` = `solemd.corpus` membership plus the canonical
+  paper/fact tables: `papers`, `paper_text`, `paper_authors`,
+  `paper_citations`, `pubtator.entity_annotations`, `pubtator.relations`
+- `mapped` = the stricter paper-level active universe inside that canonical
+  corpus
+- `evidence` = the smaller full-text / chunking / grounding subset inside
+  mapped
+
+Two scope predicates matter:
+
+- broad canonical corpus membership = `c.domain_status IN ('corpus', 'mapped')`
+- mapped paper-level active-universe membership = `c.domain_status = 'mapped'`
+
+Mapped now absorbs what older drafts called "warm": paper-level embeddings,
+UMAP / graph rollout, and paper-grounded retrieval/indexing are rollout
+behaviors over mapped papers, not a separate durable status tier.
+
+Evidence replaces the older business "hot" label. The current first-wave
+runtime now uses `evidence` as the worker/queue/actor name for
+evidence-acquisition dispatch.
+
+The corpus contract therefore has two distinct jobs:
+
+1. decide what enters the selected canonical corpus from raw upstream data;
+2. ensure the canonical paper / fact tables reflect that selected corpus
+   rather than the entire raw release breadth.
+
+Selection is not just labeling rows. It is also the boundary that determines
+what gets promoted into the durable canonical paper layer.
 
 ## Implementation checklist
 
@@ -160,7 +196,8 @@ done when the code and docs both reflect reality.
 - [x] Warehouse SQL baseline landed under `db/schema/warehouse/`
 - [x] Warehouse migration chain landed under `db/migrations/warehouse/`
 - [x] Ingest lane implemented
-- [ ] Canonical corpus selection slice implemented
+- [x] First-wave corpus-selection builder + mapped-wave evidence dispatch landed
+- [ ] Corpus-selection contract fully owns canonical corpus promotion/backfill into the selected paper/fact layer
 - [ ] Chunking / evidence-unit lane implemented
 - [ ] Projection + active pointer implemented
 - [ ] OpenSearch plane implemented
@@ -201,8 +238,8 @@ There is also a working-surface distinction:
 | 05b| Graph bundles — build / export / serve  | `05b-graph-bundles.md`       | locked (microdesign provisional)      |
 | 05c| Browser DuckDB runtime                  | `05c-browser-duckdb-runtime.md` | locked (microdesign provisional)   |
 | 05d| Wiki runtime                            | `05d-wiki-runtime.md`        | locked (microdesign provisional)      |
-| 05e| Canonical corpus selection              | `05e-corpus-selection.md`    | locked (next implementation slice)    |
-| 05f| Hot-text acquisition                    | `05f-hot-text-acquisition.md`| locked (microdesign provisional)      |
+| 05e| Canonical corpus selection              | `05e-corpus-selection.md`    | implemented in first wave (selector + mapped/evidence dispatch landed; full canonical corpus promotion/backfill into paper/fact tables still follow-on) |
+| 05f| Evidence-text acquisition               | `05f-evidence-text-acquisition.md`| implemented in first wave (PMC BioC worker/runtime landed for the evidence lane; policy expansion remains provisional) |
 | 06 | Async Python stack + pools + migrations | `06-async-stack.md`          | locked (microdesign provisional)      |
 | 07 | OpenSearch serving plane                | `07-opensearch-plane.md`     | locked (microdesign provisional)      |
 | 08 | Retrieval cascade (three-stage)         | `08-retrieval-cascade.md`    | locked (microdesign provisional)      |

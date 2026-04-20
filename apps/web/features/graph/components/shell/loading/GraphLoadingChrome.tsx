@@ -3,14 +3,15 @@
 import type { CSSProperties, ReactNode } from "react";
 import { BrandWordmarkButton } from "@/features/graph/components/chrome/BrandWordmarkButton";
 import ThemeToggle from "@/features/graph/components/chrome/ThemeToggle";
-import { getModeConfig } from "@/features/graph/lib/modes";
-import { useDashboardStore, useGraphStore } from "@/features/graph/stores";
+import { useDashboardStore } from "@/features/graph/stores";
 import { densityCssPx } from "@/lib/density";
-import { chromePillSurfaceStyle } from "../../panels/PanelShell";
+import {
+  chromeFlushSurfaceStyle,
+  chromePillSurfaceStyle,
+} from "../../panels/PanelShell";
 import type { ChromeSurfaceMode } from "../../panels/PanelShell";
 
 interface GraphLoadingChromeProps {
-  accentColor?: string;
   brandTooltipLabel?: string;
   groupRightControls?: boolean;
   onBrandClick?: () => void;
@@ -20,11 +21,8 @@ interface GraphLoadingChromeProps {
 }
 
 const flushRightChromeStyle: CSSProperties = {
-  backgroundColor: "transparent",
-  border: "1px solid transparent",
-  boxShadow: "none",
+  ...chromeFlushSurfaceStyle,
   padding: densityCssPx(3),
-  "--graph-control-idle-bg": "transparent",
 } as CSSProperties;
 
 const pillRightChromeStyle: CSSProperties = {
@@ -33,7 +31,6 @@ const pillRightChromeStyle: CSSProperties = {
 } as CSSProperties;
 
 export function GraphLoadingChrome({
-  accentColor,
   brandTooltipLabel,
   groupRightControls = false,
   onBrandClick,
@@ -41,9 +38,7 @@ export function GraphLoadingChrome({
   surfaceMode = "pill",
   zIndex = 70,
 }: GraphLoadingChromeProps = {}) {
-  const mode = useGraphStore((s) => s.mode);
   const togglePanel = useDashboardStore((s) => s.togglePanel);
-  const modeColor = accentColor ?? getModeConfig(mode).color;
   const handleBrandClick = onBrandClick ?? (() => togglePanel("about"));
   const brandLabel = brandTooltipLabel ?? "About SoleMD";
 
@@ -51,7 +46,6 @@ export function GraphLoadingChrome({
     <>
       <div className="fixed left-3 top-3" style={{ zIndex }}>
         <BrandWordmarkButton
-          accentColor={modeColor}
           onClick={handleBrandClick}
           surfaceMode={surfaceMode}
           tooltipLabel={brandLabel}

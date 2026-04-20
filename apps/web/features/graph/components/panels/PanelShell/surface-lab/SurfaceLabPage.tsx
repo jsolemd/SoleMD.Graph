@@ -17,6 +17,7 @@ import {
   panelAccentCardClassName,
   panelAccentCardStyle,
   panelCardStyle,
+  panelMonoLabelStyle,
   panelSelectStyles,
   panelSurfaceStyle,
   panelTextDimStyle,
@@ -116,28 +117,16 @@ function buildPreviewVars({
     "--graph-panel-reading-scale": "calc(var(--app-density) * var(--graph-panel-scale))",
     "--mode-accent": accentRef,
     "--mode-accent-subtle": isDark
-      ? `color-mix(in srgb, ${accentRef} 28%, var(--graph-panel-input-bg))`
-      : `color-mix(in srgb, ${accentRef} 34%, white)`,
+      ? `color-mix(in oklch, ${accentRef} 55%, transparent)`
+      : `color-mix(in oklch, ${accentRef} 55%, white)`,
     "--mode-accent-hover": isDark
-      ? `color-mix(in srgb, ${accentRef} 38%, var(--graph-panel-input-bg))`
-      : `color-mix(in srgb, ${accentRef} 46%, white)`,
-    "--mode-accent-border": isDark
-      ? `color-mix(in srgb, ${accentRef} 58%, var(--graph-panel-bg))`
-      : `color-mix(in srgb, ${accentRef} 38%, white)`,
+      ? `color-mix(in oklch, ${accentRef} 78%, transparent)`
+      : `color-mix(in oklch, ${accentRef} 72%, white)`,
     "--brand-accent": accentRef,
     "--brand-accent-alt": `color-mix(in srgb, ${accentRef} 68%, white)`,
     "--graph-panel-bg": panelBackground,
     "--graph-panel-input-bg": panelInputBackground,
     "--graph-prompt-bg": promptBackground,
-    "--graph-control-hover-bg": isDark
-      ? `color-mix(in srgb, ${accentRef} 24%, var(--graph-panel-input-bg))`
-      : `color-mix(in srgb, ${accentRef} 16%, var(--graph-panel-input-bg))`,
-    "--graph-control-pressed-bg": isDark
-      ? `color-mix(in srgb, ${accentRef} 44%, var(--graph-panel-input-bg))`
-      : `color-mix(in srgb, ${accentRef} 24%, var(--graph-panel-input-bg))`,
-    "--graph-control-active-bg": isDark
-      ? `color-mix(in srgb, ${accentRef} 56%, var(--graph-panel-input-bg))`
-      : `color-mix(in srgb, ${accentRef} 32%, var(--graph-panel-input-bg))`,
   } as CSSProperties;
 }
 
@@ -164,11 +153,8 @@ function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section
-      className="overflow-hidden rounded-[1.1rem]"
-      style={panelSurfaceStyle}
-    >
-      <div className="border-b border-[var(--graph-panel-border)] px-4 py-3">
+    <section className="overflow-hidden rounded-surface-sm">
+      <div className="px-4 pt-3 pb-2">
         <Text fw={600} style={panelTextStyle}>
           {title}
         </Text>
@@ -178,7 +164,7 @@ function SectionCard({
           </Text>
         )}
       </div>
-      <div className="p-4">{children}</div>
+      <div className="px-4 pb-4">{children}</div>
     </section>
   );
 }
@@ -202,8 +188,9 @@ function SurfaceFamilyDirectory({
           onClick={() => onSelect(family.id)}
           style={{
             ...panelCardStyle,
-            borderColor: family.id === selectedFamilyId ? "var(--mode-accent-border)" : "var(--graph-panel-border)",
-            backgroundColor: family.id === selectedFamilyId ? "var(--mode-accent-subtle)" : "var(--graph-panel-input-bg)",
+            ...(family.id === selectedFamilyId
+              ? { backgroundColor: "var(--mode-accent-subtle)" }
+              : null),
           }}
         >
           <Group gap={6}>
@@ -212,7 +199,7 @@ function SurfaceFamilyDirectory({
               {family.title}
             </Text>
           </Group>
-          <Text mt={6} className="font-mono text-[11px]" style={panelTextDimStyle}>
+          <Text mt={6} style={panelMonoLabelStyle}>
             {family.primitive}
           </Text>
         </a>
@@ -239,7 +226,7 @@ function SelectedFamilySummary({
       <Text mt={8} fw={600} style={panelTextStyle}>
         {family.title}
       </Text>
-      <Text mt={4} className="font-mono text-[11px]" style={panelTextDimStyle}>
+      <Text mt={4} style={panelMonoLabelStyle}>
         {family.primitive}
       </Text>
       <Text mt={6} style={panelTextDimStyle}>
@@ -280,7 +267,7 @@ function SurfaceFamilyCard({
     <section
       id={`surface-family-${family.slug}`}
       data-surface-family={family.id}
-      className="overflow-hidden rounded-[1.15rem] transition-colors"
+      className="overflow-hidden rounded-surface-sm transition-colors"
       onClick={() => onSelect(family.id)}
       style={{
         ...panelSurfaceStyle,
@@ -288,9 +275,8 @@ function SurfaceFamilyCard({
       }}
     >
       <div
-        className="border-b px-4 py-3"
+        className="px-4 pt-3 pb-2"
         style={{
-          borderColor: selected ? "var(--mode-accent-border)" : "var(--graph-panel-border)",
           backgroundColor: selected ? "var(--mode-accent-subtle)" : undefined,
         }}
       >
@@ -301,7 +287,7 @@ function SurfaceFamilyCard({
           </Text>
           {selected && <MetaPill>Selected</MetaPill>}
         </Group>
-        <Text mt={6} className="font-mono text-[11px]" style={panelTextDimStyle}>
+        <Text mt={6} style={panelMonoLabelStyle}>
           {family.primitive}
         </Text>
         <Text mt={6} style={panelTextDimStyle}>
@@ -310,6 +296,97 @@ function SurfaceFamilyCard({
       </div>
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+/**
+ * Live demonstration of the three-tier mode-accent scale. Each tier renders
+ * the real widget pattern that uses it, so the intensity and the use-case
+ * are visible together.
+ */
+function AccentLadder() {
+  const rows: Array<{
+    tier: string;
+    token: string;
+    preview: ReactNode;
+    usedOn: string;
+  }> = [
+    {
+      tier: "Subtle",
+      token: "--mode-accent-subtle",
+      preview: (
+        <div
+          className="rounded-full px-3 py-1 text-xs"
+          style={{
+            backgroundColor: "var(--mode-accent-subtle)",
+            color: "var(--graph-panel-text)",
+          }}
+        >
+          Selected chip
+        </div>
+      ),
+      usedOn:
+        "Resting fill for active/selected state. Active mode chip (ask/explore/learn/create), selected row in lists, tinted accent card, active icon-toggle (Type, Target), wiki search hover, EditorOverlaySurface active item.",
+    },
+    {
+      tier: "Hover",
+      token: "--mode-accent-hover",
+      preview: (
+        <div
+          className="rounded-lg px-3 py-2 text-xs"
+          style={{
+            backgroundColor: "var(--mode-accent-hover)",
+            color: "var(--graph-panel-text)",
+          }}
+        >
+          Hovered row
+        </div>
+      ),
+      usedOn:
+        "Mouse-over affordance. Has to be louder than subtle so you can tell a hovered item apart from an already-selected one. Used on graph-chrome icon buttons on hover and any panel row that supports hover feedback.",
+    },
+    {
+      tier: "Full accent",
+      token: "--mode-accent",
+      preview: (
+        <div
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+          style={{
+            border: "1px solid var(--mode-accent)",
+            color: "var(--graph-panel-text)",
+          }}
+        >
+          <span
+            className="inline-block h-2 w-2 rounded-full"
+            style={{ backgroundColor: "var(--mode-accent)" }}
+          />
+          Toggle on / accent border
+        </div>
+      ),
+      usedOn:
+        "The raw accent — no derivation. Used for toggle-ON fills (aria-pressed=true on graph icon buttons), the prompt submit circle, accent-outlined containers (EditorOverlaySurface, ClusterContent, wiki annotation borders), and the filter-bar active marker.",
+    },
+  ];
+
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {rows.map((row) => (
+        <div
+          key={row.tier}
+          className="flex flex-col gap-3 rounded-surface p-4"
+          style={panelCardStyle}
+        >
+          <div className="flex items-baseline justify-between">
+            <Text fw={600} style={panelTextStyle}>
+              {row.tier}
+            </Text>
+            <Text style={panelMonoLabelStyle}>{row.token}</Text>
+          </div>
+          <div className="flex min-h-[48px] items-center">{row.preview}</div>
+          <Text style={panelTextDimStyle}>{row.usedOn}</Text>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -391,10 +468,7 @@ export function SurfaceLabPage({ inventoryRows }: { inventoryRows: SurfaceInvent
           </Text>
         </div>
 
-        <div
-          className="flex items-center gap-2 rounded-full px-2.5 py-1.5"
-          style={{ ...panelSurfaceStyle, borderRadius: 999 }}
-        >
+        <div className="flex items-center gap-2 rounded-full px-2.5 py-1.5">
           <Text fw={600} style={panelTextStyle}>
             Appearance
           </Text>
@@ -467,7 +541,7 @@ export function SurfaceLabPage({ inventoryRows }: { inventoryRows: SurfaceInvent
               <div>
                 <Group justify="space-between" mb={6}>
                   <Text fw={600} style={panelTextStyle}>Density</Text>
-                  <Text className="font-mono text-[11px]" style={panelTextDimStyle}>
+                  <Text style={panelMonoLabelStyle}>
                     {density.toFixed(2)}
                   </Text>
                 </Group>
@@ -483,7 +557,7 @@ export function SurfaceLabPage({ inventoryRows }: { inventoryRows: SurfaceInvent
               <div>
                 <Group justify="space-between" mb={6}>
                   <Text fw={600} style={panelTextStyle}>Reading scale</Text>
-                  <Text className="font-mono text-[11px]" style={panelTextDimStyle}>
+                  <Text style={panelMonoLabelStyle}>
                     {panelScale.toFixed(2)}
                   </Text>
                 </Group>
@@ -502,7 +576,7 @@ export function SurfaceLabPage({ inventoryRows }: { inventoryRows: SurfaceInvent
                   className="mt-3 h-12 rounded-lg"
                   style={{ background: accentRef }}
                 />
-                <Text mt={8} className="font-mono text-[11px]" style={panelTextDimStyle}>
+                <Text mt={8} style={panelMonoLabelStyle}>
                   {accentRef}
                 </Text>
               </div>
@@ -511,8 +585,8 @@ export function SurfaceLabPage({ inventoryRows }: { inventoryRows: SurfaceInvent
         </aside>
 
         <div
-          className="space-y-6 rounded-[1.5rem] p-4 sm:p-5"
-          style={{ ...panelSurfaceStyle, ...previewVars, backgroundColor: "var(--background)" }}
+          className="space-y-6 rounded-surface-lg p-4 sm:p-5"
+          style={{ ...previewVars, backgroundColor: "var(--background)" }}
         >
           <ShellVariantProvider value={shellVariant}>
             <SectionCard
@@ -522,13 +596,19 @@ export function SurfaceLabPage({ inventoryRows }: { inventoryRows: SurfaceInvent
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <TokenSwatch label="Mode accent" token="--mode-accent" value="var(--mode-accent)" />
                 <TokenSwatch label="Accent subtle" token="--mode-accent-subtle" value="var(--mode-accent-subtle)" />
+                <TokenSwatch label="Accent hover" token="--mode-accent-hover" value="var(--mode-accent-hover)" />
                 <TokenSwatch label="Panel background" token="--graph-panel-bg" value="var(--graph-panel-bg)" />
                 <TokenSwatch label="Panel input" token="--graph-panel-input-bg" value="var(--graph-panel-input-bg)" />
                 <TokenSwatch label="Prompt background" token="--graph-prompt-bg" value="var(--graph-prompt-bg)" />
-                <TokenSwatch label="Control hover" token="--graph-control-hover-bg" value="var(--graph-control-hover-bg)" />
-                <TokenSwatch label="Overlay scrim" token="--graph-overlay-scrim" value="var(--graph-overlay-scrim)" />
                 <TokenSwatch label="Surface alt" token="--surface-alt" value="var(--surface-alt)" />
               </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Accent Intensity Ladder"
+              description="Three tiers — each demonstrated on a realistic widget with the exact live use-cases listed."
+            >
+              <AccentLadder />
             </SectionCard>
 
             <SectionCard

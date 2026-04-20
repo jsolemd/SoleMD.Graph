@@ -1,35 +1,33 @@
 "use client";
 
+import {
+  LANDING_BUCKET_BASES_RGB,
+  LANDING_BUCKET_NOISES_RGB,
+} from "./accent-palette";
+
 // Maze-native visual presets for ambient-field stage items.
-// Numeric values mirror scripts.pretty.js:42412-42543 (cs.default + cs.blob +
-// cs.stream + cs.pcb). Color scalars are 0-255 for 1:1 dev cross-reference
-// with the Maze uniforms `uRcolor`/`uGcolor`/`uBcolor`/`uRnoise`/`uGnoise`/
-// `uBnoise`. See docs/map/ambient-field-maze-baseline-ledger-round-12.md §2-§3.
+// Scalar uniforms mirror `scripts.pretty.js:42412-42543` (cs.default +
+// cs.blob + cs.stream + cs.pcb). Colors are paired base/noise arrays
+// (0-255 per channel) that feed the shader's paired binary lerp — see
+// `scene/accent-palette.ts` and `renderer/field-shaders.ts`.
 
 export type AmbientFieldVisualPreset = "blob" | "stream" | "pcb";
 export type AmbientFieldStageItemId = AmbientFieldVisualPreset;
-export type AmbientFieldPhaseId =
-  | "paperHighlights"
-  | "paperCards"
-  | "paperFocus"
-  | "detailInspection"
-  | "synthesisLinks"
-  | "reform";
 
 type Vec3 = readonly [number, number, number];
+type BucketPairArray = readonly [Vec3, Vec3, Vec3, Vec3, Vec3, Vec3, Vec3, Vec3];
 
 export interface AmbientFieldShaderPreset {
   alpha: number;
   alphaMobile?: number;
   amplitude: number;
-  // SoleMD multi-hue contract (diverges from Maze's six scalar
-  // uR/G/B color/noise). `baseColor` is the fixed base tint shared across
-  // all particles; `bucketAccents` is one RGB accent per entry in
-  // SOLEMD_DEFAULT_BUCKETS order — each particle lerps base→its bucket
-  // accent based on vNoise, so four hues coexist in one frame. All values
-  // are 0-255 for readability against Maze palette notes.
-  baseColor: Vec3;
-  bucketAccents: readonly [Vec3, Vec3, Vec3, Vec3];
+  // Paired binary color contract. Each slot is one (base, noise) pair
+  // feeding the shader's `base + clamp(vNoise,0,1) * 4 * (noise - base)`
+  // lerp. Eight slots so the rainbow palette can live on-field in a
+  // single frame via `int b = int(aBucket) % 8`. Values are 0-255 for
+  // readability against Maze palette notes.
+  bucketBases: BucketPairArray;
+  bucketNoises: BucketPairArray;
   depth: number;
   frequency: number;
   funnelDistortion: number;
@@ -49,29 +47,25 @@ export interface AmbientFieldShaderPreset {
 }
 
 export interface AmbientFieldVisualPresetConfig {
-  // Controller-plane (Phase 6) — kept on the preset so existing consumers
-  // continue to work while `FieldController` is being built out.
   rotationVelocity: Vec3;
   sceneOffset: Vec3;
   sceneRotation: Vec3;
   sceneScale: number;
   sceneScaleMobile?: number;
   scrollRotation: Vec3;
-  // `animateIn`/`animateOut` targets (Phase 6). For Phase 1 we initialize
-  // them but the continuous frame loop does not yet consult these.
   alphaOut: number;
   amplitudeOut: number;
   depthOut: number;
-  // Visibility carry window ("enter when scrollY + vh * entryFactor > y
-  // && y + height > scrollY + vh * exitFactor"). Maze defaults are 0.5/0.5;
-  // stream tightens to 0.7/0.3. Applied in Phase 6.
+  // Visibility carry window: enter when scrollY + vh * entryFactor > y
+  // && y + height > scrollY + vh * exitFactor. Maze defaults are 0.5/0.5;
+  // stream tightens to 0.7/0.3.
   entryFactor: number;
   exitFactor: number;
-  // Whether idle +0.001 rad/frame wrapper spin is enabled. pcb and stream
-  // default to false in Maze (rotate:false). Applied in Phase 6.
+  // Idle +0.001 rad/frame wrapper spin. Maze pcb and stream default to
+  // false (rotate:false).
   rotate: boolean;
-  // Whether animateIn adds a +pi wrapper rotation kickoff. Only `blob` in
-  // Maze uses this pattern via bindScroll's own 0->pi model tween.
+  // Only `blob` in Maze uses the +pi wrapper rotation kickoff via its
+  // bindScroll 0→pi model tween.
   rotateAnimation: boolean;
   shader: AmbientFieldShaderPreset;
 }
@@ -83,30 +77,42 @@ export interface AmbientFieldStageItemState {
 }
 
 export interface AmbientFieldSceneState {
-  activeSectionId: string;
   items: Record<AmbientFieldStageItemId, AmbientFieldStageItemState>;
   motionEnabled: boolean;
-  phases: Record<AmbientFieldPhaseId, number>;
-  processProgress: number;
-  scrollProgress: number;
 }
 
 const ZERO_VEC3 = [0, 0, 0] as const satisfies Vec3;
 
-// Maze cyan base (40, 197, 234) -> magenta noise (202, 50, 223).
-// `scripts.pretty.js:42564-42569`. SoleMD preserves the base as the shared
-// `baseColor`; the magenta noise is the default resting accent for every
-// bucket. Per-bucket bursts and the landing rainbow walk override these on
-// the blob layer at runtime (FieldScene.tsx) — stream/pcb keep the Maze
-// magenta across every bucket so those layers stay 1:1 with Maze's look.
-const MAZE_BASE: Vec3 = [40, 197, 234];
-const MAZE_NOISE: Vec3 = [202, 50, 223];
-const MAZE_DEFAULT_ACCENTS: readonly [Vec3, Vec3, Vec3, Vec3] = [
-  MAZE_NOISE,
-  MAZE_NOISE,
-  MAZE_NOISE,
-  MAZE_NOISE,
+// Maze cyan base (40, 197, 234) → magenta noise (202, 50, 223) pair
+// (`scripts.pretty.js:42564-42569`). Repeated across all 8 slots so every
+// particle lerps cyan→magenta exactly like Maze's six-scalar family. The
+// blob layer replaces these with the full landing rainbow at preset
+// attach (see `scene/accent-palette.ts`).
+const MAZE_CYAN: Vec3 = [40, 197, 234];
+const MAZE_MAGENTA: Vec3 = [202, 50, 223];
+const MAZE_BASES: BucketPairArray = [
+  MAZE_CYAN, MAZE_CYAN, MAZE_CYAN, MAZE_CYAN,
+  MAZE_CYAN, MAZE_CYAN, MAZE_CYAN, MAZE_CYAN,
 ];
+const MAZE_NOISES: BucketPairArray = [
+  MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA,
+  MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA, MAZE_MAGENTA,
+];
+
+function toBucketPair(
+  rgb: readonly (readonly [number, number, number])[],
+): BucketPairArray {
+  if (rgb.length < 8) {
+    throw new Error(`bucket pair array must have 8 slots, got ${rgb.length}`);
+  }
+  return [
+    rgb[0]!, rgb[1]!, rgb[2]!, rgb[3]!,
+    rgb[4]!, rgb[5]!, rgb[6]!, rgb[7]!,
+  ];
+}
+
+const LANDING_BASES = toBucketPair(LANDING_BUCKET_BASES_RGB);
+const LANDING_NOISES = toBucketPair(LANDING_BUCKET_NOISES_RGB);
 
 export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "blob",
@@ -114,26 +120,15 @@ export const AMBIENT_FIELD_STAGE_ITEM_IDS = [
   "pcb",
 ] as const satisfies readonly AmbientFieldStageItemId[];
 
-export const AMBIENT_FIELD_PHASE_IDS = [
-  "paperHighlights",
-  "paperCards",
-  "paperFocus",
-  "detailInspection",
-  "synthesisLinks",
-  "reform",
-] as const satisfies readonly AmbientFieldPhaseId[];
-
 export const visualPresets: Record<
   AmbientFieldVisualPreset,
   AmbientFieldVisualPresetConfig
 > = {
   blob: {
-    // Maze: cs.blob extends cs.default with uFrequency 0.7, uAmplitude 0.4,
-    // uDepth 0.5, uSize 10. scripts.pretty.js:42420-42443. Maze's cs.default
-    // uFrequency is 0.5 (scripts.pretty.js:42561-42567 family) — SoleMD
-    // matches that resting value so the blob reads as dynamic from page
-    // load. LANDING_BLOB_CHAPTER's `start-frequency` event still ramps
-    // 0.5 → 1.7 across the first ~15 % of chapter scroll.
+    // Maze: cs.blob extends cs.default with uFrequency 0.5, uAmplitude 0.05,
+    // uDepth 0.3, uSize 10 at scripts.pretty.js:42427-42433.
+    // LANDING_BLOB_CHAPTER's `start-frequency` event ramps 0.5 → 1.7 at
+    // chapter head, per scripts.pretty.js:43291-43304.
     sceneScale: 0.75,
     sceneScaleMobile: 0.55,
     sceneOffset: [0, -0.02, 0],
@@ -150,10 +145,13 @@ export const visualPresets: Record<
     shader: {
       alpha: 1,
       alphaMobile: 1,
-      amplitude: 0.08,
-      baseColor: MAZE_BASE,
-      bucketAccents: MAZE_DEFAULT_ACCENTS,
-      depth: 0.5,
+      amplitude: 0.05,
+      // Blob carries the landing rainbow so the full wheel is on-field at
+      // rest; stream/pcb stay on the Maze cyan→magenta pair below for
+      // 1:1 parity with Maze's look.
+      bucketBases: LANDING_BASES,
+      bucketNoises: LANDING_NOISES,
+      depth: 0.3,
       frequency: 0.5,
       funnelDistortion: 0,
       funnelEnd: 0,
@@ -192,8 +190,8 @@ export const visualPresets: Record<
       alpha: 1,
       alphaMobile: 1,
       amplitude: 0.05,
-      baseColor: MAZE_BASE,
-      bucketAccents: MAZE_DEFAULT_ACCENTS,
+      bucketBases: MAZE_BASES,
+      bucketNoises: MAZE_NOISES,
       depth: 0.69,
       frequency: 1.7,
       funnelDistortion: 1,
@@ -233,8 +231,8 @@ export const visualPresets: Record<
       alpha: 1,
       alphaMobile: 1,
       amplitude: 0.05,
-      baseColor: MAZE_BASE,
-      bucketAccents: MAZE_DEFAULT_ACCENTS,
+      bucketBases: MAZE_BASES,
+      bucketNoises: MAZE_NOISES,
       depth: 0.3,
       frequency: 0.1,
       funnelDistortion: 0,
@@ -269,18 +267,7 @@ function createStageItemState(
 
 export function createAmbientFieldSceneState(): AmbientFieldSceneState {
   return {
-    activeSectionId: "section-welcome",
-    scrollProgress: 0,
-    processProgress: 0,
     motionEnabled: true,
-    phases: {
-      paperHighlights: 0,
-      paperCards: 0,
-      paperFocus: 0,
-      detailInspection: 0,
-      synthesisLinks: 0,
-      reform: 0,
-    },
     items: {
       blob: createStageItemState(1, 0, 1),
       stream: createStageItemState(),

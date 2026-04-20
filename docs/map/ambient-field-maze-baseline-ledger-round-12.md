@@ -520,6 +520,13 @@ evidence, screenshots (if applicable), remaining gaps.
 - No code touched.
 - Next: Phase 1 (shader core parity).
 
+[^blob-preset-correction]: Round 14 Commit 1 correction. The original
+Round 12 Phase 1 entry wrote 0.7/0.4/0.5 for the blob preset; those are
+the adjacent `sphere` preset values at `scripts.pretty.js:42451`. Maze's
+`blob` preset at `:42427-42433` is `uFrequency=0.5, uAmplitude=0.05,
+uDepth=0.3`. `apps/web/features/ambient-field/scene/visual-presets.ts`
+has been aligned to the correct values.
+
 ### Phase 1 — shader core parity ✅
 
 - Focus: rewrite `field-shaders.ts` vertex main() to Maze 1:1 through
@@ -531,8 +538,8 @@ evidence, screenshots (if applicable), remaining gaps.
   - `apps/web/features/ambient-field/renderer/field-shaders.ts` — full rewrite.
   - `apps/web/features/ambient-field/scene/visual-presets.ts` — remove
     pulse fields + ColorToken pair; add 6 color scalars; set blob/stream/
-    pcb to Maze numeric values (blob: uFrequency 0.7, uAmplitude 0.4,
-    uDepth 0.5, uSize 10; stream: 1.7/0.05/0.69/9, funnel params; pcb:
+    pcb to Maze numeric values (blob: uFrequency 0.5, uAmplitude 0.05,
+    uDepth 0.3, uSize 10 [^blob-preset-correction]; stream: 1.7/0.05/0.69/9, funnel params; pcb:
     0.1/0.05/0.3/6 with x=-80° tilt); add controller-plane scaffolding
     (`entryFactor`, `exitFactor`, `alphaOut`, `depthOut`, `amplitudeOut`,
     `rotate`, `rotateAnimation`) for Phase 6 wiring.

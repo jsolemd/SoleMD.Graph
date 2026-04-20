@@ -18,7 +18,7 @@ const DEFAULT_HIT_WIDTH = 40;
 
 interface ViewportTocRailProps {
   entries: PanelEdgeTocEntry[];
-  scrollRef: RefObject<HTMLElement | null>;
+  scrollRef?: RefObject<HTMLElement | null>;
   bottomPx?: number;
   compact?: boolean;
   hideBelowWidth?: number;

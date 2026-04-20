@@ -111,6 +111,23 @@ paper_text_acquisition_run_status:
   unavailable: 3
   failed: 4
 
+corpus_selection_run_status:
+  started: 1
+  assets: 2
+  corpus_admission: 3
+  mapped_promotion: 4
+  canonical_materialization: 5
+  selection_summary: 6
+  published: 7
+  failed: 8
+
+corpus_wave_run_status:
+  started: 1
+  member_selection: 2
+  enqueue: 3
+  published: 4
+  failed: 5
+
 section_role:
   unknown: 0
   abstract: 1

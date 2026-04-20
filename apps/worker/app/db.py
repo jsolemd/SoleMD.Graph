@@ -41,6 +41,7 @@ class WorkerPools:
 
 
 _worker_pools: WorkerPools | None = None
+_worker_pools_lock: asyncio.Lock | None = None
 
 
 def build_pool_specs(settings: Settings) -> dict[PoolName, PoolSpec]:
@@ -152,6 +153,46 @@ def get_pool(name: PoolName) -> asyncpg.Pool:
     return get_worker_pools().get(name)
 
 
+def _get_worker_pools_lock() -> asyncio.Lock:
+    global _worker_pools_lock
+    if _worker_pools_lock is None:
+        _worker_pools_lock = asyncio.Lock()
+    return _worker_pools_lock
+
+
+def _ensure_worker_pool_names(
+    pools: WorkerPools,
+    *,
+    names: tuple[PoolName, ...] | None,
+) -> WorkerPools:
+    if not names:
+        return pools
+    missing = [name for name in names if name not in pools.pools]
+    if missing:
+        joined = ", ".join(sorted(missing))
+        raise RuntimeError(f"worker pool(s) are not initialized for this process: {joined}")
+    return pools
+
+
+async def ensure_worker_pools_open(
+    settings: Settings,
+    *,
+    names: tuple[PoolName, ...] | None = None,
+) -> WorkerPools:
+    pools = _worker_pools
+    if pools is not None:
+        return _ensure_worker_pool_names(pools, names=names)
+
+    async with _get_worker_pools_lock():
+        pools = _worker_pools
+        if pools is not None:
+            return _ensure_worker_pool_names(pools, names=names)
+
+        pools = await open_pools(settings, names=names)
+        set_worker_pools(pools)
+        return pools
+
+
 class WorkerPoolBootstrap(Middleware):
     def __init__(
         self,
@@ -168,10 +209,12 @@ class WorkerPoolBootstrap(Middleware):
         event_loop_thread = get_event_loop_thread()
         if event_loop_thread is None:
             raise RuntimeError("Dramatiq AsyncIO event loop is not running")
-        pools = event_loop_thread.run_coroutine(
-            open_pools(self.runtime_settings, names=self.pool_names)
+        event_loop_thread.run_coroutine(
+            ensure_worker_pools_open(
+                self.runtime_settings,
+                names=self.pool_names,
+            )
         )
-        set_worker_pools(pools)
 
     def before_worker_shutdown(self, broker, worker) -> None:
         pools = _worker_pools

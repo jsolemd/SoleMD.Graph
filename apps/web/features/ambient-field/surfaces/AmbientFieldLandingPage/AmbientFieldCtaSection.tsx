@@ -1,12 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MetaPill } from "@/features/graph/components/panels/PanelShell/MetaPill";
-import { OverlayCard } from "@/features/graph/components/panels/PanelShell/OverlaySurface";
-import {
-  chromePillSurfaceStyle,
-  panelSurfaceStyle,
-} from "@/features/graph/components/panels/PanelShell/panel-styles";
+import { chromePillSurfaceStyle } from "@/features/graph/components/panels/PanelShell/panel-styles";
 import { smooth } from "@/lib/motion";
 import type { AmbientFieldLandingSection } from "./ambient-field-landing-content";
 
@@ -17,6 +12,9 @@ interface AmbientFieldCtaSectionProps {
   section: AmbientFieldLandingSection;
 }
 
+/** Bookend to the hero — text on the ambient field, no card. Matches the hero's
+ *  treatment (eyebrow + large title + body + button cluster) so the landing
+ *  page opens and closes with the same visual register. */
 export function AmbientFieldCtaSection({
   graphReady,
   onOpenGraph,
@@ -29,80 +27,92 @@ export function AmbientFieldCtaSection({
       data-ambient-section
       data-preset={section.preset}
       data-section-id={section.id}
-      className="flex min-h-[124svh] items-center justify-center px-4 py-[12vh] sm:px-6 sm:py-[14vh]"
+      className="flex min-h-[100svh] items-center justify-center px-4 pb-24 pt-24 sm:px-6 sm:pb-28 sm:pt-28"
     >
-      <div className="mx-auto w-full max-w-[760px]">
+      <div className="relative mx-auto flex w-full max-w-[1240px] flex-col items-center">
+        <div className="max-w-[760px] text-center">
+          <motion.p
+            className="text-[11px] uppercase tracking-[0.24em]"
+            initial={{ opacity: 0, y: 12 }}
+            viewport={{ once: true, amount: 0.35 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{
+              y: smooth,
+              opacity: { duration: 0.18, ease: "easeOut" },
+            }}
+            style={{
+              color:
+                "color-mix(in srgb, var(--graph-panel-text-dim) 92%, transparent)",
+            }}
+          >
+            {section.eyebrow}
+          </motion.p>
+
+          <motion.h2
+            className="mx-auto mt-5 max-w-[14ch] text-[2.9rem] font-medium leading-[0.9] tracking-[-0.05em] sm:text-[4.25rem] lg:text-[5.2rem]"
+            initial={{ opacity: 0, y: 18 }}
+            viewport={{ once: true, amount: 0.35 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{
+              y: smooth,
+              opacity: { duration: 0.18, ease: "easeOut" },
+            }}
+          >
+            {section.title}
+          </motion.h2>
+
+          <motion.p
+            className="mx-auto mt-6 max-w-[38ch] text-[15px] leading-7 sm:text-[17px] sm:leading-8"
+            initial={{ opacity: 0, y: 18 }}
+            viewport={{ once: true, amount: 0.35 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{
+              y: smooth,
+              opacity: { duration: 0.18, ease: "easeOut", delay: 0.04 },
+            }}
+            style={{
+              color:
+                "color-mix(in srgb, var(--graph-panel-text) 76%, transparent)",
+            }}
+          >
+            {section.body}
+          </motion.p>
+        </div>
+
         <motion.div
+          className="mt-8 flex flex-wrap items-center justify-center gap-3"
           initial={{ opacity: 0, y: 18 }}
           viewport={{ once: true, amount: 0.35 }}
           whileInView={{ opacity: 1, y: 0 }}
           transition={{
             y: smooth,
-            opacity: { duration: 0.18, ease: "easeOut" },
+            opacity: { duration: 0.18, ease: "easeOut", delay: 0.08 },
           }}
         >
-          <OverlayCard
+          <button
+            type="button"
+            onClick={onOpenGraph}
+            disabled={!graphReady}
+            className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
             style={{
-              ...panelSurfaceStyle,
-              border:
-                "1px solid color-mix(in srgb, var(--graph-panel-border) 86%, transparent)",
+              ...chromePillSurfaceStyle,
+              color: "var(--graph-panel-text)",
+              opacity: graphReady ? 1 : 0.58,
             }}
-            className="px-6 py-6 sm:px-9 sm:py-9"
           >
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <MetaPill mono>{section.eyebrow}</MetaPill>
-              <MetaPill style={{ color: section.accentVar }}>
-                {section.preset}
-              </MetaPill>
-            </div>
-
-            <h2 className="mx-auto mt-5 max-w-[14ch] text-center text-[2.2rem] font-medium leading-[0.98] tracking-[-0.04em] sm:text-[3rem]">
-              {section.title}
-            </h2>
-
-            <p
-              className="mx-auto mt-5 max-w-[50ch] text-center text-[15px] leading-7"
-              style={{
-                color:
-                  "color-mix(in srgb, var(--graph-panel-text) 82%, transparent)",
-              }}
-            >
-              {section.body}
-            </p>
-
-            <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-              <button
-                type="button"
-                onClick={onOpenGraph}
-                disabled={!graphReady}
-                className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
-                style={{
-                  ...chromePillSurfaceStyle,
-                  color: "var(--graph-panel-text)",
-                  opacity: graphReady ? 1 : 0.58,
-                }}
-              >
-                {graphReady ? "Go to graph" : "Graph still warming"}
-              </button>
-              <button
-                type="button"
-                onClick={onReturnToTop}
-                className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
-                style={{
-                  ...chromePillSurfaceStyle,
-                  color: "var(--graph-panel-text-dim)",
-                }}
-              >
-                Return to top
-              </button>
-            </div>
-
-            <div className="mt-7 flex flex-wrap justify-center gap-2">
-              {section.bullets.map((bullet) => (
-                <MetaPill key={bullet}>{bullet}</MetaPill>
-              ))}
-            </div>
-          </OverlayCard>
+            {graphReady ? "Go to graph" : "Graph still warming"}
+          </button>
+          <button
+            type="button"
+            onClick={onReturnToTop}
+            className="rounded-full px-4 py-2 text-sm font-medium transition-[filter] hover:brightness-110"
+            style={{
+              ...chromePillSurfaceStyle,
+              color: "var(--graph-panel-text-dim)",
+            }}
+          >
+            Return to top
+          </button>
         </motion.div>
       </div>
     </section>

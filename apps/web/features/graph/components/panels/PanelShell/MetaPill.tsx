@@ -33,9 +33,8 @@ export function MetaPill(props: MetaPillProps) {
     ...(entityType
       ? {
           backgroundColor:
-            "color-mix(in srgb, var(--entity-accent, var(--graph-panel-input-bg)) 25%, var(--graph-panel-input-bg))",
-          border:
-            "1px solid color-mix(in srgb, var(--entity-accent, var(--graph-panel-border)) 40%, var(--graph-panel-border))",
+            "color-mix(in oklch, var(--entity-accent, var(--graph-panel-input-bg)) 25%, var(--graph-panel-input-bg))",
+          border: "1px solid transparent",
           color: "var(--graph-panel-text)",
         }
       : null),

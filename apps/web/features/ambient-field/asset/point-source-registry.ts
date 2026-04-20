@@ -7,7 +7,7 @@ import {
   type FieldSemanticBucket,
 } from "./field-attribute-baker";
 import { FieldGeometry } from "./field-geometry";
-import { SOLEMD_BURST_COLORS } from "../scene/burst-config";
+import { SOLEMD_BURST_COLORS } from "../scene/accent-palette";
 import type {
   AmbientFieldPointSource,
   AmbientFieldPointSourceBuffers,

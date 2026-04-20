@@ -46,22 +46,37 @@ export const bouncy: SpringTransition = {
   damping: 10,
 };
 
-/* ───── Standardized hover conventions ─────
+/* ───── Standardized press conventions ─────
  *
- * Use these on `whileHover` to communicate interactivity:
- *   hoverHint   → "click me" (single-click affordance)
- *   dblHoverHint → "double-click me" (double-click affordance)
+ * One canonical click/tap motion for every button and icon across the site.
+ * Spread on a motion element via {...pressable(disabled)}:
  *
- * Both are plain objects for Framer Motion's `whileHover` prop.
- * The transition shapes are intentionally different so users learn
- * the vocabulary: single bump = click, double bump = double-click.
+ *   <motion.button {...pressable(disabled)} />
+ *
+ * Do NOT re-inline `whileHover={{ scale: 1.08 }}` / `whileTap={{ scale: 0.92 }}`
+ * at call sites — there is one contract and it lives here.
  */
 
 /** Single-click hover hint — gentle scale bump. */
 export const hoverHint = {
-  scale: 1.1,
+  scale: 1.08,
   transition: bouncy,
 } as const;
+
+/** Single-click press hint — paired tap companion to `hoverHint`. */
+export const tapHint = {
+  scale: 0.92,
+  transition: bouncy,
+} as const;
+
+/**
+ * Spread helper — the canonical pressable contract.
+ * Pass `disabled` true to suppress both gestures without conditional spreading
+ * at call sites.
+ */
+export function pressable(disabled = false) {
+  return disabled ? {} : { whileHover: hoverHint, whileTap: tapHint };
+}
 
 /**
  * Double-click hover hint — two quick vertical dips.

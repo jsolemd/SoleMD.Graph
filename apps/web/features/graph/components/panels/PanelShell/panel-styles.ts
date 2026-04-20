@@ -56,6 +56,16 @@ export const panelStatValueStyle: CSSProperties = {
   lineHeight: panelScaledPx(14),
 };
 
+/** Mono identifier label — code/token references in design-system panels.
+ *  Fixed 11px for legibility at density 0.8; falls back to density-scaled when
+ *  the panel reading scale is above 1. */
+export const panelMonoLabelStyle: CSSProperties = {
+  color: "var(--graph-panel-text-dim)",
+  fontFamily: "var(--font-mono)",
+  fontSize: "11px",
+  lineHeight: panelScaledPx(14),
+};
+
 /** Panel surface triple — bg + border + shadow from CSS tokens. */
 export const panelSurfaceStyle: CSSProperties = {
   backgroundColor: "var(--graph-panel-bg)",
@@ -80,26 +90,50 @@ export const chromePillSurfaceStyle = {
   "--graph-control-idle-bg": "transparent",
 } as CSSProperties;
 
+/** Chrome "flush" state — the invisible counterpart to chromePillSurfaceStyle.
+ *  Used when the header chrome should disappear into the canvas (pre-scroll).
+ *  Centralized so wordmark / theme toggle / graph-loading group / warmup
+ *  action all agree on the same "transparent chrome" token instead of each
+ *  inlining its own variant. Zero shadow, zero background, idle-bg flattened
+ *  so any nested .graph-icon-btn renders as a bare glyph. */
+export const chromeFlushSurfaceStyle: CSSProperties = {
+  backgroundColor: "transparent",
+  border: "1px solid transparent",
+  boxShadow: "none",
+  "--graph-control-idle-bg": "transparent",
+} as CSSProperties;
+
+/** Neutral in-panel card — summary blocks, evidence blocks, stacked content
+ *  on a panel surface. Borderless matte: tonal step + rim light (dark mode)
+ *  carries the "panel stacked on panel" read. Rim is no-op in light mode. */
 export const panelCardClassName = "rounded-lg px-2 py-1.5";
 export const panelCardStyle: CSSProperties = {
-  backgroundColor: "var(--graph-panel-input-bg)",
-  border: densityBorder("var(--graph-panel-border)"),
+  backgroundColor: "var(--surface-alt)",
+  border: densityBorder("transparent"),
+  boxShadow: "var(--rim-light)",
 };
 
-/** Mode-accent tinted card — detail panels, preview blocks, citation items. */
+/** Mode-accent tinted card — detail panels, preview blocks, citation items.
+ *  Uses the dedicated --tint-accent-bg (12%) scalar so the tint stays subtle
+ *  enough that text-on-tint stays readable. Does NOT piggyback on
+ *  --mode-accent-subtle, which is tuned for fills (hover/selection) that
+ *  don't carry text. Borderless — tint + rim light provide stacking. */
 export const panelAccentCardClassName = "rounded-xl px-3 py-3";
 export const panelAccentCardStyle: CSSProperties = {
-  backgroundColor: "var(--mode-accent-subtle)",
-  border: densityBorder("var(--mode-accent-border)"),
+  backgroundColor: "color-mix(in oklch, var(--mode-accent) var(--tint-accent-bg), var(--graph-panel-bg))",
+  border: densityBorder("transparent"),
+  boxShadow: "var(--rim-light)",
 };
 
 /** Entity-accent tinted card — wiki entity profiles. Reads --entity-accent
- *  (set by [data-entity-type]) and falls back to --mode-accent. Mixes against
- *  panel bg/border so the tint stays legible in both light and dark. */
+ *  (set by [data-entity-type]) and falls back to --mode-accent. OKLCH tint
+ *  against panel bg stays legible in both modes. Borderless — the tint alone
+ *  differentiates it from the panel surface, rim light reinforces stacking. */
 export const panelAccentCardEntityClassName = "rounded-xl px-3 py-3";
 export const panelAccentCardEntityStyle: CSSProperties = {
-  backgroundColor: "color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 12%, var(--graph-panel-bg))",
-  border: `1px solid color-mix(in srgb, var(--entity-accent, var(--mode-accent)) 20%, var(--graph-panel-border))`,
+  backgroundColor: "color-mix(in oklch, var(--entity-accent, var(--mode-accent)) var(--tint-accent-bg), var(--graph-panel-bg))",
+  border: densityBorder("transparent"),
+  boxShadow: "var(--rim-light)",
 };
 
 export const panelErrorStyle: CSSProperties = {
@@ -167,20 +201,22 @@ export const graphControlBtnStyles = {
   },
 } as const;
 
-/** Badge with mode-accent background — for cluster labels, "Primary" tags. */
+/** Badge with mode-accent background — for cluster labels, "Primary" tags.
+ *  Borderless — tint alone carries the affordance. */
 export const badgeAccentStyles = {
   root: {
     backgroundColor: "var(--mode-accent-subtle)",
     color: "var(--graph-panel-text)",
-    border: densityBorder("var(--mode-accent-border)"),
+    border: densityBorder("transparent"),
   },
 } as const;
 
-/** Badge with outline — for section, page number, neutral metadata. */
+/** Badge with outline — for section, page number, neutral metadata.
+ *  Borderless now; tonal bg does the differentiation. */
 export const badgeOutlineStyles = {
   root: {
     backgroundColor: "color-mix(in srgb, var(--graph-panel-input-bg) 92%, white 8%)",
-    borderColor: "var(--graph-panel-border)",
+    borderColor: "transparent",
     color: "var(--graph-panel-text)",
   },
 } as const;
@@ -189,14 +225,14 @@ export const badgeOutlineStyles = {
 export const pillActiveColors = {
   backgroundColor: "var(--mode-accent-subtle)",
   color: "var(--mode-accent)",
-  border: densityBorder("var(--mode-accent-border)"),
+  border: densityBorder("transparent"),
 } as const;
 
 /** Color tokens for inactive interactive pills (dim/neutral). */
 export const pillInactiveColors = {
   backgroundColor: "var(--graph-panel-input-bg)",
   color: "var(--graph-panel-text-dim)",
-  border: densityBorder("var(--graph-panel-border)"),
+  border: densityBorder("transparent"),
 } as const;
 
 /** Base layout for raw-span interactive pills (not Mantine Badge).
@@ -223,7 +259,7 @@ export const panelPillStyles = {
   root: {
     backgroundColor: "var(--mode-accent-subtle)",
     color: "var(--graph-panel-text)",
-    border: "1px solid var(--mode-accent-border)",
+    border: "1px solid transparent",
     height: panelScaledPx(14),
     minHeight: panelScaledPx(14),
     paddingLeft: panelScaledPx(4),
@@ -239,7 +275,7 @@ export const panelTypePillStyles = {
   root: {
     backgroundColor: "var(--graph-panel-input-bg)",
     color: "var(--graph-panel-text-dim)",
-    border: "1px solid var(--graph-panel-border)",
+    border: "1px solid transparent",
     height: panelScaledPx(14),
     minHeight: panelScaledPx(14),
     paddingLeft: panelScaledPx(4),
@@ -256,7 +292,8 @@ export const PANEL_ACCENT = "var(--mode-accent)";
 /** Shared label color for Mantine Switch components inside panels. */
 export const switchLabelStyle = { label: { color: "var(--graph-panel-text)" } };
 
-/** Compact switch styles — 24×12 track, 10px label matching panelTextStyle. */
+/** Compact switch styles — 24×12 track, 10px label matching panelTextStyle.
+ *  Borderless track and thumb — Mantine's bg/color changes carry state. */
 export const panelSwitchStyles = {
   label: {
     color: "var(--graph-panel-text)",
@@ -267,12 +304,12 @@ export const panelSwitchStyles = {
   track: {
     minWidth: panelScaledPx(24),
     height: panelScaledPx(12),
-    borderColor: "var(--graph-panel-border)",
+    borderColor: "transparent",
   },
   thumb: {
     width: panelScaledPx(10),
     height: panelScaledPx(10),
-    borderColor: "var(--graph-panel-border)",
+    borderColor: "transparent",
   },
 } as const;
 
@@ -294,11 +331,13 @@ export const panelTableHeaderStyle: CSSProperties = {
   color: "var(--graph-panel-text-muted)",
 };
 
-/** Shared styles for Select/input components inside panels — compact & minimal. */
+/** Shared styles for Select/input components inside panels — compact & minimal.
+ *  Borderless: the darker input bg (graph-panel-input-bg) signals the input
+ *  affordance as an inset cutout in the panel. */
 export const panelSelectStyles = {
   input: {
     backgroundColor: "var(--graph-panel-input-bg)",
-    borderColor: "var(--graph-panel-border)",
+    borderColor: "transparent",
     color: "var(--graph-panel-text)",
     minHeight: panelScaledPx(22),
     height: panelScaledPx(22),

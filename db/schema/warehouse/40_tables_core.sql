@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS solemd.corpus (
     first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     admission_reason TEXT NOT NULL,
-    domain_status TEXT NOT NULL DEFAULT 'candidate',
+    domain_status TEXT NOT NULL DEFAULT 'corpus',
     CONSTRAINT ck_corpus_domain_status
-        CHECK (domain_status IN ('candidate', 'mapped', 'retired'))
+        CHECK (domain_status IN ('corpus', 'mapped', 'retired'))
 );
 ALTER TABLE solemd.corpus SET (fillfactor = 90);
 
@@ -132,6 +132,25 @@ CREATE TABLE IF NOT EXISTS solemd.paper_authors (
 );
 ALTER TABLE solemd.paper_authors SET (fillfactor = 100);
 ALTER TABLE solemd.paper_authors ALTER COLUMN affiliation_text SET COMPRESSION lz4;
+
+CREATE TABLE IF NOT EXISTS solemd.paper_citations (
+    corpus_id BIGINT NOT NULL
+        REFERENCES solemd.corpus (corpus_id)
+        ON DELETE CASCADE,
+    reference_checksum TEXT NOT NULL,
+    cited_corpus_id BIGINT
+        REFERENCES solemd.corpus (corpus_id)
+        ON DELETE SET NULL,
+    cited_s2_paper_id TEXT,
+    linkage_status SMALLINT NOT NULL DEFAULT 1,
+    is_influential BOOLEAN NOT NULL DEFAULT false,
+    intent_raw TEXT,
+    PRIMARY KEY (corpus_id, reference_checksum),
+    CONSTRAINT ck_paper_citations_linkage
+        CHECK (linkage_status BETWEEN 1 AND 3)
+);
+ALTER TABLE solemd.paper_citations SET (fillfactor = 100);
+ALTER TABLE solemd.paper_citations ALTER COLUMN intent_raw SET COMPRESSION lz4;
 
 CREATE TABLE IF NOT EXISTS solemd.paper_chunk_versions (
     chunk_version_key UUID PRIMARY KEY DEFAULT uuidv7(),
@@ -228,6 +247,20 @@ CREATE TABLE IF NOT EXISTS solemd.s2_paper_assets_raw (
     PRIMARY KEY (paper_id, asset_kind, asset_url)
 );
 ALTER TABLE solemd.s2_paper_assets_raw SET (fillfactor = 100);
+
+CREATE TABLE IF NOT EXISTS solemd.s2orc_documents_raw (
+    paper_id TEXT PRIMARY KEY,
+    source_release_id INTEGER NOT NULL
+        REFERENCES solemd.source_releases (source_release_id)
+        ON DELETE RESTRICT,
+    text_hash BYTEA NOT NULL,
+    document_payload TEXT NOT NULL,
+    last_seen_run_id UUID
+        REFERENCES solemd.ingest_runs (ingest_run_id)
+        ON DELETE SET NULL
+);
+ALTER TABLE solemd.s2orc_documents_raw SET (fillfactor = 100);
+ALTER TABLE solemd.s2orc_documents_raw ALTER COLUMN document_payload SET COMPRESSION lz4;
 
 CREATE TABLE IF NOT EXISTS pubtator.entity_annotations_stage (
     source_release_id INTEGER NOT NULL

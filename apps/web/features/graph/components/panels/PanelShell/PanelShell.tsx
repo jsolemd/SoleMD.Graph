@@ -282,7 +282,7 @@ export function PanelShell({
             bottom: `calc(env(safe-area-inset-bottom, 0px) + ${mobilePanelInset})`,
             left: mobilePanelInset,
           }}
-          className="fixed z-50 flex min-h-0 flex-col overflow-hidden rounded-[1.25rem]"
+          className="fixed z-50 flex min-h-0 flex-col overflow-hidden rounded-surface"
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
             <PanelChrome

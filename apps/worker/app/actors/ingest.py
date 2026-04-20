@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import dramatiq
 
-from app.db import get_pool
+from app.config import settings
+from app.db import ensure_worker_pools_open
 from app.ingest.errors import (
     IngestAlreadyInProgress,
     IngestAlreadyPublished,
@@ -29,7 +30,8 @@ from app.ingest.runtime import run_release_ingest
 )
 async def start_release(**payload: object) -> None:
     request = StartReleaseRequest.model_validate(payload)
+    pools = await ensure_worker_pools_open(settings, names=("ingest_write",))
     await run_release_ingest(
         request,
-        ingest_pool=get_pool("ingest_write"),
+        ingest_pool=pools.get("ingest_write"),
     )

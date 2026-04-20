@@ -23,6 +23,8 @@ COMMENT ON TABLE solemd.paper_text IS
     'Canonical title and abstract storage separated from narrow bibliographic metadata.';
 COMMENT ON TABLE solemd.paper_authors IS
     'Canonical author ordering for each paper.';
+COMMENT ON TABLE solemd.paper_citations IS
+    'Canonical citation edges for release-selected papers, with corpus linkage when the cited paper is already canonical.';
 COMMENT ON TABLE solemd.paper_chunk_versions IS
     'Version registry for chunking policy revisions.';
 COMMENT ON TABLE solemd.graph_runs IS
@@ -35,6 +37,8 @@ COMMENT ON TABLE solemd.s2_paper_references_raw IS
     'Typed Semantic Scholar citation-edge staging rows prior to canonical promotion.';
 COMMENT ON TABLE solemd.s2_paper_assets_raw IS
     'Typed Semantic Scholar asset metadata staging rows keyed by source paper id.';
+COMMENT ON TABLE solemd.s2orc_documents_raw IS
+    'Release-backed Semantic Scholar S2ORC raw document payloads before any canonical hot-wave parsing.';
 COMMENT ON TABLE pubtator.entity_annotations_stage IS
     'Release-scoped PubTator entity staging rows before canonical corpus-id promotion.';
 COMMENT ON TABLE pubtator.entity_annotations IS
@@ -68,6 +72,8 @@ COMMENT ON COLUMN solemd.s2_paper_references_raw.reference_checksum IS
     'Stable release-scoped citation row checksum used as the refresh-safe raw primary key.';
 COMMENT ON COLUMN solemd.s2_paper_references_raw.linkage_status IS
     'Reference-linkage state from db/schema/enum-codes.yaml.s2_reference_linkage_status.';
+COMMENT ON COLUMN solemd.s2orc_documents_raw.document_payload IS
+    'Normalized parsed S2ORC document JSON retained on the raw side of the corpus boundary.';
 COMMENT ON COLUMN pubtator.entity_annotations_stage.entity_type IS
     'PubTator entity-type code from db/schema/enum-codes.yaml.pubtator_entity_type.';
 COMMENT ON COLUMN pubtator.entity_annotations_stage.resource IS

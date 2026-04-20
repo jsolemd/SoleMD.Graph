@@ -1,13 +1,19 @@
 // Module-level monotonic clock for the ambient-field shader. Survives
 // React StrictMode double-mount and Next.js warmup remounts because the
-// epoch lives in module scope rather than a component ref. Everything
-// downstream (uTime, scroll scrubber, burst controller) reads elapsed-ms
-// from here.
+// epoch lives in module scope. Doubles as the single RAF subscriber bus
+// for the ambient-field feature — FieldScene's R3F `useFrame` calls
+// `tick(dt)` once per frame and the bus fans out to priority-ordered
+// consumers (controllers, overlays, surface chrome).
 //
-// Source rationale: Maze's runtime increments `uTime.value += 0.002` per
-// frame from a single shared RAF loop (`scripts.pretty.js:43047-43049`).
-// We produce the same monotonic time base, but driven off `performance.now()`
-// to stay independent of RAF frequency and of React's render lifecycle.
+// Priority bands (lower runs first):
+//   10  scroll driver
+//   20  controllers
+//   30  hotspot projection
+//   40  overlays
+//   50  story progress
+//   60  warmup action
+//   70  landing-page chrome mode sync
+//   80  scroll cue
 
 let epochMs: number | null = null;
 
@@ -29,6 +35,62 @@ export function getAmbientFieldElapsedSeconds(atMs?: number): number {
   return getAmbientFieldElapsedMs(atMs) / 1000;
 }
 
+export type FieldLoopTick = (dtSec: number, elapsedSec: number) => void;
+
+interface FieldLoopSubscription {
+  name: string;
+  priority: number;
+  tick: FieldLoopTick;
+}
+
+const subscribers = new Map<string, FieldLoopSubscription>();
+let orderedCache: FieldLoopSubscription[] | null = null;
+
+function rebuildOrder(): FieldLoopSubscription[] {
+  const list = Array.from(subscribers.values());
+  list.sort((a, b) => a.priority - b.priority);
+  orderedCache = list;
+  return list;
+}
+
+export function subscribe(
+  name: string,
+  priority: number,
+  tick: FieldLoopTick,
+): () => void {
+  subscribers.set(name, { name, priority, tick });
+  orderedCache = null;
+  return () => unsubscribe(name);
+}
+
+export function unsubscribe(name: string): void {
+  if (subscribers.delete(name)) orderedCache = null;
+}
+
+export function tick(dtSec: number): void {
+  const ordered = orderedCache ?? rebuildOrder();
+  const elapsedSec = getAmbientFieldElapsedSeconds();
+  for (const sub of ordered) {
+    try {
+      sub.tick(dtSec, elapsedSec);
+    } catch (error) {
+      if (typeof console !== "undefined") {
+        console.error(`[field-loop-clock] subscriber "${sub.name}" threw`, error);
+      }
+    }
+  }
+}
+
 export function __resetAmbientFieldLoopClockForTests(): void {
   epochMs = null;
+  subscribers.clear();
+  orderedCache = null;
 }
+
+export const fieldLoopClock = {
+  subscribe,
+  unsubscribe,
+  tick,
+  getElapsedMs: getAmbientFieldElapsedMs,
+  getElapsedSeconds: getAmbientFieldElapsedSeconds,
+};

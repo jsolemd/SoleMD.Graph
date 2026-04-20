@@ -44,6 +44,7 @@ def configure_retries(
 def create_broker(
     worker_settings: Settings | None = None,
     *,
+    metrics_scope: str = "cli",
     pool_names: tuple[PoolName, ...] | None = None,
 ) -> dramatiq.Broker:
     runtime_settings = worker_settings or settings
@@ -60,6 +61,13 @@ def create_broker(
     )
     ensure_middleware(broker, TimeLimit())
     ensure_middleware(broker, ShutdownNotifications())
+    if runtime_settings.worker_metrics_enabled:
+        from app.telemetry.dramatiq_prometheus import ScopedPrometheus
+
+        ensure_middleware(
+            broker,
+            ScopedPrometheus(scope=metrics_scope, runtime_settings=runtime_settings),
+        )
     ensure_middleware(
         broker,
         WorkerPoolBootstrap(runtime_settings, pool_names=pool_names),
@@ -70,10 +78,15 @@ def create_broker(
 def configure_broker(
     worker_settings: Settings | None = None,
     *,
+    metrics_scope: str = "cli",
     pool_names: tuple[PoolName, ...] | None = None,
 ) -> dramatiq.Broker:
     global _broker
     if _broker is None:
-        _broker = create_broker(worker_settings, pool_names=pool_names)
+        _broker = create_broker(
+            worker_settings,
+            metrics_scope=metrics_scope,
+            pool_names=pool_names,
+        )
         dramatiq.set_broker(_broker)
     return _broker

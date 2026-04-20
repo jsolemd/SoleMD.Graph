@@ -1,16 +1,14 @@
-// Ambient-field public surface. Every Round 12 primitive ships through
-// this barrel; downstream modules should import exclusively from
-// `@/features/ambient-field` rather than reaching into the subpaths.
+// Ambient-field public surface. Downstream modules should import
+// exclusively from `@/features/ambient-field` rather than reaching into
+// subpaths.
 
 // Scene / presets
 export {
-  AMBIENT_FIELD_PHASE_IDS,
   AMBIENT_FIELD_STAGE_ITEM_IDS,
   DEFAULT_AMBIENT_FIELD_ROTATION,
   DEFAULT_AMBIENT_FIELD_SCENE,
   createAmbientFieldSceneState,
   visualPresets,
-  type AmbientFieldPhaseId,
   type AmbientFieldSceneState,
   type AmbientFieldShaderPreset,
   type AmbientFieldStageItemId,
@@ -20,11 +18,13 @@ export {
 } from "./scene/visual-presets";
 
 export {
-  LANDING_ACCENT_RAINBOW_RGB,
-  LANDING_BURST_PALETTE,
-  PHASE_TO_BUCKET,
+  LANDING_BUCKET_BASES_RGB,
+  LANDING_BUCKET_NOISES_RGB,
+  LANDING_RAINBOW_RGB,
+  MAZE_DEFAULT_BASES_RGB,
+  MAZE_DEFAULT_NOISES_RGB,
   SOLEMD_BURST_COLORS,
-} from "./scene/burst-config";
+} from "./scene/accent-palette";
 
 // Asset / point-source primitives
 export {
@@ -71,32 +71,41 @@ export type {
 
 // Renderer primitives
 export { FieldCanvas } from "./renderer/FieldCanvas";
-export { FieldScene, type AmbientFieldHotspotFrame } from "./renderer/FieldScene";
+export { FieldScene } from "./renderer/FieldScene";
 export { FIELD_VERTEX_SHADER, FIELD_FRAGMENT_SHADER } from "./renderer/field-shaders";
 export {
+  fieldLoopClock,
   getAmbientFieldElapsedMs,
   getAmbientFieldElapsedSeconds,
   __resetAmbientFieldLoopClockForTests,
+  type FieldLoopTick,
 } from "./renderer/field-loop-clock";
 export {
   attachMouseParallax,
   type MouseParallaxOptions,
 } from "./renderer/mouse-parallax-wrapper";
-export {
-  createBurstController,
-  type BurstController,
-  type BurstControllerOptions,
-  type BurstUniformKey,
-} from "./renderer/burst-controller";
-
 // Controllers
 export {
+  ensureGsapScrollTriggerRegistered,
   FieldController,
   tnEase,
   type FieldControllerAttachment,
   type FieldControllerInit,
 } from "./controller/FieldController";
-export { BlobController, type BlobHotspotState } from "./controller/BlobController";
+export {
+  BlobController,
+  BLOB_HOTSPOT_CARD_COUNT,
+  BLOB_HOTSPOT_COUNT,
+  BLOB_HOTSPOT_IDS,
+  INTRO_DEPTH_BOOST,
+  INTRO_DURATION_SECONDS,
+  getBlobHotspotCycleDurationMs,
+  getBlobHotspotPulseEnvelope,
+  projectBlobHotspotCandidate,
+  selectBlobHotspotCandidate,
+  type AmbientFieldHotspotFrame,
+  type BlobHotspotState,
+} from "./controller/BlobController";
 export { StreamController } from "./controller/StreamController";
 export { PcbController } from "./controller/PcbController";
 
@@ -117,30 +126,16 @@ export {
   type HotspotSamplePosition,
 } from "./overlay/ambient-field-hotspot-lifecycle";
 
-// Scroll primitives
+// Scroll bootstrap
 export {
-  createUniformScrubber,
-  type UniformScrubber,
-  type UniformScrubberOptions,
-} from "./scroll/ambient-field-uniform-scrubber";
-export {
-  createFieldChapterTimeline,
-  type ChapterEvent,
-  type FieldChapterTimeline,
-  type FieldChapterTimelineOptions,
-} from "./scroll/field-chapter-timeline";
-export {
-  LANDING_BLOB_CHAPTER,
-  type LandingBlobChapterKey,
-} from "./scroll/chapters/landing-blob-chapter";
-export {
-  LANDING_PCB_CHAPTER,
-  type LandingPcbChapterKey,
-} from "./scroll/chapters/landing-pcb-chapter";
-export {
-  LANDING_STREAM_CHAPTER,
-  type LandingStreamChapterKey,
-} from "./scroll/chapters/landing-stream-chapter";
+  bindAmbientFieldControllers,
+  registerAmbientFieldScrollTrigger,
+  type BindAmbientFieldControllersOptions,
+} from "./scroll/ambient-field-scroll-driver";
 
 // Surfaces
 export { AmbientFieldLandingPage } from "./surfaces/AmbientFieldLandingPage";
+export {
+  AmbientFieldHotspotPool,
+  type AmbientFieldHotspotPoolProps,
+} from "./surfaces/AmbientFieldLandingPage/AmbientFieldHotspotPool";

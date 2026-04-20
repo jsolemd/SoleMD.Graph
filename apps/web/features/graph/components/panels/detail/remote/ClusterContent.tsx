@@ -45,7 +45,7 @@ export function ExemplarsContent({
             className="rounded-xl px-3 py-3"
             style={{
               backgroundColor: "var(--mode-accent-subtle)",
-              border: "1px solid var(--mode-accent-border)",
+              border: "1px solid var(--mode-accent)",
             }}
           >
             <Group justify="space-between" gap="sm" align="flex-start">

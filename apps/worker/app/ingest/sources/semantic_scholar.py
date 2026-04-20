@@ -27,9 +27,6 @@ from app.document_schema import (
     SECTION_ROLE_UNKNOWN,
     SEGMENTATION_SOURCE_S2ORC_ANNOTATION,
     SOURCE_PRIORITY_S2ORC,
-    TEXT_AVAILABILITY_ABSTRACT,
-    TEXT_AVAILABILITY_FULLTEXT,
-    TEXT_AVAILABILITY_NONE,
 )
 from app.document_spine import fallback_sentence_spans
 from app.ingest.errors import SourceSchemaDrift
@@ -130,35 +127,12 @@ async def promote_family(
     source_release_id: int,
     ingest_run_id: UUID,
 ) -> None:
+    del plan, ingest_run_id
     if family_name == "papers":
-        await _promote_papers(connection, source_release_id)
-        await _promote_paper_authors(connection, source_release_id)
-        return
-    if family_name == "abstracts":
-        await _promote_abstracts(connection, source_release_id)
-        return
-    if family_name == "tldrs":
-        await _promote_tldrs(connection, source_release_id)
+        await _backfill_selected_corpus_ids(connection, source_release_id)
         return
     if family_name == "citations":
         await _promote_citations(connection, source_release_id)
-        return
-    if family_name == "s2orc_v2":
-        await connection.execute(
-            """
-            UPDATE solemd.paper_text
-            SET text_availability = $1::smallint
-            WHERE corpus_id IN (
-                SELECT corpus_id
-                FROM solemd.paper_documents
-                WHERE document_source_kind = $2
-                  AND source_revision = $3
-            )
-            """,
-            TEXT_AVAILABILITY_FULLTEXT,
-            DOCUMENT_SOURCE_KIND_S2ORC_ANNOTATION,
-            plan.release_tag,
-        )
         return
 
 
@@ -170,20 +144,11 @@ def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
             "solemd.s2_papers_raw",
             "solemd.s2_paper_authors_raw",
             "solemd.s2_paper_assets_raw",
-            "solemd.corpus",
-            "solemd.papers",
-            "solemd.paper_text",
-            "solemd.paper_authors",
         ),
-        "abstracts": ("solemd.s2_papers_raw", "solemd.paper_text"),
-        "tldrs": ("solemd.s2_papers_raw", "solemd.paper_text"),
+        "abstracts": ("solemd.s2_papers_raw",),
+        "tldrs": ("solemd.s2_papers_raw",),
         "citations": ("solemd.s2_paper_references_raw",),
-        "s2orc_v2": (
-            "solemd.paper_documents",
-            "solemd.paper_sections",
-            "solemd.paper_blocks",
-            "solemd.paper_sentences",
-        ),
+        "s2orc_v2": ("solemd.s2orc_documents_raw",),
     }
     return mapping[family_name]
 
@@ -463,7 +428,10 @@ def _parse_s2orc_document(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _promote_papers(connection: asyncpg.Connection, source_release_id: int) -> None:
+async def _backfill_selected_corpus_ids(
+    connection: asyncpg.Connection,
+    source_release_id: int,
+) -> None:
     await connection.execute(
         """
         UPDATE solemd.s2_papers_raw raw
@@ -472,242 +440,6 @@ async def _promote_papers(connection: asyncpg.Connection, source_release_id: int
         WHERE raw.source_release_id = $1
           AND raw.paper_id = papers.s2_paper_id
           AND raw.corpus_id IS DISTINCT FROM papers.corpus_id
-        """,
-        source_release_id,
-    )
-    await connection.execute(
-        """
-        WITH missing AS (
-            SELECT raw.paper_id
-            FROM solemd.s2_papers_raw raw
-            LEFT JOIN solemd.papers papers
-              ON papers.s2_paper_id = raw.paper_id
-            WHERE raw.source_release_id = $1
-              AND papers.corpus_id IS NULL
-            ORDER BY raw.paper_id
-        ),
-        allocated AS (
-            SELECT
-                paper_id,
-                nextval(pg_get_serial_sequence('solemd.corpus', 'corpus_id'))::bigint AS corpus_id
-            FROM missing
-        ),
-        insert_corpus AS (
-            INSERT INTO solemd.corpus (corpus_id, admission_reason)
-            SELECT corpus_id, 'semantic_scholar_release'
-            FROM allocated
-        )
-        UPDATE solemd.s2_papers_raw raw
-        SET corpus_id = allocated.corpus_id
-        FROM allocated
-        WHERE raw.paper_id = allocated.paper_id
-        """,
-        source_release_id,
-    )
-    await connection.execute(
-        """
-        INSERT INTO solemd.papers (
-            corpus_id,
-            venue_id,
-            publication_date,
-            year,
-            is_open_access,
-            pmid,
-            doi_norm,
-            pmc_id,
-            s2_paper_id
-        )
-        SELECT
-            raw.corpus_id,
-            venues.venue_id,
-            raw.publication_date,
-            CASE
-                WHEN raw.year IS NULL THEN NULL
-                ELSE raw.year::smallint
-            END,
-            raw.is_open_access,
-            raw.pmid,
-            raw.doi_norm,
-            raw.pmc_id,
-            raw.paper_id
-        FROM solemd.s2_papers_raw raw
-        LEFT JOIN solemd.venues venues
-          ON venues.source_venue_id = raw.source_venue_id
-        WHERE raw.source_release_id = $1
-          AND raw.corpus_id IS NOT NULL
-        ON CONFLICT (corpus_id)
-        DO UPDATE SET
-            venue_id = EXCLUDED.venue_id,
-            publication_date = EXCLUDED.publication_date,
-            year = EXCLUDED.year,
-            is_open_access = EXCLUDED.is_open_access,
-            pmid = EXCLUDED.pmid,
-            doi_norm = EXCLUDED.doi_norm,
-            pmc_id = EXCLUDED.pmc_id,
-            s2_paper_id = EXCLUDED.s2_paper_id,
-            updated_at = now()
-        """,
-        source_release_id,
-    )
-    await connection.execute(
-        """
-        INSERT INTO solemd.paper_text (
-            corpus_id,
-            title_hash,
-            abstract_hash,
-            text_availability,
-            title,
-            abstract,
-            tldr
-        )
-        SELECT
-            raw.corpus_id,
-            substring(digest(coalesce(raw.title, ''), 'sha1') for 16),
-            CASE
-                WHEN raw.abstract IS NULL THEN NULL
-                ELSE substring(digest(raw.abstract, 'sha1') for 16)
-            END,
-            CASE
-                WHEN raw.abstract IS NOT NULL THEN $2::smallint
-                ELSE $3::smallint
-            END,
-            coalesce(raw.title, ''),
-            raw.abstract,
-            raw.tldr
-        FROM solemd.s2_papers_raw raw
-        WHERE raw.source_release_id = $1
-          AND raw.corpus_id IS NOT NULL
-        ON CONFLICT (corpus_id)
-        DO UPDATE SET
-            title_hash = EXCLUDED.title_hash,
-            abstract_hash = EXCLUDED.abstract_hash,
-            text_availability = GREATEST(solemd.paper_text.text_availability, EXCLUDED.text_availability),
-            title = EXCLUDED.title,
-            abstract = EXCLUDED.abstract,
-            tldr = EXCLUDED.tldr
-        """,
-        source_release_id,
-        TEXT_AVAILABILITY_ABSTRACT,
-        TEXT_AVAILABILITY_NONE,
-    )
-
-
-async def _promote_paper_authors(connection: asyncpg.Connection, source_release_id: int) -> None:
-    # Scope both upserts to authors that appear in this release only. The raw
-    # author table is release-wide; scanning it unqualified each cycle is
-    # O(all_history) and grows unboundedly.
-    await connection.execute(
-        """
-        INSERT INTO solemd.authors (source_author_id, display_name)
-        SELECT DISTINCT raw_authors.source_author_id, raw_authors.name_raw
-        FROM solemd.s2_paper_authors_raw raw_authors
-        JOIN solemd.s2_papers_raw raw
-          ON raw.paper_id = raw_authors.paper_id
-        WHERE raw.source_release_id = $1
-          AND raw_authors.source_author_id IS NOT NULL
-        ON CONFLICT (source_author_id)
-        DO UPDATE SET display_name = EXCLUDED.display_name
-        """,
-        source_release_id,
-    )
-    await connection.execute(
-        """
-        WITH missing_names AS (
-            SELECT DISTINCT raw_authors.name_raw
-            FROM solemd.s2_paper_authors_raw raw_authors
-            JOIN solemd.s2_papers_raw raw
-              ON raw.paper_id = raw_authors.paper_id
-            WHERE raw.source_release_id = $1
-              AND raw_authors.source_author_id IS NULL
-              AND NOT EXISTS (
-                    SELECT 1
-                    FROM solemd.authors authors
-                    WHERE authors.normalized_name = solemd.normalize_lookup_key(raw_authors.name_raw)
-              )
-        )
-        INSERT INTO solemd.authors (display_name)
-        SELECT name_raw
-        FROM missing_names
-        """,
-        source_release_id,
-    )
-    await connection.execute(
-        """
-        DELETE FROM solemd.paper_authors
-        WHERE corpus_id IN (
-            SELECT corpus_id
-            FROM solemd.s2_papers_raw
-            WHERE source_release_id = $1
-              AND corpus_id IS NOT NULL
-        )
-        """,
-        source_release_id,
-    )
-    await connection.execute(
-        """
-        INSERT INTO solemd.paper_authors (
-            corpus_id,
-            author_id,
-            author_ordinal,
-            affiliation_text
-        )
-        SELECT
-            raw.corpus_id,
-            authors.author_id,
-            raw_authors.author_ordinal::smallint,
-            raw_authors.affiliation_raw
-        FROM solemd.s2_paper_authors_raw raw_authors
-        JOIN solemd.s2_papers_raw raw
-          ON raw.paper_id = raw_authors.paper_id
-        JOIN solemd.authors authors
-          ON (
-                raw_authors.source_author_id IS NOT NULL
-                AND authors.source_author_id = raw_authors.source_author_id
-             )
-             OR (
-                raw_authors.source_author_id IS NULL
-                AND authors.normalized_name = solemd.normalize_lookup_key(raw_authors.name_raw)
-             )
-        WHERE raw.source_release_id = $1
-          AND raw.corpus_id IS NOT NULL
-        """,
-        source_release_id,
-    )
-
-
-async def _promote_abstracts(connection: asyncpg.Connection, source_release_id: int) -> None:
-    await connection.execute(
-        """
-        UPDATE solemd.paper_text paper_text
-        SET abstract = raw.abstract,
-            abstract_hash = CASE
-                WHEN raw.abstract IS NULL THEN NULL
-                ELSE substring(digest(raw.abstract, 'sha1') for 16)
-            END,
-            text_availability = CASE
-                WHEN raw.abstract IS NULL THEN paper_text.text_availability
-                WHEN paper_text.text_availability = $2::smallint THEN paper_text.text_availability
-                ELSE $1::smallint
-            END
-        FROM solemd.s2_papers_raw raw
-        WHERE raw.source_release_id = $3
-          AND raw.corpus_id = paper_text.corpus_id
-        """,
-        TEXT_AVAILABILITY_ABSTRACT,
-        TEXT_AVAILABILITY_FULLTEXT,
-        source_release_id,
-    )
-
-
-async def _promote_tldrs(connection: asyncpg.Connection, source_release_id: int) -> None:
-    await connection.execute(
-        """
-        UPDATE solemd.paper_text paper_text
-        SET tldr = raw.tldr
-        FROM solemd.s2_papers_raw raw
-        WHERE raw.source_release_id = $1
-          AND raw.corpus_id = paper_text.corpus_id
-          AND raw.tldr IS NOT NULL
         """,
         source_release_id,
     )

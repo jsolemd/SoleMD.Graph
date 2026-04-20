@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,6 +43,30 @@ class Settings(BaseSettings):
     )
     worker_startup_timeout_seconds: float = Field(
         default=1.0, alias="WORKER_STARTUP_TIMEOUT_SECONDS"
+    )
+    worker_metrics_enabled: bool = Field(
+        default=True,
+        alias="WORKER_METRICS_ENABLED",
+    )
+    worker_metrics_host: str = Field(
+        default="0.0.0.0",
+        alias="WORKER_METRICS_HOST",
+    )
+    worker_metrics_port: int | None = Field(
+        default=None,
+        alias="WORKER_METRICS_PORT",
+    )
+    worker_metrics_port_base: int = Field(
+        default=9464,
+        alias="WORKER_METRICS_PORT_BASE",
+    )
+    worker_metrics_multiproc_dir: str = Field(
+        default=".state/prometheus",
+        alias="WORKER_METRICS_MULTIPROC_DIR",
+    )
+    worker_metrics_clean_on_boot: bool = Field(
+        default=True,
+        alias="WORKER_METRICS_CLEAN_ON_BOOT",
     )
     redis_url: str = Field(..., alias="REDIS_URL")
     serve_dsn_read: str | None = Field(default=None, alias="SERVE_DSN_READ")
@@ -109,11 +133,34 @@ class Settings(BaseSettings):
         default=30.0,
         alias="NCBI_API_TIMEOUT_SECONDS",
     )
+    corpus_vocab_terms_path: str = Field(
+        default="data/vocab_terms.tsv",
+        alias="CORPUS_VOCAB_TERMS_PATH",
+    )
+    corpus_vocab_aliases_path: str = Field(
+        default="data/vocab_aliases.tsv",
+        alias="CORPUS_VOCAB_ALIASES_PATH",
+    )
+    corpus_journal_inventory_path: str = Field(
+        default="data/nlm_neuro_psych_journals.json",
+        alias="CORPUS_JOURNAL_INVENTORY_PATH",
+    )
+    corpus_wave_enqueue_batch_size: int = Field(
+        default=250,
+        alias="CORPUS_WAVE_ENQUEUE_BATCH_SIZE",
+    )
 
     model_config = SettingsConfigDict(
         env_file=(ENV_FILE, ENV_LOCAL_FILE),
         extra="ignore",
     )
+
+    @field_validator("worker_metrics_port", mode="before")
+    @classmethod
+    def blank_worker_metrics_port_is_none(cls, value: object) -> object:
+        if value == "":
+            return None
+        return value
 
     @property
     def service_name(self) -> str:

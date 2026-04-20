@@ -1,184 +1,144 @@
 "use client";
 
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import type { MutableRefObject } from "react";
-import type { AmbientFieldSceneState } from "../scene/visual-presets";
 import {
-  resolveAmbientFieldScrollState,
-  type AmbientFieldScrollManifest,
-  type AmbientFieldScrollStop,
-} from "./ambient-field-scroll-state";
-import { createUniformScrubber } from "./ambient-field-uniform-scrubber";
+  ensureGsapScrollTriggerRegistered,
+} from "../controller/FieldController";
+import type { BlobController } from "../controller/BlobController";
+import type { PcbController } from "../controller/PcbController";
+import type { StreamController } from "../controller/StreamController";
+import type {
+  AmbientFieldSceneState,
+  AmbientFieldStageItemId,
+} from "../scene/visual-presets";
 
-interface SetupAmbientFieldScrollOptions {
+export function registerAmbientFieldScrollTrigger(): void {
+  ensureGsapScrollTriggerRegistered();
+}
+
+export interface BindAmbientFieldControllersOptions {
+  anchors: {
+    blob: HTMLElement;
+    blobEnd: HTMLElement;
+    stream: HTMLElement;
+    pcb: HTMLElement;
+    pcbEnd?: HTMLElement | null;
+  };
+  controllers: {
+    blob: BlobController;
+    stream: StreamController;
+    pcb: PcbController;
+  };
   hero: HTMLElement;
-  overlayController?: AmbientFieldScrollOverlayController;
   reducedMotion: boolean;
-  root: HTMLDivElement;
-  scrollManifest: AmbientFieldScrollManifest;
   sceneStateRef: MutableRefObject<AmbientFieldSceneState>;
 }
 
-export interface AmbientFieldScrollController {
-  cleanup: () => void;
-  syncFrame: (timestamp: number) => void;
-}
-
-export interface AmbientFieldScrollOverlayController {
-  cleanup?: () => void;
-  syncFrame: (frame: {
-    activeSectionId: string;
-    heroProgress: number;
-    itemState: AmbientFieldSceneState["items"];
-    phaseProgress: AmbientFieldSceneState["phases"];
-    processProgress: number;
-    reducedMotion: boolean;
-    scrollProgress: number;
-    scrollTop: number;
-    streamVisibility: number;
-    timestamp: number;
-    viewportHeight: number;
-  }) => void;
-}
-
-function clamp01(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-export function composeAmbientFieldOverlayControllers(
-  controllers: Array<AmbientFieldScrollOverlayController | null | undefined>,
-): AmbientFieldScrollOverlayController | undefined {
-  const activeControllers = controllers.filter(Boolean) as AmbientFieldScrollOverlayController[];
-  if (activeControllers.length === 0) {
-    return undefined;
-  }
-
-  return {
-    syncFrame(frame) {
-      for (const controller of activeControllers) {
-        controller.syncFrame(frame);
-      }
-    },
-    cleanup() {
-      for (const controller of activeControllers) {
-        controller.cleanup?.();
-      }
-    },
-  };
-}
-
-export function createAmbientFieldScrollController({
+export function bindAmbientFieldControllers({
+  anchors,
+  controllers,
   hero,
-  overlayController,
   reducedMotion,
-  root,
-  scrollManifest,
   sceneStateRef,
-}: SetupAmbientFieldScrollOptions): AmbientFieldScrollController {
-  let resizeObserver: ResizeObserver | null = null;
-  let mutationObserver: MutationObserver | null = null;
-  let sectionStops: AmbientFieldScrollStop[] = [];
+}: BindAmbientFieldControllersOptions): () => void {
+  registerAmbientFieldScrollTrigger();
 
-  const sectionNodes = Array.from(
-    root.querySelectorAll<HTMLElement>("[data-ambient-section]"),
+  const disposers: Array<() => void> = [];
+  const triggers: ScrollTrigger[] = [];
+
+  // Each controller owns its scroll-linked timeline. Reduced motion is
+  // handled inside `bindScroll` (skips construction, snaps baseline).
+  disposers.push(controllers.blob.bindScroll(anchors.blob, anchors.blobEnd));
+  disposers.push(controllers.stream.bindScroll(anchors.stream, null));
+  disposers.push(
+    controllers.pcb.bindScroll(anchors.pcb, anchors.pcbEnd ?? null),
   );
 
-  // Low-pass the raw scroll input once at the driver stage to emulate Maze's
-  // `scrub: 1` contract — verified in Maze source at
-  // `data/research/mazehq-homepage/2026-04-18/scripts.pretty.js:43300` and
-  // matching sites, where GSAP ScrollTrigger timelines bind with scrub: 1
-  // (linear 1-second catchup). Exponential half-life of 250 ms ≈ 94 %
-  // catchup in 1 s, close to GSAP's linear duration behavior; a 1-second
-  // half-life (the original Round-13 pick) only reaches 50 % in 1 s and
-  // reads as sluggish compared to mazehq.com.
-  const scrollScrubber = createUniformScrubber<"scrollTop">({
-    halfLifeMs: 250,
-    initial: { scrollTop: root.scrollTop },
-  });
-  let lastFrameMs: number | null = null;
+  if (!reducedMotion) {
+    // Per-item visibility / localProgress writers. The blob is treated as
+    // the persistent stage substrate (visibility 1, localProgress driven by
+    // the blob anchor span) and stream/pcb fade in/out by their anchors.
+    const itemAnchors: Array<{
+      anchor: HTMLElement;
+      endAnchor?: HTMLElement | null;
+      id: AmbientFieldStageItemId;
+    }> = [
+      { anchor: anchors.blob, endAnchor: anchors.blobEnd, id: "blob" },
+      { anchor: anchors.stream, id: "stream" },
+      { anchor: anchors.pcb, endAnchor: anchors.pcbEnd ?? null, id: "pcb" },
+    ];
 
-  function measureSectionStops(): AmbientFieldScrollStop[] {
-    const rootRect = root.getBoundingClientRect();
+    for (const { anchor, endAnchor, id } of itemAnchors) {
+      const trigger = ScrollTrigger.create({
+        trigger: anchor,
+        endTrigger: endAnchor ?? anchor,
+        start: "top bottom",
+        end: "bottom top",
+        onUpdate: (self) => {
+          const item = sceneStateRef.current.items[id];
+          if (!item) return;
+          item.localProgress = self.progress;
+          item.visibility = self.isActive ? 1 : item.visibility;
+        },
+        onEnter: () => {
+          const item = sceneStateRef.current.items[id];
+          if (item) item.visibility = 1;
+        },
+        onEnterBack: () => {
+          const item = sceneStateRef.current.items[id];
+          if (item) item.visibility = 1;
+        },
+        onLeave: () => {
+          const item = sceneStateRef.current.items[id];
+          if (item && id !== "blob") item.visibility = 0;
+        },
+        onLeaveBack: () => {
+          const item = sceneStateRef.current.items[id];
+          if (item && id !== "blob") item.visibility = 0;
+        },
+      });
+      triggers.push(trigger);
+    }
 
-    return sectionNodes
-      .map((node) => ({
-        id: node.dataset.sectionId ?? node.id,
-        preset: node.dataset.preset as AmbientFieldScrollStop["preset"],
-        start:
-          node.getBoundingClientRect().top -
-          rootRect.top +
-          root.scrollTop,
-      }))
-      .sort((left, right) => left.start - right.start);
-  }
-
-  function refreshMeasurements() {
-    sectionStops = measureSectionStops();
-  }
-
-  function syncFrame(timestamp: number) {
-    const rawScrollTop = root.scrollTop;
-    const dtMs = lastFrameMs == null ? 0 : Math.max(0, timestamp - lastFrameMs);
-    lastFrameMs = timestamp;
-    const scrollTop = reducedMotion
-      ? rawScrollTop
-      : scrollScrubber.step(dtMs, { scrollTop: rawScrollTop }).scrollTop;
-    const viewportHeight = root.clientHeight;
-    const scrollMax = Math.max(0, root.scrollHeight - viewportHeight);
-    const heroProgress = clamp01(scrollTop / Math.max(1, viewportHeight * 0.96));
-    const resolved = resolveAmbientFieldScrollState({
-      manifest: scrollManifest,
-      scrollTop,
-      scrollMax,
-      viewportHeight,
-      stops: sectionStops,
+    // `--ambient-hero-progress` drives the chrome surface fade-in. Was
+    // previously written from the per-frame syncFrame in the manifest
+    // driver; ScrollTrigger now owns this directly.
+    const heroTrigger = ScrollTrigger.create({
+      trigger: hero,
+      start: "top top",
+      end: "bottom top",
+      onUpdate: (self) => {
+        hero.style.setProperty(
+          "--ambient-hero-progress",
+          self.progress.toFixed(4),
+        );
+      },
     });
-
-    sceneStateRef.current.activeSectionId = resolved.activeSectionId;
-    sceneStateRef.current.phases = resolved.phases;
-    sceneStateRef.current.scrollProgress = resolved.scrollProgress;
-    sceneStateRef.current.processProgress = resolved.processProgress;
-    sceneStateRef.current.items = resolved.items;
-
-    overlayController?.syncFrame({
-      activeSectionId: resolved.activeSectionId,
-      heroProgress,
-      itemState: resolved.items,
-      phaseProgress: resolved.phases,
-      processProgress: resolved.processProgress,
-      reducedMotion,
-      scrollProgress: resolved.scrollProgress,
-      scrollTop,
-      streamVisibility: resolved.items.stream.visibility,
-      timestamp,
-      viewportHeight,
-    });
-
-    hero.style.setProperty(
-      "--ambient-hero-progress",
-      heroProgress.toFixed(4),
-    );
+    triggers.push(heroTrigger);
+  } else {
+    // Reduced motion: still surface visibility=1 for the blob substrate.
+    sceneStateRef.current.items.blob.visibility = 1;
+    sceneStateRef.current.items.stream.visibility = 1;
+    sceneStateRef.current.items.pcb.visibility = 1;
+    hero.style.setProperty("--ambient-hero-progress", "0");
   }
 
-  refreshMeasurements();
+  // Maze defers its bind under `setTimeout(..., 1)` so ScrollTrigger's
+  // post-bind refresh runs after layout settles. In React we can bind
+  // synchronously but still need to force a refresh: multiple `fromTo`
+  // tweens on the same uniform (uAlpha 1→0 at `diagram`, then 0→1 at
+  // `shrink`) each write their `from` value at construction time; the
+  // last one wins unless ScrollTrigger has had a chance to revert the
+  // timeline back to progress 0. Without this refresh, on reload with
+  // scroll already at 0 the user sees the blob invisible until the
+  // first manual scroll kicks a refresh.
+  ScrollTrigger.refresh();
 
-  resizeObserver = new ResizeObserver(refreshMeasurements);
-  resizeObserver.observe(root);
-  resizeObserver.observe(hero);
-  for (const node of sectionNodes) {
-    resizeObserver.observe(node);
-  }
-
-  mutationObserver = new MutationObserver(refreshMeasurements);
-  mutationObserver.observe(root, { childList: true, subtree: true });
-
-  syncFrame(0);
-
-  return {
-    syncFrame,
-    cleanup() {
-      resizeObserver?.disconnect();
-      mutationObserver?.disconnect();
-      overlayController?.cleanup?.();
-    },
+  return () => {
+    for (const dispose of disposers) dispose();
+    for (const trigger of triggers) trigger.kill();
+    void gsap;
   };
 }

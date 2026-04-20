@@ -152,24 +152,22 @@ async def promote_family(
     del plan, ingest_run_id
     if family_name in {"biocxml", "bioconcepts"}:
         resource_code = ENTITY_RESOURCE_BIOCXML if family_name == "biocxml" else ENTITY_RESOURCE_BIOCONCEPTS
-        await _promote_entity_resource(connection, source_release_id, resource_code)
+        await _backfill_entity_stage_corpus_ids(connection, source_release_id, resource_code)
     if family_name in {"biocxml", "relations"}:
         relation_source = (
             RELATION_SOURCE_BIOCXML if family_name == "biocxml" else RELATION_SOURCE_TSV
         )
-        await _promote_relation_source(connection, source_release_id, relation_source)
+        await _backfill_relation_stage_corpus_ids(connection, source_release_id, relation_source)
 
 
 def _target_tables_for_family(family_name: str) -> tuple[str, ...]:
     mapping = {
         "biocxml": (
             "pubtator.entity_annotations_stage",
-            "pubtator.entity_annotations",
             "pubtator.relations_stage",
-            "pubtator.relations",
         ),
-        "bioconcepts": ("pubtator.entity_annotations_stage", "pubtator.entity_annotations"),
-        "relations": ("pubtator.relations_stage", "pubtator.relations"),
+        "bioconcepts": ("pubtator.entity_annotations_stage",),
+        "relations": ("pubtator.relations_stage",),
     }
     return mapping[family_name]
 
@@ -317,7 +315,7 @@ def _extract_pubtator_identifier(annotation: etree._Element, infons: dict[str, s
     return None
 
 
-async def _promote_entity_resource(
+async def _backfill_entity_stage_corpus_ids(
     connection: asyncpg.Connection,
     source_release_id: int,
     resource_code: int,
@@ -335,56 +333,9 @@ async def _promote_entity_resource(
         source_release_id,
         resource_code,
     )
-    await connection.execute(
-        """
-        DELETE FROM pubtator.entity_annotations
-        WHERE source_release_id = $1
-          AND resource = $2
-        """,
-        source_release_id,
-        resource_code,
-    )
-    await connection.execute(
-        """
-        INSERT INTO pubtator.entity_annotations (
-            corpus_id,
-            source_release_id,
-            start_offset,
-            end_offset,
-            pmid,
-            entity_type,
-            mention_text,
-            concept_id_raw,
-            resource
-        )
-        SELECT
-            stage.corpus_id,
-            stage.source_release_id,
-            stage.start_offset,
-            stage.end_offset,
-            stage.pmid,
-            stage.entity_type,
-            stage.mention_text,
-            stage.concept_id_raw,
-            stage.resource
-        FROM pubtator.entity_annotations_stage stage
-        WHERE stage.source_release_id = $1
-          AND stage.resource = $2
-          AND stage.corpus_id IS NOT NULL
-        ON CONFLICT (corpus_id, start_offset, end_offset, concept_id_raw)
-        DO UPDATE SET
-            source_release_id = EXCLUDED.source_release_id,
-            pmid = EXCLUDED.pmid,
-            entity_type = EXCLUDED.entity_type,
-            mention_text = EXCLUDED.mention_text,
-            resource = EXCLUDED.resource
-        """,
-        source_release_id,
-        resource_code,
-    )
 
 
-async def _promote_relation_source(
+async def _backfill_relation_stage_corpus_ids(
     connection: asyncpg.Connection,
     source_release_id: int,
     relation_source_code: int,
@@ -401,95 +352,6 @@ async def _promote_relation_source(
         """,
         source_release_id,
         relation_source_code,
-    )
-    await connection.execute(
-        """
-        DELETE FROM pubtator.relations
-        WHERE source_release_id = $1
-          AND relation_source = $2
-        """,
-        source_release_id,
-        relation_source_code,
-    )
-    if relation_source_code == RELATION_SOURCE_BIOCXML:
-        await connection.execute(
-            """
-            INSERT INTO pubtator.relations (
-                corpus_id,
-                source_release_id,
-                pmid,
-                relation_type,
-                subject_entity_id,
-                object_entity_id,
-                subject_type,
-                object_type,
-                relation_source
-            )
-            SELECT
-                stage.corpus_id,
-                stage.source_release_id,
-                stage.pmid,
-                stage.relation_type,
-                stage.subject_entity_id,
-                stage.object_entity_id,
-                stage.subject_type,
-                stage.object_type,
-                stage.relation_source
-            FROM pubtator.relations_stage stage
-            WHERE stage.source_release_id = $1
-              AND stage.relation_source = $2
-              AND stage.corpus_id IS NOT NULL
-            ON CONFLICT (corpus_id, subject_entity_id, relation_type, object_entity_id)
-            DO UPDATE SET
-                source_release_id = EXCLUDED.source_release_id,
-                pmid = EXCLUDED.pmid,
-                subject_type = EXCLUDED.subject_type,
-                object_type = EXCLUDED.object_type,
-                relation_source = EXCLUDED.relation_source
-            """,
-            source_release_id,
-            relation_source_code,
-        )
-        return
-    await connection.execute(
-        """
-        INSERT INTO pubtator.relations (
-            corpus_id,
-            source_release_id,
-            pmid,
-            relation_type,
-            subject_entity_id,
-            object_entity_id,
-            subject_type,
-            object_type,
-            relation_source
-        )
-        SELECT
-            stage.corpus_id,
-            stage.source_release_id,
-            stage.pmid,
-            stage.relation_type,
-            stage.subject_entity_id,
-            stage.object_entity_id,
-            stage.subject_type,
-            stage.object_type,
-            stage.relation_source
-        FROM pubtator.relations_stage stage
-        WHERE stage.source_release_id = $1
-          AND stage.relation_source = $2
-          AND stage.corpus_id IS NOT NULL
-        ON CONFLICT (corpus_id, subject_entity_id, relation_type, object_entity_id)
-        DO UPDATE SET
-            source_release_id = EXCLUDED.source_release_id,
-            pmid = EXCLUDED.pmid,
-            subject_type = EXCLUDED.subject_type,
-            object_type = EXCLUDED.object_type,
-            relation_source = EXCLUDED.relation_source
-        WHERE pubtator.relations.relation_source <> $3
-        """,
-        source_release_id,
-        relation_source_code,
-        RELATION_SOURCE_BIOCXML,
     )
 
 

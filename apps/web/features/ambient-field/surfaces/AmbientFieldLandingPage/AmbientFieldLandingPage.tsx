@@ -17,6 +17,10 @@ import {
   type ChromeSurfaceMode,
   panelSurfaceStyle,
 } from "@/features/graph/components/panels/PanelShell/panel-styles";
+import {
+  AmbientFieldConnectionOverlay,
+  type AmbientFieldConnectionOverlayHandle,
+} from "./AmbientFieldConnectionOverlay";
 import { GraphLoadingChrome } from "@/features/graph/components/shell/loading/GraphLoadingChrome";
 import { ShellVariantProvider } from "@/features/graph/components/shell/ShellVariantContext";
 import {
@@ -29,13 +33,11 @@ import { ViewportTocRail } from "@/features/wiki/components/ViewportTocRail";
 import { APP_CHROME_PX } from "@/lib/density";
 import { smooth } from "@/lib/motion";
 import { FieldCanvas } from "../../renderer/FieldCanvas";
-import type {
-  AmbientFieldHotspotFrame,
-} from "../../renderer/FieldScene";
-import {
-  AmbientFieldHotspotRing,
-  type AmbientFieldHotspotPhase,
-} from "../../overlay/AmbientFieldHotspotRing";
+import type { BlobController } from "../../controller/BlobController";
+import type { PcbController } from "../../controller/PcbController";
+import type { StreamController } from "../../controller/StreamController";
+import { fieldLoopClock } from "../../renderer/field-loop-clock";
+import { AmbientFieldHotspotPool } from "./AmbientFieldHotspotPool";
 import {
   prewarmAmbientFieldPointSources,
 } from "../../asset/point-source-registry";
@@ -43,27 +45,15 @@ import {
   createAmbientFieldSceneState,
   type AmbientFieldSceneState,
 } from "../../scene/visual-presets";
-import {
-  createAmbientFieldScrollController,
-  type AmbientFieldScrollController,
-} from "../../scroll/ambient-field-scroll-driver";
+import { bindAmbientFieldControllers } from "../../scroll/ambient-field-scroll-driver";
 import { AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT } from "../../ambient-field-breakpoints";
-import {
-  ambientFieldLandingSections,
-  ambientFieldLandingScrollManifest,
-} from "./ambient-field-landing-content";
-import {
-  ambientFieldBlobHotspots,
-  ambientFieldFocusedPaperSeat,
-  resolveAmbientFieldFocusPresentation,
-  type AmbientFieldFocusMotionState,
-} from "./ambient-field-hotspot-overlay";
+import { ambientFieldLandingSections } from "./ambient-field-landing-content";
+import { ambientFieldBlobHotspots } from "./ambient-field-hotspot-overlay";
 import { AmbientFieldCtaSection } from "./AmbientFieldCtaSection";
 import { AmbientFieldGraphWarmupAction } from "./AmbientFieldGraphWarmupAction";
 import { AmbientFieldGraphSection } from "./AmbientFieldGraphSection";
 import { AmbientFieldHeroSection } from "./AmbientFieldHeroSection";
 import { AmbientFieldScrollCue } from "./AmbientFieldScrollCue";
-import { AmbientFieldSectionCard } from "./AmbientFieldSectionCard";
 import { AmbientFieldStoryChapter } from "./AmbientFieldStoryChapter";
 import { ambientFieldStoryOneBeats } from "./ambient-field-landing-content";
 
@@ -75,16 +65,6 @@ const rootShellStyle: CSSProperties = {
 const fieldVignetteStyle: CSSProperties = {
   background: "transparent",
 };
-
-/** Build the secondary sidebar card's tinted style from the hosting section's
- *  accentVar so the card matches its chapter's brand color. */
-function buildSecondaryCardStyle(accentVar: string): CSSProperties {
-  return {
-    ...panelSurfaceStyle,
-    backgroundColor: `color-mix(in srgb, ${accentVar} 8%, var(--graph-panel-bg))`,
-    border: `1px solid color-mix(in srgb, ${accentVar} 22%, var(--graph-panel-border))`,
-  };
-}
 
 const CHROME_SURFACE_TRANSITION_SCROLL_PX = 24;
 const LANDING_GRAPH_READY_DEBUG_PARAM = "landingGraphReady";
@@ -112,28 +92,20 @@ function AmbientFieldLandingShell({
   const { width: viewportWidth } = useViewportSize();
   const rootRef = useRef<HTMLDivElement>(null);
   const heroRef = useRef<HTMLDivElement>(null);
-  const blobHotspotRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const storyTwoRef = useRef<HTMLElement>(null);
+  const connectionOverlayRef =
+    useRef<AmbientFieldConnectionOverlayHandle>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const blobControllerRef = useRef<BlobController | null>(null);
+  const streamControllerRef = useRef<StreamController | null>(null);
+  const pcbControllerRef = useRef<PcbController | null>(null);
+  const blobHotspotRefsRef = useRef<Array<HTMLDivElement | null>>([]);
   const blobHotspotCardRefs = useRef<Array<HTMLDivElement | null>>([]);
-  // Per-hotspot reseed counter. Bumped from `onAnimationEnd` on the ring
-  // primitive (Maze pattern) so each hotspot's 2 s CSS loop restarts
-  // independently with its authored `--afr-delay`.
-  const [hotspotSeedKeys, setHotspotSeedKeys] = useState<number[]>(() =>
-    ambientFieldBlobHotspots.map(() => 0),
-  );
-  // Per-hotspot phase derived from the latest `handleHotspotFrame`. Stored in
-  // state so the ring primitive can react via its `phase` prop (which gates
-  // the `is-animating` class), while the per-frame transform/opacity stays
-  // on the direct-DOM-write path for 60fps.
-  const [hotspotPhases, setHotspotPhases] = useState<
-    AmbientFieldHotspotPhase[]
-  >(() => ambientFieldBlobHotspots.map(() => "hidden" as const));
-  const hotspotPhasesRef = useRef<AmbientFieldHotspotPhase[]>(hotspotPhases);
-  const focusMotionStateRef = useRef<AmbientFieldFocusMotionState | null>(null);
-  const focusedPaperSeatRef = useRef<HTMLDivElement>(null);
+  const [blobControllerReady, setBlobControllerReady] = useState(false);
+  const [allControllersReady, setAllControllersReady] = useState(false);
   const sceneStateRef = useRef<AmbientFieldSceneState>(
     createAmbientFieldSceneState(),
   );
-  const scrollControllerRef = useRef<AmbientFieldScrollController | null>(null);
   const [chromeSurfaceMode, setChromeSurfaceMode] =
     useState<ChromeSurfaceMode>("flush");
   const isCompactFieldViewport =
@@ -156,164 +128,134 @@ function AmbientFieldLandingShell({
   }, [isCompactFieldViewport]);
 
   useEffect(() => {
+    if (!allControllersReady) return undefined;
     const root = rootRef.current;
     const hero = heroRef.current;
-    if (!root || !hero) return undefined;
+    const blobAnchor = root?.querySelector<HTMLElement>("#section-story-1");
+    const blobEndAnchor = root?.querySelector<HTMLElement>("#section-story-2");
+    const streamAnchor = root?.querySelector<HTMLElement>("#section-graph");
+    const pcbAnchor = root?.querySelector<HTMLElement>("#section-cta");
+    const blob = blobControllerRef.current;
+    const stream = streamControllerRef.current;
+    const pcb = pcbControllerRef.current;
+    if (
+      !root ||
+      !hero ||
+      !blobAnchor ||
+      !blobEndAnchor ||
+      !streamAnchor ||
+      !pcbAnchor ||
+      !blob ||
+      !stream ||
+      !pcb
+    ) {
+      return undefined;
+    }
 
-    const controller = createAmbientFieldScrollController({
-      root,
+    const dispose = bindAmbientFieldControllers({
+      anchors: {
+        blob: blobAnchor,
+        blobEnd: blobEndAnchor,
+        stream: streamAnchor,
+        pcb: pcbAnchor,
+        pcbEnd: pcbAnchor,
+      },
+      controllers: { blob, stream, pcb },
       hero,
       reducedMotion: !!reducedMotion,
-      scrollManifest: ambientFieldLandingScrollManifest,
       sceneStateRef,
     });
-    scrollControllerRef.current = controller;
 
-    return () => {
-      if (scrollControllerRef.current === controller) {
-        scrollControllerRef.current = null;
-      }
-      controller.cleanup();
-    };
-  }, [isCompactFieldViewport, reducedMotion]);
+    return dispose;
+  }, [allControllersReady, isCompactFieldViewport, reducedMotion]);
 
   useEffect(() => {
-    const scrollRoot = rootRef.current;
-    if (!scrollRoot) return undefined;
-
-    let frame = 0;
-
     function syncChromeSurfaceMode() {
-      frame = 0;
       const nextMode: ChromeSurfaceMode =
-        scrollRoot!.scrollTop > CHROME_SURFACE_TRANSITION_SCROLL_PX
-          ? "pill"
-          : "flush";
+        window.scrollY > CHROME_SURFACE_TRANSITION_SCROLL_PX ? "pill" : "flush";
       setChromeSurfaceMode((current) =>
         current === nextMode ? current : nextMode,
       );
     }
 
-    function handleScroll() {
-      if (frame !== 0) return;
-      frame = window.requestAnimationFrame(syncChromeSurfaceMode);
-    }
-
     syncChromeSurfaceMode();
-    scrollRoot!.addEventListener("scroll", handleScroll, { passive: true });
-
+    window.addEventListener("scroll", syncChromeSurfaceMode, { passive: true });
     return () => {
-      scrollRoot!.removeEventListener("scroll", handleScroll);
-      if (frame !== 0) {
-        window.cancelAnimationFrame(frame);
-      }
+      window.removeEventListener("scroll", syncChromeSurfaceMode);
     };
   }, []);
 
-  function handleFieldFrame(timestamp: number) {
-    scrollControllerRef.current?.syncFrame(timestamp);
+  // Subscribe to the shared loop clock so the connection overlay and
+  // per-hotspot card seats stay in sync with the frames BlobController
+  // wrote to the DOM pool. No separate RAF, no React reconciliation —
+  // a single read-and-write pass off the controller's current frame array.
+  useEffect(() => {
+    const disposer = fieldLoopClock.subscribe(
+      "landing-hotspot-consumers",
+      40,
+      () => {
+        const controller = blobControllerRef.current;
+        if (!controller) return;
+        const frames = controller.getLastFrames();
+        controller.applyStageGates(stageRef.current);
+        connectionOverlayRef.current?.updateFrames(frames);
+
+        blobHotspotCardRefs.current.forEach((cardNode, index) => {
+          if (!cardNode) return;
+          const frame = frames[index];
+          if (!frame?.visible) {
+            cardNode.style.opacity = "0";
+            cardNode.style.transform =
+              "translate3d(-9999px, -9999px, 0) scale(0.92)";
+            return;
+          }
+          const cardVisible = frame.mode === "card";
+          cardNode.style.opacity = cardVisible ? "1" : "0";
+          const cardTranslateY = cardVisible ? 0 : 10;
+          cardNode.style.transform = `translate3d(${frame.x}px, ${frame.y + cardTranslateY}px, 0)`;
+        });
+      },
+    );
+    return disposer;
+  }, []);
+
+  function handleBlobControllerReady(controller: BlobController) {
+    blobControllerRef.current = controller;
+    setBlobControllerReady(true);
+    if (streamControllerRef.current && pcbControllerRef.current) {
+      setAllControllersReady(true);
+    }
   }
 
-  function handleHotspotFrame(hotspots: AmbientFieldHotspotFrame[]) {
-    const focusedPaperFrame =
-      hotspots.find((frame) => frame.visible && frame.mode === "focus") ?? null;
-    const focusedPaperSeat = focusedPaperSeatRef.current;
-    const focusedPaperSeatRect = focusedPaperSeat?.getBoundingClientRect() ?? null;
-    const nowSeconds =
-      typeof performance === "undefined" ? 0 : performance.now() / 1000;
-    const focusPresentation =
-      focusedPaperFrame && focusedPaperSeatRect
-        ? resolveAmbientFieldFocusPresentation({
-            frame: focusedPaperFrame,
-            nowSeconds,
-            previousState: focusMotionStateRef.current,
-            seatRect: focusedPaperSeatRect,
-          })
-        : null;
-    focusMotionStateRef.current = focusPresentation?.state ?? null;
-
-    const currentPhases = hotspotPhasesRef.current;
-    const nextPhases: AmbientFieldHotspotPhase[] = currentPhases.slice();
-    let phasesChanged = false;
-
-    blobHotspotRefs.current.forEach((node, index) => {
-      const frame = hotspots[index];
-      const cardNode = blobHotspotCardRefs.current[index] ?? null;
-      if (!frame?.visible) {
-        if (node) {
-          node.style.opacity = "0";
-          node.style.transform =
-            "translate3d(-9999px, -9999px, 0) scale(0.92)";
-        }
-        if (cardNode) {
-          cardNode.style.opacity = "0";
-          cardNode.style.transform =
-            "translate3d(-9999px, -9999px, 0) scale(0.92)";
-        }
-        if (nextPhases[index] !== "hidden") {
-          nextPhases[index] = "hidden";
-          phasesChanged = true;
-        }
-        return;
-      }
-
-      let displayX = frame.x;
-      let displayY = frame.y;
-      let displayScale = frame.scale;
-      let pointOpacity = frame.opacity;
-      if (frame.mode === "focus" && focusPresentation) {
-        displayX = focusPresentation.pointX;
-        displayY = focusPresentation.pointY;
-        displayScale = focusPresentation.pointScale;
-        pointOpacity = focusPresentation.pointOpacity;
-      }
-
-      if (node) {
-        node.style.opacity = pointOpacity.toFixed(4);
-        node.style.transform = `translate3d(${displayX}px, ${displayY}px, 0) scale(${displayScale})`;
-      }
-
-      if (cardNode) {
-        // Card rides the same sampled blob position as the ring, so it stays
-        // visually tethered to the hotspot. The card's own opacity/offset is
-        // driven by `frame.mode === "card"` — a soft fade-in/translate-Y as
-        // the beat enters "card" mode.
-        const cardVisible = frame.mode === "card";
-        cardNode.style.opacity = cardVisible ? "1" : "0";
-        const cardTranslateY = cardVisible ? 0 : 10;
-        cardNode.style.transform = `translate3d(${displayX}px, ${displayY + cardTranslateY}px, 0)`;
-      }
-
-      const nextPhase: AmbientFieldHotspotPhase =
-        frame.mode === "focus" ? "only-single" : "animating";
-      if (nextPhases[index] !== nextPhase) {
-        nextPhases[index] = nextPhase;
-        phasesChanged = true;
-      }
-    });
-
-    if (phasesChanged) {
-      hotspotPhasesRef.current = nextPhases;
-      setHotspotPhases(nextPhases);
+  function handleStreamControllerReady(controller: StreamController) {
+    streamControllerRef.current = controller;
+    if (blobControllerRef.current && pcbControllerRef.current) {
+      setAllControllersReady(true);
     }
+  }
 
-    if (!focusedPaperSeat) return;
+  function handlePcbControllerReady(controller: PcbController) {
+    pcbControllerRef.current = controller;
+    if (blobControllerRef.current && streamControllerRef.current) {
+      setAllControllersReady(true);
+    }
+  }
 
-    if (!focusedPaperFrame || !focusPresentation) {
-      focusMotionStateRef.current = null;
-      focusedPaperSeat.style.opacity = "0";
-      focusedPaperSeat.style.transform = "translate3d(0, 18px, 0) scale(0.96)";
+  // Once both the BlobController and the pool refs are available, hand the
+  // pool nodes into the controller so `projectHotspots` can write DOM
+  // directly. The controller is initially attached with wrapper/mouseWrapper/
+  // model/material from FieldScene; we re-invoke `attach` here only to
+  // install hotspotRefs alongside the existing attachment.
+  useEffect(() => {
+    if (!blobControllerReady) return;
+    const controller = blobControllerRef.current;
+    if (!controller || !controller.wrapper || !controller.mouseWrapper || !controller.model || !controller.material) {
       return;
     }
-
-    focusedPaperSeat.style.setProperty(
-      "--ambient-focused-paper-accent",
-      focusedPaperFrame.color,
+    controller.hotspotRefs = blobHotspotRefsRef.current.filter(
+      (node): node is HTMLDivElement => node != null,
     );
-    focusedPaperSeat.style.opacity = Math.min(1, focusPresentation.seatOpacity).toFixed(4);
-    focusedPaperSeat.style.transform =
-      `translate3d(0, ${focusPresentation.seatTranslateY}px, 0) scale(${focusPresentation.seatScale})`;
-  }
+  }, [blobControllerReady]);
 
   const tocEntries = useMemo<PanelEdgeTocEntry[]>(
     () =>
@@ -332,12 +274,12 @@ function AmbientFieldLandingShell({
   const ctaSection = ambientFieldLandingSections[4]!;
 
   function scrollToSection(sectionId: string) {
-    const root = rootRef.current;
-    const section = root?.querySelector<HTMLElement>(`#${CSS.escape(sectionId)}`);
-    if (!root || !section) return;
-
-    root.scrollTo({
-      top: Math.max(0, section.offsetTop - sectionNavScrollOffset),
+    const section = document.getElementById(sectionId);
+    if (!section) return;
+    const top =
+      section.getBoundingClientRect().top + window.scrollY - sectionNavScrollOffset;
+    window.scrollTo({
+      top: Math.max(0, top),
       behavior: "smooth",
     });
   }
@@ -346,132 +288,78 @@ function AmbientFieldLandingShell({
     <div
       ref={rootRef}
       data-panel-shell
-      className="relative h-screen overflow-y-auto overflow-x-clip"
+      className="relative"
       style={rootShellStyle}
     >
       <FieldCanvas
         className="fixed inset-0"
         sceneStateRef={sceneStateRef}
         reducedMotion={!!reducedMotion}
-        onFrame={handleFieldFrame}
-        onHotspotsFrame={handleHotspotFrame}
+        onBlobControllerReady={handleBlobControllerReady}
+        onStreamControllerReady={handleStreamControllerReady}
+        onPcbControllerReady={handlePcbControllerReady}
       />
 
       <div
+        ref={stageRef}
         aria-hidden="true"
         className="afr-stage pointer-events-none fixed inset-0 z-[6]"
       >
-        {ambientFieldBlobHotspots.map((hotspot, index) => {
-          // Stable per-hotspot animation delay so each ring's 2 s pulse is
-          // out of phase with its neighbors — Maze authors these by hand; we
-          // derive a stable stagger from index using a prime multiplier.
-          const delayMs = (index * 137) % 2000;
-          const phase = hotspotPhases[index] ?? "hidden";
-          const seedKey = hotspotSeedKeys[index] ?? 0;
-          return (
-            <div key={hotspot.id} style={{ display: "contents" }}>
-              <AmbientFieldHotspotRing
-                ref={(node) => {
-                  blobHotspotRefs.current[index] = node;
+        <AmbientFieldHotspotPool
+          onRegisterRefs={(nodes) => {
+            blobHotspotRefsRef.current = nodes;
+            const controller = blobControllerRef.current;
+            if (controller) {
+              controller.hotspotRefs = nodes.filter(
+                (node): node is HTMLDivElement => node != null,
+              );
+            }
+          }}
+          onRegisterCardRefs={(nodes) => {
+            blobHotspotCardRefs.current = nodes;
+          }}
+          onHotspotAnimationEnd={(index) => {
+            blobControllerRef.current?.onHotspotAnimationEnd(index);
+          }}
+          renderCard={(index) => {
+            const hotspot = ambientFieldBlobHotspots[index];
+            if (!hotspot) return null;
+            return (
+              <div
+                className="ambient-field-hotspot-card-inner w-[198px] max-w-[34vw]"
+                style={{
+                  marginLeft: hotspot.cardLeft ?? "28px",
+                  marginTop: hotspot.cardTop ?? "-18px",
                 }}
-                delayMs={delayMs}
-                phase={reducedMotion ? "idle" : phase}
-                projection={{
-                  x: -9999,
-                  y: -9999,
-                  scale: 0.92,
-                  opacity: 0,
-                }}
-                seedKey={seedKey}
-                variant="cyan"
-                onAnimationEnd={() => {
-                  // Maze-parity per-hotspot reseed: bump the seed so the
-                  // ring primitive's useEffect reflow-restarts the CSS
-                  // keyframe for this index only.
-                  setHotspotSeedKeys((previous) => {
-                    const next = previous.slice();
-                    next[index] = (next[index] ?? 0) + 1;
-                    return next;
-                  });
-                }}
-              />
-
-              {index < 3 ? (
-                <div
-                  ref={(node) => {
-                    blobHotspotCardRefs.current[index] = node;
-                  }}
-                  className="ambient-field-hotspot-card absolute left-0 top-0 w-[198px] max-w-[34vw] transition-[opacity] duration-300"
+              >
+                <OverlayCard
+                  className="px-4 py-4"
                   style={{
-                    marginLeft: hotspot.cardLeft ?? "28px",
-                    marginTop: hotspot.cardTop ?? "-18px",
-                    opacity: 0,
-                    transform: "translate3d(-9999px, -9999px, 0)",
-                    willChange: "transform, opacity",
+                    ...panelSurfaceStyle,
+                    border:
+                      "1px solid color-mix(in srgb, var(--graph-panel-border) 76%, transparent)",
                   }}
                 >
-                  <OverlayCard
-                    className="px-4 py-4"
-                    style={{
-                      ...panelSurfaceStyle,
-                      border:
-                        "1px solid color-mix(in srgb, var(--graph-panel-border) 76%, transparent)",
-                    }}
-                  >
-                    <div className="flex flex-wrap gap-2">
-                      <MetaPill mono>Selected</MetaPill>
-                      {hotspot.badges.map((badge) => (
-                        <MetaPill key={badge}>{badge}</MetaPill>
-                      ))}
-                    </div>
-                    <p className="mt-3 text-[13px] font-medium leading-5">
-                      {hotspot.title}
-                    </p>
-                  </OverlayCard>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-        <div
-          ref={focusedPaperSeatRef}
-          className="absolute right-4 top-[20%] w-[min(23rem,calc(100vw-2rem))] max-w-[420px] transition-[opacity,transform] duration-300 sm:right-6 sm:top-[18%] lg:right-[max(2rem,6vw)] lg:top-[18%]"
-          style={{
-            "--ambient-focused-paper-accent": "var(--color-soft-blue)",
-            opacity: 0,
-            transform: "translate3d(0, 18px, 0) scale(0.96)",
-            willChange: "opacity, transform",
-          } as CSSProperties}
-        >
-          <OverlayCard
-            className="px-5 py-5 sm:px-6 sm:py-6"
-            style={{
-              ...panelSurfaceStyle,
-              border:
-                "1px solid color-mix(in srgb, var(--ambient-focused-paper-accent) 26%, var(--graph-panel-border) 74%)",
-            }}
-          >
-            <div className="flex flex-wrap gap-2">
-              <MetaPill mono>{ambientFieldFocusedPaperSeat.badge}</MetaPill>
-              <MetaPill style={{ color: "var(--ambient-focused-paper-accent)" }}>
-                {ambientFieldFocusedPaperSeat.eyebrow}
-              </MetaPill>
-            </div>
-            <p className="mt-4 text-[14px] font-medium leading-6 sm:text-[15px]">
-              {ambientFieldFocusedPaperSeat.title}
-            </p>
-            <p
-              className="mt-3 text-[13px] leading-6 sm:text-[14px]"
-              style={{
-                color:
-                  "color-mix(in srgb, var(--graph-panel-text) 78%, transparent)",
-              }}
-            >
-              {ambientFieldFocusedPaperSeat.summary}
-            </p>
-          </OverlayCard>
-        </div>
+                  <div className="flex flex-wrap gap-2">
+                    <MetaPill mono>Selected</MetaPill>
+                    {hotspot.badges.map((badge) => (
+                      <MetaPill key={badge}>{badge}</MetaPill>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[13px] font-medium leading-5">
+                    {hotspot.title}
+                  </p>
+                </OverlayCard>
+              </div>
+            );
+          }}
+        />
       </div>
+
+      <AmbientFieldConnectionOverlay
+        ref={connectionOverlayRef}
+        targetRef={storyTwoRef}
+      />
 
       <div
         className="pointer-events-none fixed inset-0 z-[1]"
@@ -482,7 +370,7 @@ function AmbientFieldLandingShell({
         brandTooltipLabel="Back to top"
         groupRightControls
         onBrandClick={() =>
-          rootRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+          window.scrollTo({ top: 0, behavior: "smooth" })
         }
         surfaceMode={chromeSurfaceMode}
         rightSlot={
@@ -505,7 +393,6 @@ function AmbientFieldLandingShell({
 
         <AmbientFieldStoryChapter
           beats={ambientFieldStoryOneBeats}
-          rootRef={rootRef}
           section={storyOneSection}
         />
 
@@ -514,49 +401,62 @@ function AmbientFieldLandingShell({
         />
 
         <section
+          ref={storyTwoRef}
           id={storyTwoSection.id}
           data-ambient-section
           data-preset={storyTwoSection.preset}
           data-section-id={storyTwoSection.id}
-          className="flex min-h-[128svh] items-center px-4 py-[12vh] sm:px-6 sm:py-[14vh]"
+          className="grid min-h-[128svh] grid-cols-12 grid-rows-[auto_1fr_auto] gap-x-6 gap-y-10 px-4 py-[12vh] sm:px-6 sm:py-[14vh]"
         >
-          <div className="mx-auto grid w-full max-w-[1440px] grid-cols-1 gap-6 lg:grid-cols-12 lg:gap-10">
-            <div className="hidden lg:col-span-3 lg:col-start-1 lg:block">
-              <motion.div
-                initial={{ opacity: 0, y: 18 }}
-                viewport={{ once: true, amount: 0.35 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{
-                  y: smooth,
-                  opacity: { duration: 0.18, ease: "easeOut" },
-                }}
-              >
-                <OverlayCard
-                  style={buildSecondaryCardStyle(storyTwoSection.accentVar)}
-                  className="px-5 py-5"
-                >
-                  <div className="flex items-center gap-2">
-                    <MetaPill mono>Module</MetaPill>
-                    <MetaPill style={{ color: storyTwoSection.accentVar }}>
-                      Shared substrate
-                    </MetaPill>
-                  </div>
-                  <p
-                    className="mt-3 text-[13px] leading-6"
-                    style={{
-                      color:
-                        "color-mix(in srgb, var(--graph-panel-text) 76%, transparent)",
-                    }}
-                  >
-                    Inline modules can attach here without forking the renderer or
-                    inventing another background model.
-                  </p>
-                </OverlayCard>
-              </motion.div>
-            </div>
-            <div className="lg:col-span-4 lg:col-start-9">
-              <AmbientFieldSectionCard section={storyTwoSection} />
-            </div>
+          <div className="col-span-12 row-start-1 self-start text-left lg:col-span-6 lg:col-start-1">
+            <motion.p
+              className="text-[11px] uppercase tracking-[0.24em]"
+              initial={{ opacity: 0, y: 12 }}
+              viewport={{ once: true, amount: 0.35 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{
+                y: smooth,
+                opacity: { duration: 0.18, ease: "easeOut" },
+              }}
+              style={{
+                color:
+                  "color-mix(in srgb, var(--graph-panel-text-dim) 92%, transparent)",
+              }}
+            >
+              {storyTwoSection.eyebrow}
+            </motion.p>
+
+            <motion.h2
+              className="mt-5 max-w-[18ch] text-[2.9rem] font-medium leading-[0.9] tracking-[-0.05em] sm:text-[4.25rem] lg:text-[5.2rem]"
+              initial={{ opacity: 0, y: 18 }}
+              viewport={{ once: true, amount: 0.35 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{
+                y: smooth,
+                opacity: { duration: 0.18, ease: "easeOut" },
+              }}
+            >
+              {storyTwoSection.title}
+            </motion.h2>
+          </div>
+
+          <div className="col-span-12 row-start-3 self-end text-left lg:col-span-5 lg:col-start-8 sm:text-right lg:text-right">
+            <motion.p
+              className="max-w-[44ch] text-[15px] leading-7 sm:text-[17px] sm:leading-8 sm:ml-auto"
+              initial={{ opacity: 0, y: 18 }}
+              viewport={{ once: true, amount: 0.35 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{
+                y: smooth,
+                opacity: { duration: 0.18, ease: "easeOut", delay: 0.04 },
+              }}
+              style={{
+                color:
+                  "color-mix(in srgb, var(--graph-panel-text) 76%, transparent)",
+              }}
+            >
+              {storyTwoSection.body}
+            </motion.p>
           </div>
         </section>
 
@@ -568,7 +468,7 @@ function AmbientFieldLandingShell({
             }
           }}
           onReturnToTop={() =>
-            rootRef.current?.scrollTo({ top: 0, behavior: "smooth" })
+            window.scrollTo({ top: 0, behavior: "smooth" })
           }
           section={ctaSection}
         />
@@ -576,7 +476,6 @@ function AmbientFieldLandingShell({
 
       <ViewportTocRail
         entries={tocEntries}
-        scrollRef={rootRef}
         compact
         hideBelowWidth={AMBIENT_FIELD_NON_DESKTOP_BREAKPOINT}
         narrowMode="dock"

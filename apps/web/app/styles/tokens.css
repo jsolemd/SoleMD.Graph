@@ -2,7 +2,7 @@
    DESIGN TOKENS — Tailwind v4 utility generation
    ═══════════════════════════════════════════════════════════════════ */
 @theme {
-  --color-background: #fafafa;
+  --color-background: #faf9f6;
   --color-soft-blue: #a8c5e9;
   --color-muted-indigo: #747caa;
   --color-golden-yellow: #e5c799;
@@ -44,6 +44,12 @@
     BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: var(--font-jetbrains-mono), "Fira Code", Consolas, "Liberation Mono",
     Menlo, Courier, monospace;
+
+  /* Surface radius ramp — single source of truth for panel-family corners.
+     Generates Tailwind utilities: rounded-surface-sm, rounded-surface, rounded-surface-lg. */
+  --radius-surface-sm: 1rem;
+  --radius-surface: 1.25rem;
+  --radius-surface-lg: 1.5rem;
 }
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -54,15 +60,30 @@
   /* ── Density — single source of truth (JS counterpart: lib/density.ts) ── */
   --app-density: 0.8;
 
+  /* Accent tint ramp — mix ratios for color-mix() on mode/entity accents.
+     Centralized so palette warmth/chroma shifts are one-line changes.
+     Trade-off: higher values = more visible pastel hue but less text contrast. */
+  --tint-accent-bg: 20%;       /* accent card background fill */
+  --tint-accent-border: 32%;   /* accent card border */
+  --tint-accent-pill: 40%;     /* pill background fill */
+  --tint-accent-strong: 65%;   /* pill border / strong emphasis */
+
+  /* Rim light — the matte "stacked on panel" cue. A 1px inset highlight at
+     the top edge of elevated surfaces. Invisible in light mode (white-on-white),
+     meaningful in dark mode where it implies a light source from above. */
+  --rim-light: none;
+
   /* WebGL mirror: lib/graph/brand-colors.ts — keep in sync */
-  /* ── Foundations ── */
-  --background: #fafafa;
-  --surface: #ffffff;
-  --surface-alt: #f5f6f8;
-  --text-primary: #1a1b1e;
-  --text-secondary: #5c5f66;
-  --text-tertiary: #9ca3af;
-  --border-default: #eaedf0;
+  /* ── Foundations — warm-neutral paper tone.
+     Whisper of warmth (R−B ≈ 3–4), not beige (R−B ≈ 7+). ── */
+  --background: #faf9f7;
+  --surface: #fffffe;
+  --surface-alt: #f5f4f1;
+  --surface-raised: #ffffff;     /* 4th tonal step — popovers, dropdowns */
+  --text-primary: #1a1817;
+  --text-secondary: #5e5c58;
+  --text-tertiary: #9e9c97;
+  --border-default: #eae8e4;
   --border-subtle: rgba(0, 0, 0, 0.06);
   --shadow-sm: 0 calc(1px * var(--app-density)) calc(3px * var(--app-density)) rgba(0, 0, 0, 0.04);
   --shadow-md: 0 calc(4px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.06);
@@ -74,7 +95,7 @@
 
   /* ── Graph canvas (unique values only — rest reference foundations) ── */
   --graph-canvas-filter: saturate(1.8) brightness(0.85);
-  --graph-bg: #ffffff;
+  --graph-bg: #fffffe;
   --graph-panel-bg: var(--graph-bg);
   --graph-panel-border: var(--border-subtle);
   --graph-panel-text: var(--text-primary);
@@ -130,11 +151,15 @@
   --filter-bar-active: var(--mode-accent);
   --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 82%, black);
 
-  /* ── Active mode accent (set by ModeColorSync, default = ask) ── */
+  /* ── Active mode accent (set by ModeColorSync, default = ask).
+     Two derived tiers + the raw accent:
+       subtle → resting selected / active fill (mode chip, selected row, tinted card)
+       hover  → mouse-over affordance, distinctly louder than subtle
+       (toggle-ON and accent borders go straight to var(--mode-accent))
+     OKLCH keeps ask/explore/learn/create perceptually uniform. ── */
   --mode-accent: var(--color-soft-blue);
-  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 40%, white);
-  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 50%, white);
-  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 50%, white);
+  --mode-accent-subtle: color-mix(in oklch, var(--mode-accent) 55%, white);
+  --mode-accent-hover:  color-mix(in oklch, var(--mode-accent) 72%, white);
   --module-accent-default: var(--color-soft-blue);
   /* Glyph on the mode-accent affordance (prompt submit). Matches the
      LLM send-button convention (ChatGPT/Claude/Gemini): white arrow on
@@ -152,9 +177,6 @@
      to --graph-panel-text for contrast. */
   --graph-icon-color: rgba(26, 27, 30, 0.68);
   --graph-control-idle-bg: var(--graph-panel-input-bg);
-  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent) 16%, var(--graph-panel-input-bg));
-  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent) 24%, var(--graph-panel-input-bg));
-  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent) 32%, var(--graph-panel-input-bg));
 
   /* ── Feedback states ── */
   --feedback-warning-bg: color-mix(in srgb, var(--surface-alt) 85%, var(--color-feedback-warning) 15%);
@@ -252,36 +274,31 @@ html:root {
    Downstream tokens using var() update automatically.
    ═══════════════════════════════════════════════════════════════════ */
 .dark {
-  /* ── Brand overrides ── */
-  --color-background: #18181b;
-  --color-soft-blue: #a8c5e9;
-  --color-muted-indigo: #8b8fbf;
-  --color-golden-yellow: #e5c799;
-  --color-fresh-green: #aedc93;
-  --color-warm-coral: #c48e88;
-  --color-soft-pink: #b085a8;
-  --color-soft-lavender: #a899b3;
-  --color-paper: #a89b78;
-  --color-feedback-warning: #f59e0b;
-  --color-feedback-danger: #e53e3e;
-  --color-semantic-disorder: #c48b7d;
-  --color-semantic-chemical: #8aad7a;
-  --color-semantic-gene: #a97ea4;
-  --color-semantic-anatomy: #b69d77;
-  --color-semantic-physiology: #7faec7;
-  --color-semantic-procedure: #a899b3;
-  --color-semantic-section: #8d85d7;
-  --color-semantic-paper: #a89b78;
-  --color-semantic-module: #6ea48d;
+  /* Rim light activates in dark mode — makes cards-on-panels "stack" visually
+     without drawing a border. 3% white inset at the top edge implies a light
+     source from above. Also applied to panels and floating surfaces. */
+  --rim-light: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 
-  /* ── Foundations (everything downstream updates via var()) ── */
-  --background: #18181b;
-  --surface: #1c1d21;
-  --surface-alt: #232427;
-  --text-primary: #ededf0;
-  --text-secondary: #a1a1aa;
-  --text-tertiary: #71717a;
-  --border-default: #2a2c31;
+  /* ── Brand overrides ──
+     Canvas flips to pure #000 (AMOLED). Brand + semantic pastels deliberately
+     keep their full light-mode chroma in dark mode — on OLED black they read
+     MORE alive than on warm canvas, so pre-desaturating them was killing the
+     pastel identity the product leans on. Only the canvas base color flips. */
+  --color-background: #000000;
+
+  /* ── Foundations — AMOLED canvas + Inky Meta ladder (B > R by ~2).
+     Selected from the Dark Palette Explorer in /surface-lab; candidate
+     "meta-inky". Panels sit close to #000 for a stealthier AMOLED chrome
+     while retaining Meta's cool-neutral grey personality. Downstream tokens
+     update via var(). ── */
+  --background: #000000;
+  --surface: #0F1012;
+  --surface-alt: #1A1B1E;
+  --surface-raised: #2A2C30;
+  --text-primary: #E4E6EB;
+  --text-secondary: #AEB1B7;
+  --text-tertiary: #70747A;
+  --border-default: #26272B;
   --border-subtle: rgba(255, 255, 255, 0.06);
   --shadow-sm: 0 calc(1px * var(--app-density)) calc(3px * var(--app-density)) rgba(0, 0, 0, 0.3);
   --shadow-md: 0 calc(4px * var(--app-density)) calc(12px * var(--app-density)) rgba(0, 0, 0, 0.4);
@@ -293,13 +310,23 @@ html:root {
 
   /* ── Graph canvas (only values that diverge from foundations) ── */
   --graph-canvas-filter: none;
-  --graph-bg: #111113;
-  --graph-panel-bg: #1a1b1f;
+  --graph-bg: #000000;
+  /* True-AMOLED canvas — panels sit inky on pure black (L+6 canvas→panel).
+     Inputs drop back near-black so the panel frames them. Rim-light + the
+     --graph-panel-border hairline carry the separation in place of a drop
+     shadow (which would be invisible on #000). */
+  --graph-panel-bg: #0F1012;
   --graph-panel-border: rgba(255, 255, 255, 0.08);
-  --graph-panel-input-bg: #1f2024;
+  --graph-panel-input-bg: #06070A;
+  /* Docked-panel elevation on AMOLED — light cues instead of dark shadows
+     (which would vanish on #000). A rim-light hints "lit from above", two
+     stacked omnidirectional white halos (tight + wide, both 0/0 offset)
+     wrap the panel in a soft continuous glow. No 1px rings — hairlines
+     read as a border and are avoided. */
   --graph-panel-shadow:
-    0 calc(6px * var(--app-density)) calc(18px * var(--app-density)) rgba(0, 0, 0, 0.3),
-    0 calc(16px * var(--app-density)) calc(34px * var(--app-density)) rgba(0, 0, 0, 0.24);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 calc(24px * var(--app-density)) rgba(255, 255, 255, 0.06),
+    0 0 calc(64px * var(--app-density)) rgba(255, 255, 255, 0.035);
   --graph-panel-scale: 1;
 
   /* ── Wiki graph (dark mode — semantic palette overrides above feed these vars) ── */
@@ -316,11 +343,20 @@ html:root {
   --wiki-graph-link: #475569;
   --wiki-graph-label: #e2e8f0;
 
-  /* ── Graph overlays (matte floating cards) ── */
-  --graph-prompt-bg: var(--graph-panel-bg);
+  /* ── Graph overlays (floating cards — Prompt, PopoverSurface, FloatingHoverCard).
+     These float over the canvas which can be pure black. Elevation is two
+     stacked omnidirectional white halos (tight + wide) wrapping the card in
+     a continuous soft glow — brighter than the docked panel ladder so prompts
+     visibly "pop". A subtle rim-light keeps "lit from above" on the top edge,
+     and a wide black spread gives a floor-shadow when prompts cross onto
+     lighter panel surfaces. No outline / ring. ── */
+  --graph-prompt-bg: var(--surface-raised);
   --graph-prompt-shadow:
-    0 calc(8px * var(--app-density)) calc(22px * var(--app-density)) rgba(0, 0, 0, 0.34),
-    0 calc(18px * var(--app-density)) calc(38px * var(--app-density)) rgba(0, 0, 0, 0.26);
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 calc(32px * var(--app-density)) rgba(255, 255, 255, 0.10),
+    0 0 calc(72px * var(--app-density)) rgba(255, 255, 255, 0.055),
+    0 0 calc(120px * var(--app-density)) rgba(255, 255, 255, 0.028),
+    0 calc(24px * var(--app-density)) calc(64px * var(--app-density)) rgba(0, 0, 0, 0.55);
   --graph-prompt-placeholder: rgba(255, 255, 255, 0.25);
   --graph-prompt-inactive: rgba(255, 255, 255, 0.52);
   --graph-prompt-text: #ffffff;
@@ -339,13 +375,13 @@ html:root {
   --filter-bar-active: color-mix(in oklch, var(--mode-accent) 70%, white);
   --filter-bar-marker: color-mix(in oklch, var(--mode-accent) 55%, black);
 
-  /* ── Mode accent — higher opacity needed against dark surfaces ── */
-  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 28%, var(--graph-panel-input-bg));
-  --mode-accent-hover: color-mix(in srgb, var(--mode-accent) 38%, var(--graph-panel-input-bg));
-  --mode-accent-border: color-mix(in srgb, var(--mode-accent) 58%, var(--graph-panel-bg));
-  --graph-control-hover-bg: color-mix(in srgb, var(--mode-accent) 24%, var(--graph-panel-input-bg));
-  --graph-control-pressed-bg: color-mix(in srgb, var(--mode-accent) 44%, var(--graph-panel-input-bg));
-  --graph-control-active-bg: color-mix(in srgb, var(--mode-accent) 56%, var(--graph-panel-input-bg));
+  /* ── Mode accent — *opaque* mix with the surface (Material Design reference
+     at #332940 / 13.7:1 contrast). On AMOLED canvas a 55% transparent wash
+     reads as near-black with a hint of hue; an opaque tint creates a real
+     elevated "selected" quality. Mixes with surface-alt so the result is
+     perceptually 1 panel-step above surface. ── */
+  --mode-accent-subtle: color-mix(in srgb, var(--mode-accent) 22%, var(--surface-alt));
+  --mode-accent-hover:  color-mix(in srgb, var(--mode-accent) 38%, var(--surface-alt));
   --graph-icon-color: rgba(237, 237, 240, 0.82);
   --module-accent-default: var(--color-soft-blue);
 

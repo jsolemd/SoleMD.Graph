@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+from time import perf_counter
 from uuid import UUID
 
 import asyncpg
@@ -28,6 +29,13 @@ from app.ingest.models import (
     StartReleaseRequest,
 )
 from app.ingest.sources import pubtator, semantic_scholar
+from app.telemetry.metrics import (
+    observe_ingest_phase,
+    record_ingest_failure,
+    record_ingest_family_load,
+    record_ingest_run,
+    track_ingest_lock_age,
+)
 from app.ingest.writers import pubtator as pubtator_writer
 from app.ingest.writers import s2 as s2_writer
 
@@ -84,126 +92,189 @@ async def run_release_ingest(
     adapter = SOURCE_ADAPTERS[request.source_code]
     writer = SOURCE_WRITERS[request.source_code]
     plan = adapter.build_plan(runtime_settings, request)
+    cycle_started = perf_counter()
 
     async with ingest_pool.acquire() as control_connection:
         lock_key = await _acquire_release_lock(control_connection, request)
         ingest_run_id: UUID | None = None
         family_name: str | None = None
-        try:
-            source_release_id = await _ensure_source_release(control_connection, request, plan)
-            run = await _open_or_resume_run(
-                control_connection,
-                request=request,
-                plan=plan,
-                source_release_id=source_release_id,
-                lock_key=lock_key,
-            )
-            ingest_run_id = run.ingest_run_id
-            _emit_event(
-                "ingest.cycle.started",
-                ingest_run_id=ingest_run_id,
-                source_code=request.source_code,
-                release_tag=request.release_tag,
-                plan=plan.model_dump(mode="json"),
-            )
-            await _set_phase(
-                control_connection,
-                ingest_run_id,
-                status_code=INGEST_STATUS_LOADING,
-                phase_name="loading",
-            )
-            for family_name in plan.family_names:
-                await _assert_not_aborted(control_connection, ingest_run_id)
-                if family_name in run.families_loaded:
-                    continue
-                stats = await writer.load_family(
-                    ingest_pool,
-                    runtime_settings,
-                    request,
-                    plan,
-                    family_name,
-                    source_release_id,
-                    ingest_run_id,
+        active_phase_name: str | None = None
+        active_phase_started: float | None = None
+        async with track_ingest_lock_age(
+            source_code=request.source_code,
+            release_tag=request.release_tag,
+        ):
+            try:
+                source_release_id = await _ensure_source_release(control_connection, request, plan)
+                run = await _open_or_resume_run(
+                    control_connection,
+                    request=request,
+                    plan=plan,
+                    source_release_id=source_release_id,
+                    lock_key=lock_key,
                 )
-                async with control_connection.transaction():
-                    await adapter.promote_family(
-                        control_connection,
+                ingest_run_id = run.ingest_run_id
+                _emit_event(
+                    "ingest.cycle.started",
+                    ingest_run_id=ingest_run_id,
+                    source_code=request.source_code,
+                    release_tag=request.release_tag,
+                    plan=plan.model_dump(mode="json"),
+                )
+                await _set_phase(
+                    control_connection,
+                    ingest_run_id,
+                    status_code=INGEST_STATUS_LOADING,
+                    phase_name="loading",
+                )
+                active_phase_name = "loading"
+                active_phase_started = perf_counter()
+                for family_name in plan.family_names:
+                    await _assert_not_aborted(control_connection, ingest_run_id)
+                    if family_name in run.families_loaded:
+                        continue
+                    stats = await writer.load_family(
+                        ingest_pool,
+                        runtime_settings,
+                        request,
                         plan,
                         family_name,
                         source_release_id,
                         ingest_run_id,
                     )
-                    await _mark_family_loaded(control_connection, ingest_run_id, family_name)
-                _emit_event(
-                    "ingest.family.loaded",
-                    ingest_run_id=ingest_run_id,
+                    async with control_connection.transaction():
+                        await adapter.promote_family(
+                            control_connection,
+                            plan,
+                            family_name,
+                            source_release_id,
+                            ingest_run_id,
+                        )
+                        await _mark_family_loaded(control_connection, ingest_run_id, family_name)
+                    record_ingest_family_load(
+                        source_code=request.source_code,
+                        family_name=family_name,
+                        row_count=stats.row_count,
+                        file_count=stats.file_count,
+                    )
+                    _emit_event(
+                        "ingest.family.loaded",
+                        ingest_run_id=ingest_run_id,
+                        source_code=request.source_code,
+                        release_tag=request.release_tag,
+                        family=family_name,
+                        row_count=stats.row_count,
+                        file_count=stats.file_count,
+                    )
+
+                _observe_active_phase(
                     source_code=request.source_code,
                     release_tag=request.release_tag,
-                    family=family_name,
-                    row_count=stats.row_count,
-                    file_count=stats.file_count,
+                    phase_name=active_phase_name,
+                    phase_started=active_phase_started,
                 )
 
-            await _set_phase(
-                control_connection,
-                ingest_run_id,
-                status_code=INGEST_STATUS_INDEXING,
-                phase_name="indexing",
-            )
-            await _set_phase(
-                control_connection,
-                ingest_run_id,
-                status_code=INGEST_STATUS_ANALYZING,
-                phase_name="analyzing",
-            )
-            await _finalize_published(control_connection, ingest_run_id, source_release_id)
-            _emit_event(
-                "ingest.cycle.published",
-                ingest_run_id=ingest_run_id,
-                source_code=request.source_code,
-                release_tag=request.release_tag,
-                families=plan.family_names,
-            )
-            return str(ingest_run_id)
-        except (IngestAlreadyPublished, IngestAlreadyInProgress):
-            raise
-        except IngestAborted as exc:
-            if ingest_run_id is not None:
-                await _set_terminal_status(
+                await _set_phase(
                     control_connection,
                     ingest_run_id,
-                    INGEST_STATUS_ABORTED,
-                    str(exc),
+                    status_code=INGEST_STATUS_INDEXING,
+                    phase_name="indexing",
                 )
+                active_phase_name = "indexing"
+                active_phase_started = perf_counter()
+                _observe_active_phase(
+                    source_code=request.source_code,
+                    release_tag=request.release_tag,
+                    phase_name=active_phase_name,
+                    phase_started=active_phase_started,
+                )
+
+                await _set_phase(
+                    control_connection,
+                    ingest_run_id,
+                    status_code=INGEST_STATUS_ANALYZING,
+                    phase_name="analyzing",
+                )
+                active_phase_name = "analyzing"
+                active_phase_started = perf_counter()
+                _observe_active_phase(
+                    source_code=request.source_code,
+                    release_tag=request.release_tag,
+                    phase_name=active_phase_name,
+                    phase_started=active_phase_started,
+                )
+                active_phase_name = None
+                active_phase_started = None
+                await _finalize_published(control_connection, ingest_run_id, source_release_id)
+                record_ingest_run(source_code=request.source_code, outcome="published")
                 _emit_event(
-                    "ingest.cycle.aborted",
+                    "ingest.cycle.published",
                     ingest_run_id=ingest_run_id,
                     source_code=request.source_code,
                     release_tag=request.release_tag,
-                    reason=str(exc),
+                    families=plan.family_names,
+                    total_duration_s=perf_counter() - cycle_started,
                 )
-            raise
-        except Exception as exc:
-            if ingest_run_id is not None:
-                await _set_terminal_status(
-                    control_connection,
-                    ingest_run_id,
-                    INGEST_STATUS_FAILED,
-                    str(exc),
-                )
-                _emit_event(
-                    "ingest.cycle.failed",
-                    ingest_run_id=ingest_run_id,
+                return str(ingest_run_id)
+            except (IngestAlreadyPublished, IngestAlreadyInProgress):
+                raise
+            except IngestAborted as exc:
+                _observe_active_phase(
                     source_code=request.source_code,
                     release_tag=request.release_tag,
-                    phase="loading" if family_name is not None else "start",
-                    family=family_name,
-                    error_class=type(exc).__name__,
-                    error_message=str(exc),
+                    phase_name=active_phase_name,
+                    phase_started=active_phase_started,
                 )
-            raise
-        finally:
-            await control_connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
+                if ingest_run_id is not None:
+                    await _set_terminal_status(
+                        control_connection,
+                        ingest_run_id,
+                        INGEST_STATUS_ABORTED,
+                        str(exc),
+                    )
+                    record_ingest_run(source_code=request.source_code, outcome="aborted")
+                    _emit_event(
+                        "ingest.cycle.aborted",
+                        ingest_run_id=ingest_run_id,
+                        source_code=request.source_code,
+                        release_tag=request.release_tag,
+                        reason=str(exc),
+                    )
+                raise
+            except Exception as exc:
+                failure_phase = active_phase_name or ("loading" if family_name is not None else "start")
+                _observe_active_phase(
+                    source_code=request.source_code,
+                    release_tag=request.release_tag,
+                    phase_name=active_phase_name,
+                    phase_started=active_phase_started,
+                )
+                if ingest_run_id is not None:
+                    await _set_terminal_status(
+                        control_connection,
+                        ingest_run_id,
+                        INGEST_STATUS_FAILED,
+                        str(exc),
+                    )
+                    record_ingest_run(source_code=request.source_code, outcome="failed")
+                    record_ingest_failure(
+                        source_code=request.source_code,
+                        phase=failure_phase,
+                        failure_class=type(exc).__name__,
+                    )
+                    _emit_event(
+                        "ingest.cycle.failed",
+                        ingest_run_id=ingest_run_id,
+                        source_code=request.source_code,
+                        release_tag=request.release_tag,
+                        phase=failure_phase,
+                        family=family_name,
+                        error_class=type(exc).__name__,
+                        error_message=str(exc),
+                    )
+                raise
+            finally:
+                await control_connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
 
 
 async def _acquire_release_lock(
@@ -441,3 +512,20 @@ def _digest_payload(payload: dict) -> str:
 
 def _emit_event(event_name: str, **fields: object) -> None:
     LOGGER.info("%s %s", event_name, json.dumps(fields, sort_keys=True, default=str))
+
+
+def _observe_active_phase(
+    *,
+    source_code: str,
+    release_tag: str,
+    phase_name: str | None,
+    phase_started: float | None,
+) -> None:
+    if phase_name is None or phase_started is None:
+        return
+    observe_ingest_phase(
+        source_code=source_code,
+        release_tag=release_tag,
+        phase=phase_name,
+        duration_seconds=perf_counter() - phase_started,
+    )

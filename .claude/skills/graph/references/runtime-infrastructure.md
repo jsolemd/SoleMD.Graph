@@ -144,6 +144,8 @@ docker compose -f infra/docker/compose.yaml --profile db up -d graph-db-warehous
 | Graph DB Serve | `55432` | Postgres serve cluster |
 | PgBouncer Serve | `56432` | Transaction pooler in front of serve |
 | Redis | `57379` | Local dev cache / Dramatiq broker |
+| Worker Prometheus | `9095` | Infra-owned Prometheus for Graph worker telemetry |
+| Worker Grafana | `3300` | Infra-owned Grafana for Graph worker telemetry |
 | Langfuse | `3100` | Shared observability |
 | CodeAtlas | `8100` | Shared MCP |
 

@@ -134,7 +134,7 @@ function floatingMenuStyle(x: number, y: number) {
 function floatingMenuItemStyle(isActive: boolean) {
   return {
     backgroundColor: isActive ? "var(--mode-accent-subtle)" : "transparent",
-    border: "1px solid var(--mode-accent-border)",
+    border: "1px solid var(--mode-accent)",
     color: "var(--graph-prompt-text)",
   };
 }
@@ -153,7 +153,7 @@ const floatingMenuSnippetStyle = {
 };
 
 const floatingMenuEmptyStateStyle = {
-  border: "1px solid var(--mode-accent-border)",
+  border: "1px solid var(--mode-accent)",
   color: "var(--graph-prompt-placeholder)",
   fontSize: "0.74rem",
   lineHeight: 1.45,

@@ -1,7 +1,6 @@
 "use client";
 
-import { useGraphStore, useDashboardStore } from "@/features/graph/stores";
-import { getModeConfig } from "@/features/graph/lib/modes";
+import { useDashboardStore } from "@/features/graph/stores";
 import { BrandWordmarkButton } from "./BrandWordmarkButton";
 import { ChromeBar } from "./ChromeBar";
 
@@ -13,17 +12,14 @@ import { ChromeBar } from "./ChromeBar";
  * on both platforms.
  */
 export function Wordmark() {
-  const mode = useGraphStore((s) => s.mode);
   const uiHidden = useDashboardStore((s) => s.uiHidden);
   const togglePanel = useDashboardStore((s) => s.togglePanel);
-  const modeColor = getModeConfig(mode).color;
 
   return (
     <>
       <div className="absolute top-3 left-3 z-40">
         {!uiHidden && (
           <BrandWordmarkButton
-            accentColor={modeColor}
             onClick={() => togglePanel("about")}
           />
         )}

@@ -61,6 +61,12 @@ CREATE INDEX IF NOT EXISTS idx_paper_text_fts
 
 CREATE INDEX IF NOT EXISTS idx_paper_authors_author
     ON solemd.paper_authors (author_id, corpus_id);
+CREATE INDEX IF NOT EXISTS idx_paper_citations_cited
+    ON solemd.paper_citations (cited_corpus_id, corpus_id)
+    WHERE cited_corpus_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_paper_citations_influential
+    ON solemd.paper_citations (corpus_id, cited_corpus_id)
+    WHERE is_influential = true;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_paper_chunk_versions_active
     ON solemd.paper_chunk_versions (is_active)
@@ -91,6 +97,8 @@ CREATE INDEX IF NOT EXISTS idx_s2_papers_raw_source_venue_id
 CREATE INDEX IF NOT EXISTS idx_s2_paper_authors_raw_source_author
     ON solemd.s2_paper_authors_raw (source_author_id)
     WHERE source_author_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_s2orc_documents_raw_release
+    ON solemd.s2orc_documents_raw (source_release_id, paper_id);
 
 CREATE INDEX IF NOT EXISTS idx_s2_paper_references_raw_linkage
     ON solemd.s2_paper_references_raw (source_release_id, linkage_status, citing_paper_id);

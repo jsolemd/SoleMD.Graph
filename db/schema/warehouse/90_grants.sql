@@ -15,40 +15,50 @@ GRANT INSERT ON TABLE
     solemd.papers,
     solemd.paper_text,
     solemd.paper_authors,
+    solemd.paper_citations,
     solemd.s2_papers_raw,
     solemd.s2_paper_authors_raw,
+    solemd.s2orc_documents_raw,
     solemd.s2_paper_references_raw,
     solemd.s2_paper_assets_raw
 TO engine_ingest_write;
 GRANT UPDATE ON TABLE
     solemd.source_releases,
     solemd.ingest_runs,
+    solemd.corpus,
     solemd.venues,
     solemd.authors,
     solemd.papers,
     solemd.paper_text,
+    solemd.paper_citations,
     solemd.s2_papers_raw,
     solemd.s2_paper_authors_raw,
+    solemd.s2orc_documents_raw,
     solemd.s2_paper_references_raw,
     solemd.s2_paper_assets_raw
 TO engine_ingest_write;
 GRANT DELETE ON TABLE
     solemd.paper_authors,
+    solemd.paper_citations,
     solemd.s2_papers_raw,
     solemd.s2_paper_authors_raw,
+    solemd.s2orc_documents_raw,
     solemd.s2_paper_assets_raw,
     solemd.s2_paper_references_raw
 TO engine_ingest_write;
 GRANT SELECT ON TABLE
     solemd.source_releases,
     solemd.ingest_runs,
+    solemd.corpus,
     solemd.venues,
     solemd.authors,
     solemd.papers,
     solemd.paper_text,
     solemd.paper_authors,
+    solemd.paper_citations,
     solemd.s2_papers_raw,
     solemd.s2_paper_authors_raw,
+    solemd.s2orc_documents_raw,
     solemd.s2_paper_references_raw,
     solemd.s2_paper_assets_raw
 TO engine_ingest_write;

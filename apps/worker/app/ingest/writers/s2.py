@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
+import json
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -9,7 +10,6 @@ from uuid import UUID
 import asyncpg
 
 from app.config import Settings
-from app.document_spine import replace_document_spines
 from app.ingest.models import CopyStats, FilePlan, IngestPlan, StartReleaseRequest
 from app.ingest.sources import semantic_scholar
 from app.ingest.writers.base import (
@@ -65,6 +65,14 @@ _CITATION_COLUMNS: tuple[str, ...] = (
     "intent_raw",
 )
 
+_S2ORC_DOCUMENT_COLUMNS: tuple[str, ...] = (
+    "paper_id",
+    "source_release_id",
+    "text_hash",
+    "document_payload",
+    "last_seen_run_id",
+)
+
 async def load_family(
     pool: asyncpg.Pool,
     settings: Settings,
@@ -93,7 +101,8 @@ async def load_family(
             settings,
             family.files,
             request,
-            release_tag=plan.release_tag,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
         )
     raise ValueError(f"unsupported S2 family {family_name}")
 
@@ -273,7 +282,8 @@ async def _load_s2orc_documents(
     files: Sequence[FilePlan],
     request: StartReleaseRequest,
     *,
-    release_tag: str,
+    source_release_id: int,
+    ingest_run_id: UUID,
 ) -> CopyStats:
     semaphore = asyncio.Semaphore(max(1, settings.ingest_max_concurrent_files // 2))
 
@@ -283,7 +293,8 @@ async def _load_s2orc_documents(
                 connection,
                 file_path=file_path,
                 request=request,
-                source_revision=release_tag,
+                source_release_id=source_release_id,
+                ingest_run_id=ingest_run_id,
                 batch_size=max(64, settings.ingest_copy_batch_rows // 32),
             )
 
@@ -428,7 +439,8 @@ async def _copy_s2orc_file(
     *,
     file_path: Path,
     request: StartReleaseRequest,
-    source_revision: str,
+    source_release_id: int,
+    ingest_run_id: UUID,
     batch_size: int,
 ) -> int:
     document_batch: list[dict[str, Any]] = []
@@ -440,10 +452,20 @@ async def _copy_s2orc_file(
     ):
         document_batch.append(row)
         if len(document_batch) >= batch_size:
-            written += await _flush_document_batch(connection, document_batch, source_revision=source_revision)
+            written += await _flush_document_batch(
+                connection,
+                document_batch,
+                source_release_id=source_release_id,
+                ingest_run_id=ingest_run_id,
+            )
             document_batch = []
     if document_batch:
-        written += await _flush_document_batch(connection, document_batch, source_revision=source_revision)
+        written += await _flush_document_batch(
+            connection,
+            document_batch,
+            source_release_id=source_release_id,
+            ingest_run_id=ingest_run_id,
+        )
     return written
 
 
@@ -451,67 +473,46 @@ async def _flush_document_batch(
     connection: asyncpg.Connection,
     documents: Sequence[dict[str, Any]],
     *,
-    source_revision: str,
+    source_release_id: int,
+    ingest_run_id: UUID,
 ) -> int:
+    if not documents:
+        return 0
     paper_ids = [document["paper_id"] for document in documents]
-
+    payload_rows = [
+        (
+            document["paper_id"],
+            source_release_id,
+            document["text_hash"],
+            json.dumps(
+                {
+                    "document_source_kind": document["document_source_kind"],
+                    "source_priority": document["source_priority"],
+                    "sections": document["sections"],
+                    "blocks": document["blocks"],
+                    "sentences": document["sentences"],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            ingest_run_id,
+        )
+        for document in documents
+    ]
     async with connection.transaction():
-        # One round-trip: resolve corpus_ids for this batch and cascade-delete any
-        # prior spine rows for those ids. The 4 DELETE branches + the papers
-        # SELECT collapse into a single CTE execution.
-        corpus_rows = await connection.fetch(
+        await connection.execute(
             """
-            WITH targets AS (
-                SELECT s2_paper_id, corpus_id
-                FROM solemd.papers
-                WHERE s2_paper_id = ANY($1::text[])
-            ),
-            corpus_targets AS (
-                SELECT corpus_id FROM targets
-            ),
-            deleted_sentences AS (
-                DELETE FROM solemd.paper_sentences
-                WHERE corpus_id IN (SELECT corpus_id FROM corpus_targets)
-            ),
-            deleted_blocks AS (
-                DELETE FROM solemd.paper_blocks
-                WHERE corpus_id IN (SELECT corpus_id FROM corpus_targets)
-            ),
-            deleted_sections AS (
-                DELETE FROM solemd.paper_sections
-                WHERE corpus_id IN (SELECT corpus_id FROM corpus_targets)
-            ),
-            deleted_documents AS (
-                DELETE FROM solemd.paper_documents
-                WHERE corpus_id IN (SELECT corpus_id FROM corpus_targets)
-            )
-            SELECT s2_paper_id, corpus_id FROM targets
+            DELETE FROM solemd.s2orc_documents_raw
+            WHERE paper_id = ANY($1::text[])
             """,
             paper_ids,
         )
-        corpus_by_paper_id = {
-            str(row["s2_paper_id"]): int(row["corpus_id"]) for row in corpus_rows
-        }
-        if not corpus_by_paper_id:
-            return 0
-
-        resolved_documents: list[dict[str, Any]] = []
-
-        for document in documents:
-            corpus_id = corpus_by_paper_id.get(document["paper_id"])
-            if corpus_id is None:
-                continue
-            resolved_documents.append(
-                {
-                    **document,
-                    "corpus_id": corpus_id,
-                }
-            )
-        return await replace_document_spines(
+        return await copy_records(
             connection,
-            resolved_documents,
-            source_revision=source_revision,
-            skip_delete=True,
+            table_name="s2orc_documents_raw",
+            schema_name="solemd",
+            columns=_S2ORC_DOCUMENT_COLUMNS,
+            records=payload_rows,
         )
 
 

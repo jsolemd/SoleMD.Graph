@@ -22,9 +22,10 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
 - raw Semantic Scholar ingest staging tables:
   - `solemd.s2_papers_raw`
   - `solemd.s2_paper_authors_raw`
+  - `solemd.s2orc_documents_raw`
   - `solemd.s2_paper_references_raw`
   - `solemd.s2_paper_assets_raw`
-- PubTator stage/canonical refresh tables required by the first raw-ingest lane:
+- PubTator stage plus selection-owned canonical tables:
   - `pubtator.entity_annotations_stage`
   - `pubtator.entity_annotations`
   - `pubtator.relations_stage`
@@ -46,8 +47,17 @@ extension-safe ingest/chunking foundation for the next warehouse schema slice.
   with no database default, and an intentionally unpartitioned
   `paper_evidence_units` table while the fully grounded hot cohort remains
   small (roughly hundreds of papers, not millions)
-- targeted hot-text refresh lineage for PMC BioC-backed paper-level document
+- targeted evidence-wave refresh lineage for PMC BioC-backed paper-level document
   replacement on the same canonical grounding spine
+- selected-corpus and mapped/evidence-wave lineage tables for post-ingest corpus
+  selection and evidence child-wave dispatch:
+  - `solemd.vocab_terms`
+  - `solemd.vocab_term_aliases`
+  - `solemd.corpus_selection_runs`
+  - `solemd.corpus_selection_signals`
+  - `solemd.paper_selection_summary`
+  - `solemd.corpus_wave_runs`
+  - `solemd.corpus_wave_members`
 - chunking hardening on the same stock-PG surface:
   - DB-level CHECK constraints on the new SMALLINT enum columns
   - parent-column LZ4 compression for partitioned text tables

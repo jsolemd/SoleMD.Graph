@@ -65,7 +65,7 @@ export const mantineNeutralColorsTuple: MantineColorsTuple = [
 
 export const themeSurfaceFallbackHexByKey = {
   white: "#ffffff",
-  black: "#1a1b1e",
+  black: "#1a1817",
 } as const
 
 export const extendedPastelVarNameByKey = {

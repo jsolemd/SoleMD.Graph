@@ -12,6 +12,7 @@ import {
   type LottieRgba,
 } from "@/features/animations/lottie/recolor-lottie";
 import { smooth } from "@/lib/motion";
+import { fieldLoopClock } from "@/features/ambient-field";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -23,15 +24,11 @@ export function AmbientFieldScrollCue({ visible }: { visible: boolean }) {
   const [rgba, setRgba] = useState<LottieRgba | null>(null);
 
   useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      setRgba(
-        resolveCssColor(
-          "--graph-panel-text",
-          SCROLL_CUE_FALLBACK_COLOR,
-        ),
-      );
+    const disposer = fieldLoopClock.subscribe("scroll-cue", 80, () => {
+      setRgba(resolveCssColor("--graph-panel-text", SCROLL_CUE_FALLBACK_COLOR));
+      disposer();
     });
-    return () => window.cancelAnimationFrame(frame);
+    return disposer;
   }, [colorScheme]);
 
   const animationData = useMemo(() => {

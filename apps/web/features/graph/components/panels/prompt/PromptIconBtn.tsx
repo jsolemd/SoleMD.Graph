@@ -3,7 +3,7 @@
 import { Tooltip } from "@mantine/core";
 import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
-import { bouncy } from "@/lib/motion";
+import { pressable } from "@/lib/motion";
 import { useShellVariantContext } from "@/features/graph/components/shell/ShellVariantContext";
 
 /** Prompt-icon sizing in viewport px per size × platform.
@@ -66,9 +66,7 @@ export function PromptIconBtn({
         type="button"
         onClick={onClick}
         disabled={disabled}
-        whileHover={disabled ? undefined : { scale: 1.08 }}
-        whileTap={disabled ? undefined : { scale: 0.92 }}
-        transition={bouncy}
+        {...pressable(disabled)}
         className="flex flex-shrink-0 items-center justify-center rounded-full border-0"
         style={{
           width: shellPx,

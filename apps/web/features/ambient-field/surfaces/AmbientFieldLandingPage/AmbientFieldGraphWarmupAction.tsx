@@ -13,7 +13,11 @@ import {
   resolveCssColor,
   type LottieRgba,
 } from "@/features/animations/lottie/recolor-lottie";
-import { graphControlBtnStyles } from "@/features/graph/components/panels/PanelShell";
+import {
+  chromeFlushSurfaceStyle,
+  graphControlBtnStyles,
+} from "@/features/graph/components/panels/PanelShell";
+import { fieldLoopClock } from "@/features/ambient-field";
 
 const Lottie = dynamic(() => import("lottie-react"), { ssr: false });
 
@@ -27,10 +31,8 @@ const MAX_SYNC_ATTEMPTS = 60;
 const PLAY_PLAYBACK_SPEED = 0.82;
 
 const iconActionStyle: CSSProperties = {
+  ...chromeFlushSurfaceStyle,
   position: "relative",
-  "--graph-control-idle-bg": "transparent",
-  border: "1px solid transparent",
-  boxShadow: "none",
 };
 
 const visualHostStyle: CSSProperties = {
@@ -68,10 +70,11 @@ export function AmbientFieldGraphWarmupAction({
   );
 
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
+    const disposer = fieldLoopClock.subscribe("graph-warmup-color", 60, () => {
       setIconColor(resolveCssColor("--graph-icon-color", GRAPH_ICON_FALLBACK));
+      disposer();
     });
-    return () => cancelAnimationFrame(frame);
+    return disposer;
   }, [computedColorScheme]);
 
   const playAnimationData = useMemo(() => {
@@ -88,27 +91,21 @@ export function AmbientFieldGraphWarmupAction({
       return;
     }
 
-    let frame = 0;
-
-    const syncPlayback = (attempt = 0) => {
+    let attempt = 0;
+    const disposer = fieldLoopClock.subscribe("graph-warmup-playback", 60, () => {
       const animationItem = lottieRef.current?.animationItem;
       if (!animationItem) {
-        if (attempt < MAX_SYNC_ATTEMPTS) {
-          frame = requestAnimationFrame(() => syncPlayback(attempt + 1));
-        }
+        if (attempt >= MAX_SYNC_ATTEMPTS) disposer();
+        attempt += 1;
         return;
       }
-
       animationItem.stop();
       animationItem.goToAndStop(0, true);
       animationItem.setSpeed(PLAY_PLAYBACK_SPEED);
       animationItem.play();
-    };
-
-    frame = requestAnimationFrame(() => syncPlayback());
-    return () => {
-      cancelAnimationFrame(frame);
-    };
+      disposer();
+    });
+    return disposer;
   }, [graphReady, phase, playAnimationData, reduced]);
 
   useEffect(() => {
@@ -116,30 +113,25 @@ export function AmbientFieldGraphWarmupAction({
       return;
     }
 
-    let frame = 0;
-
-    const syncIdleFrame = (attempt = 0) => {
+    let attempt = 0;
+    const disposer = fieldLoopClock.subscribe("graph-warmup-idle", 60, () => {
       const animationItem = lottieRef.current?.animationItem;
       if (!animationItem) {
-        if (attempt < MAX_SYNC_ATTEMPTS) {
-          frame = requestAnimationFrame(() => syncIdleFrame(attempt + 1));
-        }
+        if (attempt >= MAX_SYNC_ATTEMPTS) disposer();
+        attempt += 1;
         return;
       }
-
       animationItem.stop();
       animationItem.goToAndStop(Math.max(animationItem.totalFrames - 1, 0), true);
-    };
-
-    frame = requestAnimationFrame(() => syncIdleFrame());
-    return () => {
-      cancelAnimationFrame(frame);
-    };
+      disposer();
+    });
+    return disposer;
   }, [graphReady, phase, playAnimationData, reduced]);
 
   const canRenderPlayVisual = !reduced && playAnimationData != null;
   const showReadyVisual = graphReady && (reduced || canRenderPlayVisual);
   const tooltipLabel = graphReady ? READY_LABEL : LOADING_LABEL;
+  const iconOpacity = iconColor?.[3] ?? GRAPH_ICON_FALLBACK[3];
 
   return (
     <Tooltip label={tooltipLabel} position="bottom" withArrow>
@@ -205,6 +197,7 @@ export function AmbientFieldGraphWarmupAction({
                 style={{
                   width: LOTTIE_VISUAL_SIZE,
                   height: LOTTIE_VISUAL_SIZE,
+                  opacity: iconOpacity,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",

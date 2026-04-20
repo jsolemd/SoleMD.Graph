@@ -47,36 +47,48 @@ The full rebuild, reduced to the minimum accurate story, is this:
 
 1. **Raw sources land on disk** on the E-drive warehouse bind mounts (`01`,
    `05`).
-2. **Warehouse ingest** writes canonical biomedical facts into PostgreSQL on the
-   warehouse cluster (`02`, `05`).
-3. **Chunking and evidence-unit assembly** derive grounded retrieval units from
-   the canonical document spine (`02`, `05a`).
-4. **Projection jobs** read warehouse canon and write serve-facing PostgreSQL
+2. **Warehouse ingest** writes source-shaped raw/stage facts into PostgreSQL on
+   the warehouse cluster (`02`, `05`).
+3. **Selected-corpus activation** decides which papers enter the operational
+   SoleMD canonical corpus and promotes broad selected-paper facts into the
+   canonical warehouse layer. The locked first-wave policy is:
+   - corpus admission by journal / venue-pattern / curated-vocab alias hit
+   - mapped promotion by journal / pattern / entity-rule / relation-rule
+     families with second-gate handling for noisy entity families
+   - per-paper selection summary carrying publication year, locator readiness,
+     mapped-rule flags, and mapped/evidence priority scores (`02`, `05e`).
+4. **Mapped rollout and evidence waves fan out from the selected corpus.**
+   `mapped` is the paper-level active universe; evidence owns full-text
+   rewrite, chunking, grounding, and evidence derivation. The locked first-wave
+   evidence dispatcher currently means "mapped, recent, high-signal,
+   locator-aware, and still missing a canonical `pmc_bioc` document"
+   (`05f`, `05a`, `07`).
+5. **Projection jobs** read warehouse canon and write serve-facing PostgreSQL
    tables using stage-and-swap (`00`, `03`, `04`).
-5. **OpenSearch build jobs** read the same serve/warehouse inputs and build the
+6. **OpenSearch build jobs** read the same serve/warehouse inputs and build the
    retrieval indexes behind aliases (`07`).
-6. **Graph bundle build jobs** read warehouse graph outputs and export immutable
+7. **Graph bundle build jobs** read warehouse graph outputs and export immutable
    Parquet bundles for the browser runtime (`05b`).
-7. **Browser DuckDB runtime consumes the graph bundle** through one
+8. **Browser DuckDB runtime consumes the graph bundle** through one
    checksum-keyed local session, materializes the canonical active views, and
    hands them to Cosmograph without introducing a second JS-owned graph dataset
    (`05c`).
-8. **A Dramatiq wiki sync/activation worker stages and activates the authored
+9. **A Dramatiq wiki sync/activation worker stages and activates the authored
    page shell into serve** and wiki page-context reads enrich from serve
    projections plus graph-release resolution, with page actions routing into the
    same graph runtime rather than inventing a separate page-local graph layer
    (`05d`, `06`).
-9. **Cutover is pointer-driven, not row-flag-driven.** The live system is named
+10. **Cutover is pointer-driven, not row-flag-driven.** The live system is named
    by the serve-side singleton pointer and the alias layer, not by ad hoc
    "current" booleans in warehouse tables (`00`, `03`, `04`, `05b`, `07`).
-10. **The engine API serves the frontend** from serve PG, OpenSearch, the wiki
+11. **The engine API serves the frontend** from serve PG, OpenSearch, the wiki
     shell, and the immutable bundle contract; bounded FDW dereference is the
     only sanctioned cross-cluster read at request time (`00`, `03`, `05d`,
     `07`, `08`, `05b`).
-11. **Observability, quality, backup, and migration discipline** are not
+12. **Observability, quality, backup, and migration discipline** are not
    sidecars. They are part of the runtime contract and must track the same
    identities and cohort boundaries (`10`, `10a`, `11`, `12`).
-12. **Auth is deferred.** When it lands, it lands on serve as an activation PR,
+13. **Auth is deferred.** When it lands, it lands on serve as an activation PR,
     not as speculative partial scaffolding (`13`).
 
 That is the through-line. Anything that does not fit inside it is either out of
@@ -246,7 +258,7 @@ first real build. Examples:
 - bundle wall-clock budgets
 - some `INCLUDE` index sets
 - some GUC values
-- hot-tier ceilings / HNSW params where the docs still call them provisional
+- evidence-tier ceilings / HNSW params where the docs still call them provisional
 
 The rule is simple: if the doc marks it provisional and ties it to sample-build
 feedback, do not promote it to locked by editorial enthusiasm alone.
@@ -266,8 +278,8 @@ These are structural and already decided:
   `10a`
 - `06` role / DSN / admin-surface parity for non-auth rows
 - `08` / `10a` trace-contract parity
-- warm-tier paper-grounded vs hot-tier evidence-grounded contract parity
-  across `07`, `08`, `10a`, and `12`
+- mapped paper-grounded vs evidence-grounded contract parity across `07`,
+  `08`, `10a`, and `12`
 - browser DuckDB/runtime contract parity across `05b`, `05c`, and the bundle
   types/runtime code
 - wiki sync/activation contract parity across `05d`, `06`, and the human-facing
@@ -327,7 +339,7 @@ contract and should be landed into code/config/migrations as written:
   hybrid.filter + RRF`, with explicit search-pipeline selection from the
   engine. Hybrid score breakdown is a separate benchmark/debug path, not the
   production combiner.
-- **Runtime retrieval-family contract.** Warm paper support and hot
+- **Runtime retrieval-family contract.** Mapped paper support and
   evidence support both stay in the MedCPT retrieval family: Query
   Encoder for queries, Article Encoder for indexed paper/evidence docs,
   Cross-Encoder only for the bounded rerank stage. SPECTER2 remains the
@@ -353,8 +365,9 @@ contract and should be landed into code/config/migrations as written:
   artifact, and direct `migrate` is a local/dev validation path rather than an
   opaque production DDL path.
 - **Wave-based rollout contract.** Initial implementation is cohort- and
-  wave-based. Storage, warm-tier coverage, graph build, and bundle publication
-  must all work without assuming an immediate full-14M-corpus load.
+  wave-based. Storage, mapped-paper rollout coverage, graph build, and bundle
+  publication must all work without assuming an immediate full-14M-corpus
+  load.
 - **Version-currency contract.** Use current stable releases at the time the
   environment is cut, not stale historical pins and not floating `latest`
   tags. Exact image / package pins are operational inventory, but the policy is
@@ -384,41 +397,39 @@ As of this handoff:
 - The migration story is now explicitly fresh-start: runner bootstrap +
   new baseline for new clusters, with legacy code/migrations treated as
   salvage inventory only.
-- The retrieval story is explicitly split into hot evidence-grounded support
-  and warm paper-grounded support inside one MedCPT family, with SPECTER2 held
-  to the graph / relatedness lane.
+- The retrieval story is explicitly split into evidence-grounded support and
+  mapped paper-grounded support inside one MedCPT family, with SPECTER2 held to
+  the graph / relatedness lane.
 - The implementation path is now wave-based rather than silently assuming full
   corpus scale on day one.
 - The first production S2 / PubTator raw-ingest worker lane is now landed in
   `apps/worker/app`, including release-level orchestration, source-family
-  loaders, and warehouse-local promotion.
-- The next missing runtime boundary is not raw ingest. It is the explicit
-  selected-corpus activation layer that decides which papers move from
-  broad raw-release coverage into the SoleMD canonical paper universe that
-  chunking, graph embedding, and warm retrieval should consume.
+  loaders, and raw/stage landing.
+- The first-wave selected-corpus builder and mapped-wave evidence dispatch are
+  now also landed in `apps/worker/app/corpus`.
+- The corpus policy contract is now explicitly locked as
+  `raw -> corpus -> mapped -> evidence`, with canonical paper/fact
+  materialization behind the corpus boundary.
+- Mapped promotion now uses journal, venue-pattern, entity-rule, and
+  relation-rule families plus second-gate handling for noisy entity families.
+- Evidence-wave dispatch is now keyed as `evidence_missing_pmc_bioc` and uses
+  recent/high-signal/locator-aware gating from `paper_selection_summary`.
 - `13` remains intentionally activation-gated and should stay that way.
 
 The largest remaining parity work is no longer another raw-ingest rewrite.
-It is locking the selected-corpus contract and then landing the targeted
-full-text acquisition lane that downstream chunking, graph, and retrieval
-slices will read.
+It is calibrating the locked corpus/mapped/evidence policies against larger
+release cohorts, then landing the downstream evidence/full-text and
+chunk/evidence lanes against that narrower universe.
 
-## 7.1 Slice 6 follow-on handoff — canonical corpus selection
+## 7.1 Slice 6 follow-on handoff — post-policy calibration and evidence readiness
 
-Status on 2026-04-18: the first production raw-refresh worker lane is now
-landed in `apps/worker/app`. The release-level actor
-`ingest.start_release`, the source adapters for Semantic Scholar and
-PubTator, and the operator CLI entrypoints in `app.main`
-(`enqueue-release`, `dispatch-manifest`) are in place. The next follow-on is
-the **selected-corpus activation** slice documented in `05e`, not another
-raw-ingest rewrite.
-
-The next agent should implement the **canonical corpus selection layer**
-that sits between raw ingest and the newer targeted hot-text / downstream
-chunking / graph / retrieval work. The target is a refresh-safe, modular
-worker-owned surface in `apps/worker` that can deterministically reconstruct
-the selected SoleMD paper universe from raw release facts plus curated
-editorial assets.
+Status on 2026-04-19: the first production raw-refresh worker lane is landed
+in `apps/worker/app`, and the first-wave selected-corpus builder plus
+mapped-wave evidence dispatch are landed in `apps/worker/app/corpus`. The next follow-on is not another
+raw-ingest rewrite, not a from-scratch selector implementation, and not a
+corpus-boundary completion rewrite. That boundary is now in place. The next
+agent should treat the remaining work as **policy calibration and evidence
+readiness**.
 
 Current starting point:
 
@@ -426,55 +437,76 @@ Current starting point:
   `apps/worker/app`.
 - Warehouse raw / chunking schema work now exists, and the S2 / PubTator raw
   loaders are landed.
+- The selector worker lane, run tracking, signal provenance, canonical
+  materialization, and mapped-wave dispatch now exist in `apps/worker/app/corpus`.
 - `solemd.corpus.admission_reason` and `solemd.corpus.domain_status` already
   exist in `02` and are the right durable selection ledger.
+- The operational selected canonical corpus should be read as
+  `corpus`, `papers`, `paper_text`, `paper_authors`, `paper_citations`,
+  `pubtator.entity_annotations`, and `pubtator.relations`.
+- `paper_selection_summary` is now the stable warehouse-local ranking and
+  audit surface for downstream waves. It already carries `publication_year`,
+  `has_locator_candidate`, mapped-rule booleans, mapped-rule counts, and
+  mapped/evidence priority scores.
+- The first evidence-wave contract is
+  `wave_policy_key = 'evidence_missing_pmc_bioc'`: mapped-only parent scope,
+  missing PMC BioC canonical document, 10-year recency floor,
+  evidence-priority floor, and locator-aware gating.
 - Legacy inventory under `legacy/pre-cutover-2026-04-18:engine/app/corpus/`
   shows the prior selection logic: venue/journal normalization, curated
-  vocab aliases, PubTator evidence, and promotion from `candidate` to
-  `mapped`.
+  vocab aliases, PubTator evidence, and promotion from `corpus` to `mapped`.
 
 Scope for that agent:
 
 - Extend `apps/worker/app`, using the existing Dramatiq broker and pool
   bootstrap.
-- Add a worker-owned selection entrypoint that operates after raw release
-  ingest and before chunking / graph / warm retrieval.
-- Reconstruct or refresh `solemd.corpus` candidate rows from raw S2/PT3
-  evidence using release-local and curated assets rather than live APIs.
-- Promote candidates to `domain_status = 'mapped'` using reproducible
-  curated rules and corroborating gates.
+- Keep raw/stage ingest in `05` and keep downstream child waves in `05a` /
+  `05f`; this follow-on should calibrate, not redefine, the locked corpus
+  contract between them.
+- Preview and tune cohort sizes over real warehouse releases so corpus breadth,
+  mapped precision, and evidence-wave ceilings can be adjusted by policy
+  parameters rather than structural rewrites.
+- Add source-aware evidence readiness work, especially canonical fallback when
+  PMC BioC is absent but an S2 full-text source is available.
 - Keep mapped-only downstream fanout explicit in logs and metrics so later
-  chunking and embedding slices can trust the scope boundary.
+  chunking, embedding, and mapped paper-level rollout slices can trust the
+  scope boundary.
 
 Non-goals for that slice:
 
 - No serve-cluster writes.
 - No FDW read path.
+- No reintroduction of alternate corpus-status ladders or a warm tier.
 - No chunk/evidence implementation inside the selector itself.
 - No graph-embedding backfill inside the selector itself.
 - No full-200 M+ S2 canonicalization by accident.
 
 Implementation sequence for that agent:
 
-1. Materialize the selected-corpus contract from `05e` in worker-owned code:
-   broad raw coverage, candidate admission, mapped promotion.
-2. Reuse and modernize the legacy selection ideas:
-   venue normalization, curated journal inventory, curated vocab aliases,
-   PubTator entity/relation corroboration.
-3. Keep the selection phase warehouse-local and set-based; do not gate it on
-   S2 batch enrichment or OpenAlex.
-4. Add integration coverage proving deterministic resume and reproducible
-   `candidate -> mapped` outcomes for a sample release.
-5. Leave chunking, graph embedding, and warm retrieval as downstream lanes
-   operating on the selected corpus.
+1. Use `paper_selection_summary` and the durable signal ledger to preview real
+   cohort sizes before changing thresholds.
+2. Tune policy parameters rather than changing the durable status model:
+   corpus admission breadth, mapped rule floors, and evidence-wave thresholds.
+3. Add evidence-source fallback and locator/readiness improvements without
+   rebuilding the selection orchestration.
+4. Preserve warehouse-local, set-based execution and deterministic resume
+   semantics while extending the policy.
+5. Leave chunking, graph embedding, and mapped paper-level retrieval rollout as
+   downstream child waves operating on the selected corpus.
 
 Definition of done:
 
-- Reconstructing the same release/rule set produces the same mapped corpus.
+- Reconstructing the same release/rule set produces the same canonical corpus,
+  mapped universe, and evidence-wave membership.
 - The selected corpus is queryable by one durable warehouse predicate
-  (`c.domain_status = 'mapped'`).
-- Chunking, graph-embedding, and warm-indexing agents all inherit the same
-  scope boundary instead of each inventing one.
+  (`c.domain_status IN ('corpus', 'mapped')`), and the mapped paper-level
+  universe is queryable by `c.domain_status = 'mapped'`.
+- The canonical paper/fact tables reflect that canonical corpus universe rather
+  than the full raw release breadth.
+- Evidence-wave membership remains a child-wave policy, not a new paper status,
+  and is reproducible under `wave_policy_key = 'evidence_missing_pmc_bioc'`.
+- Chunking, graph-embedding, and mapped-paper rollout agents all inherit the
+  same scope boundary instead of each inventing one.
 - The slice leaves a clean enqueue point for later chunker / evidence work,
   but does not block on that later lane.
 
@@ -482,19 +514,19 @@ Definition of done:
 
 The cleanest order from here is:
 
-1. **Canonical corpus selection / mapped-corpus activation**
-   Land the explicit selector that separates broad raw release coverage from the
-   selected SoleMD paper universe. This slice owns `candidate -> mapped`
-   promotion and the downstream scope contract.
-2. **Targeted hot-text acquisition**
-   Once the selected corpus boundary is real, land the paper-scoped PMC BioC
-   refresh lane for the much smaller hot cohort. This slice rewrites the
-   canonical document spine for those mapped papers without re-opening the
-   raw-release orchestration problem.
+1. **Policy calibration on top of the locked corpus boundary**
+   Treat the structural selector/canonical-backfill work as done for the first
+   worker slice. Further work here should be cohort preview, threshold tuning,
+   and evidence-readiness improvements, not status-model rewrites.
+2. **Targeted evidence-text acquisition**
+   Land the paper-scoped PMC BioC refresh lane for the much smaller evidence
+   cohort, and add source-aware fallback when PMC BioC is absent. This slice
+   rewrites the canonical document spine for evidence-selected mapped papers
+   without re-opening the raw-release orchestration problem.
 3. **Grounding spine and chunk/evidence activation**
    Once the selected corpus boundary and paper-level full-text lane are real,
-   land the chunker actor body, evidence-unit writer, and post-publish fanout
-   to the downstream retrieval lane.
+   land the downstream evidence-wave document spine, chunker actor body,
+   evidence-unit writer, and post-publish fanout to the retrieval lane.
 4. **Graph-embedding wave for `paper_embeddings_graph`**
    Land the dedicated graph-embedding slice after corpus selection has
    established stable mapped-paper ownership. This slice owns ingesting upstream
@@ -577,10 +609,12 @@ That pass should:
   rather than rediscovering the corpus boundary from scratch
 - keep selection warehouse-local and reproducible from raw releases plus
   curated editorial assets; no live API calls as admission gates
-- make `solemd.corpus.domain_status = 'mapped'` the explicit downstream scope
-  contract for chunking, graph embeddings, and warm retrieval
-- leave chunking, graph embedding, and warm indexing as downstream waves rather
-  than entangling them into the selector
+- make `solemd.corpus.domain_status IN ('corpus', 'mapped')` the explicit
+  canonical-corpus scope contract, and `solemd.corpus.domain_status = 'mapped'`
+  the explicit mapped paper-level active-universe scope contract for graph
+  embeddings, paper-grounded retrieval rollout, and evidence selection
+- leave chunking, graph embedding, and evidence indexing as downstream waves
+  rather than entangling them into the selector
 - keep full-200 M+ S2 canonicalization out of scope; the historical ~14 M
   backbone is an explicit selected-corpus wave, not an automatic import rule
 

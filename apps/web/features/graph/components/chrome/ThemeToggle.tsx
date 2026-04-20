@@ -13,26 +13,15 @@ import { motion } from "framer-motion";
 import { Sun, Moon } from "lucide-react";
 import { crisp } from "@/lib/motion";
 import {
+  chromeFlushSurfaceStyle,
   graphControlBtnStyles,
   type ChromeSurfaceMode,
 } from "../panels/PanelShell";
-
-const flushToggleStyle: CSSProperties = {
-  "--graph-control-idle-bg": "transparent",
-  border: "1px solid transparent",
-  boxShadow: "none",
-} as CSSProperties;
 
 const pillToggleStyle: CSSProperties = {
   "--graph-control-idle-bg": "var(--graph-prompt-bg)",
   border: "calc(1px * var(--app-density, 0.8)) solid transparent",
   boxShadow: "var(--graph-prompt-shadow)",
-} as CSSProperties;
-
-const groupedToggleStyle: CSSProperties = {
-  "--graph-control-idle-bg": "transparent",
-  border: "1px solid transparent",
-  boxShadow: "none",
 } as CSSProperties;
 
 export default function ThemeToggle({
@@ -63,11 +52,9 @@ export default function ThemeToggle({
         className="graph-icon-btn"
         aria-label={label}
         style={
-          grouped
-            ? groupedToggleStyle
-            : surfaceMode === "flush"
-              ? flushToggleStyle
-              : pillToggleStyle
+          grouped || surfaceMode === "flush"
+            ? chromeFlushSurfaceStyle
+            : pillToggleStyle
         }
         styles={graphControlBtnStyles}
       >

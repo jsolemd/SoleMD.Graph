@@ -8,7 +8,7 @@ import {
   Search,
 } from "lucide-react";
 import { PanelChrome } from "../../PanelChrome";
-import { PromptChromePreview } from "../../prompt/PromptChromePreview";
+import { PromptBoxCard } from "../../prompt/PromptBoxCard";
 import { FloatingHoverCard } from "@/features/graph/components/overlay/FloatingHoverCard";
 import { DataTableGridView } from "@/features/graph/components/explore/data-table/DataTableGridView";
 import { DataTableToolbarView } from "@/features/graph/components/explore/data-table/DataTableToolbar";
@@ -37,6 +37,7 @@ import {
   PanelSearchField,
   panelSurfaceStyle,
   panelTextDimStyle,
+  panelTextMutedStyle,
   panelTextStyle,
   panelTypePillStyles,
 } from "@/features/graph/components/panels/PanelShell";
@@ -295,7 +296,7 @@ export function PopoverPreview() {
           </div>
         )}
       >
-        <div className="flex-1 border-t border-[var(--graph-panel-border)] bg-[var(--background)]" />
+        <div className="flex-1 bg-[var(--background)]" />
       </PanelChrome>
     </div>
   );
@@ -362,7 +363,7 @@ export function OverlayPreview() {
             <Text style={panelTextDimStyle}>
               Shared overlay family for fullscreen graph views, animation embeds, and modal-like explorations.
             </Text>
-            <div className="flex-1 rounded-xl border border-[var(--graph-panel-border)] bg-[var(--surface-alt)]" />
+            <div className={panelCardClassName} style={{ ...panelCardStyle, flex: 1 }} />
           </div>
         </OverlayCard>
       </OverlaySurface>
@@ -371,7 +372,35 @@ export function OverlayPreview() {
 }
 
 export function PromptPreview() {
-  return <PromptChromePreview />;
+  return (
+    <PromptBoxCard
+      isCollapsed={false}
+      isMobile={false}
+      isFullHeightMode={false}
+      isMaximized={false}
+      showFormattingTools={false}
+      selectionOnlyEnabled={false}
+      selectionScopeAvailable
+      selectionScopeToggleLabel="Selection scope"
+      isSubmitDisabled={false}
+      onToggleFormattingTools={() => {}}
+      onToggleSelectionScope={() => {}}
+      onStepUp={() => {}}
+      onStepDown={() => {}}
+      onSubmit={() => {}}
+    >
+      <div className="min-h-[72px] px-2 py-1">
+        <Text
+          style={{
+            ...panelTextMutedStyle,
+            color: "var(--graph-prompt-placeholder)",
+          }}
+        >
+          What does DRD2 connectivity suggest about psychosis-related pathways?
+        </Text>
+      </div>
+    </PromptBoxCard>
+  );
 }
 
 export function PrimitivesPreview() {
@@ -425,12 +454,12 @@ export function PrimitivesPreview() {
                 styles={{
                   th: {
                     backgroundColor: "var(--graph-panel-bg)",
-                    borderColor: "var(--graph-panel-border)",
+                    borderColor: "transparent",
                     color: "var(--graph-panel-text-dim)",
                     fontSize: "11px",
                   },
                   td: {
-                    borderColor: "var(--graph-panel-border)",
+                    borderColor: "transparent",
                     color: "var(--graph-panel-text)",
                     fontSize: "12px",
                   },
