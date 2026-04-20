@@ -127,7 +127,7 @@ export class StreamController extends FieldController {
   // (Maze also tweens a uWave uniform that the SoleMD shader doesn't have.)
   bindScroll(
     anchor: HTMLElement,
-    _endAnchor?: HTMLElement | null,
+    endAnchor?: HTMLElement | null,
   ): () => void {
     ensureGsapScrollTriggerRegistered();
     this.scrollDisposer?.();
@@ -147,6 +147,7 @@ export class StreamController extends FieldController {
     const timeline = gsap.timeline({
       scrollTrigger: {
         trigger: anchor,
+        endTrigger: endAnchor ?? anchor,
         start: "top bottom",
         end: "bottom top",
         scrub: true,
@@ -159,7 +160,6 @@ export class StreamController extends FieldController {
       timeline.kill();
     };
     this.scrollDisposer = disposer;
-    void _endAnchor;
     return disposer;
   }
 }
