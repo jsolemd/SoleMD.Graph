@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
 
@@ -52,6 +53,8 @@ async def load_family(
     family_name: str,
     source_release_id: int,
     ingest_run_id: UUID,
+    on_file_completed: Callable[[Path, int], None] | None = None,
+    on_rows_written: Callable[[Path, int], None] | None = None,
 ) -> CopyStats:
     family = next(item for item in plan.families if item.family == family_name)
     if family_name == "biocxml":
@@ -62,6 +65,8 @@ async def load_family(
             request,
             source_release_id,
             ingest_run_id,
+            on_file_completed=on_file_completed,
+            on_rows_written=on_rows_written,
         )
     if family_name == "bioconcepts":
         return await _load_entity_family(
@@ -72,6 +77,8 @@ async def load_family(
             request,
             source_release_id,
             ingest_run_id,
+            on_file_completed=on_file_completed,
+            on_rows_written=on_rows_written,
         )
     if family_name == "relations":
         return await _load_relations_family(
@@ -81,6 +88,8 @@ async def load_family(
             request,
             source_release_id,
             ingest_run_id,
+            on_file_completed=on_file_completed,
+            on_rows_written=on_rows_written,
         )
     raise ValueError(f"unsupported PubTator family {family_name}")
 
@@ -92,6 +101,9 @@ async def _load_biocxml_family(
     request: StartReleaseRequest,
     source_release_id: int,
     ingest_run_id: UUID,
+    *,
+    on_file_completed: Callable[[Path, int], None] | None = None,
+    on_rows_written: Callable[[Path, int], None] | None = None,
 ) -> CopyStats:
     await _reset_release_resource(
         pool,
@@ -170,21 +182,29 @@ async def _load_biocxml_family(
                 ]
                 async with connection.transaction():
                     if entity_batch:
-                        written += await copy_records(
+                        batch_written = await copy_records(
                             connection,
                             table_name="entity_annotations_stage",
                             schema_name="pubtator",
                             columns=_ENTITY_COLUMNS,
                             records=entity_batch,
                         )
+                        written += batch_written
+                        if on_rows_written is not None and batch_written:
+                            on_rows_written(file_path, batch_written)
                     if relation_batch:
-                        written += await copy_records(
+                        batch_written = await copy_records(
                             connection,
                             table_name="relations_stage",
                             schema_name="pubtator",
                             columns=_RELATION_COLUMNS,
                             records=relation_batch,
                         )
+                        written += batch_written
+                        if on_rows_written is not None and batch_written:
+                            on_rows_written(file_path, batch_written)
+            if on_file_completed is not None:
+                on_file_completed(file_path, written)
             return written
 
     async with asyncio.TaskGroup() as group:
@@ -204,6 +224,9 @@ async def _load_entity_family(
     request: StartReleaseRequest,
     source_release_id: int,
     ingest_run_id: UUID,
+    *,
+    on_file_completed: Callable[[Path, int], None] | None = None,
+    on_rows_written: Callable[[Path, int], None] | None = None,
 ) -> CopyStats:
     resource = (
         _BIOCXML_RESOURCE_CODE if family_name == "biocxml" else _BIOCONCEPTS_RESOURCE_CODE
@@ -249,6 +272,8 @@ async def _load_entity_family(
         [file_plan.path for file_plan in files],
         row_iterator=row_iterator,
         row_to_tuple=row_to_tuple,
+        on_file_completed=on_file_completed,
+        on_rows_written=on_rows_written,
         table_name="entity_annotations_stage",
         schema_name="pubtator",
         columns=_ENTITY_COLUMNS,
@@ -265,6 +290,9 @@ async def _load_relations_family(
     request: StartReleaseRequest,
     source_release_id: int,
     ingest_run_id: UUID,
+    *,
+    on_file_completed: Callable[[Path, int], None] | None = None,
+    on_rows_written: Callable[[Path, int], None] | None = None,
 ) -> CopyStats:
     await _reset_release_relation_source(
         pool,
@@ -307,6 +335,8 @@ async def _load_relations_family(
         [file_plan.path for file_plan in files],
         row_iterator=row_iterator,
         row_to_tuple=row_to_tuple,
+        on_file_completed=on_file_completed,
+        on_rows_written=on_rows_written,
         table_name="relations_stage",
         schema_name="pubtator",
         columns=_RELATION_COLUMNS,

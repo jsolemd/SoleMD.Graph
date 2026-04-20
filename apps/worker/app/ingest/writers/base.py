@@ -73,6 +73,8 @@ async def copy_files_concurrently(
     *,
     row_iterator: Callable[[Path], Iterator[S]],
     row_to_tuple: Callable[[S], tuple],
+    on_file_completed: Callable[[Path, int], None] | None = None,
+    on_rows_written: Callable[[Path, int], None] | None = None,
     table_name: str,
     schema_name: str,
     columns: Sequence[str],
@@ -102,13 +104,18 @@ async def copy_files_concurrently(
             ):
                 batch = [row_to_tuple(row) for row in row_batch]
                 async with connection.transaction():
-                    written += await copy_records(
+                    batch_written = await copy_records(
                         connection,
                         table_name=table_name,
                         schema_name=schema_name,
                         columns=columns,
                         records=batch,
                     )
+                    written += batch_written
+                if on_rows_written is not None and batch_written:
+                    on_rows_written(file_path, batch_written)
+            if on_file_completed is not None:
+                on_file_completed(file_path, written)
             return written
 
     async with asyncio.TaskGroup() as group:

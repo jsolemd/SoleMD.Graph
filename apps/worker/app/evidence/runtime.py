@@ -29,6 +29,7 @@ from app.telemetry.metrics import (
     record_evidence_text_document_rows,
     record_evidence_text_failure,
     record_evidence_text_run,
+    track_active_worker_run,
     track_evidence_text_inprogress,
 )
 
@@ -39,6 +40,7 @@ PAPER_TEXT_RUN_STATUS_STARTED = 1
 PAPER_TEXT_RUN_STATUS_PUBLISHED = 2
 PAPER_TEXT_RUN_STATUS_UNAVAILABLE = 3
 PAPER_TEXT_RUN_STATUS_FAILED = 4
+_PAPER_TEXT_PROGRESS_TOTAL_UNITS = 5.0
 
 
 async def acquire_paper_text(
@@ -52,165 +54,208 @@ async def acquire_paper_text(
         lock_key = await _acquire_paper_lock(connection, request.corpus_id)
         try:
             async with track_evidence_text_inprogress():
-                paper = await _load_paper_metadata(connection, request.corpus_id)
-                existing_run = await _load_existing_current_run(connection, paper.corpus_id)
-                if existing_run is not None and not request.force_refresh:
-                    record_evidence_text_run(
-                        outcome="already_current",
-                        locator_kind="pmc_bioc",
-                        resolver_kind="current_document",
+                async with track_active_worker_run(
+                    worker_scope="evidence",
+                    run_kind="evidence_text",
+                    run_label="evidence_text",
+                ) as active_run:
+                    active_run.set_state(phase="load_metadata")
+                    active_run.set_progress(
+                        progress_kind="overall",
+                        completed_units=0,
+                        total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
                     )
-                    observe_evidence_text_acquisition(
-                        outcome="already_current",
-                        locator_kind="pmc_bioc",
-                        resolver_kind="current_document",
-                        duration_seconds=perf_counter() - started,
+                    paper = await _load_paper_metadata(connection, request.corpus_id)
+                    active_run.set_progress(
+                        progress_kind="overall",
+                        completed_units=1,
+                        total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
                     )
-                    _emit_event(
-                        "evidence.paper_text.already_current",
-                        corpus_id=paper.corpus_id,
-                        paper_text_run_id=existing_run.paper_text_run_id,
-                    )
-                    return str(existing_run.paper_text_run_id)
-
-                run_id = await _insert_started_run(connection, request)
-                try:
-                    locators = await resolve_locators(runtime_settings, paper)
-                    payload, manifest = await _fetch_first_available_payload(runtime_settings, locators)
-                    document = parse_pmc_bioc_document(payload, corpus_id=paper.corpus_id)
-
-                    async with connection.transaction():
-                        await replace_document_spines(
-                            connection,
-                            (document,),
-                            source_revision=manifest.resolved_pmc_id or manifest.locator_value,
+                    existing_run = await _load_existing_current_run(connection, paper.corpus_id)
+                    if existing_run is not None and not request.force_refresh:
+                        record_evidence_text_run(
+                            outcome="already_current",
+                            locator_kind="pmc_bioc",
+                            resolver_kind="current_document",
                         )
-                        await connection.execute(
-                            """
-                            UPDATE solemd.paper_text
-                            SET text_availability = $2::smallint
-                            WHERE corpus_id = $1
-                            """,
-                            paper.corpus_id,
-                            TEXT_AVAILABILITY_FULLTEXT,
+                        observe_evidence_text_acquisition(
+                            outcome="already_current",
+                            locator_kind="pmc_bioc",
+                            resolver_kind="current_document",
+                            duration_seconds=perf_counter() - started,
                         )
-                        if manifest.resolved_pmc_id:
+                        _emit_event(
+                            "evidence.paper_text.already_current",
+                            corpus_id=paper.corpus_id,
+                            paper_text_run_id=existing_run.paper_text_run_id,
+                        )
+                        return str(existing_run.paper_text_run_id)
+
+                    run_id = await _insert_started_run(connection, request)
+                    try:
+                        active_run.set_state(phase="resolve_locators")
+                        locators = await resolve_locators(runtime_settings, paper)
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=2,
+                            total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
+                        )
+                        active_run.set_state(phase="fetch_payload")
+                        payload, manifest = await _fetch_first_available_payload(
+                            runtime_settings,
+                            locators,
+                        )
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=3,
+                            total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
+                        )
+                        active_run.set_state(phase="parse_document")
+                        document = parse_pmc_bioc_document(payload, corpus_id=paper.corpus_id)
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=4,
+                            total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
+                        )
+                        active_run.set_state(phase="publish_document")
+
+                        async with connection.transaction():
+                            await replace_document_spines(
+                                connection,
+                                (document,),
+                                source_revision=manifest.resolved_pmc_id or manifest.locator_value,
+                            )
                             await connection.execute(
                                 """
-                                UPDATE solemd.papers
-                                SET pmc_id = $2
+                                UPDATE solemd.paper_text
+                                SET text_availability = $2::smallint
                                 WHERE corpus_id = $1
-                                  AND pmc_id IS DISTINCT FROM $2
                                 """,
                                 paper.corpus_id,
-                                manifest.resolved_pmc_id,
+                                TEXT_AVAILABILITY_FULLTEXT,
                             )
+                            if manifest.resolved_pmc_id:
+                                await connection.execute(
+                                    """
+                                    UPDATE solemd.papers
+                                    SET pmc_id = $2
+                                    WHERE corpus_id = $1
+                                      AND pmc_id IS DISTINCT FROM $2
+                                    """,
+                                    paper.corpus_id,
+                                    manifest.resolved_pmc_id,
+                                )
+                            await _finalize_run(
+                                connection,
+                                run_id,
+                                status=PAPER_TEXT_RUN_STATUS_PUBLISHED,
+                                locator_kind=manifest.locator_kind,
+                                locator_value=manifest.locator_value,
+                                resolver_kind=manifest.resolver_kind,
+                                resolved_pmc_id=manifest.resolved_pmc_id,
+                                manifest_uri=manifest.manifest_uri,
+                                response_checksum=manifest.response_checksum,
+                            )
+
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
+                            total_units=_PAPER_TEXT_PROGRESS_TOTAL_UNITS,
+                        )
+                        record_evidence_text_run(
+                            outcome="published",
+                            locator_kind=manifest.locator_kind,
+                            resolver_kind=manifest.resolver_kind,
+                        )
+                        observe_evidence_text_acquisition(
+                            outcome="published",
+                            locator_kind=manifest.locator_kind,
+                            resolver_kind=manifest.resolver_kind,
+                            duration_seconds=perf_counter() - started,
+                        )
+                        record_evidence_text_document_rows(
+                            section_count=len(document["sections"]),
+                            block_count=len(document["blocks"]),
+                            sentence_count=len(document["sentences"]),
+                        )
+                        _emit_event(
+                            "evidence.paper_text.published",
+                            corpus_id=paper.corpus_id,
+                            paper_text_run_id=run_id,
+                            locator_kind=manifest.locator_kind,
+                            locator_value=manifest.locator_value,
+                            resolved_pmc_id=manifest.resolved_pmc_id,
+                            section_count=len(document["sections"]),
+                            block_count=len(document["blocks"]),
+                            sentence_count=len(document["sentences"]),
+                        )
+                        return str(run_id)
+                    except PaperTextUnavailable as exc:
+                        failed_locator = exc.locator
                         await _finalize_run(
                             connection,
                             run_id,
-                            status=PAPER_TEXT_RUN_STATUS_PUBLISHED,
-                            locator_kind=manifest.locator_kind,
-                            locator_value=manifest.locator_value,
-                            resolver_kind=manifest.resolver_kind,
-                            resolved_pmc_id=manifest.resolved_pmc_id,
-                            manifest_uri=manifest.manifest_uri,
-                            response_checksum=manifest.response_checksum,
+                            status=PAPER_TEXT_RUN_STATUS_UNAVAILABLE,
+                            locator_kind=getattr(failed_locator, "locator_kind", None),
+                            locator_value=getattr(failed_locator, "locator_value", None),
+                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                            resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
+                            error_message=str(exc),
                         )
-
-                    record_evidence_text_run(
-                        outcome="published",
-                        locator_kind=manifest.locator_kind,
-                        resolver_kind=manifest.resolver_kind,
-                    )
-                    observe_evidence_text_acquisition(
-                        outcome="published",
-                        locator_kind=manifest.locator_kind,
-                        resolver_kind=manifest.resolver_kind,
-                        duration_seconds=perf_counter() - started,
-                    )
-                    record_evidence_text_document_rows(
-                        section_count=len(document["sections"]),
-                        block_count=len(document["blocks"]),
-                        sentence_count=len(document["sentences"]),
-                    )
-                    _emit_event(
-                        "evidence.paper_text.published",
-                        corpus_id=paper.corpus_id,
-                        paper_text_run_id=run_id,
-                        locator_kind=manifest.locator_kind,
-                        locator_value=manifest.locator_value,
-                        resolved_pmc_id=manifest.resolved_pmc_id,
-                        section_count=len(document["sections"]),
-                        block_count=len(document["blocks"]),
-                        sentence_count=len(document["sentences"]),
-                    )
-                    return str(run_id)
-                except PaperTextUnavailable as exc:
-                    failed_locator = exc.locator
-                    await _finalize_run(
-                        connection,
-                        run_id,
-                        status=PAPER_TEXT_RUN_STATUS_UNAVAILABLE,
-                        locator_kind=getattr(failed_locator, "locator_kind", None),
-                        locator_value=getattr(failed_locator, "locator_value", None),
-                        resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                        resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
-                        error_message=str(exc),
-                    )
-                    record_evidence_text_run(
-                        outcome="unavailable",
-                        locator_kind=getattr(failed_locator, "locator_kind", None),
-                        resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                    )
-                    observe_evidence_text_acquisition(
-                        outcome="unavailable",
-                        locator_kind=getattr(failed_locator, "locator_kind", None),
-                        resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                        duration_seconds=perf_counter() - started,
-                    )
-                    _emit_event(
-                        "evidence.paper_text.unavailable",
-                        corpus_id=request.corpus_id,
-                        paper_text_run_id=run_id,
-                        reason=str(exc),
-                    )
-                    raise
-                except Exception as exc:
-                    failed_locator = exc.locator if isinstance(exc, PaperTextFetchFailed) else None
-                    await _finalize_run(
-                        connection,
-                        run_id,
-                        status=PAPER_TEXT_RUN_STATUS_FAILED,
-                        locator_kind=getattr(failed_locator, "locator_kind", None),
-                        locator_value=getattr(failed_locator, "locator_value", None),
-                        resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                        resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
-                        error_message=str(exc),
-                    )
-                    record_evidence_text_run(
-                        outcome="failed",
-                        locator_kind=getattr(failed_locator, "locator_kind", None),
-                        resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                    )
-                    record_evidence_text_failure(failure_class=type(exc).__name__)
-                    observe_evidence_text_acquisition(
-                        outcome="failed",
-                        locator_kind=getattr(failed_locator, "locator_kind", None),
-                        resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                        duration_seconds=perf_counter() - started,
-                    )
-                    _emit_event(
-                        "evidence.paper_text.failed",
-                        corpus_id=request.corpus_id,
-                        paper_text_run_id=run_id,
-                        locator_kind=getattr(failed_locator, "locator_kind", None),
-                        locator_value=getattr(failed_locator, "locator_value", None),
-                        resolver_kind=getattr(failed_locator, "resolver_kind", None),
-                        resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
-                        error_class=type(exc).__name__,
-                        error_message=str(exc),
-                    )
-                    raise
+                        record_evidence_text_run(
+                            outcome="unavailable",
+                            locator_kind=getattr(failed_locator, "locator_kind", None),
+                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                        )
+                        observe_evidence_text_acquisition(
+                            outcome="unavailable",
+                            locator_kind=getattr(failed_locator, "locator_kind", None),
+                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                            duration_seconds=perf_counter() - started,
+                        )
+                        _emit_event(
+                            "evidence.paper_text.unavailable",
+                            corpus_id=request.corpus_id,
+                            paper_text_run_id=run_id,
+                            reason=str(exc),
+                        )
+                        raise
+                    except Exception as exc:
+                        failed_locator = exc.locator if isinstance(exc, PaperTextFetchFailed) else None
+                        await _finalize_run(
+                            connection,
+                            run_id,
+                            status=PAPER_TEXT_RUN_STATUS_FAILED,
+                            locator_kind=getattr(failed_locator, "locator_kind", None),
+                            locator_value=getattr(failed_locator, "locator_value", None),
+                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                            resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
+                            error_message=str(exc),
+                        )
+                        record_evidence_text_run(
+                            outcome="failed",
+                            locator_kind=getattr(failed_locator, "locator_kind", None),
+                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                        )
+                        record_evidence_text_failure(failure_class=type(exc).__name__)
+                        observe_evidence_text_acquisition(
+                            outcome="failed",
+                            locator_kind=getattr(failed_locator, "locator_kind", None),
+                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                            duration_seconds=perf_counter() - started,
+                        )
+                        _emit_event(
+                            "evidence.paper_text.failed",
+                            corpus_id=request.corpus_id,
+                            paper_text_run_id=run_id,
+                            locator_kind=getattr(failed_locator, "locator_kind", None),
+                            locator_value=getattr(failed_locator, "locator_value", None),
+                            resolver_kind=getattr(failed_locator, "resolver_kind", None),
+                            resolved_pmc_id=getattr(failed_locator, "resolved_pmc_id", None),
+                            error_class=type(exc).__name__,
+                            error_message=str(exc),
+                        )
+                        raise
         finally:
             await connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
 

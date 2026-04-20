@@ -91,6 +91,15 @@ This pass adds:
   - latest `evidence_cohort`, `evidence_satisfied`,
     `evidence_backlog`, and `evidence_selected` counts per
     `(wave_policy_key, selector_version, s2_release_tag, pt3_release_tag)`
+- `worker_active_run_info`
+  - low-cardinality live labels for the current worker scope, run kind,
+    run label, phase, and work item
+- `worker_active_run_progress_ratio`
+  - latest overall completion ratio for the active run surface
+- `worker_active_run_progress_units`
+  - active run completion units and the current ingest work-item row counter
+- `worker_active_run_elapsed_seconds`
+  - live elapsed age for the current active run surface
 
 These are absolute gauges, not event counters. They exist specifically so
 Grafana can display the contract as numbers.
@@ -110,6 +119,10 @@ Current additions:
   `corpus_evidence_policy_papers`
 - renamed the old selected/enqueued panel to
   `Evidence Acquisition Backlog Dispatch: Selected vs Enqueued (24h)`
+- live run strip:
+  - `Current Run Completion`
+  - `Current Active Runs`
+  - `Current Work Item Rows Written`
 
 ## Warehouse Audit Authority
 
@@ -247,12 +260,65 @@ Sub-agent slices once the live counts are stable:
 - added `solemd.paper_text_contract_audit` as a durable warehouse view so the
   evidence-text mismatch checks are queryable without bespoke joins
 
+### Batch 7
+
+- confirmed the long-running PT3 fill is visible in Prometheus through live
+  gauges:
+  - `dramatiq_messages_inprogress`
+  - `ingest_active_lock_age_seconds`
+  - `up{job=~"graph-(ingest|corpus|evidence)-worker"}`
+- attempted a direct Grafana UI save and confirmed the worker dashboard is
+  provisioned, so live edits are blocked with:
+  - `Cannot save provisioned dashboard`
+- patched the canonical provisioned dashboard source in `SoleMD.Infra`:
+  - `/home/workbench/SoleMD/SoleMD.Infra/infra/observability/grafana/dashboards/solemd-graph-workers.dashboard.json`
+- added a new top-row live activity strip:
+  - `Workers Up (Live)`
+  - `Active Worker Messages (Live)`
+  - `Ingest In Progress (Live)`
+  - `Ingest Active Lock Age (Live)`
+- tightened dashboard refresh from `30s` to `10s`
+- reloaded Grafana dashboard provisioning via the Grafana admin API and
+  verified the live panels render in the browser with the expected current
+  values during the PT3 fill:
+  - workers up: `3`
+  - active worker messages: `1`
+  - ingest in progress: `1`
+  - ingest active lock age: about `10` minutes at verification time
+
+### Batch 8
+
+- added a shared active-run telemetry contract in
+  `apps/worker/app/telemetry/metrics.py`:
+  - `worker_active_run_info`
+  - `worker_active_run_progress_ratio`
+  - `worker_active_run_progress_units`
+  - `worker_active_run_elapsed_seconds`
+- wired the contract into all worker run surfaces:
+  - `app.ingest.runtime.run_release_ingest`
+  - `app.corpus.selection_runtime.run_corpus_selection`
+  - `app.corpus.wave_runtime.dispatch_evidence_wave`
+  - `app.evidence.runtime.acquire_paper_text`
+- tightened ingest progress so large PT3/S2 families expose useful live motion:
+  - overall completion remains file/phase based
+  - the active ingest family now also emits `current_work_item_rows`
+    continuously during batch writes
+- patched the provisioned Grafana worker dashboard again so the compact
+  run strip reads directly from the new active-run metrics:
+  - `Current Run Completion`
+  - `Current Active Runs`
+  - `Current Work Item Rows Written`
+- restarted the live worker roots on the new telemetry surface and re-enqueued:
+  - PT3 `2026-03-21` resume on run
+    `019da910-4208-7701-81cc-78ec4aaf6883`
+  - S2 `2026-03-10` bounded replay back behind the PT3 run
+
 ## Verification
 
 Repo verification:
 
-- `uv run --project apps/worker pytest apps/worker/tests/test_corpus_runtime.py apps/worker/tests/test_telemetry_bootstrap.py apps/worker/tests/test_evidence_runtime.py -q`
-- result: `14 passed`
+- `uv run --project apps/worker pytest apps/worker/tests/test_telemetry_metrics.py apps/worker/tests/test_ingest_runtime.py apps/worker/tests/test_corpus_runtime.py apps/worker/tests/test_evidence_runtime.py -q`
+- result: `19 passed`
 
 Warehouse verification:
 
@@ -277,6 +343,15 @@ Live metric verification:
   - `paper_text_document_rows_total{structure_kind="sections"} = 14`
   - `paper_text_document_rows_total{structure_kind="blocks"} = 118`
   - `paper_text_document_rows_total{structure_kind="sentences"} = 475`
+- ingest worker `/metrics` / Prometheus now expose the new active-run surface
+  during the resumed PT3 fill:
+  - `worker_active_run_info{worker_scope="ingest",run_kind="release_ingest",run_label="pt3:2026-03-21",phase="loading",work_item="biocxml"} = 1`
+  - `worker_active_run_progress_units{progress_kind="overall",state="total"} = 5`
+  - `worker_active_run_progress_units{progress_kind="current_work_item_files",state="total"} = 10`
+  - `worker_active_run_progress_units{progress_kind="current_work_item_rows",state="completed"}`
+    advanced from about `1.09M` to about `1.19M` during one verification window
+  - `worker_active_run_elapsed_seconds{worker_scope="ingest",run_label="pt3:2026-03-21"}`
+    remained live beside the existing lock-age gauge
 
 Initial warehouse quality snapshot for
 `selector-v2-contract-visibility-r1` on the monitored release pair:
@@ -339,6 +414,13 @@ Grafana verification:
   - `evidence_backlog = 0`
   - `evidence_selected = 0`
 - Grafana page check showed `No data` count = `0`
+- compact run-strip verification in Chrome after the active-run patch:
+  - `Workers Up (Live) = 3`
+  - `Active Worker Messages (Live) = 1`
+  - `Ingest In Progress (Live) = 1`
+  - `Current Active Runs = ingest / pt3:2026-03-21 / loading / biocxml`
+  - `Current Work Item Rows Written` rendered and advanced in the browser
+    from roughly `1.09 Mil` to `1.19 Mil`
 
 ## Next Recommended Passes
 

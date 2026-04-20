@@ -35,6 +35,7 @@ from app.corpus.runtime_support import (
 from app.telemetry.metrics import (
     record_corpus_evidence_policy_count,
     observe_corpus_wave_phase,
+    track_active_worker_run,
     record_corpus_wave_enqueue_count,
     record_corpus_wave_failure,
     record_corpus_wave_member_count,
@@ -78,106 +79,130 @@ async def dispatch_evidence_wave(
                 )
                 run_id = run.corpus_wave_run_id
                 completed_phases = set(run.phases_completed)
-                emit_event(
-                    "corpus.evidence_wave.started",
-                    corpus_wave_run_id=run_id,
-                    corpus_selection_run_id=plan.corpus_selection_run_id,
+                async with track_active_worker_run(
+                    worker_scope="corpus",
+                    run_kind="evidence_wave",
+                    run_label=(
+                        f"{request.wave_policy_key}:{request.selector_version}:"
+                        f"{request.s2_release_tag}:{request.pt3_release_tag}"
+                    ),
+                    selector_version=request.selector_version,
                     wave_policy_key=request.wave_policy_key,
-                    plan=plan.model_dump(mode="json"),
-                )
-                for phase_name in CORPUS_WAVE_PHASES:
-                    if phase_name in completed_phases:
-                        continue
-                    active_phase_name = phase_name
-                    active_phase_started = perf_counter()
-                    await _set_wave_phase(connection, run_id, phase_name=phase_name)
-                    if phase_name == "member_selection":
-                        async with connection.transaction():
-                            await _refresh_wave_members(connection, run_id, plan)
-                        member_count = await _count_wave_members(connection, run_id)
-                        evidence_policy_counts = await _load_evidence_policy_counts(
-                            connection,
-                            corpus_wave_run_id=run_id,
-                            plan=plan,
-                        )
-                        record_corpus_wave_member_count(
-                            wave_policy_key=request.wave_policy_key,
-                            selector_version=request.selector_version,
-                            member_count=member_count,
-                        )
-                        for stage_name, paper_count in evidence_policy_counts.items():
-                            record_corpus_evidence_policy_count(
+                    s2_release_tag=request.s2_release_tag,
+                    pt3_release_tag=request.pt3_release_tag,
+                ) as active_run:
+                    total_progress_units = float(max(1, len(CORPUS_WAVE_PHASES)))
+                    active_run.set_progress(
+                        progress_kind="overall",
+                        completed_units=float(len(completed_phases)),
+                        total_units=total_progress_units,
+                    )
+                    emit_event(
+                        "corpus.evidence_wave.started",
+                        corpus_wave_run_id=run_id,
+                        corpus_selection_run_id=plan.corpus_selection_run_id,
+                        wave_policy_key=request.wave_policy_key,
+                        plan=plan.model_dump(mode="json"),
+                    )
+                    for phase_name in CORPUS_WAVE_PHASES:
+                        if phase_name in completed_phases:
+                            continue
+                        active_phase_name = phase_name
+                        active_phase_started = perf_counter()
+                        active_run.set_state(phase=phase_name)
+                        await _set_wave_phase(connection, run_id, phase_name=phase_name)
+                        if phase_name == "member_selection":
+                            async with connection.transaction():
+                                await _refresh_wave_members(connection, run_id, plan)
+                            member_count = await _count_wave_members(connection, run_id)
+                            evidence_policy_counts = await _load_evidence_policy_counts(
+                                connection,
+                                corpus_wave_run_id=run_id,
+                                plan=plan,
+                            )
+                            record_corpus_wave_member_count(
                                 wave_policy_key=request.wave_policy_key,
                                 selector_version=request.selector_version,
-                                s2_release_tag=request.s2_release_tag,
-                                pt3_release_tag=request.pt3_release_tag,
-                                stage=stage_name,
-                                paper_count=paper_count,
+                                member_count=member_count,
                             )
-                        emit_event(
-                            "corpus.evidence_wave.members.completed",
-                            corpus_wave_run_id=run_id,
-                            member_count=member_count,
-                            evidence_policy_counts=evidence_policy_counts,
-                        )
-                    else:
-                        await _enqueue_wave_members(
-                            connection,
-                            run_id,
-                            requested_by=request.requested_by,
-                            batch_size=runtime_settings.corpus_wave_enqueue_batch_size,
-                            runtime_settings=runtime_settings,
-                        )
-                        enqueued_count = await _count_enqueued_members(connection, run_id)
-                        evidence_policy_counts = await _load_evidence_policy_counts(
-                            connection,
-                            corpus_wave_run_id=run_id,
-                            plan=plan,
-                        )
-                        record_corpus_wave_enqueue_count(
-                            wave_policy_key=request.wave_policy_key,
-                            selector_version=request.selector_version,
-                            enqueue_count=enqueued_count,
-                        )
-                        for stage_name, paper_count in evidence_policy_counts.items():
-                            record_corpus_evidence_policy_count(
+                            for stage_name, paper_count in evidence_policy_counts.items():
+                                record_corpus_evidence_policy_count(
+                                    wave_policy_key=request.wave_policy_key,
+                                    selector_version=request.selector_version,
+                                    s2_release_tag=request.s2_release_tag,
+                                    pt3_release_tag=request.pt3_release_tag,
+                                    stage=stage_name,
+                                    paper_count=paper_count,
+                                )
+                            emit_event(
+                                "corpus.evidence_wave.members.completed",
+                                corpus_wave_run_id=run_id,
+                                member_count=member_count,
+                                evidence_policy_counts=evidence_policy_counts,
+                            )
+                        else:
+                            await _enqueue_wave_members(
+                                connection,
+                                run_id,
+                                requested_by=request.requested_by,
+                                batch_size=runtime_settings.corpus_wave_enqueue_batch_size,
+                                runtime_settings=runtime_settings,
+                            )
+                            enqueued_count = await _count_enqueued_members(connection, run_id)
+                            evidence_policy_counts = await _load_evidence_policy_counts(
+                                connection,
+                                corpus_wave_run_id=run_id,
+                                plan=plan,
+                            )
+                            record_corpus_wave_enqueue_count(
                                 wave_policy_key=request.wave_policy_key,
                                 selector_version=request.selector_version,
-                                s2_release_tag=request.s2_release_tag,
-                                pt3_release_tag=request.pt3_release_tag,
-                                stage=stage_name,
-                                paper_count=paper_count,
+                                enqueue_count=enqueued_count,
                             )
-                        emit_event(
-                            "corpus.evidence_wave.enqueue.completed",
-                            corpus_wave_run_id=run_id,
-                            enqueued_count=enqueued_count,
-                            evidence_policy_counts=evidence_policy_counts,
+                            for stage_name, paper_count in evidence_policy_counts.items():
+                                record_corpus_evidence_policy_count(
+                                    wave_policy_key=request.wave_policy_key,
+                                    selector_version=request.selector_version,
+                                    s2_release_tag=request.s2_release_tag,
+                                    pt3_release_tag=request.pt3_release_tag,
+                                    stage=stage_name,
+                                    paper_count=paper_count,
+                                )
+                            emit_event(
+                                "corpus.evidence_wave.enqueue.completed",
+                                corpus_wave_run_id=run_id,
+                                enqueued_count=enqueued_count,
+                                evidence_policy_counts=evidence_policy_counts,
+                            )
+                        observe_corpus_wave_phase(
+                            wave_policy_key=request.wave_policy_key,
+                            selector_version=request.selector_version,
+                            phase=phase_name,
+                            duration_seconds=perf_counter() - active_phase_started,
                         )
-                    observe_corpus_wave_phase(
+                        await _mark_wave_phase_completed(connection, run_id, phase_name)
+                        completed_phases.add(phase_name)
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=float(len(completed_phases)),
+                            total_units=total_progress_units,
+                        )
+                        active_phase_name = None
+                        active_phase_started = None
+
+                    await _finalize_wave_published(connection, run_id)
+                    record_corpus_wave_run(
                         wave_policy_key=request.wave_policy_key,
                         selector_version=request.selector_version,
-                        phase=phase_name,
-                        duration_seconds=perf_counter() - active_phase_started,
+                        outcome="published",
                     )
-                    await _mark_wave_phase_completed(connection, run_id, phase_name)
-                    completed_phases.add(phase_name)
-                    active_phase_name = None
-                    active_phase_started = None
-
-                await _finalize_wave_published(connection, run_id)
-                record_corpus_wave_run(
-                    wave_policy_key=request.wave_policy_key,
-                    selector_version=request.selector_version,
-                    outcome="published",
-                )
-                emit_event(
-                    "corpus.evidence_wave.published",
-                    corpus_wave_run_id=run_id,
-                    published_phases=sorted(completed_phases),
-                    total_duration_s=perf_counter() - cycle_started,
-                )
-                return str(run_id)
+                    emit_event(
+                        "corpus.evidence_wave.published",
+                        corpus_wave_run_id=run_id,
+                        published_phases=sorted(completed_phases),
+                        total_duration_s=perf_counter() - cycle_started,
+                    )
+                    return str(run_id)
             except (CorpusWaveAlreadyPublished, CorpusWaveAlreadyInProgress):
                 raise
             except Exception as exc:

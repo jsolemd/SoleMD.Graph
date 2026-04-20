@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 import os
 from time import perf_counter
 
@@ -17,6 +18,8 @@ from prometheus_client import (
 
 
 _LOCK_HEARTBEAT_SECONDS = 1.0
+_RUN_PROGRESS_TOTAL_STATE = "total"
+_RUN_PROGRESS_COMPLETED_STATE = "completed"
 
 
 INGEST_PHASE_DURATION_SECONDS = Histogram(
@@ -49,6 +52,42 @@ INGEST_ACTIVE_LOCK_AGE_SECONDS = Gauge(
     "ingest_active_lock_age_seconds",
     "Elapsed seconds since the current ingest advisory lock was acquired.",
     ["source_code", "release_tag"],
+    multiprocess_mode="livemostrecent",
+)
+WORKER_ACTIVE_RUN_INFO = Gauge(
+    "worker_active_run_info",
+    "Active worker run identity and current phase/work item labels.",
+    [
+        "worker_scope",
+        "run_kind",
+        "run_label",
+        "phase",
+        "work_item",
+        "source_code",
+        "release_tag",
+        "selector_version",
+        "wave_policy_key",
+        "s2_release_tag",
+        "pt3_release_tag",
+    ],
+    multiprocess_mode="livesum",
+)
+WORKER_ACTIVE_RUN_PROGRESS_RATIO = Gauge(
+    "worker_active_run_progress_ratio",
+    "Latest active worker run progress ratio for one named progress surface.",
+    ["worker_scope", "run_kind", "run_label", "progress_kind"],
+    multiprocess_mode="livemostrecent",
+)
+WORKER_ACTIVE_RUN_PROGRESS_UNITS = Gauge(
+    "worker_active_run_progress_units",
+    "Latest active worker run progress units for one named progress surface.",
+    ["worker_scope", "run_kind", "run_label", "progress_kind", "state"],
+    multiprocess_mode="livemostrecent",
+)
+WORKER_ACTIVE_RUN_ELAPSED_SECONDS = Gauge(
+    "worker_active_run_elapsed_seconds",
+    "Elapsed seconds for the current active worker run surface.",
+    ["worker_scope", "run_kind", "run_label"],
     multiprocess_mode="livemostrecent",
 )
 
@@ -161,6 +200,87 @@ PAPER_TEXT_INPROGRESS = Gauge(
     "Paper-text acquisitions currently in progress.",
     multiprocess_mode="livesum",
 )
+
+
+@dataclass(slots=True)
+class ActiveRunTracker:
+    worker_scope: str
+    run_kind: str
+    run_label: str
+    source_code: str | None = None
+    release_tag: str | None = None
+    selector_version: str | None = None
+    wave_policy_key: str | None = None
+    s2_release_tag: str | None = None
+    pt3_release_tag: str | None = None
+    _active_info_labels: tuple[str, ...] | None = None
+    _progress_labels: set[tuple[str, ...]] = field(default_factory=set)
+
+    def set_state(self, *, phase: str, work_item: str | None = None) -> None:
+        labels = (
+            self.worker_scope,
+            self.run_kind,
+            self.run_label,
+            phase,
+            _metric_label_value(work_item),
+            _metric_label_value(self.source_code),
+            _metric_label_value(self.release_tag),
+            _metric_label_value(self.selector_version),
+            _metric_label_value(self.wave_policy_key),
+            _metric_label_value(self.s2_release_tag),
+            _metric_label_value(self.pt3_release_tag),
+        )
+        if self._active_info_labels == labels:
+            return
+        if self._active_info_labels is not None:
+            WORKER_ACTIVE_RUN_INFO.labels(*self._active_info_labels).dec()
+        WORKER_ACTIVE_RUN_INFO.labels(*labels).inc()
+        self._active_info_labels = labels
+
+    def set_progress(
+        self,
+        *,
+        progress_kind: str,
+        completed_units: float,
+        total_units: float,
+    ) -> None:
+        labels = (
+            self.worker_scope,
+            self.run_kind,
+            self.run_label,
+            progress_kind,
+        )
+        self._progress_labels.add(labels)
+        completed_value = float(max(0.0, completed_units))
+        total_value = float(max(0.0, total_units))
+        ratio_value = 0.0
+        if total_value > 0:
+            ratio_value = min(1.0, max(0.0, completed_value / total_value))
+        WORKER_ACTIVE_RUN_PROGRESS_RATIO.labels(*labels).set(ratio_value)
+        WORKER_ACTIVE_RUN_PROGRESS_UNITS.labels(
+            *labels,
+            _RUN_PROGRESS_COMPLETED_STATE,
+        ).set(completed_value)
+        WORKER_ACTIVE_RUN_PROGRESS_UNITS.labels(
+            *labels,
+            _RUN_PROGRESS_TOTAL_STATE,
+        ).set(total_value)
+
+    def clear(self) -> None:
+        if self._active_info_labels is not None:
+            WORKER_ACTIVE_RUN_INFO.labels(*self._active_info_labels).dec()
+            self._active_info_labels = None
+        for labels in self._progress_labels:
+            WORKER_ACTIVE_RUN_PROGRESS_RATIO.labels(*labels).set(0)
+            WORKER_ACTIVE_RUN_PROGRESS_UNITS.labels(
+                *labels,
+                _RUN_PROGRESS_COMPLETED_STATE,
+            ).set(0)
+            WORKER_ACTIVE_RUN_PROGRESS_UNITS.labels(
+                *labels,
+                _RUN_PROGRESS_TOTAL_STATE,
+            ).set(0)
+        self._progress_labels.clear()
 
 
 def observe_ingest_phase(
@@ -378,6 +498,39 @@ def record_evidence_text_failure(*, failure_class: str) -> None:
 
 
 @asynccontextmanager
+async def track_active_worker_run(
+    *,
+    worker_scope: str,
+    run_kind: str,
+    run_label: str,
+    source_code: str | None = None,
+    release_tag: str | None = None,
+    selector_version: str | None = None,
+    wave_policy_key: str | None = None,
+    s2_release_tag: str | None = None,
+    pt3_release_tag: str | None = None,
+) -> AsyncIterator[ActiveRunTracker]:
+    tracker = ActiveRunTracker(
+        worker_scope=worker_scope,
+        run_kind=run_kind,
+        run_label=run_label,
+        source_code=source_code,
+        release_tag=release_tag,
+        selector_version=selector_version,
+        wave_policy_key=wave_policy_key,
+        s2_release_tag=s2_release_tag,
+        pt3_release_tag=pt3_release_tag,
+    )
+    async with _track_elapsed_gauge(
+        WORKER_ACTIVE_RUN_ELAPSED_SECONDS.labels(worker_scope, run_kind, run_label)
+    ):
+        try:
+            yield tracker
+        finally:
+            tracker.clear()
+
+
+@asynccontextmanager
 async def track_ingest_lock_age(
     *,
     source_code: str,
@@ -461,3 +614,9 @@ async def _update_elapsed_gauge(gauge, started: float, stop_event: asyncio.Event
             await asyncio.wait_for(stop_event.wait(), timeout=_LOCK_HEARTBEAT_SECONDS)
         except TimeoutError:
             continue
+
+
+def _metric_label_value(value: object | None) -> str:
+    if value is None:
+        return ""
+    return str(value)

@@ -34,6 +34,7 @@ from app.telemetry.metrics import (
     record_ingest_failure,
     record_ingest_family_load,
     record_ingest_run,
+    track_active_worker_run,
     track_ingest_lock_age,
 )
 from app.ingest.writers import pubtator as pubtator_writer
@@ -61,7 +62,17 @@ class SourceAdapter:
 @dataclass(frozen=True, slots=True)
 class SourceWriter:
     load_family: Callable[
-        [asyncpg.Pool, Settings, StartReleaseRequest, IngestPlan, str, int, str],
+        [
+            asyncpg.Pool,
+            Settings,
+            StartReleaseRequest,
+            IngestPlan,
+            str,
+            int,
+            str,
+            Callable[[Path, int], None] | None,
+            Callable[[Path, int], None] | None,
+        ],
         asyncio.Future | object,
     ]
 
@@ -115,108 +126,199 @@ async def run_release_ingest(
                 )
                 await _mark_source_release_ingesting(control_connection, source_release_id)
                 ingest_run_id = run.ingest_run_id
-                _emit_event(
-                    "ingest.cycle.started",
-                    ingest_run_id=ingest_run_id,
+                async with track_active_worker_run(
+                    worker_scope="ingest",
+                    run_kind="release_ingest",
+                    run_label=f"{request.source_code}:{request.release_tag}",
                     source_code=request.source_code,
                     release_tag=request.release_tag,
-                    plan=plan.model_dump(mode="json"),
-                )
-                await _set_phase(
-                    control_connection,
-                    ingest_run_id,
-                    status_code=INGEST_STATUS_LOADING,
-                    phase_name="loading",
-                )
-                active_phase_name = "loading"
-                active_phase_started = perf_counter()
-                for family_name in plan.family_names:
-                    await _assert_not_aborted(control_connection, ingest_run_id)
-                    if family_name in run.families_loaded:
-                        continue
-                    stats = await writer.load_family(
-                        ingest_pool,
-                        runtime_settings,
-                        request,
-                        plan,
-                        family_name,
-                        source_release_id,
-                        ingest_run_id,
+                ) as active_run:
+                    total_progress_units = float(max(1, len(plan.family_names) + 2))
+                    completed_family_count = len(run.families_loaded)
+                    active_run.set_progress(
+                        progress_kind="overall",
+                        completed_units=float(completed_family_count),
+                        total_units=total_progress_units,
                     )
-                    async with control_connection.transaction():
-                        await adapter.promote_family(
-                            control_connection,
+                    active_run.set_progress(
+                        progress_kind="current_work_item_files",
+                        completed_units=0,
+                        total_units=0,
+                    )
+                    _emit_event(
+                        "ingest.cycle.started",
+                        ingest_run_id=ingest_run_id,
+                        source_code=request.source_code,
+                        release_tag=request.release_tag,
+                        plan=plan.model_dump(mode="json"),
+                    )
+                    await _set_phase(
+                        control_connection,
+                        ingest_run_id,
+                        status_code=INGEST_STATUS_LOADING,
+                        phase_name="loading",
+                    )
+                    active_phase_name = "loading"
+                    active_phase_started = perf_counter()
+                    active_run.set_state(phase="loading")
+                    for family_name in plan.family_names:
+                        await _assert_not_aborted(control_connection, ingest_run_id)
+                        if family_name in run.families_loaded:
+                            continue
+                        family_file_total = _plan_family_file_total(plan, family_name)
+                        completed_file_count = 0
+                        active_run.set_state(phase="loading", work_item=family_name)
+                        active_run.set_progress(
+                            progress_kind="current_work_item_files",
+                            completed_units=0,
+                            total_units=float(family_file_total),
+                        )
+                        active_run.set_progress(
+                            progress_kind="current_work_item_rows",
+                            completed_units=0,
+                            total_units=0,
+                        )
+                        written_row_count = 0
+
+                        def on_file_completed(_file_path, _written_rows) -> None:
+                            nonlocal completed_file_count
+                            completed_file_count += 1
+                            active_run.set_progress(
+                                progress_kind="current_work_item_files",
+                                completed_units=float(completed_file_count),
+                                total_units=float(family_file_total),
+                            )
+                            fractional_completed = 1.0
+                            if family_file_total > 0:
+                                fractional_completed = completed_file_count / family_file_total
+                            active_run.set_progress(
+                                progress_kind="overall",
+                                completed_units=float(completed_family_count) + fractional_completed,
+                                total_units=total_progress_units,
+                            )
+
+                        def on_rows_written(_file_path, batch_row_count) -> None:
+                            nonlocal written_row_count
+                            written_row_count += batch_row_count
+                            active_run.set_progress(
+                                progress_kind="current_work_item_rows",
+                                completed_units=float(written_row_count),
+                                total_units=0,
+                            )
+
+                        stats = await writer.load_family(
+                            ingest_pool,
+                            runtime_settings,
+                            request,
                             plan,
                             family_name,
                             source_release_id,
                             ingest_run_id,
+                            on_file_completed=on_file_completed,
+                            on_rows_written=on_rows_written,
                         )
-                        await _mark_family_loaded(control_connection, ingest_run_id, family_name)
-                    record_ingest_family_load(
+                        async with control_connection.transaction():
+                            await adapter.promote_family(
+                                control_connection,
+                                plan,
+                                family_name,
+                                source_release_id,
+                                ingest_run_id,
+                            )
+                            await _mark_family_loaded(control_connection, ingest_run_id, family_name)
+                        completed_family_count += 1
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=float(completed_family_count),
+                            total_units=total_progress_units,
+                        )
+                        record_ingest_family_load(
+                            source_code=request.source_code,
+                            family_name=family_name,
+                            row_count=stats.row_count,
+                            file_count=stats.file_count,
+                        )
+                        _emit_event(
+                            "ingest.family.loaded",
+                            ingest_run_id=ingest_run_id,
+                            source_code=request.source_code,
+                            release_tag=request.release_tag,
+                            family=family_name,
+                            row_count=stats.row_count,
+                            file_count=stats.file_count,
+                        )
+
+                    _observe_active_phase(
                         source_code=request.source_code,
-                        family_name=family_name,
-                        row_count=stats.row_count,
-                        file_count=stats.file_count,
+                        release_tag=request.release_tag,
+                        phase_name=active_phase_name,
+                        phase_started=active_phase_started,
                     )
+                    active_run.set_state(phase="indexing")
+                    active_run.set_progress(
+                        progress_kind="current_work_item_files",
+                        completed_units=0,
+                        total_units=0,
+                    )
+                    active_run.set_progress(
+                        progress_kind="current_work_item_rows",
+                        completed_units=0,
+                        total_units=0,
+                    )
+
+                    await _set_phase(
+                        control_connection,
+                        ingest_run_id,
+                        status_code=INGEST_STATUS_INDEXING,
+                        phase_name="indexing",
+                    )
+                    active_phase_name = "indexing"
+                    active_phase_started = perf_counter()
+                    _observe_active_phase(
+                        source_code=request.source_code,
+                        release_tag=request.release_tag,
+                        phase_name=active_phase_name,
+                        phase_started=active_phase_started,
+                    )
+                    active_run.set_progress(
+                        progress_kind="overall",
+                        completed_units=float(len(plan.family_names) + 1),
+                        total_units=total_progress_units,
+                    )
+
+                    await _set_phase(
+                        control_connection,
+                        ingest_run_id,
+                        status_code=INGEST_STATUS_ANALYZING,
+                        phase_name="analyzing",
+                    )
+                    active_phase_name = "analyzing"
+                    active_phase_started = perf_counter()
+                    active_run.set_state(phase="analyzing")
+                    _observe_active_phase(
+                        source_code=request.source_code,
+                        release_tag=request.release_tag,
+                        phase_name=active_phase_name,
+                        phase_started=active_phase_started,
+                    )
+                    active_run.set_progress(
+                        progress_kind="overall",
+                        completed_units=total_progress_units,
+                        total_units=total_progress_units,
+                    )
+                    active_phase_name = None
+                    active_phase_started = None
+                    await _finalize_published(control_connection, ingest_run_id, source_release_id)
+                    record_ingest_run(source_code=request.source_code, outcome="published")
                     _emit_event(
-                        "ingest.family.loaded",
+                        "ingest.cycle.published",
                         ingest_run_id=ingest_run_id,
                         source_code=request.source_code,
                         release_tag=request.release_tag,
-                        family=family_name,
-                        row_count=stats.row_count,
-                        file_count=stats.file_count,
+                        families=plan.family_names,
+                        total_duration_s=perf_counter() - cycle_started,
                     )
-
-                _observe_active_phase(
-                    source_code=request.source_code,
-                    release_tag=request.release_tag,
-                    phase_name=active_phase_name,
-                    phase_started=active_phase_started,
-                )
-
-                await _set_phase(
-                    control_connection,
-                    ingest_run_id,
-                    status_code=INGEST_STATUS_INDEXING,
-                    phase_name="indexing",
-                )
-                active_phase_name = "indexing"
-                active_phase_started = perf_counter()
-                _observe_active_phase(
-                    source_code=request.source_code,
-                    release_tag=request.release_tag,
-                    phase_name=active_phase_name,
-                    phase_started=active_phase_started,
-                )
-
-                await _set_phase(
-                    control_connection,
-                    ingest_run_id,
-                    status_code=INGEST_STATUS_ANALYZING,
-                    phase_name="analyzing",
-                )
-                active_phase_name = "analyzing"
-                active_phase_started = perf_counter()
-                _observe_active_phase(
-                    source_code=request.source_code,
-                    release_tag=request.release_tag,
-                    phase_name=active_phase_name,
-                    phase_started=active_phase_started,
-                )
-                active_phase_name = None
-                active_phase_started = None
-                await _finalize_published(control_connection, ingest_run_id, source_release_id)
-                record_ingest_run(source_code=request.source_code, outcome="published")
-                _emit_event(
-                    "ingest.cycle.published",
-                    ingest_run_id=ingest_run_id,
-                    source_code=request.source_code,
-                    release_tag=request.release_tag,
-                    families=plan.family_names,
-                    total_duration_s=perf_counter() - cycle_started,
-                )
-                return str(ingest_run_id)
+                    return str(ingest_run_id)
             except (IngestAlreadyPublished, IngestAlreadyInProgress):
                 raise
             except IngestAborted as exc:
@@ -459,6 +561,11 @@ async def _mark_family_loaded(
         family_name,
         ingest_run_id,
     )
+
+
+def _plan_family_file_total(plan: IngestPlan, family_name: str) -> int:
+    family = next(item for item in plan.families if item.family == family_name)
+    return len(family.files)
 
 
 async def _assert_not_aborted(connection: asyncpg.Connection, ingest_run_id: UUID) -> None:

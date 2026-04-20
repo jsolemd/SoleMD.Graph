@@ -43,6 +43,7 @@ from app.corpus.runtime_support import (
 from app.corpus.selectors import corpus, mapped, provenance
 from app.telemetry.metrics import (
     observe_corpus_selection_phase,
+    track_active_worker_run,
     record_corpus_selection_failure,
     record_corpus_selection_materialized_papers,
     record_corpus_pipeline_stage_count,
@@ -82,167 +83,193 @@ async def run_corpus_selection(
                 )
                 run_id = run.corpus_selection_run_id
                 completed_phases = set(run.phases_completed)
-
-                emit_event(
-                    "corpus.selection.started",
-                    corpus_selection_run_id=run_id,
-                    s2_release_tag=request.s2_release_tag,
-                    pt3_release_tag=request.pt3_release_tag,
-                    selector_version=request.selector_version,
-                    plan=plan.model_dump(mode="json"),
+                phase_sequence = tuple(
+                    phase_name
+                    for phase_name in CORPUS_SELECTION_PHASES
+                    if request.phase_allowlist is None or phase_name in request.phase_allowlist
                 )
 
-                for phase_name in CORPUS_SELECTION_PHASES:
-                    if phase_name in completed_phases:
-                        continue
-                    if request.phase_allowlist is not None and phase_name not in request.phase_allowlist:
-                        break
-                    active_phase_name = phase_name
-                    active_phase_started = perf_counter()
-                    if phase_name in {"corpus_admission", "mapped_promotion"}:
-                        await prepare_selector_temp_tables(connection, assets)
-                    await _set_selection_phase(connection, run_id, phase_name=phase_name)
-                    if phase_name == "assets":
-                        async with connection.transaction():
-                            term_count, alias_count = await materialize_curated_vocab(
-                                connection,
-                                assets,
+                async with track_active_worker_run(
+                    worker_scope="corpus",
+                    run_kind="corpus_selection",
+                    run_label=(
+                        f"{request.selector_version}:"
+                        f"{request.s2_release_tag}:{request.pt3_release_tag}"
+                    ),
+                    selector_version=request.selector_version,
+                    s2_release_tag=request.s2_release_tag,
+                    pt3_release_tag=request.pt3_release_tag,
+                ) as active_run:
+                    total_progress_units = float(max(1, len(phase_sequence)))
+                    active_run.set_progress(
+                        progress_kind="overall",
+                        completed_units=float(len(completed_phases & set(phase_sequence))),
+                        total_units=total_progress_units,
+                    )
+                    emit_event(
+                        "corpus.selection.started",
+                        corpus_selection_run_id=run_id,
+                        s2_release_tag=request.s2_release_tag,
+                        pt3_release_tag=request.pt3_release_tag,
+                        selector_version=request.selector_version,
+                        plan=plan.model_dump(mode="json"),
+                    )
+
+                    for phase_name in phase_sequence:
+                        if phase_name in completed_phases:
+                            continue
+                        active_phase_name = phase_name
+                        active_phase_started = perf_counter()
+                        active_run.set_state(phase=phase_name)
+                        if phase_name in {"corpus_admission", "mapped_promotion"}:
+                            await prepare_selector_temp_tables(connection, assets)
+                        await _set_selection_phase(connection, run_id, phase_name=phase_name)
+                        if phase_name == "assets":
+                            async with connection.transaction():
+                                term_count, alias_count = await materialize_curated_vocab(
+                                    connection,
+                                    assets,
+                                )
+                            emit_event(
+                                "corpus.selection.assets.completed",
+                                corpus_selection_run_id=run_id,
+                                term_count=term_count,
+                                alias_count=alias_count,
                             )
-                        emit_event(
-                            "corpus.selection.assets.completed",
-                            corpus_selection_run_id=run_id,
-                            term_count=term_count,
-                            alias_count=alias_count,
-                        )
-                    elif phase_name == "corpus_admission":
-                        async with connection.transaction():
-                            await corpus.refresh_corpus_admission(
+                        elif phase_name == "corpus_admission":
+                            async with connection.transaction():
+                                await corpus.refresh_corpus_admission(
+                                    connection,
+                                    corpus_selection_run_id=run_id,
+                                    plan=plan,
+                                )
+                            corpus_signal_count = await _count_phase_signals(
+                                connection,
+                                run_id,
+                                phase_name,
+                            )
+                            record_corpus_selection_signals(
+                                selector_version=request.selector_version,
+                                phase=phase_name,
+                                signal_count=corpus_signal_count,
+                            )
+                            emit_event(
+                                "corpus.selection.corpus.completed",
+                                corpus_selection_run_id=run_id,
+                                corpus_signal_count=corpus_signal_count,
+                            )
+                        elif phase_name == "mapped_promotion":
+                            async with connection.transaction():
+                                await mapped.refresh_mapped_promotion(
+                                    connection,
+                                    corpus_selection_run_id=run_id,
+                                    plan=plan,
+                                )
+                            mapped_signal_count = await _count_phase_signals(
+                                connection,
+                                run_id,
+                                phase_name,
+                            )
+                            record_corpus_selection_signals(
+                                selector_version=request.selector_version,
+                                phase=phase_name,
+                                signal_count=mapped_signal_count,
+                            )
+                            emit_event(
+                                "corpus.selection.mapped.completed",
+                                corpus_selection_run_id=run_id,
+                                mapped_signal_count=mapped_signal_count,
+                            )
+                        elif phase_name == "canonical_materialization":
+                            async with connection.transaction():
+                                await materialize_selected_corpus(
+                                    connection,
+                                    corpus_selection_run_id=run_id,
+                                    plan=plan,
+                                )
+                            materialized_corpus_count = await _count_materialized_papers(
+                                connection,
+                                plan.s2_source_release_id,
+                            )
+                            record_corpus_selection_materialized_papers(
+                                selector_version=request.selector_version,
+                                paper_count=materialized_corpus_count,
+                            )
+                            emit_event(
+                                "corpus.selection.materialization.completed",
+                                corpus_selection_run_id=run_id,
+                                materialized_corpus_count=materialized_corpus_count,
+                            )
+                        else:
+                            async with connection.transaction():
+                                await provenance.refresh_selection_summary(
+                                    connection,
+                                    corpus_selection_run_id=run_id,
+                                    plan=plan,
+                                )
+                            summary_row_count = await _count_summary_rows(connection, run_id)
+                            record_corpus_selection_summary_rows(
+                                selector_version=request.selector_version,
+                                row_count=summary_row_count,
+                            )
+                            pipeline_stage_counts = await _load_pipeline_stage_counts(
                                 connection,
                                 corpus_selection_run_id=run_id,
-                                plan=plan,
+                                s2_source_release_id=plan.s2_source_release_id,
                             )
-                        corpus_signal_count = await _count_phase_signals(
-                            connection,
-                            run_id,
-                            phase_name,
-                        )
-                        record_corpus_selection_signals(
+                            for stage_name, paper_count in pipeline_stage_counts.items():
+                                record_corpus_pipeline_stage_count(
+                                    selector_version=request.selector_version,
+                                    s2_release_tag=request.s2_release_tag,
+                                    pt3_release_tag=request.pt3_release_tag,
+                                    stage=stage_name,
+                                    paper_count=paper_count,
+                                )
+                            emit_event(
+                                "corpus.selection.summary.completed",
+                                corpus_selection_run_id=run_id,
+                                summary_row_count=summary_row_count,
+                                pipeline_stage_counts=pipeline_stage_counts,
+                            )
+                        observe_corpus_selection_phase(
                             selector_version=request.selector_version,
                             phase=phase_name,
-                            signal_count=corpus_signal_count,
+                            duration_seconds=perf_counter() - active_phase_started,
                         )
-                        emit_event(
-                            "corpus.selection.corpus.completed",
-                            corpus_selection_run_id=run_id,
-                            corpus_signal_count=corpus_signal_count,
+                        await _mark_selection_phase_completed(connection, run_id, phase_name)
+                        completed_phases.add(phase_name)
+                        active_run.set_progress(
+                            progress_kind="overall",
+                            completed_units=float(len(completed_phases & set(phase_sequence))),
+                            total_units=total_progress_units,
                         )
-                    elif phase_name == "mapped_promotion":
-                        async with connection.transaction():
-                            await mapped.refresh_mapped_promotion(
-                                connection,
-                                corpus_selection_run_id=run_id,
-                                plan=plan,
-                            )
-                        mapped_signal_count = await _count_phase_signals(
-                            connection,
-                            run_id,
-                            phase_name,
-                        )
-                        record_corpus_selection_signals(
+                        active_phase_name = None
+                        active_phase_started = None
+
+                    if set(phase_sequence).issubset(completed_phases):
+                        await _finalize_selection_published(connection, run_id)
+                        record_corpus_selection_run(
                             selector_version=request.selector_version,
-                            phase=phase_name,
-                            signal_count=mapped_signal_count,
+                            outcome="published",
                         )
                         emit_event(
-                            "corpus.selection.mapped.completed",
+                            "corpus.selection.published",
                             corpus_selection_run_id=run_id,
-                            mapped_signal_count=mapped_signal_count,
-                        )
-                    elif phase_name == "canonical_materialization":
-                        async with connection.transaction():
-                            await materialize_selected_corpus(
-                                connection,
-                                corpus_selection_run_id=run_id,
-                                plan=plan,
-                            )
-                        materialized_corpus_count = await _count_materialized_papers(
-                            connection,
-                            plan.s2_source_release_id,
-                        )
-                        record_corpus_selection_materialized_papers(
-                            selector_version=request.selector_version,
-                            paper_count=materialized_corpus_count,
-                        )
-                        emit_event(
-                            "corpus.selection.materialization.completed",
-                            corpus_selection_run_id=run_id,
-                            materialized_corpus_count=materialized_corpus_count,
+                            published_phases=sorted(completed_phases),
+                            total_duration_s=perf_counter() - cycle_started,
                         )
                     else:
-                        async with connection.transaction():
-                            await provenance.refresh_selection_summary(
-                                connection,
-                                corpus_selection_run_id=run_id,
-                                plan=plan,
-                            )
-                        summary_row_count = await _count_summary_rows(connection, run_id)
-                        record_corpus_selection_summary_rows(
+                        record_corpus_selection_run(
                             selector_version=request.selector_version,
-                            row_count=summary_row_count,
+                            outcome="partial",
                         )
-                        pipeline_stage_counts = await _load_pipeline_stage_counts(
-                            connection,
-                            corpus_selection_run_id=run_id,
-                            s2_source_release_id=plan.s2_source_release_id,
-                        )
-                        for stage_name, paper_count in pipeline_stage_counts.items():
-                            record_corpus_pipeline_stage_count(
-                                selector_version=request.selector_version,
-                                s2_release_tag=request.s2_release_tag,
-                                pt3_release_tag=request.pt3_release_tag,
-                                stage=stage_name,
-                                paper_count=paper_count,
-                            )
                         emit_event(
-                            "corpus.selection.summary.completed",
+                            "corpus.selection.partial",
                             corpus_selection_run_id=run_id,
-                            summary_row_count=summary_row_count,
-                            pipeline_stage_counts=pipeline_stage_counts,
+                            completed_phases=sorted(completed_phases),
+                            total_duration_s=perf_counter() - cycle_started,
                         )
-                    observe_corpus_selection_phase(
-                        selector_version=request.selector_version,
-                        phase=phase_name,
-                        duration_seconds=perf_counter() - active_phase_started,
-                    )
-                    await _mark_selection_phase_completed(connection, run_id, phase_name)
-                    completed_phases.add(phase_name)
-                    active_phase_name = None
-                    active_phase_started = None
-
-                if set(CORPUS_SELECTION_PHASES).issubset(completed_phases):
-                    await _finalize_selection_published(connection, run_id)
-                    record_corpus_selection_run(
-                        selector_version=request.selector_version,
-                        outcome="published",
-                    )
-                    emit_event(
-                        "corpus.selection.published",
-                        corpus_selection_run_id=run_id,
-                        published_phases=sorted(completed_phases),
-                        total_duration_s=perf_counter() - cycle_started,
-                    )
-                else:
-                    record_corpus_selection_run(
-                        selector_version=request.selector_version,
-                        outcome="partial",
-                    )
-                    emit_event(
-                        "corpus.selection.partial",
-                        corpus_selection_run_id=run_id,
-                        completed_phases=sorted(completed_phases),
-                        total_duration_s=perf_counter() - cycle_started,
-                    )
-                return str(run_id)
+                    return str(run_id)
             except (CorpusSelectionAlreadyPublished, CorpusSelectionAlreadyInProgress):
                 raise
             except Exception as exc:

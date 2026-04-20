@@ -574,6 +574,7 @@ are:
 
 | Lane | Metric families |
 |---|---|
+| Shared active-run contract | `worker_active_run_info`, `worker_active_run_progress_ratio`, `worker_active_run_progress_units`, `worker_active_run_elapsed_seconds` |
 | Ingest | `ingest_phase_duration_seconds`, `ingest_runs_total`, `ingest_family_rows_total`, `ingest_family_files_total`, `ingest_failures_total`, `ingest_active_lock_age_seconds` |
 | Corpus selection | `corpus_selection_phase_duration_seconds`, `corpus_selection_runs_total`, `corpus_selection_signals_total`, `corpus_selection_materialized_papers_total`, `corpus_selection_summary_rows_total`, `corpus_pipeline_stage_papers`, `corpus_selection_failures_total`, `corpus_selection_active_lock_age_seconds` |
 | Evidence wave dispatch | `corpus_wave_phase_duration_seconds`, `corpus_wave_runs_total`, `corpus_wave_members_selected_total`, `corpus_wave_enqueued_total`, `corpus_evidence_policy_papers`, `corpus_wave_failures_total`, `corpus_wave_active_lock_age_seconds` |
@@ -596,6 +597,31 @@ contract visible in Grafana without reconstructing it from run deltas:
     `(wave_policy_key, selector_version, s2_release_tag, pt3_release_tag)`
     plan
 
+The shared active-run gauges are there to answer the operator question
+"what is running right now?" without reading logs:
+
+- `worker_active_run_info`
+  - low-cardinality live labels for `worker_scope`, `run_kind`,
+    `run_label`, current `phase`, and current `work_item`
+- `worker_active_run_progress_ratio`
+  - latest overall completion ratio for the active run surface; for
+    ingest this advances on completed family/file boundaries
+- `worker_active_run_progress_units`
+  - latest live unit counters for the active run surface; currently
+    used for:
+    - `overall` completed / total units
+    - `current_work_item_files` completed / total files
+    - `current_work_item_rows` completed rows during the active ingest
+      family
+- `worker_active_run_elapsed_seconds`
+  - live elapsed age for the active run surface
+
+The active-run contract intentionally avoids high-cardinality labels:
+no `ingest_run_id`, `corpus_selection_run_id`, `paper_text_run_id`, or
+`corpus_id` labels. Release tags, selector version, and wave policy key
+remain safe; per-paper and per-run UUID identities stay on structured
+logs and warehouse tables.
+
 The provisioned Grafana worker dashboard is expected to render these beside a
 text panel named `Pipeline Contract And Criteria` so the operator can see both
 the numbers and the actual stage-membership rules in one place. The dashboard
@@ -605,6 +631,8 @@ should answer:
 - how many papers are in each stage for the monitored release pair
 - whether the current evidence run is measuring the whole cohort or only the
   current backlog dispatch
+- what run is active right now, in what phase, on what family/work item, and
+  whether it is making live progress
 
 Exemplar emit helper (§0 rule):
 
