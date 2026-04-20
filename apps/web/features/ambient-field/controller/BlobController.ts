@@ -437,6 +437,11 @@ export class BlobController extends FieldController {
   override destroy(): void {
     this.colorCycleTimeline?.kill();
     this.colorCycleTimeline = null;
+    // Kill the scroll timeline + ScrollTrigger before handing off to the
+    // base class. Maze's `unbindScroll` pattern at
+    // scripts.pretty.js:43288-43289 runs before the base teardown.
+    this.scrollDisposer?.();
+    this.scrollDisposer = null;
     super.destroy();
   }
 
@@ -481,7 +486,13 @@ export class BlobController extends FieldController {
     this.startColorCycle();
 
     const sceneUnits = this.sceneUnits;
+    // `paused: true` matches Maze's `gsap.timeline({paused: true})` at
+    // scripts.pretty.js:43294. ScrollTrigger.scrub pins the playhead to
+    // scroll position; without the explicit pause the timeline would
+    // auto-advance for the first tick before ScrollTrigger takes over,
+    // which reads as a flicker on first paint.
     const timeline = gsap.timeline({
+      paused: true,
       defaults: { duration: 1, ease: "none" },
       scrollTrigger: {
         trigger: anchor,
