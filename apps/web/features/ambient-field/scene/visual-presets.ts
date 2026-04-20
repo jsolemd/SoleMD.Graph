@@ -118,7 +118,11 @@ export const visualPresets: Record<
     sceneScaleMobile: 0.55,
     sceneOffset: [0, -0.02, 0],
     sceneRotation: [0, 0, 0],
-    rotationVelocity: [0, 0.12, 0],
+    // Maze's idle spin is `wrapper.rotation.y += 0.001` per frame
+    // (scripts.pretty.js:43048). At 60fps that's 0.06 rad/sec, which is
+    // what we drive here. One full revolution lands at ~104s. Using 0.12
+    // was a 2x drift from Maze during Round 12 rebuild.
+    rotationVelocity: [0, 0.06, 0],
     scrollRotation: [0, Math.PI, 0],
     alphaOut: 0,
     amplitudeOut: 0.8,
