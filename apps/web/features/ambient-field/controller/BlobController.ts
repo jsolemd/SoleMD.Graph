@@ -49,9 +49,10 @@ interface BlobHotspotRuntime {
 }
 
 // Intro: kill the globe-expand by snapping to baseScale on first frame
-// and ramp uDepth down from a boost multiplier over ~0.9 s so particles
-// start scattered along aMove axes and converge onto the sphere.
-export const INTRO_DURATION_SECONDS = 0.9;
+// and ramp uDepth down from a boost multiplier over 1.4s so particles
+// start scattered along aMove axes and converge onto the sphere. Matches
+// Maze's animateIn duration at scripts.pretty.js:43129-43130.
+export const INTRO_DURATION_SECONDS = 1.4;
 export const INTRO_DEPTH_BOOST = 2.6;
 
 // GSAP rainbow color cycle: tween `uColorNoise` through the palette one
